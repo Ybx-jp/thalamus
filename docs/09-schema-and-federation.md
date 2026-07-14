@@ -58,12 +58,47 @@ M1's literature expert *is* that missing half.
 | claim | ~`Decision`/`Problem`/`Solution` | present, but only *episodic* claims |
 | entity | — | absent |
 
-**Recommendation: `Decision`/`Problem`/`Solution` are subtypes of `Claim`, not
+**Decided (2026-07-14): `Decision`/`Problem`/`Solution` are subtypes of `Claim`, not
 siblings of it.** A Decision is an assertion with a rationale, made by the agent,
 inside an episode. A literature Claim is an assertion with a citation, made by a
 source, inside an ingestion event. Same node, different provenance. Unifying them is
 what makes the trust model *expressible* — it's what lets "tier" be a floor over a
 derivation chain rather than a sticker on a node.
+
+#### The unified Claim (target shape for M1)
+
+One graph label, `Claim`, discriminated by a `kind` property — **not** one label per
+subtype. This matters for federation: [01](01-federation-contract.md) says consumers
+may depend on **core types only**, so the plane and the eval loop query
+`hasLabel("Claim")` and keep working when the literature expert introduces
+`kind: technique` or `kind: finding`. One label per subtype would make every new
+expert a breaking change for every consumer — which is [G7](#g7--the-ontology-is-hardcoded-in-seven-places) all over again.
+
+```
+Claim
+  id           content-hash (G6)
+  kind         decision | problem | solution | <namespaced extension>
+  statement    the assertion itself
+  scope, tier, source, ingested_at        # the provenance envelope (G2, G3)
+  … kind-specific fields:
+      decision → rationale, outcome
+      problem  → category
+      solution → approach, worked
+      external → citation, locator
+```
+
+Edges: `TOUCHES` (→ Artifact) and `SOLVED_BY` (problem-Claim → solution-Claim) carry
+over unchanged. `DERIVED_FROM` is new (**G2**). `CONTRADICTS` is new — and it is the
+**payoff of this decision**: once an agent's Decision and a paper's Claim are the same
+node type, the contradiction surface ([03](03-master-plane.md),
+[05](05-trust-model.md)) is *one* mechanism instead of two, and "the agent decided X;
+the literature says not-X" becomes expressible in the same breath as "expert A and
+expert B disagree." That was not reachable while Decision and Claim were different
+species.
+
+The laundering rule works for the same reason: a Solution the agent wrote after
+reading a tier-2 paper is a tier-1 Claim `DERIVED_FROM` a tier-2 Claim, so its
+effective tier is 2. Uniform node type, uniform traversal, no special cases.
 
 ### G2 — No provenance. This is the expensive one.
 
@@ -115,6 +150,28 @@ description — it's an enforceable constraint *and* a metric:
 - **The metric that grades the roster:** cross-scope edge density per scope. A "leaf"
   expert with high inter-expert density is mis-cut. [08](08-roster-candidates.md)'s
   split/merge rule stops being a judgment call and becomes a number.
+
+#### The global-Artifact carve-out (and a trap it sets)
+
+**Decided (2026-07-14): `Artifact` is global** — one vertex per identifier, shared
+across every scope. It is the only unscoped node type. Two experts touching
+`src/foo.py` land on the same node, deliberately: artifacts are the **join key**
+between scopes and a large part of why the main plane is connective at all. This is
+safe because artifacts are tier-1 observations of the operator's own repo, not a
+poisoning vector.
+
+Two consequences fall out, and the second one is a trap:
+
+1. `expert-A → Artifact ← expert-B` is **not** an illegal `expert → expert` edge. The
+   prohibition above is on direct scope-to-scope edges between *scoped* nodes. Shared
+   global nodes are a shared vocabulary, not a channel.
+2. **The density metric must exclude paths through global nodes.** If it doesn't,
+   every pair of experts that ever touched the same file looks densely connected, and
+   the split/merge signal is confounded to the point of uselessness — it would measure
+   "do these experts work on the same repo," which is not the question. Cross-scope
+   density counts **direct edges between scoped nodes only**. Co-occurrence on a shared
+   Artifact is a *different* signal (and possibly an interesting one), but it must be
+   measured separately and never summed into the one that grades granularity.
 
 ### G4 — The plane bypasses the contract
 
@@ -212,21 +269,29 @@ trust model with an asterisk on it.
 - plane reading through projection grants (**G4**) — harmless at one scope, blocking
   at M3.
 
-## Open questions for the operator
+## Resolved (2026-07-14)
 
-1. **Is `Artifact` global or scoped?** Today `artifact:<identifier>` is a *shared
-   vertex*: two experts touching `src/foo.py` merge onto one node. Under federation
-   that is either a scope leak or a feature. Leaning **feature** — artifacts are the
-   natural join key between scopes, and they are a large part of why the main plane
-   is connective at all. It's also safe, because artifacts are tier-1 observations of
-   the operator's own repo, not a poisoning vector. But it is a *contract decision*
-   and should be written down rather than inherited by accident.
-2. **Does `project` survive alongside `scope`?** They are orthogonal — a Thalamus
-   session pinned to the agent-systems expert has both — and [08](08-roster-candidates.md)'s
-   roster table (a "Serves" column) already implies many-to-many. Keeping both looks
-   right; conflating them is the cheap mistake.
-3. **Is the main scope privileged, or just a scope?** The clarified design says it is
-   "basically the regular session scope," which argues for: same schema, same
-   contract, `scope=main`, and its only distinction is *topological* (dense) rather
-   than structural. That is the cleanest reading, and it turns "master plane" from a
-   type into a **measurement**.
+1. **`Artifact` is global.** One shared vertex per identifier, unscoped — the join key
+   between scopes. See the carve-out under **G3**, including the density trap it sets.
+2. **`project` and `scope` both survive, as orthogonal axes.** `project` answers *which
+   repo*; `scope` answers *which expert*. A Thalamus session pinned to the
+   agent-systems expert has both, and [08](08-roster-candidates.md)'s roster table (its
+   "Serves" column) is exactly the many-to-many between them. Conflating them was the
+   cheap mistake and we are not making it. Concretely: `Session`, `Thread`, and `Claim`
+   carry both; `Artifact` carries `project` only (it is global — it has no scope).
+3. **`Decision`/`Problem`/`Solution` become subtypes of `Claim`** — one label,
+   discriminated by `kind`. See the target shape under **G1**.
+4. **The main scope is just a scope** (`scope=main`), distinguished topologically
+   rather than structurally. This turns "master plane" from a *type* into a
+   **measurement**. See [03](03-master-plane.md).
+
+## Still open
+
+- **Does `summary` become a node?** (**G5**) Deferred to M2, when the eval loop's
+  attribution actually needs the granularity — but note that deferring it means the
+  first traces will be coarser than they should be.
+- **Do `Thread`s cross scopes?** An open thread spawned in a pinned session belongs to
+  that expert's episodic memory, but the operator's mental model of "what's unfinished"
+  is main-scope. Likely answer: threads are scoped, and the main plane `REFERENCES`
+  them — which is precisely what the no-copy rule already prescribes. Unresolved
+  because it wants a real second scope to test against.
