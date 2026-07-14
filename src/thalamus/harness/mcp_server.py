@@ -1,4 +1,11 @@
-"""MCP server exposing graph memory recall tools."""
+"""MCP server exposing graph memory recall tools.
+
+**Scope is server-side, not a tool parameter.** docs/07 is explicit that "the model is
+never trusted to self-limit its own retrieval scope", so the pinned expert comes from
+THALAMUS_SCOPE — set by the session-start hook when the pin is resolved — and no tool
+below accepts a scope argument. A model cannot widen its own view by asking nicely, and
+`memorize` writes to the pinned scope regardless of what the extraction YAML claims.
+"""
 
 from __future__ import annotations
 
@@ -17,13 +24,17 @@ from thalamus.substrate.reader import (
     recall_thread,
 )
 from thalamus.substrate.schema import SessionGraph
-from thalamus.contract.conformance import validate_connectivity
+from thalamus.contract.conformance import check_session, validate_connectivity
+from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.plane.mermaid import session_to_mermaid
 from thalamus.substrate.writer import close_connection, connect, write_session
 
 logger = logging.getLogger(__name__)
 
 GRAPH_URL = os.environ.get("THALAMUS_GRAPH_URL", "ws://localhost:8182/gremlin")
+
+# The session's pin. Resolved by the session-start hook, never by the model.
+SCOPE = os.environ.get("THALAMUS_SCOPE", MAIN_SCOPE)
 
 mcp = FastMCP("thalamus")
 
@@ -37,7 +48,7 @@ def memory_recall(query: str, limit: int = 5) -> str:
     if isinstance(g, str):
         return g
     try:
-        results = recall(g, query, limit)
+        results = recall(g, query, limit, SCOPE)
         return _format_results(results)
     finally:
         _close(g)
@@ -52,7 +63,7 @@ def memory_recall_by_artifact(identifier: str, limit: int = 5) -> str:
     if isinstance(g, str):
         return g
     try:
-        results = recall_by_artifact(g, identifier, limit)
+        results = recall_by_artifact(g, identifier, limit, SCOPE)
         return _format_results(results)
     finally:
         _close(g)
@@ -67,7 +78,7 @@ def memory_recall_by_project(project: str, limit: int = 5) -> str:
     if isinstance(g, str):
         return g
     try:
-        results = recall_by_project(g, project, limit)
+        results = recall_by_project(g, project, limit, SCOPE)
         return _format_results(results)
     finally:
         _close(g)
@@ -80,7 +91,7 @@ def memory_recall_recent(limit: int = 5) -> str:
     if isinstance(g, str):
         return g
     try:
-        results = recall_recent(g, limit)
+        results = recall_recent(g, limit, SCOPE)
         return _format_results(results)
     finally:
         _close(g)
@@ -96,7 +107,7 @@ def memory_open_threads(project: str = "", limit: int = 10) -> str:
     if isinstance(g, str):
         return g
     try:
-        results = recall_open_threads(g, project or None, limit)
+        results = recall_open_threads(g, project or None, limit, SCOPE)
         if not results:
             return "No open threads found."
         return "\n\n---\n\n".join(r.format() for r in results)
@@ -113,7 +124,7 @@ def memory_thread(thread_id: str) -> str:
     if isinstance(g, str):
         return g
     try:
-        result = recall_thread(g, thread_id)
+        result = recall_thread(g, thread_id, SCOPE)
         if not result:
             return f"Thread `{thread_id}` not found."
         return result.format()
@@ -165,9 +176,12 @@ def memorize(session_yaml: str) -> str:
     except Exception as e:
         return f"Schema validation failed: {e}"
 
-    issues = validate_connectivity(session)
+    # The pin wins over whatever the extraction claims. Scope is not the model's to choose.
+    session = session.model_copy(update={"scope": SCOPE})
+
+    issues = check_session(session)
     if issues:
-        msg = "REJECTED — all nodes must have at least one edge:\n"
+        msg = "REJECTED — the subgraph does not satisfy the federation contract:\n"
         msg += "\n".join(f"  - {issue}" for issue in issues)
         msg += "\n\nRemove orphan artifacts or add them to a decision/problem/solution/thread."
         return msg
@@ -177,15 +191,11 @@ def memorize(session_yaml: str) -> str:
         return g
     try:
         write_session(g, session)
-        count = (
-            1
-            + len(session.artifacts)
-            + len(session.decisions)
-            + len(session.problems)
-            + len(session.solutions)
-            + len(session.threads)
+        count = 1 + len(session.artifacts) + len(session.claims()) + len(session.threads)
+        return (
+            f"Memorized session `{session.session_id}` into scope `{SCOPE}` "
+            f"({count} nodes written)"
         )
-        return f"Memorized session `{session.session_id}` ({count} nodes written)"
     except Exception as e:
         logger.exception("Failed to write session %s", session.session_id)
         return (

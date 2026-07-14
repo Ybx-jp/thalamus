@@ -10,6 +10,7 @@ from urllib.parse import quote
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Order, P, T
 
+from thalamus.contract.ontology import EXPANDABLE_LABELS, LABEL_PROPERTIES
 from thalamus.plane.view_model import (
     Expandable,
     GraphView,
@@ -26,15 +27,11 @@ MAX_OVERVIEW_SOURCE_SESSIONS = 10_000
 MAX_EXPANSION_NODES = 100
 MAX_EXPANSION_EDGES = 200
 
-_EXPANDABLE_KINDS = {"Session", "Artifact", "Decision", "Problem", "Solution", "Thread"}
-_NODE_LABEL_PROPERTIES = {
-    "Session": "summary",
-    "Artifact": "identifier",
-    "Decision": "description",
-    "Problem": "description",
-    "Solution": "description",
-    "Thread": "title",
-}
+# Derived from the contract's ontology rather than restated here. Adding a node type
+# used to mean editing this file; now it means editing contract/ontology.py and nothing
+# else. (docs/09 G7)
+_EXPANDABLE_KINDS = EXPANDABLE_LABELS
+_NODE_LABEL_PROPERTIES = LABEL_PROPERTIES
 
 
 def persisted_overview(

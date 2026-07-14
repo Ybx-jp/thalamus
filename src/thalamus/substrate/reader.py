@@ -1,4 +1,16 @@
-"""Query and retrieve memory from the graph."""
+"""Query and retrieve memory from the graph.
+
+Every read is **scoped**. A session is pinned to one scope, and the server — not the
+model — decides what that scope can see: docs/07 is explicit that "the model is never
+trusted to self-limit its own retrieval scope". The `scope` parameter threaded through
+this module is where that enforcement lives.
+
+Results are rendered as **data with provenance**, never as text positioned to be read as
+instructions (docs/05, informs-never-instructs). Today everything in the graph is tier-1
+— the agent's own history — so the exposure is small. The moment a feed writes tier-2
+content, this formatter is the injection surface, which is why the tier travels with the
+content rather than being dropped on the floor at render time.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +20,25 @@ from dataclasses import dataclass, field
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 from gremlin_python.process.traversal import Order, P, T, TextP
 
+from thalamus.contract.ontology import MAIN_SCOPE, vid
+from thalamus.substrate.schema import Tier
+
 logger = logging.getLogger(__name__)
+
+_TIER_NAMES = {
+    0: "operator",
+    1: "first-party",
+    2: "curated third-party",
+    3: "wild",
+}
+
+
+def _tier_label(tier: object) -> str:
+    try:
+        value = int(tier)
+    except (TypeError, ValueError):
+        value = int(Tier.FIRST_PARTY)
+    return f"tier {value} · {_TIER_NAMES.get(value, 'unknown')}"
 
 
 @dataclass
@@ -20,12 +50,17 @@ class MemoryResult:
     timestamp: str
     tool: str
     project: str
+    scope: str = MAIN_SCOPE
+    tier: int = int(Tier.FIRST_PARTY)
+    node_id: str = ""
     details: list[dict] = field(default_factory=list)
     relevance: str = ""
 
     def format(self) -> str:
         lines = [
-            f"## [{self.tool}] {self.project or 'unknown project'} — {self.timestamp[:10]}",
+            f"## Recalled memory [{_tier_label(self.tier)}]",
+            f"**Session:** [{self.tool}] {self.project or 'unknown project'} — "
+            f"{self.timestamp[:10]} (scope: {self.scope})",
             f"**Summary:** {self.summary}",
         ]
         if self.relevance:
@@ -33,9 +68,9 @@ class MemoryResult:
         if self.details:
             lines.append("")
             for detail in self.details:
-                label = detail.get("label", "")
+                kind = detail.get("kind") or detail.get("label", "")
                 desc = detail.get("description", "")
-                lines.append(f"- **{label}**: {desc}")
+                lines.append(f"- **{kind}**: {desc}")
         return "\n".join(lines)
 
 
@@ -48,6 +83,7 @@ class ThreadResult:
     description: str
     status: str
     project: str
+    scope: str = MAIN_SCOPE
     spawned_by: str = ""
     last_session: str = ""
 
@@ -69,55 +105,65 @@ class ThreadResult:
         return "\n".join(lines)
 
 
-def recall(g: GraphTraversalSource, query: str, limit: int = 5) -> list[MemoryResult]:
-    """Natural language recall — search session summaries and node descriptions.
+def recall(
+    g: GraphTraversalSource, query: str, limit: int = 5, scope: str = MAIN_SCOPE
+) -> list[MemoryResult]:
+    """Natural language recall — search session summaries and claim descriptions.
 
-    Uses text containment matching on summaries, decisions, problems, and solutions.
-    Returns the most relevant sessions with their subgraph details.
+    Uses text containment matching. Claims are searched by label, not by subtype: a
+    single `hasLabel("Claim")` covers decisions, problems, solutions, and anything an
+    expert adds later, which is the point of the unified Claim (docs/09 G1).
     """
     keywords = _extract_keywords(query)
     if not keywords:
-        return recall_recent(g, limit)
+        return recall_recent(g, limit, scope)
 
     matched_session_ids: dict[str, float] = {}
 
     for keyword in keywords:
-        # Search session summaries
         sessions = (
             g.V()
             .has_label("Session")
+            .has("scope", scope)
             .has("summary", TextP.containing(keyword))
-            .value_map("session_id", "summary", "timestamp", "tool", "project")
+            .value_map("session_id")
             .to_list()
         )
-        for s in sessions:
-            sid = _first(s.get("session_id"))
-            matched_session_ids[sid] = matched_session_ids.get(sid, 0) + 2.0
+        for session in sessions:
+            session_id = _first(session.get("session_id"))
+            matched_session_ids[session_id] = matched_session_ids.get(session_id, 0) + 2.0
 
-        # Search decision/problem/solution descriptions
-        for label in ("Decision", "Problem", "Solution"):
-            nodes = (
-                g.V()
-                .has_label(label)
-                .has("description", TextP.containing(keyword))
-                .in_e("CONTAINS")
-                .out_v()
-                .has_label("Session")
-                .value_map("session_id")
-                .to_list()
-            )
-            for n in nodes:
-                sid = _first(n.get("session_id"))
-                matched_session_ids[sid] = matched_session_ids.get(sid, 0) + 1.0
+        claims = (
+            g.V()
+            .has_label("Claim")
+            .has("scope", scope)
+            .has("description", TextP.containing(keyword))
+            .in_e("CONTAINS")
+            .out_v()
+            .has_label("Session")
+            .value_map("session_id")
+            .to_list()
+        )
+        for claim in claims:
+            session_id = _first(claim.get("session_id"))
+            matched_session_ids[session_id] = matched_session_ids.get(session_id, 0) + 1.0
 
-    ranked = sorted(matched_session_ids.items(), key=lambda x: x[1], reverse=True)[:limit]
-    return [_load_session_result(g, sid, f"matched on: {', '.join(keywords)}") for sid, _ in ranked]
+    ranked = sorted(matched_session_ids.items(), key=lambda item: item[1], reverse=True)[:limit]
+    return [
+        _load_session_result(g, session_id, f"matched on: {', '.join(keywords)}", scope)
+        for session_id, _ in ranked
+    ]
 
 
 def recall_by_artifact(
-    g: GraphTraversalSource, identifier: str, limit: int = 5
+    g: GraphTraversalSource, identifier: str, limit: int = 5, scope: str = MAIN_SCOPE
 ) -> list[MemoryResult]:
-    """Find sessions that touched a specific artifact."""
+    """Find sessions that touched a specific artifact.
+
+    Artifacts are global — the same vertex is reachable from every scope — so the scope
+    filter is applied to the *sessions*, not to the artifact. This is the join key doing
+    its job: a shared artifact is a shared vocabulary, not a channel between experts.
+    """
     sessions = (
         g.V()
         .has_label("Artifact")
@@ -127,6 +173,7 @@ def recall_by_artifact(
         .in_e("CONTAINS")
         .out_v()
         .has_label("Session")
+        .has("scope", scope)
         .dedup()
         .value_map("session_id")
         .limit(limit)
@@ -134,166 +181,172 @@ def recall_by_artifact(
     )
 
     return [
-        _load_session_result(g, _first(s.get("session_id")), f"touches: {identifier}")
+        _load_session_result(g, _first(s.get("session_id")), f"touches: {identifier}", scope)
         for s in sessions
     ]
 
 
 def recall_by_project(
-    g: GraphTraversalSource, project: str, limit: int = 5
+    g: GraphTraversalSource, project: str, limit: int = 5, scope: str = MAIN_SCOPE
 ) -> list[MemoryResult]:
-    """Find recent sessions for a specific project."""
+    """Find recent sessions for a specific project.
+
+    `project` and `scope` are orthogonal axes — which repo, versus which expert — so this
+    filters on both.
+    """
     sessions = (
         g.V()
         .has_label("Session")
+        .has("scope", scope)
         .has("project", TextP.containing(project))
         .order()
         .by("timestamp", Order.desc)
         .limit(limit)
-        .value_map("session_id", "summary", "timestamp", "tool", "project")
+        .value_map("session_id", "summary", "timestamp", "tool", "project", "scope", "tier")
         .to_list()
     )
 
-    return [
-        MemoryResult(
-            session_id=_first(s.get("session_id")),
-            summary=_first(s.get("summary")),
-            timestamp=_first(s.get("timestamp")),
-            tool=_first(s.get("tool")),
-            project=_first(s.get("project")),
-            relevance=f"project: {project}",
-        )
-        for s in sessions
-    ]
+    return [_session_result(s, relevance=f"project: {project}") for s in sessions]
 
 
-def recall_recent(g: GraphTraversalSource, limit: int = 5) -> list[MemoryResult]:
-    """Return the most recent sessions."""
+def recall_recent(
+    g: GraphTraversalSource, limit: int = 5, scope: str = MAIN_SCOPE
+) -> list[MemoryResult]:
+    """Return the most recent sessions in scope."""
     sessions = (
         g.V()
         .has_label("Session")
+        .has("scope", scope)
         .order()
         .by("timestamp", Order.desc)
         .limit(limit)
-        .value_map("session_id", "summary", "timestamp", "tool", "project")
+        .value_map("session_id", "summary", "timestamp", "tool", "project", "scope", "tier")
         .to_list()
     )
 
-    return [
-        MemoryResult(
-            session_id=_first(s.get("session_id")),
-            summary=_first(s.get("summary")),
-            timestamp=_first(s.get("timestamp")),
-            tool=_first(s.get("tool")),
-            project=_first(s.get("project")),
-        )
-        for s in sessions
-    ]
+    return [_session_result(s) for s in sessions]
 
 
 def recall_open_threads(
-    g: GraphTraversalSource, project: str | None = None, limit: int = 10
+    g: GraphTraversalSource,
+    project: str | None = None,
+    limit: int = 10,
+    scope: str = MAIN_SCOPE,
 ) -> list[ThreadResult]:
-    """Return open/in-progress threads, optionally filtered by project.
-
-    These are the active continuation points — what should be worked on next.
-    """
-    query = g.V().has_label("Thread").has("status", P.within("open", "in_progress"))
+    """Return open/in-progress threads — the active continuation points."""
+    query = (
+        g.V()
+        .has_label("Thread")
+        .has("scope", scope)
+        .has("status", P.within("open", "in_progress"))
+    )
 
     if project:
         query = query.has("project", TextP.containing(project))
 
-    threads = query.order().by("status", Order.asc).limit(limit).value_map(
-        "thread_id", "title", "description", "status", "project"
-    ).to_list()
+    threads = (
+        query.order()
+        .by("status", Order.asc)
+        .limit(limit)
+        .value_map("thread_id", "title", "description", "status", "project", "scope")
+        .to_list()
+    )
 
-    results = []
-    for t in threads:
-        tid = _first(t.get("thread_id"))
-        vid = f"thread:{tid}"
-
-        # Find the session that spawned this thread
-        spawned = (
-            g.V(vid).in_e("SPAWNS").out_v().has_label("Session")
-            .value_map("session_id", "timestamp").limit(1).to_list()
-        )
-        spawned_by = ""
-        if spawned:
-            spawned_by = f"{_first(spawned[0].get('session_id'))} ({_first(spawned[0].get('timestamp'))[:10]})"
-
-        # Find the most recent session that touched this thread (CONTINUES or RESOLVES)
-        recent = (
-            g.V(vid).in_e("CONTINUES", "SPAWNS").out_v().has_label("Session")
-            .order().by("timestamp", Order.desc)
-            .value_map("session_id", "timestamp").limit(1).to_list()
-        )
-        last_session = ""
-        if recent:
-            last_session = f"{_first(recent[0].get('session_id'))} ({_first(recent[0].get('timestamp'))[:10]})"
-
-        results.append(ThreadResult(
-            thread_id=tid,
-            title=_first(t.get("title")),
-            description=_first(t.get("description")),
-            status=_first(t.get("status")),
-            project=_first(t.get("project")),
-            spawned_by=spawned_by,
-            last_session=last_session,
-        ))
-
-    return results
+    return [_thread_result(g, thread, scope) for thread in threads]
 
 
-def recall_thread(g: GraphTraversalSource, thread_id: str) -> ThreadResult | None:
+def recall_thread(
+    g: GraphTraversalSource, thread_id: str, scope: str = MAIN_SCOPE
+) -> ThreadResult | None:
     """Load a single thread by ID with its lineage."""
-    vid = f"thread:{thread_id}"
+    thread_vid = vid("Thread", thread_id, scope)
 
-    data = g.V(vid).has_label("Thread").value_map(
-        "thread_id", "title", "description", "status", "project"
-    ).to_list()
-
+    data = (
+        g.V(thread_vid)
+        .has_label("Thread")
+        .value_map("thread_id", "title", "description", "status", "project", "scope")
+        .to_list()
+    )
     if not data:
         return None
 
-    t = data[0]
+    return _thread_result(g, data[0], scope)
+
+
+def _thread_result(g: GraphTraversalSource, thread: dict, scope: str) -> ThreadResult:
+    thread_id = _first(thread.get("thread_id"))
+    thread_vid = vid("Thread", thread_id, scope)
 
     spawned = (
-        g.V(vid).in_e("SPAWNS").out_v().has_label("Session")
-        .value_map("session_id", "timestamp").limit(1).to_list()
+        g.V(thread_vid)
+        .in_e("SPAWNS")
+        .out_v()
+        .has_label("Session")
+        .value_map("session_id", "timestamp")
+        .limit(1)
+        .to_list()
     )
-    spawned_by = ""
-    if spawned:
-        spawned_by = f"{_first(spawned[0].get('session_id'))} ({_first(spawned[0].get('timestamp'))[:10]})"
-
     recent = (
-        g.V(vid).in_e("CONTINUES", "SPAWNS").out_v().has_label("Session")
-        .order().by("timestamp", Order.desc)
-        .value_map("session_id", "timestamp").limit(1).to_list()
+        g.V(thread_vid)
+        .in_e("CONTINUES", "SPAWNS")
+        .out_v()
+        .has_label("Session")
+        .order()
+        .by("timestamp", Order.desc)
+        .value_map("session_id", "timestamp")
+        .limit(1)
+        .to_list()
     )
-    last_session = ""
-    if recent:
-        last_session = f"{_first(recent[0].get('session_id'))} ({_first(recent[0].get('timestamp'))[:10]})"
 
     return ThreadResult(
-        thread_id=_first(t.get("thread_id")),
-        title=_first(t.get("title")),
-        description=_first(t.get("description")),
-        status=_first(t.get("status")),
-        project=_first(t.get("project")),
-        spawned_by=spawned_by,
-        last_session=last_session,
+        thread_id=thread_id,
+        title=_first(thread.get("title")),
+        description=_first(thread.get("description")),
+        status=_first(thread.get("status")),
+        project=_first(thread.get("project")),
+        scope=_first(thread.get("scope")) or scope,
+        spawned_by=_session_stamp(spawned),
+        last_session=_session_stamp(recent),
+    )
+
+
+def _session_stamp(rows: list[dict]) -> str:
+    if not rows:
+        return ""
+    session_id = _first(rows[0].get("session_id"))
+    timestamp = _first(rows[0].get("timestamp"))
+    return f"{session_id} ({timestamp[:10]})"
+
+
+def _session_result(session: dict, relevance: str = "", details: list[dict] | None = None):
+    return MemoryResult(
+        session_id=_first(session.get("session_id")),
+        summary=_first(session.get("summary")),
+        timestamp=_first(session.get("timestamp")),
+        tool=_first(session.get("tool")),
+        project=_first(session.get("project")),
+        scope=_first(session.get("scope")) or MAIN_SCOPE,
+        tier=_first_int(session.get("tier"), int(Tier.FIRST_PARTY)),
+        node_id=vid(
+            "Session",
+            _first(session.get("session_id")),
+            _first(session.get("scope")) or MAIN_SCOPE,
+        ),
+        details=details or [],
+        relevance=relevance,
     )
 
 
 def _load_session_result(
-    g: GraphTraversalSource, session_id: str, relevance: str
+    g: GraphTraversalSource, session_id: str, relevance: str, scope: str
 ) -> MemoryResult:
-    """Load full session details from graph."""
+    """Load full session details from the graph."""
     session_data = (
         g.V()
         .has_label("Session")
+        .has("scope", scope)
         .has("session_id", session_id)
-        .value_map("session_id", "summary", "timestamp", "tool", "project")
+        .value_map("session_id", "summary", "timestamp", "tool", "project", "scope", "tier")
         .to_list()
     )
 
@@ -304,39 +357,29 @@ def _load_session_result(
             timestamp="",
             tool="",
             project="",
+            scope=scope,
             relevance=relevance,
         )
 
-    s = session_data[0]
-    vid = f"session:{session_id}"
-
-    # Load contained nodes
-    children = (
-        g.V(vid)
-        .out("CONTAINS")
-        .value_map(True)
-        .to_list()
-    )
+    session_vid = vid("Session", session_id, scope)
+    children = g.V(session_vid).out("CONTAINS").value_map(True).to_list()
 
     details = []
     for child in children:
-        label = child.get(T.label, "") if hasattr(child, "get") else ""
-        # value_map(True) returns label under T.label key
-        if isinstance(child, dict):
-            label = child.get("label", [label])[0] if "label" not in child else label
-            desc = _first(child.get("description"))
-            if desc:
-                details.append({"label": label, "description": desc})
+        if not isinstance(child, dict):
+            continue
+        description = _first(child.get("description"))
+        if not description:
+            continue
+        details.append(
+            {
+                "kind": _first(child.get("kind")) or _first(child.get(T.label)),
+                "description": description,
+                "tier": _first_int(child.get("tier"), int(Tier.FIRST_PARTY)),
+            }
+        )
 
-    return MemoryResult(
-        session_id=_first(s.get("session_id")),
-        summary=_first(s.get("summary")),
-        timestamp=_first(s.get("timestamp")),
-        tool=_first(s.get("tool")),
-        project=_first(s.get("project")),
-        details=details,
-        relevance=relevance,
-    )
+    return _session_result(session_data[0], relevance=relevance, details=details)
 
 
 def _extract_keywords(query: str) -> list[str]:
@@ -362,7 +405,15 @@ def _extract_keywords(query: str) -> list[str]:
 
 
 def _first(val) -> str:
-    """Extract first value from Gremlin value_map list, or return as string."""
+    """Extract the first value from a Gremlin value_map list, or stringify."""
     if isinstance(val, list):
         return str(val[0]) if val else ""
     return str(val) if val is not None else ""
+
+
+def _first_int(val, default: int) -> int:
+    text = _first(val)
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return default

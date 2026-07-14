@@ -16,7 +16,7 @@ model and a measured utility loop. Start at [00-mission.md](00-mission.md).
 | [06-ingestion.md](06-ingestion.md) | Curated feeds; the crawler, deliberately demoted | ✅ drafted | 2026-07-13 |
 | [07-harness-integration.md](07-harness-integration.md) | MCP / hooks / CLAUDE.md / skills, pinning mechanics, the limit lab | ✅ drafted | 2026-07-13 |
 | [08-roster-candidates.md](08-roster-candidates.md) | Granularity rule (spine vs. consultant), skill-vs-expert boundary, parked candidate list | ✅ drafted | 2026-07-13 |
-| [09-schema-and-federation.md](09-schema-and-federation.md) | The ported schema vs. the contract: 7 gaps, sequencing, open questions | ✅ drafted (written against real code) | 2026-07-14 |
+| [09-schema-and-federation.md](09-schema-and-federation.md) | The ported schema vs. the contract: 7 gaps, sequencing, decisions | 🏗️ implementing — G2/G3/G6/G7 closed at M0.5 | 2026-07-14 |
 | [appendix/interactive-memory-graph-spec.md](appendix/interactive-memory-graph-spec.md) | As-built spec for the viewer (historical; predates Thalamus) | 📦 shipped | 2026-07-10 |
 
 Status legend: 💭 idea → ✅ drafted → 🔍 reviewed → 🏗️ implementing → 📦 shipped
@@ -28,7 +28,7 @@ doc has been corrected against it.
 | Milestone | Deliverable | Status |
 |---|---|---|
 | M0 | Port base graph memory system into this repo | ✅ **done** (2026-07-14) — 18 Python + 7 frontend tests green; MCP server, CLI, viewer all run |
-| M0.5 | Federation-ready schema: provenance envelope, scope, stable IDs, unified `Claim`, type registry | 🏗️ in progress — [09](09-schema-and-federation.md). The graph is **empty**, so this is not a migration; it is a greenfield schema definition, and it must precede any memory bootstrap. |
+| M0.5 | Federation-ready schema: provenance envelope, scope, stable IDs, unified `Claim`, type registry | ✅ **done** (2026-07-14) — 40 Python + 10 frontend tests green. Gaps G1(partial), G2, G3, G6, G7 closed; see [09](09-schema-and-federation.md). |
 | M1 | Federation contract v0 + literature expert (curated/manual ingest) | ⬜ not started |
 | M2 | Retrieval instrumentation + eval loop v0; start `lab/` notebook | ⬜ not started |
 | M3 | Second expert + session pinning + consultation protocol (**two proves N**) | ⬜ not started |

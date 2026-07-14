@@ -7,22 +7,12 @@ import cytoscape, {
 
 import { expansionFanPositions } from './expansion-layout'
 import type { GraphView, ViewNode } from './model'
+import { variantColors, variantOf } from './node-variant'
 
 interface GraphCanvasProps {
   graph: GraphView
   selectedNodeId: string | null
   onSelectNode: (node: ViewNode | null) => void
-}
-
-const kindColors: Record<string, string> = {
-  Session: '#2563eb',
-  Artifact: '#0891b2',
-  Decision: '#7c3aed',
-  Problem: '#dc2626',
-  Solution: '#16a34a',
-  Thread: '#d97706',
-  Missing: '#64748b',
-  Project: '#0f766e',
 }
 
 const stylesheet: StylesheetStyle[] = [
@@ -48,8 +38,8 @@ const stylesheet: StylesheetStyle[] = [
       width: 34,
     },
   },
-  ...Object.entries(kindColors).map(([kind, color]) => ({
-    selector: `node[kind = "${kind}"]`,
+  ...Object.entries(variantColors).map(([variant, color]) => ({
+    selector: `node[variant = "${variant}"]`,
     style: { 'background-color': color },
   })),
   {
@@ -156,6 +146,7 @@ function toElements(graph: GraphView): ElementDefinition[] {
         id: node.id,
         label: node.label,
         kind: node.kind,
+        variant: variantOf(node),
         virtual: node.virtual,
       },
       classes: `${node.kind} ${classesFor(node.finding_ids)}`,

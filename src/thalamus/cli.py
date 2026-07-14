@@ -15,7 +15,7 @@ import uvicorn
 import yaml
 
 from thalamus.substrate.schema import SessionGraph
-from thalamus.contract.conformance import validate_connectivity
+from thalamus.contract.conformance import check_session
 from thalamus.plane.web import create_app
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
 
@@ -97,20 +97,23 @@ def _cmd_validate(args):
     data = _load_file(args.file)
     try:
         session = SessionGraph(**data)
-        print(f"Valid. Session: {session.session_id}")
-        print(f"  Artifacts:  {len(session.artifacts)}")
-        print(f"  Decisions:  {len(session.decisions)}")
-        print(f"  Problems:   {len(session.problems)}")
-        print(f"  Solutions:  {len(session.solutions)}")
-        print(f"  Threads:    {len(session.threads)}")
-        print(f"  Thread refs:{len(session.thread_refs)}")
+        print(f"Schema OK. Session: {session.session_id}")
+        print(f"  Scope:       {session.scope}")
+        print(f"  Project:     {session.project or '—'}")
+        print(f"  Artifacts:   {len(session.artifacts)}")
+        print(f"  Claims:      {len(session.claims())} "
+              f"({len(session.decisions)} decision, {len(session.problems)} problem, "
+              f"{len(session.solutions)} solution)")
+        print(f"  Threads:     {len(session.threads)}")
+        print(f"  Thread refs: {len(session.thread_refs)}")
 
-        issues = validate_connectivity(session)
+        issues = check_session(session)
         if issues:
-            print("\nConnectivity issues:", file=sys.stderr)
+            print("\nREJECTED — does not satisfy the federation contract:", file=sys.stderr)
             for issue in issues:
                 print(f"  - {issue}", file=sys.stderr)
             sys.exit(1)
+        print("\nContract OK.")
     except Exception as e:
         print(f"Validation failed: {e}", file=sys.stderr)
         sys.exit(1)

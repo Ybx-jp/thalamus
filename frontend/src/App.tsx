@@ -9,6 +9,7 @@ import {
 } from './expansion-state'
 import GraphCanvas from './GraphCanvas'
 import type { Finding, GraphView, NodeDetails, ViewNode } from './model'
+import { LEGEND_VARIANTS } from './node-variant'
 
 function App() {
   const [graph, setGraph] = useState<GraphView | null>(null)
@@ -241,14 +242,12 @@ function App() {
             onSelectNode={selectNode}
           />
           <div className="legend" aria-label="Node type legend">
-            {['Project', 'Session', 'Artifact', 'Decision', 'Problem', 'Solution', 'Thread', 'Missing'].map(
-              (kind) => (
-                <span key={kind}>
-                  <i className={`legend-dot legend-${kind.toLowerCase()}`} />
-                  {kind}
-                </span>
-              ),
-            )}
+            {LEGEND_VARIANTS.map((variant) => (
+              <span key={variant}>
+                <i className={`legend-dot legend-${variant.toLowerCase()}`} />
+                {variant}
+              </span>
+            ))}
           </div>
         </section>
 

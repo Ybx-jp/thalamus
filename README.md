@@ -14,10 +14,13 @@ measures whether any of it actually makes the agent better.
 
 ## Status
 
-**M0 complete** — the base graph memory system is ported and running. **Everything
-that makes Thalamus *Thalamus* is still design**: there is no contract, no provenance,
-no trust tier, no expert scoping, and no knowledge-side ontology yet. What exists is a
-working episodic memory substrate.
+**M0 + M0.5 complete.** The base graph memory system is ported and running, and the
+schema is now federation-ready: provenance and trust tiers on every node, expert scoping,
+content-addressed claims, and a single-source ontology.
+
+**Still design:** the contract enforces connectivity, provenance, and scope legality, but
+there is no manifest, no projection grant, no second expert, no ingestion feed, and no
+eval loop. What exists is a working episodic memory substrate with the boundary drawn.
 
 - [`docs/index.md`](docs/index.md) — doc tracker, status board, decision log
 - [`docs/00-mission.md`](docs/00-mission.md) — mission and high-level design
@@ -30,8 +33,8 @@ working episodic memory substrate.
 src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader
                (below the contract: knows nodes and edges, not experts or tiers)
-  contract/    the federation boundary — today, one conformance check
-               (this is where the M1 work lands)
+  contract/    the federation boundary — the ontology, and the checks a subgraph
+               must pass before it may be written
   plane/       the connective plane — FastAPI read layer + React/Cytoscape viewer
   harness/     where it meets the agent — MCP server, hooks, skills
 frontend/      viewer source; builds into plane/static
@@ -89,11 +92,21 @@ Register the server (`.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor)
     "thalamus": {
       "command": "uv",
       "args": ["run", "--directory", "/path/to/thalamus", "thalamus-mcp"],
-      "env": { "THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin" }
+      "env": {
+        "THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin",
+        "THALAMUS_SCOPE": "main"
+      }
     }
   }
 }
 ```
+
+**`THALAMUS_SCOPE` is the session's pin, and no tool accepts a scope argument.** The
+server decides what the session can see; the model cannot widen its own view by asking,
+and `memorize` writes to the pinned scope regardless of what the extraction claims. That
+is deliberate — [docs/07](docs/07-harness-integration.md) requires scope enforcement to
+live server-side, because the model is never trusted to self-limit its own retrieval
+scope.
 
 ## The loop
 
@@ -110,19 +123,39 @@ the mechanism that generalizes into **expert pinning**
 
 ## Schema
 
-`Session`, `Artifact`, `Decision`, `Problem`, `Solution`, `Thread`, joined by
-`CONTAINS` / `TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` / `SOLVED_BY`.
-Every node must have at least one edge — orphans are rejected at write time, not
-filtered at read time. Run `thalamus schema` for the JSON schema.
+Four node types — `Session`, `Claim`, `Thread`, `Artifact` — joined by `CONTAINS` /
+`TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` / `SOLVED_BY` /
+`DERIVED_FROM`. Declared once in
+[`contract/ontology.py`](src/thalamus/contract/ontology.py); everything else derives
+from it. Run `thalamus schema` for the JSON schema.
 
-This is the **episodic half** of what the design calls an expert. The knowledge half
-(claims, entities, sources — with provenance and trust tiers) does not exist yet; see
+Three properties are load-bearing:
+
+- **Claims are one label, discriminated by `kind`.** Decisions, problems, and solutions
+  are claim *subtypes*, not sibling labels. A decision is an assertion with a rationale
+  from the agent; a literature claim is an assertion with a citation from a source —
+  same node, different provenance. Consumers query `Claim`, so a future expert adding
+  `kind: literature/finding` breaks nobody. Claim identity is **content-addressed**, so
+  the same claim in two sessions converges on one node.
+- **Every node carries provenance** — trust tier, source, ingestion time — and
+  `DERIVED_FROM` edges make effective trust the *floor* over a node's derivation chain.
+  Distillation does not launder.
+- **Every node carries a scope, except `Artifact`.** Scope is which *expert*; `project`
+  is which *repo*; they are orthogonal. `Artifact` is deliberately **global** — one
+  vertex per identifier, shared by every scope. It is the join key between experts.
+
+Orphans are rejected at write time, not filtered at read time. `thalamus validate` runs
+the full contract check.
+
+Still missing (this is the **episodic half** of an expert): the knowledge-side ontology
+— entities and sources, and a feed to populate them. See
 [docs/09](docs/09-schema-and-federation.md).
 
 ## Development
 
 ```bash
-.venv/bin/pytest              # 18 tests
-cd frontend && npm test       # 7 tests
+.venv/bin/pytest              # 40 tests
+.venv/bin/ruff check src tests
+cd frontend && npm test       # 10 tests
 cd frontend && npm run build  # -> src/thalamus/plane/static
 ```

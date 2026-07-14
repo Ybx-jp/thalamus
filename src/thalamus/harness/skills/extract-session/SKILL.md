@@ -1,7 +1,7 @@
-# Extract Session to Graph Memory
+# Extract Session to Thalamus Graph Memory
 
 ## Purpose
-Extract a structured property graph from the current session transcript and write it to graph memory.
+Extract a structured property graph from the current session transcript and write it to Thalamus graph memory.
 
 ## When to Use
 Invoke this skill at the end of a coding session to capture decisions, artifacts, problems, solutions, and open threads into persistent graph memory.
@@ -17,6 +17,16 @@ You are extracting a session graph from the current conversation. Output **only*
 3. **Decisions**: Capture choices that were made with their rationale. A decision without rationale is not worth recording.
 4. **Problems**: Anything that blocked progress, caused confusion, or required debugging.
 5. **Solutions**: How problems were resolved. Link to the problem via `problem_ref` (0-indexed into problems list).
+
+   Decisions, problems, and solutions are all **claims** — assertions the graph will hold
+   with a provenance chain behind them. They share one `Claim` label in the graph and are
+   distinguished by `kind`. Two consequences worth writing for:
+   - **Claims are content-addressed.** Identical text in two sessions converges on one
+     node. That is intended — it is how "this keeps coming up" becomes a graph fact — so
+     write a claim the same way when you mean the same thing, and differently when you
+     do not.
+   - **Provenance is stamped for you.** Everything you extract is tier-1 (the agent's own
+     lived experience). Do not invent provenance fields.
 6. **Threads**: Open lines of work, next steps, continuation points, or follow-up tasks. These persist across sessions and serve as entrypoints for future agents.
 7. **Thread refs**: If this session continued or resolved a thread from a prior session, reference it here to update its status.
 
@@ -25,9 +35,13 @@ You are extracting a session graph from the current conversation. Output **only*
 ```yaml
 session_id: "<conversation/session ID>"
 timestamp: "<ISO 8601>"
-tool: "cursor"  # or "claude_code"
-project: "<primary repo/project name or null>"
+tool: "claude_code"  # or "cursor"
+project: "<primary repo/project name or null>"   # WHICH REPO
 summary: "<1-3 sentence summary>"
+
+# `scope` — WHICH EXPERT — is set by the server from the session's pin. Do not emit it;
+# `memorize` overwrites whatever you write here. Scope is not the model's to choose
+# (docs/07: the model is never trusted to self-limit its own retrieval scope).
 
 artifacts:
   - identifier: "<file path, class name, or package>"

@@ -7,13 +7,28 @@ Scope: merge token encoding and contextual write failure reporting
 """
 
 from datetime import UTC, datetime
-from types import SimpleNamespace
 
 import pytest
 from gremlin_python.driver.protocol import GremlinServerError
 from gremlin_python.process.traversal import Merge
 
-from thalamus.substrate.writer import GraphWriteError, _iterate, _upsert_session_vertex
+from gremlin_python.process.traversal import T
+
+from thalamus.substrate.schema import (
+    Artifact,
+    ArtifactType,
+    Decision,
+    SessionGraph,
+    Thread,
+    Tier,
+    Tool,
+)
+from thalamus.substrate.writer import (
+    GraphWriteError,
+    _iterate,
+    _upsert_session_vertex,
+    write_session,
+)
 
 
 class FakeTraversal:
@@ -52,11 +67,11 @@ def test_session_upsert_uses_merge_enum_tokens():
     """
     graph_traversal = FakeTraversal()
     g = FakeGraphTraversalSource(graph_traversal)
-    session = SimpleNamespace(
+    session = SessionGraph(
         session_id="test-session",
         timestamp=datetime(2026, 7, 9, tzinfo=UTC),
-        tool=SimpleNamespace(value="cursor"),
-        project="graph-memory",
+        tool=Tool.CURSOR,
+        project="example-project",
         summary="Regression test",
     )
 
@@ -98,3 +113,110 @@ def test_iterate_reports_operation_target_and_server_details():
     assert "upsert Session `session:test` failed" in message
     assert "Gremlin server 599: bad traversal" in message
     assert "java.lang.IllegalStateException" in message
+
+
+class RecordingGraph:
+    """Captures every vertex and edge a write would produce, without a graph server."""
+
+    def __init__(self):
+        self.vertices: list[dict] = []
+        self.edges: list[dict] = []
+        self._pending: dict | None = None
+
+    # -- traversal surface used by the writer --
+    def merge_v(self, values):
+        self._pending = {"match": values, "properties": {}}
+        self.vertices.append(self._pending)
+        return self
+
+    def merge_e(self, values):
+        self.edges.append(values)
+        return self
+
+    def option(self, key, value):
+        if key is Merge.on_create and self._pending is not None:
+            self._pending["properties"] = value
+        return self
+
+    def V(self, *_args):
+        return self
+
+    def has_label(self, *_args):
+        return self
+
+    def property(self, *_args):
+        return self
+
+    def iterate(self):
+        return self
+
+    @property
+    def bytecode(self):
+        return "recording"
+
+
+def test_every_written_node_carries_a_provenance_envelope():
+    """
+    Scenario: Write a session containing a claim, an artifact, and a thread
+
+    Requires:
+    - infrastructure: none; a recording fake stands in for the graph
+
+    Verifications:
+    - every vertex written carries tier, source, and ingested_at
+
+    docs/05 makes provenance an obligation on every node in the graph, enforced at write
+    time. The extraction YAML never mentions it — the writer stamps it — so this test is
+    what keeps "no provenance, no write" true rather than aspirational.
+    """
+    session = SessionGraph(
+        session_id="s1",
+        timestamp=datetime(2026, 7, 14, tzinfo=UTC),
+        tool=Tool.CLAUDE_CODE,
+        project="thalamus",
+        summary="Wrote the substrate.",
+        artifacts=[Artifact(identifier="src/a.py", type=ArtifactType.FILE)],
+        decisions=[Decision(description="d", rationale="r", artifacts=["src/a.py"])],
+        threads=[Thread(id="t1", title="T", description="D")],
+    )
+
+    graph = RecordingGraph()
+    write_session(graph, session)
+
+    # Verifies: session + artifact + claim + thread — nothing written without provenance
+    assert len(graph.vertices) == 4
+    for vertex in graph.vertices:
+        properties = vertex["properties"]
+        assert properties["tier"] == int(Tier.FIRST_PARTY)
+        assert properties["source"] == "session:s1"
+        assert properties["ingested_at"]
+
+
+def test_artifacts_are_written_unscoped_and_everything_else_scoped():
+    """
+    Scenario: Write a session pinned to an expert scope
+
+    Verifications:
+    - the Artifact vertex ID carries no scope segment (it is the global join key)
+    - session, claim, and thread vertex IDs are scoped to the pin
+    """
+    session = SessionGraph(
+        session_id="s1",
+        timestamp=datetime(2026, 7, 14, tzinfo=UTC),
+        tool=Tool.CLAUDE_CODE,
+        scope="literature",
+        summary="Read a paper.",
+        artifacts=[Artifact(identifier="src/a.py", type=ArtifactType.FILE)],
+        decisions=[Decision(description="d", rationale="r", artifacts=["src/a.py"])],
+    )
+
+    graph = RecordingGraph()
+    write_session(graph, session)
+
+    ids = {vertex["properties"][T.id] for vertex in graph.vertices}
+
+    # Verifies: the global artifact is reachable identically from every scope
+    assert "artifact:src/a.py" in ids
+    # Verifies: scoped nodes are namespaced by the pin, so scopes cannot collide
+    assert "scope:literature:session:s1" in ids
+    assert any(node_id.startswith("scope:literature:claim:") for node_id in ids)

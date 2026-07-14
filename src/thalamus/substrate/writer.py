@@ -10,7 +10,8 @@ from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 from gremlin_python.process.traversal import Direction, Merge, T
 
-from thalamus.substrate.schema import SessionGraph
+from thalamus.contract.ontology import vid
+from thalamus.substrate.schema import Claim, Provenance, SessionGraph
 
 logger = logging.getLogger(__name__)
 
@@ -44,182 +45,154 @@ def write_session(g: GraphTraversalSource, session: SessionGraph) -> str:
     """
     session_vid = _upsert_session_vertex(g, session)
     artifact_vids = _upsert_artifacts(g, session)
-    _write_decisions(g, session, session_vid, artifact_vids)
-    _write_problems_and_solutions(g, session, session_vid, artifact_vids)
+    _write_claims(g, session, session_vid, artifact_vids)
     _write_threads(g, session, session_vid, artifact_vids)
     _write_thread_refs(g, session, session_vid)
 
-    logger.info(f"Wrote session subgraph: {session.session_id} ({_subgraph_size(session)} nodes)")
+    logger.info(
+        "Wrote session subgraph: %s (scope=%s, %d nodes)",
+        session.session_id,
+        session.scope,
+        _subgraph_size(session),
+    )
     return session_vid
+
+
+def _provenance_properties(provenance: Provenance) -> dict[str, object]:
+    """Flatten a provenance envelope into vertex properties.
+
+    Every node in the graph carries these. `derived_from` is deliberately NOT among them
+    — it becomes edges, not a property, because effective trust is a traversal over the
+    derivation closure (docs/05) and a property could not be walked.
+    """
+    return {
+        "tier": int(provenance.tier),
+        "source": provenance.source,
+        "ingested_at": provenance.ingested_at.isoformat(),
+    }
 
 
 def _upsert_session_vertex(g: GraphTraversalSource, session: SessionGraph) -> str:
     """Create or update the Session entry node."""
-    vid = f"session:{session.session_id}"
+    session_vid = vid("Session", session.session_id, session.scope)
+    provenance = session.default_provenance()
 
-    graph_traversal = g.merge_v(
-        {"session_id": session.session_id, T.label: "Session"}
-    ).option(
-        Merge.on_create,
-        {
-            T.id: vid,
-            "session_id": session.session_id,
-            "timestamp": session.timestamp.isoformat(),
-            "tool": session.tool.value,
-            "project": session.project or "",
-            "summary": session.summary,
-        },
-    ).option(
-        Merge.on_match,
-        {
-            "timestamp": session.timestamp.isoformat(),
-            "tool": session.tool.value,
-            "project": session.project or "",
-            "summary": session.summary,
-        },
+    properties = {
+        "session_id": session.session_id,
+        "timestamp": session.timestamp.isoformat(),
+        "tool": session.tool.value,
+        "scope": session.scope,
+        "project": session.project or "",
+        "summary": session.summary,
+        **_provenance_properties(provenance),
+    }
+
+    graph_traversal = (
+        g.merge_v({"session_id": session.session_id, "scope": session.scope, T.label: "Session"})
+        .option(Merge.on_create, {T.id: session_vid, **properties})
+        .option(Merge.on_match, properties)
     )
-    _iterate(graph_traversal, "upsert Session", vid)
+    _iterate(graph_traversal, "upsert Session", session_vid)
 
-    return vid
+    return session_vid
 
 
-def _upsert_artifacts(
-    g: GraphTraversalSource, session: SessionGraph
-) -> dict[str, str]:
-    """Upsert Artifact nodes. Returns mapping of identifier -> vertex ID.
+def _upsert_artifacts(g: GraphTraversalSource, session: SessionGraph) -> dict[str, str]:
+    """Upsert Artifact nodes. Returns identifier -> vertex ID.
 
-    Artifacts are shared across sessions, so we merge on identifier.
+    Artifacts are GLOBAL: one vertex per identifier, shared across every scope, merged on
+    identifier alone. Two experts touching the same file land on the same node by design —
+    that is what makes artifacts the join key between scopes (contract/ontology.py).
     """
     artifact_vids: dict[str, str] = {}
 
     for artifact in session.artifacts:
-        vid = f"artifact:{artifact.identifier}"
+        artifact_vid = vid("Artifact", artifact.identifier)
+        provenance = artifact.provenance or session.default_provenance()
 
-        graph_traversal = g.merge_v(
-            {"identifier": artifact.identifier, T.label: "Artifact"}
-        ).option(
-            Merge.on_create,
-            {
-                T.id: vid,
-                "identifier": artifact.identifier,
-                "type": artifact.type.value,
-                "project": artifact.project or "",
-            },
-        ).option(
-            Merge.on_match,
-            {
-                "type": artifact.type.value,
-                "project": artifact.project or session.project or "",
-            },
+        properties = {
+            "type": artifact.type.value,
+            "project": artifact.project or session.project or "",
+            **_provenance_properties(provenance),
+        }
+
+        graph_traversal = (
+            g.merge_v({"identifier": artifact.identifier, T.label: "Artifact"})
+            .option(
+                Merge.on_create,
+                {T.id: artifact_vid, "identifier": artifact.identifier, **properties},
+            )
+            .option(Merge.on_match, properties)
         )
-        _iterate(graph_traversal, "upsert Artifact", vid)
+        _iterate(graph_traversal, "upsert Artifact", artifact_vid)
 
-        artifact_vids[artifact.identifier] = vid
+        artifact_vids[artifact.identifier] = artifact_vid
 
     return artifact_vids
 
 
-def _write_decisions(
+def _claim_properties(claim: Claim) -> dict[str, object]:
+    """Subtype-specific fields, flattened onto the shared Claim label.
+
+    One label discriminated by `kind`, not one label per subtype — so consumers query
+    `hasLabel("Claim")` and keep working when an expert introduces a new kind.
+    """
+    fields = claim.model_dump(
+        mode="json", exclude={"provenance", "artifacts", "kind", "description"}
+    )
+    return {key: value for key, value in fields.items() if value is not None}
+
+
+def _write_claims(
     g: GraphTraversalSource,
     session: SessionGraph,
     session_vid: str,
     artifact_vids: dict[str, str],
-) -> None:
-    """Write Decision nodes and edges."""
-    for i, decision in enumerate(session.decisions):
-        vid = f"decision:{session.session_id}:{i}"
+) -> dict[str, str]:
+    """Write Claim nodes (decisions, problems, solutions) and their edges."""
+    claim_vids: dict[str, str] = {}
 
-        graph_traversal = g.merge_v({T.id: vid, T.label: "Decision"}).option(
-            Merge.on_create,
-            {
-                T.id: vid,
-                "description": decision.description,
-                "rationale": decision.rationale,
-                "outcome": decision.outcome or "",
-            },
-        ).option(
-            Merge.on_match,
-            {
-                "description": decision.description,
-                "rationale": decision.rationale,
-                "outcome": decision.outcome or "",
-            },
+    for claim in session.claims():
+        claim_vid = vid("Claim", claim.content_id(), session.scope)
+        provenance = claim.provenance or session.default_provenance()
+
+        properties = {
+            "kind": claim.kind.value,
+            "description": claim.description,
+            "scope": session.scope,
+            **_claim_properties(claim),
+            **_provenance_properties(provenance),
+        }
+
+        graph_traversal = (
+            g.merge_v({T.id: claim_vid, T.label: "Claim"})
+            .option(Merge.on_create, {T.id: claim_vid, **properties})
+            .option(Merge.on_match, properties)
         )
-        _iterate(graph_traversal, "upsert Decision", vid)
+        _iterate(graph_traversal, "upsert Claim", claim_vid)
 
-        # Session -[CONTAINS]-> Decision
-        _ensure_edge(g, session_vid, vid, "CONTAINS")
+        claim_vids[claim.content_id()] = claim_vid
+        _ensure_edge(g, session_vid, claim_vid, "CONTAINS")
 
-        # Decision -[TOUCHES]-> Artifact
-        for artifact_id in decision.artifacts:
+        for artifact_id in claim.artifacts:
             if artifact_id in artifact_vids:
-                _ensure_edge(g, vid, artifact_vids[artifact_id], "TOUCHES")
+                _ensure_edge(g, claim_vid, artifact_vids[artifact_id], "TOUCHES")
 
+        for origin_vid in provenance.derived_from:
+            _ensure_edge(g, claim_vid, origin_vid, "DERIVED_FROM")
 
-def _write_problems_and_solutions(
-    g: GraphTraversalSource,
-    session: SessionGraph,
-    session_vid: str,
-    artifact_vids: dict[str, str],
-) -> None:
-    """Write Problem and Solution nodes with edges."""
-    problem_vids: dict[int, str] = {}
+    # problem_ref is an index into the problems list; resolve it to a content ID.
+    problem_vids = {
+        index: vid("Claim", problem.content_id(), session.scope)
+        for index, problem in enumerate(session.problems)
+    }
+    for solution in session.solutions:
+        problem_vid = problem_vids.get(solution.problem_ref)
+        if problem_vid is not None:
+            solution_vid = vid("Claim", solution.content_id(), session.scope)
+            _ensure_edge(g, problem_vid, solution_vid, "SOLVED_BY")
 
-    for i, problem in enumerate(session.problems):
-        vid = f"problem:{session.session_id}:{i}"
-        problem_vids[i] = vid
-
-        graph_traversal = g.merge_v({T.id: vid, T.label: "Problem"}).option(
-            Merge.on_create,
-            {
-                T.id: vid,
-                "description": problem.description,
-                "category": problem.category.value,
-            },
-        ).option(
-            Merge.on_match,
-            {
-                "description": problem.description,
-                "category": problem.category.value,
-            },
-        )
-        _iterate(graph_traversal, "upsert Problem", vid)
-
-        _ensure_edge(g, session_vid, vid, "CONTAINS")
-
-        for artifact_id in problem.artifacts:
-            if artifact_id in artifact_vids:
-                _ensure_edge(g, vid, artifact_vids[artifact_id], "TOUCHES")
-
-    for i, solution in enumerate(session.solutions):
-        vid = f"solution:{session.session_id}:{i}"
-
-        graph_traversal = g.merge_v({T.id: vid, T.label: "Solution"}).option(
-            Merge.on_create,
-            {
-                T.id: vid,
-                "description": solution.description,
-                "approach": solution.approach,
-                "worked": solution.worked,
-            },
-        ).option(
-            Merge.on_match,
-            {
-                "description": solution.description,
-                "approach": solution.approach,
-                "worked": solution.worked,
-            },
-        )
-        _iterate(graph_traversal, "upsert Solution", vid)
-
-        _ensure_edge(g, session_vid, vid, "CONTAINS")
-
-        if solution.problem_ref is not None and solution.problem_ref in problem_vids:
-            _ensure_edge(g, problem_vids[solution.problem_ref], vid, "SOLVED_BY")
-
-        for artifact_id in solution.artifacts:
-            if artifact_id in artifact_vids:
-                _ensure_edge(g, vid, artifact_vids[artifact_id], "TOUCHES")
+    return claim_vids
 
 
 def _write_threads(
@@ -230,50 +203,41 @@ def _write_threads(
 ) -> None:
     """Write new Thread nodes spawned by this session.
 
-    Threads are shared across sessions (keyed by thread ID), so a thread opened in one
-    session can be continued/resolved by future sessions.
+    Threads are shared across sessions within a scope (keyed by thread ID), so a thread
+    opened in one session can be continued or resolved by a later one.
     """
-    # Create every thread before writing relationships. A thread may block a later
-    # thread in the YAML, and merge_e requires both endpoint vertices to exist.
+    # Create every thread before writing relationships: a thread may block a later thread
+    # in the YAML, and merge_e requires both endpoint vertices to exist.
     for thread in session.threads:
-        vid = f"thread:{thread.id}"
+        thread_vid = vid("Thread", thread.id, session.scope)
+        provenance = thread.provenance or session.default_provenance()
 
-        graph_traversal = g.merge_v(
-            {"thread_id": thread.id, T.label: "Thread"}
-        ).option(
-            Merge.on_create,
-            {
-                T.id: vid,
-                "thread_id": thread.id,
-                "title": thread.title,
-                "description": thread.description,
-                "status": thread.status.value,
-                "project": session.project or "",
-            },
-        ).option(
-            Merge.on_match,
-            {
-                "title": thread.title,
-                "description": thread.description,
-                "status": thread.status.value,
-            },
+        properties = {
+            "title": thread.title,
+            "description": thread.description,
+            "status": thread.status.value,
+            "scope": session.scope,
+            "project": session.project or "",
+            **_provenance_properties(provenance),
+        }
+
+        graph_traversal = (
+            g.merge_v({"thread_id": thread.id, "scope": session.scope, T.label: "Thread"})
+            .option(Merge.on_create, {T.id: thread_vid, "thread_id": thread.id, **properties})
+            .option(Merge.on_match, properties)
         )
-        _iterate(graph_traversal, "upsert Thread", vid)
+        _iterate(graph_traversal, "upsert Thread", thread_vid)
 
     for thread in session.threads:
-        vid = f"thread:{thread.id}"
-        # Session -[SPAWNS]-> Thread
-        _ensure_edge(g, session_vid, vid, "SPAWNS")
+        thread_vid = vid("Thread", thread.id, session.scope)
+        _ensure_edge(g, session_vid, thread_vid, "SPAWNS")
 
-        # Thread -[TOUCHES]-> Artifact
         for artifact_id in thread.artifacts:
             if artifact_id in artifact_vids:
-                _ensure_edge(g, vid, artifact_vids[artifact_id], "TOUCHES")
+                _ensure_edge(g, thread_vid, artifact_vids[artifact_id], "TOUCHES")
 
-        # Thread -[BLOCKS]-> Thread
         for blocked_id in thread.blocks:
-            blocked_vid = f"thread:{blocked_id}"
-            _ensure_edge(g, vid, blocked_vid, "BLOCKS")
+            _ensure_edge(g, thread_vid, vid("Thread", blocked_id, session.scope), "BLOCKS")
 
 
 def _write_thread_refs(
@@ -281,21 +245,17 @@ def _write_thread_refs(
     session: SessionGraph,
     session_vid: str,
 ) -> None:
-    """Write edges from this session to existing threads being continued or resolved."""
+    """Write edges from this session to existing threads continued or resolved."""
     for ref in session.thread_refs:
-        vid = f"thread:{ref.id}"
+        thread_vid = vid("Thread", ref.id, session.scope)
 
-        # Update thread status
-        graph_traversal = (
-            g.V(vid).has_label("Thread").property("status", ref.status.value)
-        )
-        _iterate(graph_traversal, "update Thread status", vid)
+        graph_traversal = g.V(thread_vid).has_label("Thread").property("status", ref.status.value)
+        _iterate(graph_traversal, "update Thread status", thread_vid)
 
-        # Session -[CONTINUES|RESOLVES]-> Thread based on new status
         if ref.status in ("resolved", "abandoned"):
-            _ensure_edge(g, session_vid, vid, "RESOLVES")
+            _ensure_edge(g, session_vid, thread_vid, "RESOLVES")
         else:
-            _ensure_edge(g, session_vid, vid, "CONTINUES")
+            _ensure_edge(g, session_vid, thread_vid, "CONTINUES")
 
 
 def _ensure_edge(g: GraphTraversalSource, from_vid: str, to_vid: str, label: str) -> None:
@@ -319,8 +279,8 @@ def _iterate(graph_traversal, operation: str, target: str) -> None:
         graph_traversal.bytecode,
     )
     try:
-        # gremlinpython 3.7 encodes iterate() with the server-supported
-        # none() terminal step. Version 3.8 changed this to unsupported discard().
+        # gremlinpython 3.7 encodes iterate() with the server-supported none()
+        # terminal step. Version 3.8 changed this to unsupported discard().
         graph_traversal.iterate()
     except GremlinServerError as exc:
         attributes = exc.status_attributes or {}
@@ -343,11 +303,4 @@ def _iterate(graph_traversal, operation: str, target: str) -> None:
 
 
 def _subgraph_size(session: SessionGraph) -> int:
-    return (
-        1  # session node
-        + len(session.artifacts)
-        + len(session.decisions)
-        + len(session.problems)
-        + len(session.solutions)
-        + len(session.threads)
-    )
+    return 1 + len(session.artifacts) + len(session.claims()) + len(session.threads)

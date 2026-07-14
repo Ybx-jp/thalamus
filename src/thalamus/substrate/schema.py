@@ -1,12 +1,61 @@
-"""Graph memory schema definitions and YAML validation."""
+"""Graph memory schema definitions and YAML validation.
+
+Two things to know before reading:
+
+**The YAML surface and the graph shape are deliberately different.** The extraction
+skill emits three ergonomic lists — `decisions`, `problems`, `solutions` — because that
+is what a model fills in reliably. They are *subtypes of `Claim`* in the type system and
+*one `Claim` label discriminated by `kind`* in the graph (docs/09 G1). Consumers depend
+on the `Claim` label only, so a future expert adding `kind: literature/finding` breaks
+nobody.
+
+**Provenance is stamped, not asked for.** Every node in the *graph* carries a trust
+tier, a source, and an ingestion timestamp — the contract obligation from docs/05,
+enforced at write time. But a session extraction does not have to *say* so: its
+provenance is derivable (tier-1, the agent's own lived experience, sourced to the
+session). Feeds writing curated third-party content supply it explicitly instead. The
+obligation is on the graph, not on the YAML.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime
-from enum import Enum
+import hashlib
+import json
+from datetime import datetime, timezone
+from enum import Enum, IntEnum
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+from thalamus.contract.ontology import MAIN_SCOPE
+
+
+class Tier(IntEnum):
+    """Origin tier. Provenance, not quality — a brilliant paper is tier 2 forever.
+
+    The ordering is meaningful: effective trust is the *floor* over a node's
+    DERIVED_FROM closure, which is what makes "distillation does not launder"
+    computable rather than aspirational (docs/05).
+    """
+
+    OPERATOR = 0  # the human, directly: pins, manual notes, curation decisions
+    FIRST_PARTY = 1  # the agent's own lived experience: sessions, episodes, verdicts
+    CURATED = 2  # external content from operator-approved sources
+    WILD = 3  # external content from unvetted sources
+
+
+class Provenance(BaseModel):
+    """Where a node came from. Required on every node in the graph."""
+
+    tier: Tier = Tier.FIRST_PARTY
+    source: str = Field(description="operator | session:<id> | feed:<name> | <url>")
+    ingested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    derived_from: list[str] = Field(
+        default_factory=list,
+        description="Vertex IDs this was distilled from. Effective tier is the floor "
+        "over the transitive closure: an agent's summary of a tier-2 paper is a tier-1 "
+        "node whose effective trust is 2.",
+    )
 
 
 class Tool(str, Enum):
@@ -34,32 +83,76 @@ class ProblemCategory(str, Enum):
     UNDERSTANDING = "understanding"
 
 
+class ClaimKind(str, Enum):
+    DECISION = "decision"
+    PROBLEM = "problem"
+    SOLUTION = "solution"
+
+
 class Artifact(BaseModel):
+    """A concrete thing in the operator's world: a file, class, module, dependency.
+
+    **Global.** One vertex per identifier, shared across every scope — the join key
+    between experts, and much of why the main plane is connective at all. Artifacts
+    carry no scope. See contract/ontology.py.
+    """
+
     identifier: str = Field(description="Unique path or qualified name")
     type: ArtifactType
     project: Optional[str] = None
     notes: Optional[str] = None
+    provenance: Optional[Provenance] = None
 
 
-class Decision(BaseModel):
-    description: str
+class Claim(BaseModel):
+    """An assertion, with a provenance chain behind it.
+
+    A Decision is an assertion with a rationale, made by the agent, inside an episode.
+    A literature claim is an assertion with a citation, made by a source, inside an
+    ingestion event. Same node, different provenance — which is what makes the trust
+    model expressible, and what collapses contradiction detection into one mechanism
+    instead of two (docs/09 G1).
+    """
+
+    kind: ClaimKind
+    description: str = Field(description="The assertion itself")
+    artifacts: list[str] = Field(default_factory=list, description="Artifact identifiers")
+    provenance: Optional[Provenance] = None
+
+    def content_id(self) -> str:
+        """Stable, content-addressed identity.
+
+        Replaces the old positional IDs (`decision:<session>:<index>`), under which a
+        re-extraction with a reordered list silently overwrote *different* nodes, and no
+        claim could ever be cited, superseded, or contradicted — fatal for a system whose
+        headline demo is "walk from a belief to its source" (docs/09 G6).
+
+        Note the consequence: the same claim asserted in two sessions now converges on
+        **one** vertex with two CONTAINS edges. That is desirable — it is how "this keeps
+        coming up" becomes a graph fact rather than a human impression, and it is exactly
+        how Artifact has always behaved.
+        """
+        payload = self.model_dump(mode="json", exclude={"provenance", "artifacts"})
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+
+
+class Decision(Claim):
+    kind: ClaimKind = ClaimKind.DECISION
     rationale: str
     outcome: Optional[str] = None
-    artifacts: list[str] = Field(default_factory=list, description="Artifact identifiers touched")
 
 
-class Problem(BaseModel):
-    description: str
+class Problem(Claim):
+    kind: ClaimKind = ClaimKind.PROBLEM
     category: ProblemCategory
-    artifacts: list[str] = Field(default_factory=list, description="Artifact identifiers involved")
 
 
-class Solution(BaseModel):
-    description: str
+class Solution(Claim):
+    kind: ClaimKind = ClaimKind.SOLUTION
     approach: str
     worked: bool = True
     problem_ref: Optional[int] = Field(None, description="Index into problems list")
-    artifacts: list[str] = Field(default_factory=list, description="Artifact identifiers touched")
 
 
 class ThreadStatus(str, Enum):
@@ -70,19 +163,21 @@ class ThreadStatus(str, Enum):
 
 
 class Thread(BaseModel):
-    """An open thread of work — a continuation point, next step, or unfinished line of inquiry.
+    """An open thread of work — a continuation point, next step, unfinished inquiry.
 
-    Threads persist across sessions until resolved. They serve as entrypoints into
-    the session subgraph and operationalize the memory trace.
+    Threads persist across sessions until resolved, and they are the primary entrypoint
+    into the graph. docs/01 generalizes exactly this: entrypoints are *how a graph makes
+    itself legible*.
     """
 
     id: str = Field(description="Stable slug identifier (e.g. 'build-linking-workflow')")
     title: str = Field(description="Short actionable title")
     description: str = Field(description="What needs to happen, why it matters")
     status: ThreadStatus = ThreadStatus.OPEN
-    artifacts: list[str] = Field(default_factory=list, description="Artifact identifiers involved")
+    artifacts: list[str] = Field(default_factory=list, description="Artifact identifiers")
     blocks: list[str] = Field(default_factory=list, description="Thread IDs this blocks")
     blocked_by: list[str] = Field(default_factory=list, description="Thread IDs blocking this")
+    provenance: Optional[Provenance] = None
 
 
 class ThreadRef(BaseModel):
@@ -94,31 +189,62 @@ class ThreadRef(BaseModel):
 
 
 class SessionGraph(BaseModel):
-    """Schema for a single session's extracted graph. This is what the extraction skill outputs."""
+    """A single session's extracted graph. This is what the extraction skill outputs."""
 
     session_id: str = Field(description="Unique session/conversation ID")
     timestamp: datetime = Field(default_factory=datetime.now)
     tool: Tool
-    project: Optional[str] = Field(None, description="Primary project/repo if identifiable")
     summary: str = Field(description="1-3 sentence summary of the session")
+
+    scope: str = Field(
+        default=MAIN_SCOPE,
+        description="Which expert this session was pinned to. 'main' is the connective "
+        "plane — a real scope like any other, distinguished topologically rather than "
+        "structurally (docs/03).",
+    )
+    project: Optional[str] = Field(
+        None,
+        description="Primary project/repo. Orthogonal to scope: `project` is WHICH REPO, "
+        "`scope` is WHICH EXPERT. A Thalamus session pinned to the agent-systems expert "
+        "has both.",
+    )
 
     artifacts: list[Artifact] = Field(default_factory=list)
     decisions: list[Decision] = Field(default_factory=list)
     problems: list[Problem] = Field(default_factory=list)
     solutions: list[Solution] = Field(default_factory=list)
-    threads: list[Thread] = Field(default_factory=list, description="New threads opened in this session")
-    thread_refs: list[ThreadRef] = Field(default_factory=list, description="Existing threads continued/resolved")
+    threads: list[Thread] = Field(default_factory=list, description="New threads opened here")
+    thread_refs: list[ThreadRef] = Field(
+        default_factory=list, description="Existing threads continued/resolved"
+    )
 
-    class Config:
-        json_schema_extra = {
+    def claims(self) -> list[Claim]:
+        """Every claim in the session, whatever its subtype."""
+        return [*self.decisions, *self.problems, *self.solutions]
+
+    def default_provenance(self) -> Provenance:
+        """Provenance for nodes this session asserts without stating an origin.
+
+        A session extraction is tier-1 by construction: the agent's own lived experience,
+        sourced to the session that produced it.
+        """
+        return Provenance(
+            tier=Tier.FIRST_PARTY,
+            source=f"session:{self.session_id}",
+            ingested_at=self.timestamp,
+        )
+
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "session_id": "abc123-def456",
-                "timestamp": "2025-11-15T14:30:00",
-                "tool": "cursor",
+                "timestamp": "2026-01-15T14:30:00",
+                "tool": "claude_code",
+                "scope": "main",
                 "project": "thalamus",
-                "summary": "Designed and scaffolded graph-based memory system for agentic tools.",
+                "summary": "Designed and scaffolded the graph memory substrate.",
                 "artifacts": [
-                    {"identifier": "src/thalamus/schema.py", "type": "file", "project": "thalamus"},
+                    {"identifier": "src/thalamus/substrate/schema.py", "type": "file"},
                     {"identifier": "gremlinpython", "type": "dependency"},
                 ],
                 "decisions": [
@@ -135,11 +261,12 @@ class SessionGraph(BaseModel):
                     {
                         "id": "build-linking-workflow",
                         "title": "Build cluster/summarization workflow",
-                        "description": "Once 5-10 sessions accumulate, group related subgraphs behind summary nodes",
+                        "description": "Group related subgraphs behind summary nodes",
                         "status": "open",
-                        "artifacts": ["src/thalamus/writer.py"],
+                        "artifacts": ["src/thalamus/substrate/writer.py"],
                     }
                 ],
                 "thread_refs": [],
             }
         }
+    }

@@ -39,6 +39,24 @@ The contract should *inherit* these, not replace them.
    pinning. **Pinning is not new machinery. It is this mechanism with the axis
    changed from repo to expert.**
 
+## Status of the gaps (updated 2026-07-14, after M0.5)
+
+| Gap | Status |
+|---|---|
+| **G1** — ontology is only the episodic half | 🟡 **partial.** `Claim` unified (decision/problem/solution are one label, discriminated by `kind`). The *knowledge* side — `Entity`, `Source` — is still absent. That is M1. |
+| **G2** — no provenance | ✅ **closed.** `Tier`, `source`, `ingested_at` on every node; `DERIVED_FROM` edges declared and written. |
+| **G3** — no scope | ✅ **closed.** Scope segment in vertex IDs, `scope` property on every node but `Artifact`, legality encoded in `ontology.edge_crosses_scope`. |
+| **G4** — plane bypasses the contract | ⬜ **open, deliberately.** Harmless at one scope; blocking at M3. |
+| **G5** — retrieval granularity blocks the eval loop | ⬜ **open.** `MemoryResult.node_id` now exists, but retrieval still returns session-grained prose. M2. |
+| **G6** — positional claim IDs | ✅ **closed.** Content-addressed via `Claim.content_id()`. |
+| **G7** — ontology hardcoded in seven places | ✅ **closed.** `contract/ontology.py` is the single source; `view_query`, the writer, the reader, and the frontend all derive from it. |
+
+**The graph was empty when this landed** — no volume, no data — so none of it was a
+migration. It was a greenfield schema definition, which is why the `Claim` unification
+came forward from M1 into M0.5 rather than being staged. It also fixes the timing of the
+memory bootstrap: extract from transcripts *after* this, never before, or every node is
+born without provenance and the retrofit happens anyway by a different road.
+
 ## The gaps
 
 ### G1 — The ontology is only the episodic half

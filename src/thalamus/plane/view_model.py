@@ -1,4 +1,10 @@
-"""Renderer-neutral graph models and pending-session conversion."""
+"""Renderer-neutral graph models and pending-session conversion.
+
+Node and edge *kinds* are free-form strings here and on the TypeScript side, so the
+transport was always ontology-neutral. What was not neutral were the hardcoded type
+registries; those now come from contract/ontology.py, so a new node type does not need
+a change in this file.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from thalamus.substrate.schema import SessionGraph, ThreadStatus
+from thalamus.contract.ontology import vid
+from thalamus.substrate.schema import Claim, SessionGraph, ThreadStatus
 
 
 class Expandable(BaseModel):
@@ -72,14 +79,16 @@ class NodeDetails(BaseModel):
 def session_to_graph_view(session: SessionGraph) -> GraphView:
     """Convert a complete pending session into a renderer-neutral graph.
 
-    Disconnected nodes and missing references remain visible so the preview
-    exposes validation problems instead of hiding them.
+    Disconnected nodes and missing references remain visible, so the preview exposes
+    validation problems instead of hiding them.
     """
     nodes: dict[str, ViewNode] = {}
     edges: dict[str, ViewEdge] = {}
     findings: list[Finding] = []
+    scope = session.scope
 
-    session_id = f"session:{session.session_id}"
+    session_id = vid("Session", session.session_id, scope)
+    provenance = session.default_provenance()
     nodes[session_id] = ViewNode(
         id=session_id,
         kind="Session",
@@ -88,16 +97,20 @@ def session_to_graph_view(session: SessionGraph) -> GraphView:
             "session_id": session.session_id,
             "timestamp": session.timestamp.isoformat(),
             "tool": session.tool.value,
+            "scope": scope,
             "project": session.project or "",
             "summary": session.summary,
+            "tier": int(provenance.tier),
+            "source": provenance.source,
         },
     )
 
     artifact_counts = Counter(artifact.identifier for artifact in session.artifacts)
     artifact_ids: set[str] = set()
     for artifact in session.artifacts:
-        node_id = f"artifact:{artifact.identifier}"
+        node_id = vid("Artifact", artifact.identifier)  # global: no scope segment
         artifact_ids.add(artifact.identifier)
+        artifact_provenance = artifact.provenance or provenance
         nodes[node_id] = ViewNode(
             id=node_id,
             kind="Artifact",
@@ -107,6 +120,7 @@ def session_to_graph_view(session: SessionGraph) -> GraphView:
                 "type": artifact.type.value,
                 "project": artifact.project or session.project or "",
                 "notes": artifact.notes or "",
+                "tier": int(artifact_provenance.tier),
             },
         )
         if artifact_counts[artifact.identifier] > 1:
@@ -124,71 +138,55 @@ def session_to_graph_view(session: SessionGraph) -> GraphView:
             )
 
     referenced_artifacts: set[str] = set()
-    problem_ids: dict[int, str] = {}
 
-    for index, decision in enumerate(session.decisions):
-        node_id = f"decision:{session.session_id}:{index}"
+    for claim in session.claims():
+        node_id = _claim_id(claim, scope)
+        claim_provenance = claim.provenance or provenance
         nodes[node_id] = ViewNode(
             id=node_id,
-            kind="Decision",
-            label=decision.description,
-            properties=decision.model_dump(mode="json"),
+            kind="Claim",
+            label=claim.description,
+            properties={
+                **claim.model_dump(mode="json", exclude={"provenance"}),
+                "scope": scope,
+                "tier": int(claim_provenance.tier),
+            },
         )
         _add_edge(edges, session_id, node_id, "CONTAINS")
         _add_artifact_edges(
-            node_id, decision.artifacts, artifact_ids, referenced_artifacts, nodes, edges, findings
+            node_id, claim.artifacts, artifact_ids, referenced_artifacts, nodes, edges, findings
         )
 
-    for index, problem in enumerate(session.problems):
-        node_id = f"problem:{session.session_id}:{index}"
-        problem_ids[index] = node_id
-        nodes[node_id] = ViewNode(
-            id=node_id,
-            kind="Problem",
-            label=problem.description,
-            properties=problem.model_dump(mode="json"),
-        )
-        _add_edge(edges, session_id, node_id, "CONTAINS")
-        _add_artifact_edges(
-            node_id, problem.artifacts, artifact_ids, referenced_artifacts, nodes, edges, findings
-        )
-
-    for index, solution in enumerate(session.solutions):
-        node_id = f"solution:{session.session_id}:{index}"
-        nodes[node_id] = ViewNode(
-            id=node_id,
-            kind="Solution",
-            label=solution.description,
-            properties=solution.model_dump(mode="json"),
-        )
-        _add_edge(edges, session_id, node_id, "CONTAINS")
-        if solution.problem_ref is not None:
-            if solution.problem_ref in problem_ids:
-                _add_edge(edges, problem_ids[solution.problem_ref], node_id, "SOLVED_BY")
-            else:
-                _add_missing_reference(
-                    source_id=node_id,
-                    reference_type="problem",
-                    reference=str(solution.problem_ref),
-                    relationship="SOLVED_BY",
-                    nodes=nodes,
-                    edges=edges,
-                    findings=findings,
-                )
-        _add_artifact_edges(
-            node_id, solution.artifacts, artifact_ids, referenced_artifacts, nodes, edges, findings
-        )
+    for solution in session.solutions:
+        if solution.problem_ref is None:
+            continue
+        if 0 <= solution.problem_ref < len(session.problems):
+            problem = session.problems[solution.problem_ref]
+            _add_edge(edges, _claim_id(problem, scope), _claim_id(solution, scope), "SOLVED_BY")
+        else:
+            _add_missing_reference(
+                source_id=_claim_id(solution, scope),
+                reference_type="problem",
+                reference=str(solution.problem_ref),
+                relationship="SOLVED_BY",
+                nodes=nodes,
+                edges=edges,
+                findings=findings,
+            )
 
     thread_ids = {thread.id for thread in session.threads}
     for thread in session.threads:
-        node_id = f"thread:{thread.id}"
+        node_id = vid("Thread", thread.id, scope)
+        thread_provenance = thread.provenance or provenance
         nodes[node_id] = ViewNode(
             id=node_id,
             kind="Thread",
             label=thread.title,
             properties={
-                **thread.model_dump(mode="json"),
+                **thread.model_dump(mode="json", exclude={"provenance"}),
+                "scope": scope,
                 "project": session.project or "",
+                "tier": int(thread_provenance.tier),
             },
         )
         _add_edge(edges, session_id, node_id, "SPAWNS")
@@ -197,18 +195,25 @@ def session_to_graph_view(session: SessionGraph) -> GraphView:
         )
 
     for thread in session.threads:
-        source_id = f"thread:{thread.id}"
+        source_id = vid("Thread", thread.id, scope)
         for blocked_id in thread.blocks:
             _add_thread_relationship(
-                source_id, blocked_id, thread_ids, "BLOCKS", nodes, edges, findings
+                source_id, blocked_id, thread_ids, scope, "BLOCKS", nodes, edges, findings
             )
         for blocker_id in thread.blocked_by:
             _add_thread_relationship(
-                f"thread:{blocker_id}", thread.id, thread_ids, "BLOCKS", nodes, edges, findings
+                vid("Thread", blocker_id, scope),
+                thread.id,
+                thread_ids,
+                scope,
+                "BLOCKS",
+                nodes,
+                edges,
+                findings,
             )
 
     for ref in session.thread_refs:
-        node_id = f"thread:{ref.id}"
+        node_id = vid("Thread", ref.id, scope)
         if node_id not in nodes:
             nodes[node_id] = ViewNode(
                 id=node_id,
@@ -225,7 +230,7 @@ def session_to_graph_view(session: SessionGraph) -> GraphView:
         _add_edge(edges, session_id, node_id, relationship)
 
     for artifact_id in artifact_ids - referenced_artifacts:
-        node_id = f"artifact:{artifact_id}"
+        node_id = vid("Artifact", artifact_id)
         _add_finding(
             findings,
             nodes,
@@ -252,6 +257,10 @@ def session_to_graph_view(session: SessionGraph) -> GraphView:
     )
 
 
+def _claim_id(claim: Claim, scope: str) -> str:
+    return vid("Claim", claim.content_id(), scope)
+
+
 def _add_artifact_edges(
     source_id: str,
     references: list[str],
@@ -264,7 +273,7 @@ def _add_artifact_edges(
     for artifact_id in references:
         if artifact_id in artifact_ids:
             referenced_artifacts.add(artifact_id)
-            _add_edge(edges, source_id, f"artifact:{artifact_id}", "TOUCHES")
+            _add_edge(edges, source_id, vid("Artifact", artifact_id), "TOUCHES")
         else:
             _add_missing_reference(
                 source_id=source_id,
@@ -281,13 +290,14 @@ def _add_thread_relationship(
     source_id: str,
     target_thread_id: str,
     local_thread_ids: set[str],
+    scope: str,
     relationship: str,
     nodes: dict[str, ViewNode],
     edges: dict[str, ViewEdge],
     findings: list[Finding],
 ) -> None:
-    target_id = f"thread:{target_thread_id}"
-    source_thread_id = source_id.removeprefix("thread:")
+    target_id = vid("Thread", target_thread_id, scope)
+    source_thread_id = source_id.rsplit(":", 1)[-1]
     if source_thread_id not in local_thread_ids:
         _ensure_external_thread(source_id, source_thread_id, nodes)
     if target_thread_id not in local_thread_ids:
@@ -303,7 +313,7 @@ def _add_thread_relationship(
                 severity="warning",
                 code="missing_thread_reference",
                 message=(
-                    f"Thread relationship references a thread outside this preview: "
+                    "Thread relationship references a thread outside this preview: "
                     f"{target_thread_id}"
                 ),
                 node_ids=[source_id, target_id],
@@ -314,9 +324,7 @@ def _add_thread_relationship(
     _add_edge(edges, source_id, target_id, relationship)
 
 
-def _ensure_external_thread(
-    node_id: str, thread_id: str, nodes: dict[str, ViewNode]
-) -> None:
+def _ensure_external_thread(node_id: str, thread_id: str, nodes: dict[str, ViewNode]) -> None:
     if node_id not in nodes:
         nodes[node_id] = ViewNode(
             id=node_id,
@@ -362,23 +370,14 @@ def _add_missing_reference(
     )
 
 
-def _add_edge(
-    edges: dict[str, ViewEdge], source: str, target: str, kind: str
-) -> ViewEdge:
+def _add_edge(edges: dict[str, ViewEdge], source: str, target: str, kind: str) -> ViewEdge:
     edge_id = f"{source}|{kind}|{target}"
     if edge_id not in edges:
-        edges[edge_id] = ViewEdge(
-            id=edge_id,
-            source=source,
-            target=target,
-            kind=kind,
-        )
+        edges[edge_id] = ViewEdge(id=edge_id, source=source, target=target, kind=kind)
     return edges[edge_id]
 
 
-def _add_finding(
-    findings: list[Finding], nodes: dict[str, ViewNode], finding: Finding
-) -> None:
+def _add_finding(findings: list[Finding], nodes: dict[str, ViewNode], finding: Finding) -> None:
     if any(existing.id == finding.id for existing in findings):
         return
     findings.append(finding)

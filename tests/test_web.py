@@ -47,7 +47,7 @@ def test_initial_session_is_available_to_the_viewer():
     body = response.json()
     # Verifies: the current-preview endpoint returns the CLI-provided session graph
     assert body["metadata"]["mode"] == "session_preview"
-    assert any(node["id"].startswith("session:fixture-session") for node in body["nodes"])
+    assert any(node["id"].startswith("scope:main:session:fixture-session") for node in body["nodes"])
     # Verifies: the response reports structured validation findings
     assert any(finding["code"] == "orphan_artifact" for finding in body["findings"])
 
