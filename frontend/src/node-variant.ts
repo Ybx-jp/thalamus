@@ -23,6 +23,7 @@ export const variantColors: Record<string, string> = {
   Session: '#2563eb',
   Artifact: '#0891b2',
   Thread: '#d97706',
+  Source: '#a16207',
   Missing: '#64748b',
   Project: '#0f766e',
   decision: '#7c3aed',
@@ -34,6 +35,7 @@ export const variantColors: Record<string, string> = {
 export const LEGEND_VARIANTS = [
   'Project',
   'Session',
+  'Source',
   'Artifact',
   'Decision',
   'Problem',

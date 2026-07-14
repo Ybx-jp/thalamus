@@ -18,8 +18,12 @@ measures whether any of it actually makes the agent better.
 schema is now federation-ready: provenance and trust tiers on every node, expert scoping,
 content-addressed claims, and a single-source ontology.
 
+Memory is bootstrapped from **retained session transcripts**, held in an immutable
+content-addressed archive that gives the provenance chain a floor
+([docs/10](docs/10-evidence-archive.md)).
+
 **Still design:** the contract enforces connectivity, provenance, and scope legality, but
-there is no manifest, no projection grant, no second expert, no ingestion feed, and no
+there is no manifest, no projection grant, no second expert, no literature feed, and no
 eval loop. What exists is a working episodic memory substrate with the boundary drawn.
 
 - [`docs/index.md`](docs/index.md) — doc tracker, status board, decision log
@@ -36,7 +40,8 @@ src/thalamus/
   contract/    the federation boundary — the ontology, and the checks a subgraph
                must pass before it may be written
   plane/       the connective plane — FastAPI read layer + React/Cytoscape viewer
-  harness/     where it meets the agent — MCP server, hooks, skills
+  archive/     immutable content-addressed store for retained primary evidence
+  harness/     where it meets the agent — MCP server, hooks, skills, transcript bootstrap
 frontend/      viewer source; builds into plane/static
 docs/          design docs
 lab/           harness-limit notebook (starts at M2)
@@ -61,7 +66,9 @@ docker compose up -d
 uv sync                        # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 # 4. Use it
-thalamus validate session.yaml     # check an extraction against the schema
+thalamus bootstrap                 # list session transcripts available to ingest
+thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
+thalamus validate session.yaml     # check an extraction against the contract
 thalamus visualize                 # open the persisted memory explorer
 thalamus visualize session.yaml    # preview a pending extraction, no graph needed
 thalamus write session.yaml        # write to the graph
@@ -117,14 +124,35 @@ New session → session-start hook → memory_open_threads → context
 ```
 
 The extraction skill is at `src/thalamus/harness/skills/extract-session/SKILL.md`.
-The session-start hook asks the agent for the current project's open threads; it is
-the mechanism that generalizes into **expert pinning**
+The session-start hook asks the agent for the current project's open threads; it is the
+mechanism that generalizes into **expert pinning**
 ([docs/02](docs/02-expert-subgraphs.md)).
+
+## Bootstrapping from transcripts
+
+Claude Code persists every session as JSONL. `thalamus bootstrap` retains those in an
+immutable, content-addressed archive and derives memory from them:
+
+- **Stage 1 (built, no model):** `Source`, `Session`, `Artifact`, and `TOUCHES` edges
+  **anchored to the exact messages** that touched each file — recovered from tool-call
+  records. Exact and free; an LLM would only add error. 62 sessions in ~5s.
+- **Stage 2 (deferred):** `Claim`s and `Thread`s, which genuinely need judgement.
+
+The retained transcript is what gives the provenance chain a **floor** — without it, a
+belief's source is a Session whose content is a summary of itself. It also makes
+extraction *reversible*: the graph is a materialized view over an immutable log, so a
+better skill or a changed schema means re-extract, not migrate. See
+[docs/10](docs/10-evidence-archive.md).
+
+⚠️ **Transcripts contain whatever was on screen, credentials included.** The archive lives
+at `~/.thalamus/archive/` — outside the repo, not merely gitignored. `bootstrap` scans for
+secrets and **reports**; it never redacts, because evidence that has been quietly
+rewritten is not evidence.
 
 ## Schema
 
-Four node types — `Session`, `Claim`, `Thread`, `Artifact` — joined by `CONTAINS` /
-`TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` / `SOLVED_BY` /
+Five node types — `Session`, `Claim`, `Thread`, `Source`, `Artifact` — joined by
+`CONTAINS` / `TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` / `SOLVED_BY` /
 `DERIVED_FROM`. Declared once in
 [`contract/ontology.py`](src/thalamus/contract/ontology.py); everything else derives
 from it. Run `thalamus schema` for the JSON schema.
@@ -140,6 +168,9 @@ Three properties are load-bearing:
 - **Every node carries provenance** — trust tier, source, ingestion time — and
   `DERIVED_FROM` edges make effective trust the *floor* over a node's derivation chain.
   Distillation does not launder.
+- **`Source` is retained primary evidence** — a transcript today, a paper at M1. Same node
+  type; only the tier differs. It is the floor of the provenance chain, and `DERIVED_FROM`
+  edges carry `anchors`: the precise messages a belief came from.
 - **Every node carries a scope, except `Artifact`.** Scope is which *expert*; `project`
   is which *repo*; they are orthogonal. `Artifact` is deliberately **global** — one
   vertex per identifier, shared by every scope. It is the join key between experts.
@@ -154,7 +185,7 @@ Still missing (this is the **episodic half** of an expert): the knowledge-side o
 ## Development
 
 ```bash
-.venv/bin/pytest              # 40 tests
+.venv/bin/pytest              # 48 tests
 .venv/bin/ruff check src tests
 cd frontend && npm test       # 10 tests
 cd frontend && npm run build  # -> src/thalamus/plane/static

@@ -44,7 +44,9 @@ def write_session(g: GraphTraversalSource, session: SessionGraph) -> str:
     Returns the session vertex ID.
     """
     session_vid = _upsert_session_vertex(g, session)
+    _write_sources(g, session, session_vid)
     artifact_vids = _upsert_artifacts(g, session)
+    _write_touches(g, session, session_vid, artifact_vids)
     _write_claims(g, session, session_vid, artifact_vids)
     _write_threads(g, session, session_vid, artifact_vids)
     _write_thread_refs(g, session, session_vid)
@@ -129,6 +131,58 @@ def _upsert_artifacts(g: GraphTraversalSource, session: SessionGraph) -> dict[st
         artifact_vids[artifact.identifier] = artifact_vid
 
     return artifact_vids
+
+
+def _write_sources(g: GraphTraversalSource, session: SessionGraph, session_vid: str) -> None:
+    """Write the evidence this session was distilled from, and link back to it.
+
+    The Session -[DERIVED_FROM]-> Source edge is what gives every belief in this session a
+    provenance *floor*. Without it the chain terminates at a summary of itself.
+    """
+    for source in session.sources:
+        source_vid = vid("Source", source.content_hash, session.scope)
+        provenance = source.provenance or session.default_provenance()
+
+        properties = {
+            "content_hash": source.content_hash,
+            "kind": source.kind.value,
+            "title": source.title,
+            "uri": source.uri,
+            "origin": source.origin or "",
+            "byte_size": source.byte_size,
+            "message_count": source.message_count,
+            "scope": session.scope,
+            **_provenance_properties(provenance),
+        }
+
+        graph_traversal = (
+            g.merge_v({T.id: source_vid, T.label: "Source"})
+            .option(Merge.on_create, {T.id: source_vid, **properties})
+            .option(Merge.on_match, properties)
+        )
+        _iterate(graph_traversal, "upsert Source", source_vid)
+
+        _ensure_edge(g, session_vid, source_vid, "DERIVED_FROM")
+
+
+def _write_touches(
+    g: GraphTraversalSource,
+    session: SessionGraph,
+    session_vid: str,
+    artifact_vids: dict[str, str],
+) -> None:
+    """Write the deterministic Session -[TOUCHES]-> Artifact edges.
+
+    Recovered exactly from tool-call records, and anchored to the message UUIDs of the
+    calls themselves — so "when did I touch this file, and where is the proof" is a two-hop
+    traversal with no model in the loop.
+    """
+    for touch in session.touched:
+        artifact_vid = artifact_vids.get(touch.identifier)
+        if artifact_vid is None:
+            continue
+        properties = {"anchors": ",".join(touch.anchors)} if touch.anchors else None
+        _ensure_edge(g, session_vid, artifact_vid, "TOUCHES", properties)
 
 
 def _claim_properties(claim: Claim) -> dict[str, object]:
@@ -258,8 +312,19 @@ def _write_thread_refs(
             _ensure_edge(g, session_vid, thread_vid, "CONTINUES")
 
 
-def _ensure_edge(g: GraphTraversalSource, from_vid: str, to_vid: str, label: str) -> None:
-    """Create an edge if it doesn't already exist."""
+def _ensure_edge(
+    g: GraphTraversalSource,
+    from_vid: str,
+    to_vid: str,
+    label: str,
+    properties: dict[str, object] | None = None,
+) -> None:
+    """Create an edge if it doesn't already exist, optionally carrying properties.
+
+    Edge properties are how anchors ride along: a DERIVED_FROM or TOUCHES edge records
+    *which messages* in the Source produced it, so a provenance walk lands on the exact
+    evidence rather than on a 600 KB transcript.
+    """
     graph_traversal = g.merge_e(
         {
             T.label: label,
@@ -267,6 +332,10 @@ def _ensure_edge(g: GraphTraversalSource, from_vid: str, to_vid: str, label: str
             Direction.to: to_vid,
         }
     )
+    if properties:
+        graph_traversal = graph_traversal.option(Merge.on_create, properties).option(
+            Merge.on_match, properties
+        )
     _iterate(graph_traversal, f"merge {label} edge", f"{from_vid} -> {to_vid}")
 
 
@@ -303,4 +372,10 @@ def _iterate(graph_traversal, operation: str, target: str) -> None:
 
 
 def _subgraph_size(session: SessionGraph) -> int:
-    return 1 + len(session.artifacts) + len(session.claims()) + len(session.threads)
+    return (
+        1
+        + len(session.sources)
+        + len(session.artifacts)
+        + len(session.claims())
+        + len(session.threads)
+    )

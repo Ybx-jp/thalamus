@@ -105,6 +105,22 @@ def session_to_graph_view(session: SessionGraph) -> GraphView:
         },
     )
 
+    for source in session.sources:
+        node_id = vid("Source", source.content_hash, scope)
+        source_provenance = source.provenance or provenance
+        nodes[node_id] = ViewNode(
+            id=node_id,
+            kind="Source",
+            label=source.title,
+            properties={
+                **source.model_dump(mode="json", exclude={"provenance"}),
+                "scope": scope,
+                "tier": int(source_provenance.tier),
+            },
+        )
+        # The edge that gives every belief in this session a provenance floor.
+        _add_edge(edges, session_id, node_id, "DERIVED_FROM")
+
     artifact_counts = Counter(artifact.identifier for artifact in session.artifacts)
     artifact_ids: set[str] = set()
     for artifact in session.artifacts:
@@ -138,6 +154,23 @@ def session_to_graph_view(session: SessionGraph) -> GraphView:
             )
 
     referenced_artifacts: set[str] = set()
+
+    # The deterministic layer: Session -> Artifact, anchored to the tool calls that did it.
+    for touch in session.touched:
+        if touch.identifier not in artifact_ids:
+            _add_missing_reference(
+                source_id=session_id,
+                reference_type="artifact",
+                reference=touch.identifier,
+                relationship="TOUCHES",
+                nodes=nodes,
+                edges=edges,
+                findings=findings,
+            )
+            continue
+        referenced_artifacts.add(touch.identifier)
+        edge = _add_edge(edges, session_id, vid("Artifact", touch.identifier), "TOUCHES")
+        edge.properties["anchors"] = touch.anchors
 
     for claim in session.claims():
         node_id = _claim_id(claim, scope)

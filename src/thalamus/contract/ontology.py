@@ -69,6 +69,16 @@ CORE_NODES: tuple[NodeType, ...] = (
         "description",
         kinds=("decision", "problem", "solution"),
     ),
+    # Primary evidence, retained verbatim and content-addressed. A session transcript is a
+    # tier-1 Source; a paper will be a tier-2 Source. Same node type — they differ only by
+    # tier and locator, which is why bootstrapping transcripts is a zero-risk rehearsal of
+    # the M1 ingestion path (docs/06).
+    #
+    # Source is what gives the provenance chain a FLOOR. Without it, a tier-1 claim's
+    # `source` points at a Session whose content is a summary — a distillation of itself.
+    # docs/03's inspector ("walk from a belief to where it came from") needs to terminate
+    # in evidence, not in another summary.
+    NodeType("Source", "source", "title", kinds=("transcript",)),
     # The one global. Not scoped, deliberately. See module docstring.
     NodeType("Artifact", "artifact", "identifier", scoped=False),
 )
@@ -91,8 +101,10 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     EdgeType(
         "DERIVED_FROM",
         may_cross_scope=True,
-        note="Claim -> Claim/Source. Effective tier = min(tier) over this closure "
-        "— 'distillation does not launder' (docs/05).",
+        note="Session/Claim -> Source. Effective tier = min(tier) over this closure — "
+        "'distillation does not launder' (docs/05). Carries an `anchors` property: the "
+        "message UUIDs inside the Source that this node was distilled from, so the "
+        "provenance walk lands on the exact evidence rather than a whole transcript.",
     ),
     EdgeType("REFERENCES", may_cross_scope=True, note="main -> expert node, by ID. Never copies."),
     EdgeType("CONSULTS", may_cross_scope=True, note="Session -> expert (docs/02)."),

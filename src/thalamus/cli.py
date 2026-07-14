@@ -15,7 +15,11 @@ import uvicorn
 import yaml
 
 from thalamus.substrate.schema import SessionGraph
+from thalamus.archive import archive_dir
 from thalamus.contract.conformance import check_session
+from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.harness import transcripts
+from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.plane.web import create_app
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
 
@@ -40,6 +44,27 @@ def main():
 
     # Schema command
     subparsers.add_parser("schema", help="Print the session graph JSON schema")
+
+    # Bootstrap command
+    bootstrap_parser = subparsers.add_parser(
+        "bootstrap", help="Build memory from retained Claude Code session transcripts"
+    )
+    bootstrap_parser.add_argument(
+        "projects",
+        nargs="*",
+        help="Claude Code project dir names (e.g. -home-ybx-code-thalamus). "
+        "Omit to list what is available.",
+    )
+    bootstrap_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    bootstrap_parser.add_argument(
+        "--scope", default=MAIN_SCOPE, help="Scope to pin these sessions to (default: main)"
+    )
+    bootstrap_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Actually write to the graph. Without it, this is a dry run: transcripts are "
+        "archived and extraction is reported, but nothing is persisted.",
+    )
 
     # Visualize command
     visualize_parser = subparsers.add_parser(
@@ -71,6 +96,8 @@ def main():
         _cmd_validate(args)
     elif args.command == "schema":
         _cmd_schema()
+    elif args.command == "bootstrap":
+        _cmd_bootstrap(args)
     elif args.command == "visualize":
         _cmd_visualize(args)
     else:
@@ -121,6 +148,81 @@ def _cmd_validate(args):
 
 def _cmd_schema():
     print(json.dumps(SessionGraph.model_json_schema(), indent=2))
+
+
+def _cmd_bootstrap(args):
+    available = transcripts.discover()
+    if not available:
+        print(f"No Claude Code transcripts found under {transcripts.CLAUDE_PROJECTS}", file=sys.stderr)
+        sys.exit(1)
+
+    if not args.projects:
+        print(f"Transcripts under {transcripts.CLAUDE_PROJECTS}:\n")
+        for name, paths in sorted(available.items(), key=lambda kv: -len(kv[1])):
+            size_mb = sum(p.stat().st_size for p in paths) / 1_000_000
+            print(f"  {len(paths):>3} transcripts  {size_mb:>6.1f} MB  {name}")
+        print("\nBootstrap them with (note the `--`; the names start with a dash):")
+        print("  thalamus bootstrap -- <project-dir> [<project-dir> ...] [--write]")
+        print(f"Archive: {archive_dir()}  (outside the repo, deliberately)")
+        return
+
+    unknown = [p for p in args.projects if p not in available]
+    if unknown:
+        print(f"Unknown project dir(s): {', '.join(unknown)}", file=sys.stderr)
+        sys.exit(1)
+
+    graph = connect(args.url) if args.write else None
+    all_secrets: dict[str, int] = {}
+    written = skipped = rejected = 0
+    nodes = 0
+
+    try:
+        for project in args.projects:
+            results = bootstrap_project(project, scope=args.scope)
+            print(f"\n=== {project} ({len(results)} transcripts) ===")
+            for result in results:
+                name = result.transcript.stem[:8]
+                if result.skipped:
+                    skipped += 1
+                    print(f"  ○ {name}  skipped — {result.skipped}")
+                    continue
+                if result.issues:
+                    rejected += 1
+                    print(f"  ✗ {name}  REJECTED by the contract:")
+                    for issue in result.issues:
+                        print(f"      - {issue}")
+                    continue
+
+                session = result.session
+                count = 1 + len(session.sources) + len(session.artifacts)
+                nodes += count
+                for pattern, hits in result.secrets.items():
+                    all_secrets[pattern] = all_secrets.get(pattern, 0) + hits
+
+                mark = "·" if result.already_archived else "+"
+                flag = f"  ⚠ {sum(result.secrets.values())} secret-ish" if result.secrets else ""
+                print(
+                    f"  {mark} {name}  {len(session.artifacts):>3} artifacts  "
+                    f"{session.summary[:58]}{flag}"
+                )
+
+                if graph is not None:
+                    write_session(graph, session)
+                written += 1
+    finally:
+        if graph is not None:
+            close_connection(graph)
+
+    print(f"\n{written} sessions, ~{nodes} nodes; {skipped} skipped, {rejected} rejected")
+    print(f"Archive: {archive_dir()}")
+    if all_secrets:
+        print("\n⚠  Possible credentials in the retained transcripts:")
+        for pattern, hits in sorted(all_secrets.items(), key=lambda kv: -kv[1]):
+            print(f"     {hits:>4}x  {pattern}")
+        print("   The archive is local and outside the repo. It is NOT redacted —")
+        print("   evidence that has been quietly rewritten is not evidence.")
+    if not args.write:
+        print("\nDRY RUN — nothing written to the graph. Re-run with --write to persist.")
 
 
 def _cmd_visualize(args):

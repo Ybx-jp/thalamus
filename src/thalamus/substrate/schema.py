@@ -104,6 +104,37 @@ class Artifact(BaseModel):
     provenance: Optional[Provenance] = None
 
 
+class SourceKind(str, Enum):
+    TRANSCRIPT = "transcript"
+
+
+class Source(BaseModel):
+    """Primary evidence, retained verbatim and content-addressed.
+
+    A session transcript is a tier-1 Source; a paper will be a tier-2 Source. Same node
+    type — they differ only by tier and locator.
+
+    Source is what gives the provenance chain a **floor**. Without it, a tier-1 claim's
+    `source` points at a Session whose stored content is a *summary* — a distillation of
+    itself. docs/03's inspector ("pick any belief and walk to where it came from") has to
+    terminate in evidence, not in another summary.
+
+    The bytes live outside the graph, in a content-addressed archive; the node holds a
+    pointer. Property graphs make poor blob stores, and the archive has to be immutable
+    anyway — Claude Code rotates and compacts its own transcripts, so Thalamus must own
+    the bytes rather than reference someone else's mutable file.
+    """
+
+    content_hash: str = Field(description="sha256 of the retained bytes — the node's identity")
+    kind: SourceKind = SourceKind.TRANSCRIPT
+    title: str = Field(description="Human-readable label")
+    uri: str = Field(description="Where the retained bytes live, e.g. archive://<hash>")
+    origin: Optional[str] = Field(None, description="Where it came from originally")
+    byte_size: int = 0
+    message_count: int = 0
+    provenance: Optional[Provenance] = None
+
+
 class Claim(BaseModel):
     """An assertion, with a provenance chain behind it.
 
@@ -153,6 +184,22 @@ class Solution(Claim):
     approach: str
     worked: bool = True
     problem_ref: Optional[int] = Field(None, description="Index into problems list")
+
+
+class Touch(BaseModel):
+    """An artifact the session itself touched, with the evidence for it.
+
+    Distinct from a Claim's `artifacts`: this is the *deterministic* layer, recovered
+    exactly from tool-call records rather than inferred by a model. "This session edited
+    this file, in these messages" is ground truth, and no LLM does it better.
+
+    `anchors` are message UUIDs inside the session's Source. They are what let the
+    provenance walk land on the precise evidence — the actual tool call — instead of
+    handing the operator a 600 KB transcript and wishing them luck.
+    """
+
+    identifier: str
+    anchors: list[str] = Field(default_factory=list, description="Message UUIDs in the Source")
 
 
 class ThreadStatus(str, Enum):
@@ -217,10 +264,30 @@ class SessionGraph(BaseModel):
     thread_refs: list[ThreadRef] = Field(
         default_factory=list, description="Existing threads continued/resolved"
     )
+    sources: list[Source] = Field(
+        default_factory=list,
+        description="Evidence this session was distilled from — normally its own transcript. "
+        "The session gets a DERIVED_FROM edge to each, which is what gives its beliefs a "
+        "provenance floor.",
+    )
+    touched: list[Touch] = Field(
+        default_factory=list,
+        description="Artifacts the session touched directly, recovered from tool-call records. "
+        "The deterministic layer of the graph — exact, and free of model judgement.",
+    )
 
     def claims(self) -> list[Claim]:
         """Every claim in the session, whatever its subtype."""
         return [*self.decisions, *self.problems, *self.solutions]
+
+    def referenced_artifact_ids(self) -> set[str]:
+        """Artifact identifiers something in this session points at."""
+        referenced = {touch.identifier for touch in self.touched}
+        for claim in self.claims():
+            referenced.update(claim.artifacts)
+        for thread in self.threads:
+            referenced.update(thread.artifacts)
+        return referenced
 
     def default_provenance(self) -> Provenance:
         """Provenance for nodes this session asserts without stating an origin.

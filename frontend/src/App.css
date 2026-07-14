@@ -247,6 +247,7 @@
 .legend-session { background: #2563eb; }
 .legend-project { background: #0f766e; }
 .legend-artifact { background: #0891b2; }
+.legend-source { background: #a16207; }
 .legend-decision { background: #7c3aed; }
 .legend-problem { background: #dc2626; }
 .legend-solution { background: #16a34a; }

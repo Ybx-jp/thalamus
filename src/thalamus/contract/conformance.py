@@ -21,13 +21,14 @@ from thalamus.substrate.schema import SessionGraph
 
 
 def referenced_artifacts(session: SessionGraph) -> set[str]:
-    """Artifact identifiers that at least one node in the session points at."""
-    referenced: set[str] = set()
-    for claim in session.claims():
-        referenced.update(claim.artifacts)
-    for thread in session.threads:
-        referenced.update(thread.artifacts)
-    return referenced
+    """Artifact identifiers that at least one node in the session points at.
+
+    Includes `touched` — a session that edited a file has a direct TOUCHES edge to it, so
+    the artifact is reachable even before any claim is extracted. This is what lets the
+    deterministic bootstrap (docs/06) satisfy the connectivity invariant with no model in
+    the loop.
+    """
+    return session.referenced_artifact_ids()
 
 
 def validate_connectivity(session: SessionGraph) -> list[str]:
@@ -35,7 +36,7 @@ def validate_connectivity(session: SessionGraph) -> list[str]:
     referenced = referenced_artifacts(session)
     return [
         f"Orphan artifact: '{artifact.identifier}' has no edges — "
-        "add it to a decision/problem/solution/thread artifacts list or remove it"
+        "reference it from a claim, thread, or the session's touched list, or remove it"
         for artifact in session.artifacts
         if artifact.identifier not in referenced
     ]
