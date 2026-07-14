@@ -61,7 +61,7 @@ def test_visualize_starts_local_viewer_with_pending_session(monkeypatch, capsys)
     # Verifies: the launched application contains the requested pending session
     assert response.status_code == 200
     assert any(
-        node["id"] == "session:test-session-2026-07-09"
+        node["id"] == "session:fixture-session-0001"
         for node in response.json()["nodes"]
     )
     # Verifies: --no-open suppresses browser launch

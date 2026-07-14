@@ -28,7 +28,7 @@ doc has been corrected against it.
 | Milestone | Deliverable | Status |
 |---|---|---|
 | M0 | Port base graph memory system into this repo | ✅ **done** (2026-07-14) — 18 Python + 7 frontend tests green; MCP server, CLI, viewer all run |
-| M0.5 | Provenance envelope + scope segment + stable claim IDs, before more data lands | ⬜ not started — [09](09-schema-and-federation.md); cheap now, expensive later |
+| M0.5 | Federation-ready schema: provenance envelope, scope, stable IDs, unified `Claim`, type registry | 🏗️ in progress — [09](09-schema-and-federation.md). The graph is **empty**, so this is not a migration; it is a greenfield schema definition, and it must precede any memory bootstrap. |
 | M1 | Federation contract v0 + literature expert (curated/manual ingest) | ⬜ not started |
 | M2 | Retrieval instrumentation + eval loop v0; start `lab/` notebook | ⬜ not started |
 | M3 | Second expert + session pinning + consultation protocol (**two proves N**) | ⬜ not started |
@@ -54,6 +54,22 @@ doc has been corrected against it.
 | 2026-07-13 | Trust model designed in from M1 (provenance fields), enforced at M5 | Retrofitting provenance onto an existing graph is the canonical mistake. |
 | 2026-07-13 | No memory-utility claims until counterfactuals run (M4) | The project's whole identity is measuring hard-to-measure quality; it doesn't get to exempt itself. |
 | 2026-07-13 | Expert granularity = **spine vs. consultant**, decided by pinning; **split top-down, don't merge bottom-up** | Granularity is instrumented by the collaboration graph, not chosen up front; splitting preserves per-session episodic coherence that merging destroys. See [08](08-roster-candidates.md). |
+
+## Bootstrapping memory (planned)
+
+The graph is **empty on this machine** — no volume, no data. The prior project's
+memories were deliberately not carried over; they will be **re-extracted fresh from
+this machine's own session transcripts** (Claude Code and Cursor both write them).
+
+**Ordering matters, and it is the whole reason M0.5 exists.** Bootstrap *after* the
+federation-ready schema lands, never before. Extracting memories against today's
+schema would create a corpus with no provenance, no tier, and no scope — which is
+precisely the retrofit [05](05-trust-model.md) calls the canonical mistake, arrived at
+by a different road. Memories should be born with their envelope.
+
+(This also finally motivates a long-parked item from the base system's own backlog:
+transcript normalization — parsing Cursor JSONL / Claude Code transcripts directly,
+rather than distilling only at session stop.)
 
 ## Backlog / parked ideas
 

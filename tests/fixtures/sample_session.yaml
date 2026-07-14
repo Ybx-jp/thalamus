@@ -1,37 +1,43 @@
-session_id: test-session-2026-07-09
-timestamp: "2026-07-09T12:00:00"
+# Synthetic fixture. Not a real session — fabricated to exercise the view model's
+# validation paths. Deliberately malformed in two ways:
+#   - `examplelib` is an ORPHAN artifact (nothing references it)  -> orphan_artifact
+#   - the thread touches `src/example/cache.py`, which is NOT declared in artifacts
+#                                                    -> missing_artifact_reference
+# Both are load-bearing: the preview must SURFACE bad structure, not hide it.
+session_id: fixture-session-0001
+timestamp: "2026-01-01T12:00:00"
 tool: cursor
-project: graph-memory
-summary: Test session for Mermaid visualizer validation.
+project: example-project
+summary: Synthetic fixture session used to exercise graph view validation.
 
 artifacts:
-  - identifier: src/graph_memory/visualize.py
+  - identifier: src/example/widget.py
     type: file
-  - identifier: fastmcp
+  - identifier: examplelib
     type: dependency
 
 decisions:
-  - description: Use Mermaid for session visualization
-    rationale: Layout handled by Mermaid, deterministic conversion
-    artifacts: [src/graph_memory/visualize.py]
+  - description: Render widgets eagerly rather than on demand
+    rationale: Deterministic output is easier to snapshot in tests
+    artifacts: [src/example/widget.py]
 
 problems:
-  - description: Need visual verification before committing to graph
+  - description: Widget output was not verifiable before persisting it
     category: design
     artifacts: []
 
 solutions:
-  - description: Added session_to_mermaid converter
-    approach: Deterministic YAML to Mermaid graph TD
+  - description: Added a deterministic widget renderer
+    approach: Pure function from widget spec to output
     worked: true
     problem_ref: 0
-    artifacts: [src/graph_memory/visualize.py]
+    artifacts: [src/example/widget.py]
 
 threads:
-  - id: add-render-flag
-    title: Add --render flag to CLI
-    description: Optional direct Excalidraw rendering from CLI
+  - id: add-widget-cache
+    title: Cache rendered widgets
+    description: Rendering is pure, so results can be memoized
     status: open
-    artifacts: [src/graph_memory/cli.py]
+    artifacts: [src/example/cache.py]
 
 thread_refs: []

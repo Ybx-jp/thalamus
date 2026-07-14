@@ -38,11 +38,11 @@ def test_session_preview_keeps_orphans_and_missing_references_visible():
     finding_codes = {finding.code for finding in view.findings}
 
     # Verifies: every declared artifact remains in the graph, including orphan artifacts
-    assert "artifact:fastmcp" in node_ids
+    assert "artifact:examplelib" in node_ids
     # Verifies: a missing artifact reference is represented by a visible placeholder and edge
-    assert "missing:artifact:src/graph_memory/cli.py" in node_ids
+    assert "missing:artifact:src/example/cache.py" in node_ids
     assert (
-        "thread:add-render-flag|TOUCHES|missing:artifact:src/graph_memory/cli.py"
+        "thread:add-widget-cache|TOUCHES|missing:artifact:src/example/cache.py"
         in edge_ids
     )
     # Verifies: findings identify both the orphan and the missing reference
@@ -70,17 +70,17 @@ def test_session_preview_uses_writer_compatible_ids_and_relationships():
 
     # Verifies: preview IDs match the deterministic IDs used by the graph writer
     assert {
-        "session:test-session-2026-07-09",
-        "decision:test-session-2026-07-09:0",
-        "problem:test-session-2026-07-09:0",
-        "solution:test-session-2026-07-09:0",
-        "thread:add-render-flag",
+        "session:fixture-session-0001",
+        "decision:fixture-session-0001:0",
+        "problem:fixture-session-0001:0",
+        "solution:fixture-session-0001:0",
+        "thread:add-widget-cache",
     } <= node_ids
     # Verifies: problem-to-solution and session-to-thread relationships preserve graph semantics
     assert {
         (
-            "problem:test-session-2026-07-09:0|SOLVED_BY|"
-            "solution:test-session-2026-07-09:0"
+            "problem:fixture-session-0001:0|SOLVED_BY|"
+            "solution:fixture-session-0001:0"
         ),
-        "session:test-session-2026-07-09|SPAWNS|thread:add-render-flag",
+        "session:fixture-session-0001|SPAWNS|thread:add-widget-cache",
     } <= edge_ids
