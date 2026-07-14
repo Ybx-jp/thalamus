@@ -1,0 +1,37 @@
+session_id: test-session-2026-07-09
+timestamp: "2026-07-09T12:00:00"
+tool: cursor
+project: graph-memory
+summary: Test session for Mermaid visualizer validation.
+
+artifacts:
+  - identifier: src/graph_memory/visualize.py
+    type: file
+  - identifier: fastmcp
+    type: dependency
+
+decisions:
+  - description: Use Mermaid for session visualization
+    rationale: Layout handled by Mermaid, deterministic conversion
+    artifacts: [src/graph_memory/visualize.py]
+
+problems:
+  - description: Need visual verification before committing to graph
+    category: design
+    artifacts: []
+
+solutions:
+  - description: Added session_to_mermaid converter
+    approach: Deterministic YAML to Mermaid graph TD
+    worked: true
+    problem_ref: 0
+    artifacts: [src/graph_memory/visualize.py]
+
+threads:
+  - id: add-render-flag
+    title: Add --render flag to CLI
+    description: Optional direct Excalidraw rendering from CLI
+    status: open
+    artifacts: [src/graph_memory/cli.py]
+
+thread_refs: []

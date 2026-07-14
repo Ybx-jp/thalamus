@@ -1,0 +1,46 @@
+name: thalamus
+
+services:
+  graph:
+    image: tinkerpop/gremlin-server:3.7.3
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config/gremlin-server.yaml:/opt/gremlin-server/conf/thalamus/gremlin-server.yaml:ro
+      # Bring your own enterprise feature key. Defaults to config/features.conf
+      # (gitignored); override with THALAMUS_FEATURE_KEY=/path/to/features.conf.
+      # See config/features.conf.example.
+      - ${THALAMUS_FEATURE_KEY:-./config/features.conf}:/opt/gremlin-server/conf/features.conf:ro
+      - thalamus-graph-data:/opt/gremlin-server/data
+    command: ["--config-file", "/opt/gremlin-server/conf/thalamus/gremlin-server.yaml"]
+    healthcheck:
+      # A build response is available before the node accepts client traffic.
+      # Wait for the server's readiness status so Graph does not exit with
+      # "Node ... is not yet fully initialized" during startup.
+      test: ["CMD-SHELL", "test \"$(asinfo -v status 2>/dev/null)\" = ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  graph:
+    image: tinkerpop/gremlin-server:3.7.3
+    restart: unless-stopped
+    ports:
+      - "8182:8182"
+    depends_on:
+      graph:
+        condition: service_healthy
+    volumes:
+      - ./config/tinkergraph.properties:/opt/gremlin-server/conf/thalamus/tinkergraph.properties:ro
+
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/firefly-ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 90s
+
+volumes:
+  thalamus-graph-data:
