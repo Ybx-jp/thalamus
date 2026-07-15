@@ -18,7 +18,7 @@ from thalamus.substrate.schema import SessionGraph
 from thalamus.archive import archive_dir
 from thalamus.contract.conformance import check_session
 from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.harness import transcripts
+from thalamus.harness import extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.plane.web import create_app
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
@@ -66,6 +66,43 @@ def main():
         "archived and extraction is reported, but nothing is persisted.",
     )
 
+    # Extract command — stage 2 of the bootstrap
+    extract_parser = subparsers.add_parser(
+        "extract",
+        help="Extract Claims and Threads from archived transcripts via a model (bootstrap stage 2)",
+    )
+    extract_parser.add_argument(
+        "projects",
+        nargs="*",
+        help="Claude Code project dir names. Omit to list what is available.",
+    )
+    extract_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    extract_parser.add_argument(
+        "--scope", default=MAIN_SCOPE, help="Scope the sessions are pinned to (default: main)"
+    )
+    extract_parser.add_argument(
+        "--model",
+        default=extraction.DEFAULT_MODEL,
+        help=f"Model for claude -p (default: {extraction.DEFAULT_MODEL}). The archive is "
+        "immutable, so a better model can always re-extract later.",
+    )
+    extract_parser.add_argument(
+        "--limit", type=int, default=0, help="Stop after N sessions (0 = no limit)"
+    )
+    extract_parser.add_argument(
+        "--session", action="append", default=[], help="Only these session IDs (prefix ok)"
+    )
+    extract_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-extract sessions that already have claims in the graph",
+    )
+    extract_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
+    )
+
     # Visualize command
     visualize_parser = subparsers.add_parser(
         "visualize", help="Open an interactive session graph in the local viewer"
@@ -98,6 +135,8 @@ def main():
         _cmd_schema()
     elif args.command == "bootstrap":
         _cmd_bootstrap(args)
+    elif args.command == "extract":
+        _cmd_extract(args)
     elif args.command == "visualize":
         _cmd_visualize(args)
     else:
@@ -223,6 +262,149 @@ def _cmd_bootstrap(args):
         print("   evidence that has been quietly rewritten is not evidence.")
     if not args.write:
         print("\nDRY RUN — nothing written to the graph. Re-run with --write to persist.")
+
+
+def _cmd_extract(args):
+    """Stage 2 of the bootstrap: model-extracted Claims and Threads.
+
+    Sessions are processed chronologically so a thread opened in March can be resolved by
+    a session from April — the same replay semantics a live agent would have produced.
+    """
+    from thalamus.archive import read_archived
+    from thalamus.contract.conformance import prune_orphan_artifacts
+    from thalamus.contract.ontology import vid
+
+    available = transcripts.discover()
+    if not args.projects:
+        print("Specify project dir(s); `thalamus bootstrap` lists what is available.")
+        return
+
+    unknown = [p for p in args.projects if p not in available]
+    if unknown:
+        print(f"Unknown project dir(s): {', '.join(unknown)}", file=sys.stderr)
+        sys.exit(1)
+
+    graph = connect(args.url)
+    extracted = skipped = failed = 0
+    total_cost = 0.0
+
+    try:
+        # Chronological across all requested projects: threads resolve forward in time.
+        parsed = []
+        for project in args.projects:
+            for path in available[project]:
+                facts = transcripts.parse(path)
+                if facts.user_turns == 0:
+                    continue
+                parsed.append(facts)
+        parsed.sort(key=lambda f: (f.started_at is None, f.started_at))
+
+        if args.session:
+            parsed = [
+                f for f in parsed if any(f.session_id.startswith(s) for s in args.session)
+            ]
+        if args.limit:
+            parsed = parsed[: args.limit]
+
+        print(f"{len(parsed)} sessions to extract (model: {args.model})")
+
+        for facts in parsed:
+            name = facts.session_id[:8]
+            session_vid = vid("Session", facts.session_id, args.scope)
+
+            if not args.force and _session_has_claims(graph, session_vid):
+                skipped += 1
+                print(f"  · {name}  already extracted — skipping (--force to redo)")
+                continue
+
+            entry, _ = transcripts.retain(facts.path)
+            base = transcripts.to_session_graph(
+                facts,
+                content_hash=entry.content_hash,
+                uri=entry.uri,
+                byte_size=entry.byte_size,
+                scope=args.scope,
+            )
+
+            payload = read_archived(entry.content_hash, suffix=".jsonl")
+            digest = extraction.render_digest(payload)
+            prompt = extraction.build_prompt(
+                digest,
+                project=facts.project,
+                title=facts.title or name,
+                open_threads=_open_threads(graph, args.scope, facts.project),
+            )
+
+            try:
+                run = extraction.run_extraction(prompt, model=args.model)
+                data = extraction.parse_extraction(run.text)
+                session = extraction.merge_extraction(base, data)
+                session = prune_orphan_artifacts(session)
+            except Exception as e:
+                failed += 1
+                print(f"  ✗ {name}  extraction failed: {str(e)[:120]}")
+                continue
+
+            issues = check_session(session)
+            if issues:
+                failed += 1
+                print(f"  ✗ {name}  REJECTED by the contract:")
+                for issue in issues:
+                    print(f"      - {issue}")
+                continue
+
+            total_cost += run.cost_usd
+            counts = (
+                f"{len(session.claims()):>2} claims  {len(session.threads)} threads  "
+                f"{len(session.thread_refs)} refs"
+            )
+            if args.write:
+                write_session(graph, session)
+            extracted += 1
+            print(f"  + {name}  {counts}  ${run.cost_usd:.2f}  {session.summary[:48]}")
+
+    finally:
+        close_connection(graph)
+
+    print(
+        f"\n{extracted} extracted, {skipped} skipped, {failed} failed; "
+        f"model cost ${total_cost:.2f}"
+    )
+    if not args.write:
+        print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")
+
+
+def _session_has_claims(graph, session_vid: str) -> bool:
+    try:
+        count = graph.V(session_vid).out_e("CONTAINS").count().next()
+    except Exception:
+        return False
+    return count > 0
+
+
+def _open_threads(graph, scope: str, project: str) -> list[dict]:
+    from gremlin_python.process.traversal import P
+
+    try:
+        rows = (
+            graph.V()
+            .has_label("Thread")
+            .has("scope", scope)
+            .has("project", project)
+            .has("status", P.within("open", "in_progress"))
+            .value_map("thread_id", "title", "status")
+            .to_list()
+        )
+    except Exception:
+        return []
+    return [
+        {
+            "id": row.get("thread_id", [""])[0],
+            "title": row.get("title", [""])[0],
+            "status": row.get("status", [""])[0],
+        }
+        for row in rows
+    ]
 
 
 def _cmd_visualize(args):
