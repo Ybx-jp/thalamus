@@ -14,10 +14,10 @@ model and a measured utility loop. Start at [00-mission.md](00-mission.md).
 | [04-eval-loop.md](04-eval-loop.md) | Retrieval traces, counterfactuals, utility-driven forgetting | ✅ drafted | 2026-07-13 |
 | [05-trust-model.md](05-trust-model.md) | Provenance tiers, write-gating, memory-poisoning defense | ✅ drafted | 2026-07-13 |
 | [06-ingestion.md](06-ingestion.md) | Curated feeds; the crawler, deliberately demoted | ✅ drafted | 2026-07-13 |
-| [07-harness-integration.md](07-harness-integration.md) | MCP / hooks / CLAUDE.md / skills, pinning mechanics, the limit lab | ✅ drafted | 2026-07-13 |
+| [07-harness-integration.md](07-harness-integration.md) | MCP / hooks / CLAUDE.md / skills, pinning mechanics, the limit lab | 🏗️ implementing — MCP + SessionStart/SessionEnd/PostToolUse hooks installed for this repo | 2026-07-15 |
 | [08-roster-candidates.md](08-roster-candidates.md) | Granularity rule (spine vs. consultant), skill-vs-expert boundary, parked candidate list | ✅ drafted | 2026-07-13 |
 | [09-schema-and-federation.md](09-schema-and-federation.md) | The ported schema vs. the contract: 7 gaps, sequencing, decisions | 🏗️ implementing — G2/G3/G6/G7 closed at M0.5 | 2026-07-14 |
-| [10-evidence-archive.md](10-evidence-archive.md) | Retained transcripts as the floor of the provenance chain; the two-stage bootstrap | 🏗️ implementing — stage 1 built | 2026-07-14 |
+| [10-evidence-archive.md](10-evidence-archive.md) | Retained transcripts as the floor of the provenance chain; the two-stage bootstrap | 📦 shipped — both stages run over the full corpus | 2026-07-15 |
 | [appendix/interactive-memory-graph-spec.md](appendix/interactive-memory-graph-spec.md) | As-built spec for the viewer (historical; predates Thalamus) | 📦 shipped | 2026-07-10 |
 
 Status legend: 💭 idea → ✅ drafted → 🔍 reviewed → 🏗️ implementing → 📦 shipped
@@ -65,11 +65,18 @@ The prior project's memories were deliberately **not** carried over; memory is b
 re-derived from this machine's own session transcripts. See
 [10-evidence-archive.md](10-evidence-archive.md).
 
-**Stage 1 is built** (`thalamus bootstrap`): transcripts are retained in an immutable,
-content-addressed archive at `~/.thalamus/archive/`, and `Source` / `Session` /
-`Artifact` / anchored `TOUCHES` are derived from tool-call records with no model in the
-loop. Dry run over the real corpus: **62 sessions, ~1,463 nodes, 4.9 seconds, zero
-contract rejections.** Stage 2 (model-extracted claims and threads) is deferred to M2.
+**Both stages are built and have run over the full corpus** (2026-07-15). Stage 1
+(`thalamus bootstrap`): transcripts retained in the immutable, content-addressed archive
+at `~/.thalamus/archive/`; `Source` / `Session` / `Artifact` / anchored `TOUCHES` derived
+from tool-call records with no model in the loop — 64 sessions, zero contract rejections.
+Stage 2 (`thalamus extract`): claims and threads extracted via headless `claude -p`,
+merged into the deterministic layer, chronologically so threads resolve forward in time —
+**63 sessions, 1,089 claims, 196 threads (45 resolved, 90 continued by later sessions),
+~$30 of model time.** The graph now holds ~2,459 vertices and ~4,918 edges. Memory is
+live in this repo: the MCP server and SessionStart/SessionEnd/PostToolUse hooks are
+installed, so new sessions recall at start, distill themselves at end, and leave
+retrieval traces for M2. See [10](10-evidence-archive.md) for what the first full run
+taught, including the finding that content-addressed claim convergence never fired.
 
 Allowlisted: `stepmania-chart-generator` (69 transcripts) and `thalamus`. **Not** the
 home-directory sessions — they contain résumé/personal history and the media-server work,

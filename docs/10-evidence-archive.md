@@ -1,7 +1,8 @@
 # The Evidence Archive — Retained Transcripts as the Floor of the Provenance Chain
 
-**Status:** 🏗️ implementing. Stage 1 (deterministic bootstrap) is built; stage 2
-(model-extracted claims) is not.
+**Status:** 📦 shipped. Both stages are built and have run over the full corpus
+(2026-07-15): 63 sessions extracted, ~1,089 claims and 196 threads, 45 of them
+resolved by later sessions during the chronological replay.
 
 ## The problem it solves, which was hiding in plain sight
 
@@ -74,8 +75,8 @@ two-hop traversal ending on the exact tool calls.
 |---|---|---|
 | **Produces** | `Source`, `Session`, `Artifact`, anchored `TOUCHES` | `Claim`, `Thread` |
 | **How** | tool-call records, `ai-title`, `cwd`, `gitBranch` | the extraction skill |
-| **Cost** | free, exact, ~5s for 62 sessions | model time |
-| **Status** | ✅ built (`thalamus bootstrap`) | ⬜ M2 |
+| **Cost** | free, exact, ~5s for 62 sessions | model time (~$0.50/session via headless `claude -p`) |
+| **Status** | ✅ built (`thalamus bootstrap`) | ✅ built (`thalamus extract`) |
 
 Stage 1 is **not a stopgap, and an LLM would be strictly worse at it.** Which files a
 session edited, in which messages, on which branch, is *recorded*. Inference could only
@@ -114,14 +115,32 @@ destroys the thing the archive exists to preserve. The operator is told, and the
 decides. Ingestion is allowlisted per project for the same reason: sessions about the
 media server carry VPN credentials, and sessions about the résumé carry personal history.
 
+## What the first full run taught (2026-07-15)
+
+- **It ran over everything, and everything was cheap enough** (~$30 for 63 sessions on
+  sonnet). The "only where it pays" question dissolved for corpora this size; it returns
+  if the corpus grows 10×, and the eval loop should be the thing that answers it then.
+- **Chronological replay with open-threads-in-prompt works.** Each session's extraction
+  prompt lists the graph's currently-open threads; 45 of 196 threads were resolved and 90
+  continued by later sessions, instead of duplicating.
+- **Models reference memory that was never formed.** One session emitted a `thread_ref`
+  to a thread id that never existed; the writer now drops such refs with a warning
+  (mergeE cannot edge to a missing vertex, and the thread it names was never real).
+  Hallucinated memory references are not hypothetical — plan every cross-boundary
+  interface around them.
+- **Content-addressed claim convergence did not fire once.** 1,089 claims, zero asserted
+  by more than one session — free-text descriptions never collide byte-identically across
+  independent extractions. "This keeps coming up" needs either claim-normalization,
+  feeding existing claims into the prompt the way open threads are fed, or semantic
+  matching. Open, and now measured rather than assumed.
+
 ## Open questions
 
-- **Should stage 2 run over everything, or only where it pays?** The stepmania corpus
-  already has an `INDEX.md` scoring sessions by *correction signals* — moments where a
-  belief was caught wrong and fixed. Those are plausibly the highest-utility sessions to
-  extract claims from, and the eval loop could eventually decide this rather than a human.
 - **Do `Thread`s survive a re-extraction?** Threads have operator-facing stable slugs and a
   lifecycle; claims are content-addressed and disposable. Re-extraction must not resurrect
   a thread the operator resolved. Unresolved.
+- **Live sessions snapshot per run.** A still-growing transcript hashes to a new Source
+  each time bootstrap touches it — content-addressing working as designed, but bootstrap
+  should perhaps skip or flag the currently-active session.
 - **Retention policy.** 159 MB today, and it only grows. Content addressing makes dedup
   free, but nothing prunes. Probably fine for years; worth a number before it isn't.
