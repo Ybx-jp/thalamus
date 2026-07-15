@@ -207,3 +207,24 @@ def test_written_knowledge_is_scoped_tier_2_and_derived_from_its_source():
     edge_pairs = {(e[T.label], e[Direction.to]) for e in graph.edges}
     assert ("DERIVED_FROM", "scope:literature:source:abc123") in edge_pairs
     assert ("ABOUT", "scope:literature:entity:reflexion") in edge_pairs
+
+
+def test_feed_identity_lands_on_the_source_and_only_the_source():
+    """
+    Scenario: A per-project feed (docs/06 procurement) writes a batch
+
+    docs/06's contract obligations require feed identity on every write. It lives on
+    the Source vertex — the ingestion event — and nowhere else: claims and entities
+    converge across feeds, so stamping them would let the latest feed overwrite the
+    history of who brought what in.
+    """
+    graph = _KnowledgeRecorder()
+    batch = _batch(feed="stepmania-chart-generator")
+
+    write_knowledge(graph, batch)
+
+    by_id = {v["properties"][T.id]: v["properties"] for v in graph.vertices}
+    assert by_id["scope:literature:source:abc123"]["feed"] == "stepmania-chart-generator"
+    for node_id, properties in by_id.items():
+        if not node_id.startswith("scope:literature:source:"):
+            assert "feed" not in properties

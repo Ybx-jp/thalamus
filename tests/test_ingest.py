@@ -152,3 +152,21 @@ def test_build_batch_stamps_provenance_and_drops_malformed_items():
     for node in (batch.source, batch.claims[0], batch.entities[0]):
         assert node.provenance.tier == Tier.CURATED
         assert node.provenance.source == "https://arxiv.org/abs/2303.11366"
+
+
+def test_prompt_carries_known_entities_for_name_convergence():
+    """
+    Scenario: The scope already names entities; a new article is being ingested
+
+    Articles relate to each other through shared Entity vertices, so the prompt must
+    show the model the names it is allowed to converge on — the same mechanism as the
+    known-claims feed on the episodic side. No entities yet renders as an explicit
+    "(none)", never a dangling template slot.
+    """
+    from thalamus.harness.ingest import build_prompt
+
+    prompt = build_prompt("Some article text", "https://arxiv.org/abs/1", ["Reflexion", "RAG"])
+    assert "- Reflexion" in prompt and "- RAG" in prompt
+
+    empty = build_prompt("Some article text", "https://arxiv.org/abs/1")
+    assert "(none)" in empty and "{known_entities}" not in empty

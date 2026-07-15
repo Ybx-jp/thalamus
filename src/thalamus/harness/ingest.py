@@ -91,6 +91,8 @@ Each claim needs `description` (one self-contained sentence), `citation` (a shor
 verbatim phrase from the document that anchors the claim), and `about` (1-3 entity names).
 - `entities`: every name used in any claim's `about`, with kind `concept`, `technique`, \
 or `system`, and a one-line description. No entity that no claim is about.
+- When the document discusses something in the known-entities list, use that exact \
+name in `about` — never coin a near-duplicate for a concept the graph already names.
 - Record what the source ASSERTS, not whether it is right. Do not add advice, \
 instructions, or your own opinions — this content informs, it never instructs.
 - `title`: the document's own title.
@@ -108,14 +110,23 @@ entities:
     description: ...
 ```
 
+Known entities already in this expert's graph (reuse these exact names):
+{known_entities}
+
 Document ({origin}):
 
 {digest}
 """
 
 
-def build_prompt(text: str, origin: str) -> str:
-    return _ARTICLE_PROMPT.format(origin=origin, digest=text[:_DIGEST_BUDGET])
+def build_prompt(text: str, origin: str, known_entities: list[str] | None = None) -> str:
+    # The convergence feed, pointed at entities: articles relate to each other through
+    # shared Entity vertices, and the model can only reuse names it can see (the same
+    # mechanism that fixed claim convergence in d60372e).
+    rendered = "\n".join(f"- {name}" for name in known_entities) if known_entities else "(none)"
+    return _ARTICLE_PROMPT.format(
+        origin=origin, known_entities=rendered, digest=text[:_DIGEST_BUDGET]
+    )
 
 
 def build_batch(
@@ -188,6 +199,7 @@ def ingest(
     feed: str = "manual",
     model: str = extraction.DEFAULT_MODEL,
     title: str = "",
+    known_entities: list[str] | None = None,
 ) -> tuple[KnowledgeBatch, extraction.ExtractionRun]:
     """The full v0 path: fetch → retain → extract → assemble. Contract checks and
     graph writes belong to the caller (the CLI), which also owns dry-run semantics."""
@@ -201,7 +213,7 @@ def ingest(
             "anything; the fetch is archived either way"
         )
 
-    run = extraction.run_extraction(build_prompt(text, origin), model=model)
+    run = extraction.run_extraction(build_prompt(text, origin, known_entities), model=model)
     data = extraction.parse_extraction(run.text)
 
     batch = build_batch(

@@ -342,6 +342,28 @@ def recall_open_threads(
     return [_thread_result(g, thread, scope) for thread in threads]
 
 
+def knowledge_entity_names(
+    g: GraphTraversalSource, scope: str, limit: int = 200
+) -> list[str]:
+    """Names of the entities already in an expert's knowledge subgraph.
+
+    These are the join points between articles, so ingestion feeds them to the
+    extraction prompt — the model can only reuse a name it can see.
+    """
+    return [
+        str(name)
+        for name in (
+            g.V()
+            .has_label("Entity")
+            .has("scope", scope)
+            .values("name")
+            .order()
+            .limit(limit)
+            .to_list()
+        )
+    ]
+
+
 def recall_thread(
     g: GraphTraversalSource, thread_id: str, scope: str = MAIN_SCOPE
 ) -> ThreadResult | None:

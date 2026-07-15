@@ -365,6 +365,11 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         "origin": source.origin or "",
         "byte_size": source.byte_size,
         "scope": batch.scope,
+        # Feed identity lives on the Source (the ingestion event), not on claims or
+        # entities — those converge across feeds, and the feed that brought a document
+        # in is a fact about the document. docs/06 requires it on every write; claims
+        # reach it by walking DERIVED_FROM.
+        "feed": batch.feed,
         **_provenance_properties(source.provenance or provenance),
     }
     graph_traversal = (

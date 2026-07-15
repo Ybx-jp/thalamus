@@ -499,6 +499,20 @@ def _cmd_ingest(args):
         print(str(e), file=sys.stderr)
         sys.exit(1)
 
+    # Advisory, like the known-claims feed: an unreachable graph degrades to an
+    # ingest with no entity vocabulary, never a failed ingest.
+    known_entities: list[str] = []
+    try:
+        from thalamus.substrate.reader import knowledge_entity_names
+
+        graph = connect(args.url)
+        try:
+            known_entities = knowledge_entity_names(graph, args.scope)
+        finally:
+            close_connection(graph)
+    except Exception:
+        pass
+
     try:
         batch, run = ingest_mod.ingest(
             args.location,
@@ -506,6 +520,7 @@ def _cmd_ingest(args):
             feed=args.feed,
             model=args.model or extraction_mod.DEFAULT_MODEL,
             title=args.title,
+            known_entities=known_entities,
         )
     except (ingest_mod.IngestError, extraction_mod.ExtractionError) as e:
         print(f"Ingest failed: {e}", file=sys.stderr)

@@ -32,6 +32,33 @@ The first feed populates the technical-literature expert:
   not a blob with an embedding. Graph-first is the point; if a document only ever
   needs similarity search, it doesn't need Thalamus.
 
+## Procurement protocol (v0.1 — multi-project curation into one expert)
+
+How source material is chosen and fed when several projects draw on the same
+literature expert. Added 2026-07-15 alongside the first stepmania/nodeglass feeds.
+
+1. **One consultant, per-project feeds.** Papers serving another project go into
+   the existing literature expert under a project-named feed
+   (`thalamus ingest <url> --feed stepmania-chart-generator`), never into a new
+   scope — docs/08: technical-literature is a consultant serving everything, and
+   splitting happens top-down only when retrievals measurably bifurcate. Feed
+   identity persists on the Source vertex, so "what was procured for project X"
+   stays a one-hop query and the eval loop can attribute knowledge utility per feed.
+2. **Demand-driven selection.** A document earns ingestion by bearing on a question
+   the project has actually asked — an open thread, a recorded problem, a design
+   decision in flight. Procure against the target project's open threads, not
+   against the operator's reading list; "interesting" is a tier-3 instinct wearing
+   tier-2 clothes.
+3. **Entity hygiene is the linking discipline.** Articles relate to each other only
+   through shared Entity vertices, so ingestion feeds the scope's existing entity
+   names into the extraction prompt (the same convergence mechanism as the episodic
+   known-claims feed). When curating a batch for a new domain, ingest the anchor
+   document first — it mints the entity vocabulary the rest of the batch converges on.
+4. **Dry-run, verify, then write.** Every ingest runs without `--write` first and
+   the operator confirms the extracted title matches the document intended —
+   mis-resolved references are a measured failure mode (docs/10), and the archive
+   retains whatever was fetched either way.
+
 ## Contract obligations (every feed, forever)
 
 Ingestion is a federation-contract client like everything else:
