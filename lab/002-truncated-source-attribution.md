@@ -39,7 +39,9 @@ An attribution number with no denominator check is a lie waiting to happen. The 
 loop's own first output was a false negative produced by evidence selection, not by
 matching — the kind of failure docs/04 says to publish rather than quietly fix. A
 `retrieved-but-transcript-empty` counter (distinguishing "ignored" from "nothing to
-judge against") is the refinement this run motivates.
+judge against") is the refinement this run motivates — built the same day as
+`empty_window` in `eval sync`: such nodes land unjudged with the reason on the edge,
+and never share a number with "ignored".
 
 **Follow-up (same day):** byte_size was itself only a proxy — it assumes transcript
 files never shrink, which Claude Code's compaction does not promise. Snapshots now

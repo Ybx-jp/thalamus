@@ -56,7 +56,9 @@ class ScopeReport:
                 lines.append(f"  returned nodes: {self.returns}; none attributed yet")
             if unattributed:
                 lines.append(
-                    f"  {unattributed} unattributed (no retained transcript at sync time)"
+                    f"  {unattributed} unattributed (no retained transcript at sync "
+                    "time, or no agent output after the retrieval — never counted "
+                    "as ignored)"
                 )
         else:
             lines.append("  returned nodes: 0")

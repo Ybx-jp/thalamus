@@ -234,6 +234,24 @@ def test_outputs_are_the_agents_own_and_only_after_the_retrieval():
     assert "sidechain-token" not in outputs
 
 
+def test_empty_attribution_windows_are_reported_apart_from_ignored():
+    """
+    Scenario: A sync where some returned nodes had no agent output to judge against
+
+    lab/002's refinement: "judged and ignored" and "nothing to judge against" must
+    never share a number — their conflation was the eval loop's first false negative.
+    """
+    from thalamus.eval.sync import SyncOutcome
+
+    outcome = SyncOutcome(written=2, attributed=3, used=1, ignored=2, empty_window=4)
+
+    summary = outcome.summary()
+
+    assert "1 used, 2 ignored" in summary
+    assert "4 returned nodes unjudged" in summary
+    assert "not counted as ignored" in summary
+
+
 def test_citing_a_vertex_id_is_the_strongest_used_signal():
     """
     Scenario: The agent quoted a recalled node's vertex ID in its answer

@@ -34,6 +34,7 @@ class SyncOutcome:
     attributed: int = 0
     used: int = 0
     ignored: int = 0
+    empty_window: int = 0
     misses: int = 0
     legacy: int = 0
     dangling: int = 0
@@ -46,6 +47,11 @@ class SyncOutcome:
             f"{self.attributed} returned nodes attributed: "
             f"{self.used} used, {self.ignored} ignored",
         ]
+        if self.empty_window:
+            lines.append(
+                f"{self.empty_window} returned nodes unjudged — no agent output after "
+                "the retrieval (not counted as ignored)"
+            )
         if self.legacy:
             lines.append(f"{self.legacy} legacy traces skipped (pre-node-level rendering)")
         if self.pending:
@@ -114,17 +120,24 @@ def _land_event(
 
     returns: dict[str, dict[str, object] | None] = {nid: None for nid in contents}
     if transcript is not None and contents:
-        verdicts = attribute(contents, outputs_after(transcript, event.ts))
-        for verdict in verdicts:
-            returns[verdict.node_id] = {
-                "used": verdict.used,
-                "evidence": verdict.evidence,
-            }
-            outcome.attributed += 1
-            if verdict.used:
-                outcome.used += 1
-            else:
-                outcome.ignored += 1
+        outputs = outputs_after(transcript, event.ts)
+        if not outputs.strip():
+            # Nothing to judge against is not "ignored" — the two must never share a
+            # number (lab/002). The edge records why it carries no verdict.
+            outcome.empty_window += len(contents)
+            for node_id in contents:
+                returns[node_id] = {"unjudged": "no agent output after this retrieval"}
+        else:
+            for verdict in attribute(contents, outputs):
+                returns[verdict.node_id] = {
+                    "used": verdict.used,
+                    "evidence": verdict.evidence,
+                }
+                outcome.attributed += 1
+                if verdict.used:
+                    outcome.used += 1
+                else:
+                    outcome.ignored += 1
 
     if write:
         provenance = Provenance(
