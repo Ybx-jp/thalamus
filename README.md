@@ -57,7 +57,7 @@ Requires Docker and Python ≥3.11.
 ```bash
 # 1. TinkerGraph needs an enterprise feature key (a free single-node dev key
 #    exists). Keep it OUT of the repo — config/features.conf is gitignored.
-export THALAMUS_FEATURE_KEY=/path/to/features.conf     # see config/features.conf.example
+export THALAMUS_FEATURE_KEY=/path/to/features.conf     # or drop it at config/features.conf
 
 # 2. Infrastructure
 docker compose up -d

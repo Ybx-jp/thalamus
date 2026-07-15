@@ -1,4 +1,4 @@
-# signed database licence key — NEVER commit. See config/features.conf.example.
+# signed database licence key — NEVER commit.
 config/features.conf
 
 # Python

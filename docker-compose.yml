@@ -10,7 +10,6 @@ services:
       - ./config/gremlin-server.yaml:/opt/gremlin-server/conf/thalamus/gremlin-server.yaml:ro
       # Bring your own enterprise feature key. Defaults to config/features.conf
       # (gitignored); override with THALAMUS_FEATURE_KEY=/path/to/features.conf.
-      # See config/features.conf.example.
       - ${THALAMUS_FEATURE_KEY:-./config/features.conf}:/opt/gremlin-server/conf/features.conf:ro
       - thalamus-graph-data:/opt/gremlin-server/data
     command: ["--config-file", "/opt/gremlin-server/conf/thalamus/gremlin-server.yaml"]
