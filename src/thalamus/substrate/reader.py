@@ -57,12 +57,21 @@ class MemoryResult:
     relevance: str = ""
 
     def format(self) -> str:
+        """Render for the agent's context — and for the trace tap.
+
+        Vertex IDs are rendered inline, deliberately. The PostToolUse tap records this
+        text verbatim, so the IDs are what turn a trace from "some prose came back" into
+        node-level retrieval events the eval loop can attribute (docs/04, docs/09 G5).
+        They double as handles the agent can quote when citing a memory.
+        """
         lines = [
             f"## Recalled memory [{_tier_label(self.tier)}]",
             f"**Session:** [{self.tool}] {self.project or 'unknown project'} — "
             f"{self.timestamp[:10]} (scope: {self.scope})",
-            f"**Summary:** {self.summary}",
         ]
+        if self.node_id:
+            lines.append(f"**Node:** `{self.node_id}`")
+        lines.append(f"**Summary:** {self.summary}")
         if self.relevance:
             lines.append(f"**Match:** {self.relevance}")
         if self.details:
@@ -70,7 +79,9 @@ class MemoryResult:
             for detail in self.details:
                 kind = detail.get("kind") or detail.get("label", "")
                 desc = detail.get("description", "")
-                lines.append(f"- **{kind}**: {desc}")
+                node_id = detail.get("node_id", "")
+                handle = f" `{node_id}`" if node_id else ""
+                lines.append(f"- **{kind}**{handle}: {desc}")
         return "\n".join(lines)
 
 
@@ -84,6 +95,7 @@ class ThreadResult:
     status: str
     project: str
     scope: str = MAIN_SCOPE
+    node_id: str = ""
     spawned_by: str = ""
     last_session: str = ""
 
@@ -96,6 +108,8 @@ class ThreadResult:
             f"**ID:** `{self.thread_id}`",
             f"**Description:** {self.description}",
         ]
+        if self.node_id:
+            lines.append(f"**Node:** `{self.node_id}`")
         if self.project:
             lines.append(f"**Project:** {self.project}")
         if self.spawned_by:
@@ -305,6 +319,7 @@ def _thread_result(g: GraphTraversalSource, thread: dict, scope: str) -> ThreadR
         status=_first(thread.get("status")),
         project=_first(thread.get("project")),
         scope=_first(thread.get("scope")) or scope,
+        node_id=thread_vid,
         spawned_by=_session_stamp(spawned),
         last_session=_session_stamp(recent),
     )
@@ -376,6 +391,7 @@ def _load_session_result(
                 "kind": _first(child.get("kind")) or _first(child.get(T.label)),
                 "description": description,
                 "tier": _first_int(child.get("tier"), int(Tier.FIRST_PARTY)),
+                "node_id": _first(child.get(T.id)),
             }
         )
 
@@ -399,6 +415,8 @@ def _extract_keywords(query: str) -> list[str]:
         "when", "where", "why", "all", "any", "both", "each", "few", "more",
         "most", "other", "some", "such", "no", "not", "only", "same", "so",
         "than", "too", "very", "just", "know", "work", "thing", "things",
+        "and", "but", "nor", "yet", "also", "they", "them", "their",
+        "there", "here", "because", "while", "still",
     }
     tokens = query.lower().split()
     return [t for t in tokens if len(t) > 2 and t not in stopwords]

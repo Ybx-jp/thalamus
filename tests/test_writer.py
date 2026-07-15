@@ -289,3 +289,107 @@ def test_thread_refs_to_nonexistent_threads_are_dropped_not_fatal():
         make_vid("Thread", "real-thread", session.scope)
     ]
     assert len(fake.edges) == 1
+
+
+class _SnapshotFake:
+    """Just enough traversal source for _write_sources: the heads query and the writes."""
+
+    def __init__(self, heads):
+        self.heads = list(heads)
+        self.edges = []
+
+    def V(self, *_args):
+        return self
+
+    def merge_v(self, *_args):
+        return FakeTraversal()
+
+    def merge_e(self, spec):
+        self.edges.append(spec)
+        return FakeTraversal()
+
+    # -- the _snapshot_heads chain --
+    def out(self, *_args):
+        return self
+
+    def has_label(self, *_args):
+        return self
+
+    def has(self, *_args):
+        return self
+
+    def not_(self, *_args):
+        return self
+
+    def id_(self):
+        return self
+
+    def to_list(self):
+        return list(self.heads)
+
+
+def _snapshot_session(content_hash: str) -> SessionGraph:
+    from thalamus.substrate.schema import Source
+
+    return SessionGraph(
+        session_id="s1",
+        timestamp=datetime(2026, 7, 15, tzinfo=UTC),
+        tool=Tool.CLAUDE_CODE,
+        summary="x",
+        sources=[
+            Source(content_hash=content_hash, title="Session s1", uri=f"archive://{content_hash}")
+        ],
+    )
+
+
+def test_new_transcript_snapshot_supersedes_the_previous_heads():
+    """
+    Scenario: A session distilled earlier is distilled again from a grown transcript
+
+    Verifications:
+    - the new snapshot writes a SUPERSEDES edge to every current head
+      (plural heads heal graphs written before the lineage existed)
+    - the DERIVED_FROM floor edge is still written
+
+    A session distilled while open accumulates snapshots (docs/10, lab/002); the
+    lineage is what makes "the transcript of session X" a defined head instead of a
+    byte-size guess that silently under-counts attribution.
+    """
+    from gremlin_python.process.traversal import Direction
+
+    from thalamus.substrate.writer import _write_sources
+    from thalamus.contract.ontology import vid as make_vid
+
+    session = _snapshot_session("newhash")
+    session_vid = make_vid("Session", "s1", session.scope)
+    old_a = make_vid("Source", "oldhash-a", session.scope)
+    old_b = make_vid("Source", "oldhash-b", session.scope)
+    fake = _SnapshotFake(heads=[old_a, old_b])
+
+    _write_sources(fake, session, session_vid)
+
+    new_vid = make_vid("Source", "newhash", session.scope)
+    supersedes = [e for e in fake.edges if e[T.label] == "SUPERSEDES"]
+    assert {(e[Direction.from_], e[Direction.to]) for e in supersedes} == {
+        (new_vid, old_a),
+        (new_vid, old_b),
+    }
+    assert any(e[T.label] == "DERIVED_FROM" for e in fake.edges)
+
+
+def test_rewriting_the_same_snapshot_does_not_supersede_itself():
+    """
+    Scenario: A --force re-extraction of an unchanged transcript (same content hash)
+
+    The head it finds is itself; a self-SUPERSEDES edge would orphan the lineage.
+    """
+    from thalamus.substrate.writer import _write_sources
+    from thalamus.contract.ontology import vid as make_vid
+
+    session = _snapshot_session("samehash")
+    session_vid = make_vid("Session", "s1", session.scope)
+    fake = _SnapshotFake(heads=[make_vid("Source", "samehash", session.scope)])
+
+    _write_sources(fake, session, session_vid)
+
+    assert not [e for e in fake.edges if e[T.label] == "SUPERSEDES"]

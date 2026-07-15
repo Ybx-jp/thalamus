@@ -7,7 +7,7 @@ import logging
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.driver.protocol import GremlinServerError
 from gremlin_python.process.anonymous_traversal import traversal
-from gremlin_python.process.graph_traversal import GraphTraversalSource
+from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Direction, Merge, T
 
 from thalamus.contract.ontology import vid
@@ -138,10 +138,21 @@ def _write_sources(g: GraphTraversalSource, session: SessionGraph, session_vid: 
 
     The Session -[DERIVED_FROM]-> Source edge is what gives every belief in this session a
     provenance *floor*. Without it the chain terminates at a summary of itself.
+
+    A transcript snapshot also SUPERSEDES the session's previous snapshot heads: a
+    session distilled more than once while its transcript grew holds several snapshots
+    (docs/10, lab/002), and the lineage is what gives consumers a defined "current"
+    one instead of a guess. Only transcript Sources supersede — two unrelated pieces
+    of evidence on one session (a paper and a transcript, someday) are siblings, not
+    revisions of each other.
     """
     for source in session.sources:
         source_vid = vid("Source", source.content_hash, session.scope)
         provenance = source.provenance or session.default_provenance()
+
+        prior_heads = (
+            _snapshot_heads(g, session_vid) if source.kind.value == "transcript" else []
+        )
 
         properties = {
             "content_hash": source.content_hash,
@@ -163,6 +174,9 @@ def _write_sources(g: GraphTraversalSource, session: SessionGraph, session_vid: 
         _iterate(graph_traversal, "upsert Source", source_vid)
 
         _ensure_edge(g, session_vid, source_vid, "DERIVED_FROM")
+        for head_vid in prior_heads:
+            if head_vid != source_vid:
+                _ensure_edge(g, source_vid, head_vid, "SUPERSEDES")
 
 
 def _write_touches(
@@ -324,6 +338,59 @@ def _write_thread_refs(
             _ensure_edge(g, session_vid, thread_vid, "RESOLVES")
         else:
             _ensure_edge(g, session_vid, thread_vid, "CONTINUES")
+
+
+def _snapshot_heads(g: GraphTraversalSource, session_vid: str) -> list[str]:
+    """Current head snapshots of a session's transcript lineage.
+
+    A head is a transcript Source with no incoming SUPERSEDES edge. Normally there is
+    exactly one; pre-lineage sessions (written before this edge existed) may expose
+    several, and linking the new snapshot to all of them heals the chain.
+    """
+    try:
+        return [
+            str(head)
+            for head in (
+                g.V(session_vid)
+                .out("DERIVED_FROM")
+                .has_label("Source")
+                .has("kind", "transcript")
+                .not_(__.in_e("SUPERSEDES"))
+                .id_()
+                .to_list()
+            )
+        ]
+    except Exception:
+        # A missing session vertex (first write) has no snapshots to supersede.
+        return []
+
+
+def write_trace(
+    g: GraphTraversalSource,
+    trace_vid: str,
+    properties: dict[str, object],
+    session_vid: str,
+    returns: dict[str, dict[str, object] | None],
+) -> None:
+    """Upsert one retrieval-trace vertex with its edges (docs/04 layer 1).
+
+    Session -[QUERIES]-> Trace -[RETURNS]-> result nodes. `returns` maps each returned
+    vertex ID to the properties its RETURNS edge should carry — after attribution that
+    is the `used`/`evidence` verdict, which lives on the edge because it is a fact about
+    this retrieval of the node, not about the node. Idempotent like every other write
+    here: re-syncing a trace re-asserts the same vertex, and re-attributing updates the
+    verdicts in place.
+    """
+    graph_traversal = (
+        g.merge_v({T.id: trace_vid, T.label: "Trace"})
+        .option(Merge.on_create, {T.id: trace_vid, **properties})
+        .option(Merge.on_match, properties)
+    )
+    _iterate(graph_traversal, "upsert Trace", trace_vid)
+
+    _ensure_edge(g, session_vid, trace_vid, "QUERIES")
+    for target_vid, edge_properties in returns.items():
+        _ensure_edge(g, trace_vid, target_vid, "RETURNS", edge_properties)
 
 
 def _ensure_edge(

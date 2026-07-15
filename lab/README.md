@@ -12,4 +12,9 @@ Also the home for negative results from the eval loop
 ([docs/04](../docs/04-eval-loop.md)): *"the literature expert's retrievals were
 ignored 70% of the time until X"* is worth more than a clean win.
 
-Empty by design until there is something honest to put in it.
+## Entries
+
+| # | Entry | Ends in |
+|---|---|---|
+| [001](001-sessionend-hook-snapshot.md) | The session that installs a SessionEnd hook is never distilled by it | workaround |
+| [002](002-truncated-source-attribution.md) | Attribution against a truncated Source snapshot silently under-counts | workaround |

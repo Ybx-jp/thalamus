@@ -103,6 +103,38 @@ def main():
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
     )
 
+    # Eval command — layer 1 of the eval loop (docs/04)
+    eval_parser = subparsers.add_parser(
+        "eval", help="Eval loop v0: land retrieval traces in the graph and report used-vs-ignored"
+    )
+    eval_sub = eval_parser.add_subparsers(dest="eval_command")
+
+    eval_sync_parser = eval_sub.add_parser(
+        "sync",
+        help="Land the PostToolUse trace tap as Trace nodes, attributing used-vs-ignored "
+        "against the retained transcripts",
+    )
+    eval_sync_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    eval_sync_parser.add_argument(
+        "--traces", type=Path, default=None, help="Trace tap directory (default: ~/.thalamus/traces)"
+    )
+    eval_sync_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Write to the graph. Without it, sync runs and is reported but not persisted.",
+    )
+
+    eval_report_parser = eval_sub.add_parser(
+        "report", help="Per-scope retrieval-utility numbers from landed traces"
+    )
+    eval_report_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    eval_report_parser.add_argument(
+        "--scope", default=MAIN_SCOPE, help="Scope to report on (default: main)"
+    )
+    eval_report_parser.add_argument(
+        "--top", type=int, default=5, help="How many most-ignored nodes to list"
+    )
+
     # Visualize command
     visualize_parser = subparsers.add_parser(
         "visualize", help="Open an interactive session graph in the local viewer"
@@ -140,6 +172,8 @@ def main():
         _cmd_bootstrap(args)
     elif args.command == "extract":
         _cmd_extract(args)
+    elif args.command == "eval":
+        _cmd_eval(args, eval_parser)
     elif args.command == "visualize":
         _cmd_visualize(args)
     else:
@@ -413,6 +447,31 @@ def _open_threads(graph, scope: str, project: str) -> list[dict]:
         }
         for row in rows
     ]
+
+
+def _cmd_eval(args, eval_parser):
+    if getattr(args, "eval_command", None) == "sync":
+        from thalamus.eval.sync import sync
+
+        graph = connect(args.url)
+        try:
+            outcome = sync(graph, traces_base=args.traces, write=args.write)
+        finally:
+            close_connection(graph)
+        print(outcome.summary())
+        if not args.write:
+            print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")
+    elif getattr(args, "eval_command", None) == "report":
+        from thalamus.eval.report import scope_report
+
+        graph = connect(args.url)
+        try:
+            print(scope_report(graph, scope=args.scope, top=args.top).render())
+        finally:
+            close_connection(graph)
+    else:
+        eval_parser.print_help()
+        sys.exit(1)
 
 
 def _cmd_visualize(args):

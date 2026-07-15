@@ -1,6 +1,7 @@
 # Eval Loop — Measuring Memory Utility
 
-**Status:** design. This is the differentiating component: the project's central
+**Status:** layer 1 built (M2, 2026-07-15) — see `src/thalamus/eval/`; layers 2–3
+remain design. This is the differentiating component: the project's central
 claim is not "I built agent memory" but "I built agent memory **and the evaluation
 loop that proves what it's worth**."
 
@@ -29,6 +30,18 @@ retrieved content and the session's outputs, judged post-hoc) and that is fine �
 a crude measure beats no measure, and refining attribution is itself lab-notebook
 material. Traces land as episodic memory (the trace store **is** a property graph),
 so the eval loop needs no side database: it reads the same substrate it grades.
+
+**As built (M2):** retrieval results render their vertex IDs inline, so the verbatim
+PostToolUse tap *is* the node-level trace — no side schema (docs/09 G5). `thalamus
+eval sync` lands tap lines as `Trace` nodes (`Session -[QUERIES]-> Trace -[RETURNS]->
+result`), attributing each returned node against the session's retained transcript:
+cited-by-ID and thread-slug mentions are strong signals, then lexical term overlap
+(≥2 terms and ≥30% — arbitrary dials, here to be pressure-tested). Verdicts live on
+the RETURNS edge as `used`/`evidence`. `thalamus eval report` renders per-scope
+totals, per-tool counts, miss rate, and the most retrieved-but-ignored nodes — the
+layer-3 decay candidates. A trace can only land after its session distills (the
+QUERIES edge and the transcript both need it); until then it stays in the tap,
+reported as pending. First-run findings: lab entry 002.
 
 ## Layer 2 — Counterfactuals (M4)
 

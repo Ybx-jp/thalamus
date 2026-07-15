@@ -22,9 +22,16 @@ Memory is bootstrapped from **retained session transcripts**, held in an immutab
 content-addressed archive that gives the provenance chain a floor
 ([docs/10](docs/10-evidence-archive.md)).
 
+**The eval loop's first layer is live (M2):** every memory-tool call is trace-tapped by
+a PostToolUse hook, landed in the graph as `Trace` nodes, and each returned node is
+judged used-vs-ignored against the session's retained transcript — crude lexical
+attribution, deliberately ([docs/04](docs/04-eval-loop.md)). The numbers say
+"instrumented, measuring"; utility claims wait for counterfactuals (M4).
+
 **Still design:** the contract enforces connectivity, provenance, and scope legality, but
-there is no manifest, no projection grant, no second expert, no literature feed, and no
-eval loop. What exists is a working episodic memory substrate with the boundary drawn.
+there is no manifest, no projection grant, no second expert, and no literature feed.
+What exists is a working episodic memory substrate with the boundary drawn, instrumented
+from its first expert onward.
 
 - [`docs/index.md`](docs/index.md) — doc tracker, status board, decision log
 - [`docs/00-mission.md`](docs/00-mission.md) — mission and high-level design
@@ -42,9 +49,11 @@ src/thalamus/
   plane/       the connective plane — FastAPI read layer + React/Cytoscape viewer
   archive/     immutable content-addressed store for retained primary evidence
   harness/     where it meets the agent — MCP server, hooks, skills, transcript bootstrap
+  eval/        the eval loop, layer 1 — trace tap reader, used-vs-ignored attribution,
+               Trace-node sync, per-scope utility report
 frontend/      viewer source; builds into plane/static
 docs/          design docs
-lab/           harness-limit notebook (starts at M2)
+lab/           harness-limit notebook — what broke, why, workaround or wall
 ```
 
 Both **Claude Code** and **Cursor** are supported; their hook contracts differ, so
@@ -72,6 +81,8 @@ thalamus validate session.yaml     # check an extraction against the contract
 thalamus visualize                 # open the persisted memory explorer
 thalamus visualize session.yaml    # preview a pending extraction, no graph needed
 thalamus write session.yaml        # write to the graph
+thalamus eval sync --write         # land retrieval traces + used-vs-ignored verdicts
+thalamus eval report               # per-scope retrieval-utility numbers
 thalamus-mcp                       # run the MCP server
 ```
 

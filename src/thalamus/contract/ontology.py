@@ -81,6 +81,12 @@ CORE_NODES: tuple[NodeType, ...] = (
     NodeType("Source", "source", "title", kinds=("transcript",)),
     # The one global. Not scoped, deliberately. See module docstring.
     NodeType("Artifact", "artifact", "identifier", scoped=False),
+    # A retrieval event: one memory-tool call, recorded verbatim by the PostToolUse tap
+    # and landed here by `thalamus eval sync`. The eval loop reads the same substrate it
+    # grades — "the trace store IS a property graph" (docs/04) — so utility verdicts sit
+    # next to the nodes they grade instead of in a side database. Scoped to the pin the
+    # querying session ran under: a trace is episodic memory of that expert's use.
+    NodeType("Trace", "trace", "query", expandable=False),
 )
 
 CORE_EDGES: tuple[EdgeType, ...] = (
@@ -108,6 +114,26 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     ),
     EdgeType("REFERENCES", may_cross_scope=True, note="main -> expert node, by ID. Never copies."),
     EdgeType("CONSULTS", may_cross_scope=True, note="Session -> expert (docs/02)."),
+    # The eval loop's layer 1 (docs/04). QUERIES parallels CONTAINS/SPAWNS: the session
+    # is the hub, the trace is its child event. RETURNS records what the retrieval put
+    # into context; after attribution it carries `used` (bool) and `evidence` — the
+    # used-vs-ignored verdict lives on the edge because it is a fact about *this
+    # retrieval* of the node, not about the node itself.
+    EdgeType("QUERIES", note="Session -> Trace"),
+    # Snapshot lineage. A session distilled while still open archives its transcript
+    # as it stands, and a grown transcript hashes to a new blob — so one session can
+    # legitimately hold several Source snapshots (docs/10, lab/002). Rather than
+    # prevent that (immutable evidence is the point), the newer snapshot SUPERSEDES
+    # the older, giving "the transcript of session X" a well-defined head: the Source
+    # with no incoming SUPERSEDES edge. Superseded snapshots stay archived and
+    # walkable — they are evidence of what earlier distillations saw.
+    EdgeType("SUPERSEDES", note="Source -> Source, same session's transcript only."),
+    EdgeType(
+        "RETURNS",
+        note="Trace -> Session/Claim/Thread/Artifact. Carries `used`/`evidence` after "
+        "attribution. Not a scope crossing: retrieval is pin-scoped server-side, so "
+        "scoped results share the trace's scope, and edges into globals never count.",
+    ),
 )
 
 NODES_BY_LABEL: dict[str, NodeType] = {n.label: n for n in CORE_NODES}
