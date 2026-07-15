@@ -78,6 +78,7 @@ uv sync                        # or: python -m venv .venv && .venv/bin/pip insta
 thalamus bootstrap                 # list session transcripts available to ingest
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
 thalamus validate session.yaml     # check an extraction against the contract
+thalamus contract check            # audit the live graph against the contract
 thalamus visualize                 # open the persisted memory explorer
 thalamus visualize session.yaml    # preview a pending extraction, no graph needed
 thalamus write session.yaml        # write to the graph

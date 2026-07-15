@@ -103,6 +103,18 @@ def main():
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
     )
 
+    # Contract command — the federation boundary, audited (docs/01, docs/09 M1)
+    contract_parser = subparsers.add_parser(
+        "contract", help="Federation-contract operations against the live graph"
+    )
+    contract_sub = contract_parser.add_subparsers(dest="contract_command")
+    contract_check_parser = contract_sub.add_parser(
+        "check",
+        help="Audit the live graph: provenance envelopes, scope legality, orphans, "
+        "evidence-floor integrity",
+    )
+    contract_check_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
     # Eval command — layer 1 of the eval loop (docs/04)
     eval_parser = subparsers.add_parser(
         "eval", help="Eval loop v0: land retrieval traces in the graph and report used-vs-ignored"
@@ -172,6 +184,8 @@ def main():
         _cmd_bootstrap(args)
     elif args.command == "extract":
         _cmd_extract(args)
+    elif args.command == "contract":
+        _cmd_contract(args, contract_parser)
     elif args.command == "eval":
         _cmd_eval(args, eval_parser)
     elif args.command == "visualize":
@@ -447,6 +461,30 @@ def _open_threads(graph, scope: str, project: str) -> list[dict]:
         }
         for row in rows
     ]
+
+
+def _cmd_contract(args, contract_parser):
+    if getattr(args, "contract_command", None) != "check":
+        contract_parser.print_help()
+        sys.exit(1)
+
+    from thalamus.contract.conformance import check_graph
+
+    graph = connect(args.url)
+    try:
+        issues, counts = check_graph(graph)
+    finally:
+        close_connection(graph)
+
+    print(f"Audited {counts['vertices']} vertices, {counts['edges']} edges.")
+    if not issues:
+        print("Contract OK — every node carries provenance, every edge is legal, "
+              "every Source resolves to retained bytes.")
+        return
+    print(f"\n{len(issues)} issue(s):", file=sys.stderr)
+    for issue in issues:
+        print(f"  - {issue}", file=sys.stderr)
+    sys.exit(1)
 
 
 def _cmd_eval(args, eval_parser):

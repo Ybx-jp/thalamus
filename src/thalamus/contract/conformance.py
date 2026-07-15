@@ -4,10 +4,16 @@ The federation contract (docs/01) in its current form. Obligations are enforced 
 write time, not filtered at read time** — that stance is inherited from the base memory
 system's orphan check and is the posture every obligation here adopts.
 
-Enforced today:
-  - connectivity — every node reachable by at least one edge
-  - provenance   — every node resolves to a tier, a source, and an ingestion time
-  - scope        — declared, and cross-scope edges are legal ones only
+Two layers live here:
+
+**Write-time** (`check_session`) — what a SessionGraph must satisfy before it may be
+written: connectivity, provenance, scope legality.
+
+**Audit-time** (`check_graph`, `thalamus contract check`) — the same obligations
+re-verified against the *live graph*. Write-time checks only see what came through the
+front door; the audit catches what write-time cannot: drift from schema changes, writes
+that bypassed the contract, evidence blobs that went missing under an immutable-looking
+URI. The audit functions are pure over plain rows so they are testable without a graph.
 
 Not yet enforced (they need a second scope to be meaningful):
   - manifest validation — declared node/edge types vs. what is actually written
@@ -16,7 +22,16 @@ Not yet enforced (they need a second scope to be meaningful):
 
 from __future__ import annotations
 
-from thalamus.contract.ontology import edge_crosses_scope, vid
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from thalamus.contract.ontology import (
+    EDGES_BY_LABEL,
+    NODES_BY_LABEL,
+    edge_crosses_scope,
+    scope_of,
+    vid,
+)
 from thalamus.substrate.schema import SessionGraph
 
 
@@ -105,3 +120,175 @@ def prune_orphan_artifacts(session: SessionGraph) -> SessionGraph:
     if len(pruned) == len(session.artifacts):
         return session
     return session.model_copy(update={"artifacts": pruned})
+
+
+# --------------------------------------------------------------------------------------
+# Live-graph audit — `thalamus contract check`
+# --------------------------------------------------------------------------------------
+
+_PROVENANCE_FIELDS = ("tier", "source", "ingested_at")
+
+
+@dataclass(frozen=True)
+class AuditVertex:
+    """One vertex as the audit sees it: identity, label, flat properties."""
+
+    vid: str
+    label: str
+    properties: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AuditEdge:
+    label: str
+    from_vid: str
+    from_label: str
+    to_vid: str
+    to_label: str
+
+
+def audit_vertices(vertices: list[AuditVertex]) -> list[str]:
+    """Per-vertex obligations: known label, provenance envelope, scope integrity."""
+    issues: list[str] = []
+    for vertex in vertices:
+        node = NODES_BY_LABEL.get(vertex.label)
+        if node is None:
+            issues.append(f"Unknown vertex label: `{vertex.vid}` is a `{vertex.label}`, "
+                          "which the ontology does not declare")
+            continue
+
+        missing = [f for f in _PROVENANCE_FIELDS if not vertex.properties.get(f)]
+        if missing:
+            issues.append(
+                f"Provenance hole: `{vertex.vid}` lacks {', '.join(missing)} — "
+                "no provenance, no write (docs/05)"
+            )
+
+        vid_scope = scope_of(vertex.vid)
+        declared = vertex.properties.get("scope")
+        if node.scoped:
+            if vid_scope is None:
+                issues.append(f"Scope integrity: `{vertex.vid}` ({vertex.label} is scoped) "
+                              "has no scope segment in its vertex ID")
+            elif declared != vid_scope:
+                issues.append(
+                    f"Scope integrity: `{vertex.vid}` declares scope "
+                    f"`{declared or '(none)'}` but its ID says `{vid_scope}` — "
+                    "a node that lies about its scope defeats server-side scoping"
+                )
+        elif vid_scope is not None or declared:
+            issues.append(
+                f"Scope integrity: `{vertex.vid}` ({vertex.label} is global) "
+                "carries a scope — globals are the join key and must not be claimed"
+            )
+    return issues
+
+
+def audit_edges(edges: list[AuditEdge]) -> list[str]:
+    """Per-edge obligations: known label, legal scope crossing, lineage endpoints."""
+    issues: list[str] = []
+    for edge in edges:
+        declared = EDGES_BY_LABEL.get(edge.label)
+        if declared is None:
+            issues.append(
+                f"Unknown edge label: `{edge.from_vid}` -[{edge.label}]-> `{edge.to_vid}`"
+            )
+            continue
+
+        if not declared.may_cross_scope and edge_crosses_scope(edge.from_vid, edge.to_vid):
+            issues.append(
+                f"Illegal cross-scope edge: `{edge.from_vid}` -[{edge.label}]-> "
+                f"`{edge.to_vid}`. Consultation routes through a main-scope session, "
+                "never expert-to-expert (docs/02)"
+            )
+
+        if edge.label == "SUPERSEDES" and (
+            edge.from_label != "Source" or edge.to_label != "Source"
+        ):
+            issues.append(
+                f"SUPERSEDES between non-Sources: `{edge.from_vid}` "
+                f"({edge.from_label}) -> `{edge.to_vid}` ({edge.to_label}) — "
+                "lineage is a fact about evidence snapshots only"
+            )
+    return issues
+
+
+def audit_orphans(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list[str]:
+    """Every vertex must be reachable by at least one edge — the graph-level twin of
+    the write-time orphan check."""
+    connected = {e.from_vid for e in edges} | {e.to_vid for e in edges}
+    return [
+        f"Orphan vertex: `{v.vid}` ({v.label}) has no edges"
+        for v in vertices
+        if v.vid not in connected
+    ]
+
+
+def audit_evidence(vertices: list[AuditVertex], archive_base: Path | None = None) -> list[str]:
+    """Every Source URI must resolve to retained bytes.
+
+    The provenance floor is only a floor if the bytes are actually there: a Source whose
+    blob is gone is a belief chain terminating in a dangling pointer, which is precisely
+    the fog docs/03's inspector exists to prevent.
+    """
+    from thalamus.archive import archive_dir
+
+    root = archive_base or archive_dir()
+    issues: list[str] = []
+    for vertex in vertices:
+        if vertex.label != "Source":
+            continue
+        content_hash = str(vertex.properties.get("content_hash") or "")
+        if not content_hash:
+            issues.append(f"Evidence floor: `{vertex.vid}` has no content_hash")
+            continue
+        if not any((root / content_hash[:2]).glob(f"{content_hash}*")):
+            issues.append(
+                f"Evidence floor: `{vertex.vid}` points at archive://{content_hash[:12]}… "
+                "but no such blob is retained"
+            )
+    return issues
+
+
+def check_graph(g, archive_base: Path | None = None) -> tuple[list[str], dict[str, int]]:
+    """Audit the live graph against the contract. Returns (issues, counts)."""
+    vertices, edges = _fetch(g)
+    issues = [
+        *audit_vertices(vertices),
+        *audit_edges(edges),
+        *audit_orphans(vertices, edges),
+        *audit_evidence(vertices, archive_base),
+    ]
+    return issues, {"vertices": len(vertices), "edges": len(edges)}
+
+
+def _fetch(g) -> tuple[list[AuditVertex], list[AuditEdge]]:
+    """Pull the whole graph into plain rows. Fine at this graph's size (~10^3 nodes);
+    pagination is a problem worth having later."""
+    from gremlin_python.process.traversal import Direction, T
+
+    vertices = []
+    for row in g.V().value_map(True).to_list():
+        properties = {
+            str(key): (value[0] if isinstance(value, list) and value else value)
+            for key, value in row.items()
+            if key not in (T.id, T.label)
+        }
+        vertices.append(
+            AuditVertex(vid=str(row[T.id]), label=str(row[T.label]), properties=properties)
+        )
+
+    edges = []
+    for row in g.E().element_map().to_list():
+        out_v = row.get(Direction.OUT) or {}
+        in_v = row.get(Direction.IN) or {}
+        edges.append(
+            AuditEdge(
+                label=str(row.get(T.label)),
+                from_vid=str(out_v.get(T.id, "")),
+                from_label=str(out_v.get(T.label, "")),
+                to_vid=str(in_v.get(T.id, "")),
+                to_label=str(in_v.get(T.label, "")),
+            )
+        )
+    return vertices, edges
