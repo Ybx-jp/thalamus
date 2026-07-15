@@ -362,7 +362,12 @@ def _cmd_extract(args):
                 f"{len(session.thread_refs)} refs"
             )
             if args.write:
-                write_session(graph, session)
+                try:
+                    write_session(graph, session)
+                except Exception as e:
+                    failed += 1
+                    print(f"  ✗ {name}  write failed: {str(e)[:160]}")
+                    continue
             extracted += 1
             print(f"  + {name}  {counts}  ${run.cost_usd:.2f}  {session.summary[:48]}")
 

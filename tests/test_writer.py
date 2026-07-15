@@ -220,3 +220,72 @@ def test_artifacts_are_written_unscoped_and_everything_else_scoped():
     # Verifies: scoped nodes are namespaced by the pin, so scopes cannot collide
     assert "scope:literature:session:s1" in ids
     assert any(node_id.startswith("scope:literature:claim:") for node_id in ids)
+
+
+class _VertexChain:
+    def __init__(self, fake, vid):
+        self.fake = fake
+        self.vid = vid
+        self.bytecode = "fake-bytecode"
+
+    def has_label(self, _label):
+        return self
+
+    def has_next(self):
+        return self.vid in self.fake.existing
+
+    def property(self, key, value):
+        self.fake.status_updates.append((self.vid, key, value))
+        return self
+
+    def iterate(self):
+        return self
+
+
+class _ThreadRefFake:
+    """Just enough traversal source for _write_thread_refs: V() lookups and merge_e."""
+
+    def __init__(self, existing):
+        self.existing = set(existing)
+        self.edges = []
+        self.status_updates = []
+
+    def V(self, vid):
+        return _VertexChain(self, vid)
+
+    def merge_e(self, spec):
+        self.edges.append(spec)
+        return FakeTraversal()
+
+
+def test_thread_refs_to_nonexistent_threads_are_dropped_not_fatal():
+    """
+    Scenario: A session's thread_refs name one real thread and one the model invented
+
+    Verifications:
+    - the real ref gets its status update and RESOLVES/CONTINUES edge
+    - the invented ref is dropped without any write, and nothing raises
+      (previously it crashed the whole write: mergeE cannot create an edge
+      to a missing vertex)
+    """
+    from thalamus.substrate.schema import ThreadRef, ThreadStatus
+    from thalamus.substrate.writer import _write_thread_refs
+    from thalamus.contract.ontology import vid as make_vid
+
+    session = SessionGraph(
+        session_id="s1",
+        tool=Tool.CLAUDE_CODE,
+        summary="x",
+        thread_refs=[
+            ThreadRef(id="real-thread", status=ThreadStatus.RESOLVED),
+            ThreadRef(id="hallucinated-thread", status=ThreadStatus.RESOLVED),
+        ],
+    )
+    fake = _ThreadRefFake(existing={make_vid("Thread", "real-thread", session.scope)})
+
+    _write_thread_refs(fake, session, make_vid("Session", "s1", session.scope))
+
+    assert [u[0] for u in fake.status_updates] == [
+        make_vid("Thread", "real-thread", session.scope)
+    ]
+    assert len(fake.edges) == 1

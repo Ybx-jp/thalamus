@@ -299,9 +299,23 @@ def _write_thread_refs(
     session: SessionGraph,
     session_vid: str,
 ) -> None:
-    """Write edges from this session to existing threads continued or resolved."""
+    """Write edges from this session to existing threads continued or resolved.
+
+    A ref to a thread that does not exist is dropped, not written and not fatal: it is
+    model output referencing memory that was never formed (hallucinated id, renamed
+    slug), and mergeE cannot create an edge to a missing vertex anyway. Dropping it
+    loses nothing real — the thread it names was never real.
+    """
     for ref in session.thread_refs:
         thread_vid = vid("Thread", ref.id, session.scope)
+
+        if not g.V(thread_vid).has_label("Thread").has_next():
+            logger.warning(
+                "thread_ref '%s' does not match any Thread in scope %s; dropping",
+                ref.id,
+                session.scope,
+            )
+            continue
 
         graph_traversal = g.V(thread_vid).has_label("Thread").property("status", ref.status.value)
         _iterate(graph_traversal, "update Thread status", thread_vid)
