@@ -122,6 +122,9 @@ def main():
     )
 
     args = parser.parse_args()
+    # Long-running commands (bootstrap, extract) are routinely piped to a log; without
+    # line buffering their progress sits invisible in Python's block buffer for minutes.
+    sys.stdout.reconfigure(line_buffering=True)
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
