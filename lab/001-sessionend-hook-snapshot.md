@@ -36,8 +36,36 @@ is an undistilled session. If misses recur for other reasons (hard kills also sk
 SessionEnd), the fix is a sweep — `extract` over sessions missing claims — run at
 SessionStart or by cron, not a smarter hook.
 
+## Update (same day): the boundary is the process, not the session
+
+The "one-session blind spot" prediction above is falsified — the blind spot is
+**process-wide**. Session `73a17b59` started via `/clear` at 08:35, hours after the
+hook landed, and its `/clear` at 11:56 also fired nothing. Its successor session was
+equally blind: no SessionStart context injected, no `mcp__thalamus__` tools present.
+
+Measured cause: Claude Code snapshots hooks and launches project MCP servers at
+**process startup**, and `/clear` starts a new session inside the same process. The
+terminal in question (pid 2579766) had been running since Jul 13 23:55 — ~26 hours
+before `.mcp.json` and `.claude/settings.json` existed — so three consecutive
+sessions ran with the entire harness wiring (SessionStart prime, PostToolUse traces,
+SessionEnd distillation, the MCP server itself) inert. Timeline that proves it:
+process start Jul 13 23:55 → hooks land Jul 15 02:04 → sessions `16a29708`,
+`73a17b59`, and its successor all end or run with zero hook activity, while a
+manual pipe of the same JSON into `session-end.sh` works immediately.
+
+Consequence for the workaround: the miss is not one session but *every session
+until the operator restarts the `claude` process*, and each miss is silent. That
+upgrades the detection sweep from "operator habit" to necessary — the
+undistilled-session check (transcript with no matching `session-end-*.log`) is the
+only signal that fires regardless of process age. It also touches docs/07's pinning
+problem: any pin mechanism that relies on env or hook config being re-read "next
+session" actually means "next process", which the operator cannot observe from
+inside the harness.
+
 ## Moral
 
 Lifecycle instrumentation cannot verify itself from inside the lifecycle it
 instruments. The recovery path mattering more than the trigger is exactly why the
-trigger and the bootstrap were kept as one code path.
+trigger and the bootstrap were kept as one code path. And the unit that arms
+harness config is the process, not the session — `/clear` crosses sessions
+without crossing the config boundary.
