@@ -1,6 +1,9 @@
 # Ingestion — Feeds for Expert Subgraphs
 
-**Status:** design. Deliberately the **smallest** component in the system.
+**Status:** v0 shipped (M1, 2026-07-15) as designed below — `thalamus ingest <url|file>`,
+allowlist-gated by the expert manifest, evidence-first (archive before extraction),
+model-extracted claims/entities, contract-gated writes. PDFs refused, not half-parsed.
+Deliberately the **smallest** component in the system.
 
 ## Position: the crawler is a data feed, not the project
 

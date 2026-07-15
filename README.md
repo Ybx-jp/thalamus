@@ -22,6 +22,12 @@ Memory is bootstrapped from **retained session transcripts**, held in an immutab
 content-addressed archive that gives the provenance chain a floor
 ([docs/10](docs/10-evidence-archive.md)).
 
+**The first expert is live (M1):** the technical-literature graph — a scoped knowledge
+subgraph of tier-2 `Claim`/`Entity`/`Source` nodes, populated by `thalamus ingest`
+(allowlist-gated, evidence-first, contract-gated) and declared by an operator-owned
+manifest at `config/experts/literature.yaml`. Recalled knowledge returns blockquoted
+with citation and tier: it informs, it never instructs ([docs/05](docs/05-trust-model.md)).
+
 **The eval loop's first layer is live (M2):** every memory-tool call is trace-tapped by
 a PostToolUse hook, landed in the graph as `Trace` nodes, and each returned node is
 judged used-vs-ignored against the session's retained transcript — crude lexical
@@ -79,6 +85,7 @@ thalamus bootstrap                 # list session transcripts available to inges
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus contract check            # audit the live graph against the contract
+thalamus ingest <url|file>         # feed one document to the literature expert
 thalamus visualize                 # open the persisted memory explorer
 thalamus visualize session.yaml    # preview a pending extraction, no graph needed
 thalamus write session.yaml        # write to the graph

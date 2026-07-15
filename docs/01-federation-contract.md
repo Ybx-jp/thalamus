@@ -1,8 +1,10 @@
 # Federation Contract
 
-**Status:** design. Nothing here is implemented; the base memory system's existing
-schema (session summaries + open threads as entrypoints) is the starting point it
-must remain compatible with.
+**Status:** implementing. As of M1 the manifest exists as `config/experts/<scope>.yaml`
+(identity, tier, declared claim kinds, fetch allowlist — see `contract/manifest.py`),
+and conformance is enforced twice: at write time (`check_session`/`check_knowledge`)
+and against the live graph (`thalamus contract check`). Query interface and projection
+grants remain design.
 
 ## What it is
 

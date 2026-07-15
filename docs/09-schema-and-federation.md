@@ -43,7 +43,7 @@ The contract should *inherit* these, not replace them.
 
 | Gap | Status |
 |---|---|
-| **G1** — ontology is only the episodic half | 🟡 **partial.** `Claim` unified (decision/problem/solution are one label, discriminated by `kind`). The *knowledge* side — `Entity`, `Source` — is still absent. That is M1. |
+| **G1** — ontology is only the episodic half | ✅ **closed at M1.** `Claim` unified (one label, `kind`-discriminated, kinds now namespaceable strings). Knowledge side shipped: `Entity` (scoped, reached via `ABOUT`), `LiteratureClaim` (citation/locator), `KnowledgeBatch` as the ingestion event. |
 | **G2** — no provenance | ✅ **closed.** `Tier`, `source`, `ingested_at` on every node; `DERIVED_FROM` edges declared and written. |
 | **G3** — no scope | ✅ **closed.** Scope segment in vertex IDs, `scope` property on every node but `Artifact`, legality encoded in `ontology.edge_crosses_scope`. |
 | **G4** — plane bypasses the contract | ⬜ **open, deliberately.** Harmless at one scope; blocking at M3. |
