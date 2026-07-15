@@ -206,7 +206,10 @@ def _claim_properties(claim: Claim) -> dict[str, object]:
     `hasLabel("Claim")` and keep working when an expert introduces a new kind.
     """
     fields = claim.model_dump(
-        mode="json", exclude={"provenance", "artifacts", "kind", "description"}
+        mode="json",
+        # `about` is excluded for the same reason `derived_from` is on provenance:
+        # relationships become edges, never list-valued properties.
+        exclude={"provenance", "artifacts", "kind", "description", "about"},
     )
     return {key: value for key, value in fields.items() if value is not None}
 
@@ -225,7 +228,7 @@ def _write_claims(
         provenance = claim.provenance or session.default_provenance()
 
         properties = {
-            "kind": claim.kind.value,
+            "kind": claim.kind,
             "description": claim.description,
             "scope": session.scope,
             **_claim_properties(claim),
@@ -338,6 +341,115 @@ def _write_thread_refs(
             _ensure_edge(g, session_vid, thread_vid, "RESOLVES")
         else:
             _ensure_edge(g, session_vid, thread_vid, "CONTINUES")
+
+
+def write_knowledge(g: GraphTraversalSource, batch) -> str:
+    """Write one ingestion event into an expert's knowledge subgraph.
+
+    Source (the retained article) -> Claims (DERIVED_FROM it) -> Entities (ABOUT).
+    Re-ingesting a changed article creates a new Source that SUPERSEDES the previous
+    head for the same origin — versioning stays visible to the eval loop (docs/06).
+    Returns the Source vertex ID.
+    """
+    provenance = batch.default_provenance()
+    source = batch.source
+    source_vid = vid("Source", source.content_hash, batch.scope)
+
+    prior_heads = _article_heads(g, batch.scope, source.origin or "")
+
+    properties = {
+        "content_hash": source.content_hash,
+        "kind": source.kind.value,
+        "title": source.title,
+        "uri": source.uri,
+        "origin": source.origin or "",
+        "byte_size": source.byte_size,
+        "scope": batch.scope,
+        **_provenance_properties(source.provenance or provenance),
+    }
+    graph_traversal = (
+        g.merge_v({T.id: source_vid, T.label: "Source"})
+        .option(Merge.on_create, {T.id: source_vid, **properties})
+        .option(Merge.on_match, properties)
+    )
+    _iterate(graph_traversal, "upsert Source", source_vid)
+
+    for head_vid in prior_heads:
+        if head_vid != source_vid:
+            _ensure_edge(g, source_vid, head_vid, "SUPERSEDES")
+
+    entity_vids: dict[str, str] = {}
+    for entity in batch.entities:
+        entity_vid = vid("Entity", entity.slug(), batch.scope)
+        entity_properties = {
+            "name": entity.name,
+            "kind": entity.kind,
+            "description": entity.description or "",
+            "scope": batch.scope,
+            **_provenance_properties(entity.provenance or provenance),
+        }
+        graph_traversal = (
+            g.merge_v({T.id: entity_vid, T.label: "Entity"})
+            .option(Merge.on_create, {T.id: entity_vid, **entity_properties})
+            .option(Merge.on_match, entity_properties)
+        )
+        _iterate(graph_traversal, "upsert Entity", entity_vid)
+        entity_vids[entity.name] = entity_vid
+
+    for claim in batch.claims:
+        claim_vid = vid("Claim", claim.content_id(), batch.scope)
+        claim_properties = {
+            "kind": claim.kind,
+            "description": claim.description,
+            "scope": batch.scope,
+            **_claim_properties(claim),
+            **_provenance_properties(claim.provenance or provenance),
+        }
+        graph_traversal = (
+            g.merge_v({T.id: claim_vid, T.label: "Claim"})
+            .option(Merge.on_create, {T.id: claim_vid, **claim_properties})
+            .option(Merge.on_match, claim_properties)
+        )
+        _iterate(graph_traversal, "upsert Claim", claim_vid)
+
+        # The provenance floor: this claim is what the SOURCE asserts, so the edge to
+        # the retained bytes is not optional decoration — it is what keeps tier 2 a
+        # walkable fact instead of a sticker.
+        _ensure_edge(g, claim_vid, source_vid, "DERIVED_FROM")
+        for name in claim.about:
+            if name in entity_vids:
+                _ensure_edge(g, claim_vid, entity_vids[name], "ABOUT")
+
+    logger.info(
+        "Wrote knowledge batch: %s (scope=%s, %d claims, %d entities)",
+        source.origin or source.title,
+        batch.scope,
+        len(batch.claims),
+        len(batch.entities),
+    )
+    return source_vid
+
+
+def _article_heads(g: GraphTraversalSource, scope: str, origin: str) -> list[str]:
+    """Current head Sources for an article origin within a scope."""
+    if not origin:
+        return []
+    try:
+        return [
+            str(head)
+            for head in (
+                g.V()
+                .has_label("Source")
+                .has("scope", scope)
+                .has("kind", "article")
+                .has("origin", origin)
+                .not_(__.in_e("SUPERSEDES"))
+                .id_()
+                .to_list()
+            )
+        ]
+    except Exception:
+        return []
 
 
 def _snapshot_heads(g: GraphTraversalSource, session_vid: str) -> list[str]:

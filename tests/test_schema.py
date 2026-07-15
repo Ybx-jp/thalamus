@@ -100,7 +100,7 @@ def test_claim_subtypes_share_one_label_and_differ_by_kind():
     )
 
     # Verifies: consumers depend on Claim, not on its subtypes (docs/09 G1)
-    assert [claim.kind.value for claim in session.claims()] == ["decision", "problem"]
+    assert [claim.kind for claim in session.claims()] == ["decision", "problem"]
 
 
 def test_session_extractions_are_tier_one_by_construction():

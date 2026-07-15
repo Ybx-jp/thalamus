@@ -78,7 +78,12 @@ CORE_NODES: tuple[NodeType, ...] = (
     # `source` points at a Session whose content is a summary — a distillation of itself.
     # docs/03's inspector ("walk from a belief to where it came from") needs to terminate
     # in evidence, not in another summary.
-    NodeType("Source", "source", "title", kinds=("transcript",)),
+    NodeType("Source", "source", "title", kinds=("transcript", "article")),
+    # The knowledge half of G1: a domain concept in an expert's knowledge subgraph.
+    # Scoped — each expert names its own world. Convergence across experts happens
+    # through claims and global artifacts, never through shared entities: a shared
+    # entity vocabulary would be a channel, and channels route through consultation.
+    NodeType("Entity", "entity", "name", kinds=("concept", "technique", "system")),
     # The one global. Not scoped, deliberately. See module docstring.
     NodeType("Artifact", "artifact", "identifier", scoped=False),
     # A retrieval event: one memory-tool call, recorded verbatim by the PostToolUse tap
@@ -127,7 +132,15 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     # the older, giving "the transcript of session X" a well-defined head: the Source
     # with no incoming SUPERSEDES edge. Superseded snapshots stay archived and
     # walkable — they are evidence of what earlier distillations saw.
-    EdgeType("SUPERSEDES", note="Source -> Source, same session's transcript only."),
+    EdgeType(
+        "SUPERSEDES",
+        note="Source -> Source, within one evidence lineage: a session's transcript "
+        "snapshots, or re-ingestions of one article origin (docs/06).",
+    ),
+    # Claim -> Entity: what an assertion is about. The knowledge subgraph's connective
+    # tissue — entities are reached through the claims that mention them, so an entity
+    # nobody asserts anything about is an orphan the contract rejects.
+    EdgeType("ABOUT", note="Claim -> Entity"),
     EdgeType(
         "RETURNS",
         note="Trace -> Session/Claim/Thread/Artifact. Carries `used`/`evidence` after "

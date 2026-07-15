@@ -122,6 +122,57 @@ def prune_orphan_artifacts(session: SessionGraph) -> SessionGraph:
     return session.model_copy(update={"artifacts": pruned})
 
 
+def check_knowledge(batch) -> list[str]:
+    """What an ingestion event must satisfy before it may be written (docs/06).
+
+    Feeds are contract clients like everything else, held to a *stricter* standard
+    than sessions: a session's provenance is derivable, a feed's must be explicit.
+    """
+    issues: list[str] = []
+
+    if not batch.scope or batch.scope == "main":
+        issues.append(
+            "Feeds write into an expert's knowledge subgraph, never `main` — "
+            "the main scope is episodic, and ingested content is not lived experience"
+        )
+
+    if not batch.source.origin:
+        issues.append("Source has no origin — no provenance, no write (docs/05)")
+    if not batch.source.content_hash:
+        issues.append("Source has no content_hash — evidence must be retained first")
+
+    if not batch.claims:
+        issues.append(
+            "Batch asserts nothing — an ingestion with no claims is archival, "
+            "and archival alone does not need Thalamus (docs/06)"
+        )
+
+    declared_entities = {entity.name for entity in batch.entities}
+    referenced = batch.referenced_entity_names()
+    for name in sorted(declared_entities - referenced):
+        issues.append(
+            f"Orphan entity: '{name}' — no claim is about it; entities are reached "
+            "through claims, or not at all"
+        )
+    for name in sorted(referenced - declared_entities):
+        issues.append(f"Claim references undeclared entity: '{name}'")
+
+    for claim in batch.claims:
+        if "/" not in claim.kind:
+            issues.append(
+                f"Knowledge claim kind must be namespaced (`literature/finding`), "
+                f"got '{claim.kind}' — core kinds belong to episodic claims"
+            )
+        if claim.provenance is not None and claim.provenance.tier < 2:
+            issues.append(
+                f"Claim '{claim.description[:40]}' claims tier "
+                f"{int(claim.provenance.tier)} — a feed cannot mint trust above "
+                "CURATED; distillation does not launder, and neither does ingestion"
+            )
+
+    return issues
+
+
 # --------------------------------------------------------------------------------------
 # Live-graph audit — `thalamus contract check`
 # --------------------------------------------------------------------------------------

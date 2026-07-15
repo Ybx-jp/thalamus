@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from enum import Enum, IntEnum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from thalamus.contract.ontology import MAIN_SCOPE
 
@@ -106,6 +106,7 @@ class Artifact(BaseModel):
 
 class SourceKind(str, Enum):
     TRANSCRIPT = "transcript"
+    ARTICLE = "article"
 
 
 class Source(BaseModel):
@@ -143,12 +144,23 @@ class Claim(BaseModel):
     ingestion event. Same node, different provenance — which is what makes the trust
     model expressible, and what collapses contradiction detection into one mechanism
     instead of two (docs/09 G1).
+
+    `kind` is a string, not the enum: core kinds come from ClaimKind, and experts add
+    namespaced extensions (`literature/finding`) without touching core — consumers
+    depend on the `Claim` label, never on the kind list (docs/01).
     """
 
-    kind: ClaimKind
+    kind: str
     description: str = Field(description="The assertion itself")
     artifacts: list[str] = Field(default_factory=list, description="Artifact identifiers")
     provenance: Optional[Provenance] = None
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _kind_to_plain_string(cls, value):
+        """Accept ClaimKind members but store the bare value — graph properties and
+        content hashes must never depend on Python enum identity."""
+        return value.value if isinstance(value, Enum) else value
 
     def content_id(self) -> str:
         """Stable, content-addressed identity.
@@ -169,21 +181,55 @@ class Claim(BaseModel):
 
 
 class Decision(Claim):
-    kind: ClaimKind = ClaimKind.DECISION
+    kind: str = ClaimKind.DECISION.value
     rationale: str
     outcome: Optional[str] = None
 
 
 class Problem(Claim):
-    kind: ClaimKind = ClaimKind.PROBLEM
+    kind: str = ClaimKind.PROBLEM.value
     category: ProblemCategory
 
 
 class Solution(Claim):
-    kind: ClaimKind = ClaimKind.SOLUTION
+    kind: str = ClaimKind.SOLUTION.value
     approach: str
     worked: bool = True
     problem_ref: Optional[int] = Field(None, description="Index into problems list")
+
+
+class LiteratureClaim(Claim):
+    """An assertion made by an external source — the knowledge half of G1.
+
+    Tier 2 by construction: it records what a source *asserts*, not what the agent
+    believes. The citation is the claim's own anchor into its Source, the same job
+    message-UUID anchors do for transcripts.
+    """
+
+    kind: str = "literature/finding"
+    citation: Optional[str] = Field(
+        None, description="Short verbatim quote or section reference inside the source"
+    )
+    locator: Optional[str] = Field(None, description="Page, anchor, or section id")
+    about: list[str] = Field(
+        default_factory=list, description="Entity names this claim is about"
+    )
+
+
+class Entity(BaseModel):
+    """A domain concept in an expert's knowledge subgraph: a technique, a system,
+    a recurring idea. Scoped — each expert names its own world; convergence across
+    experts happens through claims and artifacts, not shared entities.
+    """
+
+    name: str = Field(description="Canonical name — the node's identity within its scope")
+    kind: str = Field("concept", description="concept | technique | system | <extension>")
+    description: Optional[str] = None
+    provenance: Optional[Provenance] = None
+
+    def slug(self) -> str:
+        """Vertex-ID segment: lowercase, hyphenated, stable across mentions."""
+        return "-".join("".join(c if c.isalnum() else " " for c in self.name.lower()).split())
 
 
 class Touch(BaseModel):
@@ -337,3 +383,39 @@ class SessionGraph(BaseModel):
             }
         }
     }
+
+
+class KnowledgeBatch(BaseModel):
+    """One ingestion event: what a feed writes into an expert's knowledge subgraph.
+
+    The episodic twin is SessionGraph; this is the knowledge half of G1. The shape is
+    deliberately smaller — a Source (the retained article, tier 2), the claims it
+    asserts, and the entities those claims are about. No threads, no touches: feeds
+    write knowledge, never episodic memory (docs/06).
+    """
+
+    scope: str = Field(description="The expert's scope. Feeds never write `main`.")
+    feed: str = Field("manual", description="Feed identity, e.g. `manual`")
+    source: Source
+    claims: list[LiteratureClaim] = Field(default_factory=list)
+    entities: list[Entity] = Field(default_factory=list)
+
+    def default_provenance(self) -> Provenance:
+        """Tier 2 by construction: curated third-party content, sourced to its origin.
+
+        The tier is not the batch's to choose — a feed writing through this model gets
+        CURATED, and anything wilder needs a different write path that does not exist.
+        """
+        return Provenance(
+            tier=Tier.CURATED,
+            source=self.source.origin or f"feed:{self.feed}",
+            ingested_at=self.source.provenance.ingested_at
+            if self.source.provenance
+            else datetime.now(timezone.utc),
+        )
+
+    def referenced_entity_names(self) -> set[str]:
+        referenced: set[str] = set()
+        for claim in self.claims:
+            referenced.update(claim.about)
+        return referenced
