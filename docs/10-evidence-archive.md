@@ -132,7 +132,13 @@ media server carry VPN credentials, and sessions about the résumé carry person
   by more than one session — free-text descriptions never collide byte-identically across
   independent extractions. "This keeps coming up" needs either claim-normalization,
   feeding existing claims into the prompt the way open threads are fed, or semantic
-  matching. Open, and now measured rather than assumed.
+  matching. ~~Open~~ **Addressed 2026-07-15** with the first two: identity narrowed to
+  (kind, normalized description) — the secondary fields it used to hash were why nothing
+  ever collided — and recent known claims now ride into extraction prompts so the model
+  can converge on wording it can see. The live graph was migrated (1,114 → 1,113 claims;
+  the dry run surfaced the first real convergence the old identity had missed). Whether
+  the rate becomes meaningful is the next extraction batch's measurement; semantic
+  matching stays parked.
 
 ## Open questions
 

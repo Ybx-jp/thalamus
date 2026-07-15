@@ -72,18 +72,29 @@ def test_the_same_claim_in_two_sessions_converges_on_one_node():
     assert session_a.decisions[0].content_id() == session_b.decisions[0].content_id()
 
 
-def test_changing_a_claims_substance_changes_its_identity():
+def test_identity_is_the_assertion_not_its_supporting_fields():
     """
-    Scenario: A decision's rationale is revised
+    Scenario: The same decision re-asserted with a revised rationale; a genuinely
+    different decision; cosmetic whitespace/punctuation drift
 
     Verifications:
-    - a different rationale yields a different node, not a silent in-place rewrite
-    """
-    before = Decision(description="Use TinkerGraph", rationale="Real traversals")
-    after = Decision(description="Use TinkerGraph", rationale="Already have the infra")
+    - a revised rationale converges on the SAME node (latest-wins property update)
+    - a different assertion is a different node
+    - whitespace and a trailing period do not fork identity
 
-    # Verifies: substance is part of identity — the subtype's own fields count
-    assert before.content_id() != after.content_id()
+    This reverses the original "substance is part of identity" design, on evidence:
+    the first full-corpus run measured ZERO convergences across 1,089 claims (docs/10)
+    because no two sessions reproduce a rationale byte-for-byte. The assertion is the
+    identity; everything else is a property. Decision log 2026-07-15.
+    """
+    revised = Decision(description="Use TinkerGraph", rationale="Already have the infra")
+    original = Decision(description="Use TinkerGraph", rationale="Real traversals")
+    different = Decision(description="Use Neo4j", rationale="Real traversals")
+    cosmetic = Decision(description="  Use   TinkerGraph.", rationale="Real traversals")
+
+    assert original.content_id() == revised.content_id()
+    assert original.content_id() != different.content_id()
+    assert original.content_id() == cosmetic.content_id()
 
 
 def test_claim_subtypes_share_one_label_and_differ_by_kind():

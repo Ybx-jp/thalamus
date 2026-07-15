@@ -58,6 +58,13 @@ class Provenance(BaseModel):
     )
 
 
+def _normalized(description: str) -> str:
+    """The hashing form of a claim's description: whitespace collapsed, one trailing
+    period dropped. Deliberately conservative — no casefolding, no stemming; anything
+    smarter is semantic matching, which is a different (parked) mechanism."""
+    return " ".join(description.split()).rstrip(".")
+
+
 class Tool(str, Enum):
     CURSOR = "cursor"
     CLAUDE_CODE = "claude_code"
@@ -163,19 +170,25 @@ class Claim(BaseModel):
         return value.value if isinstance(value, Enum) else value
 
     def content_id(self) -> str:
-        """Stable, content-addressed identity.
+        """Stable, content-addressed identity: **(kind, normalized description) only.**
 
         Replaces the old positional IDs (`decision:<session>:<index>`), under which a
         re-extraction with a reordered list silently overwrote *different* nodes, and no
         claim could ever be cited, superseded, or contradicted — fatal for a system whose
         headline demo is "walk from a belief to its source" (docs/09 G6).
 
-        Note the consequence: the same claim asserted in two sessions now converges on
-        **one** vertex with two CONTAINS edges. That is desirable — it is how "this keeps
-        coming up" becomes a graph fact rather than a human impression, and it is exactly
-        how Artifact has always behaved.
+        The identity deliberately excludes the secondary fields (rationale, outcome,
+        approach, citation …). The first design hashed all of them — "substance is part
+        of identity" — and the first full-corpus measurement returned the verdict:
+        convergence fired **zero** times across 1,089 claims (docs/10), because two
+        sessions never reproduce a rationale byte-for-byte. An identity function that
+        never converges has no identity function. So the assertion is the identity and
+        the supporting fields are properties, latest-write-wins — re-asserting a claim
+        with a fresh rationale updates the node rather than forking it, and "this keeps
+        coming up" becomes the graph fact it was always meant to be (two CONTAINS edges,
+        exactly how Artifact has always behaved). Decision log 2026-07-15.
         """
-        payload = self.model_dump(mode="json", exclude={"provenance", "artifacts"})
+        payload = {"kind": self.kind, "description": _normalized(self.description)}
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 

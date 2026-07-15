@@ -406,6 +406,7 @@ def _cmd_extract(args):
                 project=facts.project,
                 title=facts.title or name,
                 open_threads=_open_threads(graph, args.scope, facts.project),
+                known_claims=_known_claims(graph, args.scope, facts.project),
             )
 
             try:
@@ -584,6 +585,45 @@ def _cmd_eval(args, eval_parser):
     else:
         eval_parser.print_help()
         sys.exit(1)
+
+
+def _known_claims(graph, scope: str, project: str, limit: int = 50) -> list[dict]:
+    """Recent claims for the convergence feed: what wording already exists.
+
+    Recency-bounded (last dozen sessions) and capped — the feed exists so the model
+    can converge on wording it can see, not to replay the whole corpus into every
+    prompt.
+    """
+    from gremlin_python.process.traversal import Order
+
+    try:
+        rows = (
+            graph.V()
+            .has_label("Session")
+            .has("scope", scope)
+            .has("project", project)
+            .order()
+            .by("timestamp", Order.desc)
+            .limit(12)
+            .out("CONTAINS")
+            .has_label("Claim")
+            .value_map("kind", "description")
+            .to_list()
+        )
+    except Exception:
+        return []
+
+    claims: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        description = row.get("description", [""])[0]
+        if not description or description in seen:
+            continue
+        seen.add(description)
+        claims.append({"kind": row.get("kind", [""])[0], "description": description})
+        if len(claims) >= limit:
+            break
+    return claims
 
 
 def _cmd_visualize(args):

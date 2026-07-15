@@ -200,8 +200,11 @@ resolving an existing thread over spawning a duplicate.
 7. **artifacts** — only list artifacts you reference from a decision/problem/solution/\
 thread. Every artifact you list MUST appear in at least one such reference, or it will \
 be rejected as an orphan. Use exact file paths as they appear in the transcript.
-8. Claims are content-addressed: identical text in two sessions converges on one node. \
-Write a claim the same way when you mean the same thing.
+8. Claims are content-addressed on (kind, description): identical descriptions converge \
+on one node — that is how "this keeps coming up" becomes a graph fact. If this session \
+re-asserts one of the KNOWN CLAIMS listed below, copy its description EXACTLY and put \
+what is new in the other fields (rationale, outcome, approach). Only word a claim \
+differently when the assertion itself is genuinely different.
 9. Do NOT emit session_id, timestamp, tool, project, scope, sources, or touched — those \
 are stamped from the record.
 
@@ -242,6 +245,9 @@ thread_refs:
 ### Existing open threads in this project
 {open_threads}
 
+### Known claims in this project (re-assert by copying the description exactly)
+{known_claims}
+
 ### Session metadata
 Project: {project}
 Session title: {title}
@@ -257,6 +263,7 @@ def build_prompt(
     project: str,
     title: str,
     open_threads: list[dict] | None = None,
+    known_claims: list[dict] | None = None,
 ) -> str:
     if open_threads:
         rendered = "\n".join(
@@ -264,8 +271,20 @@ def build_prompt(
         )
     else:
         rendered = "(none)"
+    # The convergence feed (docs/10): the same mechanism as open threads, pointed at
+    # claims. The model can only converge on wording it can see.
+    if known_claims:
+        rendered_claims = "\n".join(
+            f"- [{c['kind']}] {c['description']}" for c in known_claims
+        )
+    else:
+        rendered_claims = "(none)"
     return _PROMPT_TEMPLATE.format(
-        open_threads=rendered, project=project, title=title, digest=digest
+        open_threads=rendered,
+        known_claims=rendered_claims,
+        project=project,
+        title=title,
+        digest=digest,
     )
 
 
