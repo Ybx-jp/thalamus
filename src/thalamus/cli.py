@@ -103,6 +103,26 @@ def main():
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
     )
 
+    # Ingest command — curated feed v0, manual-first (docs/06)
+    ingest_parser = subparsers.add_parser(
+        "ingest", help="Ingest one document into an expert's knowledge subgraph"
+    )
+    ingest_parser.add_argument("location", help="URL (allowlist-gated) or local file path")
+    ingest_parser.add_argument(
+        "--scope", default="literature", help="Expert scope; needs a manifest in config/experts/"
+    )
+    ingest_parser.add_argument("--feed", default="manual", help="Feed identity (default: manual)")
+    ingest_parser.add_argument(
+        "--model", default=None, help="Extraction model for claude -p (default: sonnet)"
+    )
+    ingest_parser.add_argument("--title", default="", help="Override the extracted title")
+    ingest_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    ingest_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
+    )
+
     # Contract command — the federation boundary, audited (docs/01, docs/09 M1)
     contract_parser = subparsers.add_parser(
         "contract", help="Federation-contract operations against the live graph"
@@ -184,6 +204,8 @@ def main():
         _cmd_bootstrap(args)
     elif args.command == "extract":
         _cmd_extract(args)
+    elif args.command == "ingest":
+        _cmd_ingest(args)
     elif args.command == "contract":
         _cmd_contract(args, contract_parser)
     elif args.command == "eval":
@@ -461,6 +483,58 @@ def _open_threads(graph, scope: str, project: str) -> list[dict]:
         }
         for row in rows
     ]
+
+
+def _cmd_ingest(args):
+    from thalamus.contract.conformance import check_knowledge
+    from thalamus.contract.manifest import load_manifest
+    from thalamus.harness import extraction as extraction_mod
+    from thalamus.harness import ingest as ingest_mod
+    from thalamus.substrate.writer import write_knowledge
+
+    try:
+        manifest = load_manifest(args.scope)
+    except (FileNotFoundError, ValueError) as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        batch, run = ingest_mod.ingest(
+            args.location,
+            scope=args.scope,
+            feed=args.feed,
+            model=args.model or extraction_mod.DEFAULT_MODEL,
+            title=args.title,
+        )
+    except (ingest_mod.IngestError, extraction_mod.ExtractionError) as e:
+        print(f"Ingest failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Retained: {batch.source.uri} ({batch.source.byte_size:,} bytes)")
+    print(f"Extracted: {len(batch.claims)} claims, {len(batch.entities)} entities "
+          f"(${run.cost_usd:.2f})")
+    print(f"  {batch.source.title}")
+    for claim in batch.claims:
+        print(f"  - [{claim.kind.split('/')[-1]}] {claim.description[:90]}")
+
+    issues = [*check_knowledge(batch), *manifest.check_batch(batch)]
+    if issues:
+        print("\nREJECTED — the batch does not satisfy the contract:", file=sys.stderr)
+        for issue in issues:
+            print(f"  - {issue}", file=sys.stderr)
+        print("The fetch is archived; fix and re-run without refetching cost.", file=sys.stderr)
+        sys.exit(1)
+
+    if not args.write:
+        print("\nDRY RUN — nothing written to the graph. Re-run with --write to persist.")
+        return
+
+    graph = connect(args.url)
+    try:
+        source_vid = write_knowledge(graph, batch)
+        print(f"\nWritten into scope `{batch.scope}`: {source_vid}")
+    finally:
+        close_connection(graph)
 
 
 def _cmd_contract(args, contract_parser):
