@@ -196,6 +196,7 @@ class AuditEdge:
     from_label: str
     to_vid: str
     to_label: str
+    properties: dict = field(default_factory=dict)
 
 
 def audit_vertices(vertices: list[AuditVertex]) -> list[str]:
@@ -261,6 +262,49 @@ def audit_edges(edges: list[AuditEdge]) -> list[str]:
                 f"({edge.from_label}) -> `{edge.to_vid}` ({edge.to_label}) — "
                 "lineage is a fact about evidence snapshots only"
             )
+
+        if edge.label == "CONSULTS" and (
+            edge.from_label != "Session" or edge.to_label != "Exchange"
+        ):
+            issues.append(
+                f"CONSULTS between wrong endpoints: `{edge.from_vid}` "
+                f"({edge.from_label}) -> `{edge.to_vid}` ({edge.to_label}) — "
+                "a consultation is a Session's edge to its Exchange record (docs/02)"
+            )
+    return issues
+
+
+_EXCHANGE_STATUSES = frozenset({"open", "answered"})
+
+
+def audit_exchanges(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list[str]:
+    """Exchange-record obligations — the ticket protocol's contract half (docs/02).
+
+    An answered exchange must carry at least one `role: citation` REFERENCES edge:
+    consult_answer only closes on validated citations, so an answered-but-uncited
+    exchange in the live graph means something wrote around the protocol.
+    """
+    issues: list[str] = []
+    cited = {
+        edge.from_vid
+        for edge in edges
+        if edge.label == "REFERENCES" and edge.properties.get("role") == "citation"
+    }
+    for vertex in vertices:
+        if vertex.label != "Exchange":
+            continue
+        status = str(vertex.properties.get("status") or "")
+        if status not in _EXCHANGE_STATUSES:
+            issues.append(
+                f"Exchange `{vertex.vid}` has status `{status or '(none)'}` — "
+                f"the protocol knows {', '.join(sorted(_EXCHANGE_STATUSES))}"
+            )
+        if status == "answered" and vertex.vid not in cited:
+            issues.append(
+                f"Exchange `{vertex.vid}` is answered but cites nothing — "
+                "consult_answer is the only close path and it validates citations; "
+                "this exchange was closed around the protocol"
+            )
     return issues
 
 
@@ -307,6 +351,7 @@ def check_graph(g, archive_base: Path | None = None) -> tuple[list[str], dict[st
     issues = [
         *audit_vertices(vertices),
         *audit_edges(edges),
+        *audit_exchanges(vertices, edges),
         *audit_orphans(vertices, edges),
         *audit_evidence(vertices, archive_base),
     ]
@@ -340,6 +385,11 @@ def _fetch(g) -> tuple[list[AuditVertex], list[AuditEdge]]:
                 from_label=str(out_v.get(T.label, "")),
                 to_vid=str(in_v.get(T.id, "")),
                 to_label=str(in_v.get(T.label, "")),
+                properties={
+                    str(key): value
+                    for key, value in row.items()
+                    if key not in (T.id, T.label, Direction.OUT, Direction.IN)
+                },
             )
         )
     return vertices, edges

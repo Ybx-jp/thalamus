@@ -383,6 +383,26 @@ def recall_open_threads(
     return [_thread_result(g, thread, scope) for thread in threads]
 
 
+def load_exchange(g: GraphTraversalSource, exchange_vid: str) -> dict | None:
+    """Load one consultation exchange by its vertex ID (= the ticket, docs/02).
+
+    Returns the flat properties the ticket protocol decides on — expert, from_scope,
+    status — or None for a ticket that was never minted. The server resolves scope
+    grants from this record, never from a tool parameter: a model cannot widen its
+    own view by inventing a ticket, because an uninvented ticket loads nothing.
+    """
+    rows = (
+        g.V(exchange_vid)
+        .has_label("Exchange")
+        .value_map("question", "expert", "from_scope", "status")
+        .limit(1)
+        .to_list()
+    )
+    if not rows:
+        return None
+    return {key: _first(value) for key, value in rows[0].items()}
+
+
 def knowledge_entities(
     g: GraphTraversalSource, scope: str, limit: int = 200
 ) -> list[dict]:

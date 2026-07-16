@@ -14,6 +14,7 @@ from thalamus.contract.conformance import (
     AuditVertex,
     audit_edges,
     audit_evidence,
+    audit_exchanges,
     audit_orphans,
     audit_vertices,
 )
@@ -104,6 +105,58 @@ def test_supersedes_is_for_evidence_snapshots_only():
 
     assert len(issues) == 1
     assert "SUPERSEDES between non-Sources" in issues[0]
+
+
+def test_consults_is_a_sessions_edge_to_its_exchange_record():
+    """
+    Scenario: A CONSULTS edge written between the wrong node types
+
+    docs/02 makes the consultation a Session -> Exchange fact; anything else is a
+    write that bypassed the ticket protocol.
+    """
+    wrong = AuditEdge(label="CONSULTS",
+                      from_vid="scope:main:session:s1", from_label="Session",
+                      to_vid="scope:literature:claim:c1", to_label="Claim")
+    right = AuditEdge(label="CONSULTS",
+                      from_vid="scope:main:session:s1", from_label="Session",
+                      to_vid="scope:main:exchange:t1", to_label="Exchange")
+
+    issues = audit_edges([wrong, right])
+
+    assert len(issues) == 1
+    assert "CONSULTS between wrong endpoints" in issues[0]
+
+
+def test_an_answered_exchange_must_cite_and_statuses_are_closed_vocabulary():
+    """
+    Scenario: Three Exchange vertices — answered with a citation edge, answered
+    with none, and one carrying a status the protocol never mints
+
+    consult_answer is the only close path and it validates citations (docs/02, the
+    write-path stance of arXiv 2606.04329) — so an answered-but-uncited exchange in
+    the live graph means something wrote around the protocol.
+    """
+    def _exchange(vid, status):
+        return AuditVertex(vid=vid, label="Exchange",
+                           properties={**_PROV, "scope": "main", "status": status})
+
+    cited = _exchange("scope:main:exchange:t1", "answered")
+    uncited = _exchange("scope:main:exchange:t2", "answered")
+    alien = _exchange("scope:main:exchange:t3", "haunted")
+    citation = AuditEdge(label="REFERENCES",
+                         from_vid=cited.vid, from_label="Exchange",
+                         to_vid="scope:literature:claim:c1", to_label="Claim",
+                         properties={"role": "citation"})
+    brief_only = AuditEdge(label="REFERENCES",
+                           from_vid=uncited.vid, from_label="Exchange",
+                           to_vid="scope:literature:thread:th1", to_label="Thread",
+                           properties={"role": "brief"})
+
+    issues = audit_exchanges([cited, uncited, alien], [citation, brief_only])
+
+    assert len(issues) == 2
+    assert any("t2" in i and "cites nothing" in i for i in issues)
+    assert any("t3" in i and "haunted" in i for i in issues)
 
 
 def test_unknown_edge_labels_are_reported():

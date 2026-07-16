@@ -103,6 +103,17 @@ class TraceEvent:
     def is_miss(self) -> bool:
         return bool(_MISS_RE.match(self.tool_response.strip()))
 
+    def ticket(self) -> str:
+        """The consultation ticket this call carried, if it ran under one (docs/02).
+
+        This is how a consultation gets attributed to its session: the MCP server
+        cannot see its caller, but the tap records the tool input verbatim, so the
+        ticket in a recall's input is the join key between the session and the
+        Exchange vertex the ticket names.
+        """
+        value = self.tool_input.get("ticket")
+        return value if isinstance(value, str) else ""
+
     def is_legacy(self) -> bool:
         """A non-empty response with no vertex IDs: recorded before node-level rendering."""
         return (

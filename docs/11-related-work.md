@@ -159,6 +159,14 @@ list is the first thing to re-check on every future scan:
    pillar is published separately; the union as working software is the
    engineering contribution, and we should call it an engineering contribution, not
    a research one.
+4. **"The mint is the write"** — a server-minted, single-use consultation ticket in
+   which creating the exchange record and granting cross-scope authority are the
+   same act, so an unrecorded consultation is impossible by construction
+   ([02-expert-subgraphs.md](02-expert-subgraphs.md)). The components are all
+   published — capability tokens are classical systems security, execution
+   provenance and evidence tracing are surveyed in 2606.04990, write-path gating in
+   2606.04329 — but the scan did not find the coupling used as a *memory-formation*
+   mechanism between agent scopes. Provisional, like everything on this list.
 
 ## 5. Open challenges this literature puts to the design
 

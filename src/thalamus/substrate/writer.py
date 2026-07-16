@@ -482,6 +482,54 @@ def _snapshot_heads(g: GraphTraversalSource, session_vid: str) -> list[str]:
         return []
 
 
+def write_exchange(
+    g: GraphTraversalSource,
+    exchange_vid: str,
+    properties: dict[str, object],
+    brief_refs: list[str] | None = None,
+) -> None:
+    """Open one consultation exchange record — the mint IS the write (docs/02).
+
+    The vertex is created at ticket-mint time, before any answer exists, so an
+    unrecorded consultation is impossible by construction. `brief_refs` are the
+    consulted scope's nodes the server assembled into the expert brief; each gets an
+    Exchange -[REFERENCES {role: brief}]-> node edge — the consulted expert's record
+    of what it served, by ID, never copied.
+    """
+    graph_traversal = (
+        g.merge_v({T.id: exchange_vid, T.label: "Exchange"})
+        .option(Merge.on_create, {T.id: exchange_vid, **properties})
+        .option(Merge.on_match, properties)
+    )
+    _iterate(graph_traversal, "upsert Exchange", exchange_vid)
+
+    for ref_vid in brief_refs or []:
+        _ensure_edge(g, exchange_vid, ref_vid, "REFERENCES", {"role": "brief"})
+
+
+def close_exchange(
+    g: GraphTraversalSource,
+    exchange_vid: str,
+    properties: dict[str, object],
+    citation_refs: list[str],
+) -> None:
+    """Close an exchange with its validated answer, burning the ticket.
+
+    `citation_refs` have already been validated to resolve inside the consulted scope
+    (harness/consultation.py); each gets an Exchange -[REFERENCES {role: citation}]->
+    node edge — the answer's evidence-support record. The status flip to `answered`
+    rides in `properties`, and it is what makes the ticket single-use: an answered
+    exchange refuses further answers and grants no further retrieval.
+    """
+    graph_traversal = g.V(exchange_vid).has_label("Exchange")
+    for key, value in properties.items():
+        graph_traversal = graph_traversal.property(key, value)
+    _iterate(graph_traversal, "update Exchange", exchange_vid)
+
+    for ref_vid in citation_refs:
+        _ensure_edge(g, exchange_vid, ref_vid, "REFERENCES", {"role": "citation"})
+
+
 def write_trace(
     g: GraphTraversalSource,
     trace_vid: str,

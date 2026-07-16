@@ -20,8 +20,9 @@ from thalamus.archive import read_archived
 from thalamus.contract.ontology import NODES_BY_LABEL, vid
 from thalamus.eval.attribution import attribute, outputs_after
 from thalamus.eval.traces import TraceEvent, load_events
+from thalamus.harness.consultation import exchange_vid as _consultation_exchange_vid
 from thalamus.substrate.schema import Provenance, Tier
-from thalamus.substrate.writer import write_trace
+from thalamus.substrate.writer import _ensure_edge, write_trace
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,8 @@ def _land_event(
                 else:
                     outcome.ignored += 1
 
+    exchange_vid = _exchange_vid(g, event)
+
     if write:
         provenance = Provenance(
             tier=Tier.FIRST_PARTY,
@@ -156,11 +159,32 @@ def _land_event(
             "source": provenance.source,
             "ingested_at": provenance.ingested_at.isoformat(),
         }
+        if exchange_vid:
+            properties["exchange_id"] = exchange_vid
         write_trace(g, vid("Trace", event.trace_id(), scope), properties, session_vid, returns)
+        if exchange_vid:
+            # The CONSULTS edge lands here, not at mint time: the MCP server cannot
+            # see its caller's session (lab/001), but the tap records the ticket, so
+            # sync is where the consulting Session and its Exchange finally meet.
+            _ensure_edge(g, session_vid, exchange_vid, "CONSULTS")
 
     outcome.written += 1
     if event.is_miss():
         outcome.misses += 1
+
+
+def _exchange_vid(g: GraphTraversalSource, event: TraceEvent) -> str | None:
+    """The Exchange vertex behind this trace's ticket, if it was ever minted.
+
+    A ticket the model invented names no vertex; merging a CONSULTS edge to it would
+    500 the whole sync (the hallucinated-thread_ref lesson), so existence is checked
+    here and a dangling ticket is simply not a consultation.
+    """
+    ticket = event.ticket()
+    if not ticket:
+        return None
+    vertex_id = _consultation_exchange_vid(ticket)
+    return vertex_id if _vertex_exists(g, vertex_id) else None
 
 
 def _session_scope(

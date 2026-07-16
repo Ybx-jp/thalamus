@@ -92,6 +92,13 @@ CORE_NODES: tuple[NodeType, ...] = (
     # next to the nodes they grade instead of in a side database. Scoped to the pin the
     # querying session ran under: a trace is episodic memory of that expert's use.
     NodeType("Trace", "trace", "query", expandable=False),
+    # One inter-expert consultation (docs/02). The vertex IS the ticket: minting it
+    # opens the exchange record, so an unrecorded consultation is impossible by
+    # construction, and `consult_answer` is the only close path. Lives in `main` —
+    # consultation routes through the main scope, never expert-to-expert — and holds
+    # both sides of the exchange: what was asked (question, from_scope) and what was
+    # served (answer, plus REFERENCES edges into the consulted scope's nodes).
+    NodeType("Exchange", "exchange", "question", expandable=False),
 )
 
 CORE_EDGES: tuple[EdgeType, ...] = (
@@ -117,8 +124,22 @@ CORE_EDGES: tuple[EdgeType, ...] = (
         "message UUIDs inside the Source that this node was distilled from, so the "
         "provenance walk lands on the exact evidence rather than a whole transcript.",
     ),
-    EdgeType("REFERENCES", may_cross_scope=True, note="main -> expert node, by ID. Never copies."),
-    EdgeType("CONSULTS", may_cross_scope=True, note="Session -> expert (docs/02)."),
+    EdgeType(
+        "REFERENCES",
+        may_cross_scope=True,
+        note="main -> expert node, by ID. Never copies. From an Exchange it carries a "
+        "`role` property: 'brief' (served into the consultation's expert brief) or "
+        "'citation' (cited by the validated answer) — the evidence-support record of "
+        "the exchange.",
+    ),
+    EdgeType(
+        "CONSULTS",
+        may_cross_scope=True,
+        note="Session -> Exchange (docs/02). The consulting session's side of a "
+        "consultation. The MCP server cannot see its caller's session id (a measured "
+        "harness limit, lab/001), so this edge is landed by `eval sync`/distillation "
+        "from the ticket carried in retrieval traces, not at mint time.",
+    ),
     # The eval loop's layer 1 (docs/04). QUERIES parallels CONTAINS/SPAWNS: the session
     # is the hub, the trace is its child event. RETURNS records what the retrieval put
     # into context; after attribution it carries `used` (bool) and `evidence` — the

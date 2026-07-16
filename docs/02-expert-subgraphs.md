@@ -1,6 +1,7 @@
 # Expert Subgraphs — the Specialist Roster
 
-**Status:** design.
+**Status:** implementing — the consultation-ticket protocol is built (see "The ticket
+protocol" below); pinning and the second expert remain design.
 
 ## The idea
 
@@ -74,6 +75,60 @@ itself eval-loop input.
 Consultation crosses the federation contract like everything else: the consulted
 expert returns *data with provenance*, never directives
 ([05-trust-model.md](05-trust-model.md)).
+
+## The ticket protocol (as built, 2026-07-16)
+
+**The mint is the write.** `consult_request(expert, question)` mints a single-use
+consultation ticket, and minting it *is* opening the `Exchange` record in the graph —
+the ticket ID is the Exchange vertex ID, so an unrecorded consultation is impossible
+by construction. `consult_answer(ticket, answer)` is the only close path: it validates
+that every citation in the answer (backticked vertex IDs, exactly as recall renders
+them) resolves inside the consulted scope, rejects uncitable advice with the ticket
+left open, and on success records the answer and burns the ticket.
+
+Mechanics, in the order a consultation runs:
+
+1. **Mint** — the server (never the model) validates the expert against the manifest
+   roster, assembles the **expert brief** from the consulted scope's own memory (open
+   threads, recent sessions, question-matched recall; manifest identity is the only
+   tier-0 framing — no hand-written personas), and writes the Exchange: `main` scope,
+   `status: open`, with `role: brief` REFERENCES edges to every node the brief served.
+   A scope with nothing to cite refuses the mint — an expert with no memory cannot
+   produce a citable answer.
+2. **Scoped retrieval** — the consulting session spawns a subagent voicing the expert;
+   the recall tools accept the ticket and resolve the granted scope **from the
+   exchange record server-side**. An invented or burned ticket grants nothing and
+   fails closed. Grants are per-exchange and non-transitive (depth 1, as designed).
+3. **Close** — the validated answer lands on the Exchange with `role: citation`
+   REFERENCES edges: the answer's evidence-support record. The ticket is burned;
+   answered exchanges refuse further answers and grant no further retrieval.
+4. **Attribution** — the MCP server cannot see its caller's session (a measured
+   harness limit, lab/001), so the Session -[CONSULTS]-> Exchange edge and the
+   trace's `exchange_id` land at `eval sync` time, joined through the ticket the
+   PostToolUse tap recorded verbatim. Consultation transcripts are sidechains in the
+   parent session's JSONL, already retained by the archive; the exchange record
+   anchors into them, so later enrichment is `extract` over an anchored slice.
+
+The audit half ([01](01-federation-contract.md)): `thalamus contract check` verifies
+CONSULTS edges connect Session → Exchange only, exchange statuses stay in the minted
+vocabulary, and an answered exchange carries at least one citation edge — an
+answered-but-uncited exchange means something wrote around the protocol.
+
+### Prior work
+
+The 2026 literature already names both halves of this design. The exchange record is
+**execution provenance** — "the typed graph of an agent execution", explicitly
+including multi-agent collaboration steps — and citation validation is **evidence
+tracing**, "the projection of execution provenance onto evidence-support relations"
+(survey, arXiv 2606.04990; in the graph as feed `thalamus`). The citation gate's
+placement is the write-path stance of the memory-poisoning literature: consultation
+is a memory write channel, and "existing prompt injection defenses fail to cover
+memory poisoning" (arXiv 2606.04329), so the defense sits where the exchange is
+written, not where the answer is read. Both are *instantiations* of published
+consensus, and claimed as nothing more. What the 2026 scan did not surface is the
+coupling itself — a server-minted, single-use ticket where record-creation and
+authority-grant are the same act ("not found in the 2026 scan", provisional; see
+[11-related-work.md](11-related-work.md) §4).
 
 ## Roster discipline
 
