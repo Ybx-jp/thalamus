@@ -112,14 +112,19 @@ agent-authored variant of the transcript-mediated-laundering gap
 
 Experiments, ranked by information-per-effort (each run produces a lab entry):
 
-| # | Experiment | Hypothesis | Teaches |
+| # | Experiment | Hypothesis | Status (lab/004, 2026-07-16) |
 |---|---|---|---|
-| T0 | Per-teammate env inheritance (lab/004) | Teammates inherit the lead's env — one team, one pin, unless launched otherwise | Whether per-teammate pins come free; gates T1/T3 |
-| T5 | Mailbox traffic vs collaboration graph | Most inter-teammate coordination bypasses the consultation protocol | How much of "watch the roster collaborate" ([02](02-expert-subgraphs.md)) the instrumentation actually sees |
-| T2 | Per-teammate distillation | N teammates → N SessionEnd distillations → per-expert episodic memory at process level | Whether teams give docs/02's "both sides remember" for free |
-| T1 | Pin-quality A/B | Same task, literature-pinned vs main-pinned teammate: pinned retrievals show a higher used-ratio in-domain | The first measured pin-quality number (M4 precursor) |
-| T4 | Mailbox canary (M5) | A canary claim in teammate A's scope, relayed by mailbox, lands tier-1 in teammate B's scope | The concrete red-team path for the laundering gap, and evidence for the mitigation choice |
-| T3 | Counterfactual arm (M4) | Memory-on vs memory-degraded teammate on one task: the memory arm resolves faster / reuses decisions | The M4 counterfactual harness existing as a team blueprint |
+| T0 | Per-teammate env inheritance | Teammates inherit the lead's env — one team, one pin, unless launched otherwise | **Confirmed** (n=1): teammate ran pinned `literature`, own session/ledger row/tap lines. Distinct per-teammate pins need per-teammate launch control |
+| T5 | Mailbox traffic vs collaboration graph | Most inter-teammate coordination bypasses the consultation protocol | **Confirmed a fortiori**: no `inboxes/*.json` materialized at all (`in-process` delivery), zero Exchange/CONSULTS — the only durable record is the transcripts |
+| T2 | Per-teammate distillation | N teammates → N SessionEnd distillations → per-expert episodic memory at process level | **Confirmed** (free ride on the T0 run): teammate distilled into its pinned scope, own SessionEnd |
+| T1 | Pin-quality A/B | Same task, literature-pinned vs main-pinned teammate: pinned retrievals show a higher used-ratio in-domain | Unblocked in design (env per teammate, or pinned windows joined as a team); parked pending the lead-cwd anomaly |
+| T4 | Mailbox canary (M5) | A canary claim in teammate A's scope, relayed inter-teammate, lands tier-1 in teammate B's scope | Rescoped by T5: there may be no mailbox file to plant into — the channel to red-team is transcript distillation itself |
+| T3 | Counterfactual arm (M4) | Memory-on vs memory-degraded teammate on one task: the memory arm resolves faster / reuses decisions | Parked; same unblock as T1 |
+
+**Measured anomaly to re-check before trusting lead-side behavior:** a headless
+teams lead launched from this repo armed the *stepmania* project's harness (wrong
+cwd recorded in the team config; transcript landed in the wrong project dir; no
+thalamus hooks or MCP for the lead). n=1, cause unknown — lab/004 §4.
 
 ## The limit lab (the senior story)
 

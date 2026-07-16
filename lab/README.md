@@ -19,3 +19,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [001](001-sessionend-hook-snapshot.md) | The session that installs a SessionEnd hook is never distilled by it | workaround |
 | [002](002-truncated-source-attribution.md) | Attribution against a truncated Source snapshot silently under-counts | workaround |
 | [003](003-the-process-is-the-pin.md) | The process boundary that blocked pinning is the pinning mechanism | workaround |
+| [004](004-agent-teams-first-contact.md) | Agent Teams: pins inherit, coordination leaves no artifact, the lead armed the wrong repo | measurements |

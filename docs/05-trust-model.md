@@ -123,7 +123,10 @@ structural-safety posture: not "it can't happen," but "it can't happen *silently
   inter-teammate messages that land in the receiver's transcript and distill as
   tier-1 — the same laundering path with an *agent* author instead of a web page,
   and with no consultation ticket, citation gate, or Exchange record anywhere in
-  the channel. Experiment T4 (mailbox canary) is the concrete red-team for it.
+  the channel. **Measured 2026-07-16 (lab/004):** in the first live team run the
+  delivery was `in-process` — no mailbox file ever existed to audit, so the
+  transcripts are the *only* durable record of the exchange, and they distill
+  tier-1. The channel to red-team (T4) is transcript distillation itself.
 - **The tier floor is documented, not computed.** The schema states effective trust
   is the *floor* over a node's DERIVED_FROM closure, and write-time laundering is
   gated and tested (a feed cannot mint tier 1). But the read path renders only the
