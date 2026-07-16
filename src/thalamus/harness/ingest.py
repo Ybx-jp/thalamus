@@ -139,12 +139,22 @@ def build_batch(
     uri: str,
     byte_size: int,
     title_override: str = "",
+    known_entities: list[dict] | None = None,
 ) -> KnowledgeBatch:
     """Assemble the contract-facing batch from a parsed extraction.
 
     Provenance is stamped here, not trusted from the model: tier CURATED, sourced to
     the origin, timestamped now. The model contributes judgement (claims, entities),
     never trust.
+
+    `known_entities` (name/kind/description rows from the scope's graph) closes a gap
+    the convergence feed opened: the prompt tells the model to reuse known entity
+    names in `about`, and the model reasonably treats a name the graph already holds
+    as not needing re-declaration — which the contract then rejects as undeclared.
+    Re-declaring a known entity requires no model judgement, so it is backfilled here,
+    with the graph's own shape (never placeholders — the writer overwrites on match).
+    Unknown undeclared names still reject: a genuinely new entity needs a description
+    only the model can supply.
     """
     provenance = Provenance(
         tier=Tier.CURATED,
@@ -175,6 +185,21 @@ def build_batch(
         if isinstance(item, dict) and item.get("name")
     ]
 
+    known = {str(row["name"]): row for row in known_entities or [] if row.get("name")}
+    declared = {entity.name for entity in entities}
+    referenced = {name for claim in claims for name in claim.about}
+    for name in sorted(referenced - declared):
+        row = known.get(name)
+        if row:
+            entities.append(
+                Entity(
+                    name=name,
+                    kind=str(row.get("kind") or "concept"),
+                    description=(str(row["description"]) if row.get("description") else None),
+                    provenance=provenance,
+                )
+            )
+
     return KnowledgeBatch(
         scope=scope,
         feed=feed,
@@ -199,10 +224,13 @@ def ingest(
     feed: str = "manual",
     model: str = extraction.DEFAULT_MODEL,
     title: str = "",
-    known_entities: list[str] | None = None,
+    known_entities: list[dict] | None = None,
 ) -> tuple[KnowledgeBatch, extraction.ExtractionRun]:
     """The full v0 path: fetch → retain → extract → assemble. Contract checks and
-    graph writes belong to the caller (the CLI), which also owns dry-run semantics."""
+    graph writes belong to the caller (the CLI), which also owns dry-run semantics.
+
+    `known_entities` rows carry name/kind/description from the scope's graph — names
+    feed the prompt, the full shape feeds the batch backfill (see build_batch)."""
     payload, origin = fetch(location)
     entry = archive_bytes(payload, suffix=".txt" if not payload.startswith(b"<") else ".html")
 
@@ -213,7 +241,8 @@ def ingest(
             "anything; the fetch is archived either way"
         )
 
-    run = extraction.run_extraction(build_prompt(text, origin, known_entities), model=model)
+    known_names = [str(row["name"]) for row in known_entities or [] if row.get("name")]
+    run = extraction.run_extraction(build_prompt(text, origin, known_names), model=model)
     data = extraction.parse_extraction(run.text)
 
     batch = build_batch(
@@ -225,5 +254,6 @@ def ingest(
         uri=entry.uri,
         byte_size=entry.byte_size,
         title_override=title,
+        known_entities=known_entities,
     )
     return batch, run

@@ -162,7 +162,11 @@ class ThreadResult:
 
 
 def recall(
-    g: GraphTraversalSource, query: str, limit: int = 5, scope: str = MAIN_SCOPE
+    g: GraphTraversalSource,
+    query: str,
+    limit: int = 5,
+    scope: str = MAIN_SCOPE,
+    knowledge_scopes: list[str] | None = None,
 ) -> list:
     """Natural language recall — sessions, episodic claims, and knowledge claims.
 
@@ -175,10 +179,19 @@ def recall(
     knowledge claim and returns *itself*, quoted with citation and tier — an expert's
     knowledge is claims, not sessions, and dropping session-less claims would make
     every knowledge subgraph unretrievable.
+
+    Episodic matching is pinned to `scope`. Knowledge matching additionally covers
+    `knowledge_scopes` — the expert subgraphs the *server* has decided this session
+    may consult (docs/07: never a tool parameter; docs/08: the literature consultant
+    serves everything). Without this, episodic scope `main` and knowledge scope
+    `literature` can never meet in one recall and every expert's knowledge is
+    unreachable from the harness.
     """
     keywords = _extract_keywords(query)
     if not keywords:
         return recall_recent(g, limit, scope)
+
+    claim_scopes = [scope, *(s for s in knowledge_scopes or [] if s != scope)]
 
     matched_session_ids: dict[str, float] = {}
     matched_knowledge_vids: dict[str, float] = {}
@@ -214,7 +227,7 @@ def recall(
         knowledge = (
             g.V()
             .has_label("Claim")
-            .has("scope", scope)
+            .has("scope", P.within(claim_scopes))
             .has("description", TextP.containing(keyword))
             .not_(__.in_e("CONTAINS"))
             .id_()
@@ -222,17 +235,18 @@ def recall(
         )
         for claim_vid in knowledge:
             key = str(claim_vid)
-            matched_knowledge_vids[key] = matched_knowledge_vids.get(key, 0) + 1.0
+            matched_knowledge_vids[key] = matched_knowledge_vids.get(key, 0) + 2.0
 
     relevance = f"matched on: {', '.join(keywords)}"
-    candidates = [
-        *((score, "session", session_id) for session_id, score in matched_session_ids.items()),
-        *((score, "claim", claim_vid) for claim_vid, score in matched_knowledge_vids.items()),
-    ]
-    candidates.sort(key=lambda item: item[0], reverse=True)
+    sessions_ranked = sorted(
+        matched_session_ids.items(), key=lambda item: item[1], reverse=True
+    )
+    knowledge_ranked = sorted(
+        matched_knowledge_vids.items(), key=lambda item: item[1], reverse=True
+    )
 
     results = []
-    for _, shape, identifier in candidates[:limit]:
+    for shape, identifier in _mixed_window(sessions_ranked, knowledge_ranked, limit):
         if shape == "session":
             results.append(_load_session_result(g, identifier, relevance, scope))
         else:
@@ -240,6 +254,33 @@ def recall(
             if knowledge_result is not None:
                 results.append(knowledge_result)
     return results
+
+
+def _mixed_window(
+    sessions_ranked: list[tuple[str, float]],
+    knowledge_ranked: list[tuple[str, float]],
+    limit: int,
+) -> list[tuple[str, str]]:
+    """Merge ranked sessions and ranked knowledge claims into one result window.
+
+    Sessions accumulate score from long summaries and every contained claim, so in a
+    single mixed ranking episodic memory reliably drowns knowledge claims — which
+    would make the expert subgraphs unretrievable in practice, not just in the query.
+    When both kinds match, knowledge holds up to half the window (ranked on merit
+    within its own kind); a pure-episodic or pure-knowledge match uses the full
+    window unchanged, and leftover space backfills with more knowledge.
+    """
+    reserved = min(len(knowledge_ranked), limit // 2) if sessions_ranked else len(knowledge_ranked)
+    chosen = [
+        *(("claim", vid_) for vid_, _ in knowledge_ranked[:reserved]),
+        *(("session", sid) for sid, _ in sessions_ranked[: limit - reserved]),
+    ]
+    if len(chosen) < limit:
+        chosen.extend(
+            ("claim", vid_)
+            for vid_, _ in knowledge_ranked[reserved : reserved + limit - len(chosen)]
+        )
+    return chosen[:limit]
 
 
 def recall_by_artifact(
@@ -342,26 +383,41 @@ def recall_open_threads(
     return [_thread_result(g, thread, scope) for thread in threads]
 
 
+def knowledge_entities(
+    g: GraphTraversalSource, scope: str, limit: int = 200
+) -> list[dict]:
+    """Entities already in an expert's knowledge subgraph, with their stored shape.
+
+    These are the join points between articles: the names feed the extraction prompt
+    (the model can only reuse a name it can see), and the full shape lets ingestion
+    re-declare a referenced known entity faithfully instead of rejecting the batch
+    or clobbering the vertex with placeholders.
+    """
+    rows = (
+        g.V()
+        .has_label("Entity")
+        .has("scope", scope)
+        .order()
+        .by("name")
+        .limit(limit)
+        .value_map("name", "kind", "description")
+        .to_list()
+    )
+    return [
+        {
+            "name": _first(row.get("name")),
+            "kind": _first(row.get("kind")),
+            "description": _first(row.get("description")),
+        }
+        for row in rows
+    ]
+
+
 def knowledge_entity_names(
     g: GraphTraversalSource, scope: str, limit: int = 200
 ) -> list[str]:
-    """Names of the entities already in an expert's knowledge subgraph.
-
-    These are the join points between articles, so ingestion feeds them to the
-    extraction prompt — the model can only reuse a name it can see.
-    """
-    return [
-        str(name)
-        for name in (
-            g.V()
-            .has_label("Entity")
-            .has("scope", scope)
-            .values("name")
-            .order()
-            .limit(limit)
-            .to_list()
-        )
-    ]
+    """Names of the entities already in an expert's knowledge subgraph."""
+    return [entity["name"] for entity in knowledge_entities(g, scope, limit)]
 
 
 def recall_thread(

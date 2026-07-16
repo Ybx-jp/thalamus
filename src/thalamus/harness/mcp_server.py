@@ -25,6 +25,7 @@ from thalamus.substrate.reader import (
 )
 from thalamus.substrate.schema import SessionGraph
 from thalamus.contract.conformance import check_session, validate_connectivity
+from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.plane.mermaid import session_to_mermaid
 from thalamus.substrate.writer import close_connection, connect, write_session
@@ -36,19 +37,27 @@ GRAPH_URL = os.environ.get("THALAMUS_GRAPH_URL", "ws://localhost:8182/gremlin")
 # The session's pin. Resolved by the session-start hook, never by the model.
 SCOPE = os.environ.get("THALAMUS_SCOPE", MAIN_SCOPE)
 
+# Expert knowledge subgraphs recall may consult alongside the pinned scope's episodic
+# memory. Server-side policy, same as SCOPE: derived from the expert manifests on
+# disk (docs/08 — the literature consultant serves everything), never a tool
+# parameter. Until M3 consultation tickets exist, every manifest-backed expert is
+# consultable; the ticket protocol will narrow this to per-exchange grants.
+KNOWLEDGE_SCOPES = [s for s in available_scopes() if s != SCOPE]
+
 mcp = FastMCP("thalamus")
 
 
 @mcp.tool
 def memory_recall(query: str, limit: int = 5) -> str:
     """Search memory for relevant past sessions using natural language.
-    Returns summaries of past coding sessions that match the query.
+    Returns summaries of past coding sessions that match the query, plus any
+    matching expert knowledge claims (quoted, cited, tier-labelled).
     """
     g = _connect()
     if isinstance(g, str):
         return g
     try:
-        results = recall(g, query, limit, SCOPE)
+        results = recall(g, query, limit, SCOPE, knowledge_scopes=KNOWLEDGE_SCOPES)
         return _format_results(results)
     finally:
         _close(g)

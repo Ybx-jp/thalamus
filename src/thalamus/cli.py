@@ -501,13 +501,13 @@ def _cmd_ingest(args):
 
     # Advisory, like the known-claims feed: an unreachable graph degrades to an
     # ingest with no entity vocabulary, never a failed ingest.
-    known_entities: list[str] = []
+    known_entities: list[dict] = []
     try:
-        from thalamus.substrate.reader import knowledge_entity_names
+        from thalamus.substrate.reader import knowledge_entities
 
         graph = connect(args.url)
         try:
-            known_entities = knowledge_entity_names(graph, args.scope)
+            known_entities = knowledge_entities(graph, args.scope)
         finally:
             close_connection(graph)
     except Exception:

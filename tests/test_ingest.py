@@ -154,6 +154,67 @@ def test_build_batch_stamps_provenance_and_drops_malformed_items():
         assert node.provenance.source == "https://arxiv.org/abs/2303.11366"
 
 
+def test_build_batch_backfills_referenced_known_entities_faithfully():
+    """
+    Scenario: The prompt told the model to reuse a known entity name; the model used
+    it in `about` but — reasonably — did not re-declare something the graph already
+    holds. A second `about` name is genuinely unknown.
+
+    Verifications:
+    - the known name is backfilled into the batch with the graph's own kind and
+      description (the writer overwrites on match, so placeholders would clobber)
+    - the unknown name is NOT backfilled — it must stay a contract rejection,
+      because a new entity needs a description only the model can supply
+    """
+    data = {
+        "title": "A Survey of Evidence Tracing",
+        "claims": [
+            {"description": "Provenance-bearing memory tracks how items enter memory",
+             "kind": "literature/technique", "citation": "Sec 5",
+             "about": ["Memory Mechanism", "Execution Provenance"]},
+        ],
+        "entities": [
+            {"name": "Execution Provenance", "kind": "concept",
+             "description": "Typed graph of an agent execution"},
+        ],
+    }
+
+    batch = build_batch(
+        data,
+        scope="literature",
+        feed="thalamus",
+        origin="https://arxiv.org/abs/2606.04990",
+        content_hash="deadbeef",
+        uri="archive://deadbeef",
+        byte_size=1234,
+        known_entities=[
+            {"name": "Memory Mechanism", "kind": "concept",
+             "description": "How agent memory systems store and retrieve"},
+            {"name": "Unreferenced Known", "kind": "technique", "description": "x"},
+        ],
+    )
+
+    by_name = {entity.name: entity for entity in batch.entities}
+    assert set(by_name) == {"Execution Provenance", "Memory Mechanism"}
+    backfilled = by_name["Memory Mechanism"]
+    assert backfilled.kind == "concept"
+    assert backfilled.description == "How agent memory systems store and retrieve"
+
+    data["claims"][0]["about"].append("Never Seen Before")
+    rejected = build_batch(
+        data,
+        scope="literature",
+        feed="thalamus",
+        origin="https://arxiv.org/abs/2606.04990",
+        content_hash="deadbeef",
+        uri="archive://deadbeef",
+        byte_size=1234,
+        known_entities=[{"name": "Memory Mechanism", "kind": "concept",
+                         "description": "How agent memory systems store and retrieve"}],
+    )
+    assert "Never Seen Before" not in {entity.name for entity in rejected.entities}
+
+
 def test_prompt_carries_known_entities_for_name_convergence():
     """
     Scenario: The scope already names entities; a new article is being ingested

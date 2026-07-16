@@ -166,3 +166,37 @@ def test_keyword_extraction_drops_stopwords_and_short_tokens():
         "graph",
         "schema?",
     ]
+
+
+def test_mixed_recall_window_reserves_room_for_knowledge_claims():
+    """
+    Scenario: A query matches both a pile of episodic sessions and a few expert
+    knowledge claims
+
+    Verifications:
+    - knowledge claims hold up to half the window even when sessions outscore them
+      (session scores accumulate over long summaries and contained claims, so a
+      single mixed ranking would drown the expert subgraph — unretrievable in
+      practice)
+    - a pure-episodic match uses the full window for sessions
+    - a pure-knowledge match uses the full window for claims
+    - leftover space backfills with more knowledge
+    """
+    from thalamus.substrate.reader import _mixed_window
+
+    sessions = [(f"s{i}", 20.0 - i) for i in range(6)]
+    knowledge = [("k1", 4.0), ("k2", 2.0)]
+
+    window = _mixed_window(sessions, knowledge, limit=4)
+    assert window == [("claim", "k1"), ("claim", "k2"), ("session", "s0"), ("session", "s1")]
+
+    assert _mixed_window(sessions, [], limit=3) == [
+        ("session", "s0"), ("session", "s1"), ("session", "s2"),
+    ]
+    assert _mixed_window([], knowledge, limit=3) == [("claim", "k1"), ("claim", "k2")]
+
+    # One session, three knowledge claims, window of 4: knowledge backfills.
+    window = _mixed_window(sessions[:1], [("k1", 4.0), ("k2", 3.0), ("k3", 2.0)], limit=4)
+    assert window == [
+        ("claim", "k1"), ("claim", "k2"), ("session", "s0"), ("claim", "k3"),
+    ]
