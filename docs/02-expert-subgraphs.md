@@ -1,7 +1,8 @@
 # Expert Subgraphs — the Specialist Roster
 
 **Status:** implementing — the consultation-ticket protocol is built (see "The ticket
-protocol" below); pinning and the second expert remain design.
+protocol" below) and expert #2 (evaluation-methodology, [08](08-roster-candidates.md))
+is live behind it; pinning remains design, blocked on the lab/001 harness limit.
 
 ## The idea
 
@@ -133,8 +134,10 @@ authority-grant are the same act ("not found in the 2026 scan", provisional; see
 ## Roster discipline
 
 - **M1 ships one expert** (the technical-literature graph). **M3 ships the second**
-  — likely a per-project code-context expert — and the second one is the point: it
-  proves the contract. Two proves N.
+  — evaluation-methodology, decided and shipped 2026-07-16
+  ([08](08-roster-candidates.md) records the selection; an earlier draft guessed
+  "per-project code-context" here) — and the second one is the point: it proves
+  the contract. Two proves N: the manifest was the whole rollout.
 - New experts must justify themselves against the null hypothesis of "just put it in
   an existing expert." The eval loop arbitrates: if a candidate domain's retrievals
   don't cluster, it isn't an expert.

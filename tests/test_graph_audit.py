@@ -96,6 +96,22 @@ def test_cross_scope_edges_are_legal_only_where_the_ontology_says_so():
     assert "Illegal cross-scope edge" in issues[0]
 
 
+def test_returns_may_cross_scope_because_the_tap_records_what_the_reader_served():
+    """
+    Scenario: a main-scope retrieval trace RETURNS a knowledge claim from an
+    expert scope — an ordinary recall serving tier-2 knowledge (docs/05), or a
+    ticket-scoped consultation recall.
+
+    The tap is observability, not authority: what the reader may return is the
+    reader's server-side policy, and the trace must be able to record it.
+    """
+    served = AuditEdge(label="RETURNS",
+                       from_vid="scope:main:trace:t1", from_label="Trace",
+                       to_vid="scope:literature:claim:c1", to_label="Claim")
+
+    assert audit_edges([served]) == []
+
+
 def test_supersedes_is_for_evidence_snapshots_only():
     wrong = AuditEdge(label="SUPERSEDES",
                       from_vid="scope:main:claim:a", from_label="Claim",

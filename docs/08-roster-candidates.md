@@ -91,6 +91,41 @@ different claims:
 Pick by which claim M3 needs to establish first, not by which expert is more
 interesting.
 
+### Decided 2026-07-16: evaluation-methodology
+
+Two facts settled it, neither available when the contenders were parked:
+
+1. **Homelab is a spine expert, and spine experts are exercised by pinning — which
+   is blocked** on the lab/001 harness limit (config arms per process; the MCP
+   server cannot see its caller's session). A homelab expert built today sits
+   inert, and its corpus is not in the archive: the media-server sessions were
+   deliberately excluded from the bootstrap allowlist (VPN credentials).
+2. **Consultants are exercised by consultation, which shipped 2026-07-16 and is
+   live.** Eval-methodology is consultable the day its manifest exists, and the
+   tap instruments it from its first retrieval.
+
+Shipped as `config/experts/eval-methodology.yaml` — the zero-glue test held: a
+new manifest and *nothing else* (the one code change the rollout forced,
+`RETURNS may_cross_scope`, was a pre-existing audit-rule lag exposed by the
+first traces landing, not expert plumbing). The null hypothesis ("a feed into
+literature") stays open on purpose: the split stands until retrieval clustering
+says merge, which is this doc's own discipline — measurement makes the cut.
+
+**Prior work.** A second access-governed scope instantiates published consensus,
+not new ground: explicit authority and scope on multi-agent memory reads/writes
+is a named first-class concern of the agentic-web infrastructure survey (arXiv
+2606.20570), and shared graph memory with provenance-linked traces is production
+tooling (Neo4j, NODES AI 2026) — see [11](11-related-work.md) §3. The domain
+choice *converges* on the field's own turn from retrieval-QA proxies to
+downstream-utility evaluation (survey arXiv 2603.07670; Mem2ActBench arXiv
+2601.19935). The expert's anchor knowledge is the judge/meta-evaluation
+literature (A Survey on LLM-as-a-Judge, arXiv 2411.15594) and counterfactual
+consequence-level evaluation (MQuAKE, arXiv 2305.14795), procured against
+recorded demands: the eval loop's lexical-only attribution ([11](11-related-work.md)
+§5) and the M4 counterfactual harness. Nothing here is claimed as novel; the
+roster mechanics (split-until-measurement-says-merge) are this project's own
+discipline, no more.
+
 ## Anti-candidate (recorded so it stays dead)
 
 - **A broad "AI engineer" expert.** Worst of both kinds: too coarse for sharp

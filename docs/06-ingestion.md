@@ -44,6 +44,15 @@ literature expert. Added 2026-07-15 alongside the first stepmania/nodeglass feed
    splitting happens top-down only when retrievals measurably bifurcate. Feed
    identity persists on the Source vertex, so "what was procured for project X"
    stays a one-hop query and the eval loop can attribute knowledge utility per feed.
+   *Scope note (2026-07-16):* this rule forbids scopes created as a side effect of
+   procurement, not scopes created as deliberate roster decisions — a new expert
+   declared in docs/08's terms with its own manifest (e.g. `eval-methodology`, M3)
+   procures its anchors into its own scope, because a scope with nothing to cite
+   refuses the consultation mint (docs/02). A manifest's `claim_kinds` must be
+   kinds its feed actually writes (the ingest extractor writes
+   `literature/finding|technique`); declaring kinds no writer produces makes the
+   manifest aspirational, and the contract rejects the batch — measured on this
+   scope's first ingest.
 2. **Demand-driven selection.** A document earns ingestion by bearing on a question
    the project has actually asked — an open thread, a recorded problem, a design
    decision in flight. Procure against the target project's open threads, not

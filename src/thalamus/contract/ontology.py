@@ -164,9 +164,13 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     EdgeType("ABOUT", note="Claim -> Entity"),
     EdgeType(
         "RETURNS",
+        may_cross_scope=True,
         note="Trace -> Session/Claim/Thread/Artifact. Carries `used`/`evidence` after "
-        "attribution. Not a scope crossing: retrieval is pin-scoped server-side, so "
-        "scoped results share the trace's scope, and edges into globals never count.",
+        "attribution. May cross scope: the reader serves expert knowledge claims into "
+        "any session (tier-2, informs-never-instructs) and ticket-scoped consultation "
+        "recall returns consulted-scope nodes — the trace records what the reader "
+        "actually returned, and its legality is the reader's server-side policy, not "
+        "the tap's. A trace that cannot point at what was served is a tap that lies.",
     ),
 )
 
