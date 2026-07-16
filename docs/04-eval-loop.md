@@ -15,6 +15,15 @@ utility**: did the retrieved memory alter the agent's behavior, and for the bett
 Memory quality is a hard-to-measure quality, so we build the missing metric — same
 discipline as the taste critic, pointed at memory instead of music.
 
+This is now the field's consensus, not a lone position: the memory survey (arXiv
+2603.07670) names the same shift, and a wave of benchmarks — Mem2ActBench (arXiv
+2601.19935), MemoryArena (arXiv 2602.16313), AMA-Bench, Momento — measure memory by
+downstream, action-coupled outcomes ([11-related-work.md](11-related-work.md) §2).
+Those are all **offline benchmarks**: fixed dataset, external grader, run once.
+Thalamus's differentiator is the part none of them is — a **live, in-deployment,
+self-maintaining loop** over the operator's own sessions. We cite the benchmarks as
+the offline half we extend, not a void we fill.
+
 ## Layer 1 — Retrieval traces (M2)
 
 Every graph query the agent makes is instrumented via harness hooks

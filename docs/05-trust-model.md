@@ -10,10 +10,15 @@ Walk the path: the crawler ingests a technical article; the article (or a poison
 lookalike) contains adversarial instructions; it is embedded into the literature
 subgraph; three weeks later it is retrieved into the context of a coding agent
 running with the operator's credentials, mid-task. That is **memory poisoning** —
-persistent prompt injection with a time delay — a known attack class for agent
-memory that almost nothing in the wild actually defends against. Everyone bolts
-memory on; nobody gives it a trust model. Thalamus's federation contract is
-precisely the place to enforce one, so it does.
+persistent prompt injection with a time delay — a mapped attack class for agent
+memory (MINJA; MemoryGraft, arXiv 2512.16962; taxonomy in arXiv 2606.04329). The
+systematic study is explicit that "existing prompt-injection defenses fail to cover
+memory poisoning" and that the defense must live on the **write path, not the input
+boundary** — which is exactly what the federation contract is. Thalamus does not
+claim to have discovered the need for a memory trust model; the 2026 literature has
+converged on it ([11-related-work.md](11-related-work.md)). What Thalamus contributes
+is the *integrated, local-first instantiation* — tiers, gating, and the informs-
+never-instructs boundary as one working artifact rather than a proposed mechanism.
 
 Scope note: this is a *defensive* design for a single-operator personal system —
 the goal is that Jackson's own agent can't be steered by a web page it once read.
@@ -91,3 +96,20 @@ structural-safety posture: not "it can't happen," but "it can't happen *silently
   world until the eval loop justifies opening it.
 - Per-session tier policy defaults — conservative (tier ≤ 2 everywhere) until
   measured reason to relax.
+- **Static tiers vs. learned trust.** SuperLocalMemory (arXiv 2603.02240) uses a
+  Bayesian trust score — strictly more expressive than our four-tier ladder. The
+  single-operator scope is why static/legible wins here, but that trade must be
+  *argued*, not assumed ([11-related-work.md](11-related-work.md) §5).
+- **Recorded vs. certified provenance.** SMSR (arXiv 2606.12703) makes provenance
+  cryptographically unforgeable. For a local-only graph a tier stamp is likely
+  enough; name the gap rather than paper over it.
+- **The tier floor is documented, not computed.** The schema states effective trust
+  is the *floor* over a node's DERIVED_FROM closure, and write-time laundering is
+  gated and tested (a feed cannot mint tier 1). But the read path renders only the
+  node's stored tier — nothing walks the chain — and no test encodes "a tier-1
+  summary derived from tier-2 content renders at tier 2." Harmless today because no
+  distillation crosses tiers yet; it becomes silent laundering the day one does,
+  which is exactly the salience-driven **compaction poisoning** class in the
+  taxonomy (arXiv 2606.04329, in the graph as feed `thalamus`). Found by the
+  `ground-in-literature` test critique, 2026-07-15; close it alongside the first
+  cross-tier distillation feature, with the floor test written first.

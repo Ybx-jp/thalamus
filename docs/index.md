@@ -18,6 +18,7 @@ model and a measured utility loop. Start at [00-mission.md](00-mission.md).
 | [08-roster-candidates.md](08-roster-candidates.md) | Granularity rule (spine vs. consultant), skill-vs-expert boundary, parked candidate list | ✅ drafted | 2026-07-13 |
 | [09-schema-and-federation.md](09-schema-and-federation.md) | The ported schema vs. the contract: 7 gaps, sequencing, decisions | 🏗️ implementing — G2/G3/G6/G7 closed at M0.5 | 2026-07-14 |
 | [10-evidence-archive.md](10-evidence-archive.md) | Retained transcripts as the floor of the provenance chain; the two-stage bootstrap | 📦 shipped — both stages run over the full corpus | 2026-07-15 |
+| [11-related-work.md](11-related-work.md) | Where Thalamus sits in the 2026 literature: per-pillar prior work, retired claims, what survives, open challenges | 🔍 living — first scan 2026-07-15 | 2026-07-15 |
 | [appendix/interactive-memory-graph-spec.md](appendix/interactive-memory-graph-spec.md) | As-built spec for the viewer (historical; predates Thalamus) | 📦 shipped | 2026-07-10 |
 
 Status legend: 💭 idea → ✅ drafted → 🔍 reviewed → 🏗️ implementing → 📦 shipped
@@ -41,6 +42,7 @@ doc has been corrected against it.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-07-15 | **Retire the two novelty claims** ("no memory system has a trust model"; "the industry answers eval with vibes") and reframe all three pillars as *instantiation of the 2026 consensus*, cited in [11](11-related-work.md). Add the `ground-in-literature` skill: consult the literature expert before designing any component and critique tests against foundational claims. | A July-2026 scan found the field had independently converged on all three pillars (write-path provenance/trust tiers, downstream-utility eval, access-governed shared graph memory). The claims were true ~2024 and are now false; stating them dates the project and invites a knowledgeable reviewer to discount everything else. Honest position — integrated local-first instantiation, cited throughout — is the stronger and defensible one. Two ideas survive the scan as ours (live self-maintaining utility loop; evidence-archive-as-materialized-view); flagged provisionally in [11](11-related-work.md) §4. |
 | 2026-07-13 | Name: **Thalamus** | The brain's gating relay to specialized cortex — routing, gating, and federation in one metaphor; matches the project's anchor concepts (substrate, structural, gating). |
 | 2026-07-13 | Routing = **session-granular expert pinning**, not per-query classification | Human-legible, honest to how coding sessions work, keeps episodic memory coherent per expert; pin quality is graded by the eval loop instead of trusting a router. |
 | 2026-07-13 | Inter-expert communication rides the **harness subagent protocol**, exchanges preserved as episodic memory on both sides | No bespoke bus; consultations become first-class memory events and form a collaboration graph. |

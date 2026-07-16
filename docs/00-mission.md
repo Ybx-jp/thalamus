@@ -6,22 +6,32 @@ Build the memory substrate a coding agent deserves — federated, inspectable,
 trustworthy, and **measured** — and push it until the harness breaks, then engineer
 around the break, and repeat.
 
-Three claims this project exists to earn, in priority order:
+Three claims this project exists to earn. Thalamus does **not** claim to have
+invented any of the three — by mid-2026 the literature had converged on all of them
+independently ([11-related-work.md](11-related-work.md)). The claim is to be the
+**integrated, local-first, single-operator instantiation** of what the field is
+publishing in pieces, with each piece grounded in and cited against that work.
 
-1. **Evaluation.** "Does agent memory actually make the agent better?" is an open
-   question the industry answers with vibes. Thalamus answers it with instrumentation:
-   every retrieval is traced, utility is measured against downstream outcomes, and the
-   graph maintains itself from that signal. *Memory that measures itself.*
-2. **Platform.** Specialization does not require fine-tuning or prompt-cosplay
+1. **Structural safety.** A feed pipes third-party content into the persistent
+   memory of an agent that runs with the operator's credentials — a memory-poisoning
+   attack surface (MINJA; MemoryGraft, arXiv 2512.16962). The systematic study
+   (arXiv 2606.04329) shows the defense must act on the **write path, not the input
+   boundary** — exactly where our federation contract sits: provenance on every node,
+   trust tiers, write-gating, data-informs-but-never-instructs. This is a *rigorous
+   instantiation of the emerging write-path-provenance consensus*, not a first.
+2. **Evaluation.** Retrieval precision is the wrong test; downstream utility is the
+   right one — now the field's consensus (survey arXiv 2603.07670; Mem2ActBench,
+   arXiv 2601.19935). Those are *offline benchmarks*. Thalamus's differentiator is
+   the part none of them is: a **live, in-deployment loop** that traces the
+   operator's real sessions, attributes used-vs-ignored against their own
+   transcripts, and feeds a utility-driven forgetting policy. Benchmarks measure;
+   this self-maintains. *Memory that measures itself.*
+3. **Platform.** Specialization does not require fine-tuning or prompt-cosplay
    multi-agent theater. A specialist is a **retrieval scope**: a curated domain
    subgraph plus its own episodic history, hot-swappable behind a schema contract.
    The contract is proven the day the second expert plugs in with no bespoke glue.
-3. **Structural safety.** A crawler pipes third-party internet content into the
-   persistent memory of an agent that runs with the operator's credentials. That is a
-   memory-poisoning attack surface, and the contract is where it gets defended:
-   provenance on every node, trust tiers, write-gating, data-informs-but-never-
-   instructs. Almost no memory system in the wild has a trust model. This one is
-   designed around it.
+   (Access-governed shared graph memory is itself now a named design concern —
+   arXiv 2606.20570; our take is the local-first, contract-as-single-file version.)
 
 One sentence for the roster: **an in-context, memory-learned specialist roster** —
 each expert carries its own knowledge network and episodic memory, a master plane

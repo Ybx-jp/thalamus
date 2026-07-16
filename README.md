@@ -43,6 +43,9 @@ from its first expert onward.
 - [`docs/00-mission.md`](docs/00-mission.md) — mission and high-level design
 - [`docs/09-schema-and-federation.md`](docs/09-schema-and-federation.md) — **what the
   ported code owes the contract**: seven concrete gaps and the order to close them
+- [`docs/11-related-work.md`](docs/11-related-work.md) — **where Thalamus sits in the
+  2026 literature**: per-pillar prior work, what's convergence vs. what survives as
+  ours, and the open challenges the research puts to the design
 
 ## What's here
 
