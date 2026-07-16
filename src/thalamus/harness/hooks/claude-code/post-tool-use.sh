@@ -30,10 +30,14 @@ trace_dir="$HOME/.thalamus/traces"
 mkdir -p "$trace_dir"
 trace_file="$trace_dir/$(date -u +%Y-%m).jsonl"
 
+# scope: the pin, from the same env the MCP server read at process startup. The tap
+# records it verbatim and judges nothing — eval sync validates it like any hint.
 printf '%s' "$input" | jq -c \
   --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg scope "${THALAMUS_SCOPE:-main}" \
   '{ts: $ts,
     session_id: (.session_id // ""),
+    scope: $scope,
     cwd: (.cwd // ""),
     tool_name: (.tool_name // ""),
     tool_input: (.tool_input // {}),

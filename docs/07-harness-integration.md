@@ -1,6 +1,7 @@
 # Harness Integration — MCP, Hooks, Directives, and the Limit Lab
 
-**Status:** design. The base memory system already runs over MCP; this doc covers
+**Status:** implementing — MCP + all three hooks installed and live; session
+pinning built and measured ("the process is the pin", lab/003). This doc covers
 how Thalamus meets the Claude Code harness specifically, and how we find the
 harness's limits on purpose.
 
@@ -27,18 +28,56 @@ harness's limits on purpose.
   believe that?" (provenance walk), eval-report. Skills stay thin wrappers over MCP
   so nothing load-bearing lives in prompt text.
 
-## Session pinning mechanics
+## Session pinning mechanics (as built, 2026-07-16): the process is the pin
 
-Pinning is session-granular routing ([02-expert-subgraphs.md](02-expert-subgraphs.md));
-the harness makes it real:
+Pinning is session-granular routing ([02-expert-subgraphs.md](02-expert-subgraphs.md)).
+An earlier draft imagined the server resolving each call's session to a pin; lab/001
+measured that the harness cannot support that (MCP calls don't carry the caller's
+session, and config arms per *process*). The build inverts the limit into the
+mechanism — **one OS process = one immutable pin**:
 
-1. Session starts → hook resolves the pin (directive default, else ask) → records a
-   tier-0 episodic event.
-2. All MCP memory calls carry the session identity; the server scopes them to the
-   pinned expert. No pin, no retrieval — an unpinned session gets master-plane
-   entrypoints only.
-3. Pin is immutable for the session (v1); "wrong pin" is data, not a failure —
-   it feeds pin-quality grading.
+1. **Launch is the pin decision.** `thalamus pin <scope>` validates the scope
+   against the tier-0 manifests, regenerates the derived agent definition
+   (`.claude/agents/thalamus-<scope>.md` — generated from the manifest, never
+   hand-written), and hands the terminal to
+   `THALAMUS_SCOPE=<scope> claude --agent thalamus-<scope>` (a tmux window when
+   available, `execvp` otherwise). `thalamus roster` is the control plane: one
+   pinned tmux window per expert manifest plus `main`, idempotent. `main` is the
+   default for any plainly-launched process — an unpinned session *is* a
+   main-plane session.
+2. **The env is read once, everywhere, by construction.** `.mcp.json` passes
+   `${THALAMUS_SCOPE:-main}` to the MCP server, which reads it at process startup
+   and scopes every retrieval and write server-side — the model is never trusted
+   to self-limit its own scope, and no tool accepts a scope argument. All three
+   hooks are children of the same process and inherit the same env: SessionStart
+   appends the tier-0 pin record to `~/.thalamus/pins/pins.jsonl` and announces
+   the pin in the primed context; PostToolUse stamps the pin into every tap line;
+   SessionEnd resolves the distillation scope **ledger-first, env fallback** and
+   passes `--scope` to extraction, so the session's episodic memory lands in the
+   pinned expert's subgraph. Ledger-first keeps re-extraction from any later,
+   differently-pinned shell landing in the wrong scope and forking the Session
+   vertex identity (vids include scope).
+3. **Pin immutability is enforced by process lifetime, not policy.** A pin cannot
+   change mid-session because nothing can re-scope a running process (lab/001) —
+   the property v1 wanted is the property the harness gives. "Wrong pin" is data,
+   not a failure: it feeds pin-quality grading, and env≠ledger mismatches are
+   logged, never fatal.
+
+Every leg measured live in lab/003 before this section was written.
+
+### Prior work
+
+Access-governed shared memory — explicit authority and scope on multi-agent memory
+reads and writes — is a named first-class concern of the agent-infrastructure
+literature (arXiv 2606.20570, in the graph as feed `thalamus`), and governance of
+persistent agent memory/state is a surveyed subfield of its own (arXiv 2606.30306,
+same feed). Pinning is an *instantiation* of that consensus with the OS process as
+the authority boundary: the scope grant is fixed at process creation, outside the
+model's reach, which is the write-path stance (arXiv 2606.04329) applied to
+routing. What it trades away is exactly what docs/02 already conceded — per-query
+routing flexibility — accepted for legibility and episodic coherence. The specific
+coupling (harness process lifetime = pin immutability) is engineering, not
+research, and is claimed as nothing more.
 
 ## Inter-expert consultation via subagents
 
@@ -52,6 +91,35 @@ v1. Two properties matter:
   ([05-trust-model.md](05-trust-model.md)).
 - The transcript is not lost context — it is distilled into episodic memory on both
   sides. The harness's subagent mechanism becomes memory-forming machinery.
+
+## Agent Teams as an instrument (experimental track)
+
+Claude Code's experimental Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
+make each teammate its own process — own session id, own MCP server instances, own
+hooks. Under "the process is the pin" that means **each teammate is a pinnable
+unit**, and a team is a roster of concurrently-pinned experts with a shared task
+list and a mailbox. That makes teams less a product feature than a *measurement
+instrument* for exactly the questions this project exists to answer. The generated
+`.claude/agents/thalamus-<scope>.md` files double as teammate blueprints — the
+zero-glue test extends to teams.
+
+Two channels matter and they are not equal: consultation (ticketed, cited,
+recorded — the collaboration graph sees it) and the **teams mailbox** (JSON files
+the harness delivers between teammates — unprovenanced, invisible to the graph,
+and distilled into the receiver's transcript as tier-1). The mailbox is the
+agent-authored variant of the transcript-mediated-laundering gap
+([05-trust-model.md](05-trust-model.md)).
+
+Experiments, ranked by information-per-effort (each run produces a lab entry):
+
+| # | Experiment | Hypothesis | Teaches |
+|---|---|---|---|
+| T0 | Per-teammate env inheritance (lab/004) | Teammates inherit the lead's env — one team, one pin, unless launched otherwise | Whether per-teammate pins come free; gates T1/T3 |
+| T5 | Mailbox traffic vs collaboration graph | Most inter-teammate coordination bypasses the consultation protocol | How much of "watch the roster collaborate" ([02](02-expert-subgraphs.md)) the instrumentation actually sees |
+| T2 | Per-teammate distillation | N teammates → N SessionEnd distillations → per-expert episodic memory at process level | Whether teams give docs/02's "both sides remember" for free |
+| T1 | Pin-quality A/B | Same task, literature-pinned vs main-pinned teammate: pinned retrievals show a higher used-ratio in-domain | The first measured pin-quality number (M4 precursor) |
+| T4 | Mailbox canary (M5) | A canary claim in teammate A's scope, relayed by mailbox, lands tier-1 in teammate B's scope | The concrete red-team path for the laundering gap, and evidence for the mitigation choice |
+| T3 | Counterfactual arm (M4) | Memory-on vs memory-degraded teammate on one task: the memory arm resolves faster / reuses decisions | The M4 counterfactual harness existing as a team blueprint |
 
 ## The limit lab (the senior story)
 

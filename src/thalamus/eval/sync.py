@@ -192,14 +192,18 @@ def _session_scope(
 ) -> str | None:
     """Which scope this session's Session vertex lives in, or None if not yet distilled.
 
-    The tap does not record the pin (the hook runs outside the MCP server's process),
-    but the returned vertex IDs carry it, and failing that the distilled Session vertex
-    is the authority.
+    Precedence: the tap-recorded pin (the hook inherits THALAMUS_SCOPE from the same
+    process env the MCP server read — docs/07 "the process is the pin"), then the
+    scope the returned vertex IDs carry, then the distilled Session vertex. Every
+    candidate is validated against an existing Session vertex, so a wrong or stale
+    hint falls through instead of landing traces in a scope the session never joined.
     """
-    for event in events:
-        hint = event.scope_hint()
-        if hint and _vertex_exists(g, vid("Session", session_id, hint)):
-            return hint
+    for candidate in (
+        *(event.scope for event in events if event.scope),
+        *(hint for event in events if (hint := event.scope_hint())),
+    ):
+        if _vertex_exists(g, vid("Session", session_id, candidate)):
+            return candidate
 
     try:
         rows = (

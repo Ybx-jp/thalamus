@@ -70,6 +70,9 @@ class TraceEvent:
     tool: str  # short name, e.g. "memory_recall"
     tool_input: dict = field(default_factory=dict)
     tool_response: str = ""
+    # The pin the tap recorded (docs/07 "the process is the pin"). Empty on lines
+    # written before the hook carried it; sync validates it like any other hint.
+    scope: str = ""
 
     def trace_id(self) -> str:
         """Content-addressed identity, so re-syncing the tap converges instead of duplicating."""
@@ -186,6 +189,21 @@ def _parse_line(line: str) -> TraceEvent | None:
     elif isinstance(tool_response, dict):
         tool_response = json.dumps(tool_response)
 
+    # The thalamus MCP server itself returns {"result": <rendered text>}, and the tap
+    # records that envelope (sometimes JSON-encoded into a string). Unwrap it so the
+    # response the parser judges is the text the model actually saw — the anchored
+    # miss patterns can never match inside an envelope. Measured, not hypothetical:
+    # the first real miss in the tap (a pinned session with no open threads, lab/003)
+    # was misclassified as a legacy trace because of exactly this.
+    if isinstance(tool_response, str) and tool_response.lstrip().startswith("{"):
+        try:
+            envelope = json.loads(tool_response)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
+                tool_response = envelope["result"]
+
     return TraceEvent(
         ts=ts,
         session_id=session_id,
@@ -193,4 +211,5 @@ def _parse_line(line: str) -> TraceEvent | None:
         tool=tool,
         tool_input=tool_input if isinstance(tool_input, dict) else {},
         tool_response=tool_response if isinstance(tool_response, str) else "",
+        scope=record.get("scope") or "",
     )

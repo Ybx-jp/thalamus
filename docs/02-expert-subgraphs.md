@@ -1,8 +1,10 @@
 # Expert Subgraphs — the Specialist Roster
 
-**Status:** implementing — the consultation-ticket protocol is built (see "The ticket
-protocol" below) and expert #2 (evaluation-methodology, [08](08-roster-candidates.md))
-is live behind it; pinning remains design, blocked on the lab/001 harness limit.
+**Status:** built — the consultation-ticket protocol (see "The ticket protocol"
+below), expert #2 (evaluation-methodology, [08](08-roster-candidates.md)), and
+session pinning are all live. Pinning inverted the lab/001 limit into the
+mechanism: one process = one pin ("the process is the pin",
+[07](07-harness-integration.md), lab/003).
 
 ## The idea
 
@@ -44,10 +46,11 @@ Why this is the right trade:
   expert's episodic subgraph, so the expert accumulates *narrative* experience —
   not fragments scattered across a roster.
 
-Pinning mechanics (hook-level detail in
-[07-harness-integration.md](07-harness-integration.md)): explicit pin at session
-start (operator or CLAUDE.md directive by project directory), recorded as an
-episodic event. The eval loop's per-expert utility signal
+Pinning mechanics (as built — process-level detail in
+[07-harness-integration.md](07-harness-integration.md)): the pin is decided at
+*launch* (`thalamus pin <scope>` / `thalamus roster`), carried by the process
+environment, enforced server-side by the MCP server that read it at startup, and
+recorded tier-0 in the pin ledger. The eval loop's per-expert utility signal
 ([04-eval-loop.md](04-eval-loop.md)) later grades pin quality — sustained
 low-utility retrievals in pinned sessions means either the pin or the expert needs
 work, and the data says which.

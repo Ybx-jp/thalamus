@@ -91,6 +91,26 @@ def test_provenance_without_a_source_is_rejected():
     assert any("no provenance, no write" in issue for issue in issues)
 
 
+def test_a_pinned_sessions_graph_is_legal_in_an_expert_scope():
+    """
+    Scenario: A whole session distilled into an expert scope (a pinned session,
+    docs/07 "the process is the pin")
+
+    This was always legal — Session is generically scoped — but pinning makes it
+    load-bearing: the SessionEnd hook now passes --scope, so expert-scoped episodic
+    SessionGraphs must keep passing the write gate unchanged.
+    """
+    session = _session(
+        scope="literature",
+        artifacts=[Artifact(identifier="src/used.py", type=ArtifactType.FILE)],
+        decisions=[
+            Decision(description="d", rationale="r", artifacts=["src/used.py"]),
+        ],
+    )
+
+    assert check_session(session) == []
+
+
 def test_a_session_must_declare_a_scope():
     """
     Scenario: A session carries an empty scope

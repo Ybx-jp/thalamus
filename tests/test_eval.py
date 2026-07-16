@@ -167,6 +167,69 @@ def test_misses_and_legacy_traces_are_told_apart():
     assert legacy.is_legacy() and not legacy.is_miss()
 
 
+def test_the_servers_result_envelope_is_unwrapped_so_misses_stay_misses(tmp_path):
+    """
+    Scenario: The tap recorded the MCP server's {"result": ...} envelope,
+    JSON-encoded, around a miss message
+
+    Measured failure (lab/003): the first real miss in the tap was classified
+    legacy because the anchored miss pattern can't match inside an envelope.
+    A miss is the signal that grades recall; it must never be dropped as legacy.
+    """
+    (tmp_path / "2026-07.jsonl").write_text(
+        _tap_line(tool_response='{"result":"No open threads found."}')
+    )
+
+    events = load_events(tmp_path)
+
+    assert events[0].is_miss()
+    assert not events[0].is_legacy()
+
+
+def test_tap_records_the_pin_and_old_lines_still_parse(tmp_path):
+    """
+    Scenario: A pinned session's tap line carries scope; a pre-pinning line doesn't
+
+    The pin travels tap-first (docs/07 "the process is the pin"): the hook inherits
+    THALAMUS_SCOPE from the same process env the MCP server read. Lines written
+    before the hook carried scope must keep parsing, scope empty.
+    """
+    (tmp_path / "2026-07.jsonl").write_text(
+        "\n".join([_tap_line(scope="literature"), _tap_line(ts="2026-07-15T09:00:00Z")])
+    )
+
+    events = load_events(tmp_path)
+
+    assert [e.scope for e in events] == ["", "literature"]
+
+
+def test_session_scope_prefers_the_tap_pin_but_validates_every_candidate(monkeypatch):
+    """
+    Scenario: A literature-pinned session's traces carry scope=literature while the
+    returned vids say main (knowledge served cross-scope); and a stale tap pin that
+    matches no Session vertex
+
+    Precedence is tap pin -> vid hint -> distilled vertex, but every candidate must
+    resolve to an existing Session vertex — a wrong pin falls through rather than
+    landing traces in a scope the session never joined.
+    """
+    from thalamus.eval import sync
+
+    pinned = TraceEvent(
+        ts=datetime.now(timezone.utc), session_id="s1", cwd="", tool="memory_recall",
+        tool_response="`scope:main:claim:aa` knowledge served across scopes",
+        scope="literature",
+    )
+
+    existing = {"scope:literature:session:s1"}
+    monkeypatch.setattr(sync, "_vertex_exists", lambda g, v: v in existing)
+    assert sync._session_scope(None, "s1", [pinned]) == "literature"
+
+    # Stale pin: no literature Session vertex; the vid hint's main vertex exists.
+    existing = {"scope:main:session:s1"}
+    assert sync._session_scope(None, "s1", [pinned]) == "main"
+
+
 def test_trace_identity_is_content_addressed():
     """
     Scenario: The same tap line synced twice; a different call synced once

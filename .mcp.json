@@ -5,7 +5,7 @@
       "args": ["run", "thalamus-mcp"],
       "env": {
         "THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin",
-        "THALAMUS_SCOPE": "main"
+        "THALAMUS_SCOPE": "${THALAMUS_SCOPE:-main}"
       }
     }
   }

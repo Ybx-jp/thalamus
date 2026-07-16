@@ -167,6 +167,16 @@ def main():
         "--top", type=int, default=5, help="How many most-ignored nodes to list"
     )
 
+    # Pin / roster commands — docs/07 "the process is the pin"
+    pin_parser = subparsers.add_parser(
+        "pin", help="Launch a claude session pinned to an expert scope"
+    )
+    pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
+
+    subparsers.add_parser(
+        "roster", help="One pinned tmux window per expert manifest (plus main)"
+    )
+
     # Visualize command
     visualize_parser = subparsers.add_parser(
         "visualize", help="Open an interactive session graph in the local viewer"
@@ -210,6 +220,10 @@ def main():
         _cmd_contract(args, contract_parser)
     elif args.command == "eval":
         _cmd_eval(args, eval_parser)
+    elif args.command == "pin":
+        _cmd_pin(args)
+    elif args.command == "roster":
+        _cmd_roster()
     elif args.command == "visualize":
         _cmd_visualize(args)
     else:
@@ -639,6 +653,26 @@ def _known_claims(graph, scope: str, project: str, limit: int = 50) -> list[dict
         if len(claims) >= limit:
             break
     return claims
+
+
+def _cmd_pin(args):
+    from thalamus.harness.pin import PROJECT_ROOT, launch
+
+    try:
+        launch(args.scope, PROJECT_ROOT)
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        print(f"Pin failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_roster():
+    from thalamus.harness.pin import PROJECT_ROOT, roster
+
+    try:
+        roster(PROJECT_ROOT)
+    except RuntimeError as e:
+        print(f"Roster failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _cmd_visualize(args):
