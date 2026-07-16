@@ -46,6 +46,14 @@ CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 # layer exists to avoid.
 _PATH_INPUTS = ("file_path", "notebook_path")
 
+# Tools whose results are external content crossing into the transcript — the ingress
+# half of the transcript-mediated laundering channel (docs/05). Deliberately short and
+# conservative: Read/Bash outputs are tier-1 observations of the operator's own machine
+# (the docs/index Artifact argument), while these fetch from origins nobody curated.
+# Bash *can* curl the web — that residual is documented in docs/05, not papered over
+# with shell parsing this layer exists to avoid.
+EXTERNAL_INGRESS_TOOLS = frozenset({"WebFetch", "WebSearch"})
+
 
 @dataclass
 class TranscriptFacts:
@@ -64,6 +72,10 @@ class TranscriptFacts:
     tool_calls: int = 0
     # artifact identifier -> message UUIDs of the tool calls that touched it
     touched: dict[str, list[str]] = field(default_factory=dict)
+    # Verbatim texts of tool results from EXTERNAL_INGRESS_TOOLS — the third-party
+    # content embedded in this first-party transcript. The laundering floor (docs/05)
+    # judges extracted claims against these.
+    external_texts: list[str] = field(default_factory=list)
 
     @property
     def project(self) -> str:
@@ -85,9 +97,23 @@ def discover(projects_dir: Path | None = None) -> dict[str, list[Path]]:
     return found
 
 
+def tool_result_text(block: dict) -> str:
+    """The text of a tool_result content block, whichever shape the harness wrote."""
+    content = block.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = [
+            b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+        ]
+        return " ".join(p.strip() for p in parts if p.strip())
+    return ""
+
+
 def parse(path: Path) -> TranscriptFacts:
     """Read a transcript and recover every fact that needs no inference."""
     facts = TranscriptFacts(session_id=path.stem, path=path)
+    external_tool_uses: set[str] = set()
 
     for record in _records(path):
         record_type = record.get("type")
@@ -117,17 +143,33 @@ def parse(path: Path) -> TranscriptFacts:
         content = (record.get("message") or {}).get("content")
 
         if record_type == "user":
-            text = content if isinstance(content, str) else ""
-            if text and not text.lstrip().startswith("<"):
-                facts.user_turns += 1
-                if not facts.first_prompt:
-                    facts.first_prompt = text.strip()
+            if isinstance(content, str):
+                text = content
+                if text and not text.lstrip().startswith("<"):
+                    facts.user_turns += 1
+                    if not facts.first_prompt:
+                        facts.first_prompt = text.strip()
+                continue
+            # Tool results ride in user-type records. Results of external-ingress
+            # tools are third-party content inside a first-party transcript —
+            # collected verbatim so the laundering floor can judge claims against
+            # them (docs/05).
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                if block.get("tool_use_id") not in external_tool_uses:
+                    continue
+                text = tool_result_text(block)
+                if text:
+                    facts.external_texts.append(text)
             continue
 
         for block in content if isinstance(content, list) else []:
             if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
             facts.tool_calls += 1
+            if block.get("name") in EXTERNAL_INGRESS_TOOLS and block.get("id"):
+                external_tool_uses.add(block["id"])
             tool_input = block.get("input") or {}
             for key in _PATH_INPUTS:
                 identifier = tool_input.get(key)

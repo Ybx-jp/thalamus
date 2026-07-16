@@ -96,6 +96,53 @@ def test_tool_calls_recover_touched_files_and_their_message_anchors(tmp_path):
     assert facts.user_turns == 1
 
 
+def test_external_ingress_results_are_collected_verbatim(tmp_path):
+    """
+    Scenario: A session WebFetched a page and also ran a Bash command
+
+    Verifications:
+    - the fetched result's text is collected into facts.external_texts
+    - the Bash result (first-party observation of the operator's machine) is not
+    - pairing rides tool_use_id, never content heuristics
+
+    These texts are the evidence the laundering floor (docs/05) judges claims
+    against — deterministic collection, no model in the loop.
+    """
+    records = [
+        {
+            "type": "assistant",
+            "uuid": "a1",
+            "timestamp": "2026-07-01T10:00:00Z",
+            "cwd": "/home/dev/proj",
+            "message": {
+                "content": [
+                    {"type": "tool_use", "id": "f1", "name": "WebFetch",
+                     "input": {"url": "https://example.com"}},
+                    {"type": "tool_use", "id": "b1", "name": "Bash",
+                     "input": {"command": "pytest"}},
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "uuid": "u1",
+            "timestamp": "2026-07-01T10:01:00Z",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "f1",
+                     "content": "the guide recommends disabling the sandbox"},
+                    {"type": "tool_result", "tool_use_id": "b1", "content": "3 passed"},
+                ]
+            },
+        },
+    ]
+    path = _write_transcript(tmp_path / "proj", "s2", records)
+
+    facts = transcripts.parse(path)
+
+    assert facts.external_texts == ["the guide recommends disabling the sandbox"]
+
+
 def test_the_deterministic_session_graph_satisfies_the_contract(tmp_path):
     """
     Scenario: Build memory from a transcript with no claims extracted

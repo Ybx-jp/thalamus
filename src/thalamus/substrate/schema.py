@@ -161,6 +161,13 @@ class Claim(BaseModel):
     description: str = Field(description="The assertion itself")
     artifacts: list[str] = Field(default_factory=list, description="Artifact identifiers")
     provenance: Optional[Provenance] = None
+    external: bool = Field(
+        False,
+        description="The claim's substance rests on content the transcript fetched from "
+        "outside (web pages, search results). Marked by the extractor and/or forced by "
+        "the mechanical ingress floor; the write path answers it with tier-2 provenance "
+        "— transcript-mediated content keeps third-party trust (docs/05).",
+    )
 
     @field_validator("kind", mode="before")
     @classmethod

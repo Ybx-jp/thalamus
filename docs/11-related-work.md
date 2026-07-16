@@ -55,7 +55,12 @@ The defenses proposed there are, almost line-for-line, Thalamus's design:
 
 That is [05-trust-model.md](05-trust-model.md)'s "gates enforced at the federation
 contract," "distillation does not launder," and "orphans/unprovenanced nodes
-rejected at write time." We converged; we did not originate.
+rejected at write time." We converged; we did not originate. As of 2026-07-16
+"distillation does not launder" is no longer only a slogan: the transcript-ingress
+floor ([05](05-trust-model.md)) down-tiers claims resting on `WebFetch`/`WebSearch`
+content to tier 2 at the write path, contract-audited and canary-tested (lab/005) —
+the write-path stance instantiated on the *distillation* channel, MINJA (arXiv
+2503.03704, now in the graph) being the "crafted input stream suffices" motivation.
 
 More that overlaps or exceeds the design:
 

@@ -216,6 +216,19 @@ def audit_vertices(vertices: list[AuditVertex]) -> list[str]:
                 "no provenance, no write (docs/05)"
             )
 
+        # The laundering floor, audit-time half (docs/05): a claim that admits its
+        # substance came through the transcript's external ingress must not carry
+        # first-party trust. The mark and the tier are both written by our own
+        # pipeline, so a mismatch means something wrote around apply_ingress_floor.
+        if vertex.label == "Claim" and vertex.properties.get("external") is True:
+            tier = vertex.properties.get("tier")
+            if isinstance(tier, int) and tier < 2:
+                issues.append(
+                    f"Laundered ingress: `{vertex.vid}` is marked external but carries "
+                    f"tier {tier} — transcript-mediated content keeps third-party "
+                    "trust (docs/05)"
+                )
+
         vid_scope = scope_of(vertex.vid)
         declared = vertex.properties.get("scope")
         if node.scoped:

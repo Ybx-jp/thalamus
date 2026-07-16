@@ -22,6 +22,7 @@ import yaml
 from fastmcp import FastMCP
 
 from thalamus.harness import consultation
+from thalamus.harness.extraction import apply_ingress_floor
 from thalamus.substrate.reader import (
     recall,
     recall_by_artifact,
@@ -269,6 +270,11 @@ def memorize(session_yaml: str) -> str:
 
     # The pin wins over whatever the extraction claims. Scope is not the model's to choose.
     session = session.model_copy(update={"scope": SCOPE})
+
+    # Honor external-origin marks with tier-2 provenance (docs/05). No transcript is
+    # available live, so only explicit marks apply here; the mechanical echo floor
+    # runs when SessionEnd re-extracts against the retained transcript.
+    session = apply_ingress_floor(session, [])
 
     issues = check_session(session)
     if issues:

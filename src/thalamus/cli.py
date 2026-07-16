@@ -427,6 +427,9 @@ def _cmd_extract(args):
                 run = extraction.run_extraction(prompt, model=args.model)
                 data = extraction.parse_extraction(run.text)
                 session = extraction.merge_extraction(base, data)
+                # The laundering floor (docs/05): claims resting on the transcript's
+                # external ingress keep third-party trust, marked or not.
+                session = extraction.apply_ingress_floor(session, facts.external_texts)
                 session = prune_orphan_artifacts(session)
             except Exception as e:
                 failed += 1
@@ -442,9 +445,11 @@ def _cmd_extract(args):
                 continue
 
             total_cost += run.cost_usd
+            floored = sum(1 for claim in session.claims() if claim.external)
             counts = (
                 f"{len(session.claims()):>2} claims  {len(session.threads)} threads  "
                 f"{len(session.thread_refs)} refs"
+                + (f"  {floored} ingress-floored" if floored else "")
             )
             if args.write:
                 try:

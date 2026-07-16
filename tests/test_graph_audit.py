@@ -75,6 +75,32 @@ def test_globals_must_not_carry_a_scope():
     assert "global" in issues[0]
 
 
+def test_an_external_claim_carrying_first_party_trust_is_laundering():
+    """
+    Scenario: A claim marked external (transcript ingress) but stamped tier 1;
+    a correctly-floored twin at tier 2
+
+    The mark and the tier are both written by apply_ingress_floor — a live vertex
+    where they disagree means something wrote around the floor (docs/05).
+    """
+    laundered = AuditVertex(
+        vid="scope:main:claim:bad1", label="Claim",
+        properties={**_PROV, "scope": "main", "description": "x",
+                    "external": True, "tier": 1},
+    )
+    floored = AuditVertex(
+        vid="scope:main:claim:ok1", label="Claim",
+        properties={**_PROV, "scope": "main", "description": "y",
+                    "external": True, "tier": 2},
+    )
+
+    issues = audit_vertices([laundered, floored])
+
+    assert len(issues) == 1
+    assert "Laundered ingress" in issues[0]
+    assert "bad1" in issues[0]
+
+
 def test_cross_scope_edges_are_legal_only_where_the_ontology_says_so():
     """
     Scenario: A direct expert-to-expert CONTAINS edge, and a TOUCHES edge into the

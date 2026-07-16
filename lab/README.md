@@ -20,3 +20,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [002](002-truncated-source-attribution.md) | Attribution against a truncated Source snapshot silently under-counts | workaround |
 | [003](003-the-process-is-the-pin.md) | The process boundary that blocked pinning is the pinning mechanism | workaround |
 | [004](004-agent-teams-first-contact.md) | Agent Teams: pins inherit, coordination leaves no artifact, the lead armed the wrong repo | measurements |
+| [005](005-transcript-ingress-canary.md) | A poisoned WebFetch result lands tier 2, not tier 1 — the laundering floor, canary-tested | workaround |
