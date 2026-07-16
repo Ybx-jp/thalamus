@@ -103,6 +103,22 @@ structural-safety posture: not "it can't happen," but "it can't happen *silently
 - **Recorded vs. certified provenance.** SMSR (arXiv 2606.12703) makes provenance
   cryptographically unforgeable. For a local-only graph a tier stamp is likely
   enough; name the gap rather than paper over it.
+- **The distillation channel stamps tier 1 wholesale — transcript-mediated
+  laundering.** Session extraction treats the transcript as "the agent's own
+  history, episodic by definition" and writes every claim FIRST_PARTY. But a
+  transcript *embeds* third-party content — a WebFetch'd page, a cloned repo's
+  docs — and MINJA established that a crafted input stream suffices for poisoning
+  (the operator need not be the attacker; the four write channels of arXiv
+  2606.04329 include exactly this). Walk the path: the agent reads a poisoned page
+  mid-session; extraction distills its content into a tier-1 "solution" claim;
+  weeks later recall serves it as first-party history, outranking the tier-2 gate
+  entirely. The write gate is blind here because the tier decision is made by a
+  docstring, not the contract. Candidate mitigations, in escalating cost: claims
+  whose evidence anchors to tool-result segments of the transcript get tier 2, not
+  tier 1 (the anchor offsets exist in the archive); or an extraction-prompt rule
+  that externally-sourced assertions be marked and down-tiered. Found by the
+  literature-expert audit, 2026-07-15. The M5 red-team canary should include this
+  path, not just the feed path.
 - **The tier floor is documented, not computed.** The schema states effective trust
   is the *floor* over a node's DERIVED_FROM closure, and write-time laundering is
   gated and tested (a feed cannot mint tier 1). But the read path renders only the
