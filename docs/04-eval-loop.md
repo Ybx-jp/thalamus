@@ -129,6 +129,16 @@ Aggregating layer-1/2 signals per expert answers questions no memory demo can:
 - Null-hypothesis test for roster growth: if a candidate domain's retrievals don't
   cluster and out-perform "leave it in an existing expert," it isn't an expert.
 
+**As built:** `thalamus eval pins` renders the routing signal per expert — pinned
+utility (per session, worst waste first) beside consulted utility (the expert's
+nodes served into *other* scopes' traces). Pinned low while consulted high reads
+"the pin was wrong"; both low reads "the expert needs work" — docs/02's
+disambiguation, mechanical. The signal line is floor-gated (≥10 attributed nodes
+on each side, a dial like the rest): below the floor it says "insufficient data"
+rather than pretending a verdict, because no-unmeasured-claims applies to the
+routing signal too. Ledger pins that never landed a trace are counted and named —
+a pinned expert nobody asked anything is itself a signal.
+
 Verdicts surface on the master plane next to the graphs they grade
 ([03-master-plane.md](03-master-plane.md)).
 

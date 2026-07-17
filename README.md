@@ -98,6 +98,7 @@ thalamus write session.yaml        # write to the graph
 thalamus eval sync --write         # land retrieval traces + used-vs-ignored verdicts
 thalamus eval report               # per-scope retrieval-utility numbers, priced
 thalamus eval cost                 # session/operation token-cost buckets
+thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
 thalamus-mcp                       # run the MCP server
 ```
 

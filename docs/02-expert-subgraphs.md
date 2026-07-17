@@ -50,9 +50,11 @@ Pinning mechanics (process-level detail in
 *launch* (`thalamus pin <scope>` / `thalamus roster`), carried by the process
 environment, enforced server-side by the MCP server that read it at startup, and
 recorded tier-0 in the pin ledger. The eval loop's per-expert utility signal
-([04-eval-loop.md](04-eval-loop.md)) later grades pin quality — sustained
-low-utility retrievals in pinned sessions means either the pin or the expert needs
-work, and the data says which.
+(`thalamus eval pins`, [04-eval-loop.md](04-eval-loop.md)) grades pin quality —
+sustained low-utility retrievals in pinned sessions means either the pin or the
+expert needs work, and the data says which: an expert whose knowledge earns its
+keep when consulted from other scopes but is ignored under its own pin marks the
+pin, not the expert.
 
 ## Inter-expert exchange: the subagent protocol
 

@@ -9,9 +9,10 @@ is what can silently rot, so it is what gets pinned here.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from thalamus.eval.attribution import Verdict, attribute, outputs_after
+from thalamus.eval.cost import cost_report, load_pins, weighted_tokens
 from thalamus.eval.traces import TraceEvent, load_events
 from thalamus.substrate.reader import MemoryResult, ThreadResult
 
@@ -382,10 +383,6 @@ def test_thread_slugs_count_as_citations():
 # Cost accounting (thalamus.eval.cost) — the denominator of the eval loop
 # ---------------------------------------------------------------------------
 
-from datetime import date
-
-from thalamus.eval.cost import cost_report, load_pins, weighted_tokens
-
 
 def _usage_line(ts: str, *, inp=0, create=0, read=0, out=0) -> str:
     return json.dumps(
@@ -561,3 +558,124 @@ def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
 
     unpriced = ScopeReport(scope="main", traces=1, sessions=1)
     assert "injection cost" not in unpriced.render()
+
+
+def test_pin_report_disambiguates_pin_quality_from_expert_quality():
+    """
+    Scenario: Two experts with identical low pinned utility but opposite consulted
+    utility — the docs/02 ambiguity ("the pin or the expert needs work") in data form
+
+    Verifications:
+    - pinned low + consulted high -> the pin-quality signal
+    - pinned low + consulted low -> the expert-needs-work signal
+    - consulted counts only the expert's nodes served into OTHER scopes' traces
+    """
+    from thalamus.eval.pins import TraceRow, VerdictRow, build_pin_report
+
+    traces, verdicts = [], []
+
+    def pinned_scope(scope: str, session: str) -> None:
+        for t in range(2):
+            vid = f"scope:{scope}:trace:{session}-{t}"
+            traces.append(
+                TraceRow(vid=vid, scope=scope, session_id=session,
+                         injected_chars=2_400, returned_count=6)
+            )
+            for n in range(6):
+                verdicts.append(
+                    VerdictRow(trace_vid=vid, target_vid=f"scope:{scope}:claim:{n}",
+                               used=(n == 0))  # 2/12 used = 17% -> pinned low
+                )
+
+    def consulted_from_main(scope: str, used_count: int) -> None:
+        vid = f"scope:main:trace:consult-{scope}"
+        traces.append(
+            TraceRow(vid=vid, scope="main", session_id="mainsess",
+                     injected_chars=4_800, returned_count=12)
+        )
+        for n in range(12):
+            verdicts.append(
+                VerdictRow(trace_vid=vid, target_vid=f"scope:{scope}:claim:c{n}",
+                           used=(n < used_count))
+            )
+
+    pinned_scope("literature", "sessA")
+    consulted_from_main("literature", used_count=10)  # 83% -> consulted high
+    pinned_scope("eval-methodology", "sessB")
+    consulted_from_main("eval-methodology", used_count=2)  # 17% -> consulted low
+
+    report = build_pin_report(traces, verdicts, pins={})
+    by_scope = {e.scope: e for e in report.experts}
+
+    lit = by_scope["literature"]
+    assert lit.pinned.attributed == 12 and lit.consulted.attributed == 12
+    assert "pin quality" in lit.signal()
+
+    ev = by_scope["eval-methodology"]
+    assert "expert needs work" in ev.signal()
+
+
+def test_pin_report_refuses_a_verdict_below_the_sample_floor():
+    """
+    Scenario: An expert with strong-looking numbers on 3 attributed nodes
+
+    Verifications:
+    - the signal is "insufficient data", not a verdict — no unmeasured claims
+      (docs/00 principle 4) applies to the routing signal too
+    """
+    from thalamus.eval.pins import TraceRow, VerdictRow, build_pin_report
+
+    vid = "scope:literature:trace:t0"
+    traces = [TraceRow(vid=vid, scope="literature", session_id="s1",
+                       injected_chars=900, returned_count=3)]
+    verdicts = [
+        VerdictRow(trace_vid=vid, target_vid=f"scope:literature:claim:{n}", used=True)
+        for n in range(3)
+    ]
+    report = build_pin_report(traces, verdicts, pins={})
+    (expert,) = report.experts
+    assert "insufficient data" in expert.signal()
+    assert "healthy" not in expert.signal()
+
+
+def test_pin_report_renders_per_session_rows_priced_in_tokens():
+    """
+    Scenario: One expert, two pinned sessions with different waste, one ledger-only
+    pin that never landed a trace, and a global Artifact among the returns
+
+    Verifications:
+    - per-session rows render with used counts and earned/wasted tokens,
+      ordered worst-waste-first (the BudgetMem cost denominator, per session)
+    - ledger-only pinned sessions are counted and named as a signal
+    - a global Artifact return (no scope segment) never attributes to an expert
+    """
+    from thalamus.eval.pins import TraceRow, VerdictRow, build_pin_report
+
+    t1 = "scope:literature:trace:t1"
+    t2 = "scope:literature:trace:t2"
+    traces = [
+        TraceRow(vid=t1, scope="literature", session_id="aaaa1111",
+                 injected_chars=4_000, returned_count=2),
+        TraceRow(vid=t2, scope="literature", session_id="bbbb2222",
+                 injected_chars=4_000, returned_count=2),
+    ]
+    verdicts = [
+        VerdictRow(trace_vid=t1, target_vid="scope:literature:claim:x", used=True),
+        VerdictRow(trace_vid=t1, target_vid="scope:literature:claim:y", used=True),
+        VerdictRow(trace_vid=t2, target_vid="scope:literature:claim:z", used=False),
+        VerdictRow(trace_vid=t2, target_vid="artifact:src/foo.py", used=False),
+    ]
+    pins = {"aaaa1111": "literature", "bbbb2222": "literature", "cccc3333": "literature"}
+    report = build_pin_report(traces, verdicts, pins=pins)
+    (expert,) = report.experts
+
+    assert expert.ledger_only == 1
+    assert [row.session_id for row in expert.pinned_sessions] == ["bbbb2222", "aaaa1111"]
+
+    rendered = report.render()
+    assert "expert `literature`" in rendered
+    assert "(+1 in ledger with none landed)" in rendered
+    assert "aaaa1111" in rendered and "bbbb2222" in rendered
+    assert "2 attributed, 2 used (100%), ~1,000 tok earned / ~0 wasted" in rendered
+    # the artifact return is not another expert; only `literature` appears
+    assert len(report.experts) == 1

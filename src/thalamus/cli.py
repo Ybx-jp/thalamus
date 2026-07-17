@@ -182,6 +182,16 @@ def main():
         "--traces", type=Path, default=None, help="Trace tap directory (default: ~/.thalamus/traces)"
     )
 
+    eval_pins_parser = eval_sub.add_parser(
+        "pins",
+        help="Pin-quality routing signal: per-expert pinned vs consulted utility "
+        "from priced traces (docs/02: the pin or the expert — the data says which)",
+    )
+    eval_pins_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    eval_pins_parser.add_argument(
+        "--pins-file", type=Path, default=None, help="Pin ledger (default: ~/.thalamus/pins/pins.jsonl)"
+    )
+
     # Pin / roster commands — docs/07 "the process is the pin"
     pin_parser = subparsers.add_parser(
         "pin", help="Launch a claude session pinned to an expert scope"
@@ -641,6 +651,17 @@ def _cmd_eval(args, eval_parser):
         )
         project_dir = (args.project_dir or Path.cwd()).resolve()
         print(cost_report(project_dir, since, traces_base=args.traces).render())
+    elif getattr(args, "eval_command", None) == "pins":
+        from thalamus.contract.manifest import available_scopes
+        from thalamus.eval.cost import load_pins
+        from thalamus.eval.pins import pin_report
+
+        graph = connect(args.url)
+        try:
+            report = pin_report(graph, load_pins(args.pins_file), available_scopes())
+        finally:
+            close_connection(graph)
+        print(report.render())
     else:
         eval_parser.print_help()
         sys.exit(1)
