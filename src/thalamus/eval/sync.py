@@ -155,6 +155,9 @@ def _land_event(
             "session_id": event.session_id,
             "scope": scope,
             "returned_count": len(returned_ids),
+            # The rendered response *is* this retrieval's context-injection cost
+            # (docs/04 layer 1b); recorded per trace so report can price verdicts.
+            "injected_chars": len(event.tool_response),
             "tier": int(provenance.tier),
             "source": provenance.source,
             "ingested_at": provenance.ingested_at.isoformat(),

@@ -1,7 +1,7 @@
 # Eval Loop — Measuring Memory Utility
 
-**Status:** layer 1 built (M2, 2026-07-15) — see `src/thalamus/eval/`; layers 2–3
-remain design. This is the differentiating component: the project's central
+**Status:** layer 1 built (M2, 2026-07-15) and layer 1b cost accounting built
+(2026-07-16) — see `src/thalamus/eval/`; layers 2–3 remain design. This is the differentiating component: the project's central
 claim is not "I built agent memory" but "I built agent memory **and the evaluation
 loop that proves what it's worth**."
 
@@ -51,6 +51,45 @@ totals, per-tool counts, miss rate, and the most retrieved-but-ignored nodes —
 layer-3 decay candidates. A trace can only land after its session distills (the
 QUERIES edge and the transcript both need it); until then it stays in the tap,
 reported as pending. First-run findings: lab entry 002.
+
+## Layer 1b — Cost, the denominator (2026-07-16)
+
+Utility alone is half a fraction. The field grades memory on **performance–cost
+frontiers** (BudgetMem, arXiv 2602.06025 — token usage aggregated per query,
+converted to cost), and token cost is a session-level metric in the AgentOps
+observability taxonomy (arXiv 2411.05285). `thalamus eval cost` is the live-loop
+instantiation of both — a *convergence* on prior work, not an extension (see
+[11-related-work.md](11-related-work.md) §2b): no new telemetry, every number read
+from records the system already keeps.
+
+- **Harness transcripts** (per-API-call usage) bucketed by an operation ontology:
+  `interactive`, `extract` (headless distillation/ingest), `expert:<scope>` (via
+  the pin ledger — the pin is also the cost attribution), `other` (the
+  denominator). The ontology-with-weights pattern is borrowed from the operation
+  registry in the operator's own workflow-eval project (nodeglass); its DAG
+  topology scorers were evaluated and **not** adopted — they grade structural
+  action risk, and retrieval traces are shallow star graphs where topology says
+  nothing (assessed 2026-07-16).
+- **The trace tap** gives each retrieval's injection cost — the rendered response
+  *is* the cost, and it recurs in every later call of the session.
+- The weighted-token proxy (cache reads ~0.1x, cache writes ~1.25x, output ~5x)
+  is a dial, not a truth — same discipline as the attribution thresholds above.
+
+First real run (Jul 14–16): interactive sessions 56.3M weighted, extraction 18.7M
+(dominated by the one-time bootstrap), retrieval injection ~51K tokens rendered,
+expert consultations 152K — the operator's "am I burning limit on retrievals or
+experts?" answered **neither**: session length is the burn, and thalamus's
+steady-state marginal cost is one extract run (~350K weighted) per session end.
+
+**The cost-utility join (built, same day):** Trace nodes carry `injected_chars`
+at sync (the rendered response is the injection cost), and `eval report` prices
+every layer-1 verdict at an even per-node share — so the layer-3 decay ranking
+orders by **wasted tokens**, not ignore-counts. First priced run: ~43.6K tokens
+injected in scope `main`, **50% of the attributed share wasted**; the waste
+ranking surfaced cross-project bleed the count ranking buried (lab/006). This is
+the first implemented piece of the per-expert routing signal
+(`thalamus-routing-eval-signal-buildout`): scope-level cost-utility is now one
+report away from grading pin quality.
 
 ## Layer 2 — Counterfactuals (M4)
 

@@ -376,3 +376,188 @@ def test_thread_slugs_count_as_citations():
 
     assert verdict.used
     assert "slug" in verdict.evidence
+
+
+# ---------------------------------------------------------------------------
+# Cost accounting (thalamus.eval.cost) — the denominator of the eval loop
+# ---------------------------------------------------------------------------
+
+from datetime import date
+
+from thalamus.eval.cost import cost_report, load_pins, weighted_tokens
+
+
+def _usage_line(ts: str, *, inp=0, create=0, read=0, out=0) -> str:
+    return json.dumps(
+        {
+            "timestamp": ts,
+            "message": {
+                "usage": {
+                    "input_tokens": inp,
+                    "cache_creation_input_tokens": create,
+                    "cache_read_input_tokens": read,
+                    "output_tokens": out,
+                }
+            },
+        }
+    )
+
+
+def _harness_fixture(tmp_path):
+    """A miniature ~/.claude/projects: one interactive, one extract, one expert,
+    one unrelated project — plus a pin ledger and a tap file."""
+    projects = tmp_path / "projects"
+    project_dir = tmp_path / "code" / "thalamus"
+    slug = str(project_dir).replace("/", "-").replace(".", "-")
+
+    interactive = projects / slug
+    interactive.mkdir(parents=True)
+    (interactive / "sess-main.jsonl").write_text(
+        "\n".join(
+            [
+                _usage_line("2026-07-15T10:00:00Z", inp=100, create=1000, read=10000, out=50),
+                _usage_line("2026-07-01T10:00:00Z", inp=999999),  # before --since: dropped
+                "junk not json",
+            ]
+        )
+    )
+    # The expert session lives in the same project dir; only the pin tells it apart.
+    (interactive / "sess-lit.jsonl").write_text(
+        _usage_line("2026-07-15T11:00:00Z", inp=200, out=10)
+    )
+
+    extract = projects / "-tmp-thalamus-extract-abc123"
+    extract.mkdir()
+    (extract / "sess-ex.jsonl").write_text(
+        _usage_line("2026-07-15T12:00:00Z", create=4000, out=100)
+    )
+
+    unrelated = projects / "-home-op-code-elsewhere"
+    unrelated.mkdir()
+    (unrelated / "sess-other.jsonl").write_text(
+        _usage_line("2026-07-15T13:00:00Z", inp=5000)
+    )
+
+    pins = tmp_path / "pins.jsonl"
+    pins.write_text(
+        "\n".join(
+            [
+                json.dumps({"session_id": "sess-lit", "scope": "literature"}),
+                json.dumps({"session_id": "sess-main", "scope": "main"}),
+                "not json",
+            ]
+        )
+    )
+
+    tap = tmp_path / "traces"
+    tap.mkdir()
+    (tap / "2026-07.jsonl").write_text(
+        "\n".join(
+            [
+                _tap_line(tool_response="x" * 400),
+                # Non-retrieval tools count for cost even though layer 1 excludes them.
+                _tap_line(
+                    tool_name="mcp__thalamus__consult_request",
+                    tool_input={"query": "q"},
+                    tool_response="y" * 100,
+                ),
+                _tap_line(ts="2026-07-01T00:00:00Z", tool_response="dropped by since"),
+            ]
+        )
+    )
+    return project_dir, projects, pins, tap
+
+
+def test_weighted_tokens_applies_the_documented_dials():
+    usage = {
+        "input_tokens": 100,
+        "cache_creation_input_tokens": 100,
+        "cache_read_input_tokens": 1000,
+        "output_tokens": 10,
+    }
+    # 100 + 125 + 100 + 50
+    assert weighted_tokens(usage) == 375
+
+
+def test_cost_report_buckets_by_operation_and_respects_since(tmp_path):
+    """
+    Scenario: Two project sessions (one pinned to an expert), an extract run,
+    and an unrelated project, with usage on both sides of the --since date
+
+    Verifications:
+    - the pin ledger reclassifies a same-directory session as expert burn
+    - extract tmp dirs land in their own bucket; foreign projects in `other`
+    - records before --since are excluded; junk lines never fatal
+    - tap injection counts non-retrieval tools and respects --since too
+    """
+    project_dir, projects, pins, tap = _harness_fixture(tmp_path)
+
+    report = cost_report(
+        project_dir,
+        date(2026, 7, 10),
+        projects_base=projects,
+        traces_base=tap,
+        pins_path=pins,
+    )
+
+    assert report.buckets["interactive"].weighted == 100 + 1250 + 1000 + 250
+    assert report.buckets["interactive"].sessions == {"sess-main"}
+    assert report.buckets["expert:literature"].weighted == 200 + 50
+    assert report.buckets["extract"].weighted == 5000 + 500
+    assert report.buckets["other"].weighted == 5000
+    assert report.by_day["2026-07-15"]["interactive"] == 2600
+    assert "other" not in report.by_day["2026-07-15"]
+
+    assert report.injection["memory_recall"] == (1, 400)
+    assert report.injection["consult_request"] == (1, 100)
+
+    rendered = report.render()
+    assert "expert:literature" in rendered
+    assert "consult_request" in rendered
+
+
+def test_pin_ledger_last_write_wins_and_junk_is_skipped(tmp_path):
+    pins = tmp_path / "pins.jsonl"
+    pins.write_text(
+        "\n".join(
+            [
+                json.dumps({"session_id": "s1", "scope": "literature"}),
+                json.dumps({"session_id": "s1", "scope": "main"}),
+                "{broken",
+            ]
+        )
+    )
+    assert load_pins(pins) == {"s1": "main"}
+
+
+def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
+    """
+    Scenario: A scope's traces have been priced (layer 1b) and attributed (layer 1)
+
+    Verifications:
+    - injection cost renders in tokens with the earned/wasted split
+    - decay candidates carry both repeat count and wasted tokens
+    - a zero-priced report (all traces pre-layer-1b) renders without the cost line
+    """
+    from thalamus.eval.report import ScopeReport
+
+    priced = ScopeReport(
+        scope="main",
+        traces=4,
+        sessions=2,
+        returns=6,
+        attributed=6,
+        used=4,
+        injected_chars=48_000,
+        used_chars=30_000,
+        ignored_chars=10_000,
+        most_ignored=[("scope:main:claim:x", 3, 8_000, "a stale claim")],
+    )
+    rendered = priced.render()
+    assert "~12,000 tokens rendered into context" in rendered
+    assert "~7,500 earned (used) vs ~2,500 wasted (25%)" in rendered
+    assert "by wasted tokens" in rendered
+    assert "3x ~2,000 tok  `scope:main:claim:x` — a stale claim" in rendered
+
+    unpriced = ScopeReport(scope="main", traces=1, sessions=1)
+    assert "injection cost" not in unpriced.render()

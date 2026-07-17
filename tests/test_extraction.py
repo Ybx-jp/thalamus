@@ -225,6 +225,30 @@ def test_parse_extraction_reads_the_yaml_fence_and_rejects_non_mappings():
         extraction.parse_extraction("- just\n- a\n- list")
 
 
+def test_parse_extraction_repairs_bare_scalars_with_colons():
+    # The failure shape from the first BudgetMem ingest attempt (2026-07-16): the
+    # prompt templates show `description: ...` unquoted, so the model emits prose
+    # containing ": " and the scanner rejects the line. The repair pass quotes it.
+    raw = (
+        "claims:\n"
+        "  - description: strategies for realizing budget tiers: implementation and price\n"
+        '    citation: "already quoted: untouched"\n'
+        "entities:\n"
+        "  - name: BudgetMem\n"
+    )
+    data = extraction.parse_extraction(raw)
+    claim = data["claims"][0]
+    assert claim["description"] == (
+        "strategies for realizing budget tiers: implementation and price"
+    )
+    assert claim["citation"] == "already quoted: untouched"
+    assert data["entities"][0]["name"] == "BudgetMem"
+
+    # Still-broken YAML raises the typed error, not a raw scanner traceback.
+    with pytest.raises(extraction.ExtractionError):
+        extraction.parse_extraction("claims:\n  - description: [unclosed\n")
+
+
 def _stage1_graph() -> SessionGraph:
     return SessionGraph(
         session_id="abc-123",

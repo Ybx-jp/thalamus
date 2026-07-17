@@ -167,6 +167,21 @@ def main():
         "--top", type=int, default=5, help="How many most-ignored nodes to list"
     )
 
+    eval_cost_parser = eval_sub.add_parser(
+        "cost",
+        help="Token-cost attribution from local records: interactive vs extract vs "
+        "expert sessions, plus per-retrieval context injection",
+    )
+    eval_cost_parser.add_argument(
+        "--project-dir", type=Path, default=None, help="Project working directory (default: cwd)"
+    )
+    eval_cost_parser.add_argument(
+        "--since", default=None, help="Start date YYYY-MM-DD (default: 14 days ago)"
+    )
+    eval_cost_parser.add_argument(
+        "--traces", type=Path, default=None, help="Trace tap directory (default: ~/.thalamus/traces)"
+    )
+
     # Pin / roster commands — docs/07 "the process is the pin"
     pin_parser = subparsers.add_parser(
         "pin", help="Launch a claude session pinned to an expert scope"
@@ -616,6 +631,16 @@ def _cmd_eval(args, eval_parser):
             print(scope_report(graph, scope=args.scope, top=args.top).render())
         finally:
             close_connection(graph)
+    elif getattr(args, "eval_command", None) == "cost":
+        from datetime import date, timedelta
+
+        from thalamus.eval.cost import cost_report
+
+        since = (
+            date.fromisoformat(args.since) if args.since else date.today() - timedelta(days=14)
+        )
+        project_dir = (args.project_dir or Path.cwd()).resolve()
+        print(cost_report(project_dir, since, traces_base=args.traces).render())
     else:
         eval_parser.print_help()
         sys.exit(1)

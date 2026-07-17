@@ -377,12 +377,46 @@ def run_extraction(
 
 _YAML_FENCE = re.compile(r"```ya?ml\s*\n(.*?)```", re.DOTALL)
 
+# A block-mapping line whose value is a bare scalar: optional list dash, a plain
+# identifier key, then the rest of the line. Free-text fields (description,
+# citation, ...) match this; structure openers (`claims:`) don't reach the value
+# branch because they have nothing after the colon.
+_KEYED_LINE_RE = re.compile(r"^(\s*(?:-\s+)?[A-Za-z_][A-Za-z0-9_]*: )(\S.*?)\s*$")
+
+
+def _requote_scalars(raw: str) -> str:
+    """Quote bare scalar values that break YAML block-mapping parsing.
+
+    The extraction prompts show free-text fields unquoted (`description: ...`),
+    so the model legitimately emits prose after the key — and prose containing
+    ": " reads as a nested mapping key, which is a scanner error mid-line.
+    Only bare values with that failure shape are rewritten; already-quoted
+    values and flow/block openers pass through untouched.
+    """
+    lines = []
+    for line in raw.splitlines():
+        match = _KEYED_LINE_RE.match(line)
+        if match:
+            value = match.group(2)
+            if not value.startswith(('"', "'", "[", "{", "|", ">", "&", "*")) and (
+                ": " in value or value.endswith(":")
+            ):
+                line = match.group(1) + json.dumps(value, ensure_ascii=False)
+        lines.append(line)
+    return "\n".join(lines)
+
 
 def parse_extraction(text: str) -> dict:
     """Pull the YAML block out of the model's response."""
     match = _YAML_FENCE.search(text)
     raw = match.group(1) if match else text
-    data = yaml.safe_load(raw)
+    try:
+        data = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        try:
+            data = yaml.safe_load(_requote_scalars(raw))
+        except yaml.YAMLError as exc:
+            raise ExtractionError(f"unparseable extraction YAML: {exc}") from exc
     if not isinstance(data, dict):
         raise ExtractionError(f"extraction is not a mapping: {str(data)[:200]}")
     return data

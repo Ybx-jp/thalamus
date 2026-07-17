@@ -87,6 +87,26 @@ grepping JSON. It is also the audit substrate the trust model needs: gating
 decisions and poisoning post-mortems are only possible because every belief is
 traceable end-to-end.
 
+## The query instrument (built 2026-07-16)
+
+`memory_query` — one free-form **read-only Gremlin traversal** per call, served
+only to main-pinned sessions. Schema-aware LLM-written graph queries are
+established practice (Multi-Agent GraphRAG, arXiv 2511.08274; docs/11 §3); the
+in-harness turn is that the ontology travels in the tool description, so the
+query is written against the schema that actually exists. Four layers keep it
+honest: the server's gremlin-lang grammar (no closures, no code — measured), a
+lexical deny of mutating steps, the pin gate (an expert pin is refused and
+pointed at the consultation protocol — scope stays server-side, docs/07), and
+result/time caps. Rendered vertex IDs are backticked, so the tap prices this
+tool like any recall: the instrument is born inside the eval loop it queries.
+
+The queries this schema uniquely serves are the master plane's whole case:
+provenance walks (`out('DERIVED_FROM')` to retained bytes), evidence lineage
+(SUPERSEDES heads), consultation audits (Exchange/CONSULTS — did the answer get
+used?), cross-scope claim convergence, and the eval loop reading its own priced
+verdicts (Trace `injected_chars`, RETURNS `used`) — the graph grading itself,
+queryable by the agent it grades.
+
 ## Open questions
 
 - Projection freshness: on-demand vs. scheduled materialization. Start on-demand;
@@ -94,6 +114,8 @@ traceable end-to-end.
 - Contradiction detection scope at M-early: exact-claim conflicts on core-ontology
   nodes only. Semantic/soft contradiction is a research rabbit hole — do not enter
   before M6.
-- Whether master-plane episodic events are themselves queryable by the agent
-  (self-knowledge: "which expert usually helps here?"). Powerful, but defer until
-  the eval loop can measure whether it helps.
+- ~~Whether master-plane episodic events are themselves queryable by the agent~~
+  **Resolved 2026-07-16**: `memory_query` (above) makes them queryable. What
+  remains deferred is whether *self-knowledge queries* ("which expert usually
+  helps here?") measurably help — that is layer-2 eval material, and the tool's
+  own traces will carry the answer.

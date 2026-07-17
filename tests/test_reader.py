@@ -200,3 +200,50 @@ def test_mixed_recall_window_reserves_room_for_knowledge_claims():
     assert window == [
         ("claim", "k1"), ("claim", "k2"), ("session", "s0"), ("claim", "k3"),
     ]
+
+
+def test_detail_selection_renders_only_what_the_query_earned():
+    """
+    Scenario: A matched session holds ten claims; the query's terms touch three
+
+    Verifications:
+    - only matching claims render in full (the ride-along dump was 90% of
+      retrieval waste — lab/006)
+    - the elision stub is honest about the count and carries no vertex ID, so
+      the eval loop never prices phantom returns
+    - with no keywords (recency recall), the cap still applies
+    """
+    from thalamus.substrate.reader import _select_details
+
+    details = [
+        {"kind": "decision", "description": f"Chose gremlin approach {i}", "node_id": f"v{i}"}
+        for i in range(3)
+    ] + [
+        {"kind": "solution", "description": f"Unrelated fix {i}", "node_id": f"u{i}"}
+        for i in range(7)
+    ]
+
+    selected = _select_details(details, ["gremlin", "approach"])
+
+    full = [d for d in selected if d.get("node_id")]
+    assert len(full) == 3
+    assert all("gremlin" in d["description"].lower() for d in full)
+    stub = selected[-1]
+    assert stub["kind"] == "elided"
+    assert "7 more claim(s)" in stub["description"]
+    assert "node_id" not in stub
+
+    # No keywords: recency path — cap only, no stub semantics beyond the cap.
+    assert len(_select_details(details, [], cap=4)) == 4
+
+
+def test_detail_selection_caps_matching_claims_and_counts_the_rest():
+    from thalamus.substrate.reader import _select_details
+
+    details = [
+        {"kind": "decision", "description": f"gremlin detail {i}", "node_id": f"v{i}"}
+        for i in range(12)
+    ]
+    selected = _select_details(details, ["gremlin"], cap=8)
+    assert len([d for d in selected if d.get("node_id")]) == 8
+    assert "4 more claim(s)" in selected[-1]["description"]

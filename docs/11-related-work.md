@@ -120,6 +120,34 @@ Benchmarks *measure*; they do not *self-maintain*. The correct framing is theref
 "not a benchmark — a live self-maintenance loop that the offline benchmarks above
 complement," and we cite them as the offline half we extend.
 
+### 2b. Cost — the denominator (added 2026-07-16)
+
+Grading memory on utility alone is half a fraction; the field already grades the
+whole one.
+
+- **Learning Query-Aware Budget-Tier Routing for Runtime Agent Memory** /
+  BudgetMem (arXiv 2602.06025) — evaluates memory on explicit
+  **performance–cost frontiers**, aggregating input/output token usage per query
+  and converting to monetary cost via service pricing. Cost-utility grading of
+  memory is established, not ours.
+- **AgentOps: Enabling Observability of LLM Agents** (arXiv 2411.05285) —
+  taxonomy of agent observability artifacts; **token cost is a session-level
+  metric**, analyzable at session/trace/span granularity. Our cost buckets
+  (interactive / extract / expert / other) are an instantiation of its
+  session-level layer over records the harness already keeps.
+- **From Agent Traces to Trust** (arXiv 2606.04990) — execution provenance as
+  the *typed graph* of an agent run, including retrieval and memory-access
+  steps. Thalamus's Trace substrate is already that shape, so cost lands as
+  properties of existing trace records, not a parallel telemetry stack.
+
+Positioning: `thalamus eval cost` ([04-eval-loop.md](04-eval-loop.md)) is a
+*convergence* on BudgetMem's cost half and an *instantiation* of the AgentOps
+session-level taxonomy — the live-loop framing above is what it adds. BudgetMem
+also warns what we trade away by reporting instead of routing: it makes cost an
+*optimized control input* (a trained budget-tier router), where we stop at
+attribution. If per-expert cost-utility ratios ever drive retrieval decisions,
+BudgetMem is the anchor to revisit.
+
 ## 3. Federation, experts, and inter-expert exchange
 
 Most crowded pillar as of the scan.
@@ -144,6 +172,22 @@ Most crowded pillar as of the scan.
 recorded as first-class, bidirectional, provenance-tracked episodic memory forming
 a collaboration graph — now has direct analogues (Neo4j's ReasoningTrace chains).
 It remains a good design; it is no longer unclaimed.
+
+### 3b. LLM-written graph queries (added 2026-07-16)
+
+- **Multi-Agent GraphRAG: A Text-to-Cypher Framework for Labeled Property
+  Graphs** (arXiv 2511.08274) — modular agentic text-to-Cypher over LPGs with
+  schema-compliant generation and iterative content-aware correction. The
+  free-form query surface as such is established practice.
+
+Positioning of `memory_query` ([03-master-plane.md](03-master-plane.md)): an
+*instantiation* — single-shot rather than multi-agent-iterative, Gremlin rather
+than Cypher, schema shipped in the tool description rather than negotiated per
+query. What the cited work does not address and we add: the query surface living
+*inside* the trust and eval perimeter — pin-gated to the master plane, lexically
+read-only atop a gremlin-lang (no-code) server grammar, and rendering vertex IDs
+the trace tap prices like any recall. What we trade away: their feedback loop's
+correction of failed queries; ours fails fast and lets the agent rewrite.
 
 ## 4. What the scan did *not* find claimed elsewhere
 

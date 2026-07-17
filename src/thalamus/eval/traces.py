@@ -132,8 +132,15 @@ class TraceEvent:
         return None
 
 
-def load_events(base: Path | None = None) -> list[TraceEvent]:
-    """Parse every monthly tap file into retrieval events, oldest first."""
+def load_events(
+    base: Path | None = None, tools: frozenset[str] | None = RETRIEVAL_TOOLS
+) -> list[TraceEvent]:
+    """Parse every monthly tap file into typed events, oldest first.
+
+    Defaults to retrieval events only — the eval loop's layer 1. Pass `tools=None`
+    to get every thalamus tool call in the tap (cost accounting wants consults and
+    memorize traffic too, not just reads).
+    """
     directory = base or TRACES_DIR
     if not directory.is_dir():
         return []
@@ -149,7 +156,7 @@ def load_events(base: Path | None = None) -> list[TraceEvent]:
                 if event is None:
                     logger.warning("Unparseable trace line %s:%d", path.name, line_number)
                     continue
-                if event.tool in RETRIEVAL_TOOLS:
+                if tools is None or event.tool in tools:
                     events.append(event)
 
     events.sort(key=lambda e: e.ts)

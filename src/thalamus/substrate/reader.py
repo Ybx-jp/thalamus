@@ -195,6 +195,8 @@ def recall(
 
     matched_session_ids: dict[str, float] = {}
     matched_knowledge_vids: dict[str, float] = {}
+    session_hits: dict[str, set[str]] = {}
+    knowledge_hits: dict[str, set[str]] = {}
 
     for keyword in keywords:
         sessions = (
@@ -208,6 +210,7 @@ def recall(
         for session in sessions:
             session_id = _first(session.get("session_id"))
             matched_session_ids[session_id] = matched_session_ids.get(session_id, 0) + 2.0
+            session_hits.setdefault(session_id, set()).add(keyword)
 
         contained = (
             g.V()
@@ -223,6 +226,7 @@ def recall(
         for claim in contained:
             session_id = _first(claim.get("session_id"))
             matched_session_ids[session_id] = matched_session_ids.get(session_id, 0) + 1.0
+            session_hits.setdefault(session_id, set()).add(keyword)
 
         knowledge = (
             g.V()
@@ -236,19 +240,42 @@ def recall(
         for claim_vid in knowledge:
             key = str(claim_vid)
             matched_knowledge_vids[key] = matched_knowledge_vids.get(key, 0) + 2.0
+            knowledge_hits.setdefault(key, set()).add(keyword)
 
-    relevance = f"matched on: {', '.join(keywords)}"
+    # The match floor: one generic term out of ten is noise, not relevance. Priced
+    # traces showed single-keyword OR-matches pulling neighbor-project sessions that
+    # were then ignored at ~3K tokens a recall (lab/006, lab/007) — a multi-keyword
+    # query must hit at least two distinct terms to rank. Single-keyword queries are
+    # untouched: the floor is about queries whose breadth outruns their intent.
+    floor = min(2, len(keywords))
     sessions_ranked = sorted(
-        matched_session_ids.items(), key=lambda item: item[1], reverse=True
+        (
+            item
+            for item in matched_session_ids.items()
+            if len(session_hits.get(item[0], ())) >= floor
+        ),
+        key=lambda item: item[1],
+        reverse=True,
     )
     knowledge_ranked = sorted(
-        matched_knowledge_vids.items(), key=lambda item: item[1], reverse=True
+        (
+            item
+            for item in matched_knowledge_vids.items()
+            if len(knowledge_hits.get(item[0], ())) >= floor
+        ),
+        key=lambda item: item[1],
+        reverse=True,
     )
 
     results = []
     for shape, identifier in _mixed_window(sessions_ranked, knowledge_ranked, limit):
         if shape == "session":
-            results.append(_load_session_result(g, identifier, relevance, scope))
+            # The relevance line reports the terms this session actually hit —
+            # "matched on: <everything you typed>" claimed matches that never
+            # happened, and misleads the used-vs-ignored audit trail.
+            hits = [k for k in keywords if k in session_hits.get(identifier, ())]
+            relevance = f"matched on: {', '.join(hits)}"
+            results.append(_load_session_result(g, identifier, relevance, scope, keywords))
         else:
             knowledge_result = _load_knowledge_result(g, identifier)
             if knowledge_result is not None:
@@ -523,10 +550,49 @@ def _session_result(session: dict, relevance: str = "", details: list[dict] | No
     )
 
 
+# A recall result renders at most this many claim details. Priced traces showed the
+# unfiltered dump — every claim of every matched session — is where retrieval waste
+# lives: 267 of 295 ignored nodes were ride-along claims that never matched the query
+# (lab/006). A dial, not a truth.
+_DETAIL_CAP = 8
+
+
+def _select_details(details: list[dict], keywords: list[str], cap: int = _DETAIL_CAP) -> list[dict]:
+    """Keep the claims that match the query; elide the rest to a stub, not a dump.
+
+    A matched session recalls the episode, but the episode's every claim is not the
+    answer — only the claims the query's terms actually touch render in full. The
+    elision stub keeps the count honest (the agent can expand via the session node),
+    and renders no vertex ID, so the eval loop never prices phantom returns.
+    """
+    if not keywords:
+        return details[:cap]
+    matching = [
+        d
+        for d in details
+        if any(k in str(d.get("description", "")).lower() for k in keywords)
+    ]
+    elided = len(details) - len(matching[:cap])
+    selected = matching[:cap]
+    if elided > 0:
+        selected.append(
+            {
+                "kind": "elided",
+                "description": f"{elided} more claim(s) in this session did not match "
+                "the query — recall the session node to expand",
+            }
+        )
+    return selected
+
+
 def _load_session_result(
-    g: GraphTraversalSource, session_id: str, relevance: str, scope: str
+    g: GraphTraversalSource,
+    session_id: str,
+    relevance: str,
+    scope: str,
+    keywords: list[str] | None = None,
 ) -> MemoryResult:
-    """Load full session details from the graph."""
+    """Load a session with the details the query earned (docs/04 layer 1b)."""
     session_data = (
         g.V()
         .has_label("Session")
@@ -566,6 +632,7 @@ def _load_session_result(
             }
         )
 
+    details = _select_details(details, keywords or [])
     return _session_result(session_data[0], relevance=relevance, details=details)
 
 
