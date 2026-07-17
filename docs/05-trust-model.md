@@ -1,10 +1,9 @@
 # Trust Model — Provenance, Gating, Poisoning Defense
 
-**Status:** design, with first enforcement shipped ahead of M5 — the
-transcript-ingress floor (below) closes the WebFetch/WebSearch laundering path,
-write-gated and canary-tested (lab/005). The remaining schema obligations
-(provenance fields, trust tiers) exist from M1 — retrofitting provenance onto an
-existing graph is exactly the mistake this doc exists to prevent.
+**Status:** design, with first enforcement shipped — the transcript-ingress floor
+(below) closes the WebFetch/WebSearch laundering path, write-gated and
+canary-tested (lab/005). The schema obligations (provenance fields, trust tiers)
+are live on every node; full enforcement is M5.
 
 ## The threat that motivates everything
 
@@ -89,16 +88,14 @@ event → source, with trust tier at every hop*
 through, the post-mortem is a graph traversal, not archaeology. That is the
 structural-safety posture: not "it can't happen," but "it can't happen *silently*."
 
-## The transcript-ingress floor (built 2026-07-16)
+## The transcript-ingress floor (built)
 
-The distillation channel used to stamp every extracted claim tier-1: session memory
-is "the agent's own lived experience, episodic by definition." But a transcript
-*embeds* third-party content — a fetched page, a search result, an inter-agent
-message — so a poisoned page the agent read could be distilled into a tier-1
-"solution" and later out-rank the tier-2 gate built to stop exactly that content.
-The tier decision was made by a docstring, not the contract. This is the
-transcript-mediated laundering gap, found by the literature-expert audit
-(2026-07-15) and sharpened by the Agent Teams mailbox (lab/004).
+Session memory is "the agent's own lived experience" — but a transcript *embeds*
+third-party content: a fetched page, a search result, an inter-agent message.
+Blanket tier-1 distillation would therefore let a poisoned page the agent read be
+distilled into a tier-1 "solution" that later out-ranks the tier-2 gate built to
+stop exactly that content. This is the **transcript-mediated laundering gap**
+(lab/004–005).
 
 The floor closes it in four places, weakest to strongest:
 
@@ -132,12 +129,12 @@ applied to the *distillation* channel: "defenses must operate at the write path,
 the input boundary," with source isolation keeping untrusted content out of
 trusted-equivalence (arXiv 2606.04329, in the graph as feed `thalamus`); MINJA
 (arXiv 2503.03704) established that a crafted input stream suffices, so the operator
-need not be the attacker. It is an *instantiation*, not a new idea — and the survey's
-"tool-use provenance / provenance-bearing memory" (arXiv 2606.04990) is exactly the
-`tool_use_id`-anchored collection above. What it trades away is coverage: the floor
-sees the two fetch tools, not Bash-tunnelled `curl`, and it down-tiers rather than
-quarantines — both named as residuals in [lab/005](../lab/005-transcript-ingress-canary.md),
-not papered over.
+need not be the attacker. The survey's "tool-use provenance / provenance-bearing
+memory" (arXiv 2606.04990) is exactly the `tool_use_id`-anchored collection above.
+What it trades away is coverage: the floor sees the two fetch tools, not
+Bash-tunnelled `curl`, and it down-tiers rather than quarantines — both residuals
+are tracked in the open questions below and in
+[lab/005](../lab/005-transcript-ingress-canary.md).
 
 ## Open questions
 
@@ -155,9 +152,9 @@ not papered over.
 - **Recorded vs. certified provenance.** SMSR (arXiv 2606.12703) makes provenance
   cryptographically unforgeable. For a local-only graph a tier stamp is likely
   enough; name the gap rather than paper over it.
-- **Transcript-mediated laundering — the WebFetch/WebSearch path is now floored**
-  (see "The transcript-ingress floor" above, built 2026-07-16, canary-tested in
-  lab/005). Two residuals survive and stay open: **(a)** Bash-tunnelled fetches
+- **Transcript-mediated laundering — the WebFetch/WebSearch path is floored**
+  (see "The transcript-ingress floor" above). Two residuals stay open:
+  **(a)** Bash-tunnelled fetches
   (`curl`/`wget`) still distill tier-1 — the ingress set is the two fetch tools
   because parsing shell lines for URLs is the inference `transcripts.py` refuses;
   **(b)** the Agent Teams **mailbox** delivers inter-teammate messages straight into
@@ -174,6 +171,5 @@ not papered over.
   summary derived from tier-2 content renders at tier 2." Harmless today because no
   distillation crosses tiers yet; it becomes silent laundering the day one does,
   which is exactly the salience-driven **compaction poisoning** class in the
-  taxonomy (arXiv 2606.04329, in the graph as feed `thalamus`). Found by the
-  `ground-in-literature` test critique, 2026-07-15; close it alongside the first
-  cross-tier distillation feature, with the floor test written first.
+  taxonomy (arXiv 2606.04329, in the graph as feed `thalamus`). Close it alongside
+  the first cross-tier distillation feature, with the floor test written first.

@@ -1,6 +1,6 @@
 # Ingestion — Feeds for Expert Subgraphs
 
-**Status:** v0 shipped (M1, 2026-07-15) as designed below — `thalamus ingest <url|file>`,
+**Status:** v0 shipped — `thalamus ingest <url|file>`,
 allowlist-gated by the expert manifest, evidence-first (archive before extraction),
 model-extracted claims/entities, contract-gated writes. PDFs refused, not half-parsed.
 Deliberately the **smallest** component in the system.
@@ -15,7 +15,7 @@ the eval loop showing stale coverage, an expert with demonstrated utility but th
 knowledge — *demands* more. Sophistication here is pulled by measurement, never
 pushed by enthusiasm.
 
-## v0: curated, manual-first (M1)
+## v0: curated, manual-first
 
 The first feed populates the technical-literature expert:
 
@@ -35,7 +35,7 @@ The first feed populates the technical-literature expert:
 ## Procurement protocol (v0.1 — multi-project curation into one expert)
 
 How source material is chosen and fed when several projects draw on the same
-literature expert. Added 2026-07-15 alongside the first stepmania/nodeglass feeds.
+literature expert.
 
 1. **One consultant, per-project feeds.** Papers serving another project go into
    the existing literature expert under a project-named feed
@@ -44,15 +44,14 @@ literature expert. Added 2026-07-15 alongside the first stepmania/nodeglass feed
    splitting happens top-down only when retrievals measurably bifurcate. Feed
    identity persists on the Source vertex, so "what was procured for project X"
    stays a one-hop query and the eval loop can attribute knowledge utility per feed.
-   *Scope note (2026-07-16):* this rule forbids scopes created as a side effect of
+   *Scope note:* this rule forbids scopes created as a side effect of
    procurement, not scopes created as deliberate roster decisions — a new expert
-   declared in docs/08's terms with its own manifest (e.g. `eval-methodology`, M3)
+   declared in docs/08's terms with its own manifest (e.g. `eval-methodology`)
    procures its anchors into its own scope, because a scope with nothing to cite
    refuses the consultation mint (docs/02). A manifest's `claim_kinds` must be
    kinds its feed actually writes (the ingest extractor writes
    `literature/finding|technique`); declaring kinds no writer produces makes the
-   manifest aspirational, and the contract rejects the batch — measured on this
-   scope's first ingest.
+   manifest aspirational, and the contract rejects the batch.
 2. **Demand-driven selection.** A document earns ingestion by bearing on a question
    the project has actually asked — an open thread, a recorded problem, a design
    decision in flight. Procure against the target project's open threads, not

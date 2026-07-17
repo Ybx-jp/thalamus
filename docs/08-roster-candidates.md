@@ -66,8 +66,8 @@ existing expert") before it ships.
 
 | Candidate | Kind | Serves | Status / note |
 |---|---|---|---|
-| Technical-literature | Consultant | everything | **M1** (committed). GraphRAG/retrieval papers are a *feed into this*, not a separate expert. |
-| Evaluation-methodology | Consultant | all projects + career | High-value. Metrics design, LLM-as-judge, ablation/counterfactual design, calibration, taste-critic patterns. The through-line made a node; the eval loop dogfooded. |
+| Technical-literature | Consultant | everything | **Live** (`config/experts/literature.yaml`). GraphRAG/retrieval papers are a *feed into this*, not a separate expert. |
+| Evaluation-methodology | Consultant | all projects + career | **Live** (`config/experts/eval-methodology.yaml`) — see below. Metrics design, LLM-as-judge, ablation/counterfactual design, calibration, taste-critic patterns. The through-line made a node; the eval loop dogfooded. |
 | DL / training | Spine | StepMania | PyTorch, autoregressive decoding, KV-cache, CFG, sampling. Compounds via "what training run did what." |
 | Agent-systems | Spine | Thalamus, Nodeglass | Harness design, MCP, tool-use, context mgmt, subagent orchestration. Spine for infra sessions. |
 | Structural-safety / trust | Consultant | Nodeglass, Thalamus | Provenance, gating, poisoning, policy engines, red-teaming. Second pillar. |
@@ -76,40 +76,23 @@ existing expert") before it ships.
 | Homelab / self-hosting | Spine (ops) | media server + machine | Linux/systemd/Tailscale/VPN-namespace. Cheap, real episodic accumulation. |
 | Career-narrative / interview | Consultant | job hunt | Experience library + STAR stories + honest-claim guardrails as knowledge; accumulates which framings landed. Complements the resume skill. |
 
-## M3 second-expert contenders (two proves N)
+## The second expert: evaluation-methodology (two proves N)
 
-[02](02-expert-subgraphs.md) reserves M3 for the second expert; two candidates, two
-different claims:
+[02](02-expert-subgraphs.md) reserves the second roster slot for the expert that
+proves the contract. It is **evaluation-methodology**, shipped as
+`config/experts/eval-methodology.yaml` — the zero-glue test held: a new manifest
+and *nothing else*. Two facts settled the choice:
 
-- **Eval-methodology + rhythm-game on StepMania** — proves the *collaboration*
-  claim: two experts consulting on one real project, with used-vs-ignored
-  attribution making the collaboration graph do something visible.
-- **Homelab / self-hosting** — proves the *episodic-compounding* claim cheaply and
-  honestly: sessions you already generate, real "this broke → here's the fix"
-  accumulation, low cost of failure.
+1. **Consultants are exercised by consultation, which is live.** Eval-methodology
+   is consultable the day its manifest exists, and the tap instruments it from its
+   first retrieval.
+2. **The spine alternative (homelab) has no corpus**: the media-server sessions
+   are deliberately outside the bootstrap allowlist (VPN credentials), so a
+   homelab expert would sit inert and unmeasured.
 
-Pick by which claim M3 needs to establish first, not by which expert is more
-interesting.
-
-### Decided 2026-07-16: evaluation-methodology
-
-Two facts settled it, neither available when the contenders were parked:
-
-1. **Homelab is a spine expert, and spine experts are exercised by pinning — which
-   is blocked** on the lab/001 harness limit (config arms per process; the MCP
-   server cannot see its caller's session). A homelab expert built today sits
-   inert, and its corpus is not in the archive: the media-server sessions were
-   deliberately excluded from the bootstrap allowlist (VPN credentials).
-2. **Consultants are exercised by consultation, which shipped 2026-07-16 and is
-   live.** Eval-methodology is consultable the day its manifest exists, and the
-   tap instruments it from its first retrieval.
-
-Shipped as `config/experts/eval-methodology.yaml` — the zero-glue test held: a
-new manifest and *nothing else* (the one code change the rollout forced,
-`RETURNS may_cross_scope`, was a pre-existing audit-rule lag exposed by the
-first traces landing, not expert plumbing). The null hypothesis ("a feed into
-literature") stays open on purpose: the split stands until retrieval clustering
-says merge, which is this doc's own discipline — measurement makes the cut.
+The null hypothesis ("a feed into literature") stays open on purpose: the split
+stands until retrieval clustering says merge — this doc's own discipline;
+measurement makes the cut.
 
 **Prior work.** A second access-governed scope instantiates published consensus,
 not new ground: explicit authority and scope on multi-agent memory reads/writes
@@ -122,9 +105,8 @@ downstream-utility evaluation (survey arXiv 2603.07670; Mem2ActBench arXiv
 literature (A Survey on LLM-as-a-Judge, arXiv 2411.15594) and counterfactual
 consequence-level evaluation (MQuAKE, arXiv 2305.14795), procured against
 recorded demands: the eval loop's lexical-only attribution ([11](11-related-work.md)
-§5) and the M4 counterfactual harness. Nothing here is claimed as novel; the
-roster mechanics (split-until-measurement-says-merge) are this project's own
-discipline, no more.
+§5) and the M4 counterfactual harness. The roster mechanics
+(split-until-measurement-says-merge) are this project's own discipline.
 
 ## Anti-candidate (recorded so it stays dead)
 

@@ -1,7 +1,7 @@
 # Harness Integration — MCP, Hooks, Directives, and the Limit Lab
 
 **Status:** implementing — MCP + all three hooks installed and live; session
-pinning built and measured ("the process is the pin", lab/003). This doc covers
+pinning built ("the process is the pin"). This doc covers
 how Thalamus meets the Claude Code harness specifically, and how we find the
 harness's limits on purpose.
 
@@ -12,8 +12,8 @@ harness's limits on purpose.
   is enforced *server-side* (the session's pin determines the visible scope) — the
   model is never trusted to self-limit its own retrieval scope.
 - **Hooks** — the instrumentation and enforcement layer:
-  - *Session start:* resolve and record the expert pin (from directory-scoped
-    CLAUDE.md directive or operator choice); stamp the session into the ledger.
+  - *Session start:* record the process's pin into the tier-0 ledger and announce
+    it in the primed context.
   - *Post-tool-use on memory calls:* write retrieval traces — the eval loop's
     layer-1 feed ([04-eval-loop.md](04-eval-loop.md)).
   - *Session stop:* distill the session — summary + open threads into the pinned
@@ -28,13 +28,12 @@ harness's limits on purpose.
   believe that?" (provenance walk), eval-report. Skills stay thin wrappers over MCP
   so nothing load-bearing lives in prompt text.
 
-## Session pinning mechanics (as built, 2026-07-16): the process is the pin
+## Session pinning mechanics: the process is the pin
 
 Pinning is session-granular routing ([02-expert-subgraphs.md](02-expert-subgraphs.md)).
-An earlier draft imagined the server resolving each call's session to a pin; lab/001
-measured that the harness cannot support that (MCP calls don't carry the caller's
-session, and config arms per *process*). The build inverts the limit into the
-mechanism — **one OS process = one immutable pin**:
+The harness cannot resolve a per-call pin — MCP calls don't carry the caller's
+session, and config arms per *process* (measured, lab/001) — so the process
+boundary is the mechanism: **one OS process = one immutable pin**.
 
 1. **Launch is the pin decision.** `thalamus pin <scope>` validates the scope
    against the tier-0 manifests, regenerates the derived agent definition
@@ -63,7 +62,7 @@ mechanism — **one OS process = one immutable pin**:
    not a failure: it feeds pin-quality grading, and env≠ledger mismatches are
    logged, never fatal.
 
-Every leg measured live in lab/003 before this section was written.
+Every leg is measured live in lab/003.
 
 ### Prior work
 
@@ -77,7 +76,7 @@ model's reach, which is the write-path stance (arXiv 2606.04329) applied to
 routing. What it trades away is exactly what docs/02 already conceded — per-query
 routing flexibility — accepted for legibility and episodic coherence. The specific
 coupling (harness process lifetime = pin immutability) is engineering, not
-research, and is claimed as nothing more.
+research.
 
 ## Inter-expert consultation via subagents
 
