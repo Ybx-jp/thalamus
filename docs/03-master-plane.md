@@ -1,8 +1,6 @@
 # Master Plane — Observability & Audit
 
-**Status:** design. **Revised 2026-07-14** — the original framing ("a read-only
-projection, never a store") overstated the case. See *What it actually is*, below;
-the constraint that survives is **no-copy**, not **no-store**.
+**Status:** design, except the query instrument (built — see below).
 
 ## What it is
 
@@ -10,12 +8,10 @@ The master plane is the human's window into the whole system: one place to answe
 *what does my agent believe, where did each belief come from, which expert served
 it, and has it earned its keep?*
 
-## What it actually is (revised)
-
-The master plane is **the main session scope** — the one the operator talks to when
-no expert is pinned. It is not a separate species of thing. It has its own episodic
-memory, written the same way an expert's is, conforming to the same contract, under
-`scope=main` ([09-schema-and-federation.md](09-schema-and-federation.md)).
+Concretely, the master plane is **the main session scope** — the one the operator
+talks to when no expert is pinned. It is not a separate species of thing. It has its
+own episodic memory, written the same way an expert's is, conforming to the same
+contract, under `scope=main` ([09-schema-and-federation.md](09-schema-and-federation.md)).
 
 Its defining property is **topological, not structural**:
 
@@ -23,30 +19,25 @@ Its defining property is **topological, not structural**:
 > and the edges that tie everything together. Expert scopes are **leaves**: rich
 > internally, sparsely interconnected with each other.
 
-This is a better claim than the original, for one specific reason: it is
-**measurable**. Cross-scope edge density per scope is a number, the eval loop can
-compute it, and it directly grades the roster's granularity — a "leaf" expert with
-high inter-expert density is mis-cut, which is exactly the split/merge test
-[08-roster-candidates.md](08-roster-candidates.md) needs and previously had to make
-by judgment.
+The topological framing matters because it is **measurable**. Cross-scope edge
+density per scope is a number, the eval loop can compute it, and it directly grades
+the roster's granularity — a "leaf" expert with high inter-expert density is
+mis-cut, which is exactly the split/merge test
+[08-roster-candidates.md](08-roster-candidates.md) needs.
 
-## The no-copy rule (the part that survives)
+## The no-copy rule
 
 **The master plane copies nothing.** It references expert nodes by ID; it never
-embeds their content. This is the constraint that was doing the real work all along.
+embeds their content. If memories were *copied* upward into a master store, every
+boundary in the system would become decorative: the trust model would be theater
+(untrusted content laundered into a trusted store), the contract would be a
+suggestion, and the soup would be back with extra steps.
 
-If memories were *copied* upward into a master store, every boundary in the system
-would become decorative: the trust model would be theater (untrusted content
-laundered into a trusted store), the contract would be a suggestion, and the soup
-would be back with extra steps.
-
-What was wrong with the original framing: "the master plane owns nothing" implied it
-has no memory of its own, which is false and unhelpful. Sessions in the main scope
-are real sessions and produce real episodic memory worth keeping. Likewise, expert
-subagents can be talked to **directly** (pin one and have a session with it) as well
-as invoked through the harness's subagent protocol — and either way those exchanges
-are sessions worth remembering. What the plane must never do is *duplicate* what a
-scope already owns.
+The rule is no-copy, not no-store. Sessions in the main scope are real sessions and
+produce real episodic memory worth keeping. Likewise, expert subagents can be talked
+to **directly** (pin one and have a session with it) as well as invoked through the
+consultation protocol — and either way those exchanges are sessions worth
+remembering. What the plane must never do is *duplicate* what a scope already owns.
 
 ## What it projects
 
@@ -76,7 +67,7 @@ The base memory system already has a visualizer; the master plane is its natural
 upgrade target. Views, in build order: roster overview → session ledger →
 provenance-chain inspector (click a belief, walk to its source) → exchange graph →
 contradiction queue. The inspector is the demo: *pick any thing my agent believes
-and walk, hop by hop, to where it came from.* Nobody else's memory demo can do that.
+and walk, hop by hop, to where it came from.*
 
 ## Why it matters
 
@@ -87,7 +78,7 @@ grepping JSON. It is also the audit substrate the trust model needs: gating
 decisions and poisoning post-mortems are only possible because every belief is
 traceable end-to-end.
 
-## The query instrument (built 2026-07-16)
+## The query instrument (built)
 
 `memory_query` — one free-form **read-only Gremlin traversal** per call, served
 only to main-pinned sessions. Schema-aware LLM-written graph queries are
@@ -114,8 +105,5 @@ queryable by the agent it grades.
 - Contradiction detection scope at M-early: exact-claim conflicts on core-ontology
   nodes only. Semantic/soft contradiction is a research rabbit hole — do not enter
   before M6.
-- ~~Whether master-plane episodic events are themselves queryable by the agent~~
-  **Resolved 2026-07-16**: `memory_query` (above) makes them queryable. What
-  remains deferred is whether *self-knowledge queries* ("which expert usually
-  helps here?") measurably help — that is layer-2 eval material, and the tool's
-  own traces will carry the answer.
+- Whether *self-knowledge queries* ("which expert usually helps here?") measurably
+  help — layer-2 eval material; `memory_query`'s own traces will carry the answer.

@@ -2,9 +2,8 @@
 
 **Status:** built — the consultation-ticket protocol (see "The ticket protocol"
 below), expert #2 (evaluation-methodology, [08](08-roster-candidates.md)), and
-session pinning are all live. Pinning inverted the lab/001 limit into the
-mechanism: one process = one pin ("the process is the pin",
-[07](07-harness-integration.md), lab/003).
+session pinning (one process = one pin — "the process is the pin",
+[07](07-harness-integration.md)) are all live.
 
 ## The idea
 
@@ -46,7 +45,7 @@ Why this is the right trade:
   expert's episodic subgraph, so the expert accumulates *narrative* experience —
   not fragments scattered across a roster.
 
-Pinning mechanics (as built — process-level detail in
+Pinning mechanics (process-level detail in
 [07-harness-integration.md](07-harness-integration.md)): the pin is decided at
 *launch* (`thalamus pin <scope>` / `thalamus roster`), carried by the process
 environment, enforced server-side by the MCP server that read it at startup, and
@@ -80,7 +79,7 @@ Consultation crosses the federation contract like everything else: the consulted
 expert returns *data with provenance*, never directives
 ([05-trust-model.md](05-trust-model.md)).
 
-## The ticket protocol (as built, 2026-07-16)
+## The ticket protocol
 
 **The mint is the write.** `consult_request(expert, question)` mints a single-use
 consultation ticket, and minting it *is* opening the `Exchange` record in the graph —
@@ -128,19 +127,16 @@ tracing**, "the projection of execution provenance onto evidence-support relatio
 placement is the write-path stance of the memory-poisoning literature: consultation
 is a memory write channel, and "existing prompt injection defenses fail to cover
 memory poisoning" (arXiv 2606.04329), so the defense sits where the exchange is
-written, not where the answer is read. Both are *instantiations* of published
-consensus, and claimed as nothing more. What the 2026 scan did not surface is the
+written, not where the answer is read. What the 2026 scan did not surface is the
 coupling itself — a server-minted, single-use ticket where record-creation and
 authority-grant are the same act ("not found in the 2026 scan", provisional; see
 [11-related-work.md](11-related-work.md) §4).
 
 ## Roster discipline
 
-- **M1 ships one expert** (the technical-literature graph). **M3 ships the second**
-  — evaluation-methodology, decided and shipped 2026-07-16
-  ([08](08-roster-candidates.md) records the selection; an earlier draft guessed
-  "per-project code-context" here) — and the second one is the point: it proves
-  the contract. Two proves N: the manifest was the whole rollout.
+- The roster is two experts: **technical-literature** and **evaluation-methodology**
+  ([08](08-roster-candidates.md) records the selection). The second one is the
+  point: it proves the contract. Two proves N — the manifest was the whole rollout.
 - New experts must justify themselves against the null hypothesis of "just put it in
   an existing expert." The eval loop arbitrates: if a candidate domain's retrievals
   don't cluster, it isn't an expert.

@@ -17,8 +17,7 @@ publishing in pieces, with each piece grounded in and cited against that work.
    attack surface (MINJA; MemoryGraft, arXiv 2512.16962). The systematic study
    (arXiv 2606.04329) shows the defense must act on the **write path, not the input
    boundary** — exactly where our federation contract sits: provenance on every node,
-   trust tiers, write-gating, data-informs-but-never-instructs. This is a *rigorous
-   instantiation of the emerging write-path-provenance consensus*, not a first.
+   trust tiers, write-gating, data-informs-but-never-instructs.
 2. **Evaluation.** Retrieval precision is the wrong test; downstream utility is the
    right one — now the field's consensus (survey arXiv 2603.07670; Mem2ActBench,
    arXiv 2601.19935). Those are *offline benchmarks*. Thalamus's differentiator is
@@ -40,19 +39,15 @@ rather than convention.
 
 ## What exists today
 
-The **base graph memory system** is ported and running (**M0 complete**, 2026-07-14):
-graph memory for coding agents over MCP (8 tools), a React/Cytoscape viewer over a
-FastAPI read layer, and a tight schema that exposes **session summaries** and **open
-threads** as entrypoints into the graph. It generalizes the refresh-skill
-memory-maintenance scheme from stepmania-chart-generator. It lives in
-`src/thalamus/{substrate,plane,harness}`.
-
-What it is **not** yet: it has no provenance, no trust tiers, no expert scoping, no
-contract, and no knowledge-side ontology — it implements only the *episodic* half of
-what [02](02-expert-subgraphs.md) calls an expert. The gap between the ported schema
-and the federation contract, and the order in which to close it, is
-[09-schema-and-federation.md](09-schema-and-federation.md). Everything else in this
-directory is still design.
+Milestones M0 through M3 are shipped — see [index.md](index.md) for the status board
+and the binding decision log. In brief: the graph substrate with provenance and
+scoping on every node, the immutable evidence archive and two-stage transcript
+bootstrap, two live experts behind operator-owned manifests, session pinning
+("the process is the pin"), the consultation-ticket protocol, the eval loop's
+trace/attribution/cost layers, and the first trust enforcement (the
+transcript-ingress floor). Still design: counterfactuals and utility-driven
+forgetting (M4), full trust-model enforcement (M5), the master-plane visualizer
+upgrade (M6).
 
 ## The architecture in one pass
 

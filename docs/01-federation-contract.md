@@ -1,10 +1,10 @@
 # Federation Contract
 
-**Status:** implementing. As of M1 the manifest exists as `config/experts/<scope>.yaml`
-(identity, tier, declared claim kinds, fetch allowlist — see `contract/manifest.py`),
-and conformance is enforced twice: at write time (`check_session`/`check_knowledge`)
-and against the live graph (`thalamus contract check`). Query interface and projection
-grants remain design.
+**Status:** implementing. The manifest is `config/experts/<scope>.yaml` (identity,
+tier, declared claim kinds, fetch allowlist — see `contract/manifest.py`), the core
+ontology is `contract/ontology.py`, and conformance is enforced twice: at write time
+(`check_session`/`check_knowledge`) and against the live graph
+(`thalamus contract check`). Query interface and projection grants remain design.
 
 ## What it is
 
@@ -45,8 +45,8 @@ Every federated subgraph MUST publish:
 
 ## Node/edge type discipline
 
-The contract defines a small **core ontology** (entity, claim, artifact, episode,
-open-thread, summary — exact set TBD at M1) that all subgraphs share, plus a
+The contract defines a small **core ontology** (`contract/ontology.py`: Session,
+Claim, Thread, Source, Artifact, Entity and their edges) that all subgraphs share, plus a
 namespaced extension mechanism for domain-specific types. Consumers (the agent, the
 master plane, the eval loop) may depend on core types only; extension types are
 visible but never load-bearing for cross-subgraph features. This is what keeps the
@@ -70,9 +70,6 @@ the whole project.
 
 ## Open questions
 
-- Minimum viable core ontology at M1 — start smaller than feels comfortable.
-- Whether episodic memory schemas (expert-local histories) are core or extension.
-  Leaning core: the eval loop needs to read them uniformly.
-- Contract conformance testing — a `thalamus contract check <subgraph>` command that
-  makes conformance mechanical rather than reviewed. Probably an M3 deliverable,
-  built while integrating expert #2.
+- Projection grants — which node/edge types the master plane may project per expert,
+  and at what detail level. Declared above, unbuilt; blocking for M6.
+- A declared (rather than hardcoded) query interface per subgraph.

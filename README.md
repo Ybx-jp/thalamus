@@ -12,40 +12,40 @@ them — gives the human full observability into everything the agent remembers,
 believes, and retrieved, with provenance down to the ingestion event. An **eval loop**
 measures whether any of it actually makes the agent better.
 
-## Status
+## What's live
 
-**M0 + M0.5 complete.** The base graph memory system is ported and running, and the
-schema is now federation-ready: provenance and trust tiers on every node, expert scoping,
-content-addressed claims, and a single-source ontology.
+- **The substrate**: a property graph (TinkerGraph) of `Session` / `Claim` /
+  `Thread` / `Source` / `Artifact` nodes, every one carrying provenance (trust tier,
+  source, ingestion time) and a scope. Orphans and contract violations are rejected
+  at write time ([docs/09](docs/09-schema-and-federation.md)).
+- **The evidence archive**: memory is bootstrapped from retained session transcripts,
+  held in an immutable content-addressed archive outside the repo. The graph is a
+  materialized view over that log — re-extract, never migrate
+  ([docs/10](docs/10-evidence-archive.md)).
+- **Two experts**: technical-literature and evaluation-methodology, each declared by
+  an operator-owned manifest in `config/experts/` and nothing else — the zero-glue
+  contract test ([docs/01](docs/01-federation-contract.md),
+  [docs/02](docs/02-expert-subgraphs.md)). Knowledge is fed by `thalamus ingest`
+  (allowlist-gated, evidence-first) and returns blockquoted with citation and tier:
+  it informs, it never instructs ([docs/05](docs/05-trust-model.md)).
+- **Session pinning**: one OS process = one immutable pin. `thalamus pin` / `thalamus
+  roster` launch scope-pinned sessions; the MCP server reads the scope from its
+  environment at startup and no tool accepts a scope argument
+  ([docs/07](docs/07-harness-integration.md)).
+- **The consultation protocol**: cross-expert questions ride single-use tickets where
+  minting the ticket *is* writing the exchange record, and answers must cite nodes
+  inside the consulted scope ([docs/02](docs/02-expert-subgraphs.md)).
+- **The eval loop, layers 1 + 1b**: every memory-tool call is trace-tapped, landed as
+  `Trace` nodes, judged used-vs-ignored against the session's retained transcript,
+  and priced in injected tokens — decay candidates rank by wasted tokens
+  ([docs/04](docs/04-eval-loop.md)). Utility claims wait for counterfactuals.
+- **First trust enforcement**: the transcript-ingress floor down-tiers distilled
+  claims that rest on fetched web content, so a poisoned page can't launder into
+  tier-1 memory ([docs/05](docs/05-trust-model.md)).
 
-Memory is bootstrapped from **retained session transcripts**, held in an immutable
-content-addressed archive that gives the provenance chain a floor
-([docs/10](docs/10-evidence-archive.md)).
-
-**The first expert is live (M1):** the technical-literature graph — a scoped knowledge
-subgraph of tier-2 `Claim`/`Entity`/`Source` nodes, populated by `thalamus ingest`
-(allowlist-gated, evidence-first, contract-gated) and declared by an operator-owned
-manifest at `config/experts/literature.yaml`. Recalled knowledge returns blockquoted
-with citation and tier: it informs, it never instructs ([docs/05](docs/05-trust-model.md)).
-
-**The eval loop's first layer is live (M2):** every memory-tool call is trace-tapped by
-a PostToolUse hook, landed in the graph as `Trace` nodes, and each returned node is
-judged used-vs-ignored against the session's retained transcript — crude lexical
-attribution, deliberately ([docs/04](docs/04-eval-loop.md)). The numbers say
-"instrumented, measuring"; utility claims wait for counterfactuals (M4).
-
-**Still design:** the contract enforces connectivity, provenance, and scope legality, but
-there is no manifest, no projection grant, no second expert, and no literature feed.
-What exists is a working episodic memory substrate with the boundary drawn, instrumented
-from its first expert onward.
-
-- [`docs/index.md`](docs/index.md) — doc tracker, status board, decision log
-- [`docs/00-mission.md`](docs/00-mission.md) — mission and high-level design
-- [`docs/09-schema-and-federation.md`](docs/09-schema-and-federation.md) — **what the
-  ported code owes the contract**: seven concrete gaps and the order to close them
-- [`docs/11-related-work.md`](docs/11-related-work.md) — **where Thalamus sits in the
-  2026 literature**: per-pillar prior work, what's convergence vs. what survives as
-  ours, and the open challenges the research puts to the design
+Start at [`docs/index.md`](docs/index.md) — doc tracker, status board, milestone
+table, and the binding decision log. [`docs/11-related-work.md`](docs/11-related-work.md)
+places the design in the 2026 literature.
 
 ## What's here
 
@@ -53,14 +53,15 @@ from its first expert onward.
 src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader
                (below the contract: knows nodes and edges, not experts or tiers)
-  contract/    the federation boundary — the ontology, and the checks a subgraph
-               must pass before it may be written
+  contract/    the federation boundary — the ontology, expert manifests, and the
+               checks a subgraph must pass before it may be written
   plane/       the connective plane — FastAPI read layer + React/Cytoscape viewer
   archive/     immutable content-addressed store for retained primary evidence
   harness/     where it meets the agent — MCP server, hooks, skills, transcript bootstrap
-  eval/        the eval loop, layer 1 — trace tap reader, used-vs-ignored attribution,
-               Trace-node sync, per-scope utility report
+  eval/        the eval loop — trace tap reader, used-vs-ignored attribution,
+               Trace-node sync, per-scope utility and cost reports
 frontend/      viewer source; builds into plane/static
+config/        expert manifests (tier-0, operator-owned)
 docs/          design docs
 lab/           harness-limit notebook — what broke, why, workaround or wall
 ```
@@ -88,12 +89,15 @@ thalamus bootstrap                 # list session transcripts available to inges
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus contract check            # audit the live graph against the contract
-thalamus ingest <url|file>         # feed one document to the literature expert
+thalamus ingest <url|file>         # feed one document to an expert (dry-run; --write to persist)
+thalamus pin <scope>               # launch a claude session pinned to an expert
+thalamus roster                    # one pinned tmux window per expert (plus main)
 thalamus visualize                 # open the persisted memory explorer
 thalamus visualize session.yaml    # preview a pending extraction, no graph needed
 thalamus write session.yaml        # write to the graph
 thalamus eval sync --write         # land retrieval traces + used-vs-ignored verdicts
-thalamus eval report               # per-scope retrieval-utility numbers
+thalamus eval report               # per-scope retrieval-utility numbers, priced
+thalamus eval cost                 # session/operation token-cost buckets
 thalamus-mcp                       # run the MCP server
 ```
 
@@ -110,6 +114,9 @@ restarts. Don't `docker compose down -v` unless you mean to delete the graph.
 | `memory_recall_recent` | `limit` | Most recent sessions |
 | `memory_open_threads` | `project`, `limit` | Active continuation points — **the entrypoint** |
 | `memory_thread` | `thread_id` | Full context on one thread |
+| `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
+| `consult_request` | `expert`, `question` | Mint a consultation ticket = open the exchange record |
+| `consult_answer` | `ticket`, `answer` | Close a consultation; citations validated, ticket burned |
 | `memory_visualize` | `session_yaml` | Mermaid render of a pending extraction |
 | `memorize` | `session_yaml` | Write an extraction to the graph |
 
@@ -123,7 +130,7 @@ Register the server (`.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor)
       "args": ["run", "--directory", "/path/to/thalamus", "thalamus-mcp"],
       "env": {
         "THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin",
-        "THALAMUS_SCOPE": "main"
+        "THALAMUS_SCOPE": "${THALAMUS_SCOPE:-main}"
       }
     }
   }
@@ -146,8 +153,8 @@ New session → session-start hook → memory_open_threads → context
 ```
 
 The extraction skill is at `src/thalamus/harness/skills/extract-session/SKILL.md`.
-The session-start hook asks the agent for the current project's open threads; it is the
-mechanism that generalizes into **expert pinning**
+The session-start hook asks the agent for the current project's open threads, and it
+is the same mechanism that carries **expert pinning**
 ([docs/02](docs/02-expert-subgraphs.md)).
 
 ## Bootstrapping from transcripts
@@ -155,10 +162,12 @@ mechanism that generalizes into **expert pinning**
 Claude Code persists every session as JSONL. `thalamus bootstrap` retains those in an
 immutable, content-addressed archive and derives memory from them:
 
-- **Stage 1 (built, no model):** `Source`, `Session`, `Artifact`, and `TOUCHES` edges
-  **anchored to the exact messages** that touched each file — recovered from tool-call
-  records. Exact and free; an LLM would only add error. 62 sessions in ~5s.
-- **Stage 2 (deferred):** `Claim`s and `Thread`s, which genuinely need judgement.
+- **Stage 1 (deterministic, no model):** `Source`, `Session`, `Artifact`, and `TOUCHES`
+  edges **anchored to the exact messages** that touched each file — recovered from
+  tool-call records. Exact and free; an LLM would only add error.
+- **Stage 2 (`thalamus extract`):** `Claim`s and `Thread`s, which genuinely need
+  judgement — extracted via headless `claude -p`, replayed chronologically so threads
+  resolve forward in time.
 
 The retained transcript is what gives the provenance chain a **floor** — without it, a
 belief's source is a Session whose content is a summary of itself. It also makes
@@ -175,24 +184,26 @@ rewritten is not evidence.
 
 Five node types — `Session`, `Claim`, `Thread`, `Source`, `Artifact` — joined by
 `CONTAINS` / `TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` / `SOLVED_BY` /
-`DERIVED_FROM`. Declared once in
-[`contract/ontology.py`](src/thalamus/contract/ontology.py); everything else derives
-from it. Run `thalamus schema` for the JSON schema.
+`DERIVED_FROM`, plus the knowledge side an expert manifest declares (`Entity`,
+literature claims, `KnowledgeBatch`) and the eval loop's `Trace` / `Exchange` records.
+Declared once in [`contract/ontology.py`](src/thalamus/contract/ontology.py);
+everything else derives from it. Run `thalamus schema` for the JSON schema.
 
-Three properties are load-bearing:
+Four properties are load-bearing:
 
 - **Claims are one label, discriminated by `kind`.** Decisions, problems, and solutions
   are claim *subtypes*, not sibling labels. A decision is an assertion with a rationale
   from the agent; a literature claim is an assertion with a citation from a source —
   same node, different provenance. Consumers query `Claim`, so a future expert adding
-  `kind: literature/finding` breaks nobody. Claim identity is **content-addressed**, so
-  the same claim in two sessions converges on one node.
+  `kind: literature/finding` breaks nobody. Claim identity is
+  **(kind, normalized description)**, so the same claim in two sessions converges on
+  one node.
 - **Every node carries provenance** — trust tier, source, ingestion time — and
   `DERIVED_FROM` edges make effective trust the *floor* over a node's derivation chain.
   Distillation does not launder.
-- **`Source` is retained primary evidence** — a transcript today, a paper at M1. Same node
-  type; only the tier differs. It is the floor of the provenance chain, and `DERIVED_FROM`
-  edges carry `anchors`: the precise messages a belief came from.
+- **`Source` is retained primary evidence** — a transcript or an ingested paper. Same
+  node type; only the tier differs. It is the floor of the provenance chain, and
+  `DERIVED_FROM` edges carry `anchors`: the precise messages a belief came from.
 - **Every node carries a scope, except `Artifact`.** Scope is which *expert*; `project`
   is which *repo*; they are orthogonal. `Artifact` is deliberately **global** — one
   vertex per identifier, shared by every scope. It is the join key between experts.
@@ -200,15 +211,11 @@ Three properties are load-bearing:
 Orphans are rejected at write time, not filtered at read time. `thalamus validate` runs
 the full contract check.
 
-Still missing (this is the **episodic half** of an expert): the knowledge-side ontology
-— entities and sources, and a feed to populate them. See
-[docs/09](docs/09-schema-and-federation.md).
-
 ## Development
 
 ```bash
-.venv/bin/pytest              # 48 tests
-.venv/bin/ruff check src tests
-cd frontend && npm test       # 10 tests
+uv run pytest
+uv run ruff check src tests
+cd frontend && npm test
 cd frontend && npm run build  # -> src/thalamus/plane/static
 ```
