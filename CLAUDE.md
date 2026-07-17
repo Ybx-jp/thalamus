@@ -4,6 +4,11 @@ Docs are the source of truth; start at [docs/index.md](docs/index.md). The decis
 log there is binding — do not re-litigate closed decisions without new evidence.
 Commit and push frequently.
 
+Whenever a task changes behavior, design, or state that a doc in docs/ describes,
+update that doc in the same change. Docs describe the **current state only** — no
+changelog narration, no self-correction, no apologizing for past designs. History
+lives in git and the memory graph, not in docs/.
+
 ## The grounding discipline
 
 Two standing rules ([docs/00](docs/00-mission.md), [docs/11](docs/11-related-work.md)):
