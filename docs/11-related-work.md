@@ -27,9 +27,6 @@ find claimed elsewhere (§4).
 
 ## 1. Trust model & memory poisoning
 
-**Claim we retired:** "almost no memory system in the wild has a trust model." True
-circa 2024; false now. Retained only as historical framing, never as a live claim.
-
 The attack class is fully mapped:
 
 - **MINJA** (Memory INJection Attack) — query-only poisoning of agents with
@@ -55,12 +52,12 @@ The defenses proposed there are, almost line-for-line, Thalamus's design:
 
 That is [05-trust-model.md](05-trust-model.md)'s "gates enforced at the federation
 contract," "distillation does not launder," and "orphans/unprovenanced nodes
-rejected at write time." We converged; we did not originate. As of 2026-07-16
-"distillation does not launder" is no longer only a slogan: the transcript-ingress
-floor ([05](05-trust-model.md)) down-tiers claims resting on `WebFetch`/`WebSearch`
+rejected at write time" — convergence, not origination. "Distillation does not
+launder" is enforced, not just stated: the transcript-ingress floor
+([05](05-trust-model.md)) down-tiers claims resting on `WebFetch`/`WebSearch`
 content to tier 2 at the write path, contract-audited and canary-tested (lab/005) —
 the write-path stance instantiated on the *distillation* channel, MINJA (arXiv
-2503.03704, now in the graph) being the "crafted input stream suffices" motivation.
+2503.03704, in the graph) being the "crafted input stream suffices" motivation.
 
 More that overlaps or exceeds the design:
 
@@ -82,15 +79,12 @@ More that overlaps or exceeds the design:
   instructs," and it predates and outframes our version.
 
 **Position:** Thalamus's trust model is a *rigorous instantiation of the emerging
-write-path-provenance consensus*, not a first. The design choice to defend it is
-vindicated by this literature; the claim to have discovered the need is not
-available to us.
+write-path-provenance consensus*, not a first.
 
 ## 2. Evaluation
 
-**Claim we retired:** "the industry answers 'does memory help?' with vibes." Also
-now false. The field has explicitly shifted from retrieval-QA proxies to
-downstream, action-coupled evaluation.
+The field has explicitly shifted from retrieval-QA proxies to downstream,
+action-coupled evaluation.
 
 - **Memory for Autonomous LLM Agents: Mechanisms, Evaluation, and Emerging
   Frontiers** (survey, arXiv 2603.07670) — names the shift: retrieval precision is
@@ -120,7 +114,7 @@ Benchmarks *measure*; they do not *self-maintain*. The correct framing is theref
 "not a benchmark — a live self-maintenance loop that the offline benchmarks above
 complement," and we cite them as the offline half we extend.
 
-### 2b. Cost — the denominator (added 2026-07-16)
+### 2b. Cost — the denominator
 
 Grading memory on utility alone is half a fraction; the field already grades the
 whole one.
@@ -173,7 +167,7 @@ recorded as first-class, bidirectional, provenance-tracked episodic memory formi
 a collaboration graph — now has direct analogues (Neo4j's ReasoningTrace chains).
 It remains a good design; it is no longer unclaimed.
 
-### 3b. LLM-written graph queries (added 2026-07-16)
+### 3b. LLM-written graph queries
 
 - **Multi-Agent GraphRAG: A Text-to-Cypher Framework for Labeled Property
   Graphs** (arXiv 2511.08274) — modular agentic text-to-Cypher over LPGs with

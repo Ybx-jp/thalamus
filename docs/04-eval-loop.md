@@ -41,7 +41,7 @@ material. Traces land as episodic memory (the trace store **is** a property grap
 so the eval loop needs no side database: it reads the same substrate it grades.
 
 **As built:** retrieval results render their vertex IDs inline, so the verbatim
-PostToolUse tap *is* the node-level trace — no side schema (docs/09 G5). `thalamus
+PostToolUse tap *is* the node-level trace — no side schema (docs/09). `thalamus
 eval sync` lands tap lines as `Trace` nodes (`Session -[QUERIES]-> Trace -[RETURNS]->
 result`), attributing each returned node against the session's retained transcript:
 cited-by-ID and thread-slug mentions are strong signals, then lexical term overlap

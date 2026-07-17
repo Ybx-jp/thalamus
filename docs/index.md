@@ -7,18 +7,18 @@ model and a measured utility loop. Start at [00-mission.md](00-mission.md).
 
 | Doc | Covers | Status | Last touched |
 |---|---|---|---|
-| [00-mission.md](00-mission.md) | Mission, high-level design, principles, milestone ladder | ✅ drafted | 2026-07-13 |
-| [01-federation-contract.md](01-federation-contract.md) | The schema contract: data schema + permissions + trust boundary | 🏗️ implementing — manifest v0 (config/experts/), write-time + audit-time conformance | 2026-07-15 |
-| [02-expert-subgraphs.md](02-expert-subgraphs.md) | Specialist roster, session pinning, inter-expert subagent protocol | 🏗️ implementing — consultation-ticket protocol built ("the mint is the write"); expert #2 (eval-methodology) live; pinning built ("the process is the pin") | 2026-07-16 |
-| [03-master-plane.md](03-master-plane.md) | The main scope: connective plane, observability → audit, contradiction surface | 🔍 revised (no-copy, not no-store) | 2026-07-14 |
-| [04-eval-loop.md](04-eval-loop.md) | Retrieval traces, counterfactuals, utility-driven forgetting | 🏗️ implementing — layer 1 built: traces land as `Trace` nodes, crude used-vs-ignored attribution, `thalamus eval sync`/`report` | 2026-07-15 |
-| [05-trust-model.md](05-trust-model.md) | Provenance tiers, write-gating, memory-poisoning defense | 🏗️ implementing — transcript-ingress floor shipped (WebFetch/WebSearch laundering closed, canary-tested); mailbox + Bash-fetch residuals open | 2026-07-16 |
-| [06-ingestion.md](06-ingestion.md) | Curated feeds; the crawler, deliberately demoted | 📦 shipped — v0 as designed: `thalamus ingest`, allowlist-gated, evidence-first | 2026-07-15 |
-| [07-harness-integration.md](07-harness-integration.md) | MCP / hooks / CLAUDE.md / skills, pinning mechanics, the limit lab, Agent Teams instrument | 🏗️ implementing — hooks live; pinning built ("the process is the pin", lab/003); teams experiments T0–T5 specified | 2026-07-16 |
-| [08-roster-candidates.md](08-roster-candidates.md) | Granularity rule (spine vs. consultant), skill-vs-expert boundary, parked candidate list | ✅ drafted | 2026-07-13 |
-| [09-schema-and-federation.md](09-schema-and-federation.md) | The ported schema vs. the contract: 7 gaps, sequencing, decisions | 🏗️ implementing — G2/G3/G6/G7 closed at M0.5 | 2026-07-14 |
-| [10-evidence-archive.md](10-evidence-archive.md) | Retained transcripts as the floor of the provenance chain; the two-stage bootstrap | 📦 shipped — both stages run over the full corpus | 2026-07-15 |
-| [11-related-work.md](11-related-work.md) | Where Thalamus sits in the 2026 literature: per-pillar prior work, retired claims, what survives, open challenges | 🔍 living — first scan 2026-07-15 | 2026-07-15 |
+| [00-mission.md](00-mission.md) | Mission, high-level design, principles, milestone ladder | ✅ drafted | 2026-07-17 |
+| [01-federation-contract.md](01-federation-contract.md) | The schema contract: data schema + permissions + trust boundary | 🏗️ implementing — manifest v0 (config/experts/), write-time + audit-time conformance | 2026-07-17 |
+| [02-expert-subgraphs.md](02-expert-subgraphs.md) | Specialist roster, session pinning, inter-expert subagent protocol | 🏗️ implementing — consultation-ticket protocol built ("the mint is the write"); expert #2 (eval-methodology) live; pinning built ("the process is the pin") | 2026-07-17 |
+| [03-master-plane.md](03-master-plane.md) | The main scope: connective plane, observability → audit, contradiction surface | 🔍 revised (no-copy, not no-store) | 2026-07-17 |
+| [04-eval-loop.md](04-eval-loop.md) | Retrieval traces, counterfactuals, utility-driven forgetting | 🏗️ implementing — layer 1 built: traces land as `Trace` nodes, crude used-vs-ignored attribution, `thalamus eval sync`/`report` | 2026-07-17 |
+| [05-trust-model.md](05-trust-model.md) | Provenance tiers, write-gating, memory-poisoning defense | 🏗️ implementing — transcript-ingress floor shipped (WebFetch/WebSearch laundering closed, canary-tested); mailbox + Bash-fetch residuals open | 2026-07-17 |
+| [06-ingestion.md](06-ingestion.md) | Curated feeds; the crawler, deliberately demoted | 📦 shipped — v0 as designed: `thalamus ingest`, allowlist-gated, evidence-first | 2026-07-17 |
+| [07-harness-integration.md](07-harness-integration.md) | MCP / hooks / CLAUDE.md / skills, pinning mechanics, the limit lab, Agent Teams instrument | 🏗️ implementing — hooks live; pinning built ("the process is the pin", lab/003); teams experiments T0–T5 specified | 2026-07-17 |
+| [08-roster-candidates.md](08-roster-candidates.md) | Granularity rule (spine vs. consultant), skill-vs-expert boundary, parked candidate list | ✅ drafted | 2026-07-17 |
+| [09-schema-and-federation.md](09-schema-and-federation.md) | The schema as built: unified Claim, provenance envelope, scoping, the global-Artifact carve-out | 📦 shipped — projection grants (G4) still open | 2026-07-17 |
+| [10-evidence-archive.md](10-evidence-archive.md) | Retained transcripts as the floor of the provenance chain; the two-stage bootstrap | 📦 shipped — both stages run over the full corpus | 2026-07-17 |
+| [11-related-work.md](11-related-work.md) | Where Thalamus sits in the 2026 literature: per-pillar prior work, what survives, open challenges | 🔍 living — last scan 2026-07-15 | 2026-07-17 |
 | [appendix/interactive-memory-graph-spec.md](appendix/interactive-memory-graph-spec.md) | As-built spec for the viewer (historical; predates Thalamus) | 📦 shipped | 2026-07-10 |
 
 Status legend: 💭 idea → ✅ drafted → 🔍 reviewed → 🏗️ implementing → 📦 shipped
