@@ -37,6 +37,14 @@ harness's limits on purpose.
     commands as `bash_gremlin` lines in the same trace JSONL the memory tap
     writes, so `eval sync` prices them like any recall (docs/04) — the surface
     that used to query the graph in the dark.
+  - *Wall clock (`timestamp.sh`, UserPromptSubmit):* inject one line of
+    current local datetime on every prompt. The harness stamps `currentDate`
+    only at session start, so long-running pinned roster sessions drift and
+    hallucinate dates — into answers and into the memory graph's own
+    timestamps (operator-observed, 2026-07-18). This is the one deliberate
+    exception to the conditional-injection rule below: ~a dozen tokens per
+    prompt, unconditional, kept separate from `conditioning.sh` so the
+    rescue-rate telemetry stays clean.
   - *Conditioning (`conditioning.sh`, UserPromptSubmit + PostToolUse on
     TaskCreate):* tilt the agent toward the memory system at the moments it
     historically under-uses it. Lexical intent classes on the user's prompt

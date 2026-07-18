@@ -25,6 +25,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/src/thalamus/harness/hooks/claude-code/timestamp.sh"
+          },
+          {
+            "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/src/thalamus/harness/hooks/claude-code/conditioning.sh"
           }
         ]
