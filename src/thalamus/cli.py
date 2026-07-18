@@ -209,6 +209,18 @@ def main():
     )
     eval_recipes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
+    eval_conditioning_parser = eval_sub.add_parser(
+        "conditioning",
+        help="Per-firing behavioral join: did each injected reminder change behavior?",
+    )
+    eval_conditioning_parser.add_argument(
+        "--conditioning", type=Path, default=None,
+        help="Conditioning event dir (default: ~/.thalamus/conditioning)",
+    )
+    eval_conditioning_parser.add_argument(
+        "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
+    )
+
     # Pin / roster commands — docs/07 "the process is the pin"
     pin_parser = subparsers.add_parser(
         "pin", help="Launch a claude session pinned to an expert scope"
@@ -679,6 +691,14 @@ def _cmd_eval(args, eval_parser):
         print(render_smoke(results))
         if any(not r.ok for r in results):
             sys.exit(1)
+    elif getattr(args, "eval_command", None) == "conditioning":
+        from thalamus.eval.conditioning import conditioning_report
+
+        print(
+            conditioning_report(
+                conditioning_base=args.conditioning, traces_base=args.traces
+            ).render()
+        )
     elif getattr(args, "eval_command", None) == "pins":
         from thalamus.contract.manifest import available_scopes
         from thalamus.eval.cost import load_pins

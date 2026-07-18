@@ -16,6 +16,15 @@ earns it.
 
 ## The ladder — cheapest rung that answers
 
+**Recall before archaeology.** Before grepping transcripts, archives, or logs
+for what a past session did, ask the graph (L1). Measured failure (lab/008
+coda): a session spent an hour of raw-transcript forensics reconstructing an
+orphan-cleanup story whose entire narrative sat in a distilled Session
+summary — one recall away. The archive is the *floor* of the provenance chain,
+not the front door; drop to it when the graph genuinely lacks the answer, and
+before concluding that, check the distillation state (`eval sync` names
+pending sessions) rather than assuming.
+
 **L0 — already in context.** Session start injected open threads. Do not re-ask
 for them; `memory_open_threads` mid-session is only for a *different* project's
 threads.
@@ -87,6 +96,25 @@ Self-audit — what retrieval is costing and wasting, per scope:
       .by(values('injected_chars').sum())
     g.V().hasLabel('Trace').outE('RETURNS').has('used',false)
       .inV().groupCount().by(id).unfold().order().by(values,desc).limit(5)
+
+**L4 — consultation.** A question inside a roster expert's domain
+(literature, eval-methodology, homelab) that shapes a design or a metric is a
+`consult_request`, not a thin answer from general knowledge — and the consult
+comes *before* the design, not as review after (docs/02; the conditioning
+hooks remind, this skill is the canonical rule). A broad survey that needs
+volume also lands here: the consultation subagent's context is disposable.
+
+## Reading results honestly
+
+- **An empty result is often the correct answer.** "Query returned no
+  results" on an existence question is data, not a malfunction — a vertex
+  with no edges *was* the finding that exposed 1,114 migration orphans
+  (lab/008). Before treating emptiness as a bug: is emptiness plausible? The
+  dialect guard now rejects malformed queries with instruction, so a clean
+  empty means the query ran.
+- **"The graph doesn't have X" is a claim about *now*.** State changes
+  between sessions (the orphans were pruned hours after being found). Verify
+  against the live graph before repeating a remembered absence.
 
 ## Rules that keep the loop honest
 

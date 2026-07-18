@@ -37,6 +37,20 @@ harness's limits on purpose.
     commands as `bash_gremlin` lines in the same trace JSONL the memory tap
     writes, so `eval sync` prices them like any recall (docs/04) — the surface
     that used to query the graph in the dark.
+  - *Conditioning (`conditioning.sh`, UserPromptSubmit + PostToolUse on
+    TaskCreate):* tilt the agent toward the memory system at the moments it
+    historically under-uses it. Lexical intent classes on the user's prompt
+    (design intent → ground-in-literature + consult reminder; past-work
+    questions → recall-before-archaeology) plus a multi-step-work milestone on
+    task-list creation. Grounded: injection is **conditional, never
+    every-prompt** (adaptive beats indiscriminate retrieval — Self-RAG, arXiv
+    2310.11511; locally, lab/006's ~50% ignored share), **throttled**
+    (once per class per session), and **measured per firing** (`thalamus eval
+    conditioning` joins the firing log to the trace tap: did the behavior
+    follow, or was the reminder wallpaper?). Context-borne conditioning as the
+    behavior-change channel is Reflexion's result (arXiv 2303.11366).
+    TaskCreate is deliberately *not required*: it is optional harness UI, and
+    the load-bearing tier rides UserPromptSubmit, which always fires.
 - **CLAUDE.md directives** — per-project retrieval policy: default pin for this
   directory, tier policy for this kind of session, when to consult vs. answer thin.
   These start minimal and **evolve organically with use** — every directive change

@@ -198,6 +198,27 @@ read-only atop a gremlin-lang (no-code) server grammar, and rendering vertex IDs
 the trace tap prices like any recall. What we trade away: their feedback loop's
 correction of failed queries; ours fails fast and lets the agent rewrite.
 
+### 3c. Adaptive retrieval & in-context conditioning
+
+- **Self-RAG** (arXiv 2310.11511) — a single LM adaptively retrieves *on
+  demand* via reflection tokens and critiques what came back; indiscriminate
+  always-retrieve is the ad-hoc baseline it beats on factuality and citation
+  accuracy. The when-to-retrieve decision is a first-class design object.
+- **Reflexion** (arXiv 2303.11366) — agents improve without weight updates
+  through *linguistic* feedback: reflective text in an episodic buffer,
+  re-injected as context, conditions later attempts (91% pass@1 HumanEval).
+  Context injection is a working behavior-change channel.
+
+Positioning of the conditioning hooks ([07](07-harness-integration.md)): an
+*instantiation* of both — harness-event-triggered, operator-authored lexical
+classes instead of Self-RAG's learned reflection tokens, and one-shot throttled
+reminders instead of Reflexion's accumulated self-reflections. What we trade
+away: the learned per-step retrieval decision (our triggers are regexes an
+operator maintains) and self-generated reflection content. What we add from our
+own perimeter: every firing is logged and graded by a per-firing behavioral
+join (`eval conditioning`) — the conditioning layer is born inside the eval
+loop, so an ineffective reminder class is measurable wallpaper, not folklore.
+
 ## 4. What the scan did *not* find claimed elsewhere
 
 Stated narrowly and provisionally — absence in one scan is weak evidence, and this
