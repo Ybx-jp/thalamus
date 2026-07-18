@@ -47,11 +47,35 @@ RECALL_STRATEGY_PATH = (
 # reuse signal and is skipped.
 _MIN_FINGERPRINT_STEPS = 3
 
-# Mutating steps a recipe must never contain — the smoke run refuses to execute
+# Mutating tokens a recipe must never contain — the smoke run refuses to execute
 # a stored recipe that drifted onto the write path (docs/05: ad-hoc is read-only).
-_SMOKE_DENIED = ("add_v(", "add_e(", "merge_v(", "merge_e(", ".drop(", ".property(")
+# Checked on an underscore-folded compact view, so both dialects are caught
+# (add_v and addV inside a submitted string alike — the memory_query guard's
+# deny list, plus the writer's own entry points, which recipes can import).
+_SMOKE_DENIED = (
+    "addv(",
+    "adde(",
+    "mergev(",
+    "mergee(",
+    "drop(",
+    "property(",
+    "sideeffect(",
+    "io(",
+    "call(",
+    "program(",
+    "writetrace(",
+    "memorize(",
+    "ensureedge(",
+    "ensurevertex(",
+    "writesession(",
+)
+
+# The recall-strategy recipes predate per-entry Validated dates; the skill
+# shipped 2026-07-16, which bounds their admission for temporal reuse tagging.
+_RECALL_STRATEGY_ADMITTED = datetime.fromisoformat("2026-07-16T00:00:00+00:00")
 
 _STEP_RE = re.compile(r"\.\s*([A-Za-z_]+)\s*\(")
+_VALIDATED_RE = re.compile(r"\*\*Validated:\*\*\s*(\d{4}-\d{2}-\d{2})")
 
 
 @dataclass
@@ -60,6 +84,8 @@ class GuardEvent:
     session_id: str
     verdict: str  # "block" | "pass"
     command_hash: str = ""
+    branch: str = ""  # what satisfied a pass: "terminal" | "wrapper" | "textedit"
+    fingerprint: tuple[str, ...] = ()
 
 
 def load_guard_events(base: Path | None = None) -> list[GuardEvent]:
@@ -85,12 +111,17 @@ def load_guard_events(base: Path | None = None) -> list[GuardEvent]:
                 verdict = record.get("verdict")
                 if verdict not in ("block", "pass"):
                     continue
+                fingerprint = tuple(
+                    s for s in str(record.get("fingerprint", "")).split(",") if s
+                )
                 events.append(
                     GuardEvent(
                         ts=ts,
                         session_id=str(record["session_id"]),
                         verdict=verdict,
                         command_hash=str(record.get("command_hash", "")),
+                        branch=str(record.get("branch", "")),
+                        fingerprint=fingerprint,
                     )
                 )
     events.sort(key=lambda e: e.ts)
@@ -109,32 +140,67 @@ def step_fingerprint(text: str) -> tuple[str, ...]:
     return tuple(m.lower().replace("_", "") for m in _STEP_RE.findall(text))
 
 
-def recipe_fingerprints() -> dict[str, tuple[str, ...]]:
-    """Fingerprints of every stored recipe, from both stores.
+@dataclass(frozen=True)
+class Recipe:
+    fingerprint: tuple[str, ...]
+    admitted: datetime | None  # None: unknown — matches without a time bound
 
-    RECIPES.md (fenced blocks) and recall-strategy's seven memory_query recipes
-    (indented blocks under their descriptions) — reuse of either arm counts.
+
+def recipe_fingerprints() -> dict[str, Recipe]:
+    """Fingerprints of every stored recipe, from both stores, with admission dates.
+
+    RECIPES.md (fenced blocks, per-entry Validated dates) and recall-strategy's
+    seven memory_query recipes (indented blocks; admitted when the skill
+    shipped) — reuse of either arm counts. The admission date matters: tagging
+    a trace recipe-derived when it *predates* the recipe credits the store with
+    the successes that created it (selection on success — verification
+    8f6ad2d6f4024b2c finding 3).
     """
-    prints: dict[str, tuple[str, ...]] = {}
+    prints: dict[str, Recipe] = {}
     for path in (RECIPES_PATH, RECALL_STRATEGY_PATH):
         if not path.is_file():
             continue
-        for index, (name, code) in enumerate(_code_blocks(path.read_text())):
+        default_admitted = (
+            _RECALL_STRATEGY_ADMITTED if path == RECALL_STRATEGY_PATH else None
+        )
+        for index, (name, code, validated) in enumerate(_dated_blocks(path.read_text())):
             fp = step_fingerprint(code)
             if len(fp) >= _MIN_FINGERPRINT_STEPS:
                 # Index-suffixed: several recipes can share one section heading
                 # (recall-strategy's seven live under a single ##).
-                prints[f"{path.stem}:{index}:{name}"] = fp
+                prints[f"{path.stem}:{index}:{name}"] = Recipe(
+                    fp, validated or default_admitted
+                )
     return prints
 
 
-def is_recipe_derived(query: str, prints: dict[str, tuple[str, ...]]) -> str | None:
-    """The recipe this query's shape reuses, or None if written from scratch."""
+def is_recipe_derived(
+    query: str, prints: dict[str, Recipe], ts: datetime | None = None
+) -> str | None:
+    """The recipe this query's shape reuses, or None if written from scratch.
+
+    With `ts`, only recipes already admitted at that time match — a query older
+    than the recipe it resembles was the recipe's *source*, not its reuse.
+    """
     fp = step_fingerprint(query)
-    for name, recipe_fp in prints.items():
-        if _contains(fp, recipe_fp):
+    for name, recipe in prints.items():
+        if ts is not None and recipe.admitted is not None and ts < recipe.admitted:
+            continue
+        if _contains(fp, recipe.fingerprint):
             return name
     return None
+
+
+def _shares_intent(blocked: tuple[str, ...], retry: tuple[str, ...]) -> bool:
+    """Whether a later pass plausibly retries the blocked traversal.
+
+    Pre-v3 guard events carry no fingerprint; without one the join cannot be
+    tightened and falls back to any-terminal-pass.
+    """
+    if not blocked:
+        return True
+    overlap = set(blocked) & set(retry)
+    return len(overlap) >= min(2, len(blocked))
 
 
 def _contains(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool:
@@ -146,26 +212,31 @@ def _contains(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool:
     )
 
 
-def _code_blocks(markdown: str) -> list[tuple[str, str]]:
-    """(section name, code) for fenced and 4-space-indented blocks."""
-    blocks: list[tuple[str, str]] = []
+def _dated_blocks(markdown: str) -> list[tuple[str, str, datetime | None]]:
+    """(section name, code, Validated date) for fenced and 4-space-indented blocks."""
+    blocks: list[tuple[str, str, datetime | None]] = []
     section = ""
+    validated: datetime | None = None
     fence: list[str] | None = None
     indent: list[str] = []
     for line in markdown.splitlines():
         if fence is not None:
             if line.strip().startswith("```"):
-                blocks.append((section, "\n".join(fence)))
+                blocks.append((section, "\n".join(fence), validated))
                 fence = None
             else:
                 fence.append(line)
             continue
         if line.startswith("#"):
             if indent:
-                blocks.append((section, "\n".join(indent)))
+                blocks.append((section, "\n".join(indent), validated))
                 indent = []
             section = line.lstrip("# ").strip()
+            validated = None
             continue
+        match = _VALIDATED_RE.search(line)
+        if match:
+            validated = datetime.fromisoformat(match.group(1) + "T00:00:00+00:00")
         if line.strip().startswith("```"):
             fence = []
             continue
@@ -173,10 +244,10 @@ def _code_blocks(markdown: str) -> list[tuple[str, str]]:
             indent.append(line.strip())
             continue
         if indent and line.strip():
-            blocks.append((section, "\n".join(indent)))
+            blocks.append((section, "\n".join(indent), validated))
             indent = []
     if indent:
-        blocks.append((section, "\n".join(indent)))
+        blocks.append((section, "\n".join(indent), validated))
     return blocks
 
 
@@ -243,9 +314,28 @@ def gremlin_report(
                 continue
             report.blocks += 1
             later = events[i + 1 :]
-            if any(e.verdict == "pass" for e in later):
+            # A rescue is a corrected retry, not "any later pass" — wrapper and
+            # text-edit passes fire constantly in an active session and would
+            # saturate the metric (verification 8f6ad2d6f4024b2c finding 1).
+            # The join is on traversal intent: a later terminal-branch pass
+            # sharing the blocked command's step fingerprint.
+            if any(
+                e.verdict == "pass"
+                and e.branch in ("terminal", "")
+                and _shares_intent(event.fingerprint, e.fingerprint)
+                for e in later
+            ):
                 report.rescued += 1
-            if later and later[0].verdict == "block":
+            # Friction is re-submitting the *same* doomed traversal, not any
+            # adjacent block.
+            if any(
+                e.verdict == "block"
+                and (
+                    (event.command_hash and e.command_hash == event.command_hash)
+                    or (event.fingerprint and e.fingerprint == event.fingerprint)
+                )
+                for e in later
+            ):
                 report.repeat_blocks += 1
 
     prints = recipe_fingerprints()
@@ -272,7 +362,11 @@ def gremlin_report(
                 report.bash_errored += 1
             query = str(event.tool_input.get("command", ""))
 
-        arm = "recipe-derived" if is_recipe_derived(query, prints) else "from-scratch"
+        arm = (
+            "recipe-derived"
+            if is_recipe_derived(query, prints, ts=event.ts)
+            else "from-scratch"
+        )
         stats = report.reuse.setdefault(arm, {"n": 0, "ok": 0})
         stats["n"] += 1
         stats["ok"] += int(succeeded)
@@ -281,13 +375,17 @@ def gremlin_report(
 
 
 def _succeeded(event: TraceEvent) -> bool:
-    """Execution accuracy's first half: the query ran and produced output.
+    """Execution accuracy's first half: the query *executed* correctly.
 
-    The second half — was the output *used* — is the standard used/evidence
-    verdict on the landed Trace (`thalamus eval report`), not recomputed here.
+    An empty result is an execution success — it is often the right answer to
+    an existence question, and calling it a failure conflates the query running
+    with the answer being non-empty (the fact-itself vs downstream-consequence
+    split; verification 8f6ad2d6f4024b2c finding 4). The second half — was the
+    output *used* — is the standard used/evidence verdict on the landed Trace
+    (`thalamus eval report`), not recomputed here.
     """
     if event.tool == "memory_query":
-        return event.tool_response.strip().startswith("Query result")
+        return event.tool_response.strip().startswith("Query result") or event.is_miss()
     return (
         bool(event.tool_response.strip())
         and "Traceback (most recent call last)" not in event.tool_response
@@ -316,7 +414,7 @@ def smoke_recipes(url: str, path: Path | None = None) -> list[SmokeResult]:
         if name in seen or not name or name.lower().startswith(("gremlin recipe", "entry")):
             continue
         seen.add(name)
-        compact = re.sub(r"\s+", "", code).lower()
+        compact = re.sub(r"\s+", "", code).lower().replace("_", "")
         if any(denied in compact for denied in _SMOKE_DENIED):
             results.append(SmokeResult(name, False, "mutating step in stored recipe"))
             continue

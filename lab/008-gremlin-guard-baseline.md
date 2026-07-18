@@ -27,20 +27,71 @@ the ship commit (2026-07-17):
   `run_query(...)`) that iterate internally.
 - **Genuinely doomed in the archive: 0. False positives under guard v1: 8/8.**
 
-The operator-observed doomed queries are not refuted — they sit in sessions
-not yet distilled into the archive (the tap lists them as pending), outside
-this scan's reach. But the scan's verdict on the *guard* is unambiguous: as
-shipped, its first eight historical firings would all have been wrong, and the
-consultation named exactly this failure mode — false positives teach agents to
-route around a guard and silently destroy its rescue metric.
+The scan's verdict on the *guard* is unambiguous: as shipped, its first eight
+historical firings would all have been wrong, and the consultation named
+exactly this failure mode — false positives teach agents to route around a
+guard and silently destroy its rescue metric.
+
+## The completed baseline (undistilled sessions included)
+
+The verification consultation (exchange
+`scope:main:exchange:8f6ad2d6f4024b2c`) demoted the archive scan to an
+FP-calibration instrument (a zero-numerator baseline detects harm, never
+benefit) and named extending it over the undistilled sessions as the
+highest-value next measurement. Done — scanning the raw session transcripts
+directly:
+
+- **50** further inline gremlin commands in undistilled sessions; flagged
+  candidates classified by hand: two more false-positive classes (`thalamus.eval`
+  helper imports that iterate internally; `grep`/`rg` commands mentioning
+  markers inside their search patterns) and one scanner artifact (Python `re`
+  without MULTILINE misreads the guard's line-based `^sed` — the live guard
+  passes it).
+- **Doomed inline commands across both arms: 0/98.**
+- **The operator-observed doomed query was found — in a script file.** Session
+  5f8ad588 wrote `prune_migration_orphans.py` to its scratchpad containing a
+  bare `g.V().has_label("Claim").not_(T.both_e())` statement (no terminal
+  step, silently no-op) *adjacent to* a correctly terminated
+  `.count().next()` traversal. The doomed-query channel is file-writes, which
+  the Bash-text heuristic cannot see, and a statement-level check (one doomed
+  traversal beside a healthy one in the same file) needs AST inspection of
+  written `.py` content, not command grep. Open design item, not a tweak.
 
 ## Action taken
 
-Guard v2 treats house wrappers (`recall(`, `run_query(`) and text-manipulation
-markers (`re.sub(`, `read_text(`, `write_text(`, leading `sed`) as
-satisfaction, verified against the three archive false-positive classes plus a
-genuinely doomed command (still blocks). This is the false-positive audit run
-*before* the guard's first real firing rather than after.
+Guard v4 satisfaction branches, each logged per event: `terminal` (real
+iterator invocation), `wrapper` (`recall(`, `run_query(`, `from thalamus.eval`
+— house code that iterates internally), `textedit` (`re.sub(`, `read_text(`,
+`write_text(`, leading `sed`/`grep`/`rg` — code manipulation and search that
+merely mention marker strings). Verified against all archive false-positive
+classes plus a genuinely doomed command (still blocks). This is the
+false-positive audit run *before* the guard's first real firing rather than
+after.
+
+## Metric validity fixes from the verification audit
+
+All seven findings of exchange `8f6ad2d6f4024b2c` addressed in code:
+
+1. **Rescue join on intent, not any pass** — guard events now carry the
+   command's step fingerprint, the satisfaction branch, and `guard_version`; a
+   rescue is a later *terminal-branch* pass sharing the blocked fingerprint;
+   friction is the *same* command re-blocked. Wrapper/textedit passes are
+   ineligible (they fire constantly and would saturate the metric).
+2. **Tap over-inclusion** — bash_gremlin events must carry a
+   connection/wrapper call token (`connect(`, `run_query(`…) to count as
+   retrieval events; marker-mentioning text edits are filtered read-side (the
+   tap stays dumb).
+3. **Temporal reuse tagging** — a trace is recipe-derived only if it postdates
+   the recipe's Validated date; anything earlier was the recipe's *source*
+   (selection-on-success leakage).
+4. **Miss ≠ failure** — an empty memory_query result counts as executed in the
+   arm stats; emptiness is often the right answer to an existence question.
+5. **Smoke deny list unified** — underscore-folded, covering both dialects and
+   the writer's entry points by name; still lexical, and `exec()` of store
+   content remains a declared hazard (subprocess isolation is the open fix).
+6. **FN measurability** — the logged branch makes v4's false-negative exposure
+   auditable per class.
+7. **Version stamping** — `guard_version` in every event.
 
 ## Instrumentation now live (prospective arm)
 
@@ -68,5 +119,14 @@ genuinely doomed command (still blocks). This is the false-positive audit run
   recipes, and guards shipped together, so the ITS grades the bundle, and
   component attribution needs an ablation arm (skill-on/guard-off) if the
   bundle number ever needs decomposing.
-- Residual: script files (`python lab/x.py`) are invisible to both guard and
-  tap — the marker heuristic reads command text only. Named, not hidden.
+- Residual, now *measured* rather than merely named: script files are
+  invisible to both guard and tap, and the only confirmed doomed query in
+  ~100 scanned commands lived in exactly that channel. The inline channel the
+  guard covers has a measured doomed rate of zero; the guard's benefit case
+  rests on the file-write channel it does not yet cover. An AST-level check
+  on written `.py` content is the candidate design (statement-level: a bare
+  traversal expression never consumed), to be grounded before building.
+- Not implemented, tracked open: reuse weighted by displaced from-scratch
+  cost (injected_chars exists to build it), the demand-miss admission signal
+  ("consulted the store, found nothing"), within-session paired arm
+  comparison, an eviction ledger, subprocess isolation for the smoke run.

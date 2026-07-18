@@ -23,10 +23,13 @@ harness's limits on purpose.
     whose traversal never invokes the iterator — lazy traversals with no
     terminal step silently do nothing, so the hook fails them fast with
     instruction instead. Every gremlin-marker verdict (block or pass) logs to
-    `~/.thalamus/guards/`, so the guard grades itself: rescue rate and
-    friction render via `thalamus eval gremlin`. House wrappers and
-    text-editing commands are allowed through — the retrospective baseline
-    found guard v1's would-be firings were all false positives (lab/008). The
+    `~/.thalamus/guards/` with the command's step fingerprint, the satisfaction
+    branch (terminal/wrapper/textedit), and the guard version, so the guard
+    grades itself: rescue joins on traversal intent, not "any later pass", and
+    friction/false-negative exposure stay auditable per class (`thalamus eval
+    gremlin`). House wrappers and text-editing/search commands are allowed
+    through — the retrospective baseline found every would-be historical
+    firing of the unamended guard was a false positive (lab/008). The
     paired dialect guard (gremlin-python spellings on the gremlin-lang
     `memory_query` surface) lives in `substrate/query.py`; authoring rules and
     the proven-query store are the `gremlin-python` skill.

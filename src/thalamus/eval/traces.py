@@ -71,6 +71,16 @@ _MISS_RE = re.compile(
 # `thalamus eval gremlin`.
 _REJECTED_RE = re.compile(r"^(Rejected:|Query (?:failed:|must be a traversal)|Query exceeds )")
 
+# The Bash tap records on marker presence alone (the tap stays dumb), but marker
+# traffic is dominated by non-queries — sed refactors, heredoc rewrites (lab/008:
+# 8/8 flagged archive commands were wrappers or text edits). Only commands that
+# actually reach for a connection or a house retrieval wrapper are retrieval
+# events; the rest would pollute the priced surface and the reuse arms
+# (verification consultation 8f6ad2d6f4024b2c).
+_BASH_QUERY_RE = re.compile(
+    r"connect\(|with_remote\(|DriverRemoteConnection\(|Client\(|run_query\(|recall\("
+)
+
 
 @dataclass
 class TraceEvent:
@@ -178,6 +188,10 @@ def load_events(
                 event = _parse_line(line)
                 if event is None:
                     logger.warning("Unparseable trace line %s:%d", path.name, line_number)
+                    continue
+                if event.tool == "bash_gremlin" and not _BASH_QUERY_RE.search(
+                    str(event.tool_input.get("command", ""))
+                ):
                     continue
                 if tools is None or event.tool in tools:
                     events.append(event)

@@ -29,33 +29,45 @@ def _write_jsonl(path, records):
     path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
 
 
-def test_rescue_rate_and_friction_from_guard_events(tmp_path):
+def test_rescue_joins_on_intent_not_any_pass(tmp_path):
     """
-    Scenario: One session gets blocked, retries wrong (repeat block), then
-    fixes the query (pass); another session's block is abandoned
+    Scenario: A session's doomed traversal is blocked twice (same command),
+    then corrected (terminal pass, same shape); meanwhile an unrelated
+    text-edit pass fires, and another session's block is abandoned amid
+    wrapper passes
 
     Verifications:
-    - both blocks count; only the first session's is rescued
-    - the immediate second block counts as friction
+    - the corrected retry counts as a rescue; wrapper/text-edit passes never do
+      (the saturation bias — verification finding 1)
+    - friction counts only the re-submitted identical command
     """
     guards = tmp_path / "guards"
     _write_jsonl(
         guards / "2026-07.jsonl",
         [
-            {"ts": "2026-07-17T10:00:00Z", "session_id": "s1", "verdict": "block"},
-            {"ts": "2026-07-17T10:01:00Z", "session_id": "s1", "verdict": "block"},
-            {"ts": "2026-07-17T10:02:00Z", "session_id": "s1", "verdict": "pass"},
-            {"ts": "2026-07-17T11:00:00Z", "session_id": "s2", "verdict": "block"},
+            {"ts": "2026-07-17T10:00:00Z", "session_id": "s1", "verdict": "block",
+             "branch": "none", "command_hash": "aaaa", "fingerprint": "v,haslabel,has"},
+            {"ts": "2026-07-17T10:00:30Z", "session_id": "s1", "verdict": "pass",
+             "branch": "textedit", "command_hash": "eeee", "fingerprint": "sub"},
+            {"ts": "2026-07-17T10:01:00Z", "session_id": "s1", "verdict": "block",
+             "branch": "none", "command_hash": "aaaa", "fingerprint": "v,haslabel,has"},
+            {"ts": "2026-07-17T10:02:00Z", "session_id": "s1", "verdict": "pass",
+             "branch": "terminal", "command_hash": "bbbb",
+             "fingerprint": "v,haslabel,has,tolist"},
+            {"ts": "2026-07-17T11:00:00Z", "session_id": "s2", "verdict": "block",
+             "branch": "none", "command_hash": "cccc", "fingerprint": "v,groupcount,by"},
+            {"ts": "2026-07-17T11:01:00Z", "session_id": "s2", "verdict": "pass",
+             "branch": "wrapper", "command_hash": "dddd", "fingerprint": "v,groupcount,by"},
         ],
     )
 
     report = gremlin_report(traces_base=tmp_path / "none", guards_base=guards)
 
     assert report.blocks == 3
-    assert report.passes == 1
-    assert report.rescued == 2  # both s1 blocks see a later pass
-    assert report.repeat_blocks == 1
-    assert len(load_guard_events(guards)) == 4
+    assert report.passes == 3
+    assert report.rescued == 2  # both s1 blocks — s2's wrapper pass is not a rescue
+    assert report.repeat_blocks == 1  # only the identical re-submission
+    assert len(load_guard_events(guards)) == 6
 
 
 def test_reuse_tagging_matches_recipe_shape_across_dialects():
@@ -73,6 +85,15 @@ def test_reuse_tagging_matches_recipe_shape_across_dialects():
 
     adapted_census = "connect().V().group_count().by(T.label).next()"
     assert is_recipe_derived(adapted_census, prints) is not None
+
+    # Temporal bound: a query predating the recipe's admission was the recipe's
+    # source, not its reuse (verification finding 3 — selection on success).
+    from datetime import datetime, timezone
+
+    before_store = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    after_store = datetime(2026, 7, 18, tzinfo=timezone.utc)
+    assert is_recipe_derived(adapted_census, prints, ts=before_store) is None
+    assert is_recipe_derived(adapted_census, prints, ts=after_store) is not None
 
     adapted_lang = (
         "g.V().hasLabel('Artifact').has('identifier', containing('writer.py'))"
@@ -98,6 +119,8 @@ def test_memory_query_and_bash_gremlin_trace_classification(tmp_path):
     Verifications:
     - rejection is rejected, not legacy, not a miss; empty result is a miss
     - bash_gremlin output gets vertex IDs backticked at parse; never legacy
+    - a marker-mentioning text-edit command is filtered out of the retrieval
+      surface entirely (over-inclusion — verification finding 2)
     """
     traces = tmp_path / "traces"
     _write_jsonl(
@@ -121,8 +144,19 @@ def test_memory_query_and_bash_gremlin_trace_classification(tmp_path):
                 "ts": "2026-07-17T10:02:00Z",
                 "session_id": "s1",
                 "tool_name": "bash_gremlin",
-                "tool_input": {"command": "python -c '...to_list()'"},
+                "tool_input": {
+                    "command": "python -c 'from thalamus.substrate.writer import connect; print(connect().V().to_list())'"
+                },
                 "tool_response": "{'id': 'scope:main:claim:abc123', 'n': 3}",
+            },
+            {
+                "ts": "2026-07-17T10:03:00Z",
+                "session_id": "s1",
+                "tool_name": "bash_gremlin",
+                "tool_input": {
+                    "command": "sed -i 's/from thalamus.substrate.writer import connect/x/' a.py"
+                },
+                "tool_response": "edited",
             },
         ],
     )
