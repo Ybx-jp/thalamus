@@ -154,8 +154,8 @@ rather than pretending a verdict, because no-unmeasured-claims applies to the
 routing signal too. Ledger pins that never landed a trace are counted and named —
 a pinned expert nobody asked anything is itself a signal.
 
-Verdicts surface on the master plane next to the graphs they grade
-([03-master-plane.md](03-master-plane.md)).
+Verdicts surface on the master plane next to the graphs they grade — rendered
+live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
 
 ## Discipline
 

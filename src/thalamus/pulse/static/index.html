@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thalamus Pulse</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%233987e5'/><circle cx='8' cy='8' r='2.5' fill='%230d0d0d'/></svg>">
+<style>
+/* ---------- tokens (reference palette; light + dark both validated) ---------- */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --baseline: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #008300; --s3: #e87ba4; --s4: #eda100; --s5: #1baf7a;
+  --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --deemph: #c6c5be;
+  --wash: rgba(42,120,214,0.10);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --baseline: #383835; --ring: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #008300; --s3: #d55181; --s4: #c98500; --s5: #199e70;
+    --deemph: #45443f;
+    --wash: rgba(57,135,229,0.12);
+  }
+}
+* { box-sizing: border-box; margin: 0; }
+html { height: 100%; }
+body {
+  min-height: 100%;
+  background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 12px 14px 20px;
+}
+.mono, code { font-family: ui-monospace, "Cascadia Mono", Menlo, monospace; }
+a { color: var(--s1); }
+
+/* ---------- header ---------- */
+header {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px;
+  padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--grid);
+}
+header h1 {
+  font-size: 15px; font-weight: 650; letter-spacing: .14em; text-transform: uppercase;
+  font-family: ui-monospace, Menlo, monospace;
+}
+header h1::before { content: "◉ "; color: var(--s1); }
+.standing { font-size: 12px; color: var(--muted); }
+.hdr-right { margin-left: auto; display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+.hdr-stat { font-size: 12px; color: var(--ink-2); }
+.hdr-stat b { font-size: 14px; color: var(--ink); font-weight: 600; }
+
+/* ---------- stamps (the honesty chips) ---------- */
+.stamp {
+  display: inline-block; font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 1px 7px; border: 1px solid var(--baseline); border-radius: 3px;
+  color: var(--ink-2); vertical-align: 1px; white-space: nowrap;
+}
+.stamp.live { border-color: var(--s1); color: var(--s1); }
+.stamp.pending { border-color: var(--warn); color: var(--warn); }
+.stamp.pending::before { content: "◌ "; }
+.stamp.warn { border-color: var(--warn); color: var(--warn); }
+.stamp.bad { border-color: var(--critical); color: var(--critical); }
+.stamp.ok { border-color: var(--good); color: var(--good); }
+.stamp.ok::before { content: "✓ "; }
+.stamp.bad::before, .stamp.warn::before { content: "△ "; }
+
+/* ---------- layout ---------- */
+.grid { display: grid; grid-template-columns: 330px minmax(0,1fr) minmax(0,1.25fr); gap: 12px; align-items: start; }
+.pin-row { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; flex-wrap: wrap; }
+.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel {
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
+  padding: 10px 12px 12px; min-width: 0;
+}
+.panel h2 {
+  font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.panel h2 .stamp { margin-left: auto; }
+.empty { color: var(--muted); font-size: 12.5px; padding: 4px 0; }
+
+/* ---------- stat tiles ---------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.tile .lbl { font-size: 11.5px; color: var(--muted); }
+.tile .val { font-size: 26px; font-weight: 600; }
+.tile .sub { font-size: 11.5px; color: var(--ink-2); }
+.hero { font-size: 48px; font-weight: 600; line-height: 1.1; }
+
+/* ---------- live feed ---------- */
+.feed { list-style: none; max-height: 62vh; overflow-y: auto; font-size: 12px; }
+.feed li {
+  display: flex; gap: 7px; align-items: baseline; padding: 3px 0;
+  border-bottom: 1px solid var(--grid); font-family: ui-monospace, Menlo, monospace;
+}
+.feed li:last-child { border-bottom: 0; }
+.feed .t { color: var(--muted); flex: none; }
+.feed .tool { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; align-self: center;
+  box-shadow: 0 0 0 2px var(--surface); }
+.feed .tok { margin-left: auto; color: var(--ink-2); flex: none; font-variant-numeric: tabular-nums; }
+.feed .fan { flex: none; color: var(--ink-2); }
+.feed .fan.over { color: var(--warn); }
+.feed .fan.over::after { content: " △"; }
+.feed .cls { color: var(--muted); flex: none; }
+.evrows { font-size: 12px; font-family: ui-monospace, Menlo, monospace; }
+.evrows div { display: flex; gap: 8px; padding: 2px 0; color: var(--ink-2); }
+.evrows .t { color: var(--muted); white-space: nowrap; flex: none; }
+.evrows .right { margin-left: auto; }
+
+/* ---------- meters & bars ---------- */
+.meter { height: 8px; border-radius: 4px; background: var(--wash); overflow: hidden; margin: 4px 0 2px; }
+.meter > i { display: block; height: 100%; background: var(--s1); border-radius: 4px 0 0 4px; }
+.pair { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 2px 0; }
+.pair .k { width: 84px; flex: none; color: var(--ink-2); }
+.pair .bar { flex: 1; height: 12px; background: none; position: relative; }
+.pair .bar i { position: absolute; inset: 2px auto 2px 0; border-radius: 0 4px 4px 0; }
+.pair .v { width: 130px; flex: none; text-align: right; color: var(--ink-2);
+  font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.key { display: flex; gap: 14px; font-size: 11.5px; color: var(--ink-2); margin: 6px 0 2px; flex-wrap: wrap; }
+.key span::before { content: "●"; margin-right: 5px; }
+.key .k1::before { color: var(--s1); } .key .k2::before { color: var(--s2); }
+.key .k3::before { color: var(--s3); } .key .k4::before { color: var(--s4); }
+.key .k5::before { color: var(--s5); } .key .kg::before { color: var(--deemph); }
+
+/* ---------- lists ---------- */
+.rows { font-size: 12.5px; }
+.rows .row { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--grid); }
+.rows .row:last-child { border-bottom: 0; }
+.rows .id { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.rows .txt { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.rows .num { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; color: var(--ink); }
+.toggle { font-size: 11px; border: 1px solid var(--baseline); background: none; color: var(--ink-2);
+  border-radius: 3px; padding: 1px 8px; cursor: pointer; font-family: inherit; }
+.toggle[aria-pressed="true"] { border-color: var(--s1); color: var(--s1); }
+
+/* ---------- sessions ---------- */
+.sess { border-bottom: 1px solid var(--grid); padding: 6px 0; }
+.sess:last-child { border-bottom: 0; }
+.sess summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; list-style: none; font-size: 12.5px; }
+.sess summary::-webkit-details-marker { display: none; }
+.sess .sid { font-family: ui-monospace, Menlo, monospace; color: var(--ink); }
+.sess .scope-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+.sess .u { margin-left: auto; font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.recalls { margin: 6px 0 2px; font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; color: var(--ink-2); }
+.recalls div { display: flex; gap: 8px; padding: 1px 0; }
+.recalls .right { margin-left: auto; }
+
+/* ---------- svg charts ---------- */
+svg { display: block; width: 100%; height: auto; }
+.axis { font-size: 10px; fill: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.chart-note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* ---------- footer calibration plate ---------- */
+footer {
+  margin-top: 14px; border: 1px solid var(--baseline); border-radius: 8px;
+  padding: 10px 14px; font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+  color: var(--ink-2); background: var(--surface);
+}
+footer h2 { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+footer ul { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2px 24px; }
+footer li::before { content: "· "; color: var(--muted); }
+footer .standing-line { margin-top: 6px; color: var(--ink); }
+
+/* ---------- tooltip ---------- */
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--page);
+  font: 11px/1.4 ui-monospace, Menlo, monospace; padding: 4px 8px; border-radius: 4px;
+  opacity: 0; transition: opacity .08s; z-index: 10; max-width: 320px; }
+
+/* ---------- states ---------- */
+.stale { opacity: .55; transition: opacity .3s; }
+#offline { display: none; margin-bottom: 10px; padding: 6px 10px; border: 1px solid var(--critical);
+  color: var(--critical); border-radius: 6px; font-size: 12.5px; }
+body.offline #offline { display: block; }
+
+/* ---------- mobile gist ---------- */
+.desktop-only { display: block; }
+@media (max-width: 900px) {
+  body { overflow-x: clip; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .stamp { white-space: normal; }
+  .pair .v { width: 92px; }
+  .rows .id { max-width: 120px; }
+  .sess summary { flex-wrap: wrap; }
+  .sess .u { margin-left: 16px; }
+  .col-now { order: 3; } .col-session { order: 2; } .col-life { order: 1; }
+  .feed { max-height: 34vh; }
+  .desktop-only { display: none; }
+  .tile .val { font-size: 22px; } .hero { font-size: 36px; }
+  footer ul { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div id="tip" role="status"></div>
+<header>
+  <h1>Thalamus Pulse</h1>
+  <span class="standing" id="standing">layer 1 — instrumented, measuring</span>
+  <div class="hdr-right">
+    <span class="hdr-stat">session <b id="h-session" class="mono">—</b></span>
+    <span class="hdr-stat">today <b id="h-today">—</b></span>
+    <span id="h-graph" class="stamp">connecting…</span>
+    <span id="h-pending" class="stamp" hidden></span>
+  </div>
+</header>
+<div id="offline">pulse server unreachable — showing the last data it served. Restart with <code>systemctl --user restart thalamus-pulse</code>.</div>
+
+<div class="grid">
+  <!-- ============ NOW ============ -->
+  <div class="col col-now">
+    <section class="panel">
+      <h2>Now — the tap <span class="stamp live" title="Injection cost and fan-out only. Verdicts exist after distillation; a per-turn used% would be fabricated.">cost only</span></h2>
+      <ul class="feed" id="feed"><li class="empty">no tap events yet</li></ul>
+    </section>
+    <section class="panel desktop-only">
+      <h2>Guard &amp; conditioning <span class="stamp" id="gc-stamp">events</span></h2>
+      <div class="evrows" id="gc-rows"><div class="empty">no events yet</div></div>
+    </section>
+  </div>
+
+  <!-- ============ SESSION ============ -->
+  <div class="col col-session">
+    <section class="panel">
+      <h2>Sessions <span class="stamp" id="sess-stamp">—</span></h2>
+      <div id="sessions"><div class="empty">waiting for the graph report…</div></div>
+    </section>
+  </div>
+
+  <!-- ============ LIFETIME ============ -->
+  <div class="col col-life">
+    <section class="panel">
+      <h2>Main scope — used vs wasted <span class="stamp" id="head-stamp">—</span></h2>
+      <div class="tiles" id="headline"></div>
+    </section>
+    <section class="panel">
+      <h2>Waste trend <span class="stamp desktop-only" title="The band is lab/007's prediction (≤30% with used% not falling), not a measurement.">target = dial</span></h2>
+      <div id="trend"><div class="empty">no attributed days yet</div></div>
+    </section>
+    <section class="panel">
+      <h2>Routing signal — pins <span class="stamp" id="pins-stamp">—</span></h2>
+      <div id="pins"></div>
+    </section>
+    <section class="panel desktop-only">
+      <h2>Decay candidates
+        <button class="toggle" id="rank-toggle" aria-pressed="false">rank by count</button>
+        <span class="stamp" title="Ranked by absolute wasted tokens — rates bury a 60x absolute difference (lab/006).">waste rank</span>
+      </h2>
+      <div class="rows" id="decay"><div class="empty">—</div></div>
+    </section>
+    <section class="panel desktop-only">
+      <h2>Cost — weighted-token proxy <span class="stamp" id="cost-stamp">—</span></h2>
+      <div id="cost"></div>
+    </section>
+    <section class="panel desktop-only">
+      <h2>Conditioning <span class="stamp" id="cond-stamp">—</span></h2>
+      <div id="conditioning"></div>
+    </section>
+    <section class="panel desktop-only">
+      <h2>Gremlin fluency <span class="stamp" id="grem-stamp">—</span></h2>
+      <div id="gremlin"></div>
+    </section>
+  </div>
+</div>
+
+<footer id="plate" hidden>
+  <h2>Calibration plate — dials &amp; blind spots</h2>
+  <ul id="plate-dials"></ul>
+  <div id="plate-surfaces"></div>
+  <div class="standing-line" id="plate-standing"></div>
+</footer>
+
+<script>
+"use strict";
+/* Thalamus Pulse — renders the eval loop's measurements. No panel-local math
+   beyond formatting: every number arrives shaped by pulse/metrics.py. */
+
+const SCOPE_SLOT = { main: "--s1", literature: "--s2", "eval-methodology": "--s5", homelab: "--s4" };
+const BUCKET_ORDER = ["interactive", "expert:literature", "extract", "expert:homelab", "expert:eval-methodology"];
+const BUCKET_SLOT = { interactive: "--s1", "expert:literature": "--s2", extract: "--s3",
+                      "expert:homelab": "--s4", "expert:eval-methodology": "--s5" };
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const scopeColor = s => css(SCOPE_SLOT[s] || "--deemph");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+const tok = n => n >= 1e6 ? (n/1e6).toFixed(1)+"M" : n >= 1e4 ? Math.round(n/1e3)+"K" : n >= 1e3 ? (n/1e3).toFixed(1)+"K" : String(n);
+const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+let lastReport = null, rankByCount = false;
+
+/* ---------- tooltip (enhances, never gates: all values are also in text) ---------- */
+const tip = document.getElementById("tip");
+document.addEventListener("mouseover", e => {
+  const el = e.target.closest("[data-tip]");
+  if (!el) { tip.style.opacity = 0; return; }
+  tip.textContent = el.dataset.tip;
+  tip.style.opacity = 1;
+});
+document.addEventListener("mousemove", e => {
+  if (tip.style.opacity === "1") {
+    tip.style.left = Math.min(e.clientX + 12, innerWidth - 330) + "px";
+    tip.style.top = (e.clientY + 14) + "px";
+  }
+});
+
+/* ---------- live (5s) ---------- */
+async function pollLive() {
+  try {
+    const live = await (await fetch("api/live")).json();
+    document.body.classList.remove("offline");
+    renderLive(live);
+  } catch { document.body.classList.add("offline"); }
+}
+
+function renderLive(live) {
+  document.getElementById("h-session").textContent =
+    (live.current_session || "—") + (live.current_scope ? " · " + live.current_scope : "");
+  document.getElementById("h-today").textContent =
+    `${live.today.retrievals} recalls · ~${tok(live.today.injected_tokens)} tok injected`;
+
+  const feed = document.getElementById("feed");
+  if (live.feed.length) {
+    feed.innerHTML = live.feed.map(e => {
+      const cls = e.rejected ? "rejected" : e.miss ? "empty result" : "";
+      return `<li data-tip="${esc(e.query)}">
+        <span class="dot" style="background:${scopeColor(e.scope)}"></span>
+        <span class="t">${hhmm(e.ts)}</span>
+        <span class="tool">${esc(e.tool)}</span>
+        ${cls ? `<span class="cls">${cls}</span>` : `<span class="fan${e.over_guardrail ? " over" : ""}"
+          data-tip="${e.fanout} nodes returned${e.over_guardrail ? ` — over the ${live.fanout_guardrail}-node guardrail (lab/007)` : ""}">${e.fanout}n</span>`}
+        <span class="tok">~${tok(e.tokens)}t</span>
+      </li>`;
+    }).join("");
+  }
+
+  const rows = [];
+  for (const g of live.guards) rows.push({ ts: g.ts, txt: `guard ${esc(g.guard)}`, right: g.verdict });
+  for (const c of live.conditioning) rows.push({ ts: c.ts, txt: `conditioning ${esc(c.cls)}`, right: c.followed ? "followed" : "wallpaper" });
+  rows.sort((a, b) => b.ts.localeCompare(a.ts));
+  document.getElementById("gc-rows").innerHTML = rows.length
+    ? rows.slice(0, 12).map(r => `<div><span class="t">${hhmm(r.ts)}</span> ${r.txt} <span class="right">${r.right}</span></div>`).join("")
+    : `<div class="empty">no events yet</div>`;
+}
+
+/* ---------- report (60s) ---------- */
+async function pollReport() {
+  try {
+    const rpt = await (await fetch("api/report")).json();
+    if (rpt && !rpt.building) { lastReport = rpt; renderReport(rpt); }
+  } catch { /* offline banner handled by live poll */ }
+}
+
+function stamp(el, ok, textOk, textBad, cls) {
+  el.textContent = ok ? textOk : textBad;
+  el.className = "stamp " + (ok ? (cls || "") : "warn");
+}
+
+function renderReport(rpt) {
+  const graphStamp = document.getElementById("h-graph");
+  stamp(graphStamp, rpt.graph_ok, "graph", "tap-only", "ok");
+  graphStamp.title = rpt.graph_ok ? "verdicts current as of " + hhmm(rpt.generated_at)
+    : "graph unreachable — utility panels show the last landed verdicts; the tap keeps recording";
+
+  const pend = document.getElementById("h-pending");
+  if (rpt.pending && rpt.pending.total) {
+    pend.hidden = false; pend.className = "stamp pending";
+    pend.textContent = `${rpt.pending.total} traces pending sync`;
+    pend.title = rpt.pending.sessions.map(s => `${s.session}: ${s.events} (oldest ${s.oldest.slice(0,10)})`).join("\n");
+  } else pend.hidden = !rpt.pending; if (rpt.pending && !rpt.pending.total) { pend.hidden = false; pend.className = "stamp ok"; pend.textContent = "tap fully landed"; }
+
+  renderHeadline(rpt); renderTrend(rpt.trend); renderSessions(rpt); renderPins(rpt.pins);
+  renderDecay(rpt); renderCost(rpt.cost); renderConditioning(rpt.conditioning); renderGremlin(rpt.gremlin);
+  renderPlate(rpt.disclosures);
+}
+
+/* Headline: the joint signal — used% must render beside absolute waste (consultation a9bb9f26). */
+function renderHeadline(rpt) {
+  const main = rpt.scopes && rpt.scopes.main;
+  stamp(document.getElementById("head-stamp"), !!main, "measured", "tap-only");
+  const el = document.getElementById("headline");
+  if (!main) { el.innerHTML = `<div class="empty">graph unreachable — no landed verdicts to show</div>`; return; }
+  const usedPct = main.attributed ? Math.round(100 * main.used / main.attributed) : null;
+  el.innerHTML = `
+    <div class="tile"><div class="lbl">attributed use</div>
+      <div class="hero">${usedPct === null ? "—" : usedPct + "%"}</div>
+      <div class="sub">${main.used}/${main.attributed} nodes used</div>
+      <div class="meter" data-tip="share of attributed retrieved nodes reflected in what the agent did"><i style="width:${usedPct || 0}%"></i></div></div>
+    <div class="tile"><div class="lbl">earned</div><div class="val">~${tok(main.earned_tokens)}</div><div class="sub">tokens, used nodes</div></div>
+    <div class="tile"><div class="lbl">wasted</div><div class="val">~${tok(main.wasted_tokens)}</div><div class="sub">tokens, ignored nodes</div></div>
+    <div class="tile"><div class="lbl">retrievals</div><div class="val">${main.traces}</div><div class="sub">${main.sessions} sessions · ${main.misses} empty</div></div>`;
+}
+
+/* Waste trend: single series + the lab/007 prediction band. One axis, %. */
+function renderTrend(trend) {
+  const el = document.getElementById("trend");
+  const pts = (trend || []).filter(d => d.waste_pct !== null);
+  if (pts.length < 2) { el.innerHTML = `<div class="empty">fewer than two attributed days — no trend to draw yet</div>`; return; }
+  const W = 520, H = 150, L = 34, R = 8, T = 10, B = 22;
+  const x = i => L + i * (W - L - R) / (pts.length - 1);
+  const y = v => T + (100 - v) * (H - T - B) / 100;
+  const line = pts.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d.waste_pct).toFixed(1)}`).join("");
+  const grid = [0, 30, 50, 100].map(v =>
+    `<line class="gridline" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/>
+     <text class="axis" x="${L-5}" y="${y(v)+3}" text-anchor="end">${v}</text>`).join("");
+  const band = `<rect x="${L}" y="${y(30)}" width="${W-L-R}" height="${y(0)-y(30)}" fill="${css("--s2")}" opacity="0.07"/>`;
+  const dots = pts.map((d, i) =>
+    `<circle cx="${x(i)}" cy="${y(d.waste_pct)}" r="4" fill="${css("--s1")}" stroke="${css("--surface")}" stroke-width="2"
+       data-tip="${d.day}: ${Math.round(d.waste_pct)}% wasted · ~${tok(d.wasted_tokens)} tok wasted / ~${tok(d.earned_tokens)} earned · used% ${Math.round(d.used_pct)} (${d.attributed} attributed)"/>`).join("");
+  const last = pts[pts.length - 1];
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="wasted share of priced retrieval tokens per day">
+    ${grid}${band}<path d="${line}" fill="none" stroke="${css("--s1")}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}
+    <text class="axis" x="${L}" y="${H-6}">${pts[0].day.slice(5)}</text>
+    <text class="axis" x="${W-R}" y="${H-6}" text-anchor="end">${last.day.slice(5)}</text>
+    <text class="axis" x="${W-R}" y="${Math.max(y(last.waste_pct)-8, T+10)}" text-anchor="end">${Math.round(last.waste_pct)}% wasted</text>
+  </svg>
+  <div class="chart-note">wasted share of priced tokens per day · green band = lab/007 target ≤30% — a prediction, valid only if used% holds</div>
+  <details><summary class="chart-note" style="cursor:pointer">data table</summary>
+    <div class="rows">${pts.map(d => `<div class="row"><span class="txt mono">${d.day}</span>
+      <span class="num" style="font-size:12px">${Math.round(d.waste_pct)}% wasted · ~${tok(d.wasted_tokens)}/${tok(d.earned_tokens)} tok · used% ${Math.round(d.used_pct)} · n=${d.attributed}</span></div>`).join("")}
+    </div></details>`;
+}
+
+function renderSessions(rpt) {
+  const el = document.getElementById("sessions");
+  stamp(document.getElementById("sess-stamp"), rpt.graph_ok, "landed", "tap-only");
+  const sessions = rpt.sessions || [];
+  if (!sessions.length) { el.innerHTML = `<div class="empty">no landed sessions yet — traces land after their session distills</div>`; return; }
+  el.innerHTML = sessions.map(s => {
+    const pct = s.attributed ? Math.round(100 * s.used / s.attributed) : null;
+    const util = s.attributed
+      ? `${pct}% used · ~${tok(s.earned_tokens)}/${tok(s.wasted_tokens)} tok`
+      : `${s.returns} returned, none attributed`;
+    return `<details class="sess"><summary>
+      <span class="scope-dot" style="background:${scopeColor(s.scope)}"></span>
+      <span class="sid">${esc(s.session)}</span>
+      <span style="color:var(--muted);font-size:11.5px">${esc(s.scope || "main")} · ${s.traces} recalls</span>
+      <span class="u">${util}</span></summary>
+      ${s.attributed ? `<div class="meter"><i style="width:${pct}%"></i></div>` : ""}
+      <div class="recalls">${s.recalls.map(r => {
+        const use = r.attributed ? `${Math.round(100 * r.used / r.attributed)}%` : "·";
+        return `<div><span>${r.ts ? hhmm(r.ts) : ""}</span><span>${esc(r.tool)}</span>
+          <span>${r.fanout}n</span><span class="right">~${tok(r.tokens)}t · ${use}</span></div>`;
+      }).join("")}</div>
+    </details>`;
+  }).join("");
+}
+
+/* Pins: paired bars, floor states verbatim. Below the floor the verdict line IS the data. */
+function renderPins(pins) {
+  const el = document.getElementById("pins");
+  const stampEl = document.getElementById("pins-stamp");
+  if (!pins || !pins.experts || !pins.experts.length) {
+    stamp(stampEl, false, "", "tap-only"); el.innerHTML = `<div class="empty">no expert scopes visible</div>`; return;
+  }
+  const anyVerdict = pins.experts.some(e => e.floor_met);
+  stampEl.className = "stamp"; stampEl.textContent = anyVerdict ? "verdicts live" : "below floor";
+  el.innerHTML = `<div class="key"><span class="k1">pinned used%</span><span class="k2">consulted used%</span></div>` +
+    pins.experts.map(e => {
+      const bar = (u, slot) => {
+        const w = u.attributed ? Math.max(2, u.used_pct) : 0;
+        return `<div class="bar" data-tip="${u.attributed} attributed · ${u.used} used · ~${tok(u.earned_tokens)} earned / ~${tok(u.wasted_tokens)} wasted">
+          <i style="width:${w}%;background:${css(slot)}"></i></div>`;
+      };
+      const fmt = u => u.attributed ? `${Math.round(u.used_pct)}% of ${u.attributed}` : `0 of ${u.returns} attributed`;
+      const sig = e.floor_met
+        ? `<span class="stamp ${/healthy/.test(e.signal) ? "ok" : "bad"}">${esc(e.signal.split(" — ")[0])}</span>`
+        : `<span class="stamp">insufficient · pinned ${e.pinned.attributed}/10 · consulted ${e.consulted.attributed}/10</span>`;
+      return `<div style="padding:5px 0">
+        <div class="pin-row">
+          <b class="mono">${esc(e.scope)}</b>${sig}
+          ${e.ledger_only ? `<span style="color:var(--muted);font-size:11px">+${e.ledger_only} pinned, never retrieved</span>` : ""}</div>
+        <div class="pair"><span class="k">pinned</span>${bar(e.pinned, "--s1")}<span class="v">${fmt(e.pinned)}</span></div>
+        <div class="pair"><span class="k">consulted</span>${bar(e.consulted, "--s2")}<span class="v">${fmt(e.consulted)}</span></div>
+      </div>`;
+    }).join("");
+}
+
+function renderDecay(rpt) {
+  const el = document.getElementById("decay");
+  const main = rpt.scopes && rpt.scopes.main;
+  if (!main || !main.most_ignored.length) { el.innerHTML = `<div class="empty">no retrieved-but-ignored nodes landed</div>`; return; }
+  const rows = [...main.most_ignored];
+  if (rankByCount) rows.sort((a, b) => b.count - a.count || b.wasted_tokens - a.wasted_tokens);
+  el.innerHTML = rows.map(r => `<div class="row">
+    <span class="num" style="margin:0;min-width:64px">${rankByCount ? r.count + "×" : "~" + tok(r.wasted_tokens) + "t"}</span>
+    <span class="txt" data-tip="${esc(r.vid)}">${esc(r.text || r.vid)}</span>
+    <span class="num" style="color:var(--muted);font-size:11px">${rankByCount ? "~" + tok(r.wasted_tokens) + "t" : r.count + "×"}</span>
+  </div>`).join("");
+}
+
+/* Cost: stacked per-day columns, thalamus buckets colored, "other" is the gray denominator. */
+function renderCost(cost) {
+  const el = document.getElementById("cost");
+  stamp(document.getElementById("cost-stamp"), !!cost, `since ${cost ? cost.since : ""}`, "scan failed");
+  if (!cost) { el.innerHTML = `<div class="empty">transcript scan failed — see server log</div>`; return; }
+  const days = cost.by_day || [];
+  const bucketTotal = n => { const b = cost.buckets.find(x => x.name === n); return b ? b.weighted : 0; };
+  const memory = cost.buckets.filter(b => b.name !== "interactive" && b.name !== "other")
+    .reduce((a, b) => a + b.weighted, 0);
+  const interactive = bucketTotal("interactive");
+  let chart = "";
+  if (days.length) {
+    const W = 520, H = 130, L = 40, R = 8, T = 8, B = 20;
+    const max = Math.max(...days.map(d => Object.values(d.buckets).reduce((a, v) => a + v, 0)));
+    const bw = Math.min(24, (W - L - R) / days.length - 2);
+    chart = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="weighted tokens per day by operation">
+      <line class="gridline" x1="${L}" x2="${W-R}" y1="${H-B}" y2="${H-B}"/>` +
+      days.map((d, i) => {
+        const cx = L + (i + .5) * (W - L - R) / days.length;
+        let yTop = H - B, segs = "";
+        for (const name of BUCKET_ORDER) {
+          const v = d.buckets[name] || 0; if (!v) continue;
+          const h = Math.max(1, v / max * (H - T - B));
+          yTop -= h;
+          segs += `<rect x="${cx - bw/2}" y="${yTop + 1}" width="${bw}" height="${Math.max(0, h - 2)}" rx="2"
+            fill="${css(BUCKET_SLOT[name])}" data-tip="${d.day} ${name}: ${v.toLocaleString()} weighted"/>`;
+          yTop -= 0; }
+        return segs + `<text class="axis" x="${cx}" y="${H-6}" text-anchor="middle">${d.day.slice(8)}</text>`;
+      }).join("") +
+      `<text class="axis" x="${L-4}" y="${T+8}" text-anchor="end">${tok(max)}</text></svg>`;
+  }
+  el.innerHTML = chart +
+    `<div class="key">${BUCKET_ORDER.filter(n => cost.buckets.some(b => b.name === n && b.weighted))
+      .map(n => `<span class="${{ "--s1":"k1","--s2":"k2","--s3":"k3","--s4":"k4","--s5":"k5" }[BUCKET_SLOT[n]]}">${n}</span>`).join("")}</div>
+    <div class="rows">${cost.buckets.map(b => `<div class="row"><span class="txt">${esc(b.name)}</span>
+      <span class="num">${b.weighted.toLocaleString()} <span style="color:var(--muted);font-size:11px">· ${b.sessions} sess</span></span></div>`).join("")}
+    </div>
+    <div class="chart-note">memory ops (extract + experts) = ~${tok(memory)} weighted vs ~${tok(interactive)} interactive —
+      session length dominates burn; memory's marginal cost ≈ one extract per session (standing finding, docs/04)</div>`;
+}
+
+/* Conditioning: followed vs wallpaper — effectiveness, never firing counts alone. */
+function renderConditioning(cond) {
+  const el = document.getElementById("conditioning");
+  stamp(document.getElementById("cond-stamp"), cond && cond.measured, "per-firing join", "unmeasured");
+  if (!cond || !cond.measured) { el.innerHTML = `<div class="empty">no firings yet — instrumentation pending, unmeasured</div>`; return; }
+  el.innerHTML = `<div class="key"><span class="k1">followed</span><span class="kg">wallpaper</span></div>` +
+    cond.classes.map(c => {
+      const fw = c.firings ? 100 * c.followed / c.firings : 0;
+      return `<div class="pair"><span class="k mono">${esc(c.cls)}</span>
+        <div class="bar" data-tip="${c.followed} of ${c.firings} firings followed by the expected thalamus call">
+          <i style="width:${fw}%;background:${css("--s1")}"></i>
+          <i style="left:${fw}%;width:${100-fw}%;background:${css("--deemph")};border-radius:0 4px 4px 0"></i></div>
+        <span class="v">${c.followed}/${c.firings} followed</span></div>`;
+    }).join("");
+}
+
+/* Gremlin: rescue rate only with a real denominator; blocks are context, not achievement. */
+function renderGremlin(g) {
+  const el = document.getElementById("gremlin");
+  const any = g && (g.blocks || g.passes || g.memory_query.total || g.bash.total);
+  stamp(document.getElementById("grem-stamp"), !!any, "measured", "unmeasured");
+  if (!any) { el.innerHTML = `<div class="empty">no gremlin events yet — instrumentation pending, unmeasured</div>`; return; }
+  const mq = g.memory_query;
+  const rescue = g.rescue_rate === null ? "no blocks yet — rescue rate undefined"
+    : `${g.rescued}/${g.blocks} blocks rescued in-session · ${g.repeat_blocks} repeat (friction)`;
+  const arms = ["recipe-derived", "from-scratch"].map(a => {
+    const s = g.reuse && g.reuse[a];
+    return s && s.n ? `${a} ${s.ok}/${s.n} first-shot` : null;
+  }).filter(Boolean).join(" · ");
+  el.innerHTML = `<div class="rows">
+    <div class="row"><span class="txt">guard (terminal-step)</span><span class="num">${g.blocks} blocks · ${g.passes} passes</span></div>
+    <div class="row"><span class="txt">rescue</span><span class="num" style="font-size:12px">${rescue}</span></div>
+    <div class="row"><span class="txt">memory_query</span><span class="num" style="font-size:12px">${mq.ok} data · ${mq.empty} empty · ${mq.dialect_rejected + mq.mutation_rejected} rejected · ${mq.server_failed} failed</span></div>
+    <div class="row"><span class="txt">bash_gremlin</span><span class="num">${g.bash.total} runs · ${g.bash.errored} errored</span></div>
+    ${arms ? `<div class="row"><span class="txt">reuse arms</span><span class="num" style="font-size:12px">${arms}</span></div>` : ""}
+  </div>`;
+}
+
+function renderPlate(d) {
+  if (!d) return;
+  const plate = document.getElementById("plate");
+  plate.hidden = false;
+  document.getElementById("plate-dials").innerHTML = d.dials.map(x => `<li>${esc(x)}</li>`).join("");
+  document.getElementById("plate-surfaces").textContent = d.surfaces + " · " + d.attribution_lag;
+  document.getElementById("plate-standing").textContent = d.standing;
+  document.getElementById("standing").textContent = d.standing.split(".")[0];
+}
+
+document.getElementById("rank-toggle").addEventListener("click", e => {
+  rankByCount = !rankByCount;
+  e.currentTarget.setAttribute("aria-pressed", String(rankByCount));
+  e.currentTarget.textContent = rankByCount ? "rank by waste" : "rank by count";
+  if (lastReport) renderDecay(lastReport);
+});
+
+pollLive(); pollReport();
+setInterval(pollLive, 5000);
+setInterval(pollReport, 60000);
+</script>
+</body>
+</html>

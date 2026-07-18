@@ -1,6 +1,7 @@
 # Master Plane — Observability & Audit
 
-**Status:** design, except the query instrument (built — see below).
+**Status:** design, except the query instrument and the Pulse telemetry
+dashboard (both built — see below).
 
 ## What it is
 
@@ -99,6 +100,50 @@ provenance walks (`out('DERIVED_FROM')` to retained bytes), evidence lineage
 used?), cross-scope claim convergence, and the eval loop reading its own priced
 verdicts (Trace `injected_chars`, RETURNS `used`) — the graph grading itself,
 queryable by the agent it grades.
+
+## Pulse — the telemetry dashboard (built)
+
+`thalamus pulse` (`src/thalamus/pulse/`) serves the eval loop's measurements as
+a live second-screen dashboard — FastAPI on loopback :8379, run by the
+`thalamus-pulse` systemd user service, published tailnet-only at
+`https://<host>.ts.net/pulse/` (path-scoped like `/plane/`; Android WebAPKs
+ignore ports). PC-first three-column layout, single-column gist view on mobile.
+
+It is a **projection, not an instrument**: every number comes from records the
+system already keeps (the trace tap, guard/conditioning/pin ledgers, harness
+transcripts, landed Trace verdicts) — no new telemetry, no writes, no
+panel-local metrics (one priced surface, lab/008). Two feeds at two cadences:
+`/api/live` (ledger files, polled ~5s) and `/api/report` (graph + transcript
+scan, TTL-cached ~60s, stale-while-revalidate).
+
+The display encodes the eval methodology's honesty rules (consultation
+`a9bb9f26049a4176`), which shaped what gets prominence:
+
+- **Timescales say what they can know.** The NOW column is cost-only
+  (injection tokens, fan-out vs the lab/007 guardrail, event class) — a
+  per-turn used% would be fabricated, since verdicts exist only after a
+  session distills and syncs. Utility renders at session and lifetime level.
+- **Rates beside absolutes.** Used% always renders with earned/wasted tokens
+  (lab/006: waste ranking, not count ranking, surfaces cross-project bleed);
+  the decay leaderboard ranks by wasted tokens with a count-rank toggle.
+- **Floors and gaps are rendered states**, never zeros: pin signals below the
+  ≥10/side floor say so with their counts; rescue rate with no blocks is
+  "undefined"; unmeasured panels say "unmeasured"; graph-down stamps panels
+  TAP-ONLY; pending-sync traces are counted and named per session.
+- **A calibration plate** (footer) discloses the dials (attribution
+  thresholds, chars/token, weighted-token ratios, the ≤30% target band being
+  lab/007's prediction), the priced surfaces and the script-file blind spot,
+  and the standing "layer 1 — instrumented, measuring" line.
+
+**Prior work.** Live agent observability with per-lifecycle-stage tracing and
+token cost as a session-level metric is the AgentOps taxonomy (arXiv
+2411.05285); trace granularity/timing and representation-form taxonomies for
+agent evidence are surveyed in arXiv 2606.04990; grading memory on
+performance–cost frontiers is BudgetMem (arXiv 2602.06025). Pulse is an
+*instantiation* of those taxonomies over Thalamus's own priced traces — the
+turn is that the dashboard renders the *self-maintaining loop's* verdicts
+(docs/04) rather than generic spans; agent-cloud observability tooling is a
+named gap in arXiv 2606.20570.
 
 ## Open questions
 

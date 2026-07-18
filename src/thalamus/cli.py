@@ -249,6 +249,19 @@ def main():
         "--no-open", action="store_true", help="Start the viewer without opening a browser"
     )
 
+    # Pulse command — the live telemetry dashboard (docs/03)
+    pulse_parser = subparsers.add_parser(
+        "pulse",
+        help="Serve the live telemetry dashboard over the eval loop's measurements",
+    )
+    pulse_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    pulse_parser.add_argument(
+        "--host", default="127.0.0.1", help="Bind address (default: localhost)"
+    )
+    pulse_parser.add_argument(
+        "--port", type=int, default=8379, help="Port (default: 8379; /pulse via tailscale serve)"
+    )
+
     args = parser.parse_args()
     # Long-running commands (bootstrap, extract) are routinely piped to a log; without
     # line buffering their progress sits invisible in Python's block buffer for minutes.
@@ -280,6 +293,8 @@ def main():
         _cmd_roster()
     elif args.command == "visualize":
         _cmd_visualize(args)
+    elif args.command == "pulse":
+        _cmd_pulse(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -809,6 +824,19 @@ def _cmd_visualize(args):
     finally:
         if graph is not None:
             close_connection(graph)
+
+
+def _cmd_pulse(args):
+    from thalamus.pulse.web import create_pulse_app
+
+    print(f"Thalamus Pulse: http://{args.host}:{args.port}")
+    print("Press Ctrl+C to stop.")
+    uvicorn.run(
+        create_pulse_app(url=args.url),
+        host=args.host,
+        port=args.port,
+        log_level="warning",
+    )
 
 
 def _available_port(host: str) -> int:
