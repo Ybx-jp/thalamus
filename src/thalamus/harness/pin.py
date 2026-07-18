@@ -105,11 +105,32 @@ def _open_window(scope: str, argv: list[str], project_root: Path, target: str | 
     subprocess.run(cmd, check=True)
 
 
+def _pin_window_sizes(target: str | None) -> None:
+    """Set every roster window's LOCAL window-size to manual, post-creation.
+
+    The mobile control plane needs windows held at default-size (60 cols) even
+    while a desktop /tty client is attached — that's what `manual` does. It cannot
+    live in .tmux.conf as a global: tmux 3.4's server segfaults creating a window
+    while the global window-size is manual and no client is attached (measured
+    2026-07-17; it took down the whole roster). Creating first and pinning each
+    window's local option after is crash-free on the same version.
+    """
+    cmd = ["tmux", "list-windows", "-F", "#{window_id}"]
+    if target:
+        cmd[2:2] = ["-t", target]
+    out = subprocess.run(cmd, capture_output=True, text=True)
+    if out.returncode != 0:
+        return
+    for window_id in out.stdout.split():
+        subprocess.run(["tmux", "set", "-w", "-t", window_id, "window-size", "manual"])
+
+
 def launch(scope: str, project_root: Path, base: Path | None = None) -> None:
     """Hand this terminal (or a new tmux window) to a pinned claude process."""
     argv = _claude_argv(scope, project_root, base)
     if os.environ.get("TMUX"):
         _open_window(scope, argv, project_root, target=None)
+        _pin_window_sizes(target=None)
         print(f"Pinned window `{scope}` opened: {' '.join(argv)}")
         return
     # No tmux around us: this terminal becomes the pinned process. exec, not spawn —
@@ -153,6 +174,8 @@ def roster(project_root: Path, base: Path | None = None) -> None:
             continue
         _open_window(scope, _claude_argv(scope, project_root, base), project_root, target)
         print(f"Pinned window `{scope}` opened")
+
+    _pin_window_sizes(target)
 
     if target:
         print(f"Roster running in tmux session `{target}` — attach with: tmux attach -t {target}")

@@ -1,0 +1,30 @@
+# Expert manifest — homelab & self-hosting (docs/01 contract v0, docs/08 roster).
+#
+# Expert #3, and the first SPINE expert (docs/08 granularity rule): pinned to
+# whole sessions whose dominant domain is this box and its surfaces, where the
+# two live consultants are ingestion-fed. Its memory grows almost entirely from
+# pinned-session distillation (tier-1 first-party episodic), which is why the
+# feed surface below is deliberately empty. Roster decision recorded in docs/08.
+
+contract: v0
+scope: homelab
+name: Homelab & self-hosting
+domain: >-
+  The operator's Ubuntu box and everything it serves: Linux/systemd services,
+  Tailscale (serve, certs, tailnet-only exposure), the tmux roster control
+  plane and its mobile PWA surfaces (/plane/, /course/, ttyd), PWA/WebAPK
+  behavior on Android, and the media stack (Transmission behind a VPN
+  namespace, Jellyfin, Roku). What happened on this machine the last N times.
+
+# Origin tier for any INGESTED content (docs/05). Distillation writes tier-1
+# episodic memory regardless — this governs feeds only.
+tier: 2
+
+# No feeds yet, so no kinds are declared: declaring kinds no writer produces
+# would make the manifest aspirational (the eval-methodology precedent). Add
+# kinds and hosts together when a real feed ships.
+claim_kinds: []
+
+# Empty allowlist blocks all web ingestion for this scope. Local files bypass
+# the list — hand-feeding a file IS the curation decision (docs/06).
+allowlist: []

@@ -73,7 +73,7 @@ existing expert") before it ships.
 | Structural-safety / trust | Consultant | Nodeglass, Thalamus | Provenance, gating, poisoning, policy engines, red-teaming. Second pillar. |
 | Retrieval / memory-architecture | Consultant | Thalamus | Vector vs. graph memory, chunking, reranking, RAG eval. Self-referential dogfooding; where the "graphrag expert" instinct actually belongs. |
 | Rhythm-game / music-domain | Consultant | StepMania | Chart conventions, biomechanics, groove radar, onset/music-theory. The *taste* side; pairs with DL expert. |
-| Homelab / self-hosting | Spine (ops) | media server + machine | Linux/systemd/Tailscale/VPN-namespace. Cheap, real episodic accumulation. |
+| Homelab / self-hosting | Spine (ops) | media server + machine + control-plane surfaces | **Live** (`config/experts/homelab.yaml`) — see below. First spine expert; distillation-fed, empty feed surface. |
 | Career-narrative / interview | Consultant | job hunt | Experience library + STAR stories + honest-claim guardrails as knowledge; accumulates which framings landed. Complements the resume skill. |
 
 ## The second expert: evaluation-methodology (two proves N)
@@ -107,6 +107,29 @@ consequence-level evaluation (MQuAKE, arXiv 2305.14795), procured against
 recorded demands: the eval loop's lexical-only attribution ([11](11-related-work.md)
 §5) and the M4 counterfactual harness. The roster mechanics
 (split-until-measurement-says-merge) are this project's own discipline.
+
+## The third expert: homelab (the first spine)
+
+Shipped as `config/experts/homelab.yaml` — zero-glue held again. Both facts that
+deferred it at the expert-#2 decision have since flipped:
+
+1. **Pinning is live** (M3, "the process is the pin"), so a spine expert is
+   exercisable: sessions whose dominant domain is the box — tailnet serving, the
+   control-plane and course PWAs, systemd units, the media stack — get pinned to
+   `homelab` and distill there instead of diluting `main`.
+2. **The corpus objection was about bootstrap, not accumulation.** The media-server
+   transcripts stay outside the archive allowlist (VPN credentials), but the expert
+   feeds forward from pinned sessions; the 2026-07-17 control-plane sessions alone
+   minted reusable ops claims (WebAPKs ignore ports; `tailscale serve` strips the
+   mount path; ttyd base-path targets).
+
+What distinguishes it structurally: the two consultants are ingestion-fed, this
+expert is **distillation-fed** — tier-1 first-party episodic memory, so the
+manifest declares no claim kinds and an empty allowlist (a feed surface no writer
+uses would be aspirational; local hand-fed files still bypass the list as the
+curation decision itself). It passes the skill-vs-expert test precisely where the
+`home-media-server` *skill* stops: the skill is the procedure, the expert is what
+happened on this machine the last N times.
 
 ## Anti-candidate (recorded so it stays dead)
 
