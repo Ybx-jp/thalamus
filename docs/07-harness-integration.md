@@ -87,7 +87,12 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    passes `--scope` to extraction, so the session's episodic memory lands in the
    pinned expert's subgraph. Ledger-first keeps re-extraction from any later,
    differently-pinned shell landing in the wrong scope and forking the Session
-   vertex identity (vids include scope).
+   vertex identity (vids include scope). After extraction the same detached run
+   chains `thalamus eval sync --write`: the just-distilled session's tap traces
+   land as priced Trace nodes, and any backlog from other distilled sessions is
+   swept in the same pass (trace identity is content-addressed, so concurrent
+   session-ends converge). The Pulse dashboard's pending stamp (docs/03) is the
+   observable for this loop.
 3. **Pin immutability is enforced by process lifetime, not policy.** A pin cannot
    change mid-session because nothing can re-scope a running process (lab/001) —
    the property v1 wanted is the property the harness gives. "Wrong pin" is data,

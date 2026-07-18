@@ -57,8 +57,17 @@ echo "distilling session ${session_id:0:8} into scope $scope" >>"$log"
 # --force: a resumed session that was distilled at an earlier stop gets re-extracted
 # with its newer, longer transcript. Claims are content-addressed, so unchanged
 # judgement converges on the same nodes rather than duplicating.
-nohup uv --directory "${CLAUDE_PROJECT_DIR:-$cwd}" run thalamus extract \
-  --session "$session_id" --scope "$scope" --force --write -- "$project_dir" \
-  >>"$log" 2>&1 </dev/null &
+#
+# After distillation, `eval sync --write` lands this session's tap traces as
+# priced Trace nodes (they can only land post-distill — sync.py) and sweeps any
+# backlog other distilled sessions left pending. Sync runs even if extract
+# declines (non-conversation session): the sweep is still worth it. Trace
+# identity is content-addressed, so concurrent session-ends converge instead of
+# duplicating. The Pulse dashboard's pending stamp reads this loop's result.
+nohup sh -c "
+  uv --directory '${CLAUDE_PROJECT_DIR:-$cwd}' run thalamus extract \
+    --session '$session_id' --scope '$scope' --force --write -- '$project_dir'
+  uv --directory '${CLAUDE_PROJECT_DIR:-$cwd}' run thalamus eval sync --write
+" >>"$log" 2>&1 </dev/null &
 
 exit 0
