@@ -15,6 +15,8 @@
 
 set -euo pipefail
 
+. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+
 input=$(cat)
 
 tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty')
@@ -34,7 +36,7 @@ trace_file="$trace_dir/$(date -u +%Y-%m).jsonl"
 # records it verbatim and judges nothing — eval sync validates it like any hint.
 printf '%s' "$input" | jq -c \
   --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg scope "${THALAMUS_SCOPE:-main}" \
+  --arg scope "$(thalamus_resolve_scope)" \
   '{ts: $ts,
     session_id: (.session_id // ""),
     scope: $scope,

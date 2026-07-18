@@ -23,6 +23,7 @@ from fastmcp import FastMCP
 
 from thalamus.harness import consultation
 from thalamus.harness.extraction import apply_ingress_floor
+from thalamus.harness.pin import resolve_pin
 from thalamus.substrate.reader import (
     recall,
     recall_by_artifact,
@@ -43,8 +44,12 @@ logger = logging.getLogger(__name__)
 
 GRAPH_URL = os.environ.get("THALAMUS_GRAPH_URL", "ws://localhost:8182/gremlin")
 
-# The session's pin. Resolved by the session-start hook, never by the model.
-SCOPE = os.environ.get("THALAMUS_SCOPE", MAIN_SCOPE)
+# The session's pin. Resolved once at process start, never by the model: the
+# picked agent (CLAUDE_CODE_AGENT) wins when it names a real expert manifest,
+# THALAMUS_SCOPE is the fallback — picker launches bypass pin.py's env
+# threading, so the agent name is the signal that survives every launch channel
+# (harness/pin.resolve_pin; measured 2026-07-18).
+SCOPE = resolve_pin()
 
 # Expert knowledge subgraphs recall may consult alongside the pinned scope's episodic
 # memory. Server-side policy, same as SCOPE: derived from the expert manifests on

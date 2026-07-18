@@ -10,10 +10,11 @@
 #
 # This resolves a *project* from the working directory and asks the agent to pull
 # that project's open threads, and it records the session's **pin** (docs/02,
-# docs/07). The pin is THALAMUS_SCOPE, inherited from the launcher's environment —
-# "the process is the pin" (lab/003): the same env the MCP server read at process
-# startup, so the record here and the enforcement there cannot disagree unless the
-# process was reconfigured mid-flight, which lab/001 measured as impossible.
+# docs/07). The pin is resolved by resolve-scope.sh — the picked agent
+# (CLAUDE_CODE_AGENT) first, THALAMUS_SCOPE as fallback — the same precedence the
+# MCP server applies at process startup (harness/pin.resolve_pin), so the record
+# here and the enforcement there cannot disagree unless the process was
+# reconfigured mid-flight, which lab/001 measured as impossible.
 # Recording is tier-0: appended to ~/.thalamus/pins/pins.jsonl, the ledger that
 # session-end.sh resolves the distillation scope from (ledger-first beats env at
 # extraction time, so re-extraction from any shell lands in the pinned scope
@@ -27,6 +28,8 @@
 #       "command": "$CLAUDE_PROJECT_DIR/src/thalamus/harness/hooks/claude-code/session-start.sh"}]}]}}
 
 set -euo pipefail
+
+. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
 
 input=$(cat)
 
@@ -45,7 +48,7 @@ if [ -z "$cwd" ]; then
 fi
 
 project=$(basename "$cwd")
-scope="${THALAMUS_SCOPE:-main}"
+scope="$(thalamus_resolve_scope)"
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 
 # The pin ledger: one line per (session, pin), append-only. session-end.sh reads

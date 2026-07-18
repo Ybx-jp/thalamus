@@ -20,6 +20,8 @@
 
 set -euo pipefail
 
+. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+
 input=$(cat)
 
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
@@ -41,7 +43,7 @@ log="$log_dir/session-end-${session_id:0:8}.log"
 # later from an unpinned shell still lands in the scope it was pinned to, instead of
 # forking its Session vertex identity into a second scope. An env/ledger mismatch is
 # pin-quality data, not a failure: log it and trust the ledger.
-env_scope="${THALAMUS_SCOPE:-main}"
+env_scope="$(thalamus_resolve_scope)"
 ledger="$HOME/.thalamus/pins/pins.jsonl"
 ledger_scope=""
 if [ -f "$ledger" ]; then

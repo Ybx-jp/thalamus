@@ -1,11 +1,12 @@
 """Launch pinned expert sessions — docs/07 "the process is the pin".
 
-A pin is an OS process whose environment carries THALAMUS_SCOPE: the MCP server
-reads it once at startup (mcp_server.py), every hook inherits it, and the process
+A pin is an OS process: the MCP server resolves its scope once at startup
+(resolve_pin below — the picked agent first, THALAMUS_SCOPE second), every hook
+applies the same precedence (hooks/claude-code/resolve-scope.sh), and the process
 cannot be re-scoped mid-flight (lab/001 measured that boundary; lab/003 measured
 the whole path). So the launcher's whole job is to make that process correctly:
 validate the scope against the tier-0 manifests, regenerate the derived agent
-definition, and hand the terminal to `claude` with the env set.
+definition, and hand the terminal to `claude` with agent and env agreeing.
 
 tmux is the control plane when present — one window per pinned expert, the window
 name being the scope. Coordination stays in tmux, not in Thalamus: the launcher
@@ -33,6 +34,30 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 def agent_name(scope: str) -> str:
     return f"{AGENT_PREFIX}{scope}"
+
+
+def resolve_pin(env: os._Environ | dict[str, str] | None = None,
+                base: Path | None = None) -> str:
+    """The scope this process is pinned to — the picked agent first, env second.
+
+    The agent picker (`claude --agent thalamus-<scope>`, FleetView, the plane's
+    launch surfaces) starts a pinned persona without going through this launcher,
+    so THALAMUS_SCOPE carries whatever the surrounding shell had. Measured
+    2026-07-18: all three roster expert sessions ran with
+    CLAUDE_CODE_AGENT=thalamus-<scope> but THALAMUS_SCOPE=main — every memory op
+    silently hit main. The harness exports CLAUDE_CODE_AGENT into the MCP
+    server's own environment (measured on the live server processes), so the
+    picked agent is the strongest signal of operator intent and wins; a derived
+    scope must name a real manifest, else it falls through to the env pin.
+    """
+    if env is None:
+        env = os.environ
+    agent = env.get("CLAUDE_CODE_AGENT", "")
+    if agent.startswith(AGENT_PREFIX):
+        scope = agent[len(AGENT_PREFIX):]
+        if scope in available_scopes(base):
+            return scope
+    return env.get("THALAMUS_SCOPE", MAIN_SCOPE)
 
 
 def render_agent(manifest: ExpertManifest) -> str:

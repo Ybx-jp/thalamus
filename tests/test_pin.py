@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from thalamus.contract.manifest import load_manifest
-from thalamus.harness.pin import agent_name, render_agent, resolve, write_agent
+from thalamus.harness.pin import agent_name, render_agent, resolve, resolve_pin, write_agent
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
 
@@ -61,3 +61,34 @@ def test_main_is_pinnable_without_a_manifest_and_unknown_scopes_are_not():
 
     with pytest.raises(FileNotFoundError, match="Available:.*literature"):
         resolve("nonexistent-expert", REPO_CONFIG)
+
+
+def test_resolve_pin_prefers_the_picked_agent_over_the_env_scope():
+    """
+    Scenario: The agent picker launched `claude --agent thalamus-homelab` from a
+    shell whose env still said THALAMUS_SCOPE=main (measured 2026-07-18: all
+    three roster expert sessions were mis-armed exactly this way)
+
+    The picked agent is operator intent and must win; the env is residue.
+    """
+    env = {"CLAUDE_CODE_AGENT": "thalamus-homelab", "THALAMUS_SCOPE": "main"}
+
+    assert resolve_pin(env, REPO_CONFIG) == "homelab"
+
+
+def test_resolve_pin_falls_back_to_env_then_main():
+    """
+    Scenario: No agent picked (roster main window / plain terminal), or the
+    agent name doesn't map to a real manifest (never widen a pin on a typo)
+    """
+    assert resolve_pin({"THALAMUS_SCOPE": "literature"}, REPO_CONFIG) == "literature"
+    assert resolve_pin({}, REPO_CONFIG) == "main"
+    assert resolve_pin(
+        {"CLAUDE_CODE_AGENT": "thalamus-nonexistent", "THALAMUS_SCOPE": "main"},
+        REPO_CONFIG,
+    ) == "main"
+    # non-thalamus agents (e.g. Explore) never touch the pin
+    assert resolve_pin(
+        {"CLAUDE_CODE_AGENT": "Explore", "THALAMUS_SCOPE": "eval-methodology"},
+        REPO_CONFIG,
+    ) == "eval-methodology"

@@ -34,6 +34,8 @@
 
 set -euo pipefail
 
+. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+
 input=$(cat)
 
 event=$(printf '%s' "$input" | jq -r '.hook_event_name // empty')
@@ -52,7 +54,7 @@ emit() {  # $1 = class, $2 = message
   jq -cn \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg session_id "$session" \
-    --arg scope "${THALAMUS_SCOPE:-main}" \
+    --arg scope "$(thalamus_resolve_scope)" \
     --arg event "$event" \
     --arg class "$1" \
     '{ts:$ts, session_id:$session_id, scope:$scope, event:$event, class:$class, version:1}' \

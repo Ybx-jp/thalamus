@@ -84,11 +84,21 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    pinned tmux window per expert manifest plus `main`, idempotent. `main` is the
    default for any plainly-launched process — an unpinned session *is* a
    main-plane session.
-2. **The env is read once, everywhere, by construction.** `.mcp.json` passes
-   `${THALAMUS_SCOPE:-main}` to the MCP server, which reads it at process startup
-   and scopes every retrieval and write server-side — the model is never trusted
-   to self-limit its own scope, and no tool accepts a scope argument. All three
-   hooks are children of the same process and inherit the same env: SessionStart
+2. **The pin is resolved once, everywhere, by the same rule.** Resolution is
+   **picked-agent-first, env-fallback** (`harness/pin.resolve_pin`; hooks source
+   the mirror `resolve-scope.sh`): `CLAUDE_CODE_AGENT=thalamus-<scope>` wins
+   when it names a real manifest, else `THALAMUS_SCOPE`, else `main`. Agent-first
+   exists because the agent picker (FleetView, `claude --agent`, the plane's
+   launch surfaces) starts a pinned persona without going through `thalamus pin`,
+   so the env carries whatever the surrounding shell had — measured 2026-07-18:
+   all three roster expert sessions ran with the expert agent picked and
+   `THALAMUS_SCOPE=main`, every memory op silently hitting main. The harness
+   exports `CLAUDE_CODE_AGENT` into the MCP server's own environment (measured
+   on the live server processes), the server applies the rule at process
+   startup, and it scopes every retrieval and write server-side — the model is
+   never trusted to self-limit its own scope, and no tool accepts a scope
+   argument. All the hooks are children of the same process, inherit the same
+   env, and apply the same precedence: SessionStart
    appends the tier-0 pin record to `~/.thalamus/pins/pins.jsonl` and announces
    the pin in the primed context; PostToolUse stamps the pin into every tap line;
    SessionEnd resolves the distillation scope **ledger-first, env fallback** and

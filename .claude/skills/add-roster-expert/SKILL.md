@@ -74,6 +74,14 @@ current when re-ingesting.
   captures the other app's links host-wide (same source node). New surfaces get
   their own path scope; `tailscale serve` strips the mount path, so backends
   that need the prefix must include it in the target.
+- **The agent picker used to bypass the pin env** — fixed 2026-07-18: pin
+  resolution is now picked-agent-first (`harness/pin.resolve_pin`, hooks'
+  `resolve-scope.sh`), because launching `claude --agent thalamus-<scope>` from
+  any shell left `THALAMUS_SCOPE` as residue (measured: all three roster expert
+  sessions mis-armed to main, memory ops + ledger + distillation all wrong).
+  Arming is per-process: sessions started before the fix stay mis-armed until
+  relaunched. If an expert can't see its own scope's threads, check the live
+  MCP server's env (`/proc/<pid>/environ`) before debugging the graph.
 - **Recycling a window ends the session in it** — including the one you might
   be running in (`scope:homelab:claim:324c87a12b4704cc`,
   `scope:homelab:thread:homelab-recycle-self-termination-risk`). Recycle is for
