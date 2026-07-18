@@ -41,6 +41,9 @@ project switches. These are targeted and cheap; prefer them over re-recalling.
 **L3 — `memory_query`** (main pin only) for **relational questions lexical
 recall cannot answer**. One read-only Gremlin traversal; the canonical schema is
 in the tool's own description. Recipes below are tested against the live graph.
+Write **gremlin-lang** here (camelCase, no terminal step — the server iterates);
+authoring rules, the dialect split, and the wider proven-query store are the
+`gremlin-python` skill and its RECIPES.md.
 
 ## Tested memory_query recipes
 

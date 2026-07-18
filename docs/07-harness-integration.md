@@ -1,6 +1,6 @@
 # Harness Integration — MCP, Hooks, Directives, and the Limit Lab
 
-**Status:** implementing — MCP + all three hooks installed and live; session
+**Status:** implementing — MCP + all four hooks installed and live; session
 pinning built ("the process is the pin"). This doc covers
 how Thalamus meets the Claude Code harness specifically, and how we find the
 harness's limits on purpose.
@@ -19,6 +19,12 @@ harness's limits on purpose.
   - *Session stop:* distill the session — summary + open threads into the pinned
     expert's episodic subgraph (the base system's maintenance scheme, now
     per-expert and eventually utility-weighted).
+  - *Pre-tool-use on Bash (`gremlin-guard.sh`):* block inline gremlin-python
+    whose traversal never invokes the iterator — lazy traversals with no
+    terminal step silently do nothing, so the hook fails them fast with
+    instruction instead. The paired dialect guard (gremlin-python spellings on
+    the gremlin-lang `memory_query` surface) lives in `substrate/query.py`;
+    authoring rules and the proven-query store are the `gremlin-python` skill.
 - **CLAUDE.md directives** — per-project retrieval policy: default pin for this
   directory, tier policy for this kind of session, when to consult vs. answer thin.
   These start minimal and **evolve organically with use** — every directive change

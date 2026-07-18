@@ -86,9 +86,11 @@ established practice (Multi-Agent GraphRAG, arXiv 2511.08274; docs/11 §3); the
 in-harness turn is that the ontology travels in the tool description, so the
 query is written against the schema that actually exists. Four layers keep it
 honest: the server's gremlin-lang grammar (no closures, no code — measured), a
-lexical deny of mutating steps, the pin gate (an expert pin is refused and
-pointed at the consultation protocol — scope stays server-side, docs/07), and
-result/time caps. Rendered vertex IDs are backticked, so the tap prices this
+lexical deny of mutating steps *and* of gremlin-python dialect (snake_case
+steps, terminal steps — a slip that would otherwise die as a cryptic server
+parse error is rejected with instruction pointing at the `gremlin-python`
+skill), the pin gate (an expert pin is refused and pointed at the consultation
+protocol — scope stays server-side, docs/07), and result/time caps. Rendered vertex IDs are backticked, so the tap prices this
 tool like any recall: the instrument is born inside the eval loop it queries.
 
 The queries this schema uniquely serves are the master plane's whole case:

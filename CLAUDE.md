@@ -35,6 +35,11 @@ so the doc and the memory stay in step.
 - Retrieval has a measured cost discipline: consult the `recall-strategy` skill
   before mid-session recalls or any `memory_query` traversal — narrow lexical
   queries, drill-downs over re-recalls, tested Gremlin recipes (lab/006–007).
+- Gremlin authoring: consult the `gremlin-python` skill before writing any
+  gremlin-python code or new ad-hoc query — terminal steps are mandatory (lazy
+  traversals silently do nothing; a PreToolUse hook blocks the inline case),
+  dialects don't cross surfaces, and proven queries live in the skill's
+  RECIPES.md (check before writing, append after validating).
 - Ingestion follows the procurement protocol ([docs/06](docs/06-ingestion.md)):
   demand-driven against open threads, anchor document first, per-project `--feed`,
   and always dry-run the title check before `--write`.

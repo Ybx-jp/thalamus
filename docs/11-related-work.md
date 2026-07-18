@@ -173,6 +173,21 @@ It remains a good design; it is no longer unclaimed.
   Graphs** (arXiv 2511.08274) — modular agentic text-to-Cypher over LPGs with
   schema-compliant generation and iterative content-aware correction. The
   free-form query surface as such is established practice.
+- **DAIL-SQL** (arXiv 2308.15363) — the benchmark study of prompt engineering
+  for LLM query generation; its measured win is few-shot example selection by
+  similarity of *both* the question and the query, and it names token
+  efficiency as a first-class metric. Grounds the recipe store
+  (`gremlin-python` skill, RECIPES.md): each stored query carries the question
+  it answered so future sessions match by use case, and reuse is cheaper than
+  regeneration.
+- **Self-Debugging** (arXiv 2304.05128) — LLMs correct their own generated
+  queries from execution feedback and error messages, with the largest gains
+  where feedback is informative. Grounds the guard pair: deterministic,
+  instructive rejection *before* execution (the `gremlin-guard.sh` hook for
+  lazy un-terminated gremlin-python; the `substrate/query.py` dialect check for
+  python spellings on the gremlin-lang surface) is the cheap half of that
+  loop — the doomed query is caught where feedback would otherwise be silence
+  or a token-recognition error.
 
 Positioning of `memory_query` ([03-master-plane.md](03-master-plane.md)): an
 *instantiation* — single-shot rather than multi-agent-iterative, Gremlin rather

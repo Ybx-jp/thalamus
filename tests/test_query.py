@@ -44,6 +44,38 @@ def test_the_guard_denies_every_mutating_step_including_nested_and_spaced():
         assert validate_query(good) is None, good
 
 
+def test_the_guard_rejects_gremlin_python_dialect_with_instruction():
+    """
+    Scenario: The model writes gremlin-python (snake_case, terminal steps) on
+    the gremlin-lang surface — the doomed-dialect slip observed live
+
+    Verifications:
+    - python terminal steps, snake_case steps, and underscore-suffixed keyword
+      escapes all reject, and the rejection teaches the surface split
+    - equivalent gremlin-lang spellings still pass
+    """
+    for bad in (
+        "g.V().hasLabel('Claim').to_list()",
+        "g.V().count().next()",
+        "g.V().iterate()",
+        "g.V().has_label('Claim')",
+        "g.V().out_e('RETURNS')",
+        "g.V().as_('a').select('a')",
+        "g.V().where(__.in_('CONTAINS').count().is_(gte(2)))",
+    ):
+        rejection = validate_query(bad)
+        assert rejection is not None, bad
+        assert "gremlin-python" in rejection, bad
+
+    for good in (
+        "g.V().hasLabel('Claim').valueMap('description')",
+        "g.V().outE('RETURNS').has('used',false).count()",
+        "g.V().as('a').out('DERIVED_FROM').select('a')",
+        "g.V().where(__.in('CONTAINS').count().is(gte(2)))",
+    ):
+        assert validate_query(good) is None, good
+
+
 def test_the_guard_requires_a_traversal_and_bounds_its_size():
     assert validate_query("System.exit(0)") is not None
     assert validate_query("1+1") is not None

@@ -59,6 +59,44 @@ _DENIED_STEPS = (
     "program(",
 )
 
+# gremlin-python dialect, which this surface does not speak. The server takes
+# gremlin-lang: camelCase steps, no terminal step — the server iterates the
+# traversal itself. Python's snake_case renames, underscore-suffixed keyword
+# escapes, and client-side terminal steps would only die in the server parser
+# with a token error; catching them here turns that into instruction.
+_PYTHON_DIALECT_TOKENS = (
+    ".to_list(",
+    ".tolist(",
+    ".iterate(",
+    ".next(",
+    ".has_next(",
+    ".to_set(",
+    "has_label(",
+    "out_e(",
+    "in_e(",
+    "both_e(",
+    "out_v(",
+    "in_v(",
+    "other_v(",
+    "value_map(",
+    "element_map(",
+    "group_count(",
+    "as_(",
+    "not_(",
+    "is_(",
+    "in_(",
+    "from_(",
+    "and_(",
+    "or_(",
+    "filter_(",
+    "range_(",
+    "sum_(",
+    "min_(",
+    "max_(",
+    "id_(",
+    "with_(",
+)
+
 # Bare scoped vertex IDs in rendered output, backticked for the trace tap. Same
 # prefix derivation as eval/traces.py, minus the backtick anchors.
 _SCOPED_PREFIXES = "|".join(
@@ -81,6 +119,15 @@ def validate_query(query: str) -> str | None:
                 f"Rejected: `{step.rstrip('(')}` is a mutating or side-effect step. "
                 "This surface is read-only; writes go through `memorize` and the "
                 "distillation pipeline."
+            )
+    for token in _PYTHON_DIALECT_TOKENS:
+        if token in compact:
+            return (
+                f"Rejected: `{token.strip('.(')}` is gremlin-python dialect. This "
+                "surface takes gremlin-lang: camelCase steps (hasLabel, outE, "
+                "valueMap) and no terminal step — the server iterates the traversal. "
+                "to_list()/iterate()/next() belong in gremlin-python scripts; see "
+                "the gremlin-python skill."
             )
     return None
 
