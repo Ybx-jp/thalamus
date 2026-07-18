@@ -195,6 +195,48 @@ def test_sessions_with_no_user_turns_are_not_remembered(tmp_path):
     assert "no user turns" in results[0].skipped
 
 
+def test_slash_command_sessions_count_as_conversations(tmp_path):
+    """
+    Scenario: A session driven purely by slash commands (/teach lessons) — its
+    only user records are <command-name> invocations, plus harness scaffolding
+
+    Verifications:
+    - command invocations count as user turns; caveats/reminders still do not
+
+    Measured origin: ef3e3d6a (87 assistant messages) was silently ineligible
+    for distillation because every human turn started with "<".
+    """
+    project = tmp_path / "projects" / "proj"
+    _write_transcript(
+        project,
+        "teachy",
+        [
+            {
+                "type": "user",
+                "timestamp": "2026-07-17T10:00:00Z",
+                "message": {
+                    "role": "user",
+                    "content": "<command-name>/teach</command-name> <command-args></command-args>",
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-07-17T10:00:01Z",
+                "message": {"role": "user", "content": "<system-reminder>noise</system-reminder>"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-07-17T10:01:00Z",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "Lesson."}]},
+            },
+        ],
+    )
+
+    facts = transcripts.parse(project / "teachy.jsonl")
+
+    assert facts.user_turns == 1
+
+
 def test_bootstrap_retains_evidence_and_is_idempotent(tmp_path):
     """
     Scenario: Bootstrap the same project twice

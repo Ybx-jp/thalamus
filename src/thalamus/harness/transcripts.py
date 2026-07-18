@@ -145,7 +145,17 @@ def parse(path: Path) -> TranscriptFacts:
         if record_type == "user":
             if isinstance(content, str):
                 text = content
-                if text and not text.lstrip().startswith("<"):
+                stripped = text.lstrip()
+                # A "<"-prefixed record is harness scaffolding (caveats, system
+                # reminders), not the user speaking — except a slash-command
+                # invocation, which is a deliberate user turn. Without this, a
+                # session driven purely by slash commands (/teach lessons) has
+                # zero countable turns and silently never distills (measured:
+                # ef3e3d6a, 87 assistant messages, ineligible).
+                is_command = stripped.startswith("<command-name>") or (
+                    stripped.startswith("<") and "<command-name>" in stripped[:200]
+                )
+                if text and (not stripped.startswith("<") or is_command):
                     facts.user_turns += 1
                     if not facts.first_prompt:
                         facts.first_prompt = text.strip()

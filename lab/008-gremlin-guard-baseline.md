@@ -41,12 +41,12 @@ benefit) and named extending it over the undistilled sessions as the
 highest-value next measurement. Done — scanning the raw session transcripts
 directly:
 
-- **50** further inline gremlin commands in undistilled sessions; flagged
-  candidates classified by hand: two more false-positive classes (`thalamus.eval`
-  helper imports that iterate internally; `grep`/`rg` commands mentioning
-  markers inside their search patterns) and one scanner artifact (Python `re`
-  without MULTILINE misreads the guard's line-based `^sed` — the live guard
-  passes it).
+- **50** further inline gremlin commands in the raw session transcripts
+  (distilled and not); flagged candidates classified by hand: two more
+  false-positive classes (`thalamus.eval` helper imports that iterate
+  internally; `grep`/`rg` commands mentioning markers inside their search
+  patterns) and one scanner artifact (Python `re` without MULTILINE misreads
+  the guard's line-based `^sed` — the live guard passes it).
 - **Doomed inline commands across both arms: 0/98.**
 - **The flagged script-file hit was a scan artifact too.** Session 5f8ad588's
   `prune_migration_orphans.py` showed a "bare"
@@ -57,15 +57,22 @@ directly:
   1,114 migration orphans; the `--write` was blocked by the harness
   permission classifier and the cleanup completed later — live orphan count
   is now 0).
-- **Net: no doomed query has been located in any retained or undistilled
-  transcript.** The operator's observation stands as real but unlocated
-  (plausibly another project's session, or code read outside these
-  transcripts). The measured claim is narrow and honest: the inline-Bash
-  channel this guard covers has a doomed rate of 0/98, and every scan-flagged
-  candidate — inline or file — was a false positive of lexical, line-level
-  matching. A statement-level AST check on written `.py` content is the only
-  instrument that could measure the file channel; open design item, to be
-  grounded before building.
+- **Resolved: the operator-observed anomaly is in the trace tap, and it was
+  never a terminal-step failure.** The observed query
+  (`g.V("scope:main:claim:d51110ad19658456").bothE().limit(5).valueMap(true)`
+  → "Query returned no results", 2026-07-18T01:30:43Z, session 5f8ad588) was
+  well-formed gremlin-lang on the `memory_query` surface, where the server
+  always iterates — its empty result was *true*: the vertex was one of 1,114
+  migration-orphan Claims at that moment (the same session's census query in
+  the tap: total 2608, orphans 1114). The session diagnosed it correctly and
+  the orphans were pruned. The fluency layer's founding observation thus
+  resolves as a **true empty result read as a failure** — exactly the
+  miss-vs-failure conflation the verification audit's finding 4 fixed in the
+  arm stats. Net for the guard: doomed rate 0/98 inline, 0 located anywhere;
+  every scan-flagged candidate was a false positive of lexical, line-level
+  matching. A statement-level AST check on written `.py` content remains the
+  only instrument that could measure the file channel; open design item, to
+  be grounded before building.
 
 ## Action taken
 
@@ -131,12 +138,13 @@ All seven findings of exchange `8f6ad2d6f4024b2c` addressed in code:
   bundle number ever needs decomposing.
 - Residual: script files stay invisible to both guard and tap, and lexical
   line-level scanning demonstrably cannot classify them (the one flagged file
-  was a false positive on AST-level reading). The guard's covered channel is
-  measured clean; its benefit case is currently the operator's unlocated
-  observation plus the prospective ITS, nothing stronger — say so. The
-  candidate instrument for the file channel is a statement-level AST check on
-  written `.py` content (a bare traversal expression never consumed), to be
-  grounded before building.
+  was a false positive on AST-level reading). With the founding observation
+  resolved as a true empty result, the guard's benefit case is purely
+  prospective — operator experience that agents fumble exactly these details,
+  plus the ITS now accumulating — and the measured doomed rate to date is
+  zero everywhere. Say so. The candidate instrument for the file channel is a
+  statement-level AST check on written `.py` content (a bare traversal
+  expression never consumed), to be grounded before building.
 - Not implemented, tracked open: reuse weighted by displaced from-scratch
   cost (injected_chars exists to build it), the demand-miss admission signal
   ("consulted the store, found nothing"), within-session paired arm

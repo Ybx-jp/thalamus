@@ -69,3 +69,21 @@ instruments. The recovery path mattering more than the trigger is exactly why th
 trigger and the bootstrap were kept as one code path. And the unit that arms
 harness config is the process, not the session — `/clear` crosses sessions
 without crossing the config boundary.
+
+## Addendum (2026-07-18): two of the three walls have moved
+
+Re-measured on the current harness version, both in one day:
+
+- **`/clear` now fires SessionEnd.** Session 5f8ad588 distilled at the moment
+  of its `/clear` (session-end log timestamped to the second), where the
+  2026-07-15 measurement above found the hook inert on `/clear`. The
+  stale-process caution stands for **MCP servers only**.
+- **Hook config is no longer process-armed.** Pre/PostToolUse hooks added to
+  project `.claude/settings.json` mid-session fired on subsequent tool calls
+  in the *same* session (the gremlin guard blocked a command minutes after
+  being wired, no relaunch).
+
+The moral survives narrowed: the unit that arms **MCP server code and env** is
+the process; hooks and SessionEnd have become session-live. Undistilled-session
+sweeps are still the recovery — the 2026-07-18 failure mode was eligibility
+(see the slash-command fix in harness/transcripts.py), not the trigger.
