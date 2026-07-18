@@ -169,6 +169,14 @@ live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
 
 - Outcome-metric battery for counterfactual arms — needs to be cheap enough to run
   routinely, or it won't be run.
+- Open-thread staleness (designed, not built — lab/009, consultation
+  `2e0f6a574658470a`): an eval-sync sweep proposing cross-scope RESOLVES
+  *candidates* (detector may be noisy; the closer must cite specific evidence —
+  nothing auto-closes), graded by resolution latency with still-open threads as
+  censored observations and re-open rate as the Goodhart guard. Thread
+  resolution is a consequence-level fact in MQuAKE's sense (arXiv 2305.14795):
+  a thread can be perfectly recalled as "open" while the entailed consequence
+  of another scope's evidence — "this should close" — goes unevaluated.
 - Attribution refinement: when does lexical matching mislead, and is an LLM-judge
   pass worth its cost/noise?
 - Sample efficiency: a single operator generates limited sessions. Lean on paired
