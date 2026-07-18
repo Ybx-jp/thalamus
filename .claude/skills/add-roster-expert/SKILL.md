@@ -24,6 +24,10 @@ current when re-ingesting.
    real writer produces (the ingest extractor writes
    `literature/finding|technique`); an empty `allowlist` blocks web ingestion,
    and local files bypass it — hand-feeding IS the curation decision (docs/06).
+   A malformed or scope-mismatched manifest fails loudly but aborts the whole
+   roster run mid-loop (`load_manifest` raises inside `roster()`'s scope loop),
+   which the plane's roster-sync button surfaces as a failed sync — fix the
+   YAML, don't debug the plane.
 3. **Anchor the scope if it must be consultable now** — a scope with nothing to
    cite refuses the consultation mint (docs/02). Procure anchors *into the new
    scope* (docs/06 rule 1's scope note), `--feed` named for the demand, and
@@ -44,9 +48,14 @@ current when re-ingesting.
    Never restart `thalamus-plane.service` for a roster or MCP change — arming
    is per *claude process*, and restarts, when actually needed, go through the
    whitelisted `systemd-run` path only (`scope:homelab:claim:2a4b253bc3df9c65`).
-7. **Verify:** `curl -s 127.0.0.1:8378/api/panes` lists the new window; a
-   roster re-run prints "already has a window"; `uv run pytest` stays green.
-   Update docs (02/08/11) and any affected workspace notes in the same change.
+7. **Verify — including that the pin actually armed.** `curl -s
+   127.0.0.1:8378/api/panes` lists the new window; a roster re-run prints
+   "already has a window"; `uv run pytest` stays green. Then confirm the new
+   window's claude process resolved to the new scope — mis-arming is *silent*
+   (see the agent-picker hazard): `tr '\0' '\n' </proc/<pid>/environ | grep
+   THALAMUS_SCOPE`, or ask the session to run `memory_open_threads` and check
+   the node prefix. Update docs (02/08/11) and any affected workspace notes in
+   the same change.
 
 ## Hazards (each has bitten, or was caught in review)
 
@@ -82,6 +91,12 @@ current when re-ingesting.
   Arming is per-process: sessions started before the fix stay mis-armed until
   relaunched. If an expert can't see its own scope's threads, check the live
   MCP server's env (`/proc/<pid>/environ`) before debugging the graph.
+- **A new expert is not consultable from sessions that predate it.** The
+  Agent-tool roster (like the pin) is loaded per *process*: a session started
+  before the manifest existed cannot spawn `thalamus-<scope>` consultation
+  subagents until relaunched, even though the graph scope and window are live.
+  Same per-process arming rule as MCP/hooks, pointing the other direction —
+  caught in the 2026-07-18 skill audit, not yet bitten.
 - **Recycling a window ends the session in it** — including the one you might
   be running in (`scope:homelab:claim:324c87a12b4704cc`,
   `scope:homelab:thread:homelab-recycle-self-termination-risk`). Recycle is for

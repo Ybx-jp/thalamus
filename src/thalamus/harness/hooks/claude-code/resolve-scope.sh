@@ -14,7 +14,7 @@ thalamus_resolve_scope() {
   if [ -n "$agent" ] && [ "${agent#thalamus-}" != "$agent" ]; then
     scope="${agent#thalamus-}"
     root="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)}"
-    if [ -f "$root/config/experts/$scope.yaml" ]; then
+    if [ -f "${THALAMUS_CONFIG_DIR:-$root/config}/experts/$scope.yaml" ]; then
       printf '%s' "$scope"
       return
     fi
