@@ -48,14 +48,24 @@ directly:
   without MULTILINE misreads the guard's line-based `^sed` — the live guard
   passes it).
 - **Doomed inline commands across both arms: 0/98.**
-- **The operator-observed doomed query was found — in a script file.** Session
-  5f8ad588 wrote `prune_migration_orphans.py` to its scratchpad containing a
-  bare `g.V().has_label("Claim").not_(T.both_e())` statement (no terminal
-  step, silently no-op) *adjacent to* a correctly terminated
-  `.count().next()` traversal. The doomed-query channel is file-writes, which
-  the Bash-text heuristic cannot see, and a statement-level check (one doomed
-  traversal beside a healthy one in the same file) needs AST inspection of
-  written `.py` content, not command grep. Open design item, not a tweak.
+- **The flagged script-file hit was a scan artifact too.** Session 5f8ad588's
+  `prune_migration_orphans.py` showed a "bare"
+  `g.V().has_label("Claim").not_(T.both_e())` line — which on reading the
+  file is the opening of a *multi-line parenthesized expression* ending in
+  `.to_list()`. Line-level grep cannot see statement structure; only AST
+  inspection can. The script itself executed correctly (its dry run found
+  1,114 migration orphans; the `--write` was blocked by the harness
+  permission classifier and the cleanup completed later — live orphan count
+  is now 0).
+- **Net: no doomed query has been located in any retained or undistilled
+  transcript.** The operator's observation stands as real but unlocated
+  (plausibly another project's session, or code read outside these
+  transcripts). The measured claim is narrow and honest: the inline-Bash
+  channel this guard covers has a doomed rate of 0/98, and every scan-flagged
+  candidate — inline or file — was a false positive of lexical, line-level
+  matching. A statement-level AST check on written `.py` content is the only
+  instrument that could measure the file channel; open design item, to be
+  grounded before building.
 
 ## Action taken
 
@@ -119,13 +129,14 @@ All seven findings of exchange `8f6ad2d6f4024b2c` addressed in code:
   recipes, and guards shipped together, so the ITS grades the bundle, and
   component attribution needs an ablation arm (skill-on/guard-off) if the
   bundle number ever needs decomposing.
-- Residual, now *measured* rather than merely named: script files are
-  invisible to both guard and tap, and the only confirmed doomed query in
-  ~100 scanned commands lived in exactly that channel. The inline channel the
-  guard covers has a measured doomed rate of zero; the guard's benefit case
-  rests on the file-write channel it does not yet cover. An AST-level check
-  on written `.py` content is the candidate design (statement-level: a bare
-  traversal expression never consumed), to be grounded before building.
+- Residual: script files stay invisible to both guard and tap, and lexical
+  line-level scanning demonstrably cannot classify them (the one flagged file
+  was a false positive on AST-level reading). The guard's covered channel is
+  measured clean; its benefit case is currently the operator's unlocated
+  observation plus the prospective ITS, nothing stronger — say so. The
+  candidate instrument for the file channel is a statement-level AST check on
+  written `.py` content (a bare traversal expression never consumed), to be
+  grounded before building.
 - Not implemented, tracked open: reuse weighted by displaced from-scratch
   cost (injected_chars exists to build it), the demand-miss admission signal
   ("consulted the store, found nothing"), within-session paired arm
