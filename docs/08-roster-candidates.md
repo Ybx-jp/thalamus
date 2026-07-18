@@ -74,7 +74,8 @@ existing expert") before it ships.
 | Retrieval / memory-architecture | Consultant | Thalamus | Vector vs. graph memory, chunking, reranking, RAG eval. Self-referential dogfooding; where the "graphrag expert" instinct actually belongs. |
 | Rhythm-game / music-domain | Consultant | StepMania | Chart conventions, biomechanics, groove radar, onset/music-theory. The *taste* side; pairs with DL expert. |
 | Homelab / self-hosting | Spine (ops) | media server + machine + control-plane surfaces | **Live** (`config/experts/homelab.yaml`) — see below. First spine expert; distillation-fed, empty feed surface. |
-| Career-narrative / interview | Consultant | job hunt | Experience library + STAR stories + honest-claim guardrails as knowledge; accumulates which framings landed. Complements the resume skill. |
+| Teacher | Spine | every learning initiative + career narrative | **Live** (`config/experts/teacher.yaml`) — see below. Curriculum design over a persistent learner model; second spine, first dual-fed. |
+| Career-narrative / interview | Consultant | job hunt | **Absorbed into `teacher`** — which framings landed is a learning record; the experience library rides in the teacher's manifest. |
 
 ## The second expert: evaluation-methodology (two proves N)
 
@@ -130,6 +131,63 @@ uses would be aspirational; local hand-fed files still bypass the list as the
 curation decision itself). It passes the skill-vs-expert test precisely where the
 `home-media-server` *skill* stops: the skill is the procedure, the expert is what
 happened on this machine the last N times.
+
+## The fourth expert: teacher (the second spine)
+
+Shipped as `config/experts/teacher.yaml` — zero-glue held a third time. The parked
+career-narrative/interview candidate ships *inside* it rather than beside it: the
+operator's learning and the operator's story are one learner model (below).
+
+**Granularity.** Teaching sessions are bonafide sessions — curriculum building in
+`~/code/thalamus-teach`, drills, mock interviews, resume and narrative work — with
+teaching as the dominant domain, so the litmus says spine. Until this expert, those
+sessions distilled into `main`, where lesson state and mock grades dilute the
+implementation memory `main` exists to hold (the operator-reported friction that
+prompted the roster act); the pin moves them where they compound.
+
+**Null hypothesis** ("pedagogy papers as a `--feed` into literature, teach sessions
+keep distilling to `main`") fails on both halves: a consultant is never pinned, so
+the thing that makes a teacher worth having — the accumulated learner model — could
+never land anywhere. And the scope is cross-project by construction: quantitative
+analysis, ML, statistics, and experimental design recur from StepMania training
+work to Thalamus eval methodology; per-project placement would shatter the one
+learner those initiatives share.
+
+**Skill-vs-expert** passes exactly where the `thalamus-design-readiness` skill
+stops (the same boundary as homelab vs. `home-media-server`): the skill is the
+check procedure, the expert is what has been taught, what stuck, and which
+framings landed the last N times. Its entire value is longitudinal — the
+50-session test *is* the design.
+
+**Structure.** The first **dual-fed** expert: pinned-session distillation (tier-1
+learner episodic, the homelab pattern) *plus* a live ingestion feed
+(`--feed thalamus-teach`), so unlike homelab the manifest declares the literature
+claim kinds and the academic allowlist. Anchors were procured into its own scope
+at roster time ([06](06-ingestion.md) rule 1's scope note — a scope with nothing
+to cite refuses the consultation mint): learner modeling as prediction over the
+interaction history (Deep Knowledge Tracing, arXiv 1506.05908), trainable
+retention from practice history (half-life regression, Settles & Meeder, ACL
+P16-1174), and pedagogy specified at the instruction level rather than in weights
+(LearnLM, arXiv 2412.16429).
+
+**Prior work.** The classic ITS decomposition — domain model / student model /
+tutoring model — instantiated on Thalamus's own substrate: knowledge subgraph as
+domain model, episodic subgraph as student model (DKT's premise is that the
+interaction history *is* the model, and it names curriculum design as what the
+learned model is for), manifest-derived context as the tutoring layer (LearnLM's
+pedagogical-instruction-following, convergent with [02](02-expert-subgraphs.md)'s
+"specialization lives in memory, in context"). See
+[11 §3d](11-related-work.md). The cited work trains on population-scale learning
+traces; this learner model is n=1, so its claims stay observational — the
+project-wide honesty rule, applied to its own teacher.
+
+**The career-narrative absorption.** Interview positioning is the learner model
+read outward — "which framings landed" is a learning record like any drill
+result. The manifest's `domain` names the `personalized-resume` skill's
+experience library as standing learner context, which is how a *derived* agent
+definition (no hand-written persona, [07](07-harness-integration.md)) still
+knows who it teaches: the pointer is tier-0 manifest content; the skill remains
+the procedure it complements.
 
 ## Anti-candidate (recorded so it stays dead)
 

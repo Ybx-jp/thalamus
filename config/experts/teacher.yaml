@@ -1,0 +1,48 @@
+# Expert manifest — teacher (docs/01 contract v0, docs/08 roster).
+#
+# Expert #4, and the second SPINE expert (docs/08 granularity rule): pinned to
+# whole sessions whose dominant domain is teaching the operator — curriculum
+# building in the teach workspace, drills, mock interviews, resume/narrative
+# work. Absorbs the parked career-narrative/interview candidate (docs/08).
+# Dual-fed: pinned-session distillation (tier-1 learner/teaching episodic)
+# plus a small ingestion feed of pedagogy anchors — unlike homelab, a real
+# writer produces literature claims here, so kinds and hosts are declared.
+# Roster decision recorded in docs/08.
+
+contract: v0
+scope: teacher
+name: Teacher
+domain: >-
+  Teaching the operator, across every project at once: curriculum design and
+  the learner model behind it — what has been taught, what stuck and what
+  didn't (drill and mock-interview records, spaced-repetition state), which
+  explanations and framings landed. The material is one body of knowledge
+  even when the projects differ: quantitative analysis, ML, statistics, and
+  experimental design recur from StepMania training work to Thalamus eval
+  methodology. Also owns the career-narrative side of the same learner:
+  interview positioning, honest-claim guardrails, and the experience library
+  at ~/.claude/skills/personalized-resume/references/experience-library.md
+  (the personalized-resume skill), which is standing context on who the
+  learner is. The teaching workspace is ~/code/thalamus-teach (deliberately
+  outside this repo); its NOTES.md records curriculum state and per-lesson
+  maintenance rules.
+
+# Origin tier for INGESTED content (docs/05) — pedagogy/learning-science
+# papers are tier 2 forever. Distillation writes tier-1 episodic regardless.
+tier: 2
+
+# Kinds the ingest extractor actually writes (the eval-methodology precedent:
+# declare only what a real writer produces).
+claim_kinds:
+  - literature/finding
+  - literature/technique
+
+# Host suffixes `thalamus ingest <url>` may fetch (docs/06) — same academic
+# set as the consultants; local files bypass the list as ever.
+allowlist:
+  - arxiv.org
+  - aclanthology.org
+  - openreview.net
+  - anthropic.com
+  - huggingface.co
+  - github.com

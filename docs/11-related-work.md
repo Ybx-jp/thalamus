@@ -219,6 +219,33 @@ own perimeter: every firing is logged and graded by a per-firing behavioral
 join (`eval conditioning`) — the conditioning layer is born inside the eval
 loop, so an ineffective reminder class is measurable wallpaper, not folklore.
 
+### 3d. Learner modeling & pedagogy (the teacher expert)
+
+- **Deep Knowledge Tracing** (arXiv 1506.05908, NeurIPS 2015) — learner modeling
+  as prediction over the raw interaction history: an RNN traces student knowledge
+  from exercise streams without hand-authored domain encodings, and the paper
+  names intelligent curriculum design as an application of the learned model. The
+  premise that matters here: the interaction history *is* the student model.
+- **A Trainable Spaced Repetition Model for Language Learning** (Settles &
+  Meeder, ACL 2016, P16-1174) — half-life regression makes the forgetting curve
+  trainable from large-scale practice-history traces. Grounds "what stuck" as a
+  measurable, history-derived quantity; the teach workspace's SR deck instantiates
+  the heuristic side of the same idea.
+- **LearnLM: Improving Gemini for Learning** (arXiv 2412.16429) — reframes
+  injecting pedagogy into an LLM as *pedagogical instruction following*: pedagogy
+  specified at the instruction/system level rather than committed to weights,
+  deliberately avoiding a single baked-in theory of pedagogy.
+
+**Position:** the teacher expert ([08](08-roster-candidates.md)) is an
+*instantiation* of the classic ITS decomposition (domain model / student model /
+tutoring model) on Thalamus's own substrate — knowledge subgraph as domain model,
+episodic subgraph as student model, manifest-derived context as the tutoring
+layer, the last convergent with LearnLM's instruction-level framing and with
+[02](02-expert-subgraphs.md)'s "specialization lives in memory, in context." What
+the cited work has that we do not: population-scale learning traces (DKT and HLR
+both train on massive cohorts). A single-operator learner model accumulates n=1
+evidence, so its claims stay observational.
+
 ## 4. What the scan did *not* find claimed elsewhere
 
 Stated narrowly and provisionally — absence in one scan is weak evidence, and this
