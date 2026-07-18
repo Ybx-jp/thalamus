@@ -97,9 +97,14 @@ def _tmux_windows(target: str | None) -> set[str]:
     return set(out.stdout.split()) if out.returncode == 0 else set()
 
 
-def _open_window(scope: str, argv: list[str], project_root: Path, target: str | None) -> None:
-    cmd = ["tmux", "new-window", "-n", scope, "-c", str(project_root),
-           "-e", f"THALAMUS_SCOPE={scope}", "--", *argv]
+def _open_window(scope: str, argv: list[str], project_root: Path, target: str | None,
+                 detached: bool = False) -> None:
+    # detached (-d): don't switch the session's active window. Roster additions run
+    # underneath attached clients (/tty, PC attaches), which must not be yanked to
+    # the new window; an interactive `thalamus pin` keeps the switch — the operator
+    # asked for that window.
+    cmd = ["tmux", "new-window", *(["-d"] if detached else []), "-n", scope,
+           "-c", str(project_root), "-e", f"THALAMUS_SCOPE={scope}", "--", *argv]
     if target:
         cmd[2:2] = ["-t", target]
     subprocess.run(cmd, check=True)
@@ -172,7 +177,8 @@ def roster(project_root: Path, base: Path | None = None) -> None:
         if scope in existing:
             print(f"`{scope}` already has a window — skipped")
             continue
-        _open_window(scope, _claude_argv(scope, project_root, base), project_root, target)
+        _open_window(scope, _claude_argv(scope, project_root, base), project_root, target,
+                     detached=True)
         print(f"Pinned window `{scope}` opened")
 
     _pin_window_sizes(target)

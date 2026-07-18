@@ -146,6 +146,10 @@ authority-grant are the same act ("not found in the 2026 scan", provisional; see
   don't cluster, it isn't an expert.
 - Experts are cattle behind the contract: creatable, archivable, mergeable. Episodic
   memory archives with the expert — history is never deleted by roster surgery.
+- The mechanics of a roster addition — manifest, anchors, the tmux window, and what
+  the control plane does and doesn't need — are the `add-roster-expert` skill
+  (`.claude/skills/add-roster-expert`), jointly held by main and homelab; homelab
+  keeps it current.
 
 ## Open questions
 

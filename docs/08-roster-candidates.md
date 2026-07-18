@@ -124,11 +124,13 @@ deferred it at the expert-#2 decision have since flipped:
    minted reusable ops claims (WebAPKs ignore ports; `tailscale serve` strips the
    mount path; ttyd base-path targets).
 
-What distinguishes it structurally: the two consultants are ingestion-fed, this
-expert is **distillation-fed** — tier-1 first-party episodic memory, so the
-manifest declares no claim kinds and an empty allowlist (a feed surface no writer
-uses would be aspirational; local hand-fed files still bypass the list as the
-curation decision itself). It passes the skill-vs-expert test precisely where the
+What distinguishes it structurally: the two consultants are web-ingestion-fed,
+this expert is **distillation-fed** first — tier-1 first-party episodic memory —
+plus operator-hand-fed local files (first feed 2026-07-18: the roster/plane ops
+notes, making the control-plane seam hazards citable in consultations), so the
+manifest declares the kinds that feed writes while the allowlist stays empty
+(web ingestion blocked; local files bypass the list as the curation decision
+itself). It passes the skill-vs-expert test precisely where the
 `home-media-server` *skill* stops: the skill is the procedure, the expert is what
 happened on this machine the last N times.
 
@@ -159,7 +161,7 @@ check procedure, the expert is what has been taught, what stuck, and which
 framings landed the last N times. Its entire value is longitudinal — the
 50-session test *is* the design.
 
-**Structure.** The first **dual-fed** expert: pinned-session distillation (tier-1
+**Structure.** A **dual-fed** expert: pinned-session distillation (tier-1
 learner episodic, the homelab pattern) *plus* a live ingestion feed
 (`--feed thalamus-teach`), so unlike homelab the manifest declares the literature
 claim kinds and the academic allowlist. Anchors were procured into its own scope

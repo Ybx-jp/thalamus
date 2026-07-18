@@ -20,10 +20,12 @@ domain: >-
 # episodic memory regardless — this governs feeds only.
 tier: 2
 
-# No feeds yet, so no kinds are declared: declaring kinds no writer produces
-# would make the manifest aspirational (the eval-methodology precedent). Add
-# kinds and hosts together when a real feed ships.
-claim_kinds: []
+# The one live feed is operator-hand-fed local files (first: the roster/plane
+# ops notes, 2026-07-18 — the control-plane seam knowledge made citable for
+# consultations). These are the kinds the ingest extractor actually writes.
+claim_kinds:
+  - literature/finding
+  - literature/technique
 
 # Empty allowlist blocks all web ingestion for this scope. Local files bypass
 # the list — hand-feeding a file IS the curation decision (docs/06).
