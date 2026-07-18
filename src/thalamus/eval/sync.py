@@ -37,6 +37,7 @@ class SyncOutcome:
     ignored: int = 0
     empty_window: int = 0
     misses: int = 0
+    rejected: int = 0
     legacy: int = 0
     dangling: int = 0
     pending: dict[str, int] = field(default_factory=dict)  # session_id -> trace count
@@ -44,7 +45,8 @@ class SyncOutcome:
     def summary(self) -> str:
         lines = [
             f"{self.written} traces landed "
-            f"({self.misses} recall misses, {self.dangling} dangling result nodes)",
+            f"({self.misses} recall misses, {self.rejected} rejected/failed queries, "
+            f"{self.dangling} dangling result nodes)",
             f"{self.attributed} returned nodes attributed: "
             f"{self.used} used, {self.ignored} ignored",
         ]
@@ -174,6 +176,8 @@ def _land_event(
     outcome.written += 1
     if event.is_miss():
         outcome.misses += 1
+    if event.is_rejected():
+        outcome.rejected += 1
 
 
 def _exchange_vid(g: GraphTraversalSource, event: TraceEvent) -> str | None:

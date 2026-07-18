@@ -87,6 +87,13 @@ real question a session actually had. Copy, adapt, and when a new query clears
 that bar, append it. `memory_query`-surface recipes in the `recall-strategy`
 skill remain canonical there; RECIPES.md indexes them rather than duplicating.
 
+The store is measured, not trusted: `thalamus eval recipes` smoke-runs every
+entry read-only (a recipe that stops executing is an eviction candidate;
+eviction is archival, never deletion), and `thalamus eval gremlin` tags live
+queries recipe-derived vs from-scratch by traversal shape — reuse is the
+store's earn-its-keep signal, weighted by what it displaces, never raw entry
+count.
+
 ## Deeper reference
 
 `docs/gremlin-docs/` is a local, gremlin-python-focused subset of the TinkerPop

@@ -1,6 +1,6 @@
 # Harness Integration — MCP, Hooks, Directives, and the Limit Lab
 
-**Status:** implementing — MCP + all four hooks installed and live; session
+**Status:** implementing — MCP + all five hooks installed and live; session
 pinning built ("the process is the pin"). This doc covers
 how Thalamus meets the Claude Code harness specifically, and how we find the
 harness's limits on purpose.
@@ -22,9 +22,18 @@ harness's limits on purpose.
   - *Pre-tool-use on Bash (`gremlin-guard.sh`):* block inline gremlin-python
     whose traversal never invokes the iterator — lazy traversals with no
     terminal step silently do nothing, so the hook fails them fast with
-    instruction instead. The paired dialect guard (gremlin-python spellings on
-    the gremlin-lang `memory_query` surface) lives in `substrate/query.py`;
-    authoring rules and the proven-query store are the `gremlin-python` skill.
+    instruction instead. Every gremlin-marker verdict (block or pass) logs to
+    `~/.thalamus/guards/`, so the guard grades itself: rescue rate and
+    friction render via `thalamus eval gremlin`. House wrappers and
+    text-editing commands are allowed through — the retrospective baseline
+    found guard v1's would-be firings were all false positives (lab/008). The
+    paired dialect guard (gremlin-python spellings on the gremlin-lang
+    `memory_query` surface) lives in `substrate/query.py`; authoring rules and
+    the proven-query store are the `gremlin-python` skill.
+  - *Post-tool-use on Bash (`gremlin-tap.sh`):* record executed ad-hoc gremlin
+    commands as `bash_gremlin` lines in the same trace JSONL the memory tap
+    writes, so `eval sync` prices them like any recall (docs/04) — the surface
+    that used to query the graph in the dark.
 - **CLAUDE.md directives** — per-project retrieval policy: default pin for this
   directory, tier policy for this kind of session, when to consult vs. answer thin.
   These start minimal and **evolve organically with use** — every directive change

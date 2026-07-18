@@ -102,7 +102,9 @@ _PYTHON_DIALECT_TOKENS = (
 _SCOPED_PREFIXES = "|".join(
     sorted(re.escape(node.id_prefix) for node in CORE_NODES if node.scoped)
 )
-_BARE_VID_RE = re.compile(rf"(?<!`)(scope:[^:`\"\s]+:(?:{_SCOPED_PREFIXES}):[^`\"\s,}}\]]+)")
+# Both quote styles excluded: JSON renders IDs double-quoted, raw gremlin-python
+# repr output single-quoted, and a quote is never part of an ID.
+_BARE_VID_RE = re.compile(rf"(?<!`)(scope:[^:`'\"\s]+:(?:{_SCOPED_PREFIXES}):[^`'\"\s,}}\]]+)")
 
 
 def validate_query(query: str) -> str | None:
@@ -130,6 +132,16 @@ def validate_query(query: str) -> str | None:
                 "the gremlin-python skill."
             )
     return None
+
+
+def backtick_vids(text: str) -> str:
+    """Backtick bare scoped vertex IDs so the trace tap can extract them.
+
+    Shared by this surface's renderer and the bash_gremlin trace parser: raw
+    gremlin-python output carries unbackticked IDs, and RETURNS extraction
+    requires the backticks (eval/traces.py) — one rendering rule, two surfaces.
+    """
+    return _BARE_VID_RE.sub(r"`\1`", text)
 
 
 def run_query(url: str, query: str) -> str:
@@ -165,7 +177,7 @@ def render_rows(rows: list) -> str:
         line = _clip(json.dumps(row, default=str, ensure_ascii=False), _MAX_VALUE_CHARS)
         if total + len(line) > MAX_RENDERED_CHARS:
             break
-        lines.append(_BARE_VID_RE.sub(r"`\1`", line))
+        lines.append(backtick_vids(line))
         total += len(line)
         rendered_count += 1
 

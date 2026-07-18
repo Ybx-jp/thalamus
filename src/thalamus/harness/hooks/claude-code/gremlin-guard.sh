@@ -13,6 +13,13 @@
 # the cheap half of the execution-feedback loop (Self-Debugging, arXiv
 # 2304.05128): the error arrives before the query instead of after.
 #
+# Every verdict is an event: gremlin-marker commands append one JSONL line
+# (block or pass) to ~/.thalamus/guards/<YYYY-MM>.jsonl, so the guard's own
+# effectiveness is measurable — block counts, rescue rate (block followed by a
+# pass in the same session), and friction (repeat blocks) all read from this
+# file (`thalamus eval gremlin`). The guard without the event log would be
+# activity without measurement.
+#
 # Scope: fires only when the command text itself contains gremlin-python
 # connection markers. Running a script file (`python lab/x.py`) carries no
 # markers and is never touched — this guards the ad-hoc one-liner path where
@@ -37,11 +44,40 @@ printf '%s' "$command" | grep -qE \
   'gremlin_python|with_remote\(|DriverRemoteConnection|substrate\.writer import|from thalamus\.substrate' \
   || exit 0
 
+log_event() {
+  local verdict="$1"
+  local guard_dir="$HOME/.thalamus/guards"
+  mkdir -p "$guard_dir"
+  printf '%s' "$input" | jq -c \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg scope "${THALAMUS_SCOPE:-main}" \
+    --arg verdict "$verdict" \
+    --arg guard "terminal-step" \
+    --arg hash "$(printf '%s' "$command" | sha256sum | cut -c1-16)" \
+    '{ts: $ts,
+      session_id: (.session_id // ""),
+      scope: $scope,
+      cwd: (.cwd // ""),
+      guard: $guard,
+      verdict: $verdict,
+      command_hash: $hash}' >> "$guard_dir/$(date -u +%Y-%m).jsonl" || true
+}
+
 # Any terminal step or iterator consumption satisfies the guard. `.result(` is
 # the Client.submit path, where the server iterates and laziness is not in play.
-printf '%s' "$command" | grep -qE \
-  '\.iterate\(|\.to_list\(|\.toList\(|next\(|\.has_next\(|list\(|\.result\(|for [A-Za-z_]+ in ' \
-  && exit 0
+# House wrappers (recall, run_query) iterate internally, and text-manipulation
+# commands (sed/re.sub/read_text) merely mention marker strings while editing
+# code — the retrospective baseline (lab/008) found every archive hit without
+# these allowances was a false positive, and false positives teach agents to
+# route around the guard.
+if printf '%s' "$command" | grep -qE \
+  '\.iterate\(|\.to_list\(|\.toList\(|next\(|\.has_next\(|list\(|\.result\(|for [A-Za-z_]+ in |run_query\(|recall\(|re\.sub\(|read_text\(|write_text\(|(^|[;&| ])sed '
+then
+  log_event pass
+  exit 0
+fi
+
+log_event block
 
 cat >&2 <<'EOF'
 Blocked: this command builds a gremlin-python traversal but never invokes the

@@ -192,6 +192,23 @@ def main():
         "--pins-file", type=Path, default=None, help="Pin ledger (default: ~/.thalamus/pins/pins.jsonl)"
     )
 
+    eval_gremlin_parser = eval_sub.add_parser(
+        "gremlin",
+        help="Gremlin fluency metrics: guard rescue rate, rejection classes, recipe reuse",
+    )
+    eval_gremlin_parser.add_argument(
+        "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
+    )
+    eval_gremlin_parser.add_argument(
+        "--guards", type=Path, default=None, help="Guard event dir (default: ~/.thalamus/guards)"
+    )
+
+    eval_recipes_parser = eval_sub.add_parser(
+        "recipes",
+        help="Smoke-run every stored gremlin recipe read-only (rolling freshness signal)",
+    )
+    eval_recipes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
     # Pin / roster commands — docs/07 "the process is the pin"
     pin_parser = subparsers.add_parser(
         "pin", help="Launch a claude session pinned to an expert scope"
@@ -651,6 +668,17 @@ def _cmd_eval(args, eval_parser):
         )
         project_dir = (args.project_dir or Path.cwd()).resolve()
         print(cost_report(project_dir, since, traces_base=args.traces).render())
+    elif getattr(args, "eval_command", None) == "gremlin":
+        from thalamus.eval.gremlin import gremlin_report
+
+        print(gremlin_report(traces_base=args.traces, guards_base=args.guards).render())
+    elif getattr(args, "eval_command", None) == "recipes":
+        from thalamus.eval.gremlin import render_smoke, smoke_recipes
+
+        results = smoke_recipes(args.url)
+        print(render_smoke(results))
+        if any(not r.ok for r in results):
+            sys.exit(1)
     elif getattr(args, "eval_command", None) == "pins":
         from thalamus.contract.manifest import available_scopes
         from thalamus.eval.cost import load_pins

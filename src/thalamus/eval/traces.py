@@ -24,13 +24,16 @@ from datetime import datetime
 from pathlib import Path
 
 from thalamus.contract.ontology import CORE_NODES
+from thalamus.substrate.query import backtick_vids
 
 logger = logging.getLogger(__name__)
 
 TRACES_DIR = Path.home() / ".thalamus" / "traces"
 
 # The tap matcher is mcp__thalamus__.*, so memorize/visualize calls land in the JSONL
-# too. Only these read memory; only these are retrieval events.
+# too. Only these read memory; only these are retrieval events. memory_query and
+# bash_gremlin (the ad-hoc Bash tap, gremlin-tap.sh) are retrieval surfaces like
+# any recall — one priced surface, not a parallel metric.
 RETRIEVAL_TOOLS = frozenset(
     {
         "memory_recall",
@@ -39,6 +42,8 @@ RETRIEVAL_TOOLS = frozenset(
         "memory_recall_recent",
         "memory_open_threads",
         "memory_thread",
+        "memory_query",
+        "bash_gremlin",
     }
 )
 
@@ -56,8 +61,15 @@ _VID_RE = re.compile(rf"`(scope:[^:`\s]+:(?:{_SCOPED_PREFIXES}):[^`]+)`")
 # graph had nothing" is exactly the signal that grades recall — so these are recorded
 # with zero returned nodes rather than dropped.
 _MISS_RE = re.compile(
-    r"^(No matching memories found\.|No open threads found\.|Thread `[^`]*` not found\.)$"
+    r"^(No matching memories found\.|No open threads found\.|Thread `[^`]*` not found\."
+    r"|Query returned no results\.)$"
 )
+
+# memory_query's guard rejections and server-side failures (substrate/query.py).
+# A rejected query is neither a miss ("the graph had nothing") nor a legacy line —
+# it is its own event class, priced for its injection cost and counted by
+# `thalamus eval gremlin`.
+_REJECTED_RE = re.compile(r"^(Rejected:|Query (?:failed:|must be a traversal)|Query exceeds )")
 
 
 @dataclass
@@ -90,7 +102,7 @@ class TraceEvent:
 
     def query_text(self) -> str:
         """The human-readable question this retrieval asked — the Trace node's label."""
-        for key in ("query", "identifier", "project", "thread_id"):
+        for key in ("query", "identifier", "project", "thread_id", "command"):
             value = self.tool_input.get(key)
             if value:
                 return f"{self.tool}: {value}"
@@ -106,6 +118,10 @@ class TraceEvent:
     def is_miss(self) -> bool:
         return bool(_MISS_RE.match(self.tool_response.strip()))
 
+    def is_rejected(self) -> bool:
+        """A memory_query the guard refused or the server failed — never reached data."""
+        return bool(_REJECTED_RE.match(self.tool_response.strip()))
+
     def ticket(self) -> str:
         """The consultation ticket this call carried, if it ran under one (docs/02).
 
@@ -118,10 +134,17 @@ class TraceEvent:
         return value if isinstance(value, str) else ""
 
     def is_legacy(self) -> bool:
-        """A non-empty response with no vertex IDs: recorded before node-level rendering."""
+        """A non-empty response with no vertex IDs: recorded before node-level rendering.
+
+        bash_gremlin traces are never legacy — raw gremlin output legitimately
+        carries no vertex IDs (aggregates, counts) and the surface postdates
+        node-level rendering entirely. Rejections are their own class.
+        """
         return (
-            bool(self.tool_response.strip())
+            self.tool != "bash_gremlin"
+            and bool(self.tool_response.strip())
             and not self.is_miss()
+            and not self.is_rejected()
             and not self.returned_node_ids()
         )
 
@@ -211,12 +234,19 @@ def _parse_line(line: str) -> TraceEvent | None:
             if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
                 tool_response = envelope["result"]
 
+    if not isinstance(tool_response, str):
+        tool_response = ""
+    if tool == "bash_gremlin":
+        # Raw gremlin-python output carries bare vertex IDs; the RETURNS extractor
+        # requires backticks. One rendering rule, applied at read time.
+        tool_response = backtick_vids(tool_response)
+
     return TraceEvent(
         ts=ts,
         session_id=session_id,
         cwd=record.get("cwd") or "",
         tool=tool,
         tool_input=tool_input if isinstance(tool_input, dict) else {},
-        tool_response=tool_response if isinstance(tool_response, str) else "",
+        tool_response=tool_response,
         scope=record.get("scope") or "",
     )

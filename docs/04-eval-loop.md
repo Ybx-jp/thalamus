@@ -52,6 +52,21 @@ layer-3 decay candidates. A trace can only land after its session distills (the
 QUERIES edge and the transcript both need it); until then it stays in the tap,
 reported as pending. Attribution findings: lab/002.
 
+The priced surface covers every way a session reads the graph: the recall
+tools, `memory_query` (rejections and server failures are their own event
+class, priced for injection cost like any response), and ad-hoc gremlin-python
+through Bash — a PostToolUse tap (`gremlin-tap.sh`) records gremlin-marker
+commands as `bash_gremlin` trace lines in the same JSONL, stdout chars as the
+injected_chars analog, attribution unchanged. One priced surface, no parallel
+metric (eval-methodology consultation, lab/008). The fluency layer's own
+metrics — guard rescue rate from the block/pass event log
+(`~/.thalamus/guards/`), rejection classes, recipe-derived vs from-scratch by
+traversal-shape fingerprint — render via `thalamus eval gremlin`; `thalamus
+eval recipes` smoke-runs the stored recipes read-only as a rolling freshness
+signal (eviction candidates: zero reuse and failing smoke, archival never
+deletion). Known residual: script files are invisible to the Bash marker
+heuristic.
+
 ## Layer 1b — Cost, the denominator
 
 Utility alone is half a fraction. The field grades memory on **performance–cost

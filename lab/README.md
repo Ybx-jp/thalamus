@@ -21,3 +21,6 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [003](003-the-process-is-the-pin.md) | The process boundary that blocked pinning is the pinning mechanism | workaround |
 | [004](004-agent-teams-first-contact.md) | Agent Teams: pins inherit, coordination leaves no artifact, the lead armed the wrong repo | measurements |
 | [005](005-transcript-ingress-canary.md) | A poisoned WebFetch result lands tier 2, not tier 1 — the laundering floor, canary-tested | workaround |
+| [006](006-priced-verdicts-first-run.md) | First priced verdicts: half the injected retrieval tokens were ignored | measurements |
+| [007](007-query-shape-refinement.md) | Query-shape autopsy: the hook was innocent, the dump was guilty | workaround |
+| [008](008-gremlin-guard-baseline.md) | Gremlin guard baseline: the archive convicted the guard, not the queries | workaround |
