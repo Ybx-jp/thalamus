@@ -226,3 +226,35 @@ def test_web_app_serves_dashboard_and_degrades_without_graph(tmp_path, monkeypat
     report = client.get("/api/report").json()
     assert report["graph_ok"] is False
     assert report["disclosures"]["standing"].startswith("layer 1")
+
+
+def test_web_app_serves_the_pwa_install_surface(tmp_path, monkeypatch):
+    """
+    Scenario: a browser evaluates installability behind the /pulse mount
+
+    Verifications:
+    - the page links the manifest
+    - manifest + icons are served with correct media types, relative URLs
+    - the manifest scopes the app to /pulse/ (path-scope discipline: Android
+      WebAPKs ignore ports, so /pulse/ must stay disjoint from /plane/ etc.)
+    - unknown asset names 404 instead of leaking arbitrary paths
+    """
+    monkeypatch.setattr("thalamus.pulse.web._try_connect", lambda url: None)
+    client = TestClient(create_pulse_app(**_ledgers(tmp_path)))
+
+    assert '<link rel="manifest" href="manifest.webmanifest">' in client.get("/").text
+
+    manifest = client.get("/manifest.webmanifest")
+    assert manifest.status_code == 200
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    body = manifest.json()
+    assert body["scope"] == "/pulse/" and body["start_url"] == "/pulse/"
+    assert {i["src"] for i in body["icons"]} == {"icon-192.png", "icon-512.png"}
+
+    for icon in ("icon-192.png", "icon-512.png"):
+        r = client.get(f"/{icon}")
+        assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+        assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    assert client.get("/no-such-file").status_code == 404
+    assert client.get("/../pyproject.toml").status_code == 404

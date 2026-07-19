@@ -18,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 
 from thalamus.pulse import metrics
@@ -116,6 +116,25 @@ def create_pulse_app(
     @app.get("/index.html")
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    # PWA install surface. No service worker by design: Chrome installs from
+    # manifest alone, and the plane's stale-shell incident is a whole bug class
+    # this dashboard opts out of. Relative URLs throughout — the page lives
+    # behind `tailscale serve --set-path /pulse`, which strips the prefix;
+    # only the manifest names /pulse/ absolutely (id/scope/start_url).
+    _pwa_assets = {
+        "manifest.webmanifest": "application/manifest+json",
+        "icon-192.png": "image/png",
+        "icon-512.png": "image/png",
+        "icon.svg": "image/svg+xml",
+    }
+
+    @app.get("/{asset}")
+    def pwa_asset(asset: str) -> FileResponse:
+        media_type = _pwa_assets.get(asset)
+        if media_type is None:
+            raise HTTPException(status_code=404)
+        return FileResponse(STATIC_DIR / asset, media_type=media_type)
 
     return app
 
