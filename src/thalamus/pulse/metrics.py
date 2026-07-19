@@ -30,7 +30,6 @@ from thalamus.eval.pins import (
     TraceRow,
     VerdictRow,
     build_pin_report,
-    node_scope,
 )
 from thalamus.eval.report import scope_report
 from thalamus.eval.traces import load_events

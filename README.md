@@ -22,10 +22,11 @@ measures whether any of it actually makes the agent better.
   held in an immutable content-addressed archive outside the repo. The graph is a
   materialized view over that log — re-extract, never migrate
   ([docs/10](docs/10-evidence-archive.md)).
-- **Two experts**: technical-literature and evaluation-methodology, each declared by
-  an operator-owned manifest in `config/experts/` and nothing else — the zero-glue
-  contract test ([docs/01](docs/01-federation-contract.md),
-  [docs/02](docs/02-expert-subgraphs.md)). Knowledge is fed by `thalamus ingest`
+- **Four experts**: technical-literature, evaluation-methodology, homelab, and
+  teacher — each declared by an operator-owned manifest in `config/experts/` and
+  nothing else — the zero-glue contract test
+  ([docs/01](docs/01-federation-contract.md), [docs/02](docs/02-expert-subgraphs.md)).
+  Knowledge is fed by `thalamus ingest`
   (allowlist-gated, evidence-first) and returns blockquoted with citation and tier:
   it informs, it never instructs ([docs/05](docs/05-trust-model.md)).
 - **Session pinning**: one OS process = one immutable pin. `thalamus pin` / `thalamus
@@ -67,7 +68,19 @@ lab/           harness-limit notebook — what broke, why, workaround or wall
 ```
 
 Both **Claude Code** and **Cursor** are supported; their hook contracts differ, so
-there is one hook script for each under `src/thalamus/harness/hooks/`.
+each has its own hook suite under `src/thalamus/harness/hooks/`. Claude Code is the
+primary harness: nine scripts across six events (`.claude/settings.json`) cover
+memory priming, the pin ledger, distillation, the trace taps, the gremlin guard,
+and the conditioning/timestamp injections. The Cursor suite
+(`.cursor/hooks.json`, committed) ports everything portable — session-start
+priming + pin ledger, engagement marking, the gremlin guard
+(`beforeShellExecution`), and both trace taps (`afterShellExecution`,
+`afterMCPExecution`) — as thin adapters over the Claude Code scripts, so both
+harnesses share one detection logic and one set of on-disk records. Two Cursor
+walls (lab/010): `beforeSubmitPrompt` cannot inject agent-visible context, so the
+timestamp and conditioning tiers have no carrier there, and **session-end does
+not distill** — `thalamus extract` parses Claude Code JSONL transcripts only, so
+Cursor sessions currently leave no episodic memory (logged, not silent).
 
 ## Quick start
 
@@ -99,6 +112,10 @@ thalamus eval sync --write         # land retrieval traces + used-vs-ignored ver
 thalamus eval report               # per-scope retrieval-utility numbers, priced
 thalamus eval cost                 # session/operation token-cost buckets
 thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
+thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
+thalamus eval recipes              # smoke-run every stored gremlin recipe read-only
+thalamus eval conditioning         # per-firing behavioral join on injected reminders
+thalamus pulse                     # live telemetry dashboard over the eval loop
 thalamus-mcp                       # run the MCP server
 ```
 
@@ -120,6 +137,9 @@ restarts. Don't `docker compose down -v` unless you mean to delete the graph.
 | `consult_answer` | `ticket`, `answer` | Close a consultation; citations validated, ticket burned |
 | `memory_visualize` | `session_yaml` | Mermaid render of a pending extraction |
 | `memorize` | `session_yaml` | Write an extraction to the graph |
+
+Recall tools also accept a `ticket` argument: under a consultation ticket they
+search the consulted expert's memory instead of the session's own scope.
 
 Register the server (`.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor):
 
@@ -148,12 +168,15 @@ scope.
 ## The loop
 
 ```
-Session ends → extract (skill) → validate → memorize
-                                                ↓
+Session ends → SessionEnd hook → thalamus extract → memorize → eval sync
+                                                                  ↓
 New session → session-start hook → memory_open_threads → context
 ```
 
-The extraction skill is at `src/thalamus/harness/skills/extract-session/SKILL.md`.
+Distillation is automatic on Claude Code: the SessionEnd hook runs `thalamus
+extract` (headless, detached) over the retained transcript, then `eval sync
+--write` lands the session's retrieval traces as priced Trace nodes. The
+extraction prompt lives in `src/thalamus/harness/skills/extract-session/SKILL.md`.
 The session-start hook asks the agent for the current project's open threads, and it
 is the same mechanism that carries **expert pinning**
 ([docs/02](docs/02-expert-subgraphs.md)).
