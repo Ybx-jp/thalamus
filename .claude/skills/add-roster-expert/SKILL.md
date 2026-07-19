@@ -98,9 +98,13 @@ current when re-ingesting.
   Same per-process arming rule as MCP/hooks, pointing the other direction —
   caught in the 2026-07-18 skill audit, not yet bitten.
 - **Recycling a window ends the session in it** — including the one you might
-  be running in (`scope:homelab:claim:324c87a12b4704cc`,
-  `scope:homelab:thread:homelab-recycle-self-termination-risk`). Recycle is for
-  re-arming MCP/hooks after wiring changes, not part of adding an expert.
+  be running in (`scope:homelab:claim:324c87a12b4704cc`). The plane UI now
+  warns: the admin list badges the window you're viewing, and recycling it (or
+  restart-all) gets a sharp confirm saying the conversation ends (resolved
+  `scope:homelab:thread:homelab-recycle-self-termination-risk`, 2026-07-19).
+  The warning covers only the *viewed* window — a session you're running in a
+  terminal elsewhere gets no special warning. Recycle is for re-arming
+  MCP/hooks after wiring changes, not part of adding an expert.
 
 ## The seam in one line
 
