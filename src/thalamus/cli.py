@@ -716,12 +716,15 @@ def _cmd_eval(args, eval_parser):
         )
     elif getattr(args, "eval_command", None) == "pins":
         from thalamus.contract.manifest import available_scopes
-        from thalamus.eval.cost import load_pins
+        from thalamus.eval.cost import load_engaged, load_pins
         from thalamus.eval.pins import pin_report
 
         graph = connect(args.url)
         try:
-            report = pin_report(graph, load_pins(args.pins_file), available_scopes())
+            report = pin_report(
+                graph, load_pins(args.pins_file), available_scopes(),
+                engaged=load_engaged(args.pins_file),
+            )
         finally:
             close_connection(graph)
         print(report.render())

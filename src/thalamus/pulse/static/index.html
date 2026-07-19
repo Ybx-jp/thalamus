@@ -478,7 +478,8 @@ function renderPins(pins) {
       return `<div style="padding:5px 0">
         <div class="pin-row">
           <b class="mono">${esc(e.scope)}</b>${sig}
-          ${e.ledger_only ? `<span style="color:var(--muted);font-size:11px">+${e.ledger_only} pinned, never retrieved</span>` : ""}</div>
+          ${e.ledger_only ? `<span style="color:var(--muted);font-size:11px">+${e.ledger_only} engaged, no traces</span>` : ""}
+          ${e.idle_spawns ? `<span style="color:var(--deemph);font-size:11px" title="ledger entries with no user prompt — roster bring-up, excluded from the routing signal">· ${e.idle_spawns} idle spawn${e.idle_spawns > 1 ? "s" : ""} excluded</span>` : ""}</div>
         <div class="pair"><span class="k">pinned</span>${bar(e.pinned, "--s1")}<span class="v">${fmt(e.pinned)}</span></div>
         <div class="pair"><span class="k">consulted</span>${bar(e.consulted, "--s2")}<span class="v">${fmt(e.consulted)}</span></div>
       </div>`;

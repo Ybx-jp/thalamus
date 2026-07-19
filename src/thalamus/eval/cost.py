@@ -137,12 +137,10 @@ class CostReport:
         return "\n".join(lines)
 
 
-def load_pins(path: Path | None = None) -> dict[str, str]:
-    """session_id -> scope, last pin wins (a session re-pins by overwriting)."""
+def _ledger_records(path: Path | None = None):
     pins_path = path or PINS_FILE
-    pins: dict[str, str] = {}
     if not pins_path.is_file():
-        return pins
+        return
     for line in pins_path.read_text(errors="ignore").splitlines():
         line = line.strip()
         if not line:
@@ -152,8 +150,34 @@ def load_pins(path: Path | None = None) -> dict[str, str]:
         except json.JSONDecodeError:
             continue
         if isinstance(record, dict) and record.get("session_id"):
-            pins[str(record["session_id"])] = str(record.get("scope") or "")
-    return pins
+            yield record
+
+
+def load_pins(path: Path | None = None) -> dict[str, str]:
+    """session_id -> scope, last pin wins (a session re-pins by overwriting).
+
+    Spawn lines only — event lines (pin-engaged.sh's {"event": "engaged"}) are a
+    different record type in the same ledger and are read by load_engaged.
+    """
+    return {
+        str(r["session_id"]): str(r.get("scope") or "")
+        for r in _ledger_records(path)
+        if not r.get("event")
+    }
+
+
+def load_engaged(path: Path | None = None) -> set[str]:
+    """Sessions that received at least one user prompt (pin-engaged.sh).
+
+    The engagement boundary for the pin report's denominator: spawn records alone
+    conflate roster bring-up with operator routing (the 2026-07-19 confound;
+    semantics vetted in scope:main:exchange:63b647977a624b85).
+    """
+    return {
+        str(r["session_id"])
+        for r in _ledger_records(path)
+        if r.get("event") == "engaged"
+    }
 
 
 def _bucket(slug: str, session_id: str, project_slug: str, pins: dict[str, str]) -> str:

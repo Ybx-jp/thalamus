@@ -151,8 +151,16 @@ nodes served into *other* scopes' traces). Pinned low while consulted high reads
 disambiguation, mechanical. The signal line is floor-gated (≥10 attributed nodes
 on each side, a dial like the rest): below the floor it says "insufficient data"
 rather than pretending a verdict, because no-unmeasured-claims applies to the
-routing signal too. Ledger pins that never landed a trace are counted and named —
-a pinned expert nobody asked anything is itself a signal.
+routing signal too. Ledger pins are engagement-gated before they count against an
+expert: the roster spawns every pinned session at bring-up, so a spawn record
+alone is infrastructure churn, not a routing decision. A session becomes
+*engaged* at its first user prompt (`pin-engaged.sh`, an event line in the same
+ledger); engaged sessions that never landed a trace are counted and named — a
+pinned expert nobody's question ever touched memory for is itself a signal —
+while idle spawns are disclosed as an exclusion, never judged. First-prompt is a
+dial, not a truth (automated prompts count as engagement), and
+engaged-but-traceless can lag distillation; both counts are attribution only
+(semantics: consultation `scope:main:exchange:63b647977a624b85`).
 
 Verdicts surface on the master plane next to the graphs they grade — rendered
 live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).

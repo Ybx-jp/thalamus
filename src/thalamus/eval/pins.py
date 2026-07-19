@@ -116,7 +116,13 @@ class ExpertPins:
     pinned_sessions: list[SessionUtility] = field(default_factory=list)
     pinned: Utility = field(default_factory=Utility)
     consulted: Utility = field(default_factory=Utility)
-    ledger_only: int = 0  # sessions pinned in the ledger with no traces landed
+    # Denominator split (semantics vetted: scope:main:exchange:63b647977a624b85).
+    # Spawn records alone conflate roster bring-up with routing decisions, so
+    # ledger_only is gated on engagement — a session with no user prompt had no
+    # measurement opportunity and carries no routing signal. Both counts stay
+    # attribution, never utility claims (docs/04).
+    ledger_only: int = 0  # engaged in the ledger, no traces landed
+    idle_spawns: int = 0  # spawned, never engaged — roster churn, disclosed not judged
 
     def signal(self) -> str:
         if self.pinned.attributed < SIGNAL_FLOOR or self.consulted.attributed < SIGNAL_FLOOR:
@@ -152,7 +158,7 @@ class PinReport:
             lines.append("")
             lines.append(f"expert `{expert.scope}`")
             if expert.pinned_sessions:
-                note = f" (+{expert.ledger_only} in ledger with none landed)" if expert.ledger_only else ""
+                note = f" (+{expert.ledger_only} engaged with none landed)" if expert.ledger_only else ""
                 lines.append(f"  pinned sessions with traces: {len(expert.pinned_sessions)}{note}")
                 for row in expert.pinned_sessions:
                     lines.append(
@@ -161,11 +167,16 @@ class PinReport:
                 lines.append(f"  pinned:    {expert.pinned.line()}")
             elif expert.ledger_only:
                 lines.append(
-                    f"  pinned sessions with traces: 0 (+{expert.ledger_only} in ledger "
-                    "with none landed — pinned but never retrieved, itself a signal)"
+                    f"  pinned sessions with traces: 0 (+{expert.ledger_only} engaged "
+                    "with none landed — engaged but never retrieved, itself a signal)"
                 )
             else:
                 lines.append("  pinned sessions with traces: 0")
+            if expert.idle_spawns:
+                lines.append(
+                    f"  excluded: {expert.idle_spawns} idle spawn(s) — ledger entries with "
+                    "no user prompt (roster bring-up, not a routing decision)"
+                )
             lines.append(f"  consulted: {expert.consulted.line()} (served into other scopes)")
             lines.append(f"  signal: {expert.signal()}")
         return "\n".join(lines)
@@ -182,6 +193,7 @@ def build_pin_report(
     verdicts: list[VerdictRow],
     pins: dict[str, str],
     experts: list[str] | None = None,
+    engaged: set[str] | None = None,
 ) -> PinReport:
     """Pure aggregation — the graph/ledger readers feed this; tests exercise it directly."""
     by_vid = {t.vid: t for t in traces}
@@ -222,9 +234,15 @@ def build_pin_report(
             sessions.values(), key=lambda r: (-r.ignored_chars, r.session_id)
         )
         traced_sessions = set(sessions)
-        expert.ledger_only = sum(
-            1 for sid, s in pins.items() if s == scope and sid not in traced_sessions
-        )
+        # engaged=None means the ledger has no engagement records (pre-2026-07-19
+        # rows, or a caller without the ledger) — every spawn counts, old behavior.
+        for sid, s in pins.items():
+            if s != scope or sid in traced_sessions:
+                continue
+            if engaged is None or sid in engaged:
+                expert.ledger_only += 1
+            else:
+                expert.idle_spawns += 1
         report.experts.append(expert)
     return report
 
@@ -233,6 +251,7 @@ def pin_report(
     g: GraphTraversalSource,
     pins: dict[str, str],
     experts: list[str] | None = None,
+    engaged: set[str] | None = None,
 ) -> PinReport:
     """Read every scope's traces and verdicts and build the routing signal."""
     trace_rows = []
@@ -258,4 +277,4 @@ def pin_report(
                 used=None if used is None else _as_bool(used),
             )
         )
-    return build_pin_report(trace_rows, verdict_rows, pins, experts)
+    return build_pin_report(trace_rows, verdict_rows, pins, experts, engaged)

@@ -24,7 +24,7 @@ from pathlib import Path
 
 from thalamus.contract.manifest import available_scopes
 from thalamus.eval.conditioning import conditioning_report
-from thalamus.eval.cost import PINS_FILE, cost_report, load_pins
+from thalamus.eval.cost import PINS_FILE, cost_report, load_engaged, load_pins
 from thalamus.eval.gremlin import gremlin_report, load_guard_events
 from thalamus.eval.pins import (
     TraceRow,
@@ -229,7 +229,10 @@ def report_snapshot(
                 out["scopes"][scope] = _scope_dict(scope_report(g, scope=scope, top=top))
             read = _read_graph(g)
             out["pins"] = _pins_dict(
-                build_pin_report(list(read.traces), read.verdicts, pins, available_scopes())
+                build_pin_report(
+                    list(read.traces), read.verdicts, pins, available_scopes(),
+                    engaged=load_engaged(pins_file or PINS_FILE),
+                )
             )
             out["trend"] = _daily_trend(read)
             out["sessions"] = _session_utilities(read, pins)
@@ -446,6 +449,7 @@ def _pins_dict(report) -> dict:
                 "pinned": _utility_dict(e.pinned),
                 "consulted": _utility_dict(e.consulted),
                 "ledger_only": e.ledger_only,
+                "idle_spawns": e.idle_spawns,
                 "pinned_sessions": len(e.pinned_sessions),
                 "signal": e.signal(),
                 "floor_met": "insufficient data" not in e.signal(),

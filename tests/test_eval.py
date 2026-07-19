@@ -527,6 +527,59 @@ def test_pin_ledger_last_write_wins_and_junk_is_skipped(tmp_path):
     assert load_pins(pins) == {"s1": "main"}
 
 
+def test_pin_ledger_splits_spawn_records_from_engagement_events(tmp_path):
+    """
+    Scenario: the ledger mixes spawn lines (session-start) and engaged events
+    (pin-engaged, first user prompt) — the 2026-07-19 confound fix
+
+    Verifications:
+    - load_pins reads only spawn lines (an engaged event is not a re-pin)
+    - load_engaged reads only engaged events
+    - a session with both kinds appears in both reads
+    """
+    from thalamus.eval.cost import load_engaged
+
+    pins = tmp_path / "pins.jsonl"
+    pins.write_text(
+        "\n".join(
+            [
+                json.dumps({"session_id": "s1", "scope": "homelab"}),
+                json.dumps({"event": "engaged", "session_id": "s1", "scope": "homelab"}),
+                json.dumps({"session_id": "s2", "scope": "teacher"}),
+            ]
+        )
+    )
+    assert load_pins(pins) == {"s1": "homelab", "s2": "teacher"}
+    assert load_engaged(pins) == {"s1"}
+
+
+def test_pin_report_excludes_idle_spawns_from_the_routing_denominator():
+    """
+    Scenario: the tmux roster spawned an expert's window at bring-up (ledger
+    entry, no user prompt, no traces) alongside a session the operator engaged
+    but which never retrieved
+
+    Verifications:
+    - with an engaged set, the idle spawn lands in idle_spawns, not ledger_only
+    - the engaged-but-traceless session stays in ledger_only (itself a signal)
+    - the render discloses the exclusion in neutral roster-churn language
+    - engaged=None (no engagement records in the ledger) keeps old behavior
+    """
+    from thalamus.eval.pins import build_pin_report
+
+    pins = {"idle": "homelab", "asked": "homelab"}
+
+    gated = build_pin_report([], [], pins, experts=["homelab"], engaged={"asked"})
+    expert = gated.experts[0]
+    assert (expert.ledger_only, expert.idle_spawns) == (1, 1)
+    rendered = gated.render()
+    assert "+1 engaged with none landed" in rendered
+    assert "excluded: 1 idle spawn(s)" in rendered and "roster bring-up" in rendered
+
+    ungated = build_pin_report([], [], pins, experts=["homelab"])
+    assert (ungated.experts[0].ledger_only, ungated.experts[0].idle_spawns) == (2, 0)
+
+
 def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
     """
     Scenario: A scope's traces have been priced (layer 1b) and attributed (layer 1)
@@ -674,7 +727,7 @@ def test_pin_report_renders_per_session_rows_priced_in_tokens():
 
     rendered = report.render()
     assert "expert `literature`" in rendered
-    assert "(+1 in ledger with none landed)" in rendered
+    assert "(+1 engaged with none landed)" in rendered
     assert "aaaa1111" in rendered and "bbbb2222" in rendered
     assert "2 attributed, 2 used (100%), ~1,000 tok earned / ~0 wasted" in rendered
     # the artifact return is not another expert; only `literature` appears
