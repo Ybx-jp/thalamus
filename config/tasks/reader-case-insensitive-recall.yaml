@@ -49,23 +49,31 @@ acceptance:
       PYEOF
     expect_exit: 0
 
+# Probes re-authored 2026-07-19 to the lab/011 rule: target knowledge
+# unreachable from the prompt plus general competence. The first campaign
+# measured the old probes (re.escape, lab/006-7 mentions) hitting in
+# memory-off — competence echo, and the repo at this ref carries the lab
+# notebook and dial comments, so anything written down here discriminates
+# nothing. Both tokens below are verified absent from ref 9f28895
+# (`git grep`) and from this prompt; they exist only in the memory graph
+# once the authoring session (accfe19d) distills.
 probes:
-  - id: escaped-regex
-    kind: diff_regex
-    pattern: 're\.escape'
-    meaning: >-
-      The stored recipe lesson was applied: regex containment must escape the
-      term so keywords match literally (gremlin-python RECIPES, 2026-07-19).
-      An unescaped fix quietly turns every keyword into a pattern.
-  - id: floor-rationale
+  - id: memo-surfaced
     kind: transcript_regex
-    # "match floor" itself is in the prompt and would pre-satisfy the probe;
-    # these phrases only enter the transcript via memory or the lab notebook.
-    pattern: '(?i)two distinct|2-distinct|lab/00[67]'
+    pattern: 'accfe19d-ef4b-42ee-a895-04892b55ab9a'
     meaning: >-
-      The memorized match-floor rationale (lab/006–007: single-keyword OR
-      matches were the waste; the floor is two distinct hits) was engaged
-      rather than the dials being loosened blind to make the symptom go away.
+      The authoring session's node was rendered into context by recall — its
+      UUID exists nowhere in the worktree at this ref and not in the prompt.
+      This is a surfacing signal, not a use signal: it says the memo reached
+      context, and the acceptance/cost deltas say whether that mattered.
+  - id: fix-name-convergence
+    kind: diff_regex
+    pattern: '_keyword_predicate'
+    meaning: >-
+      The candidate's fix converged on the memorized fix's helper name, which
+      is absent from the repo at this ref. Suggestive of memo reuse rather
+      than proof — a candidate could coin the same natural name — so this
+      probe reads as corroboration next to memo-surfaced, never alone.
 
 rubric: |
   Is the fix at the predicate layer — one place all three keyword sites share —

@@ -129,12 +129,14 @@ def test_prompt_echo_probes_are_refused():
         prompt="Fix recall without loosening the match floor.",
         acceptance=[{"run": "true"}],
         probes=[{"id": "p1", "kind": "transcript_regex", "pattern": "(?i)match floor",
+                 "meaning": "m"},
+                {"id": "p2", "kind": "diff_regex", "pattern": "loosening",
                  "meaning": "m"}],
     )
 
     issues = task.check()
 
-    assert any("pre-satisfied" in issue for issue in issues)
+    assert sum("pre-satisfied" in issue for issue in issues) == 2
 
 
 def test_filename_is_the_id_and_duplicates_are_caught(tmp_path):

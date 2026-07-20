@@ -49,21 +49,31 @@ acceptance:
       PYEOF
     expect_exit: 0
 
+# Probes re-authored 2026-07-19 to the lab/011 rule: the first campaign
+# measured the old probes hitting in memory-off ("holds no memory" survives
+# any competent fix; the live graph is reachable from every arm via ad-hoc
+# gremlin, so graph-derivable facts don't discriminate either). The tokens
+# below are verified absent from ref a7fc38e and from this prompt; they
+# exist only in the memory graph — the consultation exchange minted during
+# the original diagnosis, the authoring session's node, and the fix's
+# helper name.
 probes:
-  - id: kept-empty-scope-remedy
-    kind: diff_regex
-    pattern: 'holds no memory'
-    meaning: >-
-      The genuinely-empty-scope refusal (whose remedy is ingestion) survived
-      the fix — the memorized failure was one blanket message, and replacing
-      it with a different blanket message repeats the mistake.
-  - id: checked-live-scope
+  - id: memo-surfaced
     kind: transcript_regex
-    pattern: '(?i)groupCount|memory_query|has\(.scope.,'
+    pattern: '8644614d1b1242a4|accfe19d-ef4b-42ee-a895-04892b55ab9a'
     meaning: >-
-      The scope's actual contents were checked against the live graph before
-      the message was believed — the diagnostic move the memorized session
-      records (the refusal text was the bug, not the scope).
+      The original diagnosis reached context via recall: the eval-methodology
+      exchange minted that session (8644614d…) or the authoring session's
+      node (accfe19d…) rendered — neither exists in the worktree at this ref
+      nor in the prompt. Surfacing signal; the acceptance/cost deltas say
+      whether it mattered.
+  - id: fix-name-convergence
+    kind: diff_regex
+    pattern: '_scope_holds_memory'
+    meaning: >-
+      The candidate's fix converged on the memorized fix's helper name,
+      absent from the repo at this ref. Suggestive corroboration next to
+      memo-surfaced, never proof alone.
 
 rubric: |
   Do the two refusals name the remedy for their actual condition (rephrase in

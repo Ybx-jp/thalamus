@@ -313,6 +313,11 @@ live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
 - Graph-snapshot pinning — the prerequisite the freshness- and volume-degraded
   arms are refused without, and the fix for the memory-on residual (arms
   currently read the live graph).
+- Store isolation for memory-off — the arm removes the *surface* (MCP + hooks),
+  not the *store*: the live graph stays reachable from any arm via ad-hoc
+  gremlin over Bash (measured in the first campaign — a memory-off session
+  queried it). Graph-derivable facts therefore never discriminate arms; true
+  store isolation needs the endpoint blocked, which is network-level work.
 - Campaign analysis — runs.jsonl holds per-run records; the paired,
   per-stratum report (sign/permutation tests, floor-gated verdicts) is not
   built, and no cross-arm claims exist until it is.
