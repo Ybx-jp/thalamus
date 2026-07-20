@@ -105,6 +105,16 @@ def consult_request(
     manifest = load_manifest(expert)
     brief_sections, brief_refs = _assemble_brief(g, expert, question)
     if not brief_refs:
+        # Two distinct failures, two distinct remedies: an empty scope needs
+        # ingestion; a knowledge-only scope with no lexical match needs the
+        # question rephrased in the vocabulary its claims actually use.
+        if _scope_holds_memory(g, expert):
+            return (
+                f"Consultation refused: nothing in scope `{expert}` matched the "
+                "question, so the expert's brief would be empty. Rephrase the "
+                "question in the expert's own vocabulary (the terms its claims "
+                "use), or ingest the missing source first (docs/06)."
+            )
         return (
             f"Consultation refused: scope `{expert}` holds no memory to consult — "
             "an expert with nothing to cite cannot produce a citable answer. "
@@ -278,5 +288,12 @@ def _assemble_brief(
 def _vertex_exists(g: GraphTraversalSource, vertex_id: str) -> bool:
     try:
         return g.V(vertex_id).has_next()
+    except Exception:
+        return False
+
+
+def _scope_holds_memory(g: GraphTraversalSource, scope: str) -> bool:
+    try:
+        return g.V().has("scope", scope).limit(1).has_next()
     except Exception:
         return False

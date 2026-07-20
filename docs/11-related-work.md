@@ -92,9 +92,11 @@ action-coupled evaluation.
   [04-eval-loop.md](04-eval-loop.md)'s opening argument, published as survey
   consensus.
 - **Mem2ActBench: Evaluating Long-Term Memory Utilization in Task-Oriented
-  Autonomous Agents** (arXiv 2601.19935) — inference-driven memory grounded into
-  *executable tool calls*: does the agent infer task-critical constraints from
-  history and act on them.
+  Autonomous Agents** (arXiv 2601.19935, in the graph) — inference-driven memory
+  grounded into *executable tool calls*: does the agent infer task-critical
+  constraints from history and act on them. Its finding — seven memory
+  frameworks remain inadequate at exactly this — is the field-level version of
+  the used-vs-ignored gap the traces measure locally.
 - **Benchmarking Agent Memory in Interdependent Multi-Session Agentic Tasks**
   / MemoryArena (arXiv 2602.16313) — sequential subtasks with **causal
   dependencies across sessions**; retrieval intent must be inferred, not handed
@@ -141,6 +143,25 @@ also warns what we trade away by reporting instead of routing: it makes cost an
 *optimized control input* (a trained budget-tier router), where we stop at
 attribution. If per-expert cost-utility ratios ever drive retrieval decisions,
 BudgetMem is the anchor to revisit.
+
+### 2c. Forgetting
+
+- **MemoryBank: Enhancing Large Language Models with Long-Term Memory** (arXiv
+  2305.10250, in the graph) — the canonical forgetting policy for LLM agent
+  memory: an Ebbinghaus-forgetting-curve update rule in which each memory
+  carries a strength, being recalled reinforces it and postpones its decay, and
+  unrecalled memories fade with elapsed time until discarded. Decay in agent
+  memory is established prior work, not ours.
+
+Positioning of layer 3 ([04-eval-loop.md](04-eval-loop.md)): a *divergence*,
+argued not assumed. MemoryBank's forgetting signal is retrieval *occurrence*
+(recency and recall count); layer 3's is retrieval *outcome* (used-vs-ignored
+attribution against the retained transcript) — a node retrieved often but never
+used accelerates toward archive exactly where recall-count reinforcement would
+strengthen it. What the divergence trades away: MemoryBank's signal exists for
+every node, while utility verdicts exist only for retrieved ones, so
+MemoryBank-style time decay is retained as the fallback prior for
+never-retrieved nodes. The utility-keyed half is the §4 item 1 claim.
 
 ## 3. Federation, experts, and inter-expert exchange
 
@@ -254,7 +275,10 @@ list is the first thing to re-check on every future scan:
 1. **The utility→decay loop closing on live deployment traces of a single
    operator's real coding sessions**, feeding an archival (never deletion)
    forgetting policy graded per-expert. The benchmarks measure; none self-maintain
-   on the operator's own stream.
+   on the operator's own stream. Nearest prior found: MemoryBank's
+   forgetting-curve decay (arXiv 2305.10250, §2c) — but its signal is retrieval
+   occurrence, not measured downstream utility; a decay policy keyed on
+   used-vs-ignored outcomes was not found in the scan.
 2. **The evidence archive as a materialized view over an immutable, content-
    addressed transcript log** — "re-extract, not migrate" (event-sourcing applied to
    memory provenance; [10-evidence-archive.md](10-evidence-archive.md)). Provenance

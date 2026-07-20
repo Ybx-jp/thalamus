@@ -1,7 +1,8 @@
 # Eval Loop — Measuring Memory Utility
 
 **Status:** layer 1 (traces + attribution) and layer 1b (cost accounting) built —
-see `src/thalamus/eval/`; layers 2–3 remain design. This is the differentiating component: the project's central
+see `src/thalamus/eval/`; layers 2–3 designed (grounded and consulted), not yet
+built. This is the differentiating component: the project's central
 claim is not "I built agent memory" but "I built agent memory **and the evaluation
 loop that proves what it's worth**."
 
@@ -102,31 +103,109 @@ one report away from grading pin quality.
 
 ## Layer 2 — Counterfactuals (M4)
 
-Traces show usage; they can't show *value*. For that, run matched tasks under:
+Traces show usage; they can't show *value*. For that, matched tasks run under
+arms, and the arms are scored on **downstream consequences** — never on whether
+memory was surfaced or quoted. The grounding is MQuAKE's finding (arXiv
+2305.14795, in the graph): systems that recall a stored fact accurately still
+fail catastrophically on questions whose answers are *entailed consequences* of
+that fact. A memory-on arm that cites the claim and still steps on the
+memorized rake scores the same as memory-off. This is the difference between
+"I built memory" and "I measured what memory is worth."
 
-- **memory-on** — full Thalamus;
-- **memory-off** — no memory surface at all;
-- **memory-degraded** — scope shuffled (wrong expert pinned), stale snapshot, or
-  top-k truncated.
+**Arms.** `memory-on` (full Thalamus) is the common control; `memory-off` (no
+memory surface) gives the headline contrast. Degradation is **one factor at a
+time**, each contrast sharing the memory-on runs — a single "degraded" arm
+would confound exactly the three properties it exists to separate:
 
-Score task outcomes (task success, iterations to done, operator interventions —
-exact battery TBD at M4) across arms. This is the difference between "I built
-memory" and "I measured what memory is worth." The degraded arm exists because it
-isolates *which property* of the memory carries the value — scoping, freshness, or
-volume. Task corpus: real sessions replayed where possible; a small fixed battery
-of representative coding tasks where replay is impractical. Small and honest beats
-large and confounded.
+- **scoping-degraded** — wrong expert pinned, serving another scope's memory of
+  comparable size and age. Isolates routing/pin value; joins the `eval pins`
+  signal.
+- **freshness-degraded** — a snapshot from N sessions back, same scope, same k.
+  A stale memory is an unpropagated edit in MQuAKE's sense: recall of the stale
+  fact stays healthy while its entailed consequences fail, so this arm's probes
+  target facts whose implications changed since the snapshot.
+- **volume-degraded** — same scope and freshness, top-k truncated (k=1) and,
+  separately, inflated with retrieved-but-ignored padding: both directions of
+  the volume dial.
+
+A factorial is unaffordable at this n; each contrast supports only "removing
+property P cost X on these paired tasks," never an interaction model, and the
+report says so.
+
+**The battery — counted before judged.** Cheap enough to run routinely means
+mostly mechanical: (1) binary task success against a mechanically checkable
+acceptance test, pre-registered at task-authoring time before any arm runs;
+(2) iterations-to-done / turns to first passing state, counted from the
+transcript; (3) operator interventions, counted; (4) wrong-path detours — tool
+calls on files irrelevant to the oracle solution, reverted-then-redone edits;
+(5) token cost per arm, which layer 1b already prices, reported as the
+utility-per-token frontier (BudgetMem, arXiv 2602.06025); (6) **consequence
+probes** — 1–3 pre-written per-task checks that are true only if the memory's
+*implications* were acted on, the live analog of Mem2ActBench's
+memory-grounded-into-tool-calls tasks (arXiv 2601.19935, in the graph) and the
+multi-hop half of MQuAKE. Where a probe is mechanically checkable ("did the
+known-bad command appear in the transcript?"), no judge runs.
+
+**The judge, guarded.** An LLM judge scores only the residual that can't be
+mechanical (solution shape beyond the acceptance test), under the reliability
+posture of the judge survey (arXiv 2411.15594): reference-guided grading
+against a per-task rubric written at authoring time; **pairwise between arms
+with position swap**, cancelling the position bias absolute scoring can't;
+**arm-blinding** — retrieval output and any mention of memory stripped from
+transcripts before judging, so verbosity and self-reference can't leak arm
+identity; operator spot-grading of 10–20% of judgments, with the judge trusted
+only on metrics where judge–human agreement is measured; judge model + prompt
+frozen per campaign, a small anchor set re-run on any change so drift is
+detectable rather than silent. Temperature-0 on a cheap model prices this at
+cents per task; the real cost is the rubric, paid once at authoring.
+
+**Task corpus.** Real sessions replayed where practical; a small fixed battery
+of representative coding tasks where replay isn't. One declared validity
+threat: a replayed session's own solution can sit in memory-on's graph, so
+tasks are tagged by memory overlap (memorization vs. transferable claims) —
+disclosed stratification, not a hidden confound. Paired designs (same task,
+arms permuted, order randomized against learning effects), sign/permutation
+tests over t-tests, and the floor-gate discipline: below the floor the report
+prints "insufficient data," never a verdict. Small and honest beats large and
+confounded.
+
+Design consultation: eval-methodology, exchange
+`scope:main:exchange:8644614d1b1242a4`.
 
 ## Layer 3 — Memory that measures itself (M4+)
 
 Close the loop: utility signals feed back into graph maintenance.
 
-- Nodes that are repeatedly **retrieved-but-ignored** decay toward archive.
+- Nodes that are repeatedly **retrieved-but-ignored** decay toward archive —
+  layer 1b's waste ranking is the candidate queue.
 - Nodes whose use correlates with good outcomes gain retrieval weight.
 - Stale literature (superseded versions, dead links) gets flagged for re-ingestion
   or demotion.
 - Decay is **archival, never deletion** — utility-driven forgetting must be
-  reversible and auditable via the master plane.
+  reversible and auditable via the master plane. Every archive verdict carries
+  the trace IDs of the retrieved-but-ignored evidence that justified it, so each
+  decision is one drill-down from its justification.
+
+**Grading the policy without Goodharting it.** "Ignored-rate went down" is won
+by retrieving nothing, so the policy is graded by downstream error instead: a
+**resurrection** — an archived node recalled back by real demand — is a
+countable false-forget event, the reopen-rate analog of the thread-staleness
+design below. With tiny samples the honest statistic is censored and
+survival-style: a node archived at time t is "correct so far," not "correct,"
+and the report counts node-months of archive exposure against resurrections
+rather than fabricating rates from single-digit counts.
+
+**Prior work, and the inversion.** Forgetting-curve decay is established:
+MemoryBank (arXiv 2305.10250, in the graph) reinforces a memory *because it was
+recalled* and fades unrecalled memories with elapsed time — Ebbinghaus applied
+to agent memory. Layer 3 keys on retrieval **outcome**, not retrieval
+occurrence: a node retrieved often but never used accelerates toward archive
+exactly where recall-count reinforcement would strengthen it. That inversion is
+the utility-driven divergence claimed provisionally in
+[11-related-work.md](11-related-work.md) §4. What it trades away: utility
+verdicts exist only for retrieved nodes, so a pure utility policy leaves
+never-retrieved nodes immortal — MemoryBank-style time decay survives as the
+fallback prior for that no-signal population, a dial like the rest.
 
 This generalizes the refresh-skill maintenance scheme into a principled,
 **utility-driven forgetting policy**: a memory system with a learned forgetting
@@ -175,8 +254,10 @@ live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
 
 ## Open questions
 
-- Outcome-metric battery for counterfactual arms — needs to be cheap enough to run
-  routinely, or it won't be run.
+- Task authoring — the expensive, still-undesigned half of layer 2: the fixed
+  battery's contents, the replay harness mechanics, and the per-task artifacts
+  (acceptance test, consequence probes, rubric) that must exist before any arm
+  runs.
 - Open-thread staleness (designed, not built — lab/009, consultation
   `2e0f6a574658470a`): an eval-sync sweep proposing cross-scope RESOLVES
   *candidates* (detector may be noisy; the closer must cite specific evidence —

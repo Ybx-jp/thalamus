@@ -43,7 +43,7 @@ class FakeGraph:
         self.property_writes: list[tuple[str, str, object]] = []
         self.edges: list[dict] = []
 
-    def V(self, vid):
+    def V(self, vid=None):
         return _VertexChain(self, vid)
 
     def merge_v(self, spec):
@@ -83,6 +83,16 @@ class _VertexChain:
         vertex = self.graph.vertices.get(self.vid)
         if vertex is not None and vertex.get("label") != label:
             self.vid = None  # label mismatch: traversal yields nothing
+        return self
+
+    def has(self, key, value):
+        if self.vid is None:  # no-arg V(): scan for the first property match
+            self.vid = next(
+                (v for v, props in self.graph.vertices.items() if props.get(key) == value),
+                None,
+            )
+        elif self.graph.vertices.get(self.vid, {}).get(key) != value:
+            self.vid = None
         return self
 
     def value_map(self, *keys):
@@ -233,6 +243,31 @@ def test_consultation_is_refused_when_there_is_nothing_to_consult(monkeypatch):
     result = consult_request(graph, "literature", "Anything?", "main")
 
     assert "refused" in result.lower()
+    assert "holds no memory" in result
+    assert graph.merged_vertices == []
+
+
+def test_refusal_distinguishes_no_match_from_empty_scope(monkeypatch):
+    """
+    Scenario: The consulted scope holds memory, but nothing matched the question
+
+    A knowledge-only scope (claims, no sessions or threads) yields an empty brief
+    whenever the question misses its vocabulary. Telling the caller the scope "holds
+    no memory" sends them chasing a phantom ingestion problem (measured 2026-07-19:
+    eval-methodology held 11 claims and was reported empty); the honest remedy is
+    rephrasing. Still refused, still no orphan exchange record.
+    """
+    _stub_manifests(monkeypatch)
+    _stub_brief(monkeypatch, sections=(), refs=())
+    graph = FakeGraph(
+        {"scope:literature:claim:abc": {"label": "Claim", "scope": "literature"}}
+    )
+
+    result = consult_request(graph, "literature", "Anything?", "main")
+
+    assert "refused" in result.lower()
+    assert "nothing in scope `literature` matched" in result
+    assert "holds no memory" not in result
     assert graph.merged_vertices == []
 
 
