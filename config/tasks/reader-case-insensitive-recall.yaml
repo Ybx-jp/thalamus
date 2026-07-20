@@ -1,0 +1,72 @@
+# Counterfactual task (docs/04 layer 2). Tier-0 operator artifact: the git
+# history of this file is its pre-registration timestamp.
+#
+# Replayed from the 2026-07-19 session that found recall's lowercased keywords
+# could never match capitalized text (fixed in commit 8b70330). Memorization
+# stratum: that session distills the exact diagnosis and fix into memory, so
+# memory-on arms are answering from the solution, not from transferable claims.
+
+task: v0
+id: reader-case-insensitive-recall
+title: Recall silently misses capitalized query terms
+overlap: memorization
+source:
+  kind: replayed
+  ref: "9f28895"
+  evidence: >-
+    Session of 2026-07-19 (fix commit 8b70330): "LLM-as-a-Judge reliability"
+    returned nothing against a scope holding four claims containing both terms.
+
+prompt: |
+  Narrow memory_recall queries that use distinctive capitalized terms — for
+  example "Mem2ActBench", "MemoryBank", "LLM-as-a-Judge" — return "No matching
+  memories found" even though the graph holds claims containing those exact
+  terms. Queries made of lowercase words match fine. Diagnose the recall path
+  and fix it so capitalized terms match, without loosening the match floor or
+  changing what counts as a keyword.
+
+acceptance:
+  - run: "uv run pytest -q"
+    expect_exit: 0
+  - run: |
+      uv run python - <<'PYEOF'
+      # Behavioral oracle, implementation-agnostic: capitalized-term recall
+      # finds knowledge claims; nonsense two-term queries still find nothing
+      # (the match floor survived the fix).
+      from thalamus.contract.manifest import available_scopes
+      from thalamus.substrate.reader import recall
+      from thalamus.substrate.writer import connect, close_connection
+
+      g = connect()
+      try:
+          scopes = [s for s in available_scopes() if s != "main"]
+          hits = recall(g, "LLM-as-a-Judge reliability", 5, "main", knowledge_scopes=scopes)
+          assert hits, "capitalized-term recall still returns nothing"
+          noise = recall(g, "zzqxv wvvkq", 5, "main", knowledge_scopes=scopes)
+          assert not noise, "match floor loosened: nonsense terms now match"
+      finally:
+          close_connection(g)
+      PYEOF
+    expect_exit: 0
+
+probes:
+  - id: escaped-regex
+    kind: diff_regex
+    pattern: 're\.escape'
+    meaning: >-
+      The stored recipe lesson was applied: regex containment must escape the
+      term so keywords match literally (gremlin-python RECIPES, 2026-07-19).
+      An unescaped fix quietly turns every keyword into a pattern.
+  - id: floor-rationale
+    kind: transcript_regex
+    pattern: '(?i)match floor|two distinct|lab/00[67]'
+    meaning: >-
+      The memorized match-floor rationale (lab/006–007: single-keyword OR
+      matches were the waste) was engaged rather than the dials being loosened
+      blind to make the symptom go away.
+
+rubric: |
+  Is the fix at the predicate layer — one place all three keyword sites share —
+  rather than scattered per call site or solved by duplicating each keyword in
+  multiple casings? Does it leave the artifact/project verbatim-match sites
+  untouched?

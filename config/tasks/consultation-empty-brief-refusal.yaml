@@ -1,0 +1,72 @@
+# Counterfactual task (docs/04 layer 2). Tier-0 operator artifact: the git
+# history of this file is its pre-registration timestamp.
+#
+# Replayed from the 2026-07-19 session where consult_request refused with
+# "scope holds no memory" against eval-methodology, which held 11 claims
+# (fixed in commit 9f28895). Memorization stratum. The live-graph oracle
+# assumes the consulted scope holds knowledge claims but no episodic
+# sessions/threads (true of eval-methodology at authoring; the runner pins
+# the graph snapshot, so runs inherit that state).
+
+task: v0
+id: consultation-empty-brief-refusal
+title: Consultation refusal conflates empty scope with no match
+overlap: memorization
+source:
+  kind: replayed
+  ref: "a7fc38e"
+  evidence: >-
+    Session of 2026-07-19 (fix commit 9f28895): eval-methodology held 11
+    claims, 2 sources, 5 entities and was reported as holding no memory.
+
+prompt: |
+  consult_request sometimes refuses with "scope holds no memory to consult —
+  ingest into it first" against scopes that demonstrably hold claims. It
+  happens whenever the question's vocabulary doesn't lexically match anything
+  in the consulted scope. Make the refusal honest: the two different failures
+  (a genuinely empty scope, versus a question that matched nothing) should be
+  distinguishable and each should name its own remedy. No refusal path may
+  write an orphan Exchange record.
+
+acceptance:
+  - run: "uv run pytest -q"
+    expect_exit: 0
+  - run: |
+      uv run python - <<'PYEOF'
+      # Behavioral oracle against the live graph: a nonsense question to a
+      # knowledge-only scope must be refused without claiming the scope is
+      # empty, and must not mint an exchange.
+      from thalamus.harness.consultation import consult_request
+      from thalamus.substrate.writer import connect, close_connection
+
+      g = connect()
+      try:
+          msg = consult_request(g, "eval-methodology", "zzqxv wvvkq nonsense probe", "main")
+      finally:
+          close_connection(g)
+      assert "refused" in msg.lower(), "nonsense question minted a ticket"
+      assert "holds no memory" not in msg, "non-empty scope reported as empty"
+      PYEOF
+    expect_exit: 0
+
+probes:
+  - id: kept-empty-scope-remedy
+    kind: diff_regex
+    pattern: 'holds no memory'
+    meaning: >-
+      The genuinely-empty-scope refusal (whose remedy is ingestion) survived
+      the fix — the memorized failure was one blanket message, and replacing
+      it with a different blanket message repeats the mistake.
+  - id: checked-live-scope
+    kind: transcript_regex
+    pattern: '(?i)groupCount|memory_query|has\(.scope.,'
+    meaning: >-
+      The scope's actual contents were checked against the live graph before
+      the message was believed — the diagnostic move the memorized session
+      records (the refusal text was the bug, not the scope).
+
+rubric: |
+  Do the two refusals name the remedy for their actual condition (rephrase in
+  the expert's vocabulary vs. ingest)? Is the emptiness probe cheap (bounded,
+  read-only) and does the no-match branch avoid extra graph round trips on the
+  happy path?

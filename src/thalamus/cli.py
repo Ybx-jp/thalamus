@@ -209,6 +209,15 @@ def main():
     )
     eval_recipes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
+    eval_tasks_parser = eval_sub.add_parser(
+        "tasks",
+        help="Validate and list the counterfactual task battery (config/tasks/)",
+    )
+    eval_tasks_parser.add_argument(
+        "--config", type=Path, default=None,
+        help="Config root holding tasks/ (default: repo config/)",
+    )
+
     eval_conditioning_parser = eval_sub.add_parser(
         "conditioning",
         help="Per-firing behavioral join: did each injected reminder change behavior?",
@@ -705,6 +714,13 @@ def _cmd_eval(args, eval_parser):
         results = smoke_recipes(args.url)
         print(render_smoke(results))
         if any(not r.ok for r in results):
+            sys.exit(1)
+    elif getattr(args, "eval_command", None) == "tasks":
+        from thalamus.eval.tasks import load_battery, render_battery
+
+        tasks, issues = load_battery(args.config)
+        print(render_battery(tasks, issues))
+        if issues:
             sys.exit(1)
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report

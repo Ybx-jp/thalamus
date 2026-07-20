@@ -1,8 +1,9 @@
 # Eval Loop — Measuring Memory Utility
 
-**Status:** layer 1 (traces + attribution) and layer 1b (cost accounting) built —
-see `src/thalamus/eval/`; layers 2–3 designed (grounded and consulted), not yet
-built. This is the differentiating component: the project's central
+**Status:** layers 1/1b built (`src/thalamus/eval/`); layer 2's task battery
+built (`config/tasks/` + `thalamus eval tasks`, pre-registration enforced) —
+the arm runner and layer 3 remain designed, unbuilt. This is the
+differentiating component: the project's central
 claim is not "I built agent memory" but "I built agent memory **and the evaluation
 loop that proves what it's worth**."
 
@@ -172,6 +173,24 @@ confounded.
 Design consultation: eval-methodology, exchange
 `scope:main:exchange:8644614d1b1242a4`.
 
+**As built — the task battery.** Tasks are tier-0 operator files under
+`config/tasks/<id>.yaml`, the manifest pattern extended to eval: what counts
+as success is a curation decision, so it lives in git where no feed or model
+can write, and the file's git history *is* the pre-registration timestamp — an
+oracle edited after a campaign is a visible diff, not a silent regrade. Each
+task carries the prompt, `source` (replayed with a mandatory evidence pointer,
+or authored; plus the git ref the arm's worktree starts from), 1+ mechanical
+`acceptance` commands, 1–3 `probes` (`transcript_regex` / `diff_regex` /
+`command`, each with a mandatory `meaning` — an uninterpretable probe is
+decoration), an optional judge `rubric`, and the `overlap` stratum
+(`memorization` | `transferable`). `thalamus eval tasks` validates the battery
+and renders it with strata counts; violations exit nonzero — the battery does
+not arm until clean, and a memorization-only battery is flagged so campaign
+claims stay scoped to that stratum. Seeds: two replayed memorization-stratum
+tasks from the 2026-07-19 session (the reader case-sensitivity bug, the
+consultation refusal conflation), their behavioral oracles validated against
+the live graph before registration.
+
 ## Layer 3 — Memory that measures itself (M4+)
 
 Close the loop: utility signals feed back into graph maintenance.
@@ -254,10 +273,13 @@ live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
 
 ## Open questions
 
-- Task authoring — the expensive, still-undesigned half of layer 2: the fixed
-  battery's contents, the replay harness mechanics, and the per-task artifacts
-  (acceptance test, consequence probes, rubric) that must exist before any arm
-  runs.
+- The arm runner — the remaining unbuilt half of layer 2: worktree checkout at
+  the task's ref, per-arm memory-surface control (on / off / each degradation),
+  graph-snapshot pinning, transcript capture for probes and blinded judging,
+  and landing arm outcomes back into the graph. The battery (`eval tasks`) is
+  its input contract.
+- Battery growth: both seeds are memorization-stratum; transferable-stratum
+  tasks must be authored before any campaign can claim beyond memorization.
 - Open-thread staleness (designed, not built — lab/009, consultation
   `2e0f6a574658470a`): an eval-sync sweep proposing cross-scope RESOLVES
   *candidates* (detector may be noisy; the closer must cite specific evidence —
