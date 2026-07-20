@@ -218,6 +218,39 @@ def main():
         help="Config root holding tasks/ (default: repo config/)",
     )
 
+    eval_run_parser = eval_sub.add_parser(
+        "run",
+        help="Run one battery task under counterfactual arms (worktree + headless session + oracles)",
+    )
+    eval_run_parser.add_argument("task_id", help="A task id from config/tasks/")
+    eval_run_parser.add_argument(
+        "--arm", action="append", dest="arms", default=None,
+        help="memory-on | memory-off | scoping-degraded:<scope>; repeatable, runs in "
+        "the order given (default: memory-on then memory-off)",
+    )
+    eval_run_parser.add_argument(
+        "--model", default=None, help="Arm session model (default: sonnet)"
+    )
+    eval_run_parser.add_argument(
+        "--max-turns", type=int, default=None, help="Turn cap for the arm session"
+    )
+    eval_run_parser.add_argument(
+        "--timeout", type=int, default=None, help="Arm session timeout, seconds"
+    )
+    eval_run_parser.add_argument(
+        "--full-auto", action="store_true",
+        help="Run the arm session with --dangerously-skip-permissions (real campaigns "
+        "need this: the default acceptEdits mode auto-denies Bash, so the candidate "
+        "cannot run tests)",
+    )
+    eval_run_parser.add_argument(
+        "--keep", action="store_true", help="Keep the worktree(s) for inspection"
+    )
+    eval_run_parser.add_argument(
+        "--config", type=Path, default=None,
+        help="Config root holding tasks/ (default: repo config/)",
+    )
+
     eval_conditioning_parser = eval_sub.add_parser(
         "conditioning",
         help="Per-firing behavioral join: did each injected reminder change behavior?",
@@ -722,6 +755,52 @@ def _cmd_eval(args, eval_parser):
         print(render_battery(tasks, issues))
         if issues:
             sys.exit(1)
+    elif getattr(args, "eval_command", None) == "run":
+        from thalamus.contract.manifest import available_scopes
+        from thalamus.eval import arms as arms_mod
+        from thalamus.eval.tasks import load_battery
+
+        tasks, issues = load_battery(args.config)
+        if issues:
+            print("The battery does not arm until clean — run `thalamus eval tasks`:",
+                  file=sys.stderr)
+            for issue in issues:
+                print(f"  - {issue}", file=sys.stderr)
+            sys.exit(1)
+        by_id = {task.id: task for task in tasks}
+        if args.task_id not in by_id:
+            print(f"No task `{args.task_id}` (have: {', '.join(sorted(by_id))})",
+                  file=sys.stderr)
+            sys.exit(1)
+        task = by_id[args.task_id]
+        try:
+            arm_list = [
+                arms_mod.parse_arm(spec, available_scopes())
+                for spec in (args.arms or ["memory-on", "memory-off"])
+            ]
+        except arms_mod.ArmError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        repo = Path(__file__).resolve().parents[2]
+        accepted = True
+        for index, arm in enumerate(arm_list):
+            try:
+                record = arms_mod.run_arm(
+                    repo, task, arm,
+                    model=args.model or arms_mod.DEFAULT_MODEL,
+                    max_turns=args.max_turns or arms_mod.DEFAULT_MAX_TURNS,
+                    timeout=args.timeout or arms_mod.DEFAULT_TIMEOUT,
+                    full_auto=args.full_auto, keep=args.keep, order_index=index,
+                )
+            except arms_mod.ArmError as exc:
+                print(f"{task.id} · {arm.spec}: {exc}", file=sys.stderr)
+                sys.exit(1)
+            print(arms_mod.render_run(record))
+            print()
+            accepted = accepted and record.get("accepted", False)
+        print(f"Records appended to {arms_mod.RUNS_BASE / 'runs.jsonl'}")
+        if not accepted:
+            sys.exit(2)
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report
 

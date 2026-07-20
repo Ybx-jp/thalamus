@@ -1,8 +1,9 @@
 # Eval Loop — Measuring Memory Utility
 
 **Status:** layers 1/1b built (`src/thalamus/eval/`); layer 2's task battery
-built (`config/tasks/` + `thalamus eval tasks`, pre-registration enforced) —
-the arm runner and layer 3 remain designed, unbuilt. This is the
+(`config/tasks/` + `thalamus eval tasks`) and arm runner (`thalamus eval run`:
+memory-on / memory-off / scoping-degraded) built — snapshot pinning, campaign
+analysis, the judge, and layer 3 remain. This is the
 differentiating component: the project's central
 claim is not "I built agent memory" but "I built agent memory **and the evaluation
 loop that proves what it's worth**."
@@ -191,6 +192,32 @@ tasks from the 2026-07-19 session (the reader case-sensitivity bug, the
 consultation refusal conflation), their behavioral oracles validated against
 the live graph before registration.
 
+**As built — the arm runner.** `thalamus eval run <task> --arm …` executes one
+battery task per arm, in the order given (the operator is the permutation):
+a disposable git worktree at the task's ref; the arm realized by editing the
+*worktree's* harness files — per-process arming (lab/001) works in the
+runner's favor, each headless session arms from whatever its worktree
+declares; a headless `claude -p` session (model / turn-cap / timeout dials;
+`--full-auto` for real campaigns, since the default acceptEdits mode
+auto-denies Bash and the candidate couldn't run tests); then the task's own
+oracles — acceptance commands in the worktree, probes against the captured
+harness transcript and the diff. One JSONL record per run appends to
+`~/.thalamus/counterfactuals/runs.jsonl` (tap-then-report, like every other
+instrument), carrying the applied arm verbatim — stripped hooks, MCP removal —
+so the record shows the arm was real. Hygiene, both directions: **no arm
+keeps a memory write-back path** (SessionEnd distillation and the trace taps
+are stripped in every arm, memory-on included — an arm session distilling
+would let later arms recall earlier arms' work, and never-distilled tap lines
+would sit in `eval report` as pending forever), and **neutral discipline
+stays on everywhere** (timestamp, gremlin-guard) so contrasts don't confound.
+Built arms: `memory-on`, `memory-off`, `scoping-degraded:<scope>`;
+`freshness-degraded` and `volume-degraded` are *refused*, not approximated,
+until graph-snapshot pinning exists. The first live smoke run (2-turn,
+memory-off) validated the plumbing and caught a probe the task's own prompt
+pre-satisfied — now a mechanical battery check: a `transcript_regex` matching
+the task's prompt refuses to arm. Residual, named: a memory-on arm reads the
+*live* graph and could write via `memorize`.
+
 ## Layer 3 — Memory that measures itself (M4+)
 
 Close the loop: utility signals feed back into graph maintenance.
@@ -273,11 +300,14 @@ live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
 
 ## Open questions
 
-- The arm runner — the remaining unbuilt half of layer 2: worktree checkout at
-  the task's ref, per-arm memory-surface control (on / off / each degradation),
-  graph-snapshot pinning, transcript capture for probes and blinded judging,
-  and landing arm outcomes back into the graph. The battery (`eval tasks`) is
-  its input contract.
+- Graph-snapshot pinning — the prerequisite the freshness- and volume-degraded
+  arms are refused without, and the fix for the memory-on residual (arms
+  currently read the live graph).
+- Campaign analysis — runs.jsonl holds per-run records; the paired,
+  per-stratum report (sign/permutation tests, floor-gated verdicts) is not
+  built, and no cross-arm claims exist until it is.
+- Judge scoring — rubrics are recorded in the battery and unused; the guarded
+  judge (pairwise, arm-blinded) is not built.
 - Battery growth: both seeds are memorization-stratum; transferable-stratum
   tasks must be authored before any campaign can claim beyond memorization.
 - Open-thread staleness (designed, not built — lab/009, consultation

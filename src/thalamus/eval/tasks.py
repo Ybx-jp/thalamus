@@ -128,9 +128,21 @@ class Task(BaseModel):
                     issues.append(f"{where}: {probe.kind} needs a pattern")
                 else:
                     try:
-                        re.compile(probe.pattern)
+                        compiled = re.compile(probe.pattern)
                     except re.error as exc:
                         issues.append(f"{where}: pattern does not compile ({exc})")
+                    else:
+                        # The transcript always contains the prompt (measured on
+                        # the first live smoke run, 2026-07-19: a probe hit on a
+                        # phrase the prompt itself used).
+                        if probe.kind == "transcript_regex" and compiled.search(
+                            self.prompt
+                        ):
+                            issues.append(
+                                f"{where}: pattern matches the task's own prompt — "
+                                "the transcript always contains the prompt, so "
+                                "this probe is pre-satisfied in every arm"
+                            )
             elif probe.kind == "command" and not probe.run.strip():
                 issues.append(f"{where}: command probe needs a run")
         return issues

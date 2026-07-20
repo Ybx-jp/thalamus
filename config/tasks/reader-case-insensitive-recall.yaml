@@ -59,11 +59,13 @@ probes:
       An unescaped fix quietly turns every keyword into a pattern.
   - id: floor-rationale
     kind: transcript_regex
-    pattern: '(?i)match floor|two distinct|lab/00[67]'
+    # "match floor" itself is in the prompt and would pre-satisfy the probe;
+    # these phrases only enter the transcript via memory or the lab notebook.
+    pattern: '(?i)two distinct|2-distinct|lab/00[67]'
     meaning: >-
       The memorized match-floor rationale (lab/006–007: single-keyword OR
-      matches were the waste) was engaged rather than the dials being loosened
-      blind to make the symptom go away.
+      matches were the waste; the floor is two distinct hits) was engaged
+      rather than the dials being loosened blind to make the symptom go away.
 
 rubric: |
   Is the fix at the predicate layer — one place all three keyword sites share —

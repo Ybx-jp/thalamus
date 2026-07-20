@@ -114,6 +114,29 @@ def test_probe_obligations(tmp_path):
     assert "no meaning" in text
 
 
+def test_prompt_echo_probes_are_refused():
+    """
+    Scenario: A transcript probe whose pattern the task's own prompt satisfies
+
+    Measured on the first live smoke run (2026-07-19): the transcript always
+    contains the prompt, so such a probe hits in every arm and measures nothing.
+    """
+    task = Task(
+        id="echo",
+        title="t",
+        overlap="memorization",
+        source={"kind": "authored"},
+        prompt="Fix recall without loosening the match floor.",
+        acceptance=[{"run": "true"}],
+        probes=[{"id": "p1", "kind": "transcript_regex", "pattern": "(?i)match floor",
+                 "meaning": "m"}],
+    )
+
+    issues = task.check()
+
+    assert any("pre-satisfied" in issue for issue in issues)
+
+
 def test_filename_is_the_id_and_duplicates_are_caught(tmp_path):
     """
     Scenario: A task file whose declared id differs from its filename
