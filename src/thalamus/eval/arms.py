@@ -332,6 +332,10 @@ def run_arm(
             "is_error": agent.is_error,
             "result_tail": agent.result[-300:],
         }
+        # Censoring, stamped not inferred: a capped session never concluded, so
+        # its iteration metrics are lower bounds (lab/011: the cap bound in 4/4
+        # first-campaign runs).
+        record["turn_capped"] = agent.num_turns > max_turns
         record["wall_seconds"] = round(time.monotonic() - started, 1)
 
         diff = _worktree_diff(worktree)
@@ -368,8 +372,9 @@ def render_run(record: dict) -> str:
     lines = [
         f"{record['task']} · {record['arm']} (scope {record['scope']}, "
         f"ref {record['ref']}, order {record['order_index']})",
-        f"  session {agent.get('session_id', '?')} — {agent.get('num_turns', '?')} turns, "
-        f"${agent.get('cost_usd', 0):.2f}, {record.get('wall_seconds', '?')}s wall, "
+        f"  session {agent.get('session_id', '?')} — {agent.get('num_turns', '?')} turns"
+        + (" (CAPPED)" if record.get("turn_capped") else "")
+        + f", ${agent.get('cost_usd', 0):.2f}, {record.get('wall_seconds', '?')}s wall, "
         f"{record.get('diff_lines', 0)} diff lines"
         + (", transcript MISSING" if not record.get("transcript_captured") else ""),
         f"  applied: mcp_removed={record.get('applied', {}).get('mcp_removed')}, "

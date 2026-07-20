@@ -218,6 +218,16 @@ pre-satisfied — now a mechanical battery check: a `transcript_regex` matching
 the task's prompt refuses to arm. Residual, named: a memory-on arm reads the
 *live* graph and could write via `memorize`.
 
+**Probe authoring rule** (lab/011, the first campaign's sharper finding —
+every probe hit in every arm, memory-off included): a probe must target
+knowledge unreachable from the prompt *plus general model competence* —
+session UUIDs, lab-entry numbers, dial values, named thread slugs. The
+validator mechanically refuses prompt echo; only authorship can refuse
+competence echo. First campaign (2026-07-19, pre-distillation baseline,
+lab/011): memory-off accepted 2/2 vs memory-on 1/2, memory-on +52% cost, the
+turn cap binding in 4/4 runs — the ambient-surface baseline the memorization
+stratum's post-distillation re-run is graded against.
+
 ## Layer 3 — Memory that measures itself (M4+)
 
 Close the loop: utility signals feed back into graph maintenance.

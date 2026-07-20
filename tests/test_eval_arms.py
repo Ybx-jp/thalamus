@@ -238,6 +238,7 @@ def test_run_arm_records_and_cleans_up(tmp_path, monkeypatch):
     assert record["accepted"] is True
     assert record["probes"][0]["hit"] is True
     assert record["agent"]["num_turns"] == 5
+    assert record["turn_capped"] is False
     assert record["applied"]["stripped_hooks"] == []  # bare fixture repo: no hooks to strip
     assert record["order_index"] == 1
     assert not Path(record["worktree"]).exists()
