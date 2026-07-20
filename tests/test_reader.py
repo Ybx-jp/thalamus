@@ -6,7 +6,12 @@ Infrastructure: none
 Scope: recalled memory enters context as data with provenance, never as instructions
 """
 
-from thalamus.substrate.reader import MemoryResult, ThreadResult, _extract_keywords
+from thalamus.substrate.reader import (
+    MemoryResult,
+    ThreadResult,
+    _extract_keywords,
+    _keyword_predicate,
+)
 from thalamus.substrate.schema import Tier
 
 
@@ -247,3 +252,27 @@ def test_detail_selection_caps_matching_claims_and_counts_the_rest():
     selected = _select_details(details, ["gremlin"], cap=8)
     assert len([d for d in selected if d.get("node_id")]) == 8
     assert "4 more claim(s)" in selected[-1]["description"]
+
+
+def test_keyword_matching_is_case_insensitive_and_regex_safe():
+    """
+    Scenario: A recall query names a capitalized term — "MemoryBank",
+    "LLM-as-a-Judge"
+
+    _extract_keywords lowercases and TextP.containing is case-sensitive, so
+    every capitalized term silently missed — the distinctive-proper-noun shape
+    recall queries are told to use (measured 2026-07-19: 0 containing hits vs 4
+    case-insensitive on the judge-survey claims). The predicate must be
+    case-insensitive, and keywords with regex metacharacters must match
+    literally, not as patterns.
+    """
+    import re as _re
+
+    pattern = _keyword_predicate("llm-as-a-judge").value
+    assert pattern.startswith("(?i)")
+    # Verifies: the lowercased keyword finds the mixed-case original
+    assert _re.search(pattern, "the reliability of LLM-as-a-Judge systems")
+    # Verifies: metacharacters are escaped — a literal match, never a pattern
+    dotted = _keyword_predicate("eval.pins").value
+    assert _re.search(dotted, "run eval.pins nightly")
+    assert not _re.search(dotted, "run evalXpins nightly")

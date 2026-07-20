@@ -65,3 +65,30 @@ finally:
 
 **Notes:** `value_map` returns list-valued properties; take `[0]` when
 unpacking.
+
+## Case-insensitive text containment
+**Question:** Does the server support case-insensitive text matching (needed
+because `TextP.containing` is case-sensitive and recall lowercases keywords)?
+**Surface:** gremlin-python
+**Validated:** 2026-07-19 against the live graph (0 containing hits vs 4 regex
+hits on the judge-survey claims)
+
+```python
+import re
+from gremlin_python.process.traversal import TextP
+from thalamus.substrate.writer import connect, close_connection
+
+g = connect()
+try:
+    n = (g.V().has_label("Claim").has("scope", "eval-methodology")
+         .has("description", TextP.regex("(?i)" + re.escape("llm-as-a-judge")))
+         .count().next())
+    print(n)
+finally:
+    close_connection(g)
+```
+
+**Notes:** `TextP.regex` uses find semantics (matches anywhere in the value);
+always `re.escape` the term so it matches literally. This is what
+`reader._keyword_predicate` does — reuse it in substrate code rather than
+rebuilding the pattern.

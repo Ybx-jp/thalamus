@@ -15,6 +15,7 @@ content rather than being dropped on the floor at render time.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
@@ -203,7 +204,7 @@ def recall(
             g.V()
             .has_label("Session")
             .has("scope", scope)
-            .has("summary", TextP.containing(keyword))
+            .has("summary", _keyword_predicate(keyword))
             .value_map("session_id")
             .to_list()
         )
@@ -216,7 +217,7 @@ def recall(
             g.V()
             .has_label("Claim")
             .has("scope", scope)
-            .has("description", TextP.containing(keyword))
+            .has("description", _keyword_predicate(keyword))
             .in_e("CONTAINS")
             .out_v()
             .has_label("Session")
@@ -232,7 +233,7 @@ def recall(
             g.V()
             .has_label("Claim")
             .has("scope", P.within(claim_scopes))
-            .has("description", TextP.containing(keyword))
+            .has("description", _keyword_predicate(keyword))
             .not_(__.in_e("CONTAINS"))
             .id_()
             .to_list()
@@ -665,6 +666,18 @@ def _load_knowledge_result(g: GraphTraversalSource, claim_vid: str) -> Knowledge
         origin=_first(source.get("origin")),
         entities=[_first(e.get("name")) for e in entities],
     )
+
+
+def _keyword_predicate(keyword: str) -> TextP:
+    """Case-insensitive containment for recall keywords.
+
+    `_extract_keywords` lowercases, and `TextP.containing` is case-sensitive — the
+    pair silently missed every capitalized term ("MemoryBank", "LLM-as-a-Judge"),
+    which is exactly the distinctive-proper-noun shape recall queries are told to
+    use (measured 2026-07-19: 0 containing hits vs 4 case-insensitive on the
+    judge-survey claims).
+    """
+    return TextP.regex("(?i)" + re.escape(keyword))
 
 
 def _extract_keywords(query: str) -> list[str]:
