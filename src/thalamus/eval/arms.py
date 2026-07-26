@@ -9,7 +9,14 @@ traces, guards, and conditioning.
 
 The arm is applied by editing the *worktree's* harness files, never the repo's:
 per-process arming (lab/001) works in the runner's favor — each headless run is a
-fresh process that arms from whatever its worktree declares.
+fresh process that arms from whatever its worktree declares. Before that, the
+worktree's copy of the hook *scripts themselves* (not `.claude/settings.json`,
+which stays pinned to the task's ref) is synced from the current repo
+(`sync_runner_hooks`) — runner-side fixes must reach every worktree regardless
+of which historical ref a task is pinned to (lab/012/013) — and the worktree's
+own venv is pre-synced with the `dev` extra (`sync_worktree_env`) so `pytest`
+exists in it before anyone runs `uv run pytest` (lab/013: it doesn't by
+default, so that command silently ran the unrelated system pytest instead).
 
 Two hygiene rules, both measurement-motivated:
 
@@ -112,9 +119,59 @@ def _git(repo: Path, *args: str) -> str:
     return proc.stdout
 
 
+HOOKS_REL_PATH = Path("src") / "thalamus" / "harness" / "hooks"
+
+
 def prepare_worktree(repo: Path, ref: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     _git(repo, "worktree", "add", "--detach", str(dest), ref)
+    sync_runner_hooks(repo, dest)
+    sync_worktree_env(dest)
+
+
+def sync_worktree_env(worktree: Path, timeout: int = 300) -> None:
+    """Pre-sync the worktree's own venv with the `dev` extra before any session runs.
+
+    `pytest` (and pytest-asyncio, ruff, httpx) live under
+    `[project.optional-dependencies] dev`, not the base `dependencies` list. A
+    worktree's `.venv` is created fresh per run and `uv run <cmd>` only
+    auto-syncs base dependencies — so an un-presynced worktree has no `pytest`
+    in `.venv/bin/`, and `uv run pytest` silently falls through to PATH,
+    finding the unrelated system `python3-pytest` package instead. That
+    process can't see anything installed in the worktree's venv, so every
+    acceptance run and every candidate-invoked `uv run pytest` fails with
+    `ModuleNotFoundError: No module named 'thalamus'` — indistinguishable at a
+    glance from a genuine candidate regression (lab/013). The operator's own
+    checkout masks this because it was synced with `--extra dev` at some past
+    setup step; a disposable worktree never is unless told to be.
+    """
+    proc = subprocess.run(
+        ["uv", "sync", "--extra", "dev"],
+        cwd=worktree, capture_output=True, text=True, timeout=timeout,
+    )
+    if proc.returncode != 0:
+        raise ArmError(f"uv sync --extra dev failed in worktree: {proc.stderr.strip()[:300]}")
+
+
+def sync_runner_hooks(repo: Path, worktree: Path) -> None:
+    """Overwrite the worktree's harness hook scripts with the current repo's.
+
+    The worktree is checked out at the *task's* ref, which is intentionally
+    historical — that's what makes the candidate's fix meaningful to grade. But
+    it also freezes the runner's own tooling (session-start.sh's project
+    resolution, etc.) at whatever state existed when the task was authored,
+    silently reverting any later fix to the harness itself (lab/012/013: the
+    THALAMUS_PROJECT fix landed in the repo but never reached a worktree pinned
+    to a pre-fix ref). This is eval-runner infrastructure, not candidate code
+    under test — `.claude/settings.json` (also worktree-pinned) still decides
+    which of these scripts actually fire, so newly added hooks with no wiring
+    at the task's ref stay inert; only the *content* of already-wired scripts
+    is refreshed.
+    """
+    src = repo / HOOKS_REL_PATH
+    dst = worktree / HOOKS_REL_PATH
+    if src.is_dir() and dst.is_dir():
+        shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
 def remove_worktree(repo: Path, dest: Path) -> None:
@@ -179,6 +236,7 @@ def run_agent(
     prompt: str,
     *,
     scope: str,
+    project: str,
     model: str = DEFAULT_MODEL,
     max_turns: int = DEFAULT_MAX_TURNS,
     timeout: int = DEFAULT_TIMEOUT,
@@ -188,6 +246,12 @@ def run_agent(
 
     env = dict(os.environ)
     env["THALAMUS_SCOPE"] = scope
+    # session-start.sh resolves project from basename(cwd), which is the repo
+    # root in a normal session but the disposable worktree dir here — never a
+    # project any session has ever distilled under, so session-start recall
+    # silently found nothing in every arm run to date (lab/012). THALAMUS_PROJECT
+    # overrides that resolution to the real repo's project.
+    env["THALAMUS_PROJECT"] = project
     # The picked agent is the pin (decision log 2026-07-18); a leaked agent name
     # from the operator's own session would override the arm's scope.
     env.pop("CLAUDE_CODE_AGENT", None)
@@ -321,7 +385,7 @@ def run_arm(
         record["applied"] = apply_arm(worktree, arm)
         started = time.monotonic()
         agent = run_agent(
-            worktree, task.prompt, scope=arm.scope, model=model,
+            worktree, task.prompt, scope=arm.scope, project=repo.name, model=model,
             max_turns=max_turns, timeout=timeout, full_auto=full_auto,
         )
         record["agent"] = {

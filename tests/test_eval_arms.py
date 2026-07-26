@@ -211,6 +211,78 @@ def _git_repo(tmp_path: Path) -> Path:
     return repo
 
 
+def test_prepare_worktree_syncs_current_hooks_over_the_pinned_refs(tmp_path, monkeypatch):
+    """
+    Scenario: a runner-side hook fix lands after a task's ref was pinned
+
+    The worktree checks out the task's historical ref, which freezes the
+    *content* of every file at that ref — including the runner's own hook
+    scripts (lab/012's THALAMUS_PROJECT fix landed in the repo but a worktree
+    pinned to a pre-fix ref still ran the pre-fix session-start.sh, silently
+    reverting it — lab/013). sync_runner_hooks must overwrite the worktree's
+    hook scripts with the current repo's, regardless of the pinned ref.
+    """
+    monkeypatch.setattr(arms, "sync_worktree_env", lambda *a, **k: None)
+    repo = _git_repo(tmp_path)
+    hooks_dir = repo / arms.HOOKS_REL_PATH
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "session-start.sh").write_text("echo old\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+         "commit", "-qm", "pin this ref"],
+        check=True, capture_output=True,
+    )
+    pinned_ref = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+    # The fix lands after the ref is pinned — an uncommitted change, exactly
+    # like this session's THALAMUS_PROJECT fix before it's committed.
+    (hooks_dir / "session-start.sh").write_text("echo fixed\n")
+
+    worktree = tmp_path / "wt"
+    arms.prepare_worktree(repo, pinned_ref, worktree)
+
+    assert (worktree / arms.HOOKS_REL_PATH / "session-start.sh").read_text() == "echo fixed\n"
+
+
+def test_sync_worktree_env_installs_the_dev_extra(tmp_path, monkeypatch):
+    """
+    Scenario: pytest must exist in the worktree's own venv before anyone runs it
+
+    Root cause (lab/013): pytest lives under `[project.optional-dependencies]
+    dev`, not the base dependency list, so a freshly-created worktree venv
+    never has it — `uv run pytest` then silently falls through to PATH and
+    runs the unrelated system pytest, which can't see anything the worktree
+    actually installed. sync_worktree_env must run `uv sync --extra dev` in
+    the worktree so this can't happen. A failure must surface as ArmError,
+    not a silently-broken later acceptance run.
+    """
+    captured = {}
+
+    def fake_run(cmd, *, cwd, capture_output, text, timeout):
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(arms.subprocess, "run", fake_run)
+    arms.sync_worktree_env(tmp_path)
+
+    assert captured["cmd"] == ["uv", "sync", "--extra", "dev"]
+    assert captured["cwd"] == tmp_path
+
+
+def test_sync_worktree_env_raises_on_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        arms.subprocess, "run",
+        lambda *a, **k: subprocess.CompletedProcess([], 1, stdout="", stderr="resolution failed"),
+    )
+    with pytest.raises(ArmError, match="resolution failed"):
+        arms.sync_worktree_env(tmp_path)
+
+
 def test_run_arm_records_and_cleans_up(tmp_path, monkeypatch):
     """
     Scenario: A full orchestrated run with the headless session stubbed
@@ -222,6 +294,7 @@ def test_run_arm_records_and_cleans_up(tmp_path, monkeypatch):
     """
     repo = _git_repo(tmp_path)
     task = _task(acceptance=[{"run": "test -f README.md"}, {"run": "grep -q hello README.md"}])
+    monkeypatch.setattr(arms, "sync_worktree_env", lambda *a, **k: None)
     monkeypatch.setattr(
         arms, "run_agent",
         lambda *a, **k: AgentRun("sess-1", "done", 0.12, 3000, 5, False),
@@ -251,6 +324,7 @@ def test_run_arm_keeps_worktree_on_request(tmp_path, monkeypatch):
     """
     repo = _git_repo(tmp_path)
     task = _task()
+    monkeypatch.setattr(arms, "sync_worktree_env", lambda *a, **k: None)
     monkeypatch.setattr(
         arms, "run_agent", lambda *a, **k: AgentRun("sess-2", "", 0.0, 0, 1, False)
     )
@@ -264,3 +338,53 @@ def test_run_arm_keeps_worktree_on_request(tmp_path, monkeypatch):
     assert Path(record["worktree"]).exists()
     assert record["kept"] is True
     assert record["transcript_captured"] is False
+
+
+def test_run_arm_passes_repos_name_as_project(tmp_path, monkeypatch):
+    """
+    Scenario: run_arm must tell the arm session its real project
+
+    session-start.sh resolves recall's project from basename(cwd), which
+    inside a worktree is the disposable run directory, not the repo — the
+    session-start pull silently found nothing in every arm run to date
+    (lab/012). run_arm must pass the checkout's own name so run_agent can
+    override that resolution.
+    """
+    repo = _git_repo(tmp_path)
+    task = _task()
+    captured = {}
+
+    def fake_run_agent(*args, **kwargs):
+        captured.update(kwargs)
+        return AgentRun("sess-3", "", 0.0, 0, 1, False)
+
+    monkeypatch.setattr(arms, "sync_worktree_env", lambda *a, **k: None)
+    monkeypatch.setattr(arms, "run_agent", fake_run_agent)
+    monkeypatch.setattr(arms, "transcript_text", lambda *a, **k: "")
+
+    run_arm(repo, task, parse_arm("memory-on", SCOPES), runs_base=tmp_path / "runs")
+
+    assert captured["project"] == repo.name == "repo"
+
+
+def test_run_agent_threads_scope_and_project_into_the_subprocess_env(tmp_path, monkeypatch):
+    """
+    Scenario: run_agent's env must carry THALAMUS_PROJECT alongside THALAMUS_SCOPE
+
+    Low-level counterpart to the run_arm test above: this is the layer that
+    actually builds the subprocess env session-start.sh reads.
+    """
+    captured = {}
+
+    def fake_run(cmd, *, input, capture_output, text, timeout, cwd, env):
+        captured["env"] = env
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps({"session_id": "s", "total_cost_usd": 0}), stderr="",
+        )
+
+    monkeypatch.setattr(arms.subprocess, "run", fake_run)
+
+    arms.run_agent(tmp_path, "prompt", scope="literature", project="thalamus")
+
+    assert captured["env"]["THALAMUS_SCOPE"] == "literature"
+    assert captured["env"]["THALAMUS_PROJECT"] == "thalamus"

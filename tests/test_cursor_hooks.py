@@ -66,6 +66,11 @@ class TestSessionStart:
         - stdout is Cursor-shaped: bare `additional_context`, no
           hookSpecificOutput wrapper
         - the context names the project and the bare (unprefixed) tool names
+        - it does *not* carry the Claude Code variant's deferred-tool
+          (ToolSearch) step — that mechanism is Claude Code's, and naming a
+          tool Cursor has no notion of would be an instruction the agent
+          cannot follow, the same class of defect lab/013 found in the other
+          direction
         - the pin ledger gets one line in the same record shape the Claude
           Code hook writes (session-end + eval read both harnesses' lines)
         """
@@ -77,6 +82,7 @@ class TestSessionStart:
         assert 'project="myproject"' in ctx
         assert "memory_open_threads" in ctx
         assert "mcp__thalamus__" not in ctx
+        assert "ToolSearch" not in ctx
 
         pins = read_jsonl(tmp_path / ".thalamus" / "pins" / "pins.jsonl")
         assert pins == [

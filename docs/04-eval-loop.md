@@ -223,10 +223,69 @@ every probe hit in every arm, memory-off included): a probe must target
 knowledge unreachable from the prompt *plus general model competence* —
 session UUIDs, lab-entry numbers, dial values, named thread slugs. The
 validator mechanically refuses prompt echo; only authorship can refuse
-competence echo. First campaign (2026-07-19, pre-distillation baseline,
-lab/011): memory-off accepted 2/2 vs memory-on 1/2, memory-on +52% cost, the
-turn cap binding in 4/4 runs — the ambient-surface baseline the memorization
-stratum's post-distillation re-run is graded against.
+competence echo.
+
+**Fixed bug: every campaign run before this one had an inert memory-on arm.**
+`session-start.sh` resolved `project=$(basename "$cwd")` to prime session-start
+recall. Outside the arm runner `cwd` is the repo root, so this resolved to
+`thalamus` and worked. Inside the arm runner, the headless session's `cwd` is the
+disposable worktree (`<task-id>--<arm>--<timestamp>`), so `basename` never
+equalled `thalamus` and the session-start pull was scoped to a project with
+nothing filed under it — confirmed from raw transcripts:
+`memory_recall_by_project` returning `"No matching memories found."` in every
+memory-on arm run to date (lab/011 and lab/012). Both campaigns' memory-on arms
+differed from memory-off only in inert hook overhead, not in memory content;
+neither campaign's numbers say anything about memory-on vs memory-off. First
+campaign (2026-07-19, pre-distillation, lab/011): memory-off accepted 2/2 vs
+memory-on 1/2, memory-on +52% cost, cap binding 4/4. Second campaign
+(2026-07-20/26, post-distillation, lab/012, one arm-pair partially voided by an
+unrelated mid-campaign OAuth expiry and re-run): memory-on 2/2 vs memory-off
+0/2, cost direction mixed. Fixed (lab/012): `run_agent` now threads the
+checkout's real project name into `THALAMUS_PROJECT`, which both hook variants
+(`claude-code/session-start.sh`, `cursor/session-start.sh`) prefer over
+`basename $cwd`/`basename $workspace_root`.
+
+**Fix validated live, campaign discipline holds anyway (lab/013).** A worktree
+checks out at the *task's* pinned ref, which also freezes the runner's own hook
+scripts at whatever state existed when the task was authored — a fix landing
+in the repo doesn't reach a worktree pinned to a pre-fix ref until
+`sync_runner_hooks` (`arms.py:120`, called from `prepare_worktree`) overwrites
+the worktree's hook-script content post-checkout (`.claude/settings.json`
+stays pinned, so only already-wired scripts refresh). With both fixes in
+place, transcripts confirm `SessionStart` now injects `project="thalamus"`
+correctly. But in lab/013's n=2 sample, **neither memory-on arm called any
+`mcp__thalamus__*` tool at all** — the first campaign where that gap was
+directly observed rather than merely possible. The mechanical cause was that
+the injected instruction was *incomplete*, not merely advisory: Claude Code
+surfaces MCP tools by name with schemas deferred, so "call
+`mcp__thalamus__memory_open_threads`" named a call the agent could not make as
+written, and neither transcript contained anything explaining the discovery
+step. `claude-code/session-start.sh` now names it — one `ToolSearch
+select:...` loading both tools, conditionally phrased because deferral is a
+per-session harness fact the hook cannot see. The Cursor variant does not
+carry it (no such mechanism there); both texts are contract-tested
+(`tests/test_claude_code_hooks.py`, `tests/test_cursor_hooks.py`). Whether
+this closes the gap is unmeasured — a corrected instruction still cannot
+compel use, and enforcement remains off the table for the same reason recall
+scope is server-side (docs/07). No campaign to date has produced an arm that
+actually recalled and used real memory content; the graph-only-token probes
+remain only negatively validated (correctly silent so far), never positively.
+
+**A third, unrelated bug in the same campaign, found by refusing to accept
+"root cause not fully pinned down" (lab/013).** Both reader arms failed `uv run
+pytest -q` with `ModuleNotFoundError` despite each behavioral oracle passing —
+first written up as an unexplained infra confound, correctly challenged by the
+operator ("this is pretty sus"). Root cause: `pytest` is a
+`[project.optional-dependencies] dev` extra, not a base dependency
+(`pyproject.toml:15-20`); a fresh worktree's `.venv` only ever gets the base
+set auto-synced, so `uv run pytest` finds no `pytest` in `.venv/bin/` and
+silently falls through to the unrelated system `python3-pytest`, which can't
+see the worktree's own installs. `sync_worktree_env` (`arms.py`, called from
+`prepare_worktree`) now runs `uv sync --extra dev` in every worktree before
+anything else, closing this for good — verified live (a fresh worktree at the
+reader task's ref: 180 passed) and unit-tested. This bug predates lab/013 and
+would have hit any prior campaign's candidate or oracle indistinguishably from
+a real regression; earlier campaigns simply didn't happen to trip it.
 
 ## Layer 3 — Memory that measures itself (M4+)
 

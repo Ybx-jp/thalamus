@@ -39,7 +39,8 @@ if [ "$is_background" = "true" ]; then
   exit 0
 fi
 
-project=$(basename "$workspace_root")
+# THALAMUS_PROJECT overrides the cwd-derived guess — see ../claude-code/session-start.sh.
+project="${THALAMUS_PROJECT:-$(basename "$workspace_root")}"
 scope="$(thalamus_resolve_scope)"
 session_id=$(printf '%s' "$input" | jq -r '.session_id // .conversation_id // empty')
 
