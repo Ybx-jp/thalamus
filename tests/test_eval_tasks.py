@@ -182,3 +182,60 @@ def test_the_shipped_battery_validates(monkeypatch):
     assert issues == []
     assert len(tasks) >= 2
     assert all(task.probes for task in tasks)
+
+
+# ---------------------------------------------------------------------------
+# The graded ladder (docs/04; eval-methodology exchange 06723ce1b78345a9)
+# ---------------------------------------------------------------------------
+
+
+def _laddered(**overrides):
+    data = dict(
+        id="t", title="t", overlap="memorization",
+        source={"kind": "replayed", "ref": "HEAD", "evidence": "e", "fix_ref": "abc123"},
+        prompt="Fix the thing.",
+        acceptance=[{"run": "a", "level": 1}, {"run": "b", "level": 2}],
+        probes=[{"id": "p", "kind": "diff_regex", "pattern": "zzz", "meaning": "m"}],
+    )
+    data.update(overrides)
+    return Task(**data)
+
+
+class TestLadderValidation:
+    def test_a_clean_ladder_validates(self):
+        assert _laddered().check() == []
+
+    def test_rung_referencing_the_memory_surface_is_refused(self):
+        """
+        The circularity guard. A rung a memory-off arm cannot reach is an arm
+        label wearing a score: grading it would make memory-on > memory-off
+        true by construction. Delivery belongs in `probes`, never the score.
+        """
+        task = _laddered(acceptance=[
+            {"run": "a", "level": 1},
+            {"run": "grep mcp__thalamus__ transcript.jsonl", "level": 2},
+        ])
+        issues = task.check()
+        assert any("no memory surface" in i for i in issues)
+
+    def test_gap_in_the_ladder_is_refused(self):
+        """A rung above a missing one is unreachable by the scoring rule."""
+        task = _laddered(acceptance=[{"run": "a", "level": 1}, {"run": "c", "level": 3}])
+        assert any("none at 2" in i for i in task.check())
+
+    def test_unbuilt_judge_rung_is_refused(self):
+        task = _laddered(acceptance=[{"run": "a", "level": 1}, {"run": "j", "level": 4}])
+        assert any("reserved" in i for i in task.check())
+
+    def test_replayed_task_without_fix_ref_is_refused(self):
+        """No positive anchor means the grading can't be checked against truth."""
+        task = _laddered(source={"kind": "replayed", "ref": "HEAD", "evidence": "e"})
+        assert any("fix_ref" in i for i in task.check())
+
+    def test_authored_task_with_fix_ref_is_refused(self):
+        """An authored task has no historical fix; anchors don't apply to it."""
+        task = _laddered(
+            source={"kind": "authored", "ref": "HEAD", "fix_ref": "abc123"},
+            overlap="transferable",
+        )
+        assert any("no historical fix" in i for i in task.check())

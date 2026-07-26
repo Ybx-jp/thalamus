@@ -32,14 +32,47 @@ OVERLAP_STRATA = ("memorization", "transferable")
 SOURCE_KINDS = ("replayed", "authored")
 PROBE_KINDS = ("transcript_regex", "diff_regex", "command")
 
+# The built rungs. 4 (judge) is reserved and deliberately unbuilt: judge
+# reliability is an open problem needing its own meta-evaluation, and the
+# nested-relation structure at level 3 supplies resolution without it.
+LADDER_LEVELS = (1, 2, 3)
+
+# Tokens that betray the memory surface. A rung mentioning one of these is
+# measuring whether the arm had memory, not whether its fix is good.
+ARM_REVEALING_TOKENS = (
+    "mcp__thalamus__",
+    "memory_recall",
+    "memory_open_threads",
+    "THALAMUS_SCOPE",
+    "ToolSearch",
+)
+
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 class Acceptance(BaseModel):
-    """One mechanical check: a command and the exit code that means pass."""
+    """One mechanical check on a rung of the ladder.
+
+    `level` is the ladder rung this check belongs to (docs/04): the run's score
+    is the highest level whose checks — and every lower level's — all pass.
+    Ordinal, not a weighted sum: there are no weights to fit, and adding a
+    cheap check to a rung cannot buy a higher score, which is the cardinality
+    bias a weighted sum imports (arXiv 2601.03525).
+    """
 
     run: str
     expect_exit: int = 0
+    level: int = Field(
+        1,
+        description=(
+            "1 = no-regression gate, 2 = targeted behavioral oracle, "
+            "3 = nested metamorphic relations. Level 4 (judge) is reserved. "
+            "Defaults to the gate: an undeclared check is the most basic "
+            "requirement, so a task that never opts into the ladder still "
+            "scores rung 1 rather than tripping the gap rule."
+        ),
+    )
+    name: str = Field("", description="Short label for the rung's report line")
 
 
 class Probe(BaseModel):
@@ -127,6 +160,35 @@ class Task(BaseModel):
         for i, acc in enumerate(self.acceptance):
             if not acc.run.strip():
                 issues.append(f"acceptance[{i}] has an empty run command")
+            if acc.level not in LADDER_LEVELS:
+                issues.append(
+                    f"acceptance[{i}] level {acc.level} is not a built rung "
+                    f"({', '.join(str(x) for x in LADDER_LEVELS)}; 4 is reserved "
+                    "for the judge and unbuilt)"
+                )
+            # Arm-independent reachability. A rung a memory-off arm cannot reach
+            # on its own merits is not a rung — it is an arm label wearing a
+            # score, and grading it would make memory-on > memory-off true by
+            # construction. The manipulation check (`probes`) is where delivery
+            # of the intervention is measured; it stays outside the score.
+            leaked = sorted({
+                token for token in ARM_REVEALING_TOKENS
+                if token in acc.run
+            })
+            if leaked:
+                issues.append(
+                    f"acceptance[{i}] references {', '.join(leaked)} — a ladder "
+                    "rung must be reachable by an arm with no memory surface. "
+                    "Delivery of the intervention belongs in `probes`, never in "
+                    "the score."
+                )
+        levels = {acc.level for acc in self.acceptance}
+        for missing in sorted(x for x in levels if x - 1 in LADDER_LEVELS and x - 1 not in levels):
+            issues.append(
+                f"ladder has a rung at level {missing} but none at {missing - 1} "
+                "— the score is the highest rung with every lower rung satisfied, "
+                "so a gap makes the upper rung unreachable"
+            )
         if not 1 <= len(self.probes) <= 3:
             issues.append(
                 f"{len(self.probes)} consequence probes — the design says 1–3 "

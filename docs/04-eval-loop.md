@@ -229,6 +229,69 @@ consultation/memory-on, the authoring session's UUID rendered into context by
 provenance line, not as the memorized diagnosis, so the probes are now
 validated as **surfacing** detectors and remain unvalidated as use signals.
 
+**The graded oracle — an ordinal ladder, built before the harder tasks.**
+Acceptance saturated at 18/18, so pass/fail cannot say whether a new task is
+*harder* or merely differently broken; the instrument has to come first, and
+"harder" is then a score drop it can show. Each `acceptance` check declares a
+`level`, and a run's **rung** is the highest level whose checks — and every
+lower level's — all pass:
+
+- **L1** no-regression gate (the pre-existing suite stays green)
+- **L2** targeted behavioral oracle for this bug
+- **L3** nested metamorphic relations R1 ⊂ R2 ⊂ R3, each strictly stronger
+- **L4** reserved for the judge, deliberately unbuilt
+
+Ordinal, not a weighted sum: there are no weights to tune after seeing results,
+and adding a cheap check to a rung cannot raise the score — the cardinality bias
+a weighted sum imports (arXiv 2601.03525). Test-pass *ratio* is rejected for a
+more general reason than its saturation here: coverage-family metrics say
+nothing about oracle quality (arXiv 2212.06118). Resolution inside a rung comes
+from **nesting relations by strictness, never counting them**, which would
+reimport the same bias; relations are behavioral rather than diff patterns, so
+they survive refactoring and cannot reward imitating the historical fix's names.
+
+**The circularity guard — rungs must be arm-independently reachable.** This
+battery's `probes` are *manipulation checks*: they measure whether the
+intervention was **delivered**, not whether it worked. `memo-surfaced` fires iff
+the arm called a thalamus tool (lab/016: 0 mismatches at n=18, 0/9 on
+memory-off controls) — an excellent delivery detector, and disqualifying as a
+rung for exactly that reason, since a memory-off arm cannot emit a UUID it never
+saw. Scoring it would make memory-on > memory-off true by construction. So
+probes stay outside the score (where `accepted` already kept them), and
+`Task.check()` refuses any rung whose command references the memory surface.
+The general failure it guards: *an oracle rung only the treatment arm can reach
+turns the experiment into a detector for its own intervention* — invisible under
+a binary verdict, which is why it appears only once a graded instrument is
+layered over measurements built for another purpose. `fix-name-convergence` is
+out of the ladder too, on separate grounds: scoring name convergence rewards
+imitation over correctness, so a better fix under a different name would score
+lower.
+
+**Anchors and mutants — validating the instrument before trusting it.** Every
+replayed task names `source.fix_ref`, the commit that actually fixed the bug, so
+the ladder can be graded against ground truth with no model in the loop: the
+**negative anchor** is the untouched worktree at `source.ref`, the **positive
+anchor** is the fix commit. The anchor pair is necessary but *not sufficient* —
+the saturated binary oracle already passes it, and a test the status quo passes
+cannot justify replacing the status quo; it establishes range coverage, not
+adequacy in the interior where all 18 observed arms live. The discrimination bar
+is instead a **mutant set** (4–6 per task) derived by degrading the known-good
+fix, with expected rungs committed in advance; the ladder must reproduce that
+ordering. Mutants are a **gate, never a graded kill-rate** — a kill-rate would
+be the pass ratio again. This is oracle-based test adequacy applied, not a new
+technique (arXiv 2212.06118, studied since 2007). Anchors carry a second value
+beyond validation: a probe that fires against the *negative* anchor is measuring
+the repo rather than the candidate, which mechanizes lab/011's competence-echo
+catch; and if the historical fix scores the same rung as every arm, the tasks
+are too easy rather than the instrument too coarse — a different remedy, and
+unobtainable any other way. **Anchor-based validation covers `replayed` tasks
+only**; `authored` tasks have no historical fix and need metamorphic relations
+instead, which is why declaring a `fix_ref` on one is refused.
+
+Design consultations: eval-methodology, exchanges
+`scope:main:exchange:c973e292d6ab45c7` → `df39a842a5ef4f27` →
+`06723ce1b78345a9` (each superseding the prior where it changed).
+
 **Open: the battery, not the runner, is the bottleneck (lab/014, confirmed
 lab/015–016).** Acceptance saturated at **18/18 across sonnet, fable, and opus
 over two replicates** — a battery ceiling, not a model ceiling, so no memory

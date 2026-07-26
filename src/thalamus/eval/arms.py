@@ -456,6 +456,8 @@ def evaluate_acceptance(task: Task, worktree: Path, timeout: int = 900) -> list[
         passed = exit_code == acc.expect_exit
         results.append({
             "run": acc.run.strip().splitlines()[0][:80],
+            "level": acc.level,
+            "name": acc.name,
             "exit": exit_code,
             "passed": passed,
             # Only a *failure* can be an infra fault. A passing command that
@@ -464,6 +466,32 @@ def evaluate_acceptance(task: Task, worktree: Path, timeout: int = 900) -> list[
             "tail": tail,
         })
     return results
+
+
+def ladder_score(acceptance: list[dict]) -> int:
+    """The run's rung: highest level whose checks, and all lower ones, pass.
+
+    Ordinal and lexicographic (docs/04, eval-methodology exchange
+    `scope:main:exchange:06723ce1b78345a9`). Two properties earn the shape:
+    adding a cheap check to a rung cannot raise the score, so there is no
+    cardinality bias to correct (arXiv 2601.03525); and there are no weights,
+    so nothing about the scale can be tuned after seeing results.
+
+    A rung with no checks declared is not "satisfied by default" — it is absent,
+    and the ladder stops below it. Scoring an undeclared rung as passed would
+    hand a task a high score for having written nothing.
+    """
+    by_level: dict[int, list[dict]] = {}
+    for entry in acceptance:
+        by_level.setdefault(entry.get("level", 1), []).append(entry)
+    score = 0
+    for level in sorted(by_level):
+        if level != score + 1:
+            break  # a gap: the rung above it is unreachable
+        if not all(entry["passed"] for entry in by_level[level]):
+            break
+        score = level
+    return score
 
 
 def evaluate_probes(
@@ -590,6 +618,16 @@ def run_arm(
         record["accepted"] = bool(record["acceptance"]) and all(
             a["passed"] for a in record["acceptance"]
         )
+        # The graded endpoint. `accepted` stays as the binary it always was so
+        # lab/011-016 records remain comparable, but it is the saturated
+        # measure (18/18) the ladder exists to replace.
+        record["rung"] = ladder_score(record["acceptance"])
+        # Probes are the *manipulation check* — did the intervention reach the
+        # arm — never part of the score. memo-surfaced fires iff the arm called
+        # a thalamus tool (lab/016, 0 mismatches at n=18), which makes it an
+        # excellent delivery detector and a disqualifying one as an outcome: a
+        # memory-off arm cannot emit a UUID it never saw, so scoring it would
+        # make memory-on > memory-off true by construction.
         record["probes"] = evaluate_probes(task, transcript, diff, worktree)
 
         # Flag, never exclude (arXiv 2111.03382, 2605.05564): the verdict above
@@ -696,14 +734,19 @@ def render_run(record: dict) -> str:
         f"  applied: mcp_removed={record.get('applied', {}).get('mcp_removed')}, "
         f"stripped={len(record.get('applied', {}).get('stripped_hooks', []))} hook(s)",
     ]
-    for acc in record.get("acceptance", []):
+    for acc in sorted(record.get("acceptance", []), key=lambda a: a.get("level", 1)):
         if acc["passed"]:
             mark = "PASS"
         elif acc.get("infra_fault"):
             mark = f"INFRA-FAULT[{acc['infra_fault']}]"
         else:
             mark = "FAIL"
-        lines.append(f"  acceptance {mark} (exit {acc['exit']}): {acc['run']}")
+        label = f" {acc['name']}" if acc.get("name") else ""
+        lines.append(
+            f"  L{acc.get('level', 1)}{label} {mark} (exit {acc['exit']}): {acc['run']}"
+        )
+    if "rung" in record:
+        lines.append(f"  => RUNG {record['rung']}")
     if record.get("void"):
         # No oracle ran, so "NOT ACCEPTED" would invent a verdict.
         lines.append(f"  => VOID ({record.get('infra_fault')}) — no candidate work, not graded")

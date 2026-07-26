@@ -27,8 +27,12 @@ prompt: |
   changing what counts as a keyword.
 
 acceptance:
+  # L1 — no-regression gate: the pre-existing suite must stay green.
   - run: "uv run pytest -q"
     expect_exit: 0
+    level: 1
+    name: no-regression
+  # L2 — targeted behavioral oracle for this bug.
   - run: |
       uv run python - <<'PYEOF'
       # Behavioral oracle, implementation-agnostic: capitalized-term recall
@@ -58,6 +62,8 @@ acceptance:
 # nothing. Both tokens below are verified absent from ref 9f28895
 # (`git grep`) and from this prompt; they exist only in the memory graph
 # once the authoring session (accfe19d) distills.
+    level: 2
+    name: behavioral
 probes:
   - id: memo-surfaced
     kind: transcript_regex
