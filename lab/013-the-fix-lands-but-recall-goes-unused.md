@@ -197,11 +197,19 @@ had no memo to converge *from*.
    coverage the Claude Code hooks have had — and an added assertion in
    `tests/test_cursor_hooks.py`). Its *effect* is unmeasured: that is what the
    fourth campaign in item 5 tests.
-4. **Runner hardening, still open (carried from lab/012):** collection/sync
-   failures should be caught and reported distinctly from a genuine test
-   failure — right now both would render identically as "pytest FAIL" in the
-   record, burying an infra fault inside what looks like a candidate defect.
-   Same category as `auth_failed` deserving its own stamp.
+4. **Runner hardening (carried from lab/012) — done 2026-07-26.** Collection/sync
+   failures rendered identically to a genuine test failure, burying an infra
+   fault inside what looked like a candidate defect; `auth_failed` deserved its
+   own stamp for the same reason. Both now classified in `arms.py`
+   (`classify_infra_fault`, `classify_auth_fault`), stamped on the record as
+   `infra_faults`/`attributable`, rendered as `INFRA-FAULT[...]` rather than
+   `FAIL`, with `AuthFault` halting the campaign instead of launching the next
+   arm against dead credentials. Grounded in CI's legitimate-vs-false-alert
+   literature (arXiv 2111.03382, 2605.05564; docs/11 §2a) — flag, never
+   exclude. Plus a cross-arm signal those campaigns lacked: an acceptance
+   command failing *identically in both arms* is flagged as probable harness
+   fault, which is precisely the shape Finding 3 had and which took a day and
+   operator pushback to catch by hand.
 5. **A fourth campaign, run under all three fixes, is the first one whose
    reader numbers (not just consultation's) can be trusted** — and whether
    Finding 2 recurs under a corrected `SessionStart` instruction is the

@@ -801,6 +801,7 @@ def _cmd_eval(args, eval_parser):
             sys.exit(1)
         repo = Path(__file__).resolve().parents[2]
         accepted = True
+        records = []
         for index, arm in enumerate(arm_list):
             try:
                 record = arms_mod.run_arm(
@@ -810,12 +811,26 @@ def _cmd_eval(args, eval_parser):
                     timeout=args.timeout or arms_mod.DEFAULT_TIMEOUT,
                     full_auto=args.full_auto, keep=args.keep, order_index=index,
                 )
+            except arms_mod.AuthFault as exc:
+                # Every arm after a credential death is void; continuing would
+                # only manufacture records that look like data (lab/012).
+                print(f"\nCAMPAIGN STOPPED — {exc}", file=sys.stderr)
+                remaining = [a.spec for a in arm_list[index + 1:]]
+                if remaining:
+                    print(f"Not run: {', '.join(remaining)}. Re-auth "
+                          "(`claude -p \"say ok\"`), then re-run this campaign.",
+                          file=sys.stderr)
+                sys.exit(3)
             except arms_mod.ArmError as exc:
                 print(f"{task.id} · {arm.spec}: {exc}", file=sys.stderr)
                 sys.exit(1)
+            records.append(record)
             print(arms_mod.render_run(record))
             print()
             accepted = accepted and record.get("accepted", False)
+        campaign_note = arms_mod.render_campaign_faults(records)
+        if campaign_note:
+            print(campaign_note)
         print(f"Records appended to {arms_mod.RUNS_BASE / 'runs.jsonl'}")
         if not accepted:
             sys.exit(2)

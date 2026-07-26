@@ -287,6 +287,33 @@ reader task's ref: 180 passed) and unit-tested. This bug predates lab/013 and
 would have hit any prior campaign's candidate or oracle indistinguishably from
 a real regression; earlier campaigns simply didn't happen to trip it.
 
+**Infra faults are now classified, not left to be noticed by hand.** Both bugs
+above cost a campaign each because the runner rendered an infrastructure fault
+exactly like a candidate defect. The runner now names the difference, following
+CI research on separating legitimate failures from ones the change under test
+cannot explain (arXiv 2111.03382, 2605.05564 — [11 §2a](11-related-work.md)):
+
+- `classify_infra_fault` reads the failure *symptom* — missing non-first-party
+  module, collection error, exit 127 — and stamps it on the acceptance entry.
+  A missing **first-party submodule** is deliberately excluded: a candidate that
+  deletes `thalamus/reader.py` really did break `thalamus.reader`, and calling
+  that infra would excuse a real defect. Unrecognized failures stay candidate
+  defects.
+- `classify_auth_fault` separates the two credential-death shapes lab/012 had
+  to split by hand: an expiry on the closing turn leaves a real worktree the
+  oracles can still grade (stamped, graded, campaign stopped), while an expiry
+  before any work leaves nothing (1 turn, $0.00 — stamped `void`, *not* graded,
+  campaign stopped). `is_error` alone is not the signal; every turn-capped run
+  carries it too. `AuthFault` halts the campaign rather than launching the next
+  arm against dead credentials.
+- Records carry `infra_faults` and `attributable`. Nothing is ever dropped —
+  the verdict stands as measured and the stamp says whether it can be read as a
+  fact about the candidate.
+- `render_campaign_faults` adds the cross-arm signal a single record cannot
+  see: an acceptance command failing **identically in every arm** is usually
+  the harness, since the arms are different candidate sessions. Reported as
+  suggestive, not conclusive — a task nobody can solve looks the same.
+
 ## Layer 3 — Memory that measures itself (M4+)
 
 Close the loop: utility signals feed back into graph maintenance.

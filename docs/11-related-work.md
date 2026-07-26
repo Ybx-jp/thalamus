@@ -116,6 +116,43 @@ Benchmarks *measure*; they do not *self-maintain*. The correct framing is theref
 "not a benchmark — a live self-maintenance loop that the offline benchmarks above
 complement," and we cite them as the offline half we extend.
 
+### 2a. Harness validity — is this failure about the candidate?
+
+A counterfactual arm grades a candidate by running commands in a disposable
+worktree, so every verdict inherits the harness's own reliability. CI research
+has this problem in its mature form and separates a failure the change under
+test explains from one it cannot.
+
+- **Discerning Legitimate Failures From False Alerts: A Study of Chromium's
+  Continuous Integration** (arXiv 2111.03382, in the graph) — Fair classifies
+  test failures into false alerts and legitimate failures from *failure
+  symptoms and test artefacts*, explicitly to avoid the industry default of
+  re-running failing tests to detect flakiness.
+- **Is this Build Failure Related to my Patch? An Empirical Study of Unrelated
+  Build Failures in Continuous Integration** (arXiv 2605.05564, in the graph) —
+  77,354 CI build failures across seven Apache projects; PU-learning models
+  identify failures unlikely to be caused by the developer's patch, with
+  *repeated error messages* among the strongest features.
+
+**How the runner instantiates this.** `arms.classify_infra_fault` reads the
+failure symptom rather than re-running — a rerun is not even available here,
+since the worktree is destroyed after the run, so it would not be the same
+experiment. Faulted runs are **flagged, never excluded**: the verdict stands as
+measured and an `attributable: false` stamp rides beside it, matching both
+papers' attribute-don't-delete stance and docs/04's rule that a measurement the
+runner distrusts must be visible rather than absent. The arm-pair sharpens
+2605.05564's repeated-error feature: two arms are two different candidate
+sessions against the same ref, so a failure reproducing identically in both is
+usually the harness — `render_campaign_faults` reports that, hedged, because a
+task no candidate can solve looks the same from here.
+
+**Named divergence.** Both papers *learn* a classifier (Fair's ML model; PU
+learning) because CI-scale symptoms are ambiguous and plentiful. A campaign is
+n=4 with a handful of hand-root-caused signatures and no rerun budget to save,
+so this is deterministic symptom matching — the same distinction at a different
+scale, deliberately conservative: an unrecognized failure stays a candidate
+defect, because falsely calling one "infra" would excuse a real regression.
+
 ### 2b. Cost — the denominator
 
 Grading memory on utility alone is half a fraction; the field already grades the

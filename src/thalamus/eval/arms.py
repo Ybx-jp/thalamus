@@ -66,6 +66,88 @@ class ArmError(RuntimeError):
     pass
 
 
+class AuthFault(ArmError):
+    """Headless credentials died. Distinct because it must stop the campaign.
+
+    lab/012: an OAuth token expired mid-campaign and the runner cheerfully
+    launched the next arm against dead credentials, recording a 1-turn/$0.00
+    run that is indistinguishable at a glance from a genuine 1-turn success.
+    Every arm after the expiry is void, so the campaign must halt, not
+    continue producing records that look like data.
+    """
+
+
+# ---------------------------------------------------------------------------
+# Infra-fault classification
+# ---------------------------------------------------------------------------
+#
+# Prior work: CI research separates *legitimate* failures from failures the
+# change under test cannot explain — "false alerts" in Fair (arXiv 2111.03382),
+# "unrelated build failures" in the Apache PU-learning study (arXiv 2605.05564).
+# Two things transfer directly. First, both classify from the **failure
+# symptom** (error text, failure properties) rather than by re-running, which
+# is exactly the affordance available here — an arm's worktree is destroyed
+# after the run, so a rerun would not even be the same experiment. Second, both
+# *flag and attribute*; neither deletes the record. A flagged run stays in
+# runs.jsonl with its verdict intact and an `attributable: false` stamp beside
+# it, because the whole point of docs/04's discipline is that a measurement the
+# runner distrusts must be visible, not absent.
+#
+# Where this instantiation diverges, and why: both papers learn a classifier
+# (Fair's ML model, the study's PU learning) because at CI scale the symptoms
+# are ambiguous and the label set is huge. Here the fault signatures are few,
+# known, and deterministic — each was root-caused by hand in lab/012-013 — and
+# a campaign is n=4, so there is nothing to learn from and no rerun budget to
+# save. Deterministic symptom matching is the same idea at a different scale,
+# not a weaker version of it.
+
+AUTH_FAULT_MARKER = "Failed to authenticate"
+
+# Missing *first-party* submodules are excluded deliberately: a candidate that
+# deletes or renames `thalamus/reader.py` genuinely breaks `thalamus.reader`,
+# and calling that infra would excuse a real defect. A missing third-party
+# distribution — or the top-level `thalamus` package itself, which the worktree
+# venv sync installs and no candidate edit can uninstall — is a fault the
+# candidate's diff cannot explain (2605.05564's "unrelated to my patch").
+_MISSING_MODULE = re.compile(r"No module named ['\"]([\w.]+)['\"]")
+_COLLECTION_ERROR = re.compile(r"errors? during collection|INTERNALERROR|"
+                               r"ImportError while loading conftest")
+
+
+def classify_infra_fault(tail: str, exit_code: int | None) -> str | None:
+    """Name the infra fault a failure tail betrays, or None if it looks genuine.
+
+    Conservative by construction: an unrecognized failure is reported as a
+    candidate defect, which is the pre-existing behavior. Only signatures
+    actually observed and root-caused in a campaign are encoded.
+    """
+    if exit_code == 127:
+        return "command_not_found"
+    missing = _MISSING_MODULE.findall(tail)
+    if missing and not any(m.startswith("thalamus.") for m in missing):
+        return "missing_dependency"
+    if _COLLECTION_ERROR.search(tail):
+        return "collection_error"
+    return None
+
+
+def classify_auth_fault(agent: AgentRun) -> str | None:
+    """Distinguish the two auth-expiry shapes lab/012 had to separate by hand.
+
+    An expiry on the *closing* turn leaves a real worktree behind — lab/012
+    confirmed from the raw transcript that the candidate's fixtures were
+    already passing when the token died, so the oracles run against that state
+    are trustworthy and only the model's own summary is lost. An expiry before
+    any work leaves nothing: 1 turn, $0.00, ~100ms. Both must stop the
+    campaign; only the second voids its own record.
+    """
+    if AUTH_FAULT_MARKER not in agent.result:
+        return None
+    if agent.num_turns <= 1 and agent.cost_usd == 0.0:
+        return "auth_failed_void"
+    return "auth_failed_at_close"
+
+
 @dataclass
 class Arm:
     """A parsed arm spec: `memory-on`, `memory-off`, `scoping-degraded:<scope>`."""
@@ -311,10 +393,14 @@ def evaluate_acceptance(task: Task, worktree: Path, timeout: int = 900) -> list[
             tail = (proc.stdout + proc.stderr)[-400:]
         except subprocess.TimeoutExpired:
             exit_code, tail = None, f"timed out after {timeout}s"
+        passed = exit_code == acc.expect_exit
         results.append({
             "run": acc.run.strip().splitlines()[0][:80],
             "exit": exit_code,
-            "passed": exit_code == acc.expect_exit,
+            "passed": passed,
+            # Only a *failure* can be an infra fault. A passing command that
+            # happens to print one of these strings is still a pass.
+            "infra_fault": None if passed else classify_infra_fault(tail, exit_code),
             "tail": tail,
         })
     return results
@@ -402,6 +488,20 @@ def run_arm(
         record["turn_capped"] = agent.num_turns > max_turns
         record["wall_seconds"] = round(time.monotonic() - started, 1)
 
+        # `is_error` alone is NOT an auth signal — every turn-capped run in
+        # runs.jsonl carries it too. The result string is the discriminator.
+        auth_fault = classify_auth_fault(agent)
+        if auth_fault == "auth_failed_void":
+            # No candidate work happened; grading an untouched worktree would
+            # manufacture a verdict out of nothing.
+            record["infra_fault"] = auth_fault
+            record["attributable"] = False
+            record["void"] = True
+            raise AuthFault(
+                f"{task.id} · {arm.spec}: headless auth died before any work "
+                "(1 turn, $0.00) — record stamped void, campaign stopped"
+            )
+
         diff = _worktree_diff(worktree)
         record["diff_lines"] = len(diff.splitlines())
         transcript = transcript_text(worktree, agent.session_id)
@@ -411,6 +511,29 @@ def run_arm(
             a["passed"] for a in record["acceptance"]
         )
         record["probes"] = evaluate_probes(task, transcript, diff, worktree)
+
+        # Flag, never exclude (arXiv 2111.03382, 2605.05564): the verdict above
+        # stays exactly as measured; `attributable` says whether it can be read
+        # as a fact about the *candidate*. lab/013 lost a whole task-pair to a
+        # `uv run pytest` failure that rendered identically to a real
+        # regression, so this distinction has to live in the record itself.
+        faults = sorted({
+            a["infra_fault"] for a in record["acceptance"] if a["infra_fault"]
+        })
+        if auth_fault:
+            # Oracles still ran and are trustworthy here (lab/012 verified the
+            # worktree state against the raw transcript) — only the model's
+            # closing summary was lost. The stamp records the caveat; the
+            # campaign still stops, below.
+            faults.append(auth_fault)
+        record["infra_faults"] = faults
+        record["attributable"] = not faults
+        if auth_fault:
+            raise AuthFault(
+                f"{task.id} · {arm.spec}: headless auth died on the closing "
+                f"turn after {agent.num_turns} turns — this record's oracles "
+                "are trustworthy, but the campaign is stopped"
+            )
     finally:
         record["kept"] = keep
         if not keep:
@@ -431,6 +554,64 @@ def _worktree_diff(worktree: Path) -> str:
     return diff
 
 
+# Two things genuinely differ between arms of the same pair and must be
+# normalized away before comparing failure shapes: the worktree path (it
+# carries the arm name and a timestamp) and pytest's duration line. Nothing
+# else — blanket digit-stripping would collapse `assert 0 == 3` and
+# `assert 1 == 3` into the same shape, erasing the very signal that tells two
+# candidates' failures apart.
+_VOLATILE_PATH = re.compile(r"(?:/[\w.\-]+)+/?")
+_VOLATILE_DURATION = re.compile(r"\d+\.\d+s\b")
+
+
+def _normalize_tail(tail: str) -> str:
+    """Collapse a failure tail to its shape, so two arms' failures can be compared."""
+    shape = _VOLATILE_PATH.sub("PATH", tail)
+    shape = _VOLATILE_DURATION.sub("Ns", shape)
+    return re.sub(r"\s+", " ", shape).strip()
+
+
+def render_campaign_faults(records: list[dict]) -> str:
+    """Cross-arm fault signals — what a single record cannot see.
+
+    Grounded in the Apache study's finding that *repeated error messages* are
+    among the strongest features for identifying failures unrelated to the
+    change under test (arXiv 2605.05564). The arm-pair gives a sharper version
+    of that signal than CI has: two arms are two different candidate sessions
+    writing different code against the same ref, so a failure that reproduces
+    **identically in every arm** is very unlikely to be about the candidates.
+    lab/013's reader pair was exactly this — the same
+    `ModuleNotFoundError: No module named 'gremlin_python'` in both arms — and
+    it was written up as a candidate defect for a day before being caught by
+    hand.
+
+    Suggestive, never conclusive, and reported as such: a task whose arms all
+    fail the same genuine way (a fix nobody found) looks the same from here.
+    """
+    graded = [r for r in records if r.get("acceptance") and not r.get("void")]
+    if len(graded) < 2:
+        return ""
+    lines = []
+    for i, acc in enumerate(graded[0]["acceptance"]):
+        failed_everywhere = all(
+            len(r["acceptance"]) > i and not r["acceptance"][i]["passed"]
+            for r in graded
+        )
+        if not failed_everywhere:
+            continue
+        shapes = {_normalize_tail(r["acceptance"][i]["tail"]) for r in graded}
+        if len(shapes) == 1:
+            lines.append(
+                f"  `{acc['run']}` failed identically in all {len(graded)} arms "
+                "— failures that reproduce across arms are usually the harness, "
+                "not the candidates (arXiv 2605.05564). Check before reading "
+                "this task's acceptance column as a result."
+            )
+    if not lines:
+        return ""
+    return "CROSS-ARM FAULT SIGNAL\n" + "\n".join(lines)
+
+
 def render_run(record: dict) -> str:
     agent = record.get("agent", {})
     lines = [
@@ -445,9 +626,25 @@ def render_run(record: dict) -> str:
         f"stripped={len(record.get('applied', {}).get('stripped_hooks', []))} hook(s)",
     ]
     for acc in record.get("acceptance", []):
-        mark = "PASS" if acc["passed"] else "FAIL"
+        if acc["passed"]:
+            mark = "PASS"
+        elif acc.get("infra_fault"):
+            mark = f"INFRA-FAULT[{acc['infra_fault']}]"
+        else:
+            mark = "FAIL"
         lines.append(f"  acceptance {mark} (exit {acc['exit']}): {acc['run']}")
+    if record.get("void"):
+        # No oracle ran, so "NOT ACCEPTED" would invent a verdict.
+        lines.append(f"  => VOID ({record.get('infra_fault')}) — no candidate work, not graded")
+        return "\n".join(lines)
     verdict = "ACCEPTED" if record.get("accepted") else "NOT ACCEPTED"
+    if record.get("infra_faults"):
+        # Loud on purpose: the failure mode this guards against is an infra
+        # fault read as a candidate defect (lab/013).
+        verdict += (
+            f" — INFRA FAULT ({', '.join(record['infra_faults'])}), "
+            "NOT attributable to the candidate"
+        )
     lines.append(f"  => {verdict}")
     for probe in record.get("probes", []):
         mark = "hit " if probe["hit"] else "miss"

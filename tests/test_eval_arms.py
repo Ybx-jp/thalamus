@@ -388,3 +388,208 @@ def test_run_agent_threads_scope_and_project_into_the_subprocess_env(tmp_path, m
 
     assert captured["env"]["THALAMUS_SCOPE"] == "literature"
     assert captured["env"]["THALAMUS_PROJECT"] == "thalamus"
+
+
+# ---------------------------------------------------------------------------
+# Infra-fault classification (lab/012-013; arXiv 2111.03382, 2605.05564)
+# ---------------------------------------------------------------------------
+#
+# The failure texts below are verbatim shapes from ~/.thalamus/counterfactuals/
+# runs.jsonl and the lab/013 write-up, not invented strings — a classifier
+# tested only against strings its author imagined is green and ungrounded.
+
+AUTH_TAIL = "Failed to authenticate: OAuth session expired and could not be refreshed"
+COLLECTION_TAIL = (
+    "ImportError while importing test module '/w/tests/test_reader.py'.\n"
+    "ModuleNotFoundError: No module named 'gremlin_python'\n"
+    "!!!!!! Interrupted: 22 errors during collection !!!!!!"
+)
+
+
+class TestInfraFaultClassification:
+    def test_missing_third_party_dependency_is_infra(self):
+        """The lab/013 fault: a dep the candidate's diff cannot have removed."""
+        assert arms.classify_infra_fault(COLLECTION_TAIL, 2) == "missing_dependency"
+
+    def test_missing_first_party_submodule_is_a_candidate_defect(self):
+        """
+        A candidate that deletes or renames thalamus/reader.py genuinely
+        breaks `thalamus.reader`. Calling that infra would excuse a real
+        defect — the exact error the classification must not make.
+        """
+        tail = "ModuleNotFoundError: No module named 'thalamus.reader'"
+        assert arms.classify_infra_fault(tail, 1) is None
+
+    def test_missing_top_level_thalamus_package_is_infra(self):
+        """
+        `No module named 'thalamus'` is the un-synced-venv symptom
+        (sync_worktree_env's docstring): the package is installed by the
+        worktree sync, not authored by the candidate.
+        """
+        tail = "ModuleNotFoundError: No module named 'thalamus'"
+        assert arms.classify_infra_fault(tail, 2) == "missing_dependency"
+
+    def test_ordinary_test_failure_is_not_reclassified(self):
+        """Conservative by construction: unrecognized failure = candidate defect."""
+        tail = "FAILED tests/test_reader.py::test_case_insensitive - assert 0 == 3\n1 failed"
+        assert arms.classify_infra_fault(tail, 1) is None
+
+    def test_command_not_found_is_infra(self):
+        assert arms.classify_infra_fault("uv: command not found", 127) == "command_not_found"
+
+    def test_auth_fault_shapes_are_distinguished(self):
+        """
+        lab/012 had to separate these two by hand from the raw transcripts.
+        A closing-turn expiry leaves a real worktree the oracles can grade; a
+        pre-work expiry leaves nothing (1 turn, $0.00).
+        """
+        at_close = AgentRun("s", AUTH_TAIL, 0.91, 197000, 33, True)
+        void = AgentRun("s", AUTH_TAIL, 0.0, 130, 1, True)
+        capped = AgentRun("s", "", 1.67, 200000, 41, True)
+        assert arms.classify_auth_fault(at_close) == "auth_failed_at_close"
+        assert arms.classify_auth_fault(void) == "auth_failed_void"
+        # is_error alone is NOT an auth signal — every capped run carries it.
+        assert arms.classify_auth_fault(capped) is None
+
+    def test_acceptance_stamps_the_fault_but_keeps_the_verdict(self, tmp_path):
+        """
+        Flag, never exclude (arXiv 2111.03382/2605.05564): `passed` stays
+        exactly as measured; the fault rides alongside it.
+        """
+        task = _task(acceptance=[{"run": f"echo \"{COLLECTION_TAIL}\" >&2; exit 2"}])
+        results = evaluate_acceptance(task, tmp_path)
+        assert results[0]["passed"] is False
+        assert results[0]["infra_fault"] == "missing_dependency"
+
+    def test_passing_command_is_never_an_infra_fault(self, tmp_path):
+        """A command that prints the words but exits 0 is still a pass."""
+        task = _task(acceptance=[{"run": "echo 'No module named X'; exit 0"}])
+        results = evaluate_acceptance(task, tmp_path)
+        assert results[0]["passed"] is True
+        assert results[0]["infra_fault"] is None
+
+
+class TestRunArmFaultStamping:
+    def _stub(self, monkeypatch, agent):
+        monkeypatch.setattr(arms, "sync_worktree_env", lambda *a, **k: None)
+        monkeypatch.setattr(arms, "run_agent", lambda *a, **k: agent)
+        monkeypatch.setattr(arms, "transcript_text", lambda *a, **k: "")
+
+    def test_infra_faulted_run_is_recorded_as_not_attributable(self, tmp_path, monkeypatch):
+        repo = _git_repo(tmp_path)
+        task = _task(acceptance=[{"run": f"echo \"{COLLECTION_TAIL}\" >&2; exit 2"}])
+        self._stub(monkeypatch, AgentRun("s1", "done", 0.1, 3000, 5, False))
+
+        record = run_arm(repo, task, parse_arm("memory-off", SCOPES),
+                         runs_base=tmp_path / "runs")
+
+        assert record["accepted"] is False
+        assert record["attributable"] is False
+        assert record["infra_faults"] == ["missing_dependency"]
+        rendered = render_run(record)
+        assert "INFRA-FAULT[missing_dependency]" in rendered
+        assert "NOT attributable to the candidate" in rendered
+
+    def test_clean_run_is_attributable(self, tmp_path, monkeypatch):
+        repo = _git_repo(tmp_path)
+        self._stub(monkeypatch, AgentRun("s2", "done", 0.1, 3000, 5, False))
+
+        record = run_arm(repo, _task(), parse_arm("memory-off", SCOPES),
+                         runs_base=tmp_path / "runs")
+
+        assert record["attributable"] is True
+        assert record["infra_faults"] == []
+        assert "INFRA FAULT" not in render_run(record)
+
+    def test_auth_death_before_any_work_voids_the_record_and_stops(self, tmp_path, monkeypatch):
+        """
+        lab/012's void arms: 1 turn, $0.00. The runner must refuse to grade an
+        untouched worktree and must raise AuthFault so the campaign halts
+        rather than launching the next arm against dead credentials.
+        """
+        repo = _git_repo(tmp_path)
+        self._stub(monkeypatch, AgentRun("s3", AUTH_TAIL, 0.0, 130, 1, True))
+
+        with pytest.raises(arms.AuthFault):
+            run_arm(repo, _task(), parse_arm("memory-off", SCOPES),
+                    runs_base=tmp_path / "runs")
+
+        # The record still lands — a stopped campaign must leave evidence.
+        record = json.loads((tmp_path / "runs" / "runs.jsonl").read_text().strip())
+        assert record["void"] is True
+        assert record["infra_fault"] == "auth_failed_void"
+        assert record["attributable"] is False
+        assert "acceptance" not in record
+        assert "VOID" in render_run(record)
+
+    def test_auth_death_at_close_still_grades_then_stops(self, tmp_path, monkeypatch):
+        """
+        lab/012 verified from the raw transcript that a closing-turn expiry
+        leaves real work behind, so the oracles run against it are
+        trustworthy — grade it, stamp it, then stop the campaign.
+        """
+        repo = _git_repo(tmp_path)
+        self._stub(monkeypatch, AgentRun("s4", AUTH_TAIL, 0.91, 197000, 33, True))
+
+        with pytest.raises(arms.AuthFault):
+            run_arm(repo, _task(), parse_arm("memory-off", SCOPES),
+                    runs_base=tmp_path / "runs")
+
+        record = json.loads((tmp_path / "runs" / "runs.jsonl").read_text().strip())
+        assert record.get("void") is not True
+        assert record["acceptance"][0]["passed"] is True
+        assert record["infra_faults"] == ["auth_failed_at_close"]
+        assert record["attributable"] is False
+
+
+class TestCrossArmFaultSignal:
+    def _record(self, tail, passed=False):
+        return {"acceptance": [{"run": "uv run pytest -q", "passed": passed,
+                                "infra_fault": None, "tail": tail, "exit": 1}]}
+
+    def test_identical_failure_across_arms_is_flagged(self):
+        """
+        lab/013's reader pair: both arms failed identically and it read as a
+        candidate defect for a day. Two arms are two different candidates, so
+        an identical failure is usually the harness (arXiv 2605.05564).
+        """
+        out = arms.render_campaign_faults([
+            self._record("No module named 'gremlin_python' — 22 errors"),
+            self._record("No module named 'gremlin_python' — 22 errors"),
+        ])
+        assert "CROSS-ARM FAULT SIGNAL" in out
+        assert "uv run pytest -q" in out
+
+    def test_differing_failures_are_not_flagged(self):
+        """Different candidates failing different ways is ordinary evidence."""
+        out = arms.render_campaign_faults([
+            self._record("assert 0 == 3"),
+            self._record("assert 1 == 3"),
+        ])
+        assert out == ""
+
+    def test_a_passing_arm_clears_the_signal(self):
+        out = arms.render_campaign_faults([
+            self._record("boom"), self._record("boom", passed=True),
+        ])
+        assert out == ""
+
+    def test_void_records_are_not_compared(self):
+        """A void arm never ran an oracle; pairing against it means nothing."""
+        void = {"void": True, "infra_fault": "auth_failed_void"}
+        assert arms.render_campaign_faults([self._record("boom"), void]) == ""
+
+    def test_same_fault_through_different_worktree_paths_still_matches(self):
+        """
+        The two arms of a pair run in differently-named worktrees
+        (<task>--memory-on--<ts> vs --memory-off--<ts>), so the same infra
+        failure arrives carrying different paths and durations. Normalizing
+        exactly those away is what lets the signal fire at all.
+        """
+        out = arms.render_campaign_faults([
+            self._record("ImportError /wt/reader--memory-on--20260726T01Z/tests/t.py\n"
+                         "No module named 'gremlin_python'\n22 errors in 1.20s"),
+            self._record("ImportError /wt/reader--memory-off--20260726T09Z/tests/t.py\n"
+                         "No module named 'gremlin_python'\n22 errors in 3.44s"),
+        ])
+        assert "CROSS-ARM FAULT SIGNAL" in out
