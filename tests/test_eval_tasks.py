@@ -224,7 +224,8 @@ class TestLadderValidation:
         assert any("none at 2" in i for i in task.check())
 
     def test_unbuilt_judge_rung_is_refused(self):
-        task = _laddered(acceptance=[{"run": "a", "level": 1}, {"run": "j", "level": 4}])
+        """Level 6 is the judge: reserved, and refused until it is built."""
+        task = _laddered(acceptance=[{"run": "a", "level": 1}, {"run": "j", "level": 6}])
         assert any("reserved" in i for i in task.check())
 
     def test_replayed_task_without_fix_ref_is_refused(self):

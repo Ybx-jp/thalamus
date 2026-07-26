@@ -32,10 +32,18 @@ OVERLAP_STRATA = ("memorization", "transferable")
 SOURCE_KINDS = ("replayed", "authored")
 PROBE_KINDS = ("transcript_regex", "diff_regex", "command")
 
-# The built rungs. 4 (judge) is reserved and deliberately unbuilt: judge
-# reliability is an open problem needing its own meta-evaluation, and the
-# nested-relation structure at level 3 supplies resolution without it.
-LADDER_LEVELS = (1, 2, 3)
+# The built rungs: 1 no-regression gate, 2 behavioral oracle, then one rung per
+# nested metamorphic relation (3=R1, 4=R2, 5=R3, each strictly implying the one
+# below). Successive rungs are how nested relations supply resolution — and this
+# is *not* the counting that would reimport the cardinality bias, precisely
+# because the relations nest: a further relation can only extend the top of the
+# ladder, never let a cheap check buy a rung.
+#
+# 6 (judge) is reserved and deliberately unbuilt: judge reliability is an open
+# problem needing its own meta-evaluation, and nesting supplies resolution
+# without it.
+LADDER_LEVELS = (1, 2, 3, 4, 5)
+JUDGE_LEVEL = 6
 
 # Tokens that betray the memory surface. A rung mentioning one of these is
 # measuring whether the arm had memory, not whether its fix is good.

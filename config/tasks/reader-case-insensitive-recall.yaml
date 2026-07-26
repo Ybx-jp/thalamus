@@ -64,6 +64,737 @@ acceptance:
 # once the authoring session (accfe19d) distills.
     level: 2
     name: behavioral
+  # L3-L5 — nested metamorphic relations, each strictly implying the one
+  # below. Authored under a held-out protocol from the bug report alone, by
+  # an agent denied the fix commit (8b70330), so they cannot re-encode the
+  # known solution. Behavioral, not syntactic: they survive refactoring and
+  # reward no helper name. Validated against ground truth — the negative
+  # anchor (9f28895, bug present) violates all three; the positive anchor
+  # (8b70330, the real fix) satisfies all three.
+  # R1 — a distinctive capitalized term the graph holds is recalled,
+  # and recall gives the same answer for its all-lowercase spelling.
+  # From the report: "the graph holds claims containing those exact terms".
+  - run: |
+      uv run python - <<'PYEOF'
+      import re
+      import sys
+
+      from gremlin_python.process.graph_traversal import __
+      from gremlin_python.process.traversal import P, TextP
+
+      from thalamus.substrate import reader
+      from thalamus.substrate.writer import close_connection, connect
+
+      MAIN = "main"
+      LIMIT = 10
+      PUNCT = "\"'`()[]{}<>,.;:!?"
+      WORD = re.compile(r"[A-Za-z][A-Za-z0-9-]{3,}\Z")
+
+
+      def one(v):
+          if isinstance(v, list):
+              return str(v[0]) if v else ""
+          return str(v) if v is not None else ""
+
+
+      def keys(results):
+          out = set()
+          for r in results:
+              sid = getattr(r, "session_id", "")
+              out.add(("session", sid) if sid else ("claim", getattr(r, "node_id", "")))
+          return out
+
+
+      def distinctive(w):
+          """A token no keyword rule could call a stopword: hyphen, digit, or camel seam."""
+          return (
+              "-" in w
+              or any(c.isdigit() for c in w)
+              or any(w[i].islower() and w[i + 1].isupper() for i in range(len(w) - 1))
+          )
+
+
+      def multipart(w):
+          """Splitting this token on its seams would yield 2+ tokens long enough to
+          count as keywords — so it is a probe that notices if a term gets split."""
+          parts = re.split(r"[-_]|(?<=[a-z0-9])(?=[A-Z])", w)
+          return len([p for p in parts if len(p) > 2]) >= 2
+
+
+      def tokens(texts, mixed_case=True):
+          out = set()
+          for text in texts:
+              for raw in text.split():
+                  w = raw.strip(PUNCT)
+                  if not WORD.fullmatch(w) or not distinctive(w):
+                      continue
+                  has_up = any(c.isupper() for c in w)
+                  has_lo = any(c.islower() for c in w)
+                  if mixed_case and not (has_up and has_lo):
+                      continue
+                  if not mixed_case and has_up:
+                      continue
+                  out.add(w)
+          return out
+
+
+      def load(g):
+          scopes = sorted({one(s) for s in g.V().has_label("Claim").values("scope").dedup().to_list()})
+          know = [s for s in scopes if s != MAIN]
+          summaries = [
+              one(r.get("summary"))
+              for r in g.V().has_label("Session").has("scope", MAIN).value_map("summary").to_list()
+          ]
+          episodic = [
+              one(r.get("description"))
+              for r in g.V().has_label("Claim").has("scope", MAIN).where(__.in_e("CONTAINS"))
+              .value_map("description").to_list()
+          ]
+          knowledge = [
+              one(r.get("description"))
+              for r in g.V().has_label("Claim").has("scope", P.within([MAIN, *know]))
+              .not_(__.in_e("CONTAINS")).value_map("description").to_list()
+          ]
+          return know, {"session": summaries, "episodic": episodic, "knowledge": knowledge}
+
+
+      def pick(site_texts, corpus, mixed_case=True, want_multipart=False):
+          """Lexicographically first token occurring in exactly one corpus text
+          case-insensitively, whose lowercase form occurs in no text verbatim."""
+          lowered = [t.lower() for t in corpus]
+          cands = tokens(site_texts, mixed_case)
+          if want_multipart:
+              cands = {w for w in cands if multipart(w)}
+          for w in sorted(cands):
+              low = w.lower()
+              if sum(1 for t in lowered if low in t) != 1:
+                  continue
+              if mixed_case and any(low in t for t in corpus):
+                  continue
+              return w
+          return None
+
+
+      def holder(g, probe, know):
+          """Ground truth: which node holds `probe`, resolved with verbatim exact-case queries."""
+          expected = set()
+          for r in (
+              g.V().has_label("Session").has("scope", MAIN)
+              .has("summary", TextP.containing(probe)).value_map("session_id").to_list()
+          ):
+              expected.add(("session", one(r.get("session_id"))))
+          for r in (
+              g.V().has_label("Claim").has("scope", MAIN)
+              .has("description", TextP.containing(probe))
+              .in_e("CONTAINS").out_v().has_label("Session").value_map("session_id").to_list()
+          ):
+              expected.add(("session", one(r.get("session_id"))))
+          for v in (
+              g.V().has_label("Claim").has("scope", P.within([MAIN, *know]))
+              .has("description", TextP.containing(probe))
+              .not_(__.in_e("CONTAINS")).id_().to_list()
+          ):
+              expected.add(("claim", str(v)))
+          return expected
+
+
+      def rec(g, q, know):
+          return reader.recall(g, q, limit=LIMIT, scope=MAIN, knowledge_scopes=know)
+
+
+      def orbit(w):
+          return sorted({w, w.lower(), w.upper(), w.swapcase(), w.title()})
+
+
+      FAILS = []
+
+
+      def check(ok, msg):
+          if not ok:
+              FAILS.append(msg)
+
+
+      def report(name):
+          if FAILS:
+              print(f"{name} VIOLATED:")
+              for f in FAILS:
+                  print("  - " + f)
+              sys.exit(1)
+          print(f"{name} holds")
+
+
+      g = connect()
+      try:
+          know, sites = load(g)
+          corpus = sites["session"] + sites["episodic"] + sites["knowledge"]
+
+          # R1 — a distinctive capitalized term the graph verifiably holds is recalled,
+          # and recall gives the same answer for its all-lowercase spelling.
+          # The report's own wording — "the graph holds claims containing those exact
+          # terms" — so the probe is drawn from claim text.
+          probe1 = pick(sites["episodic"], corpus)
+          assert probe1, "graph holds no case-discriminating probe token"
+          expect1 = holder(g, probe1, know)
+          assert expect1, f"probe {probe1!r} resolves to no node"
+          got1 = keys(rec(g, probe1, know))
+          check(got1 == expect1, f"[R1] recall({probe1!r}) -> {sorted(got1)}; want {sorted(expect1)}")
+          check(
+              got1 == keys(rec(g, probe1.lower(), know)),
+              f"[R1] recall({probe1!r}) != recall({probe1.lower()!r})",
+          )
+
+      finally:
+          close_connection(g)
+
+      report('R1')
+      PYEOF
+    expect_exit: 0
+    level: 3
+    name: relation-r1
+  # R2 — implies R1. EVERY keyword site is case-blind across the whole
+  # case orbit, and the claim a query matched still renders rather than
+  # being elided. From the report: "diagnose the recall path".
+  - run: |
+      uv run python - <<'PYEOF'
+      import re
+      import sys
+
+      from gremlin_python.process.graph_traversal import __
+      from gremlin_python.process.traversal import P, TextP
+
+      from thalamus.substrate import reader
+      from thalamus.substrate.writer import close_connection, connect
+
+      MAIN = "main"
+      LIMIT = 10
+      PUNCT = "\"'`()[]{}<>,.;:!?"
+      WORD = re.compile(r"[A-Za-z][A-Za-z0-9-]{3,}\Z")
+
+
+      def one(v):
+          if isinstance(v, list):
+              return str(v[0]) if v else ""
+          return str(v) if v is not None else ""
+
+
+      def keys(results):
+          out = set()
+          for r in results:
+              sid = getattr(r, "session_id", "")
+              out.add(("session", sid) if sid else ("claim", getattr(r, "node_id", "")))
+          return out
+
+
+      def distinctive(w):
+          """A token no keyword rule could call a stopword: hyphen, digit, or camel seam."""
+          return (
+              "-" in w
+              or any(c.isdigit() for c in w)
+              or any(w[i].islower() and w[i + 1].isupper() for i in range(len(w) - 1))
+          )
+
+
+      def multipart(w):
+          """Splitting this token on its seams would yield 2+ tokens long enough to
+          count as keywords — so it is a probe that notices if a term gets split."""
+          parts = re.split(r"[-_]|(?<=[a-z0-9])(?=[A-Z])", w)
+          return len([p for p in parts if len(p) > 2]) >= 2
+
+
+      def tokens(texts, mixed_case=True):
+          out = set()
+          for text in texts:
+              for raw in text.split():
+                  w = raw.strip(PUNCT)
+                  if not WORD.fullmatch(w) or not distinctive(w):
+                      continue
+                  has_up = any(c.isupper() for c in w)
+                  has_lo = any(c.islower() for c in w)
+                  if mixed_case and not (has_up and has_lo):
+                      continue
+                  if not mixed_case and has_up:
+                      continue
+                  out.add(w)
+          return out
+
+
+      def load(g):
+          scopes = sorted({one(s) for s in g.V().has_label("Claim").values("scope").dedup().to_list()})
+          know = [s for s in scopes if s != MAIN]
+          summaries = [
+              one(r.get("summary"))
+              for r in g.V().has_label("Session").has("scope", MAIN).value_map("summary").to_list()
+          ]
+          episodic = [
+              one(r.get("description"))
+              for r in g.V().has_label("Claim").has("scope", MAIN).where(__.in_e("CONTAINS"))
+              .value_map("description").to_list()
+          ]
+          knowledge = [
+              one(r.get("description"))
+              for r in g.V().has_label("Claim").has("scope", P.within([MAIN, *know]))
+              .not_(__.in_e("CONTAINS")).value_map("description").to_list()
+          ]
+          return know, {"session": summaries, "episodic": episodic, "knowledge": knowledge}
+
+
+      def pick(site_texts, corpus, mixed_case=True, want_multipart=False):
+          """Lexicographically first token occurring in exactly one corpus text
+          case-insensitively, whose lowercase form occurs in no text verbatim."""
+          lowered = [t.lower() for t in corpus]
+          cands = tokens(site_texts, mixed_case)
+          if want_multipart:
+              cands = {w for w in cands if multipart(w)}
+          for w in sorted(cands):
+              low = w.lower()
+              if sum(1 for t in lowered if low in t) != 1:
+                  continue
+              if mixed_case and any(low in t for t in corpus):
+                  continue
+              return w
+          return None
+
+
+      def holder(g, probe, know):
+          """Ground truth: which node holds `probe`, resolved with verbatim exact-case queries."""
+          expected = set()
+          for r in (
+              g.V().has_label("Session").has("scope", MAIN)
+              .has("summary", TextP.containing(probe)).value_map("session_id").to_list()
+          ):
+              expected.add(("session", one(r.get("session_id"))))
+          for r in (
+              g.V().has_label("Claim").has("scope", MAIN)
+              .has("description", TextP.containing(probe))
+              .in_e("CONTAINS").out_v().has_label("Session").value_map("session_id").to_list()
+          ):
+              expected.add(("session", one(r.get("session_id"))))
+          for v in (
+              g.V().has_label("Claim").has("scope", P.within([MAIN, *know]))
+              .has("description", TextP.containing(probe))
+              .not_(__.in_e("CONTAINS")).id_().to_list()
+          ):
+              expected.add(("claim", str(v)))
+          return expected
+
+
+      def rec(g, q, know):
+          return reader.recall(g, q, limit=LIMIT, scope=MAIN, knowledge_scopes=know)
+
+
+      def orbit(w):
+          return sorted({w, w.lower(), w.upper(), w.swapcase(), w.title()})
+
+
+      FAILS = []
+
+
+      def check(ok, msg):
+          if not ok:
+              FAILS.append(msg)
+
+
+      def report(name):
+          if FAILS:
+              print(f"{name} VIOLATED:")
+              for f in FAILS:
+                  print("  - " + f)
+              sys.exit(1)
+          print(f"{name} holds")
+
+
+      g = connect()
+      try:
+          know, sites = load(g)
+          corpus = sites["session"] + sites["episodic"] + sites["knowledge"]
+
+          # R1 — a distinctive capitalized term the graph verifiably holds is recalled,
+          # and recall gives the same answer for its all-lowercase spelling.
+          # The report's own wording — "the graph holds claims containing those exact
+          # terms" — so the probe is drawn from claim text.
+          probe1 = pick(sites["episodic"], corpus)
+          assert probe1, "graph holds no case-discriminating probe token"
+          expect1 = holder(g, probe1, know)
+          assert expect1, f"probe {probe1!r} resolves to no node"
+          got1 = keys(rec(g, probe1, know))
+          check(got1 == expect1, f"[R1] recall({probe1!r}) -> {sorted(got1)}; want {sorted(expect1)}")
+          check(
+              got1 == keys(rec(g, probe1.lower(), know)),
+              f"[R1] recall({probe1!r}) != recall({probe1.lower()!r})",
+          )
+
+          # R2 — every keyword site is case-blind over the whole case orbit, and the
+          # claim a query matched still renders in full instead of being elided.
+          site_probe = {}
+          for site in ("session", "episodic", "knowledge"):
+              probe = pick(sites[site], corpus)
+              assert probe, f"no case-discriminating probe for site {site!r}"
+              site_probe[site] = probe
+              expected = holder(g, probe, know)
+              assert expected, f"probe {probe!r} ({site}) resolves to no node"
+              for variant in orbit(probe):
+                  got = keys(rec(g, variant, know))
+                  check(
+                      got == expected,
+                      f"[R2/{site}] recall({variant!r}) -> {sorted(got)}; want {sorted(expected)}",
+                  )
+
+          probe2 = site_probe["episodic"]
+          cvids = [
+              str(v)
+              for v in g.V().has_label("Claim").has("scope", MAIN)
+              .has("description", TextP.containing(probe2)).id_().to_list()
+          ]
+          assert cvids, f"episodic probe {probe2!r} has no claim vertex"
+          for variant in orbit(probe2):
+              rendered = "\n".join(r.format() for r in rec(g, variant, know))
+              check(
+                  all(cv in rendered for cv in cvids),
+                  f"[R2/detail] recall({variant!r}) elided the claim it matched ({cvids})",
+              )
+
+      finally:
+          close_connection(g)
+
+      report('R2')
+      PYEOF
+    expect_exit: 0
+    level: 4
+    name: relation-r2
+  # R3 — implies R2, plus the guards the report demanded: match floor
+  # intact both ways, term still counts as one keyword, stopword fallback
+  # unchanged, lowercase queries still work, artifact/project still verbatim.
+  - run: |
+      uv run python - <<'PYEOF'
+      import re
+      import sys
+
+      from gremlin_python.process.graph_traversal import __
+      from gremlin_python.process.traversal import P, TextP
+
+      from thalamus.substrate import reader
+      from thalamus.substrate.writer import close_connection, connect
+
+      MAIN = "main"
+      LIMIT = 10
+      PUNCT = "\"'`()[]{}<>,.;:!?"
+      WORD = re.compile(r"[A-Za-z][A-Za-z0-9-]{3,}\Z")
+
+
+      def one(v):
+          if isinstance(v, list):
+              return str(v[0]) if v else ""
+          return str(v) if v is not None else ""
+
+
+      def keys(results):
+          out = set()
+          for r in results:
+              sid = getattr(r, "session_id", "")
+              out.add(("session", sid) if sid else ("claim", getattr(r, "node_id", "")))
+          return out
+
+
+      def distinctive(w):
+          """A token no keyword rule could call a stopword: hyphen, digit, or camel seam."""
+          return (
+              "-" in w
+              or any(c.isdigit() for c in w)
+              or any(w[i].islower() and w[i + 1].isupper() for i in range(len(w) - 1))
+          )
+
+
+      def multipart(w):
+          """Splitting this token on its seams would yield 2+ tokens long enough to
+          count as keywords — so it is a probe that notices if a term gets split."""
+          parts = re.split(r"[-_]|(?<=[a-z0-9])(?=[A-Z])", w)
+          return len([p for p in parts if len(p) > 2]) >= 2
+
+
+      def tokens(texts, mixed_case=True):
+          out = set()
+          for text in texts:
+              for raw in text.split():
+                  w = raw.strip(PUNCT)
+                  if not WORD.fullmatch(w) or not distinctive(w):
+                      continue
+                  has_up = any(c.isupper() for c in w)
+                  has_lo = any(c.islower() for c in w)
+                  if mixed_case and not (has_up and has_lo):
+                      continue
+                  if not mixed_case and has_up:
+                      continue
+                  out.add(w)
+          return out
+
+
+      def load(g):
+          scopes = sorted({one(s) for s in g.V().has_label("Claim").values("scope").dedup().to_list()})
+          know = [s for s in scopes if s != MAIN]
+          summaries = [
+              one(r.get("summary"))
+              for r in g.V().has_label("Session").has("scope", MAIN).value_map("summary").to_list()
+          ]
+          episodic = [
+              one(r.get("description"))
+              for r in g.V().has_label("Claim").has("scope", MAIN).where(__.in_e("CONTAINS"))
+              .value_map("description").to_list()
+          ]
+          knowledge = [
+              one(r.get("description"))
+              for r in g.V().has_label("Claim").has("scope", P.within([MAIN, *know]))
+              .not_(__.in_e("CONTAINS")).value_map("description").to_list()
+          ]
+          return know, {"session": summaries, "episodic": episodic, "knowledge": knowledge}
+
+
+      def pick(site_texts, corpus, mixed_case=True, want_multipart=False):
+          """Lexicographically first token occurring in exactly one corpus text
+          case-insensitively, whose lowercase form occurs in no text verbatim."""
+          lowered = [t.lower() for t in corpus]
+          cands = tokens(site_texts, mixed_case)
+          if want_multipart:
+              cands = {w for w in cands if multipart(w)}
+          for w in sorted(cands):
+              low = w.lower()
+              if sum(1 for t in lowered if low in t) != 1:
+                  continue
+              if mixed_case and any(low in t for t in corpus):
+                  continue
+              return w
+          return None
+
+
+      def holder(g, probe, know):
+          """Ground truth: which node holds `probe`, resolved with verbatim exact-case queries."""
+          expected = set()
+          for r in (
+              g.V().has_label("Session").has("scope", MAIN)
+              .has("summary", TextP.containing(probe)).value_map("session_id").to_list()
+          ):
+              expected.add(("session", one(r.get("session_id"))))
+          for r in (
+              g.V().has_label("Claim").has("scope", MAIN)
+              .has("description", TextP.containing(probe))
+              .in_e("CONTAINS").out_v().has_label("Session").value_map("session_id").to_list()
+          ):
+              expected.add(("session", one(r.get("session_id"))))
+          for v in (
+              g.V().has_label("Claim").has("scope", P.within([MAIN, *know]))
+              .has("description", TextP.containing(probe))
+              .not_(__.in_e("CONTAINS")).id_().to_list()
+          ):
+              expected.add(("claim", str(v)))
+          return expected
+
+
+      def rec(g, q, know):
+          return reader.recall(g, q, limit=LIMIT, scope=MAIN, knowledge_scopes=know)
+
+
+      def orbit(w):
+          return sorted({w, w.lower(), w.upper(), w.swapcase(), w.title()})
+
+
+      FAILS = []
+
+
+      def check(ok, msg):
+          if not ok:
+              FAILS.append(msg)
+
+
+      def report(name):
+          if FAILS:
+              print(f"{name} VIOLATED:")
+              for f in FAILS:
+                  print("  - " + f)
+              sys.exit(1)
+          print(f"{name} holds")
+
+
+      g = connect()
+      try:
+          know, sites = load(g)
+          corpus = sites["session"] + sites["episodic"] + sites["knowledge"]
+
+          # R1 — a distinctive capitalized term the graph verifiably holds is recalled,
+          # and recall gives the same answer for its all-lowercase spelling.
+          # The report's own wording — "the graph holds claims containing those exact
+          # terms" — so the probe is drawn from claim text.
+          probe1 = pick(sites["episodic"], corpus)
+          assert probe1, "graph holds no case-discriminating probe token"
+          expect1 = holder(g, probe1, know)
+          assert expect1, f"probe {probe1!r} resolves to no node"
+          got1 = keys(rec(g, probe1, know))
+          check(got1 == expect1, f"[R1] recall({probe1!r}) -> {sorted(got1)}; want {sorted(expect1)}")
+          check(
+              got1 == keys(rec(g, probe1.lower(), know)),
+              f"[R1] recall({probe1!r}) != recall({probe1.lower()!r})",
+          )
+
+          # R2 — every keyword site is case-blind over the whole case orbit, and the
+          # claim a query matched still renders in full instead of being elided.
+          site_probe = {}
+          for site in ("session", "episodic", "knowledge"):
+              probe = pick(sites[site], corpus)
+              assert probe, f"no case-discriminating probe for site {site!r}"
+              site_probe[site] = probe
+              expected = holder(g, probe, know)
+              assert expected, f"probe {probe!r} ({site}) resolves to no node"
+              for variant in orbit(probe):
+                  got = keys(rec(g, variant, know))
+                  check(
+                      got == expected,
+                      f"[R2/{site}] recall({variant!r}) -> {sorted(got)}; want {sorted(expected)}",
+                  )
+
+          probe2 = site_probe["episodic"]
+          cvids = [
+              str(v)
+              for v in g.V().has_label("Claim").has("scope", MAIN)
+              .has("description", TextP.containing(probe2)).id_().to_list()
+          ]
+          assert cvids, f"episodic probe {probe2!r} has no claim vertex"
+          for variant in orbit(probe2):
+              rendered = "\n".join(r.format() for r in rec(g, variant, know))
+              check(
+                  all(cv in rendered for cv in cvids),
+                  f"[R2/detail] recall({variant!r}) elided the claim it matched ({cvids})",
+              )
+
+          # R3 — R2, and none of the things the report said must not change did.
+          NONSENSE = "zzqxvwvvkqx"
+          assert not any(NONSENSE in t.lower() for t in corpus), "nonsense token is not nonsense"
+          # A probe whose seams would split into 2+ keywords if the keyword rule changed.
+          probe3 = pick(corpus, corpus, want_multipart=True) or probe2
+          expect3 = holder(g, probe3, know)
+          assert expect3, f"floor probe {probe3!r} resolves to no node"
+
+          # (a) the match floor is intact, and the probe still counts as ONE keyword:
+          # a two-term query whose second term hits nothing must rank nothing.
+          for variant in orbit(probe3):
+              got = keys(rec(g, f"{variant} {NONSENSE}", know))
+              check(
+                  got == set(),
+                  f"[R3/floor] recall({variant + ' ' + NONSENSE!r}) -> {sorted(got)}; "
+                  "want nothing (one distinct keyword hit is below the floor, and the "
+                  "term must count as a single keyword)",
+              )
+
+          # (b) the floor is not raised either: two terms that both hit still rank.
+          htext = next(t for t in corpus if probe3.lower() in t.lower())
+          htokens = {
+              raw.strip(PUNCT) for raw in htext.split() if WORD.fullmatch(raw.strip(PUNCT))
+          }
+          ranked = sorted(htokens, key=lambda w: (not distinctive(w), w))
+          second = next((w for w in ranked if w.lower() != probe3.lower()), None)
+          if second:
+              for variant in orbit(probe3):
+                  got = keys(rec(g, f"{variant} {second}", know))
+                  check(
+                      got == expect3,
+                      f"[R3/floor+] recall({variant + ' ' + second!r}) -> {sorted(got)}; "
+                      f"want {sorted(expect3)}",
+                  )
+          else:
+              print("note: no second distinctive term in the probe's text; floor+ check skipped")
+
+          # (c) what counts as a keyword is unchanged: an all-stopword query still falls
+          # back to the recency path, in any casing.
+          recent = keys(reader.recall_recent(g, LIMIT, MAIN))
+          for q in ("what is the it", "WHAT IS THE IT", "What Is The It"):
+              got = keys(rec(g, q, know))
+              check(got == recent, f"[R3/keywords] recall({q!r}) is not the recency fallback")
+
+          # (d) queries that already worked still work: an all-lowercase distinctive term.
+          low_probe = pick(corpus, corpus, mixed_case=False)
+          if low_probe:
+              expect_low = holder(g, low_probe, know)
+              if expect_low:
+                  got = keys(rec(g, low_probe, know))
+                  check(
+                      got == expect_low,
+                      f"[R3/lowercase] recall({low_probe!r}) -> {sorted(got)}; "
+                      f"want {sorted(expect_low)}",
+                  )
+          else:
+              print("note: no all-lowercase distinctive probe; lowercase regression check skipped")
+
+          # (e) the verbatim sites stayed verbatim — artifact identifiers.
+          all_idents = [str(v) for v in g.V().has_label("Artifact").values("identifier").to_list()]
+          reachable = sorted(
+              {
+                  str(v)
+                  for v in g.V().has_label("Session").has("scope", MAIN)
+                  .out("CONTAINS").out("TOUCHES").has_label("Artifact")
+                  .values("identifier").dedup().to_list()
+              }
+          )
+          ident = next(
+              (
+                  i
+                  for i in reachable
+                  if any(c.isalpha() for c in i)
+                  and i.swapcase() != i
+                  and not any(i.swapcase() in a for a in all_idents)
+              ),
+              None,
+          )
+          assert ident, "no artifact identifier usable as a verbatim probe"
+          check(
+              reader.recall_by_artifact(g, ident, limit=LIMIT, scope=MAIN) != [],
+              f"[R3/artifact] recall_by_artifact({ident!r}) returned nothing — probe is unsound",
+          )
+          flipped = reader.recall_by_artifact(g, ident.swapcase(), limit=LIMIT, scope=MAIN)
+          check(
+              flipped == [],
+              f"[R3/artifact] recall_by_artifact({ident.swapcase()!r}) matched "
+              f"{len(flipped)} session(s); artifact matching must stay verbatim",
+          )
+
+          # (f) ... and project matching.
+          all_projects = [
+              str(v)
+              for v in g.V().has_label("Session").has("scope", MAIN).values("project").to_list()
+          ]
+          proj = next(
+              (
+                  p
+                  for p in sorted(set(all_projects))
+                  if any(c.isalpha() for c in p)
+                  and p.swapcase() != p
+                  and not any(p.swapcase() in q for q in all_projects)
+              ),
+              None,
+          )
+          assert proj, "no project value usable as a verbatim probe"
+          check(
+              reader.recall_by_project(g, proj, limit=LIMIT, scope=MAIN) != [],
+              f"[R3/project] recall_by_project({proj!r}) returned nothing — probe is unsound",
+          )
+          flipped = reader.recall_by_project(g, proj.swapcase(), limit=LIMIT, scope=MAIN)
+          check(
+              flipped == [],
+              f"[R3/project] recall_by_project({proj.swapcase()!r}) matched "
+              f"{len(flipped)} session(s); project matching must stay verbatim",
+          )
+          if reader.recall_open_threads(g, project=proj, limit=LIMIT, scope=MAIN):
+              flipped = reader.recall_open_threads(g, project=proj.swapcase(), limit=LIMIT, scope=MAIN)
+              check(
+                  flipped == [],
+                  f"[R3/project] recall_open_threads({proj.swapcase()!r}) matched "
+                  f"{len(flipped)} thread(s); project matching must stay verbatim",
+              )
+
+      finally:
+          close_connection(g)
+
+      report('R3')
+      PYEOF
+    expect_exit: 0
+    level: 5
+    name: relation-r3
 probes:
   - id: memo-surfaced
     kind: transcript_regex
