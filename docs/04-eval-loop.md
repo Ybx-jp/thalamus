@@ -223,7 +223,17 @@ every probe hit in every arm, memory-off included): a probe must target
 knowledge unreachable from the prompt *plus general model competence* —
 session UUIDs, lab-entry numbers, dial values, named thread slugs. The
 validator mechanically refuses prompt echo; only authorship can refuse
-competence echo.
+competence echo. **First positive firing, lab/014:** `memo-surfaced` hit on
+consultation/memory-on, the authoring session's UUID rendered into context by
+`memory_open_threads`. Read narrowly — it surfaced as another thread's
+provenance line, not as the memorized diagnosis, so the probes are now
+validated as **surfacing** detectors and remain unvalidated as use signals.
+
+**Open: the battery, not the runner, is now the bottleneck (lab/014).**
+Acceptance saturated at 4/4 in the first clean campaign, with the turn cap
+binding in 3/4 arms, so no memory contrast has anywhere to appear. Before a
+fifth campaign the tasks need to be hard enough to fail sometimes, or
+acceptance needs a graded oracle rather than pass/fail.
 
 **Fixed bug: every campaign run before this one had an inert memory-on arm.**
 `session-start.sh` resolved `project=$(basename "$cwd")` to prime session-start
@@ -264,12 +274,21 @@ step. `claude-code/session-start.sh` now names it — one `ToolSearch
 select:...` loading both tools, conditionally phrased because deferral is a
 per-session harness fact the hook cannot see. The Cursor variant does not
 carry it (no such mechanism there); both texts are contract-tested
-(`tests/test_claude_code_hooks.py`, `tests/test_cursor_hooks.py`). Whether
-this closes the gap is unmeasured — a corrected instruction still cannot
-compel use, and enforcement remains off the table for the same reason recall
-scope is server-side (docs/07). No campaign to date has produced an arm that
-actually recalled and used real memory content; the graph-only-token probes
-remain only negatively validated (correctly silent so far), never positively.
+(`tests/test_claude_code_hooks.py`, `tests/test_cursor_hooks.py`).
+
+**Measured, and the verdict is split (lab/014).** The fourth campaign — the
+first with zero infra faults, all four arms `attributable` — delivered the
+corrected instruction verbatim to both memory-on arms. One
+(consultation) followed it exactly: one `ToolSearch` with the prescribed
+`select:` query, then `memory_open_threads(project="thalamus")` returning real
+threads — **the first arm in any campaign to actually recall real memory
+content**. The other (reader) made zero thalamus calls with the identical
+instruction in context. So naming the deferred-tool step was *necessary* and is
+demonstrably followable; it does not make the call *happen*. Advisory context
+not compelling use is now a measured property of a complete instruction, not a
+suspicion about an incomplete one — and enforcement stays off the table for the
+reason recall scope is server-side (docs/07), so the open design question is
+what makes recall worth calling, not what makes it callable.
 
 **A third, unrelated bug in the same campaign, found by refusing to accept
 "root cause not fully pinned down" (lab/013).** Both reader arms failed `uv run
