@@ -542,6 +542,66 @@ class TestRunArmFaultStamping:
         assert record["attributable"] is False
 
 
+class TestTurnCapDetection:
+    """
+    lab/015: `num_turns > max_turns` marked *completed* opus runs as censored.
+    The shapes below are the measured ones from runs.jsonl, not invented.
+    """
+
+    def _run(self, tmp_path, monkeypatch, agent, max_turns=40):
+        repo = _git_repo(tmp_path)
+        monkeypatch.setattr(arms, "sync_worktree_env", lambda *a, **k: None)
+        monkeypatch.setattr(arms, "run_agent", lambda *a, **k: agent)
+        monkeypatch.setattr(arms, "transcript_text", lambda *a, **k: "")
+        return run_arm(repo, _task(), parse_arm("memory-off", SCOPES),
+                       runs_base=tmp_path / "runs", max_turns=max_turns)
+
+    def test_genuine_cap_is_flagged(self, tmp_path, monkeypatch):
+        """Sonnet's shape: max+1 turns, errored, no closing summary."""
+        agent = AgentRun("s", "", 1.16, 198000, 41, True)
+        assert self._run(tmp_path, monkeypatch, agent)["turn_capped"] is True
+
+    def test_run_that_exceeded_the_cap_but_concluded_is_not_capped(self, tmp_path, monkeypatch):
+        """
+        Opus's shape: 53 reported turns against --max-turns 40, is_error=False,
+        and a real closing summary. It concluded; its metrics are not censored.
+        """
+        agent = AgentRun("s", "…say the word and I'll fold that one too.", 2.12, 311000, 53, False)
+        assert self._run(tmp_path, monkeypatch, agent)["turn_capped"] is False
+
+    def test_short_clean_run_is_not_capped(self, tmp_path, monkeypatch):
+        agent = AgentRun("s", "done", 1.32, 262000, 22, False)
+        assert self._run(tmp_path, monkeypatch, agent)["turn_capped"] is False
+
+
+class TestRecallCallCounting:
+    def _transcript(self, *names):
+        lines = []
+        for name in names:
+            lines.append(json.dumps({
+                "type": "assistant",
+                "message": {"content": [{"type": "tool_use", "name": name, "input": {}}]},
+            }))
+        # Noise the counter must survive: a non-tool line and a malformed one.
+        lines.append(json.dumps({"type": "user", "message": {"content": "hi"}}))
+        lines.append("{not json")
+        return "\n".join(lines)
+
+    def test_counts_thalamus_and_toolsearch_separately(self):
+        counts = arms.count_recall_calls(self._transcript(
+            "ToolSearch", "mcp__thalamus__memory_open_threads", "Bash", "Read",
+        ))
+        assert counts == {"thalamus": 1, "tool_search": 1}
+
+    def test_arm_that_never_reached_for_memory(self):
+        """The reader/memory-on shape under sonnet and fable: zero of both."""
+        counts = arms.count_recall_calls(self._transcript("Bash", "Read", "Edit"))
+        assert counts == {"thalamus": 0, "tool_search": 0}
+
+    def test_empty_transcript_is_zero_not_an_error(self):
+        assert arms.count_recall_calls("") == {"thalamus": 0, "tool_search": 0}
+
+
 class TestCrossArmFaultSignal:
     def _record(self, tail, passed=False):
         return {"acceptance": [{"run": "uv run pytest -q", "passed": passed,

@@ -229,11 +229,35 @@ consultation/memory-on, the authoring session's UUID rendered into context by
 provenance line, not as the memorized diagnosis, so the probes are now
 validated as **surfacing** detectors and remain unvalidated as use signals.
 
-**Open: the battery, not the runner, is now the bottleneck (lab/014).**
-Acceptance saturated at 4/4 in the first clean campaign, with the turn cap
-binding in 3/4 arms, so no memory contrast has anywhere to appear. Before a
-fifth campaign the tasks need to be hard enough to fail sometimes, or
-acceptance needs a graded oracle rather than pass/fail.
+**Open: the battery, not the runner, is the bottleneck (lab/014, confirmed
+lab/015).** Acceptance saturated at **12/12 across sonnet, fable, and opus** —
+a battery ceiling, not a model ceiling, so no memory contrast has anywhere to
+appear at any capability tier. Harder tasks or a graded oracle must precede any
+further campaign.
+
+**Recall-calling is a model×task interaction (lab/015).** With the corrected
+injection delivered identically to every memory-on arm, the consultation task
+elicited a recall call from all three models and the reader task from opus
+only. Every call followed the injected pattern exactly (one `ToolSearch`, then
+`memory_open_threads`). The leading hypothesis — the consultation prompt asks
+for an under-specified design judgment, the reader prompt is a fully specified
+mechanical fix — is the most concrete lead yet on *which tasks the battery
+should contain*, and is recorded as hypothesis, not finding. Because
+memory-on ran at order 0 on reader and order 1 on consultation, task and
+arm-order were confounded across lab/011–014; opus's order-0 hit alongside
+sonnet/fable's order-1 hits breaks that confound with data.
+
+**`recall_calls` is recorded per run** (`{thalamus, tool_search}`) — whether an
+arm reached for memory is the contrast's primary outcome and previously lived
+only in transcripts. `tool_search` is tracked separately because it separates
+"never tried" from "tried and could not load the schema" (lab/013).
+
+**Metric defect, fixed (lab/015).** `turn_capped` was `num_turns > max_turns`,
+which marked *concluded* runs as censored: opus reports 46–53 turns against a
+40-turn cap while terminating normally (`is_error=False`, real closing
+summary), so the turn count and the cap are not on the same scale. The true cap
+signature is errored **with an empty result** — the model never got to
+conclude. Corrected rate: sonnet 3/4, fable 0/4, opus 0/4.
 
 **Fixed bug: every campaign run before this one had an inert memory-on arm.**
 `session-start.sh` resolved `project=$(basename "$cwd")` to prime session-start

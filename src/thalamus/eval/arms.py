@@ -369,6 +369,36 @@ def run_agent(
     )
 
 
+def count_recall_calls(transcript: str) -> dict:
+    """Count the arm's memory-surface tool calls, from its own transcript.
+
+    `thalamus` is every `mcp__thalamus__*` call — the thing memory-on is
+    supposed to make possible. `tool_search` is the deferred-schema load that
+    must precede it in this harness (lab/013-014); recording it separately is
+    what distinguishes "never tried" from "tried and could not".
+    """
+    counts = {"thalamus": 0, "tool_search": 0}
+    for line in transcript.splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        content = (record.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            name = block.get("name") or ""
+            if name.startswith("mcp__thalamus__"):
+                counts["thalamus"] += 1
+            elif name == "ToolSearch":
+                counts["tool_search"] += 1
+    return counts
+
+
 def transcript_text(worktree: Path, session_id: str, projects_base: Path | None = None) -> str:
     """The harness transcript of the arm session — the probe/judging capture."""
     base = projects_base or (Path.home() / ".claude" / "projects")
@@ -485,7 +515,19 @@ def run_arm(
         # Censoring, stamped not inferred: a capped session never concluded, so
         # its iteration metrics are lower bounds (lab/011: the cap bound in 4/4
         # first-campaign runs).
-        record["turn_capped"] = agent.num_turns > max_turns
+        #
+        # `num_turns > max_turns` is NOT the test. lab/015 measured opus runs
+        # reporting 46-53 turns against `--max-turns 40` while terminating
+        # *normally* — `is_error=False`, a real closing summary in `result` —
+        # so the reported turn count and the cap are not on the same scale and
+        # the naive comparison marks completed runs as censored. The genuine
+        # termination signature is the one every truly capped run carries:
+        # errored, with an empty result because the model never got to conclude.
+        record["turn_capped"] = (
+            agent.num_turns >= max_turns
+            and agent.is_error
+            and not agent.result.strip()
+        )
         record["wall_seconds"] = round(time.monotonic() - started, 1)
 
         # `is_error` alone is NOT an auth signal — every turn-capped run in
@@ -506,6 +548,11 @@ def run_arm(
         record["diff_lines"] = len(diff.splitlines())
         transcript = transcript_text(worktree, agent.session_id)
         record["transcript_captured"] = bool(transcript)
+        # Whether the arm actually reached for memory is the primary outcome of
+        # the memory-on/off contrast, and it lived only in the transcript until
+        # lab/015 had to re-derive it by hand for twelve arms across three
+        # models. Recording it makes a campaign self-describing.
+        record["recall_calls"] = count_recall_calls(transcript)
         record["acceptance"] = evaluate_acceptance(task, worktree)
         record["accepted"] = bool(record["acceptance"]) and all(
             a["passed"] for a in record["acceptance"]
@@ -621,7 +668,10 @@ def render_run(record: dict) -> str:
         + (" (CAPPED)" if record.get("turn_capped") else "")
         + f", ${agent.get('cost_usd', 0):.2f}, {record.get('wall_seconds', '?')}s wall, "
         f"{record.get('diff_lines', 0)} diff lines"
-        + (", transcript MISSING" if not record.get("transcript_captured") else ""),
+        + (", transcript MISSING" if not record.get("transcript_captured") else "")
+        + (f", recall {record['recall_calls']['thalamus']} call(s)"
+           f" / {record['recall_calls']['tool_search']} ToolSearch"
+           if record.get("recall_calls") else ""),
         f"  applied: mcp_removed={record.get('applied', {}).get('mcp_removed')}, "
         f"stripped={len(record.get('applied', {}).get('stripped_hooks', []))} hook(s)",
     ]
