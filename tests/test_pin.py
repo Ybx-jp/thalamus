@@ -12,8 +12,16 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.contract.manifest import load_manifest
-from thalamus.harness.pin import agent_name, render_agent, resolve, resolve_pin, write_agent
+from thalamus.contract.manifest import available_scopes, load_manifest
+from thalamus.harness.pin import (
+    agent_name,
+    render_agent,
+    resolve,
+    resolve_pin,
+    spawn,
+    write_agent,
+    write_all_agents,
+)
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
 
@@ -48,6 +56,29 @@ def test_write_agent_lands_in_the_projects_agents_dir(tmp_path):
 
     assert path == tmp_path / ".claude" / "agents" / "thalamus-eval-methodology.md"
     assert path.read_text() == render_agent(manifest)
+
+
+def test_write_all_agents_writes_every_expert_into_the_dir(tmp_path):
+    """
+    Scenario: `spawn` regenerates all derived agents into ~/.claude/agents so a
+    session opened in another project can --agent-pin AND spawn sibling consultation
+    subagents — both are loaded per process from the agents dir, wherever cwd is.
+    """
+    write_all_agents(tmp_path, REPO_CONFIG)
+
+    for scope in available_scopes(REPO_CONFIG):
+        f = tmp_path / f"{agent_name(scope)}.md"
+        assert f.exists()
+        assert f"scope `{scope}`" in f.read_text()
+
+
+def test_spawn_rejects_a_nonexistent_directory(tmp_path, monkeypatch):
+    """spawn's cwd becomes the window's working dir — a bad path must fail loudly
+    before any tmux window is created, not silently open somewhere wrong."""
+    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+
+    with pytest.raises(ValueError, match="not a directory"):
+        spawn("homelab", tmp_path / "does-not-exist", base=REPO_CONFIG)
 
 
 def test_main_is_pinnable_without_a_manifest_and_unknown_scopes_are_not():

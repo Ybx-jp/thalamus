@@ -31,6 +31,13 @@ AGENT_PREFIX = "thalamus-"
 # the project the pinned session should open in.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
+# User-level agents dir. Derived expert agents are written here (not only into the
+# repo's .claude/agents) so `claude --agent thalamus-<scope>` resolves from ANY
+# working directory — the enabler for pinning an expert session in a different
+# project (Thalamus memory spans projects). Consultation subagents resolve the
+# same way, so an on-demand session in another repo can still consult siblings.
+USER_AGENTS_DIR = Path.home() / ".claude" / "agents"
+
 
 def agent_name(scope: str) -> str:
     return f"{AGENT_PREFIX}{scope}"
@@ -88,12 +95,25 @@ ambient memory.
 """
 
 
-def write_agent(manifest: ExpertManifest, project_root: Path) -> Path:
-    agents_dir = project_root / ".claude" / "agents"
+def write_agent(manifest: ExpertManifest, project_root: Path,
+                agents_dir: Path | None = None) -> Path:
+    """Write the derived agent file. Defaults to the repo's .claude/agents (roster
+    and interactive pin, which open in the repo); `spawn` passes USER_AGENTS_DIR so
+    the pin resolves from an arbitrary project cwd."""
+    agents_dir = agents_dir or (project_root / ".claude" / "agents")
     agents_dir.mkdir(parents=True, exist_ok=True)
     path = agents_dir / f"{agent_name(manifest.scope)}.md"
     path.write_text(render_agent(manifest))
     return path
+
+
+def write_all_agents(agents_dir: Path, base: Path | None = None) -> None:
+    """Regenerate every expert's derived agent into agents_dir. Used by `spawn` so a
+    session opened in another repo can still `--agent`-pin AND spawn consultation
+    subagents for sibling experts (both are loaded per process from the agents dir)."""
+    for scope in available_scopes(base):
+        manifest = load_manifest(scope, base)
+        write_agent(manifest, PROJECT_ROOT, agents_dir=agents_dir)
 
 
 def resolve(scope: str, base: Path | None = None) -> ExpertManifest | None:
@@ -171,11 +191,52 @@ def launch(scope: str, project_root: Path, base: Path | None = None) -> None:
     os.execvp(argv[0], argv)
 
 
-def roster(project_root: Path, base: Path | None = None) -> None:
-    """One tmux window per expert (plus main) — the whole control plane.
+def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
+          base: Path | None = None) -> None:
+    """Open ONE detached pinned window on demand — the plane's spawn button.
 
-    Idempotent: windows already named for a scope are left alone, so re-running
-    roster after adding a manifest opens only the new expert's window.
+    Unlike `roster` (which opens the whole set at bring-up), spawn creates a single
+    expert window in a chosen directory: `cwd` becomes the window's working dir, so
+    the session's work — and the memory it distills — is about that project while
+    still pinned to `scope`. The derived agent files are written to USER_AGENTS_DIR
+    first so `--agent` resolves regardless of `cwd`. Detached (`-d`) so an attached
+    /tty or PC client is never yanked to the new window (same rule as roster).
+    """
+    if not (os.environ.get("TMUX") or shutil.which("tmux")):
+        raise RuntimeError("spawn needs tmux (it IS the control plane)")
+    cwd = Path(cwd).expanduser()
+    if not cwd.is_dir():
+        raise ValueError(f"not a directory: {cwd}")
+
+    manifest = resolve(scope, base)  # validates scope; raises with available-scopes
+    if manifest is None:
+        argv = ["claude"]  # main has no manifest/agent by design
+    else:
+        write_all_agents(USER_AGENTS_DIR, base)
+        argv = ["claude", "--agent", agent_name(scope)]
+
+    # The session must exist (the tty unit's `tmux new -A -s thalamus` creates it,
+    # as does `thalamus roster`); create it if somehow absent so spawn never fails.
+    if subprocess.run(["tmux", "has-session", "-t", session],
+                      capture_output=True).returncode != 0:
+        subprocess.run(["tmux", "new-session", "-d", "-s", session, "-c", str(cwd)],
+                       check=True)
+
+    _open_window(scope, argv, cwd, target=session, detached=True)
+    _pin_window_sizes(target=session)
+    print(f"Spawned `{scope}` in {cwd}")
+
+
+def roster(project_root: Path, base: Path | None = None, full: bool = False) -> None:
+    """Bring up the control plane. Default: only the `main` anchor window (experts
+    are spawned on demand from the plane). `full=True` opens one window per expert.
+
+    Opening every expert at bring-up was retired: idle expert windows never get a
+    prompt, so each one wrote a pin-ledger spawn with no engagement and inflated the
+    `pinned, never retrieved` routing metric (measured 2026-07-19). On-demand spawn
+    means a window exists only when an expert is actually being used.
+
+    Idempotent either way: windows already named for a scope are left alone.
     """
     inside = bool(os.environ.get("TMUX"))
     if not (inside or shutil.which("tmux")):
@@ -183,7 +244,7 @@ def roster(project_root: Path, base: Path | None = None) -> None:
             "roster needs tmux (it IS the control plane); run `thalamus pin <scope>` instead"
         )
 
-    scopes = [MAIN_SCOPE, *available_scopes(base)]
+    scopes = [MAIN_SCOPE, *available_scopes(base)] if full else [MAIN_SCOPE]
     target = None if inside else ROSTER_SESSION
 
     if target and subprocess.run(

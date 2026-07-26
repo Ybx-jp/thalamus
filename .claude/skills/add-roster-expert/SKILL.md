@@ -36,11 +36,19 @@ current when re-ingesting.
 4. **Never author or `git add -f` the agent file.** `.claude/agents/thalamus-
    <scope>.md` is derived from the manifest, regenerated on every launch, and
    gitignored on purpose.
-5. **Open the window with `uv run thalamus roster`** (idempotent — only missing
-   scopes get windows) or the plane's INFRA → roster-sync button. Roster
-   additions open **detached** (`new-window -d`, pin.py) so attached clients
-   (/tty, PC) are not yanked to the new window; only an interactive
-   `thalamus pin <scope>` switches focus, because the operator asked for it.
+5. **A new manifest is spawnable immediately — you rarely open a window at all.**
+   Experts are **spawned on demand**, not booted at bring-up: the plane's
+   `+ SPAWN` sheet reads `config/experts/*.yaml` for its scope list and
+   `~/code/thalamus-plane/spawn-dirs.json` (favorites) + `~/code` git repos for
+   its directory list, so a fresh manifest shows up with no restart. Under the
+   hood `thalamus spawn <scope> --dir <path>` opens one **detached** window
+   (`new-window -d`, pin.py) in the chosen cwd. `thalamus roster` now brings up
+   only the `main` **anchor** by default (idempotent; `--all` = legacy full
+   roster) — always-on expert windows were retired because idle spawns inflated
+   the `pinned, never retrieved` metric (2026-07-19). Spawn writes derived agents
+   to `~/.claude/agents/` (not only the repo's `.claude/agents/`) so `--agent`
+   and sibling consultation subagents resolve from any project cwd. Only an
+   interactive `thalamus pin <scope>` switches focus, because the operator asked.
 6. **Touch nothing on the plane.** The plane server reads tmux fresh on every
    poll and targets windows by index, so a new window appears on the phone by
    itself (`scope:homelab:claim:f9c9311a69049c34`; capture/index design in
@@ -105,6 +113,19 @@ current when re-ingesting.
   The warning covers only the *viewed* window — a session you're running in a
   terminal elsewhere gets no special warning. Recycle is for re-arming
   MCP/hooks after wiring changes, not part of adding an expert.
+- **Close vs. recycle vs. the anchor.** The plane's INFRA → *close* ends a
+  session for good: `/exit` → SessionEnd distillation → the window is *removed*
+  (recycle respawns it; close does not). Force-`kill-window` only after the
+  4-min grace, which skips distillation — same tradeoff as a recycle timeout.
+  The **anchor** (the lowest-indexed window, the roster's `main`) is guarded
+  un-closable — it's the plane's reference cwd for roster-sync and command
+  scanning. On-demand `main` sessions opened elsewhere share the name "main" but
+  are *not* the anchor (identified by lowest index, never by name — a name guard
+  wrongly protected every "main").
+- **On-demand duplicates are allowed and index-targeted.** Two windows for the
+  same scope in different dirs are fine (the plane targets by index, not name);
+  roster idempotency (`already has a window`) keys on name and only governs
+  `--all`, not on-demand spawn.
 
 ## The seam in one line
 

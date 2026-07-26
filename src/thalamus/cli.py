@@ -269,8 +269,24 @@ def main():
     )
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
 
-    subparsers.add_parser(
-        "roster", help="One pinned tmux window per expert manifest (plus main)"
+    spawn_parser = subparsers.add_parser(
+        "spawn", help="Open one on-demand pinned tmux window (a chosen scope + directory)"
+    )
+    spawn_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
+    spawn_parser.add_argument(
+        "--dir", type=Path, default=None,
+        help="Working directory for the session (default: the thalamus repo)"
+    )
+    spawn_parser.add_argument(
+        "--session", default="thalamus", help="tmux session to open the window in"
+    )
+
+    roster_parser = subparsers.add_parser(
+        "roster", help="Bring up the control plane (the `main` anchor; --all for every expert)"
+    )
+    roster_parser.add_argument(
+        "--all", action="store_true",
+        help="Open one window per expert manifest (legacy full roster)"
     )
 
     # Visualize command
@@ -331,8 +347,10 @@ def main():
         _cmd_eval(args, eval_parser)
     elif args.command == "pin":
         _cmd_pin(args)
+    elif args.command == "spawn":
+        _cmd_spawn(args)
     elif args.command == "roster":
-        _cmd_roster()
+        _cmd_roster(args)
     elif args.command == "visualize":
         _cmd_visualize(args)
     elif args.command == "pulse":
@@ -877,11 +895,24 @@ def _cmd_pin(args):
         sys.exit(1)
 
 
-def _cmd_roster():
+def _cmd_spawn(args):
+    import subprocess
+
+    from thalamus.harness.pin import PROJECT_ROOT, spawn
+
+    cwd = args.dir if args.dir is not None else PROJECT_ROOT
+    try:
+        spawn(args.scope, cwd, session=args.session)
+    except (FileNotFoundError, ValueError, RuntimeError, subprocess.CalledProcessError) as e:
+        print(f"Spawn failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_roster(args):
     from thalamus.harness.pin import PROJECT_ROOT, roster
 
     try:
-        roster(PROJECT_ROOT)
+        roster(PROJECT_ROOT, full=getattr(args, "all", False))
     except RuntimeError as e:
         print(f"Roster failed: {e}", file=sys.stderr)
         sys.exit(1)

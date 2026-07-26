@@ -112,10 +112,19 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    (`.claude/agents/thalamus-<scope>.md` — generated from the manifest, never
    hand-written), and hands the terminal to
    `THALAMUS_SCOPE=<scope> claude --agent thalamus-<scope>` (a tmux window when
-   available, `execvp` otherwise). `thalamus roster` is the control plane: one
-   pinned tmux window per expert manifest plus `main`, idempotent. `main` is the
-   default for any plainly-launched process — an unpinned session *is* a
-   main-plane session.
+   available, `execvp` otherwise). `thalamus roster` brings up the control plane:
+   by default just the `main` **anchor** window (idempotent); `--all` opens one
+   window per expert manifest (the legacy full roster). Experts are otherwise
+   **spawned on demand** — `thalamus spawn <scope> --dir <path>` opens one
+   detached pinned window in a chosen directory, so a pinned expert session can
+   work in any project while its distilled memory still scopes to the expert
+   (Thalamus memory spans projects). Spawn writes the derived agents to
+   `~/.claude/agents/` (not only the repo's) so `--agent` — and sibling
+   consultation subagents — resolve regardless of the window's cwd. On-demand
+   replaced always-on expert windows because an idle window still writes a
+   pin-ledger spawn, inflating the `pinned, never retrieved` metric (lab/roster
+   metric-confound, 2026-07-19). `main` is the default for any plainly-launched
+   process — an unpinned session *is* a main-plane session.
 2. **The pin is resolved once, everywhere, by the same rule.** Resolution is
    **picked-agent-first, env-fallback** (`harness/pin.resolve_pin`; hooks source
    the mirror `resolve-scope.sh`): `CLAUDE_CODE_AGENT=thalamus-<scope>` wins
