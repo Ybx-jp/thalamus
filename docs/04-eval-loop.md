@@ -230,22 +230,29 @@ provenance line, not as the memorized diagnosis, so the probes are now
 validated as **surfacing** detectors and remain unvalidated as use signals.
 
 **Open: the battery, not the runner, is the bottleneck (lab/014, confirmed
-lab/015).** Acceptance saturated at **12/12 across sonnet, fable, and opus** —
-a battery ceiling, not a model ceiling, so no memory contrast has anywhere to
-appear at any capability tier. Harder tasks or a graded oracle must precede any
-further campaign.
+lab/015–016).** Acceptance saturated at **18/18 across sonnet, fable, and opus
+over two replicates** — a battery ceiling, not a model ceiling, so no memory
+contrast has anywhere to appear at any capability tier. Harder tasks or a graded
+oracle must precede any further campaign spend.
 
-**Recall-calling is a model×task interaction (lab/015).** With the corrected
-injection delivered identically to every memory-on arm, the consultation task
-elicited a recall call from all three models and the reader task from opus
-only. Every call followed the injected pattern exactly (one `ToolSearch`, then
-`memory_open_threads`). The leading hypothesis — the consultation prompt asks
-for an under-specified design judgment, the reader prompt is a fully specified
-mechanical fix — is the most concrete lead yet on *which tasks the battery
-should contain*, and is recorded as hypothesis, not finding. Because
-memory-on ran at order 0 on reader and order 1 on consultation, task and
-arm-order were confounded across lab/011–014; opus's order-0 hit alongside
-sonnet/fable's order-1 hits breaks that confound with data.
+**Probe validity, the sturdiest result so far (lab/016).** Across 18 valid arms
+`memo-surfaced` fired **iff** the arm called a thalamus tool — zero mismatches,
+zero false positives, and all 9 memory-off control arms silent.
+`fix-name-convergence` stayed **0/18**: surfacing is well measured, memo *use*
+is still unevidenced anywhere.
+
+**Recall-calling is substantially stochastic (lab/016, superseding lab/015
+§2).** lab/015 read a model×task interaction off one observation per cell and
+proposed that under-specified tasks invite recall. Replication inverted both
+sonnet cells — reader 0→1, consultation 1→0 — meeting the falsification
+condition written down before the run. Within a fixed (model, task, arm) cell
+the call happens or doesn't; a single campaign's recall column is one sample of
+an unknown distribution, so recall-calling cannot serve as a dependent variable
+until its base rate is measured. What survives: *when* a call happens it follows
+the injected pattern exactly (one `ToolSearch`, then `memory_open_threads`), and
+the task/arm-order confound that ran through lab/011–014 is broken by data
+(memory-on ran at order 0 on reader and order 1 on consultation, and hits occur
+at both).
 
 **`recall_calls` is recorded per run** (`{thalamus, tool_search}`) — whether an
 arm reached for memory is the contrast's primary outcome and previously lived

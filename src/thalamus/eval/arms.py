@@ -66,14 +66,22 @@ class ArmError(RuntimeError):
     pass
 
 
-class AuthFault(ArmError):
-    """Headless credentials died. Distinct because it must stop the campaign.
+class SessionFault(ArmError):
+    """The headless session died for a reason outside the experiment.
 
-    lab/012: an OAuth token expired mid-campaign and the runner cheerfully
-    launched the next arm against dead credentials, recording a 1-turn/$0.00
-    run that is indistinguishable at a glance from a genuine 1-turn success.
-    Every arm after the expiry is void, so the campaign must halt, not
-    continue producing records that look like data.
+    Credentials expiring (lab/012), a usage/session limit landing mid-campaign
+    (lab/016) — the cause differs, the consequence does not: this arm's result
+    is not about the candidate, and every arm after it will hit the same wall.
+    The campaign must halt rather than keep emitting records that read as data.
+
+    lab/016 is why this is not called AuthFault any more. The first version
+    matched exactly the one string lab/012 happened to observe
+    ("Failed to authenticate"), so `You've hit your session limit` walked
+    straight past it: 16 arms were recorded as $0.00 candidate *failures* and
+    two more, killed at turns 11 and 18 of 40, were stamped
+    `attributable: true, accepted: false` — a trustworthy-looking candidate
+    defect that was nothing of the kind. Match the failure class, never one
+    vendor's phrasing.
     """
 
 
@@ -101,7 +109,15 @@ class AuthFault(ArmError):
 # save. Deterministic symptom matching is the same idea at a different scale,
 # not a weaker version of it.
 
-AUTH_FAULT_MARKER = "Failed to authenticate"
+# Markers that mean the *session* died, not the candidate's attempt. Kept as a
+# class of failures rather than a single string — see SessionFault.
+SESSION_FAULT_MARKERS = (
+    "failed to authenticate",
+    "session limit",
+    "usage limit",
+    "rate limit",
+    "quota",
+)
 
 # Missing *first-party* submodules are excluded deliberately: a candidate that
 # deletes or renames `thalamus/reader.py` genuinely breaks `thalamus.reader`,
@@ -131,21 +147,35 @@ def classify_infra_fault(tail: str, exit_code: int | None) -> str | None:
     return None
 
 
-def classify_auth_fault(agent: AgentRun) -> str | None:
-    """Distinguish the two auth-expiry shapes lab/012 had to separate by hand.
+def classify_session_fault(agent: AgentRun) -> str | None:
+    """Name how a dead session died, or None if it died of nothing.
 
-    An expiry on the *closing* turn leaves a real worktree behind — lab/012
-    confirmed from the raw transcript that the candidate's fixtures were
-    already passing when the token died, so the oracles run against that state
-    are trustworthy and only the model's own summary is lost. An expiry before
-    any work leaves nothing: 1 turn, $0.00, ~100ms. Both must stop the
-    campaign; only the second voids its own record.
+    Two shapes only:
+
+    - `void` — nothing happened (1 turn, $0.00). Grading an untouched worktree
+      would manufacture a verdict out of thin air.
+    - `interrupted` — real work, then the session died. The worktree holds an
+      attempt of *unknown completeness*, so any verdict against it is a
+      statement about the interruption, not about the candidate.
+
+    Both stop the campaign and neither is graded.
+
+    There is deliberately no `at_close` shape, tempting as it is: lab/012 did
+    establish that one arm's token died only after its fixtures were already
+    passing, so its oracles were trustworthy — but that was established by
+    *reading the raw transcript*, and it was 33 turns into a 40-turn budget.
+    No cheap signal separates it from lab/016's fable arms, cut off at turns 11
+    and 18 of the same budget. A runner that guessed would sometimes stamp a
+    half-finished attempt as a trustworthy verdict, which is the exact failure
+    this whole classifier exists to prevent. When an interrupted arm matters,
+    read its transcript and say so by hand.
     """
-    if AUTH_FAULT_MARKER not in agent.result:
+    text = (agent.result or "").lower()
+    if not any(marker in text for marker in SESSION_FAULT_MARKERS):
         return None
     if agent.num_turns <= 1 and agent.cost_usd == 0.0:
-        return "auth_failed_void"
-    return "auth_failed_at_close"
+        return "session_fault_void"
+    return "session_fault_interrupted"
 
 
 @dataclass
@@ -530,18 +560,21 @@ def run_arm(
         )
         record["wall_seconds"] = round(time.monotonic() - started, 1)
 
-        # `is_error` alone is NOT an auth signal — every turn-capped run in
-        # runs.jsonl carries it too. The result string is the discriminator.
-        auth_fault = classify_auth_fault(agent)
-        if auth_fault == "auth_failed_void":
-            # No candidate work happened; grading an untouched worktree would
-            # manufacture a verdict out of nothing.
-            record["infra_fault"] = auth_fault
+        # `is_error` alone is NOT a session-death signal — every turn-capped run
+        # in runs.jsonl carries it too. The result string is the discriminator.
+        session_fault = classify_session_fault(agent)
+        if session_fault:
+            # Nothing to grade, or an attempt of unknown completeness. Either
+            # way a verdict here would describe the interruption and be read as
+            # a statement about the candidate (lab/016).
+            record["infra_fault"] = session_fault
             record["attributable"] = False
             record["void"] = True
-            raise AuthFault(
-                f"{task.id} · {arm.spec}: headless auth died before any work "
-                "(1 turn, $0.00) — record stamped void, campaign stopped"
+            how = ("no work done" if session_fault.endswith("void")
+                   else f"cut off after {agent.num_turns} turns of {max_turns}")
+            raise SessionFault(
+                f"{task.id} · {arm.spec}: session died ({how}) "
+                "— record stamped void and ungraded, campaign stopped"
             )
 
         diff = _worktree_diff(worktree)
@@ -567,20 +600,8 @@ def run_arm(
         faults = sorted({
             a["infra_fault"] for a in record["acceptance"] if a["infra_fault"]
         })
-        if auth_fault:
-            # Oracles still ran and are trustworthy here (lab/012 verified the
-            # worktree state against the raw transcript) — only the model's
-            # closing summary was lost. The stamp records the caveat; the
-            # campaign still stops, below.
-            faults.append(auth_fault)
         record["infra_faults"] = faults
         record["attributable"] = not faults
-        if auth_fault:
-            raise AuthFault(
-                f"{task.id} · {arm.spec}: headless auth died on the closing "
-                f"turn after {agent.num_turns} turns — this record's oracles "
-                "are trustworthy, but the campaign is stopped"
-            )
     finally:
         record["kept"] = keep
         if not keep:

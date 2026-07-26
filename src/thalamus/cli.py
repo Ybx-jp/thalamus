@@ -811,15 +811,15 @@ def _cmd_eval(args, eval_parser):
                     timeout=args.timeout or arms_mod.DEFAULT_TIMEOUT,
                     full_auto=args.full_auto, keep=args.keep, order_index=index,
                 )
-            except arms_mod.AuthFault as exc:
-                # Every arm after a credential death is void; continuing would
-                # only manufacture records that look like data (lab/012).
+            except arms_mod.SessionFault as exc:
+                # Every arm after a session death is void; continuing would only
+                # manufacture records that look like data (lab/012, lab/016).
                 print(f"\nCAMPAIGN STOPPED — {exc}", file=sys.stderr)
                 remaining = [a.spec for a in arm_list[index + 1:]]
                 if remaining:
-                    print(f"Not run: {', '.join(remaining)}. Re-auth "
-                          "(`claude -p \"say ok\"`), then re-run this campaign.",
-                          file=sys.stderr)
+                    print(f"Not run: {', '.join(remaining)}. Check credentials "
+                          "and usage limits (`claude -p \"say ok\"`), then "
+                          "re-run this campaign.", file=sys.stderr)
                 sys.exit(3)
             except arms_mod.ArmError as exc:
                 print(f"{task.id} · {arm.spec}: {exc}", file=sys.stderr)

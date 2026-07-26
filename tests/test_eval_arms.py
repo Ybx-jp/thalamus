@@ -399,6 +399,7 @@ def test_run_agent_threads_scope_and_project_into_the_subprocess_env(tmp_path, m
 # tested only against strings its author imagined is green and ungrounded.
 
 AUTH_TAIL = "Failed to authenticate: OAuth session expired and could not be refreshed"
+LIMIT_TAIL = "You've hit your session limit · resets 3:50pm (America/Los_Angeles)"
 COLLECTION_TAIL = (
     "ImportError while importing test module '/w/tests/test_reader.py'.\n"
     "ModuleNotFoundError: No module named 'gremlin_python'\n"
@@ -437,19 +438,31 @@ class TestInfraFaultClassification:
     def test_command_not_found_is_infra(self):
         assert arms.classify_infra_fault("uv: command not found", 127) == "command_not_found"
 
-    def test_auth_fault_shapes_are_distinguished(self):
+    def test_session_fault_shapes_are_distinguished(self):
         """
-        lab/012 had to separate these two by hand from the raw transcripts.
-        A closing-turn expiry leaves a real worktree the oracles can grade; a
-        pre-work expiry leaves nothing (1 turn, $0.00).
+        lab/012 had to separate these by hand from the raw transcripts.
+        A closing-turn death leaves a real worktree the oracles can grade; a
+        pre-work death leaves nothing (1 turn, $0.00); an interruption
+        mid-attempt leaves a half-finished one (lab/016).
         """
-        at_close = AgentRun("s", AUTH_TAIL, 0.91, 197000, 33, True)
         void = AgentRun("s", AUTH_TAIL, 0.0, 130, 1, True)
+        worked = AgentRun("s", AUTH_TAIL, 0.91, 197000, 33, True)
         capped = AgentRun("s", "", 1.67, 200000, 41, True)
-        assert arms.classify_auth_fault(at_close) == "auth_failed_at_close"
-        assert arms.classify_auth_fault(void) == "auth_failed_void"
-        # is_error alone is NOT an auth signal — every capped run carries it.
-        assert arms.classify_auth_fault(capped) is None
+        assert arms.classify_session_fault(void) == "session_fault_void"
+        assert arms.classify_session_fault(worked) == "session_fault_interrupted"
+        # is_error alone is NOT a session-death signal — every capped run has it.
+        assert arms.classify_session_fault(capped) is None
+
+    def test_session_limit_is_caught_not_just_auth_expiry(self):
+        """
+        lab/016: the guard matched only lab/012's observed auth string, so
+        `You've hit your session limit` walked past it and 16 arms were
+        recorded as $0.00 candidate failures. Match the class, not the phrasing.
+        """
+        void = AgentRun("s", LIMIT_TAIL, 0.0, 90, 1, True)
+        interrupted = AgentRun("s", LIMIT_TAIL, 2.62, 180000, 18, True)
+        assert arms.classify_session_fault(void) == "session_fault_void"
+        assert arms.classify_session_fault(interrupted) == "session_fault_interrupted"
 
     def test_acceptance_stamps_the_fault_but_keeps_the_verdict(self, tmp_path):
         """
@@ -501,45 +514,48 @@ class TestRunArmFaultStamping:
         assert record["infra_faults"] == []
         assert "INFRA FAULT" not in render_run(record)
 
-    def test_auth_death_before_any_work_voids_the_record_and_stops(self, tmp_path, monkeypatch):
+    def test_session_death_before_any_work_voids_the_record_and_stops(self, tmp_path, monkeypatch):
         """
         lab/012's void arms: 1 turn, $0.00. The runner must refuse to grade an
-        untouched worktree and must raise AuthFault so the campaign halts
+        untouched worktree and must raise SessionFault so the campaign halts
         rather than launching the next arm against dead credentials.
         """
         repo = _git_repo(tmp_path)
         self._stub(monkeypatch, AgentRun("s3", AUTH_TAIL, 0.0, 130, 1, True))
 
-        with pytest.raises(arms.AuthFault):
+        with pytest.raises(arms.SessionFault):
             run_arm(repo, _task(), parse_arm("memory-off", SCOPES),
                     runs_base=tmp_path / "runs")
 
         # The record still lands — a stopped campaign must leave evidence.
         record = json.loads((tmp_path / "runs" / "runs.jsonl").read_text().strip())
         assert record["void"] is True
-        assert record["infra_fault"] == "auth_failed_void"
+        assert record["infra_fault"] == "session_fault_void"
         assert record["attributable"] is False
         assert "acceptance" not in record
         assert "VOID" in render_run(record)
 
-    def test_auth_death_at_close_still_grades_then_stops(self, tmp_path, monkeypatch):
+    def test_session_death_after_real_work_is_void_and_ungraded(self, tmp_path, monkeypatch):
         """
-        lab/012 verified from the raw transcript that a closing-turn expiry
-        leaves real work behind, so the oracles run against it are
-        trustworthy — grade it, stamp it, then stop the campaign.
+        lab/016's fable arms: killed at turns 11 and 18 of 40 by a session
+        limit, and recorded as `attributable: true, accepted: false` — a
+        trustworthy-looking candidate defect that was nothing of the kind.
+        An attempt of unknown completeness must not be graded at all.
         """
         repo = _git_repo(tmp_path)
-        self._stub(monkeypatch, AgentRun("s4", AUTH_TAIL, 0.91, 197000, 33, True))
+        self._stub(monkeypatch, AgentRun("s4", LIMIT_TAIL, 2.62, 180000, 18, True))
 
-        with pytest.raises(arms.AuthFault):
+        with pytest.raises(arms.SessionFault):
             run_arm(repo, _task(), parse_arm("memory-off", SCOPES),
                     runs_base=tmp_path / "runs")
 
         record = json.loads((tmp_path / "runs" / "runs.jsonl").read_text().strip())
-        assert record.get("void") is not True
-        assert record["acceptance"][0]["passed"] is True
-        assert record["infra_faults"] == ["auth_failed_at_close"]
+        assert record["void"] is True
+        assert record["infra_fault"] == "session_fault_interrupted"
         assert record["attributable"] is False
+        # The trap: no verdict at all, rather than a verdict nobody should read.
+        assert "acceptance" not in record
+        assert "accepted" not in record
 
 
 class TestTurnCapDetection:
@@ -636,7 +652,7 @@ class TestCrossArmFaultSignal:
 
     def test_void_records_are_not_compared(self):
         """A void arm never ran an oracle; pairing against it means nothing."""
-        void = {"void": True, "infra_fault": "auth_failed_void"}
+        void = {"void": True, "infra_fault": "session_fault_void"}
         assert arms.render_campaign_faults([self._record("boom"), void]) == ""
 
     def test_same_fault_through_different_worktree_paths_still_matches(self):
