@@ -13,6 +13,7 @@ overlap: memorization
 source:
   kind: replayed
   ref: "9f28895"
+  fix_ref: 8b70330
   evidence: >-
     Session of 2026-07-19 (fix commit 8b70330): "LLM-as-a-Judge reliability"
     returned nothing against a scope holding four claims containing both terms.

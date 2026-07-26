@@ -63,6 +63,15 @@ class TaskSource(BaseModel):
     evidence: str = Field(
         "", description="Replayed tasks: the session/commit this replays"
     )
+    fix_ref: str = Field(
+        "",
+        description=(
+            "Replayed tasks: the commit that actually fixed this bug — the "
+            "oracle's positive anchor. Structured because the anchor is graded "
+            "mechanically; naming it only in `evidence` prose puts it out of "
+            "reach of the runner."
+        ),
+    )
 
 
 class Task(BaseModel):
@@ -95,6 +104,18 @@ class Task(BaseModel):
             issues.append(
                 "replayed task carries no evidence pointer — a replay that can't "
                 "name the session/commit it replays is an authored task wearing a tag"
+            )
+        if self.source.kind == "replayed" and not self.source.fix_ref.strip():
+            issues.append(
+                "replayed task has no source.fix_ref — the commit that actually "
+                "fixed the bug is the oracle's positive anchor, and without it "
+                "the task's grading cannot be validated against ground truth"
+            )
+        if self.source.kind == "authored" and self.source.fix_ref.strip():
+            issues.append(
+                "authored task declares a fix_ref — an authored task has no "
+                "historical fix; anchor-based validation does not apply to it "
+                "(it needs metamorphic relations instead)"
             )
         if not self.prompt.strip():
             issues.append("prompt is empty")
