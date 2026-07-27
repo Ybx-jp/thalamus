@@ -420,10 +420,30 @@ behaves (4 hits, 5 callers, no false positives).
 `--dangerously-skip-permissions` with the worktree as cwd, and nothing stops it
 reading `/…/thalamus/config/tasks/<id>.yaml` by absolute path. That file is the
 pre-registration — it states the withheld fact in prose and carries every
-relation with its exact fixtures. Two of 24 arms found it via `ls config/tasks/`.
-Until an arm is confined to its worktree, every gated task is one directory
-listing from solved, and no probe keyed to a token in the battery can be
-trusted.
+relation with its exact fixtures. Until an arm is confined to its worktree, every
+gated task is one directory listing from solved, and no probe keyed to a token in
+the battery can be trusted.
+
+**Detected, not confined (lab/021).** Confinement is unbuilt; *measurement* of
+the leak is not. `detect_worktree_escape` reads each arm's own transcript for
+tool inputs naming the operator's checkout by absolute path and stamps `escapes`
+and `contaminated` on the record, on the flag-never-exclude discipline the infra
+classifier already follows (§2a). Two classes: `answer_key` — a battery file, or
+a file the task's own `fix_ref` changed, since the live tree carries the fix in
+code as well as in prose — and `operator_repo` for any weaker escape. Which files
+give the answer away is a property of the task, so `fix_touched_paths` derives
+the set from `source.ref..fix_ref` rather than trusting a fixed directory list;
+that distinction is what separates the two, and it was found by validating the
+detector against lab/020's own arms, where a third contaminated arm had run the
+live `arms.py` and been missed by hand. Re-derived over that campaign the rate is
+**3 of 24**, not the 2 reported.
+
+`contaminated` is deliberately **not** `attributable`. An infra fault means the
+verdict is not about the candidate at all; contamination means it is about the
+candidate but not about an *unaided* one. The first invalidates a measurement,
+the second re-labels it, and collapsing them loses both. The stamp is the
+pre-registered exclusion key for a per-protocol read; the intention-to-treat
+comparison keeps every arm regardless, which is what lab/020 reported.
 
 **Recall-calling is substantially stochastic (lab/016, superseding lab/015
 §2).** lab/015 read a model×task interaction off one observation per cell and

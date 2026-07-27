@@ -618,6 +618,103 @@ class TestRecallCallCounting:
         assert arms.count_recall_calls("") == {"thalamus": 0, "tool_search": 0}
 
 
+class TestWorktreeEscapeDetection:
+    """The lab/020 leak, mechanised.
+
+    Two memory-off arms read the operator's live task file by absolute path and
+    scored at or above the gate's pre-registered memory-off ceiling. The shapes
+    below are those arms' shapes, not invented ones.
+    """
+
+    REPO = Path("/home/ybx/code/thalamus")
+    WORKTREE = Path("/home/ybx/.thalamus/counterfactuals/wt/task--memory-off--x")
+
+    def _transcript(self, *calls):
+        lines = []
+        for name, tool_input in calls:
+            lines.append(json.dumps({
+                "type": "assistant",
+                "message": {"content": [
+                    {"type": "tool_use", "name": name, "input": tool_input},
+                ]},
+            }))
+        lines.append(json.dumps({"type": "user", "message": {"content": "hi"}}))
+        lines.append("{not json")
+        return "\n".join(lines)
+
+    def _detect(self, transcript):
+        return arms.detect_worktree_escape(transcript, self.WORKTREE, self.REPO)
+
+    def test_reading_the_task_file_is_an_answer_key_escape(self):
+        escapes = self._detect(self._transcript(
+            ("Read", {"file_path": "/home/ybx/code/thalamus/config/tasks/"
+                                   "arm-runner-session-death-classification.yaml"}),
+        ))
+        assert len(escapes) == 1
+        assert escapes[0]["kind"] == "answer_key"
+        assert escapes[0]["tool"] == "Read"
+        assert escapes[0]["path"].startswith("config/tasks/")
+
+    def test_other_reads_of_the_live_checkout_are_the_weaker_class(self):
+        escapes = self._detect(self._transcript(
+            ("Read", {"file_path": "/home/ybx/code/thalamus/lab/019-x.md"}),
+        ))
+        assert [e["kind"] for e in escapes] == ["operator_repo"]
+
+    def test_work_inside_the_worktree_is_not_an_escape(self):
+        """The overwhelmingly common case: an arm that stayed home."""
+        escapes = self._detect(self._transcript(
+            ("Read", {"file_path": str(self.WORKTREE / "src/thalamus/eval/arms.py")}),
+            ("Edit", {"file_path": str(self.WORKTREE / "src/thalamus/eval/arms.py")}),
+            ("Bash", {"command": "uv run pytest -q"}),
+        ))
+        assert escapes == []
+
+    def test_relative_paths_resolve_in_the_worktree_and_do_not_fire(self):
+        """`ls config/tasks/` runs with cwd=worktree, where the file does not
+        exist at the task's ref. Only the absolute-path read is the leak."""
+        assert self._detect(self._transcript(
+            ("Bash", {"command": "ls config/tasks/"}),
+        )) == []
+
+    def test_bash_reads_of_the_answer_key_are_caught_too(self):
+        escapes = self._detect(self._transcript(
+            ("Bash", {"command": "cat /home/ybx/code/thalamus/config/tasks/t.yaml"}),
+        ))
+        assert [e["kind"] for e in escapes] == ["answer_key"]
+
+    def test_repeated_reads_collapse_to_one_finding(self):
+        path = "/home/ybx/code/thalamus/config/tasks/t.yaml"
+        escapes = self._detect(self._transcript(
+            ("Read", {"file_path": path}), ("Read", {"file_path": path}),
+        ))
+        assert len(escapes) == 1
+
+    def test_empty_transcript_is_clean_not_an_error(self):
+        assert self._detect("") == []
+
+    def test_a_file_the_fix_touched_is_the_answer_key_in_code_form(self):
+        """The third lab/020 escape, which the write-up did not report: an arm
+        ran the live `arms.py`, which at HEAD already carries the fix."""
+        transcript = self._transcript(
+            ("Bash", {"command": "grep -n classify /home/ybx/code/thalamus/"
+                                 "src/thalamus/eval/arms.py"}),
+        )
+        weak = arms.detect_worktree_escape(transcript, self.WORKTREE, self.REPO)
+        assert [e["kind"] for e in weak] == ["operator_repo"]
+
+        strong = arms.detect_worktree_escape(
+            transcript, self.WORKTREE, self.REPO,
+            frozenset({"src/thalamus/eval/arms.py"}),
+        )
+        assert [e["kind"] for e in strong] == ["answer_key"]
+
+    def test_a_task_with_no_fix_ref_has_no_such_set(self, tmp_path):
+        """`authored` tasks have no historical fix to leak."""
+        assert arms.fix_touched_paths(tmp_path, "abc123", "") == frozenset()
+        assert arms.fix_touched_paths(tmp_path, "", "def456") == frozenset()
+
+
 class TestCrossArmFaultSignal:
     def _record(self, tail, passed=False):
         return {"acceptance": [{"run": "uv run pytest -q", "passed": passed,

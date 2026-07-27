@@ -446,6 +446,104 @@ def count_recall_calls(transcript: str) -> dict:
     return counts
 
 
+# The battery files ARE the answer key: each states its withheld fact in prose
+# (`under_specification.fact`) and carries every relation with its exact literals.
+ANSWER_KEY_DIRS = ("config/tasks",)
+
+
+def fix_touched_paths(repo: Path, source_ref: str, fix_ref: str) -> frozenset[str]:
+    """The files the historical fix changed — the answer key in code form.
+
+    Found by validating the escape detector against lab/020's own arms: the two
+    the write-up caught had read the task *file*, but a third had run the live
+    `src/thalamus/eval/arms.py`, which at HEAD already carries the very fix the
+    task asks the candidate to write. A directory list would have filed that as
+    the weaker `operator_repo` class. Which files give the answer away is a
+    property of the task, so it is derived from the task rather than declared.
+
+    An `authored` task has no `fix_ref` and no such set.
+    """
+    if not fix_ref or not source_ref:
+        return frozenset()
+    try:
+        out = _git(repo, "diff", "--name-only", f"{source_ref}..{fix_ref}")
+    except ArmError:
+        return frozenset()
+    return frozenset(p.strip() for p in out.splitlines() if p.strip())
+
+
+def detect_worktree_escape(
+    transcript: str,
+    worktree: Path,
+    repo: Path,
+    fix_paths: frozenset[str] | set[str] = frozenset(),
+) -> list[dict]:
+    """Find reads of the operator's live checkout from inside an arm session.
+
+    A campaign arm runs `--full-auto` (`--dangerously-skip-permissions`) and
+    nothing confines it to its worktree. lab/020 measured the consequence: two
+    memory-off arms ran `ls config/tasks/` and then read the task file by
+    absolute path, outside the worktree entirely. That file states the withheld
+    constraint in prose and lists every relation with its marker strings and
+    turn counts — both arms then scored at or above the memory-off ceiling the
+    gate had pre-registered for them, and one of the two carried `memo-surfaced`
+    on a session UUID it had read out of the file rather than recalled.
+
+    That was caught by reading transcripts. A validity threat found by hand is
+    one that gets missed on the run nobody reads, so it is mechanised here on
+    the discipline the infra classifier already follows (arXiv 2111.03382,
+    2605.05564): **flag, never exclude**. The rung stands exactly as measured.
+
+    Two classes, because they are not equally disqualifying:
+
+    - `answer_key` — a battery file, or a file the task's own `fix_ref` changed
+      (`fix_paths`). The candidate could have read the answer, in prose or in
+      code, so the run says nothing about an *unaided* one.
+    - `operator_repo` — any other escape into the live checkout. Not the answer,
+      but not the experiment either: that tree carries the fix commit and every
+      lab entry describing it, both reachable from `source.ref`'s own history.
+
+    Deliberately separate from `attributable`. An infra fault means the verdict
+    is not about the candidate at all; contamination means it is about the
+    candidate but not about an unaided one. Collapsing them would lose the
+    distinction that makes either useful.
+    """
+    repo_s, worktree_s = str(repo.resolve()), str(worktree.resolve())
+    # A worktree normally lives outside the repo (under RUNS_BASE), so any
+    # mention of the repo path is already an escape — but the check is explicit
+    # so that relocating worktrees inside the repo cannot silently flip it.
+    pattern = re.compile(re.escape(repo_s) + r"[\w./\-]*")
+    escapes: list[dict] = []
+    seen: set[tuple] = set()
+    for line in transcript.splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        content = (record.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            name = block.get("name") or ""
+            blob = json.dumps(block.get("input") or {})
+            for hit in pattern.findall(blob):
+                if hit.startswith(worktree_s):
+                    continue
+                rel = hit[len(repo_s):].lstrip("/")
+                gives_answer = rel.startswith(ANSWER_KEY_DIRS) or rel in fix_paths
+                kind = "answer_key" if gives_answer else "operator_repo"
+                key = (name, rel, kind)
+                if key in seen:
+                    continue
+                seen.add(key)
+                escapes.append({"tool": name, "path": rel, "kind": kind})
+    return escapes
+
+
 def transcript_text(worktree: Path, session_id: str, projects_base: Path | None = None) -> str:
     """The harness transcript of the arm session — the probe/judging capture."""
     base = projects_base or (Path.home() / ".claude" / "projects")
@@ -683,6 +781,18 @@ def run_arm(
         # lab/015 had to re-derive it by hand for twelve arms across three
         # models. Recording it makes a campaign self-describing.
         record["recall_calls"] = count_recall_calls(transcript)
+        # Whether the candidate stayed inside its own experiment. lab/020 found
+        # two arms reading the task file out of the operator's checkout by
+        # absolute path; `contaminated` is the pre-registered exclusion key for
+        # a per-protocol read, and the intention-to-treat comparison keeps every
+        # arm regardless.
+        record["escapes"] = detect_worktree_escape(
+            transcript, worktree, repo,
+            fix_touched_paths(repo, task.source.ref, task.source.fix_ref),
+        )
+        record["contaminated"] = any(
+            e["kind"] == "answer_key" for e in record["escapes"]
+        )
         # L1 is "the *pre-existing* suite stays green", so the suite the
         # candidate inherited is the one that grades it — not the one it left
         # behind. Pinned after the diff is captured, so the record still shows
