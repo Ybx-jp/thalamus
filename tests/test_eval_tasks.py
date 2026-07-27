@@ -289,3 +289,88 @@ class TestMutantValidation:
     def test_duplicate_mutant_ids_are_refused(self):
         issues = _laddered(mutants=[self._m(), self._m()]).check()
         assert any("duplicate mutant id" in i for i in issues)
+
+
+class TestUnderSpecification:
+    """The declared-gate half of a memory-gated task (docs/04; lab/018).
+
+    lab/018 held the arm harness completely fixed and varied only the prompt: a
+    self-contained bug report produced zero thalamus calls, a past-work question
+    produced three. So under-specification is the mechanism that makes a memory
+    contrast possible at all — and an undeclared one is indistinguishable from a
+    prompt that is merely vague. These tests enforce that the declaration is
+    checkable and that it leaves a floor.
+    """
+
+    RUNGS = [{"run": f"r{n}", "level": n} for n in (1, 2, 3, 4, 5)]
+
+    def _spec(self, **overrides):
+        spec = dict(
+            gated=True,
+            fact="the withheld constraint",
+            fact_nodes=["scope:main:claim:deadbeef"],
+            absence_check="exit 0",
+            gates_rungs=[4],
+            floor_rung=2,
+        )
+        spec.update(overrides)
+        return _laddered(acceptance=self.RUNGS, under_specification=spec)
+
+    def test_a_declared_gate_validates(self):
+        assert self._spec().check() == []
+
+    def test_gate_without_fact_nodes_is_refused(self):
+        """A fact no recall can reach does not gate — it just adds difficulty."""
+        assert any("does not gate anything" in i
+                   for i in self._spec(fact_nodes=[]).check())
+
+    def test_gate_without_an_absence_check_is_refused(self):
+        """The absence claim is the load-bearing one, so prose will not do.
+
+        Three candidate facts failed this check during lab/018's design pass —
+        the repo documents its own reasoning in lab/ and in code comments, so
+        most decisions are recoverable from the worktree and gate nothing."""
+        assert any("prose is an assertion rather than evidence" in i
+                   for i in self._spec(absence_check="  ").check())
+
+    def test_floor_at_or_above_the_gate_is_refused(self):
+        """The circularity guard, in its source-input form.
+
+        If the withheld fact gates the bottom of the ladder, a memory-off arm
+        scores nothing on its own merits and the contrast measures the arm label
+        rather than the candidate."""
+        issues = self._spec(floor_rung=4).check()
+        assert any("memory-on win by construction" in i for i in issues)
+
+    def test_gating_a_rung_the_task_does_not_declare_is_refused(self):
+        """Gating rung 4 on a ladder that stops at 2 gates nothing."""
+        task = _laddered(
+            acceptance=[{"run": "a", "level": 1}, {"run": "b", "level": 2}],
+            under_specification=dict(
+                gated=True, fact="f", fact_nodes=["scope:main:claim:x"],
+                absence_check="exit 0", gates_rungs=[4], floor_rung=2,
+            ),
+        )
+        assert any("declares no acceptance check" in i for i in task.check())
+
+    def test_a_rung_cannot_be_both_strongly_and_weakly_gated(self):
+        issues = self._spec(gates_rungs=[4], gates_rungs_weak=[4]).check()
+        assert any("one of the two claims is wrong" in i for i in issues)
+
+    def test_attributable_outcome_on_a_weakly_gated_rung_is_refused(self):
+        """A rung reachable without memory cannot be evidence of memory use.
+
+        R3 on the session-death task is derivable in principle from a 33-turn
+        fixture in the pinned suite, so the endpoint is pre-registered at the
+        strongly-gated rung instead."""
+        issues = self._spec(gates_rungs_weak=[5],
+                            attributable_outcome="rung >= 5").check()
+        assert any("cannot be evidence of memory use" in i for i in issues)
+
+    def test_retired_tests_must_be_re_asserted_somewhere(self):
+        """L1 exemptions relocate an assertion; they do not drop it."""
+        task = _laddered(
+            acceptance=self.RUNGS,
+            no_regression={"obsolete_tests": ["tests/t.py::x"], "relocated_to": 6},
+        )
+        assert any("re-asserted somewhere" in i for i in task.check())

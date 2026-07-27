@@ -101,6 +101,17 @@ action-coupled evaluation.
   / MemoryArena (arXiv 2602.16313) — sequential subtasks with **causal
   dependencies across sessions**; retrieval intent must be inferred, not handed
   over as an explicit query.
+
+  Both of these landed locally as a measurement rather than a citation. lab/018
+  held the arm harness completely fixed and varied only the prompt: a
+  self-contained bug report produced zero memory calls, a past-work question
+  produced three. The battery's original tasks handed retrieval intent over
+  explicitly — exactly what MemoryArena declines to do — so the counterfactual
+  had no contrast to measure. lab/019 is the instantiation: `under_specification`
+  as a declared, mechanically-checked task property. This is a **convergence** on
+  both papers, not an extension; what is local is the enforcement (an
+  `absence_check` command, a `floor_rung` that keeps the ladder's bottom
+  reachable without memory) rather than the idea.
 - **AMA-Bench** (arXiv 2602.22769), **Momento** (arXiv 2606.00832) — long-horizon,
   multi-session memory-and-reasoning batteries.
 - Counterfactual evaluation exists (e.g., MQUAKE counterfactual edit-pairs used to

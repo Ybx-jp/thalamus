@@ -356,15 +356,40 @@ report produces **zero** calls, a past-work question produces
 `ToolSearch → memory_open_threads → memory_recall_by_project`, with conditioning
 firing in neither.
 
-Both battery tasks are self-contained bug reports carrying symptom,
+Both original battery tasks are self-contained bug reports carrying symptom,
 counterexample, and constraint, so **the prompt already holds the answer's
 inputs** and reading the source dominates. Zero recall is correct behavior, not
 a defect. This is also why `memo-surfaced` reads 0/24: it detects knowledge
-"unreachable from the prompt", and nothing in these prompts is unreachable. A
-memory-on arm has no reason to be memory-on until the battery contains a task
-whose solution requires a fact present **only** in the graph — under-specified by
-construction, with the missing piece memorized and absent from the worktree at
-the task's ref.
+"unreachable from the prompt", and nothing in those prompts is unreachable.
+
+**Under-specification is a declared task property (lab/019).** The answer is a
+task that withholds something: `under_specification` names the withheld fact,
+the graph nodes holding it, the rungs it gates, and a `floor_rung` below which
+the ladder must stay reachable from the prompt alone — because a fact gating the
+*bottom* of the ladder makes memory-on win by construction rather than on merit.
+Two claims are enforced structurally: `absence_check` is a command proving the
+tree at `source.ref` cannot answer the question (prose is an assertion, a command
+is evidence), and a rung listed in `gates_rungs_weak` may not be the
+`attributable_outcome`, since a rung reachable without memory cannot be evidence
+of memory use.
+
+Selecting a gateable fact turns out to be the hard part, and it is a constraint
+this project imposes on itself: the lab notebook lives in the repo and the code
+is commented at essay density, so most decisions are recoverable from the
+worktree and gate nothing. Three candidates were rejected on `absence_check`
+before one survived — which is why the check is mechanical rather than asserted.
+
+**`no_regression` retires, it does not drop.** L1 pins `tests/` at `source.ref`,
+which is wrong when the correct fix changes the design those tests assert — on
+the session-death task, pinning whole made *every* candidate including `fix_ref`
+cap at rung 3. The exemption is pre-registered at test-node granularity, must
+equal exactly the pinned tests `fix_ref` fails, and `relocated_to` names the rung
+that re-asserts the retired behavior with the opposite sign.
+
+**The rung-witness rule.** Every rung needs a candidate scoring exactly it, or
+that rung is unvalidated and the observed gap is carried by some other rung. The
+session-death task's mutant set supplies rungs 2, 3 and 4 between the anchors,
+and the gate passes 6/6.
 
 **Probe validity, the sturdiest result so far (lab/016, extended lab/018).**
 Across 24 valid arms `memo-surfaced` fires **iff** the arm called a thalamus

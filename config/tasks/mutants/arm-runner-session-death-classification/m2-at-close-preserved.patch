@@ -1,0 +1,27 @@
+diff --git a/src/thalamus/eval/arms.py b/src/thalamus/eval/arms.py
+index 165bc06..2a2cce9 100644
+--- a/src/thalamus/eval/arms.py
++++ b/src/thalamus/eval/arms.py
+@@ -175,6 +175,10 @@ def classify_session_fault(agent: AgentRun) -> str | None:
+         return None
+     if agent.num_turns <= 1 and agent.cost_usd == 0.0:
+         return "session_fault_void"
++    # Died late enough that the work was almost certainly finished, so the
++    # verdict is still worth having.
++    if agent.num_turns >= 30:
++        return "session_fault_at_close"
+     return "session_fault_interrupted"
+ 
+ 
+@@ -563,7 +567,10 @@ def run_arm(
+         # `is_error` alone is NOT a session-death signal — every turn-capped run
+         # in runs.jsonl carries it too. The result string is the discriminator.
+         session_fault = classify_session_fault(agent)
+-        if session_fault:
++        if session_fault and session_fault.endswith("at_close"):
++            # Late death: grade it, then stop the campaign.
++            record["infra_fault"] = session_fault
++        elif session_fault:
+             # Nothing to grade, or an attempt of unknown completeness. Either
+             # way a verdict here would describe the interruption and be read as
+             # a statement about the candidate (lab/016).

@@ -1,0 +1,13 @@
+diff --git a/src/thalamus/eval/arms.py b/src/thalamus/eval/arms.py
+index 165bc06..234b85c 100644
+--- a/src/thalamus/eval/arms.py
++++ b/src/thalamus/eval/arms.py
+@@ -175,6 +175,8 @@ def classify_session_fault(agent: AgentRun) -> str | None:
+         return None
+     if agent.num_turns <= 1 and agent.cost_usd == 0.0:
+         return "session_fault_void"
++    if agent.num_turns >= 30:
++        return "session_fault_interrupted_late"
+     return "session_fault_interrupted"
+ 
+ 

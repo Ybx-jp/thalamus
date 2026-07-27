@@ -159,6 +159,81 @@ class Mutant(BaseModel):
     rationale: str = ""
 
 
+class UnderSpecification(BaseModel):
+    """Why this task's prompt withholds something, stated so it can be audited.
+
+    lab/018 measured that whether an arm reaches for memory is carried by the
+    prompt and almost nothing else: a self-contained bug report produced zero
+    thalamus calls, a past-work question produced three, with the harness held
+    completely fixed. A task whose prompt hands over symptom, counterexample and
+    constraint leaves nothing unreachable, so declining to recall is correct
+    behavior and the memory contrast has nowhere to appear.
+
+    Under-specification is therefore a *designed* property, and an undeclared one
+    is indistinguishable from a vague prompt. The necessity belongs in the source
+    input — never in a relation's predicate, which checks inputs and outputs and
+    knows nothing about provenance (exchange `scope:main:exchange:5c5c57142ffc43ef`).
+    Hence `floor_rung`: the rungs below it must stay reachable from the prompt
+    alone, or memory-on wins by construction rather than on merit.
+    """
+
+    gated: bool = False
+    fact: str = Field("", description="What the prompt withholds, in prose")
+    fact_nodes: list[str] = Field(
+        default_factory=list,
+        description="Graph vertex IDs holding the fact — where a recall would find it",
+    )
+    absent_from: list[str] = Field(default_factory=list)
+    absence_check: str = Field(
+        "",
+        description=(
+            "Shell command proving the tree at `source.ref` cannot answer the "
+            "question. Exit 0 = absent. A prose absence claim is an assertion; "
+            "this is the evidence."
+        ),
+    )
+    alternative_routes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Disclosed non-memory routes to the fact. Declaring one weakens the "
+            "gating claim honestly rather than leaving it overstated."
+        ),
+    )
+    gates_rungs: list[int] = Field(default_factory=list)
+    gates_rungs_weak: list[int] = Field(
+        default_factory=list,
+        description="Rungs reachable without memory in principle — see alternative_routes",
+    )
+    floor_rung: int = 2
+    attributable_outcome: str = Field(
+        "",
+        description=(
+            "Pre-registered before any campaign: which rung counts as evidence "
+            "of memory use. Weakly-gated rungs must not be it."
+        ),
+    )
+
+
+class NoRegression(BaseModel):
+    """Tests the pinned pre-existing suite carries that the fix legitimately retires.
+
+    L1 pins `tests/` at `source.ref`, which is right for measuring a candidate
+    against the suite it inherits — but wrong when the correct fix *changes the
+    design* those tests assert. Without an exemption the positive anchor cannot
+    reach the top rung and the whole ladder collapses under it.
+
+    The exemption is pre-registered at test-node granularity and must equal
+    EXACTLY the pinned tests `fix_ref` fails: larger excuses a real regression,
+    smaller leaves the gate unreachable. `relocated_to` names the rung that
+    re-asserts the retired behavior with the opposite and correct sign — the
+    assertion is moved, not dropped, which is what keeps the gate from being
+    hollowed out (exchange `scope:main:exchange:1ef0d3649b5b495f`).
+    """
+
+    obsolete_tests: list[str] = Field(default_factory=list)
+    relocated_to: int = 0
+
+
 class Task(BaseModel):
     task: str = "v0"
     id: str
@@ -169,6 +244,8 @@ class Task(BaseModel):
     acceptance: list[Acceptance] = Field(default_factory=list)
     probes: list[Probe] = Field(default_factory=list)
     mutants: list[Mutant] = Field(default_factory=list)
+    under_specification: UnderSpecification | None = None
+    no_regression: NoRegression | None = None
     rubric: str = ""
 
     def check(self) -> list[str]:
@@ -283,6 +360,85 @@ class Task(BaseModel):
             elif probe.kind == "command" and not probe.run.strip():
                 issues.append(f"{where}: command probe needs a run")
         issues.extend(self._check_mutants())
+        issues.extend(self._check_under_specification(levels))
+        issues.extend(self._check_no_regression(levels))
+        return issues
+
+    def _check_no_regression(self, levels: set[int]) -> list[str]:
+        """An L1 exemption relocates an assertion; it never merely drops one.
+
+        Independent of `under_specification`: a task can legitimately retire a
+        pinned test whose design the fix changed without withholding anything
+        from its prompt.
+        """
+        if not (self.no_regression and self.no_regression.obsolete_tests):
+            return []
+        relocated = self.no_regression.relocated_to
+        if relocated in levels:
+            return []
+        return [
+            "no_regression.obsolete_tests declared but `relocated_to` names rung "
+            f"{relocated}, which has no acceptance check — a retired assertion "
+            "has to be re-asserted somewhere or the gate is simply weaker"
+        ]
+
+    def _check_under_specification(self, levels: set[int]) -> list[str]:
+        """A declared gate has to be checkable, and it has to leave a floor.
+
+        The failure this prevents is the one the eval-methodology expert flagged
+        twice: if the withheld fact gates the *bottom* of the ladder, memory-off
+        cannot reach any rung and the contrast measures the arm label rather than
+        the candidate. Necessity belongs in the source input, above a floor that
+        the prompt alone can reach.
+        """
+        issues: list[str] = []
+        spec = self.under_specification
+        if spec is None or not spec.gated:
+            return issues
+        if not spec.fact.strip():
+            issues.append("under_specification.gated with no `fact` — an undeclared "
+                          "gate is indistinguishable from a vague prompt")
+        if not spec.fact_nodes:
+            issues.append(
+                "under_specification names no `fact_nodes` — a fact no recall can "
+                "reach does not gate anything, it just makes the task harder"
+            )
+        if not spec.absence_check.strip():
+            issues.append(
+                "under_specification has no `absence_check` — the claim that the "
+                "tree cannot answer the question is the load-bearing one, and "
+                "prose is an assertion rather than evidence"
+            )
+        if not spec.gates_rungs:
+            issues.append("under_specification.gated but `gates_rungs` is empty")
+        for rung in (*spec.gates_rungs, *spec.gates_rungs_weak):
+            if rung not in levels:
+                issues.append(
+                    f"under_specification gates rung {rung}, which this task "
+                    "declares no acceptance check for"
+                )
+        for rung in sorted(set(spec.gates_rungs) & set(spec.gates_rungs_weak)):
+            issues.append(
+                f"rung {rung} is declared both strongly and weakly gated — one "
+                "of the two claims is wrong, and the weaker one is the honest "
+                "default"
+            )
+        if spec.gates_rungs and spec.floor_rung >= min(spec.gates_rungs):
+            issues.append(
+                f"floor_rung {spec.floor_rung} is not below the lowest gated rung "
+                f"{min(spec.gates_rungs)} — with no reachable floor a memory-off "
+                "arm scores nothing on its own merits, which makes memory-on win "
+                "by construction rather than on quality"
+            )
+        weak = set(spec.gates_rungs_weak)
+        if weak and spec.attributable_outcome.strip():
+            for rung in sorted(weak):
+                if f">= {rung}" in spec.attributable_outcome:
+                    issues.append(
+                        f"attributable_outcome reads on rung {rung}, which is only "
+                        "weakly gated — a candidate can reach it without memory, "
+                        "so it cannot be evidence of memory use"
+                    )
         return issues
 
     def _check_mutants(self) -> list[str]:
