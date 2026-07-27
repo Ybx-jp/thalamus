@@ -26,12 +26,19 @@ purpose.
     terminal step silently do nothing, so the hook fails them fast with
     instruction instead. Every gremlin-marker verdict (block or pass) logs to
     `~/.thalamus/guards/` with the command's step fingerprint, the satisfaction
-    branch (terminal/wrapper/textedit), and the guard version, so the guard
-    grades itself: rescue joins on traversal intent, not "any later pass", and
-    friction/false-negative exposure stay auditable per class (`thalamus eval
-    gremlin`). House wrappers and text-editing/search commands are allowed
-    through — the retrospective baseline found every would-be historical
-    firing of the unamended guard was a false positive (lab/008). The
+    branch (terminal/wrapper/textedit/no-traversal), and the guard version, so
+    the guard grades itself: rescue joins on traversal intent, not "any later
+    pass", and friction/false-negative exposure stay auditable per class
+    (`thalamus eval gremlin`). The markers that trigger the guard are imports
+    and connection setup, so a precision gate runs ahead of every satisfaction
+    branch: absent a source step (`.V(`/`.E(`/`.addV(`/`.addE(`/`.inject(`) no
+    traversal was built, there is no laziness to guard, and the command passes
+    as `no-traversal`. House wrappers, text-editing/search commands and
+    commit-message prose are allowed through likewise — markers as data rather
+    than as code. The retrospective baseline found every would-be historical
+    firing of the unamended guard was a false positive (lab/008), and false
+    positives teach agents to route around the guard, so a residual false
+    negative is the knowingly cheaper side of the trade. The
     paired dialect guard (gremlin-python spellings on the gremlin-lang
     `memory_query` surface) lives in `substrate/query.py`; authoring rules and
     the proven-query store are the `gremlin-python` skill.

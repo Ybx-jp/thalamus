@@ -84,7 +84,9 @@ class GuardEvent:
     session_id: str
     verdict: str  # "block" | "pass"
     command_hash: str = ""
-    branch: str = ""  # what satisfied a pass: "terminal" | "wrapper" | "textedit"
+    # what satisfied a pass: "terminal" | "wrapper" | "textedit" | "no-traversal"
+    # ("no-traversal" = the trigger fired on an import but no traversal was built)
+    branch: str = ""
     fingerprint: tuple[str, ...] = ()
 
 

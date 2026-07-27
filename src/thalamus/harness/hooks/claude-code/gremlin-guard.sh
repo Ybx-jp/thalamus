@@ -70,20 +70,39 @@ log_event() {
       scope: $scope,
       cwd: (.cwd // ""),
       guard: $guard,
-      guard_version: 4,
+      guard_version: 5,
       verdict: $verdict,
       branch: $branch,
       fingerprint: $fp,
       command_hash: $hash}' >> "$guard_dir/$(date -u +%Y-%m).jsonl" || true
 }
 
+# Precision gate, ahead of every satisfaction branch: the markers above are
+# imports and connection setup, not traversals. The guard's subject is a
+# traversal that was *built* and never terminated, so a command that mentions
+# a marker without building one — reading a module constant, calling a house
+# writer, printing a path — has no laziness to guard and must not be blocked.
+# Every traversal starts from a source step, so their joint absence means the
+# trigger was over-broad rather than that the terminal step is missing.
+# Measured: guard v4 blocked `from thalamus.substrate.snapshot import
+# DEFAULT_SNAPSHOT_PATH` + os.path calls, whose own logged fingerprint
+# (`exists,getsize,getmtime,…`) contains no graph step at all, and the session
+# routed around the guard rather than being rescued by it — the exact
+# route-around the v1 retrospective warned about (lab/008).
+if ! printf '%s' "$command" | grep -qE '\.(V|E|addV|addE|inject)\('; then
+  log_event pass no-traversal
+  exit 0
+fi
+
 # Satisfaction branches, most specific first. `terminal` is real iterator
 # invocation (`.result(` is the Client.submit path, where the server iterates
 # and laziness is not in play). `wrapper` is a house function that iterates
 # internally; `textedit` is code manipulation that merely mentions marker
-# strings — the retrospective baseline (lab/008) found every archive hit
-# outside `terminal` was a false positive, and false positives teach agents to
-# route around the guard.
+# strings — it stays a distinct branch because a text command may legitimately
+# quote traversal syntax (`grep '\.V('`) and so survives the gate above. The
+# retrospective baseline (lab/008) found every archive hit outside `terminal`
+# was a false positive, and false positives teach agents to route around the
+# guard.
 if printf '%s' "$command" | grep -qE \
   '\.iterate\(|\.to_list\(|\.toList\(|next\(|\.has_next\(|list\(|\.result\(|for [A-Za-z_]+ in '
 then
@@ -94,7 +113,14 @@ if printf '%s' "$command" | grep -qE 'run_query\(|recall\(|from thalamus\.eval';
   log_event pass wrapper
   exit 0
 fi
-if printf '%s' "$command" | grep -qE 're\.sub\(|read_text\(|write_text\(|(^|[;&| ])sed |(^|[;&| ])grep |(^|[;&| ])rg '; then
+# `git commit`/`git tag` carry marker strings as prose in a message body — a
+# commit describing this guard quotes `.V(` and names the import, which is the
+# same "markers as data, not code" class as an editor invocation and was a
+# measured v5 false positive on this very amendment. The residual false
+# negative (a doomed traversal chained after a commit) is accepted knowingly:
+# lab/008's standing trade is that a false positive costs more than a miss,
+# because it teaches route-around.
+if printf '%s' "$command" | grep -qE 're\.sub\(|read_text\(|write_text\(|(^|[;&| ])sed |(^|[;&| ])grep |(^|[;&| ])rg |(^|[;&| ])git (commit|tag|notes) '; then
   log_event pass textedit
   exit 0
 fi
