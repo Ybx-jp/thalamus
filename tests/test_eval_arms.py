@@ -464,6 +464,38 @@ class TestInfraFaultClassification:
         assert arms.classify_session_fault(void) == "session_fault_void"
         assert arms.classify_session_fault(interrupted) == "session_fault_interrupted"
 
+    def test_a_session_that_did_nothing_is_void_whatever_it_printed(self):
+        """
+        The first confined arm died with `Not logged in · Please run /login` —
+        an auth failure by any reading, but not the phrase the marker list
+        carried. The gate returned None and an untouched worktree was graded
+        RUNG 1: a verdict manufactured out of thin air, which is the one thing
+        this classifier exists to prevent (lab/016).
+
+        `void` is therefore decided on behavior, not vocabulary. No marker list
+        can enumerate every way a session fails to start, but "errored, took no
+        turn, spent nothing" describes all of them.
+        """
+        unknown = AgentRun("s", "Not logged in · Please run /login", 0.0, 69, 1, True)
+        assert arms.classify_session_fault(unknown) == "session_fault_void"
+
+        never_seen = AgentRun("s", "sandbox: exec format error", 0.0, 12, 1, True)
+        assert arms.classify_session_fault(never_seen) == "session_fault_void"
+
+    def test_behavioral_void_cannot_resurrect_the_healthy_arm_false_positive(self):
+        """
+        lab/020 stamped a healthy 49-turn arm void because its own summary
+        used the marker vocabulary. The behavioral test must not reopen that:
+        an arm that did work is never void, and a concluded arm is never a
+        dead session at all.
+        """
+        healthy_prose = AgentRun("s", "I broadened markers to session/quota", 3.4,
+                                 210000, 49, False)
+        assert arms.classify_session_fault(healthy_prose) is None
+
+        errored_but_worked = AgentRun("s", LIMIT_TAIL, 2.62, 180000, 18, True)
+        assert arms.classify_session_fault(errored_but_worked) == "session_fault_interrupted"
+
     def test_acceptance_stamps_the_fault_but_keeps_the_verdict(self, tmp_path):
         """
         Flag, never exclude (arXiv 2111.03382/2605.05564): `passed` stays
@@ -850,6 +882,41 @@ class TestSandboxConfinement:
         with pytest.raises(arms.ArmError, match="is not built"):
             arms.run_agent(tmp_path, "p", scope="main", project="thalamus",
                            sandbox=True)
+
+    def test_a_sandboxed_arm_refuses_before_launch_without_credentials(
+        self, tmp_path, monkeypatch
+    ):
+        """The container gets its own HOME and cannot reach the operator's
+        login. The first confined arm discovered that inside the container,
+        which costs a prepared worktree and yields a record about the
+        infrastructure rather than the candidate — so it is refused up front."""
+        monkeypatch.setattr(arms, "docker_available", lambda *a, **k: True)
+        monkeypatch.setattr(arms.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+        (tmp_path / "home").mkdir()
+        with pytest.raises(arms.ArmError, match="no credentials"):
+            arms.run_agent(tmp_path, "p", scope="main", project="thalamus",
+                           sandbox=True, home=tmp_path / "armhome")
+
+    def test_the_token_not_just_the_config_reaches_the_arm(self, tmp_path, monkeypatch):
+        """`.claude.json` is config and state; the OAuth token lives in
+        `.claude/.credentials.json`. Copying only the former produced a session
+        that reported "Not logged in" and exited in 69ms."""
+        host = tmp_path / "home"
+        (host / ".claude").mkdir(parents=True)
+        (host / ".claude.json").write_text('{"oauthAccount": {}}')
+        (host / ".claude" / ".credentials.json").write_text('{"token": "x"}')
+        monkeypatch.setattr(arms, "docker_available", lambda *a, **k: True)
+        monkeypatch.setattr(arms.Path, "home", classmethod(lambda cls: host))
+
+        arm_home = tmp_path / "armhome"
+        with pytest.raises(arms.ArmError):
+            # `claude` is not on PATH in the test env; the copy happens first.
+            arms.run_agent(tmp_path, "p", scope="main", project="thalamus",
+                           sandbox=True, home=arm_home)
+        assert (arm_home / ".claude.json").is_file()
+        creds = arm_home / ".claude" / ".credentials.json"
+        assert creds.is_file(), "the token must reach the arm, not just the config"
+        assert creds.stat().st_mode & 0o077 == 0, "the token must not widen"
 
 
 class TestCrossArmFaultSignal:

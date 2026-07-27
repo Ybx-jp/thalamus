@@ -624,13 +624,23 @@ cannot explain (arXiv 2111.03382, 2605.05564 — [11 §2a](11-related-work.md)):
   deletes `thalamus/reader.py` really did break `thalamus.reader`, and calling
   that infra would excuse a real defect. Unrecognized failures stay candidate
   defects.
-- `classify_auth_fault` separates the two credential-death shapes lab/012 had
-  to split by hand: an expiry on the closing turn leaves a real worktree the
-  oracles can still grade (stamped, graded, campaign stopped), while an expiry
-  before any work leaves nothing (1 turn, $0.00 — stamped `void`, *not* graded,
-  campaign stopped). `is_error` alone is not the signal; every turn-capped run
-  carries it too. `AuthFault` halts the campaign rather than launching the next
-  arm against dead credentials.
+- `classify_session_fault` separates the two session-death shapes lab/012 had
+  to split by hand. `is_error` alone is never the signal — every turn-capped run
+  carries it too — but the two shapes are decided on different evidence:
+  - **`void`** is decided on *behavior*: errored, one turn or fewer, $0.00.
+    That describes a session that did nothing, whatever string it printed, and
+    no marker list can enumerate every way a session fails to start. The first
+    confined arm proved the point by dying with `Not logged in · Please run
+    /login` — an auth failure that the marker vocabulary did not contain, so it
+    slipped the gate and an untouched worktree was graded RUNG 1.
+  - **`interrupted`** — real work, then death — stays gated on
+    `SESSION_FAULT_MARKERS`, because it is the only shape a healthy arm's own
+    prose can be confused with (lab/020 stamped a healthy 49-turn arm void by
+    reading its summary). An arm that did work can never satisfy the behavioral
+    test, so the two gates cannot collide.
+
+  Neither is graded, and both halt the campaign rather than launching the next
+  arm against the same dead condition.
 - Records carry `infra_faults` and `attributable`. Nothing is ever dropped —
   the verdict stands as measured and the stamp says whether it can be read as a
   fact about the candidate.

@@ -114,6 +114,7 @@ class SessionFault(ArmError):
 # class of failures rather than a single string — see SessionFault.
 SESSION_FAULT_MARKERS = (
     "failed to authenticate",
+    "not logged in",
     "session limit",
     "usage limit",
     "rate limit",
@@ -188,11 +189,25 @@ def classify_session_fault(agent: AgentRun) -> str | None:
     # — so the marker remains the discriminator *among errored runs*.
     if not agent.is_error:
         return None
+    # `void` is decided on *behavior*, before any marker is consulted. An
+    # errored session that took no turn and spent nothing did nothing, whatever
+    # string it printed on the way out, and the marker list cannot enumerate
+    # every way a session fails to start. The first confined arm proved the
+    # gap: it died with "Not logged in · Please run /login" — an auth failure
+    # by any reading, but not the phrase `failed to authenticate` — so the
+    # marker gate returned None and an untouched worktree was graded RUNG 1,
+    # the exact verdict-from-thin-air this classifier exists to prevent
+    # (lab/016: matching a string instead of a failure).
+    #
+    # This cannot resurrect lab/020's false positive. That arm ran 49 turns and
+    # spent real money; the conjunction below is unreachable for any session
+    # that did work, so the marker gate is still what guards the *interrupted*
+    # shape, which is the only one a healthy arm's prose can be confused with.
+    if agent.num_turns <= 1 and agent.cost_usd == 0.0:
+        return "session_fault_void"
     text = (agent.result or "").lower()
     if not any(marker in text for marker in SESSION_FAULT_MARKERS):
         return None
-    if agent.num_turns <= 1 and agent.cost_usd == 0.0:
-        return "session_fault_void"
     return "session_fault_interrupted"
 
 
@@ -588,11 +603,33 @@ def run_agent(
             )
         arm_home = home or arm_home_for(worktree)
         (arm_home / ".claude").mkdir(parents=True, exist_ok=True)
-        # The credential file the CLI needs, and nothing else from the
-        # operator's HOME.
-        host_creds = Path.home() / ".claude.json"
-        if host_creds.is_file():
-            shutil.copy2(host_creds, arm_home / ".claude.json")
+        # The two files the CLI needs, and nothing else from the operator's
+        # HOME. They are not interchangeable and the split is the whole reason
+        # the first confined arm died: `.claude.json` is config and state (it
+        # carries `oauthAccount` *metadata*), while the OAuth token itself
+        # lives in `.claude/.credentials.json`. Copying only the former yields
+        # a session that starts, reports "Not logged in · Please run /login",
+        # and exits in ~70ms.
+        host_config = Path.home() / ".claude.json"
+        if host_config.is_file():
+            shutil.copy2(host_config, arm_home / ".claude.json")
+        # Refused before launch rather than discovered inside the container: a
+        # missing token costs a prepared worktree and produces an `attributable`
+        # record that says nothing about the candidate. The runner knows the
+        # answer here before it spends anything, so it says so.
+        host_creds = Path.home() / ".claude" / ".credentials.json"
+        if not host_creds.is_file():
+            raise ArmError(
+                f"sandboxed arm requested but no credentials at {host_creds}. "
+                "The container gets its own HOME, so it cannot reach the "
+                "operator's login — run `claude` and `/login` on the host "
+                "first, then re-run the campaign."
+            )
+        # copy2 preserves the source's 0600; the arm HOME is the operator's own
+        # directory, but the token should not widen on the way in.
+        arm_creds = arm_home / ".claude" / ".credentials.json"
+        shutil.copy2(host_creds, arm_creds)
+        arm_creds.chmod(0o600)
         # HOME is deliberately NOT reassigned here. This process is the *docker
         # client*, which resolves its context and daemon config out of the
         # operator's own HOME — repointing it makes the CLI look up a context
