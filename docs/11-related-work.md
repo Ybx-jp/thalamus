@@ -200,6 +200,50 @@ every node, while utility verdicts exist only for retrieved ones, so
 MemoryBank-style time decay is retained as the fallback prior for
 never-retrieved nodes. The utility-keyed half is the §4 item 1 claim.
 
+### 2d. Oracle adequacy — who grades the grader
+
+A graded oracle is an instrument, and an unvalidated instrument reports its own
+construction. Software testing has the mature form of this question.
+
+- **A Brief Survey on Oracle-based Test Adequacy Metrics** (arXiv 2212.06118, in
+  the graph) — different oracle-based adequacy metrics operate on different
+  coverage domains; and the general finding the ladder leans on, that *code
+  coverage is a poor adequacy metric and should not be used as an indicator of
+  fault-detection effectiveness*. This is why the ladder is ordinal and why the
+  mutant verdict is a gate rather than a kill-rate: both would be coverage-family
+  ratios.
+- **Test Adequacy for Metamorphic Testing: Criteria, Measurement, and
+  Implication** (arXiv 2412.20692, in the graph) — adequacy criteria specified
+  from the *necessary properties the software satisfies* rather than traditional
+  criteria misaligned with metamorphic testing, measured over both the relations
+  and the source inputs, with higher adequacy tracking higher fault-detection
+  effectiveness. The direct warrant for L3–L5 being nested relations.
+- **Does mutation testing improve testing practices?** (arXiv 2103.07189, in the
+  graph) — ~15M mutants in industrial use; the load-bearing claim is that
+  analysis of past fixes of *real high-priority faults* gives evidence mutants
+  are coupled to them, which is what licenses mutants as fault proxies at all.
+- **An Empirical Study of the Realism of Mutants in Deep Learning** (arXiv
+  2512.16741, in the graph) — the two foundational hypotheses named explicitly
+  (competent programmer, coupling effect) and, more usefully, a statistical
+  framework that makes *coupling strength* a measured quantity rather than an
+  assumption, finding it varies with how the mutant was produced.
+
+**Named divergence.** Both mutation papers describe faults made by *human*
+programmers — small syntactic deviations from nearly-correct code, which is
+exactly what the competent programmer hypothesis asserts and what makes classical
+operators realistic. The candidates graded here are LLM agents under counterfactual
+arms, and their failures are a different distribution: plausible wholesale
+rewrites, over-fixes that change behavior the bug report never mentioned, fixes
+correct at one call site and absent at the others. So the mutants are derived from
+*observed arm behavior* rather than from operators, and each one declares the
+behavior it mimics ([04-eval-loop.md](04-eval-loop.md)). What this trades away is
+the generative scale mutation tooling gets for free: a hand-authored set is 4–6
+per task, not thousands, so it is a discrimination *gate* and could never be a
+kill-rate even if a kill-rate were wanted. Whether these mutants are in fact
+coupled to observed arm failures is asserted from the campaign record, not
+measured the way 2512.16741 measures it — the honest gap, and that paper is the
+cited method for closing it.
+
 ## 3. Federation, experts, and inter-expert exchange
 
 Most crowded pillar as of the scan.

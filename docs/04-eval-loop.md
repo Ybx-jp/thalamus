@@ -278,9 +278,46 @@ cannot justify replacing the status quo; it establishes range coverage, not
 adequacy in the interior where all 18 observed arms live. The discrimination bar
 is instead a **mutant set** (4–6 per task) derived by degrading the known-good
 fix, with expected rungs committed in advance; the ladder must reproduce that
-ordering. Mutants are a **gate, never a graded kill-rate** — a kill-rate would
-be the pass ratio again. This is oracle-based test adequacy applied, not a new
-technique (arXiv 2212.06118, studied since 2007). Anchors carry a second value
+ordering. `thalamus eval oracle <task>` grades anchors and mutants together, at
+zero inference cost — every candidate's quality is known by construction.
+
+Mutants are a **gate, never a graded kill-rate**. A rate is the pass ratio under
+a new name: its denominator is a set the author chose, so adding easy mutants
+moves the number. Its denominator is not even well defined — **equivalent
+mutants** are semantically identical to the original and unkillable by any test,
+and detecting them is undecidable, so every rate carries an unknown bias. A
+pre-registered rung per candidate is strictly stronger regardless: "5 of 6
+killed" cannot say *which* survived, and the survivor's identity is the whole
+signal. This is oracle-based test adequacy applied, not a new technique (arXiv
+2212.06118, studied since 2007).
+
+**Why these mutants and not classical operators.** The licence for treating
+mutants as fault proxies is the competent programmer hypothesis plus the
+**coupling effect**: mutants are coupled to real high-priority faults, measured
+across ~15M of them (arXiv 2103.07189), and coupling is a quantity that can be
+measured rather than assumed (arXiv 2512.16741). Both hypotheses describe *human*
+programmers making small syntactic slips — and these candidates are LLM agents,
+which fail differently: plausible wholesale rewrites, over-fixes touching behavior
+the report never mentioned, fixes correct at one call site and absent at four. A
+mutant set built from classical operators would be coupled to the wrong fault
+distribution, so each mutant declares `mimics`, the observed arm behavior it
+stands in for, and the declaration is enforced rather than attested. The
+**equivalent mutant is a deliberate instrument** here, not a nuisance: one mutant
+is a *correct* fix written differently, expected at the top rung, because a ladder
+that scores it lower is rewarding imitation of the historical fix rather than
+grading behavior. Undecidability does not bite — equivalence is authored, not
+inferred.
+
+**Every candidate is graded against the pre-existing suite.** L1 asks whether the
+suite an arm *inherits* stays green, so `tests/` is pinned to `source.ref` for
+anchors and mutants alike. Grading at `fix_ref` instead runs the tests the fix
+shipped with itself, which collapses every degradation to rung 0 — L1 falls before
+the ladder can say how degraded a candidate was — and, worse, fails a correct fix
+that structures its helper differently, because the fix's own unit test imports
+that helper by name. That is precisely the imitation reward the relations are
+behavioral to avoid, arriving through the gate instead.
+
+Anchors carry a second value
 beyond validation: a probe that fires against the *negative* anchor is measuring
 the repo rather than the candidate, which mechanizes lab/011's competence-echo
 catch; and if the historical fix scores the same rung as every arm, the tasks
