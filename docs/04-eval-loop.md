@@ -475,6 +475,22 @@ restricted to configured shares and `--network host` is the VM's host, not the
 operator's. The runner pins the native context. A missing image is refused, never
 silently run unconfined.
 
+The image must also be able to *run the retained hooks*, and the runner refuses
+if it cannot. Only the OS layer is baked, and the first build omitted `jq` —
+which every hook uses to parse its stdin payload, under `set -euo pipefail`. A
+SessionStart hook that aborts does not stop the session; it simply never
+injects. So the first confined memory-on arm was never told a memory surface
+existed and recorded `recall_calls: 0`, a record indistinguishable from a
+candidate that was offered memory and declined it. Two things break at once:
+the arm's own primary outcome, and the docs/index 2026-07-19 invariant that the
+neutral discipline stays on in *every* arm — hooks that do not run are not on.
+`image_missing_hook_deps` probes the image for `HOOK_DEPENDENCIES` before the
+first arm launches, so a dead hook layer is a refusal rather than a campaign of
+plausible zeros. **Credentials** are checked the same way: the container gets
+its own HOME, so the arm needs `.claude/.credentials.json` (the OAuth token) as
+well as `.claude.json` (config and state), and a missing token refuses before
+launch instead of dying inside the container.
+
 **`--isolate-store` closes the memory-off store hole.** With confinement, `--network
 none` for arms carrying no memory surface makes the graph unreachable — verified
 by connect-behaviour, not by assumption (`host` connects, `none` refuses). This is

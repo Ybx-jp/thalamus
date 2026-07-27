@@ -494,6 +494,43 @@ def docker_available(image: str = ARM_IMAGE) -> bool:
     return probe.returncode == 0
 
 
+# Commands the *retained* hooks need. Every Thalamus hook parses its stdin
+# payload with `jq` under `set -euo pipefail`, so an image without it runs a
+# session whose whole hook layer is dead.
+HOOK_DEPENDENCIES = ("jq",)
+
+_hook_dep_cache: dict[str, tuple[str, ...]] = {}
+
+
+def image_missing_hook_deps(image: str = ARM_IMAGE) -> tuple[str, ...]:
+    """Hook dependencies absent from the confinement image.
+
+    The failure this exists to prevent is silent by construction. A
+    SessionStart hook that aborts does not stop the session — it just does not
+    inject. The first confined arm ran with no `jq`, so `session-start.sh` died
+    on its first line, the memory-priming context was never delivered, and the
+    arm recorded `recall_calls: 0`. That record is indistinguishable from a
+    candidate that was told to recall and declined, which is the reading it
+    would have got: a memory-on arm filed as evidence about memory when the
+    memory surface had never been announced to it.
+
+    It also breaks an invariant the campaign design depends on — docs/index
+    2026-07-19 keeps the neutral discipline on in *every* arm precisely so it
+    cannot confound the contrast, and hooks that do not run are not on.
+    """
+    if image in _hook_dep_cache:
+        return _hook_dep_cache[image]
+    probe = subprocess.run(
+        ["docker", "--context", ARM_DOCKER_CONTEXT, "run", "--rm", image,
+         "sh", "-c", " ".join(f"command -v {dep} >/dev/null || echo {dep};"
+                              for dep in HOOK_DEPENDENCIES)],
+        capture_output=True, text=True,
+    )
+    missing = tuple(line.strip() for line in probe.stdout.splitlines() if line.strip())
+    _hook_dep_cache[image] = missing
+    return missing
+
+
 def sandbox_argv(
     worktree: Path,
     home: Path,
@@ -600,6 +637,17 @@ def run_agent(
                 "The `--context` is not optional: Docker Desktop is the default "
                 "context on this box, and a build there is invisible to the "
                 "daemon the arms use."
+            )
+        missing = image_missing_hook_deps()
+        if missing:
+            raise ArmError(
+                f"image `{ARM_IMAGE}` is missing {', '.join(missing)}, which the "
+                "retained hooks need. They would fail silently and the arm would "
+                "record a dead hook layer as candidate behaviour (no memory "
+                f"priming, `recall_calls: 0`). Rebuild:\n"
+                f"  docker --context {ARM_DOCKER_CONTEXT} build "
+                f"-f {DOCKERFILE_REL} -t {ARM_IMAGE} "
+                "--build-arg UID=$(id -u) --build-arg GID=$(id -g) ."
             )
         arm_home = home or arm_home_for(worktree)
         (arm_home / ".claude").mkdir(parents=True, exist_ok=True)

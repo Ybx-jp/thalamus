@@ -16,8 +16,17 @@
 # operator does and the image never drifts from them. Only the OS layer is baked.
 FROM ubuntu:24.04
 
+# `jq` is not a convenience: every retained hook parses its stdin payload with
+# it under `set -euo pipefail`, so without it the whole hook layer dies on its
+# first line — silently, since a PreToolUse/SessionStart failure does not stop
+# the session. The first confined arm ran that way: `session-start.sh` aborted,
+# the memory-priming context was never injected, and a memory-on arm that was
+# never told to recall recorded 0 recall calls — which reads exactly like a
+# candidate that chose not to. It also voids docs/index's "neutral discipline
+# stays on everywhere" invariant, since the hooks the runner deliberately keeps
+# in every arm were not running in the confined one.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git ca-certificates curl ripgrep less \
+        git ca-certificates curl ripgrep less jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Match the host uid/gid so files the arm writes into its mounted checkout are

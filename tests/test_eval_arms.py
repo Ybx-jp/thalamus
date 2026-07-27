@@ -883,6 +883,21 @@ class TestSandboxConfinement:
             arms.run_agent(tmp_path, "p", scope="main", project="thalamus",
                            sandbox=True)
 
+    def test_a_sandboxed_arm_refuses_when_the_image_cannot_run_the_hooks(
+        self, tmp_path, monkeypatch
+    ):
+        """The first confined image had no `jq`, so every retained hook died on
+        its first line under `set -euo pipefail`. SessionStart aborting does not
+        stop a session — it just never injects — so the memory-on arm was never
+        told a memory surface existed and recorded `recall_calls: 0`, which
+        reads exactly like a candidate that declined to recall. Refusing is the
+        only way that stays distinguishable."""
+        monkeypatch.setattr(arms, "docker_available", lambda *a, **k: True)
+        monkeypatch.setattr(arms, "image_missing_hook_deps", lambda *a, **k: ("jq",))
+        with pytest.raises(arms.ArmError, match="missing jq"):
+            arms.run_agent(tmp_path, "p", scope="main", project="thalamus",
+                           sandbox=True)
+
     def test_a_sandboxed_arm_refuses_before_launch_without_credentials(
         self, tmp_path, monkeypatch
     ):
@@ -891,6 +906,7 @@ class TestSandboxConfinement:
         which costs a prepared worktree and yields a record about the
         infrastructure rather than the candidate — so it is refused up front."""
         monkeypatch.setattr(arms, "docker_available", lambda *a, **k: True)
+        monkeypatch.setattr(arms, "image_missing_hook_deps", lambda *a, **k: ())
         monkeypatch.setattr(arms.Path, "home", classmethod(lambda cls: tmp_path / "home"))
         (tmp_path / "home").mkdir()
         with pytest.raises(arms.ArmError, match="no credentials"):
@@ -906,6 +922,7 @@ class TestSandboxConfinement:
         (host / ".claude.json").write_text('{"oauthAccount": {}}')
         (host / ".claude" / ".credentials.json").write_text('{"token": "x"}')
         monkeypatch.setattr(arms, "docker_available", lambda *a, **k: True)
+        monkeypatch.setattr(arms, "image_missing_hook_deps", lambda *a, **k: ())
         monkeypatch.setattr(arms.Path, "home", classmethod(lambda cls: host))
 
         arm_home = tmp_path / "armhome"
