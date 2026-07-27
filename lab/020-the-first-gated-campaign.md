@@ -75,3 +75,117 @@ replicate count rather than an early read.
 task in the memorization stratum. What this campaign can establish is narrower —
 whether a prompt that withholds changes recall behavior, and whether recall
 changes the rung. Both are prerequisites to the broader claim, neither is it.
+
+---
+
+## Result
+
+24 valid arms, 12 replicates, $55.58, no session faults, 3/24 turn-capped at 60.
+
+| | memory-on | memory-off |
+|---|---|---|
+| **C1 — reached rung ≥ 4** | **3/12 (25%)** | **2/12 (17%)** |
+| rungs | 1,1,1,1,1,1,2,2,2,5,5,5 | 1,1,1,1,1,1,3,3,3,3,5,5 |
+| mean rung | 2.25 | 2.33 |
+| **C2 — arms calling a thalamus tool** | **5/12 (42%)** | **0/12 (0%)** |
+| `memo-surfaced` | 4/12 | 2/12 |
+| `literal-convergence` | 6/12 | 9/12 |
+
+### C2 passes, and it is the result worth keeping
+
+**42% against lab/018's 9.5%** (2/21 across every memory-on arm on the old
+self-contained tasks), with the memory-off control clean at 0/12. The prediction
+was written down before the run. **An under-specified prompt induces recall; a
+self-contained one does not.** That is the mechanism lab/018 inferred from a
+two-session probe, now measured across 12 replicates.
+
+### C1 fails — no outcome effect
+
+3/12 vs 2/12 is a one-arm difference on n=12, and the *mean* rung is marginally
+worse for memory-on. Nothing here supports a memory effect on quality.
+
+The pre-registered falsification said that if memory-off reaches rung ≥ 4 at a
+comparable rate, the fact was derivable from the tree. It does, so **the gating
+claim does not hold as stated** — with the caveat below about how two of those
+arms got there.
+
+### The contamination: arms read their own answer key
+
+Two memory-off arms ran `ls config/tasks/` and then read
+`/home/ybx/code/thalamus/config/tasks/arm-runner-session-death-classification.yaml`
+— **the operator's live repo, by absolute path, outside the worktree**. That file
+is the answer key: `under_specification.fact` states the withheld constraint in
+prose, and the acceptance block contains every relation with its exact marker
+strings and turn counts.
+
+The worktree is checked out at `1fc6aef`, where the task file does not exist —
+the leak is that an arm runs with `--dangerously-skip-permissions` and nothing
+stops it reading the operator's checkout. Scoped, but real:
+
+| | n | rungs | ≥ 4 |
+|---|---|---|---|
+| memory-on (none leaked) | 12 | 1,1,1,1,1,1,2,2,2,5,5,5 | 3 (25%) |
+| memory-off, clean | 10 | 1,1,1,1,1,1,3,3,3,5 | 1 (10%) |
+| memory-off, leaked | 2 | 3,5 | 1 |
+
+Excluding the two leaked arms moves the comparison to 25% vs 10% — still not an
+effect at these counts, and **post-hoc, so it is exploratory and not the
+pre-registered answer**. The pre-registered C1 is the intention-to-treat 3/12 vs
+2/12, and it is null.
+
+One clean memory-off arm did reach rung 5 without memory or the answer key. The
+`alternative_routes` disclosure in lab/019 earned its place.
+
+### C3 — `memo-surfaced` is not a memory signal any more
+
+lab/016's sturdiest result was that `memo-surfaced` fires **iff** the arm called
+a thalamus tool, 0 mismatches across 24 arms. It is now falsified, and precisely:
+both memory-off firings are the two leaked arms, because the probe's pattern is a
+session UUID **printed in the task file they read**. Among clean memory-on arms it
+still behaves — 4 hits against 5 callers, no false positives.
+
+So the probe is sound and its *environment* is not. A probe searching for a token
+that appears in a file the candidate can open measures reading, not recall.
+
+`literal-convergence` fired 9/12 in memory-off, which cannot involve recall at
+all. As a confound flag it is uninformative: the marker vocabulary is reachable
+by reading `arms.py`, which is the point of the task.
+
+### C4 — dispersion widened
+
+Spread of **4 rungs in both cells** (1→5), against lab/018's 3. Per-cell n=1 is
+hopeless and n=12 is marginal; a real Δ=1 effect would need the ~43/side the
+power arithmetic called for, at ~$2.30/arm.
+
+### The unbudgeted finding: half the arms barely tried
+
+**12 of 24 arms scored rung 1**, failing the L2 behavioral oracle. Six of them
+concluded in 12–20 turns at $0.45–0.70, against $2.89 for the rest. Under-
+specification cuts both ways: it makes an arm reach for memory (C2), and it also
+lets an arm decide it is finished before it has done the work. The prompt says
+"make the runner notice and stop" and never says what counts as noticing.
+
+That is a task-design finding, not a memory finding, and it dominates the
+variance in this campaign.
+
+## Verdict
+
+The task did what lab/019 built it to do at the *mechanism* level and not at the
+*outcome* level. The honest summary: withholding the constraint changes retrieval
+behavior four-fold and does not — at n=12, against 4 rungs of noise, with half
+the arms under-attempting — change the score.
+
+No claim about memory's value follows. This is one task in the memorization
+stratum with a leaking harness and a floor problem.
+
+## What has to happen before the next gated campaign
+
+1. **Close the answer-key leak.** An arm must not be able to read the operator's
+   checkout. Until then every gated task is one `ls config/tasks/` from being
+   solved, and `memo-surfaced` cannot be trusted.
+2. **Raise the floor.** Half the arms stopped before the behavioral oracle. The
+   prompt needs enough specification to make "done" legible without restoring
+   the constraint that does the gating — the exact line lab/019's `floor_rung`
+   names but does not enforce behaviorally.
+3. **Then power it.** Δ=1 at 4 rungs of dispersion is ~43/side. That is a real
+   budget decision, not an incidental one.

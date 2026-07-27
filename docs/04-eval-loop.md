@@ -339,10 +339,26 @@ between under-fix (L3 — the reported case patched, hyphenated terms still
 broken) and over-fix (L5 — project matching loosened as collateral damage). The
 task was never too easy; the instrument could not see where candidates fell.
 
-**Open: candidate variance is three rungs wide (lab/018).** Under fixed model,
-task, and arm, rungs spread {2, 5, 5}. Per-cell n=1 is uninterpretable and
-campaigns must buy replicates before models or tasks; any claimed memory effect
-must clear that floor.
+**Open: candidate variance is three to four rungs wide (lab/018, lab/020).**
+Under fixed model, task, and arm, rungs spread {2,5,5} on the reader task and a
+full 1→5 on the session-death task across 12 replicates per side. Per-cell n=1 is
+uninterpretable and campaigns must buy replicates before models or tasks; a Δ=1
+effect against that dispersion needs ~43 arms/side at ~$2.30 each.
+
+**Under-specification induces recall — measured (lab/020).** The first gated task
+raised memory-on's thalamus-call rate to **5/12 (42%)** against **2/21 (9.5%)**
+across every arm on the self-contained tasks, with the memory-off control clean
+at 0/12. The mechanism lab/018 inferred from a two-session probe replicates. It
+did **not** move the graded outcome: 3/12 vs 2/12 reaching rung ≥ 4, mean rung
+2.25 vs 2.33. Retrieval behavior and task quality are separate measurements, and
+only the first has moved.
+
+**Open: under-specification lowers the floor as well as raising recall
+(lab/020).** Half the arms (12/24) scored rung 1, failing the behavioral oracle;
+six concluded in 12–20 turns at a third of the cost of the rest. A prompt that
+withholds the constraint also withholds what counts as finished. A gated task
+needs enough specification to make "done" legible without restoring the
+constraint that does the gating.
 
 **Open: the binding constraint is prompt under-specification in the battery
 (lab/018).** Memory-on arms call `mcp__thalamus__*` at **2/21**; real
@@ -391,11 +407,23 @@ that rung is unvalidated and the observed gap is carried by some other rung. The
 session-death task's mutant set supplies rungs 2, 3 and 4 between the anchors,
 and the gate passes 6/6.
 
-**Probe validity, the sturdiest result so far (lab/016, extended lab/018).**
-Across 24 valid arms `memo-surfaced` fires **iff** the arm called a thalamus
-tool — zero mismatches, zero false positives, and every memory-off control arm
-silent. `fix-name-convergence` stays **0/24**: surfacing is well measured, memo
-*use* is still unevidenced anywhere.
+**Probe validity held until the environment broke it (lab/016, falsified
+lab/020).** `memo-surfaced` fired **iff** the arm called a thalamus tool across
+24 arms — then fired in two memory-off arms that cannot recall at all. Both had
+read the task YAML out of the operator's checkout, and the probe's pattern is a
+session UUID printed in that file. The probe is sound; its environment is not. A
+probe searching for a token the candidate can open a file and read measures
+reading, not recall. Among arms that could not reach the task file it still
+behaves (4 hits, 5 callers, no false positives).
+
+**Open, and blocking: arms can read their own answer key (lab/020).** An arm runs
+`--dangerously-skip-permissions` with the worktree as cwd, and nothing stops it
+reading `/…/thalamus/config/tasks/<id>.yaml` by absolute path. That file is the
+pre-registration — it states the withheld fact in prose and carries every
+relation with its exact fixtures. Two of 24 arms found it via `ls config/tasks/`.
+Until an arm is confined to its worktree, every gated task is one directory
+listing from solved, and no probe keyed to a token in the battery can be
+trusted.
 
 **Recall-calling is substantially stochastic (lab/016, superseding lab/015
 §2).** lab/015 read a model×task interaction off one observation per cell and
