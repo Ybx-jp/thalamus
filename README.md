@@ -14,7 +14,7 @@ measures whether any of it actually makes the agent better.
 
 ## What's live
 
-- **The substrate**: a property graph (TinkerGraph) of `Session` / `Claim` /
+- **The substrate**: a property graph (Apache TinkerPop / TinkerGraph) of `Session` / `Claim` /
   `Thread` / `Source` / `Artifact` nodes, every one carrying provenance (trust tier,
   source, ingestion time) and a scope. Orphans and contract violations are rejected
   at write time ([docs/09](docs/09-schema-and-federation.md)).
@@ -87,17 +87,13 @@ Cursor sessions currently leave no episodic memory (logged, not silent).
 Requires Docker and Python ≥3.11.
 
 ```bash
-# 1. TinkerGraph needs an enterprise feature key (a free single-node dev key
-#    exists). Keep it OUT of the repo — config/features.conf is gitignored.
-export THALAMUS_FEATURE_KEY=/path/to/features.conf     # or drop it at config/features.conf
-
-# 2. Infrastructure
+# 1. Infrastructure — Gremlin Server on TinkerGraph. No licence, no account.
 docker compose up -d
 
-# 3. Install
+# 2. Install
 uv sync                        # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
-# 4. Use it
+# 3. Use it
 thalamus bootstrap                 # list session transcripts available to ingest
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
 thalamus validate session.yaml     # check an extraction against the contract
@@ -116,11 +112,17 @@ thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejecti
 thalamus eval recipes              # smoke-run every stored gremlin recipe read-only
 thalamus eval conditioning         # per-firing behavioral join on injected reminders
 thalamus pulse                     # live telemetry dashboard over the eval loop
+thalamus snapshot                  # flush the graph to disk now
 thalamus-mcp                       # run the MCP server
 ```
 
-TinkerGraph data lives in the named `thalamus-graph-data` Docker volume and survives
-restarts. Don't `docker compose down -v` unless you mean to delete the graph.
+The graph lives in the named `thalamus-graph-data` Docker volume and survives
+restarts. Don't `docker compose down -v` unless you mean to delete it.
+
+TinkerGraph holds the graph in memory and writes it back only on a clean
+shutdown, so every write path flushes to disk when it finishes and `thalamus
+snapshot` does it on demand. `docker compose stop` is safe; `docker kill` costs
+you whatever was written since the last flush.
 
 ## MCP tools
 

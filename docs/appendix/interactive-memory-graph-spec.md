@@ -59,7 +59,7 @@ interactive client.
 - Keep the visualization read-only with respect to graph-memory data.
 - Remain responsive with a persisted graph containing up to 10,000 nodes by loading
   focused subgraphs progressively.
-- Preserve stable graph IDs from TinkerGraph throughout the backend and frontend.
+- Preserve stable graph IDs from the substrate throughout the backend and frontend.
 
 ## Non-goals
 
@@ -323,7 +323,7 @@ Conceptual response:
 Contract requirements:
 
 - IDs are stable and unique within a response.
-- Persisted elements use their TinkerGraph IDs.
+- Persisted elements use their substrate IDs.
 - Preview-only elements use deterministic IDs compatible with the writer's ID scheme.
 - Edge IDs are deterministic even if the database does not expose a suitable ID.
 - All stored properties needed by the details panel are retained.
@@ -346,7 +346,7 @@ Initial operations:
 
 Accept YAML or JSON session content, validate it, and return a preview identifier plus
 the canonical graph response. Preview data is held in memory for the life of the
-local process and is never written to TinkerGraph.
+local process and is never written to the graph.
 
 ### `GET /api/overview`
 
@@ -550,7 +550,7 @@ usually dominates browser rendering cost.
 
 ### Backend integration tests
 
-- Queries against representative TinkerGraph data.
+- Queries against representative graph data.
 - Shared Artifact nodes across sessions.
 - Project and date filtering.
 - Unavailable graph-service behavior.

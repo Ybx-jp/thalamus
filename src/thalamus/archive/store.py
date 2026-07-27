@@ -80,6 +80,9 @@ _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("hf-token", re.compile(r"hf_[A-Za-z0-9]{34,}")),
     ("slack-token", re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}")),
     ("wireguard-key", re.compile(r"(?i)privatekey\s*=\s*[A-Za-z0-9+/]{42,44}=")),
+    # Signed licence files for commercial databases. The marker is the header
+    # line, not the key body, so this fires on the file even when the signature
+    # itself has been trimmed out of a transcript.
     ("license-feature-key", re.compile(r"feature-key-version")),
     ("generic-bearer", re.compile(r"(?i)authorization:\s*bearer\s+[A-Za-z0-9\-._~+/]{20,}")),
 )

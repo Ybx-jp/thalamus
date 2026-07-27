@@ -1,4 +1,4 @@
-"""Write session subgraphs to TinkerGraph via Gremlin."""
+"""Write session subgraphs to the graph via Gremlin."""
 
 from __future__ import annotations
 
@@ -594,8 +594,9 @@ def _iterate(graph_traversal, operation: str, target: str) -> None:
         graph_traversal.bytecode,
     )
     try:
-        # gremlinpython 3.7 encodes iterate() with the server-supported none()
-        # terminal step. Version 3.8 changed this to unsupported discard().
+        # gremlinpython 3.7 encodes iterate() with the none() terminal step, which
+        # the 3.7 server understands. Version 3.8 changed this to discard(); the
+        # pin in pyproject.toml keeps the two ends on the same side of that split.
         graph_traversal.iterate()
     except GremlinServerError as exc:
         attributes = exc.status_attributes or {}

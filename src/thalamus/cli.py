@@ -21,6 +21,7 @@ from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.harness import extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.plane.web import create_app
+from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
 
 
@@ -134,6 +135,19 @@ def main():
         "evidence-floor integrity",
     )
     contract_check_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
+    # Snapshot command — durability on demand (docs/09)
+    snapshot_parser = subparsers.add_parser(
+        "snapshot",
+        help="Flush the in-memory graph to its persistent file on the server",
+    )
+    snapshot_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    snapshot_parser.add_argument(
+        "--path",
+        default=DEFAULT_SNAPSHOT_PATH,
+        help="Server-side path to write. Defaults to the configured graphLocation; "
+        "point it elsewhere to take a side copy without touching the live file.",
+    )
 
     # Eval command — layer 1 of the eval loop (docs/04)
     eval_parser = subparsers.add_parser(
@@ -380,6 +394,8 @@ def main():
         _cmd_ingest(args)
     elif args.command == "contract":
         _cmd_contract(args, contract_parser)
+    elif args.command == "snapshot":
+        _cmd_snapshot(args)
     elif args.command == "eval":
         _cmd_eval(args, eval_parser)
     elif args.command == "pin":
@@ -397,12 +413,24 @@ def main():
         sys.exit(1)
 
 
+def _persist(graph, path: str = DEFAULT_SNAPSHOT_PATH) -> None:
+    """Flush the graph to disk after a successful write.
+
+    The substrate keeps the graph in memory and only writes it back on a clean
+    shutdown, so without this a `docker kill` between now and the next stop would
+    discard the write. Best-effort: a failed flush warns, it does not turn a
+    successful write into a reported failure.
+    """
+    snapshot_quietly(graph, path)
+
+
 def _cmd_write(args):
     data = _load_file(args.file)
     session = SessionGraph(**data)
     g = connect(args.url)
     try:
         vid = write_session(g, session)
+        _persist(g)
         print(f"Wrote session: {session.session_id} -> {vid}")
     except Exception as e:
         print(f"Write failed: {e}", file=sys.stderr)
@@ -503,6 +531,10 @@ def _cmd_bootstrap(args):
                 written += 1
     finally:
         if graph is not None:
+            # One flush for the whole run, not one per session — bootstrap writes
+            # the entire corpus and the snapshot rewrites the whole graph file.
+            if written:
+                _persist(graph)
             close_connection(graph)
 
     print(f"\n{written} sessions, ~{nodes} nodes; {skipped} skipped, {rejected} rejected")
@@ -628,6 +660,8 @@ def _cmd_extract(args):
             print(f"  + {name}  {counts}  ${run.cost_usd:.2f}  {session.summary[:48]}")
 
     finally:
+        if args.write and extracted:
+            _persist(graph)
         close_connection(graph)
 
     print(
@@ -733,9 +767,26 @@ def _cmd_ingest(args):
     graph = connect(args.url)
     try:
         source_vid = write_knowledge(graph, batch)
+        _persist(graph)
         print(f"\nWritten into scope `{batch.scope}`: {source_vid}")
     finally:
         close_connection(graph)
+
+
+def _cmd_snapshot(args):
+    from thalamus.substrate.snapshot import SnapshotError
+
+    graph = connect(args.url)
+    try:
+        vertices = graph.V().count().next()
+        edges = graph.E().count().next()
+        snapshot(graph, args.path)
+    except SnapshotError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+    finally:
+        close_connection(graph)
+    print(f"Snapshot written: {args.path} ({vertices} vertices, {edges} edges)")
 
 
 def _cmd_contract(args, contract_parser):
@@ -769,6 +820,8 @@ def _cmd_eval(args, eval_parser):
         graph = connect(args.url)
         try:
             outcome = sync(graph, traces_base=args.traces, write=args.write)
+            if args.write:
+                _persist(graph)
         finally:
             close_connection(graph)
         print(outcome.summary())

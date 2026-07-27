@@ -383,7 +383,7 @@ class SessionGraph(BaseModel):
                 "decisions": [
                     {
                         "description": "Use TinkerGraph for storage",
-                        "rationale": "Already have infra, real traversal semantics",
+                        "rationale": "Runs anywhere, real traversal semantics",
                         "outcome": "Proceeding with local Docker setup",
                         "artifacts": ["docker-compose.yml"],
                     }

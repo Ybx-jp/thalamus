@@ -38,6 +38,7 @@ from thalamus.contract.conformance import check_session, validate_connectivity
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.plane.mermaid import session_to_mermaid
+from thalamus.substrate.snapshot import snapshot_quietly
 from thalamus.substrate.writer import close_connection, connect, write_session
 
 logger = logging.getLogger(__name__)
@@ -325,6 +326,9 @@ def memorize(session_yaml: str) -> str:
         return g
     try:
         write_session(g, session)
+        # The substrate only persists on a clean shutdown; flush now so a hard
+        # kill of the container cannot silently discard what was just memorized.
+        snapshot_quietly(g)
         count = 1 + len(session.artifacts) + len(session.claims()) + len(session.threads)
         return (
             f"Memorized session `{session.session_id}` into scope `{SCOPE}` "
