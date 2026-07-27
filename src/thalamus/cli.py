@@ -218,6 +218,29 @@ def main():
         help="Config root holding tasks/ (default: repo config/)",
     )
 
+    eval_oracle_parser = eval_sub.add_parser(
+        "oracle",
+        help="Validate the graded oracle itself: grade anchors and the mutant set "
+        "against pre-registered rungs (no model in the loop)",
+    )
+    eval_oracle_parser.add_argument("task_id", help="A task id from config/tasks/")
+    eval_oracle_parser.add_argument(
+        "--config", type=Path, default=None,
+        help="Config root holding tasks/ (default: repo config/)",
+    )
+    eval_oracle_parser.add_argument(
+        "--anchors-only", action="store_true",
+        help="Grade only the range pair, skipping the mutant set (range coverage "
+        "is not discrimination — the interior is where the arms sit)",
+    )
+    eval_oracle_parser.add_argument(
+        "--timeout", type=int, default=900, help="Per-check timeout, seconds"
+    )
+    eval_oracle_parser.add_argument(
+        "--keep-worktrees", action="store_true",
+        help="Leave the graded worktrees on disk for inspection",
+    )
+
     eval_run_parser = eval_sub.add_parser(
         "run",
         help="Run one battery task under counterfactual arms (worktree + headless session + oracles)",
@@ -772,6 +795,31 @@ def _cmd_eval(args, eval_parser):
         tasks, issues = load_battery(args.config)
         print(render_battery(tasks, issues))
         if issues:
+            sys.exit(1)
+    elif getattr(args, "eval_command", None) == "oracle":
+        from thalamus.eval.oracle import render_gate, run_gate
+        from thalamus.eval.tasks import load_battery, tasks_dir
+
+        tasks, issues = load_battery(args.config)
+        if issues:
+            print("The battery does not arm until clean — run `thalamus eval tasks`:",
+                  file=sys.stderr)
+            for issue in issues:
+                print(f"  - {issue}", file=sys.stderr)
+            sys.exit(1)
+        by_id = {task.id: task for task in tasks}
+        if args.task_id not in by_id:
+            print(f"No task `{args.task_id}` (have: {', '.join(sorted(by_id))})",
+                  file=sys.stderr)
+            sys.exit(1)
+        repo = Path(__file__).resolve().parents[2]
+        result = run_gate(
+            repo, by_id[args.task_id], tasks_dir(args.config),
+            timeout=args.timeout, keep=args.keep_worktrees,
+            anchors_only=args.anchors_only,
+        )
+        print(render_gate(result))
+        if not result["passed"]:
             sys.exit(1)
     elif getattr(args, "eval_command", None) == "run":
         from thalamus.contract.manifest import available_scopes

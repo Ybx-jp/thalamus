@@ -1,0 +1,31 @@
+diff --git a/src/thalamus/substrate/reader.py b/src/thalamus/substrate/reader.py
+index d560a51..70f1ff0 100644
+--- a/src/thalamus/substrate/reader.py
++++ b/src/thalamus/substrate/reader.py
+@@ -323,7 +323,7 @@ def recall_by_artifact(
+     sessions = (
+         g.V()
+         .has_label("Artifact")
+-        .has("identifier", TextP.containing(identifier))
++        .has("identifier", _keyword_predicate(identifier))
+         .in_e("TOUCHES")
+         .out_v()
+         .in_e("CONTAINS")
+@@ -354,7 +354,7 @@ def recall_by_project(
+         g.V()
+         .has_label("Session")
+         .has("scope", scope)
+-        .has("project", TextP.containing(project))
++        .has("project", _keyword_predicate(project))
+         .order()
+         .by("timestamp", Order.desc)
+         .limit(limit)
+@@ -398,7 +398,7 @@ def recall_open_threads(
+     )
+ 
+     if project:
+-        query = query.has("project", TextP.containing(project))
++        query = query.has("project", _keyword_predicate(project))
+ 
+     threads = (
+         query.order()

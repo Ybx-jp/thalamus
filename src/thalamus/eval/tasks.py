@@ -116,6 +116,49 @@ class TaskSource(BaseModel):
     )
 
 
+class Mutant(BaseModel):
+    """A degradation of the known-good fix, with its rung committed in advance.
+
+    Mutants exist because the anchor pair validates the ladder's *range* and
+    nothing else: the negative anchor is the worst possible candidate and the
+    positive anchor the best, while every observed arm sits in the interior
+    between them. Discrimination there has to be measured against candidates
+    whose quality is known by construction (arXiv 2212.06118).
+
+    `mimics` is mandatory, and it is the whole reason this is not classical
+    mutation testing. The classical licence for mutants-as-fault-proxies is the
+    competent programmer hypothesis plus the coupling effect (arXiv 2103.07189
+    finds mutants coupled to real high-priority faults; arXiv 2512.16741 makes
+    coupling a measured quantity rather than an assumption) — but both describe
+    *human* programmers making small syntactic slips. The defects this instrument
+    grades come from LLM agents, which fail differently: plausible wholesale
+    rewrites, over-fixes that touch behavior the report never mentioned, fixes
+    correct at one call site and absent at the others. A mutant built from
+    classical operators would be coupled to the wrong fault distribution, so each
+    one here names the observed arm behavior it stands in for, and the naming is
+    enforced rather than attested.
+    """
+
+    id: str
+    patch: str = Field(description="Patch file, relative to the task file's directory")
+    expected_rung: int = Field(
+        description=(
+            "The rung this degraded candidate should score. Committed before the "
+            "gate runs — git history is the pre-registration timestamp. A "
+            "disagreement is resolved in the open (either the expectation was "
+            "wrong or the ladder is), never by quietly editing this number."
+        )
+    )
+    mimics: str = Field(
+        description=(
+            "The observed agent failure mode this mutant stands in for. Required: "
+            "see the class docstring — an unnamed mutant is coupled to the human "
+            "fault distribution, not the one being sampled."
+        )
+    )
+    rationale: str = ""
+
+
 class Task(BaseModel):
     task: str = "v0"
     id: str
@@ -125,6 +168,7 @@ class Task(BaseModel):
     prompt: str
     acceptance: list[Acceptance] = Field(default_factory=list)
     probes: list[Probe] = Field(default_factory=list)
+    mutants: list[Mutant] = Field(default_factory=list)
     rubric: str = ""
 
     def check(self) -> list[str]:
@@ -238,6 +282,42 @@ class Task(BaseModel):
                             )
             elif probe.kind == "command" and not probe.run.strip():
                 issues.append(f"{where}: command probe needs a run")
+        issues.extend(self._check_mutants())
+        return issues
+
+    def _check_mutants(self) -> list[str]:
+        """Mutant well-formedness. The set's *size* is the gate's business, not
+        arming's: a half-authored mutant set should not stop a campaign, but a
+        malformed mutant should never reach the gate."""
+        issues: list[str] = []
+        if self.mutants and not self.source.fix_ref.strip():
+            issues.append(
+                "mutants declared with no source.fix_ref — a mutant is a "
+                "degradation *of the known-good fix*, so without one there is "
+                "nothing to degrade and no rung to expect"
+            )
+        top = max(LADDER_LEVELS)
+        seen: set[str] = set()
+        for mutant in self.mutants:
+            where = f"mutant `{mutant.id}`"
+            if not _ID_RE.match(mutant.id):
+                issues.append(f"{where}: id is not a lowercase slug")
+            if mutant.id in seen:
+                issues.append(f"{where}: duplicate mutant id")
+            seen.add(mutant.id)
+            if not mutant.patch.strip():
+                issues.append(f"{where}: no patch file")
+            if not 0 <= mutant.expected_rung <= top:
+                issues.append(
+                    f"{where}: expected_rung {mutant.expected_rung} outside 0–{top} "
+                    "(0 is the rung of a candidate that fails the no-regression gate)"
+                )
+            if not mutant.mimics.strip():
+                issues.append(
+                    f"{where}: no `mimics` — a mutant that names no observed agent "
+                    "failure mode is coupled to the human fault distribution the "
+                    "classical hypotheses describe, not the one being sampled"
+                )
         return issues
 
 
@@ -285,9 +365,16 @@ def render_battery(tasks: list[Task], issues: list[str]) -> str:
         lines.append("Battery is empty — no tasks under config/tasks/.")
     for task in tasks:
         rubric = "rubric" if task.rubric.strip() else "no rubric (mechanical only)"
+        # An unvalidated ladder is worth naming: anchors cover the range, mutants
+        # cover the interior where the arms actually sit (docs/04).
+        mutants = (
+            f"{len(task.mutants)} mutant(s)" if task.mutants
+            else "no mutant set (ladder unvalidated in the interior)"
+        )
         lines.append(
             f"{task.id} [{task.overlap} · {task.source.kind}] — {task.title}\n"
-            f"  {len(task.acceptance)} acceptance, {len(task.probes)} probe(s), {rubric}"
+            f"  {len(task.acceptance)} acceptance, {len(task.probes)} probe(s), "
+            f"{mutants}, {rubric}"
         )
     strata = Counter(task.overlap for task in tasks)
     if tasks:

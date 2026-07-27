@@ -240,3 +240,52 @@ class TestLadderValidation:
             overlap="transferable",
         )
         assert any("no historical fix" in i for i in task.check())
+
+
+class TestMutantValidation:
+    """The mutant set is the discrimination bar (docs/04): anchors establish the
+    ladder's range, mutants establish its resolution in the interior where every
+    observed arm sits. Structure is enforced here; the rung comparison is the
+    gate's job (test_eval_oracle.py)."""
+
+    def _m(self, **overrides):
+        mutant = {
+            "id": "m1-partial",
+            "patch": "mutants/t/m1.patch",
+            "expected_rung": 3,
+            "mimics": "fix applied at one call site only",
+        }
+        mutant.update(overrides)
+        return mutant
+
+    def test_a_well_formed_mutant_set_validates(self):
+        assert _laddered(mutants=[self._m()]).check() == []
+
+    def test_mutant_without_a_named_failure_mode_is_refused(self):
+        """
+        `mimics` carries the coupling argument. The classical licence for
+        mutants-as-fault-proxies (competent programmer hypothesis + coupling
+        effect, arXiv 2103.07189) describes human programmers making small
+        syntactic slips; these candidates are LLM agents, which fail differently.
+        An unnamed mutant is coupled to the wrong fault distribution.
+        """
+        issues = _laddered(mutants=[self._m(mimics="  ")]).check()
+        assert any("coupled to the human fault distribution" in i for i in issues)
+
+    def test_mutant_rung_above_the_built_ladder_is_refused(self):
+        issues = _laddered(mutants=[self._m(expected_rung=6)]).check()
+        assert any("outside 0–5" in i for i in issues)
+
+    def test_mutants_without_a_fix_to_degrade_are_refused(self):
+        """A mutant is a degradation *of the known-good fix* — no fix, nothing
+        to degrade, and no ground truth to expect a rung against."""
+        task = _laddered(
+            source={"kind": "authored", "ref": "HEAD"},
+            overlap="transferable",
+            mutants=[self._m()],
+        )
+        assert any("nothing to degrade" in i for i in task.check())
+
+    def test_duplicate_mutant_ids_are_refused(self):
+        issues = _laddered(mutants=[self._m(), self._m()]).check()
+        assert any("duplicate mutant id" in i for i in issues)
