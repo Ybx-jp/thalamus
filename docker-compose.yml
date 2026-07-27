@@ -4,42 +4,28 @@ services:
   graph:
     image: tinkerpop/gremlin-server:3.7.3
     restart: unless-stopped
+    # SIGTERM makes TinkerGraph flush graphLocation on the way out. Give the JVM
+    # room to finish that write rather than letting compose SIGKILL it at 10s.
+    stop_grace_period: 60s
     ports:
-      - "3000:3000"
+      - "127.0.0.1:8182:8182"
     volumes:
-      - ./config/gremlin-server.yaml:/opt/gremlin-server/conf/thalamus/gremlin-server.yaml:ro
-      # Bring your own enterprise feature key. Defaults to config/features.conf
-      # (gitignored); override with THALAMUS_FEATURE_KEY=/path/to/features.conf.
-      - ${THALAMUS_FEATURE_KEY:-./config/features.conf}:/opt/gremlin-server/conf/features.conf:ro
+      - ./config:/opt/gremlin-server/conf/thalamus:ro
+      # The graph file lives here. Mounted on the image's own data directory so
+      # the named volume inherits the `gremlin` uid that the server runs as.
       - thalamus-graph-data:/opt/gremlin-server/data
-    command: ["--config-file", "/opt/gremlin-server/conf/thalamus/gremlin-server.yaml"]
+    # Bypasses the image entrypoint on purpose. That script `sed -i`s the config
+    # to pin `host:` to the container IP, which fails against a read-only mount
+    # and would otherwise dirty a tracked file. `host: 0.0.0.0` in the yaml binds
+    # every interface, which is what the substitution was approximating.
+    entrypoint: ["/opt/gremlin-server/bin/gremlin-server.sh"]
+    command: ["conf/thalamus/gremlin-server.yaml"]
     healthcheck:
-      # A build response is available before the node accepts client traffic.
-      # Wait for the server's readiness status so Graph does not exit with
-      # "Node ... is not yet fully initialized" during startup.
-      test: ["CMD-SHELL", "test \"$(asinfo -v status 2>/dev/null)\" = ok"]
+      test: ["CMD-SHELL", "nc -z localhost 8182"]
       interval: 5s
       timeout: 3s
       retries: 12
-      start_period: 15s
-
-  graph:
-    image: tinkerpop/gremlin-server:3.7.3
-    restart: unless-stopped
-    ports:
-      - "8182:8182"
-    depends_on:
-      graph:
-        condition: service_healthy
-    volumes:
-      - ./config/tinkergraph.properties:/opt/gremlin-server/conf/thalamus/tinkergraph.properties:ro
-
-    healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/firefly-ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 18
-      start_period: 90s
+      start_period: 20s
 
 volumes:
   thalamus-graph-data:

@@ -38,6 +38,7 @@ and `volume-degraded` are refused rather than approximated.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -252,10 +253,86 @@ HOOKS_REL_PATH = Path("src") / "thalamus" / "harness" / "hooks"
 
 
 def prepare_worktree(repo: Path, ref: str, dest: Path) -> None:
+    """Build the arm's checkout as a repository whose history *stops* at `ref`.
+
+    This was `git worktree add` until the leak was measured. A worktree shares
+    refs and the object store with the operator's repo, so an arm could read its
+    own answer without ever naming a path outside its own directory: 9 of 88
+    recorded arms ran history commands reaching past their pinned ref, including
+    `git show <fix_ref>` on the task's own fix and one
+    `git grep -l "<task-id>" $(git rev-list --all)` — a deliberate sweep of every
+    commit for the task's name. Filesystem confinement cannot close that, because
+    the object store is exactly what git needs to function.
+
+    So the arm gets a private repo containing one commit and nothing else. The
+    fetch names the **full** 40-char SHA (an abbreviation is not a fetchable ref)
+    and enables `allowAnySHA1InWant` on the *remote* side of the transport, so an
+    unadvertised commit can be fetched without creating a temp branch or leaving
+    any config behind in the operator's repo.
+
+    `--depth=1` is what removes the history; `pin_pre_existing_suite` still works
+    because it resolves `source.ref`, which is the very commit fetched.
+
+    The initial environment state is part of the instrument's definition rather
+    than scaffolding around it — τ-bench grades against an annotated end state
+    and pass^k presupposes an identical start state across trials, neither of
+    which a shared object store delivers (literature consultation
+    `scope:main:exchange:3f47831f43f2447b`).
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    _git(repo, "worktree", "add", "--detach", str(dest), ref)
+    dest.mkdir(parents=True, exist_ok=True)
+    full = _git(repo, "rev-parse", ref).strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", full):
+        raise ArmError(f"could not resolve `{ref}` to a full object name (got {full!r})")
+    _git(dest, "init", "-q")
+    _git(
+        dest, "fetch", "-q", "--depth=1",
+        "--upload-pack", "git -c uploadpack.allowAnySHA1InWant=true upload-pack",
+        f"file://{repo}", full,
+    )
+    _git(dest, "checkout", "-q", "--detach", full)
     sync_runner_hooks(repo, dest)
     sync_worktree_env(dest)
+
+
+def refuse_self_leaking_task(repo: Path, ref: str, task_id: str) -> None:
+    """Refuse a task whose own battery file exists at its `source.ref`.
+
+    Ref-limiting removes *future* leakage; it cannot remove *contemporaneous*
+    leakage. A task authored before the commit it replays ships its own answer
+    key — prompt, every relation with its literals, and the withheld fact in
+    prose — inside the checkout the candidate is handed.
+
+    Deleting the battery from the checkout was tried first and is wrong: the
+    pinned suite carries `test_the_shipped_battery_validates`, which asserts the
+    battery holds at least two tasks, so stripping it fails L1 for *every*
+    candidate. That is lab/019's ungradeable-design defect in a new place — the
+    no-regression gate is not a place to hide a harness edit.
+
+    So the check is structural and refuses rather than patches, on the same
+    ground as the unbuilt arms: a task that leaks to itself is unsound by
+    construction, and no runtime fixup makes the measurement mean what it
+    claims. All three shipped tasks pass (their battery files postdate their
+    refs); this keeps the next one honest.
+
+    Not covered, and named rather than fixed: *sibling* task files present at a
+    ref (both original tasks are readable at `1fc6aef`). Those do not give away
+    the arm's own answer, but they do reveal how arms are graded in general.
+    Low severity while probes stay unscored, and it becomes real the moment any
+    rung depends on a battery-visible literal.
+    """
+    path = f"config/tasks/{task_id}.yaml"
+    probe = subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "-e", f"{ref}:{path}"],
+        capture_output=True, text=True,
+    )
+    if probe.returncode == 0:
+        raise ArmError(
+            f"task `{task_id}` ships its own answer key: `{path}` already exists "
+            f"at `{ref}`, so the candidate's checkout contains the "
+            "pre-registration. Re-author the task against an earlier ref — "
+            "refusing beats grading a candidate that can read the oracle."
+        )
 
 
 def sync_worktree_env(worktree: Path, timeout: int = 300) -> None:
@@ -304,11 +381,18 @@ def sync_runner_hooks(repo: Path, worktree: Path) -> None:
 
 
 def remove_worktree(repo: Path, dest: Path) -> None:
+    """Drop the arm's checkout.
+
+    A plain rmtree since `prepare_worktree` stopped registering worktrees in the
+    operator's repo. The `git worktree remove` + `prune` fallback is kept for
+    checkouts left behind by campaigns that ran before that change — they are
+    still registered, and pruning them is how the operator's repo forgets them.
+    """
+    shutil.rmtree(dest, ignore_errors=True)
     try:
-        _git(repo, "worktree", "remove", "--force", str(dest))
-    except ArmError:
-        shutil.rmtree(dest, ignore_errors=True)
         _git(repo, "worktree", "prune")
+    except ArmError:
+        pass
 
 
 def apply_arm(worktree: Path, arm: Arm) -> dict:
@@ -360,6 +444,79 @@ class AgentRun:
     is_error: bool
 
 
+ARM_IMAGE = "thalamus-arm:latest"
+ARM_DOCKER_CONTEXT = "default"
+DOCKERFILE_REL = Path("docker") / "arm-runner.Dockerfile"
+
+
+def docker_available(image: str = ARM_IMAGE) -> bool:
+    """Whether the confinement image is built on the daemon the arms will use."""
+    probe = subprocess.run(
+        ["docker", "--context", ARM_DOCKER_CONTEXT, "image", "inspect", image],
+        capture_output=True, text=True,
+    )
+    return probe.returncode == 0
+
+
+def sandbox_argv(
+    worktree: Path,
+    home: Path,
+    *,
+    image: str = ARM_IMAGE,
+    network: str = "host",
+    claude_bin: Path | None = None,
+    uv_bin: Path | None = None,
+) -> list[str]:
+    """The `docker run` prefix that confines one arm.
+
+    What the confinement is *for*: the arm's checkout is mounted and the
+    operator's repo is not, so `/home/<user>/code/thalamus` does not exist inside
+    the container and the absolute-path reads measured in lab/020 resolve to
+    nothing. Combined with `prepare_worktree`'s one-commit repo, both measured
+    leak channels are closed — filesystem and git object store.
+
+    `network` is the one-flag difference between arms and carries a second
+    result. `host` lets a memory-on arm reach the graph at
+    `ws://localhost:8182/gremlin`, which is the treatment. `none` gives
+    memory-off the **store isolation** docs/04 has carried as an open question
+    since the first campaign, where a memory-off session was measured querying
+    the graph over ad-hoc gremlin: removing the surface never removed the store,
+    and this does. It only works because `sync_worktree_env` runs on the host
+    before the container starts, so no arm needs the network to install.
+
+    The toolchain is mounted read-only from the host rather than baked, so the
+    arm runs the operator's own `claude` and `uv` builds and the image cannot
+    drift from them.
+    """
+    claude = claude_bin or Path.home() / ".local" / "bin" / "claude"
+    uv = uv_bin or Path(shutil.which("uv") or "/usr/bin/uv")
+    argv = [
+        # The native daemon, explicitly. Docker Desktop is the default context on
+        # this box and is the wrong runtime here: it runs containers inside a VM,
+        # so bind mounts are restricted to configured shares and `--network host`
+        # is the VM's host, not the operator's — a memory-on arm could not reach
+        # `ws://localhost:8182/gremlin` at all. Measured both ways before pinning.
+        "docker", "--context", ARM_DOCKER_CONTEXT, "run", "--rm", "-i",
+        "--network", network,
+        f"--user={os.getuid()}:{os.getgid()}",
+        # The arm's own checkout, read-write: this is the thing under test.
+        "-v", f"{worktree}:{worktree}",
+        # A private HOME. Transcripts land in <home>/.claude/projects/... where
+        # `transcript_text` reads them, so probes and recall counts survive
+        # confinement.
+        "-v", f"{home}:{home}",
+        # Toolchain, read-only.
+        "-v", f"{claude.parent.parent}:{claude.parent.parent}:ro",
+        "-v", f"{uv}:{uv}:ro",
+        "-e", f"HOME={home}",
+        # The mounted toolchain is outside the image's PATH by construction.
+        "-e", f"PATH={claude.parent}:{uv.parent}:/usr/local/bin:/usr/bin:/bin",
+        "-w", str(worktree),
+        image,
+    ]
+    return argv
+
+
 def run_agent(
     worktree: Path,
     prompt: str,
@@ -370,9 +527,10 @@ def run_agent(
     max_turns: int = DEFAULT_MAX_TURNS,
     timeout: int = DEFAULT_TIMEOUT,
     full_auto: bool = False,
+    sandbox: bool = False,
+    network: str = "host",
+    home: Path | None = None,
 ) -> AgentRun:
-    import os
-
     env = dict(os.environ)
     env["THALAMUS_SCOPE"] = scope
     # session-start.sh resolves project from basename(cwd), which is the repo
@@ -391,6 +549,31 @@ def run_agent(
         ["--dangerously-skip-permissions"] if full_auto
         else ["--permission-mode", "acceptEdits"]
     )
+    if sandbox:
+        # Confinement is refused rather than approximated when the image is
+        # absent: silently running unconfined would produce records that look
+        # like every other record and are not (the lab/016 lesson about guards
+        # that are correct about the case in front of them).
+        if not docker_available():
+            raise ArmError(
+                f"sandboxed arm requested but image `{ARM_IMAGE}` is not built — "
+                f"`docker build -f {DOCKERFILE_REL} -t {ARM_IMAGE} "
+                "--build-arg UID=$(id -u) --build-arg GID=$(id -g) .`"
+            )
+        arm_home = home or (worktree.parent / f"{worktree.name}--home")
+        (arm_home / ".claude").mkdir(parents=True, exist_ok=True)
+        # The credential file the CLI needs, and nothing else from the
+        # operator's HOME.
+        host_creds = Path.home() / ".claude.json"
+        if host_creds.is_file():
+            shutil.copy2(host_creds, arm_home / ".claude.json")
+        # HOME is deliberately NOT reassigned here. This process is the *docker
+        # client*, which resolves its context and daemon config out of the
+        # operator's own HOME — repointing it makes the CLI look up a context
+        # that does not exist and fail with a misleading "image not found,
+        # pull access denied". The container's HOME is set inside the container,
+        # by `-e HOME=` in `sandbox_argv`.
+        cmd = sandbox_argv(worktree, arm_home, network=network) + cmd
     try:
         proc = subprocess.run(
             cmd, input=prompt, capture_output=True, text=True,
@@ -542,6 +725,84 @@ def detect_worktree_escape(
                 seen.add(key)
                 escapes.append({"tool": name, "path": rel, "kind": kind})
     return escapes
+
+
+# Git invocations that reach outside the commit the arm was pinned to. Ordered
+# most-specific first; the first match names the reach.
+_GIT_REACH = (
+    (re.compile(r"\bgit\b[^|;&\n]*\brev-list\b[^|;&\n]*--all"), "rev-list --all"),
+    (re.compile(r"\bgit\b[^|;&\n]*\blog\b[^|;&\n]*\ball\b"), "log --all"),
+    (re.compile(r"\bgit\b[^|;&\n]*\b(?:show|diff|checkout|grep)\s+([0-9a-f]{7,40})\b"),
+     "show/diff <sha>"),
+    (re.compile(r"\bgit\b[^|;&\n]*\b(?:origin/\w+|master|main)\b"), "named branch"),
+    (re.compile(r"\bgit\b[^|;&\n]*\bHEAD~\d+"), "HEAD~n"),
+    (re.compile(r"\bgit\b[^|;&\n]*--all\b"), "--all"),
+)
+
+
+def detect_history_reach(
+    transcript: str, source_ref: str = "", fix_ref: str = ""
+) -> list[dict]:
+    """Find git commands that reached past the arm's pinned commit.
+
+    The leak nobody was watching. A `git worktree` shares refs and the object
+    store with the operator's repo, so an arm could read the fix, every lab entry
+    describing it, and the task YAML itself **without naming a path outside its
+    own directory** — invisible to `detect_worktree_escape`, and un-closable by
+    filesystem confinement, since the object store is what git needs to run.
+
+    Measured across the recorded campaigns: 9 arms, including
+    `git grep -l "<task-id>" $(git rev-list --all)` — a sweep of every commit for
+    the task's own name — and a `git show <fix_ref> -- tests/test_reader.py`
+    against the reader task's own fix.
+
+    `prepare_worktree` now closes the channel, which is exactly why this detector
+    has to exist: an arm reaching for `git log --all` behaves differently from one
+    that does not, and that difference is data about the candidate. Denying the
+    read silently would convert a measured behavior into an absence. Execution
+    provenance treats environmental interaction as a first-class step type
+    (literature consultation `scope:main:exchange:3f47831f43f2447b`), so the
+    design is **deny at the environment, measure at the transcript**: the attempt
+    stays in the record and keeps the rate observable after the fix.
+    """
+    fix = (fix_ref or "").strip()
+    reaches: list[dict] = []
+    seen: set[tuple] = set()
+    for line in transcript.splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        content = (record.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            command = str((block.get("input") or {}).get("command") or "")
+            if "git" not in command:
+                continue
+            for pattern, how in _GIT_REACH:
+                match = pattern.search(command)
+                if not match:
+                    continue
+                sha = match.group(1) if match.groups() else ""
+                # A command naming the task's own fix is the answer, not a reach.
+                names_fix = bool(sha and fix and (sha.startswith(fix[:7])
+                                                  or fix.startswith(sha[:7])))
+                if sha and source_ref and (sha.startswith(source_ref[:7])
+                                           or source_ref.startswith(sha[:7])):
+                    break  # naming its own pinned ref is not a reach
+                kind = "answer_key" if names_fix else "history_reach"
+                key = (how, sha, kind)
+                if key not in seen:
+                    seen.add(key)
+                    reaches.append({"tool": "Bash", "path": f"git {how}".strip(),
+                                    "kind": kind, "command": command[:160]})
+                break
+    return reaches
 
 
 def transcript_text(worktree: Path, session_id: str, projects_base: Path | None = None) -> str:
@@ -701,6 +962,8 @@ def run_arm(
     keep: bool = False,
     runs_base: Path | None = None,
     order_index: int = 0,
+    sandbox: bool = False,
+    isolate_store: bool = False,
 ) -> dict:
     if not task.source.ref:
         raise ArmError(f"task `{task.id}` has no source.ref to check out")
@@ -708,6 +971,7 @@ def run_arm(
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     worktree = base / "wt" / f"{task.id}--{arm.name}--{stamp}"
 
+    refuse_self_leaking_task(repo, task.source.ref, task.id)
     prepare_worktree(repo, task.source.ref, worktree)
     record: dict = {
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -724,10 +988,18 @@ def run_arm(
     }
     try:
         record["applied"] = apply_arm(worktree, arm)
+        # An arm you can't see confined is an arm you can't trust, same rule as
+        # the stripped hooks above. `isolate_store` only bites arms that have no
+        # memory surface: cutting the network on memory-on would remove the
+        # treatment itself.
+        network = "none" if (sandbox and isolate_store and not arm.mcp) else "host"
+        record["applied"]["sandboxed"] = sandbox
+        record["applied"]["network"] = network if sandbox else "host (unconfined)"
         started = time.monotonic()
         agent = run_agent(
             worktree, task.prompt, scope=arm.scope, project=repo.name, model=model,
             max_turns=max_turns, timeout=timeout, full_auto=full_auto,
+            sandbox=sandbox, network=network,
         )
         record["agent"] = {
             "session_id": agent.session_id,
@@ -789,6 +1061,8 @@ def run_arm(
         record["escapes"] = detect_worktree_escape(
             transcript, worktree, repo,
             fix_touched_paths(repo, task.source.ref, task.source.fix_ref),
+        ) + detect_history_reach(
+            transcript, task.source.ref, task.source.fix_ref
         )
         record["contaminated"] = any(
             e["kind"] == "answer_key" for e in record["escapes"]

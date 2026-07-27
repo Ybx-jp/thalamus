@@ -1,0 +1,31 @@
+# Gremlin Server hosting the Thalamus substrate on TinkerGraph.
+#
+# Derived from the stock conf/gremlin-server.yaml shipped in the image; the
+# deltas are the bind address, the graph properties file, and the init script.
+host: 0.0.0.0
+port: 8182
+evaluationTimeout: 30000
+channelizer: org.apache.tinkerpop.gremlin.server.channel.WebSocketChannelizer
+graphs: {
+  graph: conf/thalamus/tinkergraph.properties}
+scriptEngines: {
+  gremlin-groovy: {
+    plugins: { org.apache.tinkerpop.gremlin.server.jsr223.GremlinServerGremlinPlugin: {},
+               org.apache.tinkerpop.gremlin.tinkergraph.jsr223.TinkerGraphGremlinPlugin: {},
+               org.apache.tinkerpop.gremlin.jsr223.ImportGremlinPlugin: {classImports: [java.lang.Math], methodImports: [java.lang.Math#*]},
+               org.apache.tinkerpop.gremlin.jsr223.ScriptFileGremlinPlugin: {files: [conf/thalamus/thalamus-graph.groovy]}}}}
+serializers:
+  - { className: org.apache.tinkerpop.gremlin.util.ser.GraphSONMessageSerializerV3, config: { ioRegistries: [org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerIoRegistryV3] }}
+  - { className: org.apache.tinkerpop.gremlin.util.ser.GraphBinaryMessageSerializerV1, config: { ioRegistries: [org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerIoRegistryV3] }}
+  - { className: org.apache.tinkerpop.gremlin.util.ser.GraphBinaryMessageSerializerV1, config: { serializeResultToString: true }}
+processors:
+  - { className: org.apache.tinkerpop.gremlin.server.op.session.SessionOpProcessor, config: { sessionTimeout: 28800000 }}
+  - { className: org.apache.tinkerpop.gremlin.server.op.traversal.TraversalOpProcessor}
+metrics: {
+  consoleReporter: {enabled: false},
+  csvReporter: {enabled: false},
+  jmxReporter: {enabled: false},
+  slf4jReporter: {enabled: false}}
+strictTransactionManagement: false
+idleConnectionTimeout: 0
+keepAliveInterval: 0

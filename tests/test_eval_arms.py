@@ -715,6 +715,123 @@ class TestWorktreeEscapeDetection:
         assert arms.fix_touched_paths(tmp_path, "", "def456") == frozenset()
 
 
+class TestHistoryReachDetection:
+    """The leak filesystem confinement cannot close.
+
+    Every command below is a real one, lifted from `runs.jsonl` transcripts.
+    """
+
+    REF, FIX = "1fc6aef", "4432703"
+
+    def _t(self, *commands):
+        return "\n".join(json.dumps({
+            "type": "assistant",
+            "message": {"content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": c}},
+            ]},
+        }) for c in commands)
+
+    def _reach(self, *commands):
+        return arms.detect_history_reach(self._t(*commands), self.REF, self.FIX)
+
+    def test_the_answer_key_sweep_across_every_commit(self):
+        """The worst measured case: a grep for the task's own id over all revs."""
+        hits = self._reach(
+            'git grep -l "arm-runner-session-death-classification" $(git rev-list --all)'
+        )
+        assert hits and hits[0]["kind"] == "history_reach"
+        assert "rev-list --all" in hits[0]["path"]
+
+    def test_showing_the_tasks_own_fix_is_the_answer_key(self):
+        hits = arms.detect_history_reach(
+            self._t("git show 8b70330 -- tests/test_reader.py"),
+            "9f28895", "8b70330",
+        )
+        assert [h["kind"] for h in hits] == ["answer_key"]
+
+    def test_log_all_and_named_branches_are_reaches(self):
+        assert self._reach("git log --all --oneline")
+        assert self._reach("git log origin/master --oneline -3")
+        assert self._reach("git diff master --stat 2>/dev/null")
+
+    def test_naming_its_own_pinned_ref_is_not_a_reach(self):
+        """Measured twice: `git show <source.ref> --stat`. The arm is entitled
+        to inspect the commit it was handed."""
+        assert self._reach("git show 1fc6aef --stat") == []
+        assert self._reach("git show 1fc6aef -- docs/04-eval-loop.md") == []
+
+    def test_ordinary_work_in_the_checkout_is_not_a_reach(self):
+        assert self._reach("git diff", "git status", "git log --oneline -5",
+                           "uv run pytest -q") == []
+
+    def test_empty_transcript_is_clean(self):
+        assert arms.detect_history_reach("", self.REF, self.FIX) == []
+
+
+class TestSelfLeakingTaskRefusal:
+    def test_a_task_whose_battery_file_predates_its_ref_is_refused(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / "config" / "tasks").mkdir(parents=True)
+        (repo / "config" / "tasks" / "leaky.yaml").write_text("task: 1\n")
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t",
+                        "-c", "user.name=t", "commit", "-qm", "x"], check=True)
+        with pytest.raises(arms.ArmError, match="ships its own answer key"):
+            arms.refuse_self_leaking_task(repo, "HEAD", "leaky")
+        # A task with no battery file at that ref is fine.
+        arms.refuse_self_leaking_task(repo, "HEAD", "not-yet-authored")
+
+
+class TestSandboxConfinement:
+    """Properties verified live against the built image before these were written."""
+
+    WT = Path("/home/ybx/.thalamus/counterfactuals/wt/t--memory-on--x")
+    HOME = Path("/home/ybx/.thalamus/counterfactuals/wt/t--memory-on--x--home")
+
+    def _argv(self, **kw):
+        return arms.sandbox_argv(self.WT, self.HOME, **kw)
+
+    def test_the_operators_checkout_is_never_mounted(self):
+        """The whole point: the paths lab/020's arms read must not exist."""
+        mounts = [a for a in self._argv() if ":" in a and a.count("/") > 1]
+        assert not any("/home/ybx/code/thalamus" in m for m in mounts)
+
+    def test_the_arm_checkout_and_home_are_mounted(self):
+        argv = self._argv()
+        assert f"{self.WT}:{self.WT}" in argv
+        assert f"{self.HOME}:{self.HOME}" in argv
+
+    def test_network_host_for_memory_on_none_for_isolated_memory_off(self):
+        assert self._argv(network="host")[self._argv().index("--network") + 1] == "host"
+        assert "none" in self._argv(network="none")
+
+    def test_it_pins_the_native_daemon_not_docker_desktop(self):
+        """Desktop runs containers in a VM: bind mounts are restricted to
+        configured shares and `--network host` is the VM's host, so a memory-on
+        arm could not reach the graph. Measured both ways."""
+        argv = self._argv()
+        assert argv[:4] == ["docker", "--context", arms.ARM_DOCKER_CONTEXT, "run"]
+
+    def test_the_toolchain_is_mounted_read_only_and_on_path(self):
+        argv = self._argv(claude_bin=Path("/opt/c/bin/claude"),
+                          uv_bin=Path("/opt/u/uv"))
+        assert "/opt/c:/opt/c:ro" in argv
+        assert "/opt/u/uv:/opt/u/uv:ro" in argv
+        path = argv[argv.index("-e") + 1] if False else next(
+            a for a in argv if a.startswith("PATH=")
+        )
+        assert "/opt/c/bin" in path and "/opt/u" in path
+
+    def test_a_sandboxed_arm_refuses_when_the_image_is_missing(self, tmp_path, monkeypatch):
+        """Refusing beats silently running unconfined — an unconfined record
+        looks exactly like a confined one."""
+        monkeypatch.setattr(arms, "docker_available", lambda *a, **k: False)
+        with pytest.raises(arms.ArmError, match="is not built"):
+            arms.run_agent(tmp_path, "p", scope="main", project="thalamus",
+                           sandbox=True)
+
+
 class TestCrossArmFaultSignal:
     def _record(self, tail, passed=False):
         return {"acceptance": [{"run": "uv run pytest -q", "passed": passed,

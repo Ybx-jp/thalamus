@@ -416,16 +416,77 @@ probe searching for a token the candidate can open a file and read measures
 reading, not recall. Among arms that could not reach the task file it still
 behaves (4 hits, 5 callers, no false positives).
 
-**Open, and blocking: arms can read their own answer key (lab/020).** An arm runs
-`--dangerously-skip-permissions` with the worktree as cwd, and nothing stops it
-reading `/…/thalamus/config/tasks/<id>.yaml` by absolute path. That file is the
-pre-registration — it states the withheld fact in prose and carries every
-relation with its exact fixtures. Until an arm is confined to its worktree, every
-gated task is one directory listing from solved, and no probe keyed to a token in
-the battery can be trusted.
+**Two answer-key leaks, both measured, both now closed (lab/020–022).** An arm
+runs `--dangerously-skip-permissions`, and it used that freedom two ways:
 
-**Detected, not confined (lab/021).** Confinement is unbuilt; *measurement* of
-the leak is not. `detect_worktree_escape` reads each arm's own transcript for
+| channel | measured | closed by |
+|---|---|---|
+| filesystem — absolute-path reads of the operator's checkout | 3 of 24 arms | the container |
+| **git object store** — `log --all`, `show <fix_ref>`, `rev-list --all` | **9 of 88 arms** | the one-commit repo |
+
+The second was the larger and nobody was watching it. A `git worktree` shares
+refs and objects with the operator's repo, so an arm could read the fix, every
+lab entry describing it, and the task YAML **without naming a path outside its
+own directory** — invisible to any filesystem confinement, since the object store
+is exactly what git needs to run. One arm ran
+`git grep -l "<task-id>" $(git rev-list --all)`; another ran
+`git show 8b70330 -- tests/test_reader.py`, the reader task's own `fix_ref`,
+which puts the pre-grading campaigns in scope too.
+
+**The arm's checkout is now a repository whose history stops at `source.ref`.**
+`prepare_worktree` fetches the single pinned commit at `--depth=1`, naming the
+full 40-char object and enabling `allowAnySHA1InWant` on the *remote* side of the
+transport so an unadvertised commit is fetchable without a temp branch or any
+config left in the operator's repo. Verified on a real checkout: one commit
+visible, `git show <fix_ref>` fails, the answer-key sweep returns nothing, and
+the inherited suite still passes 224/224 so L1 is unaffected. This also removes
+the arm's dependency on the operator's repo, which is what makes confinement
+possible at all. The initial environment state is part of the instrument's
+definition rather than scaffolding around it — τ-bench grades against an
+annotated end state and `pass^k` presupposes an identical start state per trial,
+neither of which a shared object store delivers.
+
+**Contemporaneous leakage is refused, not patched.** Ref-limiting cannot help a
+task authored *before* the commit it replays: its own battery file would sit in
+the checkout. Deleting the battery was tried and is wrong — the pinned suite
+asserts the battery holds ≥2 tasks, so stripping it fails L1 for every candidate,
+which is lab/019's ungradeable-design defect in a new place. `refuse_self_leaking_task`
+refuses instead. All three shipped tasks pass.
+
+**`--sandbox` confines the session** (`docker/arm-runner.Dockerfile`). The arm's
+checkout and a private HOME are mounted; the operator's checkout is not, so the
+paths lab/020's arms read do not exist. The toolchain is *mounted* from the host
+rather than baked, so the arm runs the operator's own `claude` and `uv` and the
+image cannot drift. Two runtime facts, both measured rather than assumed:
+bubblewrap is lighter and **does not work here** (Ubuntu's
+`apparmor_restrict_unprivileged_userns=1` denies the uid map), and Docker
+**Desktop** is the wrong daemon — it runs containers in a VM, so bind mounts are
+restricted to configured shares and `--network host` is the VM's host, not the
+operator's. The runner pins the native context. A missing image is refused, never
+silently run unconfined.
+
+**`--isolate-store` closes the memory-off store hole.** With confinement, `--network
+none` for arms carrying no memory surface makes the graph unreachable — verified
+by connect-behaviour, not by assumption (`host` connects, `none` refuses). This is
+the open question this section has carried since the first campaign, where a
+memory-off session was measured querying the graph over ad-hoc gremlin: removing
+the surface never removed the store. It is opt-in because it **changes the
+memory-off treatment**, a second factor that must be declared in a campaign's
+pre-registration.
+
+**Detection survives the fix, deliberately.** An arm that reaches for
+`git log --all` behaves differently from one that does not, and that difference
+is data about the candidate; closing the channel silently would convert a
+measured behavior into an absence. Execution provenance treats environmental
+interaction as a first-class step type, so the design is **deny at the
+environment, measure at the transcript** — the attempt is still a tool call, so
+the 9-of-88 rate stays observable after the fix. `detect_history_reach` flags
+`--all`, `rev-list`, named branches and `show <sha>` past the pinned ref, and
+classifies a command naming the task's own `fix_ref` as `answer_key`; naming
+`source.ref` itself is not a reach. It reproduces 8 of the 9 measured arms, the
+two skipped being arms that named only their own pinned commit.
+
+`detect_worktree_escape` reads each arm's own transcript for
 tool inputs naming the operator's checkout by absolute path and stamps `escapes`
 and `contaminated` on the record, on the flag-never-exclude discipline the infra
 classifier already follows (§2a). Two classes: `answer_key` — a battery file, or

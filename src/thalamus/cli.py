@@ -270,6 +270,20 @@ def main():
         "--keep", action="store_true", help="Keep the worktree(s) for inspection"
     )
     eval_run_parser.add_argument(
+        "--sandbox", action="store_true",
+        help="Confine the arm session to a container in which the operator's "
+        "checkout does not exist (docker/arm-runner.Dockerfile). Closes the "
+        "filesystem half of the answer-key leak; the git half is closed by the "
+        "arm's one-commit repo regardless. Refuses if the image is not built.",
+    )
+    eval_run_parser.add_argument(
+        "--isolate-store", action="store_true",
+        help="With --sandbox, additionally cut the network for arms that have no "
+        "memory surface, so memory-off cannot reach the graph over ad-hoc "
+        "gremlin. This CHANGES the memory-off treatment — a second factor — so "
+        "it is opt-in and must be declared in the campaign's pre-registration.",
+    )
+    eval_run_parser.add_argument(
         "--config", type=Path, default=None,
         help="Config root holding tasks/ (default: repo config/)",
     )
@@ -858,6 +872,7 @@ def _cmd_eval(args, eval_parser):
                     max_turns=args.max_turns or arms_mod.DEFAULT_MAX_TURNS,
                     timeout=args.timeout or arms_mod.DEFAULT_TIMEOUT,
                     full_auto=args.full_auto, keep=args.keep, order_index=index,
+                    sandbox=args.sandbox, isolate_store=args.isolate_store,
                 )
             except arms_mod.SessionFault as exc:
                 # Every arm after a session death is void; continuing would only
