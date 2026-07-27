@@ -449,6 +449,27 @@ ARM_DOCKER_CONTEXT = "default"
 DOCKERFILE_REL = Path("docker") / "arm-runner.Dockerfile"
 
 
+def arm_home_for(worktree: Path) -> Path:
+    """The private HOME a confined arm runs under.
+
+    Derived from the worktree rather than passed around, because two callers must
+    agree on it from different places: `run_agent` mounts it as the container's
+    HOME, and `transcript_text` reads the session transcript back out of it. When
+    they disagreed the read returned "" rather than raising, so a sandboxed arm
+    recorded `transcript_captured: false`, `recall_calls` {0, 0}, every probe a
+    miss and no escapes — an arm that recalled memory perfectly, filed as one that
+    never reached for it.
+
+    Confinement exists for *gated* campaigns, where recall behaviour is the
+    primary outcome (lab/020's C2), so the drift would have zeroed exactly the
+    measurement the campaign was bought to make, in the arm where it matters most,
+    while every other field in the record looked normal. Same class as the
+    `basename $cwd` scoping bug (lab/012) and the `turn_capped` comparison
+    (lab/015): a default that returns a plausible value instead of failing.
+    """
+    return worktree.parent / f"{worktree.name}--home"
+
+
 def docker_available(image: str = ARM_IMAGE) -> bool:
     """Whether the confinement image is built on the daemon the arms will use."""
     probe = subprocess.run(
@@ -556,11 +577,16 @@ def run_agent(
         # that are correct about the case in front of them).
         if not docker_available():
             raise ArmError(
-                f"sandboxed arm requested but image `{ARM_IMAGE}` is not built — "
-                f"`docker build -f {DOCKERFILE_REL} -t {ARM_IMAGE} "
-                "--build-arg UID=$(id -u) --build-arg GID=$(id -g) .`"
+                f"sandboxed arm requested but image `{ARM_IMAGE}` is not built on "
+                f"the `{ARM_DOCKER_CONTEXT}` docker context. Build it with:\n"
+                f"  docker --context {ARM_DOCKER_CONTEXT} build "
+                f"-f {DOCKERFILE_REL} -t {ARM_IMAGE} "
+                "--build-arg UID=$(id -u) --build-arg GID=$(id -g) .\n"
+                "The `--context` is not optional: Docker Desktop is the default "
+                "context on this box, and a build there is invisible to the "
+                "daemon the arms use."
             )
-        arm_home = home or (worktree.parent / f"{worktree.name}--home")
+        arm_home = home or arm_home_for(worktree)
         (arm_home / ".claude").mkdir(parents=True, exist_ok=True)
         # The credential file the CLI needs, and nothing else from the
         # operator's HOME.
@@ -1046,7 +1072,12 @@ def run_arm(
 
         diff = _worktree_diff(worktree)
         record["diff_lines"] = len(diff.splitlines())
-        transcript = transcript_text(worktree, agent.session_id)
+        # A confined session writes its transcript into the container's HOME,
+        # not the operator's, so the reader must look where the arm wrote.
+        transcript = transcript_text(
+            worktree, agent.session_id,
+            (arm_home_for(worktree) / ".claude" / "projects") if sandbox else None,
+        )
         record["transcript_captured"] = bool(transcript)
         # Whether the arm actually reached for memory is the primary outcome of
         # the memory-on/off contrast, and it lived only in the transcript until
@@ -1102,6 +1133,9 @@ def run_arm(
         record["kept"] = keep
         if not keep:
             remove_worktree(repo, worktree)
+            # The confined arm's private HOME holds its credentials copy and
+            # its transcript; both have been read by now.
+            shutil.rmtree(arm_home_for(worktree), ignore_errors=True)
         base.mkdir(parents=True, exist_ok=True)
         with (base / "runs.jsonl").open("a") as fh:
             fh.write(json.dumps(record) + "\n")

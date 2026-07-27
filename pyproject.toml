@@ -3,6 +3,8 @@ name = "thalamus"
 version = "0.1.0"
 description = "Federated graph memory for coding agents — with a trust model and a measured utility loop"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "gremlinpython>=3.7,<3.8",
     "pyyaml>=6.0",

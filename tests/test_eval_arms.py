@@ -823,6 +823,26 @@ class TestSandboxConfinement:
         )
         assert "/opt/c/bin" in path and "/opt/u" in path
 
+    def test_the_transcript_is_read_from_the_arms_own_home(self, tmp_path):
+        """The mounter and the reader must agree on the private HOME.
+
+        When they did not, a confined arm's transcript read empty and every
+        recall/probe signal silently went to zero — on exactly the arms whose
+        recall behaviour is the campaign's primary outcome.
+        """
+        from thalamus.eval.cost import project_slug
+
+        worktree = tmp_path / "wt" / "t--memory-on--x"
+        worktree.mkdir(parents=True)
+        projects = arms.arm_home_for(worktree) / ".claude" / "projects"
+        slug_dir = projects / project_slug(worktree)
+        slug_dir.mkdir(parents=True)
+        (slug_dir / "sid.jsonl").write_text('{"hello": "world"}')
+
+        # The operator's HOME does not resolve it; the arm's own does.
+        assert arms.transcript_text(worktree, "sid") == ""
+        assert arms.transcript_text(worktree, "sid", projects) == '{"hello": "world"}'
+
     def test_a_sandboxed_arm_refuses_when_the_image_is_missing(self, tmp_path, monkeypatch):
         """Refusing beats silently running unconfined — an unconfined record
         looks exactly like a confined one."""

@@ -91,7 +91,7 @@ Requires Docker and Python ≥3.11.
 docker compose up -d
 
 # 2. Install
-uv sync                        # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
+uv sync --extra dev            # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 # 3. Use it
 thalamus bootstrap                 # list session transcripts available to ingest

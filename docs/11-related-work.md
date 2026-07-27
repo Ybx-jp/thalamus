@@ -364,6 +364,20 @@ evidence, so its claims stay observational.
 Stated narrowly and provisionally — absence in one scan is weak evidence, and this
 list is the first thing to re-check on every future scan:
 
+**Open gap, named 2026-07-27 (lab/021–022).** The scan holds **no
+benchmark-contamination and no specification-gaming literature**, and the eval
+loop now has measured results squarely in that territory: candidates recovering
+the answer from the evaluation environment, by filesystem and by git object
+store. Nothing about arm confinement or leak-channel auditing may be phrased as
+novel until that literature is scanned — the prior art almost certainly exists.
+Known-missing anchors, demand-driven against open threads: SWE-bench solution
+leakage (arXiv 2410.06992) and memorised-vs-reasoned fixes (arXiv 2506.12286);
+the specification-gaming canon; and Wohlin's threats-to-validity taxonomy, whose
+construct / internal / external vocabulary §2a and §2d currently improvise. Also
+missing and load-bearing for the campaign statistics: ordinal-as-interval by name
+(Liddell & Kruschke 2018), intention-to-treat vs per-protocol, and sample-size
+methods for ordered categorical outcomes.
+
 1. **The utility→decay loop closing on live deployment traces of a single
    operator's real coding sessions**, feeding an archival (never deletion)
    forgetting policy graded per-expert. The benchmarks measure; none self-maintain

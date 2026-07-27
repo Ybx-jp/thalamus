@@ -141,11 +141,38 @@ reader arm's `git show 8b70330` as `answer_key`. The two it skips named only the
 own pinned ref, which is not a reach — an arm is entitled to inspect the commit it
 was handed.
 
+## The predicted failure surface was real, and it was silent
+
+This entry first said the likely failure on first real use was "credentials and
+transcript paths, not confinement." The transcript half was already broken when
+that sentence was written.
+
+A confined session's `HOME` is the container's, so it writes its transcript to
+`<arm-home>/.claude/projects/…`. `transcript_text` read the *operator's*
+`~/.claude/projects`, and returns `""` on a missing file rather than raising. A
+sandboxed arm would therefore have recorded `transcript_captured: false`,
+`recall_calls` `{0, 0}`, every probe a miss and an empty `escapes` list — an arm
+that recalled memory perfectly, filed as one that never reached for it.
+
+The direction is what makes it expensive. Confinement exists for *gated*
+campaigns, where recall behaviour is the primary outcome (lab/020's C2), so the
+bug would have zeroed exactly the measurement the campaign was bought to make, in
+the arm where it matters most, while every other field in the record looked
+normal. Same class as the `basename $cwd` scoping bug that voided two campaigns
+(lab/012) and the `turn_capped` comparison that mislabelled concluded runs
+(lab/015): **a default that returns a plausible value instead of failing.**
+
+Fixed by deriving the path in one place — `arm_home_for(worktree)` — so the
+mounter and the reader cannot drift, with a test asserting the operator's HOME
+does *not* resolve it. Found by reading the code before spending a campaign,
+rather than by reading a null result afterwards.
+
 ## What is not done
 
 - **No arm has run confined.** Every property above is verified by direct probe of
-  the image, not by a campaign. The first sandboxed campaign is the real test, and
-  the likely failure surface is credentials and transcript paths, not confinement.
+  the image, not by a campaign. Credentials are the remaining untested surface:
+  `.claude.json` is copied into the arm's private HOME, and whether the CLI
+  authenticates from that copy inside a container is unverified.
 - **Sibling task files** remain readable at refs where they exist (both original
   tasks are present at `1fc6aef`). They do not give away the arm's own answer but
   do reveal how arms are graded. Low severity while probes stay unscored.
