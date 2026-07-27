@@ -419,10 +419,20 @@ behaves (4 hits, 5 callers, no false positives).
 **Two answer-key leaks, both measured, both now closed (lab/020–022).** An arm
 runs `--dangerously-skip-permissions`, and it used that freedom two ways:
 
+Rates below are stamped on every record by `thalamus eval rescore`, which
+applies both detectors backwards over the campaigns that ran before they
+existed. Every rate is arms/arms across all six recorded campaigns; events are
+given alongside because an arm that reached twice is still one reached arm.
+
 | channel | measured | closed by |
 |---|---|---|
-| filesystem — absolute-path reads of the operator's checkout | 3 of 24 arms | the container |
-| **git object store** — `log --all`, `show <fix_ref>`, `rev-list --all` | **9 of 88 arms** | the one-commit repo |
+| filesystem — absolute-path reads of the operator's checkout | 13 of 88 arms (21 events) | the container |
+| **git object store** — `log --all`, `show <fix_ref>`, `rev-list --all` | **8 of 88 arms (10 events)** | the one-commit repo |
+
+Contamination proper — an escape of either channel that reached an `answer_key`
+file — is **5 of 88 arms**. The git channel is concentrated rather than diffuse:
+7 of its 8 arms are the single `arm-runner-session-death-classification`
+campaign, 7 of that campaign's 27.
 
 The second was the larger and nobody was watching it. A `git worktree` shares
 refs and objects with the operator's repo, so an arm could read the fix, every

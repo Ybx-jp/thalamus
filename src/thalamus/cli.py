@@ -232,6 +232,33 @@ def main():
         help="Config root holding tasks/ (default: repo config/)",
     )
 
+    eval_rescore_parser = eval_sub.add_parser(
+        "rescore",
+        help="Apply the contamination and history-reach detectors backwards over "
+        "campaigns that ran before they existed",
+    )
+    eval_rescore_parser.add_argument(
+        "--repo", type=Path, default=None,
+        help="Operator checkout the arms could escape into (default: cwd)",
+    )
+    eval_rescore_parser.add_argument(
+        "--runs", type=Path, default=None,
+        help="Run log to re-score (default: ~/.thalamus/counterfactuals/runs.jsonl)",
+    )
+    eval_rescore_parser.add_argument(
+        "--config", type=Path, default=None,
+        help="Config root holding tasks/ (default: repo config/)",
+    )
+    eval_rescore_parser.add_argument(
+        "--force", action="store_true",
+        help="Re-derive stamps on records that already carry them",
+    )
+    eval_rescore_parser.add_argument(
+        "--write", action="store_true",
+        help="Stamp the records. Without it, the derivation runs and is reported "
+        "but nothing is modified.",
+    )
+
     eval_oracle_parser = eval_sub.add_parser(
         "oracle",
         help="Validate the graded oracle itself: grade anchors and the mutant set "
@@ -950,6 +977,31 @@ def _cmd_eval(args, eval_parser):
         print(f"Records appended to {arms_mod.RUNS_BASE / 'runs.jsonl'}")
         if not accepted:
             sys.exit(2)
+    elif getattr(args, "eval_command", None) == "rescore":
+        from thalamus.eval.rescore import (
+            apply_outcomes,
+            load_records,
+            render_rescore,
+            rescore_records,
+            write_records,
+        )
+
+        records = load_records(args.runs)
+        if not records:
+            print("No run records found — nothing to re-score.", file=sys.stderr)
+            sys.exit(1)
+        outcomes = rescore_records(
+            records,
+            repo=(args.repo or Path.cwd()).resolve(),
+            tasks_base=args.config,
+            force=args.force,
+        )
+        if args.write:
+            changed = apply_outcomes(records, outcomes)
+            write_records(records, args.runs)
+        print(render_rescore(outcomes, wrote=args.write))
+        if args.write:
+            print(f"\nStamped {changed} record(s); previous log kept as *.pre-rescore.")
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report
 
