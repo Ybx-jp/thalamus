@@ -364,19 +364,29 @@ evidence, so its claims stay observational.
 Stated narrowly and provisionally — absence in one scan is weak evidence, and this
 list is the first thing to re-check on every future scan:
 
-**Open gap, named 2026-07-27 (lab/021–022).** The scan holds **no
-benchmark-contamination and no specification-gaming literature**, and the eval
-loop now has measured results squarely in that territory: candidates recovering
-the answer from the evaluation environment, by filesystem and by git object
-store. Nothing about arm confinement or leak-channel auditing may be phrased as
-novel until that literature is scanned — the prior art almost certainly exists.
-Known-missing anchors, demand-driven against open threads: SWE-bench solution
-leakage (arXiv 2410.06992) and memorised-vs-reasoned fixes (arXiv 2506.12286);
-the specification-gaming canon; and Wohlin's threats-to-validity taxonomy, whose
-construct / internal / external vocabulary §2a and §2d currently improvise. Also
-missing and load-bearing for the campaign statistics: ordinal-as-interval by name
-(Liddell & Kruschke 2018), intention-to-treat vs per-protocol, and sample-size
-methods for ordered categorical outcomes.
+**Contamination and specification gaming: held, and the claim is settled
+against us (lab/021–022).** The eval loop measured candidates recovering the
+answer from the evaluation environment, by filesystem and by git object store.
+The prior art exists, so **arm confinement and leak-channel auditing are not
+novel** — they are a local instance of a documented failure mode. SWE-Bench+
+(arXiv 2410.06992) finds 32.67% of successful SWE-bench patches carry solution
+leakage and 31.08% pass only because their tests are too weak, with the
+resolution rate dropping once both are filtered; the SWE-Bench Illusion (arXiv
+2506.12286) separates memorised from reasoned fixes, reporting up to 76% accuracy
+at naming buggy file paths from the issue text alone; and specification gaming in
+reasoning models (arXiv 2502.13295) supplies the vocabulary for an agent that
+satisfies a scored objective by hacking its environment rather than solving the
+task. Held in `eval-methodology` under feed `eval-leakage`.
+
+**Still open, and blocked on supply rather than on scanning.** Wohlin's
+threats-to-validity taxonomy, whose construct / internal / external vocabulary
+§2a and §2d improvise; and, load-bearing for the campaign statistics,
+ordinal-as-interval by name (Liddell & Kruschke 2018), intention-to-treat vs
+per-protocol (Hernán & Robins 2017 / ICH E9(R1)), and sample-size methods for
+ordered categorical outcomes (Whitehead 1993). None has an arXiv version — they
+sit on SSRN, NEJM, Statistics in Medicine and in a Springer volume, all outside
+the ingest allowlist — so procuring them is an allowlist or local-file decision,
+not a scan.
 
 1. **The utility→decay loop closing on live deployment traces of a single
    operator's real coding sessions**, feeding an archival (never deletion)
