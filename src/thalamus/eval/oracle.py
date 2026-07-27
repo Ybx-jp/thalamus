@@ -240,14 +240,18 @@ def render_gate(result: dict) -> str:
     """The full table, always — a gate that prints only its verdict hides which
     candidate disagreed, and the identity of the disagreement is the finding."""
     lines = [f"Oracle gate — {result['task']}", ""]
-    header = f"  {'candidate':<24} {'kind':<16} {'expect':>6} {'got':>5}   verdict"
+    # Width from the data, not a guess: a label wider than the column shoves every
+    # later field right and the table stops being scannable exactly when it has
+    # something to report.
+    width = max([len(g.candidate.label) for g in result["grades"]] + [len("candidate")])
+    header = f"  {'candidate':<{width}} {'kind':<16} {'expect':>6} {'got':>5}   verdict"
     lines += [header, "  " + "-" * (len(header) - 2)]
     for grade in result["grades"]:
         cand = grade.candidate
         got = "err" if grade.rung < 0 else f"L{grade.rung}"
         mark = "ok" if grade.ok else "MISMATCH"
         lines.append(
-            f"  {cand.label:<24} {cand.kind:<16} {'L' + str(cand.expected_rung):>6} "
+            f"  {cand.label:<{width}} {cand.kind:<16} {'L' + str(cand.expected_rung):>6} "
             f"{got:>5}   {mark}"
         )
         if grade.error:
