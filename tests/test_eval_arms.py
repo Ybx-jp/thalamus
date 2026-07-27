@@ -730,3 +730,34 @@ class TestArmGradesAgainstTheInheritedSuite:
         repo = _git_repo(tmp_path)
         worktree = _bare_worktree(repo, tmp_path / "wt")
         arms.pin_pre_existing_suite(repo, worktree, "HEAD")  # must not raise
+
+
+class TestConcludedRunIsNeverADeadSession:
+    """A healthy arm's own prose must not be read as evidence it died.
+
+    lab/020 lost a campaign to this. The task under test is *about* session-death
+    detection, so the candidate's closing summary said it had broadened the
+    marker list to cover session/usage/rate/quota — and the runner matched its
+    own vocabulary against that sentence, stamped a successful 49-turn $2.59 arm
+    void, and halted. lab/016's error class inverted: the right string, in the
+    wrong place.
+    """
+
+    def test_a_concluded_run_reporting_the_markers_is_not_a_fault(self):
+        agent = AgentRun(
+            "s",
+            "Broadened the guard to match session limit, usage limit, rate "
+            "limit and quota rather than one vendor string. All 226 tests pass.",
+            2.59, 300000, 49, False,
+        )
+        assert arms.classify_session_fault(agent) is None
+
+    def test_a_dead_session_is_still_caught(self):
+        """The necessary condition must not have become a sufficient one."""
+        agent = AgentRun("s", LIMIT_TAIL, 2.62, 180000, 18, True)
+        assert arms.classify_session_fault(agent) == "session_fault_interrupted"
+
+    def test_a_turn_capped_run_is_still_not_a_session_fault(self):
+        """`is_error` alone never meant death — every capped run carries it."""
+        agent = AgentRun("s", "ran out of turns mid-refactor", 1.8, 200000, 40, True)
+        assert arms.classify_session_fault(agent) is None

@@ -170,6 +170,23 @@ def classify_session_fault(agent: AgentRun) -> str | None:
     this whole classifier exists to prevent. When an interrupted arm matters,
     read its transcript and say so by hand.
     """
+    # `is_error` is NECESSARY but not sufficient, and the order matters. A run
+    # that concluded normally is not a dead session no matter what its prose
+    # says — and its prose is the model's own summary, which on a task *about*
+    # session limits necessarily contains these very markers. lab/020 lost a
+    # campaign to exactly that: a healthy 49-turn arm reported that it had
+    # broadened the marker list to cover session/usage/rate/quota, the runner
+    # read its own vocabulary back out of that sentence, stamped the arm void
+    # and halted. The same error class as lab/016 — matching a string instead of
+    # a failure — inverted: the right string, in the wrong place.
+    #
+    # Necessity is checked against the whole record: every genuine death in
+    # runs.jsonl (18 void arms, 22 marker-bearing arms) carries `is_error`, and
+    # the only `is_error: False` fault ever stamped was that false positive.
+    # `is_error` still cannot stand alone — every turn-capped run carries it too
+    # — so the marker remains the discriminator *among errored runs*.
+    if not agent.is_error:
+        return None
     text = (agent.result or "").lower()
     if not any(marker in text for marker in SESSION_FAULT_MARKERS):
         return None
