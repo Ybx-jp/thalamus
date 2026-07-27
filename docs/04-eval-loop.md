@@ -275,7 +275,8 @@ the ladder can be graded against ground truth with no model in the loop: the
 anchor** is the fix commit. The anchor pair is necessary but *not sufficient* —
 the saturated binary oracle already passes it, and a test the status quo passes
 cannot justify replacing the status quo; it establishes range coverage, not
-adequacy in the interior where all 18 observed arms live. The discrimination bar
+adequacy in the interior where real arms live — and they do live there:
+**3 of 6 graded arms landed at rung 2 or 4** (lab/018). The discrimination bar
 is instead a **mutant set** (4–6 per task) derived by degrading the known-good
 fix, with expected rungs committed in advance; the ladder must reproduce that
 ordering. `thalamus eval oracle <task>` grades anchors and mutants together, at
@@ -330,17 +331,32 @@ Design consultations: eval-methodology, exchanges
 `scope:main:exchange:c973e292d6ab45c7` → `df39a842a5ef4f27` →
 `06723ce1b78345a9` (each superseding the prior where it changed).
 
-**Open: the battery, not the runner, is the bottleneck (lab/014, confirmed
-lab/015–016).** Acceptance saturated at **18/18 across sonnet, fable, and opus
-over two replicates** — a battery ceiling, not a model ceiling, so no memory
-contrast has anywhere to appear at any capability tier. Harder tasks or a graded
-oracle must precede any further campaign spend.
+**The battery ceiling was a binary-oracle ceiling, and grading lifted it
+(lab/014–016, resolved lab/018).** Acceptance had saturated at **18/18 across
+sonnet, fable, and opus over two replicates**, reading as a battery ceiling.
+Graded, the same task de-saturates: half the arms land in the interior, split
+between under-fix (L3 — the reported case patched, hyphenated terms still
+broken) and over-fix (L5 — project matching loosened as collateral damage). The
+task was never too easy; the instrument could not see where candidates fell.
 
-**Probe validity, the sturdiest result so far (lab/016).** Across 18 valid arms
-`memo-surfaced` fired **iff** the arm called a thalamus tool — zero mismatches,
-zero false positives, and all 9 memory-off control arms silent.
-`fix-name-convergence` stayed **0/18**: surfacing is well measured, memo *use*
-is still unevidenced anywhere.
+**Open: candidate variance is three rungs wide (lab/018).** Under fixed model,
+task, and arm, rungs spread {2, 5, 5}. Per-cell n=1 is uninterpretable and
+campaigns must buy replicates before models or tasks; any claimed memory effect
+must clear that floor.
+
+**Open: the binding constraint is now recall use, not the oracle (lab/018).**
+Across three memory-on arms, `mcp__thalamus__*` calls: **0**. The SessionStart
+hook fix closed *discovery* — one arm issued the exact `ToolSearch` select and
+loaded both schemas without error — then read the source instead of calling
+either tool. With a concrete bug report in hand, reading beats querying. Until
+that changes, a counterfactual campaign has no contrast to measure and samples
+candidate variance at ~$1.4/arm.
+
+**Probe validity, the sturdiest result so far (lab/016, extended lab/018).**
+Across 24 valid arms `memo-surfaced` fires **iff** the arm called a thalamus
+tool — zero mismatches, zero false positives, and every memory-off control arm
+silent. `fix-name-convergence` stays **0/24**: surfacing is well measured, memo
+*use* is still unevidenced anywhere.
 
 **Recall-calling is substantially stochastic (lab/016, superseding lab/015
 §2).** lab/015 read a model×task interaction off one observation per cell and
