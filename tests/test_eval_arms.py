@@ -669,3 +669,64 @@ class TestCrossArmFaultSignal:
                          "No module named 'gremlin_python'\n22 errors in 3.44s"),
         ])
         assert "CROSS-ARM FAULT SIGNAL" in out
+
+
+def _bare_worktree(repo: Path, dest: Path) -> Path:
+    """A worktree without prepare_worktree's `uv sync` — these fixtures are bare
+    git repos, and the pin is a git operation with no environment to build."""
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "--detach",
+                    str(dest), "HEAD"], check=True, capture_output=True)
+    return dest
+
+
+class TestArmGradesAgainstTheInheritedSuite:
+    """L1 grades the suite the candidate inherited, not the one it left behind.
+
+    The defect this pins down (lab/020): `pin_pre_existing_suite` landed with the
+    oracle gate and for a while only the gate called it, so `eval oracle` graded
+    anchors against the inherited suite while a real arm was graded against
+    whatever tests the candidate wrote. The first gated arm scored rung 0 because
+    it authored an ambitious test its own fix did not satisfy — a defect the gate
+    by construction could never see, which means the gate's validation did not
+    transfer to the thing being measured.
+    """
+
+    def _repo_with_suite(self, tmp_path):
+        repo = _git_repo(tmp_path)
+        tests = repo / "tests"
+        tests.mkdir()
+        (tests / "test_inherited.py").write_text("def test_inherited():\n    assert True\n")
+        subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t",
+                        "-c", "user.name=t", "add", "."], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t",
+                        "-c", "user.name=t", "commit", "-qm", "suite"],
+                       check=True, capture_output=True)
+        return repo
+
+    def test_a_test_the_candidate_added_does_not_grade_it(self, tmp_path):
+        """A candidate cannot fail L1 on a standard it invented mid-run."""
+        repo = self._repo_with_suite(tmp_path)
+        worktree = _bare_worktree(repo, tmp_path / "wt")
+        (worktree / "tests" / "test_candidate_wrote_this.py").write_text(
+            "def test_impossible():\n    assert False\n")
+
+        arms.pin_pre_existing_suite(repo, worktree, "HEAD")
+
+        assert not (worktree / "tests" / "test_candidate_wrote_this.py").exists()
+        assert (worktree / "tests" / "test_inherited.py").exists()
+
+    def test_a_test_the_candidate_weakened_is_restored(self, tmp_path):
+        """The other direction: L1 cannot be passed by gutting the suite."""
+        repo = self._repo_with_suite(tmp_path)
+        worktree = _bare_worktree(repo, tmp_path / "wt")
+        (worktree / "tests" / "test_inherited.py").write_text("# deleted the assertion\n")
+
+        arms.pin_pre_existing_suite(repo, worktree, "HEAD")
+
+        assert "assert True" in (worktree / "tests" / "test_inherited.py").read_text()
+
+    def test_a_ref_with_no_suite_is_a_no_op_not_an_error(self, tmp_path):
+        """Nothing inherited means nothing to restore — and nothing to game."""
+        repo = _git_repo(tmp_path)
+        worktree = _bare_worktree(repo, tmp_path / "wt")
+        arms.pin_pre_existing_suite(repo, worktree, "HEAD")  # must not raise

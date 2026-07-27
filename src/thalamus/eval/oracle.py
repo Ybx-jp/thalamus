@@ -49,6 +49,7 @@ from thalamus.eval.arms import (
     _git,
     evaluate_acceptance,
     ladder_score,
+    pin_pre_existing_suite,
     prepare_worktree,
     remove_worktree,
 )
@@ -124,30 +125,6 @@ def mutant_candidates(task: Task, task_dir: Path) -> list[Candidate]:
     ]
 
 
-def pin_pre_existing_suite(repo: Path, worktree: Path, source_ref: str) -> None:
-    """Restore `tests/` to the task's starting ref before grading.
-
-    L1 is "the *pre-existing* suite stays green", and pre-existing means the suite
-    at `source.ref` — the one a candidate arm actually inherits. Anchors and
-    mutants start from `fix_ref` instead, whose tree carries the tests the fix
-    shipped with itself, and grading against those measures something no arm was
-    ever measured against. Two concrete distortions, both observed on this task:
-
-    - Every degradation collapses to rung 0. The fix's own unit test fails on any
-      mutant that weakens case-insensitivity, so L1 falls and the ladder never
-      gets to say *how* degraded the candidate was — the discrimination the
-      mutant set exists to measure is destroyed before rung 2.
-    - Worse, it rewards imitation. `test_keyword_matching_is_case_insensitive_and_regex_safe`
-      imports `_keyword_predicate` by name, so a *correct* fix that structures the
-      predicate differently fails L1 on an ImportError. docs/04 requires the
-      opposite: relations are behavioral precisely so they "cannot reward
-      imitating the historical fix's names", and a gate that does is not a gate
-      on quality.
-
-    Only `tests/` is pinned. Source stays at the candidate's ref — that is the
-    thing under grading.
-    """
-    _git(worktree, "checkout", source_ref, "--", "tests")
 
 
 def apply_patch(worktree: Path, patch: Path) -> None:

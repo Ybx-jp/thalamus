@@ -441,6 +441,58 @@ def transcript_text(worktree: Path, session_id: str, projects_base: Path | None 
 # ---------------------------------------------------------------------------
 
 
+def pin_pre_existing_suite(repo: Path, worktree: Path, source_ref: str) -> None:
+    """Restore `tests/` to the task's starting ref before grading.
+
+    L1 is "the *pre-existing* suite stays green", and pre-existing means the suite
+    at `source.ref` — the one a candidate arm actually inherits. Anchors and
+    mutants start from `fix_ref` instead, whose tree carries the tests the fix
+    shipped with itself, and grading against those measures something no arm was
+    ever measured against. Two concrete distortions, both observed on this task:
+
+    - Every degradation collapses to rung 0. The fix's own unit test fails on any
+      mutant that weakens case-insensitivity, so L1 falls and the ladder never
+      gets to say *how* degraded the candidate was — the discrimination the
+      mutant set exists to measure is destroyed before rung 2.
+    - Worse, it rewards imitation. `test_keyword_matching_is_case_insensitive_and_regex_safe`
+      imports `_keyword_predicate` by name, so a *correct* fix that structures the
+      predicate differently fails L1 on an ImportError. docs/04 requires the
+      opposite: relations are behavioral precisely so they "cannot reward
+      imitating the historical fix's names", and a gate that does is not a gate
+      on quality.
+
+
+    Called from BOTH paths, and that is the point. It landed with the oracle gate
+    (lab/017) and for a while only the gate pinned, so `eval oracle` graded
+    anchors against the inherited suite while a real arm was graded against
+    whatever tests the candidate happened to leave behind. Two ways that goes
+    wrong, one of them observed on the very first gated arm (lab/020): a
+    candidate that writes an ambitious test its own fix does not satisfy fails L1
+    for a defect the gate would never see, and a candidate that weakens or
+    deletes a test passes L1 for the same reason. Neither is a no-regression
+    measurement, and neither is what the gate validated.
+
+    Only `tests/` is pinned. Source stays at the candidate's ref — that is the
+    thing under grading. A ref carrying no `tests/` at all is a no-op rather than
+    an error: there is no inherited suite to restore, so there is nothing the
+    candidate could have altered.
+
+    Restoring tracked files is not sufficient on its own. `git checkout` leaves
+    *untracked* additions in place, so a candidate that drops a brand-new file
+    into `tests/` would still have it graded — which is the same defect in a
+    thinner disguise. The clean step is what makes "the suite it inherited"
+    literally true.
+    """
+    probe = subprocess.run(
+        ["git", "-C", str(worktree), "cat-file", "-e", f"{source_ref}:tests"],
+        capture_output=True, text=True,
+    )
+    if probe.returncode != 0:
+        return
+    _git(worktree, "checkout", source_ref, "--", "tests")
+    _git(worktree, "clean", "-fdq", "tests")
+
+
 def evaluate_acceptance(task: Task, worktree: Path, timeout: int = 900) -> list[dict]:
     results = []
     for acc in task.acceptance:
@@ -614,6 +666,11 @@ def run_arm(
         # lab/015 had to re-derive it by hand for twelve arms across three
         # models. Recording it makes a campaign self-describing.
         record["recall_calls"] = count_recall_calls(transcript)
+        # L1 is "the *pre-existing* suite stays green", so the suite the
+        # candidate inherited is the one that grades it — not the one it left
+        # behind. Pinned after the diff is captured, so the record still shows
+        # the candidate's real work including any tests it wrote.
+        pin_pre_existing_suite(repo, worktree, task.source.ref)
         record["acceptance"] = evaluate_acceptance(task, worktree)
         record["accepted"] = bool(record["acceptance"]) and all(
             a["passed"] for a in record["acceptance"]
