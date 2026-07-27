@@ -344,13 +344,27 @@ task, and arm, rungs spread {2, 5, 5}. Per-cell n=1 is uninterpretable and
 campaigns must buy replicates before models or tasks; any claimed memory effect
 must clear that floor.
 
-**Open: the binding constraint is now recall use, not the oracle (lab/018).**
-Across three memory-on arms, `mcp__thalamus__*` calls: **0**. The SessionStart
-hook fix closed *discovery* — one arm issued the exact `ToolSearch` select and
-loaded both schemas without error — then read the source instead of calling
-either tool. With a concrete bug report in hand, reading beats querying. Until
-that changes, a counterfactual campaign has no contrast to measure and samples
-candidate variance at ~$1.4/arm.
+**Open: the binding constraint is prompt under-specification in the battery
+(lab/018).** Memory-on arms call `mcp__thalamus__*` at **2/21**; real
+interactive sessions in this repo call it at **20/31 (65%)** without conditioning
+firing, and **11/11** with. The gap is not the runner. Harness fidelity is
+verified — `.claude/settings.json` is byte-identical between the task ref and
+`HEAD`, the memory-on arm strips write-back hooks only, `SessionStart` injects
+in 3/3 arms, and the MCP schemas load. A controlled probe holding the harness
+completely fixed and varying only the prompt settles it: the battery's bug
+report produces **zero** calls, a past-work question produces
+`ToolSearch → memory_open_threads → memory_recall_by_project`, with conditioning
+firing in neither.
+
+Both battery tasks are self-contained bug reports carrying symptom,
+counterexample, and constraint, so **the prompt already holds the answer's
+inputs** and reading the source dominates. Zero recall is correct behavior, not
+a defect. This is also why `memo-surfaced` reads 0/24: it detects knowledge
+"unreachable from the prompt", and nothing in these prompts is unreachable. A
+memory-on arm has no reason to be memory-on until the battery contains a task
+whose solution requires a fact present **only** in the graph — under-specified by
+construction, with the missing piece memorized and absent from the worktree at
+the task's ref.
 
 **Probe validity, the sturdiest result so far (lab/016, extended lab/018).**
 Across 24 valid arms `memo-surfaced` fires **iff** the arm called a thalamus

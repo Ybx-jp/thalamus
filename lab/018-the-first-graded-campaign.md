@@ -176,3 +176,89 @@ Instrument design and its citations are lab/017 and docs/04 §"Anchors and
 mutants"; nothing new was ingested for this entry. The pre-registration
 discipline followed here — falsification criterion committed before the run —
 is the lab/016 protocol, applied to the instrument instead of the hypothesis.
+
+---
+
+## Follow-up: the harness was never the problem
+
+The section above blamed the zero-recall result on "a judgment the agent makes."
+That was a guess dressed as a conclusion. It has now been tested, and the
+harness half of it is settled by controlled experiment rather than inference.
+
+### The arms run the harness they claim to
+
+| check | result |
+|---|---|
+| `.claude/settings.json`, task ref `9f28895` vs `HEAD` | **zero diff** — identical wiring |
+| hooks stripped by the memory-on arm | write-back only: `SessionEnd`, `post-tool-use.sh`, `gremlin-tap.sh` |
+| `SessionStart` fired and injected the recall instruction | 3/3 arms |
+| MCP present, schemas loadable | yes — one arm loaded both without error |
+
+The `arms.py` worktree-pinning hazard (settings.json frozen at the task's ref
+while script *content* is refreshed) is real but did not bite: the wiring has
+not changed since the ref.
+
+One genuine asymmetry: only `timestamp.sh` injected on `UserPromptSubmit` in
+every arm. `conditioning.sh` is deliberately lexical and prompt-conditional, and
+the battery's prompts match neither its `design` nor its `retrospect` class.
+
+### Real sessions call memory at 65%, arms at 9.5%
+
+Across 42 real interactive sessions in this repo (sidechains excluded):
+
+| | thalamus tool called |
+|---|---|
+| conditioning fired | **11/11 (100%)** |
+| conditioning did not fire | **20/31 (65%)** |
+| every memory-on arm ever run | **2/21 (9.5%)** |
+
+So conditioning is *not* the explanation for the gap — the 65% cohort never got
+it either. Two further hypotheses died on the data: a continuity cue in the
+opening prompt ("last session", "pick up where we left off") barely moves the
+rate (70% with vs 62% without), and CLAUDE.md is absent from the transcript of
+real sessions and arms alike, so it is not a differentiator.
+
+### The controlled probe
+
+Harness held **completely** fixed — same worktree at the same ref, same stripped
+hooks, same `THALAMUS_SCOPE`/`THALAMUS_PROJECT`, same model, same flags — with
+only the prompt varied:
+
+| probe | prompt | conditioning | thalamus calls |
+|---|---|---|---|
+| P1 | the battery's bug report, verbatim | did not fire | **none** |
+| P2 | "what did we decide about the match floor, has anyone looked at capitalized-term recall?" | did not fire | **`ToolSearch` → `memory_open_threads` → `memory_recall_by_project`** |
+
+$0.58, two headless sessions. Conditioning fired in neither, so the difference
+is carried entirely by the prompt.
+
+**The arm harness is faithful. Memory works inside it.** An agent in the exact
+arm environment reaches for the graph unprompted when the question needs it.
+
+### What this actually means for the eval loop
+
+The battery tests memory on the one task shape where memory has nothing to
+offer. Both tasks are self-contained bug reports carrying full repro detail —
+symptom, counterexample, and constraint. A candidate has no reason to query the
+graph because **the prompt already contains the answer's inputs**, and reading
+`reader.py` dominates on cost. Zero recall is the *correct* behavior here, not a
+defect to engineer around.
+
+This also explains a probe that could never have fired. `memo-surfaced` is
+authored to detect knowledge "unreachable from the prompt" — but the prompt
+hands over the whole bug, so nothing is unreachable, so the agent never looks,
+so the probe reads 0/24. That is a property of the task, not evidence about
+memory.
+
+The binding constraint is therefore **the battery, and specifically prompt
+under-specification** — not the runner, not the hooks, not discovery, and not
+the oracle. lab/015 guessed at this ("under-specified tasks invite recall") and
+lab/016 correctly falsified the *model×task* version of it; the mechanism
+survives the falsification of that specific claim, and P1-vs-P2 is the first
+clean evidence for it.
+
+The next task must be one whose solution requires a fact that exists **only** in
+the graph — the prompt under-specified by construction, with the missing piece
+memorized and absent from the worktree at the task's ref. Until such a task
+exists, a memory-on arm has no reason to be memory-on, and campaign spend buys
+candidate variance.
