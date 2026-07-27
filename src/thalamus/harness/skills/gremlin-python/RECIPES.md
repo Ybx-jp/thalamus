@@ -92,3 +92,48 @@ finally:
 always `re.escape` the term so it matches literally. This is what
 `reader._keyword_predicate` does — reuse it in substrate code rather than
 rebuilding the pattern.
+
+---
+
+## Find orphan vertices (no edges in either direction)
+
+**Question it answered:** "`contract check` reports 1114 orphan Claim vertices —
+do they actually exist, or is the checker wrong?" (2026-07-27)
+
+**Surface:** gremlin-python
+
+```python
+from gremlin_python.process.graph_traversal import __
+from thalamus.substrate.writer import connect, close_connection
+
+g = connect()
+try:
+    print(g.V().not_(__.both_e()).count().next())
+    rows = g.V().has_label("Claim").not_(__.both_e()).element_map().to_list()
+finally:
+    close_connection(g)
+```
+
+**Validated:** returns 1114, matching `thalamus contract check` exactly.
+
+**Notes — the trap that makes this recipe worth storing.** The obvious
+formulation is silently WRONG on this provider:
+
+```python
+g.V().where(__.both_e().count().is_(0)).count().next()   # returns 0. Always.
+```
+
+It does not error. It returns a clean, plausible `0` — which was read as "the
+graph is clean" until a single-vertex probe (`g.V(vid).both_e().count().next()`
+→ `0` on a vertex the same query claimed did not exist) exposed it. `both_e()`
+on a vertex with no edges yields an empty stream, and the `where()` filter drops
+the vertex before `count()` ever emits its zero, so the predicate can never be
+satisfied by the very vertices it is meant to select.
+
+Use `not_(__.both_e())`. It asks the question directly — "no incident edges" —
+instead of asking for a count that an empty traversal never produces.
+
+This is the same failure *class* as the missing-terminal-step bug this skill
+opens with: not an error, just silence dressed as an answer. The terminal-step
+guard cannot catch it, because the traversal does terminate — it terminates on
+the wrong thing.
