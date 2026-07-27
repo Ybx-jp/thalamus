@@ -238,8 +238,9 @@ lower level's — all pass:
 
 - **L1** no-regression gate (the pre-existing suite stays green)
 - **L2** targeted behavioral oracle for this bug
-- **L3** nested metamorphic relations R1 ⊂ R2 ⊂ R3, each strictly stronger
-- **L4** reserved for the judge, deliberately unbuilt
+- **L3/L4/L5** nested metamorphic relations R1 ⊂ R2 ⊂ R3, each strictly stronger
+  than the one below, so a further relation can only extend the top of the ladder
+- **L6** reserved for the judge, deliberately unbuilt
 
 Ordinal, not a weighted sum: there are no weights to tune after seeing results,
 and adding a cheap check to a rung cannot raise the score — the cardinality bias

@@ -74,7 +74,8 @@ class Acceptance(BaseModel):
         1,
         description=(
             "1 = no-regression gate, 2 = targeted behavioral oracle, "
-            "3 = nested metamorphic relations. Level 4 (judge) is reserved. "
+            "3/4/5 = nested metamorphic relations R1 ⊂ R2 ⊂ R3. "
+            "Level 6 (judge) is reserved. "
             "Defaults to the gate: an undeclared check is the most basic "
             "requirement, so a task that never opts into the ladder still "
             "scores rung 1 rather than tripping the gap rule."
@@ -171,8 +172,8 @@ class Task(BaseModel):
             if acc.level not in LADDER_LEVELS:
                 issues.append(
                     f"acceptance[{i}] level {acc.level} is not a built rung "
-                    f"({', '.join(str(x) for x in LADDER_LEVELS)}; 4 is reserved "
-                    "for the judge and unbuilt)"
+                    f"({', '.join(str(x) for x in LADDER_LEVELS)}; "
+                    f"{JUDGE_LEVEL} is reserved for the judge and unbuilt)"
                 )
             # Arm-independent reachability. A rung a memory-off arm cannot reach
             # on its own merits is not a rung — it is an arm label wearing a
