@@ -24,3 +24,5 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [006](006-priced-verdicts-first-run.md) | First priced verdicts: half the injected retrieval tokens were ignored | measurements |
 | [007](007-query-shape-refinement.md) | Query-shape autopsy: the hook was innocent, the dump was guilty | workaround |
 | [008](008-gremlin-guard-baseline.md) | Gremlin guard baseline: the archive convicted the guard, not the queries | workaround |
+| 009–023 | *not indexed — read the files directly* | — |
+| [024](024-the-endpoint-was-in-the-wrong-place.md) | The endpoint was above the rung the treatment moved; and the battery is the wrong instrument for the thesis | measurements + design |

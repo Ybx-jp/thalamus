@@ -378,6 +378,30 @@ reasoning models (arXiv 2502.13295) supplies the vocabulary for an agent that
 satisfies a scored objective by hacking its environment rather than solving the
 task. Held in `eval-methodology` under feed `eval-leakage`.
 
+**In-deployment measurement: the scan found the field avoiding it.** Consulted
+2026-07-27 (exchange `scope:main:exchange:777773c9b77e478d`). Four areas came
+back empty and are recorded here as provisional absences: **online/in-deployment
+evaluation** of memory or agent systems (no interleaved evaluation, no
+off-policy/counterfactual estimation from logged feedback, no production LLM
+monitoring); **single-unit experiment designs** (switchback, interrupted time
+series, N-of-1, sequential/anytime-valid inference); **reverse-generation of
+tasks over real logged history** (all held generation-from-history work runs over
+synthesized or simulated material); and **circularity/answer-leakage arising from
+shared provenance between task generator and grader**, as distinct from
+pretraining contamination or environment leakage. What the corpus *does* show is
+an asymmetry worth naming: MemoryBank (arXiv 2305.10250) took its qualitative
+claims from real user dialogs and its quantitative ones from LLM-simulated
+dialogs, and Mem2ActBench (arXiv 2601.19935) "*simulates* persistent assistant
+usage" — **no held work derives a quantitative utility estimate from live
+traffic.** Unlike the supply-blocked items below, the single-unit statistics
+literature is largely on arXiv and inside the existing allowlist, so this absence
+is procurable rather than structural; the queue is in
+[lab/024](../lab/024-the-endpoint-was-in-the-wrong-place.md) §2.6. Counter-signal
+flagged in the same consult and **not yet held**: arXiv 2605.17830 reports
+memory-induced violation rates exceeding the no-memory baseline and rising with
+exposure length — if it replicates it argues against this project's prior and is
+the first thing to procure.
+
 **Still open, and blocked on supply rather than on scanning.** Wohlin's
 threats-to-validity taxonomy, whose construct / internal / external vocabulary
 §2a and §2d improvise; and, load-bearing for the campaign statistics,
