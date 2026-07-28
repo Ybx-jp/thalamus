@@ -159,9 +159,11 @@ we decide about X." `scope:literature:claim:7e9f8d11227e502f` names passive
 retrieval in response to explicit questions as the failure mode, and
 history-derived questions default to exactly that shape. Real prompts do not —
 they are work requests where memory is *instrumentally* useful. KnowU-Bench
-(`arXiv:2604.08455`, **ingest candidate, not held**) is the nearest published
-statement of the principle: hide the profile, expose only behavioral logs, force
-inference rather than lookup.
+(`arXiv:2604.08455`, **held**) is the nearest published statement of the
+principle: hide the profile, expose only behavioral logs, force inference rather
+than lookup — and it reports the bottleneck is preference *acquisition*, not task
+execution. Its own interaction is simulated, so it supplies the principle, not a
+precedent for live measurement.
 
 **The validity threat: circularity.** Whatever generates the task read the same
 history that holds the answer. Per docs/11 §4 phrasing this is **not found in the
@@ -171,22 +173,23 @@ designs. Two mitigations the scan did surface:
 - Mem2ActBench's transferable contribution is the **audit step, not the
   generation trick** — `scope:literature:claim:c9367ddb558b1815`, 400 tasks with
   91.3% human-confirmed memory-dependence. Hand-confirm a sample.
-- `arXiv:2606.05037` (**ingest candidate**) carries a concrete answer-leakage
-  audit reporting leak classes "easy to introduce, hard to notice," including
-  validator-message leaks where the grader's own plain-English field carried the
-  literal fix. **The existing battery is wide open to that class** — the L2–L5
-  assertion strings in `arm-runner-session-death-classification.yaml` are prose
-  the candidate can read on failure.
+- `arXiv:2606.05037` (**held**) carries a concrete answer-leakage audit, shipped
+  as `audit_prompt` CI infrastructure, covering validator-message leaks where the
+  grader's own plain-English field carries the fix. Its sharpest datum: the
+  paper's headline comparison **only holds after the audit** — the leak was large
+  enough to invert a result. **The existing battery is wide open to that class**
+  — the L2–L5 assertion strings in
+  `arm-runner-session-death-classification.yaml` are prose the candidate reads on
+  failure.
 
 ### 2.4 — The statistics have to change with the tasks
 
 n = 12 fixed-horizon campaigns with a pre-registered threshold are the wrong
-instrument for one operator with 120 sessions. Both anchors below are **ingest
-candidates, not held** — the literature scope returned **not found in the 2026
-scan** for switchback, interrupted time series, N-of-1, and anytime-valid
-inference alike. This is a genuine hole, and unlike the Hernán & Robins /
-Whitehead problem in docs/11 §4 it is *procurable*: this literature is largely on
-arXiv and inside the existing allowlist.
+instrument for one operator with 120 sessions. The literature scope returned
+**not found in the 2026 scan** for switchback, interrupted time series, N-of-1
+and anytime-valid inference alike — a genuine hole, but unlike the Hernán &
+Robins / Whitehead problem in docs/11 §4 a *procurable* one. **Both anchors below
+are now held** (`eval-methodology`, feed `campaign-statistics`).
 
 - **`arXiv:2309.07353` — anytime-valid inference in N-of-1 trials.** The single
   best fit for the stated constraint: one unit, sequential, no fixed horizon,
@@ -204,13 +207,17 @@ arXiv and inside the existing allowlist.
 ### 2.5 — The finding that could invert Classes A and B
 
 **`arXiv:2605.17830` — "Remembering More, Risking More: Longitudinal Safety Risks
-in Memory-Equipped LLM Agents"** (**ingest candidate, not held; claim taken from
-a search summary and unverified**). Reported: memory-induced violation rates
-*exceed* the no-memory baseline and *increase with exposure length*, via
-cross-context contamination and attention dilution.
+in Memory-Equipped LLM Agents"** — **held** (`literature`, feed `thalamus`), and
+the ingest confirmed it is *stronger* than the scan summary. Memory-enabled
+agents consistently exceed a NullMemory baseline in violation rate; the rate
+shows a robust upward trend as accumulated exposure grows; the measurement
+instrument is a trigger-probe protocol evaluating a fixed probe set against
+accumulating real memory. Crucially, **order-randomization experiments** identify
+what drives the degradation — which makes this a constraint on how this project
+randomizes its own arms, not only on what it expects to find.
 
-If it replicates, it points opposite to this project's prior, and it changes how
-Classes A and B must be built:
+It points opposite to this project's prior, and it changes how Classes A and B
+must be built:
 
 1. **Sign the metrics two-sided.** Recurrence and re-litigation must be able to
    report *harm*, not merely absent benefit. A metric that counts rakes-avoided
@@ -226,19 +233,46 @@ Classes A and B must be built:
 
 This is worth procuring whether or not any of Classes A–C ship.
 
-### 2.6 — Ingest queue, demand-driven against this design
+### 2.6 — Ingest queue — **done 2026-07-27, all five held**
 
-Per docs/06: anchor document first, per-project `--feed`, and **dry-run the title
-check before `--write`**. Every ID below came from search-result summaries rather
-than from the papers, so 2026 IDs especially need confirming.
+Per docs/06: anchor first, dry-run the title check before `--write`. All five IDs
+came from search-result summaries rather than from the papers; **all five
+dry-runs resolved to the intended document**, so the mis-resolution failure mode
+docs/10 records did not fire this time. Contract check clean afterwards (4,623
+vertices / 11,028 edges).
 
-| Paper | Feeds |
-|---|---|
-| `arXiv:2309.07353` — anytime-valid inference, N-of-1 trials | §2.4 — highest value |
-| `arXiv:2605.17830` — Remembering More, Risking More | §2.5 — may invert A/B |
-| `arXiv:2009.00148` — switchback experiments | §2.4 |
-| `arXiv:2604.08455` — KnowU-Bench, inference vs lookup | §2.3 task shape |
-| `arXiv:2606.05037` — answer-leakage audit procedure | §2.3, and the existing battery |
+| Paper — verified title | Scope / feed | Feeds |
+|---|---|---|
+| `2009.00148` Design and Analysis of Switchback Experiments | eval-methodology / `campaign-statistics` | §2.4 — batch anchor |
+| `2309.07353` Anytime-valid inference in N-of-1 trials | eval-methodology / `campaign-statistics` | §2.4 |
+| `2606.05037` Self-Reflective APIs: Structure Beats Verbosity for AI Agent Recovery | eval-methodology / `eval-leakage` | §2.3 + the existing battery |
+| `2605.17830` Remembering More, Risking More | literature / `thalamus` | §2.5 |
+| `2604.08455` KnowU-Bench | literature / `thalamus` | §2.3 task shape |
+
+**Three things the ingest changed, beyond confirming the IDs:**
+
+1. **`2309.07353` is a better fit than claimed.** It does not merely tolerate
+   sequential monitoring — it "permits interim peeking of results" as an explicit
+   property of its potential-outcomes framework, and reports that peeking can
+   yield *shorter, lower-risk* trials. §1's peek is the failure mode this paper
+   is built for.
+2. **`2606.05037` is not primarily a leakage paper**, and the procurement should
+   be read accordingly: it is an API-design paper whose *secondary* contribution
+   is the audit. The reusable part is concrete — the authors shipped
+   `audit_prompt` as CI infrastructure for detecting answer leakage — and one
+   extracted finding is directly load-bearing here: the structured-vs-plain-English
+   comparison **only holds after the audit**, i.e. the leak was large enough to
+   invert a headline result. That is the argument for auditing this repo's own
+   L2–L5 assertion prose, not a general caution.
+3. **`2604.08455` does not weaken docs/11 §4's absence claim.** It calls itself
+   an *online* benchmark, but the interaction comes from an LLM-driven user
+   simulator over structured profiles — simulated, not live traffic. The
+   hide-the-profile principle §2.3 cites it for holds; the claim that no held work
+   derives quantitative utility from live traffic also holds.
+
+**Secondary queue, unchanged and still unheld:** `arXiv:2603.25973` (MemoryCD —
+verify the "real histories" claim on ingest), `arXiv:2606.03012`,
+`arXiv:2602.11243`, `arXiv:2508.00751`.
 
 Secondary, if the above land well: `arXiv:2603.25973` (MemoryCD — claims *real*
 user interaction histories; verify that word on ingest), `arXiv:2606.03012`,

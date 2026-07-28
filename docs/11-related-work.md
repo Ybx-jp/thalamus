@@ -395,12 +395,26 @@ dialogs, and Mem2ActBench (arXiv 2601.19935) "*simulates* persistent assistant
 usage" — **no held work derives a quantitative utility estimate from live
 traffic.** Unlike the supply-blocked items below, the single-unit statistics
 literature is largely on arXiv and inside the existing allowlist, so this absence
-is procurable rather than structural; the queue is in
-[lab/024](../lab/024-the-endpoint-was-in-the-wrong-place.md) §2.6. Counter-signal
-flagged in the same consult and **not yet held**: arXiv 2605.17830 reports
-memory-induced violation rates exceeding the no-memory baseline and rising with
-exposure length — if it replicates it argues against this project's prior and is
-the first thing to procure.
+is procurable rather than structural, **and it has now been procured** — five
+anchors ingested 2026-07-27 (`campaign-statistics` and `eval-leakage` feeds in
+`eval-methodology`, `thalamus` feed in `literature`); the queue is in
+[lab/024](../lab/024-the-endpoint-was-in-the-wrong-place.md) §2.6.
+
+Two results from that batch bear on this section directly. **The absence claim
+survived contact.** KnowU-Bench (arXiv 2604.08455) describes itself as an
+*online* benchmark, which looked like a counterexample — but it instantiates an
+LLM-driven user simulator grounded in structured profiles, so it is simulated
+interaction, not live traffic. Its transferable contribution is a design
+principle rather than a deployment: it hides the user profile and exposes only
+behavioral logs, forcing preference *inference* instead of context lookup, and
+reports that the bottleneck is preference acquisition rather than task execution.
+**And the counter-signal is real and stronger than the scan summary suggested.**
+Remembering More, Risking More (arXiv 2605.17830, now held) reports memory-
+enabled agents consistently exceeding a NullMemory baseline in violation rate,
+with a robust upward trend as accumulated exposure grows, via a trigger-probe
+protocol; its order-randomization experiments make this a design constraint for
+this project's own campaigns rather than a distant finding. It argues against the
+project's prior, it is cited as such, and §5 is where its challenge belongs.
 
 **Still open, and blocked on supply rather than on scanning.** Wohlin's
 threats-to-validity taxonomy, whose construct / internal / external vocabulary
