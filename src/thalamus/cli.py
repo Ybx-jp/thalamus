@@ -217,6 +217,21 @@ def main():
         "--guards", type=Path, default=None, help="Guard event dir (default: ~/.thalamus/guards)"
     )
 
+    eval_rakes_parser = eval_sub.add_parser(
+        "rakes",
+        help="Rake registry and adjudication window: solved problems later sessions "
+        "could have stepped on again (lab/024 §2.1, Class A stage 0 — proximity, "
+        "never a hit verdict)",
+    )
+    eval_rakes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    eval_rakes_parser.add_argument(
+        "--queue",
+        type=Path,
+        default=None,
+        help="Write the (rake, later-session) adjudication queue as JSONL for a "
+        "future stage-1/2 detector",
+    )
+
     eval_recipes_parser = eval_sub.add_parser(
         "recipes",
         help="Smoke-run every stored gremlin recipe read-only (rolling freshness signal)",
@@ -876,6 +891,31 @@ def _cmd_eval(args, eval_parser):
         from thalamus.eval.gremlin import gremlin_report
 
         print(gremlin_report(traces_base=args.traces, guards_base=args.guards).render())
+    elif getattr(args, "eval_command", None) == "rakes":
+        from thalamus.eval.rakes import rake_report
+
+        graph = connect(args.url)
+        try:
+            report = rake_report(graph)
+        finally:
+            close_connection(graph)
+        print(report.render())
+        if args.queue:
+            args.queue.parent.mkdir(parents=True, exist_ok=True)
+            with args.queue.open("w") as handle:
+                for candidate in report.candidates:
+                    handle.write(
+                        json.dumps(
+                            {
+                                "rake": candidate.rake_vid,
+                                "session": candidate.session_vid,
+                                "artifacts": list(candidate.artifacts),
+                                "hot": candidate.hot,
+                            }
+                        )
+                        + "\n"
+                    )
+            print(f"\nWrote {len(report.candidates)} candidate pair(s) to {args.queue}")
     elif getattr(args, "eval_command", None) == "recipes":
         from thalamus.eval.gremlin import render_smoke, smoke_recipes
 

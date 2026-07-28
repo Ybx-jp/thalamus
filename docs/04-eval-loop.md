@@ -675,6 +675,52 @@ cannot explain (arXiv 2111.03382, 2605.05564 — [11 §2a](11-related-work.md)):
   the harness, since the arms are different candidate sessions. Reported as
   suggestive, not conclusive — a task nobody can solve looks the same.
 
+## Layer 2b — In-deployment measurement: the rake registry
+
+Layer 2 authors fixtures and runs them cold in containers. Layer 2b measures the
+operator's own traffic instead, where the demand is real because work was
+happening rather than because a task presented it (lab/024 §2).
+
+A **rake** is a `problem` Claim carrying a `SOLVED_BY` edge — a mistake already
+made and already resolved, registered by ordinary distillation. `thalamus eval
+rakes` builds the registry, decides which rakes are *observable*, and emits the
+(rake, later-session) pairs an adjudicator would judge. It is stage 0 of Class A
+and **claims no outcome**: a candidate is proximity, never an encounter.
+
+Three measured properties of the corpus define the design:
+
+- **Claim identity does not detect recurrence.** Claims are content-addressed on
+  (kind, normalized description), so a re-asserted problem should converge onto
+  one vertex with two `CONTAINS` edges. It fires 4 times in 504. The count is
+  rendered every run; a detector keyed on it would see ~1% of the corpus.
+- **Unobservable is not "never hit."** A rake whose artifacts no later session
+  touched offers nothing to observe. It is bucketed apart and never folded into
+  a denominator — the discipline layer-1 attribution already applies to empty
+  windows. On the live corpus that bucket is as large as the observable one, so
+  merging them would roughly double any benefit number.
+- **Artifact identifiers collide across projects.** `Artifact` is global and
+  keyed on `identifier`, so one `README.md` vertex is shared by every project
+  that touched it. Pairs are gated on the later session sharing the rake's
+  originating project; the dropped pairs are counted and disclosed.
+
+Keys touched by more than `HOT_ARTIFACT_SESSIONS` sessions are low-specificity:
+"a later session opened `README.md`" is weak evidence that it met a specific
+rake. Those pairs are counted apart so a handful of hot files cannot dominate
+the queue — flagged, never dropped (arXiv 2111.03382), the rule the infra
+classifier and the escape detector already follow.
+
+The measurement is **observational**. It can establish recurrence rates and
+their trend, never causation — that needs the randomization layer (arXiv
+2009.00148 switchback, arXiv 2309.07353 anytime-valid) on top. Per lab/024 §2.5
+the outcome must also be signed two-sided: a metric that counts rakes avoided
+cannot observe rakes caused (arXiv 2605.17830).
+
+Stages 1–3 are unbuilt. Stage 1 is mechanical rake classes only — `gremlin-guard.sh`
+is that detector for exactly one class, and its shares-intent rule is the
+load-bearing part at scale. Stages 2–3 need the L6 judge and the answer-leakage
+audit (arXiv 2606.05037), and stage 2's adjudicator is blocked on a literature
+gap recorded in [11 §5](11-related-work.md).
+
 ## Layer 3 — Memory that measures itself (M4+)
 
 Close the loop: utility signals feed back into graph maintenance.

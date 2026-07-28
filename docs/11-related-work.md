@@ -464,6 +464,22 @@ not a scan.
 - **Structural anomaly detection** (MemAudit, 2605.23723) is a capability our audit
   story lacks. Candidate backlog item once the graph is large enough for anomalies
   to mean something.
+- **Identity-free encounter matching — a coverage gap, not an absence.** Layer 2b's
+  rake registry ([04](04-eval-loop.md)) needs to decide whether a later session met
+  a problem already solved, and content-addressed claim identity answers it 4 times
+  in 504. Deciding "same failure, different text" is the subject of duplicate
+  bug-report retrieval and crash deduplication, and the graph holds **neither**. The
+  nearest held work is adjacent rather than on point: Fair (2111.03382) classifies
+  legitimate failures from false alerts on failure properties, and 2605.05564 names
+  repeated error messages as a discriminating feature. This literature plainly
+  exists — the gap is procurement, and Class A's stage-2 adjudicator must not be
+  designed before it is closed ([06](06-ingestion.md): sophistication pulled by
+  need).
+- **Observational in-deployment evaluation.** lab/024 §2.4 procured the *randomized*
+  anchors (switchback 2009.00148, anytime-valid N-of-1 2309.07353), but Classes A
+  and B are observational and nothing anchors that half — quasi-experimental design
+  and interrupted time series are unheld. A recurrence dashboard without them is an
+  unlabelled causal claim waiting to happen.
 - **Attribution beyond lexical** — the survey (2603.07670) and the benchmarks make
   the case that inferred-intent retrieval is the hard part; our used-vs-ignored
   attribution is lexical (lab/002). This is the honest weak point of the eval loop.
