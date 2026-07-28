@@ -834,9 +834,24 @@ class TestSandboxConfinement:
         assert f"{self.WT}:{self.WT}" in argv
         assert f"{self.HOME}:{self.HOME}" in argv
 
-    def test_network_host_for_memory_on_none_for_isolated_memory_off(self):
+    def test_network_host_for_memory_on_bridge_for_isolated_memory_off(self):
         assert self._argv(network="host")[self._argv().index("--network") + 1] == "host"
-        assert "none" in self._argv(network="none")
+        assert "bridge" in self._argv(network="bridge")
+
+    def test_store_isolation_never_selects_none(self):
+        """`none` isolates the store and the model API together, so the arm dies
+        on turn 1 with `Unable to connect to API` and halts the campaign — the
+        measured outcome of the first 24-arm attempt. `bridge` leaves the graph
+        unreachable on both the container loopback and the gateway, since the
+        server binds loopback-only, while the API still answers."""
+        def chosen(arm_mcp, sandbox=True, isolate=True):
+            # The selection in run_one_arm, verbatim.
+            return "bridge" if (sandbox and isolate and not arm_mcp) else "host"
+
+        assert chosen(arm_mcp=False) == "bridge", "isolated memory-off must still run"
+        assert chosen(arm_mcp=True) == "host", "memory-on needs the graph"
+        assert chosen(arm_mcp=False, isolate=False) == "host"
+        assert chosen(arm_mcp=False, sandbox=False) == "host"
 
     def test_it_pins_the_native_daemon_not_docker_desktop(self):
         """Desktop runs containers in a VM: bind mounts are restricted to

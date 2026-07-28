@@ -36,7 +36,21 @@ that any drift over the campaign's ~70 minutes falls on both arms equally.
 `order_index` is recorded per arm.
 
 **Treatment.** memory-on = MCP surface present. memory-off = `.mcp.json`
-removed **and `--network none`** (`--isolate-store`).
+removed **and `--network bridge`** (`--isolate-store`).
+
+> **Amendment, before any endpoint data existed.** As first written this said
+> `--network none`, which is what `--isolate-store` shipped. The first attempt
+> at this campaign halted at arm 2: `none` isolates the model API along with the
+> store, so the memory-off arm died on turn 1 with `Unable to connect to API
+> (ENOTIMP)`, stamped `void` and ungraded. The shipped verification had
+> confirmed the graph was unreachable and never asked whether the arm could
+> still run. `--isolate-store` now selects `bridge`, re-verified at the TCP
+> layer: the graph is closed on `localhost:8182` and on the gateway
+> `172.17.0.1:8182` (the server binds loopback-only), while `api.anthropic.com`
+> answers. The aborted attempt produced one graded memory-on arm and no
+> memory-off arm, so it yields no comparison; it is **discarded** rather than
+> pooled, and the campaign restarts from zero. The endpoint, threshold and
+> analysis above are unchanged.
 
 **Primary endpoint, fixed in advance.** The share of gradeable arms reaching
 **rung ≥ 4**, reported as a distribution over rungs. Same threshold lab/020

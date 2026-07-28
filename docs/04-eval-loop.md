@@ -491,14 +491,24 @@ its own HOME, so the arm needs `.claude/.credentials.json` (the OAuth token) as
 well as `.claude.json` (config and state), and a missing token refuses before
 launch instead of dying inside the container.
 
-**`--isolate-store` closes the memory-off store hole.** With confinement, `--network
-none` for arms carrying no memory surface makes the graph unreachable — verified
-by connect-behaviour, not by assumption (`host` connects, `none` refuses). This is
-the open question this section has carried since the first campaign, where a
-memory-off session was measured querying the graph over ad-hoc gremlin: removing
-the surface never removed the store. It is opt-in because it **changes the
-memory-off treatment**, a second factor that must be declared in a campaign's
-pre-registration.
+**`--isolate-store` closes the memory-off store hole.** With confinement,
+`--network bridge` for arms carrying no memory surface makes the graph
+unreachable. This is the open question this section has carried since the first
+campaign, where a memory-off session was measured querying the graph over ad-hoc
+gremlin: removing the surface never removed the store. It is opt-in because it
+**changes the memory-off treatment**, a second factor that must be declared in a
+campaign's pre-registration.
+
+`bridge`, not `none`. `none` isolates the store and the model API together, so
+the arm dies on turn 1 with `Unable to connect to API (ENOTIMP)` and halts the
+campaign — which is exactly what the first attempt at a 24-arm contrast did. The
+earlier check confirmed the graph was unreachable and never asked whether the
+arm could still run: a property verified about the wrong half of the system.
+Re-verified at the TCP layer, because HTTP status codes say nothing useful about
+a websocket port — from `bridge` the graph is closed on `localhost:8182` (the
+container's own loopback) *and* on the gateway `172.17.0.1:8182`, since the
+server binds loopback-only, while `api.anthropic.com` answers. From `host` it is
+open, which is what the memory-on treatment needs.
 
 **Detection survives the fix, deliberately.** An arm that reaches for
 `git log --all` behaves differently from one that does not, and that difference

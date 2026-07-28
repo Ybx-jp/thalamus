@@ -550,12 +550,20 @@ def sandbox_argv(
 
     `network` is the one-flag difference between arms and carries a second
     result. `host` lets a memory-on arm reach the graph at
-    `ws://localhost:8182/gremlin`, which is the treatment. `none` gives
+    `ws://localhost:8182/gremlin`, which is the treatment. `bridge` gives
     memory-off the **store isolation** docs/04 has carried as an open question
     since the first campaign, where a memory-off session was measured querying
     the graph over ad-hoc gremlin: removing the surface never removed the store,
-    and this does. It only works because `sync_worktree_env` runs on the host
-    before the container starts, so no arm needs the network to install.
+    and this does.
+
+    `bridge` rather than `none`, and the distinction is not cosmetic. `none`
+    isolates the store *and* the model API, so the arm dies on its first turn
+    (`Unable to connect to API (ENOTIMP)`) and halts the campaign — measured,
+    on the first attempt to run this design. From `bridge` the graph is
+    unreachable on `localhost:8182`, which is the container's own loopback, and
+    also on the gateway `172.17.0.1:8182`, because the graph server binds
+    loopback-only; `api.anthropic.com` answers. Probed at the TCP layer, since
+    HTTP status codes say nothing useful about a websocket port.
 
     The toolchain is mounted read-only from the host rather than baked, so the
     arm runs the operator's own `claude` and `uv` builds and the image cannot
@@ -1103,7 +1111,19 @@ def run_arm(
         # the stripped hooks above. `isolate_store` only bites arms that have no
         # memory surface: cutting the network on memory-on would remove the
         # treatment itself.
-        network = "none" if (sandbox and isolate_store and not arm.mcp) else "host"
+        #
+        # `bridge`, not `none`. `none` does isolate the store, and it also
+        # isolates the model API — the arm dies on turn 1 with "Unable to
+        # connect to API (ENOTIMP)" and the campaign halts, which is what the
+        # first attempt at this campaign did. The original check verified that
+        # the *graph* was unreachable and never asked whether the arm could
+        # still run. Measured at the TCP layer instead of by HTTP semantics,
+        # which lie about a websocket port: from `bridge` the graph is
+        # unreachable both on `localhost:8182` (the container's own loopback)
+        # and on the gateway `172.17.0.1:8182`, because the server binds
+        # loopback-only — while `api.anthropic.com` answers. That is the whole
+        # requirement: no route to the store, a working session.
+        network = "bridge" if (sandbox and isolate_store and not arm.mcp) else "host"
         record["applied"]["sandboxed"] = sandbox
         record["applied"]["network"] = network if sandbox else "host (unconfined)"
         started = time.monotonic()
