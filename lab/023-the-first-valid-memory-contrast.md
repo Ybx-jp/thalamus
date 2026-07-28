@@ -84,6 +84,20 @@ not about the candidate. A `void` or `interrupted` session halts the campaign.
 - **Escape rates are a lower bound.** The detector reads absolute paths and git
   subcommands; a symlink, a `cd` then a relative path, or a shell variable slips
   past it.
+- **Rungs are censored at the 40-turn cap.** *Added after the first two arms of
+  the run, not foreseen — recorded here rather than silently in the results.*
+  Both opening arms reached 39 and 41 turns and one was stamped `turn_capped`,
+  so the cap binds rather than sitting comfortably above the work. The endpoint
+  therefore measures the rung reachable **within 40 turns**, not at completion,
+  and the capped fraction is reported per arm alongside it. The cap is left at
+  40 deliberately: every prior campaign ran there, and moving it mid-flight
+  would buy an uncensored number at the cost of comparability with all of them.
+  Handling censoring properly wants survival analysis, which lab/021 deferred as
+  supply-driven and which is still unprocured — so no time-to-event claim is
+  made here, only a stated ceiling.
+- **Budget.** Confirmed at ~$54 for 24 arms after the first two measured $4.53,
+  against a ~$21 estimate. n was **not** reduced; the design stands as
+  pre-registered.
 
 ## Results
 
