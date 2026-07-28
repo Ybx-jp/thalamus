@@ -715,16 +715,45 @@ their trend, never causation — that needs the randomization layer (arXiv
 the outcome must also be signed two-sided: a metric that counts rakes avoided
 cannot observe rakes caused (arXiv 2605.17830).
 
+### Stage 0.5 — pricing the queue before anything is built on it
+
+Nothing in the corpus labels a rake encounter, so the queue's precision is unknown,
+and an adjudicator built on it would silently inherit whatever the proximity rule's
+error rate turns out to be. `thalamus eval rake-audit --draw` emits a blind
+worksheet a human labels; `--score` reads it back. Grounded in
+[11 §2f](11-related-work.md), four properties are load-bearing:
+
+- **The draw is uniform over the specific-key stratum, seeded before any pair is
+  read.** Judging the most convincing candidates first is active selection, which
+  biases the estimate toward the system that built the pool (arXiv 1709.01709). The
+  stratum boundary is `HOT_ARTIFACT_SESSIONS`, published before the sample existed.
+- **The worksheet withholds the shared artifact key.** That key is the rule's own
+  evidence; printing it asks the annotator to ratify the system instead of judging
+  the sessions. Each item shows the problem, its solution, and what the later
+  session did — never why the queue paired them.
+- **Decoys are rendered indistinguishably**: in-window pairs sharing no artifact,
+  drawn from the same rakes. They measure the annotator, not the queue, and a decoy
+  labelled `hit` may be a real recurrence the key missed — so the decoy rate is an
+  upper bound on laxity, never a false-positive rate.
+- **`unclear` is a third bucket**, in neither numerator nor denominator, and the
+  interval is bootstrapped over *rakes* rather than pairs, because one rake
+  contributes up to eight pairs and a pairwise interval would be optimistic.
+
+A single annotator has no inter-annotator agreement to report — the case arXiv
+2606.02255 finds least documented — so what the score renders instead is the
+annotator's identity, the volume, the abstain count, and the decoy rate. The
+estimate prices **precision only**: it says nothing about encounters the artifact
+key never registered.
+
 Stages 1–3 are unbuilt. Stage 1 is mechanical rake classes only — `gremlin-guard.sh`
 is that detector for exactly one class, and its shares-intent rule is the
 load-bearing part at scale. Stage 2's adjudicator is grounded in the duplicate-
 detection literature ([11 §2e](11-related-work.md)), which points it at the simple
 end: aggregate similarity over the rake's whole group plus time (arXiv 2205.00212)
 rather than reach for a judge, and re-validate on a rolling basis because detector
-accuracy is sensitive to data age (arXiv 2212.00548). Its remaining blocker is
-**ground truth** — nothing labels a rake encounter, so a hand-audited precision
-estimate on the candidate queue has to come first. Stage 3 additionally needs the
-L6 judge and the answer-leakage audit (arXiv 2606.05037).
+accuracy is sensitive to data age (arXiv 2212.00548). It stays blocked until stage
+0.5's sample is labelled. Stage 3 additionally needs the L6 judge and the
+answer-leakage audit (arXiv 2606.05037).
 
 ## Layer 3 — Memory that measures itself (M4+)
 

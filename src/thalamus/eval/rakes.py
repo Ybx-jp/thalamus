@@ -82,6 +82,8 @@ class SessionRow:
     session_id: str = ""
     project: str = ""
     ts: str = ""  # ISO-8601; lexical compare is chronological
+    summary: str = ""  # what the session did — the audit worksheet's evidence
+    artifacts: tuple[str, ...] = ()  # everything it touched, not just a rake's keys
 
 
 @dataclass(frozen=True)
@@ -92,6 +94,7 @@ class Rake:
     description: str
     category: str = ""
     scope: str = ""
+    solution: str = ""  # the SOLVED_BY claim — what closed it the first time
     artifacts: tuple[str, ...] = ()
     sessions: tuple[str, ...] = ()  # Session vids containing this claim
 
@@ -109,6 +112,47 @@ class Candidate:
     session_vid: str
     artifacts: tuple[str, ...]  # the shared keys that generated the pair
     hot: bool = False  # every shared key is a low-specificity (hot) artifact
+
+
+@dataclass(frozen=True)
+class Window:
+    """When a rake was registered, and what a later session must satisfy to count."""
+
+    registered: str  # ISO-8601 of the earliest session asserting the rake
+    projects: frozenset[str]  # origin projects; Artifact is global, so this gates pairs
+    own_vids: frozenset[str]  # sessions that asserted the rake — never their own observers
+
+
+def observation_window(rake: Rake, sessions: dict[str, SessionRow]) -> Window | None:
+    """The window a later session must fall in to have been able to meet this rake.
+
+    `None` when no session asserting the rake carries a timestamp: without one there
+    is no bound on "later", so the rake is unobservable rather than silently compared
+    against the empty string.
+    """
+    own = [sessions[v] for v in rake.sessions if v in sessions]
+    dated = sorted(s.ts for s in own if s.ts)
+    if not dated:
+        return None
+    return Window(
+        registered=dated[0],
+        projects=frozenset(s.project for s in own),
+        own_vids=frozenset(rake.sessions),
+    )
+
+
+def in_window(window: Window, session: SessionRow) -> bool:
+    """Could this session have met the rake — later, same project, not one of its own?
+
+    Says nothing about artifacts. Sharing a key on top of this is what makes a
+    candidate; the audit's decoys are the same window *without* a shared key, which
+    is why the rule lives here rather than inline in the candidate loop.
+    """
+    if session.vid in window.own_vids:
+        return False
+    if not session.ts or session.ts <= window.registered:
+        return False
+    return not window.projects or session.project in window.projects
 
 
 @dataclass
@@ -208,7 +252,6 @@ def build_rake_report(
     touch_counts = {a: len(set(s)) for a, s in artifact_sessions.items()}
 
     for rake in rakes:
-        own = [sessions[v] for v in rake.sessions if v in sessions]
         if len(rake.sessions) >= 2:
             report.converged += 1
         if not rake.artifacts:
@@ -218,23 +261,21 @@ def build_rake_report(
         # Registered when the earliest session asserting it ran. A rake with no
         # resolvable session has no registration time and cannot bound "later" —
         # it is unobservable rather than silently compared against the empty string.
-        dated = sorted((s.ts for s in own if s.ts))
-        if not dated:
+        window = observation_window(rake, sessions)
+        if window is None:
             report.unobservable += 1
             continue
-        registered = dated[0]
-        origin_projects = {s.project for s in own}
-        own_vids = set(rake.sessions)
+        origin_projects = set(window.projects)
 
         shared: dict[str, list[str]] = {}
         for identifier in rake.artifacts:
             for vid in artifact_sessions.get(identifier, ()):
-                if vid in own_vids:
-                    continue
                 later = sessions.get(vid)
-                if later is None or not later.ts or later.ts <= registered:
+                if later is None or vid in window.own_vids:
                     continue
-                if origin_projects and later.project not in origin_projects:
+                if not later.ts or later.ts <= window.registered:
+                    continue
+                if window.projects and later.project not in window.projects:
                     report.cross_project_dropped += 1
                     continue
                 shared.setdefault(vid, []).append(identifier)
@@ -278,14 +319,18 @@ def read_rakes(g: GraphTraversalSource) -> tuple[list[Rake], dict[str, SessionRo
             session_id=str(row.get("session_id") or ""),
             project=str(row.get("project") or ""),
             ts=str(row.get("ts") or ""),
+            summary=str(row.get("summary") or ""),
+            artifacts=tuple(str(a) for a in row.get("artifacts") or ()),
         )
         for row in g.V()
         .has_label("Session")
-        .project("id", "session_id", "project", "ts")
+        .project("id", "session_id", "project", "ts", "summary", "artifacts")
         .by(__.id_())
         .by(__.coalesce(__.values("session_id"), __.constant("")))
         .by(__.coalesce(__.values("project"), __.constant("")))
         .by(__.coalesce(__.values("timestamp"), __.values("ingested_at"), __.constant("")))
+        .by(__.coalesce(__.values("summary"), __.constant("")))
+        .by(__.out("CONTAINS").out("TOUCHES").has_label("Artifact").values("identifier").dedup().fold())
         .to_list()
     }
 
@@ -307,6 +352,7 @@ def read_rakes(g: GraphTraversalSource) -> tuple[list[Rake], dict[str, SessionRo
             description=str(row["description"]),
             category=str(row["category"]),
             scope=str(row["scope"]),
+            solution=str(row["solution"]),
             artifacts=tuple(str(a) for a in row["artifacts"]),
             sessions=tuple(str(s) for s in row["sessions"]),
         )
@@ -314,11 +360,12 @@ def read_rakes(g: GraphTraversalSource) -> tuple[list[Rake], dict[str, SessionRo
         .has_label("Claim")
         .has("kind", "problem")
         .where(__.out("SOLVED_BY"))
-        .project("id", "description", "category", "scope", "artifacts", "sessions")
+        .project("id", "description", "category", "scope", "solution", "artifacts", "sessions")
         .by(__.id_())
         .by(__.coalesce(__.values("description"), __.constant("")))
         .by(__.coalesce(__.values("category"), __.constant("")))
         .by(__.coalesce(__.values("scope"), __.constant("")))
+        .by(__.coalesce(__.out("SOLVED_BY").values("description").limit(1), __.constant("")))
         .by(__.out("TOUCHES").has_label("Artifact").values("identifier").dedup().fold())
         .by(__.in_("CONTAINS").has_label("Session").id_().dedup().fold())
         .to_list()

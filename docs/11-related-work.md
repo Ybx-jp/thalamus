@@ -292,6 +292,41 @@ hand-audited precision estimate has to precede any adjudicator, not follow it.
 Data-age bias also forbids validating a detector once and trusting it: it is a
 rolling check, the same posture `thalamus eval recipes` takes to recipe freshness.
 
+### 2f. Auditing an unlabelled queue — sampling and the annotator
+
+Building that hand audit (`thalamus eval rake-audit`, stage 0.5) is itself a
+measurement design, and both halves have settled answers.
+
+- **Active Sampling for Large-scale Information Retrieval Evaluation** (arXiv
+  1709.01709, in the graph — `eval-methodology`, feed `queue-precision-audit`) —
+  the anchor for the draw. It separates two failure modes when judgments are
+  expensive: fixing a sampling distribution up front carries high **variance**,
+  while **active selection** — judging what the system ranks highest — carries a
+  **bias toward the systems that contributed to the pool**. Its own contribution
+  is a distribution over systems that moves as judgments arrive.
+- **Who Annotates in NLP?** (arXiv 2606.02255, same feed) — the anchor for the
+  labelling. A task-level audit of 2,667 annotation tasks finds that papers report
+  operational detail (recruitment, expertise, volume) but **omit what is needed to
+  assess validity** — training, adjudication, and agreement values — worst of all
+  in model-evaluation studies, and proposes bare-minimum reporting instead.
+
+Positioning: a **convergence** on the sampling half and an **instantiation** of
+the reporting half. The draw is uniform over the specific-key stratum with the
+seed fixed before any pair is read, and the worksheet withholds the shared
+artifact key — the proximity rule's own evidence — because showing it recreates
+active selection inside the annotator rather than inside the sampler. What we do
+**not** take is 1709.01709's adaptive half: it varies a distribution over
+competing systems and there is exactly one system here, stage 0's proximity rule,
+so there is nothing to vary over. On the labelling side a single annotator means
+no inter-annotator agreement exists to report at all, which is precisely the
+under-documented case 2606.02255 identifies; the substitutes are the rubric
+shipping inline with the items, the `unclear` bucket reported in neither
+numerator nor denominator (arXiv 2111.03382), and indistinguishable decoy pairs
+that bound annotator laxity from above — a decoy can be a genuine recurrence the
+artifact key missed, so its hit rate is a ceiling on laxity, never a false-positive
+rate. The cost is honesty about resolution: 40 hand judgments separate "mostly
+noise" from "mostly real" and cannot rank two detectors.
+
 ## 3. Federation, experts, and inter-expert exchange
 
 Most crowded pillar as of the scan.
@@ -505,8 +540,10 @@ not a scan.
   literature is held, but its evaluation apparatus does not transfer: those fields
   grade against human-labelled duplicate links, and nothing labels a rake
   encounter. A hand-audited precision estimate on the candidate queue is the
-  substitute and it has not been run — until it has, the registry's recall/precision
-  is unknown and no adjudicator should be built on it.
+  substitute; the instrument now exists and is grounded (§2f), but the sample is
+  **drawn and unlabelled**. Until it is labelled the queue's precision is unknown
+  and no adjudicator should be built on it. Recall stays unknown even afterwards —
+  the audit prices the pairs the rule emits, never the encounters it never keyed.
 - **Observational causal inference is anchored but not applied.** lab/024 §2.4
   procured the randomized anchors (switchback 2009.00148, anytime-valid N-of-1
   2309.07353) and DDD-ITSA (arXiv 2603.17281, in the graph — `eval-methodology`,

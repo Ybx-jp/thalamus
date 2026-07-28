@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import secrets
 import socket
 import sys
 import threading
@@ -18,6 +19,7 @@ from thalamus.substrate.schema import SessionGraph
 from thalamus.archive import archive_dir
 from thalamus.contract.conformance import check_session
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.eval.rake_audit import SAMPLE_SIZE
 from thalamus.harness import extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.plane.web import create_app
@@ -230,6 +232,42 @@ def main():
         default=None,
         help="Write the (rake, later-session) adjudication queue as JSONL for a "
         "future stage-1/2 detector",
+    )
+
+    eval_rake_audit_parser = eval_sub.add_parser(
+        "rake-audit",
+        help="Draw or score the hand-audited precision sample for the rake queue "
+        "(Class A stage 0.5 — the ground truth stage 2 is blocked on)",
+    )
+    eval_rake_audit_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    eval_rake_audit_parser.add_argument(
+        "--draw",
+        type=Path,
+        default=None,
+        help="Write a blind labelling worksheet to this path",
+    )
+    eval_rake_audit_parser.add_argument(
+        "--score",
+        type=Path,
+        default=None,
+        help="Read a labelled worksheet back and estimate queue precision",
+    )
+    eval_rake_audit_parser.add_argument(
+        "--key",
+        type=Path,
+        default=None,
+        help="Key path (default: alongside the worksheet). Written by --draw, read "
+        "by --score; the worksheet itself stays blind",
+    )
+    eval_rake_audit_parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Draw seed (default: random). Fix it before drawing, never after "
+        "seeing the sample (arXiv 1709.01709)",
+    )
+    eval_rake_audit_parser.add_argument(
+        "--size", type=int, default=None, help=f"Real pairs to draw (default {SAMPLE_SIZE})"
     )
 
     eval_recipes_parser = eval_sub.add_parser(
@@ -891,6 +929,44 @@ def _cmd_eval(args, eval_parser):
         from thalamus.eval.gremlin import gremlin_report
 
         print(gremlin_report(traces_base=args.traces, guards_base=args.guards).render())
+    elif getattr(args, "eval_command", None) == "rake-audit":
+        from thalamus.eval import rake_audit as ra
+        from thalamus.eval.rakes import build_rake_report, read_rakes
+
+        if not args.draw and not args.score:
+            parser.error("thalamus eval rake-audit needs --draw or --score")
+
+        if args.draw:
+            graph = connect(args.url)
+            try:
+                rakes, sessions, artifact_sessions, problems = read_rakes(graph)
+            finally:
+                close_connection(graph)
+            report = build_rake_report(rakes, sessions, artifact_sessions, problems=problems)
+            sample = ra.draw_sample(
+                report,
+                rakes,
+                sessions,
+                seed=args.seed if args.seed is not None else secrets.randbelow(1_000_000),
+                size=args.size or ra.SAMPLE_SIZE,
+            )
+            key_path = args.key or args.draw.with_suffix(args.draw.suffix + ".key.jsonl")
+            args.draw.parent.mkdir(parents=True, exist_ok=True)
+            args.draw.write_text(ra.render_worksheet(sample))
+            key_path.parent.mkdir(parents=True, exist_ok=True)
+            key_path.write_text(ra.sample_to_jsonl(sample))
+            # The composition is withheld here too — the annotator is usually the
+            # person who runs the draw, so the terminal is part of the blind.
+            print(f"Wrote {len(sample.items)} item(s) to {args.draw}")
+            print(f"  key: {key_path} — needed to score; do not read it before labelling")
+
+        if args.score:
+            key_path = args.key or args.score.with_suffix(args.score.suffix + ".key.jsonl")
+            if not key_path.exists():
+                parser.error(f"--score needs the key written at draw time (looked for {key_path})")
+            sample = ra.sample_from_jsonl(key_path.read_text())
+            labels, parse_problems = ra.parse_worksheet(args.score.read_text())
+            print(ra.score_sample(sample, labels, parse_problems).render())
     elif getattr(args, "eval_command", None) == "rakes":
         from thalamus.eval.rakes import rake_report
 
