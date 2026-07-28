@@ -99,7 +99,90 @@ not about the candidate. A `void` or `interrupted` session halts the campaign.
   against a ~$21 estimate. n was **not** reduced; the design stands as
   pre-registered.
 
+## Correction to this entry's own opening
+
+The framing above — "every memory-on arm before today ran without reaching
+memory" — is **wrong**, and the campaign's own baseline is what falsifies it. On
+this task's unconfined arms, 6 of 13 memory-on arms did make recall calls. The
+missing-`jq` failure was specific to the *container*: unconfined arms ran their
+hooks normally. The correct statement is narrower — no *confined* arm had
+reached memory before today, and lab/013's zero-recall arms remain unexplained
+by the `jq` fix. Left in place rather than edited away, because the prose was
+committed as a pre-registration and quietly repairing it afterwards is the thing
+pre-registration exists to prevent.
+
 ## Results
 
-Pending — appended after the run, in a separate commit, so the record shows the
-predictions were fixed before the data existed.
+24 arms, all confined, treatment cleanly separated (memory-on `host` ×12,
+memory-off `bridge` ×12). $54.11. No arm was excluded: `attributable` is true
+for all 24 and `contaminated` is **0** in both arms.
+
+**Primary endpoint, as pre-registered — share of gradeable arms at rung ≥ 4:**
+
+| arm | rung ≥ 4 | rung distribution | capped |
+|---|---|---|---|
+| memory-on | **1/12** | `{1:3, 2:1, 3:7, 5:1}` | 9/12 |
+| memory-off | **0/12** | `{1:7, 3:5}` | 7/12 |
+
+**On the pre-registered endpoint this campaign is null.** A one-arm difference
+at n=12 is not evidence of anything. The threshold was fixed in advance
+precisely so that a more flattering cut could not be promoted into the headline
+afterwards, and that constraint is now doing real work — see below.
+
+**The endpoint had almost no resolution.** Only **1 of 24** arms cleared rung 4
+at all. Against a floor that near-absolute the comparison cannot distinguish
+"memory does not help" from "this configuration cannot express help": a
+threshold reachable unconfined (3/13 and 2/13) is close to unreachable at the
+same cap once the answer key is out of reach. That is a defect in *this*
+campaign's design, not a finding about memory.
+
+**Where the separation actually lives, and why it is not promoted here.**
+[lab/024](024-the-endpoint-was-in-the-wrong-place.md) analysed this campaign
+while it ran and found the treatment acting at the 1 → 3 boundary, below the
+pre-registered threshold: final `rung ≥ 3` is 8/12 vs 5/12, `rung ≥ 2` 9/12 vs
+5/12. That analysis is **exploratory** — the statistic was chosen after seeing
+rungs — and this entry does not adopt it as a result.
+
+lab/024's own peek-decay arc completes here, and it is the more valuable
+artifact:
+
+| arms | P(on > off) | exact one-sided p |
+|---|---|---|
+| 19 | 0.789 | 0.0154 |
+| 23 | 0.693 | 0.0589 |
+| **24 (final)** | **0.667** | **0.0849** |
+
+Monotone decay to nothing. Had the campaign been stopped at arm 19 on the
+strength of p = 0.015 the project would have recorded an effect its own
+completed run does not support. The fixed horizon held, and the pre-registered
+threshold's insensitivity is what kept the tempting number from becoming the
+finding. Both disciplines earned their keep in the same campaign.
+
+**Censoring bit hard:** 16 of 24 arms hit the 40-turn cap, including the single
+rung-5 arm. Every number here is "within 40 turns."
+
+**The negative result that is actually informative.** The `jq` fix roughly
+doubled recall engagement — memory-on arms making recall calls went from 6/13
+unconfined to **11/12** confined, with 12/12 calling ToolSearch — and the graded
+outcome did not move. This is lab/020's finding again, one layer down: *the
+prompt moved recall four-fold and did not move the score*, and now the harness
+moved recall to near-ceiling and still did not move it. Engagement with memory
+is not the bottleneck on this task. Whether the bottleneck is the task, the cap,
+or memory itself, this campaign cannot say.
+
+**Confined vs unconfined is context, not a contrast.** memory-on fell 3/13 →
+1/12 and memory-off 2/13 → 0/12, but the two differ in confinement, store
+isolation, wall-clock, and the fact that 3 of the 13 unconfined memory-off arms
+were `contaminated` while none here is. Consistent with prior rung ≥ 4 rates
+having been partly leak-fed; not evidence of it. A controlled test would run
+both conditions concurrently.
+
+**Integrity checks, both passed.** The hook layer held across all 12 memory-on
+arms (12/12 ToolSearch, 11/12 recall), so the `jq` fix was not a one-arm fluke.
+Confinement held: 0 contaminated, and the 4 escape events across both arms were
+`history_reach` *attempts* denied by the one-commit repo and stamped anyway —
+deny at the environment, measure at the transcript, working as designed.
+
+Two memory-off arms called ToolSearch and found nothing, which is correct
+behaviour for an arm with no surface and worth noting only because it confirms
+the tools were genuinely absent rather than merely unused.
