@@ -717,9 +717,14 @@ cannot observe rakes caused (arXiv 2605.17830).
 
 Stages 1–3 are unbuilt. Stage 1 is mechanical rake classes only — `gremlin-guard.sh`
 is that detector for exactly one class, and its shares-intent rule is the
-load-bearing part at scale. Stages 2–3 need the L6 judge and the answer-leakage
-audit (arXiv 2606.05037), and stage 2's adjudicator is blocked on a literature
-gap recorded in [11 §5](11-related-work.md).
+load-bearing part at scale. Stage 2's adjudicator is grounded in the duplicate-
+detection literature ([11 §2e](11-related-work.md)), which points it at the simple
+end: aggregate similarity over the rake's whole group plus time (arXiv 2205.00212)
+rather than reach for a judge, and re-validate on a rolling basis because detector
+accuracy is sensitive to data age (arXiv 2212.00548). Its remaining blocker is
+**ground truth** — nothing labels a rake encounter, so a hand-audited precision
+estimate on the candidate queue has to come first. Stage 3 additionally needs the
+L6 judge and the answer-leakage audit (arXiv 2606.05037).
 
 ## Layer 3 — Memory that measures itself (M4+)
 

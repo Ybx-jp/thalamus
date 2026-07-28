@@ -255,6 +255,43 @@ coupled to observed arm failures is asserted from the campaign record, not
 measured the way 2512.16741 measures it — the honest gap, and that paper is the
 cited method for closing it.
 
+### 2e. Recurrence — deciding "same failure" without an identity
+
+Layer 2b's rake registry ([04-eval-loop.md](04-eval-loop.md)) has to decide
+whether a later session met a problem already solved. Content-addressed claim
+identity was the obvious answer and it fires 4 times in 504: two sessions never
+phrase a problem the same way. "Same failure, different text" is a mature
+software-engineering problem with two literatures, both now held.
+
+- **Duplicate Bug Report Detection: How Far Are We?** (arXiv 2212.00548, in the
+  graph — `eval-methodology`, feed `rake-recurrence`) — the field's own
+  reassessment, and the anchor. Two findings are load-bearing here. First, **the
+  age of the data and the choice of issue-tracking system cause a significant
+  difference in measured accuracy**: a detector validated on one slice of history
+  does not transfer to another, which bears directly on a corpus that grew to
+  4,700 vertices in six weeks. Second, on a debiased benchmark **a simpler
+  technique outperforms recently proposed sophisticated ones on most projects**,
+  and a technique already in industry practice matches a research system.
+- **Aggregation of Stack Trace Similarities for Crash Report Deduplication**
+  (arXiv 2205.00212, in the graph — same feed) — the crash-dedup half. Rather
+  than assigning a report to a group by its single most similar member, it
+  aggregates similarities **to the group as a whole, plus timestamp information**,
+  and reports large Recall Rate Top-1 gains on real industrial crash data. It
+  also reports that a simpler k-nearest-neighbours aggregation is competitive
+  with the fuller method.
+
+Positioning: an **instantiation**, not an extension. A rake is a group (problem
+text, solution text, the artifacts it names) and candidates arrive with
+timestamps, so the aggregation frame transfers directly, and both papers point
+the stage-2 adjudicator at the simple end of the design space rather than at a
+judge. What the transfer trades away is these fields' evaluation apparatus:
+duplicate detection is graded against human-labelled duplicate links in an issue
+tracker, and no such ground truth exists for rakes — the nearest equivalent is
+Mem2ActBench's hand-confirmation sample (arXiv 2601.19935), which is why a
+hand-audited precision estimate has to precede any adjudicator, not follow it.
+Data-age bias also forbids validating a detector once and trusting it: it is a
+rolling check, the same posture `thalamus eval recipes` takes to recipe freshness.
+
 ## 3. Federation, experts, and inter-expert exchange
 
 Most crowded pillar as of the scan.
@@ -464,22 +501,21 @@ not a scan.
 - **Structural anomaly detection** (MemAudit, 2605.23723) is a capability our audit
   story lacks. Candidate backlog item once the graph is large enough for anomalies
   to mean something.
-- **Identity-free encounter matching — a coverage gap, not an absence.** Layer 2b's
-  rake registry ([04](04-eval-loop.md)) needs to decide whether a later session met
-  a problem already solved, and content-addressed claim identity answers it 4 times
-  in 504. Deciding "same failure, different text" is the subject of duplicate
-  bug-report retrieval and crash deduplication, and the graph holds **neither**. The
-  nearest held work is adjacent rather than on point: Fair (2111.03382) classifies
-  legitimate failures from false alerts on failure properties, and 2605.05564 names
-  repeated error messages as a discriminating feature. This literature plainly
-  exists — the gap is procurement, and Class A's stage-2 adjudicator must not be
-  designed before it is closed ([06](06-ingestion.md): sophistication pulled by
-  need).
-- **Observational in-deployment evaluation.** lab/024 §2.4 procured the *randomized*
-  anchors (switchback 2009.00148, anytime-valid N-of-1 2309.07353), but Classes A
-  and B are observational and nothing anchors that half — quasi-experimental design
-  and interrupted time series are unheld. A recurrence dashboard without them is an
-  unlabelled causal claim waiting to happen.
+- **No ground truth for rake recurrence** (§2e). The duplicate-detection
+  literature is held, but its evaluation apparatus does not transfer: those fields
+  grade against human-labelled duplicate links, and nothing labels a rake
+  encounter. A hand-audited precision estimate on the candidate queue is the
+  substitute and it has not been run — until it has, the registry's recall/precision
+  is unknown and no adjudicator should be built on it.
+- **Observational causal inference is anchored but not applied.** lab/024 §2.4
+  procured the randomized anchors (switchback 2009.00148, anytime-valid N-of-1
+  2309.07353) and DDD-ITSA (arXiv 2603.17281, in the graph — `eval-methodology`,
+  feed `campaign-statistics`) now anchors the quasi-experimental half: interrupted
+  time series with a **second control group**, because two-group comparisons stay
+  confounded by concurrent interventions. Layer 2b has no control series at all —
+  every real session ran with memory on — so its recurrence trend is descriptive
+  until one is constructed. A recurrence dashboard without that is an unlabelled
+  causal claim.
 - **Attribution beyond lexical** — the survey (2603.07670) and the benchmarks make
   the case that inferred-intent retrieval is the hard part; our used-vs-ignored
   attribution is lexical (lab/002). This is the honest weak point of the eval loop.

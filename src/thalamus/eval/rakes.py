@@ -38,11 +38,22 @@ names repeated error messages as a discriminating feature for unrelated build fa
 — the same flag-never-exclude rule the infra classifier and the escape detector already
 follow (docs/11 §2a). Scoring an obligation discharged or violated rather than answer
 quality is AOEP-v0 (`scope:literature:claim:db78a71b570e17ce`). The measurement is
-observational: it can establish recurrence rates and their trend, never causation,
-which needs the randomization layer of lab/024 §2.4 (arXiv 2009.00148, 2309.07353) on
-top. **Coverage gap, open:** duplicate-bug-report retrieval and crash deduplication are
-the named literatures for identity-free encounter matching and the graph holds neither;
-stage 2's adjudicator must not be designed until they are ingested (docs/11 §4).
+observational: it can establish recurrence rates and their trend, never causation.
+Randomization is lab/024 §2.4 (arXiv 2009.00148 switchback, 2309.07353 anytime-valid);
+the quasi-experimental alternative is interrupted time series with a second control
+group (arXiv 2603.17281), and layer 2b has no control series at all, since every real
+session ran with memory on.
+
+Deciding "same failure, different text" is duplicate-bug-report retrieval and crash
+deduplication (docs/11 §2e). Both point stage 2's adjudicator at the simple end:
+aggregate similarity over the rake's whole group plus timestamps rather than a single
+nearest neighbour, with kNN competitive against the fuller method (arXiv 2205.00212),
+and a simpler technique beating sophisticated ones on a debiased benchmark (arXiv
+2212.00548). That paper's other finding binds this module: **detector accuracy is
+sensitive to data age**, so a validation is a rolling check, never a one-time result.
+The open blocker is ground truth — those fields grade against human-labelled duplicate
+links and nothing labels a rake encounter, so a hand-audited precision estimate on the
+candidate queue precedes any adjudicator.
 """
 
 from __future__ import annotations
