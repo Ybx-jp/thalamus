@@ -47,6 +47,23 @@ first, and this time with the threshold reading *null* where the rank test reads
   at a live dashboard, which is what humans do. A design whose validity depends
   on not looking is a design that will be violated. That is a property of the
   *method*, not of the operator's discipline.
+
+> **Amendment, four arms later — the peek decayed while this note was being
+> written.** At 23 of 24 arms: on `[3,1,3,3,3,3,1,2,5,3,1,3]`, off
+> `[1,1,1,1,3,1,3,1,1,3,3]`. P(on > off) fell 0.789 → **0.693** and the exact
+> one-sided p rose 0.0154 → **0.0589**. rung ≥ 3 is 8/12 vs 4/11; rung ≥ 4 is
+> still 1/12 vs 0/11. Two late memory-off arms reached rung 3 and took most of
+> the separation with them.
+>
+> Nothing was wrong with the earlier computation — it is what the data said at
+> arm 19. That is precisely the hazard: **a fixed-horizon design monitored
+> continuously produces a statistic that wanders, and whichever moment you look
+> is the moment you are tempted to report.** Had the campaign been stopped at 19
+> arms on the strength of p = 0.015, this note would have recorded an effect the
+> full run does not support. The project has now generated its own worked
+> example of why `arXiv:2309.07353` (§2.4) is the right instrument — a confidence
+> sequence is valid at *every* peek, including the tempting one. Cite this
+> paragraph, not the citation, when arguing the change.
 - **Censoring still binds.** 12 of the 19 arms are `turn_capped`. The endpoint
   remains "rung reachable within 40 turns."
 - Cost so far: $44.49 for 19 arms.
