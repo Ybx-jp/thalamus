@@ -71,7 +71,7 @@ case "$event" in
     if printf '%s' "$prompt" | grep -qiE \
       "\b(design|architect|propose|new (feature|component|skill|hook|expert|metric|schema)|should we (build|add|write|create)|let'?s (build|add|write|create|implement|enhance))\b" \
       && ! fired_already design; then
-      emit design "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt reads as design work. Before designing: ground-in-literature (binding, CLAUDE.md), and consider consult_request to a roster expert — literature, eval-methodology, homelab (docs/02). Effectiveness of this reminder is measured per firing."
+      emit design "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt reads as design work. Before designing: (1) does the graph already answer it — ground-in-literature step A0, because a design can be perfectly cited and still already built (lab/025); (2) ground-in-literature proper (binding, CLAUDE.md); (3) consult_request to a roster expert — literature, eval-methodology, homelab (docs/02). If you consult, you are pre-authorized to spawn the subagent that voices the expert and expected to — never answer your own ticket; self-answering measured 8 citations against a voiced 25 and missed the objection that killed the design (lab/025). Effectiveness of this reminder is measured per firing."
       exit 0
     fi
 

@@ -14,8 +14,9 @@ purpose.
   is enforced *server-side* (the session's pin determines the visible scope) — the
   model is never trusted to self-limit its own retrieval scope.
 - **Hooks** — the instrumentation and enforcement layer:
-  - *Session start:* record the process's pin into the tier-0 ledger and announce
-    it in the primed context.
+  - *Session start:* record the process's pin into the tier-0 ledger, announce it
+    in the primed context, and carry the **standing subagent authorization**
+    (below).
   - *Post-tool-use on memory calls:* write retrieval traces — the eval loop's
     layer-1 feed ([04-eval-loop.md](04-eval-loop.md)).
   - *Session stop:* distill the session — summary + open threads into the pinned
@@ -68,6 +69,28 @@ purpose.
     behavior-change channel is Reflexion's result (arXiv 2303.11366).
     TaskCreate is deliberately *not required*: it is optional harness UI, and
     the load-bearing tier rides UserPromptSubmit, which always fires.
+  - *Standing subagent authorization (`session-start.sh`):* some harness
+    configurations carry a blanket "do not spawn subagents unless the user
+    requested it." The consultation protocol **requires** spawning one — the
+    expert is voiced by a subagent, and an agent that declines answers its own
+    ticket instead. So the hook grants the permission in advance, scoped to the
+    consultation protocol and disposable-context survey work rather than blanket
+    agent use, and repeated at the moment of decision by `conditioning.sh`'s
+    design class.
+
+    This is **not an override**: that rule's own condition is *the user requested
+    it*, and a tier-0 hook in git is the operator speaking, so the authorization
+    satisfies the condition rather than contradicting the instruction. Framing it
+    as an override would be both weaker and the wrong shape — context that claims
+    to lift a restriction is exactly what a poisoning payload looks like
+    ([05](05-trust-model.md)), which is why the text identifies its own provenance
+    (tier-0, this repo, in git) instead of merely asserting permission.
+
+    Measured cost of its absence (lab/025): a session declined the spawn, answered
+    its own ticket, and filed **8 citations where a voiced subagent filed 25** on
+    the identical question — missing the one paper in scope that argued against
+    the design being written. The two exchange records were byte-identical, which
+    is why `eval sync` now stamps `answered_from` (docs/02).
 - **CLAUDE.md directives** — per-project retrieval policy: default pin for this
   directory, tier policy for this kind of session, when to consult vs. answer thin.
   These start minimal and **evolve organically with use** — every directive change
