@@ -2,10 +2,11 @@
 
 **Status:** implementing — MCP + the full Claude Code hook suite (eight scripts
 across five events, over a shared scope-resolution helper) installed and live;
-session pinning built ("the process is the pin"); Cursor hook suite ported as
-adapters (four of the five events cross — lab/010). This doc covers how Thalamus meets the Claude Code harness primarily,
-the Cursor port's shape and walls, and how we find the harness's limits on
-purpose.
+session pinning built ("the process is the pin"); Cursor installed at user scope
+by the same `thalamus init`, with every tier crossing except distillation
+(lab/010, lab/027). This doc covers how Thalamus meets the Claude Code harness
+primarily, the Cursor port's shape and its one remaining wall, and how we find
+the harness's limits on purpose.
 
 ## Surfaces
 
@@ -102,33 +103,62 @@ purpose.
 
 ## The second harness: Cursor
 
-Cursor is supported as a retrieval-and-instrumentation harness, wired by two
-committed files: `.cursor/mcp.json` (the same MCP server, defaulting to `main`
-scope) and `.cursor/hooks.json` (hooks.json v1). Every Cursor hook under
-`harness/hooks/cursor/` is a **thin adapter over the Claude Code script** —
-one detection logic, one set of on-disk records, two harness dialects
-(lab/010 has the field mappings):
+Cursor is supported as a retrieval-and-instrumentation harness, wired at **user
+scope** by `thalamus init` (`--harness cursor` to install it alone; the default
+installs both editors). Every Cursor hook under `harness/hooks/cursor/` is a
+**thin adapter over the Claude Code script** — one detection logic, one set of
+on-disk records, two harness dialects (lab/010 has the field mappings, lab/027
+the 2026-07-29 re-verification):
 
 - *sessionStart* → memory priming + the tier-0 pin ledger (same record shape).
-- *beforeSubmitPrompt* → engagement marking only.
+- *beforeSubmitPrompt* → engagement marking, and the prompt-side half of the
+  two injection tiers (below).
 - *beforeShellExecution* → the gremlin terminal-step guard (exit-2 protocol
   mapped to `permission: deny` + `agent_message`).
 - *afterShellExecution* / *afterMCPExecution* → the two trace taps; Cursor
   reports MCP tools by bare name, and the adapter restores the
   `mcp__thalamus__` prefix so `eval sync` stays harness-blind.
+- *postToolUse* → delivery of the spooled injection. It deliberately does **not**
+  tap: `postToolUse` is generic (it fires for every tool type, MCP included) and
+  the docs do not say whether a tool call fires both it and the specialized
+  event. If it does, tapping both double-counts every retrieval in `eval sync`,
+  so the taps stay specialized until a live Cursor settles it. The cost of that
+  caution is that tracing does not reach Cursor **cloud agents**, where the
+  MCP-specific events do not load but `postToolUse` would.
 
-What does **not** cross (both walls in lab/010): per-prompt context injection
-(`beforeSubmitPrompt` can block but not inject, so the timestamp and
-conditioning tiers are Claude-Code-only — cross-harness utilization numbers
-are confounded by design), and **distillation** (`thalamus extract` parses
-Claude Code JSONL transcripts only; the Cursor session-end hook logs the ended
-session with `distilled: false` and its `transcript_path` to
-`~/.thalamus/logs/cursor-session-end.jsonl` instead of silently dropping it).
-Pin resolution on Cursor is env-only — no agent picker — so a Cursor session
-is `main` unless launched with `THALAMUS_SCOPE`. Cursor cloud agents load none
-of the session/MCP hooks; local Cursor only. Conformance is tested with
-synthetic payloads (`tests/test_cursor_hooks.py`); the payload shapes were
-read from Cursor's docs (2026-07-19), not yet confirmed against a live Cursor.
+**The two injection tiers cross by splitting compute from delivery.** Cursor
+gives the prompt text to an event that cannot inject (`beforeSubmitPrompt`) and
+injection to events that never see the prompt — so the prompt-side hooks write
+a per-session spool (`~/.thalamus/spool/`) and the next `postToolUse` drains it
+into `additional_context`. The clock is *rendered at drain*, never at spool
+time: a timestamp computed a tool call earlier is exactly the drift
+`timestamp.sh` exists to prevent. Conditioning runs the real Claude Code
+classifier against a reshaped payload, so its lexical classes, its
+once-per-session throttle and its firing log are one implementation rather than
+two. The price, recorded rather than hidden: **injection lands one tool call
+late**, a turn that calls no tool carries its injection forward, and session end
+discards an undelivered spool instead of leaking it into a later session.
+Because both harnesses now write the same firing log, each firing records its
+`harness` and `thalamus eval conditioning` splits by it — averaging Cursor's
+delayed delivery in with Claude Code's immediate one would re-confound the
+comparison this port exists to enable.
+
+What still does **not** cross: **distillation**. `thalamus extract` parses
+Claude Code JSONL transcripts only, so a Cursor session retrieves, traces and is
+conditioned but leaves **no episodic memory**; the session-end hook logs the
+ended session with `distilled: false` and its `transcript_path` to
+`~/.thalamus/logs/cursor-session-end.jsonl` so a future adapter can backfill.
+That is now the only structural gap. The `PostToolUse:TaskCreate` milestone
+conditioning class also has no carrier — TaskCreate is Claude Code task-list UI,
+while Cursor's `Task` tool type is subagent spawning.
+
+Pin resolution on Cursor is env-only — no agent picker — so a Cursor session is
+`main` unless launched with `THALAMUS_SCOPE`. Cursor cloud agents load neither
+the session hooks nor the MCP hooks; local Cursor only. Conformance is tested
+with synthetic payloads (`tests/test_cursor_hooks.py`) against shapes read from
+Cursor's docs and re-verified 2026-07-29 — **no Thalamus code has yet run inside
+a live Cursor**, which remains the standing caveat on everything in this
+section.
 
 ## Session pinning mechanics: the process is the pin
 
@@ -164,6 +194,21 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    until an event fires, and SessionEnd fires detached). `--dry-run` reports
    without writing; `--check` verifies an existing install. Arming is
    per-process, so existing sessions need a relaunch.
+
+   The same command installs **Cursor** (`--harness claude|cursor|both`,
+   default both): `~/.cursor/hooks.json` and the `thalamus` server in
+   `~/.cursor/mcp.json`, with the checkout's project-scope copies stripped. The
+   mutual-exclusion argument is sharper here than on Claude Code — Cursor
+   documents its precedence as Enterprise > Team > Project > User, with user
+   scope *last*, so a surviving project block is documented to outrank what was
+   just written rather than merely risking it. Commands are absolute for a
+   reason specific to Cursor: user-scope hooks run from `~/.cursor/` and
+   project-scope hooks from the project root, so no relative path is correct in
+   both scopes — the checkout's former `./src/...` wiring armed only for a
+   session whose workspace root was the checkout itself. Verification exercises
+   the deferred-injection round trip (spool a turn, drain it) rather than
+   checking that files exist, because a broken spool costs a session its clock
+   and its conditioning and reports nothing at all.
 1. **Launch is the pin decision.** `thalamus pin <scope>` validates the scope
    against the tier-0 manifests, regenerates the derived agent definition
    (`.claude/agents/thalamus-<scope>.md` — generated from the manifest, never

@@ -278,18 +278,83 @@ class TestSessionEnd:
         assert "lab/010" in ends[-1]["note"]
 
 
-@pytest.mark.parametrize(
-    "script",
-    ["session-start.sh", "session-end.sh", "pin-engaged.sh",
-     "gremlin-guard.sh", "gremlin-tap.sh", "mcp-tap.sh"],
-)
-def test_registered_in_project_hooks_json(script):
-    """Every shipped Cursor hook is wired in the committed .cursor/hooks.json."""
-    config = json.loads((HOOKS.parents[4] / ".cursor" / "hooks.json").read_text())
-    assert config["version"] == 1
-    commands = [
-        entry["command"]
-        for entries in config["hooks"].values()
-        for entry in entries
-    ]
-    assert f"./src/thalamus/harness/hooks/cursor/{script}" in commands
+class TestDeferredInjection:
+    """The spool: Cursor splits reading the prompt from injecting context, so
+    beforeSubmitPrompt computes and postToolUse delivers (docs/07, lab/027).
+    These are the tiers that had no Cursor carrier at all before."""
+
+    def test_clock_is_delivered_on_the_next_tool_call(self, tmp_path):
+        run_hook("timestamp.sh", {"session_id": "d1", "prompt": "hi"}, tmp_path)
+        result = run_hook("inject.sh", {"session_id": "d1", "tool_name": "Read"}, tmp_path)
+        assert result.returncode == 0
+        assert "Current date and time" in json.loads(result.stdout)["additional_context"]
+
+    def test_clock_is_rendered_at_delivery_not_at_spool_time(self, tmp_path):
+        """The spooled marker must carry no timestamp — a clock rendered on the
+        prompt and delivered a tool call later is the drift this tier prevents."""
+        run_hook("timestamp.sh", {"session_id": "d2", "prompt": "hi"}, tmp_path)
+        spooled = read_jsonl(tmp_path / ".thalamus" / "spool" / "d2.jsonl")
+        assert spooled == [{"kind": "clock", "text": ""}]
+
+    def test_conditioning_class_crosses_to_cursor(self, tmp_path):
+        run_hook("conditioning.sh",
+                 {"session_id": "d3", "prompt": "let's design a new component"}, tmp_path)
+        result = run_hook("inject.sh", {"session_id": "d3", "tool_name": "Read"}, tmp_path)
+        assert "ground-in-literature" in json.loads(result.stdout)["additional_context"]
+
+    def test_firing_is_stamped_cursor_so_the_join_can_separate_harnesses(self, tmp_path):
+        """`thalamus eval conditioning` must not average Cursor's delayed
+        delivery in with Claude Code's immediate one."""
+        run_hook("conditioning.sh",
+                 {"session_id": "d4", "prompt": "let's design a new component"}, tmp_path)
+        log = list((tmp_path / ".thalamus" / "conditioning").glob("*.jsonl"))[0]
+        assert read_jsonl(log)[-1]["harness"] == "cursor"
+
+    def test_conditioning_throttle_still_holds_across_the_adapter(self, tmp_path):
+        for _ in range(2):
+            run_hook("conditioning.sh",
+                     {"session_id": "d5", "prompt": "let's design a thing"}, tmp_path)
+        log = list((tmp_path / ".thalamus" / "conditioning").glob("*.jsonl"))[0]
+        assert len([r for r in read_jsonl(log) if r["class"] == "design"]) == 1
+
+    def test_spool_is_drained_exactly_once(self, tmp_path):
+        run_hook("timestamp.sh", {"session_id": "d6", "prompt": "hi"}, tmp_path)
+        first = run_hook("inject.sh", {"session_id": "d6", "tool_name": "Read"}, tmp_path)
+        second = run_hook("inject.sh", {"session_id": "d6", "tool_name": "Read"}, tmp_path)
+        assert "additional_context" in json.loads(first.stdout)
+        assert json.loads(second.stdout) == {}
+
+    def test_no_spool_is_a_silent_no_op(self, tmp_path):
+        result = run_hook("inject.sh", {"session_id": "never-prompted"}, tmp_path)
+        assert result.returncode == 0
+        assert json.loads(result.stdout) == {}
+
+    def test_session_end_discards_undelivered_injection(self, tmp_path):
+        """A turn that called no tool must not leak its injection into a later
+        session, where it would be both stale and misattributed."""
+        run_hook("timestamp.sh", {"session_id": "d7", "prompt": "hi"}, tmp_path)
+        run_hook("session-end.sh", {"session_id": "d7", "reason": "user_closed"}, tmp_path)
+        assert not (tmp_path / ".thalamus" / "spool" / "d7.jsonl").exists()
+
+    def test_injection_does_not_double_count_as_a_retrieval_trace(self, tmp_path):
+        """inject.sh rides postToolUse, which fires for every tool including MCP.
+        It must never write a trace — mcp-tap.sh owns that, and a second writer
+        would inflate every retrieval in `eval sync`."""
+        run_hook("timestamp.sh", {"session_id": "d8", "prompt": "hi"}, tmp_path)
+        run_hook("inject.sh",
+                 {"session_id": "d8", "tool_name": "memory_recall",
+                  "tool_input": {"query": "x"}, "tool_output": "hits"}, tmp_path)
+        assert not (tmp_path / ".thalamus" / "traces").exists()
+
+
+def test_every_cursor_script_is_wired_by_the_installer():
+    """The installer's wiring is the single definition — `thalamus init` writes
+    it to ~/.cursor/hooks.json with absolute paths, because user-scope hooks run
+    from ~/.cursor/ and the checkout's old relative paths only ever resolved for
+    a session whose workspace root was the checkout itself (lab/027)."""
+    from thalamus.harness.install import CURSOR_HOOK_DIR, build_cursor_hook_block
+
+    commands = {e["command"] for entries in build_cursor_hook_block().values() for e in entries}
+    shipped = {p.name for p in HOOKS.glob("*.sh")} - {"resolve-scope.sh", "spool.sh"}
+    assert shipped == {c.rsplit("/", 1)[1] for c in commands}
+    assert all(c.startswith(str(CURSOR_HOOK_DIR)) for c in commands)

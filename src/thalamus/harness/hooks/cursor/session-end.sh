@@ -20,12 +20,19 @@
 
 set -euo pipefail
 
-. "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+here="$(dirname "${BASH_SOURCE[0]}")"
+. "$here/resolve-scope.sh"
+. "$here/spool.sh"
 
 input=$(cat)
 
 session_id=$(printf '%s' "$input" | jq -r '.session_id // .conversation_id // empty')
 [ -n "$session_id" ] || exit 0
+
+# Undelivered injection dies with the session: a turn that ended without a tool
+# call left its spool behind, and delivering it into some later session would be
+# both stale and misattributed.
+rm -f "$(thalamus_spool_file "$session_id")" "$(thalamus_spool_file "$session_id")".draining.* 2>/dev/null || true
 
 transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
 reason=$(printf '%s' "$input" | jq -r '.reason // empty')

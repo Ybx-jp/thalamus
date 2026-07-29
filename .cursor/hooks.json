@@ -1,23 +1,4 @@
 {
   "version": 1,
-  "hooks": {
-    "sessionStart": [
-      { "command": "./src/thalamus/harness/hooks/cursor/session-start.sh" }
-    ],
-    "sessionEnd": [
-      { "command": "./src/thalamus/harness/hooks/cursor/session-end.sh" }
-    ],
-    "beforeSubmitPrompt": [
-      { "command": "./src/thalamus/harness/hooks/cursor/pin-engaged.sh" }
-    ],
-    "beforeShellExecution": [
-      { "command": "./src/thalamus/harness/hooks/cursor/gremlin-guard.sh" }
-    ],
-    "afterShellExecution": [
-      { "command": "./src/thalamus/harness/hooks/cursor/gremlin-tap.sh" }
-    ],
-    "afterMCPExecution": [
-      { "command": "./src/thalamus/harness/hooks/cursor/mcp-tap.sh" }
-    ]
-  }
+  "hooks": {}
 }

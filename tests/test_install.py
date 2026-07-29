@@ -29,11 +29,22 @@ def sandbox(tmp_path, monkeypatch):
     project_mcp = tmp_path / "project" / ".mcp.json"
     agents = tmp_path / "agents"
     skills = tmp_path / "skills"
+    cursor_user_hooks = tmp_path / "user" / "cursor-hooks.json"
+    cursor_user_mcp = tmp_path / "user" / "cursor-mcp.json"
+    cursor_project_hooks = tmp_path / "project" / "cursor-hooks.json"
+    cursor_project_mcp = tmp_path / "project" / "cursor-mcp.json"
     monkeypatch.setattr(install, "USER_SETTINGS", user_settings)
     monkeypatch.setattr(install, "PROJECT_SETTINGS", project_settings)
     monkeypatch.setattr(install, "PROJECT_MCP", project_mcp)
     monkeypatch.setattr(install, "USER_AGENTS_DIR", agents)
     monkeypatch.setattr(install, "USER_SKILLS_DIR", skills)
+    # The Cursor leg runs by default (harness="both"), so these must be
+    # redirected too: an unpatched run rewrites the operator's real
+    # ~/.cursor/hooks.json and strips the checkout's committed .cursor files.
+    monkeypatch.setattr(install, "USER_CURSOR_HOOKS", cursor_user_hooks)
+    monkeypatch.setattr(install, "USER_CURSOR_MCP", cursor_user_mcp)
+    monkeypatch.setattr(install, "PROJECT_CURSOR_HOOKS", cursor_project_hooks)
+    monkeypatch.setattr(install, "PROJECT_CURSOR_MCP", cursor_project_mcp)
     monkeypatch.setattr(install, "write_all_agents", lambda d: d.mkdir(parents=True, exist_ok=True))
     # Never invoke the real `claude mcp add` from a test — it writes the
     # operator's shared ~/.claude.json.
@@ -41,7 +52,116 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(install, "register_mcp",
                         lambda dry_run=False: calls.append(dry_run) or "mcp: stubbed")
     return {"user": user_settings, "project": project_settings,
-            "project_mcp": project_mcp, "mcp_calls": calls, "skills": skills}
+            "project_mcp": project_mcp, "mcp_calls": calls, "skills": skills,
+            "cursor_user": cursor_user_hooks, "cursor_user_mcp": cursor_user_mcp,
+            "cursor_project": cursor_project_hooks,
+            "cursor_project_mcp": cursor_project_mcp}
+
+
+class TestCursorWiring:
+    """Cursor parity (docs/07, lab/027). The contract that matters is that the
+    written config still works when the session's workspace root is some other
+    repo — the whole reason a work machine needs an installer at all."""
+
+    def test_every_command_is_absolute(self):
+        """User-scope Cursor hooks run from ~/.cursor/, project hooks from the
+        project root. A relative command is therefore broken in one of the two
+        scopes, whichever way it is written."""
+        for entries in install.build_cursor_hook_block().values():
+            for entry in entries:
+                assert entry["command"].startswith("/")
+                assert "$" not in entry["command"]
+
+    def test_scripts_named_in_the_wiring_actually_exist(self):
+        missing = [s for _, s in install.CURSOR_HOOK_WIRING
+                   if not (install.CURSOR_HOOK_DIR / s).is_file()]
+        assert not missing
+
+    def test_prompt_tiers_reach_cursor_through_the_spool(self):
+        """timestamp and conditioning had no Cursor carrier before: they ride
+        beforeSubmitPrompt to compute and postToolUse to deliver."""
+        block = install.build_cursor_hook_block()
+        prompt_side = {e["command"].rsplit("/", 1)[1] for e in block["beforeSubmitPrompt"]}
+        assert {"timestamp.sh", "conditioning.sh"} <= prompt_side
+        assert [e["command"].rsplit("/", 1)[1] for e in block["postToolUse"]] == ["inject.sh"]
+
+    def test_taps_stay_on_the_specialized_events(self):
+        """Cursor's generic postToolUse also fires for MCP and shell calls. Until
+        a live Cursor settles whether both fire, only the specialized events may
+        tap — two writers would double-count every retrieval in `eval sync`."""
+        block = install.build_cursor_hook_block()
+        assert [e["command"].rsplit("/", 1)[1] for e in block["afterMCPExecution"]] == ["mcp-tap.sh"]
+        assert [e["command"].rsplit("/", 1)[1]
+                for e in block["afterShellExecution"]] == ["gremlin-tap.sh"]
+        assert "tap" not in str(block["postToolUse"])
+
+    def test_guard_declares_its_fail_open_posture(self):
+        guard = [e for e in install.build_cursor_hook_block()["beforeShellExecution"]
+                 if e["command"].endswith("gremlin-guard.sh")][0]
+        assert guard["failClosed"] is False
+
+
+class TestCursorInstall:
+    def test_writes_hooks_and_mcp_at_user_scope(self, sandbox):
+        install.install()
+        hooks = json.loads(sandbox["cursor_user"].read_text())
+        assert hooks["version"] == 1
+        assert set(hooks["hooks"]) == {e for e, _ in install.CURSOR_HOOK_WIRING}
+        served = json.loads(sandbox["cursor_user_mcp"].read_text())["mcpServers"]["thalamus"]
+        assert str(PROJECT_ROOT) in served["args"]
+
+    def test_strips_the_project_scope_duplicate(self, sandbox):
+        """Cursor documents Project > User precedence, so a surviving project
+        block silently outranks the user-scope one just written."""
+        sandbox["cursor_project"].parent.mkdir(parents=True, exist_ok=True)
+        sandbox["cursor_project"].write_text(json.dumps({"version": 1, "hooks": {
+            "sessionStart": [{"command": "./src/thalamus/harness/hooks/cursor/session-start.sh"}]}}))
+        install.install()
+        assert json.loads(sandbox["cursor_project"].read_text())["hooks"] == {}
+
+    def test_preserves_cursor_hooks_the_operator_added(self, sandbox):
+        sandbox["cursor_user"].parent.mkdir(parents=True, exist_ok=True)
+        sandbox["cursor_user"].write_text(json.dumps({"version": 1, "hooks": {
+            "afterFileEdit": [{"command": "/opt/mine/format.sh"}]}}))
+        install.install()
+        hooks = json.loads(sandbox["cursor_user"].read_text())["hooks"]
+        assert hooks["afterFileEdit"] == [{"command": "/opt/mine/format.sh"}]
+
+    def test_keeps_other_cursor_mcp_servers(self, sandbox):
+        sandbox["cursor_user_mcp"].parent.mkdir(parents=True, exist_ok=True)
+        sandbox["cursor_user_mcp"].write_text(
+            json.dumps({"mcpServers": {"other": {"command": "x"}}}))
+        install.install()
+        servers = json.loads(sandbox["cursor_user_mcp"].read_text())["mcpServers"]
+        assert set(servers) == {"other", "thalamus"}
+
+    def test_reinstall_does_not_accumulate_duplicates(self, sandbox):
+        install.install()
+        install.install()
+        entries = json.loads(sandbox["cursor_user"].read_text())["hooks"]["beforeSubmitPrompt"]
+        commands = [e["command"] for e in entries]
+        assert len(commands) == len(set(commands)) == 3
+
+    def test_dry_run_writes_nothing(self, sandbox):
+        install.install(dry_run=True)
+        assert not sandbox["cursor_user"].exists()
+        assert not sandbox["cursor_user_mcp"].exists()
+
+    def test_claude_only_install_leaves_cursor_untouched(self, sandbox):
+        install.install(harnesses=("claude",))
+        assert not sandbox["cursor_user"].exists()
+
+    def test_cursor_only_install_leaves_claude_untouched(self, sandbox):
+        install.install(harnesses=("cursor",))
+        assert sandbox["cursor_user"].exists()
+        assert not sandbox["user"].exists()
+        assert sandbox["mcp_calls"] == [], "cursor-only must not register the Claude MCP server"
+
+    def test_cursor_only_still_links_skills(self, sandbox):
+        """A Cursor session gets the hooks and the server; without the skills it
+        queries the graph with no recall-strategy and grounds nothing."""
+        install.install(harnesses=("cursor",))
+        assert list(sandbox["skills"].iterdir())
 
 
 class TestHookBlock:
@@ -242,5 +362,5 @@ class TestVerify:
 
     def test_run_exits_nonzero_when_a_check_fails(self, sandbox, monkeypatch):
         monkeypatch.setattr(install, "verify",
-                            lambda: [install.Check("fake", False, "boom")])
+                            lambda *a, **k: [install.Check("fake", False, "boom")])
         assert install.run(check_only=True) == 1

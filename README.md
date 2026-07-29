@@ -136,15 +136,18 @@ primary harness: eight scripts across five events (wired by `thalamus init` into
 `~/.claude/settings.json`, so they arm in any directory), over a
 shared scope-resolution helper, cover memory priming, the pin ledger, distillation,
 the trace taps, the gremlin guard, and the conditioning/timestamp injections. The Cursor suite
-(`.cursor/hooks.json`, committed) ports everything portable — session-start
-priming + pin ledger, engagement marking, the gremlin guard
-(`beforeShellExecution`), and both trace taps (`afterShellExecution`,
-`afterMCPExecution`) — as thin adapters over the Claude Code scripts, so both
-harnesses share one detection logic and one set of on-disk records. Two Cursor
-walls (lab/010): `beforeSubmitPrompt` cannot inject agent-visible context, so the
-timestamp and conditioning tiers have no carrier there, and **session-end does
-not distill** — `thalamus extract` parses Claude Code JSONL transcripts only, so
-Cursor sessions currently leave no episodic memory (logged, not silent).
+(`~/.cursor/hooks.json`, written by the same `thalamus init`) ports everything
+portable — session-start priming + pin ledger, engagement marking, the gremlin
+guard (`beforeShellExecution`), both trace taps (`afterShellExecution`,
+`afterMCPExecution`), and the timestamp/conditioning injections — as thin
+adapters over the Claude Code scripts, so both harnesses share one detection
+logic and one set of on-disk records. Cursor gives the prompt text to an event
+that cannot inject and injection to events that never see the prompt, so the
+two injection tiers compute on `beforeSubmitPrompt` into a per-session spool and
+deliver on the next `postToolUse`, one tool call late (lab/027). One wall
+remains (lab/010): **session-end does not distill** — `thalamus extract` parses
+Claude Code JSONL transcripts only, so Cursor sessions retrieve and trace but
+leave no episodic memory (logged, not silent).
 
 ## Quick start
 
@@ -157,6 +160,7 @@ docker compose up -d
 # 2. Install
 uv sync --extra dev            # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
 thalamus init                  # arm hooks + the MCP server for every directory, then verify
+                               # (both editors; --harness claude|cursor to pick one)
 
 # 3. Use it
 thalamus init --check              # verify an existing install without writing

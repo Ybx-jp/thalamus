@@ -406,6 +406,10 @@ def main():
         "--check", action="store_true",
         help="Only verify an existing install; write nothing"
     )
+    init_parser.add_argument(
+        "--harness", choices=("claude", "cursor", "both"), default="both",
+        help="Which editor to wire (default: both)"
+    )
 
     rescope_parser = subparsers.add_parser(
         "rescope", help="Redirect a session's distillation scope (before it distills)"
@@ -1230,7 +1234,7 @@ def _cmd_init(args):
     from thalamus.harness.install import run
 
     try:
-        sys.exit(run(dry_run=args.dry_run, check_only=args.check))
+        sys.exit(run(dry_run=args.dry_run, check_only=args.check, harness=args.harness))
     except RuntimeError as e:
         print(f"Init failed: {e}", file=sys.stderr)
         sys.exit(1)

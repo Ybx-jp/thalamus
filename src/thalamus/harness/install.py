@@ -63,6 +63,14 @@ HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "claude-cod
 SKILL_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "skills"
 USER_SKILLS_DIR = Path.home() / ".claude" / "skills"
 
+CURSOR_HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "cursor"
+USER_CURSOR_HOOKS = Path.home() / ".cursor" / "hooks.json"
+USER_CURSOR_MCP = Path.home() / ".cursor" / "mcp.json"
+PROJECT_CURSOR_HOOKS = PROJECT_ROOT / ".cursor" / "hooks.json"
+PROJECT_CURSOR_MCP = PROJECT_ROOT / ".cursor" / "mcp.json"
+
+HARNESSES = ("claude", "cursor")
+
 # The hook wiring, as (event, matcher, script). Matcher None = all tools.
 HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("SessionStart", None, "session-start.sh"),
@@ -74,6 +82,37 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
+]
+
+# The Cursor wiring, as (event, script). Event names and their I/O shapes were
+# re-verified against cursor.com/docs/hooks.md on 2026-07-29 (lab/027).
+#
+# Parity with HOOK_WIRING above is 8 of 9 scripts. The prompt-side tiers reach
+# Cursor through the spool: `beforeSubmitPrompt` can read the prompt but not
+# inject, so timestamp.sh and conditioning.sh record there and `inject.sh`
+# delivers on the next `postToolUse` — one of only two Cursor events that can
+# inject at all.
+#
+# The taps stay on the *specialized* events rather than moving to the generic
+# postToolUse, even though the generic one would additionally work in Cursor
+# cloud agents: the docs do not say whether an MCP call fires both the generic
+# and the specialized hook, and if it does, a tap on both double-counts every
+# retrieval in `eval sync`. That is a measurement question a live Cursor
+# settles, not a guess to ship.
+#
+# No carrier: Claude Code's PostToolUse:TaskCreate milestone class. TaskCreate
+# is task-list UI; Cursor's `Task` tool type is subagent spawning, which is a
+# different event and would fire on the wrong thing.
+CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
+    ("sessionStart", "session-start.sh"),
+    ("sessionEnd", "session-end.sh"),
+    ("beforeSubmitPrompt", "pin-engaged.sh"),
+    ("beforeSubmitPrompt", "timestamp.sh"),
+    ("beforeSubmitPrompt", "conditioning.sh"),
+    ("beforeShellExecution", "gremlin-guard.sh"),
+    ("afterShellExecution", "gremlin-tap.sh"),
+    ("afterMCPExecution", "mcp-tap.sh"),
+    ("postToolUse", "inject.sh"),
 ]
 
 
@@ -174,6 +213,115 @@ def build_mcp_entry() -> dict:
     }
 
 
+def build_cursor_hook_block() -> dict:
+    """Cursor's hooks.json `hooks` object, with absolute paths.
+
+    Absolute is not a stylistic choice here: Cursor runs *project* hooks from
+    the project root but *user* hooks from `~/.cursor/`, so a relative command
+    that works in one scope is broken in the other. The checkout's committed
+    `.cursor/hooks.json` uses `./src/...` and therefore only ever armed for a
+    session whose workspace root was the checkout itself — which is exactly the
+    reach-past-the-checkout failure this module exists to fix.
+
+    `failClosed` is set explicitly on the guard rather than left to its `false`
+    default: the fail-open posture matches Claude Code (a hook that errors does
+    not block the command, only an exit-2 verdict does), and a security-shaped
+    hook should state that rather than inherit it.
+    """
+    block: dict = {}
+    for event, script in CURSOR_HOOK_WIRING:
+        entry: dict = {"command": str(CURSOR_HOOK_DIR / script), "type": "command"}
+        if script == "gremlin-guard.sh":
+            entry["failClosed"] = False
+        block.setdefault(event, []).append(entry)
+    return block
+
+
+def _strip_cursor_hooks(config: dict) -> dict:
+    """Drop our hooks from a Cursor hooks.json, leaving the operator's alone."""
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict):
+        return config
+    cleaned = {
+        event: kept
+        for event, entries in hooks.items()
+        if (kept := [e for e in entries or [] if not _is_thalamus_hook(e)])
+    }
+    config["hooks"] = cleaned
+    return config
+
+
+def install_cursor(dry_run: bool = False) -> list[str]:
+    """Wire Cursor at user scope and strip the checkout's project-scope copy.
+
+    Same mutual-exclusion argument as the Claude Code leg, and Cursor states the
+    precedence the Claude Code docs leave open — Enterprise > Team > Project >
+    User — so a surviving project block would silently outrank the user-scope
+    one we just wrote. Removing it leaves exactly one definition. It also
+    retires a consent problem lab/010 flagged: a committed `.cursor/hooks.json`
+    runs for anyone who opens this repo in Cursor.
+    """
+    actions: list[str] = []
+
+    current = _load_json(USER_CURSOR_HOOKS)
+    desired = build_cursor_hook_block()
+    merged = _strip_cursor_hooks(json.loads(json.dumps(current)))
+    merged["version"] = 1
+    for event, entries in desired.items():
+        merged.setdefault("hooks", {}).setdefault(event, []).extend(entries)
+
+    if current == merged:
+        actions.append(f"cursor user hooks already current ({USER_CURSOR_HOOKS})")
+    else:
+        actions.append(f"{'would write' if dry_run else 'wrote'} cursor hooks to {USER_CURSOR_HOOKS}")
+        if not dry_run:
+            _write_json(USER_CURSOR_HOOKS, merged)
+
+    # Cursor has no `cursor mcp add` CLI, so this file is edited directly —
+    # safe in a way `~/.claude.json` is not, because it holds only MCP servers
+    # rather than every project's history, and `_write_json` replaces it
+    # atomically.
+    cursor_mcp = _load_json(USER_CURSOR_MCP)
+    servers = cursor_mcp.setdefault("mcpServers", {})
+    if servers.get("thalamus") == build_mcp_entry():
+        actions.append(f"cursor MCP server already current ({USER_CURSOR_MCP})")
+    else:
+        servers["thalamus"] = build_mcp_entry()
+        actions.append(f"{'would register' if dry_run else 'registered'} `thalamus` MCP server "
+                       f"at cursor user scope ({USER_CURSOR_MCP})")
+        if not dry_run:
+            _write_json(USER_CURSOR_MCP, cursor_mcp)
+
+    project = _load_json(PROJECT_CURSOR_HOOKS)
+    if project.get("hooks"):
+        stripped = _strip_cursor_hooks(json.loads(json.dumps(project)))
+        if stripped != project:
+            actions.append(
+                f"{'would strip' if dry_run else 'stripped'} project-scope cursor hooks "
+                f"({PROJECT_CURSOR_HOOKS}) — user scope is now the single definition")
+            if not dry_run:
+                _write_json(PROJECT_CURSOR_HOOKS, stripped)
+    else:
+        actions.append("project-scope cursor hook block already absent")
+
+    project_mcp = _load_json(PROJECT_CURSOR_MCP)
+    if "thalamus" in project_mcp.get("mcpServers", {}):
+        remaining = {k: v for k, v in project_mcp["mcpServers"].items() if k != "thalamus"}
+        actions.append(
+            f"{'would remove' if dry_run else 'removed'} project-scope `thalamus` cursor MCP "
+            f"server ({PROJECT_CURSOR_MCP}) — its `uv run` was cwd-relative anyway")
+        if not dry_run:
+            if remaining:
+                project_mcp["mcpServers"] = remaining
+                _write_json(PROJECT_CURSOR_MCP, project_mcp)
+            else:
+                PROJECT_CURSOR_MCP.unlink()
+    else:
+        actions.append("project-scope cursor MCP server already absent")
+
+    return actions
+
+
 def register_mcp(dry_run: bool = False) -> str:
     """Register the server through `claude mcp add`, never by editing the file.
 
@@ -266,7 +414,67 @@ def link_skills(dry_run: bool = False) -> list[str]:
     return actions
 
 
-def verify() -> list[Check]:
+def verify_cursor() -> list[Check]:
+    """Exercise the Cursor leg the way the Claude Code leg is exercised.
+
+    The deferred-injection pair gets a real round trip rather than a file-exists
+    check, because its failure mode is the silent one: a broken spool costs the
+    session its clock and its conditioning and reports nothing at all.
+    """
+    checks: list[Check] = []
+    scripts = sorted({s for _, s in CURSOR_HOOK_WIRING})
+
+    missing = [s for s in scripts if not (CURSOR_HOOK_DIR / s).is_file()]
+    checks.append(Check("cursor hook scripts present", not missing,
+                        f"all {len(scripts)} wired scripts found" if not missing
+                        else f"missing: {missing}"))
+
+    unexec = [s for s in scripts
+              if (CURSOR_HOOK_DIR / s).is_file() and not os.access(CURSOR_HOOK_DIR / s, os.X_OK)]
+    checks.append(Check("cursor hook scripts executable", not unexec,
+                        "all executable" if not unexec else f"not executable: {unexec}"))
+
+    wired = _load_json(USER_CURSOR_HOOKS)
+    commands = {e.get("command") for entries in wired.get("hooks", {}).values() for e in entries}
+    unwired = [s for s in scripts if str(CURSOR_HOOK_DIR / s) not in commands]
+    checks.append(Check("cursor hooks wired at user scope", not unwired and wired.get("version") == 1,
+                        f"{len(scripts)} scripts in {USER_CURSOR_HOOKS}" if not unwired
+                        else f"not wired: {unwired}"))
+
+    served = _load_json(USER_CURSOR_MCP).get("mcpServers", {}).get("thalamus")
+    checks.append(Check("cursor MCP server registered", served == build_mcp_entry(),
+                        f"`thalamus` in {USER_CURSOR_MCP}" if served
+                        else f"absent from {USER_CURSOR_MCP} — no retrieval on Cursor"))
+
+    # The load-bearing Cursor check: spool a turn on beforeSubmitPrompt, then
+    # drain it on postToolUse, in a throwaway HOME. This is the mechanism that
+    # replaces an event Cursor does not have, so nothing else proves it works.
+    ok, detail = False, "not run"
+    if shutil.which("jq") and (CURSOR_HOOK_DIR / "inject.sh").is_file():
+        import tempfile
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                env = {**os.environ, "HOME": tmp}
+                payload = json.dumps({"session_id": "verify", "prompt": "hello"})
+                subprocess.run([str(CURSOR_HOOK_DIR / "timestamp.sh")], input=payload,
+                               capture_output=True, text=True, timeout=30, env=env, check=True)
+                drained = subprocess.run([str(CURSOR_HOOK_DIR / "inject.sh")],
+                                         input=json.dumps({"session_id": "verify"}),
+                                         capture_output=True, text=True, timeout=30, env=env)
+                got = json.loads(drained.stdout or "{}").get("additional_context", "")
+                ok = "Current date and time" in got
+                detail = ("clock spooled and delivered through postToolUse" if ok
+                          else f"spool did not round-trip: {drained.stdout[:120]!r}")
+        except (subprocess.SubprocessError, OSError, ValueError) as exc:
+            detail = f"round trip failed: {exc}"
+    else:
+        detail = "skipped (jq or inject.sh missing)"
+    checks.append(Check("cursor deferred injection round trip", ok, detail))
+
+    return checks
+
+
+def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     """Exercise what would otherwise fail late (PCheck's early-detection idea).
 
     Each check runs the *real* mechanism, not a proxy for it: the point is that
@@ -328,17 +536,34 @@ def verify() -> list[Check]:
         f"{len(shipped_skills())} readable via {USER_SKILLS_DIR}" if not unreadable
         else f"unreadable: {unreadable}"))
 
+    if "cursor" in harnesses:
+        checks.extend(verify_cursor())
+
     return checks
 
 
-def install(dry_run: bool = False) -> tuple[list[str], list[Check]]:
+def install(dry_run: bool = False,
+            harnesses: tuple[str, ...] = HARNESSES) -> tuple[list[str], list[Check]]:
     """Install at user scope; strip the project-scope duplicate. Idempotent.
+
+    Both harnesses by default: the hook scripts, the MCP server and the graph
+    behind them are one installation, and a box that has only one of the two
+    editors simply ends up with an inert config file for the other.
 
     Returns (actions, checks). Verification runs last and always, because an
     install that reports success without exercising anything is precisely the
     silent misconfiguration this module exists to prevent.
     """
     actions: list[str] = []
+
+    if "cursor" in harnesses:
+        actions.extend(install_cursor(dry_run=dry_run))
+    if "claude" not in harnesses:
+        if not dry_run:
+            write_all_agents(USER_AGENTS_DIR)
+            actions.append(f"regenerated derived agents in {USER_AGENTS_DIR}")
+        actions.extend(link_skills(dry_run=dry_run))
+        return actions, verify(harnesses)
 
     user_settings = _load_json(USER_SETTINGS)
     desired_hooks = build_hook_block()
@@ -397,15 +622,17 @@ def install(dry_run: bool = False) -> tuple[list[str], list[Check]]:
         write_all_agents(USER_AGENTS_DIR)
         actions.append(f"regenerated derived agents in {USER_AGENTS_DIR}")
 
-    return actions, verify()
+    return actions, verify(harnesses)
 
 
-def run(dry_run: bool = False, check_only: bool = False) -> int:
+def run(dry_run: bool = False, check_only: bool = False,
+        harness: str = "both") -> int:
     """CLI entry. Non-zero exit iff a check failed — install failures must be loud."""
+    harnesses = HARNESSES if harness == "both" else (harness,)
     if check_only:
-        actions, checks = [], verify()
+        actions, checks = [], verify(harnesses)
     else:
-        actions, checks = install(dry_run=dry_run)
+        actions, checks = install(dry_run=dry_run, harnesses=harnesses)
 
     if actions:
         print("Actions:")
@@ -422,6 +649,10 @@ def run(dry_run: bool = False, check_only: bool = False) -> int:
     if dry_run:
         print("\nDRY RUN — nothing written. Re-run without --dry-run to install.")
     elif not check_only:
-        print("\nInstalled. Hooks and the MCP server arm per *process*: "
-              "relaunch `claude` for existing sessions to pick this up.")
+        editors = " and ".join("Claude Code" if h == "claude" else "Cursor" for h in harnesses)
+        print(f"\nInstalled for {editors}. Hooks and the MCP server arm per *process*: "
+              "relaunch the editor for existing sessions to pick this up.")
+        if "cursor" in harnesses:
+            print("Cursor: no distillation yet — sessions retrieve and trace but leave no "
+                  "episodic memory (docs/07, lab/010).")
     return 0

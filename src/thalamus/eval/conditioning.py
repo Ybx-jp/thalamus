@@ -51,6 +51,7 @@ class Firing:
     ts: datetime
     session_id: str
     cls: str
+    harness: str = "claude-code"
     followed: bool = False
 
 
@@ -71,6 +72,19 @@ class ConditioningReport:
                 f"{cls}: {followed}/{len(events)} firings followed by the expected "
                 f"thalamus call ({len(events) - followed} wallpaper)"
             )
+
+        # Split by harness whenever both are present. Cursor delivers a firing
+        # one tool call late (the spool — docs/07), so its rescue rate is not
+        # comparable to Claude Code's immediate injection and must not be
+        # averaged in with it.
+        by_harness: dict[str, list[Firing]] = {}
+        for firing in self.firings:
+            by_harness.setdefault(firing.harness, []).append(firing)
+        if len(by_harness) > 1:
+            lines += ["", "By harness (Cursor injection is delivered one tool call late):"]
+            for harness, events in sorted(by_harness.items()):
+                followed = sum(e.followed for e in events)
+                lines.append(f"  {harness}: {followed}/{len(events)} followed")
         return "\n".join(lines)
 
 
@@ -98,7 +112,10 @@ def load_firings(base: Path | None = None) -> list[Firing]:
                 cls = record.get("class")
                 if not session or not cls:
                     continue
-                firings.append(Firing(ts=ts, session_id=str(session), cls=str(cls)))
+                firings.append(Firing(
+                    ts=ts, session_id=str(session), cls=str(cls),
+                    harness=str(record.get("harness") or "claude-code"),
+                ))
     firings.sort(key=lambda f: f.ts)
     return firings
 

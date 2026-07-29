@@ -19,6 +19,11 @@
 #   Effectiveness is the per-firing behavioral join (`thalamus eval
 #   conditioning`): did a thalamus call follow the injection? Fire counts are
 #   activity, not effectiveness (lab/008 discipline).
+#   Each firing records `harness` (THALAMUS_HARNESS, default claude-code): the
+#   Cursor adapter reaches this script through a reshaped UserPromptSubmit
+#   payload, so `event` alone cannot tell the two apart, and injection there is
+#   delivered a tool call late (docs/07) — a lag the rescue-rate join must be
+#   able to separate out rather than average over.
 #
 # Tiers served by this one script (branch on hook_event_name):
 # - UserPromptSubmit (tier 1, always armed): lexical intent classes on the
@@ -56,8 +61,10 @@ emit() {  # $1 = class, $2 = message
     --arg session_id "$session" \
     --arg scope "$(thalamus_resolve_scope)" \
     --arg event "$event" \
+    --arg harness "${THALAMUS_HARNESS:-claude-code}" \
     --arg class "$1" \
-    '{ts:$ts, session_id:$session_id, scope:$scope, event:$event, class:$class, version:1}' \
+    '{ts:$ts, session_id:$session_id, scope:$scope, event:$event,
+      harness:$harness, class:$class, version:1}' \
     >> "$log_file" || true
   jq -cn --arg e "$event" --arg ctx "$2" \
     '{hookSpecificOutput:{hookEventName:$e, additionalContext:$ctx}}'
