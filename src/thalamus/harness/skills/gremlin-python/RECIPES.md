@@ -18,10 +18,11 @@ Entry template:
 **Notes:** <gotchas, variations> (optional)
 ```
 
-The seven `memory_query`-surface recipes in the `recall-strategy` skill are
+The ten `memory_query`-surface recipes in the `recall-strategy` skill are
 canonical there, not duplicated here: thread lifecycle, provenance walk,
 artifact history, consultation audit, claim convergence, evidence head,
-retrieval self-audit.
+retrieval self-audit, and the three contribution/coverage traversals (what a
+paper contributed, corpus citation weight, cold sources).
 
 ---
 
@@ -175,37 +176,3 @@ expert scope `X`" string is **confounded**: consultation subagents carry that
 same text, so its presence does not mean the session itself was pinned. Neither
 source can currently distinguish "mis-scoped expert session" from "main session
 that consulted an expert."
-
-## What has a paper actually contributed to a scope?
-
-**Question it answered** (2026-07-28): we were about to build precomputed
-per-document "contribution to scope" summaries. Does the graph already answer
-"how does this paper bear on the scope" without them? It does — in earned terms,
-which is better evidence than a summary written at ingest.
-
-**Surface:** `memory_query` (gremlin-lang). **Validated:** live, 37 sources.
-
-Per-paper contribution, as the verbatim questions it was cited to answer:
-
-    g.V().hasLabel('Exchange').as('e').outE('REFERENCES').has('role','citation')
-      .inV().hasLabel('Claim').out('DERIVED_FROM').hasLabel('Source')
-      .has('title', containing('Metamorphic')).select('e').dedup().values('question')
-
-Corpus-wide citation weight — which papers are carrying the design:
-
-    g.V().hasLabel('Exchange').outE('REFERENCES').has('role','citation').inV()
-      .hasLabel('Claim').out('DERIVED_FROM').hasLabel('Source').groupCount().by('title')
-
-Cold sources — ingested but never cited *or* served in a brief. Note this one
-does **not** filter `role`, so a zero here is stronger than a zero above:
-
-    g.V().hasLabel('Source').has('scope','literature')
-      .project('title','exchanges').by('title')
-      .by(__.in('DERIVED_FROM').in('REFERENCES').hasLabel('Exchange').dedup().count())
-      .order().by(select('exchanges'))
-
-A zero is two different facts and the query cannot tell them apart: literature
-nobody has needed yet, versus literature that reached a design through a channel
-that leaves no exchange record. `arXiv:2605.17830` was the second kind — zero
-exchanges, and a readiness run recording that it changed the design in three
-places. Separate them by asking whether any decision cites the paper.

@@ -16,6 +16,16 @@ earns it.
 
 ## The ladder — cheapest rung that answers
 
+**Query before you build.** Before designing a new node type, a new precomputed
+layer, or a new summary artifact, ask whether an existing traversal already
+answers it. The schema expresses more than most designs assume: `Exchange` holds
+the question its citation edges answered, `Trace -RETURNS-> {used}` holds
+retrieval utility, `DERIVED_FROM` reaches retained bytes. Records the system
+already writes are usually *better* evidence than anything precomputed, because
+they capture what was actually used rather than what someone anticipated
+(lab/025 §3 — a whole contribution-summary layer, withdrawn once someone ran the
+traversal). `ground-in-literature` step A0 is where this fires for designs.
+
 **Recall before archaeology.** Before grepping transcripts, archives, or logs
 for what a past session did, ask the graph (L1). Measured failure (lab/008
 coda): a session spent an hour of raw-transcript forensics reconstructing an
@@ -90,6 +100,32 @@ Evidence head — the current transcript snapshot (SUPERSEDES lineage, lab/002):
     g.V('scope:main:session:<id>').out('DERIVED_FROM').hasLabel('Source')
       .not(__.inE('SUPERSEDES')).values('title')
 
+What a paper has actually contributed — the questions it was cited to answer,
+verbatim, with no summarization step (lab/025 §3):
+
+    g.V().hasLabel('Exchange').as('e').outE('REFERENCES').has('role','citation')
+      .inV().hasLabel('Claim').out('DERIVED_FROM').hasLabel('Source')
+      .has('title', containing('Metamorphic')).select('e').dedup().values('question')
+
+Corpus citation weight — which papers are carrying the design:
+
+    g.V().hasLabel('Exchange').outE('REFERENCES').has('role','citation').inV()
+      .hasLabel('Claim').out('DERIVED_FROM').hasLabel('Source').groupCount().by('title')
+
+Cold sources — ingested but never cited *or* served in a brief. This one does
+**not** filter `role`, so a zero here is stronger than a zero above:
+
+    g.V().hasLabel('Source').has('scope','literature')
+      .project('title','exchanges').by('title')
+      .by(__.in('DERIVED_FROM').in('REFERENCES').hasLabel('Exchange').dedup().count())
+      .order().by(select('exchanges'))
+
+A zero is two different facts and the traversal cannot separate them: literature
+nobody has needed yet, versus literature that reached a design through a channel
+leaving no exchange record. `arXiv:2605.17830` was the second kind — zero
+exchanges, and a readiness run recording that it changed the design in three
+places. Separate them by asking whether any decision cites the paper.
+
 Self-audit — what retrieval is costing and wasting, per scope:
 
     g.V().hasLabel('Trace').group().by('scope')
@@ -101,8 +137,17 @@ Self-audit — what retrieval is costing and wasting, per scope:
 (literature, eval-methodology, homelab) that shapes a design or a metric is a
 `consult_request`, not a thin answer from general knowledge — and the consult
 comes *before* the design, not as review after (docs/02; the conditioning
-hooks remind, this skill is the canonical rule). A broad survey that needs
-volume also lands here: the consultation subagent's context is disposable.
+hooks remind, this skill is the canonical rule).
+
+**The subagent is not an optimization, it is the independence.** A broad survey
+lands here because the consultation subagent's context is disposable — but the
+load-bearing reason is that *you cannot voice an expert about a design you are
+holding*. Measured (lab/025, one question asked both ways): self-answered under
+the ticket, 4 recalls, 8 citations, design confirmed; voiced by a subagent, 19
+tool uses, **25 citations, design withdrawn** on an objection that had been in
+the scope the whole time. A session recalls toward its own hypothesis — it
+queries the vocabulary its design already uses, finds agreement, and stops. Never
+answer your own ticket; if you cannot spawn the subagent, say so *before* minting.
 
 ## Reading results honestly
 

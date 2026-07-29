@@ -44,6 +44,16 @@ so the doc and the memory stay in step.
   demand-driven against open threads, anchor document first, per-project `--feed`,
   and always dry-run the title check before `--write`.
 
+## Repo hygiene
+
+- **Commit by path, never `git add -A`.** Sessions run concurrently in this checkout
+  (roster pins, worktrees, a second terminal), so `-A` sweeps another session's
+  in-progress work into your commit. Check `git status` before staging and name the
+  files you changed.
+- `.claude/skills/*` are **symlinks** into `src/thalamus/harness/skills/` — the skills
+  ship with the package. Editing through the symlink works; `git add` on that path
+  fails ("beyond a symbolic link"). Stage the real path under `src/`.
+
 ## Verification
 
 - `uv run pytest` — the suite must stay green.

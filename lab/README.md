@@ -40,3 +40,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [022](022-confinement-and-the-leak-nobody-was-watching.md) | Confinement, and the leak nobody was watching | workaround |
 | [023](023-the-first-valid-memory-contrast.md) | The first campaign where memory-on could actually reach memory: recall hit the ceiling, the outcome did not move | measurements (null) |
 | [024](024-the-endpoint-was-in-the-wrong-place.md) | The endpoint was above the rung the treatment moved; and the battery is the wrong instrument for the thesis | measurements + design |
+| [025](025-the-expert-you-do-not-spawn.md) | Self-answering a consultation cost 17 citations and the objection that killed the design; and the component already existed | measurements + corrections |

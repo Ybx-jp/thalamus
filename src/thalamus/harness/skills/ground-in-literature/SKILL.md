@@ -39,6 +39,22 @@ back **blockquoted, with a citation and a trust tier**, because tier-2 content
 - **CLI equivalent** (outside a harness session): `thalamus visualize` to browse, or
   read back what a query returns via the MCP tool.
 
+**Never answer your own consultation ticket.** The protocol says spawn a subagent
+voicing the expert; that subagent is not a cost optimization, it *is* the
+independence. Measured (lab/025, same question asked both ways): self-answered, 8
+citations and the design confirmed; subagent-voiced, **25 citations and the design
+withdrawn** on an objection sitting four recalls away in the scope the whole time.
+The asking session recalls toward its own hypothesis — it queries the terms its
+design already uses, reads confirmation and stops. It also overclaims, because an
+author defending a design does not police the strength of its own citations.
+
+If something blocks spawning the subagent, **say so before minting the ticket** and
+either resolve it or skip the consultation. Minting and then self-answering is the
+worst option: it burns a single-use ticket, writes an exchange record that looks
+identical to a real one, and hides the whole problem behind a valid citation gate.
+(`eval sync` now stamps `answered_from` on the Exchange, so this is auditable after
+the fact — but the answer is already worse by then.)
+
 If recall comes back **thin** on a topic that clearly has a literature (agent
 memory, RAG/retrieval eval, memory poisoning, provenance, harness engineering,
 audio/music ML), that is not permission to proceed — it is a **coverage gap to
@@ -55,6 +71,34 @@ can then cite. Feeding a paper *is* the tier-2 curation decision
 hand-feeding a PDF is itself the curation.
 
 ## Instructions
+
+### A0. Internal prior art — does the system already do this?
+
+**Run this before the literature check, every time.** This skill points outward; a
+design can be perfectly grounded in published work and still duplicate something the
+repo already has. That is not hypothetical — lab/025 records a contribution-summary
+layer that was cited, consulted on, committed and documented before anyone asked
+whether the graph already answered it. It did, two ways.
+
+Three questions, in order of how cheaply they kill a design:
+
+1. **Does an existing traversal answer it?** The schema is richer than most designs
+   assume — `Exchange` carries the question and its citation edges carry what the
+   answer rested on; `Trace -RETURNS-> {used}` carries retrieval utility; `DERIVED_FROM`
+   carries provenance to retained bytes. Check `gremlin-python` RECIPES.md and the
+   `memory_query` schema before proposing a new node type. **A new node type is a
+   claim that no existing edge expresses this** — make that claim explicitly, or drop it.
+2. **Does another surface already hold it?** The teach workspace, the skills, the
+   lab notebook, `docs/`. Hand-maintained duplicates are the common case, and the
+   right move is usually to *generate* the existing artifact from the graph rather
+   than to build a third copy.
+3. **Is the thing you'd precompute already earned somewhere?** Records the system
+   writes for other reasons (exchanges, traces, the pin ledger) are usually better
+   evidence than anything derived up front, because they capture what was actually
+   used rather than what someone anticipated.
+
+If the answer is "it already exists," say so and stop. The deliverable is the
+traversal or the pointer, not a design.
 
 ### A. Grounding a new design
 
@@ -81,6 +125,17 @@ hand-feeding a PDF is itself the curation.
    *and* an ingest attempt, you may write "not found in the 2026 scan (see
    docs/11)" — never a bare "novel." Absence in one scan is weak evidence; phrase it
    as provisional and add it to [docs/11 §4](../../../../../docs/11-related-work.md).
+5b. **Write each claim at the strength the record supports, and mark which it is.**
+   Three distinct things get written as if they were one: *what a paper measured*,
+   *what follows from its argument but was never measured*, and *what we infer from
+   our own situation*. Only the first is cited. The second is an inference from the
+   cited claim's logic and must say so; the third is an argument and must be
+   labelled one. A confident phrase — "cargo-culting," "clearly doesn't transfer" —
+   over a claim of the second kind reads as grounded and is not (lab/025 §1).
+   The tell: if you cannot name the measurement, you are in kind two or three.
+   Conditions the cited work assumed and we do not meet belong here too — say
+   *conditions not met*, which is honest and usually sufficient, rather than
+   *demonstrated not to work*, which is a result nobody has.
 6. **Record the grounding.** Anything genuinely new that the search surfaced goes
    into [docs/11-related-work.md](../../../../../docs/11-related-work.md) (the human
    record) and, if it is a paper worth remembering, into the graph via
@@ -123,4 +178,6 @@ field would — against the *design intent the research implies*, not just the c
 
 ## The discipline in one line
 **A design that cites nothing has not been grounded — it has been guessed. A test
-that encodes no foundational claim is green and ungrounded.**
+that encodes no foundational claim is green and ungrounded. And a design that was
+never checked against the system's own graph may be perfectly cited and still
+already built (lab/025).**
