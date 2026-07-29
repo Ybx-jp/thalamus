@@ -93,8 +93,10 @@ def main():
     )
     extract_parser.add_argument(
         "--model",
-        default=extraction.DEFAULT_MODEL,
-        help=f"Model for claude -p (default: {extraction.DEFAULT_MODEL}). The archive is "
+        default=None,
+        help="Extraction model. Defaults per harness: "
+        f"`{extraction.DEFAULT_MODEL}` via claude -p, "
+        f"`{extraction.CURSOR_DEFAULT_MODEL}` via agent -p. The archive is "
         "immutable, so a better model can always re-extract later.",
     )
     extract_parser.add_argument(
@@ -719,6 +721,7 @@ def _cmd_extract(args):
     graph = connect(args.url)
     extracted = skipped = failed = 0
     total_cost = 0.0
+    unpriced = 0
 
     try:
         # Chronological across all requested projects: threads resolve forward in time.
@@ -803,7 +806,9 @@ def _cmd_extract(args):
             )
 
             try:
-                run = extraction.run_extraction(prompt, model=args.model)
+                run = extraction.run_extraction(
+                    prompt, model=args.model, harness=args.harness
+                )
                 data = extraction.parse_extraction(run.text)
                 session = extraction.merge_extraction(base, data)
                 # The laundering floor (docs/05): claims resting on the transcript's
@@ -829,7 +834,10 @@ def _cmd_extract(args):
                     print(f"      - {issue}")
                 continue
 
-            total_cost += run.cost_usd
+            if run.cost_usd is None:
+                unpriced += 1
+            else:
+                total_cost += run.cost_usd
             floored = sum(1 for claim in session.claims() if claim.external)
             counts = (
                 f"{len(session.claims()):>2} claims  {len(session.threads)} threads  "
@@ -844,16 +852,20 @@ def _cmd_extract(args):
                     print(f"  ✗ {name}  write failed: {str(e)[:160]}")
                     continue
             extracted += 1
-            print(f"  + {name}  {counts}  ${run.cost_usd:.2f}  {session.summary[:48]}")
+            priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "  $ ?"
+            print(f"  + {name}  {counts}  {priced}  {session.summary[:48]}")
 
     finally:
         if args.write and extracted:
             _persist(graph)
         close_connection(graph)
 
+    # "$0.00 across N sessions" would read as free rather than as unmeasured, so
+    # unpriced runs are counted separately — Cursor's CLI reports no cost fields.
+    unpriced_note = f" ({unpriced} unpriced — the CLI reports no cost)" if unpriced else ""
     print(
         f"\n{extracted} extracted, {skipped} skipped, {failed} failed; "
-        f"model cost ${total_cost:.2f}"
+        f"model cost ${total_cost:.2f}{unpriced_note}"
     )
     if not args.write:
         print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")
@@ -933,8 +945,9 @@ def _cmd_ingest(args):
         sys.exit(1)
 
     print(f"Retained: {batch.source.uri} ({batch.source.byte_size:,} bytes)")
+    priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "cost not reported"
     print(f"Extracted: {len(batch.claims)} claims, {len(batch.entities)} entities "
-          f"(${run.cost_usd:.2f})")
+          f"({priced})")
     print(f"  {batch.source.title}")
     for claim in batch.claims:
         print(f"  - [{claim.kind.split('/')[-1]}] {claim.description[:90]}")

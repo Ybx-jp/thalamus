@@ -9,6 +9,7 @@ Scope: digest rendering and elision, YAML parsing, and the merge that keeps the
 """
 
 import json
+import subprocess
 from datetime import datetime
 
 import pytest
@@ -367,3 +368,91 @@ def test_model_orphan_artifacts_are_prunable_without_losing_stage1_nodes():
     identifiers = sorted(a.identifier for a in pruned.artifacts)
     assert identifiers == ["pytest", "src/governor.py"]
     assert check_session(pruned) == []
+
+
+# ---------------------------------------------------------------------------
+# CLI selection — a session distills through its own harness's agent (docs/07)
+# ---------------------------------------------------------------------------
+
+
+def _fake_run(recorder, *, stdout, returncode=0, stderr=""):
+    def run(cmd, **kwargs):
+        recorder.append(cmd)
+        return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr=stderr)
+
+    return run
+
+
+_OK = json.dumps({"type": "result", "is_error": False, "result": "yaml here",
+                  "duration_ms": 12, "total_cost_usd": 0.25})
+# Cursor's envelope: same result/is_error/duration_ms names, no cost fields at all.
+_OK_CURSOR = json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                         "result": "yaml here", "duration_ms": 12, "duration_api_ms": 9,
+                         "session_id": "s"})
+
+
+def test_cursor_sessions_distill_through_the_cursor_cli(monkeypatch):
+    """A Cursor session on a machine where only Cursor is installed must not need
+    Claude Code present and authenticated to become memory."""
+    calls = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, stdout=_OK_CURSOR))
+    extraction.run_extraction("prompt", harness="cursor")
+    assert calls[0][:2] == ["agent", "-p"]
+    assert "--model" in calls[0] and "--output-format" in calls[0]
+
+
+def test_claude_remains_the_default_harness(monkeypatch):
+    calls = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, stdout=_OK))
+    extraction.run_extraction("prompt")
+    assert calls[0][0] == "claude"
+
+
+def test_each_harness_carries_its_own_default_model(monkeypatch):
+    calls = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, stdout=_OK_CURSOR))
+    extraction.run_extraction("prompt", harness="cursor")
+    assert calls[0][calls[0].index("--model") + 1] == extraction.CURSOR_DEFAULT_MODEL
+
+
+def test_an_explicit_model_overrides_the_harness_default(monkeypatch):
+    calls = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, stdout=_OK_CURSOR))
+    extraction.run_extraction("prompt", harness="cursor", model="composer-2.5-fast")
+    assert calls[0][calls[0].index("--model") + 1] == "composer-2.5-fast"
+
+
+def test_unreported_cost_is_none_not_zero(monkeypatch):
+    """Cursor's JSON envelope carries no cost fields. A 0.0 there would read as
+    'free' rather than 'unmeasured' and silently under-report extraction spend —
+    the same absent-vs-negative trap the ingress floor hit."""
+    monkeypatch.setattr(subprocess, "run", _fake_run([], stdout=_OK_CURSOR))
+    assert extraction.run_extraction("p", harness="cursor").cost_usd is None
+
+    monkeypatch.setattr(subprocess, "run", _fake_run([], stdout=_OK))
+    assert extraction.run_extraction("p").cost_usd == 0.25
+
+
+def test_a_bad_model_id_fails_loudly_and_says_how_to_find_the_right_one(monkeypatch):
+    """The Composer identifier is unverified — Cursor publishes none — so the
+    failure has to carry its own fix."""
+    monkeypatch.setattr(
+        subprocess, "run",
+        _fake_run([], stdout="", returncode=1, stderr="unknown model"),
+    )
+    with pytest.raises(extraction.ExtractionError, match="--list-models"):
+        extraction.run_extraction("p", harness="cursor")
+
+
+def test_a_missing_cli_names_the_binary_it_wanted(monkeypatch):
+    def boom(cmd, **kwargs):
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    with pytest.raises(extraction.ExtractionError, match="`agent` CLI not found"):
+        extraction.run_extraction("p", harness="cursor")
+
+
+def test_an_unknown_harness_is_refused():
+    with pytest.raises(extraction.ExtractionError, match="no extraction CLI"):
+        extraction.run_extraction("p", harness="emacs")

@@ -191,6 +191,28 @@ first, or to add `transcript_ready`), so reading at session end races an async
 writer and can distill a truncated session. Scope comes from each session's own
 sessionEnd record, ledger-first, not from the `--scope` flag.
 
+**A session distills through its own harness's CLI.** Claude Code sessions go to
+`claude -p`; Cursor sessions go to Cursor's `agent -p`, defaulting to Composer 2.5
+(`extraction.EXTRACTION_CLIS`). Both take `-p`, `--model` and
+`--output-format json`, and both return an envelope carrying `result`, `is_error`
+and `duration_ms` under those exact names, so one invocation path serves both.
+Two reasons this is not merely tidy: a Cursor-only machine should not need Claude
+Code installed and authenticated before its sessions can become memory, and each
+harness's session content stays with the vendor the operator already chose for
+that machine — a policy question on a work box, not only a convenience.
+
+The deliberately-not-fast variant is the batch argument: distillation is a sweep
+where nothing waits on the result, so the quality/latency trade runs the other way
+from interactive use. Two honest caveats. Cursor's envelope carries **no cost or
+token fields**, so `ExtractionRun.cost_usd` is `None` rather than `0.0` and the
+sweep counts unpriced runs separately — a zero meaning "not reported" is
+indistinguishable from a zero meaning "free", which is the same absent-vs-negative
+trap as the ingress floor. And the Composer identifier is **unverified**: Cursor
+documents `--model` and `--list-models` but publishes no identifier strings, and
+Composer 2.5 has no public API model id. A wrong string fails at invocation rather
+than silently selecting another model, and the error carries
+`agent --list-models` so the fix is one command away.
+
 The `PostToolUse:TaskCreate` milestone conditioning class remains without a
 carrier — TaskCreate is Claude Code task-list UI, while Cursor's `Task` tool type
 is subagent spawning.

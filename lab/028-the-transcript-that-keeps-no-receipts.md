@@ -149,6 +149,37 @@ archived Claude Code transcripts with `tool_use_id` linkage stripped, and diffin
 the claims, would answer directly how much the Cursor gap costs. We hold the
 corpus.
 
+## Each harness distills through its own agent
+
+Extraction shelled out to `claude -p` unconditionally, which meant a Cursor-only
+work machine still needed Claude Code installed and authenticated before any of
+its sessions could become memory — a cross-tool dependency nobody asked for, and
+one that also sent that machine's session digests to a vendor the operator had not
+chosen for it.
+
+Cursor's CLI is a drop-in for the purpose. Binary `agent`, same `-p`, `--model`
+and `--output-format json`, and an envelope carrying `result`, `is_error` and
+`duration_ms` under those exact names — so `EXTRACTION_CLIS` models only what
+actually differs: binary, default model, and whether the envelope prices the call.
+Default is Composer 2.5, non-fast, on the batch argument: a distillation sweep has
+nothing waiting on it, so the quality/latency trade runs opposite to interactive
+use.
+
+Two things the port had to be honest about:
+
+- **Cursor reports no cost or token fields at all.** `cost_usd` became
+  `float | None`, and the sweep counts unpriced runs separately rather than adding
+  0.0. This is the same absent-vs-negative trap as the ingress floor two sections
+  up, found in a second place within the same component — a zero that means "not
+  reported" is indistinguishable from one that means "free", and it would have
+  quietly under-reported the extraction spend `eval cost` exists to total.
+- **The Composer identifier is a guess.** Cursor documents `--model` and
+  `--list-models` but publishes no identifier strings, and Composer 2.5 has no
+  public API model id — it is Cursor-platform-only. A wrong string fails at
+  invocation rather than silently selecting another model, and the error message
+  carries `agent --list-models`, so the failure comes with its own fix. Verifying
+  it is one command on a machine that has Cursor.
+
 ## Wall or workaround
 
 **Workaround**, and lab/010's last structural wall is down — Cursor sessions now

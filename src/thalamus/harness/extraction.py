@@ -326,14 +326,70 @@ def build_prompt(
 
 
 # ---------------------------------------------------------------------------
-# Model invocation — claude -p, headless
+# Model invocation — headless, one dialect per harness
 # ---------------------------------------------------------------------------
+
+# Composer 2.5, deliberately not the fast variant: distillation is a batch sweep
+# where nothing waits on the result, so the quality/latency trade runs the other
+# way from interactive use.
+#
+# ⚠️ This identifier is **unverified**. Cursor documents `--model <model>` and
+# `--list-models` but publishes no identifier strings, Composer 2.5 has no public
+# API model id (it is Cursor-platform-only), and no live Cursor has been observed
+# from here. A wrong string fails at invocation rather than silently selecting
+# another model, and `_MODEL_HINT` below turns that failure into one command's
+# worth of fixing.
+CURSOR_DEFAULT_MODEL = "composer-2.5"
+
+_MODEL_HINT = "run `agent --list-models` for the accepted identifiers"
+
+
+@dataclass(frozen=True)
+class ExtractionCLI:
+    """One headless coding-agent CLI, as extraction invokes it.
+
+    Both CLIs take `-p`, `--model` and `--output-format json`, and both return an
+    envelope carrying `result`, `is_error` and `duration_ms` under those exact
+    names — so the differences worth modelling are the binary, the default model,
+    and whether the envelope prices the call at all.
+    """
+
+    harness: str
+    binary: str
+    default_model: str
+    # Claude Code reports `total_cost_usd`; Cursor's JSON envelope carries no cost
+    # or token fields at all. That distinction is kept rather than defaulted to
+    # 0.0, because a zero that means "not reported" is indistinguishable from a
+    # zero that means "free" — the same absent-vs-negative trap the ingress floor
+    # hit (docs/05), and it would quietly under-report the extraction spend that
+    # `eval cost` exists to total.
+    reports_cost: bool
+
+    def argv(self, model: str) -> list[str]:
+        return [self.binary, "-p", "--model", model, "--output-format", "json"]
+
+
+EXTRACTION_CLIS: dict[str, ExtractionCLI] = {
+    "claude": ExtractionCLI("claude", "claude", DEFAULT_MODEL, reports_cost=True),
+    "cursor": ExtractionCLI("cursor", "agent", CURSOR_DEFAULT_MODEL, reports_cost=False),
+}
+
+
+def cli_for(harness: str) -> ExtractionCLI:
+    try:
+        return EXTRACTION_CLIS[harness]
+    except KeyError:
+        raise ExtractionError(
+            f"no extraction CLI for harness `{harness}`; "
+            f"known: {', '.join(sorted(EXTRACTION_CLIS))}"
+        ) from None
 
 
 @dataclass
 class ExtractionRun:
     text: str
-    cost_usd: float = 0.0
+    # None means the CLI does not report cost — not that the call was free.
+    cost_usd: float | None = None
     duration_ms: int = 0
 
 
@@ -342,18 +398,31 @@ class ExtractionError(RuntimeError):
 
 
 def run_extraction(
-    prompt: str, *, model: str = DEFAULT_MODEL, timeout: int = 900
+    prompt: str,
+    *,
+    model: str | None = None,
+    harness: str = "claude",
+    timeout: int = 900,
 ) -> ExtractionRun:
-    """Run the extraction prompt through headless Claude Code.
+    """Run the extraction prompt through a headless coding-agent CLI.
 
-    The subprocess runs in an empty temp directory: the digest is already in the prompt,
-    so the model has no reason to touch a filesystem — and now it couldn't find anything
-    interesting if it tried.
+    A session distills through **its own harness's** CLI: a Cursor session on a
+    machine where only Cursor is installed must not need Claude Code present and
+    authenticated to become memory. It also keeps each harness's traffic on the
+    vendor the operator already chose for that machine, which is a policy question
+    on a work box and not only a convenience one.
+
+    The subprocess runs in an empty temp directory: the digest is already in the
+    prompt, so the model has no reason to touch a filesystem — and now it couldn't
+    find anything interesting if it tried.
     """
+    cli = cli_for(harness)
+    model = model or cli.default_model
+
     with tempfile.TemporaryDirectory(prefix="thalamus-extract-") as workdir:
         try:
             proc = subprocess.run(
-                ["claude", "-p", "--model", model, "--output-format", "json"],
+                cli.argv(model),
                 input=prompt,
                 capture_output=True,
                 text=True,
@@ -361,25 +430,36 @@ def run_extraction(
                 cwd=workdir,
             )
         except FileNotFoundError as exc:
-            raise ExtractionError("`claude` CLI not found on PATH") from exc
+            raise ExtractionError(
+                f"`{cli.binary}` CLI not found on PATH — required to distill "
+                f"{cli.harness} sessions"
+            ) from exc
         except subprocess.TimeoutExpired as exc:
             raise ExtractionError(f"extraction timed out after {timeout}s") from exc
 
     if proc.returncode != 0:
         stderr = proc.stderr.strip()[:500]
-        raise ExtractionError(f"claude -p exited {proc.returncode}: {stderr}")
+        hint = f" ({_MODEL_HINT})" if cli.harness == "cursor" else ""
+        raise ExtractionError(
+            f"{cli.binary} -p --model {model} exited {proc.returncode}{hint}: {stderr}"
+        )
 
     try:
         envelope = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise ExtractionError(f"unparseable claude -p output: {proc.stdout[:200]}") from exc
+        raise ExtractionError(
+            f"unparseable {cli.binary} -p output: {proc.stdout[:200]}"
+        ) from exc
 
     if envelope.get("is_error"):
-        raise ExtractionError(f"claude -p reported an error: {envelope.get('result', '')[:300]}")
+        raise ExtractionError(
+            f"{cli.binary} -p reported an error: {envelope.get('result', '')[:300]}"
+        )
 
+    cost = float(envelope.get("total_cost_usd") or 0.0) if cli.reports_cost else None
     return ExtractionRun(
         text=envelope.get("result", ""),
-        cost_usd=float(envelope.get("total_cost_usd") or 0.0),
+        cost_usd=cost,
         duration_ms=int(envelope.get("duration_ms") or 0),
     )
 

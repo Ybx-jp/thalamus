@@ -168,7 +168,7 @@ thalamus init --check              # verify an existing install without writing
 thalamus bootstrap                 # list session transcripts available to ingest
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
 thalamus extract                   # bootstrap stage 2: Claims + Threads via a model
-thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log
+thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log via `agent -p`
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus contract check            # audit the live graph against the contract
 thalamus ingest <url|file>         # feed one document to an expert (dry-run; --write to persist)
