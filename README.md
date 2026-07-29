@@ -206,8 +206,16 @@ thalamus eval rakes                # solved problems later sessions could have r
 thalamus eval rake-audit           # draw/score the hand-audited precision sample
 ```
 
-The graph lives in the named `thalamus-graph-data` Docker volume and survives
-restarts. Don't `docker compose down -v` unless you mean to delete it.
+**The graph is never shipped. Every install starts empty, for everyone.** It is
+one operator's session history — what they worked on, what they decided, and the
+retained transcripts underneath it — so there is no seed graph, no export, and no
+fixture corpus in this repo. The graph lives in the named `thalamus-graph-data`
+Docker volume and the evidence archive in `~/.thalamus/archive`; both sit outside
+the tree by construction, and `.gitignore` guards the paths anyway. A fresh graph
+reporting zero vertices is the normal starting state, and `thalamus init --check`
+says so rather than flagging it.
+
+Don't `docker compose down -v` unless you mean to delete it.
 
 TinkerGraph holds the graph in memory and writes it back only on a clean
 shutdown, so every write path flushes to disk when it finishes and `thalamus

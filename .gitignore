@@ -1,6 +1,21 @@
 # Signed database licence files — NEVER commit.
 config/features.conf
 
+# The graph and the evidence archive are PRIVATE and are NEVER shipped. Every
+# install is fresh, for everyone: the graph is one operator's session history,
+# and the archive holds their retained transcripts verbatim. Both live outside
+# the tree by design (a named Docker volume; ~/.thalamus/), so these patterns
+# guard against a stray `snapshot --path ./…` or a hand-copied archive rather
+# than against normal operation.
+# Anchored on purpose: an unanchored `archive/` would swallow the archive
+# *module* under src/, and `thalamus-graph*` would swallow the server's
+# config/thalamus-graph.groovy. Both are tracked code.
+*.kryo
+*.gryo
+/thalamus-graph-data/
+/archive/
+/.thalamus/
+
 # Python
 __pycache__/
 *.pyc

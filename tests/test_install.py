@@ -364,3 +364,53 @@ class TestVerify:
         monkeypatch.setattr(install, "verify",
                             lambda *a, **k: [install.Check("fake", False, "boom")])
         assert install.run(check_only=True) == 1
+
+
+class TestRuntimeAdvisories:
+    """Install wires configuration; it does not own services or other vendors'
+    binaries. Both gaps here are silent in the Xu et al. sense — an unreachable
+    graph reads as "no memory yet", and a missing CLI surfaces as memory that
+    quietly stopped accumulating, because distillation runs detached — so they
+    are reported with the command that fixes them and never fail the install."""
+
+    def test_an_unreachable_graph_is_advisory_and_says_how_to_start_it(self, monkeypatch):
+        monkeypatch.setenv("THALAMUS_GRAPH_URL", "ws://localhost:9/gremlin")
+        graph = [c for c in install.verify_runtime(("claude",)) if c.name == "graph reachable"][0]
+        assert not graph.ok and graph.advisory
+        assert "docker compose up -d" in graph.detail
+
+    def test_an_empty_graph_is_not_a_fault(self, monkeypatch):
+        """Every install is fresh — the graph is one operator's private history and
+        is never shipped, so zero vertices is the normal starting state."""
+        monkeypatch.setattr(install, "_probe_graph",
+                            lambda url: (True, "0 vertices at " + url + " (fresh)"))
+        graph = [c for c in install.verify_runtime(("claude",)) if c.name == "graph reachable"][0]
+        assert graph.ok
+
+    def test_a_missing_agent_cli_is_advisory_per_harness(self, monkeypatch):
+        monkeypatch.setattr(install.shutil, "which", lambda b: None)
+        monkeypatch.setattr(install, "_probe_graph", lambda url: (True, "ok"))
+        clis = [c for c in install.verify_runtime(("claude", "cursor"))
+                if c.name.endswith("distillation CLI")]
+        assert len(clis) == 2
+        assert all(c.advisory and not c.ok for c in clis)
+        assert any("`agent` not on PATH" in c.detail for c in clis)
+
+    def test_advisories_do_not_fail_the_install(self, sandbox, monkeypatch):
+        """A machine whose containers are not up yet is still a machine worth
+        wiring; refusing would be the wrong end of the trade."""
+        monkeypatch.setattr(install, "verify", lambda *a, **k: [
+            install.Check("hook scripts present", True, "all found"),
+            install.Check("graph reachable", False, "down", advisory=True),
+        ])
+        assert install.run(check_only=True) == 0
+
+    def test_a_real_check_failure_still_fails(self, sandbox, monkeypatch):
+        monkeypatch.setattr(install, "verify",
+                            lambda *a, **k: [install.Check("hook scripts present", False, "gone")])
+        assert install.run(check_only=True) == 1
+
+    def test_a_malformed_graph_url_is_reported_not_raised(self):
+        assert install._split_ws("not-a-url") == ("not-a-url", 8182)
+        assert install._split_ws("ws://:8182/gremlin") == (None, 0)
+        assert install._split_ws("ws://host:notaport/g") == (None, 0)

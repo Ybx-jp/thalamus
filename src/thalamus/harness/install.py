@@ -49,10 +49,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from thalamus.harness import agents
 from thalamus.harness.agents import HARNESSES as AGENT_HARNESSES
 from thalamus.harness.pin import PROJECT_ROOT, USER_AGENTS_DIR, write_all_agents
 
@@ -121,13 +124,23 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
 
 @dataclass
 class Check:
-    """One verification result. `ok=False` is a refusal to claim an install works."""
+    """One verification result. `ok=False` is a refusal to claim an install works.
+
+    `advisory` marks a finding about the *environment* rather than the install:
+    a graph that is not running, a coding-agent CLI that is not present. Install
+    wires configuration; it does not own services or other vendors' binaries, so
+    it reports those with the command that fixes them and leaves the exit code
+    alone. Failing on them would make `thalamus init` refuse to wire a machine
+    for the entirely ordinary reason that its containers are not up yet.
+    """
     name: str
     ok: bool
     detail: str
+    advisory: bool = False
 
     def render(self) -> str:
-        return f"  {'✓' if self.ok else '✗'} {self.name}: {self.detail}"
+        mark = "✓" if self.ok else ("!" if self.advisory else "✗")
+        return f"  {mark} {self.name}: {self.detail}"
 
 
 def _load_json(path: Path) -> dict:
@@ -417,6 +430,111 @@ def link_skills(dry_run: bool = False) -> list[str]:
     return actions
 
 
+def graph_url() -> str:
+    return os.environ.get("THALAMUS_GRAPH_URL", "ws://localhost:8182/gremlin")
+
+
+def verify_runtime(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
+    """Advisory checks on the things install wires *toward* but does not own.
+
+    Both failures here are silent in exactly the way the rest of this module
+    guards against. A graph that is not running does not announce itself at
+    install time — the first symptom is a recall that returns nothing, which
+    reads as "no memory yet" rather than as an error. A missing coding-agent CLI
+    is worse: distillation runs detached from SessionEnd, so its absence surfaces
+    as memory that quietly stopped accumulating. Neither is checked anywhere else,
+    and neither is a reason to refuse to wire the machine — so they report, with
+    the command that fixes them, and leave the exit code alone.
+    """
+    checks: list[Check] = []
+    url = graph_url()
+
+    reachable, detail = _probe_graph(url)
+    if not reachable:
+        detail = (
+            f"{detail} — start it with `docker compose up -d` in {PROJECT_ROOT}, "
+            "then re-run `thalamus init --check`"
+        )
+    checks.append(Check("graph reachable", reachable, detail, advisory=True))
+
+    # One CLI per harness being installed. `agent` missing on a box without
+    # Cursor is expected and not a fault, which is why this is advisory even
+    # when the harness is being wired: the config is still correct, and it
+    # starts working the day the binary appears.
+    for harness in harnesses:
+        cli = agents.cli_for(harness)
+        found = shutil.which(cli.binary)
+        checks.append(Check(
+            f"{harness} distillation CLI",
+            found is not None,
+            f"`{cli.binary}` at {found}" if found else
+            f"`{cli.binary}` not on PATH — {harness} sessions will retrieve and "
+            f"trace but never distill (install it, or extract with "
+            f"`--harness {'cursor' if harness == 'claude' else 'claude'}`)",
+            advisory=True,
+        ))
+
+    return checks
+
+
+def _probe_graph(url: str) -> tuple[bool, str]:
+    """Reachable, and answering? Exercised the real way, but bounded.
+
+    Two stages because they fail differently and only one of them can hang: a
+    closed port is settled by a 2s TCP connect, and only once something is
+    listening is a real traversal worth attempting. The traversal runs in a
+    subprocess so a peer that accepts the connection and then never completes the
+    websocket handshake costs a timeout rather than a wedged install.
+
+    A graph with zero vertices is a **pass**: every install is fresh, the graph is
+    private to its operator and is never shipped, so an empty one is the normal
+    starting state rather than a fault.
+    """
+    host, port = _split_ws(url)
+    if host is None:
+        return False, f"could not parse a host:port out of {url}"
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(2.0)
+        if probe.connect_ex((host, port)) != 0:
+            return False, f"nothing listening on {host}:{port}"
+
+    script = (
+        "import sys;"
+        "from thalamus.substrate.writer import connect, close_connection;"
+        "g = connect(sys.argv[1]);"
+        "n = g.V().count().next();"
+        "close_connection(g);"
+        "print(n)"
+    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", script, url],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"{host}:{port} accepted a connection but did not answer ({exc})"
+
+    if proc.returncode != 0:
+        return False, f"{host}:{port} refused the query: {proc.stderr.strip()[-160:]}"
+
+    count = proc.stdout.strip()
+    fresh = " (fresh — every install starts empty)" if count == "0" else ""
+    return True, f"{count} vertices at {url}{fresh}"
+
+
+def _split_ws(url: str) -> tuple[str | None, int]:
+    """host/port out of ws://host:port/path, without importing a URL parser."""
+    rest = url.split("://", 1)[-1].split("/", 1)[0]
+    host, _, port = rest.partition(":")
+    if not host:
+        return None, 0
+    try:
+        return host, int(port or 8182)
+    except ValueError:
+        return None, 0
+
+
 def verify_cursor() -> list[Check]:
     """Exercise the Cursor leg the way the Claude Code leg is exercised.
 
@@ -542,6 +660,8 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     if "cursor" in harnesses:
         checks.extend(verify_cursor())
 
+    checks.extend(verify_runtime(harnesses))
+
     return checks
 
 
@@ -645,7 +765,14 @@ def run(dry_run: bool = False, check_only: bool = False,
     for c in checks:
         print(c.render())
 
-    failed = [c for c in checks if not c.ok]
+    advisories = [c for c in checks if c.advisory and not c.ok]
+    if advisories:
+        print(f"\n{len(advisories)} advisory finding(s) — the install is wired, "
+              "but these must be true before it does anything:")
+        for c in advisories:
+            print(f"  ! {c.name}: {c.detail}")
+
+    failed = [c for c in checks if not c.ok and not c.advisory]
     if failed:
         print(f"\n{len(failed)} check(s) FAILED — the harness will not arm correctly.")
         return 1

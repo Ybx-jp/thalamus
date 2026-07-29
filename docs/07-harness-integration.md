@@ -322,6 +322,26 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    without writing; `--check` verifies an existing install. Arming is
    per-process, so existing sessions need a relaunch.
 
+   Install **reports on the environment, never changes it.** Two things it wires
+   toward but does not own — a running graph and a coding-agent CLI on PATH — are
+   checked and reported as *advisories*: the finding, plus the command that fixes
+   it, and no effect on the exit code. Both are otherwise silent in the Xu et al.
+   sense and neither was checked anywhere before. An unreachable graph surfaces as
+   a recall that returns nothing, which reads as "no memory yet" rather than as an
+   error; a missing CLI surfaces as memory that quietly stopped accumulating,
+   because distillation runs detached from SessionEnd. Neither is a reason to
+   refuse to wire a machine, and a tool that silently started containers would be
+   harder to trust than one that says what to run. **A graph with zero vertices
+   passes** — see below.
+
+   **The graph is never shipped.** It holds one operator's session history, and
+   the archive holds their transcripts verbatim, so there is no seed graph, no
+   export path and no fixture corpus: every install is fresh, for everyone. An
+   empty graph is therefore the normal starting state rather than a fault, and
+   the advisory says so. Both stores live outside the checkout by construction (a
+   named Docker volume; `~/.thalamus/`), with `.gitignore` guarding the paths
+   against a stray `snapshot --path ./…` or a hand-copied archive.
+
    The same command installs **Cursor** (`--harness claude|cursor|both`,
    default both): `~/.cursor/hooks.json` and the `thalamus` server in
    `~/.cursor/mcp.json`, with the checkout's project-scope copies stripped. The
