@@ -134,6 +134,66 @@ coupling itself — a server-minted, single-use ticket where record-creation and
 authority-grant are the same act ("not found in the 2026 scan", provisional; see
 [11-related-work.md](11-related-work.md) §4).
 
+## What an expert knows about its own corpus
+
+**Status: designed, not built.** An expert scope can currently answer "what does the
+corpus say about X" by lexical recall over claims. It cannot answer "how does each
+ingested document bear on this scope" — that is a query-focused summarization
+question over the whole corpus, not a retrieval question, and no amount of better
+matching answers it (arXiv 2404.16130; see [11](11-related-work.md) §3e). The answer
+is precomputation.
+
+**Standing concerns are tier-0.** Each expert manifest declares a versioned list of
+the concerns its scope exists to serve. This is the *fixed query* that per-document
+summaries are written against, and it lives in `config/experts/<scope>.yaml` for the
+same reason every other curation decision does — no feed or model can write it.
+
+**Contributions are sparse (document × concern).** For each Source, one
+`Contribution` node per concern it actually bears on — typically one to three, never
+the full cross product. Each carries what the document establishes for that concern
+*and what it argues against*, `DERIVED_FROM` its Source and `BEARS_ON` its Concern.
+Sparseness is a retrieval-cost decision: a document-level summary injected for a
+single-concern question is mostly waste, which is exactly the fan-out the eval loop
+prices (lab/006–007).
+
+**Entities stay the cross-concern layer.** GraphRAG detects entity communities
+because its corpora are too large to curate; [06](06-ingestion.md)'s entity-hygiene
+rule already makes shared entities the linking discipline at ingest, so the
+clustering communities are detected *for* comes free here. This scope does not run
+community detection — see [11](11-related-work.md) §3e for why the mechanism does not
+transfer at this corpus size.
+
+**Two retrieval surfaces**, mirroring the local/global split:
+- **Local** — an anchor document to its contributions, one hop. "What does this paper
+  give us, and where does it cut against us."
+- **Global** — a concern to every contribution bearing on it, reduced into an answer.
+  Same map-reduce shape as GraphRAG, except the map is precomputed at curation time
+  and the reduce runs over an already-relevant sparse set.
+
+**Recompute is a separate pass**, not an ingest hook: ingestion stays the smallest
+component in the system ([06](06-ingestion.md)), and a concern-list revision
+invalidates summaries that an ingest-time hook could never revisit. Staleness is a
+version comparison — `(concern_list_version, source_version)` — chosen because it is
+cheap and legible, and flagged as **ungrounded**: the literature covers accumulating
+and retrieving state far more than governing or relinquishing it (arXiv 2606.30306),
+so this policy is measurable but not anchored.
+
+### Briefs are authored here
+
+A readiness brief ([the advisor](../CLAUDE.md) runs after a design is settled, never
+before) is written **by the literature expert under a consultation ticket**, from the
+anchors' contribution nodes plus the exchange record that settled the design. It
+lands as a node in the expert's own scope and renders to a file in the teach
+workspace for reading.
+
+Its trust tier falls out of an existing rule rather than a new one: derived from
+tier-2 content, it stays tier-2 ([05](05-trust-model.md)), so a brief *informs, it
+never instructs* — the correct register for a teaching artifact, and the mechanical
+reason a brief cannot change a design. The authorship separation is the point. The
+session that made the design decision supplies the anchor list and the exchange id;
+it does not write the prose, so a brief cannot quietly teach the decision in place of
+the literature the decision rests on.
+
 ## Roster discipline
 
 - The roster ([08](08-roster-candidates.md) records each selection) is two
