@@ -55,7 +55,7 @@ def main():
     bootstrap_parser.add_argument(
         "projects",
         nargs="*",
-        help="Claude Code project dir names (e.g. -home-ybx-code-thalamus). "
+        help="Claude Code project dir names (e.g. -home-you-code-thalamus). "
         "Omit to list what is available.",
     )
     bootstrap_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")

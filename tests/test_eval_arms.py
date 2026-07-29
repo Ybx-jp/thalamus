@@ -661,8 +661,11 @@ class TestWorktreeEscapeDetection:
     below are those arms' shapes, not invented ones.
     """
 
-    REPO = Path("/home/ybx/code/thalamus")
-    WORKTREE = Path("/home/ybx/.thalamus/counterfactuals/wt/task--memory-off--x")
+    # Synthetic roots. Detection compares prefixes, so the only thing that has
+    # to be real is the *shape*: an arm worktree named task--arm--id, and a
+    # checkout it must never reach into.
+    REPO = Path("/repo/thalamus")
+    WORKTREE = Path("/wt/task--memory-off--x")
 
     def _transcript(self, *calls):
         lines = []
@@ -682,8 +685,8 @@ class TestWorktreeEscapeDetection:
 
     def test_reading_the_task_file_is_an_answer_key_escape(self):
         escapes = self._detect(self._transcript(
-            ("Read", {"file_path": "/home/ybx/code/thalamus/config/tasks/"
-                                   "arm-runner-session-death-classification.yaml"}),
+            ("Read", {"file_path": str(
+                self.REPO / "config/tasks/arm-runner-session-death-classification.yaml")}),
         ))
         assert len(escapes) == 1
         assert escapes[0]["kind"] == "answer_key"
@@ -692,7 +695,7 @@ class TestWorktreeEscapeDetection:
 
     def test_other_reads_of_the_live_checkout_are_the_weaker_class(self):
         escapes = self._detect(self._transcript(
-            ("Read", {"file_path": "/home/ybx/code/thalamus/lab/019-x.md"}),
+            ("Read", {"file_path": str(self.REPO / "lab/019-x.md")}),
         ))
         assert [e["kind"] for e in escapes] == ["operator_repo"]
 
@@ -714,12 +717,12 @@ class TestWorktreeEscapeDetection:
 
     def test_bash_reads_of_the_answer_key_are_caught_too(self):
         escapes = self._detect(self._transcript(
-            ("Bash", {"command": "cat /home/ybx/code/thalamus/config/tasks/t.yaml"}),
+            ("Bash", {"command": f"cat {self.REPO}/config/tasks/t.yaml"}),
         ))
         assert [e["kind"] for e in escapes] == ["answer_key"]
 
     def test_repeated_reads_collapse_to_one_finding(self):
-        path = "/home/ybx/code/thalamus/config/tasks/t.yaml"
+        path = str(self.REPO / "config/tasks/t.yaml")
         escapes = self._detect(self._transcript(
             ("Read", {"file_path": path}), ("Read", {"file_path": path}),
         ))
@@ -732,8 +735,8 @@ class TestWorktreeEscapeDetection:
         """The third lab/020 escape, which the write-up did not report: an arm
         ran the live `arms.py`, which at HEAD already carries the fix."""
         transcript = self._transcript(
-            ("Bash", {"command": "grep -n classify /home/ybx/code/thalamus/"
-                                 "src/thalamus/eval/arms.py"}),
+            ("Bash", {"command":
+                f"grep -n classify {self.REPO}/src/thalamus/eval/arms.py"}),
         )
         weak = arms.detect_worktree_escape(transcript, self.WORKTREE, self.REPO)
         assert [e["kind"] for e in weak] == ["operator_repo"]
@@ -821,8 +824,9 @@ class TestSelfLeakingTaskRefusal:
 class TestSandboxConfinement:
     """Properties verified live against the built image before these were written."""
 
-    WT = Path("/home/ybx/.thalamus/counterfactuals/wt/t--memory-on--x")
-    HOME = Path("/home/ybx/.thalamus/counterfactuals/wt/t--memory-on--x--home")
+    REPO = Path("/repo/thalamus")
+    WT = Path("/wt/t--memory-on--x")
+    HOME = Path("/wt/t--memory-on--x--home")
 
     def _argv(self, **kw):
         return arms.sandbox_argv(self.WT, self.HOME, **kw)
@@ -830,7 +834,7 @@ class TestSandboxConfinement:
     def test_the_operators_checkout_is_never_mounted(self):
         """The whole point: the paths lab/020's arms read must not exist."""
         mounts = [a for a in self._argv() if ":" in a and a.count("/") > 1]
-        assert not any("/home/ybx/code/thalamus" in m for m in mounts)
+        assert not any(str(self.REPO) in m for m in mounts)
 
     def test_the_arm_checkout_and_home_are_mounted(self):
         argv = self._argv()

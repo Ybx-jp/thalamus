@@ -21,7 +21,8 @@ import yaml
 from thalamus.eval import rescore
 from thalamus.eval.cost import project_slug
 
-REPO = Path("/home/ybx/code/thalamus")
+# Synthetic. Rescoring reads the transcript's recorded paths, never the disk.
+REPO = Path("/repo/thalamus")
 
 
 @pytest.fixture
