@@ -190,8 +190,9 @@ drift class, and is the first thing to build here if anything is.
 
 ### Briefs are authored here
 
-A readiness brief ([the advisor](../CLAUDE.md) runs after a design is settled, never
-before) is written **by the literature expert under a consultation ticket**, from the
+A readiness brief (the operator-fluency advisor runs after a design is settled, never
+before; it lives at user scope, outside this repo, because it holds personal coursework
+state) is written **by the literature expert under a consultation ticket**, from the
 anchors' claims, the questions those claims have previously been cited to answer, and
 the exchange record that settled the design in hand. It lands as a node in the
 expert's own scope and renders to a file in the teach workspace for reading. Nothing
