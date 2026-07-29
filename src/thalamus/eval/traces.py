@@ -95,6 +95,14 @@ class TraceEvent:
     # The pin the tap recorded (docs/07 "the process is the pin"). Empty on lines
     # written before the hook carried it; sync validates it like any other hint.
     scope: str = ""
+    # Which agent context made the call. A subagent's calls carry the harness's
+    # agent id and type; the main loop's carry neither, so **empty means the session
+    # itself called** (measured 2026-07-28 — a subagent shares its parent's
+    # session_id, so this is the only field that separates them). `None` means the
+    # tap line predates these fields, which is a different fact from "the main loop
+    # called" and must never collapse into it.
+    agent_id: str | None = None
+    agent_type: str | None = None
 
     def trace_id(self) -> str:
         """Content-addressed identity, so re-syncing the tap converges instead of duplicating."""
@@ -263,4 +271,6 @@ def _parse_line(line: str) -> TraceEvent | None:
         tool_input=tool_input if isinstance(tool_input, dict) else {},
         tool_response=tool_response,
         scope=record.get("scope") or "",
+        agent_id=record.get("agent_id"),
+        agent_type=record.get("agent_type"),
     )

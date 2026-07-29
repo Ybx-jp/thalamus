@@ -43,6 +43,8 @@ printf '%s' "$input" | jq -c \
     cwd: (.cwd // ""),
     tool_name: (.tool_name // ""),
     tool_input: (.tool_input // {}),
-    tool_response: (.tool_response // "")}' >> "$trace_file"
+    tool_response: (.tool_response // ""),
+    agent_id: (.agent_id // ""),
+    agent_type: (.agent_type // "")}' >> "$trace_file"
 
 exit 0

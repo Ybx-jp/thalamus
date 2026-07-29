@@ -21,8 +21,9 @@ from thalamus.contract.ontology import NODES_BY_LABEL, vid
 from thalamus.eval.attribution import attribute, outputs_after
 from thalamus.eval.traces import TraceEvent, load_events
 from thalamus.harness.consultation import exchange_vid as _consultation_exchange_vid
+from thalamus.substrate.reader import load_exchange
 from thalamus.substrate.schema import Provenance, Tier
-from thalamus.substrate.writer import _ensure_edge, write_trace
+from thalamus.substrate.writer import _ensure_edge, close_exchange, write_trace
 
 logger = logging.getLogger(__name__)
 
@@ -172,12 +173,65 @@ def _land_event(
             # see its caller's session (lab/001), but the tap records the ticket, so
             # sync is where the consulting Session and its Exchange finally meet.
             _ensure_edge(g, session_vid, exchange_vid, "CONSULTS")
+            _stamp_answering_context(g, exchange_vid, event)
 
     outcome.written += 1
     if event.is_miss():
         outcome.misses += 1
     if event.is_rejected():
         outcome.rejected += 1
+
+
+def answering_context(agent_type: str | None, expert: str) -> str:
+    """How independent the answer was from the session that asked for it.
+
+    The consultation protocol says to spawn a subagent voicing the expert (docs/02),
+    and the citation gate enforces that the answer rests on the expert's own memory.
+    What the gate cannot see is *who assembled it*: a session that answers its own
+    ticket inline produces a byte-identical Exchange record to one a subagent voiced,
+    so "the expert said so" and "I said so under a ticket" were indistinguishable in
+    the graph. Measured 2026-07-28: a subagent shares its parent's `session_id`, so
+    the tap's agent fields are the only signal that separates them.
+
+    - `voiced` — a subagent running the consulted expert's own agent definition.
+    - `self` — the asking context answered its own ticket. Still validly cited, but
+      the independence the protocol asks for was not obtained.
+    - `agent:<type>` — some other subagent; independent of the main loop, but not
+      the expert's persona.
+    - `unknown` — the tap line predates the agent fields. Never collapsed into
+      `self`: "we did not record it" is not "the main loop did it".
+    """
+    if agent_type is None:
+        return "unknown"
+    if not agent_type:
+        return "self"
+    return "voiced" if agent_type == f"thalamus-{expert}" else f"agent:{agent_type}"
+
+
+def _stamp_answering_context(
+    g: GraphTraversalSource, exchange_vid: str, event: TraceEvent
+) -> None:
+    """Record on the Exchange whether a subagent voiced the expert or the asker self-answered.
+
+    Only the closing call carries this fact — recalls under the ticket may legitimately
+    come from either context, and it is the *answer's* provenance that matters.
+    """
+    if event.tool != "consult_answer":
+        return
+    exchange = load_exchange(g, exchange_vid)
+    if exchange is None:
+        return
+    close_exchange(
+        g,
+        exchange_vid,
+        {
+            "answered_from": answering_context(
+                event.agent_type, exchange.get("expert") or ""
+            ),
+            "answered_by_agent_type": event.agent_type or "",
+        },
+        citation_refs=[],
+    )
 
 
 def _exchange_vid(g: GraphTraversalSource, event: TraceEvent) -> str | None:

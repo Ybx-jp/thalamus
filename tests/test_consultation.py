@@ -22,6 +22,7 @@ from gremlin_python.process.traversal import Merge, T
 from thalamus.contract.manifest import ExpertManifest
 from thalamus.eval.traces import TraceEvent
 from thalamus.harness import consultation
+from thalamus.eval.sync import answering_context
 from thalamus.harness.consultation import (
     consult_answer,
     consult_request,
@@ -458,3 +459,67 @@ def test_exchange_ids_rendered_in_responses_are_trace_extractable():
     )
 
     assert event.returned_node_ids() == ["scope:main:exchange:abcd1234"]
+
+
+def test_answering_context_separates_a_voiced_expert_from_a_self_answer():
+    """
+    Scenario: The same exchange is closed from four different calling contexts
+
+    The citation gate proves an answer rests on the expert's own memory; it cannot
+    prove *who assembled it*. A session that answers its own ticket inline writes a
+    byte-identical Exchange record to one a subagent voiced, so the independence the
+    protocol asks for was unauditable. Measured 2026-07-28: a subagent shares its
+    parent's session_id, so the tap's agent_type is the only separating signal.
+
+    `unknown` is pinned separately from `self` on purpose — a trace written before
+    the tap kept the field records no fact about who answered, and collapsing that
+    into "the main loop did it" would manufacture provenance, the failure the
+    retroactive-stamp rule (decision log 2026-07-27) exists to prevent.
+    """
+    assert answering_context("thalamus-literature", "literature") == "voiced"
+    assert answering_context("", "literature") == "self"
+    assert answering_context("general-purpose", "literature") == "agent:general-purpose"
+    assert answering_context(None, "literature") == "unknown"
+
+    # The expert's own agent definition is scope-specific: a subagent voicing a
+    # *different* expert is independent of the main loop but is not this expert.
+    assert answering_context("thalamus-eval-methodology", "literature") == (
+        "agent:thalamus-eval-methodology"
+    )
+
+
+def test_trace_event_preserves_absent_agent_fields_as_none():
+    """
+    Scenario: Tap lines written before and after the agent fields existed
+
+    An absent field and an empty field are different facts — empty means the main
+    loop called, absent means the tap did not record it. `or ""` on the read path
+    would fuse them and silently backdate every legacy consultation to `self`.
+    """
+    import json
+
+    from thalamus.eval.traces import _parse_line
+
+    legacy = _parse_line(json.dumps(
+        {
+            "ts": "2026-07-15T00:00:00Z",
+            "session_id": "s",
+            "tool_name": "mcp__thalamus__consult_answer",
+            "tool_input": {"ticket": "t1"},
+            "tool_response": "closed",
+        }
+    ))
+    assert legacy is not None and legacy.agent_type is None
+
+    main_loop = _parse_line(json.dumps(
+        {
+            "ts": "2026-07-28T00:00:00Z",
+            "session_id": "s",
+            "tool_name": "mcp__thalamus__consult_answer",
+            "tool_input": {"ticket": "t1"},
+            "tool_response": "closed",
+            "agent_id": "",
+            "agent_type": "",
+        }
+    ))
+    assert main_loop is not None and main_loop.agent_type == ""
