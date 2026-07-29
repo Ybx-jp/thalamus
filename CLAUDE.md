@@ -63,6 +63,9 @@ so the doc and the memory stay in step.
 - `.claude/skills/*` are **symlinks** into `src/thalamus/harness/skills/` — the skills
   ship with the package. Editing through the symlink works; `git add` on that path
   fails ("beyond a symbolic link"). Stage the real path under `src/`.
+  `thalamus init` links the same directories into `~/.claude/skills/` so they arm in
+  sessions opened outside the checkout; both scopes point at the one copy under `src/`,
+  so a single edit serves every session and there is nothing to keep in sync.
 
 ## Verification
 

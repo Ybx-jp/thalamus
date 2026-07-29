@@ -146,8 +146,18 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    handlers by command string, but the two cannot be textually identical — the
    whole point is that one stops using `$CLAUDE_PROJECT_DIR` — and the docs do
    not state whether hook arrays across scopes merge or override. Mutual
-   exclusion keeps that undocumented behaviour off the critical path. Install is
-   idempotent, leaves non-Thalamus hooks and unrelated settings alone, and ends
+   exclusion keeps that undocumented behaviour off the critical path. It also
+   links the package's skills into `~/.claude/skills/`, because a session opened
+   elsewhere otherwise gets the hooks, the server and the agents but none of
+   `recall-strategy`, `ground-in-literature` or `gremlin-python` — the three that
+   govern how it queries the graph and grounds a design, and whose absence is
+   silent. Skills are the one artifact **not** made mutually exclusive: both
+   scopes are symlinks onto the same package directory, so they are not rival
+   definitions, and keeping the checkout's links means a fresh clone has its
+   skills before `init` has run. A user-scope name that is not our symlink is
+   left untouched, and prompt templates without frontmatter (`extract-session`)
+   are not installed as skills. Install is idempotent, leaves non-Thalamus hooks
+   and unrelated settings alone, and ends
    by **exercising** what it wired rather than asserting it (see
    [11 §2a0](11-related-work.md) — these are latent configuration errors, inert
    until an event fires, and SessionEnd fires detached). `--dry-run` reports

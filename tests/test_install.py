@@ -28,10 +28,12 @@ def sandbox(tmp_path, monkeypatch):
     project_settings = tmp_path / "project" / "settings.json"
     project_mcp = tmp_path / "project" / ".mcp.json"
     agents = tmp_path / "agents"
+    skills = tmp_path / "skills"
     monkeypatch.setattr(install, "USER_SETTINGS", user_settings)
     monkeypatch.setattr(install, "PROJECT_SETTINGS", project_settings)
     monkeypatch.setattr(install, "PROJECT_MCP", project_mcp)
     monkeypatch.setattr(install, "USER_AGENTS_DIR", agents)
+    monkeypatch.setattr(install, "USER_SKILLS_DIR", skills)
     monkeypatch.setattr(install, "write_all_agents", lambda d: d.mkdir(parents=True, exist_ok=True))
     # Never invoke the real `claude mcp add` from a test — it writes the
     # operator's shared ~/.claude.json.
@@ -39,7 +41,7 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(install, "register_mcp",
                         lambda dry_run=False: calls.append(dry_run) or "mcp: stubbed")
     return {"user": user_settings, "project": project_settings,
-            "project_mcp": project_mcp, "mcp_calls": calls}
+            "project_mcp": project_mcp, "mcp_calls": calls, "skills": skills}
 
 
 class TestHookBlock:
@@ -154,6 +156,55 @@ class TestInstall:
             install.install()
 
 
+class TestSkills:
+    """The skills have to arm outside the checkout for the same reason the hooks do.
+
+    A session opened elsewhere gets hooks, MCP and agents; without this it gets no
+    `recall-strategy`, `ground-in-literature` or `gremlin-python`, and that absence
+    never announces itself — it shows up as an uncited design or a lazy traversal.
+    """
+
+    def test_every_shipped_skill_lands_at_user_scope(self, sandbox):
+        install.install()
+        names = {p.name for p in sandbox["skills"].iterdir()}
+        assert names == {p.name for p in install.shipped_skills()}
+        assert {"recall-strategy", "ground-in-literature", "gremlin-python"} <= names
+
+    def test_prompt_templates_are_not_installed_as_skills(self):
+        """`extract-session` is a prompt the extraction pipeline reads, not an
+        invocable skill — it has no frontmatter, and installing it would
+        advertise something no session can call."""
+        assert "extract-session" not in {p.name for p in install.shipped_skills()}
+        assert (install.SKILL_DIR / "extract-session" / "SKILL.md").is_file()
+
+    def test_links_to_the_package_so_one_edit_serves_every_scope(self, sandbox):
+        install.install()
+        for src in install.shipped_skills():
+            dest = sandbox["skills"] / src.name
+            assert dest.is_symlink(), f"{src.name} must be a link, not a copy"
+            assert dest.resolve() == src.resolve()
+
+    def test_a_hand_written_skill_of_the_same_name_is_never_clobbered(self, sandbox):
+        """User scope holds skills we did not write. Destroying one to install
+        ours would be a worse failure than the one being fixed."""
+        victim = sandbox["skills"] / install.shipped_skills()[0].name
+        victim.mkdir(parents=True)
+        (victim / "SKILL.md").write_text("---\nname: mine\n---\nhand written\n")
+        actions, _ = install.install()
+        assert (victim / "SKILL.md").read_text().endswith("hand written\n")
+        assert any("left alone" in a for a in actions), "and it must say so"
+
+    def test_is_idempotent(self, sandbox):
+        install.install()
+        actions, _ = install.install()
+        assert any("already linked" in a for a in actions)
+
+    def test_dry_run_links_nothing(self, sandbox):
+        actions, _ = install.install(dry_run=True)
+        assert any("would link" in a for a in actions)
+        assert not sandbox["skills"].exists()
+
+
 class TestVerify:
     def test_exercises_the_entry_point_rather_than_asserting_it(self, sandbox):
         """PCheck's early-detection idea: run the late usage now. The check must
@@ -165,6 +216,21 @@ class TestVerify:
     def test_reports_missing_agents_rather_than_silently_passing(self, sandbox):
         checks = {c.name: c for c in install.verify()}
         assert not checks["derived agents installed"].ok
+
+    def test_reads_skills_through_the_link_instead_of_trusting_it(self, sandbox):
+        """A dangling symlink passes `.exists()` on the name and fails on the
+        read — which is the moment a real session would have needed it."""
+        install.install()
+        name = install.shipped_skills()[0].name
+        link = sandbox["skills"] / name
+        link.unlink()
+        link.symlink_to(sandbox["skills"] / "gone")
+        check = {c.name: c for c in install.verify()}["skills load at user scope"]
+        assert not check.ok and name in check.detail
+
+    def test_passes_once_the_skills_are_installed(self, sandbox):
+        install.install()
+        assert {c.name: c for c in install.verify()}["skills load at user scope"].ok
 
     def test_run_exits_nonzero_when_a_check_fails(self, sandbox, monkeypatch):
         monkeypatch.setattr(install, "verify",

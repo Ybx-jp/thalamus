@@ -37,6 +37,11 @@ the two definitions cannot be made textually identical (the whole point is that
 one of them stops using `$CLAUDE_PROJECT_DIR`), and the docs do not state
 whether hook arrays across scopes merge or override. Mutual exclusion means that
 undocumented behaviour is not load-bearing either way.
+
+Skills are the exception to that mutual exclusion, because the two scopes are not
+rival definitions: both are symlinks onto the same package directory, so there is
+one source of truth whichever one a session resolves. Keeping the checkout's links
+means a fresh clone has its skills before `thalamus init` has ever run.
 """
 
 from __future__ import annotations
@@ -55,6 +60,8 @@ PROJECT_SETTINGS = PROJECT_ROOT / ".claude" / "settings.json"
 PROJECT_MCP = PROJECT_ROOT / ".mcp.json"
 
 HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "claude-code"
+SKILL_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "skills"
+USER_SKILLS_DIR = Path.home() / ".claude" / "skills"
 
 # The hook wiring, as (event, matcher, script). Matcher None = all tools.
 HOOK_WIRING: list[tuple[str, str | None, str]] = [
@@ -197,6 +204,68 @@ def register_mcp(dry_run: bool = False) -> str:
     return "registered `thalamus` MCP server at user scope (via `claude mcp add`)"
 
 
+def shipped_skills() -> list[Path]:
+    """The invocable skills that travel with the package.
+
+    YAML frontmatter is the discriminator, not the presence of a SKILL.md: this
+    directory also holds prompt templates the pipeline reads directly
+    (`extract-session`, adapted in harness/extraction.py), and installing one as
+    a skill would advertise something no session can invoke.
+    """
+    if not SKILL_DIR.is_dir():
+        return []
+    return sorted(d for d in SKILL_DIR.iterdir()
+                  if (d / "SKILL.md").is_file()
+                  and (d / "SKILL.md").read_text(errors="replace").startswith("---"))
+
+
+def link_skills(dry_run: bool = False) -> list[str]:
+    """Symlink each shipped skill into user scope, so it arms outside the checkout.
+
+    Same reasoning as the hooks: a session opened elsewhere (`thalamus spawn
+    --dir`) gets the hooks, the MCP server and the derived agents, and without
+    this it gets no `recall-strategy`, `ground-in-literature` or
+    `gremlin-python` — the three that govern how it queries the graph and
+    grounds a design. That absence is silent in the Xu et al. sense: nothing
+    errors, the session just writes lazy traversals and uncited designs.
+
+    Symlinks rather than copies, and the checkout's own `.claude/skills` links
+    are left alone: both point at the same package files, so there is exactly
+    one source of truth, an edit lands on every scope at once, and a fresh clone
+    still has its skills before anyone runs `thalamus init`.
+
+    A user-scope name that is *not* our symlink is never touched — that
+    directory holds hand-written skills, and clobbering one to install ours
+    would be a worse failure than the one being fixed.
+    """
+    actions: list[str] = []
+    skills = shipped_skills()
+    if not skills:
+        return [f"no shipped skills found under {SKILL_DIR}"]
+
+    linked, refused = [], []
+    for src in skills:
+        dest = USER_SKILLS_DIR / src.name
+        if dest.is_symlink() and dest.resolve() == src.resolve():
+            continue
+        if dest.exists() or dest.is_symlink():
+            refused.append(f"{src.name} (exists, not ours)")
+            continue
+        linked.append(src.name)
+        if not dry_run:
+            USER_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+            dest.symlink_to(src)
+
+    if linked:
+        actions.append(f"{'would link' if dry_run else 'linked'} {len(linked)} skill(s) into "
+                       f"{USER_SKILLS_DIR}: {', '.join(linked)}")
+    else:
+        actions.append(f"skills already linked at user scope ({USER_SKILLS_DIR})")
+    if refused:
+        actions.append(f"left alone (not installed by us): {', '.join(refused)}")
+    return actions
+
+
 def verify() -> list[Check]:
     """Exercise what would otherwise fail late (PCheck's early-detection idea).
 
@@ -241,6 +310,23 @@ def verify() -> list[Check]:
     agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []
     checks.append(Check("derived agents installed", bool(agents),
                         f"{len(agents)} in {USER_AGENTS_DIR}" if agents else "none written"))
+
+    # Read each skill *through* its user-scope path, the way a session outside
+    # the checkout will. A symlink that exists can still dangle, and a dangling
+    # one is invisible until a design goes ungrounded — so resolve it and read
+    # the frontmatter rather than calling `.exists()` and believing it.
+    unreadable = []
+    for src in shipped_skills():
+        dest = USER_SKILLS_DIR / src.name
+        try:
+            if "name:" not in (dest / "SKILL.md").read_text()[:400]:
+                unreadable.append(f"{src.name} (no frontmatter)")
+        except OSError as exc:
+            unreadable.append(f"{src.name} ({exc.strerror or exc})")
+    checks.append(Check(
+        "skills load at user scope", not unreadable,
+        f"{len(shipped_skills())} readable via {USER_SKILLS_DIR}" if not unreadable
+        else f"unreadable: {unreadable}"))
 
     return checks
 
@@ -304,6 +390,8 @@ def install(dry_run: bool = False) -> tuple[list[str], list[Check]]:
                 PROJECT_MCP.unlink()
     else:
         actions.append("project-scope MCP server already absent")
+
+    actions.extend(link_skills(dry_run=dry_run))
 
     if not dry_run:
         write_all_agents(USER_AGENTS_DIR)
