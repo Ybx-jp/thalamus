@@ -216,7 +216,13 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    session argument is optional and defaults to `$CLAUDE_CODE_SESSION_ID`, the
    harness's own export; with that unset it **refuses** rather than resolving
    from the ledger, since concurrent sessions routinely share a cwd and a
-   "most recent entry here" heuristic reintroduces the wrong-subject bug. It
+   "most recent entry here" heuristic reintroduces the wrong-subject bug. An
+   explicitly-passed id that differs from the live one is refused unless
+   `--other-session` acknowledges it — the mismatch is **detected**, not
+   self-declared, so a caller wrong about its own identity cannot assert its way
+   past it, and acknowledged crossings are stamped `cross_session`. Every row
+   records `by_session`: who performed the correction, not only who it was
+   performed on. It
    **appends, never edits**: the original pin record survives beside the
    correction, because an audit log that can be rewritten cannot audit anything.
    It **refuses once the session has distilled**, since vertex IDs include scope

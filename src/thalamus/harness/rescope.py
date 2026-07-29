@@ -182,6 +182,15 @@ def rescope(session_id: str, scope: str, reason: str = "", agent: str = "",
         "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "reason": reason or f"operator redirected distillation from `{current}` to `{scope}`",
     }
+    # Who performed the correction, not just who it was performed on. The two
+    # spurious rows lab/026 left on another session's ledger were indistinguishable
+    # from operator intent precisely because nothing recorded their author; with
+    # this field that mistake reads as "session X edited session Y" at a glance.
+    by = current_session_id()
+    if by:
+        row["by_session"] = by
+        if by != session_id:
+            row["cross_session"] = True
     if already:
         row["forked_from"] = already
 
@@ -194,10 +203,35 @@ def rescope(session_id: str, scope: str, reason: str = "", agent: str = "",
 
 
 def run(session: str | None, scope: str, reason: str = "", dry_run: bool = False,
-        allow_distilled: bool = False) -> int:
+        allow_distilled: bool = False, other_session: bool = False) -> int:
     try:
         if session:
             session_id = resolve_session(session)
+            # The guard that lab/026 needed. An explicitly-passed id that differs
+            # from the live one is the exact shape of that failure: an agent holding
+            # a plausible UUID from a file path, a transcript, or a recalled memory,
+            # acting on it with confidence. This is checked mechanically rather than
+            # asked of the caller — the harness knows which session is running, so
+            # the override is *detected*, not self-declared, and a caller who is
+            # wrong about its own identity cannot assert its way past it.
+            live = current_session_id()
+            if live and session_id != live and not other_session:
+                print(
+                    f"Refused: you passed session {session_id[:8]}, but this process is "
+                    f"running inside {live[:8]}.\n"
+                    f"  If you meant this session, drop the argument — it defaults to the "
+                    f"live one.\n"
+                    f"  If you really mean to rescope a DIFFERENT session, pass "
+                    f"--other-session to say so deliberately.\n"
+                    f"  Before you do: is {session_id[:8]} an id you were told, or one you "
+                    f"inferred from a path, a transcript, or a recalled memory? lab/026 is "
+                    f"what inferring it cost — a real, adjacent, same-scope session got two "
+                    f"rows it never earned."
+                )
+                return 1
+            if live and session_id != live:
+                print(f"CAUTION: rescoping {session_id[:8]}, which is NOT this session "
+                      f"({live[:8]}). Recorded as cross_session in the ledger.")
         else:
             session_id = current_session_id()
             if not session_id:

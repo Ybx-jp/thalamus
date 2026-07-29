@@ -132,6 +132,18 @@ the assertion passed, about the wrong thing.
   and marks it authoritative, because the failure mode is a *competing plausible
   UUID*: merely mentioning the id would not have outranked one inferred from a
   real file path.
+- **Shipped:** passing a session id that differs from the live one is **refused**
+  unless `--other-session` acknowledges it, and the mismatch is *detected* from
+  `$CLAUDE_CODE_SESSION_ID` rather than taken on trust — a caller wrong about its
+  own identity cannot assert its way past a check it does not perform. The
+  refusal names both ids and asks the question that would have stopped this
+  incident: *were you told this id, or did you infer it?* Acknowledged crossings
+  are stamped `cross_session` in the row.
+- **Shipped:** every rescope row now carries `by_session` — who performed the
+  correction, not just who it was performed on. The two spurious rows on
+  `7f815861` read as operator intent only because nothing recorded their author;
+  with this field the same mistake reads as "session X edited session Y" at a
+  glance, which is the difference between a discoverable error and a silent one.
 - **Open:** nothing detects a session reasoning about a session id that is not its
   own. The trace tap holds the evidence — the tap keys every record by the id the
   *harness* reports, which is authoritative — but nothing compares that against ids

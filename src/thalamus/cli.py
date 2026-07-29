@@ -421,6 +421,12 @@ def main():
         "--dry-run", action="store_true", help="Report the correction without appending it"
     )
     rescope_parser.add_argument(
+        "--other-session", action="store_true",
+        help="Acknowledge that the session argument names a DIFFERENT session than the "
+             "one running. Required whenever they differ; the mismatch is detected from "
+             "$CLAUDE_CODE_SESSION_ID, not taken on trust (lab/026)"
+    )
+    rescope_parser.add_argument(
         "--allow-distilled", action="store_true",
         help="Override the already-distilled refusal. Forks the session's identity across "
              "scopes (vertex IDs include scope); the original vertex is left stale."
@@ -1233,7 +1239,8 @@ def _cmd_rescope(args):
     from thalamus.harness.rescope import run
 
     sys.exit(run(args.session, args.scope, reason=args.reason,
-                 dry_run=args.dry_run, allow_distilled=args.allow_distilled))
+                 dry_run=args.dry_run, allow_distilled=args.allow_distilled,
+                 other_session=args.other_session))
 
 
 def _cmd_pin(args):

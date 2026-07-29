@@ -29,6 +29,10 @@ def ledger(tmp_path, monkeypatch):
     ) + "\n")
     monkeypatch.setattr(R, "PINS_FILE", path)
     monkeypatch.setattr(R, "distilled_scopes", lambda sid, g=None: [])
+    # Hermetic identity. Without this the real session's CLAUDE_CODE_SESSION_ID
+    # leaks in and the foreign-session guard fires against the fixture's id —
+    # tests would then pass or fail depending on who ran them and from where.
+    monkeypatch.setenv(R.SESSION_ID_ENV, SID)
     return path
 
 
@@ -133,10 +137,61 @@ class TestCurrentSession:
         assert R.run(None, "main") == 1
         assert len(rows_for(ledger)) == 1, "a refusal must not write"
 
-    def test_an_explicit_session_still_wins(self, ledger, monkeypatch):
+    def test_an_explicit_session_wins_only_when_acknowledged(self, ledger, monkeypatch):
+        """An explicit id no longer silently overrides the live one — that was
+        the hole. It wins, but only once the caller says it means to."""
         monkeypatch.setenv(R.SESSION_ID_ENV, "ffffffff-0000-0000-0000-000000000000")
-        assert R.run(SID, "main") == 0
+        assert R.run(SID, "main") == 1, "unacknowledged override must refuse"
+        assert R.run(SID, "main", other_session=True) == 0
         assert rows_for(ledger)[-1]["scope"] == "main"
+
+
+class TestForeignSessionGuard:
+    """Passing an id that is not this session's.
+
+    This is the lab/026 shape exactly: a plausible UUID from a path, a
+    transcript, or a recall, passed with confidence. The guard is mechanical —
+    the live id comes from the harness, so an agent wrong about its own identity
+    cannot assert its way past it.
+    """
+
+    LIVE = "e05114ff-ee60-4a76-ae3f-1bbb7562eb97"
+
+    def test_refuses_a_foreign_session_without_the_flag(self, ledger, monkeypatch):
+        monkeypatch.setenv(R.SESSION_ID_ENV, self.LIVE)
+        assert R.run(SID, "main") == 1
+        assert len(rows_for(ledger)) == 1, "a refusal must not write"
+
+    def test_the_refusal_names_both_sessions(self, ledger, monkeypatch, capsys):
+        monkeypatch.setenv(R.SESSION_ID_ENV, self.LIVE)
+        R.run(SID, "main")
+        out = capsys.readouterr().out
+        assert SID[:8] in out and self.LIVE[:8] in out
+        assert "lab/026" in out, "the guard should say what inferring an id cost"
+
+    def test_the_flag_permits_it_and_the_row_records_the_crossing(self, ledger, monkeypatch):
+        monkeypatch.setenv(R.SESSION_ID_ENV, self.LIVE)
+        assert R.run(SID, "main", other_session=True) == 0
+        row = rows_for(ledger)[-1]
+        assert row["cross_session"] is True
+        assert row["by_session"] == self.LIVE, "the ledger must record who edited whom"
+
+    def test_the_flag_is_unnecessary_for_your_own_session(self, ledger, monkeypatch):
+        monkeypatch.setenv(R.SESSION_ID_ENV, SID)
+        assert R.run(SID, "main") == 0
+        assert "cross_session" not in rows_for(ledger)[-1]
+
+    def test_own_session_row_still_records_authorship(self, ledger, monkeypatch):
+        monkeypatch.setenv(R.SESSION_ID_ENV, SID)
+        R.run(None, "main")
+        assert rows_for(ledger)[-1]["by_session"] == SID
+
+    def test_no_live_id_means_the_guard_cannot_run_and_does_not_pretend_to(
+            self, ledger, monkeypatch):
+        """Outside a session there is nothing to compare against; an explicit id
+        is then the only input, and blocking it would be theatre."""
+        monkeypatch.delenv(R.SESSION_ID_ENV, raising=False)
+        assert R.run(SID, "main") == 0
 
 
 class TestExitCode:
