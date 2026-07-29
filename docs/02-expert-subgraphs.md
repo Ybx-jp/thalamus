@@ -220,9 +220,11 @@ the literature the decision rests on.
 - Experts are cattle behind the contract: creatable, archivable, mergeable. Episodic
   memory archives with the expert — history is never deleted by roster surgery.
 - The mechanics of a roster addition — manifest, anchors, the tmux window, and what
-  the control plane does and doesn't need — are the `add-roster-expert` skill
-  (`.claude/skills/add-roster-expert`), jointly held by main and homelab; homelab
-  keeps it current.
+  the control plane does and doesn't need — are the `add-roster-expert` skill,
+  jointly held by main and homelab; homelab keeps it current. It lives in the
+  control-plane repo beside the surfaces it warns about, not here: the procedure is
+  written against one operator's tmux plane and its phone PWA, which this package
+  has no business shipping.
 
 ## Open questions
 
