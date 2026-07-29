@@ -137,3 +137,41 @@ This is the same failure *class* as the missing-terminal-step bug this skill
 opens with: not an error, just silence dressed as an answer. The terminal-step
 guard cannot catch it, because the traversal does terminate — it terminates on
 the wrong thing.
+
+## Scope census + sessions in a scope before a cutoff
+**Question:** How much content sits in `main` that may belong to an expert, and
+which pre-fix sessions are the candidates? (the `mis-scoped-main-writes-audit`
+thread — pre-`ed18887` agent-picker sessions resolved `main` in every hook)
+**Surface:** gremlin-python
+**Validated:** 2026-07-28 against the live graph
+
+```python
+from gremlin_python.process.graph_traversal import __
+from gremlin_python.process.traversal import Order
+from thalamus.substrate.writer import connect, close_connection
+
+g = connect()
+try:
+    for label in ("Session", "Claim", "Thread"):
+        print(label, g.V().has_label(label).group()
+              .by("scope").by(__.count()).next())
+    rows = (g.V().has_label("Session").has("scope", "main")
+            .order().by("timestamp", Order.asc)
+            .value_map("session_id", "timestamp", "project", "summary")
+            .to_list())
+finally:
+    close_connection(g)
+```
+
+**Notes:** `group().by(...).by(__.count())` needs the anonymous `__.count()` —
+a bare `count()` is a different step and will not compose here. The census is
+the denominator the audit needs: a raw main-scope count means nothing without
+the per-scope totals beside it.
+
+**Caveat the audit learned:** this identifies a session's *domain*, never its
+launch channel. The pin ledger records the **resolved** scope — the very value
+the bug got wrong — and the retained transcript's "pinned to the Thalamus
+expert scope `X`" string is **confounded**: consultation subagents carry that
+same text, so its presence does not mean the session itself was pinned. Neither
+source can currently distinguish "mis-scoped expert session" from "main session
+that consulted an expert."
