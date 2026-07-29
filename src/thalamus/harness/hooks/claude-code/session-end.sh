@@ -66,10 +66,17 @@ echo "distilling session ${session_id:0:8} into scope $scope" >>"$log"
 # declines (non-conversation session): the sweep is still worth it. Trace
 # identity is content-addressed, so concurrent session-ends converge instead of
 # duplicating. The Pulse dashboard's pending stamp reads this loop's result.
+# `uv run --project <checkout>`, not the session's cwd: a session pinned into
+# another repo (`thalamus spawn --dir`) has a cwd that is not a uv project with
+# thalamus in it, so a cwd-anchored invocation resolves no `thalamus` command and
+# the session silently never distills. --project (not --directory) keeps the
+# child's cwd where it is while resolving the environment from the checkout, the
+# same pattern the thalamus-pulse user unit already uses.
+repo_root="$(thalamus_repo_root)"
 nohup sh -c "
-  uv --directory '${CLAUDE_PROJECT_DIR:-$cwd}' run thalamus extract \
+  uv run --project '$repo_root' thalamus extract \
     --session '$session_id' --scope '$scope' --force --write -- '$project_dir'
-  uv --directory '${CLAUDE_PROJECT_DIR:-$cwd}' run thalamus eval sync --write
+  uv run --project '$repo_root' thalamus eval sync --write
 " >>"$log" 2>&1 </dev/null &
 
 exit 0

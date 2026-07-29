@@ -145,7 +145,19 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    on the live server processes), the server applies the rule at process
    startup, and it scopes every retrieval and write server-side — the model is
    never trusted to self-limit its own scope, and no tool accepts a scope
-   argument. All the hooks are children of the same process, inherit the same
+   argument. Both surfaces resolve the manifest against the **checkout** —
+   `THALAMUS_CONFIG_DIR`, else the tree the code itself sits in
+   (`contract/manifest._DEFAULT_CONFIG` in Python, `thalamus_repo_root` in the
+   bash mirror). Neither reads `CLAUDE_PROJECT_DIR`: that names the session's
+   *working* project, which is a different repo whenever a session is opened
+   outside the checkout (`thalamus spawn --dir`). Anchoring the mirror on it
+   made hooks resolve `main` while the server enforced the real scope, and
+   because SessionEnd is ledger-first, the whole session then distilled into the
+   wrong subgraph — the 2026-07-18 leak arriving through the ledger rather than
+   the env. For the same reason SessionEnd invokes extraction as
+   `uv run --project <checkout>`: a foreign cwd is not a uv project with
+   thalamus in it, and detached extraction fails invisibly.
+   All the hooks are children of the same process, inherit the same
    env, and apply the same precedence: SessionStart
    appends the tier-0 pin record to `~/.thalamus/pins/pins.jsonl` and announces
    the pin in the primed context; PostToolUse stamps the pin into every tap line;

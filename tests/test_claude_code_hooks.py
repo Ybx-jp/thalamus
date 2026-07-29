@@ -16,6 +16,7 @@ mirror of these checks lives in test_cursor_hooks.py.
 
 import json
 import subprocess
+import time
 from pathlib import Path
 
 HOOKS = Path(__file__).resolve().parents[1] / "src" / "thalamus" / "harness" / "hooks" / "claude-code"
@@ -114,3 +115,109 @@ class TestInjectedInstruction:
         result = run_hook(session_start_payload(source="resume"), tmp_path)
         assert json.loads(result.stdout) == {}
         assert not (tmp_path / ".thalamus" / "pins" / "pins.jsonl").exists()
+
+
+class TestForeignCwdPinResolution:
+    """A pinned session opened outside the checkout (`thalamus spawn --dir`).
+
+    CLAUDE_PROJECT_DIR then names the *working* repo, not the Thalamus checkout.
+    Anchoring manifest lookup on it made the hooks resolve `main` while the MCP
+    server — which anchors on contract/manifest._DEFAULT_CONFIG and never reads
+    CLAUDE_PROJECT_DIR — enforced the real scope. Because session-end is
+    ledger-first, that mismatch distilled the whole session into the wrong
+    scope: the 2026-07-18 mis-scoping leak arriving through the ledger instead
+    of the env. The bash mirror must stay anchored the way the Python is.
+    """
+
+    def resolve(self, tmp_path, env):
+        full_env = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/local/bin"}
+        full_env.update(env)
+        return subprocess.run(
+            ["bash", "-c", f'. "{HOOKS}/resolve-scope.sh"; thalamus_resolve_scope'],
+            capture_output=True, text=True, env=full_env, cwd=str(tmp_path), timeout=30,
+        ).stdout.strip()
+
+    def test_picked_agent_wins_when_project_dir_is_a_foreign_repo(self, tmp_path):
+        assert self.resolve(tmp_path, {
+            "CLAUDE_PROJECT_DIR": str(tmp_path),
+            "CLAUDE_CODE_AGENT": "thalamus-literature",
+        }) == "literature"
+
+    def test_ledger_records_the_pin_from_a_foreign_cwd(self, tmp_path):
+        """End-to-end: the ledger session-end reads must carry the real pin."""
+        run_hook(
+            session_start_payload(cwd=str(tmp_path)),
+            tmp_path,
+            env={"CLAUDE_PROJECT_DIR": str(tmp_path),
+                 "CLAUDE_CODE_AGENT": "thalamus-literature"},
+        )
+        pins = [
+            json.loads(line)
+            for line in (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()
+            if line.strip()
+        ]
+        assert pins[0]["scope"] == "literature"
+
+    def test_unknown_agent_still_falls_through_to_env(self, tmp_path):
+        """The manifest check is what makes agent-first safe; keep it load-bearing."""
+        assert self.resolve(tmp_path, {
+            "CLAUDE_PROJECT_DIR": str(tmp_path),
+            "CLAUDE_CODE_AGENT": "thalamus-nosuchexpert",
+            "THALAMUS_SCOPE": "main",
+        }) == "main"
+
+    def test_config_dir_override_still_takes_precedence(self, tmp_path):
+        """THALAMUS_CONFIG_DIR overrides the anchor, mirroring manifest.experts_dir."""
+        assert self.resolve(tmp_path, {
+            "THALAMUS_CONFIG_DIR": str(tmp_path / "nonexistent"),
+            "CLAUDE_CODE_AGENT": "thalamus-literature",
+        }) == "main"
+
+    def test_repo_root_is_the_checkout_not_the_working_project(self, tmp_path):
+        root = subprocess.run(
+            ["bash", "-c", f'. "{HOOKS}/resolve-scope.sh"; thalamus_repo_root'],
+            capture_output=True, text=True, timeout=30, cwd=str(tmp_path),
+            env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/local/bin",
+                 "CLAUDE_PROJECT_DIR": str(tmp_path)},
+        ).stdout.strip()
+        assert Path(root) == HOOKS.parents[4]
+        assert (Path(root) / "pyproject.toml").is_file()
+
+
+class TestDistillationAnchor:
+    """session-end must run `thalamus` from the checkout, not the session's cwd.
+
+    A foreign cwd is not a uv project with thalamus in it, so a cwd-anchored
+    invocation resolves no `thalamus` command and the session silently never
+    distills — the failure is invisible because extraction is detached.
+    """
+
+    def test_uv_is_pointed_at_the_checkout_from_a_foreign_cwd(self, tmp_path):
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        argv_log = tmp_path / "uv-argv.txt"
+        stub = bin_dir / "uv"
+        stub.write_text(f'#!/bin/bash\nprintf "%s\\n" "$*" >> "{argv_log}"\n')
+        stub.chmod(0o755)
+
+        subprocess.run(
+            [str(HOOKS / "session-end.sh")],
+            input=json.dumps({"session_id": "cc-sess-9", "cwd": str(tmp_path),
+                              "hook_event_name": "SessionEnd", "reason": "exit"}),
+            capture_output=True, text=True, timeout=30,
+            env={"HOME": str(tmp_path),
+                 "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin",
+                 "CLAUDE_PROJECT_DIR": str(tmp_path),
+                 "THALAMUS_SCOPE": "literature"},
+        )
+
+        deadline = time.time() + 20
+        while time.time() < deadline and not argv_log.exists():
+            time.sleep(0.2)
+        assert argv_log.exists(), "session-end never invoked uv"
+        calls = argv_log.read_text()
+
+        checkout = str(HOOKS.parents[4])
+        assert f"--project {checkout}" in calls
+        assert f"--directory {tmp_path}" not in calls
+        assert "thalamus extract" in calls
