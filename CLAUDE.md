@@ -9,6 +9,16 @@ update that doc in the same change. Docs describe the **current state only** —
 changelog narration, no self-correction, no apologizing for past designs. History
 lives in git and the memory graph, not in docs/.
 
+**Skills are procedure and knowledge — nothing else.** The same current-state-only rule
+binds every `SKILL.md`, harder: a skill is read to *do* something, so a paragraph about
+what the procedure used to be, which run exposed the flaw, or when it was rewritten is
+pure cost at the moment of use. When correcting a skill, change the instruction and
+delete what it replaced. It is not history if it earns its place as knowledge — a
+one-line citation of a measured finding (`lab/025`), a worked example, a validation
+stamp on a tested query — and those stay. The test is whether a reader mid-task needs it
+to act correctly, not whether it is true. History belongs in `lab/`, the ledgers, git,
+and the graph; every one of those already exists for it.
+
 ## The grounding discipline
 
 Two standing rules ([docs/00](docs/00-mission.md), [docs/11](docs/11-related-work.md)):
