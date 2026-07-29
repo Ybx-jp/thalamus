@@ -132,7 +132,8 @@ lab/           harness-limit notebook — what broke, why, workaround or wall
 
 Both **Claude Code** and **Cursor** are supported; their hook contracts differ, so
 each has its own hook suite under `src/thalamus/harness/hooks/`. Claude Code is the
-primary harness: eight scripts across five events (`.claude/settings.json`), over a
+primary harness: eight scripts across five events (wired by `thalamus init` into
+`~/.claude/settings.json`, so they arm in any directory), over a
 shared scope-resolution helper, cover memory priming, the pin ledger, distillation,
 the trace taps, the gremlin guard, and the conditioning/timestamp injections. The Cursor suite
 (`.cursor/hooks.json`, committed) ports everything portable — session-start
@@ -155,8 +156,10 @@ docker compose up -d
 
 # 2. Install
 uv sync --extra dev            # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
+thalamus init                  # arm hooks + the MCP server for every directory, then verify
 
 # 3. Use it
+thalamus init --check              # verify an existing install without writing
 thalamus bootstrap                 # list session transcripts available to ingest
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
 thalamus extract                   # bootstrap stage 2: Claims + Threads via a model
@@ -223,14 +226,16 @@ you whatever was written since the last flush.
 Recall tools also accept a `ticket` argument: under a consultation ticket they
 search the consulted expert's memory instead of the session's own scope.
 
-Register the server (`.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor):
+For Claude Code, `thalamus init` registers the server at **user** scope, so it is
+available in every directory rather than only inside this checkout. Cursor still
+takes a `.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "thalamus": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/thalamus", "thalamus-mcp"],
+      "args": ["run", "--project", "/path/to/thalamus", "thalamus-mcp"],
       "env": {
         "THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin",
         "THALAMUS_SCOPE": "${THALAMUS_SCOPE:-main}"

@@ -395,6 +395,18 @@ def main():
     )
 
     # Pin / roster commands — docs/07 "the process is the pin"
+    init_parser = subparsers.add_parser(
+        "init", help="Install the harness at user scope so it arms in any directory"
+    )
+    init_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Report what would change and run verification, without writing"
+    )
+    init_parser.add_argument(
+        "--check", action="store_true",
+        help="Only verify an existing install; write nothing"
+    )
+
     pin_parser = subparsers.add_parser(
         "pin", help="Launch a claude session pinned to an expert scope"
     )
@@ -478,6 +490,8 @@ def main():
         _cmd_snapshot(args)
     elif args.command == "eval":
         _cmd_eval(args, eval_parser)
+    elif args.command == "init":
+        _cmd_init(args)
     elif args.command == "pin":
         _cmd_pin(args)
     elif args.command == "spawn":
@@ -1182,6 +1196,16 @@ def _known_claims(graph, scope: str, project: str, limit: int = 50) -> list[dict
         if len(claims) >= limit:
             break
     return claims
+
+
+def _cmd_init(args):
+    from thalamus.harness.install import run
+
+    try:
+        sys.exit(run(dry_run=args.dry_run, check_only=args.check))
+    except RuntimeError as e:
+        print(f"Init failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _cmd_pin(args):
