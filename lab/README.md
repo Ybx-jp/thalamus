@@ -43,3 +43,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [025](025-the-expert-you-do-not-spawn.md) | Self-answering a consultation cost 17 citations and the objection that killed the design; and the component already existed | measurements + corrections |
 | [026](026-the-session-i-thought-i-was.md) | A session misidentified its own id, "caught" a fork risk that was another session's, and the trace tap caught that | incident + retraction |
 | [027](027-the-wall-that-moved.md) | Cursor re-verified: the contract held, the injection wall moved, the installer was the real gap | workaround + one wall |
+| [028](028-the-transcript-that-keeps-no-receipts.md) | Cursor distills, and the trust floor had to be told the difference between "nothing fetched" and "cannot know" | workaround |

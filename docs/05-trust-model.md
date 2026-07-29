@@ -124,6 +124,37 @@ Canary-tested end-to-end (lab/005): a fixture session that WebFetches a guide sa
 "commit the master token to the repo" lands that claim tier-2 while a genuine
 first-party edit in the same session stays tier-1.
 
+### When the transcript cannot carry the evidence (Cursor)
+
+Layers 1 and 3 both rest on a premise the Claude Code format satisfies silently:
+that the transcript embeds tool *results*. Cursor's does not — it records user
+messages, assistant text and tool call *inputs*, and excludes tool outputs
+deliberately because they can be large (harness/cursor_transcripts.py, lab/028).
+So for a Cursor session there are no external texts to collect and nothing for
+the mechanical echo floor to run against.
+
+The failure mode this creates is the dangerous kind: an empty external-texts list
+is indistinguishable from a session that fetched nothing, so the floor would
+report success while doing nothing, leaving only layer 2 — the layer explicitly
+*not* trusted, because a poisoned page can argue the model out of marking. An
+absence that cannot be told from a negative is worse than a known gap.
+
+So the distinction is carried explicitly rather than inferred. `TranscriptFacts`
+records `ingress_verifiable`, and when it is false `apply_ingress_floor` **floors
+the whole session** — every claim external, stamped tier-2 with the reason
+`transcript-ingress-unverifiable` rather than `transcript-ingress`, so the two
+are separable in the graph afterwards. Ingress tool *calls* are still counted
+(`ingress_detected`), because their inputs survive: we can see that a session
+fetched, only not what came back.
+
+This is deliberately heavy-handed. It takes the trade the floor already prices —
+first-party memory rendering as tier 2 informs, and costs nothing but emphasis —
+at the one moment the cheap mechanical check is unavailable, and it makes
+capturing tool outputs out-of-band the way to earn tier-1 back rather than
+something to remember to do. Cursor's own recommendation for full traces is a
+`postToolUse` hook writing them to a file, which Thalamus already has an event
+on; wiring that is the open item in docs/07, not a silent assumption here.
+
 **Prior work.** This is the write-path stance of the memory-poisoning literature
 applied to the *distillation* channel: "defenses must operate at the write path, not
 the input boundary," with source isolation keeping untrusted content out of

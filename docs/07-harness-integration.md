@@ -167,14 +167,41 @@ same guidance in the user turn is unmeasured anywhere (see
 difference it cannot attribute — channel, not latency. This is measurable
 in-house with instruments that already exist and is the next thing to run.
 
-What still does **not** cross: **distillation**. `thalamus extract` parses
-Claude Code JSONL transcripts only, so a Cursor session retrieves, traces and is
-conditioned but leaves **no episodic memory**; the session-end hook logs the
-ended session with `distilled: false` and its `transcript_path` to
-`~/.thalamus/logs/cursor-session-end.jsonl` so a future adapter can backfill.
-That is now the only structural gap. The `PostToolUse:TaskCreate` milestone
-conditioning class also has no carrier — TaskCreate is Claude Code task-list UI,
-while Cursor's `Task` tool type is subagent spawning.
+**Distillation crosses too, at reduced fidelity** (`harness/cursor_transcripts.py`,
+lab/028). `thalamus extract --harness cursor` sweeps the sessionEnd log,
+producing the same `TranscriptFacts` the Claude Code reader produces so
+extraction, merging and provenance stay unchanged. Three gaps are structural in
+Cursor's format and each is carried explicitly rather than inferred away:
+
+- **No tool results, for any tool** — excluded deliberately because they can be
+  large. So the ingress floor's evidence does not exist, and a Cursor session is
+  floored whole rather than checked ([05](05-trust-model.md)). Ingress tool
+  *calls* are still counted: their inputs survive, so we can see that a session
+  fetched, only not what came back.
+- **No message ids**, so Touch anchors are positional (`cursor:msg:<row>`),
+  namespaced so a synthesized anchor cannot pass for a real UUID.
+- **No timestamps and no cwd on any row.** Both come from the hooks' own
+  ledgers — `pins.jsonl` for the start and the workspace, the sessionEnd log for
+  the end — which is why those hooks shipping first is what makes backfill of
+  everything logged since possible at all.
+
+Extraction runs as a **later sweep, not at sessionEnd**: Cursor is not documented
+to flush the transcript before firing the hook (an open request asks it to fsync
+first, or to add `transcript_ready`), so reading at session end races an async
+writer and can distill a truncated session. Scope comes from each session's own
+sessionEnd record, ledger-first, not from the `--scope` flag.
+
+The `PostToolUse:TaskCreate` milestone conditioning class remains without a
+carrier — TaskCreate is Claude Code task-list UI, while Cursor's `Task` tool type
+is subagent spawning.
+
+**Open, and the way to earn tier-1 back on Cursor:** capture tool outputs
+out-of-band. Cursor's own recommendation for full traces is a `postToolUse` hook
+writing them to a file, and Thalamus already runs a hook on that event. The
+blocker is not the mechanism but the roster — Cursor's built-in web-tool names
+are undocumented and unobserved, so the ingress set would be a guess. A live
+session settles it; until then the conservative floor stands and costs emphasis
+rather than correctness.
 
 ### Prior work
 

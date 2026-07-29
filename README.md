@@ -144,10 +144,11 @@ adapters over the Claude Code scripts, so both harnesses share one detection
 logic and one set of on-disk records. Cursor gives the prompt text to an event
 that cannot inject and injection to events that never see the prompt, so the
 two injection tiers compute on `beforeSubmitPrompt` into a per-session spool and
-deliver on the next `postToolUse`, one tool call late (lab/027). One wall
-remains (lab/010): **session-end does not distill** — `thalamus extract` parses
-Claude Code JSONL transcripts only, so Cursor sessions retrieve and trace but
-leave no episodic memory (logged, not silent).
+deliver on the next `postToolUse`, one tool call late (lab/027). Cursor sessions
+distill too, at honestly-reduced fidelity: `thalamus extract --harness cursor`
+sweeps the sessionEnd log, and because Cursor's transcripts exclude tool outputs
+entirely, those sessions are floored whole by the ingress defence rather than
+checked against evidence that does not exist (lab/028, docs/05).
 
 ## Quick start
 
@@ -167,6 +168,7 @@ thalamus init --check              # verify an existing install without writing
 thalamus bootstrap                 # list session transcripts available to ingest
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
 thalamus extract                   # bootstrap stage 2: Claims + Threads via a model
+thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus contract check            # audit the live graph against the contract
 thalamus ingest <url|file>         # feed one document to an expert (dry-run; --write to persist)

@@ -61,6 +61,11 @@ def render_digest(payload: bytes, *, budget: int = _DIGEST_BUDGET) -> str:
     truncated tool results. Drops sidechains, meta records, and system-injected noise —
     the extractor needs the *conversation*, not the plumbing.
 
+    Harness-tolerant on purpose: Claude Code discriminates rows with `type`, Cursor with
+    `role` and nothing else (harness/cursor_transcripts.py). The block vocabulary is the
+    same in both, so one renderer serves both and a Cursor digest simply contains no
+    `result:` lines — the format carries no tool outputs to render.
+
     If the result exceeds the budget, the middle is elided rather than the tail: openings
     state intent and endings state outcomes, and both matter more than the grind between.
     """
@@ -69,7 +74,7 @@ def render_digest(payload: bytes, *, budget: int = _DIGEST_BUDGET) -> str:
     for record in _records(payload):
         if record.get("isSidechain") or record.get("isMeta"):
             continue
-        record_type = record.get("type")
+        record_type = record.get("type") or record.get("role")
         content = (record.get("message") or {}).get("content")
 
         if record_type == "user":
@@ -79,7 +84,15 @@ def render_digest(payload: bytes, *, budget: int = _DIGEST_BUDGET) -> str:
                     lines.append(f"USER: {_clip(text, _TEXT_CAP)}")
             elif isinstance(content, list):
                 for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                    if not isinstance(block, dict):
+                        continue
+                    # Cursor writes user prompts as text blocks rather than a bare
+                    # string; without this a Cursor digest holds no user turns at all.
+                    if block.get("type") == "text":
+                        text = block.get("text", "").strip()
+                        if text and not text.startswith("<"):
+                            lines.append(f"USER: {_clip(text, _TEXT_CAP)}")
+                    elif block.get("type") == "tool_result":
                         text = _tool_result_text(block)
                         if text:
                             # External-ingress results are labelled so the extractor
@@ -422,7 +435,12 @@ def parse_extraction(text: str) -> dict:
     return data
 
 
-def apply_ingress_floor(graph: SessionGraph, external_texts: list[str]) -> SessionGraph:
+def apply_ingress_floor(
+    graph: SessionGraph,
+    external_texts: list[str],
+    *,
+    ingress_verifiable: bool = True,
+) -> SessionGraph:
     """Down-tier claims that rest on external content the transcript embedded.
 
     The laundering defense's write-path half (docs/05): a session transcript is
@@ -440,23 +458,37 @@ def apply_ingress_floor(graph: SessionGraph, external_texts: list[str]) -> Sessi
     Down-tier is the only direction: nothing here ever raises trust, so the worst
     failure is first-party memory rendering as tier 2 — which informs, and costs
     nothing but emphasis.
+
+    `ingress_verifiable=False` says the transcript format cannot carry tool results
+    at all, so an empty `external_texts` is ignorance rather than evidence — the
+    Cursor case (harness/cursor_transcripts.py). The mechanical layer then has
+    nothing to run against, and honoring only the extractor's self-marks would
+    leave exactly the liftable half of the defence standing. So the whole session
+    is floored instead. That is heavy-handed by design: it is the same trade the
+    docstring above already prices, taken at the one moment the cheap mechanical
+    check is unavailable, and it makes capturing tool outputs out-of-band the way
+    to earn tier-1 back rather than something to remember to do.
     """
-    if not external_texts and not any(c.external for c in graph.claims()):
+    if not ingress_verifiable:
+        if not graph.claims():
+            return graph
+    elif not external_texts and not any(c.external for c in graph.claims()):
         return graph
 
     corpus = " ".join(external_texts).lower()
     corpus_tokens = set(_TOKEN_RE.findall(corpus))
 
+    reason = "transcript-ingress" if ingress_verifiable else "transcript-ingress-unverifiable"
     floored = Provenance(
         tier=Tier.CURATED,
-        source=f"session:{graph.session_id}#transcript-ingress",
+        source=f"session:{graph.session_id}#{reason}",
         ingested_at=graph.timestamp,
     )
 
     def floor(claims: list) -> list:
         out = []
         for claim in claims:
-            if claim.external or _echoes(claim, corpus_tokens):
+            if not ingress_verifiable or claim.external or _echoes(claim, corpus_tokens):
                 claim = claim.model_copy(update={"external": True, "provenance": floored})
             out.append(claim)
         return out

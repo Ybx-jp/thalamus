@@ -20,7 +20,7 @@ from thalamus.archive import archive_dir
 from thalamus.contract.conformance import check_session
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval.rake_audit import SAMPLE_SIZE
-from thalamus.harness import extraction, transcripts
+from thalamus.harness import cursor_transcripts, extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.plane.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
@@ -77,7 +77,15 @@ def main():
     extract_parser.add_argument(
         "projects",
         nargs="*",
-        help="Claude Code project dir names. Omit to list what is available.",
+        help="Claude Code project dir names. Omit to list what is available. "
+        "Ignored with --harness cursor, which discovers sessions from the "
+        "Cursor sessionEnd log instead.",
+    )
+    extract_parser.add_argument(
+        "--harness", choices=("claude", "cursor"), default="claude",
+        help="Which harness wrote the transcripts (default: claude). `cursor` sweeps "
+        "~/.thalamus/logs/cursor-session-end.jsonl, including sessions logged before "
+        "the adapter existed.",
     )
     extract_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     extract_parser.add_argument(
@@ -684,15 +692,29 @@ def _cmd_extract(args):
     from thalamus.contract.conformance import prune_orphan_artifacts
     from thalamus.contract.ontology import vid
 
-    available = transcripts.discover()
-    if not args.projects:
-        print("Specify project dir(s); `thalamus bootstrap` lists what is available.")
-        return
+    cursor = args.harness == "cursor"
+    reader = cursor_transcripts if cursor else transcripts
 
-    unknown = [p for p in args.projects if p not in available]
-    if unknown:
-        print(f"Unknown project dir(s): {', '.join(unknown)}", file=sys.stderr)
-        sys.exit(1)
+    if cursor:
+        ended = [s for s in cursor_transcripts.discover() if s.exists]
+        if not ended:
+            print(
+                "No Cursor sessions to extract. The sessionEnd hook logs each one to "
+                f"{cursor_transcripts.CURSOR_SESSION_END_LOG}; an empty or missing log "
+                "means no Cursor session has ended on this machine yet.",
+                file=sys.stderr,
+            )
+            return
+    else:
+        available = transcripts.discover()
+        if not args.projects:
+            print("Specify project dir(s); `thalamus bootstrap` lists what is available.")
+            return
+
+        unknown = [p for p in args.projects if p not in available]
+        if unknown:
+            print(f"Unknown project dir(s): {', '.join(unknown)}", file=sys.stderr)
+            sys.exit(1)
 
     graph = connect(args.url)
     extracted = skipped = failed = 0
@@ -701,12 +723,32 @@ def _cmd_extract(args):
     try:
         # Chronological across all requested projects: threads resolve forward in time.
         parsed = []
-        for project in args.projects:
-            for path in available[project]:
-                facts = transcripts.parse(path)
+        if cursor:
+            # Scope comes from the session's own sessionEnd record, not the flag:
+            # ledger-first resolution is what keeps a pinned Cursor session out of
+            # the wrong subgraph (docs/07). A cursor session carries no timestamps
+            # or cwd of its own, so both come from the hooks' ledgers.
+            scopes: dict[str, str] = {}
+            for ended_session in ended:
+                cwd, started_at = cursor_transcripts.session_context(ended_session.session_id)
+                facts = cursor_transcripts.parse(
+                    ended_session.transcript_path,
+                    session_id=ended_session.session_id,
+                    cwd=cwd,
+                    started_at=started_at,
+                    ended_at=ended_session.ended_at,
+                )
                 if facts.user_turns == 0:
                     continue
+                scopes[facts.session_id] = ended_session.scope
                 parsed.append(facts)
+        else:
+            for project in args.projects:
+                for path in available[project]:
+                    facts = transcripts.parse(path)
+                    if facts.user_turns == 0:
+                        continue
+                    parsed.append(facts)
         parsed.sort(key=lambda f: (f.started_at is None, f.started_at))
 
         if args.session:
@@ -720,7 +762,8 @@ def _cmd_extract(args):
 
         for facts in parsed:
             name = facts.session_id[:8]
-            session_vid = vid("Session", facts.session_id, args.scope)
+            scope = scopes.get(facts.session_id, args.scope) if cursor else args.scope
+            session_vid = vid("Session", facts.session_id, scope)
 
             if not args.force and _session_has_claims(graph, session_vid):
                 skipped += 1
@@ -728,12 +771,12 @@ def _cmd_extract(args):
                 continue
 
             entry, _ = transcripts.retain(facts.path)
-            base = transcripts.to_session_graph(
+            base = reader.to_session_graph(
                 facts,
                 content_hash=entry.content_hash,
                 uri=entry.uri,
                 byte_size=entry.byte_size,
-                scope=args.scope,
+                scope=scope,
             )
 
             payload = read_archived(entry.content_hash, suffix=".jsonl")
@@ -751,8 +794,14 @@ def _cmd_extract(args):
                 data = extraction.parse_extraction(run.text)
                 session = extraction.merge_extraction(base, data)
                 # The laundering floor (docs/05): claims resting on the transcript's
-                # external ingress keep third-party trust, marked or not.
-                session = extraction.apply_ingress_floor(session, facts.external_texts)
+                # external ingress keep third-party trust, marked or not. A format
+                # that cannot carry tool results (Cursor) floors the whole session
+                # instead — an empty list there is ignorance, not evidence.
+                session = extraction.apply_ingress_floor(
+                    session,
+                    facts.external_texts,
+                    ingress_verifiable=facts.ingress_verifiable,
+                )
                 session = prune_orphan_artifacts(session)
             except Exception as e:
                 failed += 1

@@ -77,6 +77,20 @@ class TranscriptFacts:
     # judges extracted claims against these.
     external_texts: list[str] = field(default_factory=list)
 
+    # Which harness wrote the transcript these facts came from.
+    harness: str = "claude-code"
+    # Whether `external_texts` is *evidence* or merely *empty*. Claude Code embeds
+    # tool results, so an empty list there means nothing was fetched. Cursor omits
+    # tool outputs from transcripts entirely (harness/cursor_transcripts.py), so an
+    # empty list there means we cannot know — and the mechanical half of the
+    # laundering floor, the half no prompt content can lift, has nothing to run
+    # against. Collapsing the two would delete that defence while appearing to
+    # apply it, so the distinction is carried rather than inferred downstream.
+    ingress_verifiable: bool = True
+    # Count of external-ingress tool *calls* seen. Present even when their results
+    # are not, so an unverifiable session can still say whether it fetched at all.
+    ingress_detected: int = 0
+
     @property
     def project(self) -> str:
         return Path(self.cwd).name if self.cwd else ""
