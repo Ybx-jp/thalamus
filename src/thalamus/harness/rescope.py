@@ -39,6 +39,7 @@ ledger-tail convention is local.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,6 +48,26 @@ from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE, vid
 
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
+
+# The harness exports the live session id into every child process (measured
+# 2026-07-28 on the running session). It is the authoritative answer to "which
+# session am I", and the only one: a session cannot otherwise tell, and lab/026
+# is what a guess costs — an agent inferred its id from a subagent task path,
+# drew a well-formed UUID belonging to a *different, same-scope* session, and
+# reasoned confidently about the wrong subject.
+SESSION_ID_ENV = "CLAUDE_CODE_SESSION_ID"
+
+
+def current_session_id(env: dict[str, str] | None = None) -> str | None:
+    """The session this process is running inside, or None.
+
+    Deliberately NOT falling back to "the most recent ledger entry for this cwd":
+    concurrent sessions share a working directory routinely (two ran in this
+    repo the night lab/026 was written), so that heuristic reintroduces exactly
+    the wrong-subject failure it would be papering over. No answer beats a
+    plausible wrong one.
+    """
+    return (env if env is not None else os.environ).get(SESSION_ID_ENV) or None
 
 
 class RescopeRefused(RuntimeError):
@@ -172,10 +193,19 @@ def rescope(session_id: str, scope: str, reason: str = "", agent: str = "",
     return row
 
 
-def run(session: str, scope: str, reason: str = "", dry_run: bool = False,
+def run(session: str | None, scope: str, reason: str = "", dry_run: bool = False,
         allow_distilled: bool = False) -> int:
     try:
-        session_id = resolve_session(session)
+        if session:
+            session_id = resolve_session(session)
+        else:
+            session_id = current_session_id()
+            if not session_id:
+                print(f"Refused: no session given and ${SESSION_ID_ENV} is not set, so the "
+                      f"current session cannot be identified. Pass the id explicitly — but "
+                      f"do not guess it (lab/026).")
+                return 1
+            print(f"session: {session_id[:8]} (from ${SESSION_ID_ENV})")
         row = rescope(session_id, scope, reason=reason, dry_run=dry_run,
                       allow_distilled=allow_distilled)
     except RescopeRefused as exc:

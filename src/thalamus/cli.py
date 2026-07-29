@@ -410,8 +410,12 @@ def main():
     rescope_parser = subparsers.add_parser(
         "rescope", help="Redirect a session's distillation scope (before it distills)"
     )
-    rescope_parser.add_argument("session", help="Session ID (prefix ok)")
     rescope_parser.add_argument("scope", help="Scope to distill into (`main` or a manifest)")
+    rescope_parser.add_argument(
+        "session", nargs="?", default=None,
+        help="Session ID (prefix ok). Default: the current session, read from "
+             "$CLAUDE_CODE_SESSION_ID — never guess it (lab/026)"
+    )
     rescope_parser.add_argument("--reason", default="", help="Why, for the ledger record")
     rescope_parser.add_argument(
         "--dry-run", action="store_true", help="Report the correction without appending it"

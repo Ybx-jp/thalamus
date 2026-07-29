@@ -205,9 +205,18 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    disagreed before `ed18887`, the stored value was the wrong one, and the
    retained transcript could not settle it either — consultation subagents carry
    the same pinned-agent text as a real pin, so its presence is not evidence the
-   session was pinned. When the routing decision itself was wrong — a pinned
+   session was pinned. SessionStart also states the session's **own id** in the
+   injected context, marked authoritative: a session is otherwise blind to which
+   session it is, and self-referential reasoning then guesses its subject —
+   lab/026 records a session inferring its id from a subagent task path, landing
+   on a real adjacent session, and acting on it. When the routing decision itself
+   was wrong — a pinned
    window used for main-plane work — `thalamus rescope <session> <scope>` appends
-   a correction row, which SessionEnd's `tail -1` resolution then honours. It
+   a correction row, which SessionEnd's `tail -1` resolution then honours. The
+   session argument is optional and defaults to `$CLAUDE_CODE_SESSION_ID`, the
+   harness's own export; with that unset it **refuses** rather than resolving
+   from the ledger, since concurrent sessions routinely share a cwd and a
+   "most recent entry here" heuristic reintroduces the wrong-subject bug. It
    **appends, never edits**: the original pin record survives beside the
    correction, because an audit log that can be rewritten cannot audit anything.
    It **refuses once the session has distilled**, since vertex IDs include scope

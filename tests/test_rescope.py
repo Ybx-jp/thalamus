@@ -105,6 +105,40 @@ class TestSessionResolution:
             R.resolve_session("zzzz")
 
 
+class TestCurrentSession:
+    """Which session am I — the question lab/026 answered wrongly.
+
+    The harness exports the id; the fix is to read it, and to refuse rather than
+    infer when it is absent.
+    """
+
+    def test_reads_the_harness_exported_id(self):
+        assert R.current_session_id({R.SESSION_ID_ENV: SID}) == SID
+
+    def test_absent_env_is_none_not_a_guess(self):
+        assert R.current_session_id({}) is None
+
+    def test_empty_env_value_is_none(self):
+        assert R.current_session_id({R.SESSION_ID_ENV: ""}) is None
+
+    def test_defaults_to_the_current_session(self, ledger, monkeypatch):
+        monkeypatch.setenv(R.SESSION_ID_ENV, SID)
+        assert R.run(None, "main") == 0
+        assert rows_for(ledger)[-1]["scope"] == "main"
+
+    def test_refuses_rather_than_guessing_when_the_env_is_absent(self, ledger, monkeypatch):
+        """No ledger heuristic: concurrent sessions share a cwd, so 'most recent
+        entry here' would reintroduce the wrong-subject bug it papers over."""
+        monkeypatch.delenv(R.SESSION_ID_ENV, raising=False)
+        assert R.run(None, "main") == 1
+        assert len(rows_for(ledger)) == 1, "a refusal must not write"
+
+    def test_an_explicit_session_still_wins(self, ledger, monkeypatch):
+        monkeypatch.setenv(R.SESSION_ID_ENV, "ffffffff-0000-0000-0000-000000000000")
+        assert R.run(SID, "main") == 0
+        assert rows_for(ledger)[-1]["scope"] == "main"
+
+
 class TestExitCode:
     def test_refusal_is_a_nonzero_exit(self, ledger, monkeypatch):
         monkeypatch.setattr(R, "distilled_scopes", lambda sid, g=None: ["eval-methodology"])

@@ -76,12 +76,28 @@ returned, but the *inference drawn from it* was false, and the action it produce
 
 This is the transferable finding.
 
-Nothing in a session's context reliably tells it its own `session_id`. This
-session inferred one from a subagent task-directory path, which named a
-*different* session. The value is available to every **hook** (Claude Code puts
-`session_id` on hook stdin) and is written into the pin ledger — but it is never
-injected into the session's own context, so any self-referential operation the
-agent performs must *guess the subject*.
+Nothing in a session's *context* tells it its own `session_id`. This session
+inferred one from a subagent task-directory path, which named a *different*
+session. The value is available to every **hook** (Claude Code puts `session_id`
+on hook stdin) and is written into the pin ledger — but it was never injected
+into the session's own context, so any self-referential operation the agent
+performed had to *guess the subject*.
+
+> **Correction, same night (§4 as first written was too generous to itself).**
+> "Nothing tells a session its own id" is false. The harness exports
+> **`CLAUDE_CODE_SESSION_ID`** into every child process — it was in the
+> environment of every `Bash` call this session made, holding
+> `e05114ff-…`, the correct answer, the entire time. The session did not read
+> it; it inferred from a path instead and never checked the cheaper,
+> authoritative source. So the gap was not "the information is unavailable" but
+> "the agent did not look, and nothing made looking the default." That is a
+> worse finding and a more fixable one. Both fixes shipped the same night:
+> SessionStart now states the id in context and marks it authoritative over
+> inferred ones, and `thalamus rescope` defaults to the env var. The
+> ledger-heuristic idea floated in §5 was **dropped as unsafe** — two sessions
+> shared this repo as cwd that night, so "most recent engaged entry for this
+> cwd" could have selected the wrong session by exactly the mechanism this entry
+> documents.
 
 Every self-referential operation inherits this: `rescope`, self-audit, "has my
 work distilled yet", and any future "correct my own routing" affordance. It is
@@ -109,10 +125,13 @@ the assertion passed, about the wrong thing.
 - `thalamus rescope e05114ff main` — the operator's original request, executed
   once the real subject was known, validated as undistilled.
 - The two spurious rows on `7f815861` are left in place and disclosed here.
-- **Open:** `rescope` should not take a session id by guesswork. A `--current`
-  mode resolving from the ledger (most recent `engaged` row for this cwd) or, better,
-  a `session_id` injected into context by SessionStart would remove the guess.
-  Not built; recorded so it is not re-derived by the next session to hit this.
+- **Shipped:** `thalamus rescope <scope>` now defaults to the current session,
+  read from `$CLAUDE_CODE_SESSION_ID`. It **refuses** when that is unset rather
+  than falling back to a ledger heuristic — no answer beats a plausible wrong one.
+- **Shipped:** SessionStart states the session's own id in the injected context
+  and marks it authoritative, because the failure mode is a *competing plausible
+  UUID*: merely mentioning the id would not have outranked one inferred from a
+  real file path.
 - **Open:** nothing detects a session reasoning about a session id that is not its
   own. The trace tap holds the evidence — the tap keys every record by the id the
   *harness* reports, which is authoritative — but nothing compares that against ids

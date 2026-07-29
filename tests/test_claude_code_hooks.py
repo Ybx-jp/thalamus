@@ -117,6 +117,30 @@ class TestInjectedInstruction:
         assert not (tmp_path / ".thalamus" / "pins" / "pins.jsonl").exists()
 
 
+class TestSessionIdentityInjection:
+    """A session must be told which session it is.
+
+    lab/026: nothing put the id in the model's context, so self-referential
+    reasoning guessed its own subject and got a real, adjacent, same-scope
+    session. The harness knew the answer the whole time.
+    """
+
+    def test_the_session_is_told_its_own_id(self, tmp_path):
+        ctx = context_of(run_hook(session_start_payload(session_id="abc-123"), tmp_path))
+        assert "abc-123" in ctx
+
+    def test_the_id_is_marked_authoritative_over_inferred_ones(self, tmp_path):
+        """The failure mode is a *plausible* competing UUID, so stating the id is
+        not enough — it has to outrank what the session infers elsewhere."""
+        ctx = context_of(run_hook(session_start_payload(session_id="abc-123"), tmp_path))
+        assert "authoritative" in ctx.lower()
+        assert "prefer it over any session id you infer" in ctx
+
+    def test_no_id_means_no_claim_about_identity(self, tmp_path):
+        result = run_hook(session_start_payload(session_id=""), tmp_path)
+        assert "session_id is" not in context_of(result)
+
+
 class TestForeignCwdPinResolution:
     """A pinned session opened outside the checkout (`thalamus spawn --dir`).
 
