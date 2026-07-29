@@ -169,6 +169,7 @@ thalamus ingest <url|file>         # feed one document to an expert (dry-run; --
 thalamus pin <scope>               # launch a claude session pinned to an expert
 thalamus roster                    # bring up the control plane (--all for every expert)
 thalamus spawn <scope>             # one on-demand pinned tmux window
+thalamus rescope <session> <scope> # redirect a session's distillation (before it distills)
 thalamus visualize                 # open the persisted memory explorer
 thalamus visualize session.yaml    # preview a pending extraction, no graph needed
 thalamus write session.yaml        # write to the graph

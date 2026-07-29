@@ -182,7 +182,16 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    disagreed before `ed18887`, the stored value was the wrong one, and the
    retained transcript could not settle it either — consultation subagents carry
    the same pinned-agent text as a real pin, so its presence is not evidence the
-   session was pinned. PostToolUse stamps the pin into every tap line;
+   session was pinned. When the routing decision itself was wrong — a pinned
+   window used for main-plane work — `thalamus rescope <session> <scope>` appends
+   a correction row, which SessionEnd's `tail -1` resolution then honours. It
+   **appends, never edits**: the original pin record survives beside the
+   correction, because an audit log that can be rewritten cannot audit anything.
+   It **refuses once the session has distilled**, since vertex IDs include scope
+   — a late correction would not move the Session vertex, it would mint a second
+   one under the new scope and leave the first holding a stale half of the
+   transcript (`--allow-distilled` overrides and records `forked_from`).
+   PostToolUse stamps the pin into every tap line;
    SessionEnd resolves the distillation scope **ledger-first, env fallback** and
    passes `--scope` to extraction, so the session's episodic memory lands in the
    pinned expert's subgraph. Ledger-first keeps re-extraction from any later,

@@ -407,6 +407,21 @@ def main():
         help="Only verify an existing install; write nothing"
     )
 
+    rescope_parser = subparsers.add_parser(
+        "rescope", help="Redirect a session's distillation scope (before it distills)"
+    )
+    rescope_parser.add_argument("session", help="Session ID (prefix ok)")
+    rescope_parser.add_argument("scope", help="Scope to distill into (`main` or a manifest)")
+    rescope_parser.add_argument("--reason", default="", help="Why, for the ledger record")
+    rescope_parser.add_argument(
+        "--dry-run", action="store_true", help="Report the correction without appending it"
+    )
+    rescope_parser.add_argument(
+        "--allow-distilled", action="store_true",
+        help="Override the already-distilled refusal. Forks the session's identity across "
+             "scopes (vertex IDs include scope); the original vertex is left stale."
+    )
+
     pin_parser = subparsers.add_parser(
         "pin", help="Launch a claude session pinned to an expert scope"
     )
@@ -492,6 +507,8 @@ def main():
         _cmd_eval(args, eval_parser)
     elif args.command == "init":
         _cmd_init(args)
+    elif args.command == "rescope":
+        _cmd_rescope(args)
     elif args.command == "pin":
         _cmd_pin(args)
     elif args.command == "spawn":
@@ -1206,6 +1223,13 @@ def _cmd_init(args):
     except RuntimeError as e:
         print(f"Init failed: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _cmd_rescope(args):
+    from thalamus.harness.rescope import run
+
+    sys.exit(run(args.session, args.scope, reason=args.reason,
+                 dry_run=args.dry_run, allow_distilled=args.allow_distilled))
 
 
 def _cmd_pin(args):
