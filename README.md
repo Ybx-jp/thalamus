@@ -264,7 +264,7 @@ New session → session-start hook → memory_open_threads → context
 Distillation is automatic on Claude Code: the SessionEnd hook runs `thalamus
 extract` (headless, detached) over the retained transcript, then `eval sync
 --write` lands the session's retrieval traces as priced Trace nodes. The
-extraction prompt lives in `src/thalamus/harness/skills/extract-session/SKILL.md`.
+extraction prompt is `_PROMPT_TEMPLATE` in `src/thalamus/harness/extraction.py`.
 The session-start hook asks the agent for the current project's open threads, and it
 is the same mechanism that carries **expert pinning**
 ([docs/02](docs/02-expert-subgraphs.md)).

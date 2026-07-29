@@ -170,12 +170,20 @@ class TestSkills:
         assert names == {p.name for p in install.shipped_skills()}
         assert {"recall-strategy", "ground-in-literature", "gremlin-python"} <= names
 
-    def test_prompt_templates_are_not_installed_as_skills(self):
-        """`extract-session` is a prompt the extraction pipeline reads, not an
-        invocable skill — it has no frontmatter, and installing it would
-        advertise something no session can call."""
-        assert "extract-session" not in {p.name for p in install.shipped_skills()}
-        assert (install.SKILL_DIR / "extract-session" / "SKILL.md").is_file()
+    def test_a_skill_md_without_frontmatter_is_not_installed(self, sandbox, tmp_path,
+                                                             monkeypatch):
+        """Frontmatter is what makes a directory invocable; prose in a SKILL.md
+        is a note or a prompt template, and installing it would advertise
+        something no session can call."""
+        shipped = tmp_path / "shipped"
+        (shipped / "real").mkdir(parents=True)
+        (shipped / "real" / "SKILL.md").write_text("---\nname: real\n---\nbody\n")
+        (shipped / "prose").mkdir()
+        (shipped / "prose" / "SKILL.md").write_text("# Just a prompt\n\nno frontmatter\n")
+        monkeypatch.setattr(install, "SKILL_DIR", shipped)
+        assert [p.name for p in install.shipped_skills()] == ["real"]
+        install.link_skills()
+        assert [p.name for p in sandbox["skills"].iterdir()] == ["real"]
 
     def test_links_to_the_package_so_one_edit_serves_every_scope(self, sandbox):
         install.install()

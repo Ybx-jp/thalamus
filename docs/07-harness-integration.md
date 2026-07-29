@@ -155,8 +155,9 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    scopes are symlinks onto the same package directory, so they are not rival
    definitions, and keeping the checkout's links means a fresh clone has its
    skills before `init` has run. A user-scope name that is not our symlink is
-   left untouched, and prompt templates without frontmatter (`extract-session`)
-   are not installed as skills. Install is idempotent, leaves non-Thalamus hooks
+   left untouched, and a `SKILL.md` without frontmatter is prose rather than an
+   invocable skill, so it is not installed. Install is idempotent, leaves
+   non-Thalamus hooks
    and unrelated settings alone, and ends
    by **exercising** what it wired rather than asserting it (see
    [11 §2a0](11-related-work.md) — these are latent configuration errors, inert

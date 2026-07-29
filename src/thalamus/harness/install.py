@@ -207,10 +207,10 @@ def register_mcp(dry_run: bool = False) -> str:
 def shipped_skills() -> list[Path]:
     """The invocable skills that travel with the package.
 
-    YAML frontmatter is the discriminator, not the presence of a SKILL.md: this
-    directory also holds prompt templates the pipeline reads directly
-    (`extract-session`, adapted in harness/extraction.py), and installing one as
-    a skill would advertise something no session can invoke.
+    YAML frontmatter is the discriminator, not the presence of a SKILL.md.
+    Frontmatter is what makes a directory invocable at all, so a SKILL.md
+    without it is prose — a prompt template or a note — and installing it would
+    advertise something no session can call.
     """
     if not SKILL_DIR.is_dir():
         return []
