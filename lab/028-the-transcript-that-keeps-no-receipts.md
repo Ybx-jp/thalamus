@@ -91,6 +91,64 @@ so one renderer serves both dialects. A regression test pins that Claude Code
 digests are byte-identical, because a silent change there would alter every future
 extraction on the primary harness.
 
+## What the grounding pass added
+
+Run before the build this time. Four of its findings were already handled by the
+time it returned — the `render_digest` double-coupling (it re-parses the archived
+bytes in the Claude Code dialect, and is the half the model actually sees), the
+anchor problem, the ingress trust decision, and reusing `tests/test_cursor_hooks.py`'s
+conformance shape. Three landed.
+
+**It refuted a novelty claim before one was made.** "One intermediate, many
+harness dialects" is published: HarnessFix's harness-aware Trace Intermediate
+Representation (arXiv 2606.06324) and the Agent Data Protocol's interlingua over
+thirteen datasets (arXiv 2510.24702). Both measure downstream gains and **neither
+measures IR fidelity**, so they are cited for the pattern, not the schema. Also
+settled: targeting OpenTelemetry GenAI conventions instead is the wrong move on
+documented grounds rather than effort — Development status, no released schema
+URL, no reasoning content part, and Claude Code's own OTel export redacts
+extended thinking and truncates tool content, so routing through it would *lower*
+the evidence floor docs/10 exists to raise. docs/11 §4 now records the refutation.
+
+**It found a defect in what had shipped: the parser was silently tolerant.**
+Malformed lines, unknown roles and unusable content were skipped without a sound,
+so a Cursor format change would have degraded to "that session had fewer turns" —
+the silent-failure mode this repo keeps rediscovering. RFC 9413's virtuous
+intolerance and LangSec (Momot et al., IEEE SecDev 2016) both reject Postel's law
+outside pre-declared extension points. Fixed: `TranscriptFacts.unrecognized`
+counts what the grammar could not classify and the sweep prints it. Content
+*blocks* stay the one tolerated extension point — Cursor may add block types
+without changing the record grammar — so an unknown block does not condemn its
+record, and a test pins that asymmetry.
+
+**It named the premise this whole adapter rests on, which is unverified.**
+`transcript_path` is assumed to resolve to JSONL. Cursor also keeps chat state in
+SQLite (`state.vscdb`, `cursorDiskKV`, community-reverse-engineered and not
+vendor-documented), and the sessionEnd ledger has been recording whatever the hook
+was handed. The premise was not verifiable here, so what was verified instead is
+the **failure mode**: handed a `state.vscdb`, the parser yields zero turns and a
+non-zero unrecognized count, so the session is skipped *and* the mismatch is
+reported. Nothing half-parses. A missing path is dropped at discovery. Both are
+now tests, and they are the most valuable ones in the file — they hold whatever
+the premise turns out to be.
+
+Absence handling picked up a vocabulary rather than inventing one: FHIR's
+`dataAbsentReason` three-way split — `not-applicable` / `unknown` / `unsupported`
+— puts Cursor's missing tool results squarely at `unsupported`, a value that
+exists in a format that cannot carry it. Rubin's MCAR/MAR/MNAR is explicitly not
+the frame, since every category presupposes a latent value that could have been
+observed. Information-capacity theory (Miller et al., VLDB 1993) argues for a
+*static per-format capability table* over a per-record manifest, which is what
+`ingress_verifiable` already is.
+
+One deferred item worth its own thread: **the cheapest publishable measurement in
+this area is sitting in our own archive.** Nobody has measured extraction quality
+as a function of which trace *fields* are present — every held ablation varies
+modality, volume or representation instead. Re-running the existing extractor over
+archived Claude Code transcripts with `tool_use_id` linkage stripped, and diffing
+the claims, would answer directly how much the Cursor gap costs. We hold the
+corpus.
+
 ## Wall or workaround
 
 **Workaround**, and lab/010's last structural wall is down — Cursor sessions now

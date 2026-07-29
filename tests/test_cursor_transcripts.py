@@ -105,17 +105,20 @@ class TestParse:
         )
         assert cursor_transcripts.parse(path).user_turns == 1
 
-    def test_malformed_and_unknown_records_are_skipped_not_fatal(self, tmp_path):
+    def test_malformed_and_unknown_records_are_counted_not_silently_dropped(self, tmp_path):
+        """Virtuous intolerance (RFC 9413; LangSec SecDev 2016): a parser written
+        against a format it has never observed must make surprises loud. Silent
+        tolerance would turn "Cursor changed the format" into "this session had
+        fewer turns" — the exact failure this repo keeps rediscovering."""
         path = tmp_path / "c.jsonl"
         path.write_text(
             "\n".join(
                 [
-                    "{not json",
-                    json.dumps({"role": "system", "message": {"content": [text("x")]}}),
-                    json.dumps({"role": "user"}),
-                    json.dumps({"role": "user", "message": {"content": [{"type": "mystery"}]}}),
+                    "{not json",                                                    # undecodable
+                    json.dumps({"role": "system", "message": {"content": [text("x")]}}),  # new role
+                    json.dumps({"role": "user"}),                                   # no message
                     json.dumps(user("the only real turn")),
-                    "[]",
+                    "[]",                                                           # not an object
                 ]
             )
             + "\n"
@@ -123,6 +126,50 @@ class TestParse:
         facts = cursor_transcripts.parse(path)
         assert facts.user_turns == 1
         assert facts.first_prompt == "the only real turn"
+        assert facts.unrecognized == 4
+
+    def test_an_unknown_content_block_does_not_condemn_its_record(self, tmp_path):
+        """Blocks are a pre-declared extension point — Cursor may add block types
+        without changing the record grammar, so an unknown block is tolerated while
+        an unknown *record* is not."""
+        path = write_transcript(
+            tmp_path / "c.jsonl",
+            [{"role": "user", "message": {"content": [{"type": "mystery"}, text("hi")]}}],
+        )
+        facts = cursor_transcripts.parse(path)
+        assert facts.unrecognized == 0
+        assert facts.user_turns == 1
+
+    def test_a_well_formed_transcript_reports_nothing_unrecognized(self, transcript):
+        assert cursor_transcripts.parse(transcript).unrecognized == 0
+
+    def test_a_sqlite_transcript_path_fails_loudly_not_wrongly(self, tmp_path):
+        """The premise this whole adapter rests on is that `transcript_path`
+        resolves to JSONL. It is unverified: Cursor also keeps chat state in
+        SQLite (`state.vscdb`), and the sessionEnd ledger has been recording
+        whatever the hook was handed. If the premise is wrong the adapter must
+        produce *nothing* and say so — never a half-parsed session, which would be
+        a corrupted memory rather than a missing one."""
+        import sqlite3
+
+        db = tmp_path / "state.vscdb"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE cursorDiskKV (key TEXT, value BLOB)")
+        con.execute("INSERT INTO cursorDiskKV VALUES ('composerData:x', ?)", ('{"a":1}',))
+        con.commit()
+        con.close()
+
+        facts = cursor_transcripts.parse(db, session_id="sqlite-case")
+        assert facts.user_turns == 0        # nothing distilled
+        assert facts.unrecognized > 0       # and the mismatch is reported
+
+    def test_a_transcript_path_that_does_not_exist_is_dropped_at_discovery(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        log.write_text(
+            json.dumps({"session_id": "a", "scope": "main",
+                        "transcript_path": str(tmp_path / "gone.jsonl")}) + "\n"
+        )
+        assert [s.exists for s in cursor_transcripts.discover(log)] == [False]
 
     def test_an_empty_transcript_yields_nothing_to_remember(self, tmp_path):
         path = write_transcript(tmp_path / "c.jsonl", [])

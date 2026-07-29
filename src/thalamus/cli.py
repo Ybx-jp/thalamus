@@ -742,6 +742,19 @@ def _cmd_extract(args):
                     continue
                 scopes[facts.session_id] = ended_session.scope
                 parsed.append(facts)
+
+            # Surfaced, not swallowed: this parser was written against Cursor's
+            # documented shape without ever seeing a real transcript, so records it
+            # cannot classify are the first evidence that the shape is wrong. A
+            # count nobody reads is the same silent failure as no count at all.
+            unread = sum(f.unrecognized for f in parsed)
+            if unread:
+                print(
+                    f"  ! {unread} record(s) across {sum(1 for f in parsed if f.unrecognized)} "
+                    "session(s) did not match the expected Cursor shape — the format may "
+                    "have changed (see harness/cursor_transcripts.py, lab/028)",
+                    file=sys.stderr,
+                )
         else:
             for project in args.projects:
                 for path in available[project]:

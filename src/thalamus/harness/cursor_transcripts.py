@@ -59,9 +59,44 @@ silently distill a truncated session. Instead sessionEnd logs the pointer with
 `distilled: false` and `thalamus extract --harness cursor` sweeps afterwards,
 which also picks up everything logged before this module existed.
 
-Reads are guarded throughout: this parser has never seen a real Cursor
-transcript, so an unexpected shape must degrade to an absent field rather than a
-wrong one.
+Reads are guarded, but **not tolerant**. Recognition is complete and kept
+separate from processing: a record this grammar does not cover is counted in
+`unrecognized` and surfaced by the sweep, never quietly dropped. Postel's law is
+the wrong rule for a parser written against a format it has never observed —
+silent tolerance would turn "Cursor changed the shape" into "that session had
+fewer turns" (RFC 9413's virtuous intolerance; LangSec, Momot et al., IEEE SecDev
+2016). Content *blocks* are the one pre-declared extension point, so an unknown
+block is tolerated while an unknown record is not.
+
+**Prior work.** Normalizing heterogeneous agent trajectories into one
+intermediate is an established move, not an invention: HarnessFix compiles
+traces into a harness-aware Trace Intermediate Representation that normalizes
+trajectory evidence across harnesses (arXiv 2606.06324), and the Agent Data
+Protocol positions itself as an interlingua unifying thirteen agent datasets held
+in incompatible formats (arXiv 2510.24702). This module is an *instantiation*:
+`TranscriptFacts` already existed and simply gains a second producing dialect,
+and the adapter boundary is an Anti-Corruption Layer (Evans, *Domain-Driven
+Design*, 2003) — the same framing docs/07 uses for the Cursor hook suite.
+Targeting a published wire schema instead was considered and rejected on
+documented grounds rather than effort: OpenTelemetry's GenAI conventions are
+Development-status with no released schema URL to pin, carry no reasoning content
+part, and Claude Code's own OTel export redacts extended thinking and truncates
+tool content — so routing through it would *lower* the primary-evidence floor
+docs/10 exists to raise. W3C PROV, extended to agents by PROV-AGENT (arXiv
+2508.02866), is the right shape at the wrong granularity: a provenance
+vocabulary, not a transcript format. For fields Cursor cannot supply, absence is
+recorded with a *reason* rather than a sentinel, following the three-way
+distinction FHIR's `dataAbsentReason` makes — `not-applicable`, `unknown`,
+`unsupported` — where Cursor's missing tool results are `unsupported`: a value
+exists and the format cannot carry it. Rubin's MCAR/MAR/MNAR is deliberately not
+the frame, since each of its categories presupposes a latent value that could
+have been observed. Backfilling sessions logged before this reader existed is
+replay over an immutable log, which is the position docs/10 already takes as
+"re-extract, not migrate".
+
+Not found in the 2026 scan (see docs/11 §4): a per-record manifest of what a
+source format could not carry, and any measurement of extraction quality as a
+function of *which trace fields* are present.
 """
 
 from __future__ import annotations
@@ -175,9 +210,16 @@ def parse(
     facts.started_at = started_at
     facts.ended_at = ended_at
 
-    for row, record in enumerate(_records(path)):
+    for row, (record, decodable) in enumerate(_rows(path)):
+        # Recognition first, and completely — anything the grammar below does not
+        # cover is counted, never quietly dropped (see TranscriptFacts.unrecognized).
+        if not decodable or not isinstance(record, dict):
+            facts.unrecognized += 1
+            continue
+
         role = record.get("role")
         if role not in ("user", "assistant"):
+            facts.unrecognized += 1
             continue
 
         message = record.get("message")
@@ -189,6 +231,7 @@ def parse(
         elif isinstance(content, list):
             blocks = [b for b in content if isinstance(b, dict)]
         else:
+            facts.unrecognized += 1
             continue
 
         facts.message_count += 1
@@ -248,7 +291,12 @@ def to_session_graph(
     return graph.model_copy(update={"tool": Tool.CURSOR})
 
 
-def _records(path: Path):
+def _rows(path: Path):
+    """Yield (record, decodable) for every non-blank line, decode failures included.
+
+    Kept distinct from `_records`: the ledger readers genuinely want to skip junk,
+    but the transcript parser must be able to *count* what it could not read.
+    """
     if not path or not path.is_file():
         return
     with path.open(errors="ignore") as handle:
@@ -257,11 +305,15 @@ def _records(path: Path):
             if not line:
                 continue
             try:
-                record = json.loads(line)
+                yield json.loads(line), True
             except json.JSONDecodeError:
-                continue
-            if isinstance(record, dict):
-                yield record
+                yield None, False
+
+
+def _records(path: Path):
+    for record, decodable in _rows(path):
+        if decodable and isinstance(record, dict):
+            yield record
 
 
 def _timestamp(value) -> datetime | None:

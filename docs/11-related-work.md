@@ -683,7 +683,19 @@ not a scan.
    provenance and evidence tracing are surveyed in 2606.04990, write-path gating in
    2606.04329 — but the scan did not find the coupling used as a *memory-formation*
    mechanism between agent scopes. Provisional, like everything on this list.
-5. **Harness-instrumentation gaps** (2026-07-29 scan, for the Cursor port —
+5. **Refuted, and recorded as such: a normalized agent-trace intermediate is
+   published prior work.** The Cursor transcript adapter (lab/028) would have been
+   a natural place to claim novelty for "one intermediate, many harness dialects".
+   It is not novel. HarnessFix's harness-aware Trace Intermediate Representation
+   normalizes trajectory evidence across harnesses (arXiv 2606.06324, in the graph
+   under feed `thalamus`), and the Agent Data Protocol is explicitly an interlingua
+   over thirteen agent datasets in incompatible formats (arXiv 2510.24702, same
+   feed). Both measure gains on their own downstream tasks (HarnessFix +6.3–18.4%
+   across four benchmarks; ADP ~+20% average SFT gain) and **neither measures IR
+   fidelity**, so they are cited for the pattern, never for the schema. Thalamus's
+   adapter is an instantiation. Recorded here because this list is only worth
+   keeping if entries can leave it.
+6. **Harness-instrumentation gaps** (2026-07-29 scan, for the Cursor port —
    [07](07-harness-integration.md), lab/027). These are **engineering gaps, not
    research novelty**: the mechanisms are visible in shipped products (LangChain
    middleware, Claude Code system reminders), just unstudied.
@@ -710,6 +722,39 @@ not a scan.
    - OpenTelemetry's GenAI semantic conventions define **no conditional or
      degraded conformance**: a span a harness cannot emit is simply absent, with
      nothing marking the absence as structural rather than incidental.
+7. **Cross-format transcript gaps** (2026-07-29 scan, for the Cursor transcript
+   adapter — [05](05-trust-model.md), [07](07-harness-integration.md), lab/028):
+   - **A per-record manifest of what a source format could not carry.** The theory
+     exists (information-capacity dominance, Miller, Ioannidis & Ramakrishnan,
+     VLDB 1993; recovery/quasi-inverse, Fagin 2007) and argues for a *static
+     per-format capability table* over a per-record one, which is what
+     `ingress_verifiable` is. The in-band mechanism exists only in the mirror
+     direction — declaring what a *consumer* may ignore (ISO/IEC 29500-3 MCE,
+     SOAP `mustUnderstand`) — and the reason vocabulary exists without the
+     manifest (FHIR `dataAbsentReason`). The synthesis was not found. Worth
+     knowing before building one: HL7 defined a serialization-scoped null flavor
+     (`NP`) and retired it.
+   - **A named discipline for shipping a parser against documentation alone**, with
+     no sample and no live system to test against. LangSec names the *hazard* —
+     antipattern (e), "Incomplete Protocol Specification", including specs that may
+     not exist — but names no survival practice. Every technique that sounds
+     applicable requires something we lack: grammar inference (Mimid, ESEC/FSE
+     2020; AUTOGRAM, ASE 2016) needs the implementation; schema inference (Baazizi
+     et al., EDBT 2017) needs a document corpus; differential testing needs two
+     systems. Consumer-driven contract testing scopes itself to providers you can
+     influence. Nearest fit is bi-directional contract testing, a vendor pattern
+     whose own stated objection is that it verifies you against the documentation —
+     the thing already not trusted.
+   - **Any measurement of extraction quality as a function of *which trace fields*
+     are present.** Every held ablation varies observation modality, token volume
+     or storage representation, never field structure: verbatim beats extracted
+     artifacts by 15.9–22.0 pp (arXiv 2601.00821, *single-author unrefereed
+     preprint* — cite with that caveat), observation masking matches LLM
+     summarization at half the cost (arXiv 2508.21433), judge quality is
+     *non-monotonic* in fidelity (arXiv 2504.08942), and structure beats volume
+     (arXiv 2510.02837). This one is cheap to close in-house and is now an open
+     thread: re-run the existing extractor over archived Claude Code transcripts
+     with `tool_use_id` linkage stripped, and diff the claims. We hold the corpus.
 
 ## 5. Open challenges this literature puts to the design
 

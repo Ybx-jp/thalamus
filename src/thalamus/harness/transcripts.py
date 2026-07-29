@@ -90,6 +90,15 @@ class TranscriptFacts:
     # Count of external-ingress tool *calls* seen. Present even when their results
     # are not, so an unverifiable session can still say whether it fetched at all.
     ingress_detected: int = 0
+    # Records the reader could not classify at all. A parser written against a
+    # format it has never observed must not absorb surprises quietly: silent
+    # tolerance turns "the vendor changed the format" into "this session had fewer
+    # turns", which is the failure this project keeps rediscovering. Recognition is
+    # kept complete and separate from processing, and what falls outside it is
+    # counted and surfaced rather than repaired (RFC 9413's virtuous intolerance;
+    # LangSec, Momot et al., IEEE SecDev 2016 — both explicitly reject Postel's law
+    # outside pre-declared extension points).
+    unrecognized: int = 0
 
     @property
     def project(self) -> str:
