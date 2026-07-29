@@ -143,6 +143,30 @@ class TestForeignCwdPinResolution:
             "CLAUDE_CODE_AGENT": "thalamus-literature",
         }) == "literature"
 
+    def test_ledger_records_the_launch_channel_beside_the_resolved_scope(self, tmp_path):
+        """Scope alone cannot audit its own resolution.
+
+        When agent and env disagreed before ed18887, the ledger kept only the
+        resolved scope — the value that was wrong — so the mis-scoped-writes
+        audit could not separate a mis-scoped expert session from a main session
+        that consulted an expert. Recording the channel makes divergence visible.
+        """
+        run_hook(
+            session_start_payload(cwd=str(tmp_path)),
+            tmp_path,
+            env={"CLAUDE_CODE_AGENT": "thalamus-literature", "THALAMUS_SCOPE": "main"},
+        )
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["agent"] == "thalamus-literature"
+        assert row["scope"] == "literature"
+
+    def test_ledger_agent_is_empty_for_an_unpinned_session(self, tmp_path):
+        run_hook(session_start_payload(cwd=str(tmp_path)), tmp_path)
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["agent"] == "" and row["scope"] == "main"
+
     def test_ledger_records_the_pin_from_a_foreign_cwd(self, tmp_path):
         """End-to-end: the ledger session-end reads must carry the real pin."""
         run_hook(

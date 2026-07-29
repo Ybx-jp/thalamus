@@ -176,7 +176,13 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    All the hooks are children of the same process, inherit the same
    env, and apply the same precedence: SessionStart
    appends the tier-0 pin record to `~/.thalamus/pins/pins.jsonl` and announces
-   the pin in the primed context; PostToolUse stamps the pin into every tap line;
+   the pin in the primed context. That record carries both the resolved `scope`
+   **and** the raw `agent` (`CLAUDE_CODE_AGENT`) it was resolved from, because a
+   ledger holding only the resolution cannot audit the resolution: when the two
+   disagreed before `ed18887`, the stored value was the wrong one, and the
+   retained transcript could not settle it either — consultation subagents carry
+   the same pinned-agent text as a real pin, so its presence is not evidence the
+   session was pinned. PostToolUse stamps the pin into every tap line;
    SessionEnd resolves the distillation scope **ledger-first, env fallback** and
    passes `--scope` to extraction, so the session's episodic memory lands in the
    pinned expert's subgraph. Ledger-first keeps re-extraction from any later,
