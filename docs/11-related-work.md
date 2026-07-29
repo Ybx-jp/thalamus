@@ -127,6 +127,34 @@ Benchmarks *measure*; they do not *self-maintain*. The correct framing is theref
 "not a benchmark — a live self-maintenance loop that the offline benchmarks above
 complement," and we cite them as the offline half we extend.
 
+### 2a0. Harness installation — latent configuration errors
+
+The harness only produces evidence if it is actually armed, and the ways it fails
+to arm are a studied class rather than a local accident.
+
+- **Early Detection of Configuration Errors to Reduce Failure Damage**
+  (Xu et al., OSDI 2016, in the graph) — defines a **latent configuration
+  error**: a parameter set at startup but not exercised until much later, so the
+  failure surfaces far from its cause. The paper measures that latent errors take
+  substantially longer to diagnose than non-latent ones, that 14.0%–93.2% of
+  critically important RAS parameters across six deployed systems were vulnerable
+  to them, and that 12.0%–38.6% of studied RAS parameters were never used at all.
+  PCheck's remedy is to *emulate the late usage at initialization* rather than
+  check syntax.
+- **Rethinking Software Misconfigurations in the Real World** (arXiv 2412.11121,
+  in the graph) — an empirical study of 772 real-world misconfiguration issues,
+  of which **317 produced silent errors** with no message and no repair guidance.
+
+Every Thalamus harness fault of this shape has been latent in exactly that sense:
+a hook `command` that does not resolve is inert until its event fires, and
+SessionEnd fires detached, so the first symptom is memory that quietly stopped
+accumulating. `thalamus init`'s verification stage is an **instantiation** of
+PCheck's early-detection idea, not an extension of it — it spawns the real
+interpreter against the real checkout the way SessionEnd will, instead of
+asserting that a path exists. What we give up is generality: PCheck derives its
+checkers from source automatically, whereas ours are hand-written for one
+harness, so they cover the faults we have thought of and no others.
+
 ### 2a. Harness validity — is this failure about the candidate?
 
 A counterfactual arm grades a candidate by running commands in a disposable
@@ -448,34 +476,82 @@ evidence, so its claims stay observational.
   levels, retrieved across levels at inference time. Clusters *text by embedding*
   where GraphRAG clusters *entities by graph structure*.
 
+- **BudgetMem** (arXiv 2602.06025) — the standing objection, and it lands on this
+  design directly. It characterizes most existing agent memory systems as relying
+  on **offline, query-agnostic memory construction**, which it calls inefficient
+  and prone to *discarding query-critical information*, and positions runtime
+  utilization as the alternative — while conceding that runtime approaches incur
+  substantial overhead and give limited control over the cost trade-off. Its own
+  answer is budget-tiered memory modules (Low/Mid/High) behind a router.
+
 **Position:** what transfers is the principle — **precompute summaries offline,
 reduce them against the query at answer time** — and Thalamus is a *convergence*
-on it. What does **not** transfer is the community layer: its demonstrated benefit
-is three orders of magnitude above this corpus, and a deliberately curated scope of
-tens of documents sits in the regime prior QFS methods already handle, i.e. the
-regime GraphRAG was built to escape. Adopting Leiden communities here would be
-cargo-culting the mechanism past the condition that motivates it. Thalamus's
-*extension* is the granularity: the **document** is the unit of precomputation and
-the scope's **standing concerns** are the fixed query, so the summary is written
-once per document at curation time rather than derived per question. Entity
-vertices already carry the clustering role communities are detected for, because
-[06](06-ingestion.md)'s entity-hygiene rule makes shared entities the linking
-discipline at ingest. What we trade away: GraphRAG's ability to answer questions
-nobody anticipated at index time — a fixed concern list can only answer against
-concerns it holds, so the concern list becomes a maintained, versioned object and
-its drift is the staleness signal.
+on it. Thalamus's *extension* is the granularity: the **document** is the unit of
+precomputation and the scope's **standing concerns** are the fixed query, so the
+summary is written once per document at curation time rather than derived per
+question. Entity vertices already carry the clustering role communities are
+detected for, because [06](06-ingestion.md)'s entity-hygiene rule makes shared
+entities the linking discipline at ingest.
 
-**Staleness is the ungrounded half.** Neither paper addresses incremental update of
-a summary hierarchy as the corpus grows, and that gap is documented rather than
-accidental: across a 435-work coded corpus, the literature concentrates far more
-heavily on accumulating and retrieving state than on governing, recovering or
-relinquishing it (**Always-OnAgents**, arXiv 2606.30306). Any recompute policy we
-build is measurable but not grounded, and should be stated as such.
+**Why the community layer is not taken, stated at the strength the record
+supports.** GraphRAG's gains are reported for global sensemaking over corpora in
+the **1 million token range**, and its case against prior QFS is that those methods
+don't scale that high — so a curated scope of tens of documents does not meet the
+condition under which the benefit was demonstrated. That much is cited. The further
+step — that a hierarchy therefore buys *less* at this size, because GraphRAG's
+justification is itself a scaling argument — is an **inference from the cited
+claim's logic, not a measured result**. The `literature` scope holds no node
+reporting either method's behavior on small corpora, and no ablation of hierarchy
+depth against corpus size. The choice is defensible on conditions-not-met plus the
+curation argument; it is not backed by a measurement, and must not be written as
+though it were.
+
+**RAPTOR is excluded on a different axis, and more weakly.** Its condition is depth
+*within* documents — the headline result is QuALITY, a long-document comprehension
+benchmark — not corpus size, so the 1M-token argument does not reach it. A corpus of
+tens of substantive papers may satisfy "lengthy documents" better than it satisfies
+GraphRAG's scale. The reason to prefer entity structure over embedding clusters is
+that curation already encodes the former; that is an argument from what we have, not
+a result. Treat RAPTOR as a reason to look again if the contribution layer
+underperforms, not as a settled exclusion.
+
+**The standing objection to answer.** BudgetMem's critique is precisely that
+query-agnostic offline construction discards query-critical information. Conditioning
+precomputation on a *standing set of concerns* is arguably a way to be query-aware at
+ingest without knowing the query — but that is Thalamus's argument, not the paper's,
+and it is the claim a knowledgeable reviewer will press. Its budget-tiering shape
+transfers as an idea (tiered depth behind a hand-written policy); its measured
+accuracy-cost frontier does not, being a property of an RL-trained router on
+LoCoMo/LongMemEval/HotpotQA.
+
+**Staleness is the ungrounded half, and it is a coverage gap rather than a demonstrated
+absence.** The scope holds nothing on incremental update of a summary hierarchy;
+targeted recalls returned no matches. That is a gap in what has been procured, not
+proof the field is silent — if the question becomes load-bearing it is a procurement
+target under [06](06-ingestion.md), not something more recall can fix. Two adjacent
+framings the scope does hold: MemoryBank (arXiv 2305.10250) establishes
+significance-and-recency-weighted incremental update in the *memory* literature (a
+loose analogy — it says nothing about rebuilding a summary hierarchy), and
+Always-OnAgents (arXiv 2606.30306) models persistent state as including provenance and
+audit records, which makes a durable brief's staleness a correctness property rather
+than merely a freshness one. That survey also documents why the gap exists: the
+literature concentrates far more heavily on accumulating and retrieving state than on
+governing, recovering or relinquishing it.
 
 Summarizing a document's contribution against a *standing* set of concerns rather
-than a one-off query was **not found in the 2026 scan** (§4). Before that phrasing
-hardens, the adjacent literatures to check are citation-context summarization and
-faceted scientific summarization, neither of which the `literature` scope holds.
+than a one-off query was **not found in the 2026 scan** (§4). The nearest neighbor
+the scope holds is KnowU-Bench (arXiv 2604.08455), which treats a hidden standing
+profile as something to be *inferred* from behavioral logs rather than looked up as
+static context — standing profiles as an inferrable, evaluable object, but for agent
+personalization, not document summarization. Before the phrasing hardens, the
+adjacent literatures to check are citation-context summarization and faceted
+scientific summarization, neither of which the scope holds.
+
+One method-level note for brief authoring: Self-RAG (arXiv 2310.11511) reports
+significant gains in **factuality and citation accuracy for long-form generations**
+from critique-and-reflect over retrieved passages. A readiness brief is a long-form
+generation that must carry citations, so that is the cited precedent for a reflection
+pass over a drafted brief.
 
 ## 4. What the scan did *not* find claimed elsewhere
 

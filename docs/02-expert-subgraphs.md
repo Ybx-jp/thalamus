@@ -160,8 +160,19 @@ prices (lab/006–007).
 because its corpora are too large to curate; [06](06-ingestion.md)'s entity-hygiene
 rule already makes shared entities the linking discipline at ingest, so the
 clustering communities are detected *for* comes free here. This scope does not run
-community detection — see [11](11-related-work.md) §3e for why the mechanism does not
-transfer at this corpus size.
+community detection — the demonstrated benefit sits three orders of magnitude up,
+so the condition for it is not met here. That is a conditions-not-met argument plus
+a curation argument, **not a measurement**: nothing in the record reports either
+method's behavior at this corpus size. See [11](11-related-work.md) §3e.
+
+**The objection this design has to answer.** BudgetMem (arXiv 2602.06025) argues
+that offline, query-agnostic memory construction is inefficient and discards
+query-critical information. Standing concerns are the response — a way to be
+query-aware at ingest without knowing the query — but that response is ours, not the
+paper's, and it is the load-bearing claim to defend. The falsifiable version: if
+questions keep arriving that no declared concern covers, the concern list is doing
+the discarding BudgetMem predicts, and the answer is runtime synthesis over claims
+rather than a longer concern list.
 
 **Two retrieval surfaces**, mirroring the local/global split:
 - **Local** — an anchor document to its contributions, one hop. "What does this paper

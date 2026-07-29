@@ -114,6 +114,22 @@ The harness cannot resolve a per-call pin — MCP calls don't carry the caller's
 session, and config arms per *process* (measured, lab/001) — so the process
 boundary is the mechanism: **one OS process = one immutable pin**.
 
+0. **Install is what makes the harness reach past the checkout.** `thalamus init`
+   writes the hook block to `~/.claude/settings.json` with **absolute** paths and
+   registers the MCP server at user scope through `claude mcp add` (never by
+   editing `~/.claude.json`, which every live session on the box writes). It then
+   **removes** the checkout's project-scope hook block and `.mcp.json` entry, so
+   exactly one definition of each exists: Claude Code deduplicates identical
+   handlers by command string, but the two cannot be textually identical — the
+   whole point is that one stops using `$CLAUDE_PROJECT_DIR` — and the docs do
+   not state whether hook arrays across scopes merge or override. Mutual
+   exclusion keeps that undocumented behaviour off the critical path. Install is
+   idempotent, leaves non-Thalamus hooks and unrelated settings alone, and ends
+   by **exercising** what it wired rather than asserting it (see
+   [11 §2a0](11-related-work.md) — these are latent configuration errors, inert
+   until an event fires, and SessionEnd fires detached). `--dry-run` reports
+   without writing; `--check` verifies an existing install. Arming is
+   per-process, so existing sessions need a relaunch.
 1. **Launch is the pin decision.** `thalamus pin <scope>` validates the scope
    against the tier-0 manifests, regenerates the derived agent definition
    (`.claude/agents/thalamus-<scope>.md` — generated from the manifest, never
