@@ -1,9 +1,9 @@
 # Harness Integration — MCP, Hooks, Directives, and the Limit Lab
 
-**Status:** implementing — MCP + the full Claude Code hook suite (nine scripts
-across six events) installed and live; session pinning built ("the process is
-the pin"); Cursor hook suite ported as adapters (four of six events cross —
-lab/010). This doc covers how Thalamus meets the Claude Code harness primarily,
+**Status:** implementing — MCP + the full Claude Code hook suite (eight scripts
+across five events, over a shared scope-resolution helper) installed and live;
+session pinning built ("the process is the pin"); Cursor hook suite ported as
+adapters (four of the five events cross — lab/010). This doc covers how Thalamus meets the Claude Code harness primarily,
 the Cursor port's shape and walls, and how we find the harness's limits on
 purpose.
 

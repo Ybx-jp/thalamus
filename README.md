@@ -36,10 +36,17 @@ measures whether any of it actually makes the agent better.
 - **The consultation protocol**: cross-expert questions ride single-use tickets where
   minting the ticket *is* writing the exchange record, and answers must cite nodes
   inside the consulted scope ([docs/02](docs/02-expert-subgraphs.md)).
-- **The eval loop, layers 1 + 1b**: every memory-tool call is trace-tapped, landed as
+- **The eval loop, layers 1–2**: every memory-tool call is trace-tapped, landed as
   `Trace` nodes, judged used-vs-ignored against the session's retained transcript,
   and priced in injected tokens — decay candidates rank by wasted tokens
-  ([docs/04](docs/04-eval-loop.md)). Utility claims wait for counterfactuals.
+  ([docs/04](docs/04-eval-loop.md)). Above that sits the counterfactual harness: a
+  task battery (`thalamus eval tasks`), an arm runner that executes one task
+  memory-on / memory-off / scoping-degraded in a confined worktree with its own
+  `HOME` and its own store (`thalamus eval run --sandbox --isolate-store`), and a
+  graded oracle whose rungs are validated against a mutant set before any arm is
+  scored (`thalamus eval oracle`). Fourteen campaigns are written up in
+  [`lab/`](lab/) (011–024). What is measured so far is retrieval *surfacing*;
+  retrieval *use* remains unevidenced, so the utility claim is still open.
 - **First trust enforcement**: the transcript-ingress floor down-tiers distilled
   claims that rest on fetched web content, so a poisoned page can't launder into
   tier-1 memory ([docs/05](docs/05-trust-model.md)).
@@ -60,7 +67,9 @@ src/thalamus/
   archive/     immutable content-addressed store for retained primary evidence
   harness/     where it meets the agent — MCP server, hooks, skills, transcript bootstrap
   eval/        the eval loop — trace tap reader, used-vs-ignored attribution,
-               Trace-node sync, per-scope utility and cost reports
+               Trace-node sync, per-scope utility and cost reports, and the
+               counterfactual harness (task battery, arm runner, graded oracle)
+  pulse/       live telemetry dashboard over the eval loop's measurements
 frontend/      viewer source; builds into plane/static
 config/        expert manifests (tier-0, operator-owned)
 docs/          design docs
@@ -69,9 +78,9 @@ lab/           harness-limit notebook — what broke, why, workaround or wall
 
 Both **Claude Code** and **Cursor** are supported; their hook contracts differ, so
 each has its own hook suite under `src/thalamus/harness/hooks/`. Claude Code is the
-primary harness: nine scripts across six events (`.claude/settings.json`) cover
-memory priming, the pin ledger, distillation, the trace taps, the gremlin guard,
-and the conditioning/timestamp injections. The Cursor suite
+primary harness: eight scripts across five events (`.claude/settings.json`), over a
+shared scope-resolution helper, cover memory priming, the pin ledger, distillation,
+the trace taps, the gremlin guard, and the conditioning/timestamp injections. The Cursor suite
 (`.cursor/hooks.json`, committed) ports everything portable — session-start
 priming + pin ledger, engagement marking, the gremlin guard
 (`beforeShellExecution`), and both trace taps (`afterShellExecution`,
@@ -96,24 +105,41 @@ uv sync --extra dev            # or: python -m venv .venv && .venv/bin/pip insta
 # 3. Use it
 thalamus bootstrap                 # list session transcripts available to ingest
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
+thalamus extract                   # bootstrap stage 2: Claims + Threads via a model
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus contract check            # audit the live graph against the contract
 thalamus ingest <url|file>         # feed one document to an expert (dry-run; --write to persist)
 thalamus pin <scope>               # launch a claude session pinned to an expert
-thalamus roster                    # one pinned tmux window per expert (plus main)
+thalamus roster                    # bring up the control plane (--all for every expert)
+thalamus spawn <scope>             # one on-demand pinned tmux window
 thalamus visualize                 # open the persisted memory explorer
 thalamus visualize session.yaml    # preview a pending extraction, no graph needed
 thalamus write session.yaml        # write to the graph
+thalamus pulse                     # live telemetry dashboard over the eval loop
+thalamus snapshot                  # flush the graph to disk now
+thalamus-mcp                       # run the MCP server
+```
+
+The eval loop has its own surface — layer 1 measures what retrieval did, layer 2
+asks whether it mattered:
+
+```bash
+# layer 1 — traces, priced
 thalamus eval sync --write         # land retrieval traces + used-vs-ignored verdicts
 thalamus eval report               # per-scope retrieval-utility numbers, priced
 thalamus eval cost                 # session/operation token-cost buckets
 thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
+thalamus eval conditioning         # per-firing behavioral join on injected reminders
 thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
 thalamus eval recipes              # smoke-run every stored gremlin recipe read-only
-thalamus eval conditioning         # per-firing behavioral join on injected reminders
-thalamus pulse                     # live telemetry dashboard over the eval loop
-thalamus snapshot                  # flush the graph to disk now
-thalamus-mcp                       # run the MCP server
+
+# layer 2 — counterfactuals
+thalamus eval tasks                # validate and list the task battery (config/tasks/)
+thalamus eval oracle               # grade anchors + mutants against pre-registered rungs
+thalamus eval run <task>           # run one task under arms (worktree + headless session)
+thalamus eval rescore              # apply new detectors backwards over past campaigns
+thalamus eval rakes                # solved problems later sessions could have re-stepped on
+thalamus eval rake-audit           # draw/score the hand-audited precision sample
 ```
 
 The graph lives in the named `thalamus-graph-data` Docker volume and survives
@@ -245,3 +271,7 @@ uv run ruff check src tests
 cd frontend && npm test
 cd frontend && npm run build  # -> src/thalamus/plane/static
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
