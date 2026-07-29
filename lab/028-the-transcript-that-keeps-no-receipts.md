@@ -180,6 +180,42 @@ Two things the port had to be honest about:
   carries `agent --list-models`, so the failure comes with its own fix. Verifying
   it is one command on a machine that has Cursor.
 
+## The sweep: no vendor binary spelled inline anywhere
+
+Fixing the one invocation the Cursor port needed left the rest of the codebase
+still spelling `claude` by hand, which is the same latent fault in waiting — a
+hardcoded vendor binary is invisible until the machine that lacks it tries to use
+it, and then it fails as "distillation stopped happening" rather than as an error.
+So `harness/agents.py` became the single registry: binary, default model, whether
+the envelope prices the call, and **what the CLI cannot yet do**.
+
+The sweep found four executable sites and classified each rather than converting
+all of them:
+
+| Site | Disposition |
+|---|---|
+| `extraction.run_extraction` | harness-agnostic (the original fix) |
+| `ingest.ingest` | harness-agnostic, `--harness` on the CLI — ingestion has no harness of its own, so the flag picks whichever CLI the machine has |
+| `eval/arms.run_agent` | binary/model from the registry, **but refuses non-Claude harnesses by name** |
+| `harness/pin` | left alone — it launches the agent *picker*, which Cursor has no equivalent of |
+
+The arms refusal is the part worth defending. Arms need far more than a binary
+that takes `-p`: credentials staged from `~/.claude.json` and
+`~/.claude/.credentials.json`, `--max-turns` and the permission flags, an envelope
+reporting `num_turns` and `total_cost_usd`, and a transcript that
+`detect_worktree_escape`, `detect_history_reach` and `classify_session_fault` can
+all read. Swapping the binary alone would produce arms that run, exit zero, and
+measure nothing — records that read as data and are not. That is lab/016's lesson
+(matching a string instead of a failure) and lab/022's (a `transcript_text` bug
+filing a perfect-recall arm as one that never tried) arriving a third time. So the
+blockers are enumerated on the registry entry and `agent_cli()` refuses with the
+list, which is both honest today and a to-do list if arms are ever ported.
+
+Two stale docstrings were caught in the same pass — `extraction.py` still claimed
+"the model is invoked through `claude -p`" — and `install.HARNESSES` now derives
+from the registry, so a third harness cannot arrive in one list and be silently
+uninstallable from the other.
+
 ## Wall or workaround
 
 **Workaround**, and lab/010's last structural wall is down — Cursor sessions now

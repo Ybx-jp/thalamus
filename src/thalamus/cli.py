@@ -20,7 +20,7 @@ from thalamus.archive import archive_dir
 from thalamus.contract.conformance import check_session
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval.rake_audit import SAMPLE_SIZE
-from thalamus.harness import cursor_transcripts, extraction, transcripts
+from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.plane.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
@@ -82,7 +82,7 @@ def main():
         "Cursor sessionEnd log instead.",
     )
     extract_parser.add_argument(
-        "--harness", choices=("claude", "cursor"), default="claude",
+        "--harness", choices=agents.HARNESSES, default="claude",
         help="Which harness wrote the transcripts (default: claude). `cursor` sweeps "
         "~/.thalamus/logs/cursor-session-end.jsonl, including sessions logged before "
         "the adapter existed.",
@@ -126,7 +126,14 @@ def main():
     )
     ingest_parser.add_argument("--feed", default="manual", help="Feed identity (default: manual)")
     ingest_parser.add_argument(
-        "--model", default=None, help="Extraction model for claude -p (default: sonnet)"
+        "--model", default=None,
+        help="Extraction model. Defaults to the harness's own (see --harness)."
+    )
+    ingest_parser.add_argument(
+        "--harness", choices=agents.HARNESSES, default="claude",
+        help="Which coding-agent CLI runs the extraction pass (default: claude). "
+        "Ingestion has no harness of its own — this picks whichever CLI the "
+        "machine actually has.",
     )
     ingest_parser.add_argument("--title", default="", help="Override the extracted title")
     ingest_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
@@ -936,7 +943,8 @@ def _cmd_ingest(args):
             args.location,
             scope=args.scope,
             feed=args.feed,
-            model=args.model or extraction_mod.DEFAULT_MODEL,
+            model=args.model,
+            harness=args.harness,
             title=args.title,
             known_entities=known_entities,
         )
@@ -1198,7 +1206,8 @@ def _cmd_eval(args, eval_parser):
                 remaining = [a.spec for a in arm_list[index + 1:]]
                 if remaining:
                     print(f"Not run: {', '.join(remaining)}. Check credentials "
-                          "and usage limits (`claude -p \"say ok\"`), then "
+                          "and usage limits (`claude -p \"say ok\"` — arms are "
+                          "Claude-Code-only, see arms.agent_cli), then "
                           "re-run this campaign.", file=sys.stderr)
                 sys.exit(3)
             except arms_mod.ArmError as exc:

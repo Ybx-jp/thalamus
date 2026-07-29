@@ -53,6 +53,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from thalamus.harness.agents import HARNESSES as AGENT_HARNESSES
 from thalamus.harness.pin import PROJECT_ROOT, USER_AGENTS_DIR, write_all_agents
 
 USER_SETTINGS = Path.home() / ".claude" / "settings.json"
@@ -69,7 +70,9 @@ USER_CURSOR_MCP = Path.home() / ".cursor" / "mcp.json"
 PROJECT_CURSOR_HOOKS = PROJECT_ROOT / ".cursor" / "hooks.json"
 PROJECT_CURSOR_MCP = PROJECT_ROOT / ".cursor" / "mcp.json"
 
-HARNESSES = ("claude", "cursor")
+# One list, so a third harness cannot arrive in the agent registry and be
+# silently uninstallable.
+HARNESSES = AGENT_HARNESSES
 
 # The hook wiring, as (event, matcher, script). Matcher None = all tools.
 HOOK_WIRING: list[tuple[str, str | None, str]] = [

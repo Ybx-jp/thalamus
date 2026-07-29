@@ -1101,3 +1101,34 @@ class TestConcludedRunIsNeverADeadSession:
         """`is_error` alone never meant death — every capped run carries it."""
         agent = AgentRun("s", "ran out of turns mid-refactor", 1.8, 200000, 40, True)
         assert arms.classify_session_fault(agent) is None
+
+
+# ---------------------------------------------------------------------------
+# Harness selection — plumbing is shared, capability is declared (docs/07)
+# ---------------------------------------------------------------------------
+
+
+def test_arms_refuse_a_harness_they_cannot_honestly_drive():
+    """Extraction is harness-agnostic; arms are not. Swapping the binary alone
+    would emit records that read as measurements and are not — the failure
+    lab/016 and lab/022 are both about — so the gaps are refused by name."""
+    with pytest.raises(arms.ArmError) as exc:
+        arms.agent_cli("cursor")
+    message = str(exc.value)
+    assert "cannot run under `cursor`" in message
+    assert "credential staging" in message  # itemised, not a bare refusal
+
+
+def test_arms_still_run_under_claude():
+    assert arms.agent_cli("claude").binary == "claude"
+
+
+def test_an_unknown_harness_is_refused_as_an_arm_error():
+    with pytest.raises(arms.ArmError, match="no agent CLI"):
+        arms.agent_cli("emacs")
+
+
+def test_the_arm_default_model_comes_from_the_registry():
+    from thalamus.harness import agents
+
+    assert arms.DEFAULT_MODEL == agents.cli_for("claude").default_model

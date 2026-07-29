@@ -8,6 +8,12 @@ the whole path). So the launcher's whole job is to make that process correctly:
 validate the scope against the tier-0 manifests, regenerate the derived agent
 definition, and hand the terminal to `claude` with agent and env agreeing.
 
+Claude-Code-only by nature, and not for want of plumbing: pinning rides the
+agent picker (`--agent thalamus-<scope>`), which Cursor has no equivalent of
+— a Cursor session is pinned by `THALAMUS_SCOPE` in its environment instead
+(docs/07). This launcher is therefore not routed through harness/agents.py;
+there is no second thing for it to launch.
+
 tmux is the control plane when present — one window per pinned expert, the window
 name being the scope. Coordination stays in tmux, not in Thalamus: the launcher
 never tracks the processes it starts, because the pin ledger (session-start hook)

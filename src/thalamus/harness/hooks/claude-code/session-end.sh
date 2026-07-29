@@ -74,7 +74,7 @@ echo "distilling session ${session_id:0:8} into scope $scope" >>"$log"
 # same pattern the thalamus-pulse user unit already uses.
 repo_root="$(thalamus_repo_root)"
 nohup sh -c "
-  uv run --project '$repo_root' thalamus extract \
+  uv run --project '$repo_root' thalamus extract --harness claude \
     --session '$session_id' --scope '$scope' --force --write -- '$project_dir'
   uv run --project '$repo_root' thalamus eval sync --write
 " >>"$log" 2>&1 </dev/null &

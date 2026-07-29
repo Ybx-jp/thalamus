@@ -191,15 +191,38 @@ first, or to add `transcript_ready`), so reading at session end races an async
 writer and can distill a truncated session. Scope comes from each session's own
 sessionEnd record, ledger-first, not from the `--scope` flag.
 
-**A session distills through its own harness's CLI.** Claude Code sessions go to
-`claude -p`; Cursor sessions go to Cursor's `agent -p`, defaulting to Composer 2.5
-(`extraction.EXTRACTION_CLIS`). Both take `-p`, `--model` and
-`--output-format json`, and both return an envelope carrying `result`, `is_error`
-and `duration_ms` under those exact names, so one invocation path serves both.
-Two reasons this is not merely tidy: a Cursor-only machine should not need Claude
-Code installed and authenticated before its sessions can become memory, and each
-harness's session content stays with the vendor the operator already chose for
-that machine — a policy question on a work box, not only a convenience.
+**Every headless invocation resolves its CLI from one registry**
+(`harness/agents.py`): binary, default model, whether the envelope prices the
+call, and what the CLI cannot yet do. Nothing spells `claude` inline any more,
+because a hardcoded vendor binary is invisible until the machine that lacks it
+tries to use it — and then it fails as "distillation stopped happening" rather
+than as an error anyone reads.
+
+A session distills through its own harness's CLI: Claude Code sessions go to
+`claude -p`, Cursor sessions to Cursor's `agent -p` defaulting to Composer 2.5.
+Both take `-p`, `--model` and `--output-format json`, and both return an envelope
+carrying `result`, `is_error` and `duration_ms` under those exact names, so one
+invocation path serves both. Two reasons this is not merely tidy: a Cursor-only
+machine should not need Claude Code installed and authenticated before its
+sessions can become memory, and each harness's session content stays with the
+vendor the operator already chose for that machine — a policy question on a work
+box, not only a convenience. `thalamus ingest` takes `--harness` for the same
+reason, though ingestion has no harness of its own: it picks whichever CLI the
+machine actually has.
+
+**Capability is declared, not assumed.** Two surfaces stay Claude-Code-only, and
+both say so rather than substituting a binary:
+
+- **Eval arms** (`arms.agent_cli`) refuse a harness they cannot honestly drive,
+  itemising why — staged credentials from `~/.claude.json`, `--max-turns` and the
+  permission flags, an envelope reporting `num_turns` and `total_cost_usd`, and a
+  transcript the escape detectors and fault classifier can read. A partial port
+  would emit records that read as measurements and are not, which is the failure
+  lab/016 and lab/022 are both about.
+- **`thalamus pin`** launches through the agent picker (`--agent thalamus-<scope>`),
+  which Cursor has no equivalent of — a Cursor session is pinned by
+  `THALAMUS_SCOPE` in its environment instead. There is no second thing for the
+  launcher to launch, so it is not routed through the registry at all.
 
 The deliberately-not-fast variant is the batch argument: distillation is a sweep
 where nothing waits on the result, so the quality/latency trade runs the other way

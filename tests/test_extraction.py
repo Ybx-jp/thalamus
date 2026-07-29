@@ -454,5 +454,5 @@ def test_a_missing_cli_names_the_binary_it_wanted(monkeypatch):
 
 
 def test_an_unknown_harness_is_refused():
-    with pytest.raises(extraction.ExtractionError, match="no extraction CLI"):
+    with pytest.raises(extraction.ExtractionError, match="no agent CLI"):
         extraction.run_extraction("p", harness="emacs")

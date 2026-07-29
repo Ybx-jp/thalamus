@@ -18,8 +18,11 @@ Three design commitments, all inherited from docs/10:
    stage-1 graph: session identity, sources, and anchored touches come from the record;
    the model contributes only what cannot be recorded — judgement.
 
-The model is invoked through `claude -p` (headless Claude Code), which rides whatever
-authentication the operator's own sessions use. No API key handling here.
+The model is invoked through a headless coding-agent CLI chosen by harness
+(`harness/agents.py`): `claude -p` for Claude Code sessions, Cursor's `agent -p`
+for Cursor ones. Either rides whatever authentication the operator's own sessions
+already use, so there is no API key handling here — and a Cursor-only machine
+never needs Claude Code installed to turn its sessions into memory.
 """
 
 from __future__ import annotations
@@ -33,13 +36,21 @@ from dataclasses import dataclass
 import yaml
 
 from thalamus.eval.attribution import MIN_MATCHED_RATIO, MIN_MATCHED_TERMS
+from thalamus.harness.agents import (  # re-exported: extraction is their main caller
+    AGENT_CLIS,
+    CLAUDE_DEFAULT_MODEL,
+    CURSOR_DEFAULT_MODEL,
+    AgentCLI,
+    UnknownHarness,
+    cli_for,
+)
 from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS
 from thalamus.substrate.reader import _extract_keywords
 from thalamus.substrate.schema import Claim, Provenance, SessionGraph, Tier
 
 _TOKEN_RE = re.compile(r"[a-z0-9_./-]+")
 
-DEFAULT_MODEL = "sonnet"
+DEFAULT_MODEL = CLAUDE_DEFAULT_MODEL
 
 # Character budgets for the rendered digest. ~4 chars/token, so 240k chars ≈ 60k tokens —
 # comfortably inside context while leaving room for instructions and output.
@@ -329,62 +340,6 @@ def build_prompt(
 # Model invocation — headless, one dialect per harness
 # ---------------------------------------------------------------------------
 
-# Composer 2.5, deliberately not the fast variant: distillation is a batch sweep
-# where nothing waits on the result, so the quality/latency trade runs the other
-# way from interactive use.
-#
-# ⚠️ This identifier is **unverified**. Cursor documents `--model <model>` and
-# `--list-models` but publishes no identifier strings, Composer 2.5 has no public
-# API model id (it is Cursor-platform-only), and no live Cursor has been observed
-# from here. A wrong string fails at invocation rather than silently selecting
-# another model, and `_MODEL_HINT` below turns that failure into one command's
-# worth of fixing.
-CURSOR_DEFAULT_MODEL = "composer-2.5"
-
-_MODEL_HINT = "run `agent --list-models` for the accepted identifiers"
-
-
-@dataclass(frozen=True)
-class ExtractionCLI:
-    """One headless coding-agent CLI, as extraction invokes it.
-
-    Both CLIs take `-p`, `--model` and `--output-format json`, and both return an
-    envelope carrying `result`, `is_error` and `duration_ms` under those exact
-    names — so the differences worth modelling are the binary, the default model,
-    and whether the envelope prices the call at all.
-    """
-
-    harness: str
-    binary: str
-    default_model: str
-    # Claude Code reports `total_cost_usd`; Cursor's JSON envelope carries no cost
-    # or token fields at all. That distinction is kept rather than defaulted to
-    # 0.0, because a zero that means "not reported" is indistinguishable from a
-    # zero that means "free" — the same absent-vs-negative trap the ingress floor
-    # hit (docs/05), and it would quietly under-report the extraction spend that
-    # `eval cost` exists to total.
-    reports_cost: bool
-
-    def argv(self, model: str) -> list[str]:
-        return [self.binary, "-p", "--model", model, "--output-format", "json"]
-
-
-EXTRACTION_CLIS: dict[str, ExtractionCLI] = {
-    "claude": ExtractionCLI("claude", "claude", DEFAULT_MODEL, reports_cost=True),
-    "cursor": ExtractionCLI("cursor", "agent", CURSOR_DEFAULT_MODEL, reports_cost=False),
-}
-
-
-def cli_for(harness: str) -> ExtractionCLI:
-    try:
-        return EXTRACTION_CLIS[harness]
-    except KeyError:
-        raise ExtractionError(
-            f"no extraction CLI for harness `{harness}`; "
-            f"known: {', '.join(sorted(EXTRACTION_CLIS))}"
-        ) from None
-
-
 @dataclass
 class ExtractionRun:
     text: str
@@ -416,7 +371,10 @@ def run_extraction(
     prompt, so the model has no reason to touch a filesystem — and now it couldn't
     find anything interesting if it tried.
     """
-    cli = cli_for(harness)
+    try:
+        cli = cli_for(harness)
+    except UnknownHarness as exc:
+        raise ExtractionError(str(exc)) from None
     model = model or cli.default_model
 
     with tempfile.TemporaryDirectory(prefix="thalamus-extract-") as workdir:
@@ -439,7 +397,7 @@ def run_extraction(
 
     if proc.returncode != 0:
         stderr = proc.stderr.strip()[:500]
-        hint = f" ({_MODEL_HINT})" if cli.harness == "cursor" else ""
+        hint = f" ({cli.model_hint})" if cli.model_hint else ""
         raise ExtractionError(
             f"{cli.binary} -p --model {model} exited {proc.returncode}{hint}: {stderr}"
         )

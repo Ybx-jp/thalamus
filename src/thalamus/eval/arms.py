@@ -1,7 +1,7 @@
 """The arm runner — layer 2's execution half (docs/04).
 
 One run = one task from the pre-registered battery (eval/tasks.py), one arm, one
-disposable git worktree at the task's ref, one headless `claude -p` session, then
+disposable git worktree at the task's ref, one headless coding-agent session, then
 the task's own oracles: acceptance commands in the worktree, consequence probes
 against the captured transcript and diff. Every run appends one JSONL record to
 `~/.thalamus/counterfactuals/runs.jsonl` — the same tap-then-report pattern as
@@ -29,6 +29,13 @@ Two hygiene rules, both measurement-motivated:
   `gremlin-guard.sh` are not the memory surface; stripping them in one arm would
   confound the contrast.
 
+The session binary comes from `harness/agents.py` like every other headless
+invocation, but arms are the one surface that is **not** harness-agnostic: they
+need staged credentials, turn limits, permission flags, an envelope reporting
+turns and cost, and a transcript the escape detectors and fault classifier can
+read. `agent_cli()` refuses a harness that lacks those, itemised, rather than
+substituting a binary and emitting records that read as measurements.
+
 Known residual, named not hidden: a memory-on arm can still write via the
 `memorize` MCP tool, and reads hit the *live* graph — snapshot pinning (the
 freshness arm's prerequisite) is not built, which is why `freshness-degraded`
@@ -48,9 +55,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from thalamus.eval.cost import project_slug
+from thalamus.harness.agents import cli_for as _cli_for
 from thalamus.eval.tasks import Task
 
-DEFAULT_MODEL = "sonnet"
+DEFAULT_MODEL = _cli_for("claude").default_model
 DEFAULT_MAX_TURNS = 40
 DEFAULT_TIMEOUT = 1800
 RUNS_BASE = Path.home() / ".thalamus" / "counterfactuals"
@@ -65,6 +73,32 @@ UNBUILT_ARMS = ("freshness-degraded", "volume-degraded")
 
 class ArmError(RuntimeError):
     pass
+
+
+def agent_cli(harness: str):
+    """The CLI for this harness, or a refusal naming what is still Claude-Code-only.
+
+    Arms need far more from a harness than a binary that takes `-p`: staged
+    credentials, turn limits, permission flags, a run envelope that reports turns
+    and cost, and a transcript the escape detectors and fault classifier can read.
+    Swapping the binary alone would produce arms that run and report success while
+    measuring nothing — records that look like data and are not, which is the
+    failure lab/016 and lab/022 are both about. So the gaps are enumerated on the
+    registry entry (harness/agents.py) and refused here by name.
+    """
+    try:
+        cli = _cli_for(harness)
+    except ValueError as exc:
+        raise ArmError(str(exc)) from None
+    if not cli.runs_arms:
+        blockers = "\n".join(f"  - {b}" for b in cli.arm_blockers)
+        raise ArmError(
+            f"eval arms cannot run under `{harness}` yet. Still Claude-Code-only:\n"
+            f"{blockers}\n"
+            "Extraction and ingestion are harness-agnostic; arms are not, and a "
+            "partial port would emit records that read as measurements."
+        )
+    return cli
 
 
 class SessionFault(ArmError):
@@ -604,7 +638,8 @@ def run_agent(
     *,
     scope: str,
     project: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
+    harness: str = "claude",
     max_turns: int = DEFAULT_MAX_TURNS,
     timeout: int = DEFAULT_TIMEOUT,
     full_auto: bool = False,
@@ -612,6 +647,8 @@ def run_agent(
     network: str = "host",
     home: Path | None = None,
 ) -> AgentRun:
+    cli = agent_cli(harness)
+    model = model or cli.default_model
     env = dict(os.environ)
     env["THALAMUS_SCOPE"] = scope
     # session-start.sh resolves project from basename(cwd), which is the repo
@@ -624,7 +661,8 @@ def run_agent(
     # from the operator's own session would override the arm's scope.
     env.pop("CLAUDE_CODE_AGENT", None)
 
-    cmd = ["claude", "-p", "--model", model, "--output-format", "json",
+    cli = agent_cli(harness)
+    cmd = [cli.binary, "-p", "--model", model, "--output-format", "json",
            "--max-turns", str(max_turns)]
     cmd += (
         ["--dangerously-skip-permissions"] if full_auto
@@ -699,15 +737,19 @@ def run_agent(
             timeout=timeout, cwd=worktree, env=env,
         )
     except FileNotFoundError as exc:
-        raise ArmError("`claude` CLI not found on PATH") from exc
+        raise ArmError(f"`{cli.binary}` CLI not found on PATH") from exc
     except subprocess.TimeoutExpired as exc:
         raise ArmError(f"arm session timed out after {timeout}s") from exc
     if proc.returncode != 0 and not proc.stdout.strip():
-        raise ArmError(f"claude -p exited {proc.returncode}: {proc.stderr.strip()[:300]}")
+        raise ArmError(
+            f"{cli.binary} -p exited {proc.returncode}: {proc.stderr.strip()[:300]}"
+        )
     try:
         envelope = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise ArmError(f"unparseable claude -p output: {proc.stdout[:200]}") from exc
+        raise ArmError(
+            f"unparseable {cli.binary} -p output: {proc.stdout[:200]}"
+        ) from exc
     return AgentRun(
         session_id=str(envelope.get("session_id", "")),
         result=str(envelope.get("result", "")),

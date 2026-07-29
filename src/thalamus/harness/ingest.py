@@ -222,7 +222,8 @@ def ingest(
     *,
     scope: str,
     feed: str = "manual",
-    model: str = extraction.DEFAULT_MODEL,
+    model: str | None = None,
+    harness: str = "claude",
     title: str = "",
     known_entities: list[dict] | None = None,
 ) -> tuple[KnowledgeBatch, extraction.ExtractionRun]:
@@ -242,7 +243,9 @@ def ingest(
         )
 
     known_names = [str(row["name"]) for row in known_entities or [] if row.get("name")]
-    run = extraction.run_extraction(build_prompt(text, origin, known_names), model=model)
+    run = extraction.run_extraction(
+        build_prompt(text, origin, known_names), model=model, harness=harness
+    )
     data = extraction.parse_extraction(run.text)
 
     batch = build_batch(
