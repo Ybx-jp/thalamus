@@ -55,6 +55,60 @@ Start at [`docs/index.md`](docs/index.md) — doc tracker, status board, milesto
 table, and the binding decision log. [`docs/11-related-work.md`](docs/11-related-work.md)
 places the design in the 2026 literature.
 
+## Results
+
+Every campaign is written up in [`lab/`](lab/) — the negative ones especially. In
+the order the evidence arrived:
+
+- **Layer 1: retrieval is priced.** The first priced run found **half the injected
+  retrieval tokens were never used** ([006](lab/006-priced-verdicts-first-run.md)).
+  The autopsy cleared the suspect the operator had in mind — the blanket
+  session-start recall — and convicted the query shape instead
+  ([007](lab/007-query-shape-refinement.md)).
+- **Layer 2: the harness got debugged before any number was trusted.** The first
+  three counterfactual campaigns surfaced three bugs in the runner itself — project
+  scoping, worktrees freezing the runner's own hooks at a pre-fix ref, and a fresh
+  worktree venv silently running the wrong `pytest`
+  ([012](lab/012-post-distillation-rerun-found-a-harness-bug.md),
+  [013](lab/013-the-fix-lands-but-recall-goes-unused.md)). No campaign that ran
+  before those fixes is cited as a memory-utility result;
+  [014](lab/014-the-first-clean-campaign-and-a-split-verdict-on-recall.md) is the
+  first with zero infra faults. The runner now classifies infra faults apart from
+  candidate defects.
+- **A hypothesis died on replication.** [015](lab/015-three-models-and-the-recall-gradient.md)
+  read a model×task recall pattern across 12 arms;
+  [016](lab/016-the-replication-that-killed-the-hypothesis.md) inverted both sonnet
+  cells and showed the pattern is substantially stochastic within a fixed cell. The
+  falsification criterion was written down before the run.
+- **The instrument is validated before it grades anything.** The graded oracle's
+  rungs are checked against a pre-registered mutant set with no model in the loop —
+  7/7 ([017](lab/017-the-mutant-gate-and-the-suite-that-rewarded-imitation.md)), and
+  6/6 for the withholding task at zero model cost
+  ([019](lab/019-the-task-that-withholds-something.md)).
+- **The first campaign where memory-on could actually reach memory**
+  ([023](lab/023-the-first-valid-memory-contrast.md)): 24 confined arms, treatment
+  cleanly separated, zero contaminated. On the pre-registered endpoint — share of
+  arms reaching rung ≥ 4 — it is **null**, 1/12 vs 0/12. The informative half is
+  the negative one: repairing the hook layer took recall engagement from 6/13 to
+  **11/12** and the graded outcome did not move. Engagement with memory is not the
+  bottleneck on this task.
+- **The stopping rule earned its keep.** An interim look at arm 19 of 24 showed
+  P(on > off) = 0.789, one-sided p = 0.015. By arm 24 it had decayed to p = 0.085
+  ([024](lab/024-the-endpoint-was-in-the-wrong-place.md)). Stopping early would have
+  recorded an effect the completed campaign does not support.
+- **Two audits changed already-published numbers.** A review from the
+  `eval-methodology` pin found the answer-key leak undercounted and `mean rung` used
+  without measurement-scale warrant
+  ([021](lab/021-the-escape-detector-and-three-corrections.md)); a scan of all 88
+  recorded arms then found a second leak channel — the git object store, 9 of 88 —
+  that the new detector could not see
+  ([022](lab/022-confinement-and-the-leak-nobody-was-watching.md)). Confinement
+  closed both.
+
+**The utility claim is open.** What is measured is that memory gets *surfaced*; that
+it changes task outcomes is not yet evidenced. This section says so until a campaign
+says otherwise.
+
 ## What's here
 
 ```
