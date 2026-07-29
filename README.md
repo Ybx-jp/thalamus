@@ -12,6 +12,73 @@ them — gives the human full observability into everything the agent remembers,
 believes, and retrieved, with provenance down to the ingestion event. An **eval loop**
 measures whether any of it actually makes the agent better.
 
+## Quick start
+
+**Your graph starts empty and stays yours.** Thalamus ships no seed graph, no
+export and no fixture corpus — a graph is one operator's session history, so
+every install is fresh, for everyone. Memory accumulates as you work.
+
+### Prerequisites
+
+| | Why |
+|---|---|
+| **Docker** | runs the graph (Gremlin Server on TinkerGraph) |
+| **Python ≥3.11** and [**uv**](https://docs.astral.sh/uv/) | the package and its CLI |
+| **jq** | every hook parses its stdin with it; without it the hook layer dies silently |
+| **A coding-agent CLI** — Claude Code (`claude`), Cursor (`agent`), or both | distillation shells out to it. Sessions from a harness whose CLI is missing will retrieve and trace, but never become memory |
+
+### Install
+
+```bash
+git clone https://github.com/Ybx-jp/thalamus && cd thalamus
+
+docker compose up -d           # the graph, on 127.0.0.1:8182 — no licence, no account
+uv sync --extra dev            # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
+thalamus init                  # wire both editors, then verify what it wired
+```
+
+`thalamus init` installs at **user scope**, so the harness arms in every
+directory rather than only inside this checkout. It wires Claude Code and Cursor
+by default; use `--harness claude` or `--harness cursor` for one. `--dry-run`
+reports without writing, and `--check` re-verifies any time.
+
+### Read what it tells you
+
+Install ends by *exercising* what it wired rather than asserting it — it spawns
+the real interpreter from a foreign directory, round-trips the Cursor injection
+spool, and reads each skill back through its user-scope path:
+
+```
+Verification (exercised, not assumed):
+  ✓ hook scripts present: all 9 wired scripts found
+  ✓ distillation entry point: `thalamus` resolves from a foreign cwd
+  ✓ graph reachable: 0 vertices at ws://localhost:8182/gremlin (fresh — every install starts empty)
+  ! cursor distillation CLI: `agent` not on PATH — cursor sessions will retrieve
+    and trace but never distill (install it, or extract with `--harness claude`)
+```
+
+Three markers, and the difference matters:
+
+- **`✓`** — verified by running it, not by checking that a file exists.
+- **`✗`** — the install itself is broken. Exits non-zero; fix before relying on it.
+- **`!`** — an *advisory* about your environment, with the command that fixes it.
+  Install wires configuration; it does not start your containers or install other
+  vendors' binaries. Advisories never fail the install, and a graph reporting
+  **0 vertices is a pass** — that is what a fresh install looks like.
+
+### Then relaunch your editor
+
+Hooks and the MCP server arm **per process**, so an already-running session
+picks up nothing. Quit and reopen Claude Code or Cursor; `/clear` is not enough.
+
+A new session should greet you with a memory prompt and its pinned scope. From
+there, memory builds itself: sessions distill at exit on Claude Code, and
+`thalamus extract --harness cursor` sweeps Cursor sessions afterwards
+([docs/07](docs/07-harness-integration.md) explains why Cursor is a later sweep).
+
+Working outside this repo is the normal case — that is what user-scope install
+buys. See [Command reference](#command-reference) for everything else.
+
 ## What's live
 
 - **The substrate**: a property graph (Apache TinkerPop / TinkerGraph) of `Session` / `Claim` /
@@ -150,20 +217,11 @@ sweeps the sessionEnd log, and because Cursor's transcripts exclude tool outputs
 entirely, those sessions are floored whole by the ingress defence rather than
 checked against evidence that does not exist (lab/028, docs/05).
 
-## Quick start
+## Command reference
 
-Requires Docker and Python ≥3.11.
+Setup lives in [Quick start](#quick-start); this is the rest of the surface.
 
 ```bash
-# 1. Infrastructure — Gremlin Server on TinkerGraph. No licence, no account.
-docker compose up -d
-
-# 2. Install
-uv sync --extra dev            # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
-thalamus init                  # arm hooks + the MCP server for every directory, then verify
-                               # (both editors; --harness claude|cursor to pick one)
-
-# 3. Use it
 thalamus init --check              # verify an existing install without writing
 thalamus bootstrap                 # list session transcripts available to ingest
 thalamus bootstrap -- <project>    # dry-run: retain + extract (add --write to persist)
@@ -206,14 +264,14 @@ thalamus eval rakes                # solved problems later sessions could have r
 thalamus eval rake-audit           # draw/score the hand-audited precision sample
 ```
 
-**The graph is never shipped. Every install starts empty, for everyone.** It is
-one operator's session history — what they worked on, what they decided, and the
-retained transcripts underneath it — so there is no seed graph, no export, and no
-fixture corpus in this repo. The graph lives in the named `thalamus-graph-data`
-Docker volume and the evidence archive in `~/.thalamus/archive`; both sit outside
-the tree by construction, and `.gitignore` guards the paths anyway. A fresh graph
-reporting zero vertices is the normal starting state, and `thalamus init --check`
-says so rather than flagging it.
+### Where your memory lives
+
+The graph is in the named `thalamus-graph-data` Docker volume; the evidence
+archive — your session transcripts, retained verbatim — is in
+`~/.thalamus/archive`. Both sit outside the checkout by construction, which is
+what makes "[the graph is never shipped](#quick-start)" structural rather than a
+promise: there is nothing in the tree to ship, and `.gitignore` guards the paths
+against a stray `snapshot --path ./…` anyway.
 
 Don't `docker compose down -v` unless you mean to delete it.
 
