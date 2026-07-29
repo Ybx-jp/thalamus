@@ -431,6 +431,52 @@ the cited work has that we do not: population-scale learning traces (DKT and HLR
 both train on massive cohorts). A single-operator learner model accumulates n=1
 evidence, so its claims stay observational.
 
+### 3e. Precomputed summaries — local vs global retrieval over a scope
+
+- **From Local to Global: A Graph RAG Approach to Query-Focused Summarization**
+  (arXiv 2404.16130) — questions aimed at *an entire corpus* are query-focused
+  summarization tasks, not retrieval tasks, and conventional RAG fails on them.
+  The answer is a two-stage offline index: derive an entity knowledge graph, then
+  **pregenerate summaries for communities of closely related entities**; at query
+  time each relevant community summary yields a partial response and the partials
+  are reduced into a final answer. Reported gains are for corpora **in the 1
+  million token range**, and the paper's case against prior QFS methods is
+  explicitly that they don't scale to that size.
+- **RAPTOR** (arXiv 2401.18059) — the same complaint (retrieving short contiguous
+  chunks limits holistic understanding) answered by recursively embedding,
+  clustering and summarizing text bottom-up into a tree of differing abstraction
+  levels, retrieved across levels at inference time. Clusters *text by embedding*
+  where GraphRAG clusters *entities by graph structure*.
+
+**Position:** what transfers is the principle — **precompute summaries offline,
+reduce them against the query at answer time** — and Thalamus is a *convergence*
+on it. What does **not** transfer is the community layer: its demonstrated benefit
+is three orders of magnitude above this corpus, and a deliberately curated scope of
+tens of documents sits in the regime prior QFS methods already handle, i.e. the
+regime GraphRAG was built to escape. Adopting Leiden communities here would be
+cargo-culting the mechanism past the condition that motivates it. Thalamus's
+*extension* is the granularity: the **document** is the unit of precomputation and
+the scope's **standing concerns** are the fixed query, so the summary is written
+once per document at curation time rather than derived per question. Entity
+vertices already carry the clustering role communities are detected for, because
+[06](06-ingestion.md)'s entity-hygiene rule makes shared entities the linking
+discipline at ingest. What we trade away: GraphRAG's ability to answer questions
+nobody anticipated at index time — a fixed concern list can only answer against
+concerns it holds, so the concern list becomes a maintained, versioned object and
+its drift is the staleness signal.
+
+**Staleness is the ungrounded half.** Neither paper addresses incremental update of
+a summary hierarchy as the corpus grows, and that gap is documented rather than
+accidental: across a 435-work coded corpus, the literature concentrates far more
+heavily on accumulating and retrieving state than on governing, recovering or
+relinquishing it (**Always-OnAgents**, arXiv 2606.30306). Any recompute policy we
+build is measurable but not grounded, and should be stated as such.
+
+Summarizing a document's contribution against a *standing* set of concerns rather
+than a one-off query was **not found in the 2026 scan** (§4). Before that phrasing
+hardens, the adjacent literatures to check are citation-context summarization and
+faceted scientific summarization, neither of which the `literature` scope holds.
+
 ## 4. What the scan did *not* find claimed elsewhere
 
 Stated narrowly and provisionally — absence in one scan is weak evidence, and this
