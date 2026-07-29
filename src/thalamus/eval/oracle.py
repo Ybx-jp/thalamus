@@ -46,7 +46,6 @@ from pathlib import Path
 
 from thalamus.eval.arms import (
     ArmError,
-    _git,
     evaluate_acceptance,
     ladder_score,
     pin_pre_existing_suite,

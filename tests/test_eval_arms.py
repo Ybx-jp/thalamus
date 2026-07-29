@@ -19,7 +19,6 @@ import pytest
 from thalamus.eval import arms
 from thalamus.eval.arms import (
     AgentRun,
-    Arm,
     ArmError,
     apply_arm,
     evaluate_acceptance,
@@ -49,7 +48,9 @@ def _task(**overrides) -> Task:
 
 
 def _settings() -> dict:
-    hook = lambda name: {"type": "command", "command": f"$CLAUDE_PROJECT_DIR/hooks/{name}"}
+    def hook(name):
+        return {"type": "command", "command": f"$CLAUDE_PROJECT_DIR/hooks/{name}"}
+
     return {
         "hooks": {
             "SessionStart": [{"hooks": [hook("session-start.sh")]}],
@@ -200,10 +201,12 @@ def test_acceptance_and_probes_evaluate_mechanically(tmp_path):
 def _git_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
-    run = lambda *a: subprocess.run(
-        ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", *a],
-        check=True, capture_output=True,
-    )
+    def run(*a):
+        return subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", *a],
+            check=True, capture_output=True,
+        )
+
     run("init", "-q")
     (repo / "README.md").write_text("hello")
     run("add", ".")

@@ -975,7 +975,7 @@ def _cmd_eval(args, eval_parser):
         from thalamus.eval.rakes import build_rake_report, read_rakes
 
         if not args.draw and not args.score:
-            parser.error("thalamus eval rake-audit needs --draw or --score")
+            eval_parser.error("thalamus eval rake-audit needs --draw or --score")
 
         if args.draw:
             graph = connect(args.url)
@@ -1004,7 +1004,8 @@ def _cmd_eval(args, eval_parser):
         if args.score:
             key_path = args.key or args.score.with_suffix(args.score.suffix + ".key.jsonl")
             if not key_path.exists():
-                parser.error(f"--score needs the key written at draw time (looked for {key_path})")
+                eval_parser.error(
+                    f"--score needs the key written at draw time (looked for {key_path})")
             sample = ra.sample_from_jsonl(key_path.read_text())
             labels, parse_problems = ra.parse_worksheet(args.score.read_text())
             print(ra.score_sample(sample, labels, parse_problems).render())

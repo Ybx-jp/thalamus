@@ -17,7 +17,6 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest
 
 GUARD = (
     Path(__file__).resolve().parents[1]
