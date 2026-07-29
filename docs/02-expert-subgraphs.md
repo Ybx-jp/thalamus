@@ -136,66 +136,67 @@ authority-grant are the same act ("not found in the 2026 scan", provisional; see
 
 ## What an expert knows about its own corpus
 
-**Status: designed, not built.** An expert scope can currently answer "what does the
-corpus say about X" by lexical recall over claims. It cannot answer "how does each
-ingested document bear on this scope" — that is a query-focused summarization
-question over the whole corpus, not a retrieval question, and no amount of better
-matching answers it (arXiv 2404.16130; see [11](11-related-work.md) §3e). The answer
-is precomputation.
+**A document's contribution is earned at runtime, not declared at ingest.** "How does
+this paper bear on the scope" is already answerable from structure that exists: an
+`Exchange` records the question asked, and its `REFERENCES {role: citation}` edges
+record which claims the validated answer rested on. Walk a `Source` to its claims and
+back out through those edges and you have the paper's contribution in its own earned
+terms — the actual questions it was cited to answer, verbatim, no summarization step:
 
-**Standing concerns are tier-0.** Each expert manifest declares a versioned list of
-the concerns its scope exists to serve. This is the *fixed query* that per-document
-summaries are written against, and it lives in `config/experts/<scope>.yaml` for the
-same reason every other curation decision does — no feed or model can write it.
+    g.V().hasLabel('Exchange').as('e').outE('REFERENCES').has('role','citation')
+      .inV().hasLabel('Claim').out('DERIVED_FROM').hasLabel('Source')
+      .has('title', containing('<paper>')).select('e').dedup().values('question')
 
-**Contributions are sparse (document × concern).** For each Source, one
-`Contribution` node per concern it actually bears on — typically one to three, never
-the full cross product. Each carries what the document establishes for that concern
-*and what it argues against*, `DERIVED_FROM` its Source and `BEARS_ON` its Concern.
-Sparseness is a retrieval-cost decision: a document-level summary injected for a
-single-concern question is mostly waste, which is exactly the fan-out the eval loop
-prices (lab/006–007).
+This is **better evidence than a precomputed summary**, because it records what the
+paper was *used for* rather than what someone anticipated it might be good for. It is
+also the shape the literature argues for: BudgetMem (arXiv 2602.06025) characterizes
+offline, query-agnostic memory construction as inefficient and prone to discarding
+query-critical information, and positions runtime utilization as the alternative. A
+per-document summary written against a declared concern list at ingest time is exactly
+the construction it criticizes, and the cost of getting the concern list wrong is
+silent — the discarded material leaves no trace. So no `Contribution` node type, no
+declared concern vocabulary, and no recompute pass. **The exchange questions are the
+concerns, revealed rather than declared.**
 
-**Entities stay the cross-concern layer.** GraphRAG detects entity communities
-because its corpora are too large to curate; [06](06-ingestion.md)'s entity-hygiene
-rule already makes shared entities the linking discipline at ingest, so the
-clustering communities are detected *for* comes free here. This scope does not run
-community detection — the demonstrated benefit sits three orders of magnitude up,
-so the condition for it is not met here. That is a conditions-not-met argument plus
-a curation argument, **not a measurement**: nothing in the record reports either
-method's behavior at this corpus size. See [11](11-related-work.md) §3e.
+The consequence for the local/global split ([11](11-related-work.md) §3e): the *local*
+surface is the traversal above and it is already built. The *global* surface — "how
+does this corpus position us on X" — is a reduce over the questions and cited claims a
+topic has accumulated, run when asked. Precomputation buys nothing at this corpus size
+that the reduce does not, and GraphRAG's community layer is not taken at all: its
+demonstrated benefit sits three orders of magnitude up (conditions-not-met plus the
+curation argument, **not** a measurement — nothing in the record reports either
+method's behavior at this size).
 
-**The objection this design has to answer.** BudgetMem (arXiv 2602.06025) argues
-that offline, query-agnostic memory construction is inefficient and discards
-query-critical information. Standing concerns are the response — a way to be
-query-aware at ingest without knowing the query — but that response is ours, not the
-paper's, and it is the load-bearing claim to defend. The falsifiable version: if
-questions keep arriving that no declared concern covers, the concern list is doing
-the discarding BudgetMem predicts, and the answer is runtime synthesis over claims
-rather than a longer concern list.
+**The real gap is cold sources, and it is measurable today.** A paper that was ingested
+but never cited in an exchange has no earned contribution — 10 of 37 sources in the
+`literature` scope, measured 2026-07-28. Some are legitimately another project's feed;
+the thalamus-relevant ones are cold for a reason worth naming, because
+`arXiv:2605.17830` is among them despite a readiness run recording that it *changed the
+design in three places*. It entered through a briefing aside instead of a consultation
+ticket, so it changed the design while leaving no exchange record — the lane violation
+the readiness protocol was rewritten to close, visible here as a hole in attribution.
+**Cold-source count is therefore a coverage metric, not just a curiosity**: it counts
+literature that reached the design through an unaudited channel, alongside literature
+nobody has needed yet. The two are distinguishable by whether any decision cites the
+paper.
 
-**Two retrieval surfaces**, mirroring the local/global split:
-- **Local** — an anchor document to its contributions, one hop. "What does this paper
-  give us, and where does it cut against us."
-- **Global** — a concern to every contribution bearing on it, reduced into an answer.
-  Same map-reduce shape as GraphRAG, except the map is precomputed at curation time
-  and the reduce runs over an already-relevant sparse set.
-
-**Recompute is a separate pass**, not an ingest hook: ingestion stays the smallest
-component in the system ([06](06-ingestion.md)), and a concern-list revision
-invalidates summaries that an ingest-time hook could never revisit. Staleness is a
-version comparison — `(concern_list_version, source_version)` — chosen because it is
-cheap and legible, and flagged as **ungrounded**: the literature covers accumulating
-and retrieving state far more than governing or relinquishing it (arXiv 2606.30306),
-so this policy is measurable but not anchored.
+Building anything more than that metric waits on the metric saying so — the same rule
+[06](06-ingestion.md) applies to ingestion itself. What the teach workspace's literature
+map holds by hand (a per-paper "what it shows / where we stand" position, with
+provenance sentences added after the 2026-07-26 audit found five trust-cluster papers
+asserting content the graph did not hold) is the same object, maintained manually and
+free to drift. Generating it from the traversal above is the natural way to close that
+drift class, and is the first thing to build here if anything is.
 
 ### Briefs are authored here
 
 A readiness brief ([the advisor](../CLAUDE.md) runs after a design is settled, never
 before) is written **by the literature expert under a consultation ticket**, from the
-anchors' contribution nodes plus the exchange record that settled the design. It
-lands as a node in the expert's own scope and renders to a file in the teach
-workspace for reading.
+anchors' claims, the questions those claims have previously been cited to answer, and
+the exchange record that settled the design in hand. It lands as a node in the
+expert's own scope and renders to a file in the teach workspace for reading. Nothing
+is precomputed for it: the anchor set is 2–4 papers, so the traversal is cheap at
+authoring time and reflects the graph as it stands rather than as it stood at ingest.
 
 Its trust tier falls out of an existing rule rather than a new one: derived from
 tier-2 content, it stays tier-2 ([05](05-trust-model.md)), so a brief *informs, it

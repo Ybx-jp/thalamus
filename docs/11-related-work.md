@@ -484,14 +484,20 @@ evidence, so its claims stay observational.
   substantial overhead and give limited control over the cost trade-off. Its own
   answer is budget-tiered memory modules (Low/Mid/High) behind a router.
 
-**Position:** what transfers is the principle — **precompute summaries offline,
-reduce them against the query at answer time** — and Thalamus is a *convergence*
-on it. Thalamus's *extension* is the granularity: the **document** is the unit of
-precomputation and the scope's **standing concerns** are the fixed query, so the
-summary is written once per document at curation time rather than derived per
-question. Entity vertices already carry the clustering role communities are
-detected for, because [06](06-ingestion.md)'s entity-hygiene rule makes shared
-entities the linking discipline at ingest.
+**Position: Thalamus takes the local/global *question* and rejects the offline
+answer.** The distinction that survives is GraphRAG's opening one — asking how a
+whole corpus bears on something is query-focused summarization, not retrieval, and
+better matching will not answer it. What Thalamus does not adopt is precomputation,
+because BudgetMem's critique applies squarely and the alternative is already built:
+an `Exchange` records the question asked and its citation edges record which claims
+the answer rested on, so a document's contribution is recoverable at runtime *in
+earned terms* — the questions it was actually cited to answer — with no summarization
+step and no declared concern vocabulary. That is **query-aware utilization, a
+convergence on BudgetMem's stance**, not an instantiation of GraphRAG's index. The
+per-document contribution summary considered here is withdrawn: it was the offline,
+query-agnostic construction BudgetMem names, and its failure mode (discarded
+query-critical material) is silent by construction, which is the worst property a
+memory design can have.
 
 **Why the community layer is not taken, stated at the strength the record
 supports.** GraphRAG's gains are reported for global sensemaking over corpora in
@@ -515,14 +521,14 @@ that curation already encodes the former; that is an argument from what we have,
 a result. Treat RAPTOR as a reason to look again if the contribution layer
 underperforms, not as a settled exclusion.
 
-**The standing objection to answer.** BudgetMem's critique is precisely that
-query-agnostic offline construction discards query-critical information. Conditioning
-precomputation on a *standing set of concerns* is arguably a way to be query-aware at
-ingest without knowing the query — but that is Thalamus's argument, not the paper's,
-and it is the claim a knowledgeable reviewer will press. Its budget-tiering shape
-transfers as an idea (tiered depth behind a hand-written policy); its measured
-accuracy-cost frontier does not, being a property of an RL-trained router on
-LoCoMo/LongMemEval/HotpotQA.
+**What of BudgetMem transfers.** The critique does, and it decided the design. The
+budget-tiering shape transfers as an idea (tiered depth behind a hand-written policy,
+should retrieval cost ever demand it); its measured accuracy-cost frontier does not,
+being a property of an RL-trained router on LoCoMo/LongMemEval/HotpotQA. Note the
+limit of the convergence: BudgetMem's runtime alternative is a trained routing policy,
+where Thalamus's is a graph traversal over records the consultation protocol already
+writes. Same stance on *when* to do the work, different mechanism entirely — and ours
+is cheap only because the exchange record exists for independent reasons.
 
 **Staleness is the ungrounded half, and it is a coverage gap rather than a demonstrated
 absence.** The scope holds nothing on incremental update of a summary hierarchy;
@@ -538,14 +544,14 @@ than merely a freshness one. That survey also documents why the gap exists: the
 literature concentrates far more heavily on accumulating and retrieving state than on
 governing, recovering or relinquishing it.
 
-Summarizing a document's contribution against a *standing* set of concerns rather
-than a one-off query was **not found in the 2026 scan** (§4). The nearest neighbor
-the scope holds is KnowU-Bench (arXiv 2604.08455), which treats a hidden standing
-profile as something to be *inferred* from behavioral logs rather than looked up as
-static context — standing profiles as an inferrable, evaluable object, but for agent
-personalization, not document summarization. Before the phrasing hardens, the
-adjacent literatures to check are citation-context summarization and faceted
-scientific summarization, neither of which the scope holds.
+**No novelty claim is made here** — the design reduced to using records the system
+already writes, which is the opposite of new. Worth noting only because the discarded
+alternative (summarizing a document against a *standing* set of concerns) was not
+found in the 2026 scan, and being unclaimed is not the same as being right: it was
+withdrawn on a cited objection, not on priority. KnowU-Bench (arXiv 2604.08455) is the
+nearest neighbor the scope holds, and it points the same way as the decision — a
+standing profile is something to *infer* from behavioral logs rather than look up as
+static context.
 
 One method-level note for brief authoring: Self-RAG (arXiv 2310.11511) reports
 significant gains in **factuality and citation accuracy for long-form generations**
