@@ -40,6 +40,15 @@ if [ -z "$session" ] || [ -z "$prompt" ]; then
   exit 0
 fi
 
+# A new prompt invalidates any classification still undelivered from the last
+# one: it was matched against different text, and delivering it here would
+# advise design work over whatever the user actually just asked. This hook runs
+# on every prompt and is the only writer of conditioning entries, so pruning
+# here is what makes "the spool holds at most one turn's worth" true rather
+# than assumed. The clock needs no equivalent — it carries no rendered value
+# and regenerates at drain.
+thalamus_spool_prune "$session" conditioning
+
 claude_payload=$(jq -cn --arg s "$session" --arg p "$prompt" \
   '{hook_event_name: "UserPromptSubmit", session_id: $s, prompt: $p}')
 

@@ -421,6 +421,38 @@ correction of failed queries; ours fails fast and lets the agent rewrite.
   through *linguistic* feedback: reflective text in an episodic buffer,
   re-injected as context, conditions later attempts (91% pass@1 HumanEval).
   Context injection is a working behavior-change channel.
+- **Proactive memory for long-horizon agents** (arXiv 2607.08716) — the direct
+  agent-side ablation of our throttle: selective reminder injection against
+  passive bank exposure, **always-on injection**, advisor-only, and general
+  retrieval, on Terminal-Bench 2.0 and τ²-Bench. Selective wins, and this is a
+  closer citation for the conditioning tier than Self-RAG, which decides
+  *retrieval*, not injection. Read honestly, though: the margins over always-on
+  are small (τ²-Bench macro-avg 64.3 vs 63.5, always-on better in two of three
+  domains) and no token or latency comparison is reported — so the cost half of
+  our throttle argument is currently **uncited**.
+- **Depth-dependent indirect prompt injection** (arXiv 2605.30686) — the only
+  positional measurement of instruction efficacy from the *tool-result* slot:
+  60% at depth 1 falling to 0% by depth 4, because models are trained to
+  discount instructions arriving in tool output. Adversarial, so the sign is
+  inverted for our use, and that is exactly the problem — see §4.
+- **STALE** (arXiv 2605.06527) — agents act on superseded memory even when the
+  update is retrievable; dominant failure is *implicit conflict*, best frontier
+  accuracy 55.2%. The measured reason the Cursor spool prunes an undelivered
+  classification rather than carrying it into the next turn ([07](07-harness-integration.md)).
+- **Harness-Bench** (arXiv 2605.27922) — harness configuration is a first-order
+  effect; capability "should be reported at the model-harness configuration
+  level rather than attributed to the base model alone" (106 tasks, 5,194
+  trajectories). With **measurement invariance** (Vandenberg & Lance,
+  *Organizational Research Methods* 2000) this is why the `harness` split in
+  `eval conditioning` prevents pooling but does not license a cross-harness
+  comparison: the arms differ *configurally* — indicators missing outright, not
+  merely scaled.
+- **The Saturation Trap** (arXiv 2606.04296) — intervention timing has no stable
+  ground truth: absolute-state triggers fire on 39–83% of actions, LLM judges
+  reach F1 0.17–0.40, and three trained annotators agreed on *where* to
+  intervene barely above chance (Krippendorff's α = +0.047). Conclusion: build
+  for recoverability, not precision timing — which puts Cursor's one-tool-call
+  delivery offset inside the construct's noise floor.
 
 Positioning of the conditioning hooks ([07](07-harness-integration.md)): an
 *instantiation* of both — harness-event-triggered, operator-authored lexical
@@ -651,6 +683,33 @@ not a scan.
    provenance and evidence tracing are surveyed in 2606.04990, write-path gating in
    2606.04329 — but the scan did not find the coupling used as a *memory-formation*
    mechanism between agent scopes. Provisional, like everything on this list.
+5. **Harness-instrumentation gaps** (2026-07-29 scan, for the Cursor port —
+   [07](07-harness-integration.md), lab/027). These are **engineering gaps, not
+   research novelty**: the mechanisms are visible in shipped products (LangChain
+   middleware, Claude Code system reminders), just unstudied.
+   - No paper, survey or taxonomy distinguishes a context's **computation point**
+     from its **delivery point** within an agent loop. Every candidate term
+     collides with an occupied one: "out-of-band context" belongs to prompt-
+     injection security, "delayed feedback" to RL credit assignment. Nearest
+     ancestors: *asynchronous reflection* (arXiv 2502.11882) and *anticipating*
+     as a context primitive (arXiv 2607.21503, single-author preprint).
+   - **No measured comparison of *benign* instruction uptake by injection slot**
+     (system prompt vs user turn vs tool-result slot). All positional evidence is
+     adversarial (2605.30686), where resistance is the desired outcome and the
+     sign flips for this use. This is the gap that most directly limits what the
+     Cursor arm can claim, and it is measurable in-house.
+   - No formalization or evaluation of **agent middleware / interceptors** as a
+     construct; it exists only in framework documentation.
+   - No empirical study of **instrumentation portability across agent harnesses
+     with unequal event surfaces**, nor of cross-framework agent-trace
+     comparability. Nearest analogue is the Manifest V2→V3 developer study (arXiv
+     2507.13926), where reduced scope was sometimes the honest outcome — which is
+     what lab/010 concluded for distillation.
+   - **Measurement invariance has never been ported from psychometrics to
+     software instrumentation.** Importing it (§3c) is defensible and not found.
+   - OpenTelemetry's GenAI semantic conventions define **no conditional or
+     degraded conformance**: a span a harness cannot emit is simply absent, with
+     nothing marking the absence as structural rather than incidental.
 
 ## 5. Open challenges this literature puts to the design
 

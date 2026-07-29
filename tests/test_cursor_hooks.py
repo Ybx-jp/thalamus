@@ -324,6 +324,32 @@ class TestDeferredInjection:
         assert "additional_context" in json.loads(first.stdout)
         assert json.loads(second.stdout) == {}
 
+    def test_undelivered_classification_does_not_outlive_its_turn(self, tmp_path):
+        """A turn that fires conditioning and then calls no tool must not deliver
+        that classification against the *next* prompt — it was matched on text
+        that is no longer live (RFC 9111 §4.2; STALE arXiv 2605.06527)."""
+        run_hook("conditioning.sh",
+                 {"session_id": "d9", "prompt": "let's design a new component"}, tmp_path)
+        # no tool call this turn; next prompt arrives and matches no class
+        run_hook("timestamp.sh", {"session_id": "d9", "prompt": "what time is it"}, tmp_path)
+        run_hook("conditioning.sh", {"session_id": "d9", "prompt": "what time is it"}, tmp_path)
+        delivered = json.loads(
+            run_hook("inject.sh", {"session_id": "d9", "tool_name": "Read"}, tmp_path).stdout)
+        assert "Current date and time" in delivered["additional_context"]
+        assert "ground-in-literature" not in delivered["additional_context"]
+
+    def test_a_live_classification_still_survives_to_the_first_tool_call(self, tmp_path):
+        """The prune must not eat the current turn's own classification — the
+        clock hook runs alongside it on the same prompt."""
+        run_hook("timestamp.sh",
+                 {"session_id": "d10", "prompt": "let's design a new component"}, tmp_path)
+        run_hook("conditioning.sh",
+                 {"session_id": "d10", "prompt": "let's design a new component"}, tmp_path)
+        delivered = json.loads(
+            run_hook("inject.sh", {"session_id": "d10", "tool_name": "Read"}, tmp_path).stdout)
+        assert "ground-in-literature" in delivered["additional_context"]
+        assert "Current date and time" in delivered["additional_context"]
+
     def test_no_spool_is_a_silent_no_op(self, tmp_path):
         result = run_hook("inject.sh", {"session_id": "never-prompted"}, tmp_path)
         assert result.returncode == 0

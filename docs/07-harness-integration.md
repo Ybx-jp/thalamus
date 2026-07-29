@@ -136,12 +136,36 @@ time: a timestamp computed a tool call earlier is exactly the drift
 classifier against a reshaped payload, so its lexical classes, its
 once-per-session throttle and its firing log are one implementation rather than
 two. The price, recorded rather than hidden: **injection lands one tool call
-late**, a turn that calls no tool carries its injection forward, and session end
-discards an undelivered spool instead of leaking it into a later session.
-Because both harnesses now write the same firing log, each firing records its
-`harness` and `thalamus eval conditioning` splits by it — averaging Cursor's
-delayed delivery in with Claude Code's immediate one would re-confound the
-comparison this port exists to enable.
+late**, a turn that calls no tool carries its *clock* forward, and session end
+discards an undelivered spool instead of leaking it into a later session. The
+conditioning half is pruned at each new prompt instead of carried: it was
+classified against one specific prompt, so late delivery would advise design
+work against whatever was asked next — a message past its freshness lifetime
+(RFC 9111 §4.2), and agents measurably act on superseded state even when the
+fresh state is available (STALE, arXiv 2605.06527).
+
+Each firing records its `harness` and `thalamus eval conditioning` splits by it.
+That split prevents pooling; it does **not** license a cross-harness comparison.
+The two arms differ configurally — the Cursor arm is missing indicators the
+Claude Code arm has (no milestone class) and delivers the rest through a
+different channel — and configural invariance is the precondition for any
+cross-group comparison, not something a scaling factor repairs (Vandenberg &
+Lance 2000). Harness configuration is a first-order effect on agent behaviour in
+its own right (Harness-Bench, arXiv 2605.27922). So **the Cursor arm is a
+within-harness longitudinal instrument, not a comparator against Claude Code**,
+until the channel question below is settled.
+
+**The open risk is the delivery slot, not the one-call delay.** Cursor's
+conditioning arrives in the tool-result slot, and the only positional
+measurement that exists for text in that slot is adversarial: instruction
+efficacy from the observation stream falls from 60% at depth 1 to 0% at depth 4
+(arXiv 2605.30686), because models are deliberately trained to discount
+instructions arriving in tool output — otherwise indirect prompt injection would
+be trivial. Whether *benign* guidance in that slot gets the same uptake as the
+same guidance in the user turn is unmeasured anywhere (see
+[11](11-related-work.md) §4). If it does not, a `harness` split reports a
+difference it cannot attribute — channel, not latency. This is measurable
+in-house with instruments that already exist and is the next thing to run.
 
 What still does **not** cross: **distillation**. `thalamus extract` parses
 Claude Code JSONL transcripts only, so a Cursor session retrieves, traces and is
@@ -151,6 +175,37 @@ ended session with `distilled: false` and its `transcript_path` to
 That is now the only structural gap. The `PostToolUse:TaskCreate` milestone
 conditioning class also has no carrier — TaskCreate is Claude Code task-list UI,
 while Cursor's `Task` tool type is subagent spawning.
+
+### Prior work
+
+Splitting *where context is computed* from *where it is delivered* inside an
+agent loop has no name in the literature — not found in the 2026 scan (see
+[11](11-related-work.md) §4) — but each half is grounded. Deferring computation
+off the critical path is measured: sleep-time compute cuts test-time compute
+~5× at equal accuracy (arXiv 2504.13171), and asynchronous writes are a standard
+latency mitigation in the agent-memory survey (arXiv 2603.07670). Rendering the
+volatile field at delivery rather than at enqueue is **late binding** in the
+call-by-name sense — the payload carries the expression, not its result
+(Henderson & Morris, POPL 1976; Ingerman, CACM 4(1) 1961) — the same axis as
+deferred vs immediate materialized-view maintenance (Colby et al., SIGMOD 1996)
+and Fowler's Event Notification over Event-Carried State Transfer (2017); the
+alternative, shipping a snapshot, is early binding, and RFC 9111 and EIP Message
+Expiration (Hohpe & Woolf 2003) only detect or discard staleness rather than
+prevent it. Injecting once per prompt rather than per tool call is an
+*instantiation* of Self-RAG's adaptive-vs-indiscriminate retrieval (arXiv
+2310.11511), with a direct agent-side ablation behind it: selective reminder
+injection beats an always-on baseline on Terminal-Bench 2.0 and τ²-Bench (arXiv
+2607.08716) — though by small margins, and that paper reports no token or
+latency comparison, so the cost half of the throttle argument remains uncited.
+One finding argues the lag matters less than feared: intervention timing has no
+stable ground truth — three trained annotators agreed on *where* to intervene
+barely above chance (Krippendorff's α = +0.047), and the paper's conclusion is
+to build for recoverability rather than precision timing (arXiv 2606.04296),
+which puts a one-tool-call offset inside the construct's noise floor. The
+adapter layer itself is an Anti-Corruption Layer (Evans 2003) — vocabulary, not
+evidence. The atomic drain, the filename sanitization, the fire-and-forget
+semantics and the decision not to tap in `postToolUse` are plain engineering
+with no research claim to make.
 
 Pin resolution on Cursor is env-only — no agent picker — so a Cursor session is
 `main` unless launched with `THALAMUS_SCOPE`. Cursor cloud agents load neither
