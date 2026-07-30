@@ -34,3 +34,6 @@ frontend/dist/
 
 # Derived pinned-agent definitions (thalamus pin) — the manifest is the source of truth
 .claude/agents/thalamus-*.md
+
+# Case studies — session-generated analysis, not shipped docs.
+/docs/studies/

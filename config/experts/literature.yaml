@@ -24,6 +24,7 @@ claim_kinds:
 # bypass this list: hand-feeding a file is itself the curation decision.
 allowlist:
   - arxiv.org
+  - substack.com
   - aclanthology.org
   - openreview.net
   - anthropic.com
