@@ -151,6 +151,11 @@ upgrade (M6).
 ## Non-goals
 
 - A general-purpose vector-soup RAG framework. Thalamus is graph-first, contract-first.
+  The price is stated rather than assumed: retrieval *and* attribution are both
+  lexical, and experiments/001 measures the cost of the second — a ~57% floor of
+  shared project vocabulary under every used-rate. No IR ranking literature is held
+  (docs/11 §4), so this non-goal is currently a provenance argument carrying a
+  retrieval-quality load. It is probably the right trade; it is not yet an argument.
 - Crawler sophistication. Ingestion stays minimal until something downstream demands more.
 - Model-side learning. All specialization is in-context and memory-borne, by design —
   that's the thesis, not a limitation.

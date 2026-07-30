@@ -124,9 +124,14 @@ action-coupled evaluation.
 **What survives as ours.** Every work above is an *offline benchmark*: a fixed
 dataset, an external grader, run once. Thalamus's differentiator is the thing none
 of them is — an **in-deployment, self-instrumented loop** that traces the operator's
-*real* sessions, attributes used-vs-ignored against their *own* retained transcripts,
-grades **per-expert pin quality**, and **feeds a utility-driven forgetting policy**.
-Benchmarks *measure*; they do not *self-maintain*. The correct framing is therefore
+*real* sessions and attributes used-vs-ignored against their *own* retained
+transcripts, with the instrument calibrated against a permutation null rather than
+asserted (experiments/001). Two parts of that sentence are weaker than they read.
+**Per-expert pin quality** is built but its verdict is suspended: the report compares
+a within-scope rate to a cross-scope one, which is the axis the judge confounds, so
+it renders numbers and declines to interpret them. And the **utility-driven forgetting
+policy** is designed, not built — the loop does not close, and until it does this is a
+claim about a design. Benchmarks *measure*; this is built to *self-maintain*. The correct framing is therefore
 "not a benchmark — a live self-maintenance loop that the offline benchmarks above
 complement," and we cite them as the offline half we extend.
 
