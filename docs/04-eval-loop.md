@@ -186,11 +186,12 @@ exploratory direction ran *against* the ceiling (0/6 at rung 3 vs 5/6), on a sig
 of p = 0.219 that is reported as the modest thing it is.
 
 An exploratory follow-up at double the turn budget, worktree retained, rules out
-censoring and names the mechanism: the arm finished in 36 of 80 turns, **passed L5** —
-the rung the injected memo describes — and **failed L2**, the rung it does not. Its
-diff implements the memo's conclusion in the candidate's own words. A conclusion handed
-over without its path replaced the path, which is a finding about what distillation
-should extract, not only about this battery.
+censoring and names the mechanism: the arm finished in 36 of 80 turns and still lost
+**L2 and L3**, the foundation rungs every memory-off arm passed, while its diff
+implements the memo's conclusion in the candidate's own words. (L5 does not
+discriminate — it is an absence check every arm passes.) A conclusion handed over
+without its path replaced the path, which is a finding about what distillation should
+extract, not only about this battery.
 
 
 

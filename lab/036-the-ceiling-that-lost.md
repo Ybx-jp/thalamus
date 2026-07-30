@@ -66,11 +66,24 @@ What it passed is the finding. The ladder came back:
 |---|---|---|---|---|
 | PASS | **FAIL** | FAIL | FAIL | **PASS** |
 
-It passed **L5** — *having refused to grade, the runner must also refuse to classify by
-turn count* — which is precisely what the memo describes, and failed **L2** — *stop on
-the death the operator actually described* — which the memo says nothing about. The
-rungs strictly imply one another, so the score stays at the floor; the *pattern* of
-passes is the evidence.
+**Correction, and it narrows the claim.** An earlier reading of this table said the arm
+"passed the rung the memo describes". That is misleading: memory-off arms pass L5 as
+well — every arm in the campaign did. L5 is an *absence* check (having refused to grade,
+also refuse to classify by turn count), so any candidate that never writes a turn-count
+heuristic passes it for free. It discriminates nothing.
+
+What discriminates is the other end. Every ceiling arm failed **L2** and **L3**;
+every memory-off arm passed both:
+
+| | L1 | L2 | L3 | L4 | L5 |
+|---|---|---|---|---|---|
+| ceiling (4 of 4 recorded) | PASS | **FAIL** | **FAIL** | FAIL | PASS |
+| memory-off | PASS | **PASS** | **PASS** | FAIL | PASS |
+
+L2 is *stop on the death the operator actually described* — reachable from the prompt
+alone, and the thing the memo says nothing about. The conclusion memo cost the
+foundation rungs, and it cost them in all four recorded arms while the arms with no
+memory at all cleared them.
 
 The retained diff says the same thing in the candidate's own words. It wrote
 "distinguish the two credential-death shapes lab/012 first saw — both ungraded", "both
