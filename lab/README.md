@@ -56,3 +56,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [032](032-the-instrument-is-a-topic-detector.md) | Attribution scores 59% used against an unrelated session's output vs 63% against the real one — 4pp of signal on a 59pp floor | calibration |
 | [033](033-the-graph-was-mostly-remembering-itself.md) | Distillation's own headless subprocess fired the SessionEnd hook, so 69% of Session vertices were memory about the act of remembering | fix |
 | [034](034-the-corrections-the-instrument-forced.md) | Calibrating the used-rate against a null withdrew more numbers than it produced — and the published experiments moved to `experiments/` | corrections |
+| [035](035-the-battery-that-could-not-be-run.md) | A history rewrite killed all six task refs; validation kept saying "Battery OK" because it never checked that the oracle could be reached | fix |
