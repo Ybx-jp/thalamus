@@ -94,9 +94,18 @@ def analyse(rows: list[dict]) -> dict:
             r.get("applied", {}).get("injected_fact_chars", 0)
             for r in rows if r["arm"] == "ceiling"
         ],
+        # Only `thalamus` counts. `tool_search` is the deferred-schema load that
+        # would have to precede a memory call, so an arm with tool_search>0 and
+        # thalamus=0 *tried and could not* — that is confinement working, and
+        # counting it as a breach would void a campaign for succeeding.
         "recall_calls_leaked": [
             r["ts"][:19] for r in rows
-            if sum((r.get("recall_calls") or {}).values()) > 0
+            if (r.get("recall_calls") or {}).get("thalamus", 0) > 0
+        ],
+        "reached_for_memory_and_failed": [
+            r["ts"][:19] for r in rows
+            if (r.get("recall_calls") or {}).get("tool_search", 0) > 0
+            and (r.get("recall_calls") or {}).get("thalamus", 0) == 0
         ],
     }
 
@@ -125,9 +134,12 @@ def main() -> None:
               f"[{last['lo']:.3f}, {last['hi']:.3f}] -> {m['decision']}")
 
     for label, rows_hit in (("CONTAMINATED", m["contaminated"]), ("INFRA FAULT", m["faults"]),
-                            ("RECALL IN A NO-MEMORY ARM", m["recall_calls_leaked"])):
+                            ("MEMORY REACHED IN A NO-MEMORY ARM", m["recall_calls_leaked"])):
         if rows_hit:
             print(f"  VOID CONDITION — {label}: {rows_hit}")
+    if m["reached_for_memory_and_failed"]:
+        print(f"  confinement held: {len(m['reached_for_memory_and_failed'])} arm(s) loaded tool "
+              "schemas and still reached no memory tool")
 
     if sum(m["arms"].values()) < HORIZON and m["decision"] == "continue":
         print(f"\nCampaign incomplete ({sum(m['arms'].values())}/{HORIZON} arms) and the "
