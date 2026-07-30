@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-29 · **Component:** retrieval (`_select_details`) · **Status:** measured, null result. One bug found and fixed.
 
+> **Erratum (2026-07-30).** Figures in this entry are withdrawn or bounded by [lab/034](034-the-corrections-the-instrument-forced.md); see its withdrawal list before citing anything here.
+
 ## The question
 
 [lab/030](030-the-miss-rate-was-the-consultation.md) found the detail cap is the

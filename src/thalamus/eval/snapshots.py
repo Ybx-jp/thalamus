@@ -214,6 +214,10 @@ def serve(name: str, *, port: int = 8183, timeout: int = 90):
 def _serve_path(name: str, path: str, digest: str, *, port: int = 8183, timeout: int = 90):
     """The container half of `serve`, usable before a registry row exists."""
     conf = _write_snapshot_conf(name, path)
+    # Any snapshot server still holding this port is a leftover from a run that was
+    # killed before its cleanup — reap it. Reaping only this snapshot's own container
+    # name is not enough: the port, not the name, is what collides.
+    _reap_snapshot_containers(port)
     container = f"thalamus-snapshot-{name}-{port}"
     subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
     proc = subprocess.run(
@@ -236,6 +240,23 @@ def _serve_path(name: str, path: str, digest: str, *, port: int = 8183, timeout:
         yield url
     finally:
         subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
+
+
+def _reap_snapshot_containers(port: int) -> None:
+    """Remove any `thalamus-snapshot-*` container publishing `port`.
+
+    Only ours, and only snapshot servers: a stale container from an interrupted run
+    is ours to clean up, while anything else on that port is someone else's process
+    and the failure to bind is the correct outcome.
+    """
+    listing = subprocess.run(
+        ["docker", "ps", "--filter", "name=thalamus-snapshot-", "--format", "{{.Names}}\t{{.Ports}}"],
+        capture_output=True, text=True,
+    ).stdout
+    for line in listing.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 2 and f":{port}->" in parts[1]:
+            subprocess.run(["docker", "rm", "-f", parts[0]], capture_output=True, check=False)
 
 
 def _write_snapshot_conf(name: str, graph_location: str) -> Path:

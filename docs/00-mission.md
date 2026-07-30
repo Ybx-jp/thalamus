@@ -10,7 +10,13 @@ Three claims this project exists to earn. Thalamus does **not** claim to have
 invented any of the three — by mid-2026 the literature had converged on all of them
 independently ([11-related-work.md](11-related-work.md)). The claim is to be the
 **integrated, local-first, single-operator instantiation** of what the field is
-publishing in pieces, with each piece grounded in and cited against that work.
+publishing in pieces, with each piece grounded in and cited against that work. The
+niche is populated, not empty — mem0 ships a Claude Code memory integration, and
+claude-brain, mcp-memory-service and qdrant-memory are all hooks-plus-MCP-plus-local-store
+implementations — so the claim narrows to the four things none of them has: a
+provenance floor terminating in retained primary evidence, trust tiers enforced at
+the write path, scoped expert subgraphs behind a schema contract, and an
+in-deployment eval loop.
 
 1. **Structural safety.** A feed pipes third-party content into the persistent
    memory of an agent that runs with the operator's credentials — a memory-poisoning
@@ -22,9 +28,12 @@ publishing in pieces, with each piece grounded in and cited against that work.
    right one — now the field's consensus (survey arXiv 2603.07670; Mem2ActBench,
    arXiv 2601.19935). Those are *offline benchmarks*. Thalamus's differentiator is
    the part none of them is: a **live, in-deployment loop** that traces the
-   operator's real sessions, attributes used-vs-ignored against their own
-   transcripts, and feeds a utility-driven forgetting policy. Benchmarks measure;
-   this self-maintains. *Memory that measures itself.*
+   operator's real sessions and attributes used-vs-ignored against their own
+   transcripts, with the instrument calibrated against a permutation null rather
+   than asserted (experiments/001: κ≈0.14 of the available headroom). The
+   utility-driven forgetting policy that loop is designed to feed is **designed, not
+   built** — the loop does not yet close. Benchmarks measure; this is built to
+   self-maintain. *Memory that measures itself.*
 3. **Platform.** Specialization does not require fine-tuning or prompt-cosplay
    multi-agent theater. A specialist is a **retrieval scope**: a curated domain
    subgraph plus its own episodic history, hot-swappable behind a schema contract.

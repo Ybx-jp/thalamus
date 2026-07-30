@@ -1,6 +1,8 @@
 # 018 — The first graded campaign: does the ladder's interior actually get used?
 
 **Date:** 2026-07-27 · **Component:** eval loop layer 2 (`thalamus eval run`) ·
+
+> **Erratum (2026-07-30).** Figures in this entry are withdrawn or bounded by [lab/034](034-the-corrections-the-instrument-forced.md); see its withdrawal list before citing anything here.
 **Status:** run. **C1 passes — the interior is real.** C2 fails: both cells
 spread three rungs, so n=1 graded cells are uninterpretable. C3 is void for a
 harder reason than n=3 — **no memory-on arm ever called a thalamus tool**, so

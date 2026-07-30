@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-16 · **Component:** eval loop layer 1b (cost join) · **Status:** measured
 
+> **Erratum (2026-07-30).** Figures in this entry are withdrawn or bounded by [lab/034](034-the-corrections-the-instrument-forced.md); see its withdrawal list before citing anything here.
+
 ## What was measured
 
 Layer 1b landed: Trace nodes now carry `injected_chars` (the rendered response —

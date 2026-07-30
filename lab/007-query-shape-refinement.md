@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-16 · **Component:** reader recall path · **Status:** shipped, prediction on record
 
+> **Erratum (2026-07-30).** Figures in this entry are withdrawn or bounded by [lab/034](034-the-corrections-the-instrument-forced.md); see its withdrawal list before citing anything here.
+
 ## The hypothesis (operator's)
 
 Open threads were topping the waste ranking because the SessionStart hook fires a

@@ -1,7 +1,13 @@
 # The Limit Lab
 
 One-page entries, each in the same shape: **what broke → why (root cause in harness
-terms) → workaround or wall.**
+terms) → workaround or wall.** This is the notebook, written for us.
+
+Work published for readers outside the project lives in [`experiments/`](../experiments/):
+pre-registered, regenerated end to end from a pinned graph snapshot and a seed, with
+every rate reported beside its null. When a lab figure and an experiment disagree, the
+experiment wins — it is the one that can be re-run. [lab/034](034-the-corrections-the-instrument-forced.md)
+holds the standing withdrawal list.
 
 Starts at M2, when the eval loop can actually measure the effect of a break. Entries
 that end in *"wall"* are as valuable as ones that end in *"workaround"* — a
@@ -49,3 +55,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [031](031-the-dial-that-had-nothing-to-tune.md) | Detail cap stays at 8: used-rate is ~60% flat across position, length and ranking; the elision stub was hiding the cap | null result + fix |
 | [032](032-the-instrument-is-a-topic-detector.md) | Attribution scores 59% used against an unrelated session's output vs 63% against the real one — 4pp of signal on a 59pp floor | calibration |
 | [033](033-the-graph-was-mostly-remembering-itself.md) | Distillation's own headless subprocess fired the SessionEnd hook, so 69% of Session vertices were memory about the act of remembering | fix |
+| [034](034-the-corrections-the-instrument-forced.md) | Calibrating the used-rate against a null withdrew more numbers than it produced — and the published experiments moved to `experiments/` | corrections |

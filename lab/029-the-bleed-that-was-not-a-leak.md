@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-29 · **Component:** retrieval (`substrate/reader.py` `recall()`), eval attribution · **Status:** measured; no dial turned. Supersedes the 13% ceiling in exchange `scope:main:exchange:46f20d96fa084a3c`.
 
+> **Erratum (2026-07-30).** Figures in this entry are withdrawn or bounded by [lab/034](034-the-corrections-the-instrument-forced.md); see its withdrawal list before citing anything here.
+
 ## The false alarm that started it
 
 A main-scope session working the Cursor-port question wrote "this repo is now a

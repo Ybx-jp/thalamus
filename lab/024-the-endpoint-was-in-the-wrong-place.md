@@ -1,6 +1,8 @@
 # 024 — The endpoint was in the wrong place, and the battery is the wrong instrument
 
 **Date:** 2026-07-27 · **Component:** eval loop layer 2 → a proposed layer 2b ·
+
+> **Erratum (2026-07-30).** Figures in this entry are withdrawn or bounded by [lab/034](034-the-corrections-the-instrument-forced.md); see its withdrawal list before citing anything here.
 **Status:** two things — (§1) an **interim, exploratory** observation from the
 lab/023 campaign while it was still running, and (§2) a **design proposal** for
 in-deployment measurement, written for `main` to build. Nothing in §2 is built.

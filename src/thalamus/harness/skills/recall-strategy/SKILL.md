@@ -6,11 +6,14 @@ description: How to retrieve from Thalamus memory without wasting context, and h
 # Recall Strategy — Spend Context Where It Earns
 
 Every token a retrieval renders rides along in **every later call of this
-session**. The eval loop prices this (docs/04 layer 1b): before the query-shape
-fix, 50% of injected retrieval tokens were attributed-but-ignored, and the waste
-was fan-out — worst recalls returned 50–81 nodes at 28–40% use; best returned
-3–5 at 66–80% (lab/006, lab/007). The reader now enforces a match floor and a
-detail cap, but query shape is still yours. Cost-tiered retrieval is the field's
+session**. The eval loop prices this (docs/04 layer 1b): **33.8% of injected
+retrieval tokens are judged unused, 95% CI [27.2, 40.5]** with sessions as the
+sampling unit — and once corrected for a judge that calls ~59% of *unrelated*
+tokens used, only about **17.5% of injected tokens are demonstrably earned**
+(experiments/002). The waste is fan-out: worst recalls returned 50–81 nodes at
+28–40% use, best returned 3–5 at 66–80% (lab/006, lab/007 — fan-out counts, not
+their withdrawn used-rates). The reader now enforces a match floor and a detail
+cap, but query shape is still yours. Cost-tiered retrieval is the field's
 answer too (BudgetMem, arXiv 2602.06025): pay for depth only where the query
 earns it.
 

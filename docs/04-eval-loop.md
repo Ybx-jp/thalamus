@@ -37,10 +37,14 @@ Every graph query the agent makes is instrumented via harness hooks
   actually did (cited in the answer, visible in the diff, referenced in a
   subsequent tool call), or was it dead weight in context?
 
-Used-vs-ignored attribution starts crude (lexical/structural matching between
-retrieved content and the session's outputs, judged post-hoc) and that is fine —
-a crude measure beats no measure, and refining attribution is itself lab-notebook
-material. Traces land as episodic memory (the trace store **is** a property graph),
+Used-vs-ignored attribution starts crude: lexical/structural matching between
+retrieved content and the session's outputs, judged post-hoc. **A crude measure is
+not automatically better than no measure, and this project has the counterexample.**
+For as long as the floor was unknown, the shipped target "used% above ~50" sat
+*below* permuted chance, so an agent hitting it was performing worse than random and
+the number read as evidence. A crude measure earns its keep only once it is reported
+beside its null; refining it is lab-notebook material, calibrating it is not
+optional. Traces land as episodic memory (the trace store **is** a property graph),
 so the eval loop needs no side database: it reads the same substrate it grades.
 
 **How crude is now measured, and it bounds every number below.** Under permutation
@@ -388,9 +392,14 @@ needs enough specification to make "done" legible without restoring the
 constraint that does the gating.
 
 **Open: the binding constraint is prompt under-specification in the battery
-(lab/018).** Memory-on arms call `mcp__thalamus__*` at **2/21**; real
-interactive sessions in this repo call it at **20/31 (65%)** without conditioning
-firing, and **11/11** with. The gap is not the runner. Harness fidelity is
+(lab/018).** Memory-on arms call `mcp__thalamus__*` at **2/21** — an arm-level
+count that stands. The comparison it was made against does not: the
+"20/31 without conditioning, 11/11 with" contrast came from a cohort built by
+slug-filtering `~/.claude/projects/`, and lab/033 established that 696
+extraction-sandbox project dirs lived in that directory under names the filter
+never accounted for. That denominator is unverifiable and is withdrawn (lab/034);
+it is re-derivable once the cohort is defined by the sandbox marker instead of by
+slug. The gap is not the runner. Harness fidelity is
 verified — `.claude/settings.json` is byte-identical between the task ref and
 `HEAD`, the memory-on arm strips write-back hooks only, `SessionStart` injects
 in 3/3 arms, and the MCP schemas load. A controlled probe holding the harness
@@ -718,8 +727,10 @@ Three measured properties of the corpus define the design:
 
 - **Claim identity does not detect recurrence.** Claims are content-addressed on
   (kind, normalized description), so a re-asserted problem should converge onto
-  one vertex with two `CONTAINS` edges. It fires 4 times in 504. The count is
-  rendered every run; a detector keyed on it would see ~1% of the corpus.
+  one vertex with two `CONTAINS` edges. It fires 4 times in 575 (`SOLVED_BY`
+  edges at `post-sandbox-purge-20260730`; the figure moves with the corpus and is
+  rendered every run rather than quoted as a constant). A detector keyed on it
+  would see ~1% of the corpus.
 - **Unobservable is not "never hit."** A rake whose artifacts no later session
   touched offers nothing to observe. It is bucketed apart and never folded into
   a denominator — the discipline layer-1 attribution already applies to empty

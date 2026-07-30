@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-29 · **Component:** eval layer 1 (`eval/attribution.py`) · **Status:** measured. Calibrates every used%/waste number the eval loop reports.
 
+> **Erratum (2026-07-30).** Figures in this entry are withdrawn or bounded by [lab/034](034-the-corrections-the-instrument-forced.md); see its withdrawal list before citing anything here.
+
 ## The question
 
 lab/031 could not tune the detail cap because used-rate was ~60% flat against
