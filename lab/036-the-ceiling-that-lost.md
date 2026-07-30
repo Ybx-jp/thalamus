@@ -1,0 +1,83 @@
+# 036 — The ceiling arm lost every pair, and the endpoint it was measured on read null
+
+**Date:** 2026-07-30 · **Component:** eval layer 2 (`eval/arms.py` `ceiling`) · **Status:** measured. Cancels the queued layer-2 campaign work. Full write-up: `experiments/004-the-ceiling/`.
+
+## The question
+
+Every memory-on/off campaign so far asked whether *retrieval* helps. None
+established that the battery could register the help of memory at all. So: hand a
+candidate exactly the right memory, with no retrieval to get wrong, and see whether it
+beats a candidate with none. If a perfect memory does not separate, no ranking change,
+no dial and no better instrument can move this battery.
+
+`ceiling` is memory-off's stripped harness — no MCP, memory hooks removed — plus the
+task's `under_specification.fact` injected into the prompt, framed as recall rather
+than as instruction. A task with nothing withheld is refused: there the ceiling is
+memory-off wearing another name.
+
+## Result — 12 arms, $28.84, sandboxed with the store isolated
+
+| | rungs | L≥4 (primary) | L≥3 (exploratory) | turn-capped |
+|---|---|---|---|---|
+| ceiling | 1,1,1,1,1,1 | **0/6** | 0/6 | 4/6 |
+| memory-off | 3,3,3,3,0,3 | **0/6** | 5/6 | 1/6 |
+
+**The pre-registered falsifier fires.** Rung 4 is the task's own memory-attributable
+outcome, fixed in its YAML before any campaign. Neither arm reached it. A perfect
+memory cannot clear this task's gate, so the battery is the binding constraint, and
+the container campaign and consequence-probe work queued behind it are cancelled
+rather than rescheduled.
+
+The direction at rung 3 runs against the ceiling, and the statistics are modest and
+reported as such: paired sign test **p = 0.219** (1 win, 5 losses — six pairs cannot
+beat 0.031 even with a clean sweep), rank statistic 0.167 as recorded and 0.000
+excluding censored arms. The confidence sequence reached its horizon without firing,
+which at this n it was always going to.
+
+## Two mechanisms, and this design cannot separate them
+
+The ladder is strictly implying. L2 is *stop on the death the operator described*,
+reachable from the prompt alone; L4 is *a death after real work leaves an attempt of
+unknown completeness, so it must not be graded*. The injected memory is **L4/L5
+content**, and every ceiling arm failed **L2**.
+
+1. **A conclusion without its path.** A distilled memory records the endpoint of a
+   design discussion. Handed to an agent that has not walked that path, it may
+   substitute for the earlier steps instead of adding to them — the candidate builds
+   the refinement and never builds what it refines. All four ceiling arms with the
+   field recorded visibly acted on the memo (term ratios 0.41–0.54), so this is not
+   the memo being ignored.
+2. **Scope expansion.** Ceiling arms hit the 40-turn cap 4 times in 6 against
+   memory-off's 1 in 6. The memo may simply have prompted a change too large for the
+   budget, and the floor score is censoring rather than misdirection.
+
+Raising the turn cap discriminates. Not run inside the registered design.
+
+## Two corrections made mid-campaign
+
+**The void detector was wrong.** It counted every entry in `recall_calls`, so an arm
+with `thalamus: 0, tool_search: 1` — one that loaded tool schemas and reached no memory
+tool — was flagged as memory reached inside a no-memory arm. That is confinement
+*working*. Voiding a campaign for succeeding is worse than the failure the check exists
+for.
+
+**Three identical 41-turn arms were read as diligence.** They were the 40-turn cap. A
+capped arm is censored and its rung is a lower bound, and the write-up's "worked
+longer" line was removed.
+
+The pre-registration was **silent on censoring**, so both readings are reported and
+neither is called primary. The censored arm favours the ceiling, so dropping it quietly
+would have strengthened the story the campaign had been accumulating.
+
+## Two things confirmed that were not the point
+
+**Confinement works, live.** Four arms loaded tool schemas and reached no memory tool.
+Three ran `git log --all` inside their worktree — lab/022's channel — and none was
+stamped contaminated, because `prepare_worktree` gives each arm a one-commit repo, so
+the reach returns nothing. Until this campaign confinement had only been verified by
+direct probe (`scope:eval-methodology:thread:arm-confinement-unverified-live`).
+
+**The battery had been unrunnable for a day** — see lab/035. Found only because this
+campaign tried to run it.
+
+**Ends in:** measurements (null on the primary endpoint) + a cancelled programme.

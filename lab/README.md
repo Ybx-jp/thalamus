@@ -57,3 +57,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [033](033-the-graph-was-mostly-remembering-itself.md) | Distillation's own headless subprocess fired the SessionEnd hook, so 69% of Session vertices were memory about the act of remembering | fix |
 | [034](034-the-corrections-the-instrument-forced.md) | Calibrating the used-rate against a null withdrew more numbers than it produced — and the published experiments moved to `experiments/` | corrections |
 | [035](035-the-battery-that-could-not-be-run.md) | A history rewrite killed all six task refs; validation kept saying "Battery OK" because it never checked that the oracle could be reached | fix |
+| [036](036-the-ceiling-that-lost.md) | A candidate handed the perfect memory lost every pair, and neither arm ever reached the endpoint it was measured on | null + cancelled programme |

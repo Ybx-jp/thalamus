@@ -171,6 +171,22 @@ the wrong retrieval, and an unmatched record stays visibly unmatched.
 
 ## Layer 2 — Counterfactuals (M4)
 
+**The ceiling arm, and what it settled.** `ceiling` is memory-off's stripped harness
+plus the task's withheld fact injected as recall — a candidate handed exactly the right
+memory with no retrieval to get wrong. It bounds what any retrieval could be worth, and
+a task with nothing withheld is refused because there it is memory-off under another
+name.
+
+Measured 2026-07-30, 12 arms (experiments/004, lab/036): **neither arm reached the
+pre-registered rung 4**, so a perfect memory cannot clear the battery's one
+strongly-gated task, and the battery — not the memory — is the binding constraint. The
+container campaign and the consequence-probe work are **cancelled**, not rescheduled:
+more arms against a battery that cannot register a perfect memory buy noise. The
+exploratory direction ran *against* the ceiling (0/6 at rung 3 vs 5/6), on a sign test
+of p = 0.219 that is reported as the modest thing it is.
+
+
+
 Traces show usage; they can't show *value*. For that, matched tasks run under
 arms, and the arms are scored on **downstream consequences** — never on whether
 memory was surfaced or quoted. The grounding is MQuAKE's finding (arXiv
