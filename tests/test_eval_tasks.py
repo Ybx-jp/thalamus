@@ -374,3 +374,30 @@ class TestUnderSpecification:
             no_regression={"obsolete_tests": ["tests/t.py::x"], "relocated_to": 6},
         )
         assert any("re-asserted somewhere" in i for i in task.check())
+
+
+def test_a_ref_that_no_longer_resolves_is_reported():
+    """
+    Scenario: the repository's history is rewritten and every SHA changes — which
+    happened here on 2026-07-29, killing all six refs across all three tasks.
+
+    Verification: validation says so. It previously reported "Battery OK" because
+    it checked that a task carried its oracle and never that the oracle could be
+    reached, so the failure surfaced at worktree-checkout time instead.
+    """
+    from thalamus.eval.tasks import Task, TaskSource, unresolvable_refs
+
+    dead = Task(
+        id="t", title="t", overlap="memorization", prompt="p",
+        source=TaskSource(kind="replayed", ref="deadbeef", fix_ref="cafed00d"),
+    )
+    problems = unresolvable_refs([dead])
+    assert len(problems) == 2
+    assert "does not resolve" in problems[0]
+    assert "commit-map" in problems[0]
+
+    live = Task(
+        id="t", title="t", overlap="memorization", prompt="p",
+        source=TaskSource(kind="replayed", ref="HEAD"),
+    )
+    assert unresolvable_refs([live]) == []

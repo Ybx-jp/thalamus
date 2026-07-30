@@ -513,7 +513,11 @@ def load_battery(base: Path | None = None) -> tuple[list[Task], list[str]]:
     issues.extend(
         f"duplicate task id `{task_id}`" for task_id, n in counts.items() if n > 1
     )
-    issues.extend(unresolvable_refs(tasks))
+    # Only for the real battery. A task loaded from somewhere else is not making a
+    # claim about *this* repository's history, and flagging its refs would report a
+    # fault about a repo the caller never named.
+    if base is None:
+        issues.extend(unresolvable_refs(tasks))
     return tasks, issues
 
 
