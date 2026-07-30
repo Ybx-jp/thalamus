@@ -449,7 +449,7 @@ footer.colophon code { font-size: 0.74rem; }
   <h1>The used-rate is mostly a topic detector</h1>
   <p class="standfirst">Thalamus judges whether a retrieved memory was used by matching its terms against what the agent did next. Re-judged against an unrelated session's output, that judge still says 57% used — so of the 63% it reports, only κ=0.14 of the available headroom is retrieval utility. Six alternative judges were pre-registered against it; none of them beats it.</p>
   <div class="byline">
-    <span>2026-07-30 07:57 UTC</span>
+    <span>2026-07-30 08:21 UTC</span>
     <span>snapshot <code>post-sandbox-purge-20260730</code></span>
     <span>seed <code>20260730</code></span>
     <span>code <code>1ebdb5f</code></span>
@@ -459,7 +459,7 @@ footer.colophon code { font-size: 0.74rem; }
 
 <div class="verdict null">
   <span class="verdict-kind">null</span>
-  <p>The shipped judge captures κ=0.140 of the headroom above chance — about 14% of the way from a coin-flip-on-vocabulary to a perfect judge. The pre-registered alternative, tool-call inputs only, does not beat it (0.138, gap -0.002 against a null half-width of 0.024): the hypothesis is falsified, and no reweighting of the same lexical evidence rescues the instrument. Bounding the real-minus-null gap to ±1 point would need ~445 sessions against 29 today, so the answer is a different instrument, not a bigger corpus.</p>
+  <p>The shipped judge captures κ=0.140 of the headroom above chance — about 14% of the way from a coin-flip-on-vocabulary to a perfect judge. The pre-registered alternative, tool-call inputs only, does not beat it (0.138, gap -0.002 against a null half-width of 0.024): the hypothesis is falsified, and no reweighting of the same lexical evidence rescues the instrument. Bounding the real-minus-null gap to ±1 point would need ~447 sessions against 29 today, so the answer is a different instrument, not a bigger corpus.</p>
 </div>
 
 
@@ -652,7 +652,7 @@ only, or to the next N assistant turns.</p>
 <circle cx="136.2" cy="230" r="5" class="dot" style="fill:var(--series-1)"/>
 <text x="148.2" y="234" class="value">0.003</text>
 </svg></figure>
-<div class="table-wrap"><table><caption>200 rotations, seed 20260730. The null re-judges each retrieval against another session&#x27;s output window, drawn from the same window-length stratum.</caption><thead><tr><th>judge</th><th>used</th><th>null</th><th>κ</th><th>95% CI (used)</th><th>flips under rotation</th><th>what it sees</th></tr></thead><tbody><tr><td>shipped</td><td>63.3%</td><td>57.3%</td><td>0.140</td><td>[56.6, 70.9]</td><td>24.4%</td><td>the flat, unbounded window the stored verdicts mean</td></tr><tr><td>prose</td><td>34.9%</td><td>31.2%</td><td>0.053</td><td>[25.6, 44.9]</td><td>24.4%</td><td>assistant prose only — where shared project vocabulary lives</td></tr><tr><td>tool</td><td>55.7%</td><td>48.6%</td><td>0.138</td><td>[49.4, 63.2]</td><td>24.2%</td><td>tool-call inputs only — a path or parameter echoed after a retrieval is a narrower coincidence than a word</td></tr><tr><td>bounded-10</td><td>5.7%</td><td>2.4%</td><td>0.034</td><td>[3.2, 9.3]</td><td>7.2%</td><td>the next ten assistant turns</td></tr><tr><td>bounded-3</td><td>1.9%</td><td>0.3%</td><td>0.016</td><td>[0.5, 4.2]</td><td>2.2%</td><td>the next three assistant turns</td></tr><tr><td>bounded-1</td><td>1.3%</td><td>0.2%</td><td>0.011</td><td>[0.1, 3.6]</td><td>1.5%</td><td>the next assistant turn only</td></tr><tr><td>tool-bounded-3</td><td>0.4%</td><td>0.2%</td><td>0.003</td><td>[0.1, 0.9]</td><td>0.7%</td><td>both narrowings at once: near, and acted on</td></tr></tbody></table></div>
+<div class="table-wrap"><table><caption>200 rotations, seed 20260730. The null re-judges each retrieval against another session&#x27;s output window, drawn from the same window-length stratum.</caption><thead><tr><th>judge</th><th>used</th><th>null</th><th>κ</th><th>95% CI (used)</th><th>flips under rotation</th><th>what it sees</th></tr></thead><tbody><tr><td>shipped</td><td>63.3%</td><td>57.3%</td><td>0.140</td><td>[56.6, 70.9]</td><td>24.5%</td><td>the flat, unbounded window the stored verdicts mean</td></tr><tr><td>prose</td><td>34.9%</td><td>31.2%</td><td>0.053</td><td>[25.6, 44.9]</td><td>24.6%</td><td>assistant prose only — where shared project vocabulary lives</td></tr><tr><td>tool</td><td>55.7%</td><td>48.6%</td><td>0.138</td><td>[49.4, 63.2]</td><td>24.3%</td><td>tool-call inputs only — a path or parameter echoed after a retrieval is a narrower coincidence than a word</td></tr><tr><td>bounded-10</td><td>5.7%</td><td>2.4%</td><td>0.034</td><td>[3.2, 9.3]</td><td>7.5%</td><td>the next ten assistant turns</td></tr><tr><td>bounded-3</td><td>1.9%</td><td>0.3%</td><td>0.016</td><td>[0.5, 4.2]</td><td>2.2%</td><td>the next three assistant turns</td></tr><tr><td>bounded-1</td><td>1.3%</td><td>0.2%</td><td>0.011</td><td>[0.1, 3.6]</td><td>1.4%</td><td>the next assistant turn only</td></tr><tr><td>tool-bounded-3</td><td>0.4%</td><td>0.2%</td><td>0.003</td><td>[0.1, 0.9]</td><td>0.6%</td><td>both narrowings at once: near, and acted on</td></tr></tbody></table></div>
 <aside class="callout callout-caveat"><p class="callout-title">The pre-registered hypothesis is falsified</p><p>The hypothesis was that tool-call inputs would discriminate better than
 prose, because acting on a retrieved path is a narrower coincidence than repeating a
 word. It does not: κ moves -0.002, from 0.140 shipped to
@@ -678,16 +678,72 @@ so a longer session mechanically scores more used — the judge partly reports h
 the operator kept working.</p>
 
 
-<h2 id="purge">Did the sandbox purge move it?</h2>
+<h2 id="null-design">The yardstick moves more than the judges do</h2>
 
-<p>On 2026-07-30 the graph lost 307 Session vertices that were never sessions: the
-headless subprocesses that distillation itself spawns had been firing the SessionEnd
-hook and distilling themselves. They were 69% of all sessions, and their text was
-extraction self-talk — the most topic-matched prose in the corpus, sitting exactly
-where a topic detector is most inflated.</p>
+<p>The null is a design, not a constant. This experiment rotates within a
+window-length stratum; the earlier hand-run rotation behind lab/032 did not. On this
+one corpus, with everything else held fixed:</p>
+<div class="table-wrap"><table><caption>Same snapshot, same seed, same judge. Only the partner-selection rule differs.</caption><thead><tr><th>rotation design</th><th>null</th><th>κ</th><th>95% CI on κ</th></tr></thead><tbody><tr><td>stratified on window length</td><td>57.3%</td><td>0.140</td><td>[0.028, 0.272]</td></tr><tr><td>unstratified</td><td>54.9%</td><td>0.186</td><td>[0.019, 0.321]</td></tr></tbody></table></div>
+<aside class="callout callout-finding"><p class="callout-title">Read κ figures with their null&#x27;s design attached</p>
+<p>The two designs differ by
+0.046 in κ — larger than the
+spread between the best and worst of the three judges that have any signal at all.
+A κ quoted without saying how its null was drawn is not comparable to another κ.</p>
+<p>It was put to this experiment that the difference from the project's earlier
+hand-run figure (κ≈0.086) would be mostly this — the same instrument read against a
+looser yardstick. The measurement says otherwise, and in the opposite direction:
+dropping the stratum makes the null <em>easier</em> here (54.9%
+against 57.3%) and κ correspondingly <em>higher</em>
+(0.186), which moves away from 0.086 rather than toward it. So
+the null design is worth a lot, and it is not what explains the older number; the
+remaining candidates are corpus construction (that figure was computed over
+tap-reconstructed traces, this one over the graph's own Trace census) and a
+three-rotation null with no interval. Neither is worth a rerun: both figures'
+intervals are wide enough to contain each other.</p></aside>
+
+
+<h2 id="claims">The auditable subset: claims only</h2>
+
+<p>Not every verdict can be re-derived. <code>Claim</code> vertices are
+content-addressed on (kind, normalised description), so rewriting a claim mints a
+<em>new</em> vertex and the text behind a stored verdict is still the text that was
+judged. <code>Thread</code> and <code>Session</code> are upserted latest-wins: their
+titles, descriptions and summaries are overwritten in place, and
+<code>ingested_at</code> carries the writing session's timestamp rather than the
+write time, so nothing in the graph records that the text moved.</p>
+
+<p>That splits the corpus into an auditable part and an exposed one.
+1,785 of 2,445 verdicts (73.0%)
+are claims; the rest sit on text that may have changed underneath them.</p>
+
+<div class="table-wrap"><table><caption>κ intervals are paired: each bootstrap draw resamples sessions and recomputes the rate and its null together, because κ is a contrast.</caption><thead><tr><th>corpus</th><th>verdicts</th><th>used</th><th>null</th><th>κ</th><th>95% CI on κ</th></tr></thead><tbody><tr><td>all node kinds</td><td>2,445</td><td>63.3%</td><td>57.3%</td><td>0.140</td><td>[0.028, 0.272]</td></tr><tr><td>claims only (immutable text)</td><td>1,785</td><td>60.6%</td><td>53.7%</td><td>0.149</td><td>[0.041, 0.294]</td></tr></tbody></table></div>
+
+<aside class="callout callout-finding"><p class="callout-title">The headline number survives on the auditable subset</p>
+<p>κ on claims alone is 0.149 against 0.140 on everything,
+and the two intervals overlap heavily. The mutable-text exposure is real and worth
+fixing, but it is not what produced the result — which is the thing that had to be
+checked before any of this could be quoted.</p></aside>
+
+
+<h2 id="purge">The purge comparison, withdrawn</h2>
+
+<aside class="callout callout-withdrawal"><p class="callout-title">This was pre-registered as a control. It is not one.</p>
+<p>On 2026-07-30 the graph lost 307 Session vertices that were never sessions —
+headless distillation subprocesses that had been firing the SessionEnd hook and
+distilling themselves, 69% of all sessions. The pre-registration treats "did κ move
+across the purge?" as a falsifier, on the reasoning that extraction self-talk is the
+most topic-matched prose in the corpus and would inflate a topic detector.</p>
+<p><strong>It could not have moved.</strong> Those sessions made no retrievals. Both
+snapshots yield the same 222 retrievals across the same
+29 sessions; they contributed no output window to the rate and were
+never in the rotation pool. The only difference is 37
+verdicts (1.49%) that
+pointed at purged <em>nodes</em>. Reporting the non-move as a passed control would
+imply a test that had a way to fail.</p></aside>
 <div class="table-wrap"><table><caption>The same script, the same seed, two pinned graph states.</caption><thead><tr><th>snapshot</th><th>verdicts</th><th>used</th><th>null</th><th>κ</th></tr></thead><tbody><tr><td><code>pre-sandbox-purge</code> (before)</td><td>2,482</td><td>63.7%</td><td>57.9%</td><td>0.138</td></tr><tr><td><code>post-sandbox-purge-20260730</code> (after)</td><td>2,445</td><td>63.3%</td><td>57.3%</td><td>0.140</td></tr></tbody></table></div>
-<p>Both states are pinned, so this is the same script against two graphs rather than
-two scripts against one memory.</p>
+<p>What the comparison does establish, narrowly: the 37 verdicts that pointed at
+sandbox nodes were not carrying the instrument. That is worth one sentence, not a
+control.</p>
 
 
 <h2 id="power">What this costs to fix</h2>
@@ -695,11 +751,11 @@ two scripts against one memory.</p>
 <p>The gap between the real rate and the null is
 6.0 points. To bound that gap to ±1 point
 you need enough paired verdicts to overcome how often a verdict flips under
-rotation — measured here at <strong>24.4%</strong> — inflated
+rotation — measured here at <strong>24.5%</strong> — inflated
 by the clustering of verdicts inside sessions.</p>
 
-<p>That is roughly <strong>37,520 verdicts</strong>, or about
-<strong>445 sessions</strong> at this corpus's
+<p>That is roughly <strong>37,717 verdicts</strong>, or about
+<strong>447 sessions</strong> at this corpus's
 84 verdicts per session. The corpus today has
 2,445 verdicts across 29 sessions.</p>
 
@@ -713,19 +769,40 @@ withholding policy that makes the counterfactual internal to real work.</p></asi
 
 <h2 id="threats">Threats to this result</h2>
 
-<aside class="callout callout-caveat"><p class="callout-title">Replay is 99.1% faithful, not 100%</p>
-<p>Re-judging the corpus from the pinned snapshot reproduces
-2,423 of 2,445 verdicts that <code>eval sync</code> stored live.
-The 22 that differ are almost all
-<code>memory_open_threads</code> results, and the cause is that <strong>node text is
-mutable</strong>: claim and thread descriptions are overwritten latest-wins by later
-distillation, so today's text is not the text that was judged. The stored evidence
-strings show it directly — the same node scored "8/29 terms" then and "7/22" now.</p>
-<p>Worse, <code>ingested_at</code> carries the writing <em>session's</em> timestamp
-rather than the write time, so the graph cannot say when a node's text last changed.
-The fix is to record the judged text (or its term set) on the RETURNS edge at
-judgement time, which is what makes a verdict a historical fact rather than a
-re-derivation.</p></aside>
+<aside class="callout callout-caveat"><p class="callout-title">Replay is 99.1% faithful, and fidelity is the wrong measure of the exposure</p>
+<p>Re-judging from the pinned snapshot reproduces 2,423 of 2,445
+verdicts that <code>eval sync</code> stored live. The 22 that
+differ are almost all <code>memory_open_threads</code>, and the stored evidence strings
+show why: the same node scored "8/29 terms" then and "7/22" now. The node's text
+changed.</p>
+<p><strong>The exposure is larger than the mismatch count suggests.</strong> Fidelity
+counts verdicts that <em>flipped</em>; text can change without flipping one. The right
+denominator is every verdict on a mutable node kind — Thread and Session, which are
+upserted latest-wins — and that is
+660 of 2,445 verdicts
+(27.0%), not the
+0.9% that visibly disagree. The bias
+is directional, too: a session that retrieves a thread and then rewrites that thread's
+description moves the real window's terms toward the node, and does not move any
+rotated partner's. That inflates the rate and not the null.</p>
+<p>The claims-only cut above is the check that this did not produce the headline. The
+fix is to record the judged term-set (or its hash) on the RETURNS edge at judgement
+time, which makes a verdict a historical fact rather than a re-derivation.</p></aside>
+
+<aside class="callout callout-caveat"><p class="callout-title">The bounded judges have no headroom, and κ and the odds ratio disagree</p>
+<p>Pre-registered as a condition that would make a result uninterpretable, and it
+fired: <code>bounded-1</code> and <code>bounded-3</code> score
+1.3% and 1.9% used, against
+nulls near zero. A judge with almost no positives is being scored on almost no
+headroom, so its κ is unstable — read those rows as "no signal available", not as
+"no signal found".</p>
+<p>The disagreement is the interesting part. On the odds-ratio scale the bounded
+judges order cleanly — 8.3× at one turn,
+6.2× at three, 2.5× at ten,
+1.3× unbounded — the opposite ranking to κ, which divides by a
+headroom that shrinks with the window. Neither column decides it. Measuring whether
+utility decays with distance needs a within-session shifted-window design, not a
+comparison of judges with different base rates.</p></aside>
 
 <p>Other limits, stated rather than implied:</p>
 <ul>
@@ -816,7 +893,7 @@ verify that these numbers came from it; it does not let a stranger recompute the
 from scratch, and no wording here should imply otherwise.</p>
 
 <footer class="colophon">
-  <p>Thalamus · experiment 001-the-topic-detector · generated 2026-07-30 07:57 UTC from
+  <p>Thalamus · experiment 001-the-topic-detector · generated 2026-07-30 08:21 UTC from
   <code>1ebdb5f</code>. Checklist after Pineau et al.,
   <em>Improving Reproducibility in Machine Learning Research</em>, JMLR 22(164), 2021.</p>
 </footer>

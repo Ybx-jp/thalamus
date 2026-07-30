@@ -48,20 +48,62 @@ def measure(url: str, *, scope: str, rotations: int, seed: int) -> dict:
     for name in JUDGE_ORDER:
         result = results[name]
         lo, hi = calibration.cluster_bootstrap(cases, result, seed=seed)
+        k_lo, k_hi = calibration.kappa_ci(cases, result, seed=seed)
         judges[name] = {
             "rate": result.rate,
             "rate_ci": [lo, hi],
             "null": result.null_mean,
             "null_ci": list(result.null_ci),
             "kappa": result.kappa,
+            "kappa_ci": [k_lo, k_hi],
+            "odds_ratio": _odds_ratio(result.rate, result.null_mean),
             "discordance": result.discordance,
             "unpartnered": result.unpartnered,
             "used": result.used,
             "total": result.total,
         }
 
+    # The null's *design* as a variable. lab/032 rotated without a length stratum;
+    # this run rotates within one. Reporting both on one corpus is what separates
+    # "the instrument changed" from "the yardstick changed".
+    flat = calibration.score(cases, JUDGES["shipped"])
+    calibration.rotate(
+        cases, JUDGES["shipped"], flat, rotations=rotations, seed=seed, stratified=False
+    )
+    flat_lo, flat_hi = calibration.kappa_ci(cases, flat, seed=seed)
+
+    # Claims are content-addressed, so their text is the text that was judged.
+    # Threads and Sessions are upserted latest-wins and can have changed underneath
+    # a stored verdict with nothing recording it.
+    claim_cases = calibration.restrict(cases, {"claim"})
+    claim_result = calibration.score(claim_cases, JUDGES["shipped"])
+    calibration.rotate(
+        claim_cases, JUDGES["shipped"], claim_result, rotations=rotations, seed=seed
+    )
+    c_lo, c_hi = calibration.kappa_ci(claim_cases, claim_result, seed=seed)
+
     shipped = results["shipped"]
     return {
+        "null_design": {
+            "stratified": {
+                "null": shipped.null_mean,
+                "kappa": shipped.kappa,
+                "kappa_ci": list(judges["shipped"]["kappa_ci"]),
+            },
+            "unstratified": {
+                "null": flat.null_mean,
+                "kappa": flat.kappa,
+                "kappa_ci": [flat_lo, flat_hi],
+            },
+        },
+        "claims_only": {
+            "verdicts": claim_result.total,
+            "rate": claim_result.rate,
+            "null": claim_result.null_mean,
+            "kappa": claim_result.kappa,
+            "kappa_ci": [c_lo, c_hi],
+            "sessions": len({c.session_id for c in claim_cases}),
+        },
         "census": census,
         "cases": len(cases),
         "sessions": len({c.session_id for c in cases}),
@@ -93,6 +135,20 @@ def measure(url: str, *, scope: str, rotations: int, seed: int) -> dict:
     }
 
 
+def _odds_ratio(rate: float, null: float) -> float:
+    """Odds of "used" under the real window against odds under a rotated one.
+
+    Reported beside κ because the two disagree about the bounded judges, and the
+    disagreement is informative: κ divides by the headroom above the null, so a
+    judge whose null is near zero is scored on a scale where a tiny absolute gain
+    looks small; the odds ratio does not rescale. Neither column is publishable
+    alone.
+    """
+    if not 0 < rate < 1 or not 0 < null < 1:
+        return float("nan")
+    return (rate / (1 - rate)) / (null / (1 - null))
+
+
 def verdicts_needed(delta: float, discordance: float, design_effect: float = 4.0) -> int:
     """Raw verdicts needed to bound the real-minus-null gap to ±0.010.
 
@@ -101,7 +157,7 @@ def verdicts_needed(delta: float, discordance: float, design_effect: float = 4.0
     measured here rather than assumed — `d` especially, since the required n scales
     linearly in it.
     """
-    target_se = 0.010 / 1.96
+    target_se = delta / 1.96
     n_eff = discordance / (target_se**2)
     return int(n_eff * design_effect)
 
@@ -109,6 +165,8 @@ def verdicts_needed(delta: float, discordance: float, design_effect: float = 4.0
 def page(post: dict, pre: dict | None, *, rotations: int, seed: int, snapshot_row) -> publish.Experiment:
     j = post["judges"]
     shipped = j["shipped"]
+    nd = post["null_design"]
+    co = post["claims_only"]
     ranked = sorted(JUDGE_ORDER, key=lambda name: j[name]["kappa"], reverse=True)
     best, runner_up = ranked[0], ranked[1]
     fid = post["fidelity"]
@@ -341,19 +399,40 @@ withholding policy that makes the counterfactual internal to real work.</p>''')}
             title="Threats to this result",
             anchor="threats",
             body=f"""
-{publish.callout("caveat", f"Replay is {fidelity_rate * 100:.1f}% faithful, not 100%", f'''
-<p>Re-judging the corpus from the pinned snapshot reproduces
-{fid['matched']:,} of {fid['total']:,} verdicts that <code>eval sync</code> stored live.
-The {fid['total'] - fid['matched']} that differ are almost all
-<code>memory_open_threads</code> results, and the cause is that <strong>node text is
-mutable</strong>: claim and thread descriptions are overwritten latest-wins by later
-distillation, so today's text is not the text that was judged. The stored evidence
-strings show it directly — the same node scored "8/29 terms" then and "7/22" now.</p>
-<p>Worse, <code>ingested_at</code> carries the writing <em>session's</em> timestamp
-rather than the write time, so the graph cannot say when a node's text last changed.
-The fix is to record the judged text (or its term set) on the RETURNS edge at
-judgement time, which is what makes a verdict a historical fact rather than a
-re-derivation.</p>''')}
+{publish.callout("caveat", f"Replay is {fidelity_rate * 100:.1f}% faithful, and fidelity is the wrong measure of the exposure", f'''
+<p>Re-judging from the pinned snapshot reproduces {fid['matched']:,} of {fid['total']:,}
+verdicts that <code>eval sync</code> stored live. The {fid['total'] - fid['matched']} that
+differ are almost all <code>memory_open_threads</code>, and the stored evidence strings
+show why: the same node scored "8/29 terms" then and "7/22" now. The node's text
+changed.</p>
+<p><strong>The exposure is larger than the mismatch count suggests.</strong> Fidelity
+counts verdicts that <em>flipped</em>; text can change without flipping one. The right
+denominator is every verdict on a mutable node kind — Thread and Session, which are
+upserted latest-wins — and that is
+{post['verdicts'] - co['verdicts']:,} of {post['verdicts']:,} verdicts
+({(post['verdicts'] - co['verdicts']) / post['verdicts'] * 100:.1f}%), not the
+{(fid['total'] - fid['matched']) / fid['total'] * 100:.1f}% that visibly disagree. The bias
+is directional, too: a session that retrieves a thread and then rewrites that thread's
+description moves the real window's terms toward the node, and does not move any
+rotated partner's. That inflates the rate and not the null.</p>
+<p>The claims-only cut above is the check that this did not produce the headline. The
+fix is to record the judged term-set (or its hash) on the RETURNS edge at judgement
+time, which makes a verdict a historical fact rather than a re-derivation.</p>''')}
+
+{publish.callout("caveat", "The bounded judges have no headroom, and κ and the odds ratio disagree", f'''
+<p>Pre-registered as a condition that would make a result uninterpretable, and it
+fired: <code>bounded-1</code> and <code>bounded-3</code> score
+{j['bounded-1']['rate'] * 100:.1f}% and {j['bounded-3']['rate'] * 100:.1f}% used, against
+nulls near zero. A judge with almost no positives is being scored on almost no
+headroom, so its κ is unstable — read those rows as "no signal available", not as
+"no signal found".</p>
+<p>The disagreement is the interesting part. On the odds-ratio scale the bounded
+judges order cleanly — {j['bounded-1']['odds_ratio']:.1f}× at one turn,
+{j['bounded-3']['odds_ratio']:.1f}× at three, {j['bounded-10']['odds_ratio']:.1f}× at ten,
+{j['shipped']['odds_ratio']:.1f}× unbounded — the opposite ranking to κ, which divides by a
+headroom that shrinks with the window. Neither column decides it. Measuring whether
+utility decays with distance needs a within-session shifted-window design, not a
+comparison of judges with different base rates.</p>''')}
 
 <p>Other limits, stated rather than implied:</p>
 <ul>
@@ -376,20 +455,111 @@ ranker ledger, so these rates straddle configuration changes.</li>
         sections.insert(
             3,
             publish.Section(
-                title="Did the sandbox purge move it?",
+                title="The purge comparison, withdrawn",
                 anchor="purge",
                 body=f"""
-<p>On 2026-07-30 the graph lost 307 Session vertices that were never sessions: the
-headless subprocesses that distillation itself spawns had been firing the SessionEnd
-hook and distilling themselves. They were 69% of all sessions, and their text was
-extraction self-talk — the most topic-matched prose in the corpus, sitting exactly
-where a topic detector is most inflated.</p>
+{publish.callout("withdrawal", "This was pre-registered as a control. It is not one.", f'''
+<p>On 2026-07-30 the graph lost 307 Session vertices that were never sessions —
+headless distillation subprocesses that had been firing the SessionEnd hook and
+distilling themselves, 69% of all sessions. The pre-registration treats "did κ move
+across the purge?" as a falsifier, on the reasoning that extraction self-talk is the
+most topic-matched prose in the corpus and would inflate a topic detector.</p>
+<p><strong>It could not have moved.</strong> Those sessions made no retrievals. Both
+snapshots yield the same {post['cases']} retrievals across the same
+{post['sessions']} sessions; they contributed no output window to the rate and were
+never in the rotation pool. The only difference is {abs(pre['verdicts'] - post['verdicts'])}
+verdicts ({abs(pre['verdicts'] - post['verdicts']) / pre['verdicts'] * 100:.2f}%) that
+pointed at purged <em>nodes</em>. Reporting the non-move as a passed control would
+imply a test that had a way to fail.</p>''')}
 {contrast}
-<p>Both states are pinned, so this is the same script against two graphs rather than
-two scripts against one memory.</p>
+<p>What the comparison does establish, narrowly: the 37 verdicts that pointed at
+sandbox nodes were not carrying the instrument. That is worth one sentence, not a
+control.</p>
 """,
             ),
         )
+
+    sections.insert(
+        3,
+        publish.Section(
+            title="The yardstick moves more than the judges do",
+            anchor="null-design",
+            body=f"""
+<p>The null is a design, not a constant. This experiment rotates within a
+window-length stratum; the earlier hand-run rotation behind lab/032 did not. On this
+one corpus, with everything else held fixed:</p>
+{publish.table(
+    ["rotation design", "null", "κ", "95% CI on κ"],
+    [
+        ["stratified on window length", f"{nd['stratified']['null'] * 100:.1f}%",
+         f"{nd['stratified']['kappa']:.3f}",
+         f"[{nd['stratified']['kappa_ci'][0]:.3f}, {nd['stratified']['kappa_ci'][1]:.3f}]"],
+        ["unstratified", f"{nd['unstratified']['null'] * 100:.1f}%",
+         f"{nd['unstratified']['kappa']:.3f}",
+         f"[{nd['unstratified']['kappa_ci'][0]:.3f}, {nd['unstratified']['kappa_ci'][1]:.3f}]"],
+    ],
+    caption="Same snapshot, same seed, same judge. Only the partner-selection rule differs.",
+)}
+{publish.callout("finding", "Read κ figures with their null's design attached", f'''
+<p>The two designs differ by
+{abs(nd['stratified']['kappa'] - nd['unstratified']['kappa']):.3f} in κ — larger than the
+spread between the best and worst of the three judges that have any signal at all.
+A κ quoted without saying how its null was drawn is not comparable to another κ.</p>
+<p>It was put to this experiment that the difference from the project's earlier
+hand-run figure (κ≈0.086) would be mostly this — the same instrument read against a
+looser yardstick. The measurement says otherwise, and in the opposite direction:
+dropping the stratum makes the null <em>easier</em> here ({nd['unstratified']['null'] * 100:.1f}%
+against {nd['stratified']['null'] * 100:.1f}%) and κ correspondingly <em>higher</em>
+({nd['unstratified']['kappa']:.3f}), which moves away from 0.086 rather than toward it. So
+the null design is worth a lot, and it is not what explains the older number; the
+remaining candidates are corpus construction (that figure was computed over
+tap-reconstructed traces, this one over the graph's own Trace census) and a
+three-rotation null with no interval. Neither is worth a rerun: both figures'
+intervals are wide enough to contain each other.</p>''')}
+""",
+        ),
+    )
+
+    sections.insert(
+        4,
+        publish.Section(
+            title="The auditable subset: claims only",
+            anchor="claims",
+            body=f"""
+<p>Not every verdict can be re-derived. <code>Claim</code> vertices are
+content-addressed on (kind, normalised description), so rewriting a claim mints a
+<em>new</em> vertex and the text behind a stored verdict is still the text that was
+judged. <code>Thread</code> and <code>Session</code> are upserted latest-wins: their
+titles, descriptions and summaries are overwritten in place, and
+<code>ingested_at</code> carries the writing session's timestamp rather than the
+write time, so nothing in the graph records that the text moved.</p>
+
+<p>That splits the corpus into an auditable part and an exposed one.
+{co['verdicts']:,} of {post['verdicts']:,} verdicts ({co['verdicts'] / post['verdicts'] * 100:.1f}%)
+are claims; the rest sit on text that may have changed underneath them.</p>
+
+{publish.table(
+    ["corpus", "verdicts", "used", "null", "κ", "95% CI on κ"],
+    [
+        ["all node kinds", f"{post['verdicts']:,}", f"{shipped['rate'] * 100:.1f}%",
+         f"{shipped['null'] * 100:.1f}%", f"{shipped['kappa']:.3f}",
+         f"[{shipped['kappa_ci'][0]:.3f}, {shipped['kappa_ci'][1]:.3f}]"],
+        ["claims only (immutable text)", f"{co['verdicts']:,}", f"{co['rate'] * 100:.1f}%",
+         f"{co['null'] * 100:.1f}%", f"{co['kappa']:.3f}",
+         f"[{co['kappa_ci'][0]:.3f}, {co['kappa_ci'][1]:.3f}]"],
+    ],
+    caption="κ intervals are paired: each bootstrap draw resamples sessions and recomputes "
+            "the rate and its null together, because κ is a contrast.",
+)}
+
+{publish.callout("finding", "The headline number survives on the auditable subset", f'''
+<p>κ on claims alone is {co['kappa']:.3f} against {shipped['kappa']:.3f} on everything,
+and the two intervals overlap heavily. The mutable-text exposure is real and worth
+fixing, but it is not what produced the result — which is the thing that had to be
+checked before any of this could be quoted.</p>''')}
+""",
+        ),
+    )
 
     checklist = [
         publish.ChecklistItem(

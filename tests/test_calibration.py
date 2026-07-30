@@ -146,3 +146,88 @@ def test_fidelity_reports_where_replay_disagrees_with_what_was_stored():
 
     case.stored = {"scope:main:claim:t1": True}
     assert calibration.fidelity([case], result) == (1, 1)
+
+
+def test_discordance_is_measured_across_every_rotation():
+    """
+    Scenario: 50 rotations run.
+
+    Verification: the flip rate is estimated from all of them, not from the first.
+    The n a study needs scales linearly in this number, so estimating it from one
+    pairing while discarding the rest is the same "one draw is not an estimate"
+    error the null itself exists to avoid.
+    """
+    cases = [
+        _case(f"t{i}", f"s{i}", "reader detail cap eight", "reader detail cap eight", repeats=1 + i // 2)
+        for i in range(8)
+    ]
+    calibration._assign_strata(cases)
+    judge = JUDGES["shipped"]
+    result = calibration.score(cases, judge)
+    calibration.rotate(cases, judge, result, rotations=50, seed=11)
+
+    # Every case contributed a null verdict in every rotation.
+    assert sum(t for _u, t in result.null_by_case.values()) == 8 * 50
+    assert 0.0 <= result.discordance <= 1.0
+
+
+def test_the_kappa_interval_moves_the_rate_and_its_null_together():
+    """κ is a contrast, so its interval must resample the pair. An interval built
+    on the rate alone prices variance the estimator does not have."""
+    cases = [
+        _case(f"t{i}", f"s{i % 4}", "shared vocabulary here", "shared vocabulary here", repeats=1 + i % 3)
+        for i in range(12)
+    ]
+    calibration._assign_strata(cases)
+    judge = JUDGES["shipped"]
+    result = calibration.score(cases, judge)
+    calibration.rotate(cases, judge, result, rotations=20, seed=5)
+    lo, hi = calibration.kappa_ci(cases, result, draws=200, seed=5)
+    assert lo <= hi
+    # Every case echoes its own node and every partner's window is the same text,
+    # so rate and null coincide: κ is 0 and the interval must contain it.
+    assert lo <= 0.0 <= hi
+
+
+def test_restricting_to_claims_keeps_only_immutable_text():
+    """Claims are content-addressed on (kind, normalized description), so a
+    rewritten claim is a new vertex. Threads and Sessions are upserted latest-wins,
+    so their text can change under a stored verdict with nothing recording it."""
+    case = calibration.Case(
+        trace_id="t1",
+        session_id="s1",
+        scope="main",
+        tool="memory_recall",
+        ts=datetime(2026, 7, 30, tzinfo=timezone.utc),
+        nodes={
+            "scope:main:claim:aaa": "immutable claim text",
+            "scope:main:thread:some-slug": "mutable thread description",
+            "scope:main:session:abc": "mutable session summary",
+        },
+        window=_window("immutable claim text"),
+        stored={"scope:main:claim:aaa": True},
+    )
+    claims_only = calibration.restrict([case], {"claim"})
+    assert list(claims_only[0].nodes) == ["scope:main:claim:aaa"]
+    assert claims_only[0].stored == {"scope:main:claim:aaa": True}
+
+    # A case left with nothing after the filter drops out rather than becoming an
+    # empty denominator.
+    assert calibration.restrict([case], {"artifact"}) == []
+
+
+def test_an_unstratified_rotation_is_a_different_null_by_design():
+    """The stratum constraint is part of the estimand, not an implementation
+    detail: swapping it changes κ by more than the spread between judges."""
+    cases = [
+        _case(f"t{i}", f"s{i}", "alpha beta gamma delta", "alpha beta gamma delta", repeats=1 + i * 3)
+        for i in range(8)
+    ]
+    calibration._assign_strata(cases)
+    judge = JUDGES["shipped"]
+    stratified = calibration.score(cases, judge)
+    calibration.rotate(cases, judge, stratified, rotations=10, seed=2, stratified=True)
+    flat = calibration.score(cases, judge)
+    calibration.rotate(cases, judge, flat, rotations=10, seed=2, stratified=False)
+    # Both produce a null; the point is that they are separately reportable.
+    assert stratified.null_rates and flat.null_rates

@@ -94,6 +94,11 @@ class JudgeResult:
     # rather than absorbed: a thin stratum silently shrinks the null's corpus,
     # and a null computed over a different set than the rate is not that rate's null.
     unpartnered: int = 0
+    # trace -> [null used, null total] accumulated over every rotation. Keeping the
+    # null per case is what makes a *paired* interval on κ possible: resampling
+    # sessions has to move the rate and its null together, or the interval prices
+    # variance the estimator does not have.
+    null_by_case: dict[str, list[int]] = field(default_factory=dict)
 
     @property
     def rate(self) -> float:
@@ -323,6 +328,7 @@ def rotate(
     *,
     rotations: int,
     seed: int,
+    stratified: bool = True,
     prepared: "_Prepared | None" = None,
 ) -> JudgeResult:
     """Re-judge every case against another session's window, `rotations` times.
@@ -337,7 +343,10 @@ def rotate(
     rng = random.Random(seed)
     by_stratum: dict[int, list[Case]] = defaultdict(list)
     for case in cases:
-        by_stratum[case.stratum].append(case)
+        # `stratified=False` reproduces the unstratified rotation lab/032 used, so the
+        # two null *designs* can be compared on one corpus. They are not
+        # interchangeable: the design is worth more κ than the spread between judges.
+        by_stratum[case.stratum if stratified else 0].append(case)
 
     unpartnered = {
         case.trace_id
@@ -347,21 +356,33 @@ def rotate(
     result.unpartnered = len(unpartnered)
     flips = 0
     comparable = 0
-    for turn in range(rotations):
+    for _turn in range(rotations):
         used = total = 0
         for case in cases:
-            pool = [c for c in by_stratum[case.stratum] if c.session_id != case.session_id]
+            key = case.stratum if stratified else 0
+            pool = [c for c in by_stratum[key] if c.session_id != case.session_id]
             if not pool:
                 continue
             other = pool[rng.randrange(len(pool))]
+            case_used = 0
+            case_total = 0
             for verdict in prepared.judge_against(case.nodes, other.window):
                 used += int(verdict.used)
                 total += 1
-                if turn == 0:
-                    real = result.verdicts.get(case.trace_id, {}).get(verdict.node_id)
-                    if real is not None:
-                        comparable += 1
-                        flips += int(real != verdict.used)
+                case_used += int(verdict.used)
+                case_total += 1
+                # Discordance is measured across **every** rotation, not the first.
+                # One rotation is one draw, and the required n scales linearly in this
+                # number — estimating it from a single pairing while discarding 199
+                # others is the same "one draw is not an estimate" error the null
+                # itself exists to avoid.
+                real = result.verdicts.get(case.trace_id, {}).get(verdict.node_id)
+                if real is not None:
+                    comparable += 1
+                    flips += int(real != verdict.used)
+            counts = result.null_by_case.setdefault(case.trace_id, [0, 0])
+            counts[0] += case_used
+            counts[1] += case_total
         if total:
             result.null_rates.append(used / total)
     result.discordance = flips / comparable if comparable else 0.0
@@ -369,7 +390,12 @@ def rotate(
 
 
 def calibrate(
-    cases: list[Case], *, judges: list[str] | None = None, rotations: int = 200, seed: int = 20260730
+    cases: list[Case],
+    *,
+    judges: list[str] | None = None,
+    rotations: int = 200,
+    seed: int = 20260730,
+    stratified: bool = True,
 ) -> dict[str, JudgeResult]:
     """Score every judge variant and its null on one corpus, one seed."""
     names = judges or list(JUDGES)
@@ -379,7 +405,13 @@ def calibrate(
         prepared = _Prepared(judge)
         result = score(cases, judge, prepared)
         results[name] = rotate(
-            cases, judge, result, rotations=rotations, seed=seed, prepared=prepared
+            cases,
+            judge,
+            result,
+            rotations=rotations,
+            seed=seed,
+            stratified=stratified,
+            prepared=prepared,
         )
     return results
 
@@ -417,6 +449,76 @@ def cluster_bootstrap(
     return percentile_ci(rates)
 
 
+def kappa_ci(
+    cases: list[Case], result: JudgeResult, *, draws: int = 2000, seed: int = 20260730
+) -> tuple[float, float]:
+    """A **paired**, session-clustered interval on κ.
+
+    Each bootstrap draw resamples sessions and recomputes the rate *and* its null
+    from the same sessions, so the two move together. An interval built by
+    resampling the rate alone would price variance the estimator does not have —
+    κ is a contrast, and its uncertainty is the uncertainty of the contrast.
+
+    Requires `rotate()` to have run: the per-case null counts are what make the
+    pairing possible.
+    """
+    rng = random.Random(seed)
+    by_session: dict[str, list[tuple[int, int, int, int]]] = defaultdict(list)
+    for case in cases:
+        verdicts = result.verdicts.get(case.trace_id, {})
+        null_used, null_total = result.null_by_case.get(case.trace_id, [0, 0])
+        by_session[case.session_id].append(
+            (sum(1 for u in verdicts.values() if u), len(verdicts), null_used, null_total)
+        )
+    sessions = list(by_session)
+    if len(sessions) < 2:
+        return (0.0, 0.0)
+
+    values = []
+    for _ in range(draws):
+        used = total = n_used = n_total = 0
+        for _ in sessions:
+            for u, t, nu, nt in by_session[sessions[rng.randrange(len(sessions))]]:
+                used += u
+                total += t
+                n_used += nu
+                n_total += nt
+        if total and n_total:
+            values.append(kappa(used / total, n_used / n_total))
+    return percentile_ci(values)
+
+
+def restrict(cases: list[Case], kinds: set[str]) -> list[Case]:
+    """The corpus narrowed to node kinds, strata recomputed.
+
+    Kind matters for more than curiosity: `Claim` vertices are content-addressed on
+    (kind, normalized description), so a rewritten claim is a *new* vertex and claim
+    text is immutable by construction. `Thread` and `Session` are upserted
+    latest-wins, so their text can change under a stored verdict with nothing in the
+    graph recording that it did. A κ computed on claims only is the one computed on
+    text that is still the text that was judged.
+    """
+    narrowed = []
+    for case in cases:
+        nodes = {nid: text for nid, text in case.nodes.items() if node_kind(nid) in kinds}
+        if not nodes:
+            continue
+        narrowed.append(
+            Case(
+                trace_id=case.trace_id,
+                session_id=case.session_id,
+                scope=case.scope,
+                tool=case.tool,
+                ts=case.ts,
+                nodes=nodes,
+                window=case.window,
+                stored={k: v for k, v in case.stored.items() if k in nodes},
+            )
+        )
+    _assign_strata(narrowed)
+    return narrowed
+
+
 def by_dimension(
     cases: list[Case], result: JudgeResult, key
 ) -> dict[str, tuple[int, int]]:
@@ -444,9 +546,11 @@ __all__ = [
     "cluster_bootstrap",
     "fidelity",
     "kappa",
+    "kappa_ci",
     "load_cases",
     "node_kind",
     "percentile_ci",
+    "restrict",
     "rotate",
     "score",
 ]
