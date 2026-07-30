@@ -46,3 +46,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [028](028-the-transcript-that-keeps-no-receipts.md) | Cursor distills, and the trust floor had to be told the difference between "nothing fetched" and "cannot know" | workaround |
 | [029](029-the-bleed-that-was-not-a-leak.md) | Lexical recall is project-blind; off-project carries 83% of the waste and 38% of the value; both consultations were wrong about the mechanism | measurements + corrections |
 | [030](030-the-miss-rate-was-the-consultation.md) | The 41% miss rate is consultation into thin expert subgraphs; the floor never cut fan-out (query shape did); three instrument errors caught | correction + measurements |
+| [031](031-the-dial-that-had-nothing-to-tune.md) | Detail cap stays at 8: used-rate is ~60% flat across position, length and ranking; the elision stub was hiding the cap | null result + fix |

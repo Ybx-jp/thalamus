@@ -70,7 +70,18 @@ _MATCH_FLOOR = 2
 # A recall result renders at most this many claim details. Priced traces showed the
 # unfiltered dump — every claim of every matched session — is where retrieval waste
 # lives: 267 of 295 ignored nodes were ride-along claims that never matched the query
-# (lab/006). A dial, not a truth, and never tuned.
+# (lab/006).
+#
+# Tuned 2026-07-29 against 1,354 labelled detail renders, and the answer was to leave
+# it: used-rate is ~60% flat across every property measured — render position (58-65%,
+# no decay), claim length, and keyword-hit ranking (which buys 0pp). The cap binds in
+# 17% of rendered blocks, so it is not idle; it is simply a *volume* knob at a fixed
+# ~60/40 exchange rate, with no ordering signal that would let a smaller cap keep the
+# better claims. Lowering it to 5 would drop ~146 used claims to save ~88 ignored ones.
+# The one discriminator found is claim kind (decision 62% / solution 56% / problem
+# 53%) — marginal, and untried. Caveat that bounds all of it: only 1.4% of detail
+# verdicts come from the strong vertex-ID citation path, so this rests on lexical echo
+# (lab/031).
 _DETAIL_CAP = 8
 # Knowledge holds up to 1/this of the result window when sessions also matched.
 _KNOWLEDGE_WINDOW_DIVISOR = 2
@@ -628,14 +639,26 @@ def _select_details(details: list[dict], keywords: list[str], cap: int = _DETAIL
         for d in details
         if any(k in str(d.get("description", "")).lower() for k in keywords)
     ]
-    elided = len(details) - len(matching[:cap])
     selected = matching[:cap]
-    if elided > 0:
+    # Two different absences, reported apart. Rolling them into one "did not match
+    # the query" count told the reader that capped-off *matching* claims were
+    # irrelevant, which is the opposite of true, and it made the cap invisible in
+    # the trace — you could not tell from a response whether the cap had bound, so
+    # the one number needed to tune it was the one number never recorded (lab/031).
+    capped = len(matching) - len(selected)
+    unmatched = len(details) - len(matching)
+    if capped or unmatched:
+        parts = []
+        if capped:
+            parts.append(f"{capped} matched but exceeded the {cap}-claim render cap")
+        if unmatched:
+            parts.append(f"{unmatched} did not match the query")
         selected.append(
             {
                 "kind": "elided",
-                "description": f"{elided} more claim(s) in this session did not match "
-                "the query — recall the session node to expand",
+                "description": f"{capped + unmatched} more claim(s) in this session: "
+                + "; ".join(parts)
+                + " — recall the session node to expand",
             }
         )
     return selected

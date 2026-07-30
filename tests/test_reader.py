@@ -251,7 +251,23 @@ def test_detail_selection_caps_matching_claims_and_counts_the_rest():
     ]
     selected = _select_details(details, ["gremlin"], cap=8)
     assert len([d for d in selected if d.get("node_id")]) == 8
-    assert "4 more claim(s)" in selected[-1]["description"]
+    stub = selected[-1]["description"]
+    assert "4 more claim(s)" in stub
+    # All 12 matched; the 4 held back were held back by the CAP. Reporting them as
+    # "did not match the query" told the reader they were irrelevant when they were
+    # the opposite, and left no way to see from a response that the cap had bound.
+    assert "exceeded the 8-claim render cap" in stub
+    assert "did not match" not in stub
+
+    # Mixed: 10 match, 2 don't, cap 8 -> 2 capped AND 2 unmatched, counted apart.
+    mixed = [
+        {"kind": "decision", "description": f"gremlin detail {i}", "node_id": f"v{i}"}
+        for i in range(10)
+    ] + [{"kind": "problem", "description": f"unrelated {i}", "node_id": f"u{i}"} for i in range(2)]
+    stub = _select_details(mixed, ["gremlin"], cap=8)[-1]["description"]
+    assert "4 more claim(s)" in stub
+    assert "2 matched but exceeded the 8-claim render cap" in stub
+    assert "2 did not match the query" in stub
 
 
 def test_keyword_matching_is_case_insensitive_and_regex_safe():
