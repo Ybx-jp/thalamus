@@ -1132,6 +1132,34 @@ def evaluate_probes(
 # ---------------------------------------------------------------------------
 
 
+def memo_echo(task, transcript: str) -> dict:
+    """How much of the injected fact shows up in what the candidate did.
+
+    Excludes the prompt itself: the fact is *in* the first user turn by
+    construction, so counting the whole transcript would score every ceiling arm
+    as a perfect echo and measure nothing. Only assistant prose and tool-call
+    inputs count, which is the same window layer-1 attribution judges against.
+    """
+    from thalamus.eval.attribution import attribute_prepared, node_terms, output_window, prepare
+
+    fact = (task.under_specification.fact or "") if task.under_specification else ""
+    if not fact.strip():
+        return {"terms": 0, "matched": 0, "used": False}
+
+    window = output_window(transcript.encode(), datetime.min.replace(tzinfo=timezone.utc))
+    lower, tokens = prepare(window.text())
+    terms = node_terms(fact)
+    verdict = attribute_prepared({"memo": fact}, lower, tokens, {"memo": terms})[0]
+    matched = sum(1 for term in terms if term in tokens)
+    return {
+        "terms": len(terms),
+        "matched": matched,
+        "ratio": round(matched / len(terms), 3) if terms else 0.0,
+        "used": verdict.used,
+        "evidence": verdict.evidence,
+    }
+
+
 def ceiling_prompt(task) -> str:
     """The task prompt with its withheld fact handed over as recalled memory.
 
@@ -1284,6 +1312,18 @@ def run_arm(
         # lab/015 had to re-derive it by hand for twelve arms across three
         # models. Recording it makes a campaign self-describing.
         record["recall_calls"] = count_recall_calls(transcript)
+        # A ceiling arm's whole treatment is the injected fact, so whether the
+        # candidate visibly acted on it is not optional colour — "perfect memory,
+        # ignored" and "perfect memory, useless" are different findings and a rung
+        # cannot separate them (experiments/004 pre-registration). Recorded at run
+        # time because the arm's transcript does not outlive its worktree.
+        #
+        # Judged with layer 1's own instrument, thresholds and all, so its known
+        # weakness is inherited openly rather than a second judge being invented
+        # here: this counts term overlap in what the candidate *did*, and term
+        # overlap is roughly 57 points floor and a little signal (experiments/001).
+        if arm.inject_fact and transcript:
+            record["memo_echoed"] = memo_echo(task, transcript)
         # Whether the candidate stayed inside its own experiment. lab/020 found
         # two arms reading the task file out of the operator's checkout by
         # absolute path; `contaminated` is the pre-registered exclusion key for
