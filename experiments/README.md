@@ -66,6 +66,18 @@ Figures are hand-emitted SVG whose marks carry CSS custom properties, so one ren
 is correct in light and dark, and the page stays a single file that survives being
 mailed to someone.
 
+## What is here
+
+| # | Experiment | State |
+|---|---|---|
+| [001](001-the-topic-detector/) | The used-rate is mostly a topic detector | measured; one pre-registered hypothesis falsified, one control withdrawn |
+| [002](002-what-the-waste-figure-means/) | What "a third of the tokens are wasted" actually supports | measured |
+| [003](003-does-withholding-change-anything/) | Does withholding a memory change what the session does? | **pre-registered, no data** — the policy has never been enabled |
+
+003 is the shape this directory is for: the design was committed before a single
+observation existed, and its runner reports the empty state honestly rather than
+waiting for results to justify a method.
+
 ## Running one
 
 ```bash
