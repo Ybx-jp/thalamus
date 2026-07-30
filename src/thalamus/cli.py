@@ -326,6 +326,29 @@ def main():
     )
     eval_recipes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
+    eval_gold_parser = eval_sub.add_parser(
+        "gold",
+        help="The human gold label set: draw a stratified sample, then score the "
+        "judge against it. The permutation null bounds the judge against chance; "
+        "only this bounds it against truth.",
+    )
+    eval_gold_parser.add_argument(
+        "--draw", action="store_true", help="Draw the sample and write the labelling workbooks"
+    )
+    eval_gold_parser.add_argument(
+        "--score", action="store_true", help="Score the judge against whatever has been labelled"
+    )
+    eval_gold_parser.add_argument(
+        "--n", type=int, default=256,
+        help="Sample size (default 256 — the n for SE(kappa)=0.05; see eval/gold.py)",
+    )
+    eval_gold_parser.add_argument("--seed", type=int, default=20260730)
+    eval_gold_parser.add_argument("--scope", default=MAIN_SCOPE)
+    eval_gold_parser.add_argument(
+        "--snapshot", default="", help="Draw against a pinned snapshot instead of the live graph"
+    )
+    eval_gold_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
     eval_tasks_parser = eval_sub.add_parser(
         "tasks",
         help="Validate and list the counterfactual task battery (config/tasks/)",
@@ -1077,6 +1100,55 @@ def _cmd_snapshot(args):
     print(f"Snapshot written: {args.path} ({vertices} vertices, {edges} edges)")
 
 
+def _cmd_eval_gold(args):
+    from contextlib import nullcontext
+
+    from thalamus.eval import calibration, gold, snapshots
+    from thalamus.eval.attribution import JUDGES
+
+    if args.score or not args.draw:
+        items = gold.load_sample()
+        if not items:
+            print("No sample drawn yet. `thalamus eval gold --draw` writes one.")
+            return
+        labels = gold.read_labels()
+        result = gold.agreement(items, labels)
+        done = sum(1 for i in items if i.item_id in labels)
+        print(f"Gold set: {done}/{len(items)} labelled, {result.unclear} marked unclear")
+        if not result.n:
+            print("  nothing decidable yet — label a batch and re-run")
+            return
+        lo, hi = result.ci
+        print(
+            f"  judge vs human on {result.n} decidable items: "
+            f"kappa {result.kappa:.3f} [{lo:.3f}, {hi:.3f}] "
+            f"(observed {result.observed:.3f}, chance {result.expected:.3f})"
+        )
+        print(f"  sensitivity {result.sensitivity:.3f} · specificity {result.specificity:.3f}")
+        print("  single annotator, so there is no inter-annotator agreement to report.")
+        for name, split in gold.by_stratum(items, labels, lambda i: i.node_kind).items():
+            if split.n:
+                print(f"    {name:10} n={split.n:<4} kappa {split.kappa:+.3f}")
+        return
+
+    context = snapshots.serve(args.snapshot) if args.snapshot else nullcontext(args.url)
+    with context as url:
+        graph = connect(url)
+        try:
+            cases, _census = calibration.load_cases(graph, scope=args.scope)
+        finally:
+            close_connection(graph)
+    scored = calibration.score(cases, JUDGES["shipped"])
+    items = gold.draw(cases, scored.verdicts, n=args.n, seed=args.seed)
+    paths = gold.write_batches(items)
+    print(f"Drew {len(items)} items across {len(paths)} batches into {gold.GOLD_DIR}")
+    print(f"  n={args.n} is SE(kappa)={0.05 if args.n == 256 else '?'} — see eval/gold.py for the derivation")
+    print("  the judge's verdict is recorded in sample.jsonl and withheld from the workbooks")
+    for path in paths:
+        print(f"    {path.name}")
+    print("\nLabel a batch, then: thalamus eval gold --score")
+
+
 def _cmd_contract(args, contract_parser):
     if getattr(args, "contract_command", None) != "check":
         contract_parser.print_help()
@@ -1209,6 +1281,8 @@ def _cmd_eval(args, eval_parser):
                         + "\n"
                     )
             print(f"\nWrote {len(report.candidates)} candidate pair(s) to {args.queue}")
+    elif getattr(args, "eval_command", None) == "gold":
+        _cmd_eval_gold(args)
     elif getattr(args, "eval_command", None) == "recipes":
         from thalamus.eval.gremlin import render_smoke, smoke_recipes
 
