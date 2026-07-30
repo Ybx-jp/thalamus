@@ -20,10 +20,13 @@ defense, downstream/action-coupled evaluation as the successor to retrieval-QA
 metrics, and access-governed shared graph memory with provenance-linked traces for
 multi-agent systems. Thalamus is therefore **not staking out empty ground** — it is
 an *integrated, local-first, single-operator instantiation* of a design the field
-is assembling in pieces. Every cited work below does one pillar (a defense, or a
+is assembling in pieces. Most cited work below does one pillar (a defense, or a
 benchmark, or a shared-memory scheme); the contribution here is the **union as
 working, inspectable software**, plus two narrower ideas that the scan did not
-find claimed elsewhere (§4).
+find claimed elsewhere (§4). The exception is §6 — shipped memory systems that
+integrate several pillars at once, and are therefore the neighbours against which
+duplication has to be admitted rather than the papers against which position is
+argued.
 
 ## 1. Trust model & memory poisoning
 
@@ -516,6 +519,19 @@ evidence, so its claims stay observational.
   substantial overhead and give limited control over the cost trade-off. Its own
   answer is budget-tiered memory modules (Low/Mid/High) behind a router.
 
+- **Sleep-time Compute** (arXiv 2504.13171, in the graph — feed
+  `agent-memory-systems`) — the counterweight, and it splits BudgetMem's
+  dichotomy. A model processes a context offline *by anticipating likely queries*
+  and precomputing against them: roughly **5× less test-time compute for equal
+  accuracy** on Stateful GSM-Symbolic and Stateful AIME, up to **13% / 18%**
+  accuracy gained when the offline budget is scaled, and **2.5× lower average
+  cost per query** when the offline work is amortized across related queries about
+  one context (Multi-Query GSM-Symbolic). The load-bearing claim for this section
+  is the conditional one: **the predictability of the user query is well
+  correlated with the efficacy of sleep-time compute.** The paper also runs a case
+  study on a realistic agentic software-engineering task, so the setting is not
+  purely mathematical.
+
 **Position: Thalamus takes the local/global *question* and rejects the offline
 answer.** The distinction that survives is GraphRAG's opening one — asking how a
 whole corpus bears on something is query-focused summarization, not retrieval, and
@@ -530,6 +546,21 @@ per-document contribution summary considered here is withdrawn: it was the offli
 query-agnostic construction BudgetMem names, and its failure mode (discarded
 query-critical material) is silent by construction, which is the worst property a
 memory design can have.
+
+**The rejection is conditional, and 2504.13171 states the condition.** Offline and
+runtime is not the real axis — *query-agnostic* and *query-anticipating* is.
+BudgetMem's critique bites on construction that does not know what will be asked;
+sleep-time compute precomputes against anticipated queries and buys 5× on
+test-time compute for it, with efficacy tracking **query predictability**. So the
+withdrawn contribution layer was rejected for being query-agnostic, not for being
+offline, and the door it leaves open is narrow and testable: if a scope's incoming
+questions turn out to be predictable — measurable directly from the `Exchange`
+records the consultation protocol already writes, since each one stores the
+question asked — then precomputation against *those* questions is the cited
+design, and its amortization argument (2.5× across related queries about one
+context) is exactly the shape of repeated consultations against one scope. Nothing
+here is measured locally: no predictability estimate over the exchange corpus
+exists yet, and until one does this is a named condition rather than a plan.
 
 **Why the community layer is not taken, stated at the strength the record
 supports.** GraphRAG's gains are reported for global sensemaking over corpora in
@@ -845,6 +876,155 @@ not a scan.
 - **Attribution beyond lexical** — the survey (2603.07670) and the benchmarks make
   the case that inferred-intent retrieval is the hard part; our used-vs-ignored
   attribution is lexical (lab/002). This is the honest weak point of the eval loop.
+- **Invalidation semantics are undecided, and one neighbour decided them
+  differently** (§6). Claim identity is latest-wins: a revised claim updates the
+  node (decision log 2026-07-15), so a superseded belief leaves no trace except on
+  the `Source` lineage. Zep's Graphiti keeps historical relationships instead. The
+  corpus cannot adjudicate this — no held claim describes Graphiti's edge
+  invalidation mechanics — and STALE (2605.06527) says the failure this governs is
+  real and dominant. Procurement target before any change, not a design argument
+  to have from here.
+- **No abstention rung.** LongMemEval (arXiv 2410.10813) counts **abstention**
+  among the five core long-term-memory abilities it evaluates — knowing that the
+  history does not contain the answer. The graded ladder has no equivalent: every
+  rung grades what a candidate *did*, and a task whose correct outcome is "the
+  memory does not support this" is not in the battery. Cheap to add and currently
+  absent.
+
+## 6. The deployed neighbours — systems, not papers
+
+§1–§3 argue position against *papers*, each doing one pillar. This section is the
+other comparison: four shipped or productized memory systems that integrate
+several pillars at once. The point of the section is admission — where Thalamus
+duplicates a system that already exists, it says so, and the deviation has to be
+argued rather than assumed. Held under feed `agent-memory-systems`.
+
+### Zep / Graphiti (arXiv 2501.13956)
+
+**What it solves.** A memory-layer *service* built on Graphiti, a
+temporally-aware knowledge graph engine that synthesizes unstructured
+conversational data together with structured business data while maintaining
+historical relationships. Its case against the RAG baseline is that existing
+retrieval-augmented frameworks for LLM agents are limited to **static document
+retrieval**, where the applications it targets need dynamic knowledge integration
+from ongoing conversations and business data. Reported: **94.8% vs MemGPT's 93.4%**
+on Deep Memory Retrieval, up to **18.5%** accuracy improvement with **90%** lower
+response latency on LongMemEval, gains most pronounced on cross-session
+information synthesis and long-term context maintenance.
+
+**What Thalamus duplicates.** Close to the whole architectural shape: an
+entity-linked, temporally-ordered graph over agent conversation, queried at
+runtime, replacing chunk retrieval. Graph-structured agent memory is a shipped
+product, and nothing in this repo may be described as if it were first at it.
+
+**Where the deviation is defensible.** Zep's held claims are entirely about
+retrieval accuracy and latency for a hosted service. They say nothing about a
+trust boundary on the write path, about tiering by origin, or about measuring
+whether retrieved memory changed what an agent did — which is where every pillar
+of this project lives (§1, §2). The deviation is not "a better graph"; it is a
+perimeter around one, for a single operator, on local hardware.
+
+**Where it is not defensible yet.** Invalidation. Thalamus's claim identity is
+latest-wins and Graphiti maintains historical relationships, but the corpus holds
+no claim describing how Graphiti invalidates or supersedes an edge, so the
+comparison cannot be drawn from it — a procurement gap, recorded in §5, not a
+question more recall answers.
+
+### Mem0 (arXiv 2504.19413)
+
+**What it solves.** A memory-centric architecture that dynamically extracts,
+consolidates and retrieves salient information from ongoing multi-session
+conversations against the fixed context window; `Mem0g` adds graph-based memory
+representations for relational structure. Reported on LOCOMO against six baseline
+categories: consistent wins across single-hop, temporal, multi-hop and open-domain
+questions, **26%** relative improvement in LLM-as-a-Judge over OpenAI's memory
+system, and against full-context processing **91% lower p95 latency** with **over
+90%** token-cost saving.
+
+**What Thalamus duplicates.** Extraction-and-consolidation on the write path
+(`thalamus extract`) and the cost argument for not carrying whole histories.
+
+**The datum that cuts against the graph-first bet.** `Mem0g` scores about **2%**
+above flat `Mem0` overall. Graph structure is nearly free of benefit on that
+benchmark's terms, and docs/06's "graph-first is the point" cannot be defended by
+conversational-QA accuracy — it has to be defended by the questions LOCOMO does
+not ask: provenance walks, consultation audits, per-feed attribution, contradiction
+queues. Those are traversals, and a flat store answers none of them. That is the
+honest form of the argument; "graphs retrieve better" is not available.
+
+**Where the deviation is defensible.** Mem0's numbers are efficiency claims
+against a full-context baseline. `thalamus eval cost` (§2b) does not compete
+there — it attributes cost per session and per expert rather than reducing it, and
+the project makes no accuracy-per-token claim at all.
+
+### Letta / MemGPT (arXiv 2310.08560)
+
+**What it solves.** Virtual context management: hierarchical memory tiers borrowed
+from operating systems, paging data between fast and slow tiers so a limited
+context window presents as a large one, with interrupts managing control flow.
+Evaluated on document analysis far beyond the underlying context window and on
+multi-session chat where agents remember and evolve across long interactions.
+
+**What Thalamus duplicates — and a naming collision worth stating.** Both systems
+say "tiers" and mean unrelated things. MemGPT's tiers are **capacity** tiers (what
+fits in context now); docs/05's are **trust** tiers (what a node's origin
+licenses). Nothing transfers between them.
+
+**Where the deviation is defensible, and this is the sharpest one.** MemGPT's
+memory is **self-edited**: the agent decides what to page in and what to write
+back. That is precisely the write path docs/05 gates, and the poisoning literature
+in §1 is the attack surface it opens — 2606.04329's finding that defenses must
+operate at the write path rather than the input boundary is a statement about
+architectures of exactly this shape. So docs/05's write-path argument now argues
+against a named, widely-deployed system instead of against nobody. Stated
+precisely: **no held claim about MemGPT describes any provenance, origin tier or
+trust boundary on its self-edited memory** — that is an absence in what the paper
+claims, not a demonstrated vulnerability in the product.
+
+**Supply note.** The corpus holds **no** source on Letta, MemGPT's productization.
+Anything said here is about the paper; product-level claims about Letta are
+ungrounded and are not made.
+
+### LangMem — not held
+
+The scope holds nothing on LangMem. It has no paper; it is framework
+documentation, which makes this a **supply gap, not a scan gap** — and a closable
+one, since `github.com` is on the literature manifest's allowlist, so its
+repository and docs are fetchable under [06](06-ingestion.md) whenever a question
+actually turns on it. Until then this doc makes no claim about it, including no
+claim that Thalamus differs from it.
+
+### The shared yardstick: LongMemEval (arXiv 2410.10813)
+
+Both Zep and the systems it benchmarks against report here, which is why it is
+held alongside them. It is 500 curated questions embedded in scalable
+user-assistant chat histories, evaluating five abilities — information extraction,
+multi-session reasoning, temporal reasoning, knowledge updates, and **abstention**
+— and it measures a **30% accuracy drop** for commercial chat assistants and
+long-context LLMs asked to retain information across sustained interaction. Its
+other contribution is a decomposition of long-term memory design into **indexing,
+retrieval and reading**, with optimizations at each: session decomposition for
+value granularity, fact-augmented key expansion for indexing, time-aware query
+expansion for retrieval, together substantially improving both recall and
+downstream QA.
+
+**Why it is not adopted as a target.** It grades chat assistants on curated
+questions over synthesized histories; §2's whole position is that the live loop
+measures the operator's real sessions instead. What it does supply is two things
+the local design lacks: the abstention ability (§5) and a stage vocabulary —
+indexing / retrieval / reading — that names where the graded ladder's instruments
+sit, since `eval/attribution.py` grades *reading* while lexical `recall()` is
+*retrieval*, and lab/032's measured floor is a reading-stage result.
+
+### What none of them does
+
+**The §4 in-deployment absence survives contact with this batch.** All four
+systems are graded on offline benchmarks — DMR, LOCOMO, LongMemEval — against
+curated or synthesized histories. No held claim from any of them derives a
+utility estimate from live traffic, including Mem0's, whose latency and cost
+figures are measured on the LOCOMO comparison despite the paper's
+production-readiness framing. §4's provisional absence is therefore unchanged by
+the arrival of the systems most likely to have refuted it.
 
 ## Maintenance
 
