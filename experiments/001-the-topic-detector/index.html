@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The used-rate is mostly a topic detector — Thalamus experiment 001-the-topic-detector</title>
+<meta name="description" content="Thalamus judges whether a retrieved memory was used by matching its terms against what the agent did next. Re-judged against an unrelated session's output, that judge still says 57% used — so of the 63% it reports, only κ=0.14 of the available headroom is retrieval utility. Six alternative judges were pre-registered against it; none of them beats it.">
+<style>/* Thalamus experiment write-ups — the design tokens.
+ *
+ * Steel blue leads, warm grey carries the page. The categorical ramp is fixed
+ * order, never cycled, and was validated (not eyeballed) against both surfaces:
+ * lightness band, chroma floor, CVD separation, normal-vision floor and contrast
+ * all pass on #fcfcfb and on #1a1a19. Changing a series hex means re-running that
+ * validation — the six checks are the reason these values look arbitrary.
+ *
+ * Warm grey is deliberately NOT a series colour: it is ink, rule and surface, so
+ * a grey mark always means "structure", never "category 2".
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Categorical — assign in this order, never cycled. A 7th series folds into
+     "other" or becomes a small multiple. */
+  --series-1: #3a7fb5; /* steel blue — the primary, and the default single series */
+  --series-2: #c4562f; /* terracotta */
+  --series-3: #1f8f7a; /* teal */
+  --series-4: #8e5cc8; /* violet */
+  --series-5: #a8830e; /* ochre */
+  --series-6: #c0407a; /* magenta */
+
+  /* Sequential — one hue, light to dark. Magnitude only. */
+  --seq-1: #dbe8f3;
+  --seq-2: #b3cde4;
+  --seq-3: #82aed2;
+  --seq-4: #4f8dbf;
+  --seq-5: #3a7fb5;
+  --seq-6: #275d86;
+
+  /* Diverging — two poles, warm grey midpoint. Polarity only. */
+  --div-neg: #c4562f;
+  --div-mid: #d9d4cb;
+  --div-pos: #3a7fb5;
+
+  /* Status — reserved. Never reused as a series colour; always with a label. */
+  --status-good: #1f8f7a;
+  --status-warn: #a8830e;
+  --status-serious: #c4562f;
+  --status-critical: #9c2f2f;
+
+  /* Warm grey structure */
+  --surface-page: #fcfcfb;
+  --surface-panel: #f4f2ee;
+  --surface-sunken: #eae6df;
+  --rule: #e0dbd2;
+  --rule-strong: #c9c2b6;
+  --ink: #2a2724;
+  --ink-secondary: #5c554e;
+  --ink-muted: #8a8078;
+
+  --font-body: ui-serif, "Iowan Old Style", "Source Serif 4", Georgia, serif;
+  --font-ui: ui-sans-serif, system-ui, "Inter", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --measure: 34rem; /* body text column */
+  --radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --seq-1: #1e3247;
+    --seq-2: #27506f;
+    --seq-3: #326a90;
+    --seq-4: #3a7fb5;
+    --seq-5: #66a3d0;
+    --seq-6: #9cc6e6;
+
+    --div-mid: #4a4640;
+
+    --surface-page: #1a1a19;
+    --surface-panel: #232320;
+    --surface-sunken: #2b2a26;
+    --rule: #383530;
+    --rule-strong: #4d4941;
+    --ink: #edeae4;
+    --ink-secondary: #b8b2a8;
+    --ink-muted: #8a8078;
+  }
+}
+
+:root[data-theme="dark"] {
+  --seq-1: #1e3247;
+  --seq-2: #27506f;
+  --seq-3: #326a90;
+  --seq-4: #3a7fb5;
+  --seq-5: #66a3d0;
+  --seq-6: #9cc6e6;
+  --div-mid: #4a4640;
+  --surface-page: #1a1a19;
+  --surface-panel: #232320;
+  --surface-sunken: #2b2a26;
+  --rule: #383530;
+  --rule-strong: #4d4941;
+  --ink: #edeae4;
+  --ink-secondary: #b8b2a8;
+  --ink-muted: #8a8078;
+}
+
+:root[data-theme="light"] {
+  --seq-1: #dbe8f3;
+  --seq-2: #b3cde4;
+  --seq-3: #82aed2;
+  --seq-4: #4f8dbf;
+  --seq-5: #3a7fb5;
+  --seq-6: #275d86;
+  --div-mid: #d9d4cb;
+  --surface-page: #fcfcfb;
+  --surface-panel: #f4f2ee;
+  --surface-sunken: #eae6df;
+  --rule: #e0dbd2;
+  --rule-strong: #c9c2b6;
+  --ink: #2a2724;
+  --ink-secondary: #5c554e;
+  --ink-muted: #8a8078;
+}
+
+/* Experiment page layout. Tokens come from experiments/assets/theme.css; this
+ * file only arranges them. Serif for the argument, sans for the apparatus,
+ * monospace for anything a reader might paste into a terminal.
+ */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 47rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+
+/* ---- masthead ---------------------------------------------------------- */
+
+header.masthead {
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2.5rem;
+  padding: 3.5rem 0 2rem;
+  position: relative;
+}
+header.masthead::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 3.5rem; height: 4px;
+  background: var(--series-1);
+}
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.9rem;
+}
+h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+.standfirst {
+  font-size: 1.16rem;
+  color: var(--ink-secondary);
+  margin: 0 0 1.6rem;
+  max-width: 38rem;
+}
+.byline {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+}
+.byline code { font-size: 0.76rem; }
+
+/* ---- verdict ----------------------------------------------------------- */
+
+.verdict {
+  border-left: 3px solid var(--series-1);
+  background: var(--surface-panel);
+  padding: 1.1rem 1.3rem;
+  margin: 0 0 2.6rem;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.verdict-kind {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.verdict p { margin: 0; font-size: 1.05rem; }
+.verdict.null { border-left-color: var(--series-5); }
+.verdict.withdrawn { border-left-color: var(--series-2); }
+
+/* ---- stat tiles -------------------------------------------------------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 0 0 2.8rem;
+}
+.stat { background: var(--surface-page); padding: 1rem 1.1rem; }
+.stat-label {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.45rem;
+}
+.stat-value {
+  font-family: var(--font-ui);
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.stat-interval, .stat-null, .stat-note {
+  font-family: var(--font-ui);
+  font-size: 0.76rem;
+  color: var(--ink-secondary);
+  margin: 0.4rem 0 0;
+}
+.stat-null { color: var(--ink-muted); }
+
+/* ---- prose ------------------------------------------------------------- */
+
+h2 {
+  font-family: var(--font-ui);
+  font-size: 1.28rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 3rem 0 1rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+}
+h3 {
+  font-family: var(--font-ui);
+  font-size: 1.02rem;
+  font-weight: 600;
+  margin: 2rem 0 0.6rem;
+}
+p { margin: 0 0 1.05rem; }
+a { color: var(--series-1); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+strong { font-weight: 600; }
+ul, ol { padding-left: 1.3rem; margin: 0 0 1.1rem; }
+li { margin-bottom: 0.4rem; }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--surface-sunken);
+  padding: 0.1em 0.34em;
+  border-radius: 3px;
+}
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  background: var(--surface-panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.95rem 1.1rem;
+  overflow-x: auto;
+  margin: 0 0 1.4rem;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ---- figures ----------------------------------------------------------- */
+
+.fig { margin: 1.8rem 0 2rem; }
+.chart { width: 100%; height: auto; overflow: visible; }
+.fig-title {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.grid { stroke: var(--rule); stroke-width: 1; }
+.tick, .legend {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  fill: var(--ink-muted);
+}
+.row-label {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  fill: var(--ink-secondary);
+}
+.value {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.bar { stroke: var(--surface-page); stroke-width: 2; }
+.null-band { fill: var(--ink-muted); opacity: 0.16; }
+.null-line { stroke: var(--ink-secondary); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.ci { stroke: var(--ink); stroke-width: 1.5; opacity: 0.75; }
+.lollipop { stroke: var(--rule-strong); stroke-width: 2; }
+.dot { stroke: var(--surface-page); stroke-width: 2; }
+
+/* ---- tables ------------------------------------------------------------ */
+
+.table-wrap { overflow-x: auto; margin: 0 0 1.8rem; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 0.84rem;
+}
+caption {
+  caption-side: bottom;
+  text-align: left;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  padding-top: 0.6rem;
+}
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.85rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+th {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 600;
+  border-bottom-color: var(--rule-strong);
+}
+tbody tr:last-child td { border-bottom: none; }
+
+/* ---- callouts ---------------------------------------------------------- */
+
+.callout {
+  border: 1px solid var(--rule);
+  border-left-width: 3px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.95rem 1.15rem;
+  margin: 1.6rem 0;
+  background: var(--surface-panel);
+  font-size: 0.95rem;
+}
+.callout p { margin: 0 0 0.6rem; }
+.callout p:last-child { margin-bottom: 0; }
+.callout-title {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.callout-finding { border-left-color: var(--series-1); }
+.callout-caveat { border-left-color: var(--series-5); }
+.callout-withdrawal { border-left-color: var(--series-2); }
+.callout-method { border-left-color: var(--series-3); }
+
+/* ---- checklist --------------------------------------------------------- */
+
+.checklist { list-style: none; padding: 0; margin: 0 0 1.6rem; }
+.checklist li {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.7rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+}
+.checklist li:last-child { border-bottom: none; }
+.mark { font-weight: 700; font-size: 0.95rem; line-height: 1.5; }
+.mark-yes { color: var(--status-good); }
+.mark-no { color: var(--status-serious); }
+.mark-na { color: var(--ink-muted); }
+.check-detail { color: var(--ink-muted); font-size: 0.8rem; display: block; margin-top: 0.15rem; }
+
+/* ---- registration ------------------------------------------------------ */
+
+.registration {
+  background: var(--surface-panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.35rem;
+  margin: 0 0 2rem;
+}
+.registration dl { margin: 0; display: grid; grid-template-columns: 9rem 1fr; gap: 0.55rem 1rem; }
+.registration dt {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-top: 0.15rem;
+}
+.registration dd { margin: 0; font-size: 0.95rem; }
+
+@media (max-width: 34rem) {
+  .registration dl { grid-template-columns: 1fr; gap: 0.15rem; }
+  .registration dd { margin-bottom: 0.7rem; }
+  body { font-size: 17px; }
+}
+
+footer.colophon {
+  margin-top: 3.5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+footer.colophon code { font-size: 0.74rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Thalamus · experiment 001-the-topic-detector</p>
+  <h1>The used-rate is mostly a topic detector</h1>
+  <p class="standfirst">Thalamus judges whether a retrieved memory was used by matching its terms against what the agent did next. Re-judged against an unrelated session's output, that judge still says 57% used — so of the 63% it reports, only κ=0.14 of the available headroom is retrieval utility. Six alternative judges were pre-registered against it; none of them beats it.</p>
+  <div class="byline">
+    <span>2026-07-30 07:57 UTC</span>
+    <span>snapshot <code>post-sandbox-purge-20260730</code></span>
+    <span>seed <code>20260730</code></span>
+    <span>code <code>1ebdb5f</code></span>
+  </div>
+</header>
+
+
+<div class="verdict null">
+  <span class="verdict-kind">null</span>
+  <p>The shipped judge captures κ=0.140 of the headroom above chance — about 14% of the way from a coin-flip-on-vocabulary to a perfect judge. The pre-registered alternative, tool-call inputs only, does not beat it (0.138, gap -0.002 against a null half-width of 0.024): the hypothesis is falsified, and no reweighting of the same lexical evidence rescues the instrument. Bounding the real-minus-null gap to ±1 point would need ~445 sessions against 29 today, so the answer is a different instrument, not a bigger corpus.</p>
+</div>
+
+
+
+<div class="stats">
+  
+  <div class="stat">
+    <p class="stat-label">Used, as reported today</p>
+    <p class="stat-value">63.3%</p>
+    <p class="stat-interval">95% CI [56.6, 70.9], clustered on 29 sessions</p>
+    <p class="stat-null">permuted null 57.3%</p>
+    
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">κ — headroom captured</p>
+    <p class="stat-value">0.140</p>
+    
+    
+    <p class="stat-note">the share of the available signal the shipped judge actually carries</p>
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">Best of 7 judges</p>
+    <p class="stat-value">none beat it</p>
+    <p class="stat-interval">runner-up tool at κ 0.138</p>
+    
+    <p class="stat-note">six pre-registered alternatives, all scored against their own null</p>
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">Verdicts in the corpus</p>
+    <p class="stat-value">2,445</p>
+    
+    
+    <p class="stat-note">222 retrievals across 29 sessions</p>
+  </div>
+  
+</div>
+
+
+<h2 id="preregistration">What was committed to before the data was seen</h2>
+<div class="registration">
+  <dl>
+    <dt>Question</dt><dd>How much of the used-vs-ignored rate is retrieval utility rather than shared project vocabulary, and does any judge variant separate them better?</dd>
+    <dt>Hypothesis</dt><dd>The shipped lexical judge carries little discrimination above a cross-session permutation null; narrowing the window to tool-call inputs carries more, because acting on a retrieved path is a narrower coincidence than echoing a word.</dd>
+    <dt>Endpoint</dt><dd>κ = (p − p̄₀)/(1 − p̄₀) per judge, node-weighted, over all attributed RETURNS edges in scope main.</dd>
+    <dt>Falsifier</dt><dd>If κ for the tool-only judge does not exceed the shipped judge's by more than the null's own interval, the prose/tool split is not the axis that matters and the hypothesis is wrong.</dd>
+    <dt>Stopping rule</dt><dd>200 rotations per judge, fixed before the run; the corpus is the whole census at the pinned snapshot, so there is no sampling decision to stop.</dd>
+    
+    <dt>Registered</dt><dd>2026-07-30 · <code>preregistration.md</code></dd>
+    
+  </dl>
+</div>
+
+
+<h2 id="why">Why a used-rate is not a result</h2>
+
+<p>Thalamus records, for every retrieval, which memory nodes it put in front of the
+agent — and then judges whether the agent used them, by matching the node's
+distinctive terms against what the agent said and did next. That judgement is
+cheap, runs after every session, and produces the number the project has been
+quoting: <strong>63.3% of retrieved nodes used</strong>.</p>
+
+<p>The problem is that a coding session and the memory it retrieves are about the
+same subject. Term overlap is guaranteed before any retrieval happens. So the
+question is not what the rate is, but how much of it survives when the retrieval is
+deliberately mismatched to the work.</p>
+
+<p>The control is a permutation. Re-judge every retrieval against a
+<em>different session's</em> output window and see what the judge still calls used.
+Whatever it scores there is the floor: vocabulary the sessions share by being the
+same project. Two constraints make it a fair floor — the partner is always a
+different session, and it is drawn from the same window-length stratum, because the
+judge's used-rate moves with window length alone and an unstratified rotation would
+measure that instead.</p>
+
+<aside class="callout callout-method"><p class="callout-title">The estimator</p>
+<p>κ = (p − p̄₀) / (1 − p̄₀): the share of the available headroom the judge captures.
+p is the measured rate, p̄₀ the mean over 200 rotations. A judge that scores
+63% where chance scores 57% is not
+63% right — it is 14.0% of the way from chance to
+perfect.</p></aside>
+
+
+<h2 id="results">What the judges score</h2>
+
+<p>Seven judges, one corpus, one null each. They differ only in <em>what window they
+look at</em>: the shipped judge reads everything the agent said and did after the
+retrieval, unbounded; the variants narrow it to prose only, to tool-call inputs
+only, or to the next N assistant turns.</p>
+<figure class="fig"><svg viewBox="0 0 720 402" role="img" aria-label="Used-rate against its permuted null, by judge" class="chart">
+<text x="0" y="18" class="fig-title">Used-rate against its permuted null, by judge</text>
+<line x1="132.0" y1="38" x2="132.0" y2="372" class="grid"/>
+<text x="132.0" y="390" class="tick" text-anchor="middle">0%</text>
+<line x1="230.4" y1="38" x2="230.4" y2="372" class="grid"/>
+<text x="230.4" y="390" class="tick" text-anchor="middle">20%</text>
+<line x1="328.8" y1="38" x2="328.8" y2="372" class="grid"/>
+<text x="328.8" y="390" class="tick" text-anchor="middle">40%</text>
+<line x1="427.2" y1="38" x2="427.2" y2="372" class="grid"/>
+<text x="427.2" y="390" class="tick" text-anchor="middle">60%</text>
+<line x1="525.6" y1="38" x2="525.6" y2="372" class="grid"/>
+<text x="525.6" y="390" class="tick" text-anchor="middle">80%</text>
+<line x1="624.0" y1="38" x2="624.0" y2="372" class="grid"/>
+<text x="624.0" y="390" class="tick" text-anchor="middle">100%</text>
+<text x="120" y="60" class="row-label" text-anchor="end">shipped</text>
+<rect x="402.9" y="43" width="23.5" height="22" class="null-band"/>
+<line x1="414.0" y1="41" x2="414.0" y2="67" class="null-line"/>
+<rect x="132" y="46" width="311.5" height="16" rx="4" class="bar" style="fill:var(--series-1)"/>
+<line x1="410.5" y1="54.0" x2="480.7" y2="54.0" class="ci"/><line x1="410.5" y1="48" x2="410.5" y2="60" class="ci"/><line x1="480.7" y1="48" x2="480.7" y2="60" class="ci"/>
+<text x="634" y="60" class="value">63.3%</text>
+<text x="120" y="106" class="row-label" text-anchor="end">prose</text>
+<rect x="275.1" y="89" width="22.5" height="22" class="null-band"/>
+<line x1="285.7" y1="87" x2="285.7" y2="113" class="null-line"/>
+<rect x="132" y="92" width="171.6" height="16" rx="4" class="bar" style="fill:var(--series-2)"/>
+<line x1="258.1" y1="100.0" x2="353.0" y2="100.0" class="ci"/><line x1="258.1" y1="94" x2="258.1" y2="106" class="ci"/><line x1="353.0" y1="94" x2="353.0" y2="106" class="ci"/>
+<text x="634" y="106" class="value">34.9%</text>
+<text x="120" y="152" class="row-label" text-anchor="end">tool</text>
+<rect x="360.8" y="135" width="23.7" height="22" class="null-band"/>
+<line x1="370.9" y1="133" x2="370.9" y2="159" class="null-line"/>
+<rect x="132" y="138" width="273.9" height="16" rx="4" class="bar" style="fill:var(--series-3)"/>
+<line x1="374.8" y1="146.0" x2="442.9" y2="146.0" class="ci"/><line x1="374.8" y1="140" x2="374.8" y2="152" class="ci"/><line x1="442.9" y1="140" x2="442.9" y2="152" class="ci"/>
+<text x="634" y="152" class="value">55.7%</text>
+<text x="120" y="198" class="row-label" text-anchor="end">bounded-10</text>
+<rect x="139.0" y="181" width="10.1" height="22" class="null-band"/>
+<line x1="143.6" y1="179" x2="143.6" y2="205" class="null-line"/>
+<rect x="132" y="184" width="28.0" height="16" rx="4" class="bar" style="fill:var(--series-4)"/>
+<line x1="147.7" y1="192.0" x2="177.8" y2="192.0" class="ci"/><line x1="147.7" y1="186" x2="147.7" y2="198" class="ci"/><line x1="177.8" y1="186" x2="177.8" y2="198" class="ci"/>
+<text x="634" y="198" class="value">5.7%</text>
+<text x="120" y="244" class="row-label" text-anchor="end">bounded-3</text>
+<rect x="132.2" y="227" width="3.0" height="22" class="null-band"/>
+<line x1="133.5" y1="225" x2="133.5" y2="251" class="null-line"/>
+<rect x="132" y="230" width="9.5" height="16" rx="4" class="bar" style="fill:var(--series-5)"/>
+<line x1="134.2" y1="238.0" x2="152.6" y2="238.0" class="ci"/><line x1="134.2" y1="232" x2="134.2" y2="244" class="ci"/><line x1="152.6" y1="232" x2="152.6" y2="244" class="ci"/>
+<text x="634" y="244" class="value">1.9%</text>
+<text x="120" y="290" class="row-label" text-anchor="end">bounded-1</text>
+<rect x="132.0" y="273" width="2.4" height="22" class="null-band"/>
+<line x1="132.8" y1="271" x2="132.8" y2="297" class="null-line"/>
+<rect x="132" y="276" width="6.2" height="16" rx="4" class="bar" style="fill:var(--series-6)"/>
+<line x1="132.4" y1="284.0" x2="149.6" y2="284.0" class="ci"/><line x1="132.4" y1="278" x2="132.4" y2="290" class="ci"/><line x1="149.6" y1="278" x2="149.6" y2="290" class="ci"/>
+<text x="634" y="290" class="value">1.3%</text>
+<text x="120" y="336" class="row-label" text-anchor="end">tool-bounded-3</text>
+<rect x="132.0" y="319" width="2.4" height="22" class="null-band"/>
+<line x1="132.8" y1="317" x2="132.8" y2="343" class="null-line"/>
+<rect x="132" y="322" width="2.2" height="16" rx="4" class="bar" style="fill:var(--series-1)"/>
+<line x1="132.3" y1="330.0" x2="136.3" y2="330.0" class="ci"/><line x1="132.3" y1="324" x2="132.3" y2="336" class="ci"/><line x1="136.3" y1="324" x2="136.3" y2="336" class="ci"/>
+<text x="634" y="336" class="value">0.4%</text>
+<g transform="translate(132,372)"><rect x="0" y="-9" width="18" height="9" class="null-band"/><text x="24" y="-1" class="legend">permuted null, 95% band</text><line x1="176" y1="-11" x2="176" y2="0" class="ci"/><text x="184" y="-1" class="legend">95% CI, session-clustered</text></g>
+</svg></figure>
+<figure class="fig"><svg viewBox="0 0 720 284" role="img" aria-label="κ — the share of headroom each judge captures" class="chart">
+<text x="0" y="18" class="fig-title">κ — the share of headroom each judge captures</text>
+<line x1="132.0" y1="36" x2="132.0" y2="258" class="grid"/>
+<text x="132.0" y="276" class="tick" text-anchor="middle">0.00</text>
+<line x1="237.6" y1="36" x2="237.6" y2="258" class="grid"/>
+<text x="237.6" y="276" class="tick" text-anchor="middle">0.07</text>
+<line x1="343.2" y1="36" x2="343.2" y2="258" class="grid"/>
+<text x="343.2" y="276" class="tick" text-anchor="middle">0.14</text>
+<line x1="448.8" y1="36" x2="448.8" y2="258" class="grid"/>
+<text x="448.8" y="276" class="tick" text-anchor="middle">0.21</text>
+<line x1="554.4" y1="36" x2="554.4" y2="258" class="grid"/>
+<text x="554.4" y="276" class="tick" text-anchor="middle">0.28</text>
+<line x1="660.0" y1="36" x2="660.0" y2="258" class="grid"/>
+<text x="660.0" y="276" class="tick" text-anchor="middle">0.35</text>
+<text x="120" y="55" class="row-label" text-anchor="end">shipped</text>
+<line x1="132" y1="50" x2="343.9" y2="50" class="lollipop"/>
+<circle cx="343.9" cy="50" r="5" class="dot" style="fill:var(--series-1)"/>
+<text x="355.9" y="54" class="value">0.140</text>
+<text x="120" y="85" class="row-label" text-anchor="end">prose</text>
+<line x1="132" y1="80" x2="212.2" y2="80" class="lollipop"/>
+<circle cx="212.2" cy="80" r="5" class="dot" style="fill:var(--series-2)"/>
+<text x="224.2" y="84" class="value">0.053</text>
+<text x="120" y="115" class="row-label" text-anchor="end">tool</text>
+<line x1="132" y1="110" x2="340.4" y2="110" class="lollipop"/>
+<circle cx="340.4" cy="110" r="5" class="dot" style="fill:var(--series-3)"/>
+<text x="352.4" y="114" class="value">0.138</text>
+<text x="120" y="145" class="row-label" text-anchor="end">bounded-10</text>
+<line x1="132" y1="140" x2="183.3" y2="140" class="lollipop"/>
+<circle cx="183.3" cy="140" r="5" class="dot" style="fill:var(--series-4)"/>
+<text x="195.3" y="144" class="value">0.034</text>
+<text x="120" y="175" class="row-label" text-anchor="end">bounded-3</text>
+<line x1="132" y1="170" x2="156.3" y2="170" class="lollipop"/>
+<circle cx="156.3" cy="170" r="5" class="dot" style="fill:var(--series-5)"/>
+<text x="168.3" y="174" class="value">0.016</text>
+<text x="120" y="205" class="row-label" text-anchor="end">bounded-1</text>
+<line x1="132" y1="200" x2="148.8" y2="200" class="lollipop"/>
+<circle cx="148.8" cy="200" r="5" class="dot" style="fill:var(--series-6)"/>
+<text x="160.8" y="204" class="value">0.011</text>
+<text x="120" y="235" class="row-label" text-anchor="end">tool-bounded-3</text>
+<line x1="132" y1="230" x2="136.2" y2="230" class="lollipop"/>
+<circle cx="136.2" cy="230" r="5" class="dot" style="fill:var(--series-1)"/>
+<text x="148.2" y="234" class="value">0.003</text>
+</svg></figure>
+<div class="table-wrap"><table><caption>200 rotations, seed 20260730. The null re-judges each retrieval against another session&#x27;s output window, drawn from the same window-length stratum.</caption><thead><tr><th>judge</th><th>used</th><th>null</th><th>κ</th><th>95% CI (used)</th><th>flips under rotation</th><th>what it sees</th></tr></thead><tbody><tr><td>shipped</td><td>63.3%</td><td>57.3%</td><td>0.140</td><td>[56.6, 70.9]</td><td>24.4%</td><td>the flat, unbounded window the stored verdicts mean</td></tr><tr><td>prose</td><td>34.9%</td><td>31.2%</td><td>0.053</td><td>[25.6, 44.9]</td><td>24.4%</td><td>assistant prose only — where shared project vocabulary lives</td></tr><tr><td>tool</td><td>55.7%</td><td>48.6%</td><td>0.138</td><td>[49.4, 63.2]</td><td>24.2%</td><td>tool-call inputs only — a path or parameter echoed after a retrieval is a narrower coincidence than a word</td></tr><tr><td>bounded-10</td><td>5.7%</td><td>2.4%</td><td>0.034</td><td>[3.2, 9.3]</td><td>7.2%</td><td>the next ten assistant turns</td></tr><tr><td>bounded-3</td><td>1.9%</td><td>0.3%</td><td>0.016</td><td>[0.5, 4.2]</td><td>2.2%</td><td>the next three assistant turns</td></tr><tr><td>bounded-1</td><td>1.3%</td><td>0.2%</td><td>0.011</td><td>[0.1, 3.6]</td><td>1.5%</td><td>the next assistant turn only</td></tr><tr><td>tool-bounded-3</td><td>0.4%</td><td>0.2%</td><td>0.003</td><td>[0.1, 0.9]</td><td>0.7%</td><td>both narrowings at once: near, and acted on</td></tr></tbody></table></div>
+<aside class="callout callout-caveat"><p class="callout-title">The pre-registered hypothesis is falsified</p><p>The hypothesis was that tool-call inputs would discriminate better than
+prose, because acting on a retrieved path is a narrower coincidence than repeating a
+word. It does not: κ moves -0.002, from 0.140 shipped to
+0.138, well inside the null's own half-width of 0.024.</p>
+<p>The prose-only judge is the informative half of the comparison: it scores
+κ=0.053, clearly <em>worse</em> than either. So prose and tool calls are
+not two channels of different quality — the shipped judge is stronger than either
+alone because it sees more text, which is the same length effect that shows up in
+every other cut of this corpus. The axis is quantity of window, not kind of evidence.</p></aside>
+
+
+<h2 id="breakdown">Where the rate comes from</h2>
+
+<p>The shipped judge, split three ways. None of these splits is an effect until it
+is read against a null of its own — they are here to show where the verdicts live,
+not to rank the strata.</p>
+<div class="table-wrap"><table><caption>The shipped judge, split by the tool that did the retrieving.</caption><thead><tr><th>tool</th><th>verdicts</th><th>used</th></tr></thead><tbody><tr><td>memory_recall</td><td>2,016</td><td>60.5%</td></tr><tr><td>memory_open_threads</td><td>330</td><td>77.0%</td></tr><tr><td>memory_recall_recent</td><td>39</td><td>76.9%</td></tr><tr><td>bash_gremlin</td><td>21</td><td>57.1%</td></tr><tr><td>memory_query</td><td>19</td><td>73.7%</td></tr><tr><td>memory_recall_by_project</td><td>18</td><td>88.9%</td></tr><tr><td>memory_thread</td><td>2</td><td>100.0%</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>node kind</th><th>verdicts</th><th>used</th></tr></thead><tbody><tr><td>claim</td><td>1,785</td><td>60.6%</td></tr><tr><td>thread</td><td>351</td><td>76.9%</td></tr><tr><td>session</td><td>306</td><td>63.1%</td></tr><tr><td>source</td><td>3</td><td>100.0%</td></tr></tbody></table></div>
+<p>Window length is the confound the strata exist to hold: the median window in this
+corpus is 121,656 characters and the longest is
+367,623. Term membership is tested anywhere in that window,
+so a longer session mechanically scores more used — the judge partly reports how long
+the operator kept working.</p>
+
+
+<h2 id="purge">Did the sandbox purge move it?</h2>
+
+<p>On 2026-07-30 the graph lost 307 Session vertices that were never sessions: the
+headless subprocesses that distillation itself spawns had been firing the SessionEnd
+hook and distilling themselves. They were 69% of all sessions, and their text was
+extraction self-talk — the most topic-matched prose in the corpus, sitting exactly
+where a topic detector is most inflated.</p>
+<div class="table-wrap"><table><caption>The same script, the same seed, two pinned graph states.</caption><thead><tr><th>snapshot</th><th>verdicts</th><th>used</th><th>null</th><th>κ</th></tr></thead><tbody><tr><td><code>pre-sandbox-purge</code> (before)</td><td>2,482</td><td>63.7%</td><td>57.9%</td><td>0.138</td></tr><tr><td><code>post-sandbox-purge-20260730</code> (after)</td><td>2,445</td><td>63.3%</td><td>57.3%</td><td>0.140</td></tr></tbody></table></div>
+<p>Both states are pinned, so this is the same script against two graphs rather than
+two scripts against one memory.</p>
+
+
+<h2 id="power">What this costs to fix</h2>
+
+<p>The gap between the real rate and the null is
+6.0 points. To bound that gap to ±1 point
+you need enough paired verdicts to overcome how often a verdict flips under
+rotation — measured here at <strong>24.4%</strong> — inflated
+by the clustering of verdicts inside sessions.</p>
+
+<p>That is roughly <strong>37,520 verdicts</strong>, or about
+<strong>445 sessions</strong> at this corpus's
+84 verdicts per session. The corpus today has
+2,445 verdicts across 29 sessions.</p>
+
+<aside class="callout callout-finding"><p class="callout-title">More data will not rescue this instrument</p>
+<p>An order of magnitude more sessions, at one operator's real working rate, is
+years. The conclusion is not "collect more" — it is that a lexical judge cannot be
+made precise enough at single-operator volume, and the next move is a better
+instrument: human-labelled ground truth to calibrate against, and a randomized
+withholding policy that makes the counterfactual internal to real work.</p></aside>
+
+
+<h2 id="threats">Threats to this result</h2>
+
+<aside class="callout callout-caveat"><p class="callout-title">Replay is 99.1% faithful, not 100%</p>
+<p>Re-judging the corpus from the pinned snapshot reproduces
+2,423 of 2,445 verdicts that <code>eval sync</code> stored live.
+The 22 that differ are almost all
+<code>memory_open_threads</code> results, and the cause is that <strong>node text is
+mutable</strong>: claim and thread descriptions are overwritten latest-wins by later
+distillation, so today's text is not the text that was judged. The stored evidence
+strings show it directly — the same node scored "8/29 terms" then and "7/22" now.</p>
+<p>Worse, <code>ingested_at</code> carries the writing <em>session's</em> timestamp
+rather than the write time, so the graph cannot say when a node's text last changed.
+The fix is to record the judged text (or its term set) on the RETURNS edge at
+judgement time, which is what makes a verdict a historical fact rather than a
+re-derivation.</p></aside>
+
+<p>Other limits, stated rather than implied:</p>
+<ul>
+<li><strong>One operator, one machine, one harness configuration.</strong> This is an
+observational result about a single deployment, not a benchmark.</li>
+<li><strong>The frame is blind to non-retrieval.</strong> A node that was never
+returned has no edge, so harm from failing to retrieve is structurally invisible
+here.</li>
+<li><strong>The null tests the judge, not the retrieval.</strong> Permutation can say
+how much of a verdict is vocabulary; it cannot say whether the retrieval changed what
+the agent did. That needs randomized withholding.</li>
+<li><strong>Ranker configurations are mixed.</strong> Most of this corpus predates the
+ranker ledger, so these rates straddle configuration changes.</li>
+</ul>
+
+
+
+<h2 id="reproducibility">Reproducibility</h2>
+<p>Every number and figure above regenerates from a pinned graph state and a seed.
+Nothing here was computed against the live graph, which moves whenever a session ends.</p>
+<pre><code>thalamus snapshot --list                     # verify the pinned state
+uv run --extra experiments python \
+    experiments/001-the-topic-detector/run.py --rotations 200 --seed 20260730</code></pre>
+<p>The snapshot is <code>post-sandbox-purge-20260730</code>
+(5591 vertices, 13849 edges,
+sha256 <code>a5fe960d38594181</code>), served read-only by
+<code>thalamus snapshot --serve</code>.</p>
+
+<ul class="checklist">
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>A clear description of the estimand and the estimator used for it<span class="check-detail">Estimand: share of returned nodes the agent used. Estimator: κ against a stratified cross-session permutation null.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The population the result generalises to, stated as a limit<span class="check-detail">One operator, one machine, one harness configuration; observational.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The null or baseline every reported rate is compared against<span class="check-detail">200 rotations per judge.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>An interval on every point estimate, with the resampling unit named<span class="check-detail">Sessions are the resampling unit; verdicts within a session are not independent.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The number of runs, and the seed<span class="check-detail">seed 20260730, 200 rotations.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The data the analysis read, pinned by name and hash<span class="check-detail">snapshot post-sandbox-purge-20260730, sha256 a5fe960d38594181.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>A command that regenerates every number and figure in this page<span class="check-detail">See Reproducibility.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-no">✗</span>
+    <span>Instrument validation: agreement with a reference judgement<span class="check-detail">No human-labelled gold set exists yet. The permutation bounds the judge against chance; it cannot bound it against truth. That set is the next instrument.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-na">–</span>
+    <span>Cost reported alongside utility<span class="check-detail">Injection cost is measured, but this experiment reports discrimination rather than utility per token; cost belongs to the token-waste experiment.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>What was withheld, and why<span class="check-detail">The graph is not published; the reason is stated below rather than left blank.</span></span>
+  </li>
+
+</ul>
+
+<h3>What is deliberately absent</h3>
+<p>The graph itself is not published. It is one operator's session history and the
+evidence archive holds their transcripts verbatim — credentials, client names and
+personal history included. The snapshot hash lets anyone holding the same state
+verify that these numbers came from it; it does not let a stranger recompute them
+from scratch, and no wording here should imply otherwise.</p>
+
+<footer class="colophon">
+  <p>Thalamus · experiment 001-the-topic-detector · generated 2026-07-30 07:57 UTC from
+  <code>1ebdb5f</code>. Checklist after Pineau et al.,
+  <em>Improving Reproducibility in Machine Learning Research</em>, JMLR 22(164), 2021.</p>
+</footer>
+
+</div>
+</body>
+</html>
