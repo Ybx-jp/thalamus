@@ -14,19 +14,62 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 from gremlin_python.process.traversal import Direction, T
 
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.eval.rankers import UNKNOWN as RANKER_UNKNOWN
 
 # Rendered chars per token — the same rough dial as eval/cost.py.
 _CHARS_PER_TOKEN = 4
 
 
+def parse_window_bound(
+    value: str | datetime | None, *, end_of_day: bool = False
+) -> datetime | None:
+    """Accept an ISO date or datetime as a UTC-aware window bound.
+
+    A bare date used as the upper bound covers that whole day. `--until 2026-07-20`
+    meaning "up to 00:00 on the 20th" would silently drop a day of traces, and a
+    window that quietly loses its last day is the kind of thing that survives as a
+    number nobody can reproduce.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        stamp = value
+    else:
+        text = str(value)
+        stamp = datetime.fromisoformat(text)
+        if end_of_day and len(text.strip()) == 10:
+            stamp = stamp.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp
+
+
+def _trace_ts(raw: object) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        stamp = datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
+    return stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp
+
+
 @dataclass
 class ScopeReport:
     scope: str
+    since: datetime | None = None
+    until: datetime | None = None
+    # Ranker fingerprints observed in the window, by trace count. A window spanning
+    # more than one is not a measurement of either ranker — the report says so rather
+    # than averaging across a dial change (lab/029).
+    by_ranker: Counter = field(default_factory=Counter)
+    # Traces in scope that fell outside the window, and those with no usable ts.
+    out_of_window: int = 0
+    undated: int = 0
     traces: int = 0
     sessions: int = 0
     misses: int = 0
@@ -45,9 +88,38 @@ class ScopeReport:
     def render(self) -> str:
         lines = [
             f"Eval report — scope `{self.scope}` (layer 1: instrumented, measuring)",
-            f"  retrievals: {self.traces} across {self.sessions} session(s); "
-            f"{self.misses} returned nothing",
         ]
+        if self.since or self.until:
+            window = (
+                f"{self.since.date() if self.since else 'start'} → "
+                f"{self.until.date() if self.until else 'now'}"
+            )
+            skipped = f"{self.out_of_window} outside" if self.out_of_window else ""
+            if self.undated:
+                skipped = f"{skipped}, " if skipped else ""
+                skipped += f"{self.undated} undated (excluded)"
+            lines.append(f"  window: {window}" + (f"; {skipped}" if skipped else ""))
+        lines.append(
+            f"  retrievals: {self.traces} across {self.sessions} session(s); "
+            f"{self.misses} returned nothing"
+        )
+
+        if self.by_ranker:
+            rankers = " · ".join(
+                f"{fingerprint} {count}" for fingerprint, count in self.by_ranker.most_common()
+            )
+            lines.append(f"  ranker: {rankers}")
+            served = [f for f in self.by_ranker if f != RANKER_UNKNOWN]
+            if len(served) > 1:
+                lines.append(
+                    "    ⚠ this window straddles a ranker change — the numbers below "
+                    "average across it and measure neither setting. Narrow the window."
+                )
+            elif not served:
+                lines.append(
+                    "    ⚠ no trace here records which ranker served it (all predate the "
+                    "ranker ledger), so these numbers cannot be attributed to a setting."
+                )
         if self.by_tool:
             tools = " · ".join(f"{tool} {count}" for tool, count in self.by_tool.most_common())
             lines.append(f"  by tool: {tools}")
@@ -102,22 +174,56 @@ class ScopeReport:
         return "\n".join(lines)
 
 
-def scope_report(g: GraphTraversalSource, scope: str = MAIN_SCOPE, top: int = 5) -> ScopeReport:
-    report = ScopeReport(scope=scope)
+def scope_report(
+    g: GraphTraversalSource,
+    scope: str = MAIN_SCOPE,
+    top: int = 5,
+    since: str | datetime | None = None,
+    until: str | datetime | None = None,
+) -> ScopeReport:
+    """Layer-1 numbers for one scope, optionally windowed by trace timestamp.
+
+    The window exists so a dial change can be measured against its own before and
+    after. Without it every number is a lifetime aggregate, which is why lab/007's
+    fan-out prediction could not be checked after the fact even though every trace
+    it needed was already in the graph (lab/029). `until` is inclusive of the whole
+    day when given as a bare date.
+
+    Windowing excludes traces with no parseable `ts` rather than assuming they fall
+    inside — an undated trace is unattributable to a period, and the count is
+    reported so the exclusion is visible.
+    """
+    since_ts = parse_window_bound(since)
+    until_ts = parse_window_bound(until, end_of_day=True)
+    report = ScopeReport(scope=scope, since=since_ts, until=until_ts)
+    windowed = since_ts is not None or until_ts is not None
 
     traces = (
         g.V()
         .has_label("Trace")
         .has("scope", scope)
-        .element_map("tool", "session_id", "returned_count", "injected_chars")
+        .element_map("tool", "session_id", "returned_count", "injected_chars", "ts", "ranker_config")
         .to_list()
     )
-    report.traces = len(traces)
     session_ids = set()
     # Trace vid -> each returned node's share of the rendered response. Traces synced
     # before layer 1b carry no injected_chars; they price as zero, never as a guess.
     node_share: dict[str, int] = {}
+    in_window: set[str] = set()
     for row in traces:
+        trace_vid = str(row.get(T.id) or row.get("id") or "")
+        if windowed:
+            stamp = _trace_ts(_first(row.get("ts")))
+            if stamp is None:
+                report.undated += 1
+                continue
+            if (since_ts and stamp < since_ts) or (until_ts and stamp > until_ts):
+                report.out_of_window += 1
+                continue
+        if trace_vid:
+            in_window.add(trace_vid)
+        report.traces += 1
+        report.by_ranker[_first(row.get("ranker_config")) or RANKER_UNKNOWN] += 1
         tool = _first(row.get("tool"))
         if tool:
             report.by_tool[tool] += 1
@@ -127,7 +233,6 @@ def scope_report(g: GraphTraversalSource, scope: str = MAIN_SCOPE, top: int = 5)
             report.misses += 1
         injected = _as_int(row.get("injected_chars"))
         report.injected_chars += injected
-        trace_vid = str(row.get(T.id) or row.get("id") or "")
         if trace_vid and returned_count:
             node_share[trace_vid] = injected // returned_count
     report.sessions = len(session_ids - {""})
@@ -143,6 +248,8 @@ def scope_report(g: GraphTraversalSource, scope: str = MAIN_SCOPE, top: int = 5)
     ignored_counter: Counter = Counter()
     wasted_chars: Counter = Counter()
     for edge in edges:
+        if windowed and _edge_source(edge) not in in_window:
+            continue
         report.returns += 1
         used = edge.get("used")
         if used is None:

@@ -19,6 +19,7 @@ from gremlin_python.process.traversal import Order
 from thalamus.archive import read_archived
 from thalamus.contract.ontology import NODES_BY_LABEL, vid
 from thalamus.eval.attribution import attribute, outputs_after
+from thalamus.eval.rankers import RankerLedger
 from thalamus.eval.traces import TraceEvent, load_events
 from thalamus.harness.consultation import exchange_vid as _consultation_exchange_vid
 from thalamus.substrate.reader import load_exchange
@@ -72,10 +73,16 @@ def sync(
     g: GraphTraversalSource,
     *,
     traces_base: Path | None = None,
+    rankers_base: Path | None = None,
     write: bool = True,
 ) -> SyncOutcome:
     """Sync every landable trace from the tap into the graph."""
     outcome = SyncOutcome()
+
+    # Which ranker served each trace is a point-in-time question, answered from the
+    # ledger the serving process wrote — never from the ranker installed right now,
+    # which may be several dials removed from the one that produced these rows.
+    ledger = RankerLedger.load(rankers_base)
 
     by_session: dict[str, list[TraceEvent]] = {}
     for event in load_events(traces_base):
@@ -91,7 +98,7 @@ def sync(
         transcript = _retained_transcript(g, session_vid)
 
         for event in events:
-            _land_event(g, event, session_vid, scope, transcript, write, outcome)
+            _land_event(g, event, session_vid, scope, transcript, write, outcome, ledger)
 
     return outcome
 
@@ -104,6 +111,7 @@ def _land_event(
     transcript: bytes | None,
     write: bool,
     outcome: SyncOutcome,
+    ledger: RankerLedger,
 ) -> None:
     if event.is_legacy():
         outcome.legacy += 1
@@ -161,6 +169,11 @@ def _land_event(
             # The rendered response *is* this retrieval's context-injection cost
             # (docs/04 layer 1b); recorded per trace so report can price verdicts.
             "injected_chars": len(event.tool_response),
+            # Which ranking dials served this row. Traces older than the ledger read
+            # `unknown` — the ranker of that era was never recorded, and borrowing the
+            # oldest known fingerprint would invent the very attribution this exists
+            # to make honest (lab/029).
+            "ranker_config": ledger.at(event.ts),
             "tier": int(provenance.tier),
             "source": provenance.source,
             "ingested_at": provenance.ingested_at.isoformat(),

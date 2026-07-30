@@ -199,6 +199,17 @@ def main():
     eval_report_parser.add_argument(
         "--top", type=int, default=5, help="How many most-ignored nodes to list"
     )
+    eval_report_parser.add_argument(
+        "--since",
+        default=None,
+        help="Only count traces at or after this ISO date/datetime (UTC), e.g. 2026-07-18",
+    )
+    eval_report_parser.add_argument(
+        "--until",
+        default=None,
+        help="Only count traces at or before this ISO date/datetime (UTC); a bare date "
+        "covers the whole day",
+    )
 
     eval_cost_parser = eval_sub.add_parser(
         "cost",
@@ -1040,7 +1051,15 @@ def _cmd_eval(args, eval_parser):
 
         graph = connect(args.url)
         try:
-            print(scope_report(graph, scope=args.scope, top=args.top).render())
+            print(
+                scope_report(
+                    graph,
+                    scope=args.scope,
+                    top=args.top,
+                    since=args.since,
+                    until=args.until,
+                ).render()
+            )
         finally:
             close_connection(graph)
     elif getattr(args, "eval_command", None) == "cost":

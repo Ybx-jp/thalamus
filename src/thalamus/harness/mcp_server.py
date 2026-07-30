@@ -21,10 +21,12 @@ import os
 import yaml
 from fastmcp import FastMCP
 
+from thalamus.eval.rankers import record_ranker
 from thalamus.harness import consultation
 from thalamus.harness.extraction import apply_ingress_floor
 from thalamus.harness.pin import resolve_pin
 from thalamus.substrate.reader import (
+    ranker_fingerprint,
     recall,
     recall_by_artifact,
     recall_by_project,
@@ -59,6 +61,13 @@ SCOPE = resolve_pin()
 # episodic memory is reachable solely through a consultation ticket, which grants
 # the consulted scope per-exchange (docs/02).
 KNOWLEDGE_SCOPES = [s for s in available_scopes() if s != SCOPE]
+
+# The ranking dials this process will retrieve under, recorded at startup so the eval
+# loop can tell which ranker produced a trace. It has to be stamped here rather than at
+# sync time: sync can run days later on a checkout whose ranker has since moved, and
+# reading the fingerprint out of the installed code then would attribute old traces to
+# a ranker that never served them (eval/rankers.py, lab/029).
+record_ranker(ranker_fingerprint())
 
 mcp = FastMCP("thalamus")
 

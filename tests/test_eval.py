@@ -732,3 +732,112 @@ def test_pin_report_renders_per_session_rows_priced_in_tokens():
     assert "2 attributed, 2 used (100%), ~1,000 tok earned / ~0 wasted" in rendered
     # the artifact return is not another expert; only `literature` appears
     assert len(report.experts) == 1
+
+
+def test_ranker_ledger_answers_point_in_time_and_never_guesses(tmp_path):
+    """
+    Scenario: The ranker changed once. Traces exist from before the ledger existed,
+    from between the two entries, and from after the change.
+
+    Verifications:
+    - a trace older than every ledger entry reads `unknown`, not the oldest known
+      fingerprint — the ranker of that era was genuinely never recorded
+    - a trace between two entries reads the earlier one (the one actually in force)
+    - re-recording an unchanged fingerprint does not grow the ledger
+    """
+    from thalamus.eval.rankers import (
+        UNKNOWN,
+        RankerLedger,
+        ledger_path,
+        load_ledger,
+        record_ranker,
+    )
+
+    def at(when: str) -> datetime:
+        return datetime.fromisoformat(when).replace(tzinfo=timezone.utc)
+
+    record_ranker("v1:f2-d8", base=tmp_path, now=at("2026-07-10T00:00:00"))
+    record_ranker("v1:f2-d8", base=tmp_path, now=at("2026-07-11T00:00:00"))
+    record_ranker("v1:f2-d4", base=tmp_path, now=at("2026-07-20T00:00:00"))
+
+    # The duplicate start collapsed: the join only needs the change points.
+    assert len(load_ledger(base=tmp_path)) == 2
+
+    ledger = RankerLedger.load(base=tmp_path)
+    assert ledger.at(at("2026-07-01T00:00:00")) == UNKNOWN
+    assert ledger.at(at("2026-07-15T00:00:00")) == "v1:f2-d8"
+    assert ledger.at(at("2026-07-25T00:00:00")) == "v1:f2-d4"
+    assert ledger.at(None) == UNKNOWN
+
+    # An absent ledger is an absent answer, never a crash.
+    assert RankerLedger.load(base=tmp_path / "nope").at(at("2026-07-15T00:00:00")) == UNKNOWN
+    assert ledger_path(tmp_path).is_file()
+
+
+def test_scope_report_window_excludes_undated_traces_and_flags_a_straddle():
+    """
+    Scenario: A report is windowed to audit one ranker setting, but the window
+    spans a dial change.
+
+    Verifications:
+    - a window that covers more than one *recorded* ranker warns that it measures
+      neither setting, rather than quietly averaging across the change
+    - a window whose traces all predate the ledger says so instead of implying
+      the numbers are attributable
+    - the window line discloses what it dropped, so an exclusion is never silent
+    """
+    from collections import Counter
+
+    from thalamus.eval.report import ScopeReport, parse_window_bound
+
+    straddle = ScopeReport(
+        scope="main",
+        since=parse_window_bound("2026-07-10"),
+        until=parse_window_bound("2026-07-25", end_of_day=True),
+        by_ranker=Counter({"v1:f2-d8": 30, "v1:f2-d4": 12}),
+        out_of_window=7,
+        undated=3,
+        traces=42,
+        sessions=5,
+    )
+    rendered = straddle.render()
+    assert "window: 2026-07-10 → 2026-07-25" in rendered
+    assert "7 outside" in rendered and "3 undated (excluded)" in rendered
+    assert "straddles a ranker change" in rendered
+
+    unattributable = ScopeReport(
+        scope="main",
+        since=parse_window_bound("2026-07-01"),
+        by_ranker=Counter({"unknown": 9}),
+        traces=9,
+        sessions=2,
+    )
+    assert "no trace here records which ranker served it" in unattributable.render()
+
+    clean = ScopeReport(
+        scope="main",
+        since=parse_window_bound("2026-07-21"),
+        by_ranker=Counter({"v1:f2-d4": 12}),
+        traces=12,
+        sessions=3,
+    )
+    assert "straddles" not in clean.render()
+    assert "ranker: v1:f2-d4 12" in clean.render()
+
+
+def test_a_bare_until_date_covers_its_whole_day():
+    """
+    Scenario: `--until 2026-07-20` is given as a bare date.
+
+    Verification: the bound lands at the end of that day, not its start — a window
+    that silently drops its last day produces a number nobody can reproduce.
+    """
+    from thalamus.eval.report import parse_window_bound
+
+    upper = parse_window_bound("2026-07-20", end_of_day=True)
+    assert upper.hour == 23 and upper.minute == 59
+    assert upper.tzinfo is timezone.utc
+    # The lower bound is untouched: `--since 2026-07-20` means from that midnight.
+    assert parse_window_bound("2026-07-20").hour == 0
+    # An explicit datetime is respected as given.
+    assert parse_window_bound("2026-07-20T06:30:00", end_of_day=True).hour == 6

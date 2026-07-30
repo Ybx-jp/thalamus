@@ -42,6 +42,58 @@ def _tier_label(tier: object) -> str:
     return f"tier {value} · {_TIER_NAMES.get(value, 'unknown')}"
 
 
+# ---------------------------------------------------------------------------
+# The ranking dials.
+#
+# Hoisted out of the code that uses them because the eval loop has to be able to
+# say *which ranker* produced a trace. Retrieval-utility numbers are only
+# comparable across a time window if the ranker was the same across it, and
+# lab/007's fan-out prediction went twenty-two entries unverified partly because
+# nothing recorded that. A window that straddles a dial change is not a
+# measurement of either setting (lab/029).
+#
+# Changing any value here is a ranker change: bump RANKER_VERSION so the
+# fingerprint moves even if two dials cancel out numerically.
+RANKER_VERSION = "1"
+
+# Score a matched session accumulates per distinct keyword: its own summary hitting,
+# and each contained claim that hits. The ranking unit is the *session* — a claim hit
+# raises its parent's score and never ranks on its own — so anything reasoning about
+# what a ranking change can reach has to start here, not at the claim (lab/029).
+_SUMMARY_HIT_SCORE = 2.0
+_CLAIM_HIT_SCORE = 1.0
+# Knowledge claims — the `.not_(in_e("CONTAINS"))` branch — have no parent session and
+# do rank on their own merit.
+_KNOWLEDGE_HIT_SCORE = 2.0
+# The match floor: one generic term out of ten is noise, not relevance (lab/006-007).
+_MATCH_FLOOR = 2
+# A recall result renders at most this many claim details. Priced traces showed the
+# unfiltered dump — every claim of every matched session — is where retrieval waste
+# lives: 267 of 295 ignored nodes were ride-along claims that never matched the query
+# (lab/006). A dial, not a truth, and never tuned.
+_DETAIL_CAP = 8
+# Knowledge holds up to 1/this of the result window when sessions also matched.
+_KNOWLEDGE_WINDOW_DIVISOR = 2
+
+
+def ranker_fingerprint() -> str:
+    """A compact, legible identity for the ranking dials in force.
+
+    Legible rather than hashed on purpose: a report that says the window
+    straddles `v1:s2.0-c1.0-k2.0-f2-d8-w2` and `v1:s2.0-c1.0-k2.0-f2-d4-w2`
+    tells the reader *which* dial moved. A hash would only say "something did".
+    """
+    return (
+        f"v{RANKER_VERSION}"
+        f":s{_SUMMARY_HIT_SCORE}"
+        f"-c{_CLAIM_HIT_SCORE}"
+        f"-k{_KNOWLEDGE_HIT_SCORE}"
+        f"-f{_MATCH_FLOOR}"
+        f"-d{_DETAIL_CAP}"
+        f"-w{_KNOWLEDGE_WINDOW_DIVISOR}"
+    )
+
+
 @dataclass
 class MemoryResult:
     """A single memory retrieval result."""
@@ -210,7 +262,9 @@ def recall(
         )
         for session in sessions:
             session_id = _first(session.get("session_id"))
-            matched_session_ids[session_id] = matched_session_ids.get(session_id, 0) + 2.0
+            matched_session_ids[session_id] = (
+                matched_session_ids.get(session_id, 0) + _SUMMARY_HIT_SCORE
+            )
             session_hits.setdefault(session_id, set()).add(keyword)
 
         contained = (
@@ -226,7 +280,9 @@ def recall(
         )
         for claim in contained:
             session_id = _first(claim.get("session_id"))
-            matched_session_ids[session_id] = matched_session_ids.get(session_id, 0) + 1.0
+            matched_session_ids[session_id] = (
+                matched_session_ids.get(session_id, 0) + _CLAIM_HIT_SCORE
+            )
             session_hits.setdefault(session_id, set()).add(keyword)
 
         knowledge = (
@@ -240,7 +296,9 @@ def recall(
         )
         for claim_vid in knowledge:
             key = str(claim_vid)
-            matched_knowledge_vids[key] = matched_knowledge_vids.get(key, 0) + 2.0
+            matched_knowledge_vids[key] = (
+                matched_knowledge_vids.get(key, 0) + _KNOWLEDGE_HIT_SCORE
+            )
             knowledge_hits.setdefault(key, set()).add(keyword)
 
     # The match floor: one generic term out of ten is noise, not relevance. Priced
@@ -248,7 +306,7 @@ def recall(
     # were then ignored at ~3K tokens a recall (lab/006, lab/007) — a multi-keyword
     # query must hit at least two distinct terms to rank. Single-keyword queries are
     # untouched: the floor is about queries whose breadth outruns their intent.
-    floor = min(2, len(keywords))
+    floor = min(_MATCH_FLOOR, len(keywords))
     sessions_ranked = sorted(
         (
             item
@@ -298,7 +356,11 @@ def _mixed_window(
     within its own kind); a pure-episodic or pure-knowledge match uses the full
     window unchanged, and leftover space backfills with more knowledge.
     """
-    reserved = min(len(knowledge_ranked), limit // 2) if sessions_ranked else len(knowledge_ranked)
+    reserved = (
+        min(len(knowledge_ranked), limit // _KNOWLEDGE_WINDOW_DIVISOR)
+        if sessions_ranked
+        else len(knowledge_ranked)
+    )
     chosen = [
         *(("claim", vid_) for vid_, _ in knowledge_ranked[:reserved]),
         *(("session", sid) for sid, _ in sessions_ranked[: limit - reserved]),
@@ -549,13 +611,6 @@ def _session_result(session: dict, relevance: str = "", details: list[dict] | No
         details=details or [],
         relevance=relevance,
     )
-
-
-# A recall result renders at most this many claim details. Priced traces showed the
-# unfiltered dump — every claim of every matched session — is where retrieval waste
-# lives: 267 of 295 ignored nodes were ride-along claims that never matched the query
-# (lab/006). A dial, not a truth.
-_DETAIL_CAP = 8
 
 
 def _select_details(details: list[dict], keywords: list[str], cap: int = _DETAIL_CAP) -> list[dict]:

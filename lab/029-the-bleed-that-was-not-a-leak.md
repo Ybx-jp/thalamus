@@ -124,20 +124,58 @@ the base rate; if off-project used% falls steeply with rank the boost is cheap,
 if flat it cuts at 40% and is expensive. Rank is not currently on the RETURNS
 edge.
 
+## lab/007's prediction, audited at last — it holds
+
+`thalamus eval report` grew `--since/--until`, and the window it needed was
+already in the graph. The floor landed 2026-07-17 (commit `31e241c`). Scope
+`main`, split on that date:
+
+| | ≤ 2026-07-16 | ≥ 2026-07-17 |
+|---|---|---|
+| retrievals | 23 | 263 |
+| returned nodes | 660 | 1536 |
+| used | 50% | **69%** |
+| wasted share | 46% | **30%** |
+
+All three of lab/007's dials came in: fan-out well under the ≤~15 target, wasted
+share landing exactly on the ≤30% band, and used% **rising** rather than holding.
+
+**The fair version, because the two windows differ in far more than the dial** —
+different sessions, a corpus an order of magnitude larger, and tools that did not
+exist before (`bash_gremlin`, `memory_query`). The floor acts on `recall()`
+alone, so `memory_open_threads` is an untreated control over the same period:
+
+| tool | window | traces | fan-out (non-empty) | misses |
+|---|---|---|---|---|
+| `memory_recall` (treated) | before | 15 | 41.9 | 0% |
+| `memory_recall` (treated) | after | 181 | **11.2** | **41%** |
+| `memory_open_threads` (control) | before | 7 | 6.4 | 0% |
+| `memory_open_threads` (control) | after | 26 | **11.6** | 12% |
+
+The treated tool's fan-out fell by 73%; the untreated one **rose** over the same
+window. A corpus-or-query-mix explanation predicts both move together, so it does
+not account for this. The effect is specific to the surface the dial acts on.
+
+**And the cost lab/007 never stated: `memory_recall`'s miss rate went 0% → 41%.**
+The floor converts weak matches into empty results, which is the mechanism working
+as designed, but two in five recalls now returning nothing was not part of the
+prediction and has never been weighed. An empty result is cheap in tokens and not
+free in outcomes. That is the open question the audit leaves behind.
+
 ## Standing prerequisites, in order
 
-1. **Audit lab/007's outstanding prediction.** It added the ≥2-distinct-keyword
-   floor for a *fan-out* symptom, validated on a single replayed query, and
-   predicted fan-out ≤~15 nodes/trace with wasted share falling 50% → ≤30% over
-   the next ten synced sessions. Twenty-two entries later that has never been
-   checked; the ≤30% band survives only as a rendered target
-   (`docs/03-master-plane.md:133-135`). `Trace` carries `ts` and `scope_report`
-   already computes all three numbers — it needs a `--since/--until` window, and
-   that audit *is* any future dial's baseline.
-2. **Record `ranker_config` on `Trace`.** The properties dict in `eval/sync.py`
-   carries query, tool, ts, session_id, scope, returned_count, injected_chars —
-   nothing about the ranker that produced the row. Without it, a second dial on
-   this path converts lab/007's "unverified" into "unauditable."
+1. ~~Audit lab/007's outstanding prediction.~~ **Done, above.** `scope_report`
+   now takes `--since/--until`, and a window that straddles a ranker change says
+   so instead of averaging across it.
+2. ~~Record `ranker_config` on `Trace`.~~ **Done.** It could not be stamped at
+   sync time as first proposed — sync can run days after the retrieval, on a
+   checkout whose ranker has moved, so reading the fingerprint out of the
+   installed code then would attribute old traces to a ranker that never served
+   them. It is written instead by the process that will do the ranking
+   (`eval/rankers.py`, the pin ledger's idiom), and sync joins each event to the
+   entry in force at its timestamp. Traces older than the ledger read `unknown`,
+   never a borrowed fingerprint — which is why the audit above honestly reports
+   that none of its traces can be attributed to a setting.
 3. **The rank curve and the claim-kind breakdown**, before choosing a dial.
 
 ## The citation hazard this exchange created
