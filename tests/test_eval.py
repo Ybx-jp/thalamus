@@ -841,3 +841,91 @@ def test_a_bare_until_date_covers_its_whole_day():
     assert parse_window_bound("2026-07-20").hour == 0
     # An explicit datetime is respected as given.
     assert parse_window_bound("2026-07-20T06:30:00", end_of_day=True).hour == 6
+
+
+# ---------------------------------------------------------------------------
+# Judge variants — the shipped window must not move underneath stored verdicts
+# ---------------------------------------------------------------------------
+
+
+def _assistant_turn(ts: str, prose: str = "", tool_input: dict | None = None) -> str:
+    content = []
+    if prose:
+        content.append({"type": "text", "text": prose})
+    if tool_input is not None:
+        content.append({"type": "tool_use", "name": "Edit", "input": tool_input})
+    return json.dumps({"type": "assistant", "timestamp": ts, "message": {"content": content}})
+
+
+_WINDOW_TRANSCRIPT = "\n".join(
+    [
+        _assistant_turn("2026-07-01T09:00:00Z", prose="before the retrieval"),
+        _assistant_turn("2026-07-01T10:01:00Z", prose="the reader caps details at eight"),
+        _assistant_turn("2026-07-01T10:02:00Z", tool_input={"file_path": "src/thalamus/reader.py"}),
+        _assistant_turn("2026-07-01T10:03:00Z", prose="tail", tool_input={"command": "pytest"}),
+    ]
+).encode()
+
+_AFTER = datetime.fromisoformat("2026-07-01T10:00:00+00:00")
+
+
+def test_the_flat_window_is_unchanged_by_the_turn_structure():
+    """
+    Scenario: the window gains per-turn structure so judges can bound it or split
+    prose from tool calls.
+
+    Verification: the flat, unbounded text is byte-identical to what the shipped
+    judge has always seen. Every `used` property in the graph was computed against
+    that string, so a silent change would redefine stored verdicts rather than
+    produce new ones.
+    """
+    from thalamus.eval.attribution import output_window, outputs_after
+
+    window = output_window(_WINDOW_TRANSCRIPT, _AFTER)
+    assert window.text() == outputs_after(_WINDOW_TRANSCRIPT, _AFTER)
+    assert "before the retrieval" not in window.text()
+    assert len(window) == 3
+
+
+def test_prose_and_tool_calls_are_separable():
+    """The 59-point floor lives in shared project vocabulary, which is prose. A
+    file path echoed in a tool call is a different kind of evidence, so the two
+    must be scoreable apart."""
+    from thalamus.eval.attribution import output_window
+
+    window = output_window(_WINDOW_TRANSCRIPT, _AFTER)
+    assert "reader.py" in window.text(prose=False)
+    assert "caps details" not in window.text(prose=False)
+    assert "caps details" in window.text(tools=False)
+    assert "reader.py" not in window.text(tools=False)
+
+
+def test_bounding_the_window_by_turns_drops_the_far_tail():
+    from thalamus.eval.attribution import output_window
+
+    window = output_window(_WINDOW_TRANSCRIPT, _AFTER)
+    assert "pytest" in window.text()
+    assert "pytest" not in window.text(turns=2)
+    assert "caps details" in window.text(turns=1)
+
+
+def test_every_judge_variant_scores_the_same_nodes():
+    """A variant is a configuration, not a code path: each returns a verdict per
+    returned node so they can be compared cell for cell against one null."""
+    from thalamus.eval.attribution import JUDGES, output_window
+
+    window = output_window(_WINDOW_TRANSCRIPT, _AFTER)
+    returned = {
+        "scope:main:claim:aaa": "the reader caps details at eight per node",
+        "scope:main:claim:bbb": "unrelated content about audio feature extraction",
+    }
+    for name, judge in JUDGES.items():
+        verdicts = judge(returned, window)
+        assert {v.node_id for v in verdicts} == set(returned), name
+
+    shipped = {v.node_id: v.used for v in JUDGES["shipped"](returned, window)}
+    tool_only = {v.node_id: v.used for v in JUDGES["tool"](returned, window)}
+    assert shipped["scope:main:claim:aaa"] is True
+    # The claim's vocabulary is echoed in prose, not in any tool call — exactly the
+    # discrimination the split exists to expose.
+    assert tool_only["scope:main:claim:aaa"] is False

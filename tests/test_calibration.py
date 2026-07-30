@@ -1,0 +1,148 @@
+"""Permutation-null calibration tests (I1; lab/034).
+
+Interfaces: thalamus.eval.calibration — kappa, strata, rotation constraints,
+            cluster bootstrap, reconstruction fidelity.
+Infrastructure: synthetic Cases; no graph, no archive. `load_cases` is exercised
+            against the live graph by the experiment runner, not here — a stubbed
+            traversal would test the stub.
+Scope: the two properties that make a null a null. A rotation must cross sessions
+       (or shared vocabulary is not controlled for) and must stay inside a
+       window-length stratum (or the null measures the length change instead).
+"""
+
+from datetime import datetime, timezone
+
+from thalamus.eval import calibration
+from thalamus.eval.attribution import JUDGES, OutputTurn, OutputWindow
+
+
+def _window(text: str, repeats: int = 1) -> OutputWindow:
+    return OutputWindow(turns=[OutputTurn(index=i, parts=[("prose", text)]) for i in range(repeats)])
+
+
+def _case(trace: str, session: str, node_text: str, window_text: str, repeats: int = 1):
+    return calibration.Case(
+        trace_id=trace,
+        session_id=session,
+        scope="main",
+        tool="memory_recall",
+        ts=datetime(2026, 7, 30, tzinfo=timezone.utc),
+        nodes={f"scope:main:claim:{trace}": node_text},
+        window=_window(window_text, repeats),
+    )
+
+
+def test_kappa_is_the_share_of_headroom_the_judge_captures():
+    """
+    Scenario: a judge scores 63% where chance alone scores 59%.
+
+    Verification: kappa reports 0.098, not 0.63 and not the 4-point raw gap. The
+    raw rate reads as five times more signal than it has, which is how a target of
+    "used% above ~50" came to sit below chance.
+    """
+    assert calibration.kappa(0.629, 0.594) == pytest_approx(0.086, 0.01)
+    assert calibration.kappa(1.0, 0.5) == 1.0
+    assert calibration.kappa(0.5, 0.5) == 0.0
+    # No headroom: a null at ceiling means there is nothing left to capture, and
+    # dividing by zero would turn a degenerate case into a large-looking number.
+    assert calibration.kappa(1.0, 1.0) == 0.0
+
+
+def pytest_approx(value: float, tol: float) -> float:
+    class _Approx(float):
+        def __eq__(self, other):
+            return abs(other - value) <= tol
+
+    return _Approx(value)
+
+
+def test_strata_split_the_corpus_by_window_length():
+    """The judge's used% moves 51.7% -> 69.7% on window length alone, so a
+    rotation that ignores length measures the length change."""
+    cases = [_case(f"t{i}", f"s{i}", "node", "output", repeats=i + 1) for i in range(12)]
+    calibration._assign_strata(cases)
+    strata = [c.stratum for c in sorted(cases, key=lambda c: c.window_chars)]
+    assert strata == sorted(strata)
+    assert len(set(strata)) == calibration.STRATA
+
+
+def test_a_rotation_never_reuses_the_case_s_own_session():
+    """
+    Scenario: the null is drawn by re-judging each case against someone else's
+    output window.
+
+    Verification: the partner is never the same session. Judging a session against
+    itself would put the case's own vocabulary in the null, which is the thing the
+    null exists to hold constant.
+    """
+    same_text = "the reader caps details at eight per node"
+    cases = [
+        _case("t1", "session-a", same_text, same_text),
+        _case("t2", "session-a", same_text, same_text),
+    ]
+    calibration._assign_strata(cases)
+    judge = JUDGES["shipped"]
+    result = calibration.score(cases, judge)
+    # Both cases are in one session, so no case has an eligible partner and the
+    # rotation yields nothing rather than pairing a session with itself.
+    rotated = calibration.rotate(cases, judge, result, rotations=5, seed=1)
+    assert rotated.null_rates == []
+    assert rotated.unpartnered == len(cases)
+
+
+def test_rotation_produces_a_null_distribution_not_a_single_draw():
+    """lab/032's cross-project 5.0% came from one rotation against one pool. One
+    draw cannot say whether a 4-point gap is real."""
+    topics = [
+        "reader detail cap eight",
+        "audio feature extraction pipeline",
+        "gremlin traversal terminal step",
+        "switchback carryover design",
+    ]
+    # Two sessions per stratum, so every case has an eligible partner. With one
+    # case per stratum the rotation correctly yields nothing — see `unpartnered`.
+    cases = [
+        _case(f"t{i}", f"s{i}", topics[i % 4], topics[i % 4], repeats=1 + i // 2)
+        for i in range(8)
+    ]
+    calibration._assign_strata(cases)
+    judge = JUDGES["shipped"]
+    result = calibration.score(cases, judge)
+    calibration.rotate(cases, judge, result, rotations=25, seed=7)
+
+    assert len(result.null_rates) == 25
+    assert result.unpartnered == 0
+    assert result.rate == 1.0  # every case echoes its own node verbatim
+    lo, hi = result.null_ci
+    assert lo <= result.null_mean <= hi
+
+
+def test_the_bootstrap_resamples_sessions_not_verdicts():
+    """Verdicts inside a session share a window, a topic and an operator. The
+    measured ICC is 0.264 with a design effect near 4, so a verdict-level interval
+    is about half as wide as the truth."""
+    cases = [_case(f"t{i}", f"s{i % 3}", "shared vocabulary", "shared vocabulary") for i in range(9)]
+    calibration._assign_strata(cases)
+    result = calibration.score(cases, JUDGES["shipped"])
+    lo, hi = calibration.cluster_bootstrap(cases, result, draws=200, seed=3)
+    assert 0.0 <= lo <= hi <= 1.0
+
+
+def test_fidelity_reports_where_replay_disagrees_with_what_was_stored():
+    """
+    Scenario: a stored verdict cannot be reproduced from today's graph.
+
+    Verification: it is counted, not smoothed. Node text is mutable (latest-wins)
+    and `ingested_at` carries the writing session's timestamp rather than the write
+    time, so a node can be rewritten with no trace — and a replay that silently
+    diverged would be measuring its own reconstruction.
+    """
+    case = _case("t1", "s1", "reader detail cap", "reader detail cap")
+    case.stored = {"scope:main:claim:t1": False}
+    calibration._assign_strata([case])
+    result = calibration.score([case], JUDGES["shipped"])
+    matched, total = calibration.fidelity([case], result)
+    assert (matched, total) == (0, 1)
+
+    case.stored = {"scope:main:claim:t1": True}
+    assert calibration.fidelity([case], result) == (1, 1)
