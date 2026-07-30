@@ -247,13 +247,16 @@ def classify_session_fault(agent: AgentRun) -> str | None:
 
 @dataclass
 class Arm:
-    """A parsed arm spec: `memory-on`, `memory-off`, `scoping-degraded:<scope>`."""
+    """A parsed arm spec: `memory-on`, `memory-off`, `scoping-degraded:<scope>`, `ceiling`."""
 
     spec: str
     name: str
     scope: str
     mcp: bool
     strip_hooks: set[str] = field(default_factory=set)
+    # `ceiling` only: the task's withheld fact is handed to the candidate directly,
+    # so the arm measures what a *perfect* retrieval would be worth.
+    inject_fact: bool = False
 
 
 def parse_arm(spec: str, scopes: list[str]) -> Arm:
@@ -274,13 +277,31 @@ def parse_arm(spec: str, scopes: list[str]) -> Arm:
         return Arm(
             spec, "scoping-degraded", scope, mcp=True, strip_hooks=set(WRITE_BACK_HOOKS)
         )
+    if spec == "ceiling":
+        # The skyline. Same stripped harness as memory-off — no MCP, no memory
+        # surface — but the task's withheld fact is injected into the prompt, so
+        # retrieval is not merely good, it is perfect and free.
+        #
+        # It answers the question that gates every other arm: if a candidate handed
+        # exactly the right memory, with no retrieval to get wrong, does not beat one
+        # with no memory at all, then no retrieval improvement can move this battery
+        # and the layer-2 program is measuring the battery rather than the memory.
+        #
+        # Labelled "not found in the 2026 scan" rather than standard practice: two
+        # literature scans found no held claims on oracle-context or skyline arms
+        # (`scope:eval-methodology:thread:ceiling-arm-and-survival-analysis-ungrounded`).
+        return Arm(
+            spec, "ceiling", "main", mcp=False,
+            strip_hooks=set(WRITE_BACK_HOOKS) | set(MEMORY_SURFACE_HOOKS),
+            inject_fact=True,
+        )
     if spec.split(":", 1)[0] in UNBUILT_ARMS:
         raise ArmError(
             f"arm `{spec}` is designed but not built — it needs graph-snapshot "
             "pinning (docs/04 open questions); refusing beats approximating"
         )
     raise ArmError(
-        f"unknown arm `{spec}` (memory-on, memory-off, scoping-degraded:<scope>)"
+        f"unknown arm `{spec}` (memory-on, memory-off, ceiling, scoping-degraded:<scope>)"
     )
 
 
@@ -1111,6 +1132,34 @@ def evaluate_probes(
 # ---------------------------------------------------------------------------
 
 
+def ceiling_prompt(task) -> str:
+    """The task prompt with its withheld fact handed over as recalled memory.
+
+    Framed as memory rather than as instruction on purpose. The comparison is
+    against arms that *retrieve* — so the ceiling must differ from them in
+    retrieval quality alone, not in whether the candidate was told what to do. A
+    fact presented as "here is what a past session established" is the same speech
+    act a perfect recall would have performed; "you must do X" is a different
+    experiment.
+
+    Refuses a task with no withheld fact: on an ungated task the ceiling arm is
+    identical to memory-off, and running it would spend money to produce a
+    duplicate labelled as a treatment.
+    """
+    fact = (task.under_specification.fact or "").strip() if task.under_specification else ""
+    if not fact:
+        raise ArmError(
+            f"task `{task.id}` has no under_specification.fact, so it has no ceiling: "
+            "with nothing withheld, a ceiling arm is memory-off wearing another name"
+        )
+    return (
+        f"{task.prompt}\n\n"
+        "---\n\n"
+        "Recalled from memory of a past session on this codebase:\n\n"
+        f"> {fact}\n"
+    )
+
+
 def run_arm(
     repo: Path,
     task: Task,
@@ -1169,8 +1218,12 @@ def run_arm(
         record["applied"]["sandboxed"] = sandbox
         record["applied"]["network"] = network if sandbox else "host (unconfined)"
         started = time.monotonic()
+        prompt = task.prompt
+        if arm.inject_fact:
+            prompt = ceiling_prompt(task)
+            record["applied"]["injected_fact_chars"] = len(prompt) - len(task.prompt)
         agent = run_agent(
-            worktree, task.prompt, scope=arm.scope, project=repo.name, model=model,
+            worktree, prompt, scope=arm.scope, project=repo.name, model=model,
             max_turns=max_turns, timeout=timeout, full_auto=full_auto,
             sandbox=sandbox, network=network,
         )

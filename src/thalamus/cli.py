@@ -415,8 +415,10 @@ def main():
     eval_run_parser.add_argument("task_id", help="A task id from config/tasks/")
     eval_run_parser.add_argument(
         "--arm", action="append", dest="arms", default=None,
-        help="memory-on | memory-off | scoping-degraded:<scope>; repeatable, runs in "
-        "the order given (default: memory-on then memory-off)",
+        help="memory-on | memory-off | ceiling | scoping-degraded:<scope>; repeatable, "
+        "runs in the order given (default: memory-on then memory-off). `ceiling` is "
+        "the skyline: memory-off's stripped harness with the task's withheld fact "
+        "handed over directly, so it bounds what any retrieval could be worth.",
     )
     eval_run_parser.add_argument(
         "--model", default=None, help="Arm session model (default: sonnet)"

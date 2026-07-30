@@ -1132,3 +1132,59 @@ def test_the_arm_default_model_comes_from_the_registry():
     from thalamus.harness import agents
 
     assert arms.DEFAULT_MODEL == agents.cli_for("claude").default_model
+
+
+class TestCeilingArm:
+    """The skyline arm (E2) — what a perfect retrieval would be worth."""
+
+    def test_the_ceiling_strips_the_memory_surface_like_memory_off(self):
+        """
+        Scenario: the ceiling arm is parsed.
+
+        Verification: no MCP and the memory hooks stripped, exactly as memory-off.
+        The treatment is the injected fact, not a live retrieval surface — if the
+        arm could also recall, it would measure "perfect memory plus retrieval"
+        and could not bound retrieval on its own.
+        """
+        from thalamus.eval.arms import parse_arm
+
+        ceiling = parse_arm("ceiling", ["main"])
+        off = parse_arm("memory-off", ["main"])
+        assert ceiling.mcp is False
+        assert ceiling.strip_hooks == off.strip_hooks
+        assert ceiling.inject_fact is True
+        assert off.inject_fact is False
+
+    def test_the_fact_is_handed_over_as_memory_not_as_instruction(self):
+        """The comparison is against arms that retrieve, so the ceiling must differ
+        in retrieval quality alone. "A past session established X" is the speech act
+        a perfect recall performs; "you must do X" is a different experiment."""
+        from thalamus.eval.arms import ceiling_prompt
+        from thalamus.eval.tasks import Task, TaskSource, UnderSpecification
+
+        task = Task(
+            id="t", title="t", overlap="memorization",
+            source=TaskSource(kind="replayed", ref="abc"),
+            prompt="Fix the failing classifier.",
+            under_specification=UnderSpecification(gated=True, fact="Turn counts do not separate the cases."),
+        )
+        rendered = ceiling_prompt(task)
+        assert task.prompt in rendered
+        assert "Turn counts do not separate the cases." in rendered
+        assert "Recalled from memory" in rendered
+        assert "you must" not in rendered.lower()
+
+    def test_a_task_with_nothing_withheld_has_no_ceiling(self):
+        """On an ungated task the ceiling is memory-off under another name, and
+        running it would spend money to produce a duplicate labelled a treatment."""
+        import pytest
+
+        from thalamus.eval.arms import ArmError, ceiling_prompt
+        from thalamus.eval.tasks import Task, TaskSource
+
+        task = Task(
+            id="t", title="t", overlap="memorization",
+            source=TaskSource(kind="replayed", ref="abc"), prompt="Fix it.",
+        )
+        with pytest.raises(ArmError, match="no ceiling"):
+            ceiling_prompt(task)

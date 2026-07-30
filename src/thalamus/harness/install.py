@@ -221,12 +221,26 @@ def build_mcp_entry() -> dict:
     launched process, and a pinned session gets its scope from the picked agent
     (harness/pin.resolve_pin), which a static user-scope config cannot express.
     Baking a scope here would pin every session on the box to one expert.
+
+    THALAMUS_WITHHOLD *is* baked in when it is set, because the opposite
+    property applies: a randomized-withholding campaign is only interpretable if
+    every session in it ran under the same rate, and an env var exported in one
+    terminal would randomize some sessions and not others with nothing recording
+    which. The rate lives on the server registration so it is a property of the
+    machine for the duration of the campaign — and the records carry it, so a run
+    that pooled two rates is detectable rather than invisible (experiments/003).
     """
+    env = {
+        "THALAMUS_GRAPH_URL": os.environ.get(
+            "THALAMUS_GRAPH_URL", "ws://localhost:8182/gremlin")
+    }
+    rate = os.environ.get("THALAMUS_WITHHOLD", "").strip()
+    if rate:
+        env["THALAMUS_WITHHOLD"] = rate
     return {
         "command": "uv",
         "args": ["run", "--project", str(PROJECT_ROOT), "thalamus-mcp"],
-        "env": {"THALAMUS_GRAPH_URL": os.environ.get(
-            "THALAMUS_GRAPH_URL", "ws://localhost:8182/gremlin")},
+        "env": env,
     }
 
 
@@ -355,9 +369,10 @@ def register_mcp(dry_run: bool = False) -> str:
         return "SKIPPED MCP registration: `claude` not on PATH"
 
     entry = build_mcp_entry()
-    add_cmd = [cli, "mcp", "add", "--scope", "user", "thalamus",
-               "-e", f"THALAMUS_GRAPH_URL={entry['env']['THALAMUS_GRAPH_URL']}",
-               "--", entry["command"], *entry["args"]]
+    add_cmd = [cli, "mcp", "add", "--scope", "user", "thalamus"]
+    for name, value in entry["env"].items():
+        add_cmd += ["-e", f"{name}={value}"]
+    add_cmd += ["--", entry["command"], *entry["args"]]
     if dry_run:
         return f"would register `thalamus` MCP server at user scope: {' '.join(add_cmd[1:])}"
 
