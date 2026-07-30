@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reframing the memory did not save it — Thalamus experiment 005-framing</title>
+<meta name="description" content="A perfect memory cost its candidate the rung it could already reach alone. The obvious explanation was that the memory arrived as a conclusion rather than as a problem. Stating the same evidence as a problem cost the rung anyway.">
+<style>/* Thalamus experiment write-ups — the design tokens.
+ *
+ * Steel blue leads, warm grey carries the page. The categorical ramp is fixed
+ * order, never cycled, and was validated (not eyeballed) against both surfaces:
+ * lightness band, chroma floor, CVD separation, normal-vision floor and contrast
+ * all pass on #fcfcfb and on #1a1a19. Changing a series hex means re-running that
+ * validation — the six checks are the reason these values look arbitrary.
+ *
+ * Warm grey is deliberately NOT a series colour: it is ink, rule and surface, so
+ * a grey mark always means "structure", never "category 2".
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Categorical — assign in this order, never cycled. A 7th series folds into
+     "other" or becomes a small multiple. */
+  --series-1: #3a7fb5; /* steel blue — the primary, and the default single series */
+  --series-2: #c4562f; /* terracotta */
+  --series-3: #1f8f7a; /* teal */
+  --series-4: #8e5cc8; /* violet */
+  --series-5: #a8830e; /* ochre */
+  --series-6: #c0407a; /* magenta */
+
+  /* Sequential — one hue, light to dark. Magnitude only. */
+  --seq-1: #dbe8f3;
+  --seq-2: #b3cde4;
+  --seq-3: #82aed2;
+  --seq-4: #4f8dbf;
+  --seq-5: #3a7fb5;
+  --seq-6: #275d86;
+
+  /* Diverging — two poles, warm grey midpoint. Polarity only. */
+  --div-neg: #c4562f;
+  --div-mid: #d9d4cb;
+  --div-pos: #3a7fb5;
+
+  /* Status — reserved. Never reused as a series colour; always with a label. */
+  --status-good: #1f8f7a;
+  --status-warn: #a8830e;
+  --status-serious: #c4562f;
+  --status-critical: #9c2f2f;
+
+  /* Warm grey structure */
+  --surface-page: #fcfcfb;
+  --surface-panel: #f4f2ee;
+  --surface-sunken: #eae6df;
+  --rule: #e0dbd2;
+  --rule-strong: #c9c2b6;
+  --ink: #2a2724;
+  --ink-secondary: #5c554e;
+  --ink-muted: #8a8078;
+
+  --font-body: ui-serif, "Iowan Old Style", "Source Serif 4", Georgia, serif;
+  --font-ui: ui-sans-serif, system-ui, "Inter", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --measure: 34rem; /* body text column */
+  --radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --seq-1: #1e3247;
+    --seq-2: #27506f;
+    --seq-3: #326a90;
+    --seq-4: #3a7fb5;
+    --seq-5: #66a3d0;
+    --seq-6: #9cc6e6;
+
+    --div-mid: #4a4640;
+
+    --surface-page: #1a1a19;
+    --surface-panel: #232320;
+    --surface-sunken: #2b2a26;
+    --rule: #383530;
+    --rule-strong: #4d4941;
+    --ink: #edeae4;
+    --ink-secondary: #b8b2a8;
+    --ink-muted: #8a8078;
+  }
+}
+
+:root[data-theme="dark"] {
+  --seq-1: #1e3247;
+  --seq-2: #27506f;
+  --seq-3: #326a90;
+  --seq-4: #3a7fb5;
+  --seq-5: #66a3d0;
+  --seq-6: #9cc6e6;
+  --div-mid: #4a4640;
+  --surface-page: #1a1a19;
+  --surface-panel: #232320;
+  --surface-sunken: #2b2a26;
+  --rule: #383530;
+  --rule-strong: #4d4941;
+  --ink: #edeae4;
+  --ink-secondary: #b8b2a8;
+  --ink-muted: #8a8078;
+}
+
+:root[data-theme="light"] {
+  --seq-1: #dbe8f3;
+  --seq-2: #b3cde4;
+  --seq-3: #82aed2;
+  --seq-4: #4f8dbf;
+  --seq-5: #3a7fb5;
+  --seq-6: #275d86;
+  --div-mid: #d9d4cb;
+  --surface-page: #fcfcfb;
+  --surface-panel: #f4f2ee;
+  --surface-sunken: #eae6df;
+  --rule: #e0dbd2;
+  --rule-strong: #c9c2b6;
+  --ink: #2a2724;
+  --ink-secondary: #5c554e;
+  --ink-muted: #8a8078;
+}
+
+/* Experiment page layout. Tokens come from experiments/assets/theme.css; this
+ * file only arranges them. Serif for the argument, sans for the apparatus,
+ * monospace for anything a reader might paste into a terminal.
+ */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 47rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+
+/* ---- masthead ---------------------------------------------------------- */
+
+header.masthead {
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2.5rem;
+  padding: 3.5rem 0 2rem;
+  position: relative;
+}
+header.masthead::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 3.5rem; height: 4px;
+  background: var(--series-1);
+}
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.9rem;
+}
+h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+.standfirst {
+  font-size: 1.16rem;
+  color: var(--ink-secondary);
+  margin: 0 0 1.6rem;
+  max-width: 38rem;
+}
+.byline {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+}
+.byline code { font-size: 0.76rem; }
+
+/* ---- verdict ----------------------------------------------------------- */
+
+.verdict {
+  border-left: 3px solid var(--series-1);
+  background: var(--surface-panel);
+  padding: 1.1rem 1.3rem;
+  margin: 0 0 2.6rem;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.verdict-kind {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.verdict p { margin: 0; font-size: 1.05rem; }
+.verdict.null { border-left-color: var(--series-5); }
+.verdict.withdrawn { border-left-color: var(--series-2); }
+
+/* ---- stat tiles -------------------------------------------------------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 0 0 2.8rem;
+}
+.stat { background: var(--surface-page); padding: 1rem 1.1rem; }
+.stat-label {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.45rem;
+}
+.stat-value {
+  font-family: var(--font-ui);
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.stat-interval, .stat-null, .stat-note {
+  font-family: var(--font-ui);
+  font-size: 0.76rem;
+  color: var(--ink-secondary);
+  margin: 0.4rem 0 0;
+}
+.stat-null { color: var(--ink-muted); }
+
+/* ---- prose ------------------------------------------------------------- */
+
+h2 {
+  font-family: var(--font-ui);
+  font-size: 1.28rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 3rem 0 1rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+}
+h3 {
+  font-family: var(--font-ui);
+  font-size: 1.02rem;
+  font-weight: 600;
+  margin: 2rem 0 0.6rem;
+}
+p { margin: 0 0 1.05rem; }
+a { color: var(--series-1); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+strong { font-weight: 600; }
+ul, ol { padding-left: 1.3rem; margin: 0 0 1.1rem; }
+li { margin-bottom: 0.4rem; }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--surface-sunken);
+  padding: 0.1em 0.34em;
+  border-radius: 3px;
+}
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  background: var(--surface-panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.95rem 1.1rem;
+  overflow-x: auto;
+  margin: 0 0 1.4rem;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ---- figures ----------------------------------------------------------- */
+
+.fig { margin: 1.8rem 0 2rem; }
+.chart { width: 100%; height: auto; overflow: visible; }
+.fig-title {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.grid { stroke: var(--rule); stroke-width: 1; }
+.tick, .legend {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  fill: var(--ink-muted);
+}
+.row-label {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  fill: var(--ink-secondary);
+}
+.value {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.bar { stroke: var(--surface-page); stroke-width: 2; }
+.null-band { fill: var(--ink-muted); opacity: 0.16; }
+.null-line { stroke: var(--ink-secondary); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.ci { stroke: var(--ink); stroke-width: 1.5; opacity: 0.75; }
+.lollipop { stroke: var(--rule-strong); stroke-width: 2; }
+.dot { stroke: var(--surface-page); stroke-width: 2; }
+
+/* ---- tables ------------------------------------------------------------ */
+
+.table-wrap { overflow-x: auto; margin: 0 0 1.8rem; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 0.84rem;
+}
+caption {
+  caption-side: bottom;
+  text-align: left;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  padding-top: 0.6rem;
+}
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.85rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+th {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 600;
+  border-bottom-color: var(--rule-strong);
+}
+tbody tr:last-child td { border-bottom: none; }
+
+/* ---- callouts ---------------------------------------------------------- */
+
+.callout {
+  border: 1px solid var(--rule);
+  border-left-width: 3px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.95rem 1.15rem;
+  margin: 1.6rem 0;
+  background: var(--surface-panel);
+  font-size: 0.95rem;
+}
+.callout p { margin: 0 0 0.6rem; }
+.callout p:last-child { margin-bottom: 0; }
+.callout-title {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.callout-finding { border-left-color: var(--series-1); }
+.callout-caveat { border-left-color: var(--series-5); }
+.callout-withdrawal { border-left-color: var(--series-2); }
+.callout-method { border-left-color: var(--series-3); }
+
+/* ---- checklist --------------------------------------------------------- */
+
+.checklist { list-style: none; padding: 0; margin: 0 0 1.6rem; }
+.checklist li {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.7rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+}
+.checklist li:last-child { border-bottom: none; }
+.mark { font-weight: 700; font-size: 0.95rem; line-height: 1.5; }
+.mark-yes { color: var(--status-good); }
+.mark-no { color: var(--status-serious); }
+.mark-na { color: var(--ink-muted); }
+.check-detail { color: var(--ink-muted); font-size: 0.8rem; display: block; margin-top: 0.15rem; }
+
+/* ---- registration ------------------------------------------------------ */
+
+.registration {
+  background: var(--surface-panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.35rem;
+  margin: 0 0 2rem;
+}
+.registration dl { margin: 0; display: grid; grid-template-columns: 9rem 1fr; gap: 0.55rem 1rem; }
+.registration dt {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-top: 0.15rem;
+}
+.registration dd { margin: 0; font-size: 0.95rem; }
+
+@media (max-width: 34rem) {
+  .registration dl { grid-template-columns: 1fr; gap: 0.15rem; }
+  .registration dd { margin-bottom: 0.7rem; }
+  body { font-size: 17px; }
+}
+
+footer.colophon {
+  margin-top: 3.5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+footer.colophon code { font-size: 0.74rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Thalamus · experiment 005-framing</p>
+  <h1>Reframing the memory did not save it</h1>
+  <p class="standfirst">A perfect memory cost its candidate the rung it could already reach alone. The obvious explanation was that the memory arrived as a conclusion rather than as a problem. Stating the same evidence as a problem cost the rung anyway.</p>
+  <div class="byline">
+    <span>2026-07-30 17:27 UTC</span>
+    <span>snapshot <code>n/a - arms run against git refs, not a graph snapshot</code></span>
+    <span>seed <code>20260730</code></span>
+    <span>code <code>per arm, in runs.jsonl</code></span>
+  </div>
+</header>
+
+
+<div class="verdict null">
+  <span class="verdict-kind">null</span>
+  <p>Reframing the memory changed nothing measurable: 1/5 against 0/5 on L2, one discordant pair, p = 1.000. The conclusion-without-path hypothesis is falsified as operationalised. What replaces it is worse for the premise: 1 of 10 arms given any memory passed the foundation rung, against 6 of 6 given none — so the cost belongs to injection, and rewriting what distillation stores would not have avoided it.</p>
+</div>
+
+
+
+<div class="stats">
+  
+  <div class="stat">
+    <p class="stat-label">Primary endpoint (L2 pass)</p>
+    <p class="stat-value">0/5 vs 1/5</p>
+    
+    
+    <p class="stat-note">conclusion vs problem framing — the rung the conclusion memo cost in every arm that had ever received one</p>
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">Discordant pairs</p>
+    <p class="stat-value">1 vs 0</p>
+    <p class="stat-interval">exact p = 1.000</p>
+    
+    <p class="stat-note">only disagreeing pairs carry information about a difference</p>
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">Any injected memory</p>
+    <p class="stat-value">1/10</p>
+    
+    <p class="stat-null">no memory at all: 6/6</p>
+    <p class="stat-note">both framings pooled, against experiments/004's same-day memory-off arms</p>
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">Campaign cost</p>
+    <p class="stat-value">$23.31</p>
+    
+    
+    <p class="stat-note">10 arms, sandboxed, store isolated</p>
+  </div>
+  
+</div>
+
+
+<h2 id="preregistration">What was committed to before the data was seen</h2>
+<div class="registration">
+  <dl>
+    <dt>Question</dt><dd>Does the framing of an injected memory — conclusion or problem — change what the candidate builds, holding the information constant?</dd>
+    <dt>Hypothesis</dt><dd>A conclusion handed to an agent that has not walked the path to it substitutes for the earlier steps; the same evidence framed as a problem should not.</dd>
+    <dt>Endpoint</dt><dd>Share of arms passing L2, the rung the conclusion framing cost in 4 of 4 recorded arms in experiments/004.</dd>
+    <dt>Falsifier</dt><dd>Framing is not the variable if the problem framing loses L2 at the same rate as the conclusion framing.</dd>
+    <dt>Stopping rule</dt><dd>The confidence sequence excludes the null, or 10 arms.</dd>
+    
+    <dt>Registered</dt><dd>2026-07-30 · <code>preregistration.md</code></dd>
+    
+  </dl>
+</div>
+
+
+<h2 id="test">The test</h2>
+<p>Two arms, identical but for one field: which framing of the task's withheld knowledge gets injected. The problem framing keeps every load-bearing fact — the 33-of-40 trustworthy arm, the 11 and 18 cut-offs, the turn-count attempt — and drops the imperative and the answer. A test asserts that, because varying content and framing together would attribute neither.</p><div class="table-wrap"><table><caption>Both arms are ceiling-shaped: no MCP, memory hooks stripped, same injection mechanism, same 40-turn cap. One field differs.</caption><thead><tr><th>framing</th><th>rungs</th><th>L2 pass</th><th>turn-capped</th><th>memo echo</th></tr></thead><tbody><tr><td>conclusion</td><td>[1, 1, 1, 1, 0]</td><td>0/5</td><td>3</td><td>0.70, 0.68, 0.73, 0.62, 0.19</td></tr><tr><td>problem</td><td>[1, 3, 1, 1, 1]</td><td>1/5</td><td>3</td><td>0.59, 0.44, 0.56, 0.50, 0.34</td></tr></tbody></table></div><aside class="callout callout-withdrawal"><p class="callout-title">The pre-registered hypothesis is falsified</p><p>experiments/004 found a perfect memory costing its candidate the foundation rung, and the reading offered there was that a <em>conclusion</em> handed over without its path substitutes for the earlier steps. If that were right, stating the same evidence as a problem should not cost the same rung.</p><p>It costs it anyway: 1 of 5 problem-framed arms passed L2 against 0 of 5 for the conclusion framing, one discordant pair, exact p = 1.000. The confidence sequence at n=5 spans [-0.646, 1.846] and excludes nothing. <strong>Framing is not detectably the variable</strong>, and the conclusion-without-path mechanism does not survive its own test.</p></aside>
+
+<h2 id="survives">What survives</h2>
+<div class="table-wrap"><table><caption>The memory-off arms were randomized against the conclusion arms in experiments/004, not against these problem arms. They are context for this comparison and a control for that one.</caption><thead><tr><th>what the candidate was given</th><th>arms</th><th>L2 pass</th></tr></thead><tbody><tr><td>the conclusion of a past design discussion</td><td>5</td><td>0/5</td></tr><tr><td>the same evidence, framed as a problem</td><td>5</td><td>1/5</td></tr><tr><td>nothing (experiments/004, same day)</td><td>6</td><td>6/6</td></tr></tbody></table></div><aside class="callout callout-finding"><p class="callout-title">What survives is blunter and worse</p><p>Pool the framings and the picture is stark: <strong>1 of 10</strong> arms handed a memory passed L2, against <strong>6 of 6</strong> arms handed nothing. Injecting a memory into this task cost the foundation rung under both framings tried.</p><p>That is a claim about injection, not about distillation. Rewriting what <code>thalamus extract</code> stores would not have helped here — the problem framing <em>is</em> a rewrite of what it stores, and it changed nothing measurable.</p></aside><aside class="callout callout-method"><p class="callout-title">Why the echo ratios differ, and why that is not a result</p><p>Problem-framed arms echo fewer of their memo's terms (0.34–0.59) than conclusion-framed arms (0.19–0.73). The two memos have different vocabularies, and a candidate writing code is likelier to repeat prescription words than situation words. Read as "the problem memo was used less" this would be an artifact of the term sets, so it is reported and not interpreted.</p></aside>
+
+<h2 id="limits">Limits</h2>
+<aside class="callout callout-caveat"><p class="callout-title">What this cannot support</p><p>Five pairs, one task, one model, and one authored paragraph for the problem framing. A null at this n is <em>not detectable here</em>, not <em>no effect</em>: with one discordant pair in five, detecting a difference of the size this design was built for needs roughly 25–30 pairs, which is a deliberate spend rather than a continuation.</p><p>And a single authored stimulus cannot separate "problem framings are safer" from "this paragraph is safer". The falsification is of the hypothesis as operationalised, which is the only thing an experiment can falsify.</p></aside><ul><li><strong>The conclusion arms replicate.</strong> Across both campaigns, every arm handed the conclusion memo failed L2 — a pattern now seen in two separately launched runs, which is the firmest thing either produced.</li><li><strong>Turn-capping is balanced</strong> (3 of 5 in each arm), so censoring does not explain the comparison, though it does bound how much work either arm could finish.</li><li><strong>No arm was contaminated</strong>, and every problem-framed arm touched its memo, so neither pre-registered void condition fired.</li></ul>
+
+
+<h2 id="reproducibility">Reproducibility</h2>
+<p>Every number and figure above regenerates from a pinned graph state and a seed.
+Nothing here was computed against the live graph, which moves whenever a session ends.</p>
+<pre><code>./experiments/005-framing/campaign.sh
+uv run --extra experiments python experiments/005-framing/run.py</code></pre>
+<p>The snapshot is <code>n/a - arms run against git refs, not a graph snapshot</code>
+(0 vertices, 0 edges,
+sha256 <code></code>), served read-only by
+<code>thalamus snapshot --serve</code>.</p>
+
+<ul class="checklist">
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>A clear description of the estimand and the estimator used for it<span class="check-detail">Estimand: difference in L2 pass rate. Estimator: exact test on discordant pairs (McNemar's, computed exactly).</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The population the result generalises to, stated as a limit<span class="check-detail">One task, one model, one operator, one authored stimulus.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The null or baseline every reported rate is compared against<span class="check-detail">The conclusion framing is the comparator; memory-off is same-day context.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>An interval on every point estimate, with the resampling unit named<span class="check-detail">Confidence sequence reported; it excludes nothing at this n.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The number of runs, and the seed<span class="check-detail">10 arms, framing order alternated by pair.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The data the analysis read, pinned by name and hash<span class="check-detail">runs.jsonl per arm; the stimulus is in config/tasks/ under git.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>A command that regenerates every number and figure in this page<span class="check-detail">See Reproducibility.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>Instrument validation: agreement with a reference judgement<span class="check-detail">The ladder was validated against its anchors before experiments/004.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>Cost reported alongside utility<span class="check-detail">$23.31 across 10 arms.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>What was withheld, and why<span class="check-detail">The problem framing is authored, not distilled, and says so.</span></span>
+  </li>
+
+</ul>
+
+<h3>What is deliberately absent</h3>
+<p>The graph itself is not published. It is one operator's session history and the
+evidence archive holds their transcripts verbatim — credentials, client names and
+personal history included. The snapshot hash lets anyone holding the same state
+verify that these numbers came from it; it does not let a stranger recompute them
+from scratch, and no wording here should imply otherwise.</p>
+
+<footer class="colophon">
+  <p>Thalamus · experiment 005-framing · generated 2026-07-30 17:27 UTC from
+  <code>per arm, in runs.jsonl</code>. Checklist after Pineau et al.,
+  <em>Improving Reproducibility in Machine Learning Research</em>, JMLR 22(164), 2021.</p>
+</footer>
+
+</div>
+</body>
+</html>

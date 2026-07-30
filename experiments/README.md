@@ -72,7 +72,9 @@ mailed to someone.
 |---|---|---|
 | [001](001-the-topic-detector/) | The used-rate is mostly a topic detector | measured; one pre-registered hypothesis falsified, one control withdrawn |
 | [002](002-what-the-waste-figure-means/) | What "a third of the tokens are wasted" actually supports | measured |
-| [003](003-does-withholding-change-anything/) | Does withholding a memory change what the session does? | **pre-registered, no data** — the policy has never been enabled |
+| [003](003-does-withholding-change-anything/) | Does withholding a memory change what the session does? | pre-registered; accumulating since withholding went live |
+| [004](004-the-ceiling/) | A perfect memory, and it made things worse | measured; falsifier fired, layer-2 work cancelled |
+| [005](005-framing/) | Reframing the memory did not save it | null; the mechanism 004 proposed is falsified |
 
 003 is the shape this directory is for: the design was committed before a single
 observation existed, and its runner reports the empty state honestly rather than

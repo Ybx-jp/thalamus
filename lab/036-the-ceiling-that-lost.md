@@ -127,4 +127,20 @@ direct probe (`scope:eval-methodology:thread:arm-confinement-unverified-live`).
 **The battery had been unrunnable for a day** — see lab/035. Found only because this
 campaign tried to run it.
 
-**Ends in:** measurements (null on the primary endpoint) + a cancelled programme.
+## The mechanism did not survive its own test
+
+experiments/005 put "a conclusion replaced the path" to a pre-registered test: the same
+knowledge, framed as the situation and the evidence, with the prescription withheld. If
+the framing were the variable, the problem framing should not have cost L2.
+
+It cost it anyway — 1 of 5 problem-framed arms passed L2 against 0 of 5 conclusion-framed,
+one discordant pair, exact p = 1.000. **The hypothesis is falsified as operationalised.**
+
+What replaces it is blunter and worse for the premise. Pooling both framings, **1 of 10**
+arms handed a memory passed the foundation rung, against **5 of 6** handed nothing. The
+cost belongs to *injection*, not to how the memory was written — and rewriting what
+`thalamus extract` stores would not have avoided it, because the problem framing is such
+a rewrite and it changed nothing measurable.
+
+**Ends in:** measurements (null on the primary endpoint) + a cancelled programme + a
+falsified mechanism.
