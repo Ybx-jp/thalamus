@@ -153,14 +153,20 @@ alone, so `memory_open_threads` is an untreated control over the same period:
 | `memory_open_threads` (control) | after | 26 | **11.6** | 12% |
 
 The treated tool's fan-out fell by 73%; the untreated one **rose** over the same
-window. A corpus-or-query-mix explanation predicts both move together, so it does
-not account for this. The effect is specific to the surface the dial acts on.
+window.
+
+> **Superseded by [lab/030](030-the-miss-rate-was-the-consultation.md).** The
+> attribution above is wrong. `memory_open_threads` takes a project parameter,
+> not free text, so it controls for corpus growth but **not for query shape** —
+> and query shape is what moved. Isolating the dials on real logged queries: the
+> floor cuts no fan-out (27.5 → 27.3), the detail cap cuts 8%, and query shape
+> alone cuts 28%. The floor earns its place on precision, not fan-out. The 41%
+> miss rate below is also not the floor: 64 of the 74 misses are consultation
+> recalls into small expert subgraphs (58% under a ticket vs 14% without).
 
 **And the cost lab/007 never stated: `memory_recall`'s miss rate went 0% → 41%.**
-The floor converts weak matches into empty results, which is the mechanism working
-as designed, but two in five recalls now returning nothing was not part of the
-prediction and has never been weighed. An empty result is cheap in tokens and not
-free in outcomes. That is the open question the audit leaves behind.
+An empty result is cheap in tokens and not free in outcomes, and it was not part
+of the prediction — the question lab/030 picks up.
 
 ## Standing prerequisites, in order
 

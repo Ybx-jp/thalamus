@@ -196,11 +196,23 @@ parent's score and claims never rank alone, so demoting the parent removes its
 claims too. Real figure: 83%. Before asking what a change can reach, read the
 code that does the ranking and find out what the unit is.
 
-**Look for an untreated control before crediting a change.** If a dial acts on
-one surface, another surface it does not touch is a free control over the same
-window. lab/029's floor audit: the treated tool's fan-out fell 41.9 → 11.2 while
-the untreated `memory_open_threads` **rose** over the same period — which is what
-ruled out "the corpus just changed."
+**Look for an untreated control — then ask what it does *not* control for.** If a
+dial acts on one surface, another surface it does not touch is a free control
+over the same window. But a control rules out only the confounds it actually
+holds fixed, and a good-looking one invites you to stop early. Measured
+(lab/029 → lab/030): the match floor was credited with a fan-out drop because
+the untreated `memory_open_threads` moved the opposite way over the same period.
+That does rule out corpus growth — and `memory_open_threads` takes a project
+parameter rather than free text, so it could not control for **query shape**,
+which is what had actually changed. Isolating the dials on real logged queries:
+the floor cuts no fan-out at all, the detail cap cuts 8%, query shape cuts 28%.
+Name your control's blind spot in the same breath as the control.
+
+**Replay a logged query, not the logged query *string*.** The tap stores
+`f"{tool}: {query}"`, not what the agent sent, and the recall path is served
+`knowledge_scopes` by the server that no direct call reproduces by default.
+Replaying the stored string as-is measured a 4× wrong empty rate and invented a
+"100% of narrow queries miss" result out of the prefix alone (lab/030).
 
 **A validated citation is not a validated argument.** `consult_answer` checks
 that every cited vertex ID resolves in the consulted scope. It cannot check that

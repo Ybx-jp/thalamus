@@ -45,3 +45,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [027](027-the-wall-that-moved.md) | Cursor re-verified: the contract held, the injection wall moved, the installer was the real gap | workaround + one wall |
 | [028](028-the-transcript-that-keeps-no-receipts.md) | Cursor distills, and the trust floor had to be told the difference between "nothing fetched" and "cannot know" | workaround |
 | [029](029-the-bleed-that-was-not-a-leak.md) | Lexical recall is project-blind; off-project carries 83% of the waste and 38% of the value; both consultations were wrong about the mechanism | measurements + corrections |
+| [030](030-the-miss-rate-was-the-consultation.md) | The 41% miss rate is consultation into thin expert subgraphs; the floor never cut fan-out (query shape did); three instrument errors caught | correction + measurements |
