@@ -1,6 +1,6 @@
 # Related Work — Where Thalamus Sits in the 2026 Literature
 
-**Status:** living document. Last scan 2026-07-15. This doc exists to keep the
+**Status:** living document. Last scan 2026-07-29. This doc exists to keep the
 project honest: it states, per pillar, what the published literature already
 establishes, and it reduces Thalamus's claim from *novelty* to a defensible,
 cited *position*. The rule (from [00-mission.md](00-mission.md)): **never design
@@ -647,6 +647,33 @@ with a robust upward trend as accumulated exposure grows, via a trigger-probe
 protocol; its order-randomization experiments make this a design constraint for
 this project's own campaigns rather than a distant finding. It argues against the
 project's prior, it is cited as such, and §5 is where its challenge belongs.
+
+**Attribution evaluation: a structural absence, and the eval loop's layer 1 sits
+on top of it.** Consulted 2026-07-29 (exchange
+`scope:main:exchange:2e350ddd553a4e04`). The scope held no attribution-evaluation
+work at all — no faithfulness/groundedness metrics, no citation or
+answer-attribution evaluation, no NLI-based entailment scoring, no
+context-attribution methods. That is the literature directly under
+`eval/attribution.py`, whose lexical judge was measured at ~4pp of discrimination
+over a ~59pp permuted floor (lab/032). Two anchors procured under feed
+`attribution-eval`: **ContextCite** (arXiv 2409.00729) and **TRUE:
+Re-evaluating Factual Consistency Evaluation** (arXiv 2204.04991). Still
+unprocured and named by the consult: ALCE, AIS, RAGAS, ARES, FActScore,
+AttributedQA; and for the causal arm, influence functions (Koh & Liang) and
+datamodels. **Supply-blocked:** Ojala & Garriga, *Permutation Tests for Studying
+Classifier Performance* (JMLR 2010) — the canonical methods citation for the
+permutation null itself, no arXiv version.
+
+What the held corpus does establish, and it cuts against the local design: the
+two nearest benchmarks both deliberately avoid output-text matching. τ-bench
+grades end-state against goal-state, and Mem2ActBench grounds "use" in tool
+selection and parameter grounding rather than in what the text echoes. STALE
+names the gap being measured here outright — *"a pervasive gap between retrieving
+updated evidence and acting on it."* And the causal half is **not** as closed as
+it looks: Joachims' propensity-weighted estimation (arXiv 1608.04468, already
+held under `recall-ranking`) recovers counterfactual estimates from logs without
+re-running anything, explicitly including settings where queries never repeat —
+conditional on a *stochastic* logging policy, which retrieval here is not.
 
 **Classical IR ranking: a structural absence, and it recurs on every ranking
 change.** Consulted 2026-07-29 (exchange `scope:main:exchange:837783bc60cb467b`)
