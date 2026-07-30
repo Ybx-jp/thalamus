@@ -257,6 +257,9 @@ class Arm:
     # `ceiling` only: the task's withheld fact is handed to the candidate directly,
     # so the arm measures what a *perfect* retrieval would be worth.
     inject_fact: bool = False
+    # Which framing of the withheld knowledge to hand over: the conclusion
+    # (`under_specification.fact`) or the problem (`under_specification.problem_framing`).
+    framing: str = "conclusion"
 
 
 def parse_arm(spec: str, scopes: list[str]) -> Arm:
@@ -295,13 +298,24 @@ def parse_arm(spec: str, scopes: list[str]) -> Arm:
             strip_hooks=set(WRITE_BACK_HOOKS) | set(MEMORY_SURFACE_HOOKS),
             inject_fact=True,
         )
+    if spec == "ceiling-problem":
+        # The same ceiling, handed the same knowledge framed as a situation rather
+        # than as an answer. lab/036 measured the conclusion framing costing L2 and
+        # L3 in four of four arms while memory-off cleared both; this arm is the
+        # variable that finding names — framing — held against constant content.
+        return Arm(
+            spec, "ceiling-problem", "main", mcp=False,
+            strip_hooks=set(WRITE_BACK_HOOKS) | set(MEMORY_SURFACE_HOOKS),
+            inject_fact=True, framing="problem",
+        )
     if spec.split(":", 1)[0] in UNBUILT_ARMS:
         raise ArmError(
             f"arm `{spec}` is designed but not built — it needs graph-snapshot "
             "pinning (docs/04 open questions); refusing beats approximating"
         )
     raise ArmError(
-        f"unknown arm `{spec}` (memory-on, memory-off, ceiling, scoping-degraded:<scope>)"
+        f"unknown arm `{spec}` (memory-on, memory-off, ceiling, ceiling-problem, "
+        f"scoping-degraded:<scope>)"
     )
 
 
@@ -1132,7 +1146,7 @@ def evaluate_probes(
 # ---------------------------------------------------------------------------
 
 
-def memo_echo(task, transcript: str) -> dict:
+def memo_echo(task, transcript: str, framing: str = "conclusion") -> dict:
     """How much of the injected fact shows up in what the candidate did.
 
     Excludes the prompt itself: the fact is *in* the first user turn by
@@ -1142,7 +1156,7 @@ def memo_echo(task, transcript: str) -> dict:
     """
     from thalamus.eval.attribution import attribute_prepared, node_terms, output_window, prepare
 
-    fact = (task.under_specification.fact or "") if task.under_specification else ""
+    fact = injected_memo(task, framing)
     if not fact.strip():
         return {"terms": 0, "matched": 0, "used": False}
 
@@ -1164,7 +1178,15 @@ def memo_echo(task, transcript: str) -> dict:
     }
 
 
-def ceiling_prompt(task) -> str:
+def injected_memo(task, framing: str = "conclusion") -> str:
+    """The text a ceiling arm is handed, by framing."""
+    spec = task.under_specification
+    if not spec:
+        return ""
+    return (spec.problem_framing if framing == "problem" else spec.fact) or ""
+
+
+def ceiling_prompt(task, framing: str = "conclusion") -> str:
     """The task prompt with its withheld fact handed over as recalled memory.
 
     Framed as memory rather than as instruction on purpose. The comparison is
@@ -1178,11 +1200,12 @@ def ceiling_prompt(task) -> str:
     identical to memory-off, and running it would spend money to produce a
     duplicate labelled as a treatment.
     """
-    fact = (task.under_specification.fact or "").strip() if task.under_specification else ""
+    fact = injected_memo(task, framing).strip()
     if not fact:
         raise ArmError(
-            f"task `{task.id}` has no under_specification.fact, so it has no ceiling: "
-            "with nothing withheld, a ceiling arm is memory-off wearing another name"
+            f"task `{task.id}` has no under_specification.{'problem_framing' if framing == 'problem' else 'fact'}, "
+            f"so it has no {framing}-framed ceiling: with nothing withheld, a ceiling "
+            "arm is memory-off wearing another name"
         )
     return (
         f"{task.prompt}\n\n"
@@ -1252,7 +1275,8 @@ def run_arm(
         started = time.monotonic()
         prompt = task.prompt
         if arm.inject_fact:
-            prompt = ceiling_prompt(task)
+            prompt = ceiling_prompt(task, arm.framing)
+            record["framing"] = arm.framing
             record["applied"]["injected_fact_chars"] = len(prompt) - len(task.prompt)
         agent = run_agent(
             worktree, prompt, scope=arm.scope, project=repo.name, model=model,
@@ -1327,7 +1351,7 @@ def run_arm(
         # here: this counts term overlap in what the candidate *did*, and term
         # overlap is roughly 57 points floor and a little signal (experiments/001).
         if arm.inject_fact and transcript:
-            record["memo_echoed"] = memo_echo(task, transcript)
+            record["memo_echoed"] = memo_echo(task, transcript, arm.framing)
         # Whether the candidate stayed inside its own experiment. lab/020 found
         # two arms reading the task file out of the operator's checkout by
         # absolute path; `contaminated` is the pre-registered exclusion key for

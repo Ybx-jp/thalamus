@@ -1186,5 +1186,60 @@ class TestCeilingArm:
             id="t", title="t", overlap="memorization",
             source=TaskSource(kind="replayed", ref="abc"), prompt="Fix it.",
         )
-        with pytest.raises(ArmError, match="no ceiling"):
+        with pytest.raises(ArmError, match="conclusion-framed ceiling"):
             ceiling_prompt(task)
+
+
+class TestProblemFramedCeiling:
+    """experiments/005 — the same knowledge, framed as a situation."""
+
+    def test_the_two_framings_are_separate_arms_over_one_task(self):
+        from thalamus.eval.arms import parse_arm
+
+        conclusion = parse_arm("ceiling", ["main"])
+        problem = parse_arm("ceiling-problem", ["main"])
+        assert conclusion.framing == "conclusion" and problem.framing == "problem"
+        # Everything except the framing is held fixed: same stripped harness, no MCP,
+        # same injection mechanism. The experiment varies one thing.
+        assert conclusion.mcp == problem.mcp is False
+        assert conclusion.strip_hooks == problem.strip_hooks
+        assert conclusion.inject_fact and problem.inject_fact
+
+    def test_the_problem_framing_keeps_the_evidence_and_drops_the_prescription(self):
+        """
+        Scenario: the two memos are compared.
+
+        Verification: the problem framing carries the same load-bearing facts — the
+        33-of-40 arm, the 11 and 18 cut-offs, the turn-count attempt — and none of
+        the conclusion's imperative or answer. Otherwise the experiment would vary
+        information content and framing at once, and could not attribute either.
+        """
+        from thalamus.eval.arms import injected_memo
+        from thalamus.eval.tasks import load_battery
+
+        task = next(
+            t for t in load_battery()[0] if t.id == "arm-runner-session-death-classification"
+        )
+        conclusion = injected_memo(task, "conclusion")
+        problem = injected_memo(task, "problem")
+
+        for evidence in ("33", "11", "18", "turn count"):
+            assert evidence in problem, f"problem framing dropped `{evidence}`"
+        for prescription in ("must not", "ungraded", "surviving design"):
+            assert prescription in conclusion
+            assert prescription not in problem, f"problem framing kept `{prescription}`"
+
+    def test_a_task_without_a_problem_framing_refuses_that_arm(self):
+        import pytest
+
+        from thalamus.eval.arms import ArmError, ceiling_prompt
+        from thalamus.eval.tasks import Task, TaskSource, UnderSpecification
+
+        task = Task(
+            id="t", title="t", overlap="memorization", prompt="p",
+            source=TaskSource(kind="replayed", ref="abc"),
+            under_specification=UnderSpecification(gated=True, fact="only the conclusion"),
+        )
+        assert ceiling_prompt(task, "conclusion")
+        with pytest.raises(ArmError, match="problem_framing"):
+            ceiling_prompt(task, "problem")

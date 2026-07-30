@@ -54,6 +54,23 @@ under_specification:
     established by reading a transcript at 33 of 40 turns, and no cheap signal
     separates that from arms cut off at 11 and 18 of the same budget. The
     surviving design is two conservative shapes, both ungraded.
+  # A second framing of the SAME knowledge, for experiments/005. The conclusion
+  # framing above cost every ceiling arm rungs L2 and L3 (lab/036); this one
+  # states the situation and the evidence and withholds the prescription, so the
+  # experiment varies framing rather than information.
+  #
+  # Every fact in `fact` is preserved: the earlier turn-count attempt, the 33-of-40
+  # trustworthy arm, the arms cut off at 11 and 18. What is removed is the
+  # imperative ("must not guess") and the answer ("two conservative shapes, both
+  # ungraded"). Authored 2026-07-30 as an experimental stimulus and disclosed as
+  # such — it is not a distillation of any real session.
+  problem_framing: >-
+    A past session ran into this. The campaign kept going after the account died,
+    and when we looked at what the runner had recorded, the picture was awkward:
+    one arm whose work was trustworthy had been read from a transcript at 33 of
+    its 40 turns, while other arms had been cut off at 11 and 18 of the same
+    budget. Someone tried telling those cases apart by the turn count.
+
   fact_nodes:
     - "scope:main:claim:f63f1aa02873878a"   # collapsed to two shapes, dropped the turn-count heuristic
     - "scope:main:claim:2160a77de779f216"   # broadened the guard to a failure class

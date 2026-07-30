@@ -185,6 +185,17 @@ class UnderSpecification(BaseModel):
         default_factory=list,
         description="Graph vertex IDs holding the fact — where a recall would find it",
     )
+    problem_framing: str = Field(
+        "",
+        description=(
+            "The same knowledge as `fact`, stated as the situation and the evidence "
+            "with the prescription withheld. Exists so an experiment can vary how a "
+            "memory is *framed* while holding what it *contains* fixed — the "
+            "conclusion framing cost every ceiling arm two rungs (lab/036). An "
+            "authored stimulus, not a distillation of any session, and used only by "
+            "the `ceiling-problem` arm."
+        ),
+    )
     absent_from: list[str] = Field(default_factory=list)
     absence_check: str = Field(
         "",
