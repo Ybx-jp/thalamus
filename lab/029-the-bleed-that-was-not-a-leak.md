@@ -33,10 +33,14 @@ from the pin at startup and has no project analog. So scope is enforced and
 project is advisory, which is the documented design (`docs/index.md:81`,
 2026-07-14) — but it means lexical recall draws from the whole main plane.
 
-The main plane holds 262 sessions: 141 `thalamus-extract-*` eval-worktree
-artifacts, leaving **121 real ones — 63 stepmania-chart-generator, 47 thalamus**,
-7 ybx, 4 singletons. A thalamus session's lexical recall draws from a pool where
-thalamus is the minority.
+The main plane holds 262 sessions: 141 `thalamus-extract-*` — the system's own
+extraction subprocesses, one per `thalamus extract` or `thalamus ingest` run,
+named for the temp dir in `extraction.py` — leaving **121 interactive ones: 63
+stepmania-chart-generator, 47 thalamus**, 7 ybx, 4 singletons. A thalamus
+session's lexical recall draws from a pool where thalamus is the minority.
+
+(Those 141 are worth their own look someday: distillation distils itself, so more
+than half the main plane is the graph's record of writing to the graph.)
 
 ## What the returns actually look like
 

@@ -655,14 +655,23 @@ work at all — no faithfulness/groundedness metrics, no citation or
 answer-attribution evaluation, no NLI-based entailment scoring, no
 context-attribution methods. That is the literature directly under
 `eval/attribution.py`, whose lexical judge was measured at ~4pp of discrimination
-over a ~59pp permuted floor (lab/032). Two anchors procured under feed
-`attribution-eval`: **ContextCite** (arXiv 2409.00729) and **TRUE:
-Re-evaluating Factual Consistency Evaluation** (arXiv 2204.04991). Still
-unprocured and named by the consult: ALCE, AIS, RAGAS, ARES, FActScore,
-AttributedQA; and for the causal arm, influence functions (Koh & Liang) and
-datamodels. **Supply-blocked:** Ojala & Garriga, *Permutation Tests for Studying
-Classifier Performance* (JMLR 2010) — the canonical methods citation for the
-permutation null itself, no arXiv version.
+over a ~59pp permuted floor (lab/032). **The gap is now closed**, 13 sources
+across two feeds, every arXiv ID title-checked by dry run before writing (six
+were flagged uncertain by the consult; all six resolved):
+
+- `attribution-eval` (9): ContextCite (2409.00729), TRUE (2204.04991), ALCE
+  (2305.14627), AIS (2112.12870), RAGAS (2309.15217), ARES (2311.09476),
+  FActScore (2305.14251), AttributedQA (2212.08037), and Lost in the Middle
+  (2307.03172) for the position confound in any output-window measurement.
+- `causal-attribution` (4): influence functions (Koh & Liang, 1703.04730),
+  Datamodels (2202.00622), Doubly Robust Policy Evaluation (1103.4601), and
+  Unbiased Offline Evaluation of Contextual-bandit Recommendation (1003.5956) —
+  the logged-feedback arm that makes counterfactual estimation possible without
+  re-running anything.
+
+**Supply-blocked:** Ojala & Garriga, *Permutation Tests for Studying Classifier
+Performance* (JMLR 2010) — the canonical methods citation for the permutation
+null itself, no arXiv version.
 
 What the held corpus does establish, and it cuts against the local design: the
 two nearest benchmarks both deliberately avoid output-text matching. τ-bench
