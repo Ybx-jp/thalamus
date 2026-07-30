@@ -648,6 +648,27 @@ protocol; its order-randomization experiments make this a design constraint for
 this project's own campaigns rather than a distant finding. It argues against the
 project's prior, it is cited as such, and §5 is where its challenge belongs.
 
+**Classical IR ranking: a structural absence, and it recurs on every ranking
+change.** Consulted 2026-07-29 (exchange `scope:main:exchange:837783bc60cb467b`)
+on whether lexical `recall()` should carry a project-match prior. The scope held
+nothing on learning-to-rank, query-independent static rank features,
+personalized or contextual search, click-model and presentation bias, or result
+diversification — the corpus holds agent-memory and RAG work, but not the IR
+ranking literature those systems sit on top of. The nearest held precedent for a
+query-independent prior modulating a memory score is MemoryBank's Ebbinghaus
+time-elapsed × significance term (arXiv 2305.10250), which is a mechanism
+description, not an ablation: no held work reports a precision delta for a prior
+against no-prior. Two anchors are now procured under feed `recall-ranking`:
+**Unbiased Learning-to-Rank with Biased Feedback** (arXiv 1608.04468), which
+supplies propensity-weighted estimation and the reason a ranker cannot be fit to
+logs it generated itself; and **Degenerate Feedback Loops in Recommender
+Systems** (arXiv 1902.10730), which separates echo-chamber from filter-bubble
+degeneration and is the direct hazard for a single-operator system with no
+control population. The rest is supply-blocked in the same way as Wohlin below —
+MMR (SIGIR 1998), IA-Select (WSDM 2009), α-nDCG (SIGIR 2008), Richardson's
+*Beyond PageRank* (WWW 2006), Teevan's *Potential for Personalization* (TOCHI
+2010) — so diversification sizing in particular remains ungrounded.
+
 **Still open, and blocked on supply rather than on scanning.** Wohlin's
 threats-to-validity taxonomy, whose construct / internal / external vocabulary
 §2a and §2d improvise; and, load-bearing for the campaign statistics,
