@@ -90,6 +90,27 @@ def analyse(rows: list[dict]) -> dict:
         "contaminated": [r["ts"][:19] for r in rows if r.get("contaminated")],
         "faults": [r["ts"][:19] for r in rows if r.get("infra_faults")],
         "turn_capped": sum(1 for r in rows if r.get("turn_capped")),
+        # Censoring, handled in the open. A turn-capped arm was cut off mid-work,
+        # so its rung is a lower bound rather than a score — and the
+        # pre-registration is SILENT on censoring, which means any rule chosen now
+        # is chosen with the data visible. So both readings are reported and
+        # neither is called primary: as-recorded, and excluding censored arms.
+        # Here the censored arm happens to favour the ceiling, so dropping it would
+        # strengthen the narrative this experiment has been building, which is
+        # exactly why it is not dropped quietly.
+        "censored": [
+            {"ts": r["ts"][:19], "arm": r["arm"], "rung": r.get("rung"),
+             "turns": r.get("agent", {}).get("num_turns")}
+            for r in rows if r.get("turn_capped")
+        ],
+        "rank_statistic_uncensored": rank_statistic(
+            [int(r.get("rung") or 0) for r in by_arm["ceiling"] if not r.get("turn_capped")],
+            [int(r.get("rung") or 0) for r in by_arm["memory-off"] if not r.get("turn_capped")],
+        ),
+        "escapes": [
+            {"ts": r["ts"][:19], "arm": r["arm"], "kinds": [e.get("kind") for e in r["escapes"]]}
+            for r in rows if r.get("escapes")
+        ],
         # Effort, per arm. Worth its own column because a ceiling arm that stops
         # early is a different story from one that works just as hard and scores
         # lower: "the memo told me the answer, so I stopped" and "the memo did not
@@ -142,7 +163,12 @@ def main() -> None:
         s_used, s_total = m["secondary"][arm]
         print(f"  {arm:12} n={total:<3} rungs={m['rungs'][arm]}  "
               f"L>={PRIMARY_RUNG}: {used}/{total}  L>={SECONDARY_RUNG}: {s_used}/{s_total}")
-    print(f"  rank statistic P(ceiling > memory-off) = {m['rank_statistic']:.3f}")
+    print(f"  rank statistic P(ceiling > memory-off) = {m['rank_statistic']:.3f} "
+          f"(excluding censored arms: {m['rank_statistic_uncensored']:.3f})")
+    if m["censored"]:
+        print(f"  CENSORED (turn-capped, rung is a lower bound): {m['censored']}")
+    if m["escapes"]:
+        print(f"  escapes recorded (not stamped contaminated): {m['escapes']}")
     for arm in ARMS:
         effort = m["effort"][arm]
         if effort["turns"]:
@@ -231,7 +257,7 @@ def page(m):
             label="Paired sign test",
             value=f"p = {p:.3f}",
             interval=f"{wins} win / {losses} loss / {ties} tie",
-            note="fixed-n, at the pre-registered horizon",
+            note="fixed-n, at the pre-registered horizon; censoring handled in the open",
         ),
         publish.Stat(
             label="Campaign cost",
@@ -257,7 +283,9 @@ def page(m):
         [[arm, str(m["effort"][arm]["turns"]), str(m["effort"][arm]["diff_lines"]),
           str(m["effort"][arm]["wall_seconds"])] for arm in ARMS],
         caption="Effort, because an outcome alone cannot separate \"the memo told me "
-                "the answer so I stopped\" from \"the memo did not help\".",
+                "the answer so I stopped\" from \"the memo did not help\". Read the "
+                "41s as the 40-turn cap, not as diligence: a capped arm was cut off "
+                "mid-work and its rung is a lower bound.",
     )
 
     echoes = [e for e in m["memo_echo"] if e]
@@ -292,9 +320,14 @@ def page(m):
         "one. The reading this suggests — a hypothesis, not a result — is that a "
         "distilled memory records the <em>conclusion</em> of a design discussion rather "
         "than the path to it, and handed to an agent that has not walked that path the "
-        "conclusion can substitute for the earlier steps instead of adding to them. The "
-        "arm that demonstrably used the memo worked longer than either other ceiling arm "
-        "and still scored the floor.</p>",
+        "conclusion can substitute for the earlier steps instead of adding to them.</p>"
+        "<p><strong>A competing explanation, and the data cannot separate them here.</strong> "
+        "Ceiling arms hit the 40-turn cap far more often than memory-off arms did, so the "
+        "memo may simply have prompted a larger change that did not fit the budget — "
+        "scope expansion rather than misdirection. What keeps the comparison alive is that "
+        "the effect survives dropping every censored arm: among arms that finished inside "
+        "the budget the separation is still complete. Raising the turn cap is the "
+        "experiment that would tell these apart, and it has not been run.</p>",
     )
 
     confinement_callout = publish.callout(
