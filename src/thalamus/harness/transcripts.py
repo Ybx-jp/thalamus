@@ -29,6 +29,7 @@ from pathlib import Path
 
 from thalamus.archive import archive_bytes, scan_for_secrets
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.harness.agents import SANDBOX_TMP_PREFIX
 from thalamus.substrate.schema import (
     Artifact,
     ArtifactType,
@@ -105,14 +106,33 @@ class TranscriptFacts:
         return Path(self.cwd).name if self.cwd else ""
 
 
+def is_sandbox_project(name: str) -> bool:
+    """Is this project dir the transcript of a Thalamus extraction sandbox?
+
+    Claude Code names a project dir after the flattened cwd, so a sandbox run
+    (`agents.SANDBOX_TMP_PREFIX`) is recognisable from the name alone — which is
+    all a retroactive sweep has to go on, the environment marker having died with
+    the subprocess. The test is a substring and not a path reconstruction: the
+    flattening rewrites more than `/` (a sandbox at `/tmp/thalamus-extract-0_tez5it`
+    lands under `-tmp-thalamus-extract-0-tez5it`), so only the prefix survives it
+    unchanged.
+    """
+    return SANDBOX_TMP_PREFIX in name
+
+
 def discover(projects_dir: Path | None = None) -> dict[str, list[Path]]:
-    """Map project directory name -> its transcript files."""
+    """Map project directory name -> its transcript files.
+
+    Extraction sandboxes are not sessions and are never offered: distilling one
+    writes memory about the act of remembering, and the sandbox's own headless run
+    distills in turn.
+    """
     root = projects_dir or CLAUDE_PROJECTS
     if not root.is_dir():
         return {}
     found: dict[str, list[Path]] = {}
     for project_dir in sorted(root.iterdir()):
-        if not project_dir.is_dir():
+        if not project_dir.is_dir() or is_sandbox_project(project_dir.name):
             continue
         transcripts = sorted(project_dir.glob("*.jsonl"))
         if transcripts:

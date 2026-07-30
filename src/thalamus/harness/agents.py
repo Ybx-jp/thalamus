@@ -25,7 +25,9 @@ failure class lab/016 and lab/022 are both about.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+from pathlib import PurePath
 
 CLAUDE_DEFAULT_MODEL = "sonnet"
 
@@ -41,6 +43,40 @@ CLAUDE_DEFAULT_MODEL = "sonnet"
 CURSOR_DEFAULT_MODEL = "composer-2.5"
 
 MODEL_HINT = "run `agent --list-models` for the accepted identifiers"
+
+# The sandbox a headless Thalamus subprocess runs in, named in two ways because
+# each one is visible to a different observer.
+#
+# A headless `claude -p` / `agent -p` is a full session to its own harness: it
+# gets a session id, a transcript on disk, and — because the hook suite is
+# installed at user scope — it fires SessionEnd, which distills it. The result is
+# memory *about the act of making memory*: a Session whose summary paraphrases
+# the session it was distilling, its own Claims and open Threads, and its own
+# headless run behind it, one level deeper. A sandbox is not a session and must
+# leave no memory.
+#
+# `SANDBOX_ENV` marks the subprocess so every hook the sandbox inherits can
+# recognise itself and decline (hooks are children of the CLI, so the marker
+# reaches them). `SANDBOX_TMP_PREFIX` names the throwaway cwd it runs in, which
+# is what the transcript *reader* sees — a transcript already on disk carries no
+# environment, so retroactive sweeps (`thalamus bootstrap`, an explicit
+# `thalamus extract -- <dir>`) need the second name to refuse the same input.
+SANDBOX_ENV = "THALAMUS_SANDBOX"
+SANDBOX_TMP_PREFIX = "thalamus-extract-"
+
+
+def sandbox_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """`base` (default: the current environment) plus the sandbox marker."""
+    return {**(os.environ if base is None else base), SANDBOX_ENV: "1"}
+
+
+def is_sandbox_cwd(cwd: str) -> bool:
+    """Was this working directory an extraction sandbox?
+
+    Matches on the directory *name*, not on `/tmp`: TMPDIR moves the sandbox and
+    a path-prefix test would silently stop recognising it there.
+    """
+    return any(part.startswith(SANDBOX_TMP_PREFIX) for part in PurePath(cwd).parts)
 
 
 @dataclass(frozen=True)

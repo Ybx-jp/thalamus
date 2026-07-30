@@ -782,6 +782,12 @@ def _cmd_extract(args):
                     facts = transcripts.parse(path)
                     if facts.user_turns == 0:
                         continue
+                    # An extraction sandbox is not a session (harness/agents.py).
+                    # `discover()` already withholds the project dir; this reads the
+                    # cwd the transcript itself recorded, so the refusal holds for a
+                    # sandbox transcript reached any other way.
+                    if agents.is_sandbox_cwd(facts.cwd):
+                        continue
                     parsed.append(facts)
         parsed.sort(key=lambda f: (f.started_at is None, f.started_at))
 

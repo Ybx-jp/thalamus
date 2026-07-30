@@ -222,6 +222,28 @@ box, not only a convenience. `thalamus ingest` takes `--harness` for the same
 reason, though ingestion has no harness of its own: it picks whichever CLI the
 machine actually has.
 
+**A sandbox is not a session.** Every headless invocation — distillation and
+`thalamus ingest` alike — is a full session to its own harness: it gets a session
+id, a transcript on disk, and the hook suite armed at user scope. Left alone, the
+hooks that make memory fire inside the machinery that makes memory, and the graph
+fills with memory about the act of remembering: a Session whose summary
+paraphrases the session it was distilling, its own Claims, its own open Threads,
+and its own headless run one level deeper.
+
+Three refusals close it, because the marker that stops the live loop is gone by
+the time a retroactive sweep reads the same transcript:
+
+- The subprocess runs marked. `agents.sandbox_env` sets `THALAMUS_SANDBOX`, which
+  the CLI passes to its hooks, and `thalamus_sandbox_guard` (`resolve-scope.sh`,
+  both harnesses) exits every hook that sees it — no distillation, no pin ledger,
+  no traces, no injected context. The rule is uniform across the suite so no
+  future hook has to rediscover it.
+- The reader refuses by name. `transcripts.discover()` withholds project dirs from
+  the sandbox cwd (`agents.SANDBOX_TMP_PREFIX`), so `thalamus bootstrap` never
+  lists one and `thalamus extract -- <sandbox-dir>` is an unknown project.
+- `thalamus extract` re-checks the cwd each transcript recorded, so a sandbox
+  transcript reached any other way is still skipped.
+
 **Capability is declared, not assumed.** Two surfaces stay Claude-Code-only, and
 both say so rather than substituting a binary:
 

@@ -43,6 +43,7 @@ from thalamus.harness.agents import (  # re-exported: extraction is their main c
     AgentCLI,
     UnknownHarness,
     cli_for,
+    sandbox_env,
 )
 from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS
 from thalamus.substrate.reader import _extract_keywords
@@ -370,6 +371,12 @@ def run_extraction(
     The subprocess runs in an empty temp directory: the digest is already in the
     prompt, so the model has no reason to touch a filesystem — and now it couldn't
     find anything interesting if it tried.
+
+    It also runs marked (`agents.sandbox_env`). The headless CLI is a full session
+    to its own harness — transcript on disk, SessionEnd fired, hooks armed at user
+    scope — so without the marker distillation distills itself, and the graph fills
+    with memory about the act of remembering (measured 2026-07-29: 307 of 445
+    Session nodes).
     """
     try:
         cli = cli_for(harness)
@@ -386,6 +393,7 @@ def run_extraction(
                 text=True,
                 timeout=timeout,
                 cwd=workdir,
+                env=sandbox_env(),
             )
         except FileNotFoundError as exc:
             raise ExtractionError(

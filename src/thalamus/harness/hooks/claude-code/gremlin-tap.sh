@@ -21,6 +21,7 @@
 set -euo pipefail
 
 . "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
+thalamus_sandbox_guard
 
 input=$(cat)
 

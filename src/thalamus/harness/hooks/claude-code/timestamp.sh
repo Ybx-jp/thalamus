@@ -13,6 +13,10 @@
 # tokens per prompt — the drift it prevents corrupts timestamps in the memory
 # graph itself, which is worth strictly more.
 
+here="$(dirname "${BASH_SOURCE[0]}")"
+. "$here/resolve-scope.sh"
+thalamus_sandbox_guard
+
 now=$(date '+%A %Y-%m-%d %H:%M %Z')
 jq -cn --arg ctx "Current date and time: ${now}" \
   '{hookSpecificOutput:{hookEventName:"UserPromptSubmit", additionalContext:$ctx}}'
