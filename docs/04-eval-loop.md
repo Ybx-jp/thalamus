@@ -835,9 +835,15 @@ Aggregating layer-1/2 signals per expert answers questions no memory demo can:
 
 **As built:** `thalamus eval pins` renders the routing signal per expert — pinned
 utility (per session, worst waste first) beside consulted utility (the expert's
-nodes served into *other* scopes' traces). Pinned low while consulted high reads
-"the pin was wrong"; both low reads "the expert needs work" — docs/02's
-disambiguation, mechanical. The signal line is floor-gated (≥10 attributed nodes
+nodes served into *other* scopes' traces). **The verdict line is suspended.** The
+disambiguation it implemented — pinned low while consulted high reads "the pin was
+wrong" — compares a within-scope rate to a cross-scope one, and the judge scores
+~63% within a project against ~5% across (experiments/001), so cross-scope service
+is vocabulary-distant by construction and the pattern is the artifact rather than
+the finding. It renders both numbers and declines to interpret them until each side
+carries its own permutation null. The old threshold made it worse: `used% < 50`
+sat *below* the ~57% permuted null, so the "low" branch was unreachable and every
+"healthy" verdict was unfalsifiable. The signal line is floor-gated (≥10 attributed nodes
 on each side, a dial like the rest): below the floor it says "insufficient data"
 rather than pretending a verdict, because no-unmeasured-claims applies to the
 routing signal too. Ledger pins are engagement-gated before they count against an

@@ -11,11 +11,15 @@ says which (docs/02). For each expert scope it renders two utilities side by sid
 - **consulted** — verdicts on the expert's nodes served into *other* scopes' traces
   (consultation answers and cross-scope knowledge recall).
 
-Reading the pair: pinned low while consulted high → the pin was wrong (the expert's
-knowledge earns its keep when other sessions ask for it); both low → the expert
-needs work. Both numbers are attribution, not utility claims — the counterfactual
-bar (docs/00 principle 4) still applies, and the signal line is floor-gated rather
-than asserted from thin samples.
+**The pair is rendered; it is not yet interpreted.** The intended reading — pinned
+low while consulted high means the pin was wrong — compares a within-scope rate to a
+cross-scope one, and the used-vs-ignored judge scores ~63% within a project against
+~5% across (lab/032). Cross-scope service is vocabulary-distant by construction, so
+that reading is the artifact the instrument produces for free. Until each side has
+its own permutation null (`eval/calibration.py`, experiments/001) the report prints
+the numbers and says so, which is the same floor-gate it already applies to thin
+samples. Both numbers are attribution, never utility claims — the counterfactual bar
+(docs/00 principle 4) still applies.
 
 Prior work: cost-utility frontiers for agent memory are BudgetMem's frame (arXiv
 2602.06025) — but there the frontier is a *control input* to a trained budget-tier
@@ -43,11 +47,27 @@ from gremlin_python.process.traversal import T
 # Rendered chars per token — the same rough dial as eval/cost.py and eval/report.py.
 _CHARS_PER_TOKEN = 4
 
-# Signal dials — arbitrary, here to be pressure-tested (same discipline as the
-# attribution thresholds in docs/04). Below the floor the report says "insufficient
-# data" instead of pretending a verdict.
 SIGNAL_FLOOR = 10  # attributed nodes required on each side before a signal renders
-LOW_USED_PCT = 50.0
+
+# The verdict is **suspended**, not re-tuned, and this is the reason.
+#
+# The rule this report implements — "pinned low while consulted high means the pin
+# was wrong" — reads a within-scope rate against a cross-scope one. Those sit on
+# opposite sides of the only axis the used-vs-ignored judge is known to be good at:
+# it scores ~63% within a project and ~5% across (lab/032), because it is largely a
+# topic detector. Cross-scope service is vocabulary-distant by construction, so the
+# instrument manufactures the "pinned low, consulted high" pattern for free.
+#
+# The old threshold made it worse: `LOW_USED_PCT = 50.0` sat *below* the permuted
+# null of ~57% (experiments/001), so the "low" branch was unreachable for any real
+# scope and every "healthy" verdict this report ever emitted was unfalsifiable.
+#
+# What unsuspends it: two separate nulls, a within-scope permutation and a
+# cross-scope one, each side judged against its own. `eval/calibration.py` computes
+# the first; the second needs a cross-scope rotation pool. Until both exist the
+# report prints its numbers and declines to interpret them — the same floor-gate
+# discipline it already applies to thin samples.
+CALIBRATED_NULLS_AVAILABLE = False
 
 
 @dataclass
@@ -130,16 +150,16 @@ class ExpertPins:
                 f"insufficient data (needs ≥{SIGNAL_FLOOR} attributed on each side; "
                 f"pinned {self.pinned.attributed}, consulted {self.consulted.attributed})"
             )
-        pinned_low = self.pinned.used_pct < LOW_USED_PCT
-        consulted_low = self.consulted.used_pct < LOW_USED_PCT
-        if pinned_low and not consulted_low:
+        if not CALIBRATED_NULLS_AVAILABLE:
             return (
-                "pin quality — the knowledge earns its keep when consulted, "
-                "but pinned sessions ignore what they retrieve (docs/02: the pin was wrong)"
+                "insufficient calibration — pinned is a within-scope rate and consulted a "
+                "cross-scope one, and the judge is ~63% within a project against ~5% across "
+                "(lab/032), so the pair cannot be compared until each side has its own "
+                "permutation null (experiments/001)"
             )
-        if pinned_low and consulted_low:
-            return "expert needs work — low used% both pinned and consulted (docs/02)"
-        return "healthy — pinned retrievals are being used"
+        raise NotImplementedError(
+            "the two-null comparison is not built; see CALIBRATED_NULLS_AVAILABLE"
+        )
 
 
 @dataclass
@@ -149,7 +169,8 @@ class PinReport:
     def render(self) -> str:
         lines = [
             "Pin-quality report — routing signal (attribution, not utility claims; docs/04)",
-            f"  dials: signal floor {SIGNAL_FLOOR} attributed/side · low = used% < {LOW_USED_PCT:.0f}",
+            f"  dials: signal floor {SIGNAL_FLOOR} attributed/side · verdicts suspended "
+            "pending per-side permutation nulls (experiments/001)",
         ]
         if not self.experts:
             lines.append("  no expert scopes found (manifests, ledger, and traces are all empty)")

@@ -618,7 +618,7 @@ def test_pin_report_disambiguates_pin_quality_from_expert_quality():
     Scenario: Two experts with identical low pinned utility but opposite consulted
     utility — the docs/02 ambiguity ("the pin or the expert needs work") in data form
 
-    Verifications:
+    Verifications (post-experiments/001 — the verdict is suspended, not re-tuned):
     - pinned low + consulted high -> the pin-quality signal
     - pinned low + consulted low -> the expert-needs-work signal
     - consulted counts only the expert's nodes served into OTHER scopes' traces
@@ -662,10 +662,19 @@ def test_pin_report_disambiguates_pin_quality_from_expert_quality():
 
     lit = by_scope["literature"]
     assert lit.pinned.attributed == 12 and lit.consulted.attributed == 12
-    assert "pin quality" in lit.signal()
 
-    ev = by_scope["eval-methodology"]
-    assert "expert needs work" in ev.signal()
+    # Both sides are rendered — the numbers are the point of the report.
+    assert "2 used (17%)" in lit.pinned.line()
+    assert "10 used (83%)" in lit.consulted.line()
+
+    # But the verdict that used to read this pair ("pinned low, consulted high ->
+    # the pin was wrong") is suspended: pinned is a within-scope rate and consulted
+    # a cross-scope one, and the judge scores ~63% within a project against ~5%
+    # across (lab/032), so that pattern is what the instrument produces for free.
+    for expert in (lit, by_scope["eval-methodology"]):
+        assert "insufficient calibration" in expert.signal()
+        assert "pin quality" not in expert.signal()
+        assert "healthy" not in expert.signal()
 
 
 def test_pin_report_refuses_a_verdict_below_the_sample_floor():
