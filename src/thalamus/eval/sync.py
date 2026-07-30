@@ -18,7 +18,7 @@ from gremlin_python.process.traversal import Order
 
 from thalamus.archive import read_archived
 from thalamus.contract.ontology import NODES_BY_LABEL, vid
-from thalamus.eval.attribution import attribute, outputs_after
+from thalamus.eval.attribution import attribute, node_terms, outputs_after
 from thalamus.eval.rankers import RankerLedger
 from thalamus.eval.traces import TraceEvent, load_events
 from thalamus.harness.consultation import exchange_vid as _consultation_exchange_vid
@@ -144,6 +144,20 @@ def _land_event(
                 returns[verdict.node_id] = {
                     "used": verdict.used,
                     "evidence": verdict.evidence,
+                    # The terms this verdict was actually computed against.
+                    #
+                    # Node text is not stable. `Claim` is content-addressed so a
+                    # rewrite mints a new vertex, but `Thread` and `Session` are
+                    # upserted latest-wins and their text is overwritten in place —
+                    # and `ingested_at` carries the writing session's timestamp, not
+                    # the write time, so nothing records that it moved. 27% of
+                    # verdicts sit on that kind of text (experiments/001), which made
+                    # every historical verdict a re-derivation rather than a record.
+                    # Storing the term set makes it a record: the window comes from
+                    # the immutable archive, so terms + window reproduce the verdict
+                    # exactly, and a later replay can say "the text changed" instead
+                    # of silently scoring different text.
+                    "judged_terms": " ".join(node_terms(contents[verdict.node_id])),
                 }
                 outcome.attributed += 1
                 if verdict.used:

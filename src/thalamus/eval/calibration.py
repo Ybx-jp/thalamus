@@ -78,6 +78,10 @@ class Case:
     # measuring rather than silently inheriting.
     injected_chars: int = 0
     returned_count: int = 0
+    # The term set each verdict was computed against, where the edge recorded one.
+    # Present on verdicts written after 2026-07-30; absent before, and that absence
+    # is the measurement of how much of the corpus is auditable.
+    judged_terms: dict[str, list[str]] = field(default_factory=dict)
     # What `eval sync` stored for these nodes, for the reconstruction-fidelity gate.
     stored: dict[str, bool] = field(default_factory=dict)
     stratum: int = 0
@@ -173,7 +177,7 @@ def load_cases(
         .out_e("RETURNS")
         .project(
             "trace", "session_id", "ts", "tool", "node", "used", "text",
-            "injected_chars", "returned_count",
+            "injected_chars", "returned_count", "judged_terms",
         )
         .by(__.out_v().id_())
         .by(__.out_v().coalesce(__.values("session_id"), __.constant("")))
@@ -189,6 +193,7 @@ def load_cases(
         )
         .by(__.out_v().coalesce(__.values("injected_chars"), __.constant(0)))
         .by(__.out_v().coalesce(__.values("returned_count"), __.constant(0)))
+        .by(__.coalesce(__.values("judged_terms"), __.constant("")))
         .to_list()
     )
 
@@ -211,10 +216,13 @@ def load_cases(
                 "returned_count": int(row["returned_count"] or 0),
                 "nodes": {},
                 "stored": {},
+                "judged_terms": {},
             },
         )
         entry["nodes"][row["node"]] = row["text"]
         entry["stored"][row["node"]] = bool(row["used"])
+        if row["judged_terms"]:
+            entry["judged_terms"][row["node"]] = str(row["judged_terms"]).split()
 
     transcripts: dict[str, bytes | None] = {}
     cases: list[Case] = []
@@ -249,6 +257,7 @@ def load_cases(
                 injected_chars=entry["injected_chars"],
                 returned_count=entry["returned_count"],
                 stored=entry["stored"],
+                judged_terms=entry["judged_terms"],
             )
         )
         census["cases"] += 1
@@ -265,6 +274,9 @@ def fidelity(cases: list[Case], result: JudgeResult) -> tuple[int, int]:
     replay disagrees with the production path is measuring its own reconstruction,
     not the instrument. Only meaningful for the `shipped` judge — a variant is
     *supposed* to disagree.
+
+    Note what this cannot see: it counts verdicts that **flipped**, and node text can
+    change without flipping one. `auditable()` is the honest denominator.
     """
     matched = total = 0
     for case in cases:
@@ -275,6 +287,26 @@ def fidelity(cases: list[Case], result: JudgeResult) -> tuple[int, int]:
             total += 1
             matched += int(replayed == stored)
     return matched, total
+
+
+def auditable(cases: list[Case]) -> tuple[int, int, int]:
+    """(verdicts with a stored term set, verdicts on immutable node kinds, total).
+
+    Three different ways a verdict can be trustworthy on re-read, and they are not
+    the same set. A stored term set makes the verdict reproducible outright. Failing
+    that, a `Claim` is content-addressed, so its text cannot have changed under the
+    verdict. Everything else is a `Thread` or `Session` whose text is upserted
+    latest-wins with nothing recording when it moved.
+    """
+    with_terms = immutable = total = 0
+    for case in cases:
+        for node_id in case.stored:
+            total += 1
+            if node_id in case.judged_terms:
+                with_terms += 1
+            elif node_kind(node_id) == "claim":
+                immutable += 1
+    return with_terms, immutable, total
 
 
 def _assign_strata(cases: list[Case]) -> None:
@@ -562,6 +594,7 @@ __all__ = [
     "by_dimension",
     "calibrate",
     "cluster_bootstrap",
+    "auditable",
     "fidelity",
     "kappa",
     "kappa_ci",

@@ -938,3 +938,55 @@ def test_every_judge_variant_scores_the_same_nodes():
     # The claim's vocabulary is echoed in prose, not in any tool call — exactly the
     # discrimination the split exists to expose.
     assert tool_only["scope:main:claim:aaa"] is False
+
+
+def test_a_verdict_records_the_terms_it_was_computed_against(tmp_path, monkeypatch):
+    """
+    Scenario: a retrieval is judged and landed.
+
+    Verification: the RETURNS edge carries `judged_terms`. Node text is not stable —
+    Thread and Session are upserted latest-wins and `ingested_at` carries the writing
+    session's timestamp rather than the write time — so without this the verdict is a
+    re-derivation against whatever the text says today, not a record of what was
+    judged. 27% of the corpus sits on that kind of text (experiments/001).
+    """
+    from thalamus.eval.attribution import attribute, node_terms
+
+    contents = {"scope:main:claim:aaa": "the reader caps rendered details at eight per node"}
+    outputs = "I checked the reader and the detail cap is eight"
+    verdict = attribute(contents, outputs)[0]
+
+    stored = {
+        "used": verdict.used,
+        "evidence": verdict.evidence,
+        "judged_terms": " ".join(node_terms(contents[verdict.node_id])),
+    }
+    assert stored["judged_terms"], "a judged verdict must record its terms"
+    # The record is sufficient to re-judge without the node: terms plus the window
+    # (which lives in the immutable archive) are the whole input.
+    assert set(stored["judged_terms"].split()) == set(node_terms(contents[verdict.node_id]))
+
+
+def test_auditability_is_reported_by_kind_not_assumed():
+    """A verdict is reproducible if it stored its terms; failing that it is at least
+    stable if the node is a content-addressed Claim; everything else is exposed."""
+    from datetime import datetime, timezone
+
+    from thalamus.eval import calibration
+    from thalamus.eval.attribution import OutputTurn, OutputWindow
+
+    window = OutputWindow(turns=[OutputTurn(index=0, parts=[("prose", "text")])])
+    case = calibration.Case(
+        trace_id="t1", session_id="s1", scope="main", tool="memory_recall",
+        ts=datetime(2026, 7, 30, tzinfo=timezone.utc),
+        nodes={
+            "scope:main:claim:a": "a", "scope:main:claim:b": "b",
+            "scope:main:thread:c": "c",
+        },
+        window=window,
+        stored={"scope:main:claim:a": True, "scope:main:claim:b": False,
+                "scope:main:thread:c": True},
+        judged_terms={"scope:main:claim:a": ["alpha"]},
+    )
+    with_terms, immutable, total = calibration.auditable([case])
+    assert (with_terms, immutable, total) == (1, 1, 3)
