@@ -1149,7 +1149,11 @@ def memo_echo(task, transcript: str) -> dict:
     window = output_window(transcript.encode(), datetime.min.replace(tzinfo=timezone.utc))
     lower, tokens = prepare(window.text())
     terms = node_terms(fact)
-    verdict = attribute_prepared({"memo": fact}, lower, tokens, {"memo": terms})[0]
+    # The key doubles as a node id, and layer 1's strongest path is a substring
+    # test on that id — so a key of "memo" scores every arm that says the word
+    # "memo" as a citation. Named so it cannot occur in prose.
+    key = "__injected_memo__"
+    verdict = attribute_prepared({key: fact}, lower, tokens, {key: terms})[0]
     matched = sum(1 for term in terms if term in tokens)
     return {
         "terms": len(terms),

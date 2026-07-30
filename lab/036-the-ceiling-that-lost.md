@@ -51,7 +51,41 @@ content**, and every ceiling arm failed **L2**.
    memory-off's 1 in 6. The memo may simply have prompted a change too large for the
    budget, and the floor score is censoring rather than misdirection.
 
-Raising the turn cap discriminates. Not run inside the registered design.
+Raising the turn cap discriminates. Run afterwards as one exploratory arm, outside
+the registered design, and it settles the question.
+
+## The follow-up: 80 turns, worktree kept
+
+One ceiling arm at double the turn budget, retained for inspection. It finished in
+**36 of 80 turns** — not censored, L1 green, nothing broken — and scored rung 1 again.
+So the budget was never the constraint, and scope expansion is out.
+
+What it passed is the finding. The ladder came back:
+
+| L1 no-regression | L2 behavioral | L3 relation-r1 | L4 relation-r2 | L5 relation-r3 |
+|---|---|---|---|---|
+| PASS | **FAIL** | FAIL | FAIL | **PASS** |
+
+It passed **L5** — *having refused to grade, the runner must also refuse to classify by
+turn count* — which is precisely what the memo describes, and failed **L2** — *stop on
+the death the operator actually described* — which the memo says nothing about. The
+rungs strictly imply one another, so the score stays at the floor; the *pattern* of
+passes is the evidence.
+
+The retained diff says the same thing in the candidate's own words. It wrote
+"distinguish the two credential-death shapes lab/012 first saw — both ungraded", "both
+shapes stop the campaign and leave their record void", "completeness unknown", and
+reasoned explicitly against a turn-count heuristic. That is the memo's conclusion,
+implemented faithfully, on top of a base behaviour that was never built.
+
+**A conclusion handed over without its path replaced the path.** The candidate did not
+ignore the memory and did not misunderstand it — memo-echo ratio 0.784, the highest of
+any arm. It built what the memory described and never built what the memory presupposed.
+
+This is a claim about *what distillation extracts*. `thalamus extract` writes decisions
+and solutions — the endpoints of sessions — and this is one measured case where an
+endpoint, delivered to an agent that had not walked the path to it, cost that agent the
+step it was already capable of taking on its own.
 
 ## Two corrections made mid-campaign
 
