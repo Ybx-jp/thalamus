@@ -18,7 +18,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
-from thalamus.eval import sequential  # noqa: E402
+from thalamus.eval import publish, sequential  # noqa: E402
 
 SLUG = "004-the-ceiling"
 TASK = "arm-runner-session-death-classification"
@@ -173,11 +173,250 @@ def main() -> None:
               "in preregistration.md and this script does not get to improvise one.")
         return
 
-    (Path(__file__).resolve().parent / "results.json").write_text(
-        json.dumps({"experiment": SLUG, "results": m}, indent=2, sort_keys=True) + "\n"
-    )
-    print("\nwrote results.json")
+    results_path, page_path = publish.write(page(m), Path(__file__).resolve().parent, m)
+    print(f"\nwrote {results_path.name} and {page_path.name}")
 
 
 if __name__ == "__main__":
     main()
+
+
+def sign_test(pairs):
+    """Exact two-sided sign test on the paired rungs: (wins, ties, p).
+
+    Reported *beside* the confidence sequence, never instead of it. The sequence is
+    an anytime-valid bound over an unbounded horizon and pays a great deal of width
+    for the right to be inspected continuously; the sign test is the fixed-n reading
+    this campaign's own pre-registered horizon licenses. Quoting only whichever is
+    friendlier is what lab/023 did wrong.
+    """
+    from math import comb
+
+    wins = sum(1 for c, o in pairs if c > o)
+    losses = sum(1 for c, o in pairs if c < o)
+    ties = len(pairs) - wins - losses
+    n = wins + losses
+    if not n:
+        return wins, ties, 1.0
+    extreme = min(wins, losses)
+    p = sum(comb(n, k) for k in range(extreme + 1)) / (2**n) * 2
+    return wins, ties, min(1.0, p)
+
+
+def page(m):
+    ceiling, off = m["rungs"]["ceiling"], m["rungs"]["memory-off"]
+    pairs = list(zip(ceiling, off, strict=False))
+    wins, ties, p = sign_test(pairs)
+    losses = len(pairs) - wins - ties
+    primary_c, primary_n = m["primary"]["ceiling"]
+    primary_o, primary_on = m["primary"]["memory-off"]
+    sec_c, sec_n = m["secondary"]["ceiling"]
+    sec_o, sec_on = m["secondary"]["memory-off"]
+    last = m["sequence"][-1] if m["sequence"] else {"n": 0, "lo": 0.0, "hi": 1.0}
+    held = len(m["reached_for_memory_and_failed"])
+
+    stats = [
+        publish.Stat(
+            label="Primary endpoint (L>=4)",
+            value=f"{primary_c}/{primary_n} vs {primary_o}/{primary_on}",
+            note="ceiling vs memory-off. Neither arm ever reached the task's own "
+                 "memory-attributable rung.",
+        ),
+        publish.Stat(
+            label="Exploratory (L>=3)",
+            value=f"{sec_c}/{sec_n} vs {sec_o}/{sec_on}",
+            note="where the separation actually lives, and it runs against the ceiling",
+        ),
+        publish.Stat(
+            label="Paired sign test",
+            value=f"p = {p:.3f}",
+            interval=f"{wins} win / {losses} loss / {ties} tie",
+            note="fixed-n, at the pre-registered horizon",
+        ),
+        publish.Stat(
+            label="Campaign cost",
+            value=f"${m['cost_usd']}",
+            note=f"{sum(m['arms'].values())} arms, sandboxed, store isolated",
+        ),
+    ]
+
+    rung_table = publish.table(
+        ["pair", "ceiling", "memory-off", "winner"],
+        [
+            [str(i + 1), f"L{c}", f"L{o}",
+             "ceiling" if c > o else ("memory-off" if o > c else "tie")]
+            for i, (c, o) in enumerate(pairs)
+        ],
+        caption="Rungs are ordinal and strictly implying: L4 implies L3 implies L2. "
+                "Read as ranks, never averaged — metric models over ordinal data "
+                "sign-reverse on this project's own campaign data (lab/020).",
+    )
+
+    effort_table = publish.table(
+        ["arm", "turns", "diff lines", "wall seconds"],
+        [[arm, str(m["effort"][arm]["turns"]), str(m["effort"][arm]["diff_lines"]),
+          str(m["effort"][arm]["wall_seconds"])] for arm in ARMS],
+        caption="Effort, because an outcome alone cannot separate \"the memo told me "
+                "the answer so I stopped\" from \"the memo did not help\".",
+    )
+
+    echoes = [e for e in m["memo_echo"] if e]
+    echo_line = (
+        f"{sum(1 for e in echoes if e['used'])} of {len(echoes)} recorded ceiling arms "
+        f"visibly acted on the memo (term ratios {[e['ratio'] for e in echoes]})"
+        if echoes else "not recorded for any completed ceiling arm"
+    )
+
+    endpoint_callout = publish.callout(
+        "finding",
+        "The pre-registered endpoint reads null, and it is not where the effect is",
+        f"<p>Rung {PRIMARY_RUNG} — the task's own memory-attributable outcome, fixed in "
+        f"its YAML before any campaign — was reached by <strong>{primary_c} of "
+        f"{primary_n}</strong> ceiling arms and <strong>{primary_o} of {primary_on}</strong> "
+        f"memory-off arms. Neither arm ever got there.</p>"
+        f"<p>Every difference sits at rung {SECONDARY_RUNG}, which this experiment "
+        f"pre-registered as exploratory: {sec_o}/{sec_on} for memory-off against "
+        f"{sec_c}/{sec_n} for the ceiling. That placement error is the one lab/023 made, "
+        f"and the reason it is reported this way rather than quietly promoted is that "
+        f"the rule was written down first.</p>",
+    )
+
+    mechanism_callout = publish.callout(
+        "finding", "A conclusion without its path",
+        "<p>The ladder is strictly implying. L2 is <em>stop on the death the operator "
+        "described</em>, reachable from the prompt alone; L4 is <em>a death after real "
+        "work leaves an attempt of unknown completeness, so it must not be graded</em>. "
+        "The injected memory is L4/L5 content: \"must not guess how complete an "
+        "interrupted attempt was... two conservative shapes, both ungraded\".</p>"
+        "<p>So the ceiling arm was handed the advanced requirement and failed the basic "
+        "one. The reading this suggests — a hypothesis, not a result — is that a "
+        "distilled memory records the <em>conclusion</em> of a design discussion rather "
+        "than the path to it, and handed to an agent that has not walked that path the "
+        "conclusion can substitute for the earlier steps instead of adding to them. The "
+        "arm that demonstrably used the memo worked longer than either other ceiling arm "
+        "and still scored the floor.</p>",
+    )
+
+    confinement_callout = publish.callout(
+        "method", "Confinement, confirmed live for the first time",
+        f"<p>Every arm ran in a container without the operator's checkout and without a "
+        f"route to the graph. {held} arm(s) loaded tool schemas and still reached no "
+        f"memory tool: the arms tried, and could not. Until this campaign confinement had "
+        f"only been verified by direct probe, never by a live run.</p>",
+    )
+
+    sections = [
+        publish.Section(
+            title="What was measured, and what the endpoint says", anchor="result",
+            body="<p>Two arms on the battery's one strongly-gated task, alternating so "
+                 "arm order could not confound the comparison, each sandboxed in an image "
+                 "where the operator's checkout does not exist and with the graph "
+                 f"unreachable.</p>{rung_table}{endpoint_callout}",
+        ),
+        publish.Section(
+            title="The direction is the finding", anchor="direction",
+            body=f"<p>The ceiling arm was not merely no better. It was <strong>worse in "
+                 f"every pair</strong> — {wins} wins, {losses} losses, {ties} ties, sign "
+                 f"test p = {p:.3f}. The confidence sequence at n={last['n']} spans "
+                 f"[{last['lo']:.3f}, {last['hi']:.3f}] and does not exclude the null: it "
+                 f"is an anytime-valid bound over an unbounded horizon and needs roughly "
+                 f"an order of magnitude more pairs at this effect size. Both are reported, "
+                 f"because quoting only the friendlier one is what lab/023 did wrong.</p>"
+                 f"{effort_table}<p>Memo echo: {echo_line}.</p>{mechanism_callout}",
+        ),
+        publish.Section(
+            title="What this licenses, and what it does not", anchor="threats",
+            body="<p>The pre-registered falsifier fires: the ceiling does not separate "
+                 "from memory-off on the primary endpoint, so <strong>the battery is the "
+                 "binding constraint</strong>, and the container campaign and "
+                 "consequence-probe work queued behind it are cancelled rather than "
+                 "rescheduled. Spending more on memory-on/off arms against a battery that "
+                 "cannot register a perfect memory would be buying noise.</p>"
+                 "<ul>"
+                 "<li><strong>One task.</strong> The battery has exactly one strongly-gated "
+                 "task, so this is a statement about that task's gate. Generalising it to "
+                 "\"memory does not help\" is unsupported by construction.</li>"
+                 "<li><strong>One model, one operator, one harness configuration.</strong></li>"
+                 "<li><strong>The mechanism is unconfirmed.</strong> Arm worktrees are "
+                 "cleaned after each run, so the diffs that would show whether the candidate "
+                 "built the refinement and skipped the foundation were not retained. That "
+                 "check needs one more arm with the worktree kept, and it sits outside the "
+                 "registered design.</li>"
+                 "<li><strong>The memo is one phrasing.</strong> Whether the effect survives "
+                 "a memo that states the problem rather than the conclusion is the obvious "
+                 "next experiment, and it is not this one.</li>"
+                 f"</ul>{confinement_callout}",
+        ),
+    ]
+
+    checklist = [
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[0], "yes",
+            "Estimand: share reaching the pre-registered rung. Rank statistic and exact "
+            "sign test on paired rungs; never mean-of-rungs."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[1], "yes",
+            "One task, one model, one operator — stated as a limit, not a caveat."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[2], "yes",
+            "memory-off is the baseline; the ceiling is the skyline."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[3], "yes",
+            "Confidence sequence reported with the fixed-n sign test beside it."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[4], "yes",
+            f"{sum(m['arms'].values())} arms; assignment alternated by pair."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[5], "yes",
+            "runs.jsonl per arm; task refs pinned and re-validated after the history "
+            "rewrite (lab/035)."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[6], "yes", "See Reproducibility."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[7], "yes",
+            "Ladder validated against its anchors before the campaign: negative L1, "
+            "positive L5, both as pre-registered."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[8], "yes",
+            f"${m['cost_usd']} across {sum(m['arms'].values())} arms."),
+        publish.ChecklistItem(publish.DEFAULT_CHECKLIST[9], "yes",
+            "Arm transcripts and worktrees are not retained; the mechanism check that "
+            "needs them is named as unrun rather than guessed at."),
+    ]
+
+    return publish.Experiment(
+        slug=SLUG,
+        title="A perfect memory, and it made things worse",
+        standfirst=(
+            "Before spending more on memory-on/off arms, this measures the ceiling: a "
+            "candidate handed exactly the right memory, with no retrieval to get wrong. "
+            "It lost every pair. Neither arm reached the pre-registered endpoint, and the "
+            "separation that does exist runs the wrong way."
+        ),
+        registration=publish.Registration(
+            question="If a candidate is handed exactly the right memory, with no retrieval "
+                     "to get wrong, does it beat a candidate with no memory?",
+            hypothesis="A perfect memory sets an upper bound on what any retrieval could "
+                       "be worth; if it does not separate, no retrieval improvement can "
+                       "move this battery.",
+            endpoint=f"Share of arms reaching rung >= {PRIMARY_RUNG}, the task's own "
+                     "pre-registered memory-attributable outcome.",
+            falsifier="The battery is the binding constraint if ceiling does not separate "
+                      "from memory-off at the stopping rule.",
+            stopping_rule=f"Confidence sequence excludes the null, or falls inside "
+                          f"+/-{FUTILITY_MARGIN} of it, or {HORIZON} arms.",
+            registered_at="2026-07-30", registered_ref="preregistration.md",
+        ),
+        provenance=publish.Provenance(
+            snapshot="n/a - arms run against git refs, not a graph snapshot",
+            snapshot_sha256="", snapshot_vertices=0, snapshot_edges=0,
+            seed=20260730, git_ref="per arm, in runs.jsonl",
+            command=(
+                "uv run thalamus eval oracle arm-runner-session-death-classification "
+                "--anchors-only\n"
+                "./experiments/004-the-ceiling/campaign.sh\n"
+                "uv run --extra experiments python experiments/004-the-ceiling/run.py"
+            ),
+        ),
+        stats=stats, sections=sections, checklist=checklist,
+        verdict=(
+            f"The ceiling lost every pair ({wins}W/{losses}L/{ties}T, sign test p={p:.3f}). "
+            f"On the pre-registered endpoint neither arm reached rung {PRIMARY_RUNG} at all, "
+            f"so the falsifier fires and the queued layer-2 work is cancelled: this battery "
+            f"cannot register what a perfect memory is worth. The exploratory direction is "
+            f"worse than null — the injected memory appears to have cost the candidate the "
+            f"basic rung it was already reaching without it."
+        ),
+        verdict_kind="null",
+    )
