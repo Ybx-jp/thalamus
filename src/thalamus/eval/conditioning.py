@@ -11,6 +11,10 @@ The classes carry different expected behaviors:
 - design      -> a consult_request or a literature recall should follow
 - retrospect  -> a recall should follow (instead of transcript archaeology)
 - milestone   -> any memory call counts (threads/recall/consult)
+- falsify     -> another traversal should follow: the class asks for the check
+                 that would overturn the conclusion, and that check is itself a
+                 query. A firing with no second traversal is the class failing
+                 in exactly the way it exists to prevent (lab/029).
 
 An injection with no thalamus call after it is a "wallpaper" firing — the
 reminder rode along in context and changed nothing. Rising wallpaper share is
@@ -43,6 +47,7 @@ _EXPECTED: dict[str, frozenset | None] = {
         }
     ),
     "milestone": None,  # any thalamus call counts
+    "falsify": frozenset({"memory_query", "bash_gremlin"}),
 }
 
 

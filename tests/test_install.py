@@ -178,8 +178,25 @@ class TestHookBlock:
     def test_matchers_are_preserved_per_event(self):
         block = install.build_hook_block()
         post = {g.get("matcher") for g in block["PostToolUse"]}
-        assert post == {"mcp__thalamus__.*", "Bash", "TaskCreate"}
+        assert post == {
+            "mcp__thalamus__.*",
+            "Bash",
+            "TaskCreate",
+            "mcp__thalamus__memory_query",
+        }
         assert all("matcher" not in g for g in block["SessionEnd"])
+
+        # One script legitimately serves two matchers: conditioning.sh carries both
+        # the milestone class (TaskCreate) and the falsify class (memory_query).
+        # Grouping is per matcher, so the two must land in different groups — the
+        # same script in one group twice would fire it twice for one tool call.
+        conditioning = [
+            g.get("matcher")
+            for g in block["PostToolUse"]
+            for h in g["hooks"]
+            if h["command"].endswith("conditioning.sh")
+        ]
+        assert sorted(conditioning) == ["TaskCreate", "mcp__thalamus__memory_query"]
 
     def test_scripts_named_in_the_wiring_actually_exist(self):
         """A wiring entry naming a script that isn't there is a latent error."""
@@ -243,13 +260,23 @@ class TestInstall:
         assert settings["model"] == "opus", "unrelated settings must survive"
 
     def test_reinstall_does_not_accumulate_duplicates(self, sandbox):
-        """Without stripping ours first, each run would append another copy."""
+        """Without stripping ours first, each run would append another copy.
+
+        Keyed on (matcher, command), not command alone: one script may serve
+        several matchers on purpose (conditioning.sh carries both the milestone
+        and falsify classes), and the duplicate that actually costs anything is
+        the same script firing twice for the same tool.
+        """
         install.install()
         install.install()
         install.install()
         settings = json.loads(sandbox["user"].read_text())
-        commands = [h["command"] for g in settings["hooks"]["PostToolUse"] for h in g["hooks"]]
-        assert len(commands) == len(set(commands))
+        wired = [
+            (g.get("matcher"), h["command"])
+            for g in settings["hooks"]["PostToolUse"]
+            for h in g["hooks"]
+        ]
+        assert len(wired) == len(set(wired))
 
     def test_strips_the_project_scope_duplicate(self, sandbox):
         """Option 3: one definition, so the undocumented merge behaviour of

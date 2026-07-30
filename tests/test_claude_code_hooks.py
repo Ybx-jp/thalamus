@@ -269,3 +269,81 @@ class TestDistillationAnchor:
         assert f"--project {checkout}" in calls
         assert f"--directory {tmp_path}" not in calls
         assert "thalamus extract" in calls
+
+
+def _run_conditioning(payload, home):
+    return subprocess.run(
+        [str(HOOKS / "conditioning.sh")],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin"},
+        timeout=30,
+    )
+
+
+def _firings(home, cls):
+    logs = list((home / ".thalamus" / "conditioning").glob("*.jsonl"))
+    records = []
+    for log in logs:
+        for line in log.read_text().splitlines():
+            if line.strip():
+                records.append(json.loads(line))
+    return [r for r in records if r.get("class") == cls]
+
+
+def _query_call(session_id, agent_id=""):
+    return {
+        "hook_event_name": "PostToolUse",
+        "session_id": session_id,
+        "agent_id": agent_id,
+        "tool_name": "mcp__thalamus__memory_query",
+        "tool_input": {"query": "g.V().count()"},
+    }
+
+
+def test_falsify_fires_on_an_ad_hoc_traversal_and_throttles_per_agent(tmp_path):
+    """
+    Scenario: A main session runs two memory_query calls, then two of its
+    subagents each run one.
+
+    Verifications:
+    - the class fires on memory_query and names the check-it-first instruction
+    - the main session is reminded once, not twice
+    - each subagent is reminded once: they share the parent's session_id, so a
+      session-only throttle would exempt every one of them — and the subagent is
+      where lab/029's two correctly-cited, wrong-mechanism answers were written
+    """
+    first = _run_conditioning(_query_call("s-falsify"), tmp_path)
+    context = json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "what would make the conclusion WRONG" in context
+    assert "recall-strategy" in context
+
+    assert _run_conditioning(_query_call("s-falsify"), tmp_path).stdout.strip() == ""
+
+    for agent in ("agent-a", "agent-b"):
+        out = _run_conditioning(_query_call("s-falsify", agent), tmp_path).stdout
+        assert "what would make the conclusion WRONG" in out
+
+    fired = _firings(tmp_path, "falsify")
+    assert [r["agent"] for r in fired] == ["", "agent-a", "agent-b"]
+
+
+def test_falsify_ignores_tools_that_are_not_the_ad_hoc_surface(tmp_path):
+    """The recall tools render prose already labelled as data; memory_query
+    returns raw aggregates that get turned into claims. Only the latter fires."""
+    for tool in ("mcp__thalamus__memory_recall", "Read", "mcp__thalamus__memorize"):
+        payload = _query_call("s-quiet")
+        payload["tool_name"] = tool
+        assert _run_conditioning(payload, tmp_path).stdout.strip() == ""
+    assert _firings(tmp_path, "falsify") == []
+
+
+def test_milestone_class_survives_the_new_branch(tmp_path):
+    """TaskCreate still reaches the milestone class after memory_query joined
+    the same PostToolUse branch."""
+    payload = _query_call("s-milestone")
+    payload["tool_name"] = "TaskCreate"
+    out = _run_conditioning(payload, tmp_path).stdout
+    assert "multi-step work is starting" in out
+    assert len(_firings(tmp_path, "milestone")) == 1

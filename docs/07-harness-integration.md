@@ -57,19 +57,31 @@ the harness's limits on purpose.
     prompt, unconditional, kept separate from `conditioning.sh` so the
     rescue-rate telemetry stays clean.
   - *Conditioning (`conditioning.sh`, UserPromptSubmit + PostToolUse on
-    TaskCreate):* tilt the agent toward the memory system at the moments it
-    historically under-uses it. Lexical intent classes on the user's prompt
-    (design intent → ground-in-literature + consult reminder; past-work
-    questions → recall-before-archaeology) plus a multi-step-work milestone on
-    task-list creation. Grounded: injection is **conditional, never
-    every-prompt** (adaptive beats indiscriminate retrieval — Self-RAG, arXiv
-    2310.11511; locally, lab/006's ~50% ignored share), **throttled**
-    (once per class per session), and **measured per firing** (`thalamus eval
-    conditioning` joins the firing log to the trace tap: did the behavior
-    follow, or was the reminder wallpaper?). Context-borne conditioning as the
-    behavior-change channel is Reflexion's result (arXiv 2303.11366).
-    TaskCreate is deliberately *not required*: it is optional harness UI, and
-    the load-bearing tier rides UserPromptSubmit, which always fires.
+    TaskCreate and on `mcp__thalamus__memory_query`):* tilt the agent toward the
+    memory system at the moments it historically under-uses it, and toward
+    checking a result before committing it. Lexical intent classes on the user's
+    prompt (design intent → ground-in-literature + consult reminder; past-work
+    questions → recall-before-archaeology), a multi-step-work milestone on
+    task-list creation, and a **falsify** class on the ad-hoc traversal surface
+    — name what would make the conclusion wrong and run that query first
+    (lab/029, where two correctly-cited consultation answers each had the
+    mechanism wrong and each was overturned by one more traversal). It rides
+    `memory_query` and not the recall tools because that surface returns raw
+    aggregates that become claims, where recall returns prose already labelled
+    as data; and it fires on the *first* query, because the reminder has to
+    shape which queries get run and nothing observable announces that a
+    conclusion is about to be written. Grounded: injection is **conditional,
+    never every-prompt** (adaptive beats indiscriminate retrieval — Self-RAG,
+    arXiv 2310.11511; locally, lab/006's ~50% ignored share), **throttled**
+    (once per class per **agent**, not per session — subagents share their
+    parent's session id, and a session-keyed throttle silently exempts every one
+    of them, including the consultation experts the falsify class exists for),
+    and **measured per firing** (`thalamus eval conditioning` joins the firing
+    log to the trace tap: did the behavior follow, or was the reminder
+    wallpaper?). Context-borne conditioning as the behavior-change channel is
+    Reflexion's result (arXiv 2303.11366). TaskCreate is deliberately *not
+    required*: it is optional harness UI, and the load-bearing tier rides
+    UserPromptSubmit, which always fires.
   - *Standing subagent authorization (`session-start.sh`):* some harness
     configurations carry a blanket "do not spawn subagents unless the user
     requested it." The consultation protocol **requires** spawning one — the

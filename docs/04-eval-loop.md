@@ -103,6 +103,20 @@ bleed that count ranking buries (measured: lab/006–007). This is the first
 implemented piece of the per-expert routing signal: scope-level cost-utility is
 one report away from grading pin quality.
 
+**Which ranker produced the row.** Trace nodes also carry `ranker_config`, and
+`eval report` takes `--since/--until`, because a retrieval-utility number is only
+comparable across a window if the ranking dials held across it. The fingerprint
+cannot be stamped at sync time — sync runs days after the retrieval, on a
+checkout whose ranker may have moved, so reading the installed dials then would
+attribute old traces to a ranker that never served them. It is written by the
+process that does the ranking (`eval/rankers.py`, the pin ledger's idiom) and
+joined by timestamp; traces older than the ledger read `unknown`, never a
+borrowed fingerprint, and a window spanning two rankers says so rather than
+averaging across the change. Without this, turning a second dial converts an
+unverified prediction into an unauditable one — which is how lab/007's fan-out
+prediction sat twenty-two entries unchecked with all its evidence already in the
+graph (lab/029, where the audit finally ran and the prediction held).
+
 ## Layer 2 — Counterfactuals (M4)
 
 Traces show usage; they can't show *value*. For that, matched tasks run under

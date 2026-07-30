@@ -1,6 +1,6 @@
 ---
 name: recall-strategy
-description: How to retrieve from Thalamus memory without wasting context — query shapes, the lexical-vs-traversal decision, and tested memory_query recipes. Use BEFORE issuing a mid-session memory_recall, when a recall came back noisy or empty, when the question is relational (provenance, thread history, consultation audits, the eval loop's own verdicts), or when you catch yourself re-recalling broader. Encodes the measured findings of lab/006-007.
+description: How to retrieve from Thalamus memory without wasting context, and how to keep a query result from becoming a wrong conclusion — query shapes, the lexical-vs-traversal decision, tested memory_query recipes, and the falsify-before-you-commit checklist. Use BEFORE issuing a mid-session memory_recall, when a recall came back noisy or empty, when the question is relational (provenance, thread history, consultation audits, the eval loop's own verdicts), when you catch yourself re-recalling broader, and — binding — BEFORE any number from a traversal becomes a claim in a doc, a lab entry, or a consult_answer. Encodes the measured findings of lab/006-007 and lab/029.
 ---
 
 # Recall Strategy — Spend Context Where It Earns
@@ -160,6 +160,58 @@ answer your own ticket; if you cannot spawn the subagent, say so *before* mintin
 - **"The graph doesn't have X" is a claim about *now*.** State changes
   between sessions (the orphans were pruned hours after being found). Verify
   against the live graph before repeating a remembered absence.
+
+## Before a query result becomes a conclusion
+
+A traversal returns numbers. Turning them into a claim about the system is a
+second step, and it is the one that goes wrong — not the Gremlin.
+
+**The habit, and it is the highest-leverage one here:** before you believe or
+commit ANY result, ask **"what would make this conclusion wrong?"** and run THAT
+query first. It is nearly always one more traversal against data you already
+have. (Borrowed from the `experiment-design` skill in stepmania-chart-generator,
+where every overturned conclusion was caught by a cheap fair test that was
+eventually run — the only error was running it second.)
+
+**Suspicion order when a result surprises you.** Work down; stop when one
+explains it. Only the last is a finding about the system:
+
+1. **Your traversal** — wrong label, edge direction, a missing `dedup()`, a
+   filter that silently matched nothing, counting edges where you meant vertices.
+2. **The instrument** — what does this number *mean*? `used` comes from
+   `attribution.py`, where `MIN_MATCHED_RATIO = 0.3` is a fraction of the node's
+   **own** distinctive terms, so the bar scales with text length and long nodes
+   are structurally harder to score used. A node that was never returned has no
+   RETURNS edge at all, so harm from *not* retrieving something is invisible here
+   by construction.
+3. **Your model of the code that consumes the data** — the step below.
+4. **The system.**
+
+**Establish the unit before reasoning about reach.** A property's absence on a
+node is not that node's unreachability. Measured (lab/029): "returned claims
+carry no `project` property" is true, and the conclusion drawn from it — that a
+project-aware ranker could reach at most 13% of wasted volume — was wrong by a
+factor of six. `recall()` ranks *parent sessions*; a claim hit adds to its
+parent's score and claims never rank alone, so demoting the parent removes its
+claims too. Real figure: 83%. Before asking what a change can reach, read the
+code that does the ranking and find out what the unit is.
+
+**Look for an untreated control before crediting a change.** If a dial acts on
+one surface, another surface it does not touch is a free control over the same
+window. lab/029's floor audit: the treated tool's fan-out fell 41.9 → 11.2 while
+the untreated `memory_open_threads` **rose** over the same period — which is what
+ruled out "the corpus just changed."
+
+**A validated citation is not a validated argument.** `consult_answer` checks
+that every cited vertex ID resolves in the consulted scope. It cannot check that
+the reasoning over those vertices is sound, and a wrong number in a closed
+exchange is recalled later wearing the same badge as a right one. Both
+consultations in lab/029 were correctly cited and both had the mechanism wrong.
+
+**State the falsifier in what you write.** A conclusion committed to a doc, a lab
+entry, or a `consult_answer` without naming what would overturn it — and saying
+whether that check was run — is unfinished. If the check is still untested, say
+so in the same sentence as the claim.
 
 ## Rules that keep the loop honest
 

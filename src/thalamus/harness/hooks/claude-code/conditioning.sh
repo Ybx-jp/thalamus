@@ -33,9 +33,19 @@
 #   starting -> once-per-session checklist (threads / expert / recipes).
 #   TaskCreate is deliberately NOT required: it is optional harness UI, and
 #   conditioning must not depend on an event the agent may legitimately skip.
+# - PostToolUse matcher mcp__thalamus__memory_query (tier 2, falsify): an ad-hoc
+#   traversal just ran -> the falsify-before-you-commit checklist. This surface
+#   and not the recall tools, because memory_query returns raw aggregates that
+#   get turned into claims, where recall returns prose already labelled as data.
+#   It fires on the FIRST query rather than at write time: the reminder has to
+#   shape which queries get run, and nothing observable says "a conclusion is
+#   about to be committed". Measured need (lab/029): two consultation answers,
+#   both correctly cited, both with the mechanism wrong; each was overturned by
+#   one more traversal that could have been run first.
 #
 # Install (project .claude/settings.json):
-#   UserPromptSubmit -> this script; PostToolUse {"matcher": "TaskCreate"} -> this script.
+#   UserPromptSubmit -> this script; PostToolUse {"matcher": "TaskCreate"} and
+#   {"matcher": "mcp__thalamus__memory_query"} -> this script.
 
 set -euo pipefail
 
@@ -50,8 +60,19 @@ session=$(printf '%s' "$input" | jq -r '.session_id // empty')
 log_dir="$HOME/.thalamus/conditioning"
 log_file="$log_dir/$(date -u +%Y-%m).jsonl"
 
+# The throttle key is (session, agent, class), not (session, class). Subagents share
+# their parent's session_id, so keying on the session alone silently exempts every
+# subagent from every class — and a subagent is exactly where `falsify` has to land:
+# both consultation experts in lab/029 filed a correctly-cited answer with the
+# mechanism wrong. Chained fixed-string greps, so one malformed line cannot disable
+# the throttle and spam the class.
+agent=$(printf '%s' "$input" | jq -r '.agent_id // ""')
+
 fired_already() {
-  [ -f "$log_file" ] && grep -q "\"session_id\":\"$session\".*\"class\":\"$1\"" "$log_file"
+  [ -f "$log_file" ] || return 1
+  grep -F "\"session_id\":\"$session\"" "$log_file" 2>/dev/null \
+    | grep -F "\"agent\":\"$agent\"" \
+    | grep -qF "\"class\":\"$1\""
 }
 
 emit() {  # $1 = class, $2 = message
@@ -62,9 +83,10 @@ emit() {  # $1 = class, $2 = message
     --arg scope "$(thalamus_resolve_scope)" \
     --arg event "$event" \
     --arg harness "${THALAMUS_HARNESS:-claude-code}" \
+    --arg agent "$agent" \
     --arg class "$1" \
     '{ts:$ts, session_id:$session_id, scope:$scope, event:$event,
-      harness:$harness, class:$class, version:1}' \
+      harness:$harness, agent:$agent, class:$class, version:1}' \
     >> "$log_file" || true
   jq -cn --arg e "$event" --arg ctx "$2" \
     '{hookSpecificOutput:{hookEventName:$e, additionalContext:$ctx}}'
@@ -92,11 +114,20 @@ case "$event" in
 
   PostToolUse)
     tool=$(printf '%s' "$input" | jq -r '.tool_name // empty')
-    [ "$tool" = "TaskCreate" ] || exit 0
-    if ! fired_already milestone; then
-      emit milestone "Thalamus conditioning (tier-0 operator hook, fires once/session): multi-step work is starting. Check now: (1) does an open thread overlap this work? (2) which roster expert covers this domain — consult before designing, not after (docs/02); (3) any gremlin ahead: RECIPES.md before writing new queries."
-      exit 0
-    fi
+    case "$tool" in
+      TaskCreate)
+        if ! fired_already milestone; then
+          emit milestone "Thalamus conditioning (tier-0 operator hook, fires once/session): multi-step work is starting. Check now: (1) does an open thread overlap this work? (2) which roster expert covers this domain — consult before designing, not after (docs/02); (3) any gremlin ahead: RECIPES.md before writing new queries."
+          exit 0
+        fi
+        ;;
+      mcp__thalamus__memory_query)
+        if ! fired_already falsify; then
+          emit falsify "Thalamus conditioning (tier-0 operator hook, fires once per agent): you are reasoning from an ad-hoc traversal. Before any number here becomes a claim in a doc, a lab entry, or a consult_answer: (1) name what would make the conclusion WRONG and run that query first — it is almost always one more traversal over data you already have; (2) suspect in order — your traversal, then the instrument (what \`used\` actually means; a node never returned has no RETURNS edge, so harm from not-retrieving is invisible here), then your model of the code that consumes the data, and only then the system; (3) a property's absence is not unreachability — establish the *unit* the code ranks before reasoning about what a change can reach. Measured (lab/029): \"claims carry no project property\" was true and the 13% ceiling filed from it was wrong by 6x, because the ranking unit is the parent session. Citation validation proves cited vertices resolve, never that the reasoning is sound. Full checklist: the recall-strategy skill."
+          exit 0
+        fi
+        ;;
+    esac
     ;;
 esac
 
