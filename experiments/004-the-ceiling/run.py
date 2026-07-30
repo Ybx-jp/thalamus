@@ -90,6 +90,21 @@ def analyse(rows: list[dict]) -> dict:
         "contaminated": [r["ts"][:19] for r in rows if r.get("contaminated")],
         "faults": [r["ts"][:19] for r in rows if r.get("infra_faults")],
         "turn_capped": sum(1 for r in rows if r.get("turn_capped")),
+        # Effort, per arm. Worth its own column because a ceiling arm that stops
+        # early is a different story from one that works just as hard and scores
+        # lower: "the memo told me the answer, so I stopped" and "the memo did not
+        # help" have the same rung and different mechanisms.
+        "effort": {
+            arm: {
+                "turns": [r.get("agent", {}).get("num_turns") for r in by_arm[arm]],
+                "diff_lines": [r.get("diff_lines") for r in by_arm[arm]],
+                "wall_seconds": [round(r.get("wall_seconds", 0)) for r in by_arm[arm]],
+            }
+            for arm in ARMS
+        },
+        "memo_echo": [
+            r.get("memo_echoed") for r in by_arm["ceiling"]
+        ],
         "injected_chars": [
             r.get("applied", {}).get("injected_fact_chars", 0)
             for r in rows if r["arm"] == "ceiling"
@@ -128,6 +143,17 @@ def main() -> None:
         print(f"  {arm:12} n={total:<3} rungs={m['rungs'][arm]}  "
               f"L>={PRIMARY_RUNG}: {used}/{total}  L>={SECONDARY_RUNG}: {s_used}/{s_total}")
     print(f"  rank statistic P(ceiling > memory-off) = {m['rank_statistic']:.3f}")
+    for arm in ARMS:
+        effort = m["effort"][arm]
+        if effort["turns"]:
+            print(f"  {arm:12} turns={effort['turns']} diff_lines={effort['diff_lines']}")
+    echoes = [e for e in m["memo_echo"] if e]
+    if echoes:
+        print(f"  memo echoed in {sum(1 for e in echoes if e['used'])}/{len(echoes)} ceiling arm(s) "
+              f"(term ratios {[e['ratio'] for e in echoes]})")
+    missing = sum(1 for e in m["memo_echo"] if not e)
+    if missing:
+        print(f"  memo echo not recorded for {missing} ceiling arm(s) — they predate the field")
     if m["sequence"]:
         last = m["sequence"][-1]
         print(f"  confidence sequence at n={last['n']}: "
