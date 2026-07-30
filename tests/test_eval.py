@@ -990,3 +990,83 @@ def test_auditability_is_reported_by_kind_not_assumed():
     )
     with_terms, immutable, total = calibration.auditable([case])
     assert (with_terms, immutable, total) == (1, 1, 3)
+
+
+# ---------------------------------------------------------------------------
+# Randomized render-withholding (I4)
+# ---------------------------------------------------------------------------
+
+
+def test_withholding_is_off_unless_a_rate_is_set():
+    """It costs the operator real retrieval quality, so it is opt-in with a number
+    attached, and a typo degrades to no intervention rather than to no memory."""
+    from thalamus.eval.policy import WithholdPolicy
+
+    assert WithholdPolicy.from_env({}).active is False
+    assert WithholdPolicy.from_env({"THALAMUS_WITHHOLD": "not-a-number"}).active is False
+    assert WithholdPolicy.from_env({"THALAMUS_WITHHOLD": "0.3"}).rate == 0.3
+    assert WithholdPolicy.from_env({"THALAMUS_WITHHOLD": "5"}).rate == 1.0
+
+
+def test_an_inactive_policy_leaves_no_trace():
+    from thalamus.eval import policy
+
+    offered = ["scope:main:claim:a", "scope:main:claim:b"]
+    kept, record = policy.apply(
+        offered, policy=policy.WithholdPolicy(), scope="main", tool="memory_recall", query="q"
+    )
+    assert kept == offered and record is None
+
+
+def test_the_draw_is_reproducible_from_the_record_alone():
+    """
+    Scenario: a campaign is analysed months later.
+
+    Verification: the seed is derived from the retrieval's own identity and stored,
+    so the exact draw re-derives with no live state and no trust in the writer.
+    """
+    from datetime import datetime, timezone
+
+    from thalamus.eval import policy
+
+    ts = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
+    offered = [f"scope:main:claim:{i}" for i in range(8)]
+    pol = policy.WithholdPolicy(rate=0.4)
+    first, record = policy.apply(offered, policy=pol, scope="main", tool="t", query="q", ts=ts)
+    again, record2 = policy.apply(offered, policy=pol, scope="main", tool="t", query="q", ts=ts)
+    assert first == again and record.withheld == record2.withheld
+    assert record.seed == policy.seed_for("main", "q", ts)
+    assert record.propensity == 0.6
+
+
+def test_a_retrieval_is_never_fully_withheld():
+    """An empty render is a *miss*, and the tap cannot tell a miss from a
+    fully-withheld retrieval — two different events must not share a shape."""
+    from thalamus.eval import policy
+
+    offered = ["scope:main:claim:a", "scope:main:claim:b", "scope:main:claim:c"]
+    kept, record = policy.apply(
+        offered, policy=policy.WithholdPolicy(rate=1.0), scope="main", tool="t", query="q"
+    )
+    assert kept, "something must survive"
+    assert len(record.withheld) == len(offered) - 1
+
+
+def test_records_round_trip_and_key_on_the_rendered_response(tmp_path):
+    """The join key is content, not a clock: the tap stores the response verbatim,
+    so a busy session cannot pair a draw with the wrong retrieval."""
+    from thalamus.eval import policy
+
+    offered = ["scope:main:claim:a", "scope:main:claim:b"]
+    _kept, record = policy.apply(
+        offered, policy=policy.WithholdPolicy(rate=0.5), scope="main", tool="t", query="q"
+    )
+    rendered = "the response the agent actually saw"
+    policy.log(record, rendered, base=tmp_path)
+
+    loaded = policy.load(tmp_path)
+    assert policy.response_key(rendered) in loaded
+    restored = loaded[policy.response_key(rendered)]
+    assert restored.withheld == record.withheld
+    assert restored.offered == offered
+    assert policy.load(tmp_path / "nonexistent") == {}

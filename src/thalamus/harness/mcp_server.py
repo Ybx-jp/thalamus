@@ -25,6 +25,8 @@ from thalamus.eval.rankers import record_ranker
 from thalamus.harness import consultation
 from thalamus.harness.extraction import apply_ingress_floor
 from thalamus.harness.pin import resolve_pin
+from thalamus.eval import policy as withhold
+from thalamus.eval.policy import WithholdPolicy
 from thalamus.substrate.reader import (
     ranker_fingerprint,
     recall,
@@ -108,7 +110,7 @@ def memory_recall(query: str, limit: int = 5, ticket: str = "") -> str:
             return grant
         scope, knowledge_scopes = grant
         results = recall(g, query, limit, scope, knowledge_scopes=knowledge_scopes)
-        return _format_results(results)
+        return _format_results(results, query=query, tool="memory_recall")
     finally:
         _close(g)
 
@@ -368,10 +370,34 @@ def _close(g):
         logger.warning("Failed to close Gremlin connection: %s", e)
 
 
-def _format_results(results) -> str:
+def _format_results(results, *, query: str = "", tool: str = "") -> str:
+    """Render a result window, after the withholding policy has had its say.
+
+    Every recall tool renders through here, so this is the one place the
+    intervention can be applied without each tool remembering to. When the policy is
+    inactive — the default — this is the old function exactly, and leaves no record.
+    """
     if not results:
         return "No matching memories found."
-    return "\n\n---\n\n".join(r.format() for r in results)
+
+    policy = WithholdPolicy.from_env()
+    record = None
+    if policy.active:
+        offered = [r.node_id for r in results if r.node_id]
+        kept, record = withhold.apply(
+            offered, policy=policy, scope=SCOPE, tool=tool, query=query
+        )
+        if record:
+            keep = set(kept)
+            results = [r for r in results if not r.node_id or r.node_id in keep]
+
+    rendered = "\n\n---\n\n".join(r.format() for r in results)
+    if record:
+        try:
+            withhold.log(record, rendered)
+        except OSError:
+            logger.warning("Could not record the withholding draw; retrieval unaffected")
+    return rendered
 
 
 def main():

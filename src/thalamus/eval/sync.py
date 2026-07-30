@@ -17,6 +17,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Order
 
 from thalamus.archive import read_archived
+from thalamus.eval import policy as policy_mod
 from thalamus.contract.ontology import NODES_BY_LABEL, vid
 from thalamus.eval.attribution import attribute, node_terms, outputs_after
 from thalamus.eval.rankers import RankerLedger
@@ -74,6 +75,7 @@ def sync(
     *,
     traces_base: Path | None = None,
     rankers_base: Path | None = None,
+    policy_base: Path | None = None,
     write: bool = True,
 ) -> SyncOutcome:
     """Sync every landable trace from the tap into the graph."""
@@ -83,6 +85,11 @@ def sync(
     # ledger the serving process wrote — never from the ranker installed right now,
     # which may be several dials removed from the one that produced these rows.
     ledger = RankerLedger.load(rankers_base)
+
+    # The withholding draws, keyed by the hash of the response each produced. Empty
+    # when the policy has never run, which is the default — an unrandomized corpus
+    # simply carries no propensities rather than carrying wrong ones.
+    withheld = policy_mod.load(policy_base)
 
     by_session: dict[str, list[TraceEvent]] = {}
     for event in load_events(traces_base):
@@ -98,7 +105,9 @@ def sync(
         transcript = _retained_transcript(g, session_vid)
 
         for event in events:
-            _land_event(g, event, session_vid, scope, transcript, write, outcome, ledger)
+            _land_event(
+                g, event, session_vid, scope, transcript, write, outcome, ledger, withheld
+            )
 
     return outcome
 
@@ -112,6 +121,7 @@ def _land_event(
     write: bool,
     outcome: SyncOutcome,
     ledger: RankerLedger,
+    withheld: dict[str, "policy_mod.WithholdRecord"] | None = None,
 ) -> None:
     if event.is_legacy():
         outcome.legacy += 1
@@ -194,6 +204,20 @@ def _land_event(
         }
         if exchange_vid:
             properties["exchange_id"] = exchange_vid
+        # The withholding draw, joined by the hash of the rendered response — the
+        # tap stores that response verbatim, so content matches content and a
+        # clock-skewed pairing is impossible. Without these the retrieval looks
+        # deterministic to every later estimator, which is exactly the state
+        # docs/11 §4 records as blocking replay and doubly-robust estimation.
+        draw = (withheld or {}).get(policy_mod.response_key(event.tool_response))
+        if draw:
+            properties["withheld"] = " ".join(draw.withheld)
+            properties["withheld_count"] = len(draw.withheld)
+            properties["offered_count"] = len(draw.offered)
+            properties["propensity"] = draw.propensity
+            properties["policy"] = draw.version
+            properties["policy_rate"] = draw.rate
+            properties["policy_seed"] = draw.seed
         write_trace(g, vid("Trace", event.trace_id(), scope), properties, session_vid, returns)
         if exchange_vid:
             # The CONSULTS edge lands here, not at mint time: the MCP server cannot

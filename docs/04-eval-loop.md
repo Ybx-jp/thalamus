@@ -134,6 +134,41 @@ unverified prediction into an unauditable one — which is how lab/007's fan-out
 prediction sat twenty-two entries unchecked with all its evidence already in the
 graph (lab/029, where the audit finally ran and the prediction held).
 
+## Layer 1c — Randomized withholding, the counterfactual inside real work
+
+Layer 1 grades a set the ranker chose, which makes every used-rate a correlation. A
+permutation null bounds the *judge* (experiments/001) and can say nothing about the
+*retrieval*. The intervention that can is one line of policy: with a pre-registered
+probability, drop a node the ranker would have rendered, and record the draw.
+
+`eval/policy.py`, off unless `THALAMUS_WITHHOLD` carries a rate — withholding costs
+the operator real retrieval quality, so turning it on is a deliberate act with a
+number attached, and a campaign that forgets to set it produces no records rather
+than silently unrandomized ones. The draw is seeded from the retrieval's own identity
+and the seed is stored, so an analysis months later re-derives the exact draw from
+the record with no live state.
+
+One mechanism, two estimators:
+
+- **A switchback inside the operator's own sessions.** Within-unit randomization with
+  carryover (injected tokens ride along in every later call of the session),
+  analysable by exact randomization inference — the in-deployment pivot lab/024 argued
+  for, without a container campaign.
+- **A stochastic logging policy.** Recording the propensity is the standing
+  precondition for replay and doubly-robust estimation off the trace log, which
+  [11](11-related-work.md) §4 records as unavailable precisely because retrieval here
+  was deterministic. It no longer has to be.
+
+Two things the design refuses. A retrieval is never *fully* withheld, because an
+empty render is a miss and the tap cannot tell a miss from a fully-withheld
+retrieval. And a withheld node gets **no verdict at all** — it never reached the
+agent, so folding it into "ignored" would put the intervention's own effect into the
+outcome it is measuring.
+
+The record joins to its trace by the sha256 of the rendered response, which the tap
+stores verbatim: content matches content, so a busy session cannot pair a draw with
+the wrong retrieval, and an unmatched record stays visibly unmatched.
+
 ## Layer 2 — Counterfactuals (M4)
 
 Traces show usage; they can't show *value*. For that, matched tasks run under
