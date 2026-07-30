@@ -2,9 +2,17 @@
 # history of this file is its pre-registration timestamp.
 #
 # Replayed from the 2026-07-19 session that found recall's lowercased keywords
-# could never match capitalized text (fixed in commit 8b70330). Memorization
+# could never match capitalized text (fixed in commit e0c56d2). Memorization
 # stratum: that session distills the exact diagnosis and fix into memory, so
 # memory-on arms are answering from the solution, not from transferable claims.
+
+# NOTE ON REFS: the repository's history was rewritten on 2026-07-29 (git-filter-repo,
+# scrubbing a licence phrase across 41 commits), which changed every SHA and left this
+# task's `ref`/`fix_ref` pointing at objects that no longer exist. The refs below were
+# remapped through `.git/filter-repo/commit-map`; the *content* of each commit is
+# unchanged, so the pre-registration this file's git history carries is intact. Old
+# SHAs are kept beside the new ones so the chain stays auditable.
+#   9f28895 -> 09c8dd1 · 8b70330 -> e0c56d2
 
 task: v0
 id: reader-case-insensitive-recall
@@ -12,10 +20,10 @@ title: Recall silently misses capitalized query terms
 overlap: memorization
 source:
   kind: replayed
-  ref: "9f28895"
-  fix_ref: 8b70330
+  ref: "09c8dd1"
+  fix_ref: e0c56d2
   evidence: >-
-    Session of 2026-07-19 (fix commit 8b70330): "LLM-as-a-Judge reliability"
+    Session of 2026-07-19 (fix commit e0c56d2): "LLM-as-a-Judge reliability"
     returned nothing against a scope holding four claims containing both terms.
 
 prompt: |
@@ -59,18 +67,18 @@ acceptance:
 # measured the old probes (re.escape, lab/006-7 mentions) hitting in
 # memory-off — competence echo, and the repo at this ref carries the lab
 # notebook and dial comments, so anything written down here discriminates
-# nothing. Both tokens below are verified absent from ref 9f28895
+# nothing. Both tokens below are verified absent from ref 09c8dd1
 # (`git grep`) and from this prompt; they exist only in the memory graph
 # once the authoring session (accfe19d) distills.
     level: 2
     name: behavioral
   # L3-L5 — nested metamorphic relations, each strictly implying the one
   # below. Authored under a held-out protocol from the bug report alone, by
-  # an agent denied the fix commit (8b70330), so they cannot re-encode the
+  # an agent denied the fix commit (e0c56d2), so they cannot re-encode the
   # known solution. Behavioral, not syntactic: they survive refactoring and
   # reward no helper name. Validated against ground truth — the negative
-  # anchor (9f28895, bug present) violates all three; the positive anchor
-  # (8b70330, the real fix) satisfies all three.
+  # anchor (09c8dd1, bug present) violates all three; the positive anchor
+  # (e0c56d2, the real fix) satisfies all three.
   # R1 — a distinctive capitalized term the graph holds is recalled,
   # and recall gives the same answer for its all-lowercase spelling.
   # From the report: "the graph holds claims containing those exact terms".
@@ -821,7 +829,7 @@ rubric: |
 
 # Mutants — the discrimination bar (docs/04). Anchors cover the range endpoints;
 # these cover the interior, where all 18 observed arms sit. Each is a degradation
-# of the known-good fix (8b70330) with its rung committed here BEFORE the gate
+# of the known-good fix (e0c56d2) with its rung committed here BEFORE the gate
 # ran — the git history of this block is the pre-registration timestamp, and a
 # disagreement gets resolved in the open rather than by editing the number.
 #
@@ -891,7 +899,7 @@ mutants:
     rationale: >-
       The equivalent mutant, deliberate rather than a nuisance: undecidability
       does not bite because equivalence is known by construction. It must score 5.
-      Anything less means the ladder rewards imitating 8b70330 instead of grading
+      Anything less means the ladder rewards imitating e0c56d2 instead of grading
       behavior — the failure docs/04 requires the relations be behavioral to
       avoid. This is also the mutant that proved `tests/` must be pinned to
       source.ref: the fix's own unit test imports `_keyword_predicate` by name,

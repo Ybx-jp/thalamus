@@ -23,6 +23,8 @@ import re
 from collections import Counter
 from pathlib import Path
 
+import subprocess
+
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
@@ -511,7 +513,40 @@ def load_battery(base: Path | None = None) -> tuple[list[Task], list[str]]:
     issues.extend(
         f"duplicate task id `{task_id}`" for task_id, n in counts.items() if n > 1
     )
+    issues.extend(unresolvable_refs(tasks))
     return tasks, issues
+
+
+def unresolvable_refs(tasks: list[Task]) -> list[str]:
+    """Refs that no longer name a commit — a battery that cannot be run.
+
+    Not a theoretical check. A history rewrite on 2026-07-29 (git-filter-repo over
+    41 commits) changed every SHA in this repository, and all six refs across all
+    three tasks died with it. The battery kept reporting "OK" because validation
+    checked that each task carried its oracle and never that the oracle could be
+    reached; the failure surfaced only when an arm tried to check out its worktree,
+    which is the last place anyone wants to learn it.
+
+    Reported as an issue rather than raised: a dead ref is a repairable provenance
+    fault (the commit content survives under a new hash), and a validator that
+    refused to load the battery would make the repair harder than the break.
+    """
+    problems = []
+    for task in tasks:
+        for label, ref in (("source.ref", task.source.ref), ("source.fix_ref", task.source.fix_ref)):
+            if not ref:
+                continue
+            resolved = subprocess.run(
+                ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+                capture_output=True, text=True,
+            )
+            if resolved.returncode != 0:
+                problems.append(
+                    f"{task.id}: {label} `{ref}` does not resolve — the battery cannot "
+                    "be run against it (check .git/filter-repo/commit-map if history "
+                    "was rewritten)"
+                )
+    return problems
 
 
 def render_battery(tasks: list[Task], issues: list[str]) -> str:

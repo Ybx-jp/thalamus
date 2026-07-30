@@ -3,10 +3,18 @@
 #
 # Replayed from the 2026-07-19 session where consult_request refused with
 # "scope holds no memory" against eval-methodology, which held 11 claims
-# (fixed in commit 9f28895). Memorization stratum. The live-graph oracle
+# (fixed in commit 09c8dd1). Memorization stratum. The live-graph oracle
 # assumes the consulted scope holds knowledge claims but no episodic
 # sessions/threads (true of eval-methodology at authoring; the runner pins
 # the graph snapshot, so runs inherit that state).
+
+# NOTE ON REFS: the repository's history was rewritten on 2026-07-29 (git-filter-repo,
+# scrubbing a licence phrase across 41 commits), which changed every SHA and left this
+# task's `ref`/`fix_ref` pointing at objects that no longer exist. The refs below were
+# remapped through `.git/filter-repo/commit-map`; the *content* of each commit is
+# unchanged, so the pre-registration this file's git history carries is intact. Old
+# SHAs are kept beside the new ones so the chain stays auditable.
+#   a7fc38e -> b4ac18e · 9f28895 -> 09c8dd1
 
 task: v0
 id: consultation-empty-brief-refusal
@@ -14,10 +22,10 @@ title: Consultation refusal conflates empty scope with no match
 overlap: memorization
 source:
   kind: replayed
-  ref: "a7fc38e"
-  fix_ref: 9f28895
+  ref: "b4ac18e"
+  fix_ref: 09c8dd1
   evidence: >-
-    Session of 2026-07-19 (fix commit 9f28895): eval-methodology held 11
+    Session of 2026-07-19 (fix commit 09c8dd1): eval-methodology held 11
     claims, 2 sources, 5 entities and was reported as holding no memory.
 
 prompt: |
@@ -58,7 +66,7 @@ acceptance:
 # measured the old probes hitting in memory-off ("holds no memory" survives
 # any competent fix; the live graph is reachable from every arm via ad-hoc
 # gremlin, so graph-derivable facts don't discriminate either). The tokens
-# below are verified absent from ref a7fc38e and from this prompt; they
+# below are verified absent from ref b4ac18e and from this prompt; they
 # exist only in the memory graph — the consultation exchange minted during
 # the original diagnosis, the authoring session's node, and the fix's
 # helper name.

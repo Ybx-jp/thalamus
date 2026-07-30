@@ -16,6 +16,14 @@
 # rung-witness rule, the obsolete-set construction, and the derivability caveat
 # on R3).
 
+# NOTE ON REFS: the repository's history was rewritten on 2026-07-29 (git-filter-repo,
+# scrubbing a licence phrase across 41 commits), which changed every SHA and left this
+# task's `ref`/`fix_ref` pointing at objects that no longer exist. The refs below were
+# remapped through `.git/filter-repo/commit-map`; the *content* of each commit is
+# unchanged, so the pre-registration this file's git history carries is intact. Old
+# SHAs are kept beside the new ones so the chain stays auditable.
+#   1fc6aef -> 2cbe7cf · 4432703 -> 71ae0df
+
 task: v0
 id: arm-runner-session-death-classification
 title: The campaign ran on after the account died
@@ -23,10 +31,10 @@ overlap: memorization
 
 source:
   kind: replayed
-  ref: "1fc6aef"
-  fix_ref: "4432703"
+  ref: "2cbe7cf"
+  fix_ref: "71ae0df"
   evidence: >-
-    Session of 2026-07-26 (fix commit 4432703): a usage limit landed at 22:44Z
+    Session of 2026-07-26 (fix commit 71ae0df): a usage limit landed at 22:44Z
     mid-matrix and AUTH_FAULT_MARKER, taken verbatim from lab/012's single
     incident, did not match it. Four further waves ran against a dead account,
     recording 16 arms as $0.00 candidate failures and stamping two arms killed
@@ -53,7 +61,7 @@ under_specification:
     - "scope:main:claim:dc99c32c9c8e3c5e"   # 16 void records and 2 falsely attributed
   absent_from:
     - "the prompt below — it names no marker, no shape, and no turn count"
-    - "the worktree at 1fc6aef — `SessionFault`, `usage limit`, `quota` and
+    - "the worktree at 2cbe7cf — `SessionFault`, `usage limit`, `quota` and
        `rate limit` do not appear, and lab/016 does not exist yet at that ref"
   # The absence claim is mechanical, so it is checked mechanically. Scoped to the
   # runner's own surface rather than the whole tree, and the exclusion is
@@ -63,9 +71,9 @@ under_specification:
   # absent tree-wide. Run from the repo root; exit 0 means the tree at `ref`
   # cannot answer the question.
   absence_check: |
-    git grep -qi -e 'SessionFault' -e 'usage limit' -e 'quota' 1fc6aef -- ':!*.jsonl' \
+    git grep -qi -e 'SessionFault' -e 'usage limit' -e 'quota' 2cbe7cf -- ':!*.jsonl' \
       && echo 'LEAK: the ref names the failure class' && exit 1
-    git grep -qi -e 'rate limit' 1fc6aef -- src/thalamus/eval tests lab \
+    git grep -qi -e 'rate limit' 2cbe7cf -- src/thalamus/eval tests lab \
       && echo 'LEAK: the ref discusses rate limits on the runner surface' && exit 1
     exit 0
   # Disclosed rather than hidden: the tree at `ref` carries a 33-turn fixture in
@@ -73,7 +81,7 @@ under_specification:
   # turn-invariance without recall. Judged unlikely but unmeasurable, so R3 is
   # recorded as weakly gated and is NOT the memory-attributable endpoint.
   alternative_routes:
-    - "tests/test_eval_arms.py at 1fc6aef contains a 33-turn at_close fixture,
+    - "tests/test_eval_arms.py at 2cbe7cf contains a 33-turn at_close fixture,
        from which turn-invariance is derivable in principle"
   gates_rungs: [4]        # strongly gated: nothing in the tree says an interrupted arm must go ungraded
   gates_rungs_weak: [5]   # derivable in principle — see alternative_routes
@@ -85,7 +93,7 @@ under_specification:
 # --------------------------------------------------------------------------
 # L1 is "the pre-existing suite stays green", but the correct fix legitimately
 # retires three of its tests, so pinning the suite whole makes the positive
-# anchor unreachable — no candidate, including 4432703, could exceed rung 3.
+# anchor unreachable — no candidate, including 71ae0df, could exceed rung 3.
 #
 # The exemption is pre-registered at test-node granularity and mechanically
 # validated: this list must equal EXACTLY the pinned tests that `fix_ref` fails.
@@ -355,12 +363,12 @@ probes:
 # so each of R1/R2/R3 has a candidate that passes everything below it and fails
 # only it.
 #
-#   negative anchor (1fc6aef) -> 1
+#   negative anchor (2cbe7cf) -> 1
 #   m1-second-literal-marker  -> 2   witnesses the L2/L3 split
 #   m2-at-close-preserved     -> 3   witnesses the L3/L4 split  [the fact_blind anchor]
 #   m3-turn-keyed-label       -> 4   witnesses the L4/L5 split
 #   m4-equivalent-renamed     -> 5   anti-imitation
-#   positive anchor (4432703) -> 5
+#   positive anchor (71ae0df) -> 5
 #
 # m2 is the load-bearing one: it is the plausible memory-off ceiling, and it is
 # pre-registered as such. `fix_ref` says where a *correct* candidate lands and
