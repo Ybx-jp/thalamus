@@ -44,3 +44,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [026](026-the-session-i-thought-i-was.md) | A session misidentified its own id, "caught" a fork risk that was another session's, and the trace tap caught that | incident + retraction |
 | [027](027-the-wall-that-moved.md) | Cursor re-verified: the contract held, the injection wall moved, the installer was the real gap | workaround + one wall |
 | [028](028-the-transcript-that-keeps-no-receipts.md) | Cursor distills, and the trust floor had to be told the difference between "nothing fetched" and "cannot know" | workaround |
+| [029](029-the-bleed-that-was-not-a-leak.md) | Lexical recall is project-blind; off-project carries 83% of the waste and 38% of the value; both consultations were wrong about the mechanism | measurements + corrections |
