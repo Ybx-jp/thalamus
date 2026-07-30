@@ -107,6 +107,20 @@ verified against the hash.
 - **Outside the repository, not merely gitignored.** Thalamus is going public, and a
   `.gitignore` is one `git add -f` from a bad day.
 
+### The cold store
+
+`~/.thalamus/cold/` holds retained bytes that **nothing live points at**, in the same
+sharded layout plus a tarball of the source directories and a `README.md` naming what
+each holds and the one command that restores it. It is retention, not deletion —
+[04](04-eval-loop.md)'s rule that forgetting is archival applies to evidence whose
+node was dropped, not only to nodes. It is read by nothing: no traversal, no
+`read_archived()`, no secret scan, no `contract check`.
+
+Something lands here when its `Source` is gone from the graph and will not come back:
+today, the 380 extraction-sandbox transcripts and the 696 sandbox project dirs behind
+the lab/033 purge. Moving them out is checked, not assumed — no live `Source` may carry
+a moved content hash, and each blob is re-hashed after the move.
+
 ## The risk, stated plainly
 
 **Transcripts are the highest-risk artifact in this project.** They contain whatever was

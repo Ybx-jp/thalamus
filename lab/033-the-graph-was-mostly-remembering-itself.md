@@ -69,6 +69,11 @@ designed — only the sandbox's edge went. `thalamus contract check` passes on
 5,585 vertices / 13,710 edges; a pre-purge snapshot is on the graph server as
 `pre-sandbox-purge-20260729.kryo`.
 
+The sandbox bytes are retained, not deleted: 696 project dirs (56.6 MB) tarred and
+380 unreferenced archive blobs moved into `~/.thalamus/cold/`, which nothing scans
+or traverses (docs/10). No live `Source` carried any moved hash, checked before the
+move; every blob re-hashed after it.
+
 ## What it costs elsewhere
 
 Any per-Session figure computed before this date counted sandboxes: session
