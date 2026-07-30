@@ -8,6 +8,7 @@ import logging
 import secrets
 import socket
 import sys
+import time
 import threading
 import webbrowser
 from pathlib import Path
@@ -20,6 +21,7 @@ from thalamus.archive import archive_dir
 from thalamus.contract.conformance import check_session
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval.rake_audit import SAMPLE_SIZE
+from thalamus.eval import snapshots
 from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.plane.web import create_app
@@ -166,6 +168,26 @@ def main():
         default=DEFAULT_SNAPSHOT_PATH,
         help="Server-side path to write. Defaults to the configured graphLocation; "
         "point it elsewhere to take a side copy without touching the live file.",
+    )
+    snapshot_parser.add_argument(
+        "--name",
+        help="Pin the graph under this name instead: writes a named .kryo and records "
+        "counts, sha256 and git ref in the committed registry. A published number cites "
+        "the snapshot it was computed on; snapshots are immutable.",
+    )
+    snapshot_parser.add_argument(
+        "--note", default="", help="Why this state was worth pinning (goes in the registry)"
+    )
+    snapshot_parser.add_argument(
+        "--list", action="store_true", help="List pinned snapshots and verify their hashes"
+    )
+    snapshot_parser.add_argument(
+        "--serve",
+        help="Serve a pinned snapshot read-only on --port so an analysis can address the "
+        "past without the live graph moving underneath it",
+    )
+    snapshot_parser.add_argument(
+        "--port", type=int, default=8183, help="Port for --serve (default: 8183)"
     )
 
     # Eval command — layer 1 of the eval loop (docs/04)
@@ -1000,6 +1022,47 @@ def _cmd_ingest(args):
 
 def _cmd_snapshot(args):
     from thalamus.substrate.snapshot import SnapshotError
+
+    if args.list:
+        rows = snapshots.registry()
+        if not rows:
+            print("No pinned snapshots. `thalamus snapshot --name <id>` pins one.")
+            return
+        for row in rows:
+            ok = "ok" if snapshots.verify(row.name) else "HASH MISMATCH"
+            print(
+                f"{row.name:32} {row.taken_at[:19]}  {row.vertices:>6}V {row.edges:>6}E  "
+                f"@{row.git_ref}  {ok}"
+            )
+            if row.note:
+                print(f"{'':32} {row.note}")
+        return
+
+    if args.name:
+        try:
+            row = snapshots.take(args.name, note=args.note, url=args.url)
+        except snapshots.SnapshotError as e:
+            print(str(e), file=sys.stderr)
+            sys.exit(1)
+        print(
+            f"Pinned `{row.name}`: {row.vertices} vertices, {row.edges} edges, "
+            f"{row.byte_size / 1e6:.1f} MB, sha256 {row.sha256[:12]} @{row.git_ref}"
+        )
+        print(f"  registry: {snapshots.REGISTRY}")
+        print(f"  serve it: thalamus snapshot --serve {row.name}")
+        return
+
+    if args.serve:
+        with snapshots.serve(args.serve, port=args.port) as url:
+            row = snapshots.find(args.serve)
+            print(f"Serving `{row.name}` ({row.vertices}V/{row.edges}E) at {url}")
+            print("Read-only; the volume is mounted ro. Ctrl-C to stop.")
+            try:
+                while True:
+                    time.sleep(3600)
+            except KeyboardInterrupt:
+                print("\nStopped.")
+        return
 
     graph = connect(args.url)
     try:
