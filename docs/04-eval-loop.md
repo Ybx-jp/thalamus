@@ -43,6 +43,19 @@ a crude measure beats no measure, and refining attribution is itself lab-noteboo
 material. Traces land as episodic memory (the trace store **is** a property graph),
 so the eval loop needs no side database: it reads the same substrate it grades.
 
+**How crude is now measured, and it bounds every number below.** Under permutation
+— judging a retrieval's nodes against a *different same-project session's* output
+window — used% reads 58–61% against 62.9% for the real window. Across projects the
+same test reads 5%. So the instrument is a **topic detector**: nearly perfect at
+"is this node from this body of work", and carrying roughly **4 points of
+discrimination on a 59-point floor** at the question actually being asked, "did
+this retrieval get used". It also rises with output length (51.7% at 20–100k chars
+vs 69.7% at 100k+), which means it partly re-measures the session-length effect
+that already dominates cost. Read every used% in this document as ~59 points of
+vocabulary overlap plus ~4 of utility (lab/032). The fix is to report the permuted
+baseline beside the rate — computable from retained data, and gated on the
+grounding/consultation path because it changes a metric of record.
+
 **As built:** retrieval results render their vertex IDs inline, so the verbatim
 PostToolUse tap *is* the node-level trace — no side schema (docs/09). `thalamus
 eval sync` lands tap lines as `Trace` nodes (`Session -[QUERIES]-> Trace -[RETURNS]->

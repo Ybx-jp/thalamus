@@ -8,6 +8,17 @@ way lexical matching misleads is lab-notebook material for refining it. No model
 this loop: attribution must stay cheap enough to run after every session, or it will
 not be run.
 
+**How crude, measured (lab/032).** Judging a retrieval's nodes against a *different*
+same-project session's output scores 58-61% used, against 62.9% for the real output
+window — so within a project this instrument carries roughly **4 points of
+discrimination on a 59-point floor**. Across projects it is nearly perfect (63% vs
+5%): it is a topic detector, accurate at a granularity coarser than the question
+being asked of it. Two structural causes, both here in `_judge`: term membership is
+tested anywhere in the window with no proximity, so long windows match more (used%
+51.7% at 20-100k chars vs 69.7% at 100k+), and same-project sessions share
+vocabulary by definition. Read every used% as ~59 points of overlap plus ~4 of
+utility until a permuted baseline is reported beside it.
+
 Verdicts are facts about one retrieval of one node, so they land as properties on the
 Trace -[RETURNS]-> node edge, never on the node itself.
 """

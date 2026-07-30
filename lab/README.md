@@ -47,3 +47,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [029](029-the-bleed-that-was-not-a-leak.md) | Lexical recall is project-blind; off-project carries 83% of the waste and 38% of the value; both consultations were wrong about the mechanism | measurements + corrections |
 | [030](030-the-miss-rate-was-the-consultation.md) | The 41% miss rate is consultation into thin expert subgraphs; the floor never cut fan-out (query shape did); three instrument errors caught | correction + measurements |
 | [031](031-the-dial-that-had-nothing-to-tune.md) | Detail cap stays at 8: used-rate is ~60% flat across position, length and ranking; the elision stub was hiding the cap | null result + fix |
+| [032](032-the-instrument-is-a-topic-detector.md) | Attribution scores 59% used against an unrelated session's output vs 63% against the real one — 4pp of signal on a 59pp floor | calibration |
