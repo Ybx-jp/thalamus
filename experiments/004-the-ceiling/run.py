@@ -203,8 +203,6 @@ def main() -> None:
     print(f"\nwrote {results_path.name} and {page_path.name}")
 
 
-if __name__ == "__main__":
-    main()
 
 
 def sign_test(pairs):
@@ -453,3 +451,7 @@ def page(m):
         ),
         verdict_kind="null",
     )
+
+
+if __name__ == "__main__":
+    main()
