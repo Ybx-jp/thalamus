@@ -61,6 +61,49 @@ The citation path is not immune. Under permutation it still fired on 54 nodes
 (2.3%) against 90 (3.8%) real — agents cite the same vertex IDs across sessions,
 so even the strong path has a false-positive floor.
 
+## Where the floor lives: by node kind
+
+Proposed mechanism (operator, same day): `memory_open_threads` fires at every
+session start, sessions spawn far more threads than they close, and turn
+completions reference open threads — so thread nodes would echo in *any*
+session's output and inflate the floor.
+
+The premise holds. **398 SPAWNS against 71 RESOLVES — 5.6 threads opened per one
+closed — and 306 of 377 threads (81%) are open or in-progress.** Threads are
+long-lived and shared across sessions by design.
+
+The effect is real and is the largest of any node kind:
+
+| node kind | n | real | placebo | discrimination |
+|---|---|---|---|---|
+| claim | 1756 | 60.1% | 56.0% | +4.1pp |
+| **thread** | 323 | 77.7% | **70.0%** | +7.7pp |
+| **session** | 285 | 63.2% | **62.8%** | **+0.4pp** |
+| by tool: `memory_open_threads` | 319 | 77.4% | 69.6% | +7.8pp |
+| by tool: `memory_recall` | 1972 | 60.0% | 56.3% | +3.7pp |
+
+Threads do float free exactly as predicted — a 70% placebo rate is the highest
+in the corpus, and `memory_open_threads` is the leakiest surface. **But it is not
+the explanation for the floor.** Threads are 13.6% of verdicts; excluding them
+entirely moves the floor 58.7% → **56.9%**, and the real-vs-placebo gap stays at
++3.7pp. The floor lives in Claims, which are 74% of all verdicts and sit at 56%
+placebo on their own.
+
+The channel is also not the one it looks like. `_judge` has a dedicated
+thread-slug path, and it fires on only 26 of 323 thread verdicts (19 of those
+also fire under permutation). The other 220 come through ordinary lexical echo:
+thread *descriptions* are long topical prose about the project's live concerns,
+which is the most echo-prone text in the graph. Slugs are a rounding error; the
+description is the leak.
+
+**The sharpest result here is the session row.** Session-summary verdicts carry
+**+0.4pp** of discrimination — statistically nothing. Whatever a session
+summary's used-flag means, it is not "this summary was used by this retrieval."
+That bears directly on the open question in
+[lab/030](030-the-miss-rate-was-the-consultation.md) about whether summaries are
+noise or an unobservable mediator: as measured, the summary used-flag cannot
+answer it either way, because it contains no retrieval-level signal to read.
+
 ## Consequences for numbers already on record
 
 - **The `recall-strategy` skill told agents to target "used% above ~50."** The
@@ -79,6 +122,10 @@ so even the strong path has a false-positive floor.
 - **lab/031's null result stands, and is now better explained.** Used-rate was
   flat across position, length and keyword ranking because ~59 of those 60 points
   are a floor that no reordering of the same session's claims can move.
+- **Any conclusion resting on session-summary used% is unreadable**, at +0.4pp.
+  That includes the session-level half of lab/029's 2×2. Its internal argument
+  survives — a *sign reversal* by project cannot be produced by a length artifact
+  — but the 91%-vs-25% magnitudes are the topic detector detecting topic.
 
 ## What would change the conclusion
 
