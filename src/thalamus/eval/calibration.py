@@ -71,6 +71,13 @@ class Case:
     ts: datetime
     nodes: dict[str, str]
     window: OutputWindow
+    # Rendered size of the whole retrieval, and how many nodes shared it. Carried on
+    # the case because token waste is a *token*-weighted question and the per-node
+    # share is the only price the graph records — a 40-token thread and a 400-token
+    # claim in one render are priced identically, which is a known defect worth
+    # measuring rather than silently inheriting.
+    injected_chars: int = 0
+    returned_count: int = 0
     # What `eval sync` stored for these nodes, for the reconstruction-fidelity gate.
     stored: dict[str, bool] = field(default_factory=dict)
     stratum: int = 0
@@ -164,7 +171,10 @@ def load_cases(
         .has_label("Trace")
         .has("scope", scope)
         .out_e("RETURNS")
-        .project("trace", "session_id", "ts", "tool", "node", "used", "text")
+        .project(
+            "trace", "session_id", "ts", "tool", "node", "used", "text",
+            "injected_chars", "returned_count",
+        )
         .by(__.out_v().id_())
         .by(__.out_v().coalesce(__.values("session_id"), __.constant("")))
         .by(__.out_v().coalesce(__.values("ts"), __.constant("")))
@@ -177,6 +187,8 @@ def load_cases(
                 __.constant(""),
             )
         )
+        .by(__.out_v().coalesce(__.values("injected_chars"), __.constant(0)))
+        .by(__.out_v().coalesce(__.values("returned_count"), __.constant(0)))
         .to_list()
     )
 
@@ -195,6 +207,8 @@ def load_cases(
                 "session_id": row["session_id"],
                 "ts": row["ts"],
                 "tool": row["tool"],
+                "injected_chars": int(row["injected_chars"] or 0),
+                "returned_count": int(row["returned_count"] or 0),
                 "nodes": {},
                 "stored": {},
             },
@@ -232,6 +246,8 @@ def load_cases(
                 ts=ts,
                 nodes=entry["nodes"],
                 window=window,
+                injected_chars=entry["injected_chars"],
+                returned_count=entry["returned_count"],
                 stored=entry["stored"],
             )
         )
@@ -512,6 +528,8 @@ def restrict(cases: list[Case], kinds: set[str]) -> list[Case]:
                 ts=case.ts,
                 nodes=nodes,
                 window=case.window,
+                injected_chars=case.injected_chars,
+                returned_count=case.returned_count,
                 stored={k: v for k, v in case.stored.items() if k in nodes},
             )
         )

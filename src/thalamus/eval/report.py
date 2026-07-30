@@ -158,6 +158,18 @@ class ScopeReport:
                     f"({wasted_pct:.0f}%)"
                 )
             lines.append(line)
+            # The bare percentage above is a point estimate with no interval and no
+            # chance correction, and both matter more than it does: sessions are the
+            # sampling unit (design effect ~2.5, so the honest interval is ~3.5x the
+            # verdict-level one), and the judge calls ~59% of *unrelated* tokens used.
+            # Printing it without this line is how "50% wasted" travelled into docs
+            # and a skill as if it were a measurement.
+            lines.append(
+                "    ^ point estimate only — no interval, no chance correction. "
+                "See experiments/002 for the session-clustered interval "
+                "(+/-7pp at this corpus size) and what the figure becomes once "
+                "corrected against the permuted null."
+            )
 
         if self.most_ignored:
             lines.append(

@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What “a third of the tokens are wasted” actually supports — Thalamus experiment 002-what-the-waste-figure-means</title>
+<meta name="description" content="Thalamus reports 34% of injected memory tokens as unused. With sessions as the sampling unit that is 33.8% ±6.6pp — and once corrected for a judge that calls 59% of unrelated tokens used, what the corpus supports is that about 17% of injected tokens are demonstrably earned.">
+<style>/* Thalamus experiment write-ups — the design tokens.
+ *
+ * Steel blue leads, warm grey carries the page. The categorical ramp is fixed
+ * order, never cycled, and was validated (not eyeballed) against both surfaces:
+ * lightness band, chroma floor, CVD separation, normal-vision floor and contrast
+ * all pass on #fcfcfb and on #1a1a19. Changing a series hex means re-running that
+ * validation — the six checks are the reason these values look arbitrary.
+ *
+ * Warm grey is deliberately NOT a series colour: it is ink, rule and surface, so
+ * a grey mark always means "structure", never "category 2".
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Categorical — assign in this order, never cycled. A 7th series folds into
+     "other" or becomes a small multiple. */
+  --series-1: #3a7fb5; /* steel blue — the primary, and the default single series */
+  --series-2: #c4562f; /* terracotta */
+  --series-3: #1f8f7a; /* teal */
+  --series-4: #8e5cc8; /* violet */
+  --series-5: #a8830e; /* ochre */
+  --series-6: #c0407a; /* magenta */
+
+  /* Sequential — one hue, light to dark. Magnitude only. */
+  --seq-1: #dbe8f3;
+  --seq-2: #b3cde4;
+  --seq-3: #82aed2;
+  --seq-4: #4f8dbf;
+  --seq-5: #3a7fb5;
+  --seq-6: #275d86;
+
+  /* Diverging — two poles, warm grey midpoint. Polarity only. */
+  --div-neg: #c4562f;
+  --div-mid: #d9d4cb;
+  --div-pos: #3a7fb5;
+
+  /* Status — reserved. Never reused as a series colour; always with a label. */
+  --status-good: #1f8f7a;
+  --status-warn: #a8830e;
+  --status-serious: #c4562f;
+  --status-critical: #9c2f2f;
+
+  /* Warm grey structure */
+  --surface-page: #fcfcfb;
+  --surface-panel: #f4f2ee;
+  --surface-sunken: #eae6df;
+  --rule: #e0dbd2;
+  --rule-strong: #c9c2b6;
+  --ink: #2a2724;
+  --ink-secondary: #5c554e;
+  --ink-muted: #8a8078;
+
+  --font-body: ui-serif, "Iowan Old Style", "Source Serif 4", Georgia, serif;
+  --font-ui: ui-sans-serif, system-ui, "Inter", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --measure: 34rem; /* body text column */
+  --radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --seq-1: #1e3247;
+    --seq-2: #27506f;
+    --seq-3: #326a90;
+    --seq-4: #3a7fb5;
+    --seq-5: #66a3d0;
+    --seq-6: #9cc6e6;
+
+    --div-mid: #4a4640;
+
+    --surface-page: #1a1a19;
+    --surface-panel: #232320;
+    --surface-sunken: #2b2a26;
+    --rule: #383530;
+    --rule-strong: #4d4941;
+    --ink: #edeae4;
+    --ink-secondary: #b8b2a8;
+    --ink-muted: #8a8078;
+  }
+}
+
+:root[data-theme="dark"] {
+  --seq-1: #1e3247;
+  --seq-2: #27506f;
+  --seq-3: #326a90;
+  --seq-4: #3a7fb5;
+  --seq-5: #66a3d0;
+  --seq-6: #9cc6e6;
+  --div-mid: #4a4640;
+  --surface-page: #1a1a19;
+  --surface-panel: #232320;
+  --surface-sunken: #2b2a26;
+  --rule: #383530;
+  --rule-strong: #4d4941;
+  --ink: #edeae4;
+  --ink-secondary: #b8b2a8;
+  --ink-muted: #8a8078;
+}
+
+:root[data-theme="light"] {
+  --seq-1: #dbe8f3;
+  --seq-2: #b3cde4;
+  --seq-3: #82aed2;
+  --seq-4: #4f8dbf;
+  --seq-5: #3a7fb5;
+  --seq-6: #275d86;
+  --div-mid: #d9d4cb;
+  --surface-page: #fcfcfb;
+  --surface-panel: #f4f2ee;
+  --surface-sunken: #eae6df;
+  --rule: #e0dbd2;
+  --rule-strong: #c9c2b6;
+  --ink: #2a2724;
+  --ink-secondary: #5c554e;
+  --ink-muted: #8a8078;
+}
+
+/* Experiment page layout. Tokens come from experiments/assets/theme.css; this
+ * file only arranges them. Serif for the argument, sans for the apparatus,
+ * monospace for anything a reader might paste into a terminal.
+ */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 47rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+
+/* ---- masthead ---------------------------------------------------------- */
+
+header.masthead {
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2.5rem;
+  padding: 3.5rem 0 2rem;
+  position: relative;
+}
+header.masthead::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 3.5rem; height: 4px;
+  background: var(--series-1);
+}
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.9rem;
+}
+h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+.standfirst {
+  font-size: 1.16rem;
+  color: var(--ink-secondary);
+  margin: 0 0 1.6rem;
+  max-width: 38rem;
+}
+.byline {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+}
+.byline code { font-size: 0.76rem; }
+
+/* ---- verdict ----------------------------------------------------------- */
+
+.verdict {
+  border-left: 3px solid var(--series-1);
+  background: var(--surface-panel);
+  padding: 1.1rem 1.3rem;
+  margin: 0 0 2.6rem;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.verdict-kind {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.verdict p { margin: 0; font-size: 1.05rem; }
+.verdict.null { border-left-color: var(--series-5); }
+.verdict.withdrawn { border-left-color: var(--series-2); }
+
+/* ---- stat tiles -------------------------------------------------------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 0 0 2.8rem;
+}
+.stat { background: var(--surface-page); padding: 1rem 1.1rem; }
+.stat-label {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.45rem;
+}
+.stat-value {
+  font-family: var(--font-ui);
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.stat-interval, .stat-null, .stat-note {
+  font-family: var(--font-ui);
+  font-size: 0.76rem;
+  color: var(--ink-secondary);
+  margin: 0.4rem 0 0;
+}
+.stat-null { color: var(--ink-muted); }
+
+/* ---- prose ------------------------------------------------------------- */
+
+h2 {
+  font-family: var(--font-ui);
+  font-size: 1.28rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 3rem 0 1rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+}
+h3 {
+  font-family: var(--font-ui);
+  font-size: 1.02rem;
+  font-weight: 600;
+  margin: 2rem 0 0.6rem;
+}
+p { margin: 0 0 1.05rem; }
+a { color: var(--series-1); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+strong { font-weight: 600; }
+ul, ol { padding-left: 1.3rem; margin: 0 0 1.1rem; }
+li { margin-bottom: 0.4rem; }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--surface-sunken);
+  padding: 0.1em 0.34em;
+  border-radius: 3px;
+}
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  background: var(--surface-panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.95rem 1.1rem;
+  overflow-x: auto;
+  margin: 0 0 1.4rem;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ---- figures ----------------------------------------------------------- */
+
+.fig { margin: 1.8rem 0 2rem; }
+.chart { width: 100%; height: auto; overflow: visible; }
+.fig-title {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.grid { stroke: var(--rule); stroke-width: 1; }
+.tick, .legend {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  fill: var(--ink-muted);
+}
+.row-label {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  fill: var(--ink-secondary);
+}
+.value {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.bar { stroke: var(--surface-page); stroke-width: 2; }
+.null-band { fill: var(--ink-muted); opacity: 0.16; }
+.null-line { stroke: var(--ink-secondary); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.ci { stroke: var(--ink); stroke-width: 1.5; opacity: 0.75; }
+.lollipop { stroke: var(--rule-strong); stroke-width: 2; }
+.dot { stroke: var(--surface-page); stroke-width: 2; }
+
+/* ---- tables ------------------------------------------------------------ */
+
+.table-wrap { overflow-x: auto; margin: 0 0 1.8rem; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 0.84rem;
+}
+caption {
+  caption-side: bottom;
+  text-align: left;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  padding-top: 0.6rem;
+}
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.85rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-variant-numeric: tabular-nums;
+  vertical-align: top;
+}
+th {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 600;
+  border-bottom-color: var(--rule-strong);
+}
+tbody tr:last-child td { border-bottom: none; }
+
+/* ---- callouts ---------------------------------------------------------- */
+
+.callout {
+  border: 1px solid var(--rule);
+  border-left-width: 3px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 0.95rem 1.15rem;
+  margin: 1.6rem 0;
+  background: var(--surface-panel);
+  font-size: 0.95rem;
+}
+.callout p { margin: 0 0 0.6rem; }
+.callout p:last-child { margin-bottom: 0; }
+.callout-title {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.callout-finding { border-left-color: var(--series-1); }
+.callout-caveat { border-left-color: var(--series-5); }
+.callout-withdrawal { border-left-color: var(--series-2); }
+.callout-method { border-left-color: var(--series-3); }
+
+/* ---- checklist --------------------------------------------------------- */
+
+.checklist { list-style: none; padding: 0; margin: 0 0 1.6rem; }
+.checklist li {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.7rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+}
+.checklist li:last-child { border-bottom: none; }
+.mark { font-weight: 700; font-size: 0.95rem; line-height: 1.5; }
+.mark-yes { color: var(--status-good); }
+.mark-no { color: var(--status-serious); }
+.mark-na { color: var(--ink-muted); }
+.check-detail { color: var(--ink-muted); font-size: 0.8rem; display: block; margin-top: 0.15rem; }
+
+/* ---- registration ------------------------------------------------------ */
+
+.registration {
+  background: var(--surface-panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.35rem;
+  margin: 0 0 2rem;
+}
+.registration dl { margin: 0; display: grid; grid-template-columns: 9rem 1fr; gap: 0.55rem 1rem; }
+.registration dt {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding-top: 0.15rem;
+}
+.registration dd { margin: 0; font-size: 0.95rem; }
+
+@media (max-width: 34rem) {
+  .registration dl { grid-template-columns: 1fr; gap: 0.15rem; }
+  .registration dd { margin-bottom: 0.7rem; }
+  body { font-size: 17px; }
+}
+
+footer.colophon {
+  margin-top: 3.5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+footer.colophon code { font-size: 0.74rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Thalamus · experiment 002-what-the-waste-figure-means</p>
+  <h1>What “a third of the tokens are wasted” actually supports</h1>
+  <p class="standfirst">Thalamus reports 34% of injected memory tokens as unused. With sessions as the sampling unit that is 33.8% ±6.6pp — and once corrected for a judge that calls 59% of unrelated tokens used, what the corpus supports is that about 17% of injected tokens are demonstrably earned.</p>
+  <div class="byline">
+    <span>2026-07-30 08:27 UTC</span>
+    <span>snapshot <code>post-sandbox-purge-20260730</code></span>
+    <span>seed <code>20260730</code></span>
+    <span>code <code>1ebdb5f</code></span>
+  </div>
+</header>
+
+
+<div class="verdict measured">
+  <span class="verdict-kind">measured</span>
+  <p>33.8% of injected tokens were judged unused, 95% CI [27.2, 40.5] with sessions as the sampling unit — a ±6.6pp interval where the verdict-level one would have claimed ±1.9pp. Chance-corrected, the supportable claim is that about 17% of injected tokens are demonstrably earned. Reaching ±3pp on the uncorrected figure needs 143 sessions; the corrected one cannot be reached by waiting.</p>
+</div>
+
+
+
+<div class="stats">
+  
+  <div class="stat">
+    <p class="stat-label">Wasted, as reported</p>
+    <p class="stat-value">33.8%</p>
+    <p class="stat-interval">95% CI [27.2, 40.5] · ±6.6pp</p>
+    
+    <p class="stat-note">93,662 of 277,024 injected tokens</p>
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">Demonstrably earned</p>
+    <p class="stat-value">17.5%</p>
+    
+    <p class="stat-null">token-weighted null 59.0%</p>
+    <p class="stat-note">after correcting for what the judge scores on unrelated retrievals</p>
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">Design effect</p>
+    <p class="stat-value">2.52×</p>
+    <p class="stat-interval">ICC 0.229 across 29 sessions</p>
+    
+    <p class="stat-note">verdicts in one session are not independent draws</p>
+  </div>
+  
+  <div class="stat">
+    <p class="stat-label">Sessions for ±3pp</p>
+    <p class="stat-value">143</p>
+    <p class="stat-interval">29 today</p>
+    
+    <p class="stat-note">at the variance measured here</p>
+  </div>
+  
+</div>
+
+
+<h2 id="preregistration">What was committed to before the data was seen</h2>
+<div class="registration">
+  <dl>
+    <dt>Question</dt><dd>What interval does the token-waste figure carry once the clustering of verdicts inside sessions is respected, and what does it become after correcting for the judge's chance level?</dd>
+    <dt>Hypothesis</dt><dd>The published point estimate is materially less precise than it looks, and the chance correction changes the headline more than the interval does.</dd>
+    <dt>Endpoint</dt><dd>Ratio of totals (wasted / injected tokens), sessions as primary sampling units, delete-one-session jackknife; plus the token-weighted chance-corrected share.</dd>
+    <dt>Falsifier</dt><dd>If the session-clustered interval is no wider than the verdict-level one, clustering is not material here and the simpler estimator stands.</dd>
+    <dt>Stopping rule</dt><dd>Census at the pinned snapshot; no sampling decision to stop. 200 rotations for the null, fixed before the run.</dd>
+    
+    <dt>Registered</dt><dd>2026-07-30 · <code>preregistration.md</code></dd>
+    
+  </dl>
+</div>
+
+
+<h2 id="three">Three numbers wearing one name</h2>
+
+<p>Thalamus prices every retrieval: the rendered block has a size, and each node in
+it carries a share. Multiply that share by whether the judge called the node used,
+and you get the figure the tooling prints — <strong>33.8% of injected
+tokens wasted</strong>.</p>
+
+<p>That figure has been quoted three ways, and they are not the same quantity.</p>
+<div class="table-wrap"><table><caption>Three different quantities that a bare &#x27;33% wasted&#x27; has been used to mean.</caption><thead><tr><th>what is being estimated</th><th>value</th><th>95% interval</th><th>resampling unit</th></tr></thead><tbody><tr><td>share of injected tokens the judge called unused</td><td>33.8%</td><td>[27.2, 40.5] (±6.6pp)</td><td>session (29 PSUs, jackknife)</td></tr><tr><td>the same, if verdicts were independent draws</td><td>33.8%</td><td>±1.9pp</td><td>verdict (2,445) — wrong, shown for scale</td></tr><tr><td>share not distinguishable from topic overlap</td><td>82.5%</td><td>not yet interval-bounded (see below)</td><td>token-weighted, chance-corrected</td></tr></tbody></table></div>
+<aside class="callout callout-method"><p class="callout-title">Why the session is the unit</p>
+<p>Verdicts inside one session share an output window, a topic and an operator, so
+they are not independent draws. Measured here: ICC 0.229, design effect
+2.52×. Treating 2,445 verdicts as 2,445
+observations would report ±1.9pp where the honest interval is ±6.6pp.
+The estimator is a ratio of totals with a delete-one-session jackknife.</p></aside>
+
+
+<h2 id="correction">The correction that changes the sentence</h2>
+
+<p>The interval above prices sampling error only. The deeper problem is what "used"
+means: the same judge, pointed at an <em>unrelated</em> session's output, still calls
+59.0% of tokens used (experiment 001, token-weighted here rather
+than node-weighted, because the nodes that dominate the token budget are not the ones
+that dominate the count).</p>
+
+<p>Correcting for that — κ on the token scale — leaves
+<strong>17.5% of injected tokens demonstrably earned</strong>. The
+defensible sentence is not "a third of the tokens are wasted". It is:</p>
+
+<aside class="callout callout-finding"><p class="callout-title">What the corpus supports</p>
+<p>About <strong>17%</strong> of injected retrieval tokens are
+demonstrably earned. The remaining <strong>83%</strong> is not
+distinguishable, by this instrument, from tokens that would have looked equally
+"used" had they been retrieved for a different session entirely.</p>
+<p>That is not a claim that 83% of the memory is useless. It is a
+statement about the instrument's resolution: it cannot tell the difference, and
+neither can anyone quoting its output.</p></aside>
+
+<p>This corrected figure has no interval yet, and that is deliberate rather than an
+oversight. Its uncertainty is the uncertainty of a difference between two rates
+measured on the same verdicts, which needs the paired estimator experiment 001 built
+for κ — extended to token weights. Pending that, it is reported as a bound with its
+inputs shown, not as a point estimate with a false interval.</p>
+
+
+<h2 id="power">How much more data would fix the interval</h2>
+
+<p>The uncorrected figure's precision is a straightforward function of session count
+at the variance measured here.</p>
+<div class="table-wrap"><table><caption>From the measured jackknife SE of 0.0339 at 29 sessions, scaling as 1/√n. A superpopulation statement about sessions not yet had.</caption><thead><tr><th>target precision</th><th>sessions needed</th><th>multiple of today</th></tr></thead><tbody><tr><td>±5pp</td><td>52</td><td>1.8×</td></tr><tr><td>±3pp</td><td>143</td><td>4.9×</td></tr><tr><td>±2pp</td><td>320</td><td>11.0×</td></tr></tbody></table></div>
+<p>The corrected figure is much harder. Its estimand is a difference of about
+7.2 points between two rates on the same
+verdicts, and verdicts flip under rotation 24.5% of the time.
+Bounding that difference to ±1 point needs roughly
+23,779 verdicts —
+around 282
+sessions at this corpus's 84 verdicts per session,
+against 29 today.</p>
+<aside class="callout callout-finding"><p class="callout-title">Precision on the uncorrected figure is reachable; on the corrected one it is not</p>
+<p>143 sessions is a matter of months at one operator's
+working rate. The number needed to pin the corrected figure is an order of magnitude
+beyond that. So the uncorrected waste rate can be made precise by waiting, and the
+quantity anyone actually cares about cannot — which is the argument for changing the
+instrument rather than growing the corpus.</p></aside>
+
+
+<h2 id="breakdown">Where the waste sits</h2>
+
+<div class="table-wrap"><table><thead><tr><th>tool</th><th>retrievals</th><th>injected tokens</th><th>wasted</th><th>waste share</th></tr></thead><tbody><tr><td>memory_recall</td><td>167</td><td>204,743</td><td>76,952</td><td>37.6%</td></tr><tr><td>memory_open_threads</td><td>32</td><td>59,052</td><td>13,584</td><td>23.0%</td></tr><tr><td>memory_recall_recent</td><td>6</td><td>6,257</td><td>1,337</td><td>21.4%</td></tr><tr><td>bash_gremlin</td><td>7</td><td>1,783</td><td>1,042</td><td>58.4%</td></tr><tr><td>memory_query</td><td>3</td><td>1,821</td><td>454</td><td>24.9%</td></tr><tr><td>memory_recall_by_project</td><td>5</td><td>3,195</td><td>294</td><td>9.2%</td></tr><tr><td>memory_thread</td><td>2</td><td>174</td><td>0</td><td>0.0%</td></tr></tbody></table></div>
+<div class="table-wrap"><table><caption>Waste is concentrated, which is why the session is the sampling unit.</caption><thead><tr><th>session</th><th>retrievals</th><th>wasted tokens</th><th>share of all waste</th></tr></thead><tbody><tr><td>dfd36179</td><td>24</td><td>16,068</td><td>17.2%</td></tr><tr><td>d31d2da8</td><td>51</td><td>11,818</td><td>12.6%</td></tr><tr><td>16a18806</td><td>10</td><td>11,623</td><td>12.4%</td></tr><tr><td>7e008e7e</td><td>7</td><td>9,275</td><td>9.9%</td></tr><tr><td>3203f9b9</td><td>15</td><td>6,413</td><td>6.8%</td></tr></tbody></table></div>
+<p>The top three sessions carry 42% of all wasted tokens. Concentration
+that heavy is the substantive reason the session is the sampling unit, and it is also
+a hint about where a targeted fix would pay: a retrieval-shape change that only
+affects long sessions would move most of this number.</p>
+
+
+<h2 id="threats">Threats to this result</h2>
+
+<aside class="callout callout-caveat"><p class="callout-title">The per-node price is uniform, and nodes are not</p>
+<p>The graph records the size of the whole rendered block and the number of nodes in
+it, not the size of each node. So the price is <code>injected_chars /
+returned_count</code>: a 40-token thread title and a 400-token claim in the same
+retrieval are charged identically. The direction of the bias depends on whether long
+nodes are used more often than short ones — which is measurable, and is not measured
+here. Until it is, read every token figure as node-count-weighted in disguise.</p></aside>
+
+<aside class="callout callout-caveat"><p class="callout-title">Injected once, paid for repeatedly</p>
+<p>A retrieval's tokens ride along in every subsequent API call of the session, so
+the true cost of a wasted retrieval is its size times the number of later calls. The
+cost module counts that multiplier separately and this experiment does not use it:
+these are single-injection tokens, which understates the real spend by a factor
+nobody has pinned.</p></aside>
+
+<ul>
+<li><strong>Non-retrieval is invisible.</strong> A node that was never returned has
+no edge, so this frame can price what retrieval cost but never what forgetting cost.</li>
+<li><strong>One operator, one machine, one harness configuration.</strong> The n
+calculations are superpopulation statements about that operator's future sessions.</li>
+<li><strong>27% of verdicts sit on mutable node text</strong> (experiment 001):
+threads and sessions are overwritten latest-wins, so some of these verdicts price
+text that has since changed.</li>
+</ul>
+
+
+
+<h2 id="reproducibility">Reproducibility</h2>
+<p>Every number and figure above regenerates from a pinned graph state and a seed.
+Nothing here was computed against the live graph, which moves whenever a session ends.</p>
+<pre><code>thalamus snapshot --list
+uv run --extra experiments python \
+    experiments/002-what-the-waste-figure-means/run.py --rotations 200 --seed 20260730</code></pre>
+<p>The snapshot is <code>post-sandbox-purge-20260730</code>
+(5591 vertices, 13849 edges,
+sha256 <code>a5fe960d38594181</code>), served read-only by
+<code>thalamus snapshot --serve</code>.</p>
+
+<ul class="checklist">
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>A clear description of the estimand and the estimator used for it<span class="check-detail">Estimand: wasted / injected tokens. Estimator: ratio of totals, sessions as PSUs, delete-one-session jackknife.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The population the result generalises to, stated as a limit<span class="check-detail">One operator; superpopulation over future sessions.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The null or baseline every reported rate is compared against<span class="check-detail">Token-weighted permuted null 59.0% from 200 rotations.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>An interval on every point estimate, with the resampling unit named<span class="check-detail">Session-clustered. The naive verdict-level interval is shown beside it for scale.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The number of runs, and the seed<span class="check-detail">seed 20260730, 200 rotations.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>The data the analysis read, pinned by name and hash<span class="check-detail">snapshot post-sandbox-purge-20260730, sha256 a5fe960d38594181.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>A command that regenerates every number and figure in this page<span class="check-detail">See Reproducibility.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-no">✗</span>
+    <span>Instrument validation: agreement with a reference judgement<span class="check-detail">No human-labelled gold set exists yet, so the judge underlying the estimand is bounded against chance but not against truth.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>Cost reported alongside utility<span class="check-detail">This experiment is the cost side of the frontier.</span></span>
+  </li>
+
+  <li>
+    <span class="mark mark-yes">✓</span>
+    <span>What was withheld, and why<span class="check-detail">The corrected figure is reported without an interval, and the reason is stated rather than a placeholder being supplied.</span></span>
+  </li>
+
+</ul>
+
+<h3>What is deliberately absent</h3>
+<p>The graph itself is not published. It is one operator's session history and the
+evidence archive holds their transcripts verbatim — credentials, client names and
+personal history included. The snapshot hash lets anyone holding the same state
+verify that these numbers came from it; it does not let a stranger recompute them
+from scratch, and no wording here should imply otherwise.</p>
+
+<footer class="colophon">
+  <p>Thalamus · experiment 002-what-the-waste-figure-means · generated 2026-07-30 08:27 UTC from
+  <code>1ebdb5f</code>. Checklist after Pineau et al.,
+  <em>Improving Reproducibility in Machine Learning Research</em>, JMLR 22(164), 2021.</p>
+</footer>
+
+</div>
+</body>
+</html>
