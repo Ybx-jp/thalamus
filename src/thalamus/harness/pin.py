@@ -233,7 +233,8 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
     print(f"Spawned `{scope}` in {cwd}")
 
 
-def roster(project_root: Path, base: Path | None = None, full: bool = False) -> None:
+def roster(project_root: Path, base: Path | None = None, full: bool = False,
+           session: str | None = None) -> None:
     """Bring up the control plane. Default: only the `main` anchor window (experts
     are spawned on demand from the plane). `full=True` opens one window per expert.
 
@@ -243,15 +244,21 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False) -> 
     means a window exists only when an expert is actually being used.
 
     Idempotent either way: windows already named for a scope are left alone.
+
+    `session` names the target session explicitly. Left None (the CLI's case) the
+    target is the surrounding tmux session when there is one, else ROSTER_SESSION.
+    The control-plane server passes it: it drives a session by name and must not
+    behave differently depending on whether the server process happens to have
+    been started from inside a tmux of its own.
     """
-    inside = bool(os.environ.get("TMUX"))
+    inside = bool(os.environ.get("TMUX")) and session is None
     if not (inside or shutil.which("tmux")):
         raise RuntimeError(
             "roster needs tmux (it IS the control plane); run `thalamus pin <scope>` instead"
         )
 
     scopes = [MAIN_SCOPE, *available_scopes(base)] if full else [MAIN_SCOPE]
-    target = None if inside else ROSTER_SESSION
+    target = session or (None if inside else ROSTER_SESSION)
 
     if target and subprocess.run(
         ["tmux", "has-session", "-t", target], capture_output=True

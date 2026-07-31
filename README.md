@@ -100,6 +100,13 @@ buys. See [Command reference](#command-reference) for everything else.
   roster` launch scope-pinned sessions; the MCP server reads the scope from its
   environment at startup and no tool accepts a scope argument
   ([docs/07](docs/07-harness-integration.md)).
+- **The control plane**: because a pin is a process in a tmux window, the whole
+  roster is addressable from one place. `thalamus console` serves it to a browser —
+  a tab per window, the live pane, a composer, the terminal keys a phone keyboard
+  lacks, and one tap to spawn an expert in a project or to restart one so a wiring
+  change arms. Installable as a PWA, loopback-bound, and it never moves the active
+  window, so the terminal on your desk stays where you left it
+  ([docs/control-plane.md](docs/control-plane.md)).
 - **The consultation protocol**: cross-expert questions ride single-use tickets where
   minting the ticket *is* writing the exchange record, and answers must cite nodes
   inside the consulted scope ([docs/02](docs/02-expert-subgraphs.md)).
@@ -233,6 +240,7 @@ thalamus ingest <url|file>         # feed one document to an expert (dry-run; --
 thalamus pin <scope>               # launch a claude session pinned to an expert
 thalamus roster                    # bring up the control plane (--all for every expert)
 thalamus spawn <scope>             # one on-demand pinned tmux window
+thalamus console                   # drive the roster from a browser or phone (docs/control-plane.md)
 thalamus rescope <scope>           # redirect this session's distillation (before it distills)
 thalamus visualize                 # open the persisted memory explorer
 thalamus visualize session.yaml    # preview a pending extraction, no graph needed

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Every URL in this app is relative, so it works under any mount path a proxy
+     gives it. One catch: reached as a bare directory with no trailing slash
+     ("/console" rather than "/console/"), relative URLs resolve one level too
+     high — canonicalize before any resource loads. A last segment containing a
+     dot is a file, not a directory, and is left alone. -->
+<script>
+(function () {
+  var seg = location.pathname.split("/").pop();
+  if (seg && seg.indexOf(".") === -1) {
+    location.replace(location.pathname + "/" + location.search + location.hash);
+  }
+})();
+</script>
+<!-- interactive-widget=resizes-content: on Android the on-screen keyboard shrinks
+     the layout viewport instead of covering the composer. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0e1116">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+<title>Thalamus Control Plane</title>
+</head>
+<body>
+
+<header>
+  <span class="brand">THALA<b>MUS</b></span>
+  <span class="tagline">control plane</span>
+  <span class="conn" id="conn"><span class="beacon"></span><span id="conn-label">connecting</span></span>
+  <button type="button" class="admin-btn" id="spawn-btn" aria-label="Spawn a session" title="Spawn a session">＋</button>
+  <button type="button" class="admin-btn" id="admin-btn" aria-label="Infra admin" title="Infra admin">⚙</button>
+</header>
+
+<div class="admin" id="admin" hidden>
+  <div class="admin-head">
+    <span class="admin-title">INFRA</span>
+    <button type="button" class="install-x" id="admin-x" aria-label="Close">✕</button>
+  </div>
+  <section class="admin-sec">
+    <h3>Pinned sessions</h3>
+    <p class="admin-note">Restart replaces a window's claude process — the only way
+      wiring changes (MCP servers, per-process hooks) take effect. Graceful:
+      <code>/exit</code> fires SessionEnd → distillation, then the window respawns
+      its original command. Force-kills only after 4 min.</p>
+    <div class="admin-list" id="admin-windows"></div>
+    <div class="admin-actions">
+      <button type="button" class="admin-act" id="admin-restart-all">restart all</button>
+      <button type="button" class="admin-act" id="admin-roster">roster sync</button>
+    </div>
+  </section>
+  <!-- Hidden unless `thalamus console --service <unit>` named units to manage. -->
+  <section class="admin-sec" id="admin-services-sec" hidden>
+    <h3>Services</h3>
+    <div class="admin-list" id="admin-services"></div>
+  </section>
+  <pre class="admin-log" id="admin-log"></pre>
+</div>
+
+<div class="admin" id="spawn" hidden>
+  <div class="admin-head">
+    <span class="admin-title">SPAWN SESSION</span>
+    <button type="button" class="install-x" id="spawn-x" aria-label="Close">✕</button>
+  </div>
+  <section class="admin-sec">
+    <p class="admin-note">Open a pinned expert session on demand, in the project you
+      pick. Its work and its distilled memory scope to that expert; the directory sets
+      what it's about. Close its tab (INFRA → close) to end &amp; distill it.</p>
+    <h3>Expert</h3>
+    <div class="chips" id="spawn-scopes"></div>
+    <h3>Directory</h3>
+    <div class="chips chips-dirs" id="spawn-dirs"></div>
+    <div class="admin-actions">
+      <button type="button" class="admin-act primary" id="spawn-go" disabled>spawn</button>
+    </div>
+    <pre class="admin-log" id="spawn-log" hidden></pre>
+  </section>
+</div>
+
+<div class="install-bar" id="install-bar" hidden>
+  <span class="install-msg" id="install-msg"></span>
+  <button type="button" class="install-do" id="install-do">Install</button>
+  <button type="button" class="install-x" id="install-x" aria-label="Dismiss">✕</button>
+</div>
+
+<!-- Workspace (cwd) filter. Hidden whenever every session shares one directory, so
+     it costs no vertical space until a second context actually exists. -->
+<nav class="wsbar" id="wsbar" aria-label="Workspaces" hidden></nav>
+
+<nav class="rail" id="rail" role="tablist" aria-label="Experts"></nav>
+
+<div class="screen-wrap" id="screen-wrap">
+  <div class="recycle-note" id="recycle-note" hidden>session restarting — input is paused until the new process is up</div>
+  <pre class="screen" id="screen"></pre>
+</div>
+
+<form class="composer" id="composer" autocomplete="off">
+  <div class="hints" id="hints" hidden></div>
+  <div class="keyrow" aria-label="Terminal keys">
+    <button type="button" class="keycap" data-key="escape">esc</button>
+    <button type="button" class="keycap" data-key="shift-tab" title="Cycle permission mode (Shift+Tab)">mode</button>
+    <button type="button" class="keycap" data-key="up">↑</button>
+    <button type="button" class="keycap" data-key="down">↓</button>
+    <button type="button" class="keycap" data-key="pageup">pg↑</button>
+    <button type="button" class="keycap" data-key="pagedown">pg↓</button>
+    <button type="button" class="keycap" data-key="tab">tab</button>
+    <button type="button" class="keycap" data-key="enter">⏎</button>
+    <button type="button" class="keycap" data-key="ctrl-u">clr</button>
+    <button type="button" class="keycap danger" data-key="ctrl-c">⌃C</button>
+    <span class="spacer"></span>
+    <button type="button" class="fontcap" id="font-dn">A−</button>
+    <button type="button" class="fontcap" id="font-up">A+</button>
+  </div>
+  <div class="input-line">
+    <textarea id="msg" rows="1" placeholder="Message the active expert…"
+      autocapitalize="sentences" autocorrect="on" spellcheck="true"></textarea>
+    <button type="submit" class="send" id="send">SEND</button>
+  </div>
+</form>
+
+<script src="app.js"></script>
+</body>
+</html>

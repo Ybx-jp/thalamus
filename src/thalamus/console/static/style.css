@@ -1,0 +1,556 @@
+/* Thalamus control plane — a signal console. Dark, mobile-first, one-handed.
+   Signature: each expert is a relay channel with its own hue and a live signal dot
+   that pulses when its screen changes. Everything else stays quiet. */
+
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --panel-hi: #1c232c;
+  --hair: #2a323d;
+  --ink: #cdd8e4;
+  --muted: #7d8794;
+  --faint: #4d5661;
+  --danger: #e0685c;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  /* per-channel hues, overridden per-tab in JS */
+  --chan: #9a8cff;
+  --screen-size: 14px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--ui);
+  /* lock the layout to the viewport; only the screen scrolls */
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ---- Header ---- */
+header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: .6rem;
+  padding: .7rem .9rem .55rem;
+  border-bottom: 1px solid var(--hair);
+  background: var(--panel);
+}
+.brand {
+  font-family: var(--mono);
+  font-size: .82rem;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink);
+  font-weight: 600;
+}
+.brand b { color: var(--chan); font-weight: 600; transition: color .3s; }
+.tagline {
+  font-family: var(--mono);
+  font-size: .6rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.conn {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: .58rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex; align-items: center; gap: .35rem;
+}
+.conn .beacon {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--faint);
+}
+.conn.live .beacon { background: #4db6a6; box-shadow: 0 0 6px #4db6a6; }
+.conn.stale .beacon { background: var(--danger); }
+
+/* ---- Install bar ---- */
+.install-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .9rem;
+  background: var(--panel-hi);
+  border-bottom: 1px solid var(--hair);
+}
+.install-bar[hidden] { display: none; }
+.install-msg { flex: 1 1 auto; min-width: 0; font-size: .8rem; color: var(--ink); }
+.install-do {
+  appearance: none; flex: 0 0 auto;
+  background: var(--chan); border: 0; border-radius: 7px;
+  color: #0b0e12; font-family: var(--mono); font-weight: 600;
+  font-size: .72rem; letter-spacing: .06em; padding: .4rem .8rem; cursor: pointer;
+}
+.install-x {
+  appearance: none; flex: 0 0 auto;
+  background: transparent; border: 0; color: var(--muted);
+  font-size: .9rem; cursor: pointer; padding: .2rem .3rem;
+}
+
+/* ---- Workspace bar (cwd contexts) ---- */
+/* Only rendered when sessions span more than one directory. Quieter than the rail
+   on purpose: the rail is who you're talking to, this is only where they're rooted. */
+.wsbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: .3rem;
+  align-items: center;
+  padding: .3rem .6rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--bg);
+  border-bottom: 1px solid var(--hair);
+}
+.wsbar[hidden] { display: none; }
+.wsbar::-webkit-scrollbar { display: none; }
+.ws {
+  appearance: none;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: .6rem;
+  letter-spacing: .06em;
+  padding: .22rem .55rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .2s, border-color .2s, background .2s;
+}
+.ws:hover { color: var(--ink); }
+.ws.on {
+  color: var(--bg);
+  background: var(--chan);
+  border-color: var(--chan);
+  font-weight: 600;
+}
+/* A hidden workspace whose screen just moved. Quiet — a lit edge, not a pulse:
+   it's peripheral news about somewhere you're not looking. */
+.ws.live {
+  color: var(--ink);
+  border-color: var(--chan);
+  box-shadow: 0 0 6px -1px var(--chan);
+}
+
+/* ---- Channel rail (the signature) ---- */
+.rail {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0;
+  min-width: 0; /* contain horizontal overflow instead of widening the column */
+  border-bottom: 1px solid var(--hair);
+  background: var(--panel);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.rail::-webkit-scrollbar { display: none; }
+.chan-tab {
+  flex: 1 1 0;
+  min-width: max-content;
+  appearance: none;
+  border: 0;
+  border-top: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  padding: .6rem .8rem .55rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  transition: color .2s, background .2s;
+}
+.chan-tab .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--faint);
+  flex: 0 0 auto;
+  transition: background .25s, box-shadow .25s;
+}
+.chan-tab.pulse .dot { animation: pulse 1.1s ease-out; }
+.chan-tab .nm { font-size: .72rem; letter-spacing: .04em; white-space: nowrap; }
+/* Two-line form, used only while more than one directory is in play: expert on top,
+   its directory beneath. The dot stays vertically centred against both lines. */
+.chan-tab .tab-text { display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; min-width: 0; }
+.chan-tab .cwd {
+  font-size: .55rem;
+  /* Tracking is deliberately light here: `ch` ignores letter-spacing, so a wide
+     value makes the cap below under-measure and ellipsize names that would fit. */
+  letter-spacing: .05em;
+  color: var(--faint);
+  white-space: nowrap;
+  /* Wide enough for a typical repo directory name; anything longer ellipsizes
+     rather than stretching the tab. The full path is in the tab's title. */
+  max-width: 20ch; overflow: hidden; text-overflow: ellipsis;
+}
+.chan-tab[aria-selected="true"] .cwd { color: var(--tab); opacity: .85; }
+.chan-tab .cmd {
+  font-size: .54rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--faint);
+}
+.chan-tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--panel-hi);
+  border-top-color: var(--tab);
+}
+.chan-tab[aria-selected="true"] .dot { background: var(--tab); box-shadow: 0 0 7px var(--tab); }
+.chan-tab.active-live .dot { background: var(--tab); box-shadow: 0 0 5px var(--tab); }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 var(--tab); }
+  100% { box-shadow: 0 0 0 9px transparent; }
+}
+
+/* ---- Live screen ---- */
+.screen-wrap {
+  flex: 1 1 auto;
+  min-width: 0;   /* the 80-col pane scrolls INSIDE here, not by widening the page */
+  min-height: 0;
+  overflow: auto;
+  background: #0b0e12;
+  border-bottom: 1px solid var(--hair);
+  position: relative;
+}
+.screen {
+  margin: 0;
+  padding: .7rem .75rem 1.2rem;
+  font-family: var(--mono);
+  font-size: var(--screen-size);
+  line-height: 1.32;
+  white-space: pre;
+  color: var(--ink);
+  min-width: max-content;
+}
+.screen .cursor-line { color: var(--chan); }
+.screen-empty {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: .78rem;
+  padding: 2rem 1rem;
+  white-space: normal;
+}
+
+/* ---- Desktop chrome ---- */
+.deskbar {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  margin-left: auto;
+  padding-left: .5rem;
+}
+.deskbar button {
+  font: inherit;
+  font-size: .72rem;
+  font-family: var(--ui);
+  color: var(--muted);
+  background: var(--panel-hi);
+  border: 1px solid var(--hair);
+  border-radius: 5px;
+  padding: .2rem .5rem;
+  cursor: pointer;
+}
+.deskbar button:hover { color: var(--ink); border-color: var(--faint); }
+.deskbar button[aria-pressed="true"] { color: var(--chan); border-color: var(--chan); }
+/* Keystrokes go straight to the pane, so the composer is no longer the input path —
+   dim it to say so, without removing it (it still takes multi-line paste and the
+   slash-command hints). */
+body.passthrough .composer .input-line { opacity: .55; }
+body.passthrough .composer .input-line:focus-within { opacity: 1; }
+
+/* ---- Composer ---- */
+.composer {
+  flex: 0 0 auto;
+  background: var(--panel);
+  padding: .5rem .6rem calc(.5rem + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+  min-width: 0;
+}
+.hints {
+  display: flex;
+  gap: .35rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: .1rem;
+}
+.hints[hidden] { display: none; }
+.hints::-webkit-scrollbar { display: none; }
+.hint {
+  appearance: none;
+  flex: 0 0 auto;
+  max-width: 72vw;
+  background: var(--panel-hi);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  padding: .35rem .6rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .1rem;
+  text-align: left;
+}
+.hint:active { border-color: var(--chan); }
+.hint-name {
+  font-family: var(--mono);
+  font-size: .72rem;
+  color: var(--chan);
+}
+.hint-desc {
+  font-size: .62rem;
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.keyrow {
+  display: flex;
+  gap: .35rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.keyrow::-webkit-scrollbar { display: none; }
+.keycap, .fontcap {
+  appearance: none;
+  flex: 0 0 auto;
+  background: var(--panel-hi);
+  border: 1px solid var(--hair);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: .68rem;
+  letter-spacing: .04em;
+  padding: .34rem .6rem;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.keycap:active, .fontcap:active { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.keycap.danger { color: var(--danger); border-color: #4a2a29; }
+.keyrow .spacer { flex: 1 1 auto; }
+.input-line { display: flex; gap: .5rem; align-items: flex-end; }
+textarea {
+  flex: 1 1 auto;
+  min-width: 0; /* let it shrink; without this the flex row overflows and hides SEND */
+  resize: none;
+  background: #0b0e12;
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 16px; /* ≥16px stops iOS zoom-on-focus */
+  line-height: 1.35;
+  padding: .55rem .7rem;
+  max-height: 40vh;
+  min-height: 2.6rem;
+}
+textarea:focus { outline: none; border-color: var(--chan); }
+.send {
+  appearance: none;
+  flex: 0 0 auto;
+  background: var(--chan);
+  border: 0;
+  border-radius: 9px;
+  color: #0b0e12;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: .78rem;
+  letter-spacing: .08em;
+  padding: .7rem 1rem;
+  cursor: pointer;
+}
+.send:disabled { opacity: .4; }
+.send:active { filter: brightness(1.1); }
+
+/* ---- Infra admin panel ---- */
+.admin-btn {
+  appearance: none;
+  align-self: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: .15rem .1rem .15rem .4rem;
+  cursor: pointer;
+}
+.admin-btn:active { color: var(--chan); }
+.admin {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: .7rem .9rem calc(.7rem + env(safe-area-inset-bottom));
+  gap: .8rem;
+  overflow-y: auto;
+}
+.admin[hidden] { display: none; }
+.admin-head { display: flex; align-items: center; }
+.admin-title {
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .22em;
+  color: var(--chan);
+  font-weight: 600;
+}
+.admin-head .install-x { margin-left: auto; }
+.admin-sec h3 {
+  margin: 0 0 .35rem;
+  font-family: var(--mono);
+  font-size: .6rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 600;
+}
+.admin-note {
+  margin: 0 0 .5rem;
+  font-size: .7rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.admin-note code { font-family: var(--mono); color: var(--ink); font-size: .66rem; }
+.admin-list { display: flex; flex-direction: column; gap: .3rem; }
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  padding: .45rem .6rem;
+}
+.admin-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--tab, var(--faint));
+}
+.admin-dot.ok { background: #4db6a6; box-shadow: 0 0 5px #4db6a6; }
+.admin-dot.bad { background: var(--danger); }
+.admin-name { font-family: var(--mono); font-size: .74rem; color: var(--ink); display: flex; flex-direction: column; gap: .08rem; min-width: 0; }
+.admin-cwd { font-size: .55rem; letter-spacing: .06em; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-viewing {
+  font-family: var(--mono);
+  font-size: .55rem;
+  color: var(--faint);
+  border: 1px solid var(--faint);
+  border-radius: 3px;
+  padding: 0 .3rem;
+}
+.admin-state {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: .6rem;
+  color: var(--faint);
+}
+.admin-state.bad { color: var(--danger); }
+.admin-act {
+  appearance: none;
+  flex: 0 0 auto;
+  background: var(--panel-hi);
+  border: 1px solid var(--hair);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: .66rem;
+  letter-spacing: .04em;
+  padding: .34rem .65rem;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.admin-act:active { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.admin-act:disabled { opacity: .4; }
+.admin-actions { display: flex; gap: .45rem; margin-top: .5rem; }
+.admin-log {
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 4rem;
+  overflow: auto;
+  background: #0b0e12;
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  padding: .5rem .6rem;
+  font-family: var(--mono);
+  font-size: .62rem;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+/* rail tab + screen indicators while a window's process is being replaced */
+.chan-tab.recycling .dot { animation: recycling 1s ease-in-out infinite; }
+@keyframes recycling {
+  0%, 100% { background: var(--faint); }
+  50% { background: var(--tab, var(--chan)); box-shadow: 0 0 6px var(--tab, var(--chan)); }
+}
+.recycle-note {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--panel-hi);
+  border-bottom: 1px solid var(--hair);
+  color: var(--chan);
+  font-family: var(--mono);
+  font-size: .62rem;
+  letter-spacing: .04em;
+  padding: .4rem .75rem;
+}
+.recycle-note[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chan-tab.pulse .dot { animation: none; }
+  .chan-tab.recycling .dot { animation: none; background: var(--tab, var(--chan)); }
+}
+
+/* Pane text is selectable, and URLs in it are tappable links. Selection no longer
+   disappears mid-copy (app.js defers the repaint while a selection is held). */
+.screen { -webkit-user-select: text; user-select: text; }
+.screen a {
+  color: var(--chan);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;   /* long URLs wrap rather than force horizontal scroll */
+}
+.screen a:active { background: var(--chan); color: #0b0e12; }
+
+/* anchor badge on the un-closable main window */
+.admin-viewing.anchor { color: var(--chan); border-color: var(--chan); }
+
+/* variant admin buttons: primary = spawn CTA, danger-lite = close a session */
+.admin-act.primary { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.admin-act.primary:disabled { opacity: .4; }
+.admin-act.danger-lite { color: var(--danger); border-color: #4a2a29; }
+
+/* spawn sheet: scope + directory pickers as tappable chips */
+.chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0 .2rem; }
+.chip {
+  appearance: none;
+  background: var(--panel-hi);
+  border: 1px solid var(--hair);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: .68rem;
+  padding: .4rem .6rem;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.chip.on {
+  color: #0b0e12;
+  background: var(--tab, var(--chan));
+  border-color: var(--tab, var(--chan));
+}
+.chips-dirs .chip { font-size: .64rem; }
