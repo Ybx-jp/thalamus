@@ -574,14 +574,14 @@ def load_exchange(g: GraphTraversalSource, exchange_vid: str) -> dict | None:
     """Load one consultation exchange by its vertex ID (= the ticket, docs/02).
 
     Returns the flat properties the ticket protocol decides on — expert, from_scope,
-    status — or None for a ticket that was never minted. The server resolves scope
+    status, kind — or None for a ticket that was never minted. The server resolves scope
     grants from this record, never from a tool parameter: a model cannot widen its
     own view by inventing a ticket, because an uninvented ticket loads nothing.
     """
     rows = (
         g.V(exchange_vid)
         .has_label("Exchange")
-        .value_map("question", "expert", "from_scope", "status")
+        .value_map("question", "expert", "from_scope", "status", "kind")
         .limit(1)
         .to_list()
     )

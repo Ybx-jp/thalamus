@@ -56,6 +56,30 @@ def mint_ticket() -> str:
     return uuid.uuid4().hex[:16]
 
 
+# The same lexical design-intent classifier `conditioning.sh` fires on at
+# UserPromptSubmit. One rule, two events: a prompt that reads as design work gets the
+# ground-and-consult reminder, and a *ticket* that reads as design work gets the
+# readiness check when it closes. Two different regexes would be two different
+# answers to one question.
+_DESIGN_RE = re.compile(
+    r"\b(design|architect|propose|schema|new (feature|component|skill|hook|expert|metric)"
+    r"|should (we|i) (build|add|write|create|adopt)"
+    r"|(adopt|build) (it|this|them)\b)",
+    re.IGNORECASE,
+)
+
+
+def question_kind(question: str) -> str:
+    """`design` when a ticket settles a design, else `general`.
+
+    Recorded at mint because closing a design ticket is the mechanical signal that a
+    design was settled — the point of asking an expert and then acting on the answer.
+    Leaving it to be recognized later means it is recognized only when someone
+    remembers to look, which is the failure mode the readiness check already had.
+    """
+    return "design" if _DESIGN_RE.search(question or "") else "general"
+
+
 def exchange_vid(ticket: str) -> str:
     """Exchanges live in `main`: consultation routes through the main scope, never
     expert-to-expert (contract/ontology.py rule 2)."""
@@ -138,6 +162,9 @@ def consult_request(
             "expert": expert,
             "from_scope": from_scope,
             "status": "open",
+            # Classified at mint, so "was this a design ticket" is a stored fact
+            # rather than a judgement made later by whoever happens to read it.
+            "kind": question_kind(question),
             "scope": MAIN_SCOPE,
             "ts": now.isoformat(),
             "tier": int(provenance.tier),
@@ -234,10 +261,23 @@ def consult_answer(g: GraphTraversalSource, ticket: str, answer: str) -> str:
         },
         citation_refs=in_scope,
     )
-    return (
+    closed = (
         f"Exchange `{exchange_vid(ticket)}` closed: answer recorded with "
         f"{len(in_scope)} validated citation(s). The ticket is burned."
     )
+    # Closing a design ticket IS the signal that a design was settled — the whole
+    # point of asking an expert was to act on the answer. Firing the readiness check
+    # here rather than on the consulting agent's judgement is the difference between
+    # a step that runs and one that runs when someone remembers it. Advisory by
+    # construction: the skill never blocks work and never changes a design.
+    if (exchange.get("kind") or "") == "design":
+        closed += (
+            "\n\nThis ticket was minted as design work and is now settled, which is "
+            "the trigger condition for the `thalamus-design-readiness` skill "
+            "(operator-fluency check on a settled design; advisory, never blocking). "
+            "Invoke it before the session moves on, passing this exchange id."
+        )
+    return closed
 
 
 def _assemble_brief(

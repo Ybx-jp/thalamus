@@ -523,3 +523,78 @@ def test_trace_event_preserves_absent_agent_fields_as_none():
         }
     ))
     assert main_loop is not None and main_loop.agent_type == ""
+
+
+# --------------------------------------------------------------------------------------
+# A closed design ticket is the mechanical signal that a design was settled.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_design_question_is_classified_at_mint_not_recognized_later():
+    """
+    Scenario: Tickets are minted for design work and for ordinary questions
+
+    Verifications:
+    - design intent is recorded as a stored `kind`
+    - questions that merely mention past work are not design
+
+    Recorded at mint because closing a design ticket is the point where a design was
+    settled, and a property decided later is decided only when someone remembers to
+    look — which is the failure the readiness check already had. The classifier is the
+    same lexical rule `conditioning.sh` fires on at UserPromptSubmit: two regexes would
+    be two different answers to one question.
+    """
+    assert consultation.question_kind("Should we adopt bi-temporal claim identity?") == "design"
+    assert consultation.question_kind("Design a new eval metric for waste") == "design"
+    assert consultation.question_kind("Two coupled schema questions about time") == "design"
+
+    assert consultation.question_kind("What happened in the last session?") == "general"
+    assert consultation.question_kind("Review a draft case study") == "general"
+    assert consultation.question_kind("") == "general"
+
+
+def test_closing_a_design_ticket_names_the_readiness_check():
+    """
+    Scenario: A validly cited answer closes a ticket that was minted as design work
+
+    Verifications:
+    - the close message names the readiness skill and its trigger condition
+    - it says the check is advisory, so it cannot read as a gate on the work
+    - a general ticket closes silently
+
+    The readiness check used to fire on the consulting agent's judgement about whether
+    a design had been settled. consult_answer closing a design ticket is that same fact,
+    mechanically — the whole reason to ask an expert was to act on the answer.
+    """
+    ticket = "abc123"
+    graph = FakeGraph({
+        exchange_vid(ticket): {
+            "label": "Exchange", "expert": "literature", "status": "open",
+            "kind": "design",
+        },
+        "scope:literature:claim:aaa": {"label": "Claim"},
+    })
+
+    message = consult_answer(graph, ticket, "Adopt it — see `scope:literature:claim:aaa`.")
+
+    assert "closed" in message
+    assert "thalamus-design-readiness" in message
+    assert "advisory, never blocking" in message
+
+
+def test_closing_a_general_ticket_says_nothing_about_readiness():
+    """A reminder that fires on every close is the wallpaper the design-intent
+    classifier exists to avoid."""
+    ticket = "def456"
+    graph = FakeGraph({
+        exchange_vid(ticket): {
+            "label": "Exchange", "expert": "literature", "status": "open",
+            "kind": "general",
+        },
+        "scope:literature:claim:aaa": {"label": "Claim"},
+    })
+
+    message = consult_answer(graph, ticket, "See `scope:literature:claim:aaa`.")
+
+    assert "closed" in message
+    assert "thalamus-design-readiness" not in message

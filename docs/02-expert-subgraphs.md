@@ -104,7 +104,9 @@ Mechanics, in the order a consultation runs:
    tier-0 framing — no hand-written personas), and writes the Exchange: `main` scope,
    `status: open`, with `role: brief` REFERENCES edges to every node the brief served.
    A scope with nothing to cite refuses the mint — an expert with no memory cannot
-   produce a citable answer.
+   produce a citable answer. The question is classified at mint (`kind: design |
+   general`, the same lexical rule `conditioning.sh` fires on at UserPromptSubmit),
+   so what kind of ticket this was is a stored fact rather than a later judgement.
 2. **Scoped retrieval** — the consulting session spawns a subagent voicing the expert;
    the recall tools accept the ticket and resolve the granted scope **from the
    exchange record server-side**. An invented or burned ticket grants nothing and
@@ -112,6 +114,11 @@ Mechanics, in the order a consultation runs:
 3. **Close** — the validated answer lands on the Exchange with `role: citation`
    REFERENCES edges: the answer's evidence-support record. The ticket is burned;
    answered exchanges refuse further answers and grant no further retrieval.
+   Closing a `kind: design` ticket **is** the signal that a design was settled — the
+   reason to ask an expert was to act on the answer — so the close names the
+   `thalamus-design-readiness` check there rather than waiting for the consulting
+   agent to judge that the moment has arrived. Advisory: the check never blocks work
+   and never changes a design.
    **Reading its own record** is a separate surface, not a ticket grant: an Exchange
    is a `main`-scope vertex, so the expert's scope filter cannot reach it, and the
    ticket that could dies at the moment of closing — the grant resolves to the
