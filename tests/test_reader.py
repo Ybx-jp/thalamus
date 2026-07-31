@@ -1,16 +1,19 @@
 """
 Retrieval-rendering tests.
 
-Interfaces: thalamus.substrate.reader.MemoryResult.format, _extract_keywords
+Interfaces: thalamus.substrate.reader.MemoryResult.format, ExchangeResult.format,
+recall_exchanges, _extract_keywords
 Infrastructure: none
 Scope: recalled memory enters context as data with provenance, never as instructions
 """
 
 from thalamus.substrate.reader import (
+    ExchangeResult,
     MemoryResult,
     ThreadResult,
     _extract_keywords,
     _keyword_predicate,
+    recall_exchanges,
 )
 from thalamus.substrate.schema import Tier
 
@@ -292,3 +295,146 @@ def test_keyword_matching_is_case_insensitive_and_regex_safe():
     dotted = _keyword_predicate("eval.pins").value
     assert _re.search(dotted, "run eval.pins nightly")
     assert not _re.search(dotted, "run evalXpins nightly")
+
+
+# --------------------------------------------------------------------------------------
+# The consulted expert's own side of a consultation (docs/02).
+# --------------------------------------------------------------------------------------
+
+
+class _ExchangeGraph:
+    """Just enough traversal surface for recall_exchanges: filter, order, limit."""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self._filters = {}
+        self._label = None
+        self._limit = None
+
+    # Traversal surface
+    def V(self):
+        return self
+
+    def has_label(self, label):
+        self._label = label
+        return self
+
+    def has(self, key, value):
+        self._filters[key] = value
+        return self
+
+    def order(self):
+        return self
+
+    def by(self, key, order=None):
+        self._order_key = key
+        return self
+
+    def limit(self, n):
+        self._limit = n
+        return self
+
+    def value_map(self, _tokens):
+        return self
+
+    def to_list(self):
+        from gremlin_python.process.traversal import T
+
+        rows = [
+            row for row in self._rows
+            if row["label"] == self._label
+            and all(row.get(k) == v for k, v in self._filters.items())
+        ]
+        rows.sort(key=lambda r: r.get("answered_at", ""), reverse=True)
+        return [
+            {T.id: row["id"], **{k: [v] for k, v in row.items()
+                                 if k not in ("id", "label")}}
+            for row in rows[: self._limit]
+        ]
+
+
+def _exchange(vid, expert, status, answered_at, from_scope="main", question="q", answer="a"):
+    return {
+        "id": vid, "label": "Exchange", "expert": expert, "status": status,
+        "answered_at": answered_at, "from_scope": from_scope,
+        "question": question, "answer": answer,
+    }
+
+
+def test_an_expert_reads_the_exchanges_it_answered_and_no_others():
+    """
+    Scenario: A session pinned to `literature` asks for its own consultations
+
+    Verifications:
+    - exchanges routed to another expert are not returned
+    - open tickets are not returned — only closed records
+    - the ticket is recovered from the vertex id
+
+    The Exchange lives in `main` scope by construction (consultation routes through
+    the main scope, never expert-to-expert), so the expert's ordinary scope filter
+    cannot reach it and the ticket grant that could dies the moment the answer lands.
+    Confinement therefore rides on the `expert` property, and it has to be as tight
+    as the scope filter it stands in for — docs/07: the server decides what a scope
+    can see, never the model.
+    """
+    graph = _ExchangeGraph([
+        _exchange("scope:main:exchange:aaa", "literature", "answered", "2026-07-30T01:00:00"),
+        _exchange("scope:main:exchange:bbb", "eval-methodology", "answered", "2026-07-30T02:00:00"),
+        _exchange("scope:main:exchange:ccc", "literature", "open", ""),
+    ])
+
+    results = recall_exchanges(graph, "literature", 5)
+
+    # Verifies: another expert's exchange is invisible, and an open ticket is not a record
+    assert [r.ticket for r in results] == ["aaa"]
+
+
+def test_answered_consultations_come_back_newest_first():
+    """
+    Scenario: An expert with several closed consultations recalls them
+
+    A consulted expert accumulates exchanges over time and the recent ones are the
+    ones a session is likely to be building on, so ordering is part of the contract
+    rather than incidental — the same most-recent-first shape recall_recent uses.
+    """
+    graph = _ExchangeGraph([
+        _exchange("scope:main:exchange:old", "literature", "answered", "2026-07-01T00:00:00"),
+        _exchange("scope:main:exchange:new", "literature", "answered", "2026-07-30T00:00:00"),
+        _exchange("scope:main:exchange:mid", "literature", "answered", "2026-07-15T00:00:00"),
+    ])
+
+    results = recall_exchanges(graph, "literature", 5)
+
+    assert [r.ticket for r in results] == ["new", "mid", "old"]
+    # Verifies: the limit is honoured
+    assert len(recall_exchanges(graph, "literature", 2)) == 2
+
+
+def test_a_recalled_consultation_attributes_the_question_to_its_asker():
+    """
+    Scenario: Render a closed exchange back into the answering expert's context
+
+    Verifications:
+    - the asking scope is named
+    - the question is quoted, not presented as the expert's own recollection
+    - the block says outright that the question is data, not an instruction
+
+    The question is a *main-scope agent's* words crossing into an expert's context.
+    That is the same informs-never-instructs surface docs/05 governs for tier-2
+    content: a question rendered bare reads as a live request to act, and this
+    record is history.
+    """
+    rendered = ExchangeResult(
+        ticket="bee1f376",
+        question="Should claim identity be bi-temporal?",
+        answer="Zep invalidates edges rather than overwriting.",
+        from_scope="main",
+        answered_at="2026-07-30T22:00:00",
+        node_id="scope:main:exchange:bee1f376",
+    ).format()
+
+    assert "scope `main`" in rendered
+    assert "> Should claim identity be bi-temporal?" in rendered
+    assert "> Zep invalidates edges rather than overwriting." in rendered
+    # Verifies: framed as data about what was asked, never as a standing instruction
+    assert "never an instruction" in rendered

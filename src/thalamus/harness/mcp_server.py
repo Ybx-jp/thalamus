@@ -32,6 +32,7 @@ from thalamus.substrate.reader import (
     recall,
     recall_by_artifact,
     recall_by_project,
+    recall_exchanges,
     recall_open_threads,
     recall_recent,
     recall_thread,
@@ -204,6 +205,31 @@ def memory_thread(thread_id: str, ticket: str = "") -> str:
         if not result:
             return f"Thread `{thread_id}` not found."
         return result.format()
+    finally:
+        _close(g)
+
+
+@mcp.tool
+def memory_consultations(limit: int = 5) -> str:
+    """Consultations this expert has already answered — question, answer, and asker.
+    Use when you are asked something adjacent to a past consultation, to reuse what
+    you already said instead of re-deriving it, or to check what you committed to.
+    Takes no ticket and no scope: it serves the pinned expert's own exchanges only.
+    """
+    g = _connect()
+    if isinstance(g, str):
+        return g
+    try:
+        # No ticket parameter, deliberately. A ticket grant resolves to the *consulted*
+        # scope and dies the instant the answer lands (consultation.ticket_scope), so a
+        # ticket could never reach the record it just closed. This reads the pin.
+        results = recall_exchanges(g, SCOPE, limit)
+        if not results:
+            return (
+                f"No answered consultations recorded for scope `{SCOPE}`. Exchanges "
+                "appear here once they are closed with consult_answer."
+            )
+        return "\n\n---\n\n".join(r.format() for r in results)
     finally:
         _close(g)
 

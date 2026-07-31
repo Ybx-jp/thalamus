@@ -71,7 +71,8 @@ preserved as episodic memory **on both sides**.
 - The **consulting** expert records: what it asked, what came back, whether the
   answer was used, outcome attribution.
 - The **consulted** expert records: what it was asked, what it served — its episodic
-  memory grows even in sessions it wasn't pinned to.
+  memory grows even in sessions it wasn't pinned to, and it reads that record back
+  through `memory_consultations`.
 - The **master plane** records the exchange edge (who asked whom, when, about what),
   which is how the operator watches the roster actually collaborate.
 
@@ -111,6 +112,17 @@ Mechanics, in the order a consultation runs:
 3. **Close** — the validated answer lands on the Exchange with `role: citation`
    REFERENCES edges: the answer's evidence-support record. The ticket is burned;
    answered exchanges refuse further answers and grant no further retrieval.
+   **Reading its own record** is a separate surface, not a ticket grant: an Exchange
+   is a `main`-scope vertex, so the expert's scope filter cannot reach it, and the
+   ticket that could dies at the moment of closing — the grant resolves to the
+   consulted scope and expires with `status: open`. `memory_consultations` closes
+   that gap by confining on the Exchange's `expert` property instead of its scope
+   segment, serving answered exchanges only. Server-decided like every other read
+   (no ticket, no scope parameter), and it is a read allowance rather than a
+   contract change: the contract governs writes, and `main → expert` is already the
+   mandated topology. Open tickets stay invisible — an open ticket is a question
+   being asked *now*, and serving it through recall would let a session discover
+   work it was never handed.
 4. **Attribution** — the MCP server cannot see its caller's session (a measured
    harness limit, lab/001), so the Session -[CONSULTS]-> Exchange edge and the
    trace's `exchange_id` land at `eval sync` time, joined through the ticket the
