@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from datetime import datetime, timezone
 
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.driver.protocol import GremlinServerError
@@ -60,6 +62,48 @@ def write_session(g: GraphTraversalSource, session: SessionGraph) -> str:
     return session_vid
 
 
+def _text_stamp(g: GraphTraversalSource, vertex_id: str, text: str) -> dict[str, object]:
+    """`written_at`: when this vertex's text last *changed*, beside `ingested_at`.
+
+    `ingested_at` carries the writing session's timestamp and is overwritten on every
+    re-upsert, so it can move backwards and cannot answer "when did this node's text
+    change" — a question the graph could not answer at all until this existed, which
+    is why the mutable-text exposure had to be inferred from evidence strings rather
+    than queried.
+
+    The two are different axes and the literature keeps them apart: Graphiti carries
+    `t'_created`/`t'_expired` (ingestion order) separately from `t_valid`/`t_invalid`
+    (when the fact held), and TOKI keeps `system_time_*` separate from `valid_*`
+    columns — collapsing them costs 12.2 accuracy points in TSM (docs/11 §5). This is
+    the transaction-time axis only. Valid time — when a fact stopped being true — is a
+    second axis this does not attempt (docs/09, and the decision log's dated refusal).
+
+    A digest rather than the text itself: it is the comparison that matters, and
+    storing the text twice would be one more copy to keep honest.
+    """
+    digest = hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        rows = g.V(vertex_id).value_map("written_at", "text_digest").limit(1).to_list()
+    except Exception:
+        # A vertex that cannot be read has no prior text to differ from, which is the
+        # first-write case and stamps `now` — the same posture as _snapshot_heads.
+        rows = []
+    if rows:
+        stored = rows[0] if isinstance(rows[0], dict) else {}
+        held = stored.get("text_digest")
+        held = held[0] if isinstance(held, list) and held else held
+        if held == digest:
+            kept = stored.get("written_at")
+            kept = kept[0] if isinstance(kept, list) and kept else kept
+            # Unchanged text keeps its original stamp. Refreshing it here would make
+            # `written_at` a synonym for "last written", which is the property
+            # `ingested_at` already fails to be useful as.
+            if kept:
+                return {"written_at": kept, "text_digest": digest}
+    return {"written_at": now, "text_digest": digest}
+
+
 def _provenance_properties(provenance: Provenance) -> dict[str, object]:
     """Flatten a provenance envelope into vertex properties.
 
@@ -87,6 +131,7 @@ def _upsert_session_vertex(g: GraphTraversalSource, session: SessionGraph) -> st
         "project": session.project or "",
         "summary": session.summary,
         **_provenance_properties(provenance),
+        **_text_stamp(g, session_vid, session.summary),
     }
 
     graph_traversal = (
@@ -164,6 +209,7 @@ def _write_sources(g: GraphTraversalSource, session: SessionGraph, session_vid: 
             "message_count": source.message_count,
             "scope": session.scope,
             **_provenance_properties(provenance),
+            **_text_stamp(g, source_vid, source.title),
         }
 
         graph_traversal = (
@@ -290,6 +336,7 @@ def _write_threads(
             "scope": session.scope,
             "project": session.project or "",
             **_provenance_properties(provenance),
+            **_text_stamp(g, thread_vid, thread.title),
         }
 
         graph_traversal = (
@@ -392,6 +439,7 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
             "description": entity.description or "",
             "scope": batch.scope,
             **_provenance_properties(entity.provenance or provenance),
+            **_text_stamp(g, entity_vid, entity.name),
         }
         graph_traversal = (
             g.merge_v({T.id: entity_vid, T.label: "Entity"})

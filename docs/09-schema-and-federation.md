@@ -67,6 +67,35 @@ ingested_at:  ISO-8601
 DERIVED_FROM: edge (not a property) → the node(s) this was distilled from
 ```
 
+Nodes whose text can move under a stable identity — `Session.summary`,
+`Thread.title`, `Source.title`, `Entity.name` — additionally carry:
+
+```
+written_at:   ISO-8601 — when this node's text last CHANGED
+text_digest:  sha256[:16] of that text — the comparison, not a second copy
+```
+
+`ingested_at` cannot answer that question: it carries the *writing session's*
+timestamp and is overwritten on every re-upsert, so it can move backwards and is
+not even a monotone change marker. `written_at` is the transaction-time axis and
+moves only when the digest does; an unchanged re-write preserves it, or it would
+just be "last written" again.
+
+The other node types do not carry it, and that is a claim about them rather than
+an omission. `Artifact`'s text is its identifier, which is its identity. A
+`Claim`'s description feeds its `content_id`, so a rewrite mints a different
+vertex instead of moving text under the same one. An `Exchange`'s question is
+fixed at mint and its answer is written once.
+
+**Valid time is a second axis, and it is deliberately not built.** "When did this
+text change" and "when did this fact stop being true" are different questions, and
+the literature keeps them apart: Graphiti carries `t'_created`/`t'_expired`
+alongside `t_valid`/`t_invalid`, TOKI keeps `system_time_*` separate from
+`valid_*`, and collapsing them costs 12.2 accuracy points in TSM
+([11 §5](11-related-work.md)). Claim identity therefore remains latest-wins, with
+this reasoning recorded rather than assumed — see the decision log
+([index](index.md)) for the dated refusal and what would reverse it.
+
 Effective trust = `min(tier)` over the transitive `DERIVED_FROM` closure. That is
 [05](05-trust-model.md)'s "distillation does not launder" rule made computable —
 and it's a graph traversal, which is the entire reason the substrate is a graph

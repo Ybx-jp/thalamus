@@ -19,6 +19,7 @@ from thalamus.substrate.schema import (
     ArtifactType,
     Decision,
     SessionGraph,
+    Source,
     Thread,
     Tier,
     Tool,
@@ -393,3 +394,132 @@ def test_rewriting_the_same_snapshot_does_not_supersede_itself():
     _write_sources(fake, session, session_vid)
 
     assert not [e for e in fake.edges if e[T.label] == "SUPERSEDES"]
+
+
+# --------------------------------------------------------------------------------------
+# written_at — the transaction-time axis ingested_at could not carry.
+# --------------------------------------------------------------------------------------
+
+
+class _StampFake:
+    """A graph that can answer the stored-text lookup, unlike the write-only recorders."""
+
+    def __init__(self, stored: dict | None = None):
+        self._stored = stored
+        self.asked = []
+
+    def V(self, vertex_id):
+        self.asked.append(vertex_id)
+        return self
+
+    def value_map(self, *_keys):
+        return self
+
+    def limit(self, _n):
+        return self
+
+    def to_list(self):
+        return [self._stored] if self._stored is not None else []
+
+
+def test_unchanged_text_keeps_its_original_written_at():
+    """
+    Scenario: A session is re-distilled and its summary comes back identical
+
+    Verifications:
+    - the stored stamp is preserved, not refreshed
+
+    If every write refreshed it, `written_at` would mean "last written" — which is
+    what `ingested_at` already fails to be useful as, since it carries the writing
+    session's timestamp and can move backwards. The whole value of this field is
+    that it moves only when the text does.
+    """
+    from thalamus.substrate.writer import _text_stamp
+
+    digest = _text_stamp(_StampFake(), "v", "the same summary")["text_digest"]
+    graph = _StampFake({"written_at": ["2026-01-01T00:00:00+00:00"],
+                        "text_digest": [digest]})
+
+    stamp = _text_stamp(graph, "v", "the same summary")
+
+    assert stamp["written_at"] == "2026-01-01T00:00:00+00:00"
+
+
+def test_changed_text_moves_written_at():
+    """
+    Scenario: A session's summary is rewritten by a later distillation
+
+    This is the mutable-text exposure the graph could not previously answer: a node's
+    text could change with nothing recording that it had, which is why the exposure
+    had to be inferred from evidence strings rather than queried.
+    """
+    from thalamus.substrate.writer import _text_stamp
+
+    graph = _StampFake({"written_at": ["2026-01-01T00:00:00+00:00"],
+                        "text_digest": ["0000000000000000"]})
+
+    stamp = _text_stamp(graph, "v", "a rewritten summary")
+
+    assert stamp["written_at"] != "2026-01-01T00:00:00+00:00"
+    assert stamp["text_digest"] != "0000000000000000"
+
+
+def test_a_first_write_stamps_now_rather_than_failing():
+    """
+    Scenario: The vertex does not exist yet, or the traversal source cannot answer
+
+    A vertex with no prior text has nothing to differ from, so the stamp is the write
+    itself. Same posture as _snapshot_heads: an unanswerable lookup on a first write
+    is not an error.
+    """
+    from thalamus.substrate.writer import _text_stamp
+
+    class _Mute:
+        def V(self, _vid):
+            raise RuntimeError("no such traversal surface")
+
+    assert _text_stamp(_Mute(), "v", "text")["written_at"]
+    assert _text_stamp(_StampFake(), "v", "text")["written_at"]
+
+
+def test_written_at_lands_on_every_node_whose_text_can_change():
+    """
+    Scenario: Write a full session subgraph
+
+    Verifications:
+    - Session, Thread and Source carry written_at
+    - Artifact does not — its text is its identifier, which is its identity and
+      therefore cannot change under it
+    - Claim does not — a rewritten description hashes to a different content_id and
+      mints a new vertex, so its text is immutable in place
+
+    The field exists for exactly the nodes where a stable identity can carry moving
+    text. Putting it on the others would imply a mutability they do not have.
+    """
+    session = SessionGraph(
+        session_id="s1",
+        timestamp=datetime(2026, 7, 14, tzinfo=UTC),
+        tool=Tool.CLAUDE_CODE,
+        project="thalamus",
+        summary="Wrote the substrate.",
+        artifacts=[Artifact(identifier="src/a.py", type=ArtifactType.FILE)],
+        decisions=[Decision(description="d", rationale="r", artifacts=["src/a.py"])],
+        threads=[Thread(id="t1", title="T", description="D")],
+        sources=[Source(content_hash="abc123", title="transcript", uri="file:///x")],
+    )
+
+    graph = RecordingGraph()
+    write_session(graph, session)
+
+    by_label = {}
+    for entry in graph.vertices:
+        label = entry["match"].get(T.label)
+        by_label.setdefault(label, []).append(entry["properties"])
+
+    for label in ("Session", "Thread", "Source"):
+        assert by_label.get(label), f"no {label} written"
+        assert all("written_at" in props for props in by_label[label]), label
+
+    for label in ("Artifact", "Claim"):
+        if by_label.get(label):
+            assert all("written_at" not in props for props in by_label[label]), label
