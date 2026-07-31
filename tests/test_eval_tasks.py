@@ -142,6 +142,9 @@ def test_prompt_echo_probes_are_refused():
 def test_filename_is_the_id_and_duplicates_are_caught(tmp_path):
     """
     Scenario: A task file whose declared id differs from its filename
+
+    The violation is reported and the task is quarantined — it will not arm at
+    `thalamus eval run`, while the rest of the battery still can.
     """
     _write(tmp_path, "other-name.yaml", VALID)
 
@@ -149,7 +152,7 @@ def test_filename_is_the_id_and_duplicates_are_caught(tmp_path):
 
     assert any("the filename is the id" in issue for issue in issues)
     rendered = render_battery(tasks, issues)
-    assert "does not arm" in rendered
+    assert "QUARANTINED, will not run" in rendered
 
 
 def test_memorization_only_battery_is_flagged_not_pooled(tmp_path):
@@ -401,3 +404,104 @@ def test_a_ref_that_no_longer_resolves_is_reported():
         source=TaskSource(kind="replayed", ref="HEAD"),
     )
     assert unresolvable_refs([live]) == []
+
+
+# --------------------------------------------------------------------------------------
+# Quarantine: the refusal is as wide as the fault, and the exclusion is recorded.
+# --------------------------------------------------------------------------------------
+
+
+def _task(task_id: str, ref: str = "HEAD"):
+    from thalamus.eval.tasks import Task, TaskSource
+
+    return Task(
+        id=task_id, title=task_id, overlap="memorization", prompt="p",
+        source=TaskSource(kind="replayed", ref=ref),
+    )
+
+
+def test_an_issue_is_attributed_to_the_task_it_is_about():
+    """
+    Scenario: One task in a three-task battery has a dead ref
+
+    Verifications:
+    - the issue lands against that task, not against the battery
+    - the other two tasks are unaffected
+
+    A campaign runs one task at a time, so a battery-wide refusal for a fault in a
+    task the run never touches refuses for a reason untrue of the run. That is the
+    gate operators learn to route around; per-task, the refusal is exactly as wide
+    as the fault.
+    """
+    from thalamus.eval.tasks import quarantine
+
+    tasks = [_task("alpha"), _task("beta"), _task("gamma")]
+    issues = ["beta: source.ref `deadbeef` does not resolve — the battery cannot be run"]
+
+    per_task, battery_wide = quarantine(tasks, issues)
+
+    assert list(per_task) == ["beta"]
+    assert battery_wide == []
+
+
+def test_a_filename_prefixed_issue_is_attributed_too():
+    """
+    Scenario: A task file fails schema validation, so it never became a Task at all
+
+    Its id is the filename (the battery enforces that), so the operator asking to
+    run that id must be told what is wrong with it rather than handed a
+    battery-level refusal that names no task.
+    """
+    from thalamus.eval.tasks import quarantine
+
+    per_task, battery_wide = quarantine(
+        [_task("alpha")], ["broken.yaml: 2 schema error(s) — ..."]
+    )
+
+    assert list(per_task) == ["broken"]
+    assert battery_wide == []
+
+
+def test_a_duplicate_task_id_blocks_the_whole_battery():
+    """
+    Scenario: Two files declare the same task id
+
+    There is no task-scoped reading of this: it makes *which* task `eval run <id>`
+    would pick ambiguous, so it stays battery-level and blocks everything.
+    """
+    from thalamus.eval.tasks import quarantine
+
+    per_task, battery_wide = quarantine([_task("alpha")], ["duplicate task id `alpha`"])
+
+    assert per_task == {}
+    assert battery_wide == ["duplicate task id `alpha`"]
+
+
+def test_strata_are_counted_over_the_runnable_set_only():
+    """
+    Scenario: Render a battery in which one task is quarantined
+
+    Verifications:
+    - the quarantined task is flagged in the listing
+    - it is excluded from the strata count, and the exclusion is stated
+
+    Strata are what a campaign's claims are scoped to. Counting a task that cannot
+    run would describe a battery that does not exist and move the scope of every
+    claim built on it, silently.
+    """
+    tasks = [_task("alpha"), _task("beta")]
+    rendered = render_battery(tasks, ["beta: source.ref `deadbeef` does not resolve"])
+
+    assert "beta [memorization · replayed] — beta — QUARANTINED, will not run" in rendered
+    # Verifies: one of two tasks counted, and the reader is told why
+    assert "Runnable strata (1 quarantined, excluded): 1 memorization" in rendered
+    assert "the rest of the battery still arms" in rendered
+
+
+def test_a_clean_battery_still_reports_ok():
+    """A battery with no issues must not grow a quarantine section."""
+    rendered = render_battery([_task("alpha")], [])
+
+    assert "Battery OK" in rendered
+    assert "QUARANTINED" not in rendered
+    assert "Runnable strata: 1 memorization" in rendered

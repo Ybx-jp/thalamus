@@ -74,6 +74,7 @@ acceptance:
     name: behavioral
 probes:
   - id: memo-surfaced
+    requires: memory_surface
     kind: transcript_regex
     pattern: '8644614d1b1242a4|accfe19d-ef4b-42ee-a895-04892b55ab9a'
     meaning: >-

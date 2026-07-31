@@ -353,6 +353,7 @@ acceptance:
 # --------------------------------------------------------------------------
 probes:
   - id: memo-surfaced
+    requires: memory_surface
     kind: transcript_regex
     pattern: "623f0ced-e6d9-490e-b7ac-9b27c383b996"
     meaning: >-

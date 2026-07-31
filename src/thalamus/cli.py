@@ -1301,13 +1301,17 @@ def _cmd_eval(args, eval_parser):
             sys.exit(1)
     elif getattr(args, "eval_command", None) == "oracle":
         from thalamus.eval.oracle import render_gate, run_gate
-        from thalamus.eval.tasks import load_battery, tasks_dir
+        from thalamus.eval.tasks import load_battery, quarantine, tasks_dir
 
         tasks, issues = load_battery(args.config)
-        if issues:
-            print("The battery does not arm until clean — run `thalamus eval tasks`:",
+        # Per-task, same as `eval run`: the gate refuses the task it is about to
+        # spend on, not the battery it happens to live in.
+        per_task, battery_wide = quarantine(tasks, issues)
+        blocking = battery_wide + per_task.get(args.task_id, [])
+        if blocking:
+            print(f"`{args.task_id}` does not arm — run `thalamus eval tasks`:",
                   file=sys.stderr)
-            for issue in issues:
+            for issue in blocking:
                 print(f"  - {issue}", file=sys.stderr)
             sys.exit(1)
         by_id = {task.id: task for task in tasks}
@@ -1327,13 +1331,21 @@ def _cmd_eval(args, eval_parser):
     elif getattr(args, "eval_command", None) == "run":
         from thalamus.contract.manifest import available_scopes
         from thalamus.eval import arms as arms_mod
-        from thalamus.eval.tasks import load_battery
+        from thalamus.eval.tasks import load_battery, quarantine
 
         tasks, issues = load_battery(args.config)
-        if issues:
-            print("The battery does not arm until clean — run `thalamus eval tasks`:",
+        # Report at the inspection surface, refuse at the spend surface. `eval
+        # tasks` loads a faulty battery so the fault can be read and repaired
+        # (lab/035); this is the point where money starts, so it refuses — but
+        # only as widely as the fault. A dead ref on another task says nothing
+        # about this run, and a gate that blocks for a reason untrue of the run
+        # it blocks is the kind that gets routed around.
+        per_task, battery_wide = quarantine(tasks, issues)
+        blocking = battery_wide + per_task.get(args.task_id, [])
+        if blocking:
+            print(f"`{args.task_id}` does not arm — run `thalamus eval tasks`:",
                   file=sys.stderr)
-            for issue in issues:
+            for issue in blocking:
                 print(f"  - {issue}", file=sys.stderr)
             sys.exit(1)
         by_id = {task.id: task for task in tasks}
@@ -1342,6 +1354,13 @@ def _cmd_eval(args, eval_parser):
                   file=sys.stderr)
             sys.exit(1)
         task = by_id[args.task_id]
+        # Quarantine is only honest if the campaign record says what was excluded.
+        # Otherwise a battery that shrank between two campaigns reads as one that
+        # never had those tasks, and the strata a claim is scoped to move silently.
+        quarantined = sorted(per_task)
+        if quarantined:
+            print(f"Quarantined and not available to this campaign: "
+                  f"{', '.join(quarantined)}", file=sys.stderr)
         try:
             arm_list = [
                 arms_mod.parse_arm(spec, available_scopes())
@@ -1362,6 +1381,7 @@ def _cmd_eval(args, eval_parser):
                     timeout=args.timeout or arms_mod.DEFAULT_TIMEOUT,
                     full_auto=args.full_auto, keep=args.keep, order_index=index,
                     sandbox=args.sandbox, isolate_store=args.isolate_store,
+                    quarantined=quarantined,
                 )
             except arms_mod.SessionFault as exc:
                 # Every arm after a session death is void; continuing would only

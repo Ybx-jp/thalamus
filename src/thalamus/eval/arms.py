@@ -1118,11 +1118,47 @@ def ladder_score(acceptance: list[dict]) -> int:
     return score
 
 
+def probe_applies(probe, arm: Arm | None) -> str:
+    """Why a probe cannot be evaluated for this arm, or "" if it can.
+
+    Applicability is a property of the *arm*, decided from the same capability the
+    runner uses to strip the memory surface — not from the probe's outcome. A
+    `memo-surfaced` probe on an arm with no MCP is asking whether a fact reached
+    context through a channel that was removed before the session started.
+    """
+    if arm is None or not probe.requires:
+        return ""
+    if probe.requires == "memory_surface" and not arm.mcp:
+        return f"arm `{arm.spec}` runs with no memory surface — nothing to surface"
+    return ""
+
+
 def evaluate_probes(
-    task: Task, transcript: str, diff: str, worktree: Path, timeout: int = 300
+    task: Task, transcript: str, diff: str, worktree: Path, timeout: int = 300,
+    arm: Arm | None = None,
 ) -> list[dict]:
+    """Probe verdicts, three-state: hit, miss, or inapplicable.
+
+    Inapplicable is not a miss and not an omission. A miss puts a structural zero in
+    the same denominator as a real one — lab/030 measured what that costs, where a
+    miss rate turned out to be describing the stratum rather than the system. An
+    omission repeats the `recall_calls: 0` failure instead: absent is
+    indistinguishable from "offered the surface and declined it".
+
+    So the field is always present, `status` carries the three states, `hit` stays
+    a bool for readers that only know the old shape, and `applicable` is the key an
+    aggregate filters on.
+    """
     results = []
     for probe in task.probes:
+        reason = probe_applies(probe, arm)
+        if reason:
+            results.append({
+                "id": probe.id, "kind": probe.kind, "hit": False,
+                "status": "inapplicable", "applicable": False, "reason": reason,
+                "meaning": probe.meaning.strip(),
+            })
+            continue
         if probe.kind == "transcript_regex":
             hit = bool(re.search(probe.pattern, transcript))
         elif probe.kind == "diff_regex":
@@ -1137,8 +1173,25 @@ def evaluate_probes(
             except subprocess.TimeoutExpired:
                 hit = False
         results.append({"id": probe.id, "kind": probe.kind, "hit": hit,
+                        "status": "hit" if hit else "miss", "applicable": True,
                         "meaning": probe.meaning.strip()})
     return results
+
+
+def probe_tally(probes: list[dict]) -> dict:
+    """Hits over *decided* probes, with the inapplicable count kept separate.
+
+    `decided` is the denominator, never `len(probes)`. The inapplicable count rides
+    alongside rather than being folded into either bucket: it is not `void`, not
+    `contaminated`, not `attributable` — collapsing it into any of them loses both
+    facts.
+    """
+    decided = [p for p in probes if p.get("applicable", True)]
+    return {
+        "hit": sum(1 for p in decided if p["hit"]),
+        "decided": len(decided),
+        "inapplicable": len(probes) - len(decided),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1229,6 +1282,7 @@ def run_arm(
     order_index: int = 0,
     sandbox: bool = False,
     isolate_store: bool = False,
+    quarantined: list[str] | None = None,
 ) -> dict:
     if not task.source.ref:
         raise ArmError(f"task `{task.id}` has no source.ref to check out")
@@ -1250,6 +1304,11 @@ def run_arm(
         "full_auto": full_auto,
         "order_index": order_index,
         "worktree": str(worktree),
+        # What the battery could not offer this campaign. Recorded because a
+        # battery that shrank between two campaigns is otherwise indistinguishable
+        # from one that never held those tasks, and the strata a claim is scoped
+        # to would move with nothing saying so.
+        "battery_quarantined": list(quarantined or []),
     }
     try:
         record["applied"] = apply_arm(worktree, arm)
@@ -1385,7 +1444,8 @@ def run_arm(
         # excellent delivery detector and a disqualifying one as an outcome: a
         # memory-off arm cannot emit a UUID it never saw, so scoring it would
         # make memory-on > memory-off true by construction.
-        record["probes"] = evaluate_probes(task, transcript, diff, worktree)
+        record["probes"] = evaluate_probes(task, transcript, diff, worktree, arm=arm)
+        record["probe_tally"] = probe_tally(record["probes"])
 
         # Flag, never exclude (arXiv 2111.03382, 2605.05564): the verdict above
         # stays exactly as measured; `attributable` says whether it can be read
@@ -1521,6 +1581,18 @@ def render_run(record: dict) -> str:
         )
     lines.append(f"  => {verdict}")
     for probe in record.get("probes", []):
-        mark = "hit " if probe["hit"] else "miss"
-        lines.append(f"  probe {mark} [{probe['kind']}] {probe['id']} — {probe['meaning']}")
+        # Read `status`, not `hit`: an inapplicable probe has hit=False and
+        # rendering it as "miss" is exactly the noise this replaced.
+        status = probe.get("status") or ("hit" if probe["hit"] else "miss")
+        mark = {"hit": "hit ", "miss": "miss", "inapplicable": "n/a "}[status]
+        detail = probe["meaning"]
+        if status == "inapplicable":
+            detail = f"{probe.get('reason', 'inapplicable')} (probe not evaluated)"
+        lines.append(f"  probe {mark} [{probe['kind']}] {probe['id']} — {detail}")
+    tally = record.get("probe_tally")
+    if tally and tally.get("inapplicable"):
+        lines.append(
+            f"  probes: {tally['hit']}/{tally['decided']} decided, "
+            f"{tally['inapplicable']} inapplicable (excluded from the denominator)"
+        )
     return "\n".join(lines)

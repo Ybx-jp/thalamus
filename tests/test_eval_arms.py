@@ -1243,3 +1243,141 @@ class TestProblemFramedCeiling:
         assert ceiling_prompt(task, "conclusion")
         with pytest.raises(ArmError, match="problem_framing"):
             ceiling_prompt(task, "problem")
+
+
+# --------------------------------------------------------------------------------------
+# A probe that cannot fire for an arm is inapplicable, never a miss.
+# --------------------------------------------------------------------------------------
+
+
+def _probe_task(requires: str = "memory_surface"):
+    from thalamus.eval.tasks import Probe, Task, TaskSource
+
+    return Task(
+        id="t", title="t", overlap="memorization", prompt="p",
+        source=TaskSource(kind="replayed", ref="HEAD"),
+        probes=[
+            Probe(id="memo-surfaced", kind="transcript_regex", pattern="deadbeef-uuid",
+                  meaning="the memo reached context by recall", requires=requires),
+            Probe(id="fix-name-convergence", kind="diff_regex", pattern="_helper",
+                  meaning="converged on the memorized helper name"),
+        ],
+    )
+
+
+def test_a_memory_surface_probe_is_inapplicable_to_an_arm_with_no_mcp(tmp_path):
+    """
+    Scenario: A `memo-surfaced` probe runs against a ceiling arm, which has its MCP
+    server removed before the session starts
+
+    Verifications:
+    - the probe is `inapplicable`, not `miss`
+    - it is dropped from the decided denominator but counted on its own key
+    - the reason names the arm
+
+    The probe matches a session UUID that exists only in the memory graph, so for an
+    arm with no memory surface it asks whether a fact arrived through a channel that
+    was deleted before the run. Recorded as a miss, that structural zero sits in the
+    same denominator as a real one — the mistake lab/030 already paid for, where a
+    miss rate turned out to be describing the stratum rather than the system.
+    """
+    task = _probe_task()
+    ceiling = arms.parse_arm("ceiling", ["main"])
+
+    results = arms.evaluate_probes(task, "no uuid here", "no diff", tmp_path, arm=ceiling)
+
+    memo = next(p for p in results if p["id"] == "memo-surfaced")
+    assert memo["status"] == "inapplicable"
+    assert memo["applicable"] is False
+    assert "no memory surface" in memo["reason"]
+
+    # Verifies: the ordinary probe is still decided, so this is not a blanket opt-out
+    other = next(p for p in results if p["id"] == "fix-name-convergence")
+    assert other["status"] == "miss" and other["applicable"] is True
+
+    tally = arms.probe_tally(results)
+    assert tally == {"hit": 0, "decided": 1, "inapplicable": 1}
+
+
+def test_the_same_probe_is_decided_for_an_arm_that_has_memory(tmp_path):
+    """
+    Scenario: The same probe runs against memory-on, which keeps its MCP server
+
+    Applicability is a property of the arm, not of the outcome — so an arm that
+    *could* have surfaced the memo and did not is a real miss and must stay in the
+    denominator. Otherwise the fix would delete the measurement it exists to clean.
+    """
+    task = _probe_task()
+    on = arms.parse_arm("memory-on", ["main"])
+
+    results = arms.evaluate_probes(task, "no uuid here", "no diff", tmp_path, arm=on)
+    memo = next(p for p in results if p["id"] == "memo-surfaced")
+
+    assert memo["status"] == "miss" and memo["applicable"] is True
+    assert arms.probe_tally(results)["decided"] == 2
+
+    # Verifies: and it still hits when the UUID is actually present
+    hit = arms.evaluate_probes(task, "saw deadbeef-uuid", "", tmp_path, arm=on)
+    assert next(p for p in hit if p["id"] == "memo-surfaced")["status"] == "hit"
+
+
+def test_a_probe_with_no_requirement_is_always_decided(tmp_path):
+    """
+    Scenario: An ordinary probe evaluated against a no-MCP arm
+
+    Only probes that *declare* a requirement become inapplicable. Silence means the
+    probe is arm-independent, which is the common case and must not change.
+    """
+    task = _probe_task(requires="")
+    results = arms.evaluate_probes(
+        task, "no uuid", "no diff", tmp_path, arm=arms.parse_arm("memory-off", ["main"])
+    )
+
+    assert all(p["applicable"] for p in results)
+    assert arms.probe_tally(results)["inapplicable"] == 0
+
+
+def test_an_inapplicable_probe_does_not_render_as_a_miss():
+    """
+    Scenario: Render a ceiling arm's record
+
+    Verifications:
+    - the line reads `n/a`, not `miss`
+    - the reason is shown in place of the meaning, so the reader is not invited to
+      interpret a verdict that was never reached
+    - the tally states what was excluded
+
+    This is the whole visible symptom: the probe appeared as a "miss" in every
+    ceiling arm's output, which is noise pretending to be a measurement.
+    """
+    record = {
+        "task": "t", "arm": "ceiling", "scope": "main", "ref": "HEAD",
+        "order_index": 0, "rung": 1, "acceptance": [],
+        "probes": [
+            {"id": "memo-surfaced", "kind": "transcript_regex", "hit": False,
+             "status": "inapplicable", "applicable": False,
+             "reason": "arm `ceiling` runs with no memory surface — nothing to surface",
+             "meaning": "the memo reached context by recall"},
+        ],
+        "probe_tally": {"hit": 0, "decided": 0, "inapplicable": 1},
+    }
+
+    rendered = arms.render_run(record)
+
+    assert "probe n/a " in rendered
+    assert "probe miss" not in rendered
+    assert "nothing to surface" in rendered
+    assert "1 inapplicable (excluded from the denominator)" in rendered
+
+
+def test_an_unknown_requirement_is_a_pre_registration_violation():
+    """
+    Scenario: A task declares `requires: telepathy`
+
+    A requirement the runner does not understand would silently evaluate as an
+    ordinary probe, which is the failure mode in reverse — so it is caught at
+    validation, where every other pre-registration fault is.
+    """
+    task = _probe_task(requires="telepathy")
+
+    assert any("requires `telepathy`" in issue for issue in task.check())

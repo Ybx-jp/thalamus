@@ -91,6 +91,13 @@ class Probe(BaseModel):
 
     `meaning` is mandatory — a probe nobody can interpret is decoration, and the
     report quotes it next to the verdict.
+
+    `requires` names the arm capability the probe presupposes. A `memo-surfaced`
+    probe matching a session UUID that exists only in the graph cannot fire for an
+    arm with no memory surface — not because the arm failed, but because there was
+    nothing for it to surface. Recorded as a miss, that structural zero reads as a
+    measurement and lands in the same denominator as a real one, which is the
+    mistake lab/030 already paid for once.
     """
 
     id: str
@@ -99,6 +106,16 @@ class Probe(BaseModel):
     pattern: str = ""  # transcript_regex / diff_regex
     run: str = ""  # command
     expect_exit: int = 0
+    requires: str = Field(
+        "",
+        description=(
+            "Arm capability this probe presupposes. `memory_surface` means the "
+            "probe is inapplicable — never a miss — for an arm with no MCP."
+        ),
+    )
+
+
+PROBE_REQUIREMENTS = ("memory_surface",)
 
 
 class TaskSource(BaseModel):
@@ -349,6 +366,11 @@ class Task(BaseModel):
                 continue
             if not probe.meaning.strip():
                 issues.append(f"{where}: no meaning — an uninterpretable probe")
+            if probe.requires and probe.requires not in PROBE_REQUIREMENTS:
+                issues.append(
+                    f"{where}: requires `{probe.requires}` not in "
+                    f"{PROBE_REQUIREMENTS}"
+                )
             if probe.kind in ("transcript_regex", "diff_regex"):
                 if not probe.pattern:
                     issues.append(f"{where}: {probe.kind} needs a pattern")
@@ -515,8 +537,12 @@ def load_battery(base: Path | None = None) -> tuple[list[Task], list[str]]:
             issues.append(f"{path.name}: {exc.error_count()} schema error(s) — {exc}")
             continue
         if task.id != path.stem:
+            # Keyed on the *declared* id, not the filename: `eval run` resolves
+            # tasks by task.id, so that is the id whose campaign has to refuse.
+            # Keying it on the filename would quarantine a name nobody can run
+            # and leave the runnable one unguarded.
             issues.append(
-                f"{path.name}: declares id `{task.id}` — the filename is the id"
+                f"{task.id}: declared in {path.name} — the filename is the id"
             )
         issues.extend(f"{path.name}: {issue}" for issue in task.check())
         tasks.append(task)
@@ -564,11 +590,46 @@ def unresolvable_refs(tasks: list[Task]) -> list[str]:
     return problems
 
 
+def quarantine(
+    tasks: list[Task], issues: list[str]
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Attribute each issue to the task it is about, or to the battery as a whole.
+
+    The split exists because a campaign is run one task at a time. A dead ref on
+    `task-A` says nothing about `task-B`, so refusing the whole battery for it
+    refuses for a reason untrue of the run — and a gate that is wrong about the run
+    it blocks is the kind operators learn to route around. Per-task, the refusal is
+    exactly as wide as the fault.
+
+    Battery-level issues stay battery-level and block everything: a duplicate task
+    id makes *which* task `eval run <id>` would pick ambiguous, so there is no
+    task-scoped reading of it.
+
+    Issue strings are prefixed with the file name (which is the task id, enforced
+    above) or the task id itself, which is what makes this attributable at all.
+    """
+    per_task: dict[str, list[str]] = {}
+    battery: list[str] = []
+    known = {task.id for task in tasks}
+    for issue in issues:
+        head, _, rest = issue.partition(": ")
+        task_id = head[:-5] if head.endswith(".yaml") else head
+        # An unparseable file never became a Task, so its id is not in `known`;
+        # attribute it anyway — the id is the filename, and the operator asking
+        # for that id needs to be told, not handed a battery-level refusal.
+        if task_id in known or (rest and head.endswith(".yaml")):
+            per_task.setdefault(task_id, []).append(issue)
+        else:
+            battery.append(issue)
+    return per_task, battery
+
+
 def render_battery(tasks: list[Task], issues: list[str]) -> str:
     """The battery as the operator reads it before a campaign."""
     lines: list[str] = []
     if not tasks:
         lines.append("Battery is empty — no tasks under config/tasks/.")
+    per_task, battery_wide = quarantine(tasks, issues)
     for task in tasks:
         rubric = "rubric" if task.rubric.strip() else "no rubric (mechanical only)"
         # An unvalidated ladder is worth naming: anchors cover the range, mutants
@@ -577,17 +638,27 @@ def render_battery(tasks: list[Task], issues: list[str]) -> str:
             f"{len(task.mutants)} mutant(s)" if task.mutants
             else "no mutant set (ladder unvalidated in the interior)"
         )
+        flag = " — QUARANTINED, will not run" if per_task.get(task.id) else ""
         lines.append(
-            f"{task.id} [{task.overlap} · {task.source.kind}] — {task.title}\n"
+            f"{task.id} [{task.overlap} · {task.source.kind}] — {task.title}{flag}\n"
             f"  {len(task.acceptance)} acceptance, {len(task.probes)} probe(s), "
             f"{mutants}, {rubric}"
         )
-    strata = Counter(task.overlap for task in tasks)
-    if tasks:
+    # Strata over the *runnable* set. A quarantined task is not available to a
+    # campaign, so counting it here would describe a battery that cannot be run and
+    # quietly change what a campaign's claims are scoped to.
+    runnable = [task for task in tasks if not per_task.get(task.id)]
+    strata = Counter(task.overlap for task in runnable)
+    if runnable:
         strata_line = ", ".join(
             f"{strata.get(s, 0)} {s}" for s in OVERLAP_STRATA
         )
-        lines.append(f"\nStrata: {strata_line} — arms report per stratum, never pooled.")
+        excluded = len(tasks) - len(runnable)
+        note = f" ({excluded} quarantined, excluded)" if excluded else ""
+        lines.append(
+            f"\nRunnable strata{note}: {strata_line} — arms report per stratum, "
+            "never pooled."
+        )
         if not strata.get("transferable"):
             lines.append(
                 "  Note: no transferable-stratum tasks yet; campaign claims stay "
@@ -595,8 +666,18 @@ def render_battery(tasks: list[Task], issues: list[str]) -> str:
             )
     if issues:
         lines.append(f"\n{len(issues)} pre-registration violation(s):")
-        lines.extend(f"  - {issue}" for issue in issues)
-        lines.append("The battery does not arm until these are fixed.")
+        for task_id in sorted(per_task):
+            lines.append(f"  {task_id} — quarantined:")
+            lines.extend(f"    - {issue}" for issue in per_task[task_id])
+        if battery_wide:
+            lines.append("  battery-wide — nothing runs:")
+            lines.extend(f"    - {issue}" for issue in battery_wide)
+        lines.append(
+            "A quarantined task refuses at `thalamus eval run`; the rest of the "
+            "battery still arms."
+            if not battery_wide else
+            "A battery-wide violation blocks every task."
+        )
     elif tasks:
         lines.append("Battery OK — every task carries its oracle before any arm runs.")
     return "\n".join(lines)

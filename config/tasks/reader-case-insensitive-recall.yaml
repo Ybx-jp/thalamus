@@ -805,6 +805,7 @@ acceptance:
     name: relation-r3
 probes:
   - id: memo-surfaced
+    requires: memory_surface
     kind: transcript_regex
     pattern: 'accfe19d-ef4b-42ee-a895-04892b55ab9a'
     meaning: >-
