@@ -140,6 +140,15 @@ traversal or the pointer, not a design.
    into [docs/11-related-work.md](../../../../../docs/11-related-work.md) (the human
    record) and, if it is a paper worth remembering, into the graph via
    `thalamus ingest` (the machine record). The doc and the memory stay in step.
+7. **Checkpoint the result back.** For anything that produces a *number* — a
+   campaign, an audit, a calibration, any measurement program — mint a second ticket
+   when the result exists and before it is published, carrying the actual figures and
+   the method that produced them. Consult → build → **return with results** →
+   correct. It costs one extra ticket and it is the only step that can catch an error
+   in the thing you built rather than in the plan you built it from: the checkpoint
+   that established this found four errors in a result that would otherwise have
+   shipped. Send the numbers, not a summary of them — an expert cannot check a
+   conclusion it is only told about.
 
 ### B. Critiquing tests for research alignment
 

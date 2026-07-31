@@ -937,6 +937,17 @@ live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
 - Publish negative results in the lab notebook. "The literature expert's retrievals
   were ignored 70% of the time until X" is more valuable — to the design and to the
   portfolio — than a clean win.
+- **Every measurement program checkpoints its result back.** Consult → build →
+  return with results → correct. The grounding consultation happens before the work
+  and can only check the plan; a second ticket carrying the actual figures and the
+  method that produced them is the only step that checks the thing that was built.
+  It costs one extra ticket, and the checkpoint that established the rule found four
+  errors in a result that would otherwise have shipped. Send the numbers, not a
+  summary of them — an expert cannot check a conclusion it is only told about.
+- **A rate is rendered with a null and an interval, or with a stated reason it has
+  neither** (`eval/rates.py`). Below n=20 the counts render and the percentage does
+  not: every campaign here is 6–10 arms, where the convention is the exact paired
+  test, and a percentage on n=6 is what travels.
 
 ## Open questions
 
