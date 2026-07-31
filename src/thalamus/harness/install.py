@@ -89,6 +89,8 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "conditioning.sh"),
+    ("PostToolUse", "mcp__thalamus__memory_query", "recipe-stage.sh"),
+    ("PostToolUse", "Bash", "recipe-stage.sh"),
 ]
 
 # The Cursor wiring, as (event, script). Event names and their I/O shapes were

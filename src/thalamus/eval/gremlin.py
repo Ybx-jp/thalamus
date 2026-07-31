@@ -401,6 +401,70 @@ class SmokeResult:
     detail: str = ""
 
 
+STAGED_RECIPES = Path.home() / ".thalamus" / "recipes" / "staged.jsonl"
+
+
+def staged_recipes(path: Path | None = None) -> list[dict]:
+    """Queries the PostToolUse hook staged as RECIPES.md candidates.
+
+    Rule 5 of the gremlin-python skill is "check RECIPES.md before writing, add to it
+    after validating". Step one is enforced by the PreToolUse guard; step two was left
+    to an agent remembering, mid-task, a second obligation from a skill it invoked for
+    the first one — measured at 0-for-3 in one session. The hook records the
+    candidates so the decision survives the session that produced them.
+
+    Deduplicated on the query text, newest kept: the same traversal re-run five times
+    while being debugged is one candidate, not five.
+    """
+    source = path or STAGED_RECIPES
+    if not source.is_file():
+        return []
+    by_query: dict[str, dict] = {}
+    for line in source.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        query = (row.get("query") or "").strip()
+        if query:
+            by_query[query] = row
+    return sorted(by_query.values(), key=lambda r: r.get("ts", ""), reverse=True)
+
+
+def render_staged(rows: list[dict]) -> str:
+    """The staging queue as the operator reads it before promoting anything.
+
+    Deliberately does not write RECIPES.md. Admission is a judgement — "it answered a
+    real question a session actually had" — and automating it would fill the store
+    with whatever ran, which is the opposite of a curated one. What the hook removes
+    is only the failure where the query is gone by the time anyone decides.
+    """
+    if not rows:
+        return (
+            "No staged queries. The PostToolUse hook records memory_query calls and "
+            "inline gremlin Bash that ran and returned something."
+        )
+    lines = [f"{len(rows)} staged quer(y/ies), newest first — promote by hand into "
+             f"{RECIPES_PATH.name}:"]
+    for row in rows:
+        query = " ".join((row.get("query") or "").split())
+        if len(query) > 160:
+            query = query[:157] + "..."
+        lines.append(
+            f"\n  [{row.get('surface', '?')}] {row.get('ts', '?')} "
+            f"scope={row.get('scope', '?')} ({row.get('response_chars', 0):,} chars back)"
+        )
+        lines.append(f"    {query}")
+    lines.append(
+        "\nAdmission threshold (gremlin-python skill, rule 5): it ran against the live "
+        "graph AND answered a real question a session actually had. The hook can only "
+        "check the first."
+    )
+    return "\n".join(lines)
+
+
 def smoke_recipes(url: str, path: Path | None = None) -> list[SmokeResult]:
     """Re-execute every stored recipe read-only against the live graph.
 

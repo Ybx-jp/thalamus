@@ -325,6 +325,11 @@ def main():
         help="Smoke-run every stored gremlin recipe read-only (rolling freshness signal)",
     )
     eval_recipes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    eval_recipes_parser.add_argument(
+        "--staged", action="store_true",
+        help="Show queries the PostToolUse hook staged for RECIPES.md instead of "
+             "smoke-running the store",
+    )
 
     eval_gold_parser = eval_sub.add_parser(
         "gold",
@@ -1286,8 +1291,11 @@ def _cmd_eval(args, eval_parser):
     elif getattr(args, "eval_command", None) == "gold":
         _cmd_eval_gold(args)
     elif getattr(args, "eval_command", None) == "recipes":
-        from thalamus.eval.gremlin import render_smoke, smoke_recipes
+        from thalamus.eval.gremlin import render_smoke, render_staged, smoke_recipes, staged_recipes
 
+        if args.staged:
+            print(render_staged(staged_recipes()))
+            return
         results = smoke_recipes(args.url)
         print(render_smoke(results))
         if any(not r.ok for r in results):

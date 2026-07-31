@@ -87,6 +87,13 @@ real question a session actually had. Copy, adapt, and when a new query clears
 that bar, append it. `memory_query`-surface recipes in the `recall-strategy`
 skill remain canonical there; RECIPES.md indexes them rather than duplicating.
 
+You do not have to remember the second half mid-task, and measurably will not:
+a PostToolUse hook stages every `memory_query` and inline-gremlin Bash call that
+ran and returned something. Review the queue with `thalamus eval recipes
+--staged` and promote by hand. The hook checks only that a query *ran* — whether
+it answered a real question is the half that stays yours, which is why nothing
+is written to RECIPES.md automatically.
+
 The store is measured, not trusted: `thalamus eval recipes` smoke-runs every
 entry read-only (a recipe that stops executing is an eviction candidate;
 eviction is archival, never deletion), and `thalamus eval gremlin` tags live

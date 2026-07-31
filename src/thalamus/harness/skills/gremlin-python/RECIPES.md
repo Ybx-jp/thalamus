@@ -176,3 +176,41 @@ expert scope `X`" string is **confounded**: consultation subagents carry that
 same text, so its presence does not mean the session itself was pinned. Neither
 source can currently distinguish "mis-scoped expert session" from "main session
 that consulted an expert."
+
+---
+
+## Exchanges an expert answered
+**Question:** What consultations has this expert already closed — so a session can
+reuse what it said instead of re-deriving it, or audit what it committed to?
+**Surface:** gremlin-python
+**Validated:** 2026-07-30 against the live graph (3 rows for `literature`, 3 for
+`eval-methodology`)
+
+```python
+from thalamus.substrate.writer import connect, close_connection
+from gremlin_python.process.traversal import Order, T
+
+g = connect()
+try:
+    rows = (
+        g.V()
+        .has_label("Exchange")
+        .has("expert", "literature")
+        .has("status", "answered")
+        .order().by("answered_at", Order.desc)
+        .limit(5)
+        .value_map(True)
+        .to_list()
+    )
+    for row in rows:
+        print(row[T.id], row.get("from_scope"), row.get("answered_at"))
+finally:
+    close_connection(g)
+```
+
+**Notes:** Filter on the `expert` **property**, not on scope. An Exchange vertex is
+always `scope:main:exchange:<ticket>` — consultation routes through `main`, never
+expert-to-expert — so `.has("scope", "literature")` returns nothing and looks like
+"this expert has never been consulted". `status` is `open` until `consult_answer`
+lands, so the answered filter is what separates a record from a live question. The
+shipped path is `reader.recall_exchanges` / the `memory_consultations` MCP tool.

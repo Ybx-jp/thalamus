@@ -66,7 +66,8 @@ RUNS_BASE = Path.home() / ".thalamus" / "counterfactuals"
 # The scripts that ARE the memory read surface (stripped only in memory-off).
 MEMORY_SURFACE_HOOKS = {"session-start.sh", "conditioning.sh", "pin-engaged.sh"}
 # Write-back paths stripped in every arm — runs must not write memory.
-WRITE_BACK_HOOKS = {"session-end.sh", "post-tool-use.sh", "gremlin-tap.sh"}
+WRITE_BACK_HOOKS = {"session-end.sh", "post-tool-use.sh", "gremlin-tap.sh",
+                    "recipe-stage.sh"}
 
 UNBUILT_ARMS = ("freshness-degraded", "volume-degraded")
 

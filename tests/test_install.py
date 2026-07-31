@@ -198,6 +198,17 @@ class TestHookBlock:
         ]
         assert sorted(conditioning) == ["TaskCreate", "mcp__thalamus__memory_query"]
 
+        # recipe-stage.sh covers both graph surfaces, for the same reason the tap
+        # does: memory_query and inline gremlin Bash query the same graph, and a
+        # store fed by only one of them would miss whichever the session preferred.
+        staging = sorted(
+            g.get("matcher")
+            for g in block["PostToolUse"]
+            for h in g["hooks"]
+            if h["command"].endswith("recipe-stage.sh")
+        )
+        assert staging == ["Bash", "mcp__thalamus__memory_query"]
+
     def test_scripts_named_in_the_wiring_actually_exist(self):
         """A wiring entry naming a script that isn't there is a latent error."""
         for _, _, script in install.HOOK_WIRING:

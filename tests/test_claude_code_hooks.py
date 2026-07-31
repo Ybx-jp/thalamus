@@ -347,3 +347,145 @@ def test_milestone_class_survives_the_new_branch(tmp_path):
     out = _run_conditioning(payload, tmp_path).stdout
     assert "multi-step work is starting" in out
     assert len(_firings(tmp_path, "milestone")) == 1
+
+
+# --------------------------------------------------------------------------------------
+# recipe-stage.sh — RECIPES.md capture as a hook, not a habit.
+# --------------------------------------------------------------------------------------
+
+
+def _run_stage(payload, home):
+    return subprocess.run(
+        [str(HOOKS / "recipe-stage.sh")],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin"},
+        timeout=30,
+    )
+
+
+def _staged(home):
+    path = Path(home) / ".thalamus" / "recipes" / "staged.jsonl"
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def _query_payload(query, response):
+    return {
+        "session_id": "s1",
+        "tool_name": "mcp__thalamus__memory_query",
+        "tool_input": {"query": query},
+        "tool_response": response,
+    }
+
+
+def _bash_payload(command, stdout):
+    return {
+        "session_id": "s1",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_response": {"stdout": stdout},
+    }
+
+
+def test_a_query_that_ran_and_answered_is_staged(tmp_path):
+    """
+    Scenario: A session runs a memory_query that comes back with data
+
+    Rule 5 of the gremlin-python skill is "check RECIPES.md before writing, add to it
+    after validating". The guard enforces step one; step two was left to an agent
+    remembering a second obligation mid-task, measured at 0-for-3 in one session.
+    """
+    _run_stage(_query_payload("g.V().hasLabel('Exchange').count()", "[42]"), tmp_path)
+
+    staged = _staged(tmp_path)
+    assert len(staged) == 1
+    assert staged[0]["surface"] == "memory_query"
+    assert staged[0]["query"] == "g.V().hasLabel('Exchange').count()"
+
+
+def test_a_query_that_failed_is_not_a_validated_recipe(tmp_path):
+    """
+    Scenario: Traversals that errored, were refused, or returned nothing
+
+    Verifications:
+    - none of them stage
+
+    The admission threshold the hook *can* check is that the query ran and answered.
+    Staging failures would fill the queue with the thing the skill exists to warn
+    about, and a store of broken queries is worse than no store.
+    """
+    for response in (
+        "Traceback (most recent call last): GremlinServerError",
+        "memory_query is a master-plane instrument and this session is pinned to `x`",
+        "No results",
+        "",
+        "   ",
+    ):
+        _run_stage(_query_payload("g.V().bogus()", response), tmp_path)
+
+    assert _staged(tmp_path) == []
+
+
+def test_a_lazy_traversal_is_refused_rather_than_stored_as_a_recipe(tmp_path):
+    """
+    Scenario: A Bash gremlin call prints a GraphTraversal repr
+
+    A repr means the traversal was never iterated — the single most common Gremlin
+    mistake in this project, and the precise opposite of a proven recipe. Storing it
+    would teach the next session the error.
+    """
+    _run_stage(
+        _bash_payload(
+            "python -c 'from gremlin_python import x; print(g.V())'",
+            "<gremlin_python.process.graph_traversal.GraphTraversal object at 0x7f>",
+        ),
+        tmp_path,
+    )
+
+    assert _staged(tmp_path) == []
+
+
+def test_only_bash_that_actually_inlines_gremlin_is_a_graph_query(tmp_path):
+    """
+    Scenario: Ordinary Bash runs alongside inline gremlin
+
+    Verifications:
+    - `ls` does not stage
+    - a command importing the substrate does
+
+    Same marker heuristic as gremlin-guard.sh and gremlin-tap.sh, deliberately: three
+    surfaces disagreeing about what counts as a graph query would be three different
+    answers to one question.
+    """
+    _run_stage(_bash_payload("ls -la", "a.py b.py"), tmp_path)
+    assert _staged(tmp_path) == []
+
+    _run_stage(
+        _bash_payload(
+            "python -c 'from thalamus.substrate.writer import connect'", "3 rows"
+        ),
+        tmp_path,
+    )
+    staged = _staged(tmp_path)
+    assert len(staged) == 1 and staged[0]["surface"] == "gremlin-python"
+
+
+def test_staging_never_blocks_and_never_speaks(tmp_path):
+    """
+    Scenario: Every payload shape reaches the hook
+
+    A PostToolUse hook that exits non-zero or writes to stdout would inject itself
+    into the session. This one records and says nothing — promotion is a human
+    judgement made later, out of band.
+    """
+    for payload in (
+        _query_payload("g.V().count()", "[5]"),
+        _bash_payload("ls", "x"),
+        {"session_id": "s", "tool_name": "Read", "tool_input": {}, "tool_response": "x"},
+    ):
+        result = _run_stage(payload, tmp_path)
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
