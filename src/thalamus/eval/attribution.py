@@ -38,7 +38,26 @@ from thalamus.substrate.reader import _extract_keywords
 MIN_MATCHED_TERMS = 2
 MIN_MATCHED_RATIO = 0.3
 
+# Bump when a dial above moves, or when the term extraction under it changes, so the
+# fingerprint moves even if two dials cancel out numerically.
+JUDGE_VERSION = "1"
+
 _TOKEN_RE = re.compile(r"[a-z0-9_./-]+")
+
+
+def judge_fingerprint(name: str = "shipped") -> str:
+    """A compact, legible identity for the judging dials a verdict was reached under.
+
+    `judged_terms` records the instrument's *inputs*; this records its *settings*. Both
+    are needed to call a stored verdict a record: the same term set under a different
+    threshold is a different verdict, and without this a dial change silently
+    re-attributes every historical judgement to settings that never produced it.
+
+    The ranker solved this identical problem one property over (`Trace.ranker_config`,
+    lab/029) and the judge had no equivalent. Legible rather than hashed, for the same
+    reason: a window straddling `j1:t2-r0.3` and `j1:t3-r0.3` says *which* dial moved.
+    """
+    return f"j{JUDGE_VERSION}:{name}-t{MIN_MATCHED_TERMS}-r{MIN_MATCHED_RATIO}"
 
 
 @dataclass

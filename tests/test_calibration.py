@@ -231,3 +231,44 @@ def test_an_unstratified_rotation_is_a_different_null_by_design():
     calibration.rotate(cases, judge, flat, rotations=10, seed=2, stratified=False)
     # Both produce a null; the point is that they are separately reportable.
     assert stratified.null_rates and flat.null_rates
+
+
+def test_restricting_a_corpus_keeps_the_terms_auditability_is_measured_from():
+    """
+    Scenario: Narrow the corpus to claims, then ask how much of it is auditable
+
+    Verifications:
+    - judged_terms survives the restriction, filtered to the surviving nodes
+    - auditable() therefore still sees the verdicts that recorded their terms
+
+    `restrict` is the function experiments/001 narrows with *before* calling
+    auditable(), so dropping judged_terms here made the auditability of a restricted
+    corpus read as zero in the one place it is actually measured — a stored number
+    that was a function of a field the same call had just discarded.
+    """
+    case = calibration.Case(
+        trace_id="t1",
+        session_id="s1",
+        scope="main",
+        tool="memory_recall",
+        ts=datetime(2026, 7, 30, tzinfo=timezone.utc),
+        nodes={
+            "scope:main:claim:aaa": "immutable claim text",
+            "scope:main:thread:some-slug": "mutable thread description",
+        },
+        window=_window("immutable claim text"),
+        stored={"scope:main:claim:aaa": True, "scope:main:thread:some-slug": False},
+        judged_terms={
+            "scope:main:claim:aaa": ["immutable", "claim"],
+            "scope:main:thread:some-slug": ["mutable", "thread"],
+        },
+    )
+
+    claims_only = calibration.restrict([case], {"claim"})
+
+    assert claims_only[0].judged_terms == {"scope:main:claim:aaa": ["immutable", "claim"]}
+    # Verifies: the terms of a node the filter removed do not ride along
+    assert "scope:main:thread:some-slug" not in claims_only[0].judged_terms
+    # Verifies: the verdict is still reported as auditable after narrowing
+    with_terms, _immutable, total = calibration.auditable(claims_only)
+    assert (with_terms, total) == (1, 1)

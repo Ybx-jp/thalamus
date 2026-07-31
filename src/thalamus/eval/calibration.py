@@ -563,6 +563,14 @@ def restrict(cases: list[Case], kinds: set[str]) -> list[Case]:
                 injected_chars=case.injected_chars,
                 returned_count=case.returned_count,
                 stored={k: v for k, v in case.stored.items() if k in nodes},
+                # Carried, not dropped. `auditable()` reports how many verdicts
+                # recorded the terms they were computed against, and this is the
+                # function experiments/001 narrows the corpus with before asking —
+                # so losing it here made the auditability of a restricted corpus
+                # read as zero, in the one place it is actually measured.
+                judged_terms={
+                    k: v for k, v in case.judged_terms.items() if k in nodes
+                },
             )
         )
     _assign_strata(narrowed)

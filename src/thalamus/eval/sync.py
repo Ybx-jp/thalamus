@@ -19,7 +19,12 @@ from gremlin_python.process.traversal import Order
 from thalamus.archive import read_archived
 from thalamus.eval import policy as policy_mod
 from thalamus.contract.ontology import NODES_BY_LABEL, vid
-from thalamus.eval.attribution import attribute, node_terms, outputs_after
+from thalamus.eval.attribution import (
+    attribute,
+    judge_fingerprint,
+    node_terms,
+    outputs_after,
+)
 from thalamus.eval.rankers import RankerLedger
 from thalamus.eval.traces import TraceEvent, load_events
 from thalamus.harness.consultation import exchange_vid as _consultation_exchange_vid
@@ -102,11 +107,12 @@ def sync(
             continue
 
         session_vid = vid("Session", session_id, scope)
-        transcript = _retained_transcript(g, session_vid)
+        transcript, snapshot_hash = _retained_snapshot(g, session_vid)
 
         for event in events:
             _land_event(
-                g, event, session_vid, scope, transcript, write, outcome, ledger, withheld
+                g, event, session_vid, scope, transcript, write, outcome, ledger,
+                withheld, snapshot_hash,
             )
 
     return outcome
@@ -122,6 +128,7 @@ def _land_event(
     outcome: SyncOutcome,
     ledger: RankerLedger,
     withheld: dict[str, "policy_mod.WithholdRecord"] | None = None,
+    snapshot_hash: str = "",
 ) -> None:
     if event.is_legacy():
         outcome.legacy += 1
@@ -198,6 +205,16 @@ def _land_event(
             # oldest known fingerprint would invent the very attribution this exists
             # to make honest (lab/029).
             "ranker_config": ledger.at(event.ts),
+            # The judging dials the verdicts on this trace's RETURNS edges were
+            # reached under. `judged_terms` records the instrument's inputs; this
+            # records its settings, and a verdict needs both to be a record rather
+            # than a re-derivation. Same argument as ranker_config one line up.
+            "judge_config": judge_fingerprint(),
+            # Which archived snapshot the judging window was cut from. The blob is
+            # immutable, but *which* blob is the lineage head is resolved at call
+            # time and moves when a still-open session is re-distilled — so a
+            # verdict without this is reproducible only by luck.
+            "judged_against": snapshot_hash,
             "tier": int(provenance.tier),
             "source": provenance.source,
             "ingested_at": provenance.ingested_at.isoformat(),
@@ -335,13 +352,26 @@ def _session_scope(
 
 
 def _retained_transcript(g: GraphTraversalSource, session_vid: str) -> bytes | None:
-    """The archived transcript behind this session, for attribution.
+    """The archived transcript behind this session, for attribution."""
+    return _retained_snapshot(g, session_vid)[0]
+
+
+def _retained_snapshot(
+    g: GraphTraversalSource, session_vid: str
+) -> tuple[bytes | None, str]:
+    """The archived transcript, and the content hash it came from.
 
     A session distilled while still open accumulates several Source snapshots (docs/10,
     lab/002); the SUPERSEDES lineage marks the current head, and attribution against
     anything else silently under-counts usage. The head is the snapshot with no
     incoming SUPERSEDES edge; ordering by ingested_at breaks ties on graphs written
     before the lineage existed, where every snapshot still looks like a head.
+
+    The hash is returned, not just the bytes, because *which* snapshot is the head is
+    resolved at call time and moves: re-distilling a still-open session mints a new
+    Source that supersedes the old one. The blob is immutable; the selection of blob
+    is not, and a verdict that does not record which one it judged against is
+    reproducible only by luck.
     """
     try:
         rows = (
@@ -356,19 +386,19 @@ def _retained_transcript(g: GraphTraversalSource, session_vid: str) -> bytes | N
             .to_list()
         )
     except Exception:
-        return None
+        return None, ""
     if not rows:
-        return None
+        return None, ""
     content_hash = rows[0].get("content_hash")
     if isinstance(content_hash, list):
         content_hash = content_hash[0] if content_hash else None
     if not content_hash:
-        return None
+        return None, ""
     try:
-        return read_archived(str(content_hash), suffix=".jsonl")
+        return read_archived(str(content_hash), suffix=".jsonl"), str(content_hash)
     except FileNotFoundError:
         logger.warning("Archive missing for %s (%s)", session_vid, content_hash)
-        return None
+        return None, str(content_hash)
 
 
 def _node_text(g: GraphTraversalSource, node_id: str) -> str | None:
