@@ -21,9 +21,22 @@ from gremlin_python.process.traversal import Direction, T
 
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval.rankers import UNKNOWN as RANKER_UNKNOWN
+from thalamus.eval.rates import Rate, widen, wilson_interval
 
 # Rendered chars per token — the same rough dial as eval/cost.py.
 _CHARS_PER_TOKEN = 4
+
+# The judge calls ~59% of *unrelated* tokens "used" (experiments/001), so a system
+# with no signal at all wastes the remaining ~41%. The wasted share is therefore
+# bounded below by chance rather than by zero, which is the correction the "50%
+# wasted" figure never carried.
+_JUDGE_USED_NULL = 0.59
+_JUDGE_NULL = 1.0 - _JUDGE_USED_NULL
+
+# Verdicts cluster in sessions: waste.py measured ICC ~0.26, a design effect near 4.
+# An interval that assumes independence is not conservative here, it is wrong in the
+# direction that makes a finding look stronger.
+_DESIGN_EFFECT = 4.0
 
 
 def parse_window_bound(
@@ -128,11 +141,29 @@ class ScopeReport:
             unattributed = self.returns - self.attributed
             if self.attributed:
                 ignored = self.attributed - self.used
-                pct = 100.0 * self.used / self.attributed
                 lines.append(
-                    f"  returned nodes: {self.returns}; attributed {self.attributed}: "
-                    f"{self.used} used ({pct:.0f}%), {ignored} ignored"
+                    f"  returned nodes: {self.returns}; attributed {self.attributed}, "
+                    f"{ignored} ignored"
                 )
+                lines.append("  " + Rate(
+                    label="  used",
+                    hits=self.used,
+                    total=self.attributed,
+                    interval=widen(wilson_interval(self.used, self.attributed),
+                                   _DESIGN_EFFECT),
+                    null=None,
+                    null_reason=(
+                        "the permuted null is corpus-specific and is not recomputed "
+                        "here; experiments/001 measured 57% on this judge, which is "
+                        "close enough to the observed rate that the figure is not "
+                        "self-evidently above chance"
+                    ),
+                    note=(
+                        f"interval widened by the measured design effect (~{_DESIGN_EFFECT:g}, "
+                        "ICC~0.26): verdicts cluster in sessions and the independent "
+                        "interval would be too narrow"
+                    ),
+                ).render())
             else:
                 lines.append(f"  returned nodes: {self.returns}; none attributed yet")
             if unattributed:
@@ -151,25 +182,35 @@ class ScopeReport:
             )
             priced = self.used_chars + self.ignored_chars
             if priced:
-                wasted_pct = 100.0 * self.ignored_chars / priced
                 line += (
                     f"; of the attributed share, ~{self.used_chars // _CHARS_PER_TOKEN:,} "
-                    f"earned (used) vs ~{self.ignored_chars // _CHARS_PER_TOKEN:,} wasted "
-                    f"({wasted_pct:.0f}%)"
+                    f"earned (used) vs ~{self.ignored_chars // _CHARS_PER_TOKEN:,} wasted"
                 )
             lines.append(line)
-            # The bare percentage above is a point estimate with no interval and no
-            # chance correction, and both matter more than it does: sessions are the
-            # sampling unit (design effect ~2.5, so the honest interval is ~3.5x the
-            # verdict-level one), and the judge calls ~59% of *unrelated* tokens used.
-            # Printing it without this line is how "50% wasted" travelled into docs
-            # and a skill as if it were a measurement.
-            lines.append(
-                "    ^ point estimate only — no interval, no chance correction. "
-                "See experiments/002 for the session-clustered interval "
-                "(+/-7pp at this corpus size) and what the figure becomes once "
-                "corrected against the permuted null."
-            )
+            if priced:
+                # This is the figure that became "50% wasted" and travelled into
+                # docs/04 and a skill on a point estimate over n=5 (lab/034). It is
+                # token-weighted, so its denominator is characters while its
+                # *sampling* unit is the verdict — which is why no interval is
+                # rendered here rather than a convenient one.
+                lines.append("  " + Rate(
+                    label="  wasted share of priced tokens",
+                    hits=self.ignored_chars,
+                    total=priced,
+                    unit="chars",
+                    interval=None,
+                    interval_reason=(
+                        "token-weighted, so the character denominator is not the "
+                        "sample size; the session-clustered interval is +/-7pp at "
+                        "this corpus size (experiments/002)"
+                    ),
+                    null=_JUDGE_NULL,
+                    note=(
+                        "the null is the judge calling unrelated tokens used, so the "
+                        "wasted share is bounded below by chance, not by zero — "
+                        "experiments/002 has what the figure becomes once corrected"
+                    ),
+                ).render())
 
         if self.most_ignored:
             lines.append(

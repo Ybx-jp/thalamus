@@ -72,7 +72,8 @@ the harness's limits on purpose.
     shape which queries get run and nothing observable announces that a
     conclusion is about to be written. Grounded: injection is **conditional,
     never every-prompt** (adaptive beats indiscriminate retrieval — Self-RAG,
-    arXiv 2310.11511; locally, lab/006's ~50% ignored share), **throttled**
+    arXiv 2310.11511; locally, the ignored share is real but its magnitude is
+    experiments/002's, not lab/006's withdrawn ~50%), **throttled**
     (once per class per **agent**, not per session — subagents share their
     parent's session id, and a session-keyed throttle silently exempts every one
     of them, including the consultation experts the falsify class exists for),

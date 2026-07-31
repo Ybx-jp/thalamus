@@ -586,6 +586,9 @@ def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
 
     Verifications:
     - injection cost renders in tokens with the earned/wasted split
+    - the wasted *share* renders as a Rate, so it carries its null and states why
+      it has no interval — it cannot be printed bare (lab/034)
+    - the used rate is below the render floor at n=6 and shows counts only
     - decay candidates carry both repeat count and wasted tokens
     - a zero-priced report (all traces pre-layer-1b) renders without the cost line
     """
@@ -605,7 +608,13 @@ def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
     )
     rendered = priced.render()
     assert "~12,000 tokens rendered into context" in rendered
-    assert "~7,500 earned (used) vs ~2,500 wasted (25%)" in rendered
+    assert "~7,500 earned (used) vs ~2,500 wasted" in rendered
+    # Verifies: the share renders with its instruments, not as a naked percentage
+    assert "wasted share of priced tokens: 10,000/40,000 chars (25%)" in rendered
+    assert "null 41% (at or below chance)" in rendered
+    assert "no interval — token-weighted" in rendered
+    # Verifies: n=6 attributed verdicts is below the floor, so no used% is offered
+    assert "used: 4/6" in rendered and "no rate rendered (n<20)" in rendered
     assert "by wasted tokens" in rendered
     assert "3x ~2,000 tok  `scope:main:claim:x` — a stale claim" in rendered
 

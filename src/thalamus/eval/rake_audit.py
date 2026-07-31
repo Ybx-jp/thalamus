@@ -39,12 +39,14 @@ discipline layer-1 attribution applies to empty windows).
 from __future__ import annotations
 
 import json
-import math
 import random
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
+# wilson_interval has one definition, in eval/rates.py, so a fix reaches every
+# rate; re-exported here because this module's callers have always found it here.
+from thalamus.eval.rates import wilson_interval  # noqa: F401
 from thalamus.eval.rakes import (
     Candidate,
     Rake,
@@ -313,16 +315,6 @@ def parse_worksheet(text: str) -> tuple[dict[int, str], list[str]]:
     return labels, problems
 
 
-def wilson_interval(hits: int, total: int, z: float = 1.96) -> tuple[float, float]:
-    """Wilson score interval — behaves at the small n and extreme p a 40-label
-    sample can produce, where the normal approximation does not."""
-    if total == 0:
-        return (0.0, 1.0)
-    p = hits / total
-    d = 1 + z * z / total
-    centre = (p + z * z / (2 * total)) / d
-    spread = z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total)) / d
-    return (max(0.0, centre - spread), min(1.0, centre + spread))
 
 
 def cluster_interval(
