@@ -69,6 +69,28 @@ leaves an "the answer rests on this" record whose referent has moved, and
 one is arguably correct as designed (by ID, never copied, is a deliberate rule), so
 the open question is whether to stamp the cited text's digest rather than to copy it.
 
+## The class, caught in the wild the same day
+
+A design checkpoint on the next campaign (exchange `34166c3f423141aa`) went looking at
+the 17 recorded injected arms and found the disease already present. Four of fifteen
+`memo_echoed` verdicts — 10:30, 10:51, 11:00 and 11:46 UTC on 2026-07-30 — carry
+`evidence: "cited by vertex ID"`. That is impossible under the current key,
+`__injected_memo__`, which is named in a comment three lines above it *precisely* so it
+cannot occur in prose. They are the output of the superseded `"memo"` key, which
+self-matched every arm that said the word. `rescored_at` is null on all 17, so nothing
+in the corpus says which instrument produced which verdict.
+
+What it does and does not cost: the **ratios are computed the same way under both keys**
+and are unaffected, and lab/036's reading — "all four ceiling arms with the field
+recorded visibly acted on the memo (term ratios 0.41–0.54)" — rests on ratios. That
+conclusion stands. What cannot be cited is the evidence string, and by extension the
+`used` boolean on those four, which under the old key had a path to true that the new
+key removed. Rescore before the next campaign uses them.
+
+This is the argument for `judge_config` in its strongest form. Had the fingerprint
+existed, these four would say `j0:memo-...` beside the others' `j1:shipped-...` and the
+mismatch would have been a query rather than a discovery.
+
 ## Two counter-examples worth keeping
 
 `gold.py` records `judge_verdict` at *draw* time "so scoring cannot be accused of
@@ -90,4 +112,4 @@ numbers rather than one, because a stored term set, an immutable node kind, and
 neither are three different degrees of trustworthy and pooling them would hide the
 worst one.
 
-**Ends in:** three fixes, four open items, one thread.
+**Ends in:** three fixes, four open items, one live instance, one rescore owed.
