@@ -441,3 +441,126 @@ class TestRuntimeAdvisories:
         assert install._split_ws("not-a-url") == ("not-a-url", 8182)
         assert install._split_ws("ws://:8182/gremlin") == (None, 0)
         assert install._split_ws("ws://host:notaport/g") == (None, 0)
+
+
+# --------------------------------------------------------------------------------------
+# The MCP env is per-process, and a changed env leaves live sessions stale.
+# --------------------------------------------------------------------------------------
+
+
+def _mcp_get_output(env_lines: str) -> str:
+    return (
+        "thalamus:\n"
+        "  Scope: User config (available in all your projects)\n"
+        "  Status: ✔ Connected\n"
+        "  Type: stdio\n"
+        "  Command: uv\n"
+        "  Args: run --project /home/x/code/thalamus thalamus-mcp\n"
+        "  Environment:\n"
+        f"{env_lines}"
+        "\nTo remove this server, run: claude mcp remove thalamus -s user\n"
+    )
+
+
+def test_the_registered_mcp_env_is_read_back_from_the_cli(monkeypatch):
+    """
+    Scenario: Read what env the *currently registered* server would launch with
+
+    Verifications:
+    - the Environment block is parsed into name/value pairs
+    - the trailing prose after the block is not swallowed as an env var
+
+    Read through `claude mcp get` rather than `~/.claude.json` for the same reason
+    registration goes through `claude mcp add`: the CLI owns that file, and parsing
+    a private schema we are told not to write is a dependency worth not taking.
+    """
+    import subprocess
+
+    monkeypatch.setattr(install.shutil, "which", lambda _: "/usr/bin/claude")
+    monkeypatch.setattr(
+        install.subprocess, "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0], 0,
+            stdout=_mcp_get_output(
+                "    THALAMUS_GRAPH_URL=ws://localhost:8182/gremlin\n"
+                "    THALAMUS_WITHHOLD=0.25\n"),
+            stderr="",
+        ),
+    )
+
+    assert install.registered_mcp_env() == {
+        "THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin",
+        "THALAMUS_WITHHOLD": "0.25",
+    }
+
+
+def test_an_unregistered_server_reports_no_env_rather_than_failing(monkeypatch):
+    """
+    Scenario: `thalamus init` runs on a box where the server was never registered,
+    or where the `claude` CLI is not installed
+
+    Both mean "nothing is running the old config", which is the same as no drift —
+    so this must not be an error, and must not manufacture a relaunch warning on a
+    first install.
+    """
+    monkeypatch.setattr(install.shutil, "which", lambda _: None)
+    assert install.registered_mcp_env() == {}
+    assert install.relaunch_checks(install.mcp_env_drift({}, {"A": "1"})) != []
+
+
+def test_a_changed_withholding_rate_raises_a_relaunch_advisory():
+    """
+    Scenario: The MCP server is re-registered with a different THALAMUS_WITHHOLD
+
+    Verifications:
+    - the specific variable and both values are named, not just "something changed"
+    - the finding is advisory: the install is correct, what is untrue is that
+      anything is running it
+    - the text says outright that open sessions keep the OLD config
+
+    This is the failure that costs data rather than time. A withholding rate that
+    moves while sessions are open produces records at two rates with the operator
+    believing the campaign ran at one — and experiments/003 needs the rate to be a
+    property of the machine for the campaign's whole duration. Nothing about those
+    sessions looks wrong from the inside, so the install is the only place it can
+    be caught.
+    """
+    drift = install.mcp_env_drift(
+        {"THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin", "THALAMUS_WITHHOLD": "0.25"},
+        {"THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin", "THALAMUS_WITHHOLD": "0.5"},
+    )
+    assert drift == ["THALAMUS_WITHHOLD `0.25` -> `0.5`"]
+
+    checks = install.relaunch_checks(drift)
+    assert len(checks) == 1
+    assert checks[0].advisory and not checks[0].ok
+    assert "0.25" in checks[0].detail and "0.5" in checks[0].detail
+    # Verifies: the operator is told the old config is still live, not just that
+    # a relaunch is a good idea
+    assert "OLD config" in checks[0].detail
+    assert "`/clear` is not enough" in checks[0].detail
+
+
+def test_an_unchanged_env_raises_nothing():
+    """
+    Scenario: A re-run of `thalamus init` with no env change
+
+    The standing "arms per process" line already prints on every install. Repeating
+    it as a finding when nothing moved is what made it stop being read in the first
+    place, so an idempotent re-run must stay silent here.
+    """
+    env = {"THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin"}
+    assert install.mcp_env_drift(env, dict(env)) == []
+    assert install.relaunch_checks([]) == []
+
+
+def test_dropping_a_variable_is_drift_too():
+    """
+    Scenario: The rate was set when the server was registered and is not exported
+    in the shell running this install
+
+    An unset is the easiest change to make by accident — a new terminal is enough —
+    and it silently returns a withholding campaign to full recall.
+    """
+    drift = install.mcp_env_drift({"THALAMUS_WITHHOLD": "0.25"}, {})
+    assert drift == ["THALAMUS_WITHHOLD unset (was `0.25`)"]

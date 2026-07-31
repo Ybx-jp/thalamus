@@ -354,7 +354,13 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    [11 §2a0](11-related-work.md) — these are latent configuration errors, inert
    until an event fires, and SessionEnd fires detached). `--dry-run` reports
    without writing; `--check` verifies an existing install. Arming is
-   per-process, so existing sessions need a relaunch.
+   per-process, so existing sessions need a relaunch — `/clear` is not enough.
+   When the MCP server's **env** changes, that stops being a nicety and becomes
+   an advisory naming the variable and both values: an open session keeps the old
+   env for its whole lifetime while looking entirely normal from the inside, so a
+   withholding rate that moves mid-campaign yields records at two rates under the
+   belief they ran at one (experiments/003 requires the rate to hold for the
+   campaign's duration).
 
    Install **reports on the environment, never changes it.** Two things it wires
    toward but does not own — a running graph and a coding-agent CLI on PATH — are

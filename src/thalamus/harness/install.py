@@ -353,6 +353,58 @@ def install_cursor(dry_run: bool = False) -> list[str]:
     return actions
 
 
+def registered_mcp_env() -> dict[str, str]:
+    """The env the *currently registered* server would launch with.
+
+    Read through `claude mcp get` rather than `~/.claude.json` for the same reason
+    registration goes through `claude mcp add`: the CLI owns that file. Read-only
+    here, so the concurrency argument is weaker, but parsing a private schema we
+    are told not to write is a dependency worth not taking twice.
+
+    Returns {} when the server is unregistered or the CLI is absent — both mean
+    "nothing is running the old config", which is the same as no drift.
+    """
+    cli = shutil.which("claude")
+    if cli is None:
+        return {}
+    try:
+        proc = subprocess.run([cli, "mcp", "get", "thalamus"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    env: dict[str, str] = {}
+    in_env = False
+    for line in (proc.stdout or "").splitlines():
+        if line.strip() == "Environment:":
+            in_env = True
+            continue
+        if in_env:
+            # The block ends at the first line that is not an indented KEY=VALUE.
+            if not line.startswith(" ") or "=" not in line:
+                break
+            name, _, value = line.strip().partition("=")
+            env[name] = value
+    return env
+
+
+def mcp_env_drift(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    """What changed in the MCP server's env, named one variable at a time."""
+    changes = []
+    for name in sorted(set(before) | set(after)):
+        was, now = before.get(name), after.get(name)
+        if was == now:
+            continue
+        if was is None:
+            changes.append(f"{name} set to `{now}`")
+        elif now is None:
+            changes.append(f"{name} unset (was `{was}`)")
+        else:
+            changes.append(f"{name} `{was}` -> `{now}`")
+    return changes
+
+
 def register_mcp(dry_run: bool = False) -> str:
     """Register the server through `claude mcp add`, never by editing the file.
 
@@ -681,6 +733,35 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     return checks
 
 
+def relaunch_checks(env_drift: list[str]) -> list[Check]:
+    """Raise the per-process relaunch to a finding when the MCP env actually moved.
+
+    The standing "arm per process" line at the end of an install is wallpaper: it
+    prints on every run, including the many where nothing changed, so it stops being
+    read. What it fails to catch is the case that costs data — the server's *env*
+    changing while sessions are open. Those sessions keep the old config for their
+    whole lifetime, and nothing about their behaviour looks wrong: a withholding rate
+    that moved mid-campaign produces records at two rates with the operator believing
+    it ran at one (experiments/003 needs the rate to be a property of the machine for
+    the campaign's duration, which is exactly what a stale process breaks).
+
+    Advisory, not a failure: the install *is* wired correctly. What is not yet true
+    is that anything is running it, which is the shape `advisory` already carries.
+    """
+    if not env_drift:
+        return []
+    return [Check(
+        "MCP env changed — relaunch required",
+        ok=False,
+        detail=(
+            f"{'; '.join(env_drift)}. This arms per *process*: every session already "
+            "open keeps the OLD config until the editor is relaunched, and `/clear` is "
+            "not enough. Records written by those sessions carry the old env."
+        ),
+        advisory=True,
+    )]
+
+
 def install(dry_run: bool = False,
             harnesses: tuple[str, ...] = HARNESSES) -> tuple[list[str], list[Check]]:
     """Install at user scope; strip the project-scope duplicate. Idempotent.
@@ -719,7 +800,13 @@ def install(dry_run: bool = False,
         if not dry_run:
             _write_json(USER_SETTINGS, merged)
 
+    # Captured *before* re-registering: `register_mcp` is remove-then-add, so after
+    # it runs there is nothing left to compare against.
+    env_before = {} if dry_run else registered_mcp_env()
     actions.append(register_mcp(dry_run=dry_run))
+    # A dry run changes nothing, so no session is stale and there is nothing to
+    # relaunch for; drift is only meaningful once the registration has moved.
+    env_drift = [] if dry_run else mcp_env_drift(env_before, build_mcp_entry()["env"])
 
     # Mutual exclusion: with hooks at user scope, the project block would be a
     # second definition whose command string differs, so dedup would not collapse
@@ -761,7 +848,7 @@ def install(dry_run: bool = False,
         write_all_agents(USER_AGENTS_DIR)
         actions.append(f"regenerated derived agents in {USER_AGENTS_DIR}")
 
-    return actions, verify(harnesses)
+    return actions, verify(harnesses) + relaunch_checks(env_drift)
 
 
 def run(dry_run: bool = False, check_only: bool = False,
@@ -797,7 +884,8 @@ def run(dry_run: bool = False, check_only: bool = False,
     elif not check_only:
         editors = " and ".join("Claude Code" if h == "claude" else "Cursor" for h in harnesses)
         print(f"\nInstalled for {editors}. Hooks and the MCP server arm per *process*: "
-              "relaunch the editor for existing sessions to pick this up.")
+              "every session already open keeps the old config until the editor is "
+              "relaunched, and `/clear` is not enough.")
         if "cursor" in harnesses:
             print("Cursor: no distillation yet — sessions retrieve and trace but leave no "
                   "episodic memory (docs/07, lab/010).")
