@@ -885,10 +885,15 @@ not a scan.
   differently** (§6). Claim identity is latest-wins: a revised claim updates the
   node (decision log 2026-07-15), so a superseded belief leaves no trace except on
   the `Source` lineage. Zep's Graphiti keeps historical relationships instead. The
-  corpus cannot adjudicate this — no held claim describes Graphiti's edge
-  invalidation mechanics — and STALE (2605.06527) says the failure this governs is
-  real and dominant. Procurement target before any change, not a design argument
-  to have from here.
+  corpus now holds the mechanics (§6) and the accuracy case for the change is
+  **thin**: TOKI's audit-row defence moves LoCoMo accuracy by 0.86 points and its
+  cross-system comparison is self-reported as underpowered (arXiv 2606.06240).
+  What is not thin is the *detection* argument — retention without stored
+  supersession collapses 0.99 → 0.33, indistinguishable from naive RAG
+  (2606.26511) — and that lands on the queryability side of the line, where §6's
+  Mem0 entry already concedes benchmark accuracy is the wrong yardstick. The
+  remaining unknown is as-of-time query utility on a real operator workload,
+  which no held source measures.
 - **No abstention rung.** LongMemEval (arXiv 2410.10813) counts **abstention**
   among the five core long-term-memory abilities it evaluates — knowing that the
   history does not contain the answer. The graded ladder has no equivalent: every
@@ -930,10 +935,22 @@ of this project lives (§1, §2). The deviation is not "a better graph"; it is a
 perimeter around one, for a single operator, on local hardware.
 
 **Where it is not defensible yet.** Invalidation. Thalamus's claim identity is
-latest-wins and Graphiti maintains historical relationships, but the corpus holds
-no claim describing how Graphiti invalidates or supersedes an edge, so the
-comparison cannot be drawn from it — a procurement gap, recorded in §5, not a
-question more recall answers.
+latest-wins; Graphiti carries a **bi-temporal** model over two timelines — `T`,
+chronological event ordering, and `T'`, the transactional order of ingestion —
+with four timestamps per edge (`t'_created`/`t'_expired` on `T'`,
+`t_valid`/`t_invalid` on `T`). Invalidation is LLM-driven: new edges are compared
+against semantically related existing ones for contradictions, and an invalidated
+edge's `t_invalid` is set to the `t_valid` of the edge that displaced it, new
+information always winning. Two consequences for this repo. First, the two
+timelines are **separate axes**, so a "when did this text last change" stamp and
+edge invalidation are complementary rather than competing designs — TSM recovers
+12.2 accuracy points on LongMemEval/LoCoMo purely by not collapsing them
+(2606.06240). Second, Graphiti's LLM-per-edge mechanism is not the only option
+and is measurably not the best one: MemStrata's deterministic
+`(subject, relation, object)` supersession uses no similarity threshold and no
+LLM call, while similarity-plus-judge gating leaks stale facts 25–60% of the time,
+worse than naive RAG in the abstention regime (2606.26511). Anything built here
+should copy the bi-temporal *shape*, not the adjudication mechanism.
 
 ### Mem0 (arXiv 2504.19413)
 
