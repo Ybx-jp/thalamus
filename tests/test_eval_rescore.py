@@ -226,3 +226,92 @@ class TestWriteRecords:
         records = [{"task": f"t{i}", "arm": "memory-on"} for i in range(5)]
         rescore.write_records(records, target)
         assert rescore.load_records(target) == records
+
+
+# --------------------------------------------------------------------------------------
+# memo-echo re-scoring: a superseded judge's verdicts, re-derived under the current one.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_record_with_no_memo_is_not_rescored(tmp_path):
+    """
+    Scenario: memory-on and memory-off arms reach the memo-echo re-scorer
+
+    They were never handed a memo, so there is no verdict to re-derive. Refusing by
+    reason keeps them distinguishable from an injected arm whose evidence is gone.
+    """
+    from thalamus.eval.rescore import NOT_INJECTED, memo_echo_outcomes
+
+    outcomes = memo_echo_outcomes([
+        {"task": "t", "arm": "memory-on", "ts": "2026-07-30T10:00:00"},
+        {"task": "t", "arm": "memory-off", "ts": "2026-07-30T10:00:00"},
+    ])
+
+    assert [o.status for o in outcomes] == [NOT_INJECTED, NOT_INJECTED]
+    assert all(o.memo_echoed is None for o in outcomes)
+
+
+def test_an_injected_arm_with_no_transcript_is_refused_not_stamped(tmp_path):
+    """
+    Scenario: A ceiling arm whose transcript is gone — the confined arm wrote it into
+    the container HOME beside the worktree, and both were deleted
+
+    Verifications:
+    - the outcome is a refusal carrying the session id
+    - nothing is stamped
+
+    This is the failure lab/022 caught in `transcript_text`: a default that returns a
+    plausible value instead of failing files a verdict nobody can check. Re-scoring is
+    exactly where that would be invisible, since there is no live run to contradict it.
+    """
+    from thalamus.eval.rescore import NO_TRANSCRIPT, memo_echo_outcomes
+
+    outcomes = memo_echo_outcomes([{
+        "task": "arm-runner-session-death-classification",
+        "arm": "ceiling",
+        "ts": "2026-07-30T10:30:24",
+        "worktree": str(tmp_path / "gone"),
+        "agent": {"session_id": "abc-123"},
+        "memo_echoed": {"used": True, "ratio": 0.486, "evidence": "cited by vertex ID"},
+    }])
+
+    assert outcomes[0].status == NO_TRANSCRIPT
+    assert "abc-123" in outcomes[0].detail
+    assert outcomes[0].memo_echoed is None
+
+
+def test_applying_a_memo_rescore_keeps_the_prior_verdict_beside_the_fresh_one():
+    """
+    Scenario: A stale verdict is re-derived and written back
+
+    Verifications:
+    - the fresh verdict replaces the stored one
+    - the prior value survives under `memo_echoed_prior`
+    - the record is marked as retroactively re-scored
+
+    The old value is the only evidence of which judge the corpus used to carry.
+    Discarding it while fixing a provenance gap would be the same mistake pointing the
+    other way — so the fix keeps both and says which is which.
+    """
+    from thalamus.eval.rescore import Outcome, STAMPED, apply_outcomes
+
+    records = [{
+        "task": "t", "arm": "ceiling", "ts": "2026-07-30T11:46:34",
+        "memo_echoed": {"used": True, "ratio": 0.784, "evidence": "cited by vertex ID"},
+    }]
+    outcome = Outcome(index=0, task="t", arm="ceiling", date="2026-07-30", status=STAMPED)
+    outcome.memo_echoed = {
+        "used": True, "ratio": 0.784, "evidence": "matched 29/37 terms: arm, arms",
+        "judge_config": "j1:shipped-t2-r0.3",
+    }
+
+    assert apply_outcomes(records, [outcome]) == 1
+
+    assert records[0]["memo_echoed"]["evidence"].startswith("matched 29/37")
+    assert records[0]["memo_echoed"]["judge_config"] == "j1:shipped-t2-r0.3"
+    # Verifies: the superseded judge's output is preserved, not overwritten
+    assert records[0]["memo_echoed_prior"]["evidence"] == "cited by vertex ID"
+    assert records[0]["memo_echo_rescored_at"]
+    # Verifies: a memo re-score does not masquerade as a contamination stamp
+    assert "contaminated" not in records[0]
+    assert "rescored_at" not in records[0]

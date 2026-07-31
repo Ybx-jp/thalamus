@@ -1,6 +1,6 @@
 # 037 — The verdicts that could not be replayed
 
-**Date:** 2026-07-30 · **Component:** eval layer 1 (`eval/sync.py`, `eval/attribution.py`, `eval/calibration.py`) · **Status:** audited; three fixed, four open with a thread.
+**Date:** 2026-07-30 · **Component:** eval layer 1 (`eval/sync.py`, `eval/attribution.py`, `eval/calibration.py`) · **Status:** audited; four fixed, four open with a thread; one stale verdict of four recovered.
 
 ## The rule the audit applied
 
@@ -80,12 +80,35 @@ cannot occur in prose. They are the output of the superseded `"memo"` key, which
 self-matched every arm that said the word. `rescored_at` is null on all 17, so nothing
 in the corpus says which instrument produced which verdict.
 
-What it does and does not cost: the **ratios are computed the same way under both keys**
-and are unaffected, and lab/036's reading — "all four ceiling arms with the field
-recorded visibly acted on the memo (term ratios 0.41–0.54)" — rests on ratios. That
-conclusion stands. What cannot be cited is the evidence string, and by extension the
-`used` boolean on those four, which under the old key had a path to true that the new
-key removed. Rescore before the next campaign uses them.
+### The rescore, and what it recovered
+
+`thalamus eval rescore --memo-echo` re-derives the verdict under the current judge and
+stamps `judge_config` on the result, keeping the old value as `memo_echoed_prior` —
+discarding it while fixing a provenance gap would be the same mistake pointing the other
+way.
+
+It recovered **one of the four**, and the result is decisive on the question that
+mattered:
+
+| | before | after |
+|---|---|---|
+| ratio | 0.784 | **0.784** |
+| matched | 29/37 | **29/37** |
+| used | true | **true** |
+| evidence | `cited by vertex ID` | `matched 29/37 terms: arm, arms, attempt, …` |
+
+Identical, except for the impossible string. So the **ratios are computed the same way
+under both keys**, and lab/036's reading — "all four ceiling arms with the field
+recorded visibly acted on the memo (term ratios 0.41–0.54)" — **stands, now with one
+arm's worth of direct confirmation rather than inference.**
+
+The other three cannot be recovered: their arm homes are gone, and a confined arm writes
+its transcript into the container's HOME beside the worktree, which is deleted with it.
+They keep the stale string and no `judge_config`, which is the honest state — a refusal
+with a reason, never a fresh-looking stamp. The first pass reported *all seventeen* as
+unrecoverable because it looked only in the operator's `~/.claude/projects`; the arm-home
+fallback that `run_arm` already applies at run time was missing from the rescore path,
+and finding that is most of what this exercise bought.
 
 This is the argument for `judge_config` in its strongest form. Had the fingerprint
 existed, these four would say `j0:memo-...` beside the others' `j1:shipped-...` and the
@@ -112,4 +135,4 @@ numbers rather than one, because a stored term set, an immutable node kind, and
 neither are three different degrees of trustworthy and pooling them would hide the
 worst one.
 
-**Ends in:** three fixes, four open items, one live instance, one rescore owed.
+**Ends in:** four fixes, four open items, one live instance, one of four verdicts recovered.

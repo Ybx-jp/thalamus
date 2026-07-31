@@ -67,6 +67,7 @@ class Outcome:
     status: str
     escapes: list[dict] = field(default_factory=list)
     contaminated: bool | None = None
+    memo_echoed: dict | None = None
     detail: str = ""
 
     @property
@@ -204,6 +205,110 @@ def rescore_records(
     return outcomes
 
 
+NOT_INJECTED = "not-injected"
+NO_MEMO = "no-memo-recorded"
+
+
+def memo_echo_outcomes(
+    records: list[dict],
+    *,
+    tasks_base: Path | None = None,
+    projects_base: Path | None = None,
+) -> list[Outcome]:
+    """Re-derive `memo_echoed` under the current judge, for arms that carry one.
+
+    Why this exists: the probe's node key changed. It was `"memo"`, which layer 1's
+    substring-on-id path matched against any arm that said the word — so the verdict
+    could come back "cited by vertex ID" on prose that cited nothing. The key is now
+    `__injected_memo__`, named so it cannot occur in prose. Four records on disk still
+    carry the old key's output, and nothing in them says which judge produced it
+    (lab/037).
+
+    The ratios are unaffected — `matched / len(terms)` is computed the same way under
+    both keys — so this is not a correction of lab/036's reading, which rests on
+    ratios. What it corrects is the evidence string and the `used` flag beside it.
+
+    Same evidence discipline as contamination re-scoring: an arm whose transcript is
+    gone gets a refusal with a reason, never a fresh-looking verdict. And the result
+    is stamped with `judge_config`, so the next reader can tell which instrument
+    produced it instead of inferring it from an impossible evidence string.
+    """
+    from thalamus.eval.arms import arm_home_for, memo_echo, parse_arm
+    from thalamus.eval.attribution import judge_fingerprint
+    from thalamus.contract.manifest import available_scopes
+
+    tasks, _ = load_battery(tasks_base)
+    by_id = {t.id: t for t in tasks}
+    scopes = available_scopes()
+
+    outcomes: list[Outcome] = []
+    for i, record in enumerate(records):
+        task_id = record.get("task") or ""
+        outcome = Outcome(
+            index=i,
+            task=task_id,
+            arm=record.get("arm") or "",
+            date=(record.get("ts") or "")[:10],
+            status=STAMPED,
+        )
+        if record.get("memo_echoed") is None:
+            outcome.status = NOT_INJECTED if not record.get("arm", "").startswith(
+                "ceiling"
+            ) else NO_MEMO
+            outcomes.append(outcome)
+            continue
+
+        task = by_id.get(task_id)
+        if task is None:
+            outcome.status = UNKNOWN_TASK
+            outcome.detail = f"`{task_id}` is not in the battery"
+            outcomes.append(outcome)
+            continue
+
+        session_id = (record.get("agent") or {}).get("session_id") or ""
+        if not session_id:
+            outcome.status = NO_SESSION
+            outcome.detail = "record carries no agent.session_id"
+            outcomes.append(outcome)
+            continue
+
+        # A confined arm wrote its transcript into the container's HOME beside the
+        # worktree, not the operator's, so looking only in ~/.claude/projects reports
+        # every sandboxed run as evidence-gone. Try the arm home first, exactly as
+        # `run_arm` does at run time, and fall back to the operator's.
+        worktree = Path(record.get("worktree") or "")
+        arm_projects = arm_home_for(worktree) / ".claude" / "projects"
+        transcript = ""
+        if arm_projects.is_dir():
+            transcript = transcript_text(worktree, session_id, arm_projects)
+        if not transcript:
+            transcript = transcript_text(worktree, session_id, projects_base)
+        if not transcript:
+            outcome.status = NO_TRANSCRIPT
+            outcome.detail = f"no transcript on disk for session {session_id}"
+            outcomes.append(outcome)
+            continue
+
+        try:
+            framing = parse_arm(record.get("arm") or "", scopes).framing
+        except ArmError:
+            framing = "conclusion"
+        fresh = memo_echo(task, transcript, framing)
+        fresh["judge_config"] = judge_fingerprint()
+        outcome.memo_echoed = fresh
+        old = record.get("memo_echoed") or {}
+        outcome.detail = (
+            f"used {old.get('used')}->{fresh.get('used')}, "
+            f"evidence was {str(old.get('evidence'))[:34]!r}"
+            if old.get("used") != fresh.get("used")
+            or old.get("evidence") != fresh.get("evidence")
+            else "unchanged"
+        )
+        outcomes.append(outcome)
+
+    return outcomes
+
+
 def apply_outcomes(records: list[dict], outcomes: list[Outcome]) -> int:
     """Stamp the records that earned a stamp. Returns how many changed."""
     stamped_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -212,6 +317,16 @@ def apply_outcomes(records: list[dict], outcomes: list[Outcome]) -> int:
         if not outcome.stamped:
             continue
         record = records[outcome.index]
+        if outcome.memo_echoed is not None:
+            # Kept beside the fresh verdict rather than overwritten. The old value
+            # is the only evidence of which judge the corpus used to carry, and
+            # discarding it while fixing a provenance gap would be the same mistake
+            # in the other direction (lab/037).
+            record.setdefault("memo_echoed_prior", record.get("memo_echoed"))
+            record["memo_echoed"] = outcome.memo_echoed
+            record["memo_echo_rescored_at"] = stamped_at
+            changed += 1
+            continue
         record["escapes"] = outcome.escapes
         record["contaminated"] = outcome.contaminated
         # The stamp's provenance: derived from a retained transcript after the

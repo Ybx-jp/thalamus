@@ -369,6 +369,13 @@ def main():
         "campaigns that ran before they existed",
     )
     eval_rescore_parser.add_argument(
+        "--memo-echo",
+        action="store_true",
+        help="Re-derive memo_echoed under the current judge instead of stamping "
+             "contamination. Four records carry the superseded key's output "
+             "(lab/037); the prior value is kept beside the fresh one.",
+    )
+    eval_rescore_parser.add_argument(
         "--repo", type=Path, default=None,
         help="Operator checkout the arms could escape into (default: cwd)",
     )
@@ -1419,6 +1426,7 @@ def _cmd_eval(args, eval_parser):
         from thalamus.eval.rescore import (
             apply_outcomes,
             load_records,
+            memo_echo_outcomes,
             render_rescore,
             rescore_records,
             write_records,
@@ -1428,12 +1436,15 @@ def _cmd_eval(args, eval_parser):
         if not records:
             print("No run records found — nothing to re-score.", file=sys.stderr)
             sys.exit(1)
-        outcomes = rescore_records(
-            records,
-            repo=(args.repo or Path.cwd()).resolve(),
-            tasks_base=args.config,
-            force=args.force,
-        )
+        if args.memo_echo:
+            outcomes = memo_echo_outcomes(records, tasks_base=args.config)
+        else:
+            outcomes = rescore_records(
+                records,
+                repo=(args.repo or Path.cwd()).resolve(),
+                tasks_base=args.config,
+                force=args.force,
+            )
         if args.write:
             changed = apply_outcomes(records, outcomes)
             write_records(records, args.runs)
