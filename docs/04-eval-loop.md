@@ -349,6 +349,13 @@ of pinned inputs **and every input to that derivation is itself pinned** — the
 set fails the second clause, which is not hypothetical: the 2026-07-29 history
 rewrite changed every SHA and left both task refs dangling, remapped by hand.
 
+**Named residual: `derivation` versions the detector and not the adjudicator.** The
+contamination audit measured the half that is missing — manual adjudication
+reinterpreted a verdict *without changing a single flag* (arXiv 2606.10066) — and the
+8-of-88 git-reach figure has a human judgement in it. `detector_config` pins the
+mechanical half only; no field carries the rubric or the adjudicator. Recorded as an
+absence rather than closed.
+
 **Pinning is not validity, and must not be read as it.** A pinned corpus with an
 unablated leak channel yields a reproducibly wrong number, which is worse than an
 unpinned one because it recruits the pin as evidence of rigour. The instrument that
