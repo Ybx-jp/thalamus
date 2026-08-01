@@ -308,6 +308,53 @@ pre-satisfied — now a mechanical battery check: a `transcript_regex` matching
 the task's prompt refuses to arm. Residual, named: a memory-on arm reads the
 *live* graph and could write via `memorize`.
 
+**The run log is pinned by name, and re-scoring appends.** `thalamus eval corpus
+--name <id>` seals `runs.jsonl` under a name that is immutable once cited: a
+read-only copy beside the live log, a **manifest** of one line per run
+(`run_id`, `body_sha256`, `revision`) committed to `experiments/corpora/`, and a
+registry row in `experiments/corpora.jsonl` — the same split as the graph snapshot
+registry, and for the same reason. `--diff <id>` reads the difference back and
+separates the two things a whole-file digest reports as one bit: **appends and
+supersessions are legitimate; a record that changed under its own identity is not.**
+`--list` verifies the sealed copy and its manifest as *two* states, so a corpus that
+still hashes to its citation with a manifest that no longer matches it cannot read as
+"ok".
+
+Identity is derived, never assigned. `run_id` digests the fields fixed when an arm is
+born — `ts`, `task`, `arm`, `scope`, `ref`, `model`, `worktree`, `order_index` — so
+the 140 records written before any of this existed acquire a stable identity without
+the file being rewritten to add one, which would be the very mutation being ended.
+Unique across the corpus as found. A Merkle tree is deliberately not used: its payoff
+is proofs to a verifier who distrusts the log operator (RFC 6962), and a root hash
+destroys exactly the per-record diff that makes the manifest worth keeping.
+
+**A re-derived verdict supersedes; it never overwrites.** `thalamus eval rescore
+--write` appends a record carrying the same `run_id`, one higher `revision`, and
+`supersedes` holding the digest of the body it replaces, stamped with the detector or
+judge fingerprint that produced it. Readers take the head revision per run
+(`corpora.head_revisions`), which is why every existing analysis reads the numbers it
+read before. This is not a preference: the void fix moved four fields on 23 records
+and kept only a `restamped_by` marker, and the contamination pass overwrote 88
+judgements that survive in neither hand-made backup (lab/038). A marker that records
+*that* something changed and not *what* is not provenance.
+
+**Every campaign record carries what its verdict was computed against.** `derivation`
+stamps `task_digest` (over the YAML **bytes** — the 2026-07-29 ref remapping lives in
+a comment block), `fix_ref`, the resolved `fix_paths` and their digest, and
+`detector_config`. This closes lab/037 finding #5: the record used to store `ref`
+alone while `contaminated` was computed from a git diff over the operator's *live*
+repo, so editing a task YAML afterwards silently re-scoped every prior contamination
+verdict. The boundary is that config may be re-derived only if it is a pure function
+of pinned inputs **and every input to that derivation is itself pinned** — the path
+set fails the second clause, which is not hypothetical: the 2026-07-29 history
+rewrite changed every SHA and left both task refs dangling, remapped by hand.
+
+**Pinning is not validity, and must not be read as it.** A pinned corpus with an
+unablated leak channel yields a reproducibly wrong number, which is worse than an
+unpinned one because it recruits the pin as evidence of rigour. The instrument that
+catches an answer-key channel in a downstream probe is the **leak-ablation control**,
+not the audit trail; see [11](11-related-work.md) §7f.
+
 **Probe authoring rule** (lab/011, the first campaign's sharper finding —
 every probe hit in every arm, memory-off included): a probe must target
 knowledge unreachable from the prompt *plus general model competence* —

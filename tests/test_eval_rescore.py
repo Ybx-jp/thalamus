@@ -1,7 +1,7 @@
 """
 Retroactive contamination stamping (src/thalamus/eval/rescore.py; lab/021-022).
 
-Interfaces: rescore_records / apply_outcomes / write_records / render_rescore.
+Interfaces: rescore_records / apply_outcomes / append_revisions / render_rescore.
 Infrastructure: a hermetic task battery in tmp_path (an `authored` task has no
 `fix_ref`, so nothing here touches git) and synthetic transcripts placed where
 `transcript_text` looks; no live graph, no campaign.
@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from thalamus.eval import rescore
+from thalamus.eval import corpora, rescore
 from thalamus.eval.cost import project_slug
 
 # Synthetic. Rescoring reads the transcript's recorded paths, never the disk.
@@ -87,7 +87,7 @@ class TestIncompleteEvidenceRefusesAStamp:
         outcomes = rescore.rescore_records(
             records, REPO, tasks_base=battery, projects_base=tmp_path / "projects"
         )
-        assert rescore.apply_outcomes(records, outcomes) == 0
+        assert rescore.apply_outcomes(records, outcomes) == []
         assert "contaminated" not in records[0]
         assert "rescored_at" not in records[0]
 
@@ -143,9 +143,13 @@ class TestStamping:
         outcomes = rescore.rescore_records(
             records, REPO, tasks_base=battery, projects_base=projects
         )
-        assert rescore.apply_outcomes(records, outcomes) == 1
-        assert records[0]["rescored_at"].endswith("Z")
-        assert records[0]["contaminated"] is False
+        revisions = rescore.apply_outcomes(records, outcomes)
+        assert len(revisions) == 1
+        assert revisions[0]["rescored_at"].endswith("Z")
+        assert revisions[0]["contaminated"] is False
+        # The verdict is a new revision; the record it was derived from is untouched.
+        assert "rescored_at" not in records[0]
+        assert revisions[0]["supersedes"] == corpora.body_digest(records[0])
 
 
 class TestIdempotence:
@@ -155,7 +159,7 @@ class TestIdempotence:
             records, REPO, tasks_base=battery, projects_base=tmp_path / "projects"
         )
         assert outcomes[0].status == rescore.ALREADY
-        assert rescore.apply_outcomes(records, outcomes) == 0
+        assert rescore.apply_outcomes(records, outcomes) == []
 
     def test_force_re_derives(self, tmp_path, battery):
         projects = tmp_path / "projects"
@@ -211,20 +215,52 @@ class TestUnitsAndGrouping:
         assert "DRY RUN" in out
 
 
-class TestWriteRecords:
-    def test_write_keeps_the_previous_log(self, tmp_path):
-        target = tmp_path / "runs.jsonl"
-        target.write_text(json.dumps({"task": "t", "arm": "memory-on"}) + "\n")
-        rescore.write_records([{"task": "t", "arm": "memory-on", "contaminated": False}], target)
-        backup = target.with_suffix(target.suffix + ".pre-rescore")
-        assert backup.is_file(), "the campaign evidence base keeps a pre-write copy"
-        assert "contaminated" not in backup.read_text()
-        assert "contaminated" in target.read_text()
+class TestAppendRevisions:
+    """The write-side half of the corpus pin: re-scoring appends, never overwrites.
 
-    def test_round_trips_every_record(self, tmp_path):
+    The corpus lost 88 pre-rescore judgements to in-place rewrites and kept nothing
+    but a `restamped_by` marker on 23 more (lab/038). These pin the property that
+    would have prevented it.
+    """
+
+    def test_the_superseded_body_stays_on_disk(self, tmp_path):
         target = tmp_path / "runs.jsonl"
-        records = [{"task": f"t{i}", "arm": "memory-on"} for i in range(5)]
-        rescore.write_records(records, target)
+        prior = {"ts": "2026-07-01T00:00:00Z", "task": "t", "arm": "memory-on",
+                 "contaminated": False}
+        target.write_text(json.dumps(prior) + "\n")
+
+        revised = corpora.supersede(
+            {**prior, "contaminated": True}, prior, scorer_config="d1:test"
+        )
+        rescore.append_revisions([revised], target)
+
+        lines = [json.loads(line) for line in target.read_text().splitlines()]
+        assert len(lines) == 2, "the revision is appended, not written over the original"
+        assert lines[0] == prior, "nothing already written moved"
+        assert lines[1]["supersedes"] == corpora.body_digest(prior)
+        assert lines[1]["revision"] == 1
+
+    def test_load_records_returns_the_head_revision(self, tmp_path):
+        target = tmp_path / "runs.jsonl"
+        prior = {"ts": "2026-07-01T00:00:00Z", "task": "t", "arm": "memory-on",
+                 "contaminated": False}
+        revised = corpora.supersede(
+            {**prior, "contaminated": True}, prior, scorer_config="d1:test"
+        )
+        target.write_text(
+            json.dumps(prior) + "\n" + json.dumps(revised) + "\n"
+        )
+        current = rescore.load_records(target)
+        assert len(current) == 1, "two revisions of one run are one run"
+        assert current[0]["contaminated"] is True
+
+    def test_records_written_before_revisions_existed_still_load(self, tmp_path):
+        target = tmp_path / "runs.jsonl"
+        records = [
+            {"ts": f"2026-07-0{i}T00:00:00Z", "task": f"t{i}", "arm": "memory-on"}
+            for i in range(1, 6)
+        ]
+        target.write_text("".join(json.dumps(r) + "\n" for r in records))
         assert rescore.load_records(target) == records
 
 
@@ -305,13 +341,20 @@ def test_applying_a_memo_rescore_keeps_the_prior_verdict_beside_the_fresh_one():
         "judge_config": "j1:shipped-t2-r0.3",
     }
 
-    assert apply_outcomes(records, [outcome]) == 1
+    revisions = apply_outcomes(records, [outcome])
+    assert len(revisions) == 1
+    revised = revisions[0]
 
-    assert records[0]["memo_echoed"]["evidence"].startswith("matched 29/37")
-    assert records[0]["memo_echoed"]["judge_config"] == "j1:shipped-t2-r0.3"
+    assert revised["memo_echoed"]["evidence"].startswith("matched 29/37")
+    assert revised["memo_echoed"]["judge_config"] == "j1:shipped-t2-r0.3"
     # Verifies: the superseded judge's output is preserved, not overwritten
-    assert records[0]["memo_echoed_prior"]["evidence"] == "cited by vertex ID"
-    assert records[0]["memo_echo_rescored_at"]
+    assert revised["memo_echoed_prior"]["evidence"] == "cited by vertex ID"
+    assert revised["memo_echo_rescored_at"]
     # Verifies: a memo re-score does not masquerade as a contamination stamp
-    assert "contaminated" not in records[0]
-    assert "rescored_at" not in records[0]
+    assert "contaminated" not in revised
+    assert "rescored_at" not in revised
+    # Verifies: the record it was derived from is left exactly as it was, and the
+    # revision names the body it replaces rather than only the fact of replacement.
+    assert records[0]["memo_echoed"]["evidence"] == "cited by vertex ID"
+    assert revised["supersedes"] == corpora.body_digest(records[0])
+    assert revised["scorer_config"] == "j1:shipped-t2-r0.3"

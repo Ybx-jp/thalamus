@@ -363,6 +363,55 @@ artifact key missed, so its hit rate is a ceiling on laxity, never a false-posit
 rate. The cost is honesty about resolution: 40 hand judgments separate "mostly
 noise" from "mostly real" and cannot rank two detectors.
 
+### 2g. Reproducing a measurement over a corpus that moves
+
+A published number names the graph snapshot it came from (`experiments/snapshots.jsonl`).
+It did not name the *trajectory* corpus, and that corpus moves two ways: campaigns
+append to `runs.jsonl`, and re-scoring passes rewrote it in place. Measured
+2026-08-01: 23 records changed under their own identity on four fields, keeping only a
+`restamped_by` marker, and 88 contamination judgements were overwritten and survive in
+neither hand-made backup. The pin closing this is lab/038; the literature it rests on:
+
+- **Append-only, hash-chained ledgers.** AuditWeave (arXiv 2607.09682) records
+  workflow steps into "a single append-only, hash-chained ledger" in which "any
+  modification, reordering, insertion, or deletion of events is detectable through
+  chain verification", and **measured** that chain verification flagged every injected
+  mutation across four mutation classes over 2,000 randomized trials, at tens of
+  microseconds per event. This is the strongest held evidence for the append-plus-
+  digest shape.
+- **Supersession over in-place update.** ESAA (arXiv 2602.23193) **specifies** a
+  deterministic orchestrator that persists events in an append-only log and projects a
+  verifiable materialized view, with replay verification by hashing. Cited for its
+  specification only: its evidence is two small case studies (9 tasks/49 events; 50
+  tasks/86 events) with **no comparison arm against in-place update**, so it is not
+  evidence that event sourcing outperforms mutation.
+- **The pinning boundary.** Croissant Tasks (arXiv 2605.29786) specifies six
+  components — `cr:input`, `cr:output`, `cr:implementation`, `cr:execution`,
+  `cr:evaluation`, `cr:subTask` — and shifts the goalpost "from technical replication
+  ... to conceptual reproducibility". That licence is what lets implementation detail
+  go unpinned; it does not reach a verdict whose *inputs* move, which is why the
+  fix-touched path set is pinned rather than re-derived. Its "checklists ... fail to
+  scale" line is the argument for a command over a README paragraph, and bounds
+  Pineau et al. (JMLR 22(164), 2021), which `experiments/` already renders.
+- **Why not a Merkle tree.** Its payoff is logarithmic inclusion and consistency
+  proofs to a verifier who does not trust the log operator (RFC 6962 — named as design
+  vocabulary from general knowledge, not retrieved in this scan). One operator, no
+  adversary, 140 records — and a root hash destroys the per-record diff that separates
+  a legitimate append from a rewrite. Revisit if the corpus is ever published or a
+  second writer appears.
+
+**This does not transfer from the claim layer.** The 2026-07-31 refusal of bi-temporal
+claim identity — `written_at` plus `text_digest` on the four mutable node types — holds
+because a Claim is *re-derivable* from its retained Source, so detection suffices where
+reconstruction is possible. A trajectory arm is an unrepeatable observation at the
+measured $2.25 and 447 s with no upstream to re-derive from, and the proof is local:
+`rescored_at` and `restamped_by` stamps *were* present on all 88 and told nobody what
+had been overwritten. Detection without retention is not enough where the thing
+detected cannot be rebuilt. TOKI's audit-erasure argument (arXiv 2606.06240) is about
+LLM-agent persistent memory rather than run corpora, and its verdict matrix ranks the
+design it proposes — the transfer to `runs.jsonl` is this project's argument, not
+TOKI's finding.
+
 ## 3. Federation, experts, and inter-expert exchange
 
 Most crowded pillar as of the scan.
@@ -1313,6 +1362,32 @@ SFT/DPO), and that is training-time, not a harness mechanism.
 - **Beat the free baseline first.** G-NLL needs no hooks, no serving-stack
   migration, and no training set. Any activation-based instrument that does not
   beat it is not worth its infrastructure.
+- **Pinning the corpus does not make the number valid.** The trajectory corpus is now
+  sealable by name with a per-record manifest (§2g, lab/038), which is a precondition
+  for a probe study citing the state it trained and scored on — and nothing more than
+  that. A pinned corpus with an unablated leak channel yields a *reproducibly wrong*
+  AUROC, which is arguably worse than an unpinned one because it recruits the pin as
+  evidence of rigour. The instrument that catches the git-object-store answer key is
+  the **leak-ablation control** — run the probe with the channel removed and see
+  whether AUROC survives — not the audit trail. PARALLAX already measured that a
+  naïve text-similarity baseline exploits answer leakage to near-perfect detection
+  with no access to internals, and the temporal-validity work measured that deleting a
+  surface marker moved a baseline by up to 14 points (arXiv 2606.26511). These are
+  orthogonal obligations and the corpus-pinning work discharges only one.
+- **The contamination denominator is itself a detector-dependent quantity.** The 8-of-88
+  git-reach figure is a joint property of (corpus, detector, threshold), and the
+  standing audit thread has never scored it under a second detector configuration. A
+  controlled audit of pretraining contamination in medical vision-language benchmarks
+  (arXiv 2606.10066) measured the same benchmark at **19.8% under SigLIP-B-16 and 4.2%
+  under SigLIP-SO400M**, with 0/2000 flags on out-of-domain controls — one measured
+  instance of a 4.7× swing from the detector alone. That paper is medical VLM work and
+  the transfer to agent transcripts is an argument, not a result. Its subtler half
+  transfers more directly: manual adjudication reinterpreted the verdict *without
+  changing a single flag*, so pinning the detector is necessary and not sufficient —
+  the rubric and the adjudicator need versions too, and the 8-of-88 has a human
+  judgement in it. **Cheap falsifier, not yet run:** re-score that finding under a
+  second detector configuration. If the count is stable, the pinning obligation here
+  is weaker than argued.
 - **Not found in this scan:** no held source applies activation probes to *memory
   retrieval* decisions — whether to recall, whether a recalled item was used, or
   whether a trajectory is about to re-encounter a known rake. The probe literature

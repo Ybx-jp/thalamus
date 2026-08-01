@@ -31,8 +31,8 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
+from thalamus.eval import corpora
 from thalamus.eval.arms import (
     RUNS_BASE,
     ArmError,
@@ -104,14 +104,21 @@ def _ref_resolves(repo: Path, ref: str) -> bool:
 
 
 def load_records(path: Path | None = None) -> list[dict]:
+    """The current view of the run log: the head revision of each run.
+
+    A superseded record stays on disk forever and is never what a re-score reads —
+    re-deriving a verdict from a body that has already been replaced would file the
+    new revision against the wrong parent.
+    """
     target = path or RUNS_FILE
     if not target.is_file():
         return []
-    return [
+    records = [
         json.loads(line)
         for line in target.read_text().splitlines()
         if line.strip()
     ]
+    return corpora.head_revisions(records)
 
 
 def rescore_records(
@@ -309,53 +316,66 @@ def memo_echo_outcomes(
     return outcomes
 
 
-def apply_outcomes(records: list[dict], outcomes: list[Outcome]) -> int:
-    """Stamp the records that earned a stamp. Returns how many changed."""
+def apply_outcomes(records: list[dict], outcomes: list[Outcome]) -> list[dict]:
+    """Build the revisions the outcomes earned. `records` is left untouched.
+
+    Re-scoring used to rewrite the record where it sat. That is how the corpus lost
+    what it lost: the void fix moved `void`, `infra_fault`, `attributable` and
+    `restamped_by` on 23 records and kept only a marker saying *that* something
+    changed, never what it had said — and the 88 contamination stamps overwrote
+    judgements that now exist nowhere on disk, in either hand-made backup.
+
+    So a re-derived verdict is an **append** carrying the same `run_id`, one higher
+    `revision`, and `supersedes` holding the digest of the body it replaces. Readers
+    take the head revision per run (`corpora.head_revisions`), which is why every
+    existing analysis reads the same numbers it read before. The append-only shape is
+    AuditWeave's (arXiv 2607.09682) and ESAA's (arXiv 2602.23193) — the latter cited
+    for its specification only, its evidence being two small case studies with no
+    comparison against in-place update.
+    """
     stamped_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    changed = 0
+    revisions: list[dict] = []
     for outcome in outcomes:
         if not outcome.stamped:
             continue
-        record = records[outcome.index]
+        prior = records[outcome.index]
+        revised = dict(prior)
         if outcome.memo_echoed is not None:
-            # Kept beside the fresh verdict rather than overwritten. The old value
-            # is the only evidence of which judge the corpus used to carry, and
-            # discarding it while fixing a provenance gap would be the same mistake
-            # in the other direction (lab/037).
-            record.setdefault("memo_echoed_prior", record.get("memo_echoed"))
-            record["memo_echoed"] = outcome.memo_echoed
-            record["memo_echo_rescored_at"] = stamped_at
-            changed += 1
-            continue
-        record["escapes"] = outcome.escapes
-        record["contaminated"] = outcome.contaminated
-        # The stamp's provenance: derived from a retained transcript after the
-        # fact, not observed at run time.
-        record["rescored_at"] = stamped_at
-        changed += 1
-    return changed
+            # The prior value is kept in the body as well as recoverable from the
+            # superseded revision — this is the one place the corpus already did it
+            # right (lab/037), and narrowing it now would be a regression.
+            revised.setdefault("memo_echoed_prior", prior.get("memo_echoed"))
+            revised["memo_echoed"] = outcome.memo_echoed
+            revised["memo_echo_rescored_at"] = stamped_at
+            scorer = outcome.memo_echoed.get("judge_config", "")
+        else:
+            revised["escapes"] = outcome.escapes
+            revised["contaminated"] = outcome.contaminated
+            # The stamp's provenance: derived from a retained transcript after the
+            # fact, not observed at run time.
+            revised["rescored_at"] = stamped_at
+            scorer = corpora.DETECTOR_CONFIG
+        revisions.append(
+            corpora.supersede(revised, prior, scorer_config=scorer, at=stamped_at)
+        )
+    return revisions
 
 
-def write_records(records: list[dict], path: Path | None = None) -> Path:
-    """Rewrite the run log atomically, keeping the previous copy alongside.
+def append_revisions(revisions: list[dict], path: Path | None = None) -> Path:
+    """Append re-derived records to the run log. Nothing already written moves.
 
-    The run log is the campaign evidence base; a partial write from a crash
-    mid-rewrite would corrupt records that were never being re-scored.
+    The old rewrite path took a `.pre-rescore` copy first, which was the right
+    instinct against the wrong failure: it protected against a crash mid-rewrite and
+    not against the rewrite succeeding. Appending removes the crash window too — a
+    torn final line is one unparseable record at the end, not a corrupted middle.
     """
     target = path or RUNS_FILE
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.is_file():
-        backup = target.with_suffix(target.suffix + ".pre-rescore")
-        backup.write_text(target.read_text())
-    with NamedTemporaryFile(
-        "w", dir=str(target.parent), prefix=".runs-", suffix=".jsonl", delete=False
-    ) as handle:
-        for record in records:
+    with target.open("a") as handle:
+        for record in revisions:
             handle.write(json.dumps(record) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
-        temp = Path(handle.name)
-    temp.replace(target)
     return target
 
 

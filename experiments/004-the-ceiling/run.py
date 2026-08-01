@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 from thalamus.eval import publish, sequential  # noqa: E402
+from thalamus.eval.corpora import head_revisions  # noqa: E402
 
 SLUG = "004-the-ceiling"
 TASK = "arm-runner-session-death-classification"
@@ -35,6 +36,10 @@ def load(path: Path = RUNS) -> list[dict]:
     if not path.is_file():
         return []
     rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    # A re-scored verdict is appended as a new revision rather than written over the
+    # old one, so the current view is the head revision per run. Behaviour-preserving
+    # for every record written before that discipline existed.
+    rows = head_revisions(rows)
     return [
         r for r in rows
         if r.get("task") == TASK and r.get("arm") in ARMS and r.get("ts", "") >= CAMPAIGN_START

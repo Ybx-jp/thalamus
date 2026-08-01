@@ -13,7 +13,9 @@ number computed against it is not reproducible even by its own author.
 
 ```
 experiments/
-  snapshots.jsonl          the pinned-state registry (committed; the .kryo files are not)
+  snapshots.jsonl          the pinned graph-state registry (committed; the .kryo files are not)
+  corpora.jsonl            the pinned trajectory-corpus registry (committed; the sealed logs are not)
+  corpora/<name>.jsonl     per-record manifest: run_id, body_sha256, revision
   assets/theme.css         design tokens — steel blue leads, warm grey carries
   NNN-slug/
     preregistration.md     written first, never edited after the first run
@@ -21,6 +23,15 @@ experiments/
     results.json           every number the page shows, machine-readable
     index.html             the publication — self-contained, no external assets
 ```
+
+**Two states are pinned, not one.** The graph moves when a session ends; the
+trajectory corpus (`~/.thalamus/counterfactuals/runs.jsonl`) moves when a campaign
+appends *and* when a re-score touches it. An experiment over campaign records names a
+corpus pin (`thalamus eval corpus --name`) exactly as one over the graph names a
+snapshot, and `--diff` says whether the file still holds what the pin claims. The
+distinction that matters is append vs. rewrite: a whole-file digest reports both as
+"changed", and only the per-record manifest separates them. See
+[docs/04](../docs/04-eval-loop.md) layer 2 and lab/038.
 
 ## The contract for `run.py`
 

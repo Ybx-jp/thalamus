@@ -1417,14 +1417,25 @@ def run_arm(
         # absolute path; `contaminated` is the pre-registered exclusion key for
         # a per-protocol read, and the intention-to-treat comparison keeps every
         # arm regardless.
+        fix_paths = fix_touched_paths(repo, task.source.ref, task.source.fix_ref)
         record["escapes"] = detect_worktree_escape(
-            transcript, worktree, repo,
-            fix_touched_paths(repo, task.source.ref, task.source.fix_ref),
+            transcript, worktree, repo, fix_paths,
         ) + detect_history_reach(
             transcript, task.source.ref, task.source.fix_ref
         )
         record["contaminated"] = any(
             e["kind"] == "answer_key" for e in record["escapes"]
+        )
+        # What the verdict above was computed against (lab/037 #5). The path set
+        # is derived from a git diff over the operator's *live* repo, so a record
+        # that keeps only `ref` lets a later task-YAML edit or history rewrite
+        # re-scope a contamination verdict already recorded.
+        # Imported here rather than at module scope: the corpus layer reads the
+        # run log this module writes, so the dependency only runs one way.
+        from thalamus.eval import corpora
+
+        record["derivation"] = corpora.derivation_fingerprint(
+            task, repo, fix_paths=fix_paths
         )
         # L1 is "the *pre-existing* suite stays green", so the suite the
         # candidate inherited is the one that grades it — not the one it left
@@ -1466,6 +1477,14 @@ def run_arm(
             # its transcript; both have been read by now.
             shutil.rmtree(arm_home_for(worktree), ignore_errors=True)
         base.mkdir(parents=True, exist_ok=True)
+        # Identity, stamped at birth. `run_id` is *derivable* from the fields above
+        # so the 140 records written before this existed keep a stable identity
+        # without the file being rewritten to add one — but a record that carries
+        # it says so, and supersession has something to append against.
+        from thalamus.eval import corpora
+
+        record["run_id"] = corpora.run_id(record)
+        record["revision"] = 0
         with (base / "runs.jsonl").open("a") as fh:
             fh.write(json.dumps(record) + "\n")
     return record

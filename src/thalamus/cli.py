@@ -365,6 +365,33 @@ def main():
         help="Config root holding tasks/ (default: repo config/)",
     )
 
+    eval_corpus_parser = eval_sub.add_parser(
+        "corpus",
+        help="Pin the trajectory corpus (runs.jsonl) under a name, so a study can "
+        "cite the exact state it was computed over",
+    )
+    eval_corpus_parser.add_argument(
+        "--name", default="",
+        help="Seal the current run log under this name. Corpus pins are immutable: "
+        "a name that has been cited keeps meaning what it meant.",
+    )
+    eval_corpus_parser.add_argument(
+        "--note", default="", help="What this pin is for; shown in the registry"
+    )
+    eval_corpus_parser.add_argument(
+        "--list", action="store_true",
+        help="List pinned corpora and verify their digests",
+    )
+    eval_corpus_parser.add_argument(
+        "--diff", default="",
+        help="Report what has changed since the named pin, separating legitimate "
+        "appends and supersessions from in-place rewrites",
+    )
+    eval_corpus_parser.add_argument(
+        "--runs", type=Path, default=None,
+        help="Run log to pin (default: ~/.thalamus/counterfactuals/runs.jsonl)",
+    )
+
     eval_rescore_parser = eval_sub.add_parser(
         "rescore",
         help="Apply the contamination and history-reach detectors backwards over "
@@ -1098,6 +1125,87 @@ def _cmd_ingest(args):
         close_connection(graph)
 
 
+def _cmd_eval_corpus(args):
+    from thalamus.eval import corpora
+
+    if args.list:
+        rows = corpora.registry()
+        if not rows:
+            print(
+                "No pinned corpora. `thalamus eval corpus --name <id>` pins the "
+                "current run log."
+            )
+            return
+        for row in rows:
+            corpus_ok, manifest_ok = corpora.verify(row.name)
+            # Two states, never pooled: a sealed file that no longer hashes to its
+            # citation and a manifest that no longer matches it are different
+            # failures, and the worse one must not hide behind the other.
+            state = "ok" if corpus_ok and manifest_ok else (
+                "CORPUS MISMATCH" if not corpus_ok else "MANIFEST MISMATCH"
+            )
+            print(
+                f"{row.name:32} {row.taken_at[:19]}  {row.records:>5} records  "
+                f"sha {row.sha256[:12]}  @{row.git_ref}  {state}"
+            )
+            if row.note:
+                print(f"{'':32} {row.note}")
+        return
+
+    if args.diff:
+        try:
+            delta = corpora.diff(args.diff, corpora.load_records(args.runs))
+        except corpora.CorpusError as e:
+            print(str(e), file=sys.stderr)
+            sys.exit(1)
+        print(f"Against `{args.diff}`:")
+        print(f"  unchanged:   {delta.unchanged}")
+        print(f"  appended:    {len(delta.added)}")
+        print(f"  superseded:  {len(delta.superseded)}")
+        print(f"  REWRITTEN:   {len(delta.rewritten)}")
+        print(f"  REMOVED:     {len(delta.removed)}")
+        for run in delta.rewritten:
+            print(f"    rewritten in place: {run}")
+        for run in delta.removed:
+            print(f"    removed: {run}")
+        if delta.clean:
+            print(
+                "\nClean: appends and supersessions only. Every record present at "
+                "seal time still says what it said."
+            )
+        else:
+            # Not an error exit — the report is the point, and a corpus that has
+            # been rewritten is exactly what the operator needs to see rendered.
+            print(
+                "\nNot clean: records changed under their own identity. A study "
+                f"citing `{args.diff}` is not reproducible against this file."
+            )
+        return
+
+    if args.name:
+        try:
+            row = corpora.seal(args.name, note=args.note, runs_path=args.runs)
+        except corpora.CorpusError as e:
+            print(str(e), file=sys.stderr)
+            sys.exit(1)
+        print(
+            f"Pinned `{row.name}`: {row.records} records, {row.byte_size / 1e3:.0f} kB, "
+            f"sha256 {row.sha256[:12]} @{row.git_ref}"
+        )
+        print(f"  registry: {corpora.REGISTRY}")
+        print(f"  manifest: {row.manifest_path}")
+        print(f"  sealed:   {row.pinned_path} (read-only)")
+        print(f"  check it: thalamus eval corpus --diff {row.name}")
+        return
+
+    print(
+        "Nothing to do. `--name <id>` seals the current run log, `--list` shows "
+        "what is pinned, `--diff <id>` reports what has changed since a pin.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 def _cmd_snapshot(args):
     from thalamus.substrate.snapshot import SnapshotError
 
@@ -1463,14 +1571,16 @@ def _cmd_eval(args, eval_parser):
         print(f"Records appended to {arms_mod.RUNS_BASE / 'runs.jsonl'}")
         if not accepted:
             sys.exit(2)
+    elif getattr(args, "eval_command", None) == "corpus":
+        _cmd_eval_corpus(args)
     elif getattr(args, "eval_command", None) == "rescore":
         from thalamus.eval.rescore import (
+            append_revisions,
             apply_outcomes,
             load_records,
             memo_echo_outcomes,
             render_rescore,
             rescore_records,
-            write_records,
         )
 
         records = load_records(args.runs)
@@ -1487,11 +1597,15 @@ def _cmd_eval(args, eval_parser):
                 force=args.force,
             )
         if args.write:
-            changed = apply_outcomes(records, outcomes)
-            write_records(records, args.runs)
+            revisions = apply_outcomes(records, outcomes)
+            append_revisions(revisions, args.runs)
         print(render_rescore(outcomes, wrote=args.write))
         if args.write:
-            print(f"\nStamped {changed} record(s); previous log kept as *.pre-rescore.")
+            print(
+                f"\nAppended {len(revisions)} revision(s). Nothing already written "
+                "moved; the superseded bodies stay on disk and readers take the "
+                "head revision per run."
+            )
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report
 
