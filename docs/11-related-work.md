@@ -1,6 +1,6 @@
 # Related Work — Where Thalamus Sits in the 2026 Literature
 
-**Status:** living document. Last scan 2026-07-29. This doc exists to keep the
+**Status:** living document. Last scan 2026-08-01. This doc exists to keep the
 project honest: it states, per pillar, what the published literature already
 establishes, and it reduces Thalamus's claim from *novelty* to a defensible,
 cited *position*. The rule (from [00-mission.md](00-mission.md)): **never design
@@ -1047,6 +1047,265 @@ utility estimate from live traffic, including Mem0's, whose latency and cost
 figures are measured on the LOCOMO comparison despite the paper's
 production-readiness framing. §4's provisional absence is therefore unchanged by
 the arrival of the systems most likely to have refuted it.
+
+## 7. Activation-level harness instrumentation
+
+A harness that runs its own local model can read the model's internal state, not
+just its tokens. This section holds that literature because it bears on the eval
+loop directly: the best-evidenced use of activation access is **predicting that a
+trajectory is going badly, early enough to stop paying for it** — which is the
+same quantity §2b prices and §2 grades after the fact. Held under feed
+`activation-instrumentation`.
+
+The section exists mostly to say what *not* to build. Three of the five families
+below are negative results.
+
+### 7a. The access mechanism — the serving stack is the decision
+
+The primitive is `nn.Module.register_forward_hook` / `register_forward_pre_hook`.
+On a HF decoder model a pre-hook on `model.model.layers[i]` yields the residual
+stream in; the forward hook's `output[0]` (a tuple, not a tensor) yields it out;
+`resid_mid` is reachable only as the input to `post_attention_layernorm`. Wrappers
+exist and are maintained — **TransformerLens 3.x** (v3.6.0, 2026-07-28; v3
+deprecates `HookedTransformer.from_pretrained` for `TransformerBridge`, which
+matches HF numerics where legacy `HookedTransformer` never did), **nnsight 0.6**
+(2026-02-26; the only option with a real gradient story), **baukit `TraceDict`**
+(unmaintained, ~30 lines of dependency, still correct).
+
+Access and optimized serving are in direct tension, and the choice of serving
+stack determines what is possible:
+
+| Stack | Access | Cost |
+| --- | --- | --- |
+| HF `transformers` + hooks | anything at a module boundary | ~1/8–1/24 vLLM throughput |
+| vLLM + `vllm-lens` (UK AISI, MIT, 2026-04-23) | residual stream + steering, per-request via `SamplingParams.extra_args` | ~20% slower than bare vLLM; forces `enforce_eager=True` |
+| vLLM native `extract_hidden_states` | chosen layers → safetensors on disk | offline collection only |
+| llama.cpp `cb_eval` | every ggml graph node — the most complete access of any serving stack | C-side filtering mandatory |
+| SGLang | last layer only (#8069 closed inactive) | — |
+| MLX | no hook API; monkeypatch `model.layers` | — |
+| Ollama | **none** | — |
+
+Implementation facts that decide designs rather than decorate them:
+
+- **Hooks fire once per token during decode.** Prefill gives `(b, n_prompt, d)`,
+  each decode step `(b, 1, d)`. A `.cpu()` sync inside the hook serializes the
+  decode loop.
+- **`torch.compile` and CUDA graphs silently drop hooks.** Hooks registered after
+  first compilation never run (pytorch#117758); a replayed CUDA graph does not
+  re-enter Python. Every serving-side solution either forces eager mode or does
+  something exotic (DMI-Lib, arXiv 2605.11093, claims hooks surviving CUDA graphs
+  at 0.4–6.8% overhead — research preview, unreplicated).
+- **Attention patterns require `attn_implementation="eager"`.** SDPA and
+  FlashAttention never materialize the matrix. A memory cliff, not a flag flip.
+- **Continuous batching scrambles positions** — the tensor at a hook is a
+  flattened concat over in-flight sequences (vllm#36998, still open, no
+  implementation; its own estimate for observing *decode* is ~25% throughput loss).
+- **`vllm-lens` ships hooks as cloudpickle over HTTP** — remote code execution by
+  design. Localhost or tailnet only.
+- **Numerics do not match across stacks.** A probe trained on `transformers`
+  activations may not transfer to vLLM's kernels. Train on the stack you deploy on.
+
+Remote access: **NDIF** (nnsight `remote=True`, NSF-funded, Llama-3.1-8B/70B/405B)
+is the only real public option. **Goodfire Ember's public API was deprecated in
+February 2026**; Ember now names a partner-only platform. No frontier-lab API
+exposes activations, which is why this section is scoped to open weights.
+
+### 7b. Attention maps and saliency — do not build on these
+
+The intuitive mechanism is the discredited one.
+
+- **Attention as explanation** is a settled negative: Jain & Wallace (1902.10186,
+  NAACL 2019) show attention uncorrelated with leave-one-out importance and
+  adversarial attention distributions yielding equivalent predictions; Serrano &
+  Smith (1906.03731) find it a noisy predictor even of intermediate-component
+  importance; Wiegreffe & Pinter (1908.04626) narrow rather than overturn this.
+  Bastings & Filippova (2010.05607) reframe: the unstated goal is input-token
+  relevance and attention is used only because it is a ready-made per-token weight.
+- **The saliency alternative is worse.** Adebayo et al. (1810.03292, NeurIPS 2018)
+  show Guided BackProp and Guided GradCAM produce visually unchanged maps as the
+  network's weights are randomized. ROAR (1806.10758, NeurIPS 2019) finds base
+  saliency estimators rank features **worse than random** under retrain-and-remove.
+  Kindermans et al. (1711.00867) trace failures to arbitrary reference points.
+  Gradient saliency also needs a backward pass, which no fast serving stack exposes.
+- **Scope caveat, stated honestly:** nearly all of this is encoder LSTMs and BERT
+  doing classification. Decoder-only re-derivations are 2026 preprints, and the
+  old erasure protocol does not port cleanly (Kamahi & Yaghoobzadeh, 2408.11252 —
+  erasure creates OOD inputs for next-token-trained models).
+
+Two survivable uses remain, both distinct from explanation: attention patterns as
+a *detector* inside causal circuit work (Olsson et al. 2209.11895 uses them for
+prefix-matching, with the copying half an OV/weights claim; the modern pipeline is
+activation patching — ACDC 2304.14997, AtP\* 2403.00745), and attention as a
+*feature for a trained classifier* (Attention Tracker, NAACL Findings 2025, +10.0
+AUROC on prompt-injection detection). The distinction between "attention as
+signal" and "attention as explanation" is the whole content of this subsection.
+
+### 7c. Linear probes on the residual stream — where the evidence is
+
+Foundation: Alain & Bengio (1610.01644, 2016). The agentic results are recent and
+directly on the eval loop's questions:
+
+- **Trajectory abort.** Probes predict agent task failure from the first
+  interaction round; a recall-controlled abort cascade saves **60.2% of tokens on
+  TextCraft and 54.9% on WebShop at 90% recall** (2607.06503, 3 models × 2 envs ×
+  4 variants). Behaviour-only monitoring is consistently weaker, and adding
+  behavioural features to hidden-state probes gives **no further gain**.
+- **Tool gating.** Tool *necessity* is linearly decodable from the pre-generation
+  representation at **AUROC 0.89–0.96** across six models; 48% fewer tool calls at
+  1.7% accuracy loss, and the hidden-state signal substantially outperforms the
+  model's own verbalized reasoning about whether it needs the tool (2605.09252).
+- **Coding agents.** Logistic probes on the residual stream decode whether current
+  code parses and passes tests at **AUC up to 0.83**, predicting the outcome of
+  edits **~25 steps before they are written**, transferring SWE-bench Verified →
+  Pro without retraining (2607.05188).
+- **Hallucination pre-emission.** DRIFT reads inter-layer hidden-state transitions
+  at <0.1% overhead, fully parallel with generation, SOTA AUROC on 10/12 settings
+  (2601.14210).
+- **Production cost.** The user-facing Gemini misuse monitor is a probe: 2.64%
+  weighted test error vs Gemini 2.5 Flash's 2.04% at **>10,000× lower cost**,
+  trained on **3,175 samples** (2601.11516). Probe latency is <1% overhead — the
+  forward pass is already paid for.
+
+The constraints are as important as the results, and they are the reason this
+section is not a green light:
+
+- **Probes read the situation, not the action.** A direction separating fine-tuned
+  from base at **AUC 1.000** fired on **0 of 143** audited pre-assistant-turn
+  contexts and 0 of 342 prefill rows (2606.30449), while decoding *prompt domain*
+  at 0.999. "Is this trajectory in a region where the model tends to fail" works;
+  "is the model about to take this specific bad action" has no evidence.
+- **In-distribution AUROC is nearly worthless as evidence.** Filtering surface
+  textual cues drops probe AUROC 10–30 points — sandbagging **0.94 → 0.57**, which
+  is chance (2509.21344). PARALLAX (2605.17028) evaluated 22 hallucination
+  detectors across 12 models and found four of six standard corpora embed the
+  ground-truth answer in the prompt; under controlled conditions most established
+  baselines perform near chance, and only two supervised hidden-state probes
+  survived. This is §2's answer-key-leak problem in a new venue, and it lands on a
+  scope that has already found one such leak by hand (the git-object-store channel,
+  9/88 arms).
+- **Truthfulness is not universal.** Orgad et al. (2410.02707, ICLR 2025) — the
+  paper that establishes exact-answer-token concentration — also finds detectors
+  fail to generalize across datasets, and off-skill are **no better than
+  logit-based uncertainty**. Cheang et al. (2510.09033) argue hidden states encode
+  *recall status* rather than truth.
+- **Probes are adversarially fragile.** Obfuscated activations drop harmfulness
+  probe recall **100% → 0%** at a retained 90% jailbreak rate (2412.09565).
+  RL-Obfuscation (2506.14261) evades token-level monitors but finds **max-pooling
+  and attention-based probes remain robust** — which is a concrete architecture
+  constraint: pool, do not read the last token.
+- **CCS is refuted.** Burns et al.'s unsupervised knowledge discovery
+  (2212.03827) is proven to find whatever feature is most prominent, not knowledge
+  (2312.10029). Do not build on it.
+
+### 7d. The logits-only baseline that must be beaten first
+
+- **G-NLL** — negative log-likelihood of the single greedy sequence, one forward
+  pass, no hooks — wins or ties on 9 of 10 BFCL splits and beats 10-sample
+  semantic entropy everywhere on function-calling (2604.22985, AUROC 0.76–0.78 vs
+  0.72–0.74). **Semantic entropy does not replicate on structured output**: the
+  distribution is so peaked that meaningful uncertainty lives in fewer than 5
+  tokens and the runner-up is usually syntactically equivalent (`=["` vs `=['`),
+  so all samples land in one cluster and SE reads ~0 on wrong calls. Restricting
+  G-NLL to semantically meaningful tokens takes it to 0.78 and cuts smoothECE
+  0.147 → 0.091.
+- **Semantic entropy** (Farquhar et al., Nature 630:625–630, 2024) is validated on
+  free-form factual assertions, averaging 0.790 AUROC vs naive entropy's 0.691 —
+  but the underlying ICLR paper's margins are much smaller (0.828 vs 0.802 on
+  TriviaQA; 0.675 vs 0.673 under exact match), and it targets *confabulations*,
+  not systematic wrongness. A model that consistently misunderstands an API is
+  confidently, repeatably, undetectably wrong by this instrument.
+- **Aggregated trajectory logprobs do not work.** τ²-bench trajectory uncertainty
+  predicting task failure: AUROC 0.597 / 0.624 / 0.469 / 0.645 across four
+  model×domain cells, at or below chance (2602.05073, ACL 2026). This is the
+  cleanest argument for activations over logits at the trajectory level — the same
+  task where probes deliver 60% token savings.
+- **Per-token entropy localizes decision points.** CoT entropy is bimodal; a
+  high-entropy minority of "forking tokens" decides the trajectory, and the effect
+  is causal (2506.01939, NeurIPS 2025). Gate there, not uniformly.
+- **Calibration.** RLHF degrades ECE 0.007 → 0.074 (GPT-4 tech report Fig. 8), and
+  a single fitted global temperature largely recovers it (2207.05221 §3.3).
+  Verbalized confidence clusters at 80–100% in multiples of 5 — a rank signal,
+  never a probability (2306.13063).
+- **A methodological landmine that applies to our own eval loop.** The approximate
+  correctness function used to label answers right/wrong changes the *ranking* of
+  UQ methods (2510.02279). No AUROC in this literature is readable without it, and
+  the same hazard applies to the judge in §2d.
+- **Proxy logprobs are closed.** LLaMA-30B judging GPT-3 gives passage-level
+  Pearson **−22.83** — anticorrelated (SelfCheckGPT, 2303.08896). If the acting
+  model's logprobs are unavailable, use consistency sampling or a judge, never a
+  proxy's probabilities.
+
+### 7e. Sparse autoencoders and steering — held, and declined
+
+Both families are procured so the decision is cited rather than assumed.
+
+**SAEs: the 2024 optimism did not survive 2025–26.** Bricken et al. (Transformer
+Circuits, Oct 2023, never peer-reviewed), Templeton et al. (Scaling
+Monosemanticity, 2024), Gao et al. (2406.04093), Gemma Scope (BlackboxNLP 2024,
+400+ SAEs, >20% of GPT-3's training compute). Against them: SAE probes
+**underperform logistic regression on average** across data scarcity, class
+imbalance, label noise, and covariate shift (2502.16681, ICML 2025); SAEBench
+(2503.09532, 200+ SAEs, 8 architectures) finds gains on sparsity/reconstruction
+proxies **do not translate downstream** — the entire 2024 architecture race
+optimized a metric that does not predict utility; feature absorption is a
+structural consequence of the sparsity objective, not a tuning bug (2409.14507);
+SAEs do not find canonical units (2502.04878 — an "Einstein" latent decomposes
+into "scientist" + "Germany" + "famous person"). Revealed preference is the
+cleanest evidence: the team that built Gemma Scope shipped the production Gemini
+monitor on activation probes.
+
+Numbers in this literature need checking before they are quoted. A citation audit
+run for this section found: Templeton's "34M features" SAE has **~12M alive** (65%
+dead, in the paper); Gated SAEs' "half as many firing features" appears **only in
+the abstract**, against a compute-matched baseline with 50% more latents, with the
+interpretability study at **p = .060** — parity, not superiority; Gao et al.
+explicitly **repudiate** the "% of loss recovered" metric others report as theirs;
+and Cunningham et al. is ICLR 2024 with **Huben listed first**. The narrow honest
+counterexamples are Goodfire/Rakuten's production PII detection under
+synthetic→real shift (vendor blog, unreplicated) and OpenAI's 2504.20271, which
+recommends prompted probing and finds SAEs ahead only in the compute-constrained
+corner.
+
+**Steering is a control tool, not a sensing tool**, so it gates nothing: ActAdd
+(2308.10248), CAA (ACL 2024, 2312.06681), RepE (2310.01405), ITI (2306.03341,
+Alpaca TruthfulQA 32.5% → 65.1%), function/task vectors (2310.15213, 2310.15916).
+The disqualifying measurement is that **~1/3 of samples move the wrong way**
+(2505.22637; see also 2407.12404 — steerability is largely a *dataset* property,
+not a model property, and a significant fraction of inputs are anti-steerable),
+plus non-identifiability: orthogonal steering vectors achieve comparable effects,
+so steering working does not license the claim that you found "the" direction
+(2602.06801). On stronger models it no longer beats multi-shot prompting. The one
+shape with a real cost argument is amortizing the vector into weights (CASAL,
+2510.02324 — 30–40% hallucination reduction, 30× more compute-efficient than LoRA
+SFT/DPO), and that is training-time, not a harness mechanism.
+
+### 7f. What this puts to the Thalamus design
+
+- **The abort signal is the overlap.** §2b prices cost as the denominator and
+  lab/023's campaign spent ~$52 across 24 arms. A trajectory-abort probe is the
+  only instrument in this scan that attacks that denominator directly, and it is
+  the same construct the graded ladder scores after the fact. Whether a probe
+  trained on our own arm transcripts reaches the published effect sizes at our n
+  is unmeasured, and the label counts are the binding constraint, not the method.
+- **The leakage hazard is one we have already been bitten by.** PARALLAX's finding
+  — that most published detectors score near chance once the answer is removed
+  from the prompt — is structurally the same failure as the git-object-store
+  answer-key channel found at 9/88 arms. Any probe AUROC computed over arm
+  transcripts inherits every leak channel the standing audit thread has not yet
+  closed, and a probe is a *better* leak reader than a language model is.
+- **Situation-not-action bounds the ambition.** A probe may be able to say "this
+  arm is going badly." Nothing in the literature supports "this tool call is about
+  to be wrong," and the 0/143 result is the reason to write that constraint down
+  before a design assumes otherwise.
+- **Beat the free baseline first.** G-NLL needs no hooks, no serving-stack
+  migration, and no training set. Any activation-based instrument that does not
+  beat it is not worth its infrastructure.
+- **Not found in this scan:** no held source applies activation probes to *memory
+  retrieval* decisions — whether to recall, whether a recalled item was used, or
+  whether a trajectory is about to re-encounter a known rake. The probe literature
+  gates tools and aborts trajectories; the memory-systems literature (§6) is graded
+  on offline benchmarks and reads no internal state at all. This is an absence in
+  the 2026 scan, recorded as such and not as a claim.
 
 ## Maintenance
 
