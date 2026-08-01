@@ -7,6 +7,12 @@
 lab/023 campaign while it was still running, and (§2) a **design proposal** for
 in-deployment measurement, written for `main` to build. Nothing in §2 is built.
 
+> **The campaign has since completed.** Its results are
+> [lab/023](023-the-first-valid-memory-contrast.md) — 24 arms, $54.11,
+> P(on > off) = 0.667, exact one-sided p = 0.0849. §1's interim figures are a
+> record of the peek, not of the campaign; cite them only as the peek-decay
+> demonstration they are labelled as, never as an effect.
+
 Grounding consultation: exchange `scope:main:exchange:777773c9b77e478d`
 (literature expert, 14 validated citations).
 
@@ -66,9 +72,21 @@ first, and this time with the threshold reading *null* where the rank test reads
 > example of why `arXiv:2309.07353` (§2.4) is the right instrument — a confidence
 > sequence is valid at *every* peek, including the tempting one. Cite this
 > paragraph, not the citation, when arguing the change.
-- **Censoring still binds.** 12 of the 19 arms are `turn_capped`. The endpoint
-  remains "rung reachable within 40 turns."
-- Cost so far: $44.49 for 19 arms.
+>
+> **The arc completed at 24 arms, and the decay was monotone:**
+>
+> | arms | P(on > off) | exact one-sided p |
+> |---|---|---|
+> | 19 | 0.789 | 0.0154 |
+> | 23 | 0.693 | 0.0589 |
+> | **24 (final)** | **0.667** | **0.0849** |
+>
+> Final rungs: on `[3,1,3,3,3,3,1,2,5,3,1,3]`, off `[1,1,1,1,3,1,3,1,1,3,3,3]`.
+> The signal did not merely weaken — it decayed to nothing, and every figure in
+> this table is reproducible from `~/.thalamus/counterfactuals/runs.jsonl`.
+- **Censoring still binds.** 13 of the 19 arms are `turn_capped` (16 of 24 at
+  completion). The endpoint remains "rung reachable within 40 turns."
+- Cost so far: $44.49 for 19 arms; $54.11 for all 24.
 
 **For main.** Do not amend lab/023's pre-registration to match this — that is
 exactly the silent-regrade the tier-0 task-file discipline exists to prevent. Let
@@ -76,6 +94,11 @@ the campaign finish and report the pre-registered endpoint as the primary result
 *with* the rank-based read reported beside it and labelled exploratory. Then
 pre-register the rung ≥ 3 endpoint, or a rank statistic, for the *next* campaign
 and let fresh data decide.
+
+That discipline held: lab/023 reports the pre-registered rung ≥ 4 endpoint (1/12
+vs 0/12, null) as primary, with the rank read beside it and labelled
+exploratory. Pre-registering a rung ≥ 3 or rank endpoint for the next campaign
+is still open.
 
 ---
 
@@ -305,9 +328,10 @@ allowlist-blocked, same procurement class as Hernán & Robins).
 
 ## What main should pick up, in order
 
-1. **Let lab/023 finish.** Report the pre-registered rung ≥ 4 endpoint as primary;
-   report the rank-based read beside it, labelled exploratory. Do not amend the
-   pre-registration retroactively.
+1. ~~**Let lab/023 finish.**~~ **Done** — 24 arms, $54.11, pre-registered rung ≥ 4
+   endpoint null (1/12 vs 0/12) and reported as primary; the rank read
+   (P(on > off) = 0.667, p = 0.0849) beside it, labelled exploratory. The
+   pre-registration was not amended retroactively.
 2. **Ingest the five in §2.6**, dry-run first. `2309.07353` and `2605.17830` are
    the two that change decisions.
 3. **Class A first.** It has a shipping precedent (`gremlin-guard.sh`), needs no
