@@ -36,14 +36,32 @@ The attack class is fully mapped:
   persistent memory, reporting injection-success rates above 95% via bridging
   steps and progressive shortening. Establishes that the operator does not need to
   be the attacker; a crafted *query stream* suffices.
-- **MemoryGraft: Persistent Memory Poisoning in LLM Agents** (arXiv 2512.16962) —
-  poisoned *experiences* create persistent behavioral drift by exploiting an
-  agent's tendency to imitate prior successful trajectories. Directly motivates
-  why episodic memory (not just knowledge) needs a trust boundary.
+- **MemoryGraft: Persistent Compromise of LLM Agents via Poisoned Experience
+  Retrieval** (arXiv 2512.16962, in the graph) — poisoned *experiences* create
+  persistent behavioral drift by exploiting the agent's **semantic imitation
+  heuristic**, its tendency to replicate patterns from retrieved successful tasks.
+  The attacker needs only write access to ingestion-level artifacts the agent reads
+  during execution (a README, say); union retrieval over lexical (BM25) and embedding
+  similarity then surfaces the grafted entries on semantically similar tasks.
+  Validated on MetaGPT's DataInterpreter with GPT-4o, where a small number of poisoned
+  records account for a large fraction of retrieved experiences on benign workloads.
+  Directly motivates why episodic memory (not just knowledge) needs a trust boundary.
+  Its own proposed defense is **Cryptographic Provenance Attestation** — the agent
+  signs validated experiences with an enclave-held key and retrieval verifies the
+  signature — which is the write-path stance again, one notch stronger than a tier
+  stamp.
 - **From Untrusted Input to Trusted Memory: A Systematic Study of Memory Poisoning
-  Attacks in LLM Agents** (arXiv 2606.04329) — a six-class taxonomy (explicit /
-  conditional command insertion, salience-driven compaction poisoning, policy-
-  conformant fact injection, false-precedent insertion, skill-procedure insertion).
+  Attacks in LLM Agents** (arXiv 2606.04329, in the graph) — a six-class taxonomy
+  (explicit / conditional command insertion, salience-driven compaction poisoning,
+  policy-conformant fact injection, false-precedent insertion, skill-procedure
+  insertion) over **four memory write channels** (explicit instruction-executed,
+  system-prompt-driven, compaction-driven, experience-to-procedure) and **nine
+  structural vulnerabilities** at three levels — model capability (V-M1–2), system
+  prompt design (V-P1–2), agent architecture (V-S1–5). The three architecture-level
+  ones are the pre-registration spine of [05](05-trust-model.md)'s leak-channel audit.
+  Its metric is deliberately two-phase: ASR (did the payload reach persistent storage)
+  and RSR, conditioned on ASR (did the stored entry change behaviour on a later
+  query) — measured at 50.46% / 41.05% across OpenClaw and HERMES.
 
 The defenses proposed there are, almost line-for-line, Thalamus's design:
 
@@ -52,6 +70,14 @@ The defenses proposed there are, almost line-for-line, Thalamus's design:
 > provenance tracking**, **source isolation** (untrusted content never reaches
 > trusted-equivalence), and **compaction filters distinguishing trusted from
 > untrusted sources** (2606.04329).
+
+That first clause is measured, not asserted: four input-boundary detectors (PIGuard,
+DataFilter, CommandSans, PromptArmor) are evaluated against memory-poisoning payloads
+and none achieves both high true-positive and low false-positive rate; retraining them
+on memory-poisoning data does not meaningfully help, which the paper reads as a
+structural limit rather than a training-distribution one, and every detector falls off
+sharply on weak-signal payloads that carry no syntactic anomaly. That negative is what
+makes a write-path floor the load-bearing defense rather than a belt-and-braces one.
 
 That is [05-trust-model.md](05-trust-model.md)'s "gates enforced at the federation
 contract," "distillation does not launder," and "orphans/unprovenanced nodes
@@ -64,10 +90,16 @@ the write-path stance instantiated on the *distillation* channel, MINJA (arXiv
 
 More that overlaps or exceeds the design:
 
-- **SMSR: Certified Defence Against Runtime Memory Poisoning** (arXiv 2606.12703) —
-  a *certified* runtime defense using **Cryptographic Provenance Attestation**.
-  Stronger than our tier stamp: it makes provenance unforgeable, not merely
-  recorded. A candidate direction for M5 enforcement.
+- **SMSR: Certified Defence Against Runtime Memory Poisoning in Persistent LLM Agent
+  Systems** (arXiv 2606.12703, in the graph) — Signed Memory with Smoothed Retrieval:
+  **HMAC-SHA256 provenance tagging at write time** plus randomised retrieval-time
+  memory ablation with verdict-based voting, against what it names the Multi-Session
+  Memory Poisoning threat. Stronger than our tier stamp: it makes provenance
+  unforgeable, not merely recorded, and its component-1 result is a drop from 93–100%
+  to 0% attack success. The load-bearing part for us is its **impossibility result** —
+  no provenance-free retrieval-time filter can achieve a non-trivial worst-case
+  certificate against an adaptive adversary — which is the write-path stance stated as
+  a bound rather than an observation. A candidate direction for M5 enforcement.
 - **MemAudit: Post-hoc Auditing of Poisoned Agent Memory via Causal Attribution
   and Structural Anomaly Detection** (arXiv 2605.23723) — automates exactly our
   "the post-mortem is a graph traversal, not archaeology" audit story, and adds

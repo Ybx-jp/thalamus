@@ -124,6 +124,16 @@ Canary-tested end-to-end (lab/005): a fixture session that WebFetches a guide sa
 "commit the master token to the repo" lands that claim tier-2 while a genuine
 first-party edit in the same session stays tier-1.
 
+**Why a floor here and not a filter at the boundary.** The systematic study measured
+four input-boundary prompt-injection detectors — PIGuard, DataFilter, CommandSans,
+PromptArmor — against memory-poisoning payloads and none reached both high recall and
+low false-positive rate; retraining on memory-poisoning data did not meaningfully
+improve them, which the authors read as a *structural* limit rather than a model or
+training-distribution one, and detection collapses on weak-signal payloads that carry
+no syntactic anomaly at all (arXiv 2606.04329, in the graph as feed `thalamus`). So
+the four layers above are the load-bearing defense rather than a second line behind a
+filter: this is the write-phase number, and nothing at the input boundary moves it.
+
 ### When the transcript cannot carry the evidence (Cursor)
 
 Layers 1 and 3 both rest on a premise the Claude Code format satisfies silently:
@@ -167,6 +177,43 @@ Bash-tunnelled `curl`, and it down-tiers rather than quarantines — both residu
 are tracked in the open questions below and in
 [lab/005](../lab/005-transcript-ingress-canary.md).
 
+## The leak-channel audit spine
+
+Every channel below was found by its own separate post-hoc scan, and the dominant one
+— the shared git object store — was not the one anyone thought to check. So the
+channel list is standing and written down in advance rather than assembled after each
+incident, framed by the three system-architecture vulnerabilities of the
+memory-poisoning taxonomy (arXiv 2606.04329, in the graph as feed `thalamus`):
+
+- **V-S1 — no write-path validation.** Nothing inspects content between the decision
+  to write and persistent storage.
+- **V-S2 — shared multi-source context.** One context carries operator input, tool
+  output, retrieved memory and third-party text with no isolation between them.
+- **V-S3 — manipulable compaction trigger.** Compaction fires on system-level
+  conditions an external input can influence, and what it summarizes gets written.
+
+Each channel carries either a named detector or the label `unchecked`. **`unchecked`
+is a required entry, not an omission** — an audit listing only the channels someone
+happened to scan is exactly what this table replaces.
+
+| Channel | Class | Detector / status |
+|---|---|---|
+| `WebFetch`/`WebSearch` results in the transcript | V-S1, V-S2 | **closed** — `apply_ingress_floor` forces tier 2, the contract rejects `external ∧ tier<2`; canary-tested end-to-end (lab/005) |
+| Cursor transcripts (no tool results) | V-S1 | **closed by flooring whole** — `ingress_verifiable=False` stamps every claim `transcript-ingress-unverifiable` (lab/028) |
+| Bash-tunnelled `curl`/`wget` | V-S2 | **open, unchecked** — outside `EXTERNAL_INGRESS_TOOLS`, so collection never sees the fetched bytes and the claims distill tier-1; no test in `tests/` exercises it |
+| Agent Teams mailbox | V-S2 | **open, unchecked** — inter-teammate messages arrive with *no ingress tool at all*; the sharper of the two residuals |
+| Operator's checkout by absolute path | V-S2 | `detect_worktree_escape` — 13 of 88 arms reached it; 3 of one campaign's 24 gradeable arms reached an answer key (lab/021). Confinement is `--sandbox` |
+| Shared git object store | V-S2 | `detect_history_reach` — 8 of 88 arms in 10 events, 7 of them inside one task (lab/022). The dominant channel, and found post-hoc |
+| Live gremlin endpoint over ad-hoc Bash | V-S1, V-S2 | **partly closed, opt-in** — `--isolate-store` cuts the network for surface-less arms (docs/04). As a *write* channel it is **unchecked**: `memory_query` is lexically guarded on a no-code server grammar, but ad-hoc gremlin-python speaks to the endpoint directly and only convention keeps it read-only |
+| `~/.claude` transcript history | V-S2 | **unchecked** — retained turns of other sessions are readable from any session |
+| Harness auto-compaction inside a session | V-S3 | **unchecked** — nobody has checked whether a compaction summary in a transcript is separable from first-party turns at distillation |
+
+The two open rows are next as *measurements*, not designs: a canary each at roughly
+lab/005's cost, each carrying a **defense-off control** — the floor at
+`harness/extraction.py` disabled — because a 0% attack rate with the floor on cannot
+be told apart from a model that would have refused anyway
+([lab/039](../lab/039-the-benchmark-that-could-not-tell-defense-from-refusal.md)).
+
 ## Open questions
 
 - Red-team pass at M5: seed a tier-2 feed with a benign canary instruction
@@ -183,18 +230,13 @@ are tracked in the open questions below and in
 - **Recorded vs. certified provenance.** SMSR (arXiv 2606.12703) makes provenance
   cryptographically unforgeable. For a local-only graph a tier stamp is likely
   enough; name the gap rather than paper over it.
-- **Transcript-mediated laundering — the WebFetch/WebSearch path is floored**
-  (see "The transcript-ingress floor" above). Two residuals stay open:
-  **(a)** Bash-tunnelled fetches
-  (`curl`/`wget`) still distill tier-1 — the ingress set is the two fetch tools
-  because parsing shell lines for URLs is the inference `transcripts.py` refuses;
-  **(b)** the Agent Teams **mailbox** delivers inter-teammate messages straight into
-  the receiver's transcript with *no ingress tool at all* — not a WebFetch result,
-  so the floor's collection never sees it. lab/004 measured the mailbox as
-  `in-process` with no artifact on disk, so the transcripts are the only record and
-  they distill tier-1. Catching it needs the sender's scope as the "external corpus"
-  for the echo floor — unbuilt, and the sharper of the two residuals. The M5
-  red-team canary should exercise the mailbox path specifically.
+- **What the two open residuals would take to close** (status in the audit spine
+  above). **(a)** The ingress set is the two fetch tools because parsing shell lines
+  for URLs is the inference `transcripts.py` refuses, so Bash-tunnelled `curl`/`wget`
+  has no collection step to floor. **(b)** lab/004 measured the mailbox as
+  `in-process` with no artifact on disk, so transcripts are the only record of it;
+  catching it needs the *sender's* scope as the "external corpus" the echo floor runs
+  against — unbuilt.
 - **The tier floor is documented, not computed.** The schema states effective trust
   is the *floor* over a node's DERIVED_FROM closure, and write-time laundering is
   gated and tested (a feed cannot mint tier 1). But the read path renders only the
