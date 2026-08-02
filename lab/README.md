@@ -60,3 +60,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [036](036-the-ceiling-that-lost.md) | A candidate handed the perfect memory lost every pair, and neither arm ever reached the endpoint it was measured on | null + cancelled programme |
 | [037](037-the-verdicts-that-could-not-be-replayed.md) | A stored verdict that is a function of state the record does not carry is a re-derivation wearing a record's clothes | audit: 4 fixed, 4 open |
 | [038](038-the-corpus-that-moved-under-its-own-numbers.md) | The run log was rewritten in place and neither backup predates the rescore; 88 judgements exist nowhere | fix + one unrun falsifier |
+| [039](039-the-benchmark-that-could-not-tell-defense-from-refusal.md) | MPBench declined: dataset-only artifact, 2/6 classes reach us, and its ASR null is confounded with the model's refusal | declined + taxonomy adopted |
