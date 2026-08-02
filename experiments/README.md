@@ -87,6 +87,7 @@ mailed to someone.
 | [004](004-the-ceiling/) | A perfect memory, and it made things worse | measured; falsifier fired, layer-2 work cancelled |
 | [005](005-framing/) | Reframing the memory did not save it | null; the mechanism 004 proposed is falsified |
 | [006](006-structure-not-dose/) | Structure, not dose | pre-registered; the `ceiling-node` arm is unbuilt, so nothing has run |
+| [007](007-the-two-residual-channels/) | The two residual ingress channels, each against a defense-off control | pre-registered; C-mailbox has no capturable fixture yet, so nothing has run |
 
 003 is the shape this directory is for: the design was committed before a single
 observation existed, and its runner reports the empty state honestly rather than
