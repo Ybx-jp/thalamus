@@ -11,9 +11,16 @@ the harness's limits on purpose.
 ## Surfaces
 
 - **MCP server** — the primary runtime surface: scoped retrieval/traversal for the
-  pinned expert, consultation requests, episodic writes. The subgraph-scoping rule
-  is enforced *server-side* (the session's pin determines the visible scope) — the
-  model is never trusted to self-limit its own retrieval scope.
+  pinned expert, and consultation requests. The subgraph-scoping rule is enforced
+  *server-side* (the session's pin determines the visible scope) — the model is
+  never trusted to self-limit its own retrieval scope. It is a **read surface plus
+  the consultation exchange**: a session cannot write its own episodic memory from
+  inside itself, because distillation will write that session anyway and a live
+  second pass phrases the same decisions differently — content-addressed claims
+  would not converge, and the duplicate threads would land in the surface every
+  next session reads first. Checkpointing an open session is the operator's
+  `thalamus extract --session <id> --force --write`, whose Source snapshots already
+  carry a SUPERSEDES lineage for a session distilled while still open.
 - **Hooks** — the instrumentation and enforcement layer:
   - *Session start:* record the process's pin into the tier-0 ledger, announce it
     in the primed context, and carry the **standing subagent authorization**

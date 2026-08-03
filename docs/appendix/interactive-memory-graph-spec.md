@@ -18,7 +18,7 @@ application backed by graph-memory's Python and Gremlin layers.
 
 The application provides one consistent interface for:
 
-1. validating a pending `SessionGraph` before it is memorized;
+1. validating a pending `SessionGraph` before it is written;
 2. browsing a project-oriented overview of persisted memory;
 3. searching for and incrementally expanding focused subgraphs;
 4. tracing thread lineage over time; and

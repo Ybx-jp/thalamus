@@ -70,8 +70,9 @@ g.V().has("identifier", TextP.containing("reader.py"))
 
 ## Rule 4 — ad-hoc queries are read-only
 
-The graph's write path is `memorize`/distillation/`thalamus ingest` only
-(docs/05). An ad-hoc query that mutates is a contract violation even though
+The graph's write paths are distillation (`thalamus extract`), `thalamus ingest`
+and `thalamus write` only (docs/05) — all of them outside a live session. An
+ad-hoc query that mutates is a contract violation even though
 gremlin-python will happily do it — the `memory_query` guard's denied-step list
 (`substrate/query.py`) is the norm for ad-hoc python too: no `add_v`, `add_e`,
 `merge_v`, `merge_e`, `drop`, `property`.

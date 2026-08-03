@@ -214,3 +214,38 @@ expert-to-expert — so `.has("scope", "literature")` returns nothing and looks 
 "this expert has never been consulted". `status` is `open` until `consult_answer`
 lands, so the answered filter is what separates a record from a live question. The
 shipped path is `reader.recall_exchanges` / the `memory_consultations` MCP tool.
+
+## One session's subgraph census, by exact vertex id
+**Question:** For a named session, how much did it actually write — and does it have
+a Source at all (i.e. was it distilled, or written some other way)?
+**Surface:** gremlin-python
+**Validated:** 2026-08-03 against the live graph
+
+```python
+from thalamus.substrate.writer import connect, close_connection
+from gremlin_python.process.graph_traversal import __
+
+vid = "scope:main:session:758d17ea-2b9e-45a8-b121-d4ce5568ef6b"
+g = connect()
+try:
+    rows = (g.V(vid)
+            .project("claims", "threads", "sources")
+            .by(__.out("CONTAINS").count())
+            .by(__.out("SPAWNS").count())
+            .by(__.out("DERIVED_FROM").count())
+            .to_list())
+    print(rows)
+finally:
+    close_connection(g)
+```
+
+**Notes:** Build the id — `scope:<scope>:session:<full-uuid>` — and hand it to `g.V(id)`
+for an O(1) lookup. Do **not** reach for a session by id prefix: `has(id,
+TextP.containing("bc0ca43e"))` forces a full scan that does not return on a graph this
+size. `sources=0` is the signal worth reading: distillation always writes the archived
+transcript as a Source and a `DERIVED_FROM` edge to it, so a session with claims and no
+Source got them from somewhere other than `thalamus extract`, and has no provenance
+floor. `ingested_at` cannot tell you how many write passes a session saw — it carries
+the *session's* timestamp and is overwritten on every re-upsert (decision log
+2026-07-30) — and Claims carry no `written_at`, since content addressing means their
+text never moves.

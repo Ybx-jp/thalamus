@@ -299,13 +299,24 @@ you whatever was written since the last flush.
 | `memory_open_threads` | `project`, `limit` | Active continuation points — **the entrypoint** |
 | `memory_thread` | `thread_id` | Full context on one thread |
 | `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
+| `memory_consultations` | `limit` | This expert's own answered consultations |
 | `consult_request` | `expert`, `question` | Mint a consultation ticket = open the exchange record |
 | `consult_answer` | `ticket`, `answer` | Close a consultation; citations validated, ticket burned |
-| `memory_visualize` | `session_yaml` | Mermaid render of a pending extraction |
-| `memorize` | `session_yaml` | Write an extraction to the graph |
+| `memory_visualize` | `session_yaml` | Mermaid render of a pending extraction (read-only) |
 
 Recall tools also accept a `ticket` argument: under a consultation ticket they
 search the consulted expert's memory instead of the session's own scope.
+
+**A session does not write its own memory.** The only episodic write on this surface
+is the consultation exchange, which records a crossing rather than a session's
+beliefs. Beliefs are distilled after the session ends, by `thalamus extract` reading
+the retained transcript — one pass, one phrasing, one set of thread ids. Writing the
+same session live as well would produce a second phrasing of the same decisions;
+claims are content-addressed on (kind, description), so the two would not converge,
+and duplicate threads would surface in `memory_open_threads`, which is the first
+thing the next session reads. Distilling a session before it ends is supported — it
+is `thalamus extract --session <id> --force --write`, run by the operator from
+outside the session.
 
 For Claude Code, `thalamus init` registers the server at **user** scope, so it is
 available in every directory rather than only inside this checkout. Cursor still
@@ -327,17 +338,16 @@ takes a `.cursor/mcp.json`:
 ```
 
 **`THALAMUS_SCOPE` is the session's pin, and no tool accepts a scope argument.** The
-server decides what the session can see; the model cannot widen its own view by asking,
-and `memorize` writes to the pinned scope regardless of what the extraction claims. That
-is deliberate — [docs/07](docs/07-harness-integration.md) requires scope enforcement to
-live server-side, because the model is never trusted to self-limit its own retrieval
-scope.
+server decides what the session can see; the model cannot widen its own view by asking.
+That is deliberate — [docs/07](docs/07-harness-integration.md) requires scope
+enforcement to live server-side, because the model is never trusted to self-limit its
+own retrieval scope.
 
 ## The loop
 
 ```
-Session ends → SessionEnd hook → thalamus extract → memorize → eval sync
-                                                                  ↓
+Session ends → SessionEnd hook → thalamus extract → graph → eval sync
+                                                              ↓
 New session → session-start hook → memory_open_threads → context
 ```
 

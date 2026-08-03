@@ -4,9 +4,9 @@
 # The distillation trigger from docs/07: when a session ends, its transcript is
 # retained in the archive and both bootstrap stages run over it — the deterministic
 # layer (Source, Session, Artifacts, anchored TOUCHES) and the model-extracted layer
-# (Claims, Threads). `thalamus extract` does both for a single session, so the live
-# memorize path and the retroactive bootstrap are literally the same code — a session
-# ending now is just a bootstrap of one.
+# (Claims, Threads). `thalamus extract` does both for a single session, so this path
+# and the retroactive bootstrap are literally the same code — a session ending now is
+# just a bootstrap of one.
 #
 #   stdin: {session_id, transcript_path, cwd, hook_event_name, reason}
 #

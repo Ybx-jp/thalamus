@@ -31,7 +31,7 @@ bare="${tool_name#mcp__thalamus__}"
 case "$bare" in
   memory_recall|memory_recall_by_artifact|memory_recall_by_project|\
   memory_recall_recent|memory_open_threads|memory_thread|memory_query|\
-  consult_request|consult_answer|memory_visualize|memorize) ;;
+  memory_consultations|consult_request|consult_answer|memory_visualize) ;;
   *) exit 0 ;;
 esac
 

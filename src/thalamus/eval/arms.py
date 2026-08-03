@@ -36,10 +36,15 @@ turns and cost, and a transcript the escape detectors and fault classifier can
 read. `agent_cli()` refuses a harness that lacks those, itemised, rather than
 substituting a binary and emitting records that read as measurements.
 
-Known residual, named not hidden: a memory-on arm can still write via the
-`memorize` MCP tool, and reads hit the *live* graph — snapshot pinning (the
-freshness arm's prerequisite) is not built, which is why `freshness-degraded`
-and `volume-degraded` are refused rather than approximated.
+"No arm writes memory" holds on the MCP surface too, structurally rather than by
+convention: there is no live write tool for an arm to reach — the graph is written
+after a session ends, by `thalamus extract` over the retained transcript, which the
+arm runner strips. The one write left on the surface is the consultation exchange,
+and an arm that mints one is recording a crossing it actually made.
+
+Known residual, named not hidden: an arm's reads hit the *live* graph — snapshot
+pinning (the freshness arm's prerequisite) is not built, which is why
+`freshness-degraded` and `volume-degraded` are refused rather than approximated.
 """
 
 from __future__ import annotations

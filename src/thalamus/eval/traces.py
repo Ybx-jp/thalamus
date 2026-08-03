@@ -30,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 TRACES_DIR = Path.home() / ".thalamus" / "traces"
 
-# The tap matcher is mcp__thalamus__.*, so memorize/visualize calls land in the JSONL
-# too. Only these read memory; only these are retrieval events. memory_query and
+# The tap matcher is mcp__thalamus__.*, so consultation and visualize calls land in
+# the JSONL too — as do `memorize` records retained from before that tool was retired.
+# Only these read memory; only these are retrieval events. memory_query and
 # bash_gremlin (the ad-hoc Bash tap, gremlin-tap.sh) are retrieval surfaces like
 # any recall — one priced surface, not a parallel metric.
 RETRIEVAL_TOOLS = frozenset(
@@ -179,8 +180,8 @@ def load_events(
     """Parse every monthly tap file into typed events, oldest first.
 
     Defaults to retrieval events only — the eval loop's layer 1. Pass `tools=None`
-    to get every thalamus tool call in the tap (cost accounting wants consults and
-    memorize traffic too, not just reads).
+    to get every thalamus tool call in the tap (cost accounting wants consultation
+    traffic too, not just reads).
     """
     directory = base or TRACES_DIR
     if not directory.is_dir():

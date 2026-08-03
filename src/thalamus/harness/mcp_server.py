@@ -3,14 +3,27 @@
 **Scope is server-side, not a tool parameter.** docs/07 is explicit that "the model is
 never trusted to self-limit its own retrieval scope", so the pinned expert comes from
 THALAMUS_SCOPE — set by the session-start hook when the pin is resolved — and no tool
-below accepts a scope argument. A model cannot widen its own view by asking nicely, and
-`memorize` writes to the pinned scope regardless of what the extraction YAML claims.
+below accepts a scope argument. A model cannot widen its own view by asking nicely.
 
 The one sanctioned way across a scope boundary is a **consultation ticket** (docs/02):
 `consult_request` mints it server-side — which IS opening the exchange record in the
 graph — and the recall tools accept it as the `ticket` parameter, resolving the granted
 scope from the ticket's own Exchange vertex, never from model input. An invented or
 burned ticket grants nothing.
+
+**A session does not write its own memory.** The only episodic write here is the
+consultation exchange, which records a crossing rather than a session's beliefs. A
+session's beliefs are distilled *after* it ends, by `thalamus extract` reading the
+retained transcript — one pass, one phrasing, one set of thread ids. A live tool that
+wrote the same session from inside it would produce a second phrasing of the same
+decisions: claims are content-addressed on (kind, description), so they would not
+converge, and duplicate threads would land in `memory_open_threads`, the surface a
+future session reads first. Distilling a session before it ends is a supported
+operation — it is `thalamus extract --session <id> --force --write`, whose Source
+snapshots carry a SUPERSEDES lineage for exactly this case (decision log 2026-07-15)
+— but it is an operator's call from outside the session, not the model's from inside.
+The same rule keeps eval honest: `memory-on` means the read surface is on
+([04](docs/04-eval-loop.md), decision log 2026-07-19).
 """
 
 from __future__ import annotations
@@ -23,7 +36,6 @@ from fastmcp import FastMCP
 
 from thalamus.eval.rankers import record_ranker
 from thalamus.harness import consultation
-from thalamus.harness.extraction import apply_ingress_floor
 from thalamus.harness.pin import resolve_pin
 from thalamus.eval import policy as withhold
 from thalamus.eval.policy import WithholdPolicy
@@ -39,12 +51,11 @@ from thalamus.substrate.reader import (
 )
 from thalamus.substrate.query import run_query, schema_summary as query_schema_summary
 from thalamus.substrate.schema import SessionGraph
-from thalamus.contract.conformance import check_session, validate_connectivity
+from thalamus.contract.conformance import validate_connectivity
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.plane.mermaid import session_to_mermaid
-from thalamus.substrate.snapshot import snapshot_quietly
-from thalamus.substrate.writer import close_connection, connect, write_session
+from thalamus.substrate.writer import close_connection, connect
 
 logger = logging.getLogger(__name__)
 
@@ -301,8 +312,8 @@ def memory_query(query: str) -> str:
 
 @mcp.tool
 def memory_visualize(session_yaml: str) -> str:
-    """Generate a Mermaid diagram from a session extraction for visual verification.
-    Pass the output to Excalidraw create_from_mermaid to render the graph.
+    """Render a Mermaid diagram of a session extraction, for inspection before it is
+    written by `thalamus write`. Read-only — this does not store anything.
     Orphan nodes (no edges) are automatically pruned. Connectivity issues are reported.
     """
     try:
@@ -321,65 +332,10 @@ def memory_visualize(session_yaml: str) -> str:
     if issues:
         warning = "CONNECTIVITY ISSUES (auto-pruned from diagram):\n"
         warning += "\n".join(f"  - {issue}" for issue in issues)
-        warning += "\n\nFix these in the YAML before calling memorize.\n\n"
+        warning += "\n\nFix these in the YAML before writing it with `thalamus write`.\n\n"
         return warning + mermaid
 
     return mermaid
-
-
-@mcp.tool
-def memorize(session_yaml: str) -> str:
-    """Store a session extraction into graph memory.
-    Accepts YAML conforming to the SessionGraph schema.
-    Rejects sessions with orphan nodes — every artifact must have at least one edge.
-    """
-    try:
-        data = yaml.safe_load(session_yaml)
-    except yaml.YAMLError as e:
-        return f"Invalid YAML: {e}"
-
-    try:
-        session = SessionGraph(**data)
-    except Exception as e:
-        return f"Schema validation failed: {e}"
-
-    # The pin wins over whatever the extraction claims. Scope is not the model's to choose.
-    session = session.model_copy(update={"scope": SCOPE})
-
-    # Honor external-origin marks with tier-2 provenance (docs/05). No transcript is
-    # available live, so only explicit marks apply here; the mechanical echo floor
-    # runs when SessionEnd re-extracts against the retained transcript.
-    session = apply_ingress_floor(session, [])
-
-    issues = check_session(session)
-    if issues:
-        msg = "REJECTED — the subgraph does not satisfy the federation contract:\n"
-        msg += "\n".join(f"  - {issue}" for issue in issues)
-        msg += "\n\nRemove orphan artifacts or add them to a decision/problem/solution/thread."
-        return msg
-
-    g = _connect()
-    if isinstance(g, str):
-        return g
-    try:
-        write_session(g, session)
-        # The substrate only persists on a clean shutdown; flush now so a hard
-        # kill of the container cannot silently discard what was just memorized.
-        snapshot_quietly(g)
-        count = 1 + len(session.artifacts) + len(session.claims()) + len(session.threads)
-        return (
-            f"Memorized session `{session.session_id}` into scope `{SCOPE}` "
-            f"({count} nodes written)"
-        )
-    except Exception as e:
-        logger.exception("Failed to write session %s", session.session_id)
-        return (
-            f"Write failed: {e}\n"
-            "Set THALAMUS_LOG_LEVEL=DEBUG and restart the MCP server for "
-            "Gremlin bytecode and server stack traces."
-        )
-    finally:
-        _close(g)
 
 
 def _connect():

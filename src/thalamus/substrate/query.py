@@ -119,8 +119,8 @@ def validate_query(query: str) -> str | None:
         if step in compact:
             return (
                 f"Rejected: `{step.rstrip('(')}` is a mutating or side-effect step. "
-                "This surface is read-only; writes go through `memorize` and the "
-                "distillation pipeline."
+                "This surface is read-only; the graph is written by the distillation "
+                "pipeline after a session ends, not from inside one."
             )
     for token in _PYTHON_DIALECT_TOKENS:
         if token in compact:

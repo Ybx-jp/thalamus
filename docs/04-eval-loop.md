@@ -306,7 +306,8 @@ until graph-snapshot pinning exists. The first live smoke run (2-turn,
 memory-off) validated the plumbing and caught a probe the task's own prompt
 pre-satisfied — now a mechanical battery check: a `transcript_regex` matching
 the task's prompt refuses to arm. Residual, named: a memory-on arm reads the
-*live* graph and could write via `memorize`.
+*live* graph. It cannot write one — the MCP surface carries no live write tool,
+so "no arm writes memory" holds structurally and not by convention.
 
 **The run log is pinned by name, and re-scoring appends.** `thalamus eval corpus
 --name <id>` seals `runs.jsonl` under a name that is immutable once cited: a
