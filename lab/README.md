@@ -61,3 +61,4 @@ ignored 70% of the time until X"* is worth more than a clean win.
 | [037](037-the-verdicts-that-could-not-be-replayed.md) | A stored verdict that is a function of state the record does not carry is a re-derivation wearing a record's clothes | audit: 4 fixed, 4 open |
 | [038](038-the-corpus-that-moved-under-its-own-numbers.md) | The run log was rewritten in place and neither backup predates the rescore; 88 judgements exist nowhere | fix + one unrun falsifier |
 | [039](039-the-benchmark-that-could-not-tell-defense-from-refusal.md) | MPBench declined: dataset-only artifact, 2/6 classes reach us, and its ASR null is confounded with the model's refusal | declined + taxonomy adopted |
+| [040](040-the-floor-that-skipped-the-entrypoint.md) | The ingress floor covers `Claim` subtypes and skips `Thread` — the node served first to every session; the one-line fix silently no-ops | gap + schema change |

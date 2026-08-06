@@ -198,7 +198,8 @@ happened to scan is exactly what this table replaces.
 
 | Channel | Class | Detector / status |
 |---|---|---|
-| `WebFetch`/`WebSearch` results in the transcript | V-S1, V-S2 | **closed** — `apply_ingress_floor` forces tier 2, the contract rejects `external ∧ tier<2`; canary-tested end-to-end (lab/005) |
+| `WebFetch`/`WebSearch` results in the transcript | V-S1, V-S2 | **closed for `Claim` subtypes** — `apply_ingress_floor` forces tier 2, the contract rejects `external ∧ tier<2`; canary-tested end-to-end (lab/005) |
+| …the same results distilled into a `Thread` | V-S2 | **open, unchecked** — the floor updates only `decisions`/`problems`/`solutions`, `Thread` has no `external` field to mark, and the conformance audit keys on `label == "Claim"`, so thread descriptions write tier-1. Cross-session, and served first by `memory_open_threads` (lab/040) |
 | Cursor transcripts (no tool results) | V-S1 | **closed by flooring whole** — `ingress_verifiable=False` stamps every claim `transcript-ingress-unverifiable` (lab/028) |
 | Bash-tunnelled `curl`/`wget` | V-S2 | **open, unchecked** — outside `EXTERNAL_INGRESS_TOOLS`, so collection never sees the fetched bytes and the claims distill tier-1; no test in `tests/` exercises it |
 | Agent Teams mailbox | V-S2 | **open, unchecked** — inter-teammate messages arrive with *no ingress tool at all*; the sharper of the two residuals |
@@ -208,7 +209,7 @@ happened to scan is exactly what this table replaces.
 | `~/.claude` transcript history | V-S2 | **unchecked** — retained turns of other sessions are readable from any session |
 | Harness auto-compaction inside a session | V-S3 | **unchecked** — nobody has checked whether a compaction summary in a transcript is separable from first-party turns at distillation |
 
-The two open rows are next as *measurements*, not designs: a canary each at roughly
+The three open rows are next as *measurements*, not designs: a canary each at roughly
 lab/005's cost, each carrying a **defense-off control** — the floor at
 `harness/extraction.py` disabled — because a 0% attack rate with the floor on cannot
 be told apart from a model that would have refused anyway
