@@ -615,9 +615,15 @@ def recall_open_problems(
     problem is an assertion about the past rather than a workitem with a lifecycle
     (docs/09) — "unsolved" is a fact about its edges, not a field it stores.
 
-    Ordered by recurrence first: a problem several sessions independently re-asserted
-    converged onto one node with several `CONTAINS` edges, and "this keeps coming up"
-    is the strongest signal the episodic record carries.
+    Recency orders the list; recurrence only lifts the rare problem that several
+    sessions independently re-asserted. **Recurrence is measured to fire almost never**
+    — 77 of 82 open problems have been asserted exactly once (2026-08-07) — so ranking
+    on it alone leaves the tail sorted by nothing, which is a dial with no signal on a
+    live retrieval surface (lab/031). It is kept because when it does fire it is worth
+    seeing, not because it orders the result.
+
+    Claims with no containing session are excluded: unattributable to a project or a
+    date, and every tier-1 instance in the graph today is an identity-migration ghost.
     """
     query = (
         g.V()
@@ -625,6 +631,7 @@ def recall_open_problems(
         .has("kind", "problem")
         .has("scope", scope)
         .not_(__.out_e("SOLVED_BY"))
+        .where(__.in_("CONTAINS").has_label("Session"))
     )
 
     # Claims carry no `project` of their own — it belongs to the session that holds
@@ -634,10 +641,17 @@ def recall_open_problems(
             __.in_("CONTAINS").has("project", TextP.containing(project))
         )
 
-    rows = query.limit(limit * 4).element_map().to_list()
+    # Pre-order server-side by write time so the candidate window is the recent tail
+    # rather than an arbitrary slice, then refine once each row's sessions are known.
+    rows = (
+        query.order().by("ingested_at", Order.desc).limit(limit * 4).element_map().to_list()
+    )
 
     results = [_problem_result(g, row) for row in rows]
-    results.sort(key=lambda r: (-r.times_seen, r.description))
+    # Recurrence first (rare, and notable when it fires), then most-recent-first.
+    # The date is the key that actually varies, so it is what orders the tail.
+    results.sort(key=lambda r: r.last_seen, reverse=True)
+    results.sort(key=lambda r: r.times_seen, reverse=True)
     return results[:limit]
 
 
