@@ -863,70 +863,87 @@ def _cmd_extract(args):
             print(f"Unknown project dir(s): {', '.join(unknown)}", file=sys.stderr)
             sys.exit(1)
 
-    graph = connect(args.url)
     extracted = skipped = failed = 0
     total_cost = 0.0
     unpriced = 0
 
-    try:
-        # Chronological across all requested projects: threads resolve forward in time.
-        parsed = []
-        if cursor:
-            # Scope comes from the session's own sessionEnd record, not the flag:
-            # ledger-first resolution is what keeps a pinned Cursor session out of
-            # the wrong subgraph (docs/07). A cursor session carries no timestamps
-            # or cwd of its own, so both come from the hooks' ledgers.
-            scopes: dict[str, str] = {}
-            for ended_session in ended:
-                cwd, started_at = cursor_transcripts.session_context(ended_session.session_id)
-                facts = cursor_transcripts.parse(
-                    ended_session.transcript_path,
-                    session_id=ended_session.session_id,
-                    cwd=cwd,
-                    started_at=started_at,
-                    ended_at=ended_session.ended_at,
-                )
+    # Session selection runs before the graph connection: a run that selects nothing
+    # has no reason to open one, and the refusal below stays reachable on a machine
+    # whose graph is down.
+    # Chronological across all requested projects: threads resolve forward in time.
+    parsed = []
+    if cursor:
+        # Scope comes from the session's own sessionEnd record, not the flag:
+        # ledger-first resolution is what keeps a pinned Cursor session out of
+        # the wrong subgraph (docs/07). A cursor session carries no timestamps
+        # or cwd of its own, so both come from the hooks' ledgers.
+        scopes: dict[str, str] = {}
+        for ended_session in ended:
+            cwd, started_at = cursor_transcripts.session_context(ended_session.session_id)
+            facts = cursor_transcripts.parse(
+                ended_session.transcript_path,
+                session_id=ended_session.session_id,
+                cwd=cwd,
+                started_at=started_at,
+                ended_at=ended_session.ended_at,
+            )
+            if facts.user_turns == 0:
+                continue
+            scopes[facts.session_id] = ended_session.scope
+            parsed.append(facts)
+
+        # Surfaced, not swallowed: this parser was written against Cursor's
+        # documented shape without ever seeing a real transcript, so records it
+        # cannot classify are the first evidence that the shape is wrong. A
+        # count nobody reads is the same silent failure as no count at all.
+        unread = sum(f.unrecognized for f in parsed)
+        if unread:
+            print(
+                f"  ! {unread} record(s) across {sum(1 for f in parsed if f.unrecognized)} "
+                "session(s) did not match the expected Cursor shape — the format may "
+                "have changed (see harness/cursor_transcripts.py, lab/028)",
+                file=sys.stderr,
+            )
+    else:
+        for project in args.projects:
+            for path in available[project]:
+                facts = transcripts.parse(path)
                 if facts.user_turns == 0:
                     continue
-                scopes[facts.session_id] = ended_session.scope
+                # An extraction sandbox is not a session (harness/agents.py).
+                # `discover()` already withholds the project dir; this reads the
+                # cwd the transcript itself recorded, so the refusal holds for a
+                # sandbox transcript reached any other way.
+                if agents.is_sandbox_cwd(facts.cwd):
+                    continue
                 parsed.append(facts)
+    parsed.sort(key=lambda f: (f.started_at is None, f.started_at))
 
-            # Surfaced, not swallowed: this parser was written against Cursor's
-            # documented shape without ever seeing a real transcript, so records it
-            # cannot classify are the first evidence that the shape is wrong. A
-            # count nobody reads is the same silent failure as no count at all.
-            unread = sum(f.unrecognized for f in parsed)
-            if unread:
-                print(
-                    f"  ! {unread} record(s) across {sum(1 for f in parsed if f.unrecognized)} "
-                    "session(s) did not match the expected Cursor shape — the format may "
-                    "have changed (see harness/cursor_transcripts.py, lab/028)",
-                    file=sys.stderr,
-                )
-        else:
-            for project in args.projects:
-                for path in available[project]:
-                    facts = transcripts.parse(path)
-                    if facts.user_turns == 0:
-                        continue
-                    # An extraction sandbox is not a session (harness/agents.py).
-                    # `discover()` already withholds the project dir; this reads the
-                    # cwd the transcript itself recorded, so the refusal holds for a
-                    # sandbox transcript reached any other way.
-                    if agents.is_sandbox_cwd(facts.cwd):
-                        continue
-                    parsed.append(facts)
-        parsed.sort(key=lambda f: (f.started_at is None, f.started_at))
+    if args.session:
+        parsed = [
+            f for f in parsed if any(f.session_id.startswith(s) for s in args.session)
+        ]
+        # An explicit --session that matches nothing is a failure, not a no-op.
+        # This is the SessionEnd hook's own invocation shape, and it runs
+        # detached into a log nobody reads: "0 sessions to extract" is
+        # indistinguishable there from a session that legitimately had nothing
+        # to distill, which is how a wrong project dir lost three sessions
+        # before anyone noticed. Named input, no match, non-zero.
+        if not parsed:
+            requested = ", ".join(args.session)
+            where = "the Cursor sessionEnd log" if cursor else ", ".join(args.projects)
+            print(
+                f"No session matching {requested} under {where} — nothing distilled.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    if args.limit:
+        parsed = parsed[: args.limit]
 
-        if args.session:
-            parsed = [
-                f for f in parsed if any(f.session_id.startswith(s) for s in args.session)
-            ]
-        if args.limit:
-            parsed = parsed[: args.limit]
+    print(f"{len(parsed)} sessions to extract (model: {args.model})")
 
-        print(f"{len(parsed)} sessions to extract (model: {args.model})")
-
+    graph = connect(args.url)
+    try:
         for facts in parsed:
             name = facts.session_id[:8]
             scope = scopes.get(facts.session_id, args.scope) if cursor else args.scope

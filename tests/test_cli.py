@@ -6,6 +6,7 @@ Infrastructure: mocked Uvicorn server
 Scope: pending-session viewer construction and launch configuration
 """
 
+import pytest
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -108,3 +109,68 @@ def test_visualize_without_file_connects_to_the_persisted_memory_graph(monkeypat
     # Verifies: the graph connection is closed after the viewer server exits
     assert captured["closed"] is graph
     assert "Thalamus viewer: http://127.0.0.1:43123" in capsys.readouterr().out
+
+
+def test_extract_refuses_an_explicit_session_that_matches_nothing(monkeypatch, capsys):
+    """
+    Scenario: the SessionEnd hook names a session that isn't in the given project dir
+
+    Requires:
+    - monkeypatched transcripts.discover / parse (no ~/.claude, no graph server)
+
+    Observable via:
+    - SystemExit code
+    - stderr
+
+    Verifications:
+    - a --session that selects nothing exits non-zero instead of reporting "0 sessions"
+    - the message names both the session asked for and where it was looked for
+    - no graph connection is opened to discover there is nothing to do
+
+    A silent zero here is how a wrong project dir lost three sessions: distillation
+    runs detached, so "0 sessions to extract" is indistinguishable in the log from a
+    session that legitimately had nothing to distill.
+    """
+    from pathlib import Path
+
+    from thalamus.harness import transcripts
+
+    monkeypatch.setattr(
+        transcripts, "discover", lambda *a, **k: {"-proj": [Path("/nope/aaaa1111.jsonl")]}
+    )
+    monkeypatch.setattr(
+        transcripts,
+        "parse",
+        lambda path: SimpleNamespace(
+            session_id="aaaa1111-real",
+            user_turns=3,
+            cwd="/home/someone",
+            started_at="2026-01-01",
+            path=path,
+        ),
+    )
+
+    def unexpected_connect(*a, **k):
+        raise AssertionError("must not open a graph connection when nothing is selected")
+
+    monkeypatch.setattr(cli, "connect", unexpected_connect)
+
+    args = SimpleNamespace(
+        harness="claude",
+        projects=["-proj"],
+        session=["bbbb2222"],
+        scope="main",
+        model=None,
+        limit=0,
+        force=False,
+        write=False,
+        url="ws://unused/gremlin",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli._cmd_extract(args)
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "bbbb2222" in err
+    assert "-proj" in err

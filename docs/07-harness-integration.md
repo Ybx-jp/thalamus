@@ -491,8 +491,13 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    files a transcript under the dir named for the cwd the session **started** in,
    while the payload's `cwd` is the cwd at exit, so a session that `cd`s away
    would otherwise point extraction at a different project dir and select no
-   session at all: loud (`Unknown project dir(s)`) when that dir does not exist,
-   silent when it happens to. After extraction the same detached run
+   session at all. Behind that, a second floor: an explicit `--session` that
+   matches nothing **exits non-zero** rather than reporting "0 sessions to
+   extract" and succeeding. Distillation runs detached into a log, where a
+   zero-count success is indistinguishable from a session that legitimately had
+   nothing to distill — the shape that hid three lost sessions. Selection runs
+   before the graph connection, so the refusal survives a graph that is down.
+   After extraction the same detached run
    chains `thalamus eval sync --write`: the just-distilled session's tap traces
    land as priced Trace nodes, and any backlog from other distilled sessions is
    swept in the same pass (trace identity is content-addressed, so concurrent
