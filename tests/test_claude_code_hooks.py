@@ -270,6 +270,49 @@ class TestDistillationAnchor:
         assert f"--directory {tmp_path}" not in calls
         assert "thalamus extract" in calls
 
+    def test_project_dir_comes_from_the_transcript_not_the_exit_cwd(self, tmp_path):
+        """A session that cd'd away must still distill from its own project dir.
+
+        Claude Code files a transcript under the dir named for the *startup* cwd;
+        the SessionEnd payload carries the cwd at exit. Deriving the project dir
+        from the latter points extract at the wrong dir, which selects zero
+        sessions — silently, when the drifted-to dir happens to exist.
+        """
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        argv_log = tmp_path / "uv-argv.txt"
+        stub = bin_dir / "uv"
+        stub.write_text(f'#!/bin/bash\nprintf "%s\\n" "$*" >> "{argv_log}"\n')
+        stub.chmod(0o755)
+
+        started_in = "-home-someone"
+        transcript = tmp_path / ".claude" / "projects" / started_in / "cc-sess-10.jsonl"
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text("{}\n")
+        drifted_to = tmp_path / "code" / "elsewhere"
+        drifted_to.mkdir(parents=True)
+
+        subprocess.run(
+            [str(HOOKS / "session-end.sh")],
+            input=json.dumps({"session_id": "cc-sess-10", "cwd": str(drifted_to),
+                              "transcript_path": str(transcript),
+                              "hook_event_name": "SessionEnd", "reason": "exit"}),
+            capture_output=True, text=True, timeout=30,
+            env={"HOME": str(tmp_path),
+                 "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin",
+                 "CLAUDE_PROJECT_DIR": str(tmp_path),
+                 "THALAMUS_SCOPE": "main"},
+        )
+
+        deadline = time.time() + 20
+        while time.time() < deadline and not argv_log.exists():
+            time.sleep(0.2)
+        assert argv_log.exists(), "session-end never invoked uv"
+        calls = argv_log.read_text()
+
+        assert f"-- {started_in}" in calls
+        assert str(drifted_to).replace("/", "-") not in calls
+
 
 def _run_conditioning(payload, home):
     return subprocess.run(

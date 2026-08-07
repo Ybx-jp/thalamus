@@ -27,13 +27,26 @@ input=$(cat)
 
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
+transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
 
 if [ -z "$session_id" ] || [ -z "$cwd" ]; then
   exit 0
 fi
 
-# Claude Code names its project dirs by flattening the absolute cwd: / -> -
-project_dir=$(printf '%s' "$cwd" | tr '/' '-')
+# The project dir comes from the transcript's own location, never from the cwd.
+# Claude Code files a transcript under the dir named for the cwd the session
+# *started* in, but the SessionEnd payload's `cwd` is the cwd at exit — a session
+# that cd'd elsewhere reports a different, often real, project dir, and extract
+# then finds no session matching --session and distills nothing. Silent when the
+# drifted-to dir exists, "Unknown project dir(s)" when it doesn't; both lose the
+# session. `basename(dirname())` is exactly the key transcripts.discover() returns,
+# so it cannot drift and needs no flattening rules.
+if [ -n "$transcript_path" ]; then
+  project_dir=$(basename "$(dirname "$transcript_path")")
+else
+  # Claude Code names its project dirs by flattening the absolute cwd: / -> -
+  project_dir=$(printf '%s' "$cwd" | tr '/' '-')
+fi
 
 log_dir="$HOME/.thalamus/logs"
 mkdir -p "$log_dir"

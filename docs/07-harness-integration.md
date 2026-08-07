@@ -485,7 +485,14 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    passes `--scope` to extraction, so the session's episodic memory lands in the
    pinned expert's subgraph. Ledger-first keeps re-extraction from any later,
    differently-pinned shell landing in the wrong scope and forking the Session
-   vertex identity (vids include scope). After extraction the same detached run
+   vertex identity (vids include scope). The *project dir* it hands extraction
+   comes from the payload's `transcript_path` — `basename(dirname(...))`, exactly
+   the key `transcripts.discover()` returns — never from the cwd. Claude Code
+   files a transcript under the dir named for the cwd the session **started** in,
+   while the payload's `cwd` is the cwd at exit, so a session that `cd`s away
+   would otherwise point extraction at a different project dir and select no
+   session at all: loud (`Unknown project dir(s)`) when that dir does not exist,
+   silent when it happens to. After extraction the same detached run
    chains `thalamus eval sync --write`: the just-distilled session's tap traces
    land as priced Trace nodes, and any backlog from other distilled sessions is
    swept in the same pass (trace identity is content-addressed, so concurrent
