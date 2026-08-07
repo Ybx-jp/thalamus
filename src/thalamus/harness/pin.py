@@ -223,12 +223,19 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
 
     # The session must exist (the tty unit's `tmux new -A -s thalamus` creates it,
     # as does `thalamus roster`); create it if somehow absent so spawn never fails.
+    # Create it *with* this scope's window, the way `roster` does. A bare
+    # `new-session` would leave a shell placeholder at the lowest index, and the
+    # plane reads the lowest index as the anchor — the un-closable window whose cwd
+    # is its reference for roster sync. A placeholder there outranks every real
+    # session for the life of the tmux server, and `restart` on it types `/exit`
+    # into a shell instead of a claude, so the recycle hangs out its whole grace.
     if subprocess.run(["tmux", "has-session", "-t", session],
                       capture_output=True).returncode != 0:
-        subprocess.run(["tmux", "new-session", "-d", "-s", session, "-c", str(cwd)],
-                       check=True)
-
-    _open_window(scope, argv, cwd, target=session, detached=True)
+        subprocess.run(["tmux", "new-session", "-d", "-s", session, "-n", scope,
+                        "-c", str(cwd), "-e", f"THALAMUS_SCOPE={scope}",
+                        "--", *argv], check=True)
+    else:
+        _open_window(scope, argv, cwd, target=session, detached=True)
     _pin_window_sizes(target=session)
     print(f"Spawned `{scope}` in {cwd}")
 

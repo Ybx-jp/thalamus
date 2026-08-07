@@ -203,8 +203,35 @@ and the restart survives killing the process that requested it. Name any other
 units you want reachable from your phone the same way (`--service` repeats).
 
 The tmux session is separate and outlives the console. If you want it up at boot
-too, a second unit running `tmux new -A -s thalamus` gives you one to attach to
-from a terminal.
+too, give it its own unit — and let **`thalamus roster`** be what creates it:
+
+```ini
+# ~/.config/systemd/user/thalamus-roster.service
+[Unit]
+Description=Thalamus roster
+After=network.target
+Before=thalamus-console.service        # and any unit that attaches a terminal
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/code/thalamus
+ExecStart=%h/code/thalamus/.venv/bin/thalamus roster
+KillMode=process
+```
+
+**Whichever unit creates the session defines window 0**, and the lowest-indexed
+window is the anchor — un-closable, and the reference directory for roster sync.
+A unit running bare `tmux new -A -s thalamus` (or a web terminal doing it on
+first connect) puts a *shell* there, and it then outranks every real session for
+the life of the tmux server: roster sync adds `main` beside it rather than
+reclaiming index 0, and **restart** on it types `/exit` into a shell, so the
+recycle hangs its whole 4-minute grace. Ordering the roster first is what keeps
+the anchor a real session.
+
+`KillMode=process` matters for the same reason: the tmux server is forked by
+`ExecStart` and stays in the unit's cgroup, so the default `control-group` would
+take every session down with a `systemctl --user restart` of this unit.
 
 ---
 

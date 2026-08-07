@@ -8,6 +8,7 @@ verified live (docs/07, lab/003) — a launcher can only be tested by the proces
 it launches, which is exactly the lab/001 boundary.
 """
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -79,6 +80,39 @@ def test_spawn_rejects_a_nonexistent_directory(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="not a directory"):
         spawn("homelab", tmp_path / "does-not-exist", base=REPO_CONFIG)
+
+
+def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monkeypatch):
+    """
+    Scenario: spawn is the first thing to touch tmux after a reboot, so it has to
+    create the session itself. It must create it *with* the scope's window — a bare
+    `new-session` leaves a shell at index 0, and the plane reads the lowest index as
+    the anchor: un-closable, the reference cwd for roster sync, and a `restart` on it
+    types `/exit` into a shell and hangs the recycle for its whole grace budget.
+    """
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *a, **kw):
+        calls.append(cmd)
+        # has-session: report "no such session" so spawn takes the create path.
+        rc = 1 if "has-session" in cmd else 0
+        return subprocess.CompletedProcess(cmd, rc, stdout="", stderr="")
+
+    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+
+    spawn("homelab", tmp_path, base=REPO_CONFIG)
+
+    created = [c for c in calls if "new-session" in c]
+    assert len(created) == 1, "the session should be created exactly once"
+    argv = created[0]
+    assert argv[argv.index("-n") + 1] == "homelab", "first window must be the scope's"
+    assert "claude" in argv, "the first window must run claude, not a bare shell"
+    assert f"THALAMUS_SCOPE=homelab" in argv, "the anchor must be armed for its scope"
+    # A second window beside the placeholder is exactly the bug — the create path
+    # already opened the window, so nothing should call new-window.
+    assert not [c for c in calls if "new-window" in c]
 
 
 def test_main_is_pinnable_without_a_manifest_and_unknown_scopes_are_not():
