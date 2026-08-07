@@ -1458,8 +1458,13 @@ belief-revision subsystem, and rules out an `INFLUENCES` edge as unfalsifiable.
 
 KGCompass (arXiv 2503.21710) measures that **89.7% of successfully localized bugs carry
 no explicit location hint in the issue and are found only through multi-hop graph
-traversal**, with a modest gain from added graph structure (+3pp file, +5pp function)
-(MEASURED). No paper in this scan ablates a *direct typed edge* against a shared-artifact
+traversal** (MEASURED, held as `scope:literature:claim` under that source). Note the
+denominator: that is a share *of successes*, not of all bugs, and the marginal
+contribution of the added graph structure is single-digit percentage points — the
+argument turns on the gap between the headline and the margin. The exact ablation figures
+are **not currently held as claims in the graph** and so are not quoted here; quoting
+them anywhere requires a targeted re-ingest of that paper's ablation table first.
+No paper in this scan ablates a *direct typed edge* against a shared-artifact
 join, so the comparison Thalamus needs is unmeasured externally and belongs to our own
 data (lab/041 measures it: 43% of Problems reach no Thread through the join at all).
 

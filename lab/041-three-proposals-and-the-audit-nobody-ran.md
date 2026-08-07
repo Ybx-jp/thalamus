@@ -31,6 +31,15 @@ There is no threshold that works: above 0.67 there is nothing but ghosts, below 
 merge distinct instances. A *perfect* matcher would move Problem convergence from 1.5%
 to 2.8%.
 
+**Correction (same day).** An earlier revision of this entry, and of docs/11 §8b, quoted
+KGCompass's ablation as "+3pp file, +5pp function" and tagged it MEASURED. That figure
+has no vertex in the `literature` scope — the only KGCompass claim held is the 89.7% one
+— so it was uncitable in a write-up whose whole discipline is citation. Caught by the
+literature expert while writing brief 0003 (`92d781c4d9a04b34`). The marginal
+contribution is stated qualitatively as single-digit percentage points below, which
+preserves the argument, since it turns on the *gap* between headline and margin rather
+than the exact value. Quoting the figure anywhere needs a targeted re-ingest first.
+
 The literature closes the same door from the other side. Cosine separates contradictions
 from duplicates at **AUROC 0.59** — near chance — and contradictions are *more*
 embedding-similar (0.812) than genuine duplicates (0.800), capping precision at 0.667.
@@ -64,6 +73,13 @@ Two further findings kill the case for building now:
   moves retrieval**: query shape cuts fan-out 28%, detail cap 8%, match floor −1%. No
   schema addition has ever been measured to move retrieval here, and the one thing that
   did was not in the schema.
+
+The strongest external case *for* building it is KGCompass (arXiv 2503.21710): **89.7%
+of successfully localized bugs carry no explicit location hint and are found only through
+multi-hop traversal**. Two things blunt it. The denominator is a share *of successes*,
+not of all bugs; and the marginal contribution of the graph structure itself is
+single-digit percentage points. It is also SWE-bench fault localization, so the transfer
+to problem↔thread linkage is our inference, not the paper's result.
 
 ### The census argument was wrong, both times
 
