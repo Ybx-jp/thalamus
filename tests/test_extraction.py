@@ -456,3 +456,80 @@ def test_a_missing_cli_names_the_binary_it_wanted(monkeypatch):
 def test_an_unknown_harness_is_refused():
     with pytest.raises(extraction.ExtractionError, match="no agent CLI"):
         extraction.run_extraction("p", harness="emacs")
+
+
+def test_partition_valid_drops_the_bad_item_and_keeps_the_paid_remainder():
+    """One malformed item costs that item, not the whole session.
+
+    The real failure this encodes: `solutions.2.approach Field required` discarded a
+    complete extraction and kept a session out of the graph for ten days, even though
+    the expensive digest pass had succeeded.
+    """
+    data = {
+        "summary": "s",
+        "solutions": [
+            {"description": "kept", "approach": "how"},
+            {"description": "no approach given"},
+        ],
+    }
+    kept, dropped = extraction.partition_valid(data)
+
+    assert [s["description"] for s in kept["solutions"]] == ["kept"]
+    assert len(dropped) == 1
+    assert "solutions[1]" in dropped[0]
+    assert "approach" in dropped[0]
+
+
+def test_partition_valid_invents_nothing_to_satisfy_a_required_field():
+    """A validator is ground truth about conformance, never about content.
+
+    Filling a missing `approach` would turn a loud failure into a fabricated memory,
+    which is strictly worse for a store whose value is that claims are traceable.
+    """
+    data = {"solutions": [{"description": "no approach given"}]}
+    kept, _ = extraction.partition_valid(data)
+
+    assert kept["solutions"] == []
+    assert not any("approach" in s for s in kept["solutions"])
+
+
+def test_dropping_a_problem_remaps_surviving_problem_refs():
+    """`problem_ref` is positional, so a drop renumbers every later problem.
+
+    Without the remap a surviving solution attaches its SOLVED_BY edge to the wrong
+    problem — and a wrong link reads exactly like a right one.
+    """
+    data = {
+        "problems": [
+            {"description": "P0", "category": "bug"},
+            {"description": "P1 invalid", "category": "nonsense"},
+            {"description": "P2", "category": "design"},
+        ],
+        "solutions": [
+            {"description": "fixes P2", "approach": "a", "problem_ref": 2},
+            {"description": "fixes P0", "approach": "b", "problem_ref": 0},
+            {"description": "fixed the dropped one", "approach": "c", "problem_ref": 1},
+        ],
+    }
+    kept, dropped = extraction.partition_valid(data)
+
+    assert [p["description"] for p in kept["problems"]] == ["P0", "P2"]
+    by_description = {s["description"]: s["problem_ref"] for s in kept["solutions"]}
+    # P2 moved from index 2 to index 1 and its solution followed it
+    assert by_description["fixes P2"] == 1
+    assert by_description["fixes P0"] == 0
+    # Pointed at a dropped problem: unlinked, not mislinked
+    assert by_description["fixed the dropped one"] is None
+    assert len(dropped) == 1
+
+
+def test_partition_valid_is_a_no_op_when_everything_validates():
+    data = {
+        "problems": [{"description": "P0", "category": "bug"}],
+        "solutions": [{"description": "S0", "approach": "a", "problem_ref": 0}],
+    }
+    kept, dropped = extraction.partition_valid(data)
+
+    assert dropped == []
+    assert kept["solutions"][0]["problem_ref"] == 0
+    assert len(kept["problems"]) == 1

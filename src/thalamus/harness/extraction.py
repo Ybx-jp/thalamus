@@ -47,7 +47,18 @@ from thalamus.harness.agents import (  # re-exported: extraction is their main c
 )
 from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS
 from thalamus.substrate.reader import _extract_keywords
-from thalamus.substrate.schema import Claim, Provenance, SessionGraph, Tier
+from thalamus.substrate.schema import (
+    Artifact,
+    Claim,
+    Decision,
+    Problem,
+    Provenance,
+    SessionGraph,
+    Solution,
+    Thread,
+    ThreadRef,
+    Tier,
+)
 
 _TOKEN_RE = re.compile(r"[a-z0-9_./-]+")
 
@@ -563,6 +574,96 @@ def _echoes(claim: Claim, corpus_tokens: set[str]) -> bool:
     matched = [term for term in terms if term in corpus_tokens]
     needed = min(len(terms), MIN_MATCHED_TERMS)
     return len(matched) >= needed and len(matched) / len(terms) >= MIN_MATCHED_RATIO
+
+
+_CLAIM_LISTS: tuple[tuple[str, type], ...] = (
+    ("decisions", Decision),
+    ("problems", Problem),
+    ("solutions", Solution),
+    ("threads", Thread),
+    ("thread_refs", ThreadRef),
+    ("artifacts", Artifact),
+)
+
+
+def _validation_reason(exc: Exception) -> str:
+    """`field — message`, from a pydantic ValidationError or anything else.
+
+    The operator reads this in a detached log to decide whether a dropped claim was
+    worth recovering, so it has to name the field *and* what was wrong with it.
+    """
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            parts = [
+                f"{'.'.join(str(p) for p in err.get('loc', ())) or '?'} — {err.get('msg', '')}"
+                for err in errors()
+            ]
+            if parts:
+                return "; ".join(parts)[:160]
+        except Exception:
+            pass
+    return str(exc).replace("\n", " ")[:160]
+
+
+def partition_valid(data: dict) -> tuple[dict, list[str]]:
+    """Split a parsed extraction into the items that validate and the ones that don't.
+
+    One malformed list item used to discard the whole run: a `SessionGraph(**data)`
+    raising on `solutions.2.approach` threw away the other forty claims the model got
+    right, and the session stayed out of the graph until someone re-ran it by hand and
+    paid again. The digest pass had *succeeded*; only a downstream check failed.
+
+    So items are validated individually and the bad ones are dropped by name. This is
+    deliberately not a repair: nothing is invented to satisfy a required field. A
+    validator is ground truth about conformance, never about content — a missing
+    `approach` means the model recorded no approach, and inventing one would convert a
+    loud failure into a fabricated memory, which is strictly worse for a store whose
+    whole value is that its claims are traceable (docs/05).
+
+    Returns the surviving data and a human-readable list of what was dropped and why.
+    Losing one claim is a cost; losing the session is an outage.
+    """
+    kept = dict(data)
+    dropped: list[str] = []
+    # old index -> new index, per list. `problem_ref` is positional, so dropping a
+    # problem renumbers every later one: without this remap a surviving solution
+    # would silently attach its SOLVED_BY edge to the wrong problem, which is worse
+    # than the failure being fixed here — a wrong link reads exactly like a right one.
+    remap: dict[str, dict[int, int]] = {}
+    for field_name, model in _CLAIM_LISTS:
+        items = data.get(field_name)
+        if not isinstance(items, list):
+            continue
+        survivors = []
+        index_map: dict[int, int] = {}
+        for index, item in enumerate(items):
+            try:
+                model(**(item if isinstance(item, dict) else dict(item)))
+            except Exception as exc:
+                dropped.append(f"{field_name}[{index}]: {_validation_reason(exc)}")
+                continue
+            index_map[index] = len(survivors)
+            survivors.append(item)
+        kept[field_name] = survivors
+        remap[field_name] = index_map
+
+    problem_map = remap.get("problems")
+    if problem_map is not None and len(problem_map) != len(data.get("problems") or []):
+        rebuilt = []
+        for solution in kept.get("solutions") or []:
+            if not isinstance(solution, dict):
+                rebuilt.append(solution)
+                continue
+            ref = solution.get("problem_ref")
+            if isinstance(ref, int):
+                solution = dict(solution)
+                # Pointed at a dropped problem: unlink rather than guess. An
+                # unlinked solution is still true; a mislinked one is not.
+                solution["problem_ref"] = problem_map.get(ref)
+            rebuilt.append(solution)
+        kept["solutions"] = rebuilt
+    return kept, dropped
 
 
 def merge_extraction(base: SessionGraph, data: dict) -> SessionGraph:

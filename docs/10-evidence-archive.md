@@ -30,6 +30,20 @@ immutable log**: if the view is wrong — a bad skill, a better model, a changed
 schema — rebuild it from evidence. This makes the graph **disposable**, which is a
 superpower: a schema change means *re-extract everything*, not *migrate*.
 
+Reversibility binds the model pass too, on the same argument. The extraction
+response is written to `~/.thalamus/extractions/<scope>-<session>.txt` **before**
+anything validates it, so every downstream refusal is recoverable by re-parsing
+rather than by re-invoking a model — the run is paid for once regardless of what
+rejects it. And a response is accepted *partially*: items are validated one at a
+time and only the malformed ones are dropped, by name, with the reason logged. One
+missing required field used to discard an entire successful extraction. Nothing is
+ever invented to satisfy a required field — a validator is ground truth about
+conformance, never about content, and filling a blank would convert a loud failure
+into a fabricated memory ([05](05-trust-model.md)). Dropping a `problems` entry
+renumbers the list that `problem_ref` indexes, so surviving references are remapped
+and a reference to a dropped problem is unlinked rather than repointed: an unlinked
+solution is still true, a mislinked one is not.
+
 **3. The eval loop cannot exist without it ([04](04-eval-loop.md) layer 1).**
 Used-vs-ignored is defined as *"lexical/structural matching between retrieved
 content and **the session's outputs**"*. The session's outputs **are the

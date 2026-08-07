@@ -829,6 +829,20 @@ def _cmd_bootstrap(args):
         print("\nDRY RUN — nothing written to the graph. Re-run with --write to persist.")
 
 
+def _retain_raw_extraction(session_id: str, scope: str, text: str) -> Path:
+    """Write a model's extraction response to disk before anything validates it.
+
+    The response is the expensive artifact — the digest pass is where the money went.
+    Retaining it first makes every downstream refusal recoverable by re-parsing rather
+    than re-paying, which is the difference between a bug and an outage.
+    """
+    out_dir = Path.home() / ".thalamus" / "extractions"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{scope}-{session_id}.txt"
+    path.write_text(text)
+    return path
+
+
 def _cmd_extract(args):
     """Stage 2 of the bootstrap: model-extracted Claims and Threads.
 
@@ -977,7 +991,18 @@ def _cmd_extract(args):
                 run = extraction.run_extraction(
                     prompt, model=args.model, harness=args.harness
                 )
+                # The paid output lands on disk before anything can reject it. Every
+                # failure below is then re-parseable without re-invoking a model —
+                # the run is spent once, whatever happens to it afterwards.
+                raw_path = _retain_raw_extraction(facts.session_id, scope, run.text)
                 data = extraction.parse_extraction(run.text)
+                # Partial acceptance: one malformed item costs that item, not the
+                # session. Nothing is invented to satisfy a required field.
+                data, dropped = extraction.partition_valid(data)
+                for note in dropped:
+                    print(f"  ! {name}  dropped {note}")
+                if dropped:
+                    print(f"      raw response retained at {raw_path}")
                 session = extraction.merge_extraction(base, data)
                 # The laundering floor (docs/05): claims resting on the transcript's
                 # external ingress keep third-party trust, marked or not. A format
