@@ -30,7 +30,8 @@ bare="${tool_name#mcp__thalamus__}"
 # machine's MCP surface is not ours to trace.
 case "$bare" in
   memory_recall|memory_recall_by_artifact|memory_recall_by_project|\
-  memory_recall_recent|memory_open_threads|memory_thread|memory_query|\
+  memory_recall_recent|memory_open_threads|memory_open_problems|\
+  memory_thread|memory_query|\
   memory_consultations|consult_request|consult_answer|memory_visualize) ;;
   *) exit 0 ;;
 esac

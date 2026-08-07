@@ -226,6 +226,36 @@ class ThreadResult:
 
 
 @dataclass
+class ProblemResult:
+    """An unsolved problem — a Problem claim with no outgoing SOLVED_BY."""
+
+    description: str
+    category: str
+    node_id: str = ""
+    scope: str = MAIN_SCOPE
+    project: str = ""
+    times_seen: int = 1
+    last_session: str = ""
+    last_seen: str = ""
+
+    def format(self) -> str:
+        lines = [
+            f"## ⚠ [unsolved · {self.category}] {self.description}",
+            f"**Node:** `{self.node_id}`",
+        ]
+        if self.times_seen > 1:
+            lines.append(
+                f"**Recurred:** asserted in {self.times_seen} sessions — "
+                "the same assertion converged on one node"
+            )
+        if self.project:
+            lines.append(f"**Project:** {self.project}")
+        if self.last_session:
+            lines.append(f"**Last seen:** {self.last_session} ({self.last_seen})")
+        return "\n".join(lines)
+
+
+@dataclass
 class ExchangeResult:
     """A consultation this expert answered — its own side of the record.
 
@@ -568,6 +598,70 @@ def recall_open_threads(
     )
 
     return [_thread_result(g, thread, scope) for thread in threads]
+
+
+def recall_open_problems(
+    g: GraphTraversalSource,
+    project: str | None = None,
+    limit: int = 10,
+    scope: str = MAIN_SCOPE,
+) -> list[ProblemResult]:
+    """Problems with no recorded solution — the open half of the episodic record.
+
+    `memory_open_threads` has always answered "what was I going to do next"; this
+    answers "what went wrong that nobody fixed", which is a different question and
+    was previously reachable only by hand-written Gremlin. A Problem is open when it
+    has no outgoing `SOLVED_BY`: unlike a Thread it carries no status, because a
+    problem is an assertion about the past rather than a workitem with a lifecycle
+    (docs/09) — "unsolved" is a fact about its edges, not a field it stores.
+
+    Ordered by recurrence first: a problem several sessions independently re-asserted
+    converged onto one node with several `CONTAINS` edges, and "this keeps coming up"
+    is the strongest signal the episodic record carries.
+    """
+    query = (
+        g.V()
+        .has_label("Claim")
+        .has("kind", "problem")
+        .has("scope", scope)
+        .not_(__.out_e("SOLVED_BY"))
+    )
+
+    # Claims carry no `project` of their own — it belongs to the session that holds
+    # them, so the filter reaches through CONTAINS rather than reading a property.
+    if project:
+        query = query.where(
+            __.in_("CONTAINS").has("project", TextP.containing(project))
+        )
+
+    rows = query.limit(limit * 4).element_map().to_list()
+
+    results = [_problem_result(g, row) for row in rows]
+    results.sort(key=lambda r: (-r.times_seen, r.description))
+    return results[:limit]
+
+
+def _problem_result(g: GraphTraversalSource, row: dict) -> ProblemResult:
+    node_id = str(row.get(T.id, ""))
+    sessions = (
+        g.V(node_id)
+        .in_("CONTAINS")
+        .has_label("Session")
+        .order()
+        .by("timestamp", Order.desc)
+        .value_map("session_id", "timestamp", "project")
+        .to_list()
+    )
+    return ProblemResult(
+        description=str(row.get("description", "")),
+        category=str(row.get("category", "")),
+        node_id=node_id,
+        scope=str(row.get("scope", MAIN_SCOPE)),
+        project=_first(sessions[0].get("project")) if sessions else "",
+        times_seen=len(sessions),
+        last_session=_first(sessions[0].get("session_id")) if sessions else "",
+        last_seen=_first(sessions[0].get("timestamp"))[:10] if sessions else "",
+    )
 
 
 def load_exchange(g: GraphTraversalSource, exchange_vid: str) -> dict | None:

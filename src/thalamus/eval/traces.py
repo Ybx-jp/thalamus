@@ -42,6 +42,7 @@ RETRIEVAL_TOOLS = frozenset(
         "memory_recall_by_project",
         "memory_recall_recent",
         "memory_open_threads",
+        "memory_open_problems",
         "memory_thread",
         "memory_query",
         "bash_gremlin",

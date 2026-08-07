@@ -11,7 +11,7 @@ schema as it stands and the design decisions that shape it; the decision log in
 | **Core node types** | `Session`, `Artifact`, `Claim`, `Thread`, `Source`, `Entity` (+ `Trace`, `Exchange`, `KnowledgeBatch` for the eval and consultation records) |
 | **Core edge types** | `CONTAINS`, `TOUCHES`, `SPAWNS`, `BLOCKS`, `CONTINUES`, `RESOLVES`, `SOLVED_BY`, `DERIVED_FROM`, `REFERENCES`, `CONSULTS`, `QUERIES`, `RETURNS`, `ABOUT`, `SUPERSEDES` |
 | **Vertex IDs** | `scope:<scope>:<type>:<local_id>` — scope is a segment of identity |
-| **Entrypoints** | `memory_open_threads`, `memory_recall_recent`, `memory_recall_by_project` |
+| **Entrypoints** | `memory_open_threads`, `memory_open_problems`, `memory_recall_recent`, `memory_recall_by_project` |
 | **Write gate** | contract conformance (`contract/conformance.py`): orphan check, provenance envelope, scope legality, tier rules — rejected at write time, never filtered at read time |
 | **Single source** | `contract/ontology.py` — writer, reader, plane, and frontend all derive from it |
 
@@ -34,6 +34,13 @@ Claim
       solution → approach, worked
       external → citation, locator
 ```
+
+A Claim carries no lifecycle. A `problem` is **open** when nothing `SOLVED_BY`s it —
+a fact about its edges, never a status property — which is the line between a Claim
+and a Thread: a problem asserts something that happened, a thread tracks work that
+should. `memory_open_problems` reads that edge absence and ranks by recurrence, since
+identical assertions converge onto one node and repeat as extra `CONTAINS` edges
+rather than as duplicate rows.
 
 This matters for federation: consumers may depend on **core types only**, so the
 plane and the eval loop query `hasLabel("Claim")` and keep working when an expert

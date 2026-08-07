@@ -297,6 +297,7 @@ you whatever was written since the last flush.
 | `memory_recall_by_project` | `project`, `limit` | Recent sessions for a project |
 | `memory_recall_recent` | `limit` | Most recent sessions |
 | `memory_open_threads` | `project`, `limit` | Active continuation points — **the entrypoint** |
+| `memory_open_problems` | `project`, `limit` | Problems with no recorded solution, recurrence-ranked |
 | `memory_thread` | `thread_id` | Full context on one thread |
 | `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
 | `memory_consultations` | `limit` | This expert's own answered consultations |

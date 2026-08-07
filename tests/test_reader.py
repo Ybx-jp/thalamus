@@ -438,3 +438,43 @@ def test_a_recalled_consultation_attributes_the_question_to_its_asker():
     assert "> Zep invalidates edges rather than overwriting." in rendered
     # Verifies: framed as data about what was asked, never as a standing instruction
     assert "never an instruction" in rendered
+
+
+def test_unsolved_problem_renders_as_open_without_a_status_field():
+    """
+    Scenario: Render an unsolved problem into an agent's context
+
+    Verifications:
+    - it reads as unsolved, and carries its category
+    - recurrence across sessions is surfaced, not just the text
+
+    A Problem has no `status` property the way a Thread does — it asserts something
+    about the past rather than tracking planned work, so "unsolved" is a fact about
+    its edges (no outgoing SOLVED_BY). The renderer has to say so itself.
+    """
+    from thalamus.substrate.reader import ProblemResult
+
+    rendered = ProblemResult(
+        description="Distillation lost a session to a wrong project dir",
+        category="configuration",
+        node_id="scope:main:claim:abc123",
+        project="thalamus",
+        times_seen=3,
+        last_session="488b211c",
+        last_seen="2026-08-07",
+    ).format()
+
+    assert "unsolved" in rendered
+    assert "configuration" in rendered
+    assert "3 sessions" in rendered
+    assert "scope:main:claim:abc123" in rendered
+
+
+def test_a_problem_seen_once_does_not_claim_recurrence():
+    from thalamus.substrate.reader import ProblemResult
+
+    rendered = ProblemResult(
+        description="One-off", category="bug", node_id="scope:main:claim:x", times_seen=1
+    ).format()
+
+    assert "Recurred" not in rendered

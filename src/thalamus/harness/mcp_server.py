@@ -45,6 +45,7 @@ from thalamus.substrate.reader import (
     recall_by_artifact,
     recall_by_project,
     recall_exchanges,
+    recall_open_problems,
     recall_open_threads,
     recall_recent,
     recall_thread,
@@ -195,6 +196,29 @@ def memory_open_threads(project: str = "", limit: int = 10, ticket: str = "") ->
         results = recall_open_threads(g, project or None, limit, grant[0])
         if not results:
             return "No open threads found."
+        return "\n\n---\n\n".join(r.format() for r in results)
+    finally:
+        _close(g)
+
+
+@mcp.tool
+def memory_open_problems(project: str = "", limit: int = 10, ticket: str = "") -> str:
+    """Return problems that were recorded but never solved.
+    A problem is open when no solution was ever linked to it — distinct from an open
+    thread, which is planned work. Use when picking up loose ends, or before
+    re-debugging something a past session already hit. Results are ordered by how many
+    sessions independently ran into the same problem.
+    """
+    g = _connect()
+    if isinstance(g, str):
+        return g
+    try:
+        grant = _granted_scope(g, ticket)
+        if isinstance(grant, str):
+            return grant
+        results = recall_open_problems(g, project or None, limit, grant[0])
+        if not results:
+            return "No unsolved problems found."
         return "\n\n---\n\n".join(r.format() for r in results)
     finally:
         _close(g)

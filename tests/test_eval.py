@@ -1079,3 +1079,40 @@ def test_records_round_trip_and_key_on_the_rendered_response(tmp_path):
     assert restored.withheld == record.withheld
     assert restored.offered == offered
     assert policy.load(tmp_path / "nonexistent") == {}
+
+
+def test_every_retrieval_mcp_tool_is_traced_and_tapped():
+    """A retrieval surface the eval loop cannot see is a surface that measures nothing.
+
+    Three rosters name the memory tools independently — the MCP server itself, the
+    eval loop's RETRIEVAL_TOOLS (what lands as a Trace), and the Cursor tap's case
+    statement (what reaches the tap at all). They have desynced before: adding a tool
+    to the server and forgetting the tap silently drops that tool's traces on Cursor.
+    This test fails the moment a new memory_* tool is added to only one of them.
+    """
+    import re
+    from pathlib import Path
+
+    from thalamus.eval.traces import RETRIEVAL_TOOLS
+
+    root = Path(__file__).resolve().parents[1] / "src" / "thalamus"
+    server = (root / "harness" / "mcp_server.py").read_text()
+    tap = (root / "harness" / "hooks" / "cursor" / "mcp-tap.sh").read_text()
+
+    # Tools the server exposes that are retrieval-shaped: they read memory back.
+    exposed = set(re.findall(r"@mcp\.tool\s*\ndef (memory_\w+)", server))
+    retrieval_shaped = {
+        name for name in exposed if name.startswith(("memory_recall", "memory_open"))
+    } | {"memory_thread", "memory_query"}
+
+    missing_from_traces = retrieval_shaped - set(RETRIEVAL_TOOLS)
+    assert not missing_from_traces, (
+        f"retrieval tools absent from RETRIEVAL_TOOLS (their calls never become "
+        f"Trace nodes): {sorted(missing_from_traces)}"
+    )
+
+    missing_from_tap = {name for name in exposed if name not in tap}
+    assert not missing_from_tap, (
+        f"MCP tools absent from the Cursor tap roster (untraced on Cursor): "
+        f"{sorted(missing_from_tap)}"
+    )

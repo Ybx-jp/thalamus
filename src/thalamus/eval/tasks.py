@@ -53,6 +53,7 @@ ARM_REVEALING_TOKENS = (
     "mcp__thalamus__",
     "memory_recall",
     "memory_open_threads",
+    "memory_open_problems",
     "THALAMUS_SCOPE",
     "ToolSearch",
 )
