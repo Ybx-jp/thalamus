@@ -590,14 +590,29 @@ non-member sees only non-members. Structure governs *discovery* — a non-member
 never listed — and the guard governs *intent*, catching a member that means to
 reach out however it learned the name.
 
-**The room config dir is a symlink farm around one private directory.** Only
-`sessions/` (and `statsig/`) belong to the room; `.credentials.json` is
-symlinked, since a fresh config dir cannot authenticate at all without it, and
-`projects/`, `todos/`, `skills`, `agents`, `plugins`, `commands` are symlinked
-back to the real config. `projects/` matters most: transcripts are written there,
-so a room dir that owns its own would put every member's transcript on tmpfs
-where `thalamus extract` never looks — joining a room would silently cost the
-session its distillation. `.claude.json` is copied, because members write to it.
+The boundary holds on delivery as well as discovery, and it is **name
+resolution, not transport**: a non-member handed a member's exact `name [ref]`
+by a scout inside the room is told `No agent named '…' is reachable`, while
+every session's socket sits in the one shared directory the whole time. So a
+room bounds an agent using the sanctioned tool — the docs/05 threat model — and
+is not confinement against a hostile local process of the same uid.
+
+**A room has three channels, and the third is the transcript.** Discovery
+(roster), delivery (name resolution), and **resumption** —
+`claude --resume <id> --fork-session`, the quick protocol's warm-context
+transport, which consults neither roster and reads `$CLAUDE_CONFIG_DIR/projects/`
+instead. A room dir that symlinks `projects/` back to the real config therefore
+hands its members' context to any non-member who forks their session, measured
+in both directions ([lab/046](../lab/046-the-third-channel-is-the-transcript.md)).
+
+**So the room config dir lives on persistent disk and owns `sessions/`,
+`projects/`, `todos/` and `statsig/`.** It symlinks `skills`, `agents`,
+`plugins`, `commands` and `.credentials.json` — a fresh config dir cannot
+authenticate at all without the last — and copies `.claude.json`, because members
+write to it. Persistent disk rather than `/run/user/<uid>` is what keeps the
+room's own transcripts from dying on tmpfs, and **`thalamus extract` must be
+pointed at those `projects/` dirs** or room members distil nowhere;
+`harness/transcripts.discover()` already takes a `projects_dir`.
 
 One limit remains deliberate: the guard governs **outbound only**. An outsider
 can still message a member, since nothing at that sender's end is ours to gate

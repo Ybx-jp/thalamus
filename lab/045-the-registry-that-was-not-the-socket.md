@@ -127,6 +127,38 @@ symlinked back. Arm 3 kept only `sessions/` and `statsig/` private and symlinked
 - room transcripts were written into the real `~/.claude/projects/`;
 - nothing was left behind on tmpfs.
 
+## Arm 4: the send path refuses an out-of-band name, and a leaked ref
+
+Discovery being partitioned does not settle *delivery*. If `SendMessage`
+resolved a target by any route but the caller's own roster, a non-member who
+learned a name out-of-band would reach in anyway and the boundary would be
+cosmetic. The adversarial version: a scout **inside** the room called
+`ListAgents` and wrote out the member's exact addressable string, which was
+handed to the outsider verbatim.
+
+| cell | sender → target | result |
+|---|---|---|
+| in-room | `alpha-two` → `alpha-one [ref]` | **delivered** — receiver reports `PROBE-INROOM` |
+| control | `outsider-send` → `outsider-recv [ref]` | **delivered** — receiver reports `PROBE-CONTROL` |
+| out-of-band | `outsider-send` → `alpha-one [da1b10]`, leaked | `No agent named 'alpha-one [da1b10]' is reachable.` |
+
+Both positive controls delivered end-to-end and both receivers reported the
+inbound `<cross-session-message>` wrapper, so the receiver-side instrument is
+valid and the negative is readable.
+
+A first run of this arm delivered nothing in any cell: `SendMessage` requires the
+disambiguated `name [ref]` form on first contact, and the senders had been told
+not to retry. That run is not evidence of isolation — it is an instrument
+failure, and it is only the re-run with refs that decides anything.
+
+**The boundary is name resolution, not transport.** Every session in this arm
+bound its socket in the *same shared* `/run/user/1000/cc-socks` — the delivered
+messages carry `from="uds:/run/user/1000/cc-socks/713944.sock"` — so `alpha-one`'s
+socket was reachable to the outsider the whole time and the resolver simply
+refused to name it. A room is therefore a boundary against an agent using the
+sanctioned tool, which is the docs/05 threat model, and **not** a confinement
+boundary against a hostile local process of the same uid.
+
 ## Consequences
 
 - **docs/07's structural-boundary paragraph and `room-guard.sh`'s header comment
@@ -137,7 +169,12 @@ symlinked back. Arm 3 kept only `sessions/` and `statsig/` private and symlinked
   symlinked, and `projects/`/`todos/` symlinked back to the real config.
 - **The guard returns to defence-in-depth**, over a boundary that now exists.
   Its outbound-only limit is survivable again for the same reason as before: a
-  non-member is not in the roster to be addressed.
+  non-member is not in the roster to be addressed, and arm 4 shows it cannot
+  address one out-of-band either.
+- **`projects/` must not be symlinked after all** — [lab/046](046-the-third-channel-is-the-transcript.md)
+  found that arm 3's fix opens a transcript channel straight through this
+  boundary, and replaces it with a room dir that owns its `projects/` on
+  persistent disk.
 - `--messaging-socket-path` (hidden flag, from the lab/044 consultation) sets the
   bind address directly and is irrelevant to isolation — the descriptor publishes
   whatever it sets.
@@ -151,9 +188,6 @@ symlinked back. Arm 3 kept only `sessions/` and `statsig/` private and symlinked
   `statsig/` were checked; `history.jsonl`, `file-history/`, `teams/`, `tasks/`
   and `ide/` were not, and `settings.json` is currently a **copy**, so a settings
   edit would not reach a live room.
-- Whether an outsider that learns a member's name can still reach it. Discovery
-  is partitioned; the send path was not probed against a name obtained
-  out-of-band.
 - Everything here used `claude -p`. Interactive sessions publish the same
   descriptor shape (this session's is quoted above), but their visibility was not
   probed from inside a room.
