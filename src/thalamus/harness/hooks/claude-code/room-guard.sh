@@ -6,17 +6,18 @@
 # outside only through a ticketed consultation. That boundary is what makes the
 # cheap tier defensible, so it needs enforcement rather than convention.
 #
-# This is defence-in-depth, not the boundary itself. The boundary is structural:
-# peer discovery reads the socket registry at `$XDG_RUNTIME_DIR/cc-socks`, that
-# variable is honoured, and a per-room value under a short path gives members a
-# registry only they can see (lab/044). Structure governs discovery — a non-member
-# is never listed — and this guard governs intent, catching a member that means to
-# reach out however it learned the name.
+# This guard is the entire boundary — there is no structural layer beneath it.
+# Peer discovery scans no socket directory; it enumerates
+# `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` and reads each `messagingSocketPath`
+# from the descriptor, so a per-room `XDG_RUNTIME_DIR` relocates the socket
+# without hiding the session. Measured: five concurrent sessions across three
+# isolated socket registries all listed each other (lab/045).
 #
 # It governs **outbound only**. An outsider can still message a room member,
 # because nothing at that sender's end is ours to gate, and `crossSessionInbound`
-# cannot discriminate by sender. That asymmetry is survivable exactly because the
-# structural boundary is doing the real work.
+# cannot discriminate by sender — and an outsider can enumerate every member by
+# name. Treat this as intent-logging over a public roster, not confinement: the
+# cheap unprovenanced intra-room protocol is not defensible on this footing.
 #
 # Membership is carried by name. Room members launch as `<room>-<scope>`
 # (`--name`), which is the address SendMessage routes on, so a target is a

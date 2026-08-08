@@ -79,9 +79,12 @@ shape that overflows, so this is a live trap, not a theoretical one.
   here by `kernel.apparmor_restrict_unprivileged_userns = 1` — a settable sysctl, not a
   kernel wall. It is moot for rooms now, but it was recorded as a harder limit than it is.
 
-## Not yet measured
+## Measured since, and it refutes the discovery half
 
-A two-live-session cross-visibility A/B: in-room reachable, out-of-room invisible, in
-**both** directions. The boundary is confirmed structurally (where sockets bind) and not
-end-to-end (what `ListAgents` actually shows a member and a non-member). Run it before
-the cheap tier ships. Both labs used `claude -p`; interactive is untested.
+[lab/045](045-the-registry-that-was-not-the-socket.md) ran the cross-visibility A/B.
+The binding result above stands — sockets partition exactly as described — but
+**discovery does not read a socket directory at all**, so a per-room
+`XDG_RUNTIME_DIR` isolates nothing: peers are enumerated from
+`$CLAUDE_CONFIG_DIR/sessions/*.json`, each descriptor publishing its own
+`messagingSocketPath`. Every "rooms need no containers" consequence below is
+therefore about the *transport*, not about isolation.
