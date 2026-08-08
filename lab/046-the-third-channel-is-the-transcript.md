@@ -57,9 +57,10 @@ reads from disk.**
 ## The shape that closes it
 
 Room config dir on **persistent disk**, owning `sessions/`, `projects/`, `todos/`
-and `statsig/`; symlinking `skills`, `agents`, `plugins`, `commands` and
-`.credentials.json`; copying `.claude.json`. Measured at
-`~/.thalamus/rooms-lab045/alpha-cfg7` (ext4, not tmpfs):
+and `statsig/`; symlinking `skills`, `agents`, `plugins`, `commands`,
+`settings.json`, `settings.local.json` and `.credentials.json`; copying
+`.claude.json`. Measured at `~/.thalamus/rooms-lab045/alpha-cfg7` (ext4, not
+tmpfs):
 
 | probe | result |
 |---|---|
@@ -70,6 +71,27 @@ and `statsig/`; symlinking `skills`, `agents`, `plugins`, `commands` and
 
 Both directions are separately measured rather than one inferred from the other —
 the same discipline lab/044 and lab/045 were written to enforce.
+
+**Two entries in that symlink list are load-bearing and were found by the homelab
+consultation** (`4d2ef0d3d7f74a4a`), which observed that a room omitting
+`settings.json` arms **zero** Thalamus hooks: every hook is registered
+user-scope in `~/.claude/settings.json`, and that scope moves with the config
+dir. `settings.local.json` carries the permission allowlist, whose loss means a
+member prompts for everything. Both work as **symlinks** — measured here, a room
+member with symlinked settings wrote its pin ledger row normally — which is
+better than the copy these labs used, since a copy silently stops tracking the
+operator's own settings. `.claude.json` must stay a copy (members write to it),
+and copying it is what carries `mcpServers`: a room member under this shape has
+the `thalamus` MCP server connected, verified with `claude mcp list`.
+
+**`forked_from` was not actually being recorded**, which this entry's own
+premise assumed. `session-start.sh` returned early on `source=resume` *before*
+the pin ledger write, and a fork arrives as `resume` — so `--fork-session`
+recorded neither `room` nor `forked_from`, for exactly the sessions those fields
+exist to describe. One early return was serving two concerns, priming and
+recording. Fixed: recording is unconditional, priming still skips
+resume/compact. A fork in a room now writes `room=alpha` and
+`forked_from=<parent>`.
 
 ## Consequences
 
@@ -87,13 +109,31 @@ the same discipline lab/044 and lab/045 were written to enforce.
   point of forking: warm context against consultation's measured cold-start cost
   (303–462s, lab/043).
 
+## What the launcher still owes
+
+From the homelab consultation (`4d2ef0d3d7f74a4a`), measured on this box and not
+re-verified here:
+
+- **tmux does not inherit the room.** An exported variable does not reach a new
+  window; only `-e` does, and `pin.py`'s three window/session creation paths pass
+  exactly one (`-e THALAMUS_SCOPE`). A room launcher must add
+  `-e CLAUDE_CONFIG_DIR` and `-e THALAMUS_ROOM` to all three.
+- **`respawn-window` drops `-e` entirely**, so the plane's recycle button would
+  move a member back onto `~/.claude` mid-life. The pin survives this only
+  because it has a second channel — `--agent` in the creation argv — and
+  `resolve_room` is env-only by design, so a room has no such fallback.
+- **Never `tmux set-environment -g`** for this: it reaches every window created
+  without `-e`, the shape that already burned this box once with `VIRTUAL_ENV`.
+
 ## Not yet measured
 
-- Whether `forked_from` is actually written when the fork happens under a room
-  config dir. The mechanism is measured here; the record was not checked, and
-  these probes ran with `THALAMUS_SANDBOX=1`, which disables the hooks that
-  would have written it.
 - Cross-room resumption. Both probes tested room-vs-outside; two rooms with
   private `projects/` should be symmetric by the same mechanism, unmeasured.
 - Whether pointing extract at room dirs reintroduces any of the lab/033 problem
   where distillation's own subprocess transcripts became memory.
+- Whether an interactive room member hits a fresh trust dialog — its
+  `.claude.json` is a copy carrying `hasTrustDialogAccepted`, but every probe
+  here used `claude -p`.
+- Retroactive sweeps: `thalamus bootstrap` and `rescore.py` still default to
+  `~/.claude/projects`, so a manual re-extract of a room session needs
+  `--projects-dir` passed by hand.

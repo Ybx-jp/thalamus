@@ -605,14 +605,38 @@ instead. A room dir that symlinks `projects/` back to the real config therefore
 hands its members' context to any non-member who forks their session, measured
 in both directions ([lab/046](../lab/046-the-third-channel-is-the-transcript.md)).
 
-**So the room config dir lives on persistent disk and owns `sessions/`,
-`projects/`, `todos/` and `statsig/`.** It symlinks `skills`, `agents`,
-`plugins`, `commands` and `.credentials.json` — a fresh config dir cannot
-authenticate at all without the last — and copies `.claude.json`, because members
-write to it. Persistent disk rather than `/run/user/<uid>` is what keeps the
-room's own transcripts from dying on tmpfs, and **`thalamus extract` must be
-pointed at those `projects/` dirs** or room members distil nowhere;
-`harness/transcripts.discover()` already takes a `projects_dir`.
+**So the room config dir lives on persistent disk at `~/.thalamus/rooms/<room>/`
+and owns `sessions/`, `projects/`, `todos/` and `statsig/`.** It symlinks
+`skills`, `agents`, `plugins`, `commands`, `settings.json`,
+`settings.local.json` and `.credentials.json`, and copies `.claude.json` because
+members write to it. Every one of those is load-bearing: without
+`.credentials.json` a fresh config dir cannot authenticate at all; without
+`settings.json` a member arms **zero** Thalamus hooks, since every hook is
+registered user-scope and that scope moves with the config dir; without
+`settings.local.json` it prompts for every permission; and the `.claude.json`
+copy is what carries `mcpServers`, so the member keeps the `thalamus` MCP server.
+The location is chosen against the rest of the box: `$HOME` must not move (the
+pin ledger, archive and logs are anchored there), `~/code` is scanned by the
+plane's spawn picker, and `~/.claude` is swept by the harness's own cleanup.
+
+`thalamus extract` reaches those transcripts via `--projects-dir`, which
+`session-end.sh` derives from the transcript's own path — the same path the
+project dir already comes from, so it needs no room registry and is exact rather
+than inferred. Retroactive sweeps (`thalamus bootstrap`) still default to
+`~/.claude/projects` and need the flag passed by hand.
+
+**A room is not inherited; it must be handed to each window explicitly.** tmux
+does not pass an exported variable to a new window — only `-e` does — and
+`respawn-window` drops `-e` entirely, so a recycled window silently returns to
+`~/.claude`. The pin survives that because `--agent` in the creation argv gives
+it a second channel; `resolve_room` is env-only by design and has none, which is
+the whole reason a room is one launch decision. `tmux set-environment -g` is not
+the answer: it reaches every window created without `-e`.
+
+Two variables one word apart govern different trees, and neither should ever be
+called just "the config dir": **`CLAUDE_CONFIG_DIR`** is the harness's user-config
+root (the room boundary), while **`THALAMUS_CONFIG_DIR`** overrides the checkout's
+`config/` tree of expert manifests.
 
 One limit remains deliberate: the guard governs **outbound only**. An outsider
 can still message a member, since nothing at that sender's end is ours to gate
