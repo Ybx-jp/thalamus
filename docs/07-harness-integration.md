@@ -569,6 +569,26 @@ blocked — "cross-session permission laundering" — a norm stated in a tool
 description, enforced by nothing, and orthogonal to trust tier. Nothing in the
 channel marks a claim that crosses scopes.
 
+**The room boundary is enforced at the sender** (`room-guard.sh`, PreToolUse on
+`SendMessage`). A session with `THALAMUS_ROOM` set may message only room-mates —
+names prefixed `<room>-`, the form the launcher gives members — plus `main` and
+raw agent ids, because the same tool serves in-process subagents and the
+consultation protocol runs over it. Everything else is blocked with the ticket
+named as the sanctioned route. Sessions outside a room are untouched.
+
+Two limits, both deliberate. It governs **outbound only**: an outsider can still
+message a member, since nothing at that sender's end is ours to gate, and
+`crossSessionInbound` cannot discriminate by sender. And it is policy where
+structure would be better — peer discovery reads the socket registry at
+`$XDG_RUNTIME_DIR/cc-socks`, but overriding that variable does not relocate the
+registry, it stops the session binding a socket at all
+([lab/044](../lab/044-the-runtime-dir-is-an-off-switch.md)), and relocating it
+needs a bind mount in a mount namespace that this box refuses unprivileged. Until
+a privileged bind mount or a container per room exists, a room is one whose
+members will not talk out rather than one nobody can talk into. Verdicts are
+events in the same guard ledger `thalamus eval gremlin` reads, so the
+false-positive rate is measurable rather than assumed.
+
 **The channel is instrumentable, which the in-process teams mailbox was not.** An
 incoming message lands in the receiver's transcript wrapped as
 `<cross-session-message from="...">`. That wrapper is a syntactic boundary
