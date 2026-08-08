@@ -152,10 +152,18 @@ tracing**, "the projection of execution provenance onto evidence-support relatio
 placement is the write-path stance of the memory-poisoning literature: consultation
 is a memory write channel, and "existing prompt injection defenses fail to cover
 memory poisoning" (arXiv 2606.04329), so the defense sits where the exchange is
-written, not where the answer is read. What the 2026 scan did not surface is the
-coupling itself — a server-minted, single-use ticket where record-creation and
-authority-grant are the same act ("not found in the 2026 scan", provisional; see
-[11-related-work.md](11-related-work.md) §4).
+written, not where the answer is read.
+
+The delegation shape is older than any of that and is not ours: Contract Net
+(Smith 1980, in the graph as feed `thalamus`) runs task announcement → bid → award
+between manager and contractor nodes, and its award both records the agreement and
+confers the task — record-creation and authority-grant already coupled. What the
+protocol here adds is that the record is *memory*: retained, citable, and closed
+only by an answer whose citations resolve. The pure-shared-medium alternative is
+equally prior — Hearsay-II's knowledge sources (Erman et al. 1980, same feed)
+coordinate solely through a blackboard, keeping no per-exchange record at all.
+The surviving claim is confined to the memory-formation half and stays provisional
+([11-related-work.md](11-related-work.md) §4).
 
 ## What an expert knows about its own corpus
 

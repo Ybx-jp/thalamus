@@ -202,7 +202,7 @@ happened to scan is exactly what this table replaces.
 | …the same results distilled into a `Thread` | V-S2 | **open, unchecked** — the floor updates only `decisions`/`problems`/`solutions`, `Thread` has no `external` field to mark, and the conformance audit keys on `label == "Claim"`, so thread descriptions write tier-1. Cross-session, and served first by `memory_open_threads` (lab/040) |
 | Cursor transcripts (no tool results) | V-S1 | **closed by flooring whole** — `ingress_verifiable=False` stamps every claim `transcript-ingress-unverifiable` (lab/028) |
 | Bash-tunnelled `curl`/`wget` | V-S2 | **open, unchecked** — outside `EXTERNAL_INGRESS_TOOLS`, so collection never sees the fetched bytes and the claims distill tier-1; no test in `tests/` exercises it |
-| Agent Teams mailbox | V-S2 | **open, unchecked** — inter-teammate messages arrive with *no ingress tool at all*; the sharper of the two residuals |
+| Peer-session messages (`SendMessage`) | V-S2 | **open, unchecked** — a peer's summary arrives with *no ingress tool at all* and distills tier-1; the sharper of the two residuals, and generally available to every live session on the machine and in the cloud rather than to one team. Unlike the in-process teams mailbox (lab/004), it leaves a collectable boundary: the receiver's transcript wraps it as `<cross-session-message from="...">` |
 | Operator's checkout by absolute path | V-S2 | `detect_worktree_escape` — 13 of 88 arms reached it; 3 of one campaign's 24 gradeable arms reached an answer key (lab/021). Confinement is `--sandbox` |
 | Shared git object store | V-S2 | `detect_history_reach` — 8 of 88 arms in 10 events, 7 of them inside one task (lab/022). The dominant channel, and found post-hoc |
 | Live gremlin endpoint over ad-hoc Bash | V-S1, V-S2 | **partly closed, opt-in** — `--isolate-store` cuts the network for surface-less arms (docs/04). As a *write* channel it is **unchecked**: `memory_query` is lexically guarded on a no-code server grammar, but ad-hoc gremlin-python speaks to the endpoint directly and only convention keeps it read-only |
@@ -234,10 +234,12 @@ be told apart from a model that would have refused anyway
 - **What the two open residuals would take to close** (status in the audit spine
   above). **(a)** The ingress set is the two fetch tools because parsing shell lines
   for URLs is the inference `transcripts.py` refuses, so Bash-tunnelled `curl`/`wget`
-  has no collection step to floor. **(b)** lab/004 measured the mailbox as
-  `in-process` with no artifact on disk, so transcripts are the only record of it;
-  catching it needs the *sender's* scope as the "external corpus" the echo floor runs
-  against — unbuilt.
+  has no collection step to floor. **(b)** Peer messages reach the receiver through
+  no ingress tool, but the `<cross-session-message from="...">` wrapper is a marker a
+  collection step can key on, flooring the payload the way `apply_ingress_floor`
+  floors fetch results. What the wrapper does not supply is the *sender's* scope as
+  the "external corpus" the echo floor runs against — `from` names a session, not a
+  scope. Both halves unbuilt.
 - **The tier floor is documented, not computed.** The schema states effective trust
   is the *floor* over a node's DERIVED_FROM closure, and write-time laundering is
   gated and tested (a feed cannot mint tier 1). But the read path renders only the

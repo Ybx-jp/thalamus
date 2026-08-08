@@ -538,33 +538,52 @@ v1. Two properties matter:
 - The transcript is not lost context — it is distilled into episodic memory on both
   sides. The harness's subagent mechanism becomes memory-forming machinery.
 
-## Agent Teams as an instrument (experimental track)
+## Peer sessions as an instrument
 
-Claude Code's experimental Agent Teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
-make each teammate its own process — own session id, own MCP server instances, own
-hooks. Under "the process is the pin" that means **each teammate is a pinnable
-unit**, and a team is a roster of concurrently-pinned experts with a shared task
-list and a mailbox. That makes teams less a product feature than a *measurement
-instrument* for exactly the questions this project exists to answer. The generated
-`.claude/agents/thalamus-<scope>.md` files double as teammate blueprints — the
-zero-glue test extends to teams.
+Claude Code makes each teammate and each session its own process — own session id,
+own MCP server instances, own hooks. Under "the process is the pin" that means
+**every session is a pinnable unit**, and a team is a roster of concurrently-pinned
+experts with a shared task list. That makes the harness's coordination surfaces less
+a product feature than a *measurement instrument* for exactly the questions this
+project exists to answer. The generated `.claude/agents/thalamus-<scope>.md` files
+double as teammate blueprints — the zero-glue test extends to teams.
+
+Teammates remain behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`; **peer-session
+messaging is generally available**. `ListAgents` enumerates every reachable session —
+in-process subagents, other local sessions, cloud sessions, remote bridge sessions —
+and `SendMessage` delivers a sender-authored summary to any of them, which the
+receiver takes up mid-task.
 
 Two channels matter and they are not equal: consultation (ticketed, cited,
-recorded — the collaboration graph sees it) and the **teams mailbox** (JSON files
-the harness delivers between teammates — unprovenanced, invisible to the graph,
-and distilled into the receiver's transcript as tier-1). The mailbox is the
-agent-authored variant of the transcript-mediated-laundering gap
-([05-trust-model.md](05-trust-model.md)).
+recorded — the collaboration graph sees it) and **peer messaging** (a sender's
+summary the harness delivers between sessions — unprovenanced, invisible to the
+graph, and distilled into the receiver's transcript as tier-1). Peer messaging is
+the agent-authored variant of the transcript-mediated-laundering gap
+([05-trust-model.md](05-trust-model.md)), and general availability is what sets its
+blast radius: the reachable set is every live session on the machine and in the
+cloud, not the teammates of one team.
+
+The harness guards the adjacent axis, not this one. `SendMessage`'s own
+documentation forbids asking a peer to perform work the sender's permissions
+blocked — "cross-session permission laundering" — a norm stated in a tool
+description, enforced by nothing, and orthogonal to trust tier. Nothing in the
+channel marks a claim that crosses scopes.
+
+**The channel is instrumentable, which the in-process teams mailbox was not.** An
+incoming message lands in the receiver's transcript wrapped as
+`<cross-session-message from="...">`. That wrapper is a syntactic boundary
+collection can key on — a sender attribute and a delimited payload, where the
+mailbox offered no artifact at all — and it is what makes T4 buildable.
 
 Experiments, ranked by information-per-effort (each run produces a lab entry):
 
 | # | Experiment | Hypothesis | Status (lab/004, 2026-07-16) |
 |---|---|---|---|
 | T0 | Per-teammate env inheritance | Teammates inherit the lead's env — one team, one pin, unless launched otherwise | **Confirmed** (n=1): teammate ran pinned `literature`, own session/ledger row/tap lines. Distinct per-teammate pins need per-teammate launch control |
-| T5 | Mailbox traffic vs collaboration graph | Most inter-teammate coordination bypasses the consultation protocol | **Confirmed a fortiori**: no `inboxes/*.json` materialized at all (`in-process` delivery), zero Exchange/CONSULTS — the only durable record is the transcripts |
+| T5 | Peer traffic vs collaboration graph | Most inter-session coordination bypasses the consultation protocol | **Confirmed a fortiori**: no `inboxes/*.json` materialized at all (`in-process` delivery), zero Exchange/CONSULTS — the only durable record is the transcripts. Unchanged by GA messaging, which writes no artifact of its own either |
 | T2 | Per-teammate distillation | N teammates → N SessionEnd distillations → per-expert episodic memory at process level | **Confirmed** (free ride on the T0 run): teammate distilled into its pinned scope, own SessionEnd |
 | T1 | Pin-quality A/B | Same task, literature-pinned vs main-pinned teammate: pinned retrievals show a higher used-ratio in-domain | Unblocked in design (env per teammate, or pinned windows joined as a team); parked pending the lead-cwd anomaly |
-| T4 | Mailbox canary (M5) | A canary claim in teammate A's scope, relayed inter-teammate, lands tier-1 in teammate B's scope | Rescoped by T5: there may be no mailbox file to plant into — the channel to red-team is transcript distillation itself |
+| T4 | Peer-message canary (M5) | A canary claim in session A's scope, relayed by `SendMessage`, lands tier-1 in session B's scope | **Unblocked**: the `<cross-session-message from="...">` wrapper is a collectable boundary in the receiver's transcript. Needs the defense-off control (lab/039) |
 | T3 | Counterfactual arm (M4) | Memory-on vs memory-degraded teammate on one task: the memory arm resolves faster / reuses decisions | Parked; same unblock as T1 |
 
 **Measured anomaly to re-check before trusting lead-side behavior:** a headless

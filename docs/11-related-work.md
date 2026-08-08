@@ -855,8 +855,27 @@ not a scan.
    ([02-expert-subgraphs.md](02-expert-subgraphs.md)). The components are all
    published — capability tokens are classical systems security, execution
    provenance and evidence tracing are surveyed in 2606.04990, write-path gating in
-   2606.04329 — but the scan did not find the coupling used as a *memory-formation*
-   mechanism between agent scopes. Provisional, like everything on this list.
+   2606.04329. **The claim narrows now that the classical DAI shelf is held**
+   (feed `thalamus`, ingested 2026-08-07). Contract Net (Smith 1980) already couples
+   the two halves this claim rests on: an award both records the manager–contractor
+   agreement and confers the task, and its announcement / bid / award cycle is the
+   delegation shape a consultation ticket instantiates. What it does not do is make
+   the record *memory* — the contract coordinates execution, is not retained as
+   citable knowledge, and has no analogue of a citation-validated close. Hearsay-II
+   (Erman et al. 1980) is the opposite pole and equally prior: knowledge sources
+   communicate solely through a shared blackboard, with no per-exchange record at
+   all. So what survives is narrow — the coupling used as a *memory-formation*
+   mechanism between agent scopes — and it now rests on a shelf that has been read
+   rather than one that was never scanned. Adjudicating the remainder properly wants
+   a consultation against the newly held sources, not this paragraph. Provisional,
+   like everything on this list.
+   **Supply-blocked:** Hayes-Roth, *A Blackboard Architecture for Control* (AIJ
+   1985) — closed access, confirmed against Unpaywall, OpenAlex and Semantic
+   Scholar, and absent from the Stanford CS technical-report series, so no
+   institutional copy exists to find. The blackboard *control* layer is therefore
+   held only through Hearsay-II's focus-of-control mechanism. Barbara Hayes-Roth's
+   BB1 report (Stanford CS-TR-84-1034) is open and would cover it if the gap starts
+   costing something.
 5. **Refuted, and recorded as such: a normalized agent-trace intermediate is
    published prior work.** The Cursor transcript adapter (lab/028) would have been
    a natural place to claim novelty for "one intermediate, many harness dialects".
