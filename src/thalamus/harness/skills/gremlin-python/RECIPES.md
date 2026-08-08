@@ -249,3 +249,50 @@ floor. `ingested_at` cannot tell you how many write passes a session saw — it 
 the *session's* timestamp and is overwritten on every re-upsert (decision log
 2026-07-30) — and Claims carry no `written_at`, since content addressing means their
 text never moves.
+
+## Witnessed-vs-used: did an answer cite what its own brief served?
+**Question:** A consultation is a two-party room — the brief is what the expert saw,
+the validated answer's citations are what it provably used. Replaying a proposed
+use-gate against those existing labels needs the (exchange, witnessed-claim) universe
+and its positive rate, before any experiment is built.
+**Surface:** gremlin-python
+**Validated:** 2026-08-08 against the live graph (48/55 answered exchanges non-empty;
+807 pairs, 89 positives, base rate 0.110) — lab/042
+
+```python
+from gremlin_python.process.graph_traversal import __
+from gremlin_python.process.traversal import T
+from thalamus.substrate.writer import connect, close_connection
+
+g = connect()
+try:
+    rows = (
+        g.V().has_label("Exchange").has("status", "answered")
+        .project("id", "expert", "witnessed", "cited")
+        .by(T.id)
+        .by("expert")
+        .by(__.union(
+            __.out_e("REFERENCES").has("role", "brief").in_v().has_label("Claim"),
+            __.out_e("REFERENCES").has("role", "brief").in_v().has_label("Session")
+              .out("CONTAINS").has_label("Claim"),
+        ).id_().dedup().fold())
+        .by(__.out_e("REFERENCES").has("role", "citation").in_v()
+              .has_label("Claim").id_().dedup().fold())
+        .to_list()
+    )
+    for row in rows:
+        hit = set(row["witnessed"]) & set(row["cited"])
+        print(row["expert"], len(row["witnessed"]), len(row["cited"]), len(hit))
+finally:
+    close_connection(g)
+```
+
+**Notes:** The union is load-bearing and was found by falsifying a wrong result. Using
+`role:brief` targets *directly* as the universe returns a clean zero in all 55
+exchanges, which reads as "experts ignore their briefs" but is pure schema: briefs
+serve Threads (124) and Sessions (122) far more than Claims (77), while answers cite
+Claims (999). The two roles point at near-disjoint label populations, so the direct
+intersection is structurally empty. The real signal is one hop out, through
+`Session -CONTAINS-> Claim`. Always check the label breakdown of both edge roles
+before intersecting them. Cluster on the **exchange**, never the pair — 89 positives
+sat in 12 exchanges with 79% in one expert's.
