@@ -62,7 +62,15 @@ literature expert.
    names into the extraction prompt (the same convergence mechanism as the episodic
    known-claims feed). When curating a batch for a new domain, ingest the anchor
    document first — it mints the entity vocabulary the rest of the batch converges on.
-4. **Dry-run, verify, then write.** Every ingest runs without `--write` first and
+4. **Feed the full text, not the landing page.** For arXiv, ingest
+   `arxiv.org/html/<id>`; `/abs/<id>` is a landing page whose only prose is the
+   abstract, so it yields abstract-level claims and the paper's actual numbers —
+   distributions, ablations, effect sizes — never enter the graph. The failure is
+   silent: extraction succeeds, the title resolves, the claim count looks normal,
+   and the gap only surfaces when an expert is asked for a figure it cannot cite.
+   Where no HTML rendering exists, hand-feed the relevant sections as a local file
+   (`~/.thalamus/hand-fed/`) rather than settling for the abstract.
+5. **Dry-run, verify, then write.** Every ingest runs without `--write` first and
    the operator confirms the extracted title matches the document intended —
    mis-resolved references are a measured failure mode (docs/10), and the archive
    retains whatever was fetched either way.

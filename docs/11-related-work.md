@@ -822,6 +822,55 @@ MMR (SIGIR 1998), IA-Select (WSDM 2009), α-nDCG (SIGIR 2008), Richardson's
 *Beyond PageRank* (WWW 2006), Teevan's *Potential for Personalization* (TOCHI
 2010) — so diversification sizing in particular remains ungrounded.
 
+**Multi-agent coordination: four absences, now procured, and the corpus argues
+against the local instinct.** Consulted 2026-08-07 (exchanges
+`scope:main:exchange:a42d7d6316f54be4`, 47 citations, and
+`scope:main:exchange:fca6fdf82b0d42f0`, 57). The scope held no classical DAI, no
+multi-agent failure taxonomy, no agent-messaging protocol specifications, and
+nothing on iterated-summarization degradation — so item 4's novelty position rested
+on shelves nobody had read. Twelve sources procured under feed `thalamus`: Contract
+Net (Smith 1980), Hearsay-II (Erman et al. 1980) and BB1 (Hayes-Roth 1984)
+hand-fed; MAST (2503.13657), AgentCollabBench (2605.08647), GoAgent (2603.19677),
+the equal-token-budget single-agent result (2604.02460), small-agents-collaborate
+(2601.11327), *Broken Telephone* (ACL 2025, 2502.20258), *Faithful, Not Corrective*
+(2607.09678), the MCP-vs-A2A comparative study (2607.23884) and AIP (2603.24775)
+on-allowlist.
+
+Three findings bear on this project's own design rather than on the question that
+procured them, and each is better-provenanced than the position it challenges.
+**(a) Multi-agent gains may be a compute artifact**: single-agent matches or beats
+multi-agent on multi-hop reasoning at equal thinking-token budgets, with a Data
+Processing Inequality argument that a single agent is strictly more
+information-efficient under a fixed budget, and MAS becoming competitive only when
+single-agent context utilisation degrades *or more compute is spent* — so any
+multi-agent win here is unattributable until the single-agent control is run at the
+multi-agent total budget. That control has never been run. **(b) Restricted
+communication is the winning configuration**: an orchestrator plus specialised
+sub-agents under *limited* communication wins, orchestrator reasoning carries
+nearly all the gain, and sub-agent reasoning is limited or negative. **(c) High
+relay fidelity is not a safety property**: a strong relay is reported near-lossless
+over six hops, which weakens the *fidelity* case for receiver-assembled briefs at
+frontier capability — but the same testbed reports an injected wrong value
+persisting to the final hop in 83–100% of chains in every message format, matching
+the true value's retention. Structure buys a faithful, error-*localizing* channel,
+not an error-correcting one, and localizing needs a record to localize in. Two
+provenance cautions: (c)'s source is a single-author unvenued preprint, while the
+peer-reviewed result in the same area (ACL 2025) finds distortion accumulating with
+chain complexity — the stratification runs the wrong way for optimism; and the
+durable-record argument is unsupported in *both* directions, since nothing held
+identifies unrecorded communication as a leading failure driver either.
+
+What the corpus does support is group-as-atomic-unit topology with a compressed
+inter-group channel (GoAgent measures ~17% fewer tokens at 93.84% average accuracy,
+warranted on redundancy and noise, **not** on safety), and topology explaining
+7–40% of variance in whether constraints survive multi-hop transfer
+(AgentCollabBench). Pinned scopes plus the ticket already instantiate that shape.
+**Genuinely unaddressed in the held corpus: provenance across a *group* answer** —
+what a citation means when the answering unit spans scopes. Adjacent work
+(PROV-AGENT, the evidence-tracing survey, AIP's per-delegation completion records)
+treats provenance per agent or per delegation, never per group. If any part of this
+line is pursued, that is where the research question is.
+
 **Still open, and blocked on supply rather than on scanning.** Wohlin's
 threats-to-validity taxonomy, whose construct / internal / external vocabulary
 §2a and §2d improvise; and, load-bearing for the campaign statistics,
@@ -869,13 +918,18 @@ not a scan.
    rather than one that was never scanned. Adjudicating the remainder properly wants
    a consultation against the newly held sources, not this paragraph. Provisional,
    like everything on this list.
-   **Supply-blocked:** Hayes-Roth, *A Blackboard Architecture for Control* (AIJ
-   1985) — closed access, confirmed against Unpaywall, OpenAlex and Semantic
-   Scholar, and absent from the Stanford CS technical-report series, so no
-   institutional copy exists to find. The blackboard *control* layer is therefore
-   held only through Hearsay-II's focus-of-control mechanism. Barbara Hayes-Roth's
-   BB1 report (Stanford CS-TR-84-1034) is open and would cover it if the gap starts
-   costing something.
+   The blackboard *control* layer is held through Hayes-Roth's BB1 technical report
+   (Stanford CS-TR-84-1034, hand-fed), which bears on the recording question
+   directly and against the unrecorded-deliberation instinct: BB1 makes control
+   decisions themselves entries on a control blackboard, and what that buys is
+   explanation (an action is explained by the rules, ratings and competing actions
+   that produced it) and learning (control heuristics generated in-session become
+   knowledge sources for the next). **Supply-blocked:** the same author's *A
+   Blackboard Architecture for Control* (AIJ 1985) — closed access, confirmed
+   against Unpaywall, OpenAlex and Semantic Scholar, and absent from the Stanford
+   CS technical-report series, so no institutional copy exists to find. It appears
+   in BB1's own bibliography as reference [6]; that line is the one conflation
+   vector in the hand-fed file and the two must not be merged.
 5. **Refuted, and recorded as such: a normalized agent-trace intermediate is
    published prior work.** The Cursor transcript adapter (lab/028) would have been
    a natural place to claim novelty for "one intermediate, many harness dialects".
