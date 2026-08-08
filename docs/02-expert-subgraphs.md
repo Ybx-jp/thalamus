@@ -55,10 +55,16 @@ pin quality — sustained low-utility retrievals in pinned sessions meaning eith
 pin or the expert needs work, disambiguated by whether the expert's knowledge earns
 its keep when consulted from other scopes. **That reading is suspended and the
 report says so.** Pinned utility is within-scope and consulted utility is
-cross-scope, and the used-vs-ignored judge scores ~63% within a project against ~5%
-across (experiments/001): it would manufacture "ignored under its own pin, used when
-consulted" for free. Each side needs its own permutation null before the pair means
-anything.
+cross-scope, and the used-vs-ignored judge scores 62.9% against a retrieval's own
+output window versus 5.0% against a different project's session (lab/032, an
+arm-level contrast lab/034 leaves standing while withdrawing that entry's absolute
+denominators): it would manufacture "ignored under its own pin, used when consulted"
+for free. Each side needs its own permutation null before the pair means anything.
+The judge's own discrimination at the shipped operating point is κ = 0.140, 95% CI
+[0.028, 0.272], against a permuted floor of 57.3% (experiments/001, pinned snapshot
+`post-sandbox-purge-20260730`) — a floor that is itself a vocabulary-overlap
+artifact, and therefore a lower bound for any population more lexically correlated
+than two sessions of one project.
 
 ## Inter-expert exchange: the subagent protocol
 

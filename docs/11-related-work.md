@@ -865,11 +865,38 @@ inter-group channel (GoAgent measures ~17% fewer tokens at 93.84% average accura
 warranted on redundancy and noise, **not** on safety), and topology explaining
 7–40% of variance in whether constraints survive multi-hop transfer
 (AgentCollabBench). Pinned scopes plus the ticket already instantiate that shape.
-**Genuinely unaddressed in the held corpus: provenance across a *group* answer** —
-what a citation means when the answering unit spans scopes. Adjacent work
-(PROV-AGENT, the evidence-tracing survey, AIP's per-delegation completion records)
-treats provenance per agent or per delegation, never per group. If any part of this
-line is pursued, that is where the research question is.
+**Provenance across a group answer looked like the one question the shelf had not
+asked. Checking it found ancestors, not a gap** (scan 2026-08-08). Every component
+has a mature prior treatment, none of it previously held: *what a citation means for
+an assembled answer* is semiring provenance (Green, Karvounarakis & Tannen, PODS
+2007), whose annotation polynomials already separate alternative derivations from
+jointly-required contributors; *how a federation refuses evidence stripped of its
+origin* is collaborative data sharing (ORCHESTRA / CDSS, TODS 2013), where
+autonomous peers hold disjoint instances and **trust conditions are evaluated on
+provenance** — structurally the nearest ancestor to this project's topology; *who
+among a group produced an output* was closed by accountable-subgroup multisignatures
+(CCS 2001); *who is answerable for a joint assertion* is group assertion (Lackey)
+and the joint-intention and degree-of-responsibility literatures; and *mechanical
+laundering prevention* is information-flow control, whose multi-agent instance
+(SafeFlow, 2607.25255) and attribution limit (ContextCite, 2409.00729, NeurIPS 2024)
+are held under feed `thalamus`. Lackey is supply-blocked (fully paywalled).
+
+What survives is narrow, and **the phrasing must carry all three conjuncts** — drop
+any one and a 2001, 2007 or 2013 paper answers it:
+
+> Citation validation for an answer jointly produced by agents holding **disjoint,
+> mutually invisible retrieval scopes**, where the aggregation step is a **language
+> model and therefore provenance-opaque**, and where the requirement is to **reject**
+> an unsupported citation rather than to record what happened.
+
+Each conjunct does work: disjoint scopes defeat re-derivation (classical provenance
+assumes a shared instance, CDSS assumes schema mappings between peers); LLM
+aggregation permits only *estimated* attribution (ContextCite), so semiring exactness
+cannot transfer; and validation-not-tracing is where IFC stops — it rejects flows,
+never checks that a claim follows from its cited evidence. Confidence the narrow
+version is open: ~60%, with three unchased legs that would settle it — federated-RAG
+cross-silo citation verification (the weakest), provenance under access control, and
+multi-agent argumentation over private knowledge bases.
 
 **Still open, and blocked on supply rather than on scanning.** Wohlin's
 threats-to-validity taxonomy, whose construct / internal / external vocabulary
