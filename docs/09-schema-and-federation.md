@@ -138,8 +138,10 @@ interconnection. That is an enforceable constraint *and* a metric:
 `scope` answers *which expert*. `Session`, `Thread`, and `Claim` carry both;
 `Artifact` carries `project` only.
 
-`Session` carries a third: **`room`** answers *which event* — the collaboration the
-session witnessed, empty when it worked alone. It exists because sessions that
+`Session` carries a third: **`room`** answers *which collaboration* — empty when the
+session worked alone. It is deliberately **not** an event identifier: a room hosts many
+turns, so collapsing convergence by room would trade a false-count error for a
+false-collapse error. It exists because sessions that
 distilled one shared conversation produce **correlated** claims, and a convergence
 count that treats them as distinct witnesses reads a single event as N-fold
 agreement. That artifact is undetectable after the fact: nothing in a finished graph
@@ -149,8 +151,24 @@ together. So the room is stamped at write time or never — resolved from
 ledger-first at distillation, the same path the pin takes and for the same reason
 (the spawner's environment is gone by SessionEnd). Empty is the honest default;
 inferring a room from co-timing would manufacture the very correlation the field
-exists to expose. Nothing consumes it yet — deduplicating convergence by room is the
-first thing it makes possible, and it cannot be built retroactively.
+exists to expose. Nothing consumes it yet.
+
+**What it supports, and what it does not.** Flagging convergence among room-mates: yes.
+Computing an effective sample size: no, and the provenance literature says exactly why.
+Under semiring provenance (Green, Karvounarakis & Tannen 2007, held) the collapse
+`a + a = a` requires the room's *event* to be the provenance variable and each
+distillation to be a mapping over it. Thalamus records the opposite modeling: a Source
+vertex is `vid("Source", content_hash, scope)`, so N experts in one room mint N Sources
+in disjoint id spaces — N distinct variables, which **no commutative semiring
+collapses**. The N-count is formally correct under session-as-source, which is precisely
+why the failure is silent. A counter tallying distinct parent `Session` vertices is
+evaluating in the bag semiring `N` where set semantics was intended; the idempotent,
+absorptive `PosBool(X)` is the reading that collapses it. Since RA+ over any commutative
+semiring factors through the polynomial, the resolution is one write path and two
+readings — `N` for "how often was this said", `PosBool(X)` for "how many independent
+groundings" — rather than a second field. Getting there needs a scope-independent
+witnessing-event node and a claim→event edge carrying the mapping identity. `room` is
+the grouping key that makes those buildable, not a substitute for them.
 
 ### The global-Artifact carve-out (and a trap it sets)
 
