@@ -576,18 +576,24 @@ raw agent ids, because the same tool serves in-process subagents and the
 consultation protocol runs over it. Everything else is blocked with the ticket
 named as the sanctioned route. Sessions outside a room are untouched.
 
-Two limits, both deliberate. It governs **outbound only**: an outsider can still
-message a member, since nothing at that sender's end is ours to gate, and
-`crossSessionInbound` cannot discriminate by sender. And it is policy where
-structure would be better — peer discovery reads the socket registry at
-`$XDG_RUNTIME_DIR/cc-socks`, but overriding that variable does not relocate the
-registry, it stops the session binding a socket at all
-([lab/044](../lab/044-the-runtime-dir-is-an-off-switch.md)), and relocating it
-needs a bind mount in a mount namespace that this box refuses unprivileged. Until
-a privileged bind mount or a container per room exists, a room is one whose
-members will not talk out rather than one nobody can talk into. Verdicts are
-events in the same guard ledger `thalamus eval gremlin` reads, so the
-false-positive rate is measurable rather than assumed.
+The guard is **defence-in-depth over a structural boundary, not a substitute for
+one.** The structure is the socket registry: peer discovery reads
+`$XDG_RUNTIME_DIR/cc-socks`, that variable is honoured, and a per-room value under
+a short path gives members a registry only they can see — no container, no
+orchestrator, no privilege ([lab/044](../lab/044-the-103-byte-cliff.md)). The
+structure governs *discovery*; the guard governs *intent*, and its ledger is what
+makes either measurable.
+
+**The launcher must assert its socket path length.** Over 103 bytes the path
+silently falls back to `/tmp/cc-socks-<uid>/`, which every other overflowed session
+also lands in — so long per-room paths merge every room into one while appearing
+isolated. Short room dirs (`/run/user/<uid>/rooms/<room>`) are the shape to use.
+
+One limit remains deliberate: the guard governs **outbound only**. An outsider can
+still message a member, since nothing at that sender's end is ours to gate and
+`crossSessionInbound` cannot discriminate by sender — which is precisely why the
+structural boundary, where a non-member is never discoverable in the first place,
+is the one doing the real work.
 
 **The channel is instrumentable, which the in-process teams mailbox was not.** An
 incoming message lands in the receiver's transcript wrapped as

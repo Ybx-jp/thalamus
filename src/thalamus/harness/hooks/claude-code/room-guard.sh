@@ -6,19 +6,17 @@
 # outside only through a ticketed consultation. That boundary is what makes the
 # cheap tier defensible, so it needs enforcement rather than convention.
 #
-# Structural isolation would be better and is not available: cross-session
-# messaging discovers peers through the socket registry at
-# `$XDG_RUNTIME_DIR/cc-socks`, and overriding that variable does not relocate
-# the registry — it stops the session binding a socket at all (lab/044, clean
-# A/B). Relocating it needs a bind mount in a mount namespace, and unprivileged
-# ones are refused on this box. So the boundary is policy here, at the sender,
-# until a privileged bind mount or a container per room exists.
+# This is defence-in-depth, not the boundary itself. The boundary is structural:
+# peer discovery reads the socket registry at `$XDG_RUNTIME_DIR/cc-socks`, that
+# variable is honoured, and a per-room value under a short path gives members a
+# registry only they can see (lab/044). Structure governs discovery — a non-member
+# is never listed — and this guard governs intent, catching a member that means to
+# reach out however it learned the name.
 #
-# What this guard is honest about: it governs **outbound only**. An outsider can
-# still message a room member, because nothing at the sender's end of that
-# exchange is ours to gate. Closing inbound needs `crossSessionInbound` on the
-# members, which cannot discriminate by sender. A room enforced this way is a
-# room whose members will not talk out, not one nobody can talk into.
+# It governs **outbound only**. An outsider can still message a room member,
+# because nothing at that sender's end is ours to gate, and `crossSessionInbound`
+# cannot discriminate by sender. That asymmetry is survivable exactly because the
+# structural boundary is doing the real work.
 #
 # Membership is carried by name. Room members launch as `<room>-<scope>`
 # (`--name`), which is the address SendMessage routes on, so a target is a
