@@ -44,6 +44,45 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 # same way, so an on-demand session in another repo can still consult siblings.
 USER_AGENTS_DIR = Path.home() / ".claude" / "agents"
 
+# Room config dirs. A room's boundary IS its `CLAUDE_CONFIG_DIR`: peer discovery
+# enumerates `$CLAUDE_CONFIG_DIR/sessions/*.json` and name resolution answers from
+# that roster, so members of one room see only each other (lab/045). The location is
+# chosen against the rest of the box — `$HOME` must not move (the pin ledger, archive
+# and logs are anchored there), `~/code` is scanned by the control plane's spawn
+# picker, and `~/.claude` is swept by the harness's own cleanup.
+ROOMS_DIR = Path.home() / ".thalamus" / "rooms"
+
+
+def room_config_dir(room: str) -> Path:
+    return ROOMS_DIR / room
+
+
+def _room_env(room: str) -> list[tuple[str, str]]:
+    """The launch variables that put a process in a room, or nothing at all."""
+    if not room:
+        return []
+    return [("THALAMUS_ROOM", room), ("CLAUDE_CONFIG_DIR", str(room_config_dir(room)))]
+
+
+def _with_room(argv: list[str], room: str) -> list[str]:
+    """Carry the room in the window's own argv, not only in its tmux env.
+
+    tmux `-e` on `new-window` sets the initial process environment and is *not*
+    stored in the session environment, so `respawn-window` — which is exactly what
+    the control plane's recycle button runs — re-executes this argv with those
+    variables gone (measured on tmux 3.4; `new-session -e` does survive, since that
+    one does populate the session env). The pin already survives a recycle for this
+    reason: `--agent thalamus-<scope>` rides the argv. `resolve_room` is env-only by
+    design and has no such second channel, so without this prefix a recycled member
+    silently drops back onto `~/.claude` — out of its room, still looking like a
+    member. `set-environment -g` is not the alternative: it reaches every window
+    created without `-e`, which is the shape that has already misfired here once.
+    """
+    pairs = _room_env(room)
+    if not pairs:
+        return argv
+    return ["env", *(f"{k}={v}" for k, v in pairs), *argv]
+
 
 def agent_name(scope: str) -> str:
     return f"{AGENT_PREFIX}{scope}"
@@ -179,13 +218,19 @@ def _tmux_windows(target: str | None) -> set[str]:
 
 
 def _open_window(scope: str, argv: list[str], project_root: Path, target: str | None,
-                 detached: bool = False) -> None:
+                 detached: bool = False, room: str = "") -> None:
     # detached (-d): don't switch the session's active window. Roster additions run
     # underneath attached clients (/tty, PC attaches), which must not be yanked to
     # the new window; an interactive `thalamus pin` keeps the switch — the operator
     # asked for that window.
+    #
+    # Room variables go through both channels deliberately: `-e` so the window's own
+    # environment agrees with what the process got, and the argv prefix so the room
+    # survives a `respawn-window` recycle (see `_with_room`).
+    room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
     cmd = ["tmux", "new-window", *(["-d"] if detached else []), "-n", scope,
-           "-c", str(project_root), "-e", f"THALAMUS_SCOPE={scope}", "--", *argv]
+           "-c", str(project_root), "-e", f"THALAMUS_SCOPE={scope}", *room_flags,
+           "--", *_with_room(argv, room)]
     if target:
         cmd[2:2] = ["-t", target]
     subprocess.run(cmd, check=True)
@@ -259,13 +304,15 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
     # is its reference for roster sync. A placeholder there outranks every real
     # session for the life of the tmux server, and `restart` on it types `/exit`
     # into a shell instead of a claude, so the recycle hangs out its whole grace.
+    room = resolve_room()
+    room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
     if subprocess.run(["tmux", "has-session", "-t", session],
                       capture_output=True).returncode != 0:
         subprocess.run(["tmux", "new-session", "-d", "-s", session, "-n", scope,
-                        "-c", str(cwd), "-e", f"THALAMUS_SCOPE={scope}",
-                        "--", *argv], check=True)
+                        "-c", str(cwd), "-e", f"THALAMUS_SCOPE={scope}", *room_flags,
+                        "--", *_with_room(argv, room)], check=True)
     else:
-        _open_window(scope, argv, cwd, target=session, detached=True)
+        _open_window(scope, argv, cwd, target=session, detached=True, room=room)
     _pin_window_sizes(target=session)
     print(f"Spawned `{scope}` in {cwd}")
 
@@ -296,6 +343,8 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
 
     scopes = [MAIN_SCOPE, *available_scopes(base)] if full else [MAIN_SCOPE]
     target = session or (None if inside else ROSTER_SESSION)
+    room = resolve_room()
+    room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
 
     if target and subprocess.run(
         ["tmux", "has-session", "-t", target], capture_output=True
@@ -303,8 +352,8 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
         first = scopes.pop(0)
         subprocess.run(
             ["tmux", "new-session", "-d", "-s", target, "-n", first,
-             "-c", str(project_root), "-e", f"THALAMUS_SCOPE={first}",
-             "--", *_claude_argv(first, project_root, base)],
+             "-c", str(project_root), "-e", f"THALAMUS_SCOPE={first}", *room_flags,
+             "--", *_with_room(_claude_argv(first, project_root, base), room)],
             check=True,
         )
 
@@ -314,7 +363,7 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
             print(f"`{scope}` already has a window — skipped")
             continue
         _open_window(scope, _claude_argv(scope, project_root, base), project_root, target,
-                     detached=True)
+                     detached=True, room=room)
         print(f"Pinned window `{scope}` opened")
 
     _pin_window_sizes(target)

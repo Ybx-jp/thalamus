@@ -109,21 +109,36 @@ resume/compact. A fork in a room now writes `room=alpha` and
   point of forking: warm context against consultation's measured cold-start cost
   (303–462s, lab/043).
 
-## What the launcher still owes
+## The launcher, and where `-e` is not enough
 
-From the homelab consultation (`4d2ef0d3d7f74a4a`), measured on this box and not
-re-verified here:
+The homelab consultation (`4d2ef0d3d7f74a4a`) found that tmux does not inherit
+the room — an exported variable does not reach a new window, only `-e` does — and
+that `pin.py`'s three window/session creation paths passed exactly one
+(`-e THALAMUS_SCOPE`). It also reported that `respawn-window` drops `-e`
+entirely. **Re-measured here, that last part is half right, and the half that is
+wrong is the half that decides the fix:**
 
-- **tmux does not inherit the room.** An exported variable does not reach a new
-  window; only `-e` does, and `pin.py`'s three window/session creation paths pass
-  exactly one (`-e THALAMUS_SCOPE`). A room launcher must add
-  `-e CLAUDE_CONFIG_DIR` and `-e THALAMUS_ROOM` to all three.
-- **`respawn-window` drops `-e` entirely**, so the plane's recycle button would
-  move a member back onto `~/.claude` mid-life. The pin survives this only
-  because it has a second channel — `--agent` in the creation argv — and
-  `resolve_room` is env-only by design, so a room has no such fallback.
-- **Never `tmux set-environment -g`** for this: it reaches every window created
-  without `-e`, the shape that already burned this box once with `VIRTUAL_ENV`.
+| creation | stored in session env? | survives `respawn-window -k`? |
+|---|---|---|
+| `new-session -e VAR=x` | yes | **yes** |
+| `new-window -e VAR=x` | no | **no** — the respawned process sees it empty |
+
+So `-e` is durable exactly where the roster does not need it (the anchor) and
+lossy exactly where it does (every spawned member window). Threading `-e` through
+`_open_window` alone would have produced a room that silently dissolves the first
+time the plane's recycle button is tapped — a member back on `~/.claude`, out of
+the room, still named like a member.
+
+The fix is the channel the pin already survives on: **the argv**.
+`--agent thalamus-<scope>` rides the creation command, which is what
+`respawn-window` re-executes. `resolve_room` is env-only by design and has no such
+channel, so `pin.py` now wraps a member's command as
+`env THALAMUS_ROOM=<room> CLAUDE_CONFIG_DIR=<dir> claude …` and *also* passes
+`-e`, so the window's own environment agrees with what the process got. Room dirs
+live at `~/.thalamus/rooms/<room>/`.
+
+`tmux set-environment -g` is not the alternative: it reaches every window created
+without `-e`, the shape that already burned this box once with `VIRTUAL_ENV`.
 
 ## Not yet measured
 

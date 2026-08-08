@@ -625,13 +625,19 @@ project dir already comes from, so it needs no room registry and is exact rather
 than inferred. Retroactive sweeps (`thalamus bootstrap`) still default to
 `~/.claude/projects` and need the flag passed by hand.
 
-**A room is not inherited; it must be handed to each window explicitly.** tmux
-does not pass an exported variable to a new window — only `-e` does — and
-`respawn-window` drops `-e` entirely, so a recycled window silently returns to
-`~/.claude`. The pin survives that because `--agent` in the creation argv gives
-it a second channel; `resolve_room` is env-only by design and has none, which is
-the whole reason a room is one launch decision. `tmux set-environment -g` is not
-the answer: it reaches every window created without `-e`.
+**A room is not inherited; it must be handed to each window explicitly, and
+through the argv.** tmux does not pass an exported variable to a new window —
+only `-e` does — and `-e` is durable only on `new-session`, which stores it in the
+session environment. On `new-window` it sets the initial process environment and
+nothing else, so `respawn-window` (the control plane's recycle button) re-executes
+the creation command with those variables gone. That is every spawned member
+window. The pin is unharmed because `--agent thalamus-<scope>` rides the creation
+argv, which is exactly what a respawn re-runs; `resolve_room` is env-only by
+design and has no such channel. So `thalamus pin` wraps a member's command as
+`env THALAMUS_ROOM=<room> CLAUDE_CONFIG_DIR=<dir> claude …` and passes `-e`
+besides, so the window's environment agrees with the process's. `tmux
+set-environment -g` is not the answer: it reaches every window created without
+`-e`.
 
 Two variables one word apart govern different trees, and neither should ever be
 called just "the config dir": **`CLAUDE_CONFIG_DIR`** is the harness's user-config

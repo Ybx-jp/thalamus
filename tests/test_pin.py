@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from thalamus.contract.manifest import available_scopes, load_manifest
+from thalamus.harness import pin
 from thalamus.harness.pin import (
     agent_name,
     render_agent,
@@ -157,3 +158,57 @@ def test_resolve_pin_falls_back_to_env_then_main():
         {"CLAUDE_CODE_AGENT": "Explore", "THALAMUS_SCOPE": "eval-methodology"},
         REPO_CONFIG,
     ) == "eval-methodology"
+
+
+def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
+    """
+    Scenario: a member window is opened while THALAMUS_ROOM is set
+
+    Verifications:
+    - the room reaches the process through BOTH channels: tmux `-e` and an `env`
+      prefix on the window's own argv
+    - CLAUDE_CONFIG_DIR points at the room's config dir, which IS the boundary
+    - no room set leaves the argv untouched
+
+    The argv prefix is the load-bearing one. `-e` on `new-window` sets only the
+    initial process environment — tmux does not store it in the session env — so
+    `respawn-window`, which is what the control plane's recycle button runs,
+    re-executes this argv with those variables gone (measured, tmux 3.4). The pin
+    survives a recycle because `--agent thalamus-<scope>` rides the argv;
+    `resolve_room` is env-only by design and would otherwise have no second
+    channel, so a recycled member would drop back onto ~/.claude while still
+    looking like a member.
+    """
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *a, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 1 if "has-session" in cmd else 0, stdout="", stderr="")
+
+    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    monkeypatch.setenv("THALAMUS_ROOM", "alpha")
+
+    spawn("homelab", tmp_path, base=REPO_CONFIG)
+
+    created = [c for c in calls if "new-session" in c][0]
+    room_dir = str(pin.room_config_dir("alpha"))
+
+    # Verifies: the tmux env channel
+    assert "THALAMUS_ROOM=alpha" in created
+    assert f"CLAUDE_CONFIG_DIR={room_dir}" in created
+
+    # Verifies: the durable argv channel, ahead of the command it wraps
+    after = created[created.index("--") + 1:]
+    assert after[0] == "env"
+    assert f"CLAUDE_CONFIG_DIR={room_dir}" in after[: after.index("claude")]
+    assert "THALAMUS_ROOM=alpha" in after[: after.index("claude")]
+
+    # Verifies: outside a room nothing is wrapped
+    calls.clear()
+    monkeypatch.delenv("THALAMUS_ROOM")
+    spawn("homelab", tmp_path, base=REPO_CONFIG)
+    plain = [c for c in calls if "new-session" in c][0]
+    assert plain[plain.index("--") + 1] == "claude"
+    assert not [a for a in plain if a.startswith("CLAUDE_CONFIG_DIR")]
