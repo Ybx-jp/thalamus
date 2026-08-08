@@ -170,6 +170,22 @@ groundings" — rather than a second field. Getting there needs a scope-independ
 witnessing-event node and a claim→event edge carrying the mapping identity. `room` is
 the grouping key that makes those buildable, not a substitute for them.
 
+**`forked_from`** is the fourth, and it is the sharper instrument. Where `room` says
+*these sessions saw one event*, this says *this session derives from that one*: a fork
+(`claude --resume <id> --fork-session`) inherits its parent's context rather than
+reaching its own conclusions, so it is a mapping over the parent's material and its
+agreement corroborates nothing. That is the event-as-source modeling the semiring
+analysis says the session-as-source schema otherwise lacks — available exactly here,
+because the dependence is **recorded rather than inferred**. Room membership makes
+correlation *plausible*; a fork parent makes it *certain*.
+
+Both are launcher-supplied and neither is guessed. The harness mints a fork a fresh
+session id and tells it nothing about the resumed one, so only whoever ran the command
+knows; recovering the link later from transcript content would be inference over
+model-written text, which this layer refuses on the same grounds it refuses to infer a
+room from co-timing. `THALAMUS_FORKED_FROM` carries it, the pin ledger holds it, and
+distillation reads it back ledger-first.
+
 ### The global-Artifact carve-out (and a trap it sets)
 
 **`Artifact` is global** — one vertex per identifier, shared across every scope,

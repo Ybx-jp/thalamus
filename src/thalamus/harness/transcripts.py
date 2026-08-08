@@ -256,6 +256,7 @@ def to_session_graph(
     byte_size: int,
     scope: str = MAIN_SCOPE,
     room: str = "",
+    forked_from: str = "",
 ) -> SessionGraph:
     """Build the deterministic half of a session's memory. No model involved.
 
@@ -283,6 +284,7 @@ def to_session_graph(
         scope=scope,
         project=facts.project or None,
         room=room,
+        forked_from=forked_from,
         summary=_summary(facts),
         sources=[source],
         artifacts=[

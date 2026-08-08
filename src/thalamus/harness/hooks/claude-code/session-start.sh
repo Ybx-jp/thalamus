@@ -92,8 +92,10 @@ if [ -n "$session_id" ]; then
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$cwd" \
     --arg agent "${CLAUDE_CODE_AGENT:-}" \
     --arg room "$(thalamus_resolve_room)" \
+    --arg forked_from "$(thalamus_resolve_forked_from)" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{session_id: $sid, scope: $scope, agent: $agent, room: $room, cwd: $cwd, ts: $ts}' \
+    '{session_id: $sid, scope: $scope, agent: $agent, room: $room,
+      forked_from: $forked_from, cwd: $cwd, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi
 

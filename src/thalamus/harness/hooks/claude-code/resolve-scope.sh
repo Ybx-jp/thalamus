@@ -47,6 +47,16 @@ thalamus_resolve_room() {
   printf '%s' "${THALAMUS_ROOM:-}"
 }
 
+# The session this one was forked from (`claude --resume <id> --fork-session`), empty
+# when it started cold. Mirror of harness/pin.resolve_forked_from. The launcher must
+# supply it: the harness mints the fork a new session id and tells it nothing about the
+# old one, and recovering the link from transcript content afterwards would be inference
+# over model-written text. Where room says "we saw the same thing", this says "I came
+# from you" — so a fork's agreement with its parent corroborates nothing.
+thalamus_resolve_forked_from() {
+  printf '%s' "${THALAMUS_FORKED_FROM:-}"
+}
+
 thalamus_resolve_scope() {
   local agent="${CLAUDE_CODE_AGENT:-}" config scope
   if [ -n "$agent" ] && [ "${agent#thalamus-}" != "$agent" ]; then

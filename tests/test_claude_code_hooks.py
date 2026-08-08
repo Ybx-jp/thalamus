@@ -573,3 +573,39 @@ class TestRoomLedger:
             (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
         assert row["room"] == "room-7"
         assert row["scope"] == "literature"
+
+
+class TestForkedFromLedger:
+    """`room` says these sessions saw one event; `forked_from` says this session
+    derives from that one. A fork inherited its parent's context, so its agreement
+    with the parent is not corroboration — and unlike room membership, that
+    dependence is exact rather than circumstantial.
+    """
+
+    def test_fork_parent_lands_in_the_ledger(self, tmp_path):
+        run_hook(
+            session_start_payload(cwd=str(tmp_path)),
+            tmp_path,
+            env={"THALAMUS_FORKED_FROM": "parent-sess-9"},
+        )
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["forked_from"] == "parent-sess-9"
+
+    def test_a_cold_session_records_no_parent(self, tmp_path):
+        run_hook(session_start_payload(cwd=str(tmp_path)), tmp_path)
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["forked_from"] == ""
+
+    def test_room_and_fork_parent_are_independent(self, tmp_path):
+        """A fork may be in a room, in no room, or a room member may be unforked.
+        Neither field implies the other."""
+        run_hook(
+            session_start_payload(cwd=str(tmp_path)),
+            tmp_path,
+            env={"THALAMUS_FORKED_FROM": "parent-sess-9"},
+        )
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["forked_from"] == "parent-sess-9" and row["room"] == ""

@@ -130,6 +130,7 @@ def _upsert_session_vertex(g: GraphTraversalSource, session: SessionGraph) -> st
         "scope": session.scope,
         "project": session.project or "",
         "room": session.room,
+        "forked_from": session.forked_from,
         "summary": session.summary,
         **_provenance_properties(provenance),
         **_text_stamp(g, session_vid, session.summary),

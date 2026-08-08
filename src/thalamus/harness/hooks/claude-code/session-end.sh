@@ -80,6 +80,17 @@ if [ -f "$ledger" ]; then
     'select(.session_id == $sid) | .room // ""' "$ledger" 2>/dev/null | tail -1)
 fi
 room="${room:-$(thalamus_resolve_room)}"
+
+# The fork parent, ledger-first for the same reasons. Distinct from the room: room
+# says these sessions saw one event, forked_from says this session derives from that
+# one, so its agreement with its parent is not corroboration at all.
+forked_from=""
+if [ -f "$ledger" ]; then
+  forked_from=$(jq -r --arg sid "$session_id" \
+    'select(.session_id == $sid) | .forked_from // ""' "$ledger" 2>/dev/null | tail -1)
+fi
+forked_from="${forked_from:-$(thalamus_resolve_forked_from)}"
+
 if [ -n "$room" ]; then
   echo "distilling session ${session_id:0:8} into scope $scope (room $room)" >>"$log"
 else
@@ -105,7 +116,8 @@ fi
 repo_root="$(thalamus_repo_root)"
 nohup sh -c "
   uv run --project '$repo_root' thalamus extract --harness claude \
-    --session '$session_id' --scope '$scope' --room '$room' --force --write -- '$project_dir'
+    --session '$session_id' --scope '$scope' --room '$room' \
+    --forked-from '$forked_from' --force --write -- '$project_dir'
   uv run --project '$repo_root' thalamus eval sync --write
 " >>"$log" 2>&1 </dev/null &
 

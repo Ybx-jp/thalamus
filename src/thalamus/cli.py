@@ -25,7 +25,7 @@ from thalamus.eval.rake_audit import SAMPLE_SIZE
 from thalamus.eval import snapshots
 from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
-from thalamus.harness.pin import ROSTER_SESSION, resolve_room
+from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
 from thalamus.plane.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
@@ -101,6 +101,13 @@ def main():
         help="Collaboration these sessions witnessed, stamped on the Session (default: "
         "$THALAMUS_ROOM, else none). Sessions sharing a room distilled one conversation, "
         "so their claims are correlated rather than independent.",
+    )
+    extract_parser.add_argument(
+        "--forked-from",
+        default=None,
+        help="Session these were forked from (default: $THALAMUS_FORKED_FROM, else "
+        "none). A fork inherited its parent's context, so it derives from that session "
+        "rather than corroborating it.",
     )
     extract_parser.add_argument(
         "--model",
@@ -966,6 +973,9 @@ def _cmd_extract(args):
     # silently drop the room and turn correlated witnesses back into apparent
     # independent ones.
     room = args.room if args.room is not None else resolve_room()
+    forked_from = (
+        args.forked_from if args.forked_from is not None else resolve_forked_from()
+    )
 
     print(f"{len(parsed)} sessions to extract (model: {args.model})")
 
@@ -989,6 +999,7 @@ def _cmd_extract(args):
                 byte_size=entry.byte_size,
                 scope=scope,
                 room=room,
+                forked_from=forked_from,
             )
 
             payload = read_archived(entry.content_hash, suffix=".jsonl")

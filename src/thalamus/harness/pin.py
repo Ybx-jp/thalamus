@@ -88,6 +88,21 @@ def resolve_room(env: os._Environ | dict[str, str] | None = None) -> str:
     return env.get("THALAMUS_ROOM", "")
 
 
+def resolve_forked_from(env: os._Environ | dict[str, str] | None = None) -> str:
+    """The session this one was forked from, empty when it started cold.
+
+    Set by whoever launches `claude --resume <id> --fork-session`, because the
+    harness does not expose the resumed id to the forked process — it mints a new
+    session id and says nothing about the old one. Recovering the link from
+    transcript content afterwards would be inference over model-written text, which
+    is the guess this layer refuses; the launcher knows the answer exactly and is
+    the only party that does.
+    """
+    if env is None:
+        env = os.environ
+    return env.get("THALAMUS_FORKED_FROM", "")
+
+
 def render_agent(manifest: ExpertManifest) -> str:
     """The derived agent definition for a pinned expert session.
 

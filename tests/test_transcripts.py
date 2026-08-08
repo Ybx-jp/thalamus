@@ -291,3 +291,35 @@ def test_room_is_stamped_on_the_session_and_defaults_empty(tmp_path):
         facts, content_hash="abc123", uri="archive://abc123", byte_size=42
     )
     assert alone.room == ""
+
+
+def test_fork_parent_is_stamped_on_the_session_and_defaults_empty(tmp_path):
+    """
+    Scenario: A session forked from another, and one that started cold
+
+    Verifications:
+    - a fork parent passed at distillation lands on the Session
+    - absent one the field is empty, never inferred from transcript content
+
+    `room` groups co-witnesses; this records derivation. A fork inherited its
+    parent's context rather than reaching its own conclusions, so it is a mapping
+    over the parent's material and its agreement corroborates nothing. The harness
+    mints the fork a fresh session id and says nothing about the resumed one, so
+    only the launcher knows — recovering it later would be inference over
+    model-written text, which this layer refuses.
+    """
+    path = _write_transcript(tmp_path / "proj", "s1", _transcript_records())
+    facts = transcripts.parse(path)
+
+    forked = transcripts.to_session_graph(
+        facts, content_hash="abc123", uri="archive://abc123", byte_size=42,
+        forked_from="parent-sess-9",
+    )
+    assert forked.forked_from == "parent-sess-9"
+    assert forked.room == ""
+    assert check_session(forked) == []
+
+    cold = transcripts.to_session_graph(
+        facts, content_hash="abc123", uri="archive://abc123", byte_size=42
+    )
+    assert cold.forked_from == ""

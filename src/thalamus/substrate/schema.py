@@ -332,6 +332,17 @@ class SessionGraph(BaseModel):
         "distinguishes three sessions that agreed from three that were in the room "
         "together.",
     )
+    forked_from: str = Field(
+        default="",
+        description="The session this one was forked from (`claude --resume <id> "
+        "--fork-session`), empty when it started cold. Where `room` says these sessions "
+        "witnessed one event, this says **this session derives from that one** — the "
+        "fork inherited the parent's context rather than reaching its own conclusions "
+        "from scratch. That makes it a mapping over the parent's material and not an "
+        "independent witness, so its agreement corroborates nothing. Unlike room "
+        "membership the dependence here is exact rather than circumstantial, which is "
+        "the whole reason it is worth a field of its own.",
+    )
 
     artifacts: list[Artifact] = Field(default_factory=list)
     decisions: list[Decision] = Field(default_factory=list)
