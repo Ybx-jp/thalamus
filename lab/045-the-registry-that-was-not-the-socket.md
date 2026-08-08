@@ -1,11 +1,12 @@
 # 045 — The registry that was not the socket
 
-**Ends in: the structural room boundary does not exist. Five concurrent sessions
-across three isolated socket registries all listed each other. `XDG_RUNTIME_DIR`
-relocates the *socket*; peer discovery never reads a socket directory — it reads
-`$CLAUDE_CONFIG_DIR/sessions/*.json`, and each descriptor publishes its own
-`messagingSocketPath` to every reader. `room-guard.sh` is not defence-in-depth
-over a structural boundary. It is the only boundary there is.**
+**Ends in: the room's structural boundary is real, and it is not the one that was
+shipped. `XDG_RUNTIME_DIR` isolates nothing — five sessions across three
+separate socket registries all listed each other. Peer discovery never reads a
+socket directory; it enumerates `$CLAUDE_CONFIG_DIR/sessions/*.json`, each
+descriptor publishing its own `messagingSocketPath`. A per-room
+`CLAUDE_CONFIG_DIR` partitions the roster cleanly, in both directions, and with
+`projects/` symlinked back it costs the room nothing in distillation reach.**
 
 **Date:** 2026-08-08 · **Harness:** Claude Code 2.1.226 · **Status:** measured,
 end-to-end, with positive controls; lab/044's discovery claim refuted
@@ -35,7 +36,7 @@ The pre-declared rule, carried over from lab/044's error: **a negative is only
 readable beside a positive from the same instrument.** If the in-room and
 default-registry controls failed, the isolation result would measure nothing.
 
-## The sockets partitioned. The visibility did not.
+## Arm 1: the sockets partitioned. The visibility did not.
 
 The registries did exactly what lab/044 predicted, at every sample:
 
@@ -85,33 +86,74 @@ discovery must therefore read that directory. It confirmed the mechanism it went
 looking for and never asked what the reader actually reads. **Confirming where a
 write lands does not establish where a read comes from.**
 
+## Arm 2: the config dir is the lever, and it partitions cleanly
+
+Same probes, and the variable isolated on purpose — **every session used the
+default `XDG_RUNTIME_DIR`**, so all sockets bound in the one shared directory and
+any partition is attributable to the config dir alone. A room config dir carries
+a private `sessions/`, with `.credentials.json` symlinked (one token file, no
+second copy) and `.claude.json` copied, since probes write to it.
+
+| prober | config dir | saw |
+|---|---|---|
+| `alpha-one` | `rooms/alpha-cfg` | `alpha-two`, nothing else |
+| `alpha-two` | `rooms/alpha-cfg` | `alpha-one`, nothing else |
+| `beta-one` | `rooms/beta-cfg` | nothing |
+| `outsider` | real `~/.claude` | this session, nothing else |
+
+Meanwhile every probe socket sat in the shared `/run/user/1000/cc-socks`, and the
+three `sessions/` registries held exactly their own members. Visibility followed
+the registries, not the sockets — which is both the result and a direct control
+on the mechanism claim above. `beta-one`'s empty listing carries no in-room
+positive control of its own (it was a room of one); it counts only as a target
+`alpha-*` and `outsider` failed to see.
+
+A room config dir refuses to start without reaching `.credentials.json` — a probe
+with a fresh config dir fails at the API with no credentials to find.
+
+## Arm 3: and it need not cost the room its memory
+
+A separate config dir also relocates `projects/`, where transcripts are written.
+Arm 2's room transcripts landed under `rooms/<room>-cfg/projects/` — on **tmpfs**,
+and nowhere `thalamus extract` looks. Uncorrected, joining a room silently costs
+a session its distillation.
+
+The fix is that `projects/` is not part of the discovery mechanism, so it can be
+symlinked back. Arm 3 kept only `sessions/` and `statsig/` private and symlinked
+`projects/`, `todos/`, `skills`, `agents`, `plugins`, `commands`:
+
+- the partition held, on both calls, both members — `alpha-one` ↔ `alpha-two`,
+  `outsider` saw only this session;
+- room transcripts were written into the real `~/.claude/projects/`;
+- nothing was left behind on tmpfs.
+
 ## Consequences
 
 - **docs/07's structural-boundary paragraph and `room-guard.sh`'s header comment
-  were false and are corrected in this change.** Both stated that per-room
-  `XDG_RUNTIME_DIR` "gives members a registry only they can see".
-- **The guard is now the whole boundary, not the second layer.** Its known limit
-  — outbound only, since `crossSessionInbound` cannot discriminate by sender —
-  was survivable *because* a non-member was supposedly undiscoverable. It isn't.
-  An outsider can enumerate every room member by name and message in, and no room
-  member's hook fires on that path.
-- **The cheap intra-room protocol does not ship on this footing.** Its whole
-  defence was that unprovenanced content could not leave the room. What actually
-  holds today is one sender-side hook over a fully public roster.
-- **`CLAUDE_CONFIG_DIR` is the candidate lever** — it is what `Ln()` resolves, and
-  a private `sessions/` under it would partition the roster itself. Untested
-  end-to-end: a room config dir needs the session to reach `.credentials.json`,
-  and both routes tried (copy, symlink) were refused by the permission
-  classifier. The arm is designed and blocked, not run.
+  named the wrong variable and are corrected in this change.** Both stated that
+  per-room `XDG_RUNTIME_DIR` "gives members a registry only they can see".
+- **The room launcher's isolation argument is `CLAUDE_CONFIG_DIR`, not
+  `XDG_RUNTIME_DIR`** — a room dir with a private `sessions/`, credentials
+  symlinked, and `projects/`/`todos/` symlinked back to the real config.
+- **The guard returns to defence-in-depth**, over a boundary that now exists.
+  Its outbound-only limit is survivable again for the same reason as before: a
+  non-member is not in the roster to be addressed.
 - `--messaging-socket-path` (hidden flag, from the lab/044 consultation) sets the
-  bind address directly. It cannot help here either: the descriptor publishes
+  bind address directly and is irrelevant to isolation — the descriptor publishes
   whatever it sets.
 
 ## Not yet measured
 
-- The `CLAUDE_CONFIG_DIR` arm above.
-- Whether a room member's descriptor can be withheld from the shared registry at
-  all without also cutting it off from `main` and its own subagents.
+- Whether the cheap unprovenanced intra-room protocol is defensible *given* this
+  boundary. This entry establishes that a boundary can be drawn, not that the
+  protocol inside it is safe; the lab/042 verdict on the write-path judge stands.
+- What else a private config dir silently forks. `projects/`, `todos/` and
+  `statsig/` were checked; `history.jsonl`, `file-history/`, `teams/`, `tasks/`
+  and `ide/` were not, and `settings.json` is currently a **copy**, so a settings
+  edit would not reach a live room.
+- Whether an outsider that learns a member's name can still reach it. Discovery
+  is partitioned; the send path was not probed against a name obtained
+  out-of-band.
 - Everything here used `claude -p`. Interactive sessions publish the same
   descriptor shape (this session's is quoted above), but their visibility was not
   probed from inside a room.

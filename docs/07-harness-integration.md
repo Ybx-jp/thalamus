@@ -576,29 +576,34 @@ raw agent ids, because the same tool serves in-process subagents and the
 consultation protocol runs over it. Everything else is blocked with the ticket
 named as the sanctioned route. Sessions outside a room are untouched.
 
-**The guard is the entire boundary. There is no structural layer under it.**
-Peer discovery does not scan any socket directory: it enumerates
-`$CLAUDE_CONFIG_DIR/sessions/<pid>.json` and reads each session's
-`messagingSocketPath` out of the descriptor file. `XDG_RUNTIME_DIR` therefore
-chooses only where a session *binds*, and the descriptor publishes that address
-to every session sharing the config dir. Measured end-to-end with positive
-controls: five concurrent sessions across three isolated socket registries all
-listed each other, in both directions
-([lab/045](../lab/045-the-registry-that-was-not-the-socket.md)).
+The guard is **defence-in-depth over a structural boundary, not a substitute for
+one** — and that boundary is the **config dir**, not the socket. Peer discovery
+scans no socket directory: it enumerates `$CLAUDE_CONFIG_DIR/sessions/<pid>.json`
+and reads each session's `messagingSocketPath` out of the descriptor file. So
+`XDG_RUNTIME_DIR` chooses only where a session *binds*, and the descriptor then
+publishes that address to everyone sharing the config dir — sessions across three
+separate socket registries all listed each other
+([lab/045](../lab/045-the-registry-that-was-not-the-socket.md)). A per-room
+`CLAUDE_CONFIG_DIR` with a private `sessions/` partitions the roster itself,
+measured in both directions with positive controls: members see only members, a
+non-member sees only non-members. Structure governs *discovery* — a non-member is
+never listed — and the guard governs *intent*, catching a member that means to
+reach out however it learned the name.
 
-Two consequences follow, and both are live. The guard governs **outbound only**
-— an outsider can still message a member, since nothing at that sender's end is
-ours to gate and `crossSessionInbound` cannot discriminate by sender. That
-asymmetry was survivable only while a non-member was undiscoverable, and it
-isn't: an outsider can enumerate every room member by name. **The cheap
-unprovenanced intra-room protocol does not ship on this footing** — its defence
-was that such content could not leave the room, and what actually holds today is
-one sender-side hook over a public roster.
+**The room config dir is a symlink farm around one private directory.** Only
+`sessions/` (and `statsig/`) belong to the room; `.credentials.json` is
+symlinked, since a fresh config dir cannot authenticate at all without it, and
+`projects/`, `todos/`, `skills`, `agents`, `plugins`, `commands` are symlinked
+back to the real config. `projects/` matters most: transcripts are written there,
+so a room dir that owns its own would put every member's transcript on tmpfs
+where `thalamus extract` never looks — joining a room would silently cost the
+session its distillation. `.claude.json` is copied, because members write to it.
 
-`CLAUDE_CONFIG_DIR` is the candidate structural lever, since it is what the
-enumeration resolves against; a private `sessions/` under it would partition the
-roster itself. Untested — a room config dir must reach `.credentials.json`, and
-that arm is designed but unrun.
+One limit remains deliberate: the guard governs **outbound only**. An outsider
+can still message a member, since nothing at that sender's end is ours to gate
+and `crossSessionInbound` cannot discriminate by sender — which is precisely why
+the structural boundary, where a non-member is never discoverable in the first
+place, is the one doing the real work.
 
 **A launcher setting `XDG_RUNTIME_DIR` must still assert its socket path length.**
 Over 103 bytes the path silently falls back to `/tmp/cc-socks-<uid>/`
