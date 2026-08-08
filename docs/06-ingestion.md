@@ -70,6 +70,14 @@ literature expert.
    and the gap only surfaces when an expert is asked for a figure it cannot cite.
    Where no HTML rendering exists, hand-feed the relevant sections as a local file
    (`~/.thalamus/hand-fed/`) rather than settling for the abstract.
+   **Full text is necessary and not sufficient.** A whole-document pass extracts a
+   fixed handful of claims and chooses which — so a paper can be held complete while
+   the one mechanism it was procured for never becomes citable. Measured 2026-08-08:
+   the CDSS precursor was ingested in full, and neither its trust-evaluation rule nor
+   its delegation rule distilled, forcing an expert to quote them from source and cite
+   adjacent claims instead. When a *specific* mechanism has to be citable, feed that
+   section as its own file. The excerpt's header names the parent file and what the
+   pass missed, so the two are never mistaken for independent sources.
 5. **Dry-run, verify, then write.** Every ingest runs without `--write` first and
    the operator confirms the extracted title matches the document intended —
    mis-resolved references are a measured failure mode (docs/10), and the archive
