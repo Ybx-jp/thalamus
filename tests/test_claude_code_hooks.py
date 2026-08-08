@@ -110,11 +110,42 @@ class TestInjectedInstruction:
         assert pins[0]["scope"] == "literature"
         assert pins[0]["session_id"] == "cc-sess-1"
 
-    def test_resume_is_not_primed(self, tmp_path):
-        """Resume/compact already carry context; only startup and clear prime."""
-        result = run_hook(session_start_payload(source="resume"), tmp_path)
+    def test_resume_is_not_primed_but_is_still_recorded(self, tmp_path):
+        """
+        Scenario: a resumed or forked session starts
+
+        Verifications:
+        - it is not primed — resume/compact already carry their context
+        - its pin row IS written, with room and fork parent
+
+        These are two concerns, and one early return used to serve both. A fork
+        (`--resume <id> --fork-session`) arrives as `source=resume`, so gating the
+        ledger on `startup` meant the launcher's `room` and `forked_from` were
+        dropped for exactly the sessions those fields exist to describe — a fork's
+        agreement with its parent is inheritance, not corroboration (lab/043).
+        session-end.sh resolves ledger-first precisely so a later re-extraction
+        from a plain shell lands the same way, so an env var that happens to
+        survive to session end does not make the row optional.
+        """
+        result = run_hook(
+            session_start_payload(source="resume"),
+            tmp_path,
+            env={"THALAMUS_ROOM": "alpha", "THALAMUS_FORKED_FROM": "parent-sess-9"},
+        )
+
+        # Verifies: still not primed
         assert json.loads(result.stdout) == {}
-        assert not (tmp_path / ".thalamus" / "pins" / "pins.jsonl").exists()
+
+        # Verifies: recorded anyway, with the launch facts nothing else can recover
+        pins = [
+            json.loads(line)
+            for line in (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()
+            if line.strip()
+        ]
+        assert len(pins) == 1
+        assert pins[0]["session_id"] == "cc-sess-1"
+        assert pins[0]["room"] == "alpha"
+        assert pins[0]["forked_from"] == "parent-sess-9"
 
 
 class TestSessionIdentityInjection:

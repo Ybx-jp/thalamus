@@ -158,6 +158,7 @@ def test_extract_refuses_an_explicit_session_that_matches_nothing(monkeypatch, c
     args = SimpleNamespace(
         harness="claude",
         projects=["-proj"],
+        projects_dir=None,
         session=["bbbb2222"],
         scope="main",
         model=None,

@@ -41,11 +41,20 @@ fi
 # drifted-to dir exists, "Unknown project dir(s)" when it doesn't; both lose the
 # session. `basename(dirname())` is exactly the key transcripts.discover() returns,
 # so it cannot drift and needs no flattening rules.
+#
+# The transcript's location also names its *root*, which is what makes room members
+# distillable at all: a room runs under its own CLAUDE_CONFIG_DIR and writes to that
+# dir's `projects/`, where extract's default sweep of ~/.claude/projects never looks
+# (lab/046). Taking the root from the same path the project dir came from means this
+# needs no room registry and no env var, and it is exact rather than inferred — a
+# session distills where its transcript actually landed, in a room or out of one.
 if [ -n "$transcript_path" ]; then
   project_dir=$(basename "$(dirname "$transcript_path")")
+  projects_dir=$(dirname "$(dirname "$transcript_path")")
 else
   # Claude Code names its project dirs by flattening the absolute cwd: / -> -
   project_dir=$(printf '%s' "$cwd" | tr '/' '-')
+  projects_dir=""
 fi
 
 log_dir="$HOME/.thalamus/logs"
@@ -114,10 +123,12 @@ fi
 # child's cwd where it is while resolving the environment from the checkout, the
 # same pattern the thalamus-pulse user unit already uses.
 repo_root="$(thalamus_repo_root)"
+projects_arg=""
+[ -n "$projects_dir" ] && projects_arg="--projects-dir '$projects_dir'"
 nohup sh -c "
   uv run --project '$repo_root' thalamus extract --harness claude \
     --session '$session_id' --scope '$scope' --room '$room' \
-    --forked-from '$forked_from' --force --write -- '$project_dir'
+    --forked-from '$forked_from' $projects_arg --force --write -- '$project_dir'
   uv run --project '$repo_root' thalamus eval sync --write
 " >>"$log" 2>&1 </dev/null &
 

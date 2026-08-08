@@ -47,12 +47,6 @@ input=$(cat)
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
 source_kind=$(printf '%s' "$input" | jq -r '.source // "startup"')
 
-# Only prime memory on a genuinely new session. Resume/compact already carry context.
-if [ "$source_kind" != "startup" ] && [ "$source_kind" != "clear" ]; then
-  printf '{}\n'
-  exit 0
-fi
-
 if [ -z "$cwd" ]; then
   printf '{}\n'
   exit 0
@@ -97,6 +91,20 @@ if [ -n "$session_id" ]; then
     '{session_id: $sid, scope: $scope, agent: $agent, room: $room,
       forked_from: $forked_from, cwd: $cwd, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
+fi
+
+# Recording is unconditional; priming is not. A resumed or compacted session already
+# carries its context, so injecting open threads again is waste — but the pin above
+# must be written for *every* source, and a single early return serving both concerns
+# silently cost the one case the fields exist for. A fork arrives as `source=resume`,
+# so gating the ledger on `startup` meant `--fork-session` recorded neither
+# `forked_from` nor `room`: precisely the sessions whose dependence the graph cannot
+# otherwise recover (lab/043, lab/046). Ledger-first resolution at distillation is
+# what makes a later re-extraction from a plain shell land the same way, so an env
+# fallback that happens to survive to session end is not a substitute for the row.
+if [ "$source_kind" != "startup" ] && [ "$source_kind" != "clear" ]; then
+  printf '{}\n'
+  exit 0
 fi
 
 # Standing subagent authorization. Some harness configurations carry a blanket

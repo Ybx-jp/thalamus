@@ -64,6 +64,14 @@ def main():
     )
     bootstrap_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     bootstrap_parser.add_argument(
+        "--projects-dir",
+        type=Path,
+        default=None,
+        help="Transcript root to sweep (default: ~/.claude/projects). A room member "
+        "runs under its own CLAUDE_CONFIG_DIR and writes transcripts to that dir's "
+        "`projects/` instead, where the default sweep never looks.",
+    )
+    bootstrap_parser.add_argument(
         "--scope", default=MAIN_SCOPE, help="Scope to pin these sessions to (default: main)"
     )
     bootstrap_parser.add_argument(
@@ -92,6 +100,15 @@ def main():
         "the adapter existed.",
     )
     extract_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    extract_parser.add_argument(
+        "--projects-dir",
+        type=Path,
+        default=None,
+        help="Transcript root holding the project dir (default: ~/.claude/projects). "
+        "A room member runs under its own CLAUDE_CONFIG_DIR and writes transcripts to "
+        "that dir's `projects/`; session-end.sh derives this from the transcript's own "
+        "path, so a room session distills where it actually landed rather than nowhere.",
+    )
     extract_parser.add_argument(
         "--scope", default=MAIN_SCOPE, help="Scope the sessions are pinned to (default: main)"
     )
@@ -765,13 +782,14 @@ def _cmd_schema():
 
 
 def _cmd_bootstrap(args):
-    available = transcripts.discover()
+    root = args.projects_dir or transcripts.CLAUDE_PROJECTS
+    available = transcripts.discover(args.projects_dir)
     if not available:
-        print(f"No Claude Code transcripts found under {transcripts.CLAUDE_PROJECTS}", file=sys.stderr)
+        print(f"No Claude Code transcripts found under {root}", file=sys.stderr)
         sys.exit(1)
 
     if not args.projects:
-        print(f"Transcripts under {transcripts.CLAUDE_PROJECTS}:\n")
+        print(f"Transcripts under {root}:\n")
         for name, paths in sorted(available.items(), key=lambda kv: -len(kv[1])):
             size_mb = sum(p.stat().st_size for p in paths) / 1_000_000
             print(f"  {len(paths):>3} transcripts  {size_mb:>6.1f} MB  {name}")
@@ -792,7 +810,9 @@ def _cmd_bootstrap(args):
 
     try:
         for project in args.projects:
-            results = bootstrap_project(project, scope=args.scope)
+            results = bootstrap_project(
+                project, projects_dir=args.projects_dir, scope=args.scope
+            )
             print(f"\n=== {project} ({len(results)} transcripts) ===")
             for result in results:
                 name = result.transcript.stem[:8]
@@ -881,14 +901,22 @@ def _cmd_extract(args):
             )
             return
     else:
-        available = transcripts.discover()
+        available = transcripts.discover(args.projects_dir)
         if not args.projects:
             print("Specify project dir(s); `thalamus bootstrap` lists what is available.")
             return
 
         unknown = [p for p in args.projects if p not in available]
         if unknown:
-            print(f"Unknown project dir(s): {', '.join(unknown)}", file=sys.stderr)
+            # Naming the root matters here: a room member's transcripts live under
+            # its own CLAUDE_CONFIG_DIR, so the same project dir name is genuinely
+            # absent from the default root and the failure is otherwise
+            # indistinguishable from a typo.
+            root = args.projects_dir or transcripts.CLAUDE_PROJECTS
+            print(
+                f"Unknown project dir(s) under {root}: {', '.join(unknown)}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     extracted = skipped = failed = 0

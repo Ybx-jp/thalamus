@@ -323,3 +323,40 @@ def test_fork_parent_is_stamped_on_the_session_and_defaults_empty(tmp_path):
         facts, content_hash="abc123", uri="archive://abc123", byte_size=42
     )
     assert cold.forked_from == ""
+
+
+def test_a_room_members_transcripts_are_discoverable_under_its_own_config_dir(tmp_path):
+    """
+    Scenario: A room member runs under its own CLAUDE_CONFIG_DIR, so its
+    transcripts land in that dir's `projects/` and not in ~/.claude/projects
+
+    Verifications:
+    - the default root does not see them
+    - the room's own root does, under the same project dir name
+
+    The room boundary is the config dir (lab/045), and a config dir owns
+    `projects/`. That is what keeps a non-member from resuming a member's session
+    (lab/046) — and it is also why a sweep anchored on the default root distills a
+    room member nowhere at all. Both roots must be reachable, and the same project
+    dir name legitimately exists under each, so the root has to be passed rather
+    than guessed from the name.
+    """
+    default_root = tmp_path / "default" / "projects"
+    room_root = tmp_path / "rooms" / "alpha-cfg" / "projects"
+    _write_transcript(default_root / "proj", "outside", _transcript_records())
+    _write_transcript(room_root / "proj", "inroom", _transcript_records())
+
+    outside = transcripts.discover(default_root)
+    inroom = transcripts.discover(room_root)
+
+    # Verifies: same project dir name, disjoint transcripts — the root decides
+    assert [p.stem for p in outside["proj"]] == ["outside"]
+    assert [p.stem for p in inroom["proj"]] == ["inroom"]
+
+    # Verifies: a room member distills from its own root, not the default one
+    results = bootstrap_project(
+        "proj", projects_dir=room_root, archive_base=tmp_path / "archive"
+    )
+    assert len(results) == 1
+    assert results[0].session is not None
+    assert results[0].session.session_id == "inroom"
