@@ -25,7 +25,7 @@ from thalamus.eval.rake_audit import SAMPLE_SIZE
 from thalamus.eval import snapshots
 from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
-from thalamus.harness.pin import ROSTER_SESSION
+from thalamus.harness.pin import ROSTER_SESSION, resolve_room
 from thalamus.plane.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
@@ -94,6 +94,13 @@ def main():
     extract_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     extract_parser.add_argument(
         "--scope", default=MAIN_SCOPE, help="Scope the sessions are pinned to (default: main)"
+    )
+    extract_parser.add_argument(
+        "--room",
+        default=None,
+        help="Collaboration these sessions witnessed, stamped on the Session (default: "
+        "$THALAMUS_ROOM, else none). Sessions sharing a room distilled one conversation, "
+        "so their claims are correlated rather than independent.",
     )
     extract_parser.add_argument(
         "--model",
@@ -954,6 +961,12 @@ def _cmd_extract(args):
     if args.limit:
         parsed = parsed[: args.limit]
 
+    # Ledger-first for the room the same way session-end.sh resolves the scope: the
+    # spawner's env is authoritative, but a re-extraction from a plain shell must not
+    # silently drop the room and turn correlated witnesses back into apparent
+    # independent ones.
+    room = args.room if args.room is not None else resolve_room()
+
     print(f"{len(parsed)} sessions to extract (model: {args.model})")
 
     graph = connect(args.url)
@@ -975,6 +988,7 @@ def _cmd_extract(args):
                 uri=entry.uri,
                 byte_size=entry.byte_size,
                 scope=scope,
+                room=room,
             )
 
             payload = read_archived(entry.content_hash, suffix=".jsonl")

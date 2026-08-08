@@ -278,6 +278,7 @@ def to_session_graph(
     uri: str,
     byte_size: int,
     scope: str = MAIN_SCOPE,
+    room: str = "",
 ) -> SessionGraph:
     """The deterministic half, stamped as Cursor's.
 
@@ -286,7 +287,7 @@ def to_session_graph(
     builder would fork the schema contract with it.
     """
     graph = _to_session_graph(
-        facts, content_hash=content_hash, uri=uri, byte_size=byte_size, scope=scope
+        facts, content_hash=content_hash, uri=uri, byte_size=byte_size, scope=scope, room=room
     )
     return graph.model_copy(update={"tool": Tool.CURSOR})
 

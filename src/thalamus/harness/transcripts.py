@@ -255,6 +255,7 @@ def to_session_graph(
     uri: str,
     byte_size: int,
     scope: str = MAIN_SCOPE,
+    room: str = "",
 ) -> SessionGraph:
     """Build the deterministic half of a session's memory. No model involved.
 
@@ -281,6 +282,7 @@ def to_session_graph(
         tool=Tool.CLAUDE_CODE,
         scope=scope,
         project=facts.project or None,
+        room=room,
         summary=_summary(facts),
         sources=[source],
         artifacts=[

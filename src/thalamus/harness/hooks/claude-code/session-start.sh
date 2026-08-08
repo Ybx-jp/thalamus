@@ -82,10 +82,18 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 if [ -n "$session_id" ]; then
   pin_dir="$HOME/.thalamus/pins"
   mkdir -p "$pin_dir"
+  # `room` records the collaboration this session was launched into, empty when it
+  # worked alone. It rides the ledger for the same reason the scope does: it is a
+  # launch fact that must survive the process, and session-end.sh reads it back at
+  # distillation. Sessions sharing a room witnessed one conversation, so their claims
+  # are correlated — and nothing in a finished graph can tell three sessions that
+  # independently agreed from three that were in the room together, which is why this
+  # is recorded at write time or not at all.
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$cwd" \
     --arg agent "${CLAUDE_CODE_AGENT:-}" \
+    --arg room "$(thalamus_resolve_room)" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{session_id: $sid, scope: $scope, agent: $agent, cwd: $cwd, ts: $ts}' \
+    '{session_id: $sid, scope: $scope, agent: $agent, room: $room, cwd: $cwd, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi
 

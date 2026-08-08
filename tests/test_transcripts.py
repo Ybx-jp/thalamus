@@ -262,3 +262,32 @@ def test_bootstrap_retains_evidence_and_is_idempotent(tmp_path):
     assert first[0].content_hash == second[0].content_hash
     assert first[0].session.summary == second[0].session.summary
     assert first[0].issues == []
+
+
+def test_room_is_stamped_on_the_session_and_defaults_empty(tmp_path):
+    """
+    Scenario: Sessions distilled from inside a room, and one that worked alone
+
+    Verifications:
+    - a room passed at distillation lands on the Session
+    - absent a room the field is empty, never guessed
+
+    The room is what makes correlated witnesses detectable later. N sessions that
+    distilled one shared conversation produce correlated claims; a convergence count
+    treating them as distinct witnesses reads one event as N-fold agreement. Nothing
+    in a finished graph recovers that, so it is recorded at write time or not at all.
+    """
+    path = _write_transcript(tmp_path / "proj", "s1", _transcript_records())
+    facts = transcripts.parse(path)
+
+    in_room = transcripts.to_session_graph(
+        facts, content_hash="abc123", uri="archive://abc123", byte_size=42, room="room-7"
+    )
+    assert in_room.room == "room-7"
+    # Verifies: the room does not disturb the contract it rides along with
+    assert check_session(in_room) == []
+
+    alone = transcripts.to_session_graph(
+        facts, content_hash="abc123", uri="archive://abc123", byte_size=42
+    )
+    assert alone.room == ""

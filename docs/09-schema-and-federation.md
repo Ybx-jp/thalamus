@@ -138,6 +138,20 @@ interconnection. That is an enforceable constraint *and* a metric:
 `scope` answers *which expert*. `Session`, `Thread`, and `Claim` carry both;
 `Artifact` carries `project` only.
 
+`Session` carries a third: **`room`** answers *which event* — the collaboration the
+session witnessed, empty when it worked alone. It exists because sessions that
+distilled one shared conversation produce **correlated** claims, and a convergence
+count that treats them as distinct witnesses reads a single event as N-fold
+agreement. That artifact is undetectable after the fact: nothing in a finished graph
+separates three sessions that independently agreed from three that were in the room
+together. So the room is stamped at write time or never — resolved from
+`THALAMUS_ROOM`, recorded in the pin ledger at SessionStart, and read back
+ledger-first at distillation, the same path the pin takes and for the same reason
+(the spawner's environment is gone by SessionEnd). Empty is the honest default;
+inferring a room from co-timing would manufacture the very correlation the field
+exists to expose. Nothing consumes it yet — deduplicating convergence by room is the
+first thing it makes possible, and it cannot be built retroactively.
+
 ### The global-Artifact carve-out (and a trap it sets)
 
 **`Artifact` is global** — one vertex per identifier, shared across every scope,

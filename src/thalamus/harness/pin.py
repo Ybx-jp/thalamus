@@ -73,6 +73,21 @@ def resolve_pin(env: os._Environ | dict[str, str] | None = None,
     return env.get("THALAMUS_SCOPE", MAIN_SCOPE)
 
 
+def resolve_room(env: os._Environ | dict[str, str] | None = None) -> str:
+    """The collaboration this process is part of, empty when it works alone.
+
+    Env-only, with no agent-picker fallback: a room is a launch decision the
+    spawner makes for a set of processes at once, so unlike the pin there is no
+    second channel that could disagree. Empty is the honest default — a session
+    that was never told it was in a room was not in one, and guessing from
+    co-timing would manufacture exactly the correlation the field exists to
+    detect.
+    """
+    if env is None:
+        env = os.environ
+    return env.get("THALAMUS_ROOM", "")
+
+
 def render_agent(manifest: ExpertManifest) -> str:
     """The derived agent definition for a pinned expert session.
 

@@ -37,6 +37,16 @@ thalamus_sandbox_guard() {
   fi
 }
 
+# The room this session belongs to — the collaboration it witnessed, empty when it
+# worked alone. Mirror of harness/pin.resolve_room. Env-only and deliberately without
+# the agent-picker fallback the pin has: a room is one launch decision covering a set
+# of processes, so there is no second channel to disagree with. Empty is the honest
+# default — inferring a room from co-timing would manufacture the very correlation
+# the field exists to make detectable.
+thalamus_resolve_room() {
+  printf '%s' "${THALAMUS_ROOM:-}"
+}
+
 thalamus_resolve_scope() {
   local agent="${CLAUDE_CODE_AGENT:-}" config scope
   if [ -n "$agent" ] && [ "${agent#thalamus-}" != "$agent" ]; then

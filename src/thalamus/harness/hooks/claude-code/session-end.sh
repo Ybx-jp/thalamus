@@ -68,7 +68,23 @@ scope="${ledger_scope:-$env_scope}"
 if [ -n "$ledger_scope" ] && [ "$ledger_scope" != "$env_scope" ]; then
   echo "pin mismatch: ledger=$ledger_scope env=$env_scope — using ledger" >>"$log"
 fi
-echo "distilling session ${session_id:0:8} into scope $scope" >>"$log"
+
+# The room, resolved ledger-first for the same reason as the scope, and with one
+# extra: by SessionEnd the spawner's environment may be gone, so the ledger row
+# written at SessionStart is the only surviving record that this session shared a
+# conversation with others. Losing it turns correlated witnesses back into apparent
+# independent ones — silently, and in the direction that looks like more evidence.
+room=""
+if [ -f "$ledger" ]; then
+  room=$(jq -r --arg sid "$session_id" \
+    'select(.session_id == $sid) | .room // ""' "$ledger" 2>/dev/null | tail -1)
+fi
+room="${room:-$(thalamus_resolve_room)}"
+if [ -n "$room" ]; then
+  echo "distilling session ${session_id:0:8} into scope $scope (room $room)" >>"$log"
+else
+  echo "distilling session ${session_id:0:8} into scope $scope" >>"$log"
+fi
 
 # --force: a resumed session that was distilled at an earlier stop gets re-extracted
 # with its newer, longer transcript. Claims are content-addressed, so unchanged
@@ -89,7 +105,7 @@ echo "distilling session ${session_id:0:8} into scope $scope" >>"$log"
 repo_root="$(thalamus_repo_root)"
 nohup sh -c "
   uv run --project '$repo_root' thalamus extract --harness claude \
-    --session '$session_id' --scope '$scope' --force --write -- '$project_dir'
+    --session '$session_id' --scope '$scope' --room '$room' --force --write -- '$project_dir'
   uv run --project '$repo_root' thalamus eval sync --write
 " >>"$log" 2>&1 </dev/null &
 

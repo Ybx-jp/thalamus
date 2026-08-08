@@ -532,3 +532,44 @@ def test_staging_never_blocks_and_never_speaks(tmp_path):
         result = _run_stage(payload, tmp_path)
         assert result.returncode == 0
         assert result.stdout.strip() == ""
+
+
+class TestRoomLedger:
+    """The room is the third axis: project = which repo, scope = which expert,
+    room = which event. It rides the ledger because by SessionEnd the spawner's
+    environment is gone, and a finished graph cannot tell three sessions that
+    independently agreed from three that were in the room together.
+    """
+
+    def test_room_lands_in_the_ledger(self, tmp_path):
+        run_hook(
+            session_start_payload(cwd=str(tmp_path)),
+            tmp_path,
+            env={"THALAMUS_ROOM": "room-7"},
+        )
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["room"] == "room-7"
+
+    def test_a_session_that_worked_alone_records_an_empty_room(self, tmp_path):
+        """Empty is the honest default. Inferring a room from co-timing would
+        manufacture exactly the correlation the field exists to make detectable."""
+        run_hook(session_start_payload(cwd=str(tmp_path)), tmp_path)
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["room"] == ""
+
+    def test_room_is_orthogonal_to_scope_and_project(self, tmp_path):
+        run_hook(
+            session_start_payload(cwd=str(tmp_path)),
+            tmp_path,
+            env={
+                "THALAMUS_ROOM": "room-7",
+                "CLAUDE_CODE_AGENT": "thalamus-literature",
+                "THALAMUS_PROJECT": "thalamus",
+            },
+        )
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["room"] == "room-7"
+        assert row["scope"] == "literature"

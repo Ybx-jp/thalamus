@@ -321,6 +321,17 @@ class SessionGraph(BaseModel):
         "`scope` is WHICH EXPERT. A Thalamus session pinned to the agent-systems expert "
         "has both.",
     )
+    room: str = Field(
+        default="",
+        description="The collaboration this session witnessed, empty when it worked alone. "
+        "A third orthogonal axis: `project` is WHICH REPO, `scope` is WHICH EXPERT, `room` "
+        "is WHICH EVENT. Sessions sharing a room distilled one conversation, so their "
+        "claims are correlated — a convergence count that treats them as distinct "
+        "witnesses reads one event as N-fold agreement. Recorded at write time because "
+        "the correlation is undetectable afterwards: nothing in a finished graph "
+        "distinguishes three sessions that agreed from three that were in the room "
+        "together.",
+    )
 
     artifacts: list[Artifact] = Field(default_factory=list)
     decisions: list[Decision] = Field(default_factory=list)
