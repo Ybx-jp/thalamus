@@ -869,11 +869,19 @@ warranted on redundancy and noise, **not** on safety), and topology explaining
 asked. Checking it found ancestors, not a gap** (scan 2026-08-08). Every component
 has a mature prior treatment, none of it previously held: *what a citation means for
 an assembled answer* is semiring provenance (Green, Karvounarakis & Tannen, PODS
-2007), whose annotation polynomials already separate alternative derivations from
-jointly-required contributors; *how a federation refuses evidence stripped of its
-origin* is collaborative data sharing (ORCHESTRA / CDSS, TODS 2013), where
-autonomous peers hold disjoint instances and **trust conditions are evaluated on
-provenance** — structurally the nearest ancestor to this project's topology; *who
+2007, held), whose annotation polynomials already separate alternative derivations
+from jointly-required contributors; *how a federation refuses evidence stripped of
+its origin* is collaborative data sharing, where autonomous peers hold disjoint
+instances and **trust conditions are evaluated on provenance** — structurally the
+nearest ancestor to this project's topology, with the trust-composition rule stated
+as a peer delegating the ability to distrust tuples to those it maps data from.
+The journal statement of that work (ORCHESTRA / CDSS, TODS 38(3) 2013,
+doi:10.1145/2500127) is **supply-blocked** — closed at ACM, confirmed against
+Unpaywall and OpenAlex, absent from all three authors' pages, and a Semantic Scholar
+record claiming bronze OA resolves to a 403. Held instead is its direct primary
+precursor, *Update Exchange with Mappings and Provenance* (UPenn TR MS-CIS-07-26,
+hand-fed), which carries the trust-policy mechanism in full; it is the mechanism
+source, not the citation, and the two must not be merged. *Who
 among a group produced an output* was closed by accountable-subgroup multisignatures
 (CCS 2001); *who is answerable for a joint assertion* is group assertion (Lackey)
 and the joint-intention and degree-of-responsibility literatures; and *mechanical
