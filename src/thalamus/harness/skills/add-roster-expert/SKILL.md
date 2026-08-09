@@ -1,13 +1,13 @@
 ---
 name: add-roster-expert
-description: The end-to-end procedure for adding a Thalamus expert to the roster without breaking the tmux control plane or its phone PWA. Use BEFORE creating any config/experts/ manifest or running `thalamus roster` with a new scope, when a roster/plane surface misbehaves after a roster change (e.g. the /plane/ PWA stuck at "connecting"), or before touching pin.py window mechanics or thalamus-plane server behavior. Jointly held by main and homelab — homelab keeps it current.
+description: The end-to-end procedure for adding a Thalamus expert to the roster without breaking the tmux roster or the console's phone PWA. Use BEFORE creating any config/experts/ manifest or running `thalamus roster` with a new scope, when a roster/console surface misbehaves after a roster change (e.g. the PWA stuck at "connecting"), or before touching pin.py window mechanics or console server behavior. Jointly held by main and homelab — homelab keeps it current.
 ---
 
-# Add a Roster Expert (without breaking the control plane)
+# Add a Roster Expert (without breaking the roster)
 
 Jointly designed by main and the homelab expert (consultation
 `scope:main:exchange:92f74910bc124b84`, 2026-07-18). **Custody:** any session
-that changes roster/plane mechanics (pin.py windowing, thalamus-plane server or
+that changes roster or console mechanics (pin.py windowing, the console server or
 SW, tailscale serve layout) updates this skill in the same change; sessions
 pinned to `homelab` treat stale content here as a bug in their domain. Hazards
 cite homelab graph claims so consultations can serve them; keep citations
@@ -15,10 +15,11 @@ current when re-ingesting.
 
 **Where things live.** This skill sits beside the agents it governs — in the same
 package that declares the experts and owns `pin.py` — so the manifest, the window
-mechanics, and the procedure for adding one all version together. The *mechanism*
-hazards it indexes are maintained in the control-plane repo instead, because they
-are true of any systemd-owned tmux session driven over HTTP and have an audience
-beyond Thalamus. Change window mechanics here; change the hazard write-up there.
+mechanics, and the procedure for adding one all version together. The console it
+warns about is `src/thalamus/console/`, in this same package. The *mechanism*
+hazards it indexes are vendor-neutral — true of any systemd-owned tmux session
+driven over HTTP — and are written up separately in
+[docs/console-hazards.md](../../../../../docs/console-hazards.md).
 
 ## Procedure
 
@@ -33,8 +34,8 @@ beyond Thalamus. Change window mechanics here; change the hazard write-up there.
    and local files bypass it — hand-feeding IS the curation decision (docs/06).
    A malformed or scope-mismatched manifest fails loudly but aborts the whole
    roster run mid-loop (`load_manifest` raises inside `roster()`'s scope loop),
-   which the plane's roster-sync button surfaces as a failed sync — fix the
-   YAML, don't debug the plane.
+   which the console's roster-sync button surfaces as a failed sync — fix the
+   YAML, don't debug the console.
 3. **Anchor the scope if it must be consultable now** — a scope with nothing to
    cite refuses the consultation mint (docs/02). Procure anchors *into the new
    scope* (docs/06 rule 1's scope note), `--feed` named for the demand, and
@@ -44,9 +45,9 @@ beyond Thalamus. Change window mechanics here; change the hazard write-up there.
    <scope>.md` is derived from the manifest, regenerated on every launch, and
    gitignored on purpose.
 5. **A new manifest is spawnable immediately — you rarely open a window at all.**
-   Experts are **spawned on demand**, not booted at bring-up: the plane's
+   Experts are **spawned on demand**, not booted at bring-up: the console's
    `+ SPAWN` sheet reads `config/experts/*.yaml` for its scope list and
-   `~/code/thalamus-plane/spawn-dirs.json` (favorites) + `~/code` git repos for
+   the console's `--dir` favorites + `--scan` roots (`~/code` git repos) for
    its directory list, so a fresh manifest shows up with no restart. Under the
    hood `thalamus spawn <scope> --dir <path>` opens one **detached** window
    (`new-window -d`, pin.py) in the chosen cwd. `thalamus roster` now brings up
@@ -56,11 +57,11 @@ beyond Thalamus. Change window mechanics here; change the hazard write-up there.
    to `~/.claude/agents/` (not only the repo's `.claude/agents/`) so `--agent`
    and sibling consultation subagents resolve from any project cwd. Only an
    interactive `thalamus pin <scope>` switches focus, because the operator asked.
-6. **Touch nothing on the plane.** The plane server reads tmux fresh on every
+6. **Touch nothing on the console.** The console server reads tmux fresh on every
    poll and targets windows by index, so a new window appears on the phone by
    itself (`scope:homelab:claim:f9c9311a69049c34`; capture/index design in
    `scope:homelab:source:e57d6219e6f3901f33d4206666c081b53bc41e97d677607223ca775014354dd5`).
-   Never restart `thalamus-plane.service` for a roster or MCP change — arming
+   Never restart `thalamus-console.service` for a roster or MCP change — arming
    is per *claude process*, and restarts, when actually needed, go through the
    whitelisted `systemd-run` path only (`scope:homelab:claim:2a4b253bc3df9c65`).
    The restart ban has teeth beyond arming — the cgroup hazard (hazard 2) means
@@ -78,16 +79,14 @@ beyond Thalamus. Change window mechanics here; change the hazard write-up there.
 ## Hazards
 
 Split by audience. The **mechanism** hazards are not Thalamus-specific — they belong
-to any tmux-session-owned-by-systemd-driven-over-HTTP setup, so they live
-vendor-neutrally in the control-plane repo, which is where they are maintained:
-[thalamus-plane/docs/control-plane-hazards.md](https://github.com/Ybx-jp/thalamus-plane/blob/master/docs/control-plane-hazards.md)
-(locally `~/code/thalamus-plane/docs/control-plane-hazards.md`). Read it before
-changing window mechanics; the index below is a reminder of what's in it, not a
-substitute.
+to any tmux-session-owned-by-systemd-driven-over-HTTP setup, so they are written up
+vendor-neutrally in [docs/console-hazards.md](../../../../../docs/console-hazards.md).
+Read it before changing window mechanics; the index below is a reminder of what's in
+it, not a substitute.
 
 | # | Mechanism hazard | One-line rule |
 |---|---|---|
-| 1 | Session creator defines window 0 | Order `thalamus-roster.service` `Before=` tty and plane; identify the anchor by lowest index, never by name |
+| 1 | Session creator defines window 0 | Order `thalamus-roster.service` `Before=` tty and console; identify the anchor by lowest index, never by name |
 | 2 | tmux server lives in the creating unit's cgroup | `KillMode=process`; check `/proc/<tmux>/cgroup` before restarting anything |
 | 3 | A pane inherits the *creating client's* PATH | Units pin `Environment=PATH=%h/.local/bin:…`; without it a boot-started unit spawns panes that can't exec `claude` |
 | 4 | `tmux new-window` returns 0 before the command execs | Confirm a live window; never trust the exit code (`do_spawn` does this) |
@@ -100,7 +99,7 @@ Graph provenance for the above, for consultations that need to cite it:
 tmux geometry + WebAPK scopes
 `scope:homelab:source:e57d6219e6f3901f33d4206666c081b53bc41e97d677607223ca775014354dd5`;
 stale-SW failure `scope:homelab:claim:b8b1aa2cbd3c2b53` → network-first fix
-`scope:homelab:claim:ffbb6a07cd23a9c3`; plane reads tmux fresh
+`scope:homelab:claim:ffbb6a07cd23a9c3`; console reads tmux fresh
 `scope:homelab:claim:f9c9311a69049c34`; restart path
 `scope:homelab:claim:2a4b253bc3df9c65`.
 
@@ -125,31 +124,31 @@ fit assumes 60 columns. Don't "fix" window sizes.
   Same per-process arming rule as MCP/hooks, pointing the other direction —
   caught in the 2026-07-18 skill audit, not yet bitten.
 - **Recycling a window ends the session in it** — including the one you might
-  be running in (`scope:homelab:claim:324c87a12b4704cc`). The plane UI now
+  be running in (`scope:homelab:claim:324c87a12b4704cc`). The console UI now
   warns: the admin list badges the window you're viewing, and recycling it (or
   restart-all) gets a sharp confirm saying the conversation ends (resolved
   `scope:homelab:thread:homelab-recycle-self-termination-risk`, 2026-07-19).
   The warning covers only the *viewed* window — a session you're running in a
   terminal elsewhere gets no special warning. Recycle is for re-arming
   MCP/hooks after wiring changes, not part of adding an expert.
-- **Close vs. recycle vs. the anchor.** The plane's INFRA → *close* ends a
+- **Close vs. recycle vs. the anchor.** The console's INFRA → *close* ends a
   session for good: `/exit` → SessionEnd distillation → the window is *removed*
   (recycle respawns it; close does not). Force-`kill-window` only after the
   4-min grace, which skips distillation — same tradeoff as a recycle timeout.
   The **anchor** (the lowest-indexed window, the roster's `main`) is guarded
-  un-closable — it's the plane's reference cwd for roster-sync and command
+  un-closable — it's the console's reference cwd for roster-sync and command
   scanning. On-demand `main` sessions opened elsewhere share the name "main" but
   are *not* the anchor (identified by lowest index, never by name — a name guard
   wrongly protected every "main").
 - **On-demand duplicates are allowed and index-targeted.** Two windows for the
-  same scope in different dirs are fine (the plane targets by index, not name);
+  same scope in different dirs are fine (the console targets by index, not name);
   roster idempotency (`already has a window`) keys on name and only governs
   `--all`, not on-demand spawn.
 - **How a stolen anchor presents here** (mechanism: hazard 1). When ttyd's
   `tmux new -A -s thalamus` wins the race, index 0 is a bare shell; roster sync
   adds `main` beside it at index 1, and INFRA → *restart* on that anchor types
   `/exit` into bash (`-bash: /exit: No such file or directory`), so the pane
-  never dies and the plane sits `recycling: true` for the full 4-min grace —
+  never dies and the console sits `recycling: true` for the full 4-min grace —
   which reads as **"sessions won't start"**. `thalamus-roster.service` ordered
   `Before=thalamus-tty.service` prevents it; `pin.spawn()` creates the session
   with the scope's window for the same reason. Repair: confirm index 0 is an idle
@@ -160,10 +159,10 @@ fit assumes 60 columns. Don't "fix" window sizes.
   anchor never loads — the boot-time PATH has no `~/.local/bin`, so `claude`
   can't exec. If the anchor was the only window, the tmux server exits with it
   and the whole roster is gone (2026-08-08). Check
-  `systemctl --user show thalamus-plane -p Environment` first; `do_spawn` now
+  `systemctl --user show thalamus-console -p Environment` first; `do_spawn` now
   reports this as a failure instead of a success.
 
 ## The seam in one line
 
-**The manifest is the rollout; the roster window is detached; the plane needs
+**The manifest is the rollout; the roster window is detached; the console needs
 nothing — if the phone disagrees, suspect its service worker, not the roster.**

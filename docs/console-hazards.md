@@ -1,0 +1,199 @@
+# Hazards of driving tmux from a phone
+
+Everything here has actually bitten a running system, and none of it is specific to
+this project — it applies to any setup where **a long-lived tmux session is created by
+a systemd unit and driven over HTTP from a browser**. The failures share a shape:
+tmux, systemd, and the browser each report success while the thing you wanted quietly
+did not happen.
+
+If you are building something like this, these are the traps in the order they tend to
+find you.
+
+---
+
+## 1. Whoever creates the session defines window 0 — forever
+
+tmux window indexes are assigned in creation order and never reshuffle. If your control
+plane treats "the lowest-indexed window" as special — an anchor, a home tab, the
+reference directory — then **whichever process creates the session first decides what
+that window is**, for the entire life of the tmux server.
+
+The classic way to lose this race: a web terminal like `ttyd` configured with
+`tmux new -A -s <session>`. It attaches if the session exists and *creates it with a
+bare login shell* if it doesn't. First browser connect after a reboot, and index 0 is
+now a shell instead of your real process. Everything that assumes the anchor is a real
+process then misbehaves — commands typed into it land in `bash`, which answers
+`-bash: /exit: No such file or directory` and never exits, so any "wait for it to die"
+logic hangs for its full timeout.
+
+**Fix:** give the session an explicit owner — a `oneshot` unit that creates it, ordered
+`Before=` everything else that might.
+
+```ini
+Before=my-tty.service my-plane.service
+```
+
+**Repair a live one:** confirm index 0 really is an idle shell (`tmux list-panes`, no
+child processes), `tmux kill-window -t <session>:0`, then re-run the owner.
+
+**Corollary:** identify the anchor by *lowest index*, never by name. A name guard
+protects every window that happens to share the name.
+
+---
+
+## 2. The tmux server lives in the cgroup of the unit that created it
+
+This one destroys everything at once.
+
+systemd puts a forked process in the creating unit's cgroup, and the default
+`KillMode=control-group` kills the **entire cgroup** on stop. So if unit A happened to
+create the tmux session, `systemctl --user restart A` kills every session in it — even
+though A has nothing to do with them.
+
+```ini
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+KillMode=process     # confine the stop to ExecStart; leave the sessions alone
+```
+
+**Always check who holds it before restarting anything:**
+
+```sh
+cat /proc/$(pgrep -f 'tmux new-session.*<session>' | head -1)/cgroup
+```
+
+---
+
+## 3. A pane inherits the PATH of the client that created the window
+
+Not the PATH of your shell. Not the PATH in `~/.profile`. The PATH of whatever process
+called `tmux new-window`.
+
+When that caller is a systemd user unit, the PATH is whatever the *user manager* had at
+unit start — and a systemd user unit never gets a login shell's PATH. Worse, that value
+differs depending on **when** the unit started:
+
+| Unit started | PATH includes `~/.local/bin`? |
+|---|---|
+| At boot (lingering / enabled) | **No** |
+| After a desktop login | Yes — the session ran `import-environment` |
+
+So a tool installed in `~/.local/bin` — which is where `uv`, `ttyd`, `claude`, `pipx`
+shims and most user-level installs land — resolves fine when you test by hand, resolves
+fine if the service was started from your terminal, and **cannot be found after an
+unattended reboot**. The bug hides until the machine reboots on its own.
+
+**Fix:** pin PATH in the unit rather than inheriting it.
+
+```ini
+Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+```
+
+---
+
+## 4. `tmux new-window` returns 0 before your command execs
+
+This is what makes hazard 3 so hard to see.
+
+`tmux new-window` reports success as soon as it has **forked**. Whether the command
+then execs is not part of its exit status. So a command that cannot start at all —
+wrong PATH, missing binary, bad interpreter — produces:
+
+1. `tmux new-window` → exit 0
+2. the pane dies immediately
+3. tmux reaps the window (no `remain-on-exit`), so it isn't even there to inspect
+4. every layer above reports success
+
+The API answers `{"ok": true}` and the button does nothing. There is no error anywhere,
+because nothing errored — the evidence deleted itself.
+
+**Never treat a zero exit as proof a window exists.** Diff the window list around the
+spawn and confirm a live window survives a short settle:
+
+```python
+before = {w["index"] for w in list_windows()}
+run_the_spawn()
+time.sleep(SETTLE)                       # exec failure is immediate
+fresh = [w for w in list_windows() if w["index"] not in before]
+if not any(not w["dead"] for w in fresh):
+    return False, "window exited immediately — check the service's PATH"
+```
+
+Serialize spawns while you do this, or two concurrent ones scramble each other's
+before-picture.
+
+**To debug one live:** `tmux set -wg remain-on-exit on` makes the corpse stay so you can
+read `pane_dead_status` and `capture-pane`. Note the *global* (`-wg`) form — a
+session-level set is not inherited by new windows. Turn it back off afterwards; lingering
+dead panes confuse close/recycle logic. If the process clears the screen on exit, wrap
+it in `script -qfc '<cmd>' /tmp/log` to capture what it actually printed.
+
+---
+
+## 5. Create windows detached, or you yank every attached client
+
+`tmux new-window` without `-d` switches **all** attached clients to the new window. If a
+background process adds windows, anyone with a terminal attached gets teleported
+mid-keystroke. Use `-d` for anything programmatic; keep the switch only where a human
+explicitly asked for that window.
+
+---
+
+## 6. Window geometry is load-bearing when you scrape with `capture-pane`
+
+A full-screen TUI runs on the terminal's alternate screen, so `capture-pane` returns
+exactly the window's height in lines — the geometry *is* your API's page size, and your
+client's layout assumptions are pinned to the column count.
+
+Setting `window-size manual` keeps a window at a fixed size even while a desktop client
+with a different terminal size is attached. But on tmux 3.4, setting it **globally**
+and then creating a window with no client attached **segfaults the server** — taking
+every session down. Set it per-window, after creation:
+
+```sh
+tmux new-window -d …                          # create first
+tmux set -w -t <window_id> window-size manual # then pin
+```
+
+---
+
+## 7. The phone is usually lying about the server
+
+When the browser shows something stale or broken and the server measures healthy,
+suspect the PWA layer, not the backend. Diagnose in this order — loopback API first,
+then through the proxy, then the installed app:
+
+```sh
+curl -s 127.0.0.1:<port>/api/panes          # server truth
+curl -s https://<host>/<mount>/api/panes    # proxy truth
+```
+
+Two things reliably cause "the server is fine but the phone isn't":
+
+- **A cache-first service worker** serving a stale shell. Keep the SW network-first for
+  the shell, and **never let it intercept `/api/`**. The discriminator for a stale
+  install is a full close (swipe from recents) and reopen — not a refresh.
+- **Android WebAPK scope collisions.** Installed PWAs claim a URL scope **per hostname,
+  ignoring the port**. Two apps on one host must get disjoint path scopes
+  (`/app-a/`, `/app-b/`); a root-scoped install captures the other app's links
+  host-wide.
+
+---
+
+## 8. Reverse proxies strip the mount path
+
+`tailscale serve --set-path /plane http://127.0.0.1:8378` forwards `/plane/api/panes`
+to the backend as `/api/panes`. That is usually what you want, but it means:
+
+- the backend must not expect its own prefix,
+- any absolute URL the client builds must re-add it (use **relative** fetch paths), and
+- a backend that genuinely needs the prefix has to have it in the proxy target.
+
+---
+
+## The one-line version
+
+**Every layer here reports success early** — tmux when it forks, systemd when it starts
+a unit, the browser when it has *a* cached copy. Verify the thing you actually wanted,
+not the return code of the call you made.

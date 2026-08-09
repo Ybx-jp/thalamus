@@ -265,7 +265,8 @@ the literature the decision rests on.
   package that defines what a scope is. What does *not* live here is the generic
   hazard write-up it indexes — session ownership, cgroup kills, PATH inheritance in
   tmux panes — which is true of any systemd-owned tmux session driven over HTTP and
-  is maintained in the control-plane repo for the wider audience it has.
+  is kept vendor-neutrally in [console-hazards.md](console-hazards.md) for the wider
+  audience it has.
 
 ## Open questions
 
