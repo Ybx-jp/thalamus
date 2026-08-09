@@ -163,6 +163,26 @@ answer your own ticket; if you cannot spawn the subagent, say so *before* mintin
 - **"The graph doesn't have X" is a claim about *now*.** State changes
   between sessions (the orphans were pruned hours after being found). Verify
   against the live graph before repeating a remembered absence.
+- **An empty recall answers for one scope, never for the graph.** Every
+  `memory_recall*` call is scope-pinned — your own scope, or the consulted
+  expert's under a ticket. The graph is *deliberately* partitioned: docs/06 §1
+  files an expert's anchors in that expert's own scope, so material living in
+  scope B is **correctly** absent from scope A. Absence there is the design
+  working, not a gap and not drift.
+
+  So before an empty scoped recall becomes "we never procured this" or "the doc
+  is stale", ask **where would this have been filed?** and query *that* scope. A
+  doc that names a scope and feed — "in the graph — `eval-methodology`, feed
+  `campaign-statistics`" — is telling you where to look; querying somewhere else
+  and calling the doc wrong inverts the evidence. Worked example: a literature
+  consult reported nothing held on switchback and anytime-valid inference while
+  docs/11 said both anchors were procured. The doc was right. They are in
+  `eval-methodology`, where the split rule puts statistics anchors, and the
+  consult had faithfully reported its own scope.
+
+  The rule generalizes past scopes: a query is always narrower than the
+  question. Name the partition your query ran inside before you generalize
+  outside it.
 
 ## Before a query result becomes a conclusion
 

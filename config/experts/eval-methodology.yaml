@@ -25,8 +25,11 @@ claim_kinds:
   - literature/finding
   - literature/technique
 
-# Host suffixes `thalamus ingest <url>` may fetch (docs/06). Same academic set
-# as the literature expert; local files bypass the list as ever.
+# Host suffixes `thalamus ingest <url>` may fetch (docs/06). Local files bypass the
+# list as ever. The statistics anchors this scope needs are not on arXiv — the
+# methods literature it draws on predates it or never used it — so the open-access
+# publishers carrying them are listed explicitly rather than by a broad suffix:
+# `pmc.ncbi.nlm.nih.gov`, not `nih.gov`.
 allowlist:
   - arxiv.org
   - aclanthology.org
@@ -34,3 +37,6 @@ allowlist:
   - anthropic.com
   - huggingface.co
   - github.com
+  - jmlr.org
+  - pmc.ncbi.nlm.nih.gov
+  - vldb.org
