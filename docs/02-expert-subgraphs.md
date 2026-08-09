@@ -247,7 +247,11 @@ the literature the decision rests on.
 ## The quick protocol: a second tier, for the room
 
 `thalamus quick ask <expert> "<question>"` is the whole surface, and
-`thalamus quick targets` lists what is forkable and how recent each parent is.
+`thalamus quick targets` lists what is forkable and how recent each parent is. A calling
+agent reaches it through Bash, not through a tool of its own: the full ticket is an MCP
+tool because minting is instant, while a quick call blocks for a minute or more, and the
+MCP server is one process serving every session — a blocking subprocess inside it would
+stall the memory tools of sessions that are not consulting anyone.
 
 Inside a [room](07-harness-integration.md), the full ticket is the wrong instrument for
 a question the caller is *blocked on*. Its cost is not the mint or the brief but the

@@ -865,6 +865,32 @@ def test_an_uncitable_answer_leaves_the_ticket_open(wired):
     assert result.close_report.startswith("Rejected")
 
 
+def test_a_fork_that_dies_leaves_an_explained_open_exchange(wired):
+    """
+    Scenario: The fork returns a login notice instead of an answer
+
+    Verifications:
+    - the refusal propagates, and the open exchange records why
+
+    "Never answered" and "answered by a login notice" are the same open row
+    otherwise, and only one of them is a bug in the launcher.
+    """
+    graph = _cited_graph()
+    payload = envelope(result="Not logged in · Please run /login", num_turns=1)
+
+    with pytest.raises(quick.QuickRefused):
+        quick.consult(
+            graph, "homelab", "q?", "main",
+            config_dir_override=wired, runner=fake_runner(payload),
+        )
+
+    exchange = next(
+        v for k, v in graph.vertices.items() if k.startswith("scope:main:exchange:")
+    )
+    assert exchange["status"] == "open"
+    assert "login notice" in exchange["fork_error"]
+
+
 def test_consulting_a_scope_with_no_manifest_spends_nothing(wired):
     """
     Scenario: The caller names something that is not an expert

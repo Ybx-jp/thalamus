@@ -740,16 +740,24 @@ def consult(
         scope=expert,
         grant=grant,
     )
-    result.run = run_fork(
-        target,
-        expert,
-        prompt,
-        fork_session_id=fork_session_id,
-        allowed_tools=allowed_tools,
-        timeout=timeout,
-        name=f"quick-{ticket[:8]}",
-        runner=runner,
-    )
+    try:
+        result.run = run_fork(
+            target,
+            expert,
+            prompt,
+            fork_session_id=fork_session_id,
+            allowed_tools=allowed_tools,
+            timeout=timeout,
+            name=f"quick-{ticket[:8]}",
+            runner=runner,
+        )
+    except QuickRefused as exc:
+        # The exchange was minted before the fork ran, so a fork that dies leaves an
+        # open exchange either way. What it must not leave is an *unexplained* one:
+        # "never answered" and "answered by a login notice" are the same row
+        # otherwise, and only one of them is a bug in the launcher.
+        close_exchange(g, vertex_id, {"fork_error": str(exc)}, citation_refs=[])
+        raise
 
     # The delta is read here for the same reason it is distilled later: the fork's
     # transcript is its parent's conversation restamped, so its *own* records are the

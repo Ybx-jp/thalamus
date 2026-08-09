@@ -240,6 +240,8 @@ thalamus ingest <url|file>         # feed one document to an expert (dry-run; --
 thalamus pin <scope>               # launch a claude session pinned to an expert
 thalamus roster                    # bring up the tmux roster (--all for every expert)
 thalamus spawn <scope>             # one on-demand pinned tmux window
+thalamus quick ask <scope> "<q>"   # consult a live expert by forking its own session
+thalamus quick targets             # which experts are forkable, and how warm each is
 thalamus console                   # drive the roster from a browser or phone (docs/console.md)
 thalamus rescope <scope>           # redirect this session's distillation (before it distills)
 thalamus visualize                 # open the persisted memory explorer
