@@ -342,19 +342,38 @@ Pre-registered before any arm runs, per [04](04-eval-loop.md):
   Both experts proposed this contrast independently: warmth is contamination rather than
   cache if the quick tier never disagrees with the caller while the cold tier sometimes
   does.
-- **Refused: non-inferior answer quality.** There is no validated quality scale here, and
-  citation count is confounded with the treatment's own mechanism — warmth makes citing
-  cheap, so the proxy inflates for free in precisely the arm under scrutiny. A null would
-  be indistinguishable between "warmth did not hurt" and "the proxy cannot see the harm",
-  which is the confounded zero [04](04-eval-loop.md) already declined once. **Recorded as
-  a refusal, not a null.** A load-bearing-citation *ratio* is the candidate replacement,
-  since free citing raises both terms.
+  **The instrument varies confidence, not just truth.** Sycophancy rises with the
+  *epistemic commitment expressed in the prompt* (SWAY, arXiv 2604.02423), so the caller
+  asserts each planted premise at graded confidence and the endpoint is the agreement
+  *shift* across that gradient. This is strictly stronger than a binary plant and is
+  scored without a judge — SWAY's metric is unsupervised, needing no ground-truth labels
+  and no multi-turn structure, which is the constraint [04](04-eval-loop.md) works under.
+  It also rules out the obvious mitigation: instructing a model to be anti-sycophantic
+  measures poorly there, so "tell the fork to push back" is not the fix.
+- **Refused: non-inferior answer quality — for a structural reason, not a budgetary one.**
+  All three methods for setting a non-inferiority margin — point-estimate, fixed-margin
+  (FDA-recommended), synthesis — are anchored on a prior effect estimate for the active
+  comparator (PMC5341347). Here the comparator is a cold consultation, and this project
+  has no measured quality distribution for it, so none of the three can be executed and
+  any margin would be bare expert opinion — the residual category whose under-reporting
+  that review's headline finding indicts. The proxy problem compounds it: citation count
+  is confounded with the treatment's own mechanism, since warmth makes citing cheap and
+  inflates the proxy in precisely the arm under scrutiny. A null would be
+  indistinguishable between "warmth did not hurt" and "the proxy cannot see the harm" —
+  the confounded zero [04](04-eval-loop.md) declined once already. **Recorded as a
+  refusal, not a null**, and lifted the moment the cold path has a quality distribution
+  of its own. A load-bearing-citation *ratio* is the candidate proxy replacement, since
+  free citing raises both terms.
 - Both arms fire in parallel off one frozen brief with **write-back suppressed until both
   close**, or the first answer becomes memory the second recalls.
 
-Two open gaps this design rests on and the graph does not hold: **sycophancy /
-premise-agreement measurement**, and **non-inferiority margin selection**. Both scopes
-came back empty; both are ingestion work before either becomes a claim.
+**The hazard is not the fork's invention.** Retrieved memories already induce sycophancy
+in memory-conditioned agents, and existing memory benchmarks test whether a memory was
+stored and retrieved rather than whether it *should influence a decision* — the gap the
+tripwire occupies (MemSyco-Bench, arXiv 2607.01071). What neither paper measures is a
+fork of a live session: both establish that conditioning on prior context raises
+agreement, and a fork is the maximal case, but the transfer is this project's argument
+and the tripwire tests it rather than confirming it.
 
 ## Roster discipline
 

@@ -444,6 +444,70 @@ LLM-agent persistent memory rather than run corpora, and its verdict matrix rank
 design it proposes — the transfer to `runs.jsonl` is this project's argument, not
 TOKI's finding.
 
+### 2h. Agreement as a failure mode — measuring sycophancy without a judge
+
+The quick protocol ([02](02-expert-subgraphs.md)) answers from a **fork of the
+consulted expert's live session**, so the answering context inherits the caller's
+in-flight framing. The failure that buys is not a wrong fact but an agreeable one, and
+the scan found the literature naming it precisely.
+
+- **MemSyco-Bench: Benchmarking Sycophancy in Agent Memory** (arXiv 2607.01071, in the
+  graph) — the closest prior work to this design's actual hazard: *retrieved memories in
+  LLM-based agents often induce sycophancy, causing agents to over-align*. Its framing
+  finding is the sharper one for us — existing memory benchmarks evaluate whether
+  memories are correctly **stored and retrieved**, not whether a memory **should
+  influence a decision**, and its five tasks assess whether an agent can *reject memory
+  as factual evidence*. That is the gap the harm tripwire sits in, and it means the
+  hazard is a property of memory-conditioned answering generally, not something the fork
+  introduces.
+- **SWAY: A Counterfactual Computational Linguistic Approach to Measuring and Mitigating
+  Sycophancy** (arXiv 2604.02423, in the graph) — an **unsupervised** metric using
+  counterfactual prompting, requiring no ground-truth labels, no LLM judge, and no
+  multi-turn structure, which is exactly the constraint [04](04-eval-loop.md) operates
+  under. Its measured finding reshapes the tripwire: *sycophancy increases with the
+  epistemic commitment expressed in the prompt*. So the instrument should vary **how
+  confidently the caller asserts its premise**, not only whether the premise is false —
+  a confidence gradient is a strictly stronger design than a binary plant, and it is
+  scored by agreement shift rather than by a grader. It also reports that instructing a
+  model to be anti-sycophantic is a poor mitigation while counterfactual chain-of-thought
+  works without suppressing responsiveness, which is a standing warning against
+  "just tell the fork to push back" as a fix.
+
+**Named limit.** Neither paper measures a *fork* of a live session — the shared-context
+regime here is context inheritance, not retrieval. The transfer is this project's
+argument: both establish that conditioning on prior context raises agreement, and the
+fork is the maximal case of such conditioning, but no measurement of the fork regime
+exists in either. Treat the tripwire as testing that transfer, not confirming it.
+
+### 2i. Non-inferiority — the margin is the hard part, and we do not have one
+
+[02](02-expert-subgraphs.md) **refuses** a non-inferiority endpoint for the quick
+protocol rather than testing and reporting a null. The reason is stronger than small n,
+and the scan supplies it.
+
+- **Methods of defining the non-inferiority margin in randomized, double-blind
+  controlled trials: a systematic review** (PMC5341347, in the graph) — the three
+  named methods for setting a margin are the **point-estimate** method, the
+  **fixed-margin** method (FDA-recommended, derived from the smallest effect of the
+  active comparator established in historical evidence), and the **synthesis** method.
+  All three are anchored on a *prior effect estimate for the active comparator*.
+
+That is the disqualifier, and it is structural rather than budgetary: the "active
+comparator" here is a cold consultation, and this project has **no historical effect
+estimate of cold-consultation answer quality against any control** — there is no
+placebo arm and no prior trial to preserve a fraction of. Without that estimate none of
+the three methods can be executed, so any margin we picked would be the review's
+residual category, *expert opinion* — which it records as the most common of the "other
+methods" and which its headline finding indicts: the method used to define the margin
+was **unreported for the majority** of the 273 margins surveyed. Declaring a margin by
+assertion and then passing against it is the failure mode the paper measures, not a
+shortcut around it.
+
+So the refusal is recorded as a refusal. The paper is also the method for lifting it
+later: once the cold path has a measured quality distribution of its own, a
+fixed-margin construction becomes available and the endpoint can be reinstated with a
+margin that has a derivation.
+
 ## 3. Federation, experts, and inter-expert exchange
 
 Most crowded pillar as of the scan.
