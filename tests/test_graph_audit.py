@@ -221,6 +221,35 @@ def test_orphans_are_vertices_no_edge_reaches():
     assert issues == ["Orphan vertex: `artifact:src/lonely.py` (Artifact) has no edges"]
 
 
+def test_an_open_quick_exchange_is_edgeless_by_construction():
+    """
+    Scenario: A quick consultation was minted and its fork never answered; and a
+    second quick exchange closed as answered without citations landing
+
+    Verifications:
+    - the open one is not reported as an orphan
+    - the answered one still is
+
+    The full ticket's Exchange is born connected, because the server's brief becomes
+    `role: brief` edges. The quick tier drops the brief on purpose (docs/02), so an
+    open quick exchange has nothing to point at until its citations land — honest
+    data, with `brief_served: false` and `fork_error` saying what happened. Answering
+    removes the exemption: an answered exchange must cite, like any other.
+    """
+    open_quick = AuditVertex(
+        vid="scope:main:exchange:q1", label="Exchange",
+        properties={**_PROV, "protocol": "quick", "status": "open"},
+    )
+    answered_quick = AuditVertex(
+        vid="scope:main:exchange:q2", label="Exchange",
+        properties={**_PROV, "protocol": "quick", "status": "answered"},
+    )
+
+    issues = audit_orphans([open_quick, answered_quick], [])
+
+    assert issues == ["Orphan vertex: `scope:main:exchange:q2` (Exchange) has no edges"]
+
+
 def test_evidence_floor_requires_the_blob_to_exist(tmp_path):
     """
     Scenario: Two Source nodes — one whose blob is retained, one dangling

@@ -13,6 +13,7 @@ schema as it stands and the design decisions that shape it; the decision log in
 | **Vertex IDs** | `scope:<scope>:<type>:<local_id>` — scope is a segment of identity |
 | **Entrypoints** | `memory_open_threads`, `memory_open_problems`, `memory_recall_recent`, `memory_recall_by_project` |
 | **Write gate** | contract conformance (`contract/conformance.py`): orphan check, provenance envelope, scope legality, tier rules — rejected at write time, never filtered at read time |
+| **One orphan exemption** | an Exchange with `protocol: quick` **and** `status: open`. The quick tier drops the brief ([02](02-expert-subgraphs.md)), and the brief is what makes a full ticket's Exchange born connected — so a quick exchange points at nothing until its citations land. Answering removes the exemption: an answered exchange must cite, like any other |
 | **Single source** | `contract/ontology.py` — writer, reader, plane, and frontend all derive from it |
 
 ## The unified Claim

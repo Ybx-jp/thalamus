@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.console.distill import STALL_AFTER_S, DistillWatch
+from thalamus.console.distill import STALL_AFTER_S, STATE_V, DistillWatch
 
 DONE = ("distilling session {sid} into scope {scope}\n"
         "1 sessions to extract (model: None)\n"
@@ -37,7 +37,8 @@ def box(tmp_path):
     # A console that has already been up a while, so the clean-slate seed is behind
     # us and these logs read as new work. Seeding itself is tested separately.
     state = tmp_path / "dismissed.json"
-    state.write_text(json.dumps({"seeded_at": time.time() - 3600, "dismissed": {}}))
+    state.write_text(json.dumps({"v": STATE_V, "seeded_at": time.time() - 3600,
+                                 "dismissed": {}}))
     watch = DistillWatch(logs=logs, pins=pins, state=state)
 
     def pin(sid, scope="homelab", cwd="/home/ybx/code/thalamus"):
@@ -128,19 +129,32 @@ def test_dismissing_an_error_clears_it_and_the_dismissal_survives_a_restart(box,
 
 
 def test_a_dismissed_session_that_fails_again_comes_back(box):
-    """Dismissal is stamped against the log's mtime, so a re-distill re-raises it
-    rather than being silently swallowed by the earlier dismissal."""
+    """Dismissal counts the runs in the log, so distilling the session a second
+    time re-raises it rather than being swallowed by the earlier dismissal."""
     box.pin("22222222")
-    box.log("22222222", FAILED)
+    path = box.log("22222222", FAILED)
     box.watch.dismiss("22222222")
     assert box.watch.rows() == []
 
-    path = box.logs / "session-end-22222222.log"
-    later = time.time() + 5
-    import os
-    os.utime(path, (later, later))
+    with path.open("a") as fh:                       # the session distills again
+        fh.write(FAILED.format(sid="22222222", scope="homelab"))
     box.watch._scanned_at = 0.0
     assert len(box.watch.rows()) == 1
+
+
+def test_a_dismissal_is_not_undone_by_the_eval_sync_that_trails_extract(box):
+    """The hook runs `thalamus eval sync` into the same log a few seconds after
+    extract's summary. Keyed on mtime, a dismissal made in that window would pop
+    straight back; keyed on runs, those trailing lines are correctly ignored."""
+    box.pin("66666666")
+    path = box.log("66666666", FAILED)
+    box.watch.dismiss("66666666")
+
+    with path.open("a") as fh:
+        fh.write("1107 traces landed (248 recall misses)\n"
+                 "34 legacy traces skipped (pre-node-level rendering)\n")
+    box.watch._scanned_at = 0.0
+    assert box.watch.rows() == []
 
 
 def test_the_backlog_on_disk_at_first_run_is_a_clean_slate(tmp_path):

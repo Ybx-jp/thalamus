@@ -359,13 +359,22 @@ conversation lands on no cached block boundary. Warmth decays inside the nominal
 This is a scheduling property, not a budget line. **The room largely answers it**: a room
 is a co-working cluster by construction, so its members are active in the same window and
 the warm case is the common one — the "roster is normally idle" figure that first
-suggested otherwise was drawn from the *solo* roster (live `teacher` sessions ~25,700 s
-stale), which is the wrong population for a room in use. What survives is narrower and
-still unmeasured: how often a room-mate is warm *enough*, given that warmth decays inside
-the nominal TTL, and the mid-turn case, where non-interruption steers `quick` toward a
-busy expert and a truncated conversation lands on no cached boundary. Waiting for the
-current turn to land is the cheapest available optimisation, and a room-level cache
-pre-warm would close the rest.
+suggested otherwise was drawn from the *solo* roster, which is the wrong population for a
+room in use. What survives is narrower and still unmeasured: how often a room-mate is warm
+*enough*, given that warmth decays inside the nominal TTL, and the mid-turn case, where
+non-interruption steers `quick` toward a busy expert and a truncated conversation lands on
+no cached boundary. Waiting for the current turn to land is the cheapest available
+optimisation, and a room-level cache pre-warm would close the rest.
+
+**Availability is a harder constraint than warmth, and the solo roster fails it
+outright.** A session is registered in the live roster from the moment it starts but files
+no transcript until its first *turn*, so a spawned-and-untouched expert is live and
+**unforkable** — `--resume` exits 1. Measured on this roster: of four live pinned expert
+sessions, three had never been spoken to and the fourth was mid-turn
+([lab/050](../lab/050-the-first-live-quick-call.md)). The launcher checks for the parent's
+transcript before minting, so an unforkable parent costs nothing, and `thalamus quick
+targets` reports it. The room remains the only argument that this tier has anyone to call,
+and it is still the unmeasured one.
 
 ### Prior work
 

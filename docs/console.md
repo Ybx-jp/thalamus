@@ -170,8 +170,10 @@ and the ＋ carries a dot when the sheet has something in it. Only sessions in t
 pin ledger are counted: subagents fire SessionEnd too and always fail (they have no
 transcript of their own), but they never write a ledger entry, which is what
 separates them from real sessions. Dismissals live in
-`~/.thalamus/console/distill-dismissed.json` and are stamped against the log's
-mtime, so a session that re-distills later and fails again comes back.
+`~/.thalamus/console/distill-dismissed.json`, counted in distillation runs rather
+than stamped in time, so a session that distills again later and fails again comes
+back — while the `thalamus eval sync` output the hook appends a few seconds behind
+extract does not bounce a row you just dismissed.
 
 **Rooms** are the third choice on that sheet, and default to `solo`. A room is a
 private roster: its members can see and message each other and nobody else, which

@@ -1968,9 +1968,15 @@ def _cmd_quick(args, parser):
         print(f"{'scope':16} {'session':10} {'status':9} {'age':>7}  cwd")
         for session in sorted(rows, key=lambda s: (s.scope, s.age_seconds)):
             age = f"{session.age_seconds / 60:.0f}m"
+            # A session registers the moment it starts and files no transcript until
+            # its first turn, so "live" and "forkable" are different questions.
+            status = (
+                session.status if quick_mod.has_conversation(session.session_id)
+                else "no convo"
+            )
             print(
                 f"{session.scope or '(main)':16} {session.session_id[:8]:10} "
-                f"{session.status:9} {age:>7}  {session.cwd}"
+                f"{status:9} {age:>7}  {session.cwd}"
             )
         # Warmth is a cache and it decays inside the nominal TTL — 44.8% of the
         # parent's prefix survived at 38 minutes (lab/049). The ages above are the

@@ -43,6 +43,10 @@ LOGS = Path.home() / ".thalamus" / "logs"
 PINS = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 STATE = Path.home() / ".thalamus" / "console" / "distill-dismissed.json"
 
+# Bumped when the meaning of a `dismissed` value changes; an older file keeps its
+# seed stamp and forgets its dismissals rather than misreading them.
+STATE_V = 2
+
 PREFIX = "session-end-"
 SUFFIX = ".log"
 
@@ -71,6 +75,16 @@ STALL_AFTER_S = 20 * 60
 # may poll at once; the scan is cheap (a scandir plus a read of whatever changed)
 # but there is no reason to repeat it inside one poll interval.
 SCAN_TTL_S = 1.0
+
+
+# The line the hook writes before forking. A session distilled more than once —
+# resumed, or re-extracted by hand — appends a second one, which is the only
+# unambiguous "this ran again" marker in the file.
+RUN_MARK = "distilling session "
+
+
+def _runs(text: str) -> int:
+    return sum(1 for line in text.splitlines() if line.startswith(RUN_MARK))
 
 
 def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
@@ -128,10 +142,16 @@ class DistillWatch:
                 raise ValueError("not an object")
             got.setdefault("seeded_at", 0.0)
             got.setdefault("dismissed", {})
+            # Dismissals used to be stamped with the log's mtime. Compared against
+            # a run count those would hide a row forever, so an unversioned file
+            # keeps its seed — the part that is still true — and drops the rest.
+            if got.get("v") != STATE_V:
+                got["v"], got["dismissed"] = STATE_V, {}
+                self._write_state(got)
         except (OSError, ValueError):
             # First run (or a corrupt file, which is the same thing here): stamp
             # now and let every log that already exists fall behind the stamp.
-            got = {"seeded_at": time.time(), "dismissed": {}}
+            got = {"v": STATE_V, "seeded_at": time.time(), "dismissed": {}}
             self._write_state(got)
         self._state = got
         return got
@@ -146,15 +166,21 @@ class DistillWatch:
             pass          # a widget is not worth failing a poll over
 
     def dismiss(self, session: str) -> bool:
-        """Hide this session's error row until its log is written to again."""
+        """Hide this session's error row until the session distills *again*.
+
+        Keyed on the number of runs in the log rather than its mtime, because the
+        hook appends `thalamus eval sync` output a few seconds behind extract's
+        own summary: an mtime key would bounce a row that was dismissed inside
+        that window straight back onto the list.
+        """
         with self._lock:
             state = self._load_state()
             path = self.logs / f"{PREFIX}{session}{SUFFIX}"
             try:
-                mtime = path.stat().st_mtime
+                runs = _runs(path.read_text(errors="replace"))
             except OSError:
                 return False
-            state["dismissed"][session] = mtime
+            state["dismissed"][session] = runs
             self._write_state(state)
             self._scanned_at = 0.0
             return True
@@ -221,27 +247,34 @@ class DistillWatch:
                 except OSError:
                     continue
                 seen.add(name)
-                if st.st_mtime <= max(seeded_at, dismissed.get(session, 0.0)):
+                # The clean slate, applied before anything is read: a log that has
+                # not been touched since this widget first ran is backlog.
+                if st.st_mtime <= seeded_at:
                     continue
 
                 cached = self._logs_cache.get(name)
                 if cached and cached[0] == st.st_mtime and cached[1] == st.st_size:
-                    kind, detail = cached[2], cached[3]
+                    kind, detail, runs = cached[2], cached[3], cached[4]
                     # 'active' is the one verdict that expires on the clock
                     # rather than on a write, so it is re-derived every scan.
                     if kind == "active" and now - st.st_mtime >= STALL_AFTER_S:
                         kind, detail = "error", ("stalled — the extract process "
                                                  "stopped without finishing")
-                        self._logs_cache[name] = (st.st_mtime, st.st_size, kind, detail)
+                        self._logs_cache[name] = (st.st_mtime, st.st_size,
+                                                  kind, detail, runs)
                 else:
                     try:
                         text = (self.logs / name).read_text(errors="replace")
                     except OSError:
                         continue
                     kind, detail = _classify(text, st.st_mtime, now)
-                    self._logs_cache[name] = (st.st_mtime, st.st_size, kind, detail)
+                    runs = _runs(text)
+                    self._logs_cache[name] = (st.st_mtime, st.st_size,
+                                              kind, detail, runs)
 
                 if kind == "done":
+                    continue
+                if runs <= dismissed.get(session, 0):
                     continue
                 cwd = pin.get("cwd", "") or ""
                 out.append({

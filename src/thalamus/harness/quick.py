@@ -580,6 +580,19 @@ def find_transcript(session_id: str, projects_dir: Path) -> Path | None:
     return None
 
 
+def has_conversation(session_id: str, projects_root: Path | None = None) -> bool:
+    """Is there anything for `--resume` to restore?
+
+    A session registers in the live roster the moment it starts, but the harness files
+    no transcript until its first turn — so a freshly spawned expert is *live* and not
+    *forkable*, and `claude --resume` exits 1 with `No conversation found with session
+    ID`. Measured while verifying this launcher against a session spawned seconds
+    earlier. Checked before the mint, so an unforkable parent costs nothing.
+    """
+    root = projects_root if projects_root is not None else config_dir() / "projects"
+    return find_transcript(session_id, root) is not None
+
+
 def materialize_delta(
     fork_transcript: Path, parent_transcript: Path, dest_root: Path
 ) -> Path:
@@ -701,6 +714,15 @@ def consult(
         raise QuickRefused(refused)
 
     target = resolve_target(expert, config_dir_override)
+    projects = (
+        Path(config_dir_override) if config_dir_override else config_dir()
+    ) / "projects"
+    if not has_conversation(target.session_id, projects):
+        raise QuickRefused(
+            f"`{expert}` session {target.session_id[:8]} is live but has no "
+            "conversation yet — `--resume` has nothing to restore, so there is "
+            "nothing to fork. A session becomes forkable on its first turn."
+        )
     fork_point = datetime.now(timezone.utc)
     grant = grant_text(target, expert, fork_point)
     fork_session_id = str(uuid.uuid4())
@@ -762,9 +784,6 @@ def consult(
     # The delta is read here for the same reason it is distilled later: the fork's
     # transcript is its parent's conversation restamped, so its *own* records are the
     # only place the tier's third obligation is visible.
-    projects = (
-        Path(config_dir_override) if config_dir_override else config_dir()
-    ) / "projects"
     fork_transcript = find_transcript(result.run.session_id, projects)
     parent_transcript = find_transcript(target.session_id, projects)
     if fork_transcript and parent_transcript:

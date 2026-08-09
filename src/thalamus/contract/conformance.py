@@ -321,6 +321,24 @@ def audit_exchanges(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list
     return issues
 
 
+def _edgeless_by_construction(vertex: AuditVertex) -> bool:
+    """The one vertex the protocol creates with nothing to point at.
+
+    A full ticket's Exchange is born connected: the server assembles a brief and each
+    node it served becomes a `role: brief` REFERENCES edge. The quick tier drops the
+    brief on purpose (docs/02), so an open quick exchange has no edges until it is
+    answered and its citations land — which is the state a fork that never answered
+    leaves behind. That is honest data, not an unreachable node: `brief_served: false`
+    and `fork_error` say exactly what happened. An *answered* quick exchange is not
+    exempt; it must cite, like any other.
+    """
+    return (
+        vertex.label == "Exchange"
+        and str(vertex.properties.get("protocol") or "") == "quick"
+        and str(vertex.properties.get("status") or "") == "open"
+    )
+
+
 def audit_orphans(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list[str]:
     """Every vertex must be reachable by at least one edge — the graph-level twin of
     the write-time orphan check."""
@@ -328,7 +346,7 @@ def audit_orphans(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list[s
     return [
         f"Orphan vertex: `{v.vid}` ({v.label}) has no edges"
         for v in vertices
-        if v.vid not in connected
+        if v.vid not in connected and not _edgeless_by_construction(v)
     ]
 
 

@@ -103,13 +103,97 @@ printed a traceback instead of an answer. Nothing was lost — the record is the
 and the record was already written — which is the protocol working as designed on a
 day the CLI did not.
 
+## 5. Live is not forkable, and most of the roster is not
+
+Verifying the fixes against a freshly spawned `literature` session failed before the
+fork could run:
+
+```
+claude -p exited 1: No conversation found with session ID: 16e2eed4…
+```
+
+A session registers in `$CLAUDE_CONFIG_DIR/sessions/` the moment it starts and files no
+transcript until its **first turn**. So the live roster answers "is this expert
+running", and `--resume` asks a different question. The launcher now checks for the
+parent's transcript before minting, so an unforkable parent costs nothing, and
+`quick targets` prints `no convo` in the status column.
+
+Turning that check on the roster is the finding:
+
+| Live pinned expert session | Age | Forkable |
+|---|---|---|
+| `homelab` | 10 min | yes — and `busy` |
+| `teacher` ×3 | ~16.5 h | **no — never had a turn** |
+
+lab/049 said the roster's normal state is *idle*, and docs/02 answered that a room is a
+co-working cluster so warmth is the common case there. Both stand. What the check adds
+is sharper and worse for the solo roster: three of four live experts here are not cold,
+they are **empty** — spawned, pinned, never spoken to. A quick call against them is not
+an expensive call, it is an impossible one. The room argument is now the *only* argument
+for availability, and it remains unmeasured.
+
+## 6. A SessionEnd hook that does work in the foreground is cancelled
+
+The delta staging was called synchronously from `session-end.sh`, before the detached
+block. It worked on the first fork and not on the second, whose log stops after one
+line:
+
+```
+distilling session 8d7b6269 into scope literature
+```
+
+No staging, no extraction, no error. A headless `claude -p` exits the moment it has
+printed its envelope, and a SessionEnd hook still running is cancelled — the same
+`Hook cancelled` seen earlier when a fork failed to resume. A few seconds of `uv run`
+is enough to lose the race, and losing it is silent.
+
+The hook's own header already says this: extraction runs detached *because* it takes a
+minute. Anything that costs time belongs in the same `nohup` block, and the delta
+staging now is. Run by hand afterwards, the pipeline was correct end to end: 49 fork
+records → 33 staged → one Session in scope `literature`, `forked_from` set, summarising
+**the fork's own exchange** and not its parent's episode. The parent has no Session at
+all, which is the outcome the whole delta design exists for.
+
+## 7. An open quick exchange is an orphan, and the audit had never seen one
+
+`contract check` reported the unanswered exchange from §5 as an orphan vertex. It is
+one, and the tier is why: a full ticket's Exchange is born connected, because every
+node the server's brief served becomes a `role: brief` edge — and the quick tier drops
+the brief. So until an answer lands its citations, a quick exchange points at nothing.
+
+The audit exempts exactly that shape — `protocol: quick` **and** `status: open` — and
+nothing else. An answered quick exchange must still cite, which is the invariant that
+was never negotiable. This is the second time dropping the brief has needed a
+compensating record (`brief_served: false` was the first): **a projection of the
+exchange record is legitimate only where something says which projection it is.**
+
 ## What this says about the suite
 
-27 unit tests passed before the call and after it. They pin the launcher against fakes:
-a fake roster, a fake subprocess, a fake graph. All four defects live in the seams the
-fakes stand in for — the real ledger's other writers, the real parser's rules, the real
-MCP server's availability to the fork, the real CLI's own signatures.
+27 unit tests passed before the first call and after it. They pin the launcher against
+fakes: a fake roster, a fake subprocess, a fake graph. **All seven defects live in the
+seams the fakes stand in for** — the real ledger's other writers, the real parser's
+rules, the real MCP server's availability to the fork, the real harness's
+transcript-on-first-turn behaviour, the real hook lifecycle, the real contract audit,
+and the real CLI's own signatures.
 
 The corrections are regression-tested now, but the transferable rule is that **the
 first live call is the test**, and it should be run against a real expert the day the
 launcher is written, not after it is trusted.
+
+## The second call, after the fixes
+
+`literature`, parent primed with one turn, everything green:
+
+| | |
+|---|---|
+| Wall clock | **27.3 s** |
+| Cost | **$0.389** |
+| Cache | 62,174 read / 33,531 created — **65% hit** |
+| Turns / output | 3 / 886 tokens |
+| Fresh in-ticket recalls | **1** — the obligation met and counted |
+| Ledger assertion | clean |
+| Closed by | **launcher**, with 7 validated citations |
+| Delta | 33 of 49 records → one Session in `literature`, `forked_from` set |
+
+Half the wall clock and 40% of the price of the first call, on a third of the output
+tokens. Same reduction as before: **the tier's cost is what the expert writes.**

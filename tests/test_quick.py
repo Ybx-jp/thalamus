@@ -719,6 +719,12 @@ def wired(monkeypatch, tmp_path):
     write_descriptor(
         tmp_path, pid=os.getpid(), session_id="parent-sid", agent="thalamus-homelab"
     )
+    # The parent has had at least one turn, so there is a conversation to resume —
+    # the difference between a live session and a forkable one.
+    _transcript(
+        tmp_path / "projects" / "-home-ybx-code-thalamus" / "parent-sid.jsonl",
+        [{"uuid": "u1", "type": "user", "message": {"role": "user", "content": "hi"}}],
+    )
     return tmp_path
 
 
@@ -863,6 +869,34 @@ def test_an_uncitable_answer_leaves_the_ticket_open(wired):
     assert record["cost_usd"] == 0.037
     assert not result.accepted
     assert result.close_report.startswith("Rejected")
+
+
+def test_a_live_session_that_never_had_a_turn_is_not_forkable(wired):
+    """
+    Scenario: An expert was spawned seconds ago and has not been spoken to
+
+    Verifications:
+    - the refusal fires before the exchange is minted, so nothing is spent
+    - no fork is launched
+
+    A session registers in the live roster the moment it starts and files no transcript
+    until its first turn, so `--resume` exits 1 with `No conversation found`. Measured
+    on the roster this launcher was verified against, where three of four live experts
+    were in exactly this state.
+    """
+    graph = FakeGraph()
+    runner = fake_runner(envelope())
+    (wired / "projects" / "-home-ybx-code-thalamus" / "parent-sid.jsonl").unlink()
+
+    with pytest.raises(quick.QuickRefused) as excinfo:
+        quick.consult(
+            graph, "homelab", "q?", "main",
+            config_dir_override=wired, runner=runner,
+        )
+
+    assert "no conversation yet" in str(excinfo.value)
+    assert runner.calls == []
+    assert graph.vertices == {}
 
 
 def test_a_fork_that_dies_leaves_an_explained_open_exchange(wired):

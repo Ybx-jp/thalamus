@@ -145,24 +145,31 @@ repo_root="$(thalamus_repo_root)"
 # everything below runs identically. It refuses when the parent's transcript is gone,
 # and that refusal ends the distillation: re-asserting the parent's episode is worse
 # than not distilling this fork at all.
-if [ -n "$forked_from" ] && [ -n "$transcript_path" ]; then
-  if delta_root=$(uv run --project "$repo_root" thalamus quick delta \
-      --transcript "$transcript_path" --parent "$forked_from" 2>>"$log"); then
-    projects_dir="$delta_root"
-    echo "fork of ${forked_from:0:8}: distilling delta only, from $delta_root" >>"$log"
-  else
-    echo "fork of ${forked_from:0:8}: delta staging failed — not distilling, since " \
-         "the whole transcript would re-assert the parent's episode" >>"$log"
-    exit 0
-  fi
-fi
-
-projects_arg=""
-[ -n "$projects_dir" ] && projects_arg="--projects-dir '$projects_dir'"
+#
+# It runs **inside** the detached block, with everything else that costs time. The
+# hook itself must return immediately: a headless `claude -p` exits the moment it has
+# printed its envelope, and a SessionEnd hook still running is cancelled — measured
+# twice, once as `Hook cancelled` and once as a fork whose staging never happened and
+# whose log stops after the first line. A few seconds of `uv run` in the foreground is
+# enough to lose the race.
 nohup sh -c "
+  projects_dir='$projects_dir'
+  if [ -n '$forked_from' ] && [ -n '$transcript_path' ]; then
+    if delta_root=\$(uv run --project '$repo_root' thalamus quick delta \
+        --transcript '$transcript_path' --parent '$forked_from'); then
+      projects_dir=\"\$delta_root\"
+      echo \"fork of ${forked_from:0:8}: distilling delta only, from \$delta_root\"
+    else
+      echo 'fork: delta staging failed — not distilling, since the whole transcript'
+      echo 'would re-assert the parent episode as a second Session'
+      exit 0
+    fi
+  fi
+  projects_arg=''
+  [ -n \"\$projects_dir\" ] && projects_arg=\"--projects-dir \$projects_dir\"
   uv run --project '$repo_root' thalamus extract --harness claude \
     --session '$session_id' --scope '$scope' --room '$room' \
-    --forked-from '$forked_from' $projects_arg --force --write -- '$project_dir'
+    --forked-from '$forked_from' \$projects_arg --force --write -- '$project_dir'
   uv run --project '$repo_root' thalamus eval sync --write
 " >>"$log" 2>&1 </dev/null &
 
