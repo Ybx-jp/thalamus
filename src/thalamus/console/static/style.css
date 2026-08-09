@@ -604,6 +604,57 @@ textarea:focus { outline: none; border-color: var(--chan); }
   color: var(--faint);
 }
 .admin-state.bad { color: var(--danger); }
+
+/* ---- Distillation widget (spawn sheet) ----
+   A session keeps distilling after its window is gone, so this is the only place
+   that work is visible. Rows are transient by design: a clean finish removes the
+   row, and only a failure stays put until it is dismissed. */
+.distill-row .admin-dot.work {
+  background: var(--chan);
+  animation: distill-pulse 1.6s ease-in-out infinite;
+}
+@keyframes distill-pulse {
+  0%, 100% { opacity: .28; box-shadow: none; }
+  50% { opacity: 1; box-shadow: 0 0 6px var(--chan); }
+}
+.distill-detail {
+  font-size: .55rem;
+  letter-spacing: .04em;
+  color: var(--danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.distill-x {
+  appearance: none;
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--hair);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: .6rem;
+  line-height: 1;
+  padding: .25rem .4rem;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.distill-x:active { color: var(--danger); border-color: var(--danger); }
+/* The ＋ button is the only always-visible surface, so it carries the news that
+   there is something inside the sheet worth opening. */
+.admin-btn { position: relative; }
+.spawn-pip {
+  position: absolute;
+  top: .1rem; right: -.05rem;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--chan);
+}
+.spawn-pip[hidden] { display: none; }
+.spawn-pip.work { animation: distill-pulse 1.6s ease-in-out infinite; }
+.spawn-pip.bad { background: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .distill-row .admin-dot.work, .spawn-pip.work { animation: none; opacity: 1; }
+}
 .admin-act {
   appearance: none;
   flex: 0 0 auto;

@@ -56,6 +56,9 @@ const els = {
   spawnDirs: document.getElementById("spawn-dirs"),
   spawnGo: document.getElementById("spawn-go"),
   spawnLog: document.getElementById("spawn-log"),
+  spawnPip: document.getElementById("spawn-pip"),
+  distillSec: document.getElementById("distill-sec"),
+  distillList: document.getElementById("distill-list"),
   read: document.getElementById("read"),
   readWait: document.getElementById("read-wait"),
   viewToggle: document.getElementById("view-toggle"),
@@ -561,6 +564,7 @@ async function poll() {
     }
     if (changed) { renderWsBar(); renderRail(); }
     syncActiveChrome();
+    renderDistill(data.distill || []);
 
     updateDots(next);
     const cur = windows.find((w) => w.index === activeIdx);
@@ -824,6 +828,94 @@ async function closeWin(w) {
 
 // ---- Spawn a session on demand ----
 // Pick a scope (expert) + a directory; the server opens a detached pinned window via
+// ---- Distillation widget ----
+// A session's memory is written after its window is gone, by a detached process
+// nothing else reports on. These rows are that process, made visible: one per
+// session still distilling or finished badly. A clean finish is deliberately
+// silent — the row simply stops appearing — so an empty list means "nothing owed",
+// which is the state this is really here to let you confirm at a glance.
+let distillSig = "";
+const distillAges = new Map();     // session → the element showing its elapsed time
+
+function shortAge(s) {
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  const h = Math.floor(s / 3600);
+  return `${h}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+function renderDistill(rows) {
+  const bad = rows.some((r) => r.state === "error");
+  const work = rows.some((r) => r.state === "active");
+  els.spawnPip.hidden = !(bad || work);
+  els.spawnPip.className = "spawn-pip" + (bad ? " bad" : work ? " work" : "");
+
+  // Rebuilt only when the set of rows changes: at a 1.2s poll, replacing the nodes
+  // every tick would restart the pulse animation each time. The elapsed time moves
+  // on every tick and is therefore written in place rather than counted as a change.
+  const sig = rows.map((r) => `${r.session}:${r.state}:${r.detail}`).join("|");
+  if (sig === distillSig) {
+    for (const r of rows) {
+      const el = distillAges.get(r.session);
+      if (el) el.textContent = `${r.session} · ${shortAge(r.age)}`;
+    }
+    return;
+  }
+  distillSig = sig;
+
+  els.distillSec.hidden = rows.length === 0;
+  els.distillList.innerHTML = "";
+  distillAges.clear();
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = "admin-row distill-row";
+
+    const dot = document.createElement("span");
+    dot.className = "admin-dot " + (r.state === "active" ? "work" : "bad");
+    row.appendChild(dot);
+
+    const name = document.createElement("span");
+    name.className = "admin-name";
+    const top = document.createElement("span");
+    top.textContent = r.dir ? `${r.scope} · ${r.dir}` : r.scope;
+    name.appendChild(top);
+    const sub = document.createElement("span");
+    if (r.state === "active") {
+      sub.className = "admin-cwd";
+      sub.textContent = `${r.session} · ${shortAge(r.age)}`;
+      distillAges.set(r.session, sub);
+    } else {
+      // Straight from the extract log, so it is set as text, never as markup.
+      sub.className = "distill-detail";
+      sub.textContent = r.detail || "distillation failed";
+    }
+    name.appendChild(sub);
+    row.appendChild(name);
+
+    if (r.state === "active") {
+      const state = document.createElement("span");
+      state.className = "admin-state";
+      state.textContent = "distilling";
+      row.appendChild(state);
+    } else {
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "distill-x";
+      x.textContent = "✕";
+      x.setAttribute("aria-label", `Dismiss ${r.session}`);
+      x.addEventListener("click", () => dismissDistill(r.session));
+      row.appendChild(x);
+    }
+    els.distillList.appendChild(row);
+  }
+}
+
+async function dismissDistill(session) {
+  await postJson("api/distill-dismiss", { session });
+  distillSig = "";        // force a rebuild off the next poll's fresh list
+  poll();
+}
+
 // `thalamus spawn`. Experts are no longer all booted at bring-up — only spawned when used.
 let spawnOpts = null, spawnScope = null, spawnDir = null, selectNewestOnNextPoll = false;
 // "" is solo — the ordinary roster. A room is chosen, or typed to make a new one:

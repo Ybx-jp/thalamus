@@ -32,7 +32,7 @@
   <span class="brand">THALA<b>MUS</b></span>
   <span class="tagline">console</span>
   <span class="conn" id="conn"><span class="beacon"></span><span id="conn-label">connecting</span></span>
-  <button type="button" class="admin-btn" id="spawn-btn" aria-label="Spawn a session" title="Spawn a session">＋</button>
+  <button type="button" class="admin-btn" id="spawn-btn" aria-label="Spawn a session" title="Spawn a session">＋<span class="spawn-pip" id="spawn-pip" hidden></span></button>
   <button type="button" class="admin-btn" id="admin-btn" aria-label="Infra admin" title="Infra admin">⚙</button>
 </header>
 
@@ -66,6 +66,10 @@
     <span class="admin-title">SPAWN SESSION</span>
     <button type="button" class="install-x" id="spawn-x" aria-label="Close">✕</button>
   </div>
+  <section class="admin-sec" id="distill-sec" hidden>
+    <h3>Distillation</h3>
+    <div class="admin-list" id="distill-list"></div>
+  </section>
   <section class="admin-sec">
     <p class="admin-note">Open a pinned expert session on demand, in the project you
       pick. Its work and its distilled memory scope to that expert; the directory sets

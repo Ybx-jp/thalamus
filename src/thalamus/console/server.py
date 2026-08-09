@@ -126,6 +126,32 @@ def read_feed(cfg: Config, idx: int):
         session_id, path, launch_cwd = got
         return window, _FEEDS.get(session_id, path, launch_cwd)
 
+# One watcher for the process. `.distill` is stdlib-only, but it is still reached
+# through an accessor like the rest of the package: a console run as a bare script
+# has no package to do a relative import from, and a missing widget is a better
+# failure than a missing console.
+_DISTILL_UNSET = object()
+_distill_cache: object = _DISTILL_UNSET
+
+
+def distill_watch():
+    """The `DistillWatch` singleton, or None if this console has no package."""
+    global _distill_cache
+    if _distill_cache is _DISTILL_UNSET:
+        try:
+            from .distill import DistillWatch
+        except Exception:  # noqa: BLE001 — any import failure means "not available"
+            _distill_cache = None
+        else:
+            _distill_cache = DistillWatch()
+    return _distill_cache
+
+
+def distill_rows() -> list[dict]:
+    watch = distill_watch()
+    return watch.rows() if watch is not None else []
+
+
 # Graceful-exit budget before force-respawning a window. SessionEnd runs
 # `thalamus extract` (distillation), which can take a while; killing early loses it.
 RECYCLE_GRACE_S = 240
@@ -730,7 +756,10 @@ class Handler(BaseHTTPRequestHandler):
             windows = list_windows(self.cfg)
             for w in windows:
                 w["lines"] = capture(self.cfg, w["index"])
-            return self._send(200, {"session": self.cfg.session, "windows": windows})
+            # Distillation outlives the window that triggered it, so it rides the
+            # poll the client already runs rather than getting a loop of its own.
+            return self._send(200, {"session": self.cfg.session, "windows": windows,
+                                    "distill": distill_rows()})
         if path == "/api/read":
             # The read view: this window's session as prose and collapsed tool
             # calls, read from the transcript rather than the pane. `since` is the
@@ -825,6 +854,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "unknown unit"})
             service_restart(unit)
             return self._send(200, {"ok": True})
+
+        if path == "/api/distill-dismiss":
+            # Clears one error row. Not a window operation — the window whose
+            # session this was is long gone — so it returns before the handler
+            # below starts insisting on a live window index.
+            session = data.get("session")
+            watch = distill_watch()
+            if watch is None:
+                return self._send(503, {"error": "no distillation watcher on this "
+                                                 "console — see /api/panes"})
+            if not isinstance(session, str) or not re.fullmatch(r"[0-9a-f]{8}", session):
+                return self._send(400, {"error": "session must be an 8-hex-digit id"})
+            return self._send(200, {"ok": watch.dismiss(session)})
 
         if path == "/api/spawn":
             scope = data.get("scope")

@@ -151,6 +151,28 @@ server opens a detached pinned window there. The scope decides which memory it
 reads and writes; the directory decides what the work is about. See
 [02](02-expert-subgraphs.md) for what that pairing means.
 
+The same sheet reports **distillation**, because ending a session and distilling it
+are not the same event. `/exit` fires SessionEnd, which launches `thalamus extract`
+*detached* and lets the window go; the memory is written minutes later by a process
+with no window, no tab and no other place to report itself. A row appears per
+session still distilling and per session that finished badly:
+
+- **distilling** — a pulsing dot and the elapsed time. Typical is two to four
+  minutes.
+- **an error** — red, with the reason from the extract log, and it stays until you
+  tap ✕. This is the case worth having: a failed extraction exits *zero*, so
+  nothing else on the box would ever mention that a conversation was not recorded.
+  A distillation that stops being written to for twenty minutes counts as failed —
+  the process died rather than ran long.
+
+A clean finish removes its own row, so **an empty section means nothing is owed**,
+and the ＋ carries a dot when the sheet has something in it. Only sessions in the
+pin ledger are counted: subagents fire SessionEnd too and always fail (they have no
+transcript of their own), but they never write a ledger entry, which is what
+separates them from real sessions. Dismissals live in
+`~/.thalamus/console/distill-dismissed.json` and are stamped against the log's
+mtime, so a session that re-distills later and fails again comes back.
+
 **Rooms** are the third choice on that sheet, and default to `solo`. A room is a
 private roster: its members can see and message each other and nobody else, which
 is a boundary in the harness itself rather than a convention
@@ -340,8 +362,8 @@ keeps that true.
 
 ## How it works
 
-`src/thalamus/console/` — `server.py` and `transcript.py` plus `static/`. Stdlib
-Python and a dependency-free client.
+`src/thalamus/console/` — `server.py`, `transcript.py` and `distill.py` plus
+`static/`. Stdlib Python and a dependency-free client.
 
 - **Stdlib `http.server`, not FastAPI** like `pulse/` and `plane/`. One of its jobs
   is restarting the systemd unit hosting it; the fewer moving parts between a tap
@@ -361,6 +383,12 @@ Python and a dependency-free client.
   scope and directory are all routinely shared by two windows at once; the pane id
   is unique per window, stable for its life, and survives the respawn a recycle
   performs.
+- **Distillation state is derived, not tracked.** The SessionEnd hook forks and
+  exits, so there is no lockfile, pid file or status record to read — the whole
+  state machine is `~/.thalamus/logs/session-end-<sid8>.log`, joined against the
+  pin ledger to drop subagent residue (two thirds of the logs on a working box).
+  It rides the poll the client already runs rather than getting a loop of its own,
+  and is cached against (mtime, size) so a steady-state poll opens no file.
 - **Every tmux call is an argv list, never a shell string.** Pane text and typed
   input are data. Nothing captured from a pane and nothing typed into the composer
   can become a command.
