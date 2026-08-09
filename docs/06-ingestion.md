@@ -78,6 +78,15 @@ literature expert.
    adjacent claims instead. When a *specific* mechanism has to be citable, feed that
    section as its own file. The excerpt's header names the parent file and what the
    pass missed, so the two are never mistaken for independent sources.
+   **Length predicts the loss before the run does.** The digest is capped at ~24,000
+   characters, so a document far above it is not summarized but *sampled*, and which
+   handful survives is not the operator's choice. Measured 2026-08-08: the
+   cluster-robust guide (2.44 MB) distilled nine claims and not one of them concerned
+   few treated clusters — the single mechanism it was procured for — which a 19,595-byte
+   section feed of the same paper then yielded twelve of. Treat a long guide, survey, or
+   textbook chapter as a section feed by default rather than discovering the hole
+   afterwards; the whole-document pass is still worth writing for breadth, but it is a
+   map, not the territory.
 5. **Dry-run, verify, then write.** Every ingest runs without `--write` first and
    the operator confirms the extracted title matches the document intended —
    mis-resolved references are a measured failure mode (docs/10), and the archive

@@ -786,9 +786,17 @@ were flagged uncertain by the consult; all six resolved):
   the logged-feedback arm that makes counterfactual estimation possible without
   re-running anything.
 
-**Supply-blocked:** Ojala & Garriga, *Permutation Tests for Studying Classifier
-Performance* (JMLR 2010) — the canonical methods citation for the permutation
-null itself, no arXiv version.
+**The permutation null's own methods anchors are held** (scope `eval-methodology`,
+feed `permutation-null`). Ojala & Garriga, *Permutation Tests for Studying Classifier
+Performance* (JMLR 2010) supplies the canonical two-test distinction — permuting
+labels versus permuting features within class — and the caution that label-permutation
+p-values run very low even on weak class structure. Winkler et al., *Multi-level block
+permutation* (NeuroImage 2015) supplies the part the local design actually needs: when
+observations are not exchangeable, the permutation space is restricted by nesting
+**exchangeability blocks**, whole-block and within-block, so that correlated units are
+never swapped for one another. That is the same move `eval/calibration.uncorrelated`
+makes when it refuses a room-mate or a fork as a null partner — and the same source
+records its price, that restricting the permutation space costs power.
 
 What the held corpus does establish, and it cuts against the local design: the
 two nearest benchmarks both deliberately avoid output-text matching. τ-bench
@@ -1067,6 +1075,28 @@ not a scan.
   every real session ran with memory on — so its recurrence trend is descriptive
   until one is constructed. A recurrence dashboard without that is an unlabelled
   causal claim.
+- **Clustered inference is anchored, and the anchor is a warning.** MacKinnon,
+  Nielsen & Webb, *Cluster-Robust Inference: A Guide to Empirical Practice*
+  (2205.03285, `eval-methodology`, feed `cluster-inference`) supplies the Moulton
+  factor, the CV1/CV2/CV3 sandwich estimators and the wild cluster bootstrap. Its
+  load-bearing finding for this project is the negative one: with **one or a few
+  treated clusters** cluster-robust t- and Wald tests over-reject severely, with a
+  single treated cluster the score for the treatment dummy is exactly zero, and the
+  WCR bootstrap — normally the fix — fails in that same corner. Randomization
+  inference is the recommended fallback. Any design whose treatment is applied to a
+  handful of clusters (a room is one cluster, and rooms accumulate slowly) inherits
+  this hazard directly, and the hard-coded session-level `_DESIGN_EFFECT = 4.0` in
+  `eval/report.py` prices no level above the session.
+- **Dependent evidence aggregation is anchored** (§ convergence). Dong,
+  Berti-Équille & Srivastava, *Integrating Conflicting Data: The Role of Source
+  Dependence* (VLDB 2009, `eval-methodology`, feed `evidence-independence`) is the
+  closest prior art to `substrate/witnesses`: it discounts a vote count by the
+  probability that sources copied one another, proves the iterative estimator
+  converges, and exhibits the case where naive majority voting picks the wrong value
+  **because the majority are copiers**. That is the failure `room` and `forked_from`
+  are stamped to expose. The gap that remains is one of kind, not of coverage: that
+  work *infers* dependence from agreement patterns, where Thalamus refuses to and
+  reads a recorded launch fact instead (docs/09 §Scope).
 - **Attribution beyond lexical** — the survey (2603.07670) and the benchmarks make
   the case that inferred-intent retrieval is the hard part; our used-vs-ignored
   attribution is lexical (lab/002). This is the honest weak point of the eval loop.
