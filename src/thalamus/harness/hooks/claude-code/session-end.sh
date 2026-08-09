@@ -36,7 +36,6 @@ fi
 project_dir=$(printf '%s' "$cwd" | tr '/' '-')
 
 log_dir="$HOME/.thalamus/logs"
-mkdir -p "$log_dir"
 log="$log_dir/session-end-${session_id:0:8}.log"
 
 # The distillation scope: ledger first, env fallback (docs/07 "the process is the
@@ -52,6 +51,33 @@ if [ -f "$ledger" ]; then
     'select(.session_id == $sid) | .scope' "$ledger" 2>/dev/null | tail -1)
 fi
 scope="${ledger_scope:-$env_scope}"
+
+# Nothing to distill without a transcript, and spawning `uv run … claude -p` to
+# discover that is not free. **Subagents fire SessionEnd too** — they are sessions
+# to the harness — but they have no transcript of their own, so every one of them
+# used to start a full extract that could only ever end in "No session matching",
+# then run `eval sync --write` on top. On a box that fans out subagents that is not
+# a rounding error: it was measured at 1234 of 1826 session-end logs, and a burst of
+# them oversubscribed a 4-core machine badly enough to starve a *real* distillation
+# until it died with its memory unwritten.
+#
+# The test is the transcript rather than the pin ledger deliberately. Ledger absence
+# would also catch subagents, but it would silently skip a real session whenever
+# SessionStart failed to record one — trading wasted CPU for lost memory, which is
+# the worse failure. A real session always has a transcript.
+transcript="$HOME/.claude/projects/$project_dir/$session_id.jsonl"
+if [ ! -f "$transcript" ]; then
+  # A ledger row means this was a real session, so a missing transcript is an
+  # anomaly worth a log (the console's distillation widget surfaces it as an
+  # error). A session with neither is a subagent: leave nothing behind at all.
+  if [ -n "$ledger_scope" ]; then
+    mkdir -p "$log_dir"
+    echo "no transcript at $transcript — nothing to distill" >>"$log"
+  fi
+  exit 0
+fi
+
+mkdir -p "$log_dir"
 if [ -n "$ledger_scope" ] && [ "$ledger_scope" != "$env_scope" ]; then
   echo "pin mismatch: ledger=$ledger_scope env=$env_scope — using ledger" >>"$log"
 fi

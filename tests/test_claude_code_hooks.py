@@ -247,17 +247,9 @@ class TestDistillationAnchor:
         stub = bin_dir / "uv"
         stub.write_text(f'#!/bin/bash\nprintf "%s\\n" "$*" >> "{argv_log}"\n')
         stub.chmod(0o755)
+        _transcript(tmp_path, tmp_path, "cc-sess-9")
 
-        subprocess.run(
-            [str(HOOKS / "session-end.sh")],
-            input=json.dumps({"session_id": "cc-sess-9", "cwd": str(tmp_path),
-                              "hook_event_name": "SessionEnd", "reason": "exit"}),
-            capture_output=True, text=True, timeout=30,
-            env={"HOME": str(tmp_path),
-                 "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin",
-                 "CLAUDE_PROJECT_DIR": str(tmp_path),
-                 "THALAMUS_SCOPE": "literature"},
-        )
+        _session_end(tmp_path, tmp_path, "cc-sess-9", bin_dir)
 
         deadline = time.time() + 20
         while time.time() < deadline and not argv_log.exists():
@@ -269,6 +261,92 @@ class TestDistillationAnchor:
         assert f"--project {checkout}" in calls
         assert f"--directory {tmp_path}" not in calls
         assert "thalamus extract" in calls
+
+
+def _transcript(home, cwd, session_id, body="{}\n"):
+    """The transcript Claude Code writes for a real session, where the hook looks."""
+    path = (Path(home) / ".claude" / "projects"
+            / str(cwd).replace("/", "-") / f"{session_id}.jsonl")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body)
+    return path
+
+
+def _session_end(home, cwd, session_id, bin_dir, scope="literature"):
+    return subprocess.run(
+        [str(HOOKS / "session-end.sh")],
+        input=json.dumps({"session_id": session_id, "cwd": str(cwd),
+                          "hook_event_name": "SessionEnd", "reason": "exit"}),
+        capture_output=True, text=True, timeout=30,
+        env={"HOME": str(home),
+             "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin",
+             "CLAUDE_PROJECT_DIR": str(cwd),
+             "THALAMUS_SCOPE": scope},
+    )
+
+
+class TestTranscriptlessSessionsAreNotDistilled:
+    """A subagent is a session to the harness: it fires SessionEnd like any other,
+    but has no transcript of its own, so extracting it can only ever fail. Spawning
+    `uv run … claude -p` to find that out cost a measured 1234 of 1826 session-end
+    logs on a working box, and a burst of them starved a real distillation to death.
+    """
+
+    def _stub_uv(self, tmp_path):
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        argv_log = tmp_path / "uv-argv.txt"
+        stub = bin_dir / "uv"
+        stub.write_text(f'#!/bin/bash\nprintf "%s\\n" "$*" >> "{argv_log}"\n')
+        stub.chmod(0o755)
+        return bin_dir, argv_log
+
+    def test_a_session_with_no_transcript_never_spawns_an_extract(self, tmp_path):
+        bin_dir, argv_log = self._stub_uv(tmp_path)
+
+        _session_end(tmp_path, tmp_path, "sub-agent-1", bin_dir)
+
+        time.sleep(1.5)          # a detached extract would have landed by now
+        assert not argv_log.exists(), "a transcriptless session still ran extract"
+
+    def test_it_leaves_no_log_behind_either(self, tmp_path):
+        """Otherwise the logs directory fills with files for sessions that were
+        never distillable, which is what the console's widget has to filter."""
+        bin_dir, _ = self._stub_uv(tmp_path)
+
+        _session_end(tmp_path, tmp_path, "sub-agent-2", bin_dir)
+
+        assert not (tmp_path / ".thalamus" / "logs").exists()
+
+    def test_a_real_session_missing_its_transcript_is_logged_as_an_anomaly(self, tmp_path):
+        """A pin-ledger row means this was a real session, so the missing file is a
+        fault worth surfacing rather than routine subagent noise."""
+        bin_dir, argv_log = self._stub_uv(tmp_path)
+        pins = tmp_path / ".thalamus" / "pins"
+        pins.mkdir(parents=True)
+        (pins / "pins.jsonl").write_text(
+            json.dumps({"session_id": "real-sess-1", "scope": "homelab",
+                        "cwd": str(tmp_path), "ts": "now"}) + "\n")
+
+        _session_end(tmp_path, tmp_path, "real-sess-1", bin_dir)
+
+        log = tmp_path / ".thalamus" / "logs" / "session-end-real-ses.log"
+        assert log.exists(), "a real session's missing transcript went unrecorded"
+        assert "nothing to distill" in log.read_text()
+        time.sleep(1.5)
+        assert not argv_log.exists()
+
+    def test_a_session_with_a_transcript_still_distills(self, tmp_path):
+        bin_dir, argv_log = self._stub_uv(tmp_path)
+        _transcript(tmp_path, tmp_path, "real-sess-2")
+
+        _session_end(tmp_path, tmp_path, "real-sess-2", bin_dir)
+
+        deadline = time.time() + 20
+        while time.time() < deadline and not argv_log.exists():
+            time.sleep(0.2)
+        assert argv_log.exists()
+        assert "thalamus extract" in argv_log.read_text()
 
 
 def _run_conditioning(payload, home):
