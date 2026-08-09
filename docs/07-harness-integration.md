@@ -772,13 +772,18 @@ boundary. Warmth also decays well inside the nominal 1-hour TTL — 44.8% at 38 
 tools+system only. A `quick` launcher records both cache fields and prefers a
 parent between turns.
 
-**What is measured on the clock is fork overhead, not response latency.** Every timing
-here used a one-word prompt, so 1.6–2.5 s warm against 2.0–2.5 s cold is process start,
-transcript load and prefill — not request-to-answer. The 303–462 s cold-consult baseline
-is end-to-end, so the two are not comparable and no ratio between them is claimed. The
-number the design actually rests on — caller-boundary latency for a real question,
-including the mandated fresh recall — is **unmeasured**. The 71 s / 6.2 MB outlier remains
-a compaction effect that caching does not explain.
+**Fork overhead is 2–7% of a real call, and the fork does not generate faster.** The
+1.6–2.5 s figures are process start, transcript load and prefill, measured on a one-word
+prompt. Caller-boundary latency for a realistic question is **52–122 s warm**, and wall
+time per output token is **12.4–13.9 ms across every arm** — warm or cold, 0 to 30 tool
+calls, 128 k of inherited context or none. Latency is a function of tokens emitted and
+nothing else, so what a fork buys is *skipped discovery*: ~103 s when the cold arm would
+otherwise go inspect the box (21 of its 31 tool calls did exactly that), ~0 s when it
+would not, and in the restricted single-recall shape the fork was 1.5× **slower** because
+it wrote 65% more output. The mandated fresh recall itself costs +40 s and +$0.16. The
+303–462 s cold-consult baseline measures a larger envelope (ticket mint, brief assembly,
+citation validation) and must not be differenced against any of these. The 71 s / 6.2 MB
+outlier remains a compaction effect caching does not explain.
 
 Two failure modes to handle as outcomes rather than anomalies: a fork may answer *the
 parent's* question instead of the caller's — one 6.2 MB fork read the appended question

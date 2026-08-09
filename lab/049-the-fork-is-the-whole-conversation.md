@@ -301,6 +301,79 @@ tools+system block only**, $0.2285. A never-forked size-matched fixture reads 25
 isolated*: the sibling-fork arm rules out writer identity, leaving time or eviction, but
 the window between "seconds" and "38 minutes" was not bracketed.
 
+## Response latency, measured — and the protocol's own shape loses
+
+Pinned `--agent thalamus-homelab` parent warmed with 261,885 bytes (~128 k tokens) of
+homelab-shaped working context; a real peer-review question about binding a roster status
+endpoint, WebAPK background polling and systemd/tmux hazards. Answers ran 4,595–7,785
+chars, all substantive. Wall-clock from `Popen` to final stdout.
+
+| arm | wall | TTFT | turns | out tok | cost | tools | **ms/out tok** |
+|---|---|---|---|---|---|---|---|
+| W1 warm, unrestricted | 121.88 s | 93.81 s | 12 | 9,140 | $0.5178 | 10 | 13.33 |
+| W3 warm, unrestricted (replicate) | 120.12 s | 93.55 s | 8 | 9,117 | $0.4392 | 7 | 13.18 |
+| W2 warm, **+1 mandated recall** | **99.00 s** | 65.83 s | 3 | 7,719 | $0.2586 | 2 | 12.83 |
+| W4 warm, tool-free | 51.86 s | 32.48 s | 1 | 3,722 | $0.0959 | 0 | 13.93 |
+| W5 warm, tool-free (replicate) | 61.63 s | 39.86 s | 1 | 4,423 | $0.1047 | 0 | 13.93 |
+| C1 cold, **+1 mandated recall** | **64.86 s** | 40.05 s | 3 | 4,679 | $0.1624 | 2 | 13.86 |
+| C2 cold, unrestricted | 223.85 s | 195.93 s | 31 | 18,060 | $0.7360 | 30 | 12.39 |
+| C3 cold, tool-free | 60.46 s | 38.76 s | 1 | 4,460 | $0.1270 | 0 | 13.56 |
+
+Replicates agree within 2%. **Warm-fork response latency is 52–122 s, not 1.6–2.5 s**, and
+fork overhead — start, load, prefill — is **2–7% of the total**.
+
+**The cleanest result: wall time per output token is 12.4–13.9 ms across every arm** —
+warm or cold, 0 to 30 tool calls, 128 k of inherited context or none. Latency is a
+function of how many tokens the agent emits and nothing else. **A warm fork does not
+generate faster; its inherited prefix costs nothing in time.** So "which is faster"
+reduces entirely to "which emits fewer tokens".
+
+**In the protocol's own configured shape, the fork loses.** The matched restricted pair
+differs only by `--resume --fork-session`: **W2 warm 99.0 s / $0.2586 against C1 cold
+64.9 s / $0.1624 — 1.5× slower and 1.6× dearer.** Same ms/token; the whole gap is that
+the warm arm wrote 65% more output. *Ungraded*, so whether those ~3,000 extra tokens were
+worth anything is unknown — and that cuts both ways, since the restricted cold arm may
+simply have answered worse, faster.
+
+**Unrestricted, the fork wins on both axes.** W1/W3 at 121.9/120.1 s against C2 at
+223.9 s — **1.9× faster, ~103 s saved, and cheaper ($0.44–0.52 against $0.74)**. The
+mechanism is visible in the timeline: C2 made 31 tool calls, **21 of them Bash/Read calls
+going out to inspect the actual box** between t=49 s and t=115 s. The warm arms already
+had that context and skipped it. Tool-free, the arms are indistinguishable (51.9/61.6 s
+warm against 60.5 s cold).
+
+**So the fork's latency value is exactly "the expert does not have to rediscover its
+subject."** Worth ~0 s when no discovery is needed, ~100 s when it is, and never anything
+per token.
+
+**The mandated recall has a price, now counted.** W2 (one recall) against W4–W5
+(tool-free), same parent and question: **+40 s and +$0.16** for the `memory_recall` plus
+the `ToolSearch` that loads its schema — about a third of the protocol's end-to-end
+latency, spent on the step that makes warmth a revalidated cache rather than a stale one.
+
+**The comparator is same-instrument but cross-protocol.** C1–C3 share the binary,
+`--agent`, timing harness and question, differing only by `--resume --fork-session` — a
+fairer control than lab/043's 303–462 s. But they are *not* the consultation protocol: no
+ticket mint, no brief assembly, no citation-validation round-trip. Do not difference the
+two. The defensible statement is: *against a same-instrument cold expert, the fork runs
+between 34 s slower and 103 s faster depending on whether discovery is needed.*
+
+**And the cost figure is corrected a second time.** The $0.034 warm call was also a
+one-word artifact. Each tool-calling turn re-reads the whole prefix at $0.30/MTok, so cost
+scales with turns as well as with the one-time prefix. **The honest range for a real quick
+call is $0.10–$0.52.**
+
+Keep-warm, costed but not built: any refresh must re-send the exact prefix, so it pays a
+full cache read — **$0.038 per refresh** on a 128 k prefix, ~$1.44/day/member at one every
+30 minutes, plus a transcript turn unless run under `--no-session-persistence`. That is
+within an order of magnitude of just paying the cold write when a call actually happens.
+Not worth spending on until the decay window is bracketed: hit at seconds, miss at 38
+minutes, nothing in between.
+
+*Instrument note for anyone repeating this:* omitting `--allowedTools` does **not** give a
+no-tool arm — two nominal "no tool" arms ran 10 and 30 tool calls. The tool-free arms here
+are enforced by prompt instruction with `tools=0` verified in the stream.
+
 ## The mid-turn exception, and it is the case the design is for
 
 Parent actively generating (`ps` state `Sl`, 15 transcript lines written), forked at

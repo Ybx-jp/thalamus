@@ -315,7 +315,8 @@ wall-clock and tokens makes that claim unfalsifiable — and a cost figure taken
 `cache_read_input_tokens` is how [lab/049](../lab/049-the-fork-is-the-whole-conversation.md)
 first got this wrong by 16×.
 
-**Cost is bimodal, and the discriminator is the parent's recency rather than its size.**
+**A real call costs $0.10–$0.52, and cost is bimodal on the parent's recency rather than
+its size.**
 A fork of a parent active seconds ago reads that parent's entire prompt-cache prefix and
 creates only the new turn — a 100% hit, ~$0.03–0.08 even for a large parent. The same
 parent gone cold, or a fork whose `--agent` does not match its parent's, pays $0.55–1.35;
@@ -355,9 +356,19 @@ Every component has prior art; the composite is the claim.
 
 Pre-registered before any arm runs, per [04](04-eval-loop.md):
 
-- **Powered: latency.** Paired, at the *caller's* boundary (mint → answer accepted, so
-  queueing is not smuggled out), one-sided sign test. Five questions all favouring warm
-  is p = 0.031.
+- **Powered: latency — but the endpoint must be re-registered, because the direction is
+  not what the design assumed.** Paired, at the *caller's* boundary (mint → answer
+  accepted, so queueing is not smuggled out), one-sided sign test; five questions all
+  favouring warm is p = 0.031. What a same-instrument matched pair now shows
+  ([lab/049](../lab/049-the-fork-is-the-whole-conversation.md)) is that **wall time per
+  output token is invariant at 12.4–13.9 ms** across warm and cold alike, so a warm fork
+  does not generate faster and "which is faster" reduces to "which emits fewer tokens".
+  In the protocol's **own restricted shape** the fork was 1.5× *slower* and 1.6× dearer,
+  having written 65% more output; unrestricted, it was 1.9× faster and cheaper, because
+  the cold arm spent 21 tool calls rediscovering its subject. **The fork buys skipped
+  discovery, not speed** — so the endpoint is directional only against a comparator
+  allowed to discover, and a one-sided test would otherwise be registered against the
+  wrong tail.
 - **Powered: a harm tripwire, not a safety proof.** Plant a premise the record
   contradicts — drawn from *real superseded decisions in the graph*, so difficulty is set
   by the record rather than invented — and score whether the answer contradicts it, with
