@@ -308,6 +308,18 @@ def main():
         "--guards", type=Path, default=None, help="Guard event dir (default: ~/.thalamus/guards)"
     )
 
+    eval_rooms_parser = eval_sub.add_parser(
+        "rooms",
+        help="Room manipulation check: did the collaboration actually happen (not a score)",
+    )
+    eval_rooms_parser.add_argument(
+        "--pins", type=Path, default=None,
+        help="Pin ledger file (default: ~/.thalamus/pins/pins.jsonl)",
+    )
+    eval_rooms_parser.add_argument(
+        "--guards", type=Path, default=None, help="Guard event dir (default: ~/.thalamus/guards)"
+    )
+
     eval_rakes_parser = eval_sub.add_parser(
         "rakes",
         help="Rake registry and adjudication window: solved problems later sessions "
@@ -1503,6 +1515,11 @@ def _cmd_eval(args, eval_parser):
         from thalamus.eval.gremlin import gremlin_report
 
         print(gremlin_report(traces_base=args.traces, guards_base=args.guards).render())
+    elif getattr(args, "eval_command", None) == "rooms":
+        from thalamus.eval.rooms import render as render_rooms
+        from thalamus.eval.rooms import room_topologies
+
+        print(render_rooms(room_topologies(pins_file=args.pins, guards_base=args.guards)))
     elif getattr(args, "eval_command", None) == "rake-audit":
         from thalamus.eval import rake_audit as ra
         from thalamus.eval.rakes import build_rake_report, read_rakes

@@ -910,6 +910,45 @@ accuracy is sensitive to data age (arXiv 2212.00548). It stays blocked until sta
 0.5's sample is labelled. Stage 3 additionally needs the L6 judge and the
 answer-leakage audit (arXiv 2606.05037).
 
+## Layer 2c — Did the room treatment occur? (`eval/rooms.py`, `thalamus eval rooms`)
+
+A room arm's treatment is not "sessions were put in a room" — that is a launch flag.
+It is that they *collaborated*, and the two come apart silently. A room whose members
+never messaged each other is a set of solo sessions wearing a room label, and an arm
+like that cannot separate **"rooms do not help"** from **"the room did not happen"**.
+
+So this is a **manipulation check, not a score** — the standing `arms.py` gives its
+consequence probes, and for the same reason: it reports whether the intervention
+landed, never whether it worked. A room that fails is grounds for excluding the arm,
+which must happen *before* outcomes are looked at; dropping arms after seeing them is
+the peeking failure the sequential layer exists to avoid.
+
+Two topologies from two ledgers, and the gap between them is the measurement:
+
+- **Nominal** — who was *allowed* to talk, from the pin ledger. It carries members
+  that never said anything, which is why enumeration is driven from here: a silent
+  room is the only room the check can fail, and reading the roster off the guard
+  ledger would make exactly that case invisible.
+- **Realized** — who actually *sent*, from the `room-boundary` rows of the guard
+  ledger (`{room, scope, target, branch, verdict}`), giving a directed edge list over
+  member scopes. Reported as edges, volume, reciprocated pairs, density over the
+  member set, and blocked outbound attempts kept apart as evidence of attempted reach.
+
+Three limits it states rather than hides. A realized edge is a **permitted send, not
+a delivery** — the guard is outbound-only and fires before the send, so name
+resolution can still refuse it (lab/045); that direction of error is the safe one,
+since it can only make a room look more collaborative than it was. A **room of one**
+is reported as not a room at all rather than as a room that failed to collaborate,
+because no pair could have collaborated. And a target that parses but names no member
+is counted `unresolved` rather than admitted, since the prefix is not membership and a
+phantom peer would inflate the edge set against a density denominator drawn from the
+roster — kept distinct from a self-send, which is understood and correctly dropped.
+
+**Not built:** anything that turns this into an outcome. Grading collaboration by
+volume, or using realized density to *discount* correlated witnesses in
+`substrate/witnesses`, would change a settled decision (docs/09 §Scope refuses to
+reduce a count on room membership alone) and needs a consultation, not an inference.
+
 ## Layer 3 — Memory that measures itself (M4+)
 
 Close the loop: utility signals feed back into graph maintenance.

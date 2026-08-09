@@ -36,6 +36,9 @@ from thalamus.eval.traces import TraceEvent, load_events
 from thalamus.substrate.query import run_query
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
+
+# This module's own guard, named because the ledger directory is shared with others.
+TERMINAL_STEP_GUARD = "terminal-step"
 RECIPES_PATH = (
     Path(__file__).parents[1] / "harness" / "skills" / "gremlin-python" / "RECIPES.md"
 )
@@ -88,9 +91,18 @@ class GuardEvent:
     # ("no-traversal" = the trigger fired on an import but no traversal was built)
     branch: str = ""
     fingerprint: tuple[str, ...] = ()
+    # Which guard wrote the row. The ledger directory is shared — the room boundary
+    # writes here too (`room-boundary`, read by `eval/rooms.py`) — so a reader that
+    # wants one guard's events has to say which, or it counts another's as its own.
+    guard: str = ""
 
 
-def load_guard_events(base: Path | None = None) -> list[GuardEvent]:
+def load_guard_events(base: Path | None = None, guard: str = "") -> list[GuardEvent]:
+    """Guard-ledger rows, newest last. `guard` filters to one writer; "" reads all.
+
+    Rows predating the `guard` field carry "" and are treated as `terminal-step`,
+    which was the only writer then.
+    """
     directory = base or GUARDS_DIR
     if not directory.is_dir():
         return []
@@ -113,6 +125,9 @@ def load_guard_events(base: Path | None = None) -> list[GuardEvent]:
                 verdict = record.get("verdict")
                 if verdict not in ("block", "pass"):
                     continue
+                wrote = str(record.get("guard") or TERMINAL_STEP_GUARD)
+                if guard and wrote != guard:
+                    continue
                 fingerprint = tuple(
                     s for s in str(record.get("fingerprint", "")).split(",") if s
                 )
@@ -124,6 +139,7 @@ def load_guard_events(base: Path | None = None) -> list[GuardEvent]:
                         command_hash=str(record.get("command_hash", "")),
                         branch=str(record.get("branch", "")),
                         fingerprint=fingerprint,
+                        guard=wrote,
                     )
                 )
     events.sort(key=lambda e: e.ts)
@@ -305,7 +321,7 @@ def gremlin_report(
 ) -> GremlinReport:
     report = GremlinReport()
 
-    guard_events = load_guard_events(guards_base)
+    guard_events = load_guard_events(guards_base, guard=TERMINAL_STEP_GUARD)
     by_session: dict[str, list[GuardEvent]] = {}
     for event in guard_events:
         by_session.setdefault(event.session_id, []).append(event)
