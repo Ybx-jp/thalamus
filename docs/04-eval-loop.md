@@ -48,8 +48,11 @@ optional. Traces land as episodic memory (the trace store **is** a property grap
 so the eval loop needs no side database: it reads the same substrate it grades.
 
 **How crude is now measured, and it bounds every number below.** Under permutation
-— judging a retrieval's nodes against a *different same-project session's* output
-window — used% reads 58–61% against 62.9% for the real window. Across projects the
+— judging a retrieval's nodes against an *uncorrelated same-project session's*
+output window, meaning a different session that shared neither a room nor a fork
+parent with it (docs/09 §Scope), since room-mates and forks share the conversation
+itself and would price topic overlap as chance — used% reads 58–61% against 62.9%
+for the real window. Across projects the
 same test reads 5%. So the instrument is a **topic detector**: nearly perfect at
 "is this node from this body of work", and carrying roughly **4 points of
 discrimination on a 59-point floor** at the question actually being asked, "did

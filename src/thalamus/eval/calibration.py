@@ -50,7 +50,7 @@ from thalamus.eval.attribution import (
     output_window,
     prepare,
 )
-from thalamus.eval.sync import _retained_transcript
+from thalamus.eval.sync import _retained_transcript, _session_correlates
 from thalamus.contract.ontology import vid
 
 # Length strata for the rotation. Quartiles of the window's character length: a
@@ -85,6 +85,13 @@ class Case:
     # What `eval sync` stored for these nodes, for the reconstruction-fidelity gate.
     stored: dict[str, bool] = field(default_factory=dict)
     stratum: int = 0
+    # The two axes that make another session's window a bad null partner, read off the
+    # asserting `Session` (docs/09 §Scope, `substrate/witnesses`). The rotation's whole
+    # premise is that a *different* session supplies unrelated vocabulary; a room-mate
+    # or a fork shares the conversation itself, so pairing against one measures topic
+    # overlap and calls it chance.
+    room: str = ""
+    forked_from: str = ""
 
     @property
     def window_chars(self) -> int:
@@ -225,6 +232,7 @@ def load_cases(
             entry["judged_terms"][row["node"]] = str(row["judged_terms"]).split()
 
     transcripts: dict[str, bytes | None] = {}
+    correlates: dict[str, tuple[str, str]] = {}
     cases: list[Case] = []
     for trace_id, entry in grouped.items():
         census["traces"] += 1
@@ -234,7 +242,9 @@ def load_cases(
             continue
         if session_id not in transcripts:
             transcripts[session_id] = _retained_transcript(g, vid("Session", session_id, scope))
+            correlates[session_id] = _session_correlates(g, vid("Session", session_id, scope))
         transcript = transcripts[session_id]
+        room, forked_from = correlates.get(session_id, ("", ""))
         if transcript is None:
             census["no_transcript"] += 1
             continue
@@ -258,6 +268,8 @@ def load_cases(
                 returned_count=entry["returned_count"],
                 stored=entry["stored"],
                 judged_terms=entry["judged_terms"],
+                room=room,
+                forked_from=forked_from,
             )
         )
         census["cases"] += 1
@@ -369,6 +381,32 @@ def score(cases: list[Case], judge: Judge, prepared: "_Prepared | None" = None) 
     return result
 
 
+def uncorrelated(case: Case, other: Case) -> bool:
+    """Whether `other`'s window is a legitimate null partner for `case`.
+
+    A different `session_id` was the original test, and it is not sufficient. The
+    null is meant to price *shared project vocabulary*; two sessions that shared a
+    room or a fork parent shared the conversation, so their windows overlap in topic
+    by construction and swapping one in measures that overlap as if it were chance.
+    Both axes come from `Session` and mean different things (docs/09 §Scope): a room
+    makes the correlation plausible, a fork makes it certain. The null excludes both,
+    because a null only has to be conservative about what it admits.
+
+    Fork siblings — two sessions forked from one parent — are excluded too: neither
+    descends from the other, but both inherited the same context, which is the thing
+    that makes the vocabulary shared.
+    """
+    if case.session_id == other.session_id:
+        return False
+    if case.room and case.room == other.room:
+        return False
+    if case.forked_from and case.forked_from in (other.session_id, other.forked_from):
+        return False
+    if other.forked_from and other.forked_from == case.session_id:
+        return False
+    return True
+
+
 def rotate(
     cases: list[Case],
     judge: Judge,
@@ -379,13 +417,14 @@ def rotate(
     stratified: bool = True,
     prepared: "_Prepared | None" = None,
 ) -> JudgeResult:
-    """Re-judge every case against another session's window, `rotations` times.
+    """Re-judge every case against an uncorrelated session's window, `rotations` times.
 
-    The swap is constrained twice: a different **session** (or the vocabulary is
-    shared by construction and the null is not a null) and the same **length
-    stratum** (or the null measures the length change). A case with no eligible
-    partner is skipped rather than paired loosely, and the skip is visible in the
-    per-rotation denominator.
+    The swap is constrained twice: an **uncorrelated session** (see `uncorrelated` —
+    a different session that shared neither a room nor a fork parent, or the
+    vocabulary is shared by construction and the null is not a null) and the same
+    **length stratum** (or the null measures the length change). A case with no
+    eligible partner is skipped rather than paired loosely, and the skip is visible in
+    the per-rotation denominator.
     """
     prepared = prepared or _Prepared(judge)
     rng = random.Random(seed)
@@ -399,7 +438,7 @@ def rotate(
     unpartnered = {
         case.trace_id
         for case in cases
-        if not any(c.session_id != case.session_id for c in by_stratum[case.stratum])
+        if not any(uncorrelated(case, c) for c in by_stratum[case.stratum])
     }
     result.unpartnered = len(unpartnered)
     flips = 0
@@ -408,7 +447,7 @@ def rotate(
         used = total = 0
         for case in cases:
             key = case.stratum if stratified else 0
-            pool = [c for c in by_stratum[key] if c.session_id != case.session_id]
+            pool = [c for c in by_stratum[key] if uncorrelated(case, c)]
             if not pool:
                 continue
             other = pool[rng.randrange(len(pool))]

@@ -64,6 +64,8 @@ from dataclasses import dataclass, field
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import T
 
+from thalamus.substrate.witnesses import Witness, corroboration
+
 # Dials — arbitrary, here to be pressure-tested (the same posture as the attribution
 # thresholds in docs/04 and the pin-report floors in eval/pins.py).
 #
@@ -84,6 +86,9 @@ class SessionRow:
     ts: str = ""  # ISO-8601; lexical compare is chronological
     summary: str = ""  # what the session did — the audit worksheet's evidence
     artifacts: tuple[str, ...] = ()  # everything it touched, not just a rake's keys
+    # Why this session's agreement might not be its own (docs/09 §Scope).
+    room: str = ""
+    forked_from: str = ""
 
 
 @dataclass(frozen=True)
@@ -160,6 +165,7 @@ class RakeReport:
     problems: int = 0
     rakes: int = 0
     converged: int = 0  # rakes asserted in >=2 sessions — the identity detector's yield
+    converged_correlated: int = 0  # of those, ones whose witnesses were not independent
     unkeyable: int = 0  # no TOUCHES artifact at all
     unobservable: int = 0  # keyed, but no later same-project session touched it
     observable: int = 0
@@ -213,6 +219,12 @@ class RakeReport:
             f"  identity-converged rakes: {self.converged}/{self.rakes} — the "
             "content-addressed recurrence detector's entire yield"
         )
+        if self.converged_correlated:
+            lines.append(
+                f"    of which {self.converged_correlated} rest on correlated "
+                "witnesses (a fork agreeing with its parent, or room-mates) — "
+                "convergence there is not independent agreement"
+            )
         if self.hot_artifacts:
             lines.append("")
             lines.append("low-specificity keys (flagged, not dropped):")
@@ -254,6 +266,21 @@ def build_rake_report(
     for rake in rakes:
         if len(rake.sessions) >= 2:
             report.converged += 1
+            # The detector's yield is the headline number this module exists to keep
+            # visible, so the share of it that rests on correlated sessions has to be
+            # visible on the same line. A fork agreeing with its parent is one
+            # grounding counted twice, and nothing in the finished graph would say so.
+            # Keyed on `session_id`, not the vertex id: `forked_from` records the
+            # parent's session id (the launcher knows that and nothing else), so
+            # matching vids here would compare two different namespaces and quietly
+            # never collapse anything.
+            if corroboration([
+                Witness(session_id=sessions[vid].session_id,
+                        room=sessions[vid].room,
+                        forked_from=sessions[vid].forked_from)
+                for vid in rake.sessions if vid in sessions
+            ]).correlated:
+                report.converged_correlated += 1
         if not rake.artifacts:
             report.unkeyable += 1
             continue
@@ -321,16 +348,21 @@ def read_rakes(g: GraphTraversalSource) -> tuple[list[Rake], dict[str, SessionRo
             ts=str(row.get("ts") or ""),
             summary=str(row.get("summary") or ""),
             artifacts=tuple(str(a) for a in row.get("artifacts") or ()),
+            room=str(row.get("room") or ""),
+            forked_from=str(row.get("forked_from") or ""),
         )
         for row in g.V()
         .has_label("Session")
-        .project("id", "session_id", "project", "ts", "summary", "artifacts")
+        .project("id", "session_id", "project", "ts", "summary", "artifacts",
+                 "room", "forked_from")
         .by(__.id_())
         .by(__.coalesce(__.values("session_id"), __.constant("")))
         .by(__.coalesce(__.values("project"), __.constant("")))
         .by(__.coalesce(__.values("timestamp"), __.values("ingested_at"), __.constant("")))
         .by(__.coalesce(__.values("summary"), __.constant("")))
         .by(__.out("CONTAINS").out("TOUCHES").has_label("Artifact").values("identifier").dedup().fold())
+        .by(__.coalesce(__.values("room"), __.constant("")))
+        .by(__.coalesce(__.values("forked_from"), __.constant("")))
         .to_list()
     }
 

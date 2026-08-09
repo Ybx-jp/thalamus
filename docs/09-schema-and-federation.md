@@ -151,7 +151,14 @@ together. So the room is stamped at write time or never — resolved from
 ledger-first at distillation, the same path the pin takes and for the same reason
 (the spawner's environment is gone by SessionEnd). Empty is the honest default;
 inferring a room from co-timing would manufacture the very correlation the field
-exists to expose. Nothing consumes it yet.
+exists to expose.
+
+Both fields are read by `substrate/witnesses.corroboration`, which every site that
+turns a session count into a claim about agreement now passes through: the
+recurrence line on an unsolved problem (`memory_open_problems`) and the
+`identity-converged` yield in the rake report. Neither number changes — what
+changes is that a correlated one now says so where it is read, since a caveat that
+lives only here reaches nobody holding the count.
 
 **What it supports, and what it does not.** Flagging convergence among room-mates: yes.
 Computing an effective sample size: no, and the provenance literature says exactly why.
@@ -159,16 +166,33 @@ Under semiring provenance (Green, Karvounarakis & Tannen 2007, held) the collaps
 `a + a = a` requires the room's *event* to be the provenance variable and each
 distillation to be a mapping over it. Thalamus records the opposite modeling: a Source
 vertex is `vid("Source", content_hash, scope)`, so N experts in one room mint N Sources
-in disjoint id spaces — N distinct variables, which **no commutative semiring
-collapses**. The N-count is formally correct under session-as-source, which is precisely
-why the failure is silent. A counter tallying distinct parent `Session` vertices is
-evaluating in the bag semiring `N` where set semantics was intended; the idempotent,
-absorptive `PosBool(X)` is the reading that collapses it. Since RA+ over any commutative
+in disjoint id spaces — N distinct variables, and **distinct variables collapse only
+under a valuation that identifies them**. Idempotence is necessary and not sufficient:
+`x₁ + x₂` stays a sum of two variables in `PosBool(X)` as much as in `N[X]`, because
+what `a + a = a` collapses is two occurrences of *one* variable. Since a homomorphism
+out of `N[X]` is fixed by where it sends the variables, and session-as-source has
+already minted two, no downstream reading can merge them — the identity is settled
+upstream at annotation time, not chosen later by picking a semiring. The N-count is
+formally correct under session-as-source, which is precisely why the failure is silent.
+A counter tallying distinct parent `Session` vertices is evaluating in the bag semiring
+`N` where set semantics was intended; the idempotent, absorptive `PosBool(X)` is the
+reading under which a *recorded* mapping — a fork onto its parent's material — collapses
+rather than accumulating. Since RA+ over any commutative
 semiring factors through the polynomial, the resolution is one write path and two
 readings — `N` for "how often was this said", `PosBool(X)` for "how many independent
-groundings" — rather than a second field. Getting there needs a scope-independent
-witnessing-event node and a claim→event edge carrying the mapping identity. `room` is
-the grouping key that makes those buildable, not a substitute for them.
+groundings" — rather than a second field. Both readings are computed today, and the
+`PosBool(X)` one is exact **only along the fork axis**, where the mapping is recorded
+(below); along the room axis it is a flag, not a collapse. Making it exact there needs a
+scope-independent witnessing-event node and a claim→event edge carrying the mapping
+identity. `room` is the grouping key that makes those buildable, not a substitute for
+them.
+
+Two limits the implementation keeps rather than papers over. A fork collapses only into
+a parent that asserted the same claim: chaining through a session that made no claim
+would infer a dependence from a third party's silence, where every other input here is a
+record — so a gap in the chain costs a collapse instead of inventing one. And nothing
+reduces a count on room membership alone, which is the false-collapse error this section
+opens by refusing.
 
 **`forked_from`** is the fourth, and it is the sharper instrument. Where `room` says
 *these sessions saw one event*, this says *this session derives from that one*: a fork

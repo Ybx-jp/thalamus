@@ -23,6 +23,7 @@ from gremlin_python.process.traversal import Order, P, T, TextP
 
 from thalamus.contract.ontology import MAIN_SCOPE, vid
 from thalamus.substrate.schema import Tier
+from thalamus.substrate.witnesses import Corroboration, Witness, corroboration
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +238,7 @@ class ProblemResult:
     times_seen: int = 1
     last_session: str = ""
     last_seen: str = ""
+    corroboration: Corroboration | None = None
 
     def format(self) -> str:
         lines = [
@@ -248,6 +250,13 @@ class ProblemResult:
                 f"**Recurred:** asserted in {self.times_seen} sessions — "
                 "the same assertion converged on one node"
             )
+            # Only when the count is not what it looks like. A recurrence reads as
+            # independent agreement, and that reading is what makes an unsolved
+            # problem worth attention — so the cases where it is not earned are
+            # exactly the ones that have to say so at the point of being read.
+            note = self.corroboration.note() if self.corroboration else ""
+            if note:
+                lines.append(f"**Correlated:** {note}")
         if self.project:
             lines.append(f"**Project:** {self.project}")
         if self.last_session:
@@ -663,7 +672,11 @@ def _problem_result(g: GraphTraversalSource, row: dict) -> ProblemResult:
         .has_label("Session")
         .order()
         .by("timestamp", Order.desc)
-        .value_map("session_id", "timestamp", "project")
+        # room/forked_from ride along on the query that was already fetching these
+        # rows: whether N assertions are N witnesses is decided by the same sessions
+        # the count is taken from, so asking separately would be a second round trip
+        # for data already in hand.
+        .value_map("session_id", "timestamp", "project", "room", "forked_from")
         .to_list()
     )
     return ProblemResult(
@@ -675,6 +688,12 @@ def _problem_result(g: GraphTraversalSource, row: dict) -> ProblemResult:
         times_seen=len(sessions),
         last_session=_first(sessions[0].get("session_id")) if sessions else "",
         last_seen=_first(sessions[0].get("timestamp"))[:10] if sessions else "",
+        corroboration=corroboration([
+            Witness(session_id=_first(s.get("session_id")),
+                    room=_first(s.get("room")),
+                    forked_from=_first(s.get("forked_from")))
+            for s in sessions
+        ]),
     )
 
 

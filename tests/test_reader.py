@@ -478,3 +478,54 @@ def test_a_problem_seen_once_does_not_claim_recurrence():
     ).format()
 
     assert "Recurred" not in rendered
+
+
+def test_a_recurrence_built_on_correlated_sessions_says_so_where_it_is_read():
+    """
+    Scenario: a problem asserted by three sessions, one of them a fork of another
+              and two of them room-mates
+
+    Verifications:
+    - the raw recurrence count is still shown (it is what was actually said)
+    - the reader is told, in the same block, why it is not three witnesses
+
+    A recurrence reads as independent agreement, and that reading is what makes an
+    unsolved problem worth acting on. Nothing in a finished graph separates three
+    sessions that agreed from three that were in one room, so the disclosure has to
+    travel with the number rather than live in a doc (docs/09 §Scope).
+    """
+    from thalamus.substrate.reader import ProblemResult
+    from thalamus.substrate.witnesses import Witness, corroboration
+
+    rendered = ProblemResult(
+        description="Distillation lost a session to a wrong project dir",
+        category="configuration",
+        node_id="scope:main:claim:abc123",
+        times_seen=3,
+        corroboration=corroboration([
+            Witness("s1", room="alpha"),
+            Witness("s2", room="alpha", forked_from="s1"),
+            Witness("s3"),
+        ]),
+    ).format()
+
+    assert "3 sessions" in rendered
+    assert "Correlated:" in rendered
+    assert "2 independent groundings" in rendered
+    assert "`alpha`" in rendered
+
+
+def test_an_uncorrelated_recurrence_carries_no_extra_line():
+    """Recall output is charged against the reader's context (lab/006-007), so the
+    ordinary case must cost nothing — a caveat on every recurrence is a caveat
+    nobody reads."""
+    from thalamus.substrate.reader import ProblemResult
+    from thalamus.substrate.witnesses import Witness, corroboration
+
+    rendered = ProblemResult(
+        description="p", category="bug", node_id="scope:main:claim:x", times_seen=2,
+        corroboration=corroboration([Witness("s1"), Witness("s2")]),
+    ).format()
+
+    assert "Recurred" in rendered
+    assert "Correlated" not in rendered
