@@ -1,6 +1,6 @@
 {
-  "name": "Thalamus Control Plane",
-  "short_name": "Plane",
+  "name": "Thalamus Console",
+  "short_name": "Console",
   "description": "Drive your pinned expert sessions from your phone.",
   "start_url": "./",
   "scope": "./",
