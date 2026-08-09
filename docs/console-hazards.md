@@ -192,6 +192,35 @@ to the backend as `/api/panes`. That is usually what you want, but it means:
 
 ---
 
+## 9. Typing into a pane that is showing a modal answers the modal
+
+`send-keys -l <text>` followed by `Enter` behaves three different ways depending on what
+the target program is doing, and only the first is the one you designed for:
+
+| target state | the text | the Enter |
+|---|---|---|
+| idle at a prompt | lands in the composer | submits it |
+| busy / generating | lands in the composer | **queues** it — processed as the next input, order preserved |
+| showing a modal (permission prompt, trust dialog) | **discarded** | **actuates the highlighted default** |
+
+The third row is the dangerous one, and it is not theoretical: driving an agent to a
+`Do you want to proceed? ❯ 1. Yes` prompt on a pending file-creating command, then sending
+an unrelated line plus `Enter`, **creates the file**. The sent text vanishes and its Enter
+approves an action the sender knew nothing about. A first message to a freshly created
+window is the most likely to hit this, because a new working directory raises a
+trust dialog before anything else runs.
+
+So a blind sender — anything that types into a pane it is not watching — must check the
+target's state first, and must never send a bare `Enter` to a pane that might be modal.
+Do not verify by scraping the pane: hazard 6 means `capture-pane` shows only the visible
+height, and a modal that has scrolled the useful line away reads as absent.
+
+Where the state actually lives depends on the program. For a program that publishes a
+status descriptor, read the descriptor; confirm delivery by watching its timestamp
+advance rather than by reading back the screen.
+
+---
+
 ## The one-line version
 
 **Every layer here reports success early** — tmux when it forks, systemd when it starts
