@@ -58,8 +58,38 @@ else
 fi
 
 log_dir="$HOME/.thalamus/logs"
-mkdir -p "$log_dir"
 log="$log_dir/session-end-${session_id:0:8}.log"
+
+# Extraction's precondition, checked before paying for it. **SessionEnd fires for
+# subagents too** — they are sessions to the harness — but a subagent has no
+# transcript of its own, so `extract --session <id>` can only ever come back "No
+# session matching". Finding that out is not free: a `uv run`, a `claude -p` model
+# call, and a chained `eval sync --write` each time. Measured on this box, 1234 of
+# 1826 session-end logs were that residue, and under a fan-out it stops being
+# merely wasteful — 12 concurrent jobs on 4 cores drove load past 20 and a real
+# session with a 96KB transcript sat in the queue until its extract died with
+# nothing written (lab: the console's distillation widget caught it as `stalled`).
+#
+# The file named for the session id is exactly what transcripts.discover() keys on,
+# so this is the same question extract asks, asked cheaply. Deliberately not the pin
+# ledger: ledger absence would also identify subagents, but it would silently skip a
+# real session whenever SessionStart failed to record one — trading wasted CPU for
+# lost memory, which is the worse failure. A real session always has a transcript.
+transcript="${projects_dir:-$HOME/.claude/projects}/$project_dir/$session_id.jsonl"
+if [ ! -f "$transcript" ]; then
+  # A ledger row means this *was* a real session, so a missing transcript is a
+  # fault worth surfacing (the console widget renders it as an error). A session
+  # with neither is a subagent: leave nothing behind, not even a log.
+  if [ -f "$HOME/.thalamus/pins/pins.jsonl" ] && jq -e --arg sid "$session_id" \
+       'select(.session_id == $sid and (has("event") | not))' \
+       "$HOME/.thalamus/pins/pins.jsonl" >/dev/null 2>&1; then
+    mkdir -p "$log_dir"
+    echo "no transcript at $transcript — nothing to distill" >>"$log"
+  fi
+  exit 0
+fi
+
+mkdir -p "$log_dir"
 
 # The distillation scope: ledger first, env fallback (docs/07 "the process is the
 # pin"). Ledger-first keeps re-extraction deterministic — the same session recovered
