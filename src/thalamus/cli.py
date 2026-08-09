@@ -320,6 +320,24 @@ def main():
         "--guards", type=Path, default=None, help="Guard event dir (default: ~/.thalamus/guards)"
     )
 
+    eval_ri_parser = eval_sub.add_parser(
+        "randomize",
+        help="Randomization inference over clusters, and whether a design can reject at all",
+    )
+    eval_ri_parser.add_argument(
+        "--clusters", type=int, default=0, help="Cluster count, for a design-only feasibility check"
+    )
+    eval_ri_parser.add_argument(
+        "--treated", type=int, default=0, help="How many of them are treated"
+    )
+    eval_ri_parser.add_argument(
+        "--alpha", type=float, default=0.05, help="Significance level (default 0.05)"
+    )
+    eval_ri_parser.add_argument(
+        "--outcomes", default="",
+        help="Comma-separated cluster-level outcomes in [0,1], treated arm first",
+    )
+
     eval_rakes_parser = eval_sub.add_parser(
         "rakes",
         help="Rake registry and adjudication window: solved problems later sessions "
@@ -1515,6 +1533,30 @@ def _cmd_eval(args, eval_parser):
         from thalamus.eval.gremlin import gremlin_report
 
         print(gremlin_report(traces_base=args.traces, guards_base=args.guards).render())
+    elif getattr(args, "eval_command", None) == "randomize":
+        from thalamus.eval.randomization import (
+            feasible, monitor, randomization_test, render, smallest_design,
+        )
+
+        if args.outcomes:
+            values = [float(v) for v in args.outcomes.split(",") if v.strip()]
+            treated_n = args.treated or len(values) // 2
+            flags = [i < treated_n for i in range(len(values))]
+            print(render(
+                randomization_test(values, flags),
+                feasible(len(values), treated_n, alpha=args.alpha),
+                monitor(values, flags),
+            ))
+        elif args.clusters:
+            print(f"  design: {feasible(args.clusters, args.treated, alpha=args.alpha).note()}")
+        else:
+            total, treated = smallest_design(alpha=args.alpha)
+            print(
+                f"  smallest design that can reject at α={args.alpha:g}: "
+                f"{total} clusters split {treated}/{total - treated}"
+                if total
+                else f"  no design under the search limit can reject at α={args.alpha:g}"
+            )
     elif getattr(args, "eval_command", None) == "rooms":
         from thalamus.eval.rooms import render as render_rooms
         from thalamus.eval.rooms import room_topologies

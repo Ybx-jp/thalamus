@@ -949,6 +949,50 @@ volume, or using realized density to *discount* correlated witnesses in
 `substrate/witnesses`, would change a settled decision (docs/09 §Scope refuses to
 reduce a count on room membership alone) and needs a consultation, not an inference.
 
+## Layer 2d — Cluster inference: the test, and whether the design can reject at all
+
+When the treatment is assigned to a **group** rather than a run — a room, a switchback
+window — the group is the unit, and the anchored literature (feed `cluster-inference`)
+says the usual tools break exactly there: with one or a few *treated clusters*,
+cluster-robust t- and Wald tests over-reject severely, cluster-robust standard errors
+are biased **downward**, and the wild cluster bootstrap fails in the same corner. The
+held recommendation is **randomization inference** (`eval/randomization.py`), which
+tests the sharp null by re-dealing the treatment across clusters and ranking the
+observed statistic in that distribution. No standard error is estimated, which is why
+it does not inherit the bias.
+
+**The design floor, which is the part worth internalising.** The reference distribution
+has one entry per possible assignment, so an exact two-sided p-value cannot fall below
+`2 / n_assignments` in a balanced design (every assignment's complement is also an
+assignment and yields the negated statistic) or `1 / n_assignments` in an unbalanced
+one. Consequences, and they are arithmetic rather than further empirical claims:
+
+| clusters | split | assignments | smallest attainable p |
+|---|---|---|---|
+| 3 | 1/2 | 3 | 0.333 |
+| 6 | 3/3 | 20 | 0.100 |
+| 7 | 3/4 | 35 | 0.029 |
+| 8 | 4/4 | 70 | 0.029 |
+
+So **seven clusters is the smallest campaign that can produce p ≤ 0.05 at all**, and a
+*perfectly clean* six-cluster separation still reads p = 0.10. `feasible()` answers this
+before a campaign is run, while the shape is still free to change; `thalamus eval
+randomize` exposes it with no arguments.
+
+**Two guarantees, reported side by side and never merged.** The RI p-value is exact at
+**one** look, and recomputing it as each cluster lands is the peeking failure lab/023
+demonstrated first-hand. Anytime-valid monitoring comes from `sequential.py`'s Robbins
+confidence sequence, whose interval is valid at every *t* simultaneously —
+`randomization.monitor()` is its caller. A sequential *randomization* test is a real
+construction this project does not hold the literature for, so the two are presented
+separately rather than combined into one number implying a guarantee neither gives.
+
+Monitoring an unpaired design (clusters are treated or not, so there is no per-cluster
+difference) runs a sequence per arm and reports both intervals. **Non-overlap is a
+conservative signal, not a test of the difference** — two intervals can overlap while
+the difference still excludes zero, so the error costs power and never buys false
+confidence.
+
 ## Layer 3 — Memory that measures itself (M4+)
 
 Close the loop: utility signals feed back into graph maintenance.
@@ -1058,7 +1102,10 @@ live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
   store isolation needs the endpoint blocked, which is network-level work.
 - Campaign analysis — runs.jsonl holds per-run records; the paired,
   per-stratum report (sign/permutation tests, floor-gated verdicts) is not
-  built, and no cross-arm claims exist until it is.
+  built, and no cross-arm claims exist until it is. Layer 2d supplies the
+  cluster-level test and the anytime-valid sequence, but nothing reads
+  runs.jsonl into them: the join from per-run records to a cluster-level outcome
+  vector is the missing piece, not the inference.
 - Judge scoring — rubrics are recorded in the battery and unused; the guarded
   judge (pairwise, arm-blinded) is not built.
 - Battery growth: both seeds are memorization-stratum; transferable-stratum
