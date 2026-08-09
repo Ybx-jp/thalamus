@@ -303,12 +303,25 @@ is no independent believer left to disagree (arXiv 2604.02189), and self-enhance
 bias is at its purest when the judge is the same trajectory as the judged
 (arXiv 2411.15594). A cheap tier that cannot say no to the room is not a consultation.
 
-**The exchange must price itself.** The entire justification is a latency claim, so a
-quick exchange that does not record its own wall-clock and tokens makes that claim
-unfalsifiable. It is also the wrong number to watch: forking a 1.8 MB parent costs
-**$1.35** against $0.09 cold, because the whole parent context is re-written to cache
-every call, and nothing amortises it (lab/049). Latency is ~5× better; money is ~15×
-worse. The quick protocol is fast, not cheap.
+**The exchange must price itself, and record both cache fields.** The entire
+justification is a latency claim, so a quick exchange that does not log its own
+wall-clock and tokens makes that claim unfalsifiable — and a cost figure taken without
+`cache_read_input_tokens` is how [lab/049](../lab/049-the-fork-is-the-whole-conversation.md)
+first got this wrong by 16×.
+
+**Cost is bimodal, and the discriminator is the parent's recency rather than its size.**
+A fork of a parent active seconds ago reads that parent's entire prompt-cache prefix and
+creates only the new turn — a 100% hit, ~$0.03–0.08 even for a large parent. The same
+parent gone cold, or a fork whose `--agent` does not match its parent's, pays $0.55–1.35;
+a **mid-turn** fork pays 13× the post-turn price, because a truncated conversation lands
+on no cached block boundary. Warmth decays inside the nominal TTL (44.8% at 38 minutes).
+
+This is a scheduling property, not a budget line, and it cuts against the protocol's own
+motivation: non-interruption means `quick` is reached for precisely when the expert is
+mid-task, which is the expensive case. **The roster's normal state is also idle**, so a
+call against an expert nobody has touched today is a cold call. The expected price
+therefore depends on a usage distribution nobody has measured — an instrument to build
+before any per-call figure is quoted as *the* cost.
 
 ### Prior work
 

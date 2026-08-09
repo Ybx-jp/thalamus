@@ -4,11 +4,15 @@
 not "the parent's context plus an answer" — it is a full rewrite of the parent's
 conversation with the fork's own session id stamped on every record. Distilling one as
 an ordinary session mints a second Session re-asserting the parent's entire episode.
-Five silent failures found before shipping, and the binding constraint turns out to be
-money, not latency: $1.35 per call against a 1.8 MB parent.**
+Five silent failures found before shipping. A first cost finding — "$1.35 per call, and
+money is the binding constraint" — is **withdrawn below**: it forked stale transcripts
+and never read the cache-hit field. A warm fork reads the parent's whole prefix and
+creates only the new turn, at 16× less. Cost is bimodal, and the discriminator is parent
+*recency*, not parent size.**
 
 **Date:** 2026-08-09 · **Harness:** Claude Code 2.1.226 · Ubuntu, `ybx-MS-7A63` ·
-**Status:** measured, live, on real transcripts and the real pin ledger
+**Status:** measured, live, on real transcripts and the real pin ledger; 16 further arms
+after a withdrawal
 
 ## Why
 
@@ -196,10 +200,11 @@ out of the symlinked `settings.json` so the probe could not write to the graph.
   above distills **into `main`**, moving an expert session's entire conversation across
   a scope boundary with nothing recording the crossing.
 
-## Cost, not latency, is the wall
+## Latency holds, with a cliff
 
 All `--model sonnet`, one-word prompt, sandbox-marked so no hook overhead, sequential on
-a box already running six live Claude sessions:
+a box already running six live Claude sessions. **These parents were all stale fixtures —
+see the withdrawal below for what that does to the cost column.**
 
 | parent transcript | bytes | wall (s) | cache-creation tokens | cost |
 |---|---|---|---|---|
@@ -210,20 +215,130 @@ a box already running six live Claude sessions:
 | large | 1,772,440 | **6.23** | 223,477 | **$1.350** |
 | very large | 6,184,854 | **71.03** | 670,898 | **$4.047** |
 
-Three readings:
-
 **The latency premise holds, with a cliff.** ~2.3 s of CLI overhead plus a load term
 that is free to a few hundred KB, 6.2 s at 1.8 MB, and **71 s at 6.2 MB** — an 11× jump
 for 3.5× the size. The tell is 670,898 cache-creation tokens, past a 200 K window: that
 fork was compacting. Still ~5× better than the cold baseline, but "far below" stops
-being the right word.
+being the right word. Caching does not explain the outlier — warm forks below ran
+1.6–2.5 s against cold 2.0–2.5 s — so this reading survives the withdrawal intact.
 
-**Money is the binding constraint.** A cold `-p` costs $0.09; forking a 1.8 MB parent
-costs **$1.35** and a 6.2 MB parent **$4.05** — for a one-word answer, because the whole
-parent context is re-written to cache on every fork. A live expert mid-day is routinely
-1–2 MB, so ten quick calls against one is ~$13, and nothing amortises it: each fork is a
-fresh cache write. The design's justification was latency, and latency is not what will
-stop anyone using this.
+## Withdrawn: "money is the binding constraint"
+
+An earlier version of this entry concluded that **cost, not latency, is the wall, at
+$1.35 per call**. That is wrong, and the error is in the probe rather than the arithmetic.
+Every parent in the table above is a **stale fixture**, so any cache entry had long
+expired; and the table reports `cache_creation_input_tokens` while never reading
+`cache_read_input_tokens`. It measured the one case the quick protocol never runs in.
+
+The generalisable error is the same shape as lab/043's: **a measurement of the cold
+regime is not a measurement of the harness.** The operator caught it by asking whether
+forks share the parent's cache. They do.
+
+**The deciding arm.** Parent = one `-p` request carrying a 228,515-byte payload (~98 k
+tokens of `messages[0]`), forked seconds later:
+
+| arm | `cache_read` | `cache_creation` | hit | cost | dur |
+|---|---|---|---|---|---|
+| parent's own request (cold) | 24,018 | 97,920 | 19.7% | **$0.5948** | 2490 ms |
+| fork #1, same model | **121,938** | **15** | **100.0%** | **$0.0367** | 1990 ms |
+| fork #2 (+4 s) | 121,942 | 11 | 100.0% | $0.0367 | 1688 ms |
+| fork #3 (+24 s, after divergent arms) | 121,942 | 11 | 100.0% | $0.0367 | 2502 ms |
+| fork + `--agent` **added** (parent unpinned) | 21,100 | 92,241 | 18.6% | $0.5598 | 2268 ms |
+| fork + **different model** (haiku, positive control) | 17,794 | 75,409 | 19.1% | $0.1528 | 2322 ms |
+
+24,018 + 97,920 = 121,938 exactly: **a warm fork reads the parent's entire prefix and
+creates 11–15 tokens — the new user turn only. 16× cheaper.** Three distinct fork session
+ids reading one entry also settles that per-session volatile content — session id,
+`--name` — is **not** in the cached prefix. The haiku arm misses as predicted, so the
+instrument can see a miss.
+
+Price constants derived from the envelopes and consistent across all 16 arms: **cache
+read $0.30/MTok**, **1 h cache write $6.00/MTok** (every envelope showed `ephemeral_1h`,
+`ephemeral_5m: 0`).
+
+**Matching the parent's agent is free — mismatching it is what costs.** Against a
+*pinned* parent with an identical payload:
+
+| arm | read | create | hit | cost |
+|---|---|---|---|---|
+| pinned parent, cold | 21,100 | 92,226 | 18.6% | $0.5598 |
+| fork, `--agent` matched | 113,330 | 11 | 100.0% | **$0.0341** |
+| fork, `--agent` **dropped** | **113,330** | 11 | **100.0%** | $0.0341 |
+| fork, matched again | 113,341 | 0 | 100.0% | $0.0341 |
+
+So the apparent tension — "pass `--agent` to keep the pin" against "adding `--agent`
+broke the cache" — dissolves: that arm missed because the fork's agent *differed from its
+parent's*, not because pinning costs anything.
+
+**And the dropped-`--agent` row is a sharper version of the pin finding.** The unpinned
+prefix totals 121,938 tokens; the pinned one totals 113,326, because `--agent` swaps in a
+shorter system prompt. A fork of a pinned parent *without* `--agent` read **113,330** —
+the **pinned** total. *Inferred* from that (the rendered prefix is not reachable): the
+resumed session restores the expert's system prompt from its own record even with the
+flag absent. *Measured* separately above: that same fork's ledger row says `scope=main,
+agent=""`. So a fork that forgets `--agent` **speaks as the expert to the model and files
+as `main` to Thalamus**, and nothing in the answer text shows the divergence. That is
+worse than the visible failure originally described.
+
+**A fork writes no competing entry.** First fork of a cold 1.14 MB fixture: 20,733 read /
+108,076 created, 16.1%, $0.6547. Second fork seconds later: **127,924 read / 886 created,
+99.3%, $0.0438.** N quick calls cost **one write plus N−1 reads**, and it does not matter
+whether the writer was the parent or a sibling.
+
+**But warmth decays well inside the nominal 1 h TTL.** Re-forking the `medium` fixture 38
+minutes after an earlier fork of it: 29,712 read / 36,586 created — **44.8%, the
+tools+system block only**, $0.2285. A never-forked size-matched fixture reads 25.3%. *Not
+isolated*: the sibling-fork arm rules out writer identity, leaving time or eviction, but
+the window between "seconds" and "38 minutes" was not bracketed.
+
+## The mid-turn exception, and it is the case the design is for
+
+Parent actively generating (`ps` state `Sl`, 15 transcript lines written), forked at
+t+22 s:
+
+| arm | read | create | hit | cost |
+|---|---|---|---|---|
+| fork **while parent generating** | 21,100 | 39,627 | **34.7%** | **$0.2441** |
+| same parent, seconds **after** it finished | 61,175 | 16 | **100.0%** | **$0.0185** |
+
+**A mid-turn fork misses the message body entirely — 13× the post-turn cost.** The prefix
+totals differ (60,727 vs 61,191): the mid-turn fork snapshots a *truncated* conversation,
+so its final block boundary is one no cache entry sits at. *Inferred* mechanism,
+consistent with all 16 arms but not directly observed: breakpoints are placed relative to
+the message list, and a truncated list can neither reach the parent's late breakpoint nor
+find one of its own.
+
+This lands on the design rather than beside it. Non-interruption is the stated reason to
+fork, so if `quick` is reached for *because* the expert is mid-task, it lands in the
+34.7% case by construction.
+
+## The corrected cost, and why it is not one number
+
+Warm cost is (parent context tokens) × $0.30/MTok:
+
+| parent | withdrawn figure | corrected warm figure |
+|---|---|---|
+| 122 k-token context (measured directly) | — | **$0.034–0.037** |
+| 1.77 MB / ~253 k tokens | $1.35 | **≈$0.076** (extrapolated at the measured read rate; 17.8×) |
+| 6.18 MB / ~700 k tokens | $4.05 | **≈$0.21** (19×) |
+
+**Cost is bimodal, and the discriminator is parent recency, not parent size:**
+
+1. **Warm** (parent active within seconds): **$0.03–0.08**.
+2. **Cold** (parent expired) or **agent-mismatched**: **$0.55–$1.35** on the same parent —
+   16–20×.
+3. **Mid-turn**: 13× the post-turn price.
+
+And the distribution matters more than the rates. **The roster's normal state is idle** —
+the three live `thalamus-teacher` sessions carry `updatedAt` ages of ~25,700 s. A quick
+call against an expert nobody has typed at today is a *cold* call, and the 38-minute
+decay says "today" is generous. The expected cost therefore depends on a usage
+distribution nobody has measured, which is an instrument to build before any per-call
+price goes in a design doc.
+
+What caching does **not** touch: the duplicate-episode distillation above is a storage and
+secret-duplication cost — a second ~1.7 MB archived Source per call — and it is unaffected
+by any of this.
 
 **The fork does not reliably answer the question you asked.** On the 6.2 MB run the fork
 returned a refusal in full — it read the appended question as a prompt injection into
@@ -243,12 +358,17 @@ question.
   Without it, every quick call duplicates the parent's episode and archives it again.
 - **`THALAMUS_FORKED_FROM` and `--agent thalamus-<scope>` are both launcher obligations**,
   and both should be asserted against the resulting ledger row before the answer is
-  accepted.
+  accepted. `--agent` must carry the **parent's own** agent: matching is free, mismatching
+  costs a full cache miss, and omitting it is silent — the fork answers in the expert's
+  voice and files as `main`.
 - **Resolve targets from `$CLAUDE_CONFIG_DIR/sessions/*.json`, not the pin ledger**, and
-  refuse on 0 or ≥2 rather than picking.
-- **Price the call, not just the clock.** `quick` should record its own cost and refuse
-  above a parent-size threshold; the compaction cliff and the dollar curve are the same
-  event seen twice.
+  refuse on 0 or ≥2 rather than picking. The roster's `updatedAt` is also the cost
+  predictor: it is what separates a $0.03 call from a $0.60 one.
+- **Prefer a parent between turns.** A mid-turn fork costs 13× a post-turn fork of the
+  same parent, and non-interruption means `quick` is reached for exactly when the expert
+  is busy. Waiting for the current turn to land is the cheapest available optimisation.
+- **Record the call's own cost, and both cache fields.** A cost table without
+  `cache_read_input_tokens` is what produced the withdrawal above.
 
 ## Not yet measured
 

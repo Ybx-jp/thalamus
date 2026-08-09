@@ -748,13 +748,23 @@ is an exact set difference and not a timestamp heuristic. The sandbox guard is t
 tool for this — it would discard the fork's transcript, which is the evidence for an
 answer whose claim survives in the caller's memory.
 
-**Forking a live parent is safe; forking a large one is expensive.** `--resume` takes no
-lock and did not perturb a parent that ran to completion through two concurrent mid-turn
-forks. The fork is a point-in-time snapshot of what is *written*, not of what the parent
-believes. Cost and latency both scale with the parent and then cliff: 4.4 s / $0.23 at
-284 KB, 6.2 s / $1.35 at 1.8 MB, **71 s / $4.05 at 6.2 MB** where the fork begins
-compacting. A `quick` launcher records its own cost and refuses above a parent-size
-threshold.
+**Forking a live parent is safe, and a warm one is cheap.** `--resume` takes no lock and
+did not perturb a parent that ran to completion through two concurrent mid-turn forks.
+The fork is a point-in-time snapshot of what is *written*, not of what the parent
+believes. **A fork of a recently-active parent reads that parent's entire prompt-cache
+prefix and creates only the new turn** — measured at 121,938 read / 15 created, a 100%
+hit, $0.037 against $0.595 cold. Session id and `--name` are not in the cached prefix
+(three fork ids read one entry), a fork writes no competing entry (N calls cost one write
+plus N−1 reads), and matching the parent's `--agent` is free while *mismatching* it costs
+a full miss.
+
+So cost is bimodal and the discriminator is **parent recency, not parent size**: ~$0.03–
+0.08 warm, $0.55–1.35 cold or agent-mismatched, and **13× for a mid-turn fork**, which
+misses the message body because a truncated conversation lands on no cached block
+boundary. Warmth also decays well inside the nominal 1-hour TTL — 44.8% at 38 minutes,
+tools+system only. Latency is the flatter axis: 1.6–2.5 s warm against 2.0–2.5 s cold,
+with the 71 s / 6.2 MB outlier a compaction effect caching does not explain. A `quick`
+launcher records both cache fields and prefers a parent between turns.
 
 Two failure modes to handle as outcomes rather than anomalies: a fork may answer *the
 parent's* question instead of the caller's — one 6.2 MB fork read the appended question
