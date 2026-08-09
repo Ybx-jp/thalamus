@@ -698,6 +698,71 @@ Over 103 bytes the path silently falls back to `/tmp/cc-socks-<uid>/`
 ([lab/044](../lab/044-the-103-byte-cliff.md)). Short dirs
 (`/run/user/<uid>/rooms/<room>`) are the shape to use.
 
+## Launching a quick fork (designed, not built)
+
+The quick protocol's design is [02](02-expert-subgraphs.md); what follows is what the
+harness does and does not hand a fork, all of it measured in
+[lab/049](../lab/049-the-fork-is-the-whole-conversation.md).
+
+**A fork inherits the room for free and the pin not at all.** `CLAUDE_CONFIG_DIR` is
+already exported in a member's environment, so a fork launched from inside one lands in
+the room's `projects/` and records `room=` with the launcher doing nothing. That is
+exactly what makes the rest a trap: `--resume` restores the conversation, not the launch
+flags, so `resolve-scope.sh` reads `CLAUDE_CODE_AGENT` from the *new* process and a fork
+of a `homelab` parent arrives at **`scope=main`, `agent=""`** while still holding the
+expert's full context. Its MCP server then serves the wrong scope. **`--agent
+thalamus-<scope>` and `THALAMUS_FORKED_FROM` are launcher obligations**, taken from the
+roster's `agent` field and asserted against the resulting ledger row before the answer
+is accepted — `forked_from` is the field whose absence turns a fork into a fake
+independent witness ([09](09-schema-and-federation.md)), and one row in 1,246 carries it
+today, so no historical data would flag the regression.
+
+**The fork runs in the parent's cwd.** Not a temp dir: the only in-repo example of
+launching a headless `claude` is extraction's `thalamus-extract-` sandbox, and copying
+that idiom files the transcript under a project dir `discover()` withholds — the
+`Unknown project dir(s)` exit lands in a detached log, so it fails silently. A *non*-
+sandbox temp dir is no better; it mints a junk project. The roster entry carries the cwd
+to use.
+
+**Targets resolve against the live roster, never the pin ledger.** The ledger has no
+exit event, so a row is a birth certificate: at one measured moment its newest row named
+a dead session for three of five scopes, including one scope with three live sessions it
+could not see. `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` carries `pid`, `procStart`,
+`cwd`, `agent`, `name`, `tmux` and `status`, and entries are removed on clean exit;
+liveness is `pid` plus `procStart` against `/proc/<pid>/stat`, which defeats pid reuse.
+Zero live sessions and two live sessions both **refuse and name it** rather than
+picking — two same-scope members share the `<room>-<scope>` name, so a caller cannot
+address them apart anyway, and forking a dead session's transcript is asking a snapshot
+while closing an exchange that reads as a live consultation. Note that the console's
+recycle path fires `/exit` before `respawn-window`, so **a recycle distills the parent
+and destroys the resumable session**; any cached resolution invalidates on `pid` change.
+
+**A fork's transcript is the parent's whole conversation, restamped.** Every record
+carries the fork's `sessionId`, the parent's message UUIDs are preserved verbatim
+(562/562 measured), and title, artifacts and `TOUCHES` anchors all duplicate. Distilling
+one as an ordinary session mints a second Session re-asserting the parent's episode and
+archives a second near-identical Source — the archive cannot dedup it, because
+`archive_bytes` is content-addressed and every `sessionId` line differs. **So a quick
+fork distills the delta only**: the records whose UUIDs are absent from the parent, which
+is an exact set difference and not a timestamp heuristic. The sandbox guard is the wrong
+tool for this — it would discard the fork's transcript, which is the evidence for an
+answer whose claim survives in the caller's memory.
+
+**Forking a live parent is safe; forking a large one is expensive.** `--resume` takes no
+lock and did not perturb a parent that ran to completion through two concurrent mid-turn
+forks. The fork is a point-in-time snapshot of what is *written*, not of what the parent
+believes. Cost and latency both scale with the parent and then cliff: 4.4 s / $0.23 at
+284 KB, 6.2 s / $1.35 at 1.8 MB, **71 s / $4.05 at 6.2 MB** where the fork begins
+compacting. A `quick` launcher records its own cost and refuses above a parent-size
+threshold.
+
+Two failure modes to handle as outcomes rather than anomalies: a fork may answer *the
+parent's* question instead of the caller's — one 6.2 MB fork read the appended question
+as a prompt injection into the parent's frame and declined it — which argues for an
+explicit frame-break rather than a bare question; and a launcher shelling into a room dir
+it did not provision receives a well-formed envelope containing `Not logged in` as the
+answer, with exit 0, so the result string needs checking and not just the exit code.
+
 **The channel is instrumentable, which the in-process teams mailbox was not.** An
 incoming message lands in the receiver's transcript wrapped as
 `<cross-session-message from="...">`. That wrapper is a syntactic boundary

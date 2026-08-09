@@ -244,6 +244,118 @@ session that made the design decision supplies the anchor list and the exchange 
 it does not write the prose, so a brief cannot quietly teach the decision in place of
 the literature the decision rests on.
 
+## The quick protocol: a second tier, for the room
+
+**Designed, not built** — the shape below is settled; the code is not written.
+
+Inside a [room](07-harness-integration.md), the full ticket is the wrong instrument for
+a question the caller is *blocked on*. Its cost is not the mint or the brief but the
+cold subagent recalling its way to competence: 303 s, 372 s, 383 s, 417 s, 462 s across
+five measured consultations ([lab/043](../lab/043-two-forks-and-i-measured-the-wrong-one.md)).
+The quick protocol answers from a **fork of the expert's own live session** instead —
+`claude -p --resume <sid> --fork-session`, warm, blocking on stdout. The parent is never
+signalled and keeps working; **non-interruption is why this forks rather than messaging
+the live expert**, and it is the *asynchronous communication* requirement the
+inter-agent coordination literature already names (arXiv 2505.02279, feed `thalamus`).
+
+**Warmth is a cache, and a cache's failure mode is staleness, not absence.** The
+tempting argument — that the fork's transcript already holds vertex IDs rendered by its
+parent's earlier recalls, so warmth *is* retrieval — concedes more than it wins. Those
+IDs were retrieved to answer a **different question**, so the citation gate would be
+validating resolvability rather than relevance; naive RAG serves the superseded value
+15–40% of the time (arXiv 2606.11400) and a fork has no supersession mechanism at all;
+and position bias puts the parent's earlier recalls mid-transcript while the question
+arrives at the end, degrading use of exactly the region the argument depends on
+(arXiv 2307.03172). So the tier is defined by what it **keeps**:
+
+1. **The record, in full.** The mint is still the write. A `kind: quick` Exchange is a
+   multi-agent collaboration step, which is inside the definition of execution
+   provenance (arXiv 2606.04990), not an exception to it.
+2. **Citation validation, unchanged.** `contract check` constrains Exchange `status`,
+   not `kind`, and its one real invariant — an answered exchange cites something — is
+   the write-path defense the memory-poisoning literature puts exactly here
+   (arXiv 2606.04329). The lighter tier does not get to bend the audit.
+3. **At least one fresh in-ticket recall.** One, against the cold path's many. This is
+   what converts warmth from retrieval *replacement* into cache *revalidation*: it costs
+   about the embedding floor, it re-renders tier labels adjacent to the answer, and it
+   puts a citation in the position-favoured region. Without it the tier is a decorated
+   snapshot.
+
+And by what it **drops**, which is one thing, not three:
+
+- **The brief is dropped**, and its absence is *recorded as a fact* — silence and "no
+  brief served" are the same bytes, and only one is auditable. Evidence tracing is the
+  projection of execution provenance onto evidence-support relations (arXiv 2606.04990),
+  so dropping the `role: brief` half is a lossy but well-defined projection, legitimate
+  only while the record says which projection it is.
+- **The grant is not dropped — it is degenerate.** A compact assertion that this fork
+  inherits parent P's scope S as of fork point F. The delegation literature's own
+  tiering (arXiv 2510.19619) splits the credential's *format*, never its *presence*, and
+  the same field set satisfies the keyed-answerer minimum that replay consistency
+  requires (arXiv 2604.14022). It is also the only way to check the fork actually armed
+  the expert's scope, which it does not do by inheritance
+  ([lab/049](../lab/049-the-fork-is-the-whole-conversation.md)).
+
+**The tier is chosen by question type, not by how busy the caller is.** Lookups into the
+expert's own corpus take the quick path. **Judgments of the caller's in-flight work take
+the full ticket** — a fork has no contagion *rate*, it has coefficient 1, because there
+is no independent believer left to disagree (arXiv 2604.02189), and self-enhancement
+bias is at its purest when the judge is the same trajectory as the judged
+(arXiv 2411.15594). A cheap tier that cannot say no to the room is not a consultation.
+
+**The exchange must price itself.** The entire justification is a latency claim, so a
+quick exchange that does not record its own wall-clock and tokens makes that claim
+unfalsifiable. It is also the wrong number to watch: forking a 1.8 MB parent costs
+**$1.35** against $0.09 cold, because the whole parent context is re-written to cache
+every call, and nothing amortises it (lab/049). Latency is ~5× better; money is ~15×
+worse. The quick protocol is fast, not cheap.
+
+### Prior work
+
+The intra-cheap / inter-expensive split is **not ours**: GoAgent makes `Intra-Topology`
+a literal field of its group schema and selects groups as atomic units "jointly
+capturing intra-group cohesion and inter-group coordination" (arXiv 2603.19677, feed
+`thalamus`). Contract Net's focused addressing narrows the *recipient set* while leaving
+all four announcement slots intact (Smith 1980) — a task announcement is a brief, so it
+supports a fast path and gives no cover for a briefless one; its speed win is early
+award, not a thinner message. Hearsay-II indicts the fork directly on its own criterion:
+credibility rises with involvement in *mutually supporting clusters* (Erman et al. 1980),
+and a fork agreeing with its parent is not an independent supporter. Budget-tiered memory
+routing is BudgetMem (arXiv 2602.06025).
+
+What survives is narrow, and phrased as [11](11-related-work.md) requires: answering a
+delegation by **forking the answerer's live context instead of briefing a fresh one,
+while retaining a citation-validated exchange record**, was not found in the 2026 scan.
+Every component has prior art; the composite is the claim.
+
+### What the measurement can and cannot say
+
+Pre-registered before any arm runs, per [04](04-eval-loop.md):
+
+- **Powered: latency.** Paired, at the *caller's* boundary (mint → answer accepted, so
+  queueing is not smuggled out), one-sided sign test. Five questions all favouring warm
+  is p = 0.031.
+- **Powered: a harm tripwire, not a safety proof.** Plant a premise the record
+  contradicts — drawn from *real superseded decisions in the graph*, so difficulty is set
+  by the record rather than invented — and score whether the answer contradicts it, with
+  the cold arm as floor. Both tiers catching it reads as uninformative, never as safe.
+  Both experts proposed this contrast independently: warmth is contamination rather than
+  cache if the quick tier never disagrees with the caller while the cold tier sometimes
+  does.
+- **Refused: non-inferior answer quality.** There is no validated quality scale here, and
+  citation count is confounded with the treatment's own mechanism — warmth makes citing
+  cheap, so the proxy inflates for free in precisely the arm under scrutiny. A null would
+  be indistinguishable between "warmth did not hurt" and "the proxy cannot see the harm",
+  which is the confounded zero [04](04-eval-loop.md) already declined once. **Recorded as
+  a refusal, not a null.** A load-bearing-citation *ratio* is the candidate replacement,
+  since free citing raises both terms.
+- Both arms fire in parallel off one frozen brief with **write-back suppressed until both
+  close**, or the first answer becomes memory the second recalls.
+
+Two open gaps this design rests on and the graph does not hold: **sycophancy /
+premise-agreement measurement**, and **non-inferiority margin selection**. Both scopes
+came back empty; both are ingestion work before either becomes a claim.
+
 ## Roster discipline
 
 - The roster ([08](08-roster-candidates.md) records each selection) is two
