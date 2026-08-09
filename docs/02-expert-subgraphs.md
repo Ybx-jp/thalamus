@@ -258,10 +258,14 @@ the literature the decision rests on.
   memory archives with the expert — history is never deleted by roster surgery.
 - The mechanics of a roster addition — manifest, anchors, the tmux window, and what
   the control plane does and doesn't need — are the `add-roster-expert` skill,
-  jointly held by main and homelab; homelab keeps it current. It lives in the
-  control-plane repo beside the surfaces it warns about, not here: the procedure is
-  written against one operator's tmux plane and its phone PWA, which this package
-  has no business shipping.
+  jointly held by main and homelab; homelab keeps it current. It lives here, in
+  `harness/skills/`, beside the code that declares the agents it governs: the
+  manifest, `pin.py`'s window mechanics, and the procedure for adding an expert
+  version together, and a skill that names `thalamus-<scope>` belongs with the
+  package that defines what a scope is. What does *not* live here is the generic
+  hazard write-up it indexes — session ownership, cgroup kills, PATH inheritance in
+  tmux panes — which is true of any systemd-owned tmux session driven over HTTP and
+  is maintained in the control-plane repo for the wider audience it has.
 
 ## Open questions
 
