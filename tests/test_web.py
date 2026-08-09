@@ -13,8 +13,8 @@ import yaml
 from fastapi.testclient import TestClient
 
 from thalamus.substrate.schema import SessionGraph
-from thalamus.plane.view_model import Expandable, GraphView, NodeDetails, ViewMetadata, ViewNode
-from thalamus.plane.web import create_app
+from thalamus.viewer.view_model import Expandable, GraphView, NodeDetails, ViewMetadata, ViewNode
+from thalamus.viewer.web import create_app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -136,7 +136,7 @@ def test_persisted_overview_uses_the_server_graph(monkeypatch):
         captured["kwargs"] = kwargs
         return expected
 
-    monkeypatch.setattr("thalamus.plane.web.persisted_overview", fake_overview)
+    monkeypatch.setattr("thalamus.viewer.web.persisted_overview", fake_overview)
     client = TestClient(create_app(graph=graph))
 
     response = client.get("/api/overview?project=graph-memory&per_project_session_limit=3")
@@ -186,7 +186,7 @@ def test_expansion_passes_known_elements_and_enforces_request_limits(monkeypatch
         captured["kwargs"] = kwargs
         return expected
 
-    monkeypatch.setattr("thalamus.plane.web.expand_subgraph", fake_expand)
+    monkeypatch.setattr("thalamus.viewer.web.expand_subgraph", fake_expand)
     client = TestClient(create_app(graph=graph))
 
     response = client.post(
@@ -251,7 +251,7 @@ def test_node_details_reports_graph_wide_relationship_counts(monkeypatch):
         captured["node_id"] = node_id
         return expected
 
-    monkeypatch.setattr("thalamus.plane.web.persisted_node_details", fake_node_details)
+    monkeypatch.setattr("thalamus.viewer.web.persisted_node_details", fake_node_details)
     client = TestClient(create_app(graph=graph))
 
     response = client.get("/api/nodes/session:one")
@@ -269,7 +269,7 @@ def test_built_frontend_is_served_with_the_preview_api():
     Scenario: Open the packaged browser application
 
     Requires:
-    - frontend assets built into src/thalamus/plane/static
+    - frontend assets built into src/thalamus/viewer/static
     - infrastructure: in-process FastAPI application
 
     Observable via:

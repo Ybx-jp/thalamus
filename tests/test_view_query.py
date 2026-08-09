@@ -1,17 +1,17 @@
 """
 Persisted visualization query model tests.
 
-Interfaces: thalamus.plane.view_query.node_from_value_map,
-            thalamus.plane.view_query.edge_from_value_map,
-            thalamus.plane.view_query.persisted_node_details
+Interfaces: thalamus.viewer.view_query.node_from_value_map,
+            thalamus.viewer.view_query.edge_from_value_map,
+            thalamus.viewer.view_query.persisted_node_details
 Infrastructure: none
 Scope: conversion of Gremlin property maps into stable canonical graph elements
 """
 
 from gremlin_python.process.traversal import T
 
-from thalamus.plane import view_query
-from thalamus.plane.view_query import (
+from thalamus.viewer import view_query
+from thalamus.viewer.view_query import (
     edge_from_value_map,
     expand_subgraph,
     node_from_value_map,
@@ -164,7 +164,7 @@ def test_node_details_uses_persisted_edge_counts_not_visible_elements():
     - infrastructure: traversal double
 
     Observable via:
-    - thalamus.plane.view_query.persisted_node_details
+    - thalamus.viewer.view_query.persisted_node_details
 
     Verifications:
     - the details response keeps the complete persisted node properties
@@ -200,7 +200,7 @@ def test_persisted_overview_groups_recent_sessions_and_active_threads():
     - infrastructure: traversal double
 
     Observable via:
-    - thalamus.plane.view_query.persisted_overview
+    - thalamus.viewer.view_query.persisted_overview
 
     Verifications:
     - project nodes aggregate matching sessions and contain the bounded recent subset
@@ -259,7 +259,7 @@ def test_expansion_returns_only_unknown_neighbors_with_explicit_limits(monkeypat
     - infrastructure: patched bounded neighbor query
 
     Observable via:
-    - thalamus.plane.view_query.expand_subgraph
+    - thalamus.viewer.view_query.expand_subgraph
 
     Verifications:
     - already visible neighbors are omitted while their newly observed relationship is returned

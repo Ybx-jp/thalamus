@@ -420,7 +420,7 @@ the full contract check.
 uv run pytest
 uv run ruff check src tests
 cd frontend && npm test
-cd frontend && npm run build  # -> src/thalamus/plane/static
+cd frontend && npm run build  # -> src/thalamus/viewer/static
 ```
 
 ## License

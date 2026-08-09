@@ -1,6 +1,6 @@
 > **Historical / as-built.** This is the design spec for the interactive memory-graph
 > viewer, written for the prior `graph-memory` project *before* Thalamus existed. The
-> viewer it specifies is built and shipped (`src/thalamus/plane/`, `frontend/`). It is
+> viewer it specifies is built and shipped (`src/thalamus/viewer/`, `frontend/`). It is
 > kept for provenance — it is not part of the Thalamus design set (`docs/00`–`09`), and
 > its "master plane" is not this project's. Under Thalamus this viewer is the seed of
 > the connective plane; see [../03-master-plane.md](../03-master-plane.md).

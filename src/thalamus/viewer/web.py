@@ -13,8 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from thalamus.substrate.schema import SessionGraph
-from thalamus.plane.view_model import GraphView, NodeDetails, session_to_graph_view
-from thalamus.plane.view_query import (
+from thalamus.viewer.view_model import GraphView, NodeDetails, session_to_graph_view
+from thalamus.viewer.view_query import (
     DEFAULT_OVERVIEW_LIMIT,
     DEFAULT_PER_PROJECT_SESSION_LIMIT,
     MAX_EXPANSION_EDGES,

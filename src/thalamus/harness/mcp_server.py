@@ -55,7 +55,7 @@ from thalamus.substrate.schema import SessionGraph
 from thalamus.contract.conformance import validate_connectivity
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.plane.mermaid import session_to_mermaid
+from thalamus.viewer.mermaid import session_to_mermaid
 from thalamus.substrate.writer import close_connection, connect
 
 logger = logging.getLogger(__name__)

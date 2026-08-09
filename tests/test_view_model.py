@@ -1,7 +1,7 @@
 """
 Pending session visualization model tests.
 
-Interfaces: thalamus.plane.view_model.session_to_graph_view
+Interfaces: thalamus.viewer.view_model.session_to_graph_view
 Infrastructure: none
 Scope: complete rendering, stable relationships, and structured validation findings
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 import yaml
 
 from thalamus.contract.ontology import vid
-from thalamus.plane.view_model import session_to_graph_view
+from thalamus.viewer.view_model import session_to_graph_view
 from thalamus.substrate.schema import SessionGraph
 
 FIXTURES = Path(__file__).parent / "fixtures"

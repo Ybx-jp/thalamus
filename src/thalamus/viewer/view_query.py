@@ -11,7 +11,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Order, P, T
 
 from thalamus.contract.ontology import EXPANDABLE_LABELS, LABEL_PROPERTIES
-from thalamus.plane.view_model import (
+from thalamus.viewer.view_model import (
     Expandable,
     GraphView,
     NodeDetails,

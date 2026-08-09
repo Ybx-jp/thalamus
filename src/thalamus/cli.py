@@ -26,7 +26,7 @@ from thalamus.eval import snapshots
 from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
-from thalamus.plane.web import create_app
+from thalamus.viewer.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
 
