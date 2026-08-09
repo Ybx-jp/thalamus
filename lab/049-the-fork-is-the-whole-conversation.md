@@ -200,7 +200,7 @@ out of the symlinked `settings.json` so the probe could not write to the graph.
   above distills **into `main`**, moving an expert session's entire conversation across
   a scope boundary with nothing recording the crossing.
 
-## Latency holds, with a cliff
+## What the clock actually measured: fork overhead, not response latency
 
 All `--model sonnet`, one-word prompt, sandbox-marked so no hook overhead, sequential on
 a box already running six live Claude sessions. **These parents were all stale fixtures —
@@ -215,12 +215,22 @@ see the withdrawal below for what that does to the cost column.**
 | large | 1,772,440 | **6.23** | 223,477 | **$1.350** |
 | very large | 6,184,854 | **71.03** | 670,898 | **$4.047** |
 
-**The latency premise holds, with a cliff.** ~2.3 s of CLI overhead plus a load term
+**Fork overhead is small and cliffs at size.** ~2.3 s of CLI overhead plus a load term
 that is free to a few hundred KB, 6.2 s at 1.8 MB, and **71 s at 6.2 MB** — an 11× jump
 for 3.5× the size. The tell is 670,898 cache-creation tokens, past a 200 K window: that
-fork was compacting. Still ~5× better than the cold baseline, but "far below" stops
-being the right word. Caching does not explain the outlier — warm forks below ran
-1.6–2.5 s against cold 2.0–2.5 s — so this reading survives the withdrawal intact.
+fork was compacting. Caching does not explain the outlier — warm forks ran 1.6–2.5 s
+against cold 2.0–2.5 s — so the size cliff survives the withdrawal intact.
+
+**But this is not the protocol's latency, and an earlier reading of it as such is
+withdrawn too.** Every arm above used a **one-word prompt**. What they time is process
+start, transcript load and prefill — *fork overhead*. The 303–462 s cold-consult baseline
+(lab/043) is **request → validated cited answer**: a cold subagent recalling its way to
+competence, reasoning, and composing. Comparing the two produced "~5× better" and "far
+below the baseline"; both are unsupported, because they compare a startup cost against an
+end-to-end one. The number the design rests on is **caller-boundary response latency** for
+a realistic question — including the fresh in-ticket recall the protocol mandates — and it
+has never been measured. What these arms do establish is a *lower bound* on the fork's
+fixed cost, and that the bound is small relative to anything involving generation.
 
 ## Withdrawn: "money is the binding constraint"
 

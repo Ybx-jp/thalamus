@@ -296,12 +296,18 @@ And by what it **drops**, which is one thing, not three:
   the expert's scope, which it does not do by inheritance
   ([lab/049](../lab/049-the-fork-is-the-whole-conversation.md)).
 
-**The tier is chosen by question type, not by how busy the caller is.** Lookups into the
-expert's own corpus take the quick path. **Judgments of the caller's in-flight work take
-the full ticket** — a fork has no contagion *rate*, it has coefficient 1, because there
-is no independent believer left to disagree (arXiv 2604.02189), and self-enhancement
-bias is at its purest when the judge is the same trajectory as the judged
-(arXiv 2411.15594). A cheap tier that cannot say no to the room is not a consultation.
+**The tier is chosen by question type, and the discriminating property is prior
+commitment — not the grammatical mood of the question.** Lookups into the expert's own
+corpus take the quick path, and so does ordinary **cross-role review**: a visual-explainer
+expert asking a subject-matter expert whether a representation is faithful is peer review
+between different scopes, pins, goals and skills, which is exactly the exchange the room
+exists to make cheap. What takes the full ticket is narrower — any question where **the
+expert already has a stake in the thing being judged**. The room's public phase makes that
+common: if the expert helped shape the plan the caller is now executing, its "review" is
+partly self-review, and self-enhancement bias needs precisely that identity between judge
+and judged (arXiv 2411.15594). The test is operational: **is the artifact under review
+already in the fork's inherited context?** If it is, the expert is not an independent
+reader of it and the exchange belongs on the full path.
 
 **The exchange must price itself, and record both cache fields.** The entire
 justification is a latency claim, so a quick exchange that does not log its own
@@ -316,12 +322,16 @@ parent gone cold, or a fork whose `--agent` does not match its parent's, pays $0
 a **mid-turn** fork pays 13× the post-turn price, because a truncated conversation lands
 on no cached block boundary. Warmth decays inside the nominal TTL (44.8% at 38 minutes).
 
-This is a scheduling property, not a budget line, and it cuts against the protocol's own
-motivation: non-interruption means `quick` is reached for precisely when the expert is
-mid-task, which is the expensive case. **The roster's normal state is also idle**, so a
-call against an expert nobody has touched today is a cold call. The expected price
-therefore depends on a usage distribution nobody has measured — an instrument to build
-before any per-call figure is quoted as *the* cost.
+This is a scheduling property, not a budget line. **The room largely answers it**: a room
+is a co-working cluster by construction, so its members are active in the same window and
+the warm case is the common one — the "roster is normally idle" figure that first
+suggested otherwise was drawn from the *solo* roster (live `teacher` sessions ~25,700 s
+stale), which is the wrong population for a room in use. What survives is narrower and
+still unmeasured: how often a room-mate is warm *enough*, given that warmth decays inside
+the nominal TTL, and the mid-turn case, where non-interruption steers `quick` toward a
+busy expert and a truncated conversation lands on no cached boundary. Waiting for the
+current turn to land is the cheapest available optimisation, and a room-level cache
+pre-warm would close the rest.
 
 ### Prior work
 
@@ -352,17 +362,18 @@ Pre-registered before any arm runs, per [04](04-eval-loop.md):
   contradicts — drawn from *real superseded decisions in the graph*, so difficulty is set
   by the record rather than invented — and score whether the answer contradicts it, with
   the cold arm as floor. Both tiers catching it reads as uninformative, never as safe.
-  Both experts proposed this contrast independently: warmth is contamination rather than
-  cache if the quick tier never disagrees with the caller while the cold tier sometimes
-  does.
-  **The instrument varies confidence, not just truth.** Sycophancy rises with the
-  *epistemic commitment expressed in the prompt* (SWAY, arXiv 2604.02423), so the caller
-  asserts each planted premise at graded confidence and the endpoint is the agreement
-  *shift* across that gradient. This is strictly stronger than a binary plant and is
-  scored without a judge — SWAY's metric is unsupervised, needing no ground-truth labels
-  and no multi-turn structure, which is the constraint [04](04-eval-loop.md) works under.
-  It also rules out the obvious mitigation: instructing a model to be anti-sycophantic
-  measures poorly there, so "tell the fork to push back" is not the fix.
+  Both experts proposed this contrast independently.
+  **The endpoint is an interaction, not a level, and the test is two-sided.** Sycophancy
+  rises with the *epistemic commitment expressed in the prompt* (SWAY, arXiv 2604.02423),
+  so the caller asserts each planted premise at graded confidence and the measurement is
+  whether warmth **flattens or steepens** that confidence→agreement slope relative to
+  cold. Flatter means warmth is protective; steeper means contaminating. Asking only "did
+  the warm arm agree?" cannot separate those, and the predicted direction is *protective*
+  (below) — so a design that can only detect harm would confirm itself by construction.
+  SWAY's metric is unsupervised, needing no ground-truth labels, no judge and no
+  multi-turn structure, which is the constraint [04](04-eval-loop.md) works under. It also
+  rules out the obvious mitigation: instructing a model to be anti-sycophantic measures
+  poorly there, so "tell the fork to push back" is not the fix.
 - **Refused: non-inferior answer quality — for a structural reason, not a budgetary one.**
   All three methods for setting a non-inferiority margin — point-estimate, fixed-margin
   (FDA-recommended), synthesis — are anchored on a prior effect estimate for the active
@@ -380,13 +391,21 @@ Pre-registered before any arm runs, per [04](04-eval-loop.md):
 - Both arms fire in parallel off one frozen brief with **write-back suppressed until both
   close**, or the first answer becomes memory the second recalls.
 
-**The hazard is not the fork's invention.** Retrieved memories already induce sycophancy
-in memory-conditioned agents, and existing memory benchmarks test whether a memory was
-stored and retrieved rather than whether it *should influence a decision* — the gap the
-tripwire occupies (MemSyco-Bench, arXiv 2607.01071). What neither paper measures is a
-fork of a live session: both establish that conditioning on prior context raises
-agreement, and a fork is the maximal case, but the transfer is this project's argument
-and the tripwire tests it rather than confirming it.
+**The predicted direction is protective, and an earlier reading of it here was
+backwards.** Sycophancy is alignment to *the interlocutor's* position. A fork does not
+inherit the interlocutor's position — it inherits **its own**: the expert's earlier
+reasoning and recalls, with the caller's premise arriving as a new turn at the end, the
+same place it arrives in a cold consult. What inherited context predicts is therefore
+**self-anchoring** — over-trusting what it already holds, the failure MemSyco-Bench
+actually names as failing to *reject memory as factual evidence* (arXiv 2607.01071) — and
+against a false premise that makes a warm expert *more* likely to push back, not less.
+The caller-agreement risk lives on the **room** axis instead, where shared phase-1 framing
+can make a peer's premise the expert's own prior commitment in another voice; `room`
+already marks that correlation and `forked_from` marks the fork one
+([09](09-schema-and-federation.md)). An earlier draft called a fork "the maximal case" of
+conditioning-raises-agreement, conflating the two: **withdrawn**. Neither paper measures
+either regime, so the tripwire tests the transfer rather than confirming it — in both
+directions.
 
 ## Roster discipline
 

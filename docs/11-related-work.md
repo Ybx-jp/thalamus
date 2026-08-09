@@ -473,11 +473,39 @@ the scan found the literature naming it precisely.
   works without suppressing responsiveness, which is a standing warning against
   "just tell the fork to push back" as a fix.
 
-**Named limit.** Neither paper measures a *fork* of a live session — the shared-context
-regime here is context inheritance, not retrieval. The transfer is this project's
-argument: both establish that conditioning on prior context raises agreement, and the
-fork is the maximal case of such conditioning, but no measurement of the fork regime
-exists in either. Treat the tripwire as testing that transfer, not confirming it.
+**Named limit — and the transfer runs the other way.** Neither paper measures a *fork* of
+a live session; the regime here is context inheritance, not retrieval. But the direction
+matters more than the gap, and the obvious reading of it is wrong.
+
+Sycophancy as both papers measure it is alignment to **the interlocutor's** stated
+position. A fork does not inherit the interlocutor's position — it inherits **its own**:
+the expert's earlier reasoning, its own recalls, its own half-finished work. The caller's
+premise arrives as a *new turn at the end* of that context, which is the same position it
+occupies in a cold consult. So what inherited context predicts here is **self-anchoring**,
+the failure MemSyco-Bench actually names — an agent failing to *reject memory as factual
+evidence*, over-trusting what it already holds. Against a caller asserting something
+false, self-anchoring is **protective**: a warm expert with its own established position
+should contradict the premise more readily than a cold one, not less.
+
+The design reinforces this rather than working against it. Caller and expert are
+different agents with different scopes, pins, goals and skills — one expert asking
+another to review a representation is peer review, not self-review, and
+self-enhancement bias (arXiv 2411.15594) needs the judge and the judged to be the same
+trajectory.
+
+**The caller-agreement risk is real but sits on a different axis.** In a room, caller and
+expert may share framing from the public phase, so a "peer" premise can be the expert's
+own prior commitment wearing another agent's voice. That is a **room** correlation —
+which [09](09-schema-and-federation.md) already marks with `room` — not a fork one, which
+`forked_from` marks. The two were conflated in an earlier draft of this section, which
+called a fork "the maximal case" of conditioning-raises-agreement. Withdrawn: the fork
+axis and the shared-framing axis are orthogonal, and only the second is a sycophancy
+channel.
+
+So the tripwire's job is an **interaction, not a level**: does warmth *flatten or steepen*
+the confidence→agreement slope SWAY measures? Flatter means warmth is protective, steeper
+means contaminating, and the cold arm supplies the comparison. A design that only asks
+"did the warm arm agree?" cannot tell those apart.
 
 ### 2i. Non-inferiority — the margin is the hard part, and we do not have one
 
