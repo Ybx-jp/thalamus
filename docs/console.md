@@ -123,6 +123,29 @@ cycle), arrows, page up/down, `tab`, `⏎`, `clr` (Ctrl-U) and `⌃C`. `A−`/`A
 the font off the auto-fit size, which is computed so a full pane line fits your
 screen without horizontal scrolling.
 
+**`read` switches to the transcript view.** The pane view mirrors a *rendering* of
+the session: an 80-column repaint, colours stripped by tmux, reflowing under you
+while a turn streams. The read view shows the session itself — Claude Code writes
+every turn to a JSONL transcript, and the server projects that into flowing prose
+with each tool call collapsed to one tappable line, so a forty-line diff reads as
+`Edit docs/09-schema-and-federation.md`. Tap a line for its output; tap `term` to
+go back. Text wraps to your screen instead of to the session's columns, and since
+the transcript is written a turn at a time rather than a token at a time, text
+lands as finished blocks instead of shifting mid-sentence.
+
+It is a second view, not a replacement, for one specific reason: **a pending
+permission prompt is never written to the transcript.** Nothing is recorded while
+the dialog is on screen, so a tool call with no result is either still running or
+blocked waiting on you, and the feed cannot tell which. When a call stays open the
+read view says so and points at the terminal, which can. Approve things in `term`.
+
+The view needs to know which session is in a window, which it reads from the pin
+ledger by tmux pane id. Sessions started before the console recorded that resolve
+by a narrower fallback — process start time joined on scope and directory — which
+**refuses when two windows share a scope and a directory**, since showing the wrong
+session's transcript is worse than showing none. Restart the window (⚙ → restart)
+and it resolves exactly from then on.
+
 **＋ spawns a session**: pick an expert scope, a directory, and a room, and the
 server opens a detached pinned window there. The scope decides which memory it
 reads and writes; the directory decides what the work is about. See
@@ -317,12 +340,27 @@ keeps that true.
 
 ## How it works
 
-`src/thalamus/console/` — `server.py` plus `static/`. Around 550 lines of stdlib
+`src/thalamus/console/` — `server.py` and `transcript.py` plus `static/`. Stdlib
 Python and a dependency-free client.
 
 - **Stdlib `http.server`, not FastAPI** like `pulse/` and `plane/`. One of its jobs
   is restarting the systemd unit hosting it; the fewer moving parts between a tap
   on a phone and a tmux call, the better.
+- **The read view is a deferred import.** It reuses the harness's transcript
+  parsing, so `transcript.py` is imported on use like the expert layer — a console
+  running under a bare `python3` keeps the pane mirror and reports the read view
+  unavailable rather than failing to start.
+- **The transcript is read forward from a byte offset, never re-parsed.** Claude
+  Code's JSONL is append-only: prefix bytes never change, the inode is stable, and
+  mutable state (`mode`, `relocated`) is re-appended under last-wins semantics
+  rather than rewritten. Tool result bodies stay on the server and are fetched only
+  when a reader expands one — a real session's 276 items serialise to 278KB
+  otherwise, against 30KB with the bodies split off.
+- **Windows join to sessions by tmux pane id**, recorded in the pin ledger by the
+  SessionStart hook. A window *index* renumbers when a window closes, and name,
+  scope and directory are all routinely shared by two windows at once; the pane id
+  is unique per window, stable for its life, and survives the respawn a recycle
+  performs.
 - **Every tmux call is an argv list, never a shell string.** Pane text and typed
   input are data. Nothing captured from a pane and nothing typed into the composer
   can become a command.

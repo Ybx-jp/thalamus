@@ -457,7 +457,14 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    disagreed before `ed18887`, the stored value was the wrong one, and the
    retained transcript could not settle it either — consultation subagents carry
    the same pinned-agent text as a real pin, so its presence is not evidence the
-   session was pinned. SessionStart also states the session's **own id** in the
+   session was pinned. The record also carries `tmux_pane`, the pane the session
+   was launched into, which is what lets a surface map a roster window back to the
+   session running in it — the console's read view
+   ([console.md](console.md)) is the first consumer. Nothing else in the
+   system identifies a window durably: an index renumbers when a window closes,
+   and name, scope and cwd are all routinely shared by two live windows at once,
+   while a pane id is unique, stable for the window's life, and preserved across
+   the respawn a recycle performs. SessionStart also states the session's **own id** in the
    injected context, marked authoritative: a session is otherwise blind to which
    session it is, and self-referential reasoning then guesses its subject —
    lab/026 records a session inferring its id from a subagent task path, landing

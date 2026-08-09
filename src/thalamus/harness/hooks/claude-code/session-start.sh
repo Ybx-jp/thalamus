@@ -83,13 +83,28 @@ if [ -n "$session_id" ]; then
   # are correlated — and nothing in a finished graph can tell three sessions that
   # independently agreed from three that were in the room together, which is why this
   # is recorded at write time or not at all.
+  # `tmux_pane` is the console's join key. The console addresses roster windows by
+  # index, but an index identifies nothing durable: it renumbers when a window
+  # closes, and two windows routinely share a name, a scope, and a cwd at once
+  # (measured 2026-08-09 — the live roster held two `main` windows both pinned to
+  # scope main in /home/ybx/code/thalamus). Every other route to "which session is
+  # in this window" was tried and rejected: tmux environments are session-scoped,
+  # not per-window; /proc/<pid>/environ carries THALAMUS_SCOPE but no session id;
+  # newest-JSONL-in-the-project-dir returns one file for every window sharing a
+  # cwd; and /proc/<pid>/fd never holds the transcript, since Claude appends and
+  # closes per write. The pane id is the one handle that is unique per window,
+  # stable for its whole life, already in this hook's environment, and preserved
+  # across the respawn a console recycle performs — so a recycled window's new
+  # session simply appends a fresher row under the same key, and last-row-wins
+  # resolves it. Empty outside tmux, which is the correct answer there.
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$cwd" \
     --arg agent "${CLAUDE_CODE_AGENT:-}" \
     --arg room "$(thalamus_resolve_room)" \
     --arg forked_from "$(thalamus_resolve_forked_from)" \
+    --arg tmux_pane "${TMUX_PANE:-}" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{session_id: $sid, scope: $scope, agent: $agent, room: $room,
-      forked_from: $forked_from, cwd: $cwd, ts: $ts}' \
+      forked_from: $forked_from, cwd: $cwd, tmux_pane: $tmux_pane, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi
 

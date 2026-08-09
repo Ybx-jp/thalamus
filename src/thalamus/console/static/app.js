@@ -56,6 +56,9 @@ const els = {
   spawnDirs: document.getElementById("spawn-dirs"),
   spawnGo: document.getElementById("spawn-go"),
   spawnLog: document.getElementById("spawn-log"),
+  read: document.getElementById("read"),
+  readWait: document.getElementById("read-wait"),
+  viewToggle: document.getElementById("view-toggle"),
 };
 
 let windows = [];          // last known window list
@@ -311,6 +314,186 @@ document.addEventListener("selectionchange", () => {
   }
 });
 
+// ---- Read view ----
+// The pane mirror shows a *rendering* of a session — an 80-column repaint with the
+// colours stripped by tmux and no structure left. This shows the session itself:
+// the server projects Claude Code's own JSONL transcript into prose and one-line
+// tool chips (console/transcript.py). Two things it buys on a phone that no amount
+// of work on the mirror could — text that wraps to the screen instead of to fixed
+// columns, and a forty-line diff that reads as `Edit src/foo.py`.
+//
+// It is a second view, never a replacement. A pending permission prompt is never
+// written to the transcript at all, so a tool call with no result is either running
+// or blocked on you and the feed cannot tell which. That is what the wait banner is
+// for, and why the terminal stays one tap away.
+
+let readMode = localStorage.getItem("plane-read-mode") === "1";
+let readShownIdx = null;
+const readState = new Map();
+// How long a tool call may sit unresolved before we say so. Long enough that
+// ordinary calls (a test run, a build) never trip it.
+const PENDING_HINT_MS = 8000;
+
+function readStateFor(idx) {
+  let st = readState.get(idx);
+  if (!st) {
+    st = { seq: 0, sid: null, items: new Map(), nodes: new Map(), order: [],
+           pendingSince: 0, reason: null };
+    readState.set(idx, st);
+  }
+  return st;
+}
+
+function applyView() {
+  els.viewToggle.textContent = readMode ? "term" : "read";
+  els.viewToggle.classList.toggle("on", readMode);
+  els.screen.hidden = readMode;
+  els.read.hidden = !readMode;
+  if (!readMode) { els.readWait.hidden = true; renderedText = null; }
+  else { readShownIdx = null; }   // force a re-attach of this window's nodes
+}
+
+function setReadMode(on) {
+  readMode = on;
+  localStorage.setItem("plane-read-mode", on ? "1" : "0");
+  applyView();
+  pollLoop();
+}
+
+els.viewToggle.addEventListener("click", () => setReadMode(!readMode));
+
+function readItemNode(idx, it) {
+  const el = document.createElement("div");
+  el.className = "rd rd-" + it.kind + (it.sidechain ? " rd-side" : "");
+  if (it.kind === "tool") {
+    el.innerHTML =
+      `<div class="rd-head"><span class="rd-name"></span><span class="rd-sum"></span>` +
+      `<span class="rd-dot"></span></div><div class="rd-body" hidden></div>`;
+    el.querySelector(".rd-head").addEventListener("click", () => toggleBody(idx, it.id, el));
+  } else if (it.kind === "thinking") {
+    el.innerHTML = `<div class="rd-head"><span class="rd-name">thinking</span>` +
+                   `<span class="rd-sum"></span></div><div class="rd-body" hidden></div>`;
+    el.querySelector(".rd-head").addEventListener("click", () => {
+      const b = el.querySelector(".rd-body");
+      b.textContent = it.text;
+      b.hidden = !b.hidden;
+    });
+  }
+  return el;
+}
+
+function updateReadNode(el, it) {
+  if (it.kind === "tool") {
+    el.querySelector(".rd-name").textContent = it.name;
+    el.querySelector(".rd-sum").textContent =
+      it.summary.startsWith(it.name) ? it.summary.slice(it.name.length).trim() : it.summary;
+    el.querySelector(".rd-dot").className = "rd-dot " + (it.status || "pending");
+  } else if (it.kind === "thinking") {
+    el.querySelector(".rd-sum").textContent = " ".concat(it.text).replace(/\s+/g, " ").slice(0, 90) + "…";
+  } else {
+    // Prose and operator turns are the point of this view: real wrapped text.
+    el.innerHTML = linkify(it.text);
+  }
+}
+
+async function toggleBody(idx, id, el) {
+  const body = el.querySelector(".rd-body");
+  if (!body.hidden) { body.hidden = true; return; }
+  body.hidden = false;
+  if (body.dataset.loaded) return;
+  body.textContent = "…";
+  try {
+    const r = await fetch(`api/read/body?index=${idx}&item=${id}`, { cache: "no-store" });
+    const d = await r.json();
+    body.textContent = d.body || "(no output)";
+    body.dataset.loaded = "1";
+  } catch (e) {
+    body.textContent = "(could not load)";
+  }
+}
+
+function renderRead(idx) {
+  const st = readStateFor(idx);
+  const sc = scroller();
+  const atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 60;
+
+  if (st.reason) {
+    els.read.className = "read read-note";
+    els.read.textContent = st.reason === "no-package"
+      ? "The read view needs the thalamus package alongside the console; this one is running as a bare tmux bridge."
+      : "Can't tell which session is in this window yet. Sessions started before the console learned to record it resolve on their next restart (INFRA → restart).";
+    readShownIdx = null;
+    return;
+  }
+  els.read.className = "read";
+  if (readShownIdx !== idx) {          // switched windows — re-attach this one's nodes
+    els.read.textContent = "";
+    // Only what has already been built: on a cold open the ids are known a beat
+    // before their nodes exist, and the build loop below appends the rest in the
+    // same ascending order.
+    for (const id of st.order) {
+      const built = st.nodes.get(id);
+      if (built) els.read.appendChild(built);
+    }
+    readShownIdx = idx;
+  }
+  for (const id of st.order) {
+    const it = st.items.get(id);
+    let node = st.nodes.get(id);
+    if (!node) {
+      node = readItemNode(idx, it);
+      st.nodes.set(id, node);
+      els.read.appendChild(node);
+    }
+    if (node.dataset.seq !== String(it.seq)) {
+      updateReadNode(node, it);
+      node.dataset.seq = String(it.seq);
+    }
+  }
+  if (!st.order.length) {
+    els.read.className = "read read-note";
+    els.read.textContent = "Nothing in this session's transcript yet.";
+  }
+  const waiting = st.pendingSince && Date.now() - st.pendingSince > PENDING_HINT_MS;
+  els.readWait.hidden = !waiting;
+  if (waiting) {
+    els.readWait.textContent =
+      "a tool call is still open — if it's waiting for your approval, that prompt is in the terminal view";
+  }
+  if (atBottom) { const after = scroller(); after.scrollTop = after.scrollHeight; }
+}
+
+async function pollRead(idx) {
+  const st = readStateFor(idx);
+  const r = await fetch(`api/read?index=${idx}&since=${st.seq}`, { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status);
+  const d = await r.json();
+  if (!d.available) { st.reason = d.reason || "unresolved"; renderRead(idx); return; }
+  st.reason = null;
+  // A recycle or a /clear mints a new session id and a new transcript. Everything
+  // held for the old one is about a process that no longer exists — drop it and let
+  // the next poll cold-open the replacement.
+  if (st.sid && d.session_id !== st.sid) {
+    readState.delete(idx);
+    readShownIdx = null;
+    return;
+  }
+  st.sid = d.session_id;
+  for (const it of d.items || []) {
+    if (!st.items.has(it.id)) st.order.push(it.id);
+    st.items.set(it.id, it);
+  }
+  st.order.sort((a, b) => a - b);
+  st.seq = Math.max(st.seq, d.seq || 0);
+  const last = st.order.length ? st.items.get(st.order[st.order.length - 1]) : null;
+  if (last && last.kind === "tool" && last.status === "pending") {
+    if (!st.pendingSince) st.pendingSince = Date.now();
+  } else {
+    st.pendingSince = 0;
+  }
+  renderRead(idx);
+}
+
 // A session filtered out of the rail still needs to be able to announce itself —
 // otherwise picking a workspace makes you blind to the others. Its workspace chip
 // carries the signal that its hidden tab's dot would have.
@@ -381,8 +564,21 @@ async function poll() {
 
     updateDots(next);
     const cur = windows.find((w) => w.index === activeIdx);
-    if (cur) renderScreen(cur.lines);
-    else renderNoSession(data.session);
+    if (!cur) {
+      // No window to read. The onboarding text lives in the pane element, so show
+      // that regardless of which view is selected — a read view of nothing would
+      // just be a second empty rectangle.
+      els.screen.hidden = false;
+      els.read.hidden = true;
+      els.readWait.hidden = true;
+      renderNoSession(data.session);
+    } else if (readMode) {
+      els.screen.hidden = true;
+      els.read.hidden = false;
+      await pollRead(cur.index).catch(() => {});
+    } else {
+      renderScreen(cur.lines);
+    }
     if (cur && cur.closing) {
       els.recycleNote.hidden = false;
       els.recycleNote.textContent = "session ending & distilling to memory — this tab will close";
@@ -469,6 +665,12 @@ function computeFit() {
 function applyFont() {
   const px = Math.max(7, Math.min(40, fitPx + fontDelta));
   document.documentElement.style.setProperty("--screen-size", px.toFixed(2) + "px");
+  // The read view is not column-fitted — that is the whole difference between it
+  // and the pane. Its text wraps to the screen, so sizing it by what makes 80
+  // monospace columns fit would blow prose up to 24px on a desktop and shrink it
+  // to nothing on a narrow phone. Fixed reading size, still moved by A−/A+.
+  const rpx = Math.max(11, Math.min(26, 15 + fontDelta));
+  document.documentElement.style.setProperty("--read-size", rpx.toFixed(2) + "px");
 }
 
 // ---- Slash-command hints ----
@@ -1174,6 +1376,7 @@ function pollLoop() {
     pollTimer = setTimeout(pollLoop, pollDelay());
   });
 }
+applyView();
 pollLoop();
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pollLoop(); });
 

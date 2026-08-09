@@ -99,7 +99,12 @@
 
 <div class="screen-wrap" id="screen-wrap">
   <div class="recycle-note" id="recycle-note" hidden>session restarting — input is paused until the new process is up</div>
+  <!-- Read view only. A pending permission prompt is never written to the
+       transcript, so a tool call with no result is either running or waiting on
+       you and the feed cannot tell which — this offers the terminal, which can. -->
+  <div class="recycle-note wait-note" id="read-wait" hidden></div>
   <pre class="screen" id="screen"></pre>
+  <div class="read" id="read" hidden></div>
 </div>
 
 <form class="composer" id="composer" autocomplete="off">
@@ -116,6 +121,10 @@
     <button type="button" class="keycap" data-key="ctrl-u">clr</button>
     <button type="button" class="keycap danger" data-key="ctrl-c">⌃C</button>
     <span class="spacer"></span>
+    <!-- A view control, grouped with the font caps rather than the terminal keys:
+         it changes what you are looking at, not what the session receives. -->
+    <button type="button" class="fontcap viewcap" id="view-toggle"
+      title="Switch between the readable transcript and the raw terminal">read</button>
     <button type="button" class="fontcap" id="font-dn">A−</button>
     <button type="button" class="fontcap" id="font-up">A+</button>
   </div>

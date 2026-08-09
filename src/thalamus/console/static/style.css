@@ -16,6 +16,7 @@
   /* per-channel hues, overridden per-tab in JS */
   --chan: #9a8cff;
   --screen-size: 14px;
+  --read-size: 15px;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -249,6 +250,90 @@ header {
   margin: 0 auto;
   line-height: 1.65;
 }
+
+/* ---- Read view ----
+   The transcript, not the pane. Prose is set in the UI face and wraps to the
+   screen — the whole point, against a mirror that can only wrap to the session's
+   80 columns. Everything the machine did stays monospaced and dim, so the eye
+   sorts prose from machinery without reading either. */
+.read {
+  padding: .6rem .75rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  max-width: 74ch;
+}
+.read-note {
+  color: var(--faint);
+  font-family: var(--ui);
+  font-size: .8rem;
+  line-height: 1.6;
+  padding: 2rem 1rem;
+  max-width: 42ch;
+  margin: 0 auto;
+  text-align: center;
+}
+.rd-prose, .rd-user {
+  font-family: var(--ui);
+  font-size: var(--read-size);
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;     /* keeps paragraph breaks, still wraps to the screen */
+  overflow-wrap: anywhere;   /* a long path must not widen the page */
+}
+/* The operator's own turns, marked by the channel hue rather than a label. */
+.rd-user {
+  border-left: 2px solid var(--chan);
+  padding: .1rem 0 .1rem .6rem;
+  color: var(--muted);
+}
+/* A tool call: one line, tappable, never a wall of diff. */
+.rd-tool .rd-head, .rd-thinking .rd-head {
+  display: flex;
+  align-items: baseline;
+  gap: .4rem;
+  font-family: var(--mono);
+  font-size: calc(var(--read-size) - 3px);
+  color: var(--faint);
+  cursor: pointer;
+  padding: .12rem 0;
+}
+.rd-name { color: var(--chan); flex: 0 0 auto; opacity: .85; }
+.rd-sum {
+  color: var(--muted);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rd-dot {
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.rd-dot.done { background: #4db6a6; opacity: .5; }
+.rd-dot.error { background: var(--danger); }
+.rd-dot.pending { background: #e0a45c; animation: rd-pulse 1.4s ease-in-out infinite; }
+@keyframes rd-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
+.rd-body {
+  font-family: var(--mono);
+  font-size: calc(var(--read-size) - 3px);
+  line-height: 1.4;
+  color: var(--muted);
+  background: var(--panel);
+  border-left: 2px solid var(--hair);
+  padding: .45rem .55rem;
+  margin-top: .3rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.rd-thinking .rd-head { font-style: italic; opacity: .7; }
+/* Subagent work, one step back from the session's own voice. */
+.rd-side { margin-left: .9rem; opacity: .72; }
+.viewcap.on { color: var(--chan); border-color: var(--chan); }
+.wait-note { color: #e0a45c; }
 
 /* ---- Frame theme (desktop only) ----
    The same art and the same panel geometry the terminal emulator paints on its GPU

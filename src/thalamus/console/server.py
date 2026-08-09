@@ -74,6 +74,58 @@ def has_experts() -> bool:
     """Whether the expert controls (scope list, spawn, roster, rooms) can work."""
     return pin_module() is not None
 
+
+_read_cache: object = _PIN_UNSET
+
+
+def transcript_module():
+    """`.transcript`, or None if this console has no package around it.
+
+    Deferred for the same reason the expert layer is: the read view reuses the
+    harness's transcript parsing, so importing it at module scope would drag the
+    package into a bridge that is documented to run under a bare `python3`. A
+    console without it keeps the pane mirror and reports the read view
+    unavailable, which the client renders as the absence of the toggle.
+    """
+    global _read_cache
+    if _read_cache is _PIN_UNSET:
+        try:
+            from . import transcript
+        except Exception:  # noqa: BLE001 — any import failure means "not available"
+            _read_cache = None
+        else:
+            _read_cache = transcript
+    return _read_cache
+
+
+# One ledger index and one feed store for the process, both stateful across polls
+# so a poll reads only the bytes appended since the last one. ThreadingHTTPServer
+# serves requests concurrently and a phone plus a desktop on the same window is the
+# normal case, so every touch of that shared state is serialized.
+READ_LOCK = threading.Lock()
+_LEDGER = None
+_FEEDS = None
+
+
+def read_feed(cfg: Config, idx: int):
+    """(window, feed) for a roster window, or (window, None) if unresolvable."""
+    tr = transcript_module()
+    window = next((w for w in list_windows(cfg) if w["index"] == idx), None)
+    if tr is None or window is None:
+        return window, None
+    global _LEDGER, _FEEDS
+    with READ_LOCK:
+        if _LEDGER is None:
+            _LEDGER, _FEEDS = tr.LedgerIndex(), tr.FeedStore()
+        # The window name is the scope: the roster names a window for the expert
+        # pinned in it, and the fallback route needs that to join the ledger.
+        got = tr.resolve(window.get("pane_id", ""), window.get("name", ""),
+                         window.get("cwd", ""), window.get("pane_pid", 0), _LEDGER)
+        if got is None:
+            return window, None
+        session_id, path, launch_cwd = got
+        return window, _FEEDS.get(session_id, path, launch_cwd)
+
 # Graceful-exit budget before force-respawning a window. SessionEnd runs
 # `thalamus extract` (distillation), which can take a while; killing early loses it.
 RECYCLE_GRACE_S = 240
@@ -340,8 +392,8 @@ def parse_windows(raw: str) -> list[dict]:
         closing = set(CLOSING)
     out = []
     for line in raw.splitlines():
-        parts = (line.split("\t") + [""] * 9)[:9]
-        idx, name, active, cmd, width, height, dead, cwd, start = parts
+        parts = (line.split("\t") + [""] * 11)[:11]
+        idx, name, active, cmd, width, height, dead, cwd, start, pane_id, pane_pid = parts
         try:
             index = int(idx)
         except ValueError:
@@ -349,6 +401,14 @@ def parse_windows(raw: str) -> list[dict]:
         room = re.search(r"THALAMUS_ROOM=(\S+)", start)
         out.append({
             "index": index, "name": name,
+            # The read view's join key. A window *index* renumbers when a window
+            # closes and is shared by name/scope/cwd with its neighbours, so it
+            # identifies a window only for as long as nobody touches the roster;
+            # the pane id is stable for the window's life and survives the
+            # respawn a recycle performs. pid is the fallback route's only input,
+            # for sessions launched before the ledger recorded pane ids.
+            "pane_id": pane_id,
+            "pane_pid": int(pane_pid) if pane_pid.isdigit() else 0,
             "active": active == "1", "command": cmd,
             "width": int(width or 0), "height": int(height or 0),
             "dead": dead == "1",
@@ -375,7 +435,7 @@ def list_windows(cfg: Config) -> list[dict]:
     r = tmux("list-windows", "-t", cfg.session, "-F",
              "#{window_index}\t#{window_name}\t#{window_active}\t#{pane_current_command}"
              "\t#{window_width}\t#{window_height}\t#{pane_dead}\t#{pane_current_path}"
-             "\t#{pane_start_command}")
+             "\t#{pane_start_command}\t#{pane_id}\t#{pane_pid}")
     return parse_windows(r.stdout) if r.returncode == 0 else []
 
 
@@ -671,6 +731,53 @@ class Handler(BaseHTTPRequestHandler):
             for w in windows:
                 w["lines"] = capture(self.cfg, w["index"])
             return self._send(200, {"session": self.cfg.session, "windows": windows})
+        if path == "/api/read":
+            # The read view: this window's session as prose and collapsed tool
+            # calls, read from the transcript rather than the pane. `since` is the
+            # highest seq the client already holds; 0 means a cold open, which is
+            # the only case that gets truncated to a tail.
+            q = parse_qs(query)
+            raw = q.get("index", [""])[0]
+            if not raw.lstrip("-").isdigit():
+                return self._send(400, {"error": "index required"})
+            since = q.get("since", ["0"])[0]
+            since = int(since) if since.isdigit() else 0
+            tr = transcript_module()
+            if tr is None:
+                return self._send(200, {"available": False, "reason": "no-package"})
+            window, feed = read_feed(self.cfg, int(raw))
+            if window is None:
+                return self._send(404, {"error": "no such window"})
+            if feed is None:
+                # Resolution refuses rather than guesses — a session launched
+                # before the ledger carried pane ids, in a window whose scope and
+                # cwd it shares with another. It resolves itself on recycle.
+                return self._send(200, {"available": False, "reason": "unresolved"})
+            with READ_LOCK:
+                return self._send(200, {
+                    "available": True,
+                    "session_id": feed.session_id,
+                    "seq": feed.seq,
+                    "items": tr.wire(feed.since(since, tr.COLD_OPEN_ITEMS if not since else 0)),
+                    "mode": feed.mode,
+                    "permission_mode": feed.permission_mode,
+                    "agent": feed.agent,
+                })
+        if path == "/api/read/body":
+            # A tool result, fetched only when the reader expands that call.
+            q = parse_qs(query)
+            raw = q.get("index", [""])[0]
+            item = q.get("item", [""])[0]
+            if not raw.lstrip("-").isdigit() or not item.isdigit():
+                return self._send(400, {"error": "index and item required"})
+            _, feed = read_feed(self.cfg, int(raw))
+            if feed is None:
+                return self._send(404, {"error": "unresolved"})
+            with READ_LOCK:
+                body = feed.body(int(item))
+            if body is None:
+                return self._send(404, {"error": "no such item"})
+            return self._send(200, {"body": body})
         if path == "/api/admin":
             with RECYCLING_LOCK:
                 recycling = sorted(RECYCLING)
