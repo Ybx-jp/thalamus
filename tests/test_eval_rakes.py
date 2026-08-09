@@ -158,3 +158,66 @@ def test_an_empty_registry_says_so_rather_than_rendering_a_zero_rate():
 
     assert report.rakes == 0
     assert "No rakes registered" in report.render()
+
+
+def test_convergence_on_correlated_witnesses_is_disclosed_on_the_same_line():
+    """
+    Scenario: one rake converged on two genuinely separate sessions, another on a
+              session and the fork it came from
+
+    Verifications:
+    - both still count as converged (the detector's yield is unchanged)
+    - the fork-backed one is also counted as correlated, and rendered
+
+    `converged` is the headline this module exists to keep visible, and a fork
+    agreeing with its parent is one grounding counted twice — recorded by the
+    launcher, invisible in the finished graph, and exactly the kind of flattering
+    number the rest of this module refuses (docs/09 §Scope).
+    """
+    rakes = [
+        Rake(vid="r1", description="p", artifacts=("a.py",), sessions=("s1", "s2")),
+        Rake(vid="r2", description="q", artifacts=("a.py",), sessions=("s3", "s4")),
+    ]
+    sessions = {
+        "s1": _session("s1", "2026-07-01"),
+        "s2": _session("s2", "2026-07-02"),
+        "s3": _session("s3", "2026-07-03"),
+        "s4": SessionRow(vid="s4", session_id="s4", project="thalamus",
+                         ts="2026-07-04", forked_from="s3"),
+    }
+
+    report = build_rake_report(rakes, sessions, {"a.py": ["s1", "s2", "s3", "s4"]})
+
+    assert report.converged == 2
+    assert report.converged_correlated == 1
+    assert "of which 1 rest on correlated witnesses" in report.render()
+
+
+def test_room_mates_are_flagged_without_reducing_the_converged_count():
+    """A room is not an event — it hosts many turns — so room-mates are disclosed
+    and left counted. Collapsing them would trade a false-count error for a
+    false-collapse one, which docs/09 closes against."""
+    rakes = [Rake(vid="r1", description="p", artifacts=("a.py",), sessions=("s1", "s2"))]
+    sessions = {
+        "s1": SessionRow(vid="s1", session_id="s1", project="thalamus",
+                         ts="2026-07-01", room="alpha"),
+        "s2": SessionRow(vid="s2", session_id="s2", project="thalamus",
+                         ts="2026-07-02", room="alpha"),
+    }
+
+    report = build_rake_report(rakes, sessions, {"a.py": ["s1", "s2"]})
+
+    assert report.converged == 1
+    assert report.converged_correlated == 1
+
+
+def test_an_ordinary_converged_rake_says_nothing_about_correlation():
+    """The disclosure line must not fire on the uncorrelated corpus — a warning
+    every run is a warning nobody reads."""
+    rakes = [Rake(vid="r1", description="p", artifacts=("a.py",), sessions=("s1", "s2"))]
+    sessions = {"s1": _session("s1", "2026-07-01"), "s2": _session("s2", "2026-07-02")}
+
+    report = build_rake_report(rakes, sessions, {"a.py": ["s1", "s2"]})
+
+    assert report.converged_correlated == 0
+    assert "correlated witnesses" not in report.render()
