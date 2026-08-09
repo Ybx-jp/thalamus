@@ -106,14 +106,14 @@ def extract_citations(answer: str) -> list[str]:
     return list(seen)
 
 
-def consult_request(
-    g: GraphTraversalSource, expert: str, question: str, from_scope: str
-) -> str:
-    """Mint a consultation ticket — which IS opening the exchange record.
+def refuse_reason(expert: str, question: str, from_scope: str) -> str | None:
+    """Why this consultation cannot be minted at all, or None.
 
-    Returns the ticket, the server-assembled expert brief, and the protocol the
-    consulting agent follows (spawn a subagent voicing the expert; recall with the
-    ticket; close with consult_answer).
+    The checks both tiers share, in one place: the quick protocol (docs/02) is a
+    second tier of the same exchange, not a second protocol, so an addressee that is
+    not an expert — or is this session's own scope — must be refused identically
+    whichever tier asks. What is *not* here is the empty-brief refusal, which belongs
+    to brief assembly and so belongs to the full ticket alone.
     """
     if not question.strip():
         return "Consultation refused: the question is empty."
@@ -125,26 +125,26 @@ def consult_request(
     if expert not in available_scopes():
         known = ", ".join(s for s in available_scopes() if s != from_scope) or "(none)"
         return f"Consultation refused: no expert manifest for `{expert}`. Available: {known}"
+    return None
 
-    manifest = load_manifest(expert)
-    brief_sections, brief_refs = _assemble_brief(g, expert, question)
-    if not brief_refs:
-        # Two distinct failures, two distinct remedies: an empty scope needs
-        # ingestion; a knowledge-only scope with no lexical match needs the
-        # question rephrased in the vocabulary its claims actually use.
-        if _scope_holds_memory(g, expert):
-            return (
-                f"Consultation refused: nothing in scope `{expert}` matched the "
-                "question, so the expert's brief would be empty. Rephrase the "
-                "question in the expert's own vocabulary (the terms its claims "
-                "use), or ingest the missing source first (docs/06)."
-            )
-        return (
-            f"Consultation refused: scope `{expert}` holds no memory to consult — "
-            "an expert with nothing to cite cannot produce a citable answer. "
-            "Ingest into it first (docs/06)."
-        )
 
+def open_exchange(
+    g: GraphTraversalSource,
+    expert: str,
+    question: str,
+    from_scope: str,
+    *,
+    protocol: str = "ticket",
+    brief_refs: list[str] | None = None,
+    extra: dict[str, object] | None = None,
+) -> tuple[str, str]:
+    """Mint the ticket and write the open exchange in one act. Returns (ticket, vid).
+
+    Both tiers land here, and the mint is the write for both: an unrecorded
+    consultation is impossible by construction, and a quick exchange is a multi-agent
+    collaboration step, which is inside the definition of execution provenance
+    (arXiv 2606.04990) rather than an exception to it.
+    """
     ticket = mint_ticket()
     vertex_id = exchange_vid(ticket)
     now = datetime.now(timezone.utc)
@@ -165,13 +165,56 @@ def consult_request(
             # Classified at mint, so "was this a design ticket" is a stored fact
             # rather than a judgement made later by whoever happens to read it.
             "kind": question_kind(question),
+            # Which tier answered. Orthogonal to `kind`, which classifies the
+            # *question*: a quick exchange can still settle a design, and the
+            # readiness check must still fire when it does.
+            "protocol": protocol,
             "scope": MAIN_SCOPE,
             "ts": now.isoformat(),
             "tier": int(provenance.tier),
             "source": provenance.source,
             "ingested_at": provenance.ingested_at.isoformat(),
+            **(extra or {}),
         },
         brief_refs=brief_refs,
+    )
+    return ticket, vertex_id
+
+
+def consult_request(
+    g: GraphTraversalSource, expert: str, question: str, from_scope: str
+) -> str:
+    """Mint a consultation ticket — which IS opening the exchange record.
+
+    Returns the ticket, the server-assembled expert brief, and the protocol the
+    consulting agent follows (spawn a subagent voicing the expert; recall with the
+    ticket; close with consult_answer).
+    """
+    refused = refuse_reason(expert, question, from_scope)
+    if refused:
+        return refused
+
+    manifest = load_manifest(expert)
+    brief_sections, brief_refs = _assemble_brief(g, expert, question)
+    if not brief_refs:
+        # Two distinct failures, two distinct remedies: an empty scope needs
+        # ingestion; a knowledge-only scope with no lexical match needs the
+        # question rephrased in the vocabulary its claims actually use.
+        if _scope_holds_memory(g, expert):
+            return (
+                f"Consultation refused: nothing in scope `{expert}` matched the "
+                "question, so the expert's brief would be empty. Rephrase the "
+                "question in the expert's own vocabulary (the terms its claims "
+                "use), or ingest the missing source first (docs/06)."
+            )
+        return (
+            f"Consultation refused: scope `{expert}` holds no memory to consult — "
+            "an expert with nothing to cite cannot produce a citable answer. "
+            "Ingest into it first (docs/06)."
+        )
+
+    ticket, vertex_id = open_exchange(
+        g, expert, question, from_scope, brief_refs=brief_refs
     )
 
     brief = "\n\n".join(brief_sections)

@@ -24,6 +24,7 @@ from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval.rake_audit import SAMPLE_SIZE
 from thalamus.eval import snapshots
 from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
+from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
 from thalamus.viewer.web import create_app
@@ -647,6 +648,53 @@ def main():
     )
     roster_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
 
+    quick_parser = subparsers.add_parser(
+        "quick",
+        help="The quick protocol: consult a live expert by forking its own session (docs/02)",
+    )
+    quick_sub = quick_parser.add_subparsers(dest="quick_command")
+    quick_ask = quick_sub.add_parser(
+        "ask", help="Fork the expert's live session and block on its cited answer"
+    )
+    quick_ask.add_argument("expert", help="Expert scope to consult (a config/experts manifest)")
+    quick_ask.add_argument("question", help="The question, asked of the forked expert")
+    quick_ask.add_argument(
+        "--from-scope", default=None,
+        help="The calling session's own scope (default: this process's pin)"
+    )
+    quick_ask.add_argument(
+        "--allow", default=quick_mod.DEFAULT_ALLOWED_TOOLS,
+        help="Tools the fork may use without prompting (default: %(default)s — the "
+             "tier answers from memory rather than inspecting the box)"
+    )
+    quick_ask.add_argument(
+        "--timeout", type=int, default=quick_mod.DEFAULT_TIMEOUT,
+        help="Seconds to wait for the fork's answer (default: %(default)s)"
+    )
+    quick_ask.add_argument(
+        "--force-busy", action="store_true",
+        help="Fork a parent that is mid-turn. Costs 13x the between-turns price and "
+             "misses the message body the parent is still writing (lab/049)."
+    )
+    quick_ask.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    quick_targets = quick_sub.add_parser(
+        "targets", help="Live sessions this caller can fork, and what each would cost"
+    )
+    quick_targets.add_argument(
+        "--all", action="store_true", help="Include unpinned (`main`) sessions"
+    )
+    quick_delta = quick_sub.add_parser(
+        "delta",
+        help="Stage a fork's own records for distillation; prints the projects root "
+             "to extract from (session-end.sh calls this)",
+    )
+    quick_delta.add_argument(
+        "--transcript", type=Path, required=True, help="The fork's transcript"
+    )
+    quick_delta.add_argument(
+        "--parent", required=True, help="Session id the fork was resumed from"
+    )
+
     room_parser = subparsers.add_parser(
         "room", help="Rooms: the collaborations sessions are launched into"
     )
@@ -769,6 +817,8 @@ def main():
         _cmd_spawn(args)
     elif args.command == "roster":
         _cmd_roster(args)
+    elif args.command == "quick":
+        _cmd_quick(args, quick_parser)
     elif args.command == "room":
         _cmd_room(args, parser)
     elif args.command == "visualize":
@@ -1902,6 +1952,107 @@ def _cmd_roster(args):
         roster(PROJECT_ROOT, full=getattr(args, "all", False), room=args.room)
     except (ValueError, RuntimeError) as e:
         print(f"Roster failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_quick(args, parser):
+    from thalamus.harness import pin
+
+    if args.quick_command == "targets":
+        rows = quick_mod.live_sessions()
+        rows = [s for s in rows if args.all or s.scope]
+        if not rows:
+            print("No live sessions to fork. The quick tier needs a running expert; "
+                  "`thalamus spawn <scope>` opens one.")
+            return
+        print(f"{'scope':16} {'session':10} {'status':9} {'age':>7}  cwd")
+        for session in sorted(rows, key=lambda s: (s.scope, s.age_seconds)):
+            age = f"{session.age_seconds / 60:.0f}m"
+            print(
+                f"{session.scope or '(main)':16} {session.session_id[:8]:10} "
+                f"{session.status:9} {age:>7}  {session.cwd}"
+            )
+        # Warmth is a cache and it decays inside the nominal TTL — 44.8% of the
+        # parent's prefix survived at 38 minutes (lab/049). The ages above are the
+        # cost estimate; there is no second number to consult.
+        print("\nCost is bimodal on the parent's recency, not its size: a fork of a "
+              "just-active parent reads its whole prompt-cache prefix (~$0.03-0.08), "
+              "a cold or mid-turn one pays $0.55-1.35.")
+        return
+
+    if args.quick_command == "delta":
+        # stdout is the projects root and nothing else — session-end.sh substitutes
+        # it straight into `extract --projects-dir`, so any commentary here would be
+        # a path as far as the caller is concerned.
+        try:
+            root = quick_mod.stage_delta(args.transcript, args.parent)
+        except (quick_mod.QuickRefused, OSError) as e:
+            print(f"Delta staging failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(root)
+        return
+
+    if args.quick_command != "ask":
+        parser.parse_args(["quick", "--help"])
+        return
+
+    from_scope = args.from_scope or pin.resolve_pin()
+    try:
+        target = quick_mod.resolve_target(args.expert)
+    except quick_mod.QuickRefused as e:
+        print(f"Quick consultation refused: {e}", file=sys.stderr)
+        sys.exit(1)
+    if not target.between_turns and not args.force_busy:
+        print(
+            f"Quick consultation refused: `{args.expert}` (session "
+            f"{target.session_id[:8]}) is mid-turn. Forking now costs 13x the "
+            "between-turns price and misses the message body it is still writing. "
+            "Wait for the turn to land, or pass --force-busy.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    graph = connect(args.url)
+    try:
+        result = quick_mod.consult(
+            graph, args.expert, args.question, from_scope,
+            allowed_tools=args.allow, timeout=args.timeout,
+        )
+    except quick_mod.QuickRefused as e:
+        print(f"Quick consultation refused: {e}", file=sys.stderr)
+        close_connection()
+        sys.exit(1)
+    _persist(graph)
+    close_connection()
+
+    run = result.run
+    print(f"## Quick exchange `{result.exchange_vid}`")
+    print(f"**Expert:** {args.expert} (fork of {result.target.session_id[:8]}, "
+          f"{result.target.status})")
+    print(f"**Grant:** {result.grant}")
+    print()
+    print(result.answer.strip())
+    print()
+    if run is not None:
+        print(
+            f"— {run.wall_ms / 1000:.1f}s, ${run.cost_usd:.4f}, {run.num_turns} turn(s), "
+            f"cache {run.cache_hit:.0%} hit "
+            f"({run.cache_read_input_tokens:,} read / "
+            f"{run.cache_creation_input_tokens:,} created), "
+            f"{run.output_tokens:,} out"
+        )
+    # The tier's own invariant, counted from the fork's records rather than asserted:
+    # without a fresh recall the answer is a decorated snapshot of context retrieved
+    # for a different question (docs/02).
+    if result.fresh_recalls == 0:
+        print("— WARNING: the fork made no in-ticket recall. Warmth was not "
+              "revalidated; treat this answer as a cached opinion.")
+    else:
+        print(f"— {result.fresh_recalls} in-ticket recall(s)")
+    for issue in result.ledger_issues:
+        print(f"— LEDGER: {issue}")
+    print(f"— {result.close_report}")
+    if not result.accepted:
         sys.exit(1)
 
 

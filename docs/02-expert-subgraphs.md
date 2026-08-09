@@ -246,7 +246,8 @@ the literature the decision rests on.
 
 ## The quick protocol: a second tier, for the room
 
-**Designed, not built** — the shape below is settled; the code is not written.
+`thalamus quick ask <expert> "<question>"` is the whole surface, and
+`thalamus quick targets` lists what is forkable and how recent each parent is.
 
 Inside a [room](07-harness-integration.md), the full ticket is the wrong instrument for
 a question the caller is *blocked on*. Its cost is not the mint or the brief but the
@@ -268,18 +269,25 @@ and position bias puts the parent's earlier recalls mid-transcript while the que
 arrives at the end, degrading use of exactly the region the argument depends on
 (arXiv 2307.03172). So the tier is defined by what it **keeps**:
 
-1. **The record, in full.** The mint is still the write. A `kind: quick` Exchange is a
+1. **The record, in full.** The mint is still the write — both tiers open their
+   exchange through one `open_exchange`, and a `protocol: quick` Exchange is a
    multi-agent collaboration step, which is inside the definition of execution
-   provenance (arXiv 2606.04990), not an exception to it.
+   provenance (arXiv 2606.04990), not an exception to it. `protocol` is a separate
+   field from `kind`, which classifies the *question*: a quick exchange can still
+   settle a design, and the readiness check must still fire when it does.
 2. **Citation validation, unchanged.** `contract check` constrains Exchange `status`,
-   not `kind`, and its one real invariant — an answered exchange cites something — is
-   the write-path defense the memory-poisoning literature puts exactly here
-   (arXiv 2606.04329). The lighter tier does not get to bend the audit.
+   not `protocol`, and its one real invariant — an answered exchange cites something —
+   is the write-path defense the memory-poisoning literature puts exactly here
+   (arXiv 2606.04329). The lighter tier does not get to bend the audit: the fork closes
+   through `consult_answer` like any expert, and if it only answers, the launcher closes
+   it through the same call rather than a shortcut.
 3. **At least one fresh in-ticket recall.** One, against the cold path's many. This is
    what converts warmth from retrieval *replacement* into cache *revalidation*: it costs
    about the embedding floor, it re-renders tier labels adjacent to the answer, and it
    puts a citation in the position-favoured region. Without it the tier is a decorated
-   snapshot.
+   snapshot. **Counted, not asserted** — `fresh_recalls` is read off the fork's own
+   records, so an answer that merely claims to have recalled reports zero and says so
+   in the caller's output.
 
 And by what it **drops**, which is one thing, not three:
 
@@ -313,7 +321,17 @@ reader of it and the exchange belongs on the full path.
 justification is a latency claim, so a quick exchange that does not log its own
 wall-clock and tokens makes that claim unfalsifiable — and a cost figure taken without
 `cache_read_input_tokens` is how [lab/049](../lab/049-the-fork-is-the-whole-conversation.md)
-first got this wrong by 16×.
+first got this wrong by 16×. Every closed quick exchange carries `wall_ms`, `cost_usd`,
+`num_turns`, both cache fields and the derived `cache_hit`, plus the parent's `status`
+and age at fork point — the cost *predictor*, recorded while the descriptor still
+exists rather than reconstructed afterwards.
+
+**The answer is accepted only after the fork's own ledger row agrees with the launch.**
+`--agent thalamus-<scope>` and `THALAMUS_FORKED_FROM` are launcher obligations
+([07](07-harness-integration.md)), and a fork that missed either produces a good-looking
+answer in the expert's voice filed under the wrong scope, or a dependent witness filed as
+an independent one. Divergence leaves the exchange open with the reason on the record;
+the cost is written either way, because it was spent either way.
 
 **A real call costs $0.10–$0.52, and cost is bimodal on the parent's recency rather than
 its size.**

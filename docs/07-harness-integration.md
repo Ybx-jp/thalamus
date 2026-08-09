@@ -705,11 +705,12 @@ Over 103 bytes the path silently falls back to `/tmp/cc-socks-<uid>/`
 ([lab/044](../lab/044-the-103-byte-cliff.md)). Short dirs
 (`/run/user/<uid>/rooms/<room>`) are the shape to use.
 
-## Launching a quick fork (designed, not built)
+## Launching a quick fork
 
 The quick protocol's design is [02](02-expert-subgraphs.md); what follows is what the
 harness does and does not hand a fork, all of it measured in
-[lab/049](../lab/049-the-fork-is-the-whole-conversation.md).
+[lab/049](../lab/049-the-fork-is-the-whole-conversation.md) and all of it now carried by
+`thalamus quick` (`harness/quick.py`).
 
 **A fork inherits the room for free and the pin not at all.** `CLAUDE_CONFIG_DIR` is
 already exported in a member's environment, so a fork launched from inside one lands in
@@ -722,7 +723,8 @@ thalamus-<scope>` and `THALAMUS_FORKED_FROM` are launcher obligations**, taken f
 roster's `agent` field and asserted against the resulting ledger row before the answer
 is accepted — `forked_from` is the field whose absence turns a fork into a fake
 independent witness ([09](09-schema-and-federation.md)), and one row in 1,246 carries it
-today, so no historical data would flag the regression.
+today, so no historical data would flag the regression. A missing ledger row is itself a
+divergence, not a pass: silence and "verified clean" are the same bytes.
 
 **The fork runs in the parent's cwd.** Not a temp dir: the only in-repo example of
 launching a headless `claude` is extraction's `thalamus-extract-` sandbox, and copying
@@ -754,6 +756,17 @@ fork distills the delta only**: the records whose UUIDs are absent from the pare
 is an exact set difference and not a timestamp heuristic. The sandbox guard is the wrong
 tool for this — it would discard the fork's transcript, which is the evidence for an
 answer whose claim survives in the caller's memory.
+
+The delta is staged rather than filtered in place: `thalamus quick delta` writes the
+fork's own records to `~/.thalamus/forks/<fork-session>/<project-dir>/`, keeping the
+project dir name, and prints that root for `extract --projects-dir`. So the ordinary
+pipeline runs unchanged — same parse, same archive, same write path — and the archived
+Source is the delta's bytes rather than a second copy of the parent's conversation.
+`session-end.sh` reaches it for **any** session whose ledger row carries `forked_from`,
+not just a `quick` one: the duplicate episode is a property of `--fork-session`, not of
+this protocol. A parent transcript that has rotated away is a **refusal** that ends the
+distillation — leaving a fork undistilled is a better outcome than re-asserting its
+parent's episode as a second Session.
 
 **Forking a live parent is safe, and a warm one is cheap.** `--resume` takes no lock and
 did not perturb a parent that ran to completion through two concurrent mid-turn forks.

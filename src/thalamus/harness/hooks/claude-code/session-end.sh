@@ -123,6 +123,31 @@ fi
 # child's cwd where it is while resolving the environment from the checkout, the
 # same pattern the thalamus-pulse user unit already uses.
 repo_root="$(thalamus_repo_root)"
+
+# A fork distills its **delta**, not its transcript. A `--fork-session` JSONL is the
+# parent's whole conversation restamped with the fork's own sessionId, the parent's
+# message UUIDs preserved verbatim (562/562 measured, lab/049) — so distilling it as
+# an ordinary session mints a second Session re-asserting the parent's episode and
+# archives a second near-identical Source that the archive cannot dedup, because
+# archive_bytes is content-addressed and every sessionId line differs.
+#
+# `thalamus quick delta` writes the exact set difference under ~/.thalamus/forks/ and
+# prints the projects root to distill from; the project *dir name* is unchanged, so
+# everything below runs identically. It refuses when the parent's transcript is gone,
+# and that refusal ends the distillation: re-asserting the parent's episode is worse
+# than not distilling this fork at all.
+if [ -n "$forked_from" ] && [ -n "$transcript_path" ]; then
+  if delta_root=$(uv run --project "$repo_root" thalamus quick delta \
+      --transcript "$transcript_path" --parent "$forked_from" 2>>"$log"); then
+    projects_dir="$delta_root"
+    echo "fork of ${forked_from:0:8}: distilling delta only, from $delta_root" >>"$log"
+  else
+    echo "fork of ${forked_from:0:8}: delta staging failed — not distilling, since " \
+         "the whole transcript would re-assert the parent's episode" >>"$log"
+    exit 0
+  fi
+fi
+
 projects_arg=""
 [ -n "$projects_dir" ] && projects_arg="--projects-dir '$projects_dir'"
 nohup sh -c "
