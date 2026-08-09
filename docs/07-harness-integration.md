@@ -805,6 +805,22 @@ explicit frame-break rather than a bare question; and a launcher shelling into a
 it did not provision receives a well-formed envelope containing `Not logged in` as the
 answer, with exit 0, so the result string needs checking and not just the exit code.
 
+**The frame break must not open with a tag.** `transcripts.parse` counts a `<`-prefixed
+user record as harness scaffolding rather than a turn — correctly, since system reminders
+arrive that way — so a prompt beginning `<quick-consultation …>` leaves the fork's delta
+with zero user turns and `extract` declines it as a non-conversation. Measured on the
+first live call ([lab/050](../lab/050-the-first-live-quick-call.md)): it answered, cited,
+staged its delta, and distilled nothing. The prompt opens with a plain line and carries
+the tag on the second.
+
+**The pin ledger has more than one row shape, and only one of them is a pin.**
+`pin-engaged.sh` appends `{event: "engaged", session_id, scope, ts}` beside the
+SessionStart row, carrying no `agent`, no `room` and no `forked_from`. Last-row-wins
+across both — the right idiom for pin rows — reads those three as empty, which reported a
+correctly-launched fork as having met none of its obligations, and would have sent a
+fork's whole restamped transcript to distillation had the environment fallback not
+happened to survive. Every reader of this ledger filters `event` rows.
+
 **The channel is instrumentable, which the in-process teams mailbox was not.** An
 incoming message lands in the receiver's transcript wrapped as
 `<cross-session-message from="...">`. That wrapper is a syntactic boundary

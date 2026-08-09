@@ -278,9 +278,14 @@ arrives at the end, degrading use of exactly the region the argument depends on
 2. **Citation validation, unchanged.** `contract check` constrains Exchange `status`,
    not `protocol`, and its one real invariant — an answered exchange cites something —
    is the write-path defense the memory-poisoning literature puts exactly here
-   (arXiv 2606.04329). The lighter tier does not get to bend the audit: the fork closes
-   through `consult_answer` like any expert, and if it only answers, the launcher closes
-   it through the same call rather than a shortcut.
+   (arXiv 2606.04329). The lighter tier does not get to bend the audit — but the
+   **launcher** is the closer, not the fork: closing *is* acceptance, and acceptance is
+   downstream of the ledger check, so an answerer that burns its own ticket through the
+   MCP tool closes the exchange before the check that would have gated it can run
+   ([lab/050](../lab/050-the-first-live-quick-call.md)). The fork is told its reply is
+   the answer; one that closes anyway is recorded as `closed_by: fork` rather than
+   fought, because a gate the answerer can step around is a report and the record has to
+   say which it was.
 3. **At least one fresh in-ticket recall.** One, against the cold path's many. This is
    what converts warmth from retrieval *replacement* into cache *revalidation*: it costs
    about the embedding floor, it re-renders tier labels adjacent to the answer, and it
@@ -333,13 +338,19 @@ answer in the expert's voice filed under the wrong scope, or a dependent witness
 an independent one. Divergence leaves the exchange open with the reason on the record;
 the cost is written either way, because it was spent either way.
 
-**A real call costs $0.10–$0.52, and cost is bimodal on the parent's recency rather than
-its size.**
-A fork of a parent active seconds ago reads that parent's entire prompt-cache prefix and
-creates only the new turn — a 100% hit, ~$0.03–0.08 even for a large parent. The same
-parent gone cold, or a fork whose `--agent` does not match its parent's, pays $0.55–1.35;
-a **mid-turn** fork pays 13× the post-turn price, because a truncated conversation lands
-on no cached block boundary. Warmth decays inside the nominal TTL (44.8% at 38 minutes).
+**Forking is cheap; answering is not. The first live call cost $0.975 at an 82% cache
+hit.** A fork of a parent active seconds ago reads that parent's entire prompt-cache
+prefix and creates only the new turn — a 100% hit, ~$0.03–0.08 even for a large parent —
+but that is the price of *arriving*, measured on a one-word prompt. A real answer
+(88.9 s, 8 turns, 4,784 output tokens, three mandated recalls) cost a dollar with the
+cache working as designed ([lab/050](../lab/050-the-first-live-quick-call.md)). Price
+follows output tokens, the same reduction latency follows.
+
+What recency governs is the *input* side, and there it is bimodal: a cold parent, or a
+fork whose `--agent` does not match its parent's, pays $0.55–1.35 to re-create the
+prefix, and a **mid-turn** fork pays 13× the post-turn price, because a truncated
+conversation lands on no cached block boundary. Warmth decays inside the nominal TTL
+(44.8% at 38 minutes).
 
 This is a scheduling property, not a budget line. **The room largely answers it**: a room
 is a co-working cluster by construction, so its members are active in the same window and

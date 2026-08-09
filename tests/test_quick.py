@@ -446,7 +446,52 @@ def test_the_question_arrives_inside_a_frame_break():
     assert "`main`" in prompt and "`homelab`" in prompt
     assert "No brief was served" in prompt
     assert 'ticket="abc123"' in prompt
-    assert "consult_answer" in prompt
+
+
+def test_the_prompt_counts_as_a_user_turn(tmp_path):
+    """
+    Scenario: The fork's delta is parsed for distillation, and its only user record
+    is the launcher's prompt
+
+    Verifications:
+    - `transcripts.parse` counts it as a turn
+
+    A `<`-prefixed user record is harness scaffolding rather than a turn, so a prompt
+    that opens with the frame-break tag gives the delta zero user turns and
+    extraction declines it as a non-conversation. Measured on the first live call: it
+    answered correctly and distilled nothing. Asserted against the parser itself, not
+    against a restatement of its rule.
+    """
+    from thalamus.harness import transcripts
+
+    prompt = quick.fork_prompt(
+        ticket="abc123", question="q?", from_scope="main", scope="homelab", grant="g"
+    )
+    path = _transcript(
+        tmp_path / "p" / "fork.jsonl",
+        [{"uuid": "u1", "type": "user", "cwd": "/home/ybx/code/thalamus",
+          "message": {"role": "user", "content": prompt}}],
+    )
+
+    assert transcripts.parse(path).user_turns == 1
+
+
+def test_the_fork_is_told_not_to_close_the_exchange():
+    """
+    Scenario: The launcher renders the prompt
+
+    Verifications:
+    - the fork is told its reply is the answer, and not to call consult_answer
+
+    Closing is acceptance, and acceptance is downstream of the ledger check: a fork
+    that burns its own ticket through the MCP tool closes the exchange before the
+    check that would have gated it can run.
+    """
+    prompt = quick.fork_prompt(
+        ticket="abc123", question="q?", from_scope="main", scope="homelab", grant="g"
+    )
+
+    assert "Do NOT call `consult_answer`" in prompt
 
 
 # --------------------------------------------------------------------------------------
@@ -511,6 +556,28 @@ def test_a_clean_fork_asserts_clean(tmp_path):
         {"session_id": "fork-sid", "scope": "main", "agent": "", "forked_from": ""},
         {"session_id": "fork-sid", "scope": "homelab", "agent": "thalamus-homelab",
          "forked_from": "parent-sid"},
+    )
+
+    assert quick.assert_ledger("fork-sid", "homelab", "parent-sid", pins) == []
+
+
+def test_the_engaged_lifecycle_row_does_not_overwrite_the_pin_row(tmp_path):
+    """
+    Scenario: `pin-engaged.sh` appends its `{event: "engaged"}` row after the fork's
+    pin row, carrying scope but no agent and no forked_from
+
+    Verifications:
+    - the assertion reads the pin row, not the lifecycle row, and finds it clean
+
+    Measured on the first live quick call: the ledger row was correct and the
+    assertion said the launcher had met none of its obligations, because last-wins
+    across both row shapes reads the two missing fields as empty.
+    """
+    pins = _pins(
+        tmp_path,
+        {"session_id": "fork-sid", "scope": "homelab", "agent": "thalamus-homelab",
+         "forked_from": "parent-sid"},
+        {"event": "engaged", "session_id": "fork-sid", "scope": "homelab"},
     )
 
     assert quick.assert_ledger("fork-sid", "homelab", "parent-sid", pins) == []
@@ -695,7 +762,45 @@ def test_a_quick_exchange_records_the_briefs_absence_and_prices_itself(wired, mo
     assert record["fork_session"] == "fork-sid"
     assert record["cache_read_input_tokens"] == 121_938
     assert record["status"] == "answered"
+    assert record["closed_by"] == "launcher"
     assert result.accepted
+
+
+def test_a_fork_that_closes_its_own_ticket_is_recorded_as_having_done_so(wired):
+    """
+    Scenario: The fork calls consult_answer itself despite being told not to, closing
+    the exchange before the launcher's ledger check runs
+
+    Verifications:
+    - the answer stands, and `closed_by` records that the fork closed it
+    - the report says the citations validated and the ordering did not
+
+    Closing is acceptance, and acceptance is downstream of the ledger check — a gate
+    the answerer can step around is a gate that reports what happened rather than one
+    that prevents it, and the record has to say which.
+    """
+    graph = _cited_graph()
+    pins = _pins(
+        wired,
+        {"session_id": "fork-sid", "scope": "homelab", "agent": "thalamus-homelab",
+         "forked_from": "parent-sid"},
+    )
+
+    def runner(argv, **kwargs):
+        for vertex in graph.vertices.values():
+            if vertex.get("label") == "Exchange":
+                vertex["status"] = "answered"
+        return subprocess.CompletedProcess(argv, 0, envelope(), "")
+
+    result = quick.consult(
+        graph, "homelab", "q?", "main",
+        config_dir_override=wired, pins_file=pins, runner=runner,
+    )
+
+    record = graph.vertices[exchange_vid(result.ticket)]
+    assert record["closed_by"] == "fork"
+    assert result.accepted
+    assert "ordering did not" in result.close_report
 
 
 def test_a_diverged_ledger_row_blocks_acceptance(wired):

@@ -68,10 +68,17 @@ log="$log_dir/session-end-${session_id:0:8}.log"
 # pin-quality data, not a failure: log it and trust the ledger.
 env_scope="$(thalamus_resolve_scope)"
 ledger="$HOME/.thalamus/pins/pins.jsonl"
+#
+# `has("event") | not` skips the lifecycle rows that share this ledger:
+# pin-engaged.sh appends {event: "engaged", session_id, scope, ts}, which carries no
+# room, no agent and no forked_from. Last-wins across both reads those fields as
+# empty — silently, and in the direction that turns a dependent fork back into an
+# apparent independent session.
 ledger_scope=""
 if [ -f "$ledger" ]; then
   ledger_scope=$(jq -r --arg sid "$session_id" \
-    'select(.session_id == $sid) | .scope' "$ledger" 2>/dev/null | tail -1)
+    'select(.session_id == $sid and (has("event") | not)) | .scope' \
+    "$ledger" 2>/dev/null | tail -1)
 fi
 scope="${ledger_scope:-$env_scope}"
 if [ -n "$ledger_scope" ] && [ "$ledger_scope" != "$env_scope" ]; then
@@ -86,7 +93,8 @@ fi
 room=""
 if [ -f "$ledger" ]; then
   room=$(jq -r --arg sid "$session_id" \
-    'select(.session_id == $sid) | .room // ""' "$ledger" 2>/dev/null | tail -1)
+    'select(.session_id == $sid and (has("event") | not)) | .room // ""' \
+    "$ledger" 2>/dev/null | tail -1)
 fi
 room="${room:-$(thalamus_resolve_room)}"
 
@@ -96,7 +104,8 @@ room="${room:-$(thalamus_resolve_room)}"
 forked_from=""
 if [ -f "$ledger" ]; then
   forked_from=$(jq -r --arg sid "$session_id" \
-    'select(.session_id == $sid) | .forked_from // ""' "$ledger" 2>/dev/null | tail -1)
+    'select(.session_id == $sid and (has("event") | not)) | .forked_from // ""' \
+    "$ledger" 2>/dev/null | tail -1)
 fi
 forked_from="${forked_from:-$(thalamus_resolve_forked_from)}"
 

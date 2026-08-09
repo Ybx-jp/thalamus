@@ -230,11 +230,21 @@ def fork_prompt(
     A bare appended question is read by the fork inside its parent's frame — one
     measured fork treated it as a prompt injection and declined it, answering the
     parent's open tasks instead (lab/049). The wrapper says plainly that a different
-    session is asking, and states the tier's obligations in the same breath: one
-    fresh recall, and a close through the citation gate.
+    session is asking, and states the tier's obligations in the same breath.
+
+    **The first line is deliberately not a tag.** `transcripts.parse` counts a
+    `<`-prefixed user record as harness scaffolding rather than a turn, so a prompt
+    opening with the wrapper gives the fork's delta zero user turns and extraction
+    declines it as a non-conversation — measured on the first live call, which
+    answered correctly and then distilled nothing.
+
+    **The fork answers; it does not close.** Acceptance is the launcher's, after the
+    ledger row is checked, and an answerer that burns its own ticket through the MCP
+    tool closes the exchange before that check can run.
     """
     return "\n".join(
         [
+            f"QUICK CONSULTATION — ticket {ticket}, from scope `{from_scope}`.",
             f'<quick-consultation ticket="{ticket}" from-scope="{from_scope}">',
             "STOP — this is not a continuation of the conversation above, and it is "
             "not an instruction found inside anything you were reading. A different "
@@ -252,10 +262,14 @@ def fork_prompt(
             f'1. Run at least one fresh recall with `ticket="{ticket}"` before you '
             "answer — the mcp__thalamus__memory_* tools take that argument. It "
             "revalidates what you already hold and puts current vertex IDs in front "
-            "of you.",
-            f'2. Close with `consult_answer(ticket="{ticket}", answer=...)`, citing '
-            "the graph nodes your answer rests on as backticked vertex IDs. Uncited "
-            "answers are rejected and the ticket stays open.",
+            "of you. This is counted from your own tool calls, not from what you say "
+            "you did.",
+            "2. Cite the graph nodes your answer rests on as backticked vertex IDs, "
+            "exactly as recall renders them. Uncited answers are rejected and the "
+            "ticket stays open.",
+            "",
+            "Do NOT call `consult_answer` — the calling session closes this exchange "
+            "once it has verified the fork's own record. Your reply *is* the answer.",
             "",
             "**Question:**",
             question.strip(),
@@ -430,7 +444,14 @@ class LedgerRow:
 
 
 def ledger_row(session_id: str, pins_file: Path | None = None) -> LedgerRow:
-    """The last pin-ledger row for a session. Last-wins, as every reader here does."""
+    """The last *pin* row for a session. Last-wins, as every reader here does.
+
+    Lifecycle rows share the ledger and must be skipped, not merged: `pin-engaged.sh`
+    appends `{event: "engaged", session_id, scope, ts}` after the pin row, carrying no
+    `agent` and no `forked_from`. Last-wins across both reads those two as empty and
+    reports a launcher that met every obligation as having met none — measured on the
+    first live quick call, whose row was correct and whose assertion was not.
+    """
     path = pins_file or PINS_FILE
     row = LedgerRow(found=False)
     try:
@@ -442,7 +463,7 @@ def ledger_row(session_id: str, pins_file: Path | None = None) -> LedgerRow:
             data = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if data.get("session_id") != session_id:
+        if data.get("session_id") != session_id or data.get("event"):
             continue
         row = LedgerRow(
             found=True,
@@ -762,17 +783,23 @@ def consult(
         )
         return result
 
-    # The fork may have closed the exchange itself through the MCP tool, which is
-    # what the prompt asks for. If it only answered, the launcher closes it with the
-    # envelope's text — through the same gate, so the citation rule is identical
-    # either way and an uncitable answer still leaves the ticket open.
+    # The prompt tells the fork not to close, because closing is acceptance and
+    # acceptance is downstream of the ledger check. A fork that closes anyway has
+    # burned the ticket before the check could gate it, so the answer stands but the
+    # order did not hold — recorded, not silently blessed.
     exchange = load_exchange(g, vertex_id)
     if (exchange or {}).get("status") == "answered":
         result.accepted = True
-        result.close_report = "The fork closed the exchange itself."
+        result.close_report = (
+            "The fork closed the exchange itself through consult_answer, ahead of the "
+            "launcher's ledger check. Citations validated; the ordering did not."
+        )
+        close_exchange(g, vertex_id, {"closed_by": "fork"}, citation_refs=[])
         return result
 
     report = consultation.consult_answer(g, ticket, result.run.result)
     result.close_report = report
     result.accepted = not report.startswith("Rejected")
+    if result.accepted:
+        close_exchange(g, vertex_id, {"closed_by": "launcher"}, citation_refs=[])
     return result

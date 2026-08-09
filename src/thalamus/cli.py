@@ -2020,10 +2020,10 @@ def _cmd_quick(args, parser):
         )
     except quick_mod.QuickRefused as e:
         print(f"Quick consultation refused: {e}", file=sys.stderr)
-        close_connection()
+        close_connection(graph)
         sys.exit(1)
     _persist(graph)
-    close_connection()
+    close_connection(graph)
 
     run = result.run
     print(f"## Quick exchange `{result.exchange_vid}`")
