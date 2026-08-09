@@ -167,7 +167,23 @@ def parse(path: Path) -> TranscriptFacts:
             facts.title = record["aiTitle"]
             continue
 
-        if record.get("cwd"):
+        # FIRST cwd wins, not the last. Claude Code files a transcript under the dir
+        # named for the cwd the session *started* in, and `project` is this cwd's
+        # basename — so taking the last one lets a session that moved (a git worktree,
+        # a `cd`) be filed under one project and attributed to another. Last-wins also
+        # makes the attribution depend on where the session happened to stop: the same
+        # work reads as `thalamus` or as the worktree's name depending on whether the
+        # operator stepped back out before exiting. Measured 2026-08-08 on a session
+        # that entered a worktree mid-run — 663 records at the worktree path against
+        # 345 at the checkout, and only the exit order decided it. The SessionEnd hook
+        # already resolves the project *dir* from the transcript's own location for
+        # exactly this reason; this is the same rule applied to the project *name*.
+        #
+        # `git_branch` is deliberately still last-wins: cwd answers "which project is
+        # this session's", which is fixed when the transcript is filed, while the
+        # branch answers "what was the work on", and a session that switched branches
+        # did its work on the later one.
+        if record.get("cwd") and not facts.cwd:
             facts.cwd = record["cwd"]
         if record.get("gitBranch"):
             facts.git_branch = record["gitBranch"]

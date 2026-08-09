@@ -96,6 +96,53 @@ def test_tool_calls_recover_touched_files_and_their_message_anchors(tmp_path):
     assert facts.user_turns == 1
 
 
+def test_a_session_that_moved_is_attributed_to_where_it_started(tmp_path):
+    """
+    Scenario: A session opens in a checkout, works in a git worktree, and exits there
+
+    Verifications:
+    - `project` is the checkout, not the worktree it ended in
+    - the branch it moved to is still recorded
+
+    Claude Code files a transcript under the dir named for the cwd the session
+    *started* in, so an attribution taken from the last cwd files a session under one
+    project and attributes it to another. It also makes the answer depend on where the
+    session happened to stop — step back out of the worktree before exiting and the
+    same work is `thalamus`; exit inside it and it is the worktree's name. cwd fixes
+    the session's identity, so it is read once; the branch describes the work, so it
+    tracks.
+    """
+    records = [
+        {
+            "type": "user", "uuid": "u1", "timestamp": "2026-08-08T22:00:00Z",
+            "cwd": "/home/dev/thalamus", "gitBranch": "control-plane",
+            "message": {"content": "fold the two copies together"},
+        },
+        {
+            "type": "assistant", "uuid": "a1", "timestamp": "2026-08-08T22:30:00Z",
+            "cwd": "/home/dev/thalamus/.claude/worktrees/console-consolidation",
+            "gitBranch": "console-consolidation",
+            "message": {"content": [{"type": "text", "text": "working in the worktree"}]},
+        },
+        {
+            # Ends in the worktree — the case last-wins got wrong.
+            "type": "assistant", "uuid": "a2", "timestamp": "2026-08-08T23:00:00Z",
+            "cwd": "/home/dev/thalamus/.claude/worktrees/console-consolidation",
+            "gitBranch": "console-consolidation",
+            "message": {"content": [{"type": "text", "text": "done"}]},
+        },
+    ]
+    path = _write_transcript(tmp_path / "-home-dev-thalamus", "s-worktree", records)
+
+    facts = transcripts.parse(path)
+
+    # Verifies: attribution follows the cwd the transcript was filed under, not the exit cwd
+    assert facts.cwd == "/home/dev/thalamus"
+    assert facts.project == "thalamus"
+    # Verifies: the branch still reflects where the work ended up
+    assert facts.git_branch == "console-consolidation"
+
+
 def test_external_ingress_results_are_collected_verbatim(tmp_path):
     """
     Scenario: A session WebFetched a page and also ran a Bash command
