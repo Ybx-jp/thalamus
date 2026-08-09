@@ -73,7 +73,7 @@ existing expert") before it ships.
 | Structural-safety / trust | Consultant | Nodeglass, Thalamus | Provenance, gating, poisoning, policy engines, red-teaming. Second pillar. |
 | Retrieval / memory-architecture | Consultant | Thalamus | Vector vs. graph memory, chunking, reranking, RAG eval. Self-referential dogfooding; where the "graphrag expert" instinct actually belongs. |
 | Rhythm-game / music-domain | Consultant | StepMania | Chart conventions, biomechanics, groove radar, onset/music-theory. The *taste* side; pairs with DL expert. |
-| Homelab / self-hosting | Spine (ops) | media server + machine + control-plane surfaces | **Live** (`config/experts/homelab.yaml`) — see below. First spine expert; distillation-fed, empty feed surface. |
+| Homelab / self-hosting | Spine (ops) | media server + machine + console surfaces | **Live** (`config/experts/homelab.yaml`) — see below. First spine expert; distillation-fed, empty feed surface. |
 | Teacher | Spine | every learning initiative + career narrative | **Live** (`config/experts/teacher.yaml`) — see below. Curriculum design over a persistent learner model; second spine, first dual-fed. |
 | Career-narrative / interview | Consultant | job hunt | **Absorbed into `teacher`** — which framings landed is a learning record; the experience library rides in the teacher's manifest. |
 
@@ -116,18 +116,18 @@ deferred it at the expert-#2 decision have since flipped:
 
 1. **Pinning is live** (M3, "the process is the pin"), so a spine expert is
    exercisable: sessions whose dominant domain is the box — tailnet serving, the
-   control-plane and course PWAs, systemd units, the media stack — get pinned to
+   console and course PWAs, systemd units, the media stack — get pinned to
    `homelab` and distill there instead of diluting `main`.
 2. **The corpus objection was about bootstrap, not accumulation.** The media-server
    transcripts stay outside the archive allowlist (VPN credentials), but the expert
-   feeds forward from pinned sessions; the 2026-07-17 control-plane sessions alone
+   feeds forward from pinned sessions; the 2026-07-17 console sessions alone
    minted reusable ops claims (WebAPKs ignore ports; `tailscale serve` strips the
    mount path; ttyd base-path targets).
 
 What distinguishes it structurally: the two consultants are web-ingestion-fed,
 this expert is **distillation-fed** first — tier-1 first-party episodic memory —
-plus operator-hand-fed local files (first feed 2026-07-18: the roster/plane ops
-notes, making the control-plane seam hazards citable in consultations), so the
+plus operator-hand-fed local files (first feed 2026-07-18: the roster/console ops
+notes, making the console seam hazards citable in consultations), so the
 manifest declares the kinds that feed writes while the allowlist stays empty
 (web ingestion blocked; local files bypass the list as the curation decision
 itself). It passes the skill-vs-expert test precisely where the
