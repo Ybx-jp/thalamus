@@ -121,6 +121,78 @@ def test_a_directory_the_picker_never_offered_cannot_be_spawned_into(tmp_path):
         assert status == 400 and "allowed list" in body["error"]
 
 
+def test_a_window_reports_the_room_it_was_created_in(tmp_path):
+    """
+    Scenario: tmux lists a member window whose start command carries the room
+
+    Verifications:
+    - the room is projected onto the window
+    - a window created without one reports no room
+
+    Read from `#{pane_start_command}` rather than the window name: the launcher
+    puts the room in an `env` prefix on the window's argv, which is what a
+    `respawn-window` re-executes, so the start command agrees with the process even
+    after the recycle button drops tmux's `-e`. The window name stays the bare
+    scope — the room is a second dimension over the roster, not a renaming of it.
+    """
+    member = ("2\thomelab\t1\tclaude\t60\t50\t0\t/home/op/code/thalamus\t"
+              "env THALAMUS_ROOM=alpha CLAUDE_CONFIG_DIR=/home/op/.thalamus/rooms/alpha "
+              "claude --agent thalamus-homelab --name alpha-homelab")
+    solo = "1\tmain\t0\tclaude\t60\t50\t0\t/home/op/code/thalamus\tclaude"
+
+    rooms = {w["index"]: w["room"] for w in parse_windows("\n".join([member, solo]))}
+
+    assert rooms == {2: "alpha", 1: ""}
+
+
+def test_a_room_name_that_is_not_a_room_name_is_refused(tmp_path):
+    """
+    Scenario: a spawn request naming a room with a path or regex metacharacter
+
+    Verifications:
+    - it is refused before anything is created
+
+    Naming a room IS creating it (the launcher provisions the dir on the way in),
+    so this field is the one place a client's string reaches both a filesystem path
+    under ROOMS_DIR and the pattern `room-guard.sh` interpolates to decide who a
+    member may message.
+    """
+    code = tmp_path / "code"
+    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
+
+    with _serving(cfg) as post:
+        for bad in ("../escape", "a/b", "Alpha", "a|b"):
+            status, body = post("/api/spawn",
+                                {"scope": "main", "dir": str(code / "alpha"), "room": bad})
+            assert status == 400 and body["error"] == "invalid room name", bad
+
+
+def test_the_spawn_endpoint_names_the_room_and_never_inherits_one(tmp_path, monkeypatch):
+    """
+    Scenario: the console spawns into a room, and then spawns solo
+
+    Verifications:
+    - the room from the request reaches `pin.spawn`
+    - a request with no room passes "" — not None, which would mean "read the env"
+
+    The console is a long-lived server process. If it left the room to
+    `resolve_room()`, every session spawned from the phone would silently join
+    whatever room the *server* was started in, and the phone would have no way to
+    say otherwise.
+    """
+    code = tmp_path / "code"
+    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
+    seen: list[dict] = []
+    monkeypatch.setattr(server.pin, "spawn",
+                        lambda scope, cwd, **kw: seen.append({"scope": scope, **kw}))
+
+    with _serving(cfg) as post:
+        post("/api/spawn", {"scope": "main", "dir": str(code / "alpha"), "room": "alpha"})
+        post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
+
+    assert [s["room"] for s in seen] == ["alpha", ""]
+
+
 def test_an_unknown_scope_is_refused_before_any_directory_check(tmp_path):
     cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"))
 

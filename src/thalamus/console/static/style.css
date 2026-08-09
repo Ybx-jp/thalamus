@@ -554,3 +554,31 @@ textarea:focus { outline: none; border-color: var(--chan); }
   border-color: var(--tab, var(--chan));
 }
 .chips-dirs .chip { font-size: .64rem; }
+
+/* ---- Rooms ---- */
+/* A room member's tab already carries the room's colour (hueForRoom); the mark is
+   what survives a palette collision between two rooms, and what tells a room's
+   `main` from the anchor at a glance. */
+.chan-tab .nm .room {
+  color: var(--tab);
+  margin-right: .18em;
+  font-size: .85em;
+}
+/* The room filter sits in the same bar as the workspace filter but reads as its
+   own dimension: lit by the room's own hue rather than the channel's, so the two
+   rows can be on at once without looking like one selection. */
+.ws.room-ws.on {
+  background: var(--chan-room, var(--chan));
+  border-color: var(--chan-room, var(--chan));
+}
+.admin-room {
+  display: inline-block;
+  margin-left: .4rem;
+  padding: 0 .3rem;
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: .55rem;
+  letter-spacing: .04em;
+  vertical-align: middle;
+}

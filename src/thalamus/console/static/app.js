@@ -17,12 +17,22 @@ const STALE_MS = 5000;
 const MAIN_HUE = "#9a8cff";                                        // violet
 const PALETTE = ["#e0a45c", "#4db6a6", "#6db3f2", "#e07a9c",       // amber, teal, sky, rose
                  "#8fce6b", "#c79bf0"];                            // moss, orchid
-function hueFor(name, idx) {
-  if (name === "main") return MAIN_HUE;
+function hashHue(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (Math.imul(h, 31) + name.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
+function hueFor(name, idx) {
+  if (name === "main") return MAIN_HUE;
+  return hashHue(name);
+}
+// In a room the colour comes from the ROOM, not the scope — so co-membership is
+// what reads at a glance, which is the thing a room is. Two `homelab` tabs in
+// different rooms are then different colours, and a room's `main` and `literature`
+// are the same one. The room badge on the tab carries the name, because a palette
+// of six cannot promise two rooms different colours.
+function hueForRoom(room) { return hashHue("room:" + room); }
+function hueOf(w) { return w.room ? hueForRoom(w.room) : hueFor(w.name, w.index); }
 
 const els = {
   rail: document.getElementById("rail"),
@@ -42,6 +52,7 @@ const els = {
   recycleNote: document.getElementById("recycle-note"),
   spawn: document.getElementById("spawn"),
   spawnScopes: document.getElementById("spawn-scopes"),
+  spawnRooms: document.getElementById("spawn-rooms"),
   spawnDirs: document.getElementById("spawn-dirs"),
   spawnGo: document.getElementById("spawn-go"),
   spawnLog: document.getElementById("spawn-log"),
@@ -71,9 +82,19 @@ function workspaces() {
   return [...seen].map(([path, label]) => ({ path, label }));
 }
 const multiWs = () => workspaces().length > 1;
-// Tabs the rail shows: all of them, or just the selected workspace's.
+
+// Rooms are the second dimension over the same set of windows. A session is now
+// (expert, directory, room), and the two filters compose: they answer different
+// questions — "what project" and "which collaboration" — and a session that is in
+// a room is still somewhere.
+let activeRoom = localStorage.getItem("plane-room") || null;
+function roomsPresent() {
+  return [...new Set(windows.map((w) => w.room).filter(Boolean))];
+}
+// Tabs the rail shows: all of them, or just the selected workspace's and room's.
 const visibleWindows = () =>
-  activeWs === null ? windows : windows.filter((w) => w.cwd === activeWs);
+  windows.filter((w) => (activeWs === null || w.cwd === activeWs) &&
+                        (activeRoom === null || (w.room || "") === activeRoom));
 
 function setChannelHue(hue) {
   document.documentElement.style.setProperty("--chan", hue);
@@ -81,8 +102,9 @@ function setChannelHue(hue) {
 
 function renderWsBar() {
   const ws = workspaces();
-  // One directory (the common case) → no bar at all, layout unchanged.
-  if (ws.length < 2) {
+  const rooms = roomsPresent();
+  // One directory and no rooms (the common case) → no bar at all, layout unchanged.
+  if (ws.length < 2 && rooms.length === 0) {
     els.wsbar.hidden = true;
     els.wsbar.innerHTML = "";
     return;
@@ -99,11 +121,46 @@ function renderWsBar() {
     b.addEventListener("click", () => selectWorkspace(path));
     return b;
   };
-  els.wsbar.appendChild(mk("⌂ all", null, "Show every session"));
-  for (const w of ws) {
-    const count = windows.filter((x) => x.cwd === w.path).length;
-    const full = (windows.find((x) => x.cwd === w.path) || {}).cwd_short || w.path;
-    els.wsbar.appendChild(mk(`${w.label} ${count}`, w.path, full));
+  if (ws.length > 1) {
+    els.wsbar.appendChild(mk("⌂ all", null, "Show every session"));
+    for (const w of ws) {
+      const count = windows.filter((x) => x.cwd === w.path).length;
+      const full = (windows.find((x) => x.cwd === w.path) || {}).cwd_short || w.path;
+      els.wsbar.appendChild(mk(`${w.label} ${count}`, w.path, full));
+    }
+  }
+  if (!rooms.length) return;
+  const mkRoom = (label, room, title, hue) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ws room-ws" + (activeRoom === room ? " on" : "");
+    b.textContent = label;
+    b.title = title;
+    if (hue) b.style.setProperty("--chan-room", hue);
+    b.addEventListener("click", () => selectRoom(activeRoom === room ? null : room));
+    return b;
+  };
+  els.wsbar.appendChild(mkRoom("◈ any", null, "Sessions in every room, and outside"));
+  for (const r of rooms) {
+    const count = windows.filter((x) => x.room === r).length;
+    els.wsbar.appendChild(
+      mkRoom(`◈ ${r} ${count}`, r, `Only room ${r}`, hueForRoom(r)));
+  }
+  const solo = windows.filter((x) => !x.room).length;
+  if (solo) els.wsbar.appendChild(mkRoom(`solo ${solo}`, "", "Only sessions in no room"));
+}
+
+function selectRoom(room) {
+  activeRoom = room;
+  if (room === null) localStorage.removeItem("plane-room");
+  else localStorage.setItem("plane-room", room);
+  renderWsBar();
+  renderRail();
+  // The filter must never hide the window being viewed — the pane would keep
+  // updating with no tab to explain where it came from.
+  if (!visibleWindows().some((w) => w.index === activeIdx)) {
+    const first = visibleWindows()[0];
+    if (first) selectWindow(first.index);
   }
 }
 
@@ -129,18 +186,20 @@ function renderRail() {
   els.rail.innerHTML = "";
   const showCwd = multiWs();
   for (const w of visibleWindows()) {
-    const hue = hueFor(w.name, w.index);
+    const hue = hueOf(w);
     const tab = document.createElement("button");
     tab.className = "chan-tab" + (showCwd ? " two-line" : "");
     tab.setAttribute("role", "tab");
     tab.setAttribute("aria-selected", String(w.index === activeIdx));
     tab.style.setProperty("--tab", hue);
     tab.dataset.idx = w.index;
-    tab.title = w.cwd_short ? `${w.name} — ${w.cwd_short}` : w.name;
+    tab.title = (w.room ? `[${w.room}] ` : "") +
+      (w.cwd_short ? `${w.name} — ${w.cwd_short}` : w.name);
     tab.innerHTML =
       `<span class="dot"></span>` +
       `<span class="tab-text">` +
-      `<span class="nm">${escapeHtml(w.name)}</span>` +
+      `<span class="nm">${w.room ? `<span class="room">◈</span>` : ""}` +
+      `${escapeHtml(w.name)}</span>` +
       (showCwd ? `<span class="cwd">${escapeHtml(w.cwd_label || "?")}</span>` : "") +
       `</span>`;
     tab.classList.toggle("recycling", !!w.recycling);
@@ -158,7 +217,7 @@ function syncActiveChrome() {
   chromeIdx = activeIdx;
   const w = windows.find((x) => x.index === activeIdx);
   if (!w) return;
-  setChannelHue(hueFor(w.name, w.index));
+  setChannelHue(hueOf(w));
   document.title = w.cwd_label ? `${w.name} · ${w.cwd_label}` : `${w.name} · Thalamus`;
   commands = null; // project skills are per-directory; refetch for this window
 }
@@ -472,8 +531,9 @@ function renderAdminWindows() {
     const state = w.closing ? "distilling…" : w.recycling ? "restarting…"
       : w.dead ? "dead" : (w.command || "");
     row.innerHTML =
-      `<span class="admin-dot" style="--tab:${hueFor(w.name, w.index)}"></span>` +
+      `<span class="admin-dot" style="--tab:${hueOf(w)}"></span>` +
       `<span class="admin-name">${escapeHtml(w.name)}` +
+      (w.room ? `<span class="admin-room">◈ ${escapeHtml(w.room)}</span>` : "") +
       (w.cwd_label ? `<span class="admin-cwd" title="${escapeHtml(w.cwd_short || "")}">${escapeHtml(w.cwd_label)}</span>` : "") +
       `</span>` +
       (w.anchor ? `<span class="admin-viewing anchor">anchor</span>` : "") +
@@ -504,7 +564,8 @@ function renderAdminWindows() {
 // Destructive-action prompts must name the directory too — "Restart homelab?" is
 // ambiguous the moment the same expert runs in two projects, and the wrong answer
 // ends a conversation.
-const wlabel = (w) => (w.cwd_label ? `${w.name} (${w.cwd_label})` : w.name);
+const wlabel = (w) => (w.room ? `${w.room}-${w.name}` : w.name) +
+  (w.cwd_label ? ` (${w.cwd_label})` : "");
 
 async function recycle(w, quiet) {
   // Recycling the window you're conversing in ends that conversation. The plane
@@ -536,6 +597,10 @@ async function closeWin(w) {
 // Pick a scope (expert) + a directory; the server opens a detached pinned window via
 // `thalamus spawn`. Experts are no longer all booted at bring-up — only spawned when used.
 let spawnOpts = null, spawnScope = null, spawnDir = null, selectNewestOnNextPoll = false;
+// "" is solo — the ordinary roster. A room is chosen, or typed to make a new one:
+// naming it IS creating it, since the launcher provisions the config dir on the way
+// in. There is no separate create step to forget from a phone.
+let spawnRoom = "";
 async function openSpawn() {
   els.spawn.hidden = false;
   els.admin.hidden = true;
@@ -546,7 +611,7 @@ async function openSpawn() {
     try {
       const r = await fetch("api/spawn-options", { cache: "no-store" });
       spawnOpts = await r.json();
-    } catch (e) { spawnOpts = { scopes: [], dirs: [] }; }
+    } catch (e) { spawnOpts = { scopes: [], dirs: [], rooms: [] }; }
   }
   renderSpawnChips();
 }
@@ -571,14 +636,47 @@ function renderSpawnChips() {
     els.spawnDirs.appendChild(
       chip(label, d.path === spawnDir, () => { spawnDir = d.path; renderSpawnChips(); }));
   }
+  els.spawnRooms.innerHTML = "";
+  const known = spawnOpts.rooms || [];
+  // Rooms live and dead in one list: a room whose members have all been closed is
+  // still a room (its config dir, and its members' transcripts, are still there),
+  // and rejoining it is the normal way to pick a collaboration back up.
+  const rooms = [...new Set([...known, ...windows.map((w) => w.room).filter(Boolean)])];
+  els.spawnRooms.appendChild(
+    chip("solo", spawnRoom === "", () => { spawnRoom = ""; renderSpawnChips(); }));
+  for (const r of rooms) {
+    const live = windows.filter((w) => w.room === r).length;
+    const c = chip(live ? `◈ ${r} ${live}` : `◈ ${r}`, r === spawnRoom,
+                   () => { spawnRoom = r; renderSpawnChips(); });
+    c.style.setProperty("--tab", hueForRoom(r));
+    els.spawnRooms.appendChild(c);
+  }
+  els.spawnRooms.appendChild(chip("+ new", false, newRoom));
   els.spawnGo.disabled = !(spawnScope && spawnDir);
+}
+// A prompt, not an inline field: it is the rarest action on the sheet, and a
+// text input in the chip row would take the tap target every other choice needs
+// at 60 columns.
+function newRoom() {
+  const name = (prompt("New room name (lowercase letters, digits, hyphens):") || "").trim();
+  if (!name) return;
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
+    els.spawnLog.hidden = false;
+    els.spawnLog.textContent =
+      `"${name}" is not a room name — lowercase letters, digits and hyphens only.`;
+    return;
+  }
+  spawnRoom = name;
+  renderSpawnChips();
 }
 async function doSpawn() {
   if (!(spawnScope && spawnDir)) return;
   els.spawnGo.disabled = true;
   els.spawnLog.hidden = false;
-  els.spawnLog.textContent = `spawning ${spawnScope} in ${spawnDir}…`;
-  const { ok, data } = await postJson("api/spawn", { scope: spawnScope, dir: spawnDir });
+  els.spawnLog.textContent = `spawning ${spawnScope} in ${spawnDir}` +
+    (spawnRoom ? ` — room ${spawnRoom}` : "") + "…";
+  const { ok, data } = await postJson("api/spawn",
+    { scope: spawnScope, dir: spawnDir, room: spawnRoom });
   if (ok && data.ok) {
     els.spawnLog.textContent = data.output || "spawned.";
     selectNewestOnNextPoll = true;

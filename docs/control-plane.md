@@ -110,10 +110,10 @@ warning when you use it.
 **Tabs** are windows. The dot pulses when a session's screen changed since the
 last poll, so you can see which one is talking while you read another.
 
-**The workspace bar** appears only once your sessions span more than one
-directory, and filters the tabs to one project. A filtered-away session that
-changes lights up its workspace chip, so filtering never makes you blind to the
-others.
+**The workspace bar** appears once your sessions span more than one directory, or
+any of them is in a room, and filters the tabs to one project (and/or one room). A
+filtered-away session that changes lights up its workspace chip, so filtering never
+makes you blind to the others.
 
 **The composer** sends a line to the active session. `/` at the start opens the
 slash-command strip — the claude built-ins plus your user skills plus *that
@@ -123,10 +123,25 @@ cycle), arrows, page up/down, `tab`, `⏎`, `clr` (Ctrl-U) and `⌃C`. `A−`/`A
 the font off the auto-fit size, which is computed so a full pane line fits your
 screen without horizontal scrolling.
 
-**＋ spawns a session**: pick an expert scope and a directory, and the server opens
-a detached pinned window there. The scope decides which memory it reads and writes;
-the directory decides what the work is about. See
+**＋ spawns a session**: pick an expert scope, a directory, and a room, and the
+server opens a detached pinned window there. The scope decides which memory it
+reads and writes; the directory decides what the work is about. See
 [02](02-expert-subgraphs.md) for what that pairing means.
+
+**Rooms** are the third choice on that sheet, and default to `solo`. A room is a
+private roster: its members can see and message each other and nobody else, which
+is a boundary in the harness itself rather than a convention
+([07](07-harness-integration.md)). Tapping `+ new` and naming one is all it takes
+to create it — the launcher provisions the room the first time a member enters, so
+there is no setup step that needs a keyboard.
+
+A room member's tab takes its colour from the **room** rather than its scope, so
+co-membership is what reads at a glance: two `homelab` sessions in different rooms
+are different colours, and a room's `main` and `literature` are the same one. A ◈
+marks the tab, since six palette entries cannot promise two rooms different
+colours, and the workspace bar grows a room row — a second filter that composes
+with the directory one, because "what project" and "which collaboration" are
+different questions about the same window.
 
 **⚙ is the admin sheet**:
 

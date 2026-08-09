@@ -569,6 +569,21 @@ blocked — "cross-session permission laundering" — a norm stated in a tool
 description, enforced by nothing, and orthogonal to trust tier. Nothing in the
 channel marks a claim that crosses scopes.
 
+**A room is entered with `--room`, on any launcher.** `thalamus pin`, `spawn` and
+`roster` all take it; the flag beats `$THALAMUS_ROOM` so the control plane — a
+long-lived server process — can put a window in a room without being in one, and
+`--room ''` says explicitly not in a room. `thalamus room list|show|create`
+inspects them. Naming a room is what creates it: `pin.ensure_room` provisions the
+config dir on the way in, on every launch, because the failure it prevents is
+silent — `CLAUDE_CONFIG_DIR` pointed at a directory that does not exist is not an
+error the harness reports, it is a member that starts, authenticates as nobody,
+arms no hooks and distills nowhere. There is no create step a phone could skip.
+
+**Members are named `<room>-<scope>`** (`claude --name`), and that name is what
+lands in the session descriptor's `name` field — the address `SendMessage`
+resolves and the string the guard's roommate pattern matches. Without it the
+guard has no reachable allow-path: it could only ever block.
+
 **The room boundary is enforced at the sender** (`room-guard.sh`, PreToolUse on
 `SendMessage`). A session with `THALAMUS_ROOM` set may message only room-mates —
 names prefixed `<room>-`, the form the launcher gives members — plus `main` and
@@ -609,7 +624,13 @@ in both directions ([lab/046](../lab/046-the-third-channel-is-the-transcript.md)
 and owns `sessions/`, `projects/`, `todos/` and `statsig/`.** It symlinks
 `skills`, `agents`, `plugins`, `commands`, `settings.json`,
 `settings.local.json` and `.credentials.json`, and copies `.claude.json` because
-members write to it. Every one of those is load-bearing: without
+members write to it — `ensure_room` builds exactly that, and repairs a room built
+to the withdrawn shape by replacing a symlinked `projects/` with a directory the
+room owns. The copy is refreshed rather than taken once: only `mcpServers` is
+carried forward from the operator's own, because a server added after the room
+existed would otherwise be absent from it, and a member without the `thalamus`
+server runs with no memory tools and says nothing. Every one of those is
+load-bearing: without
 `.credentials.json` a fresh config dir cannot authenticate at all; without
 `settings.json` a member arms **zero** Thalamus hooks, since every hook is
 registered user-scope and that scope moves with the config dir; without
@@ -638,6 +659,27 @@ design and has no such channel. So `thalamus pin` wraps a member's command as
 besides, so the window's environment agrees with the process's. `tmux
 set-environment -g` is not the answer: it reaches every window created without
 `-e`.
+
+**And a roomless launch must say so, because silence is inherited.** `-e` on
+`new-session` — unlike `new-window` — *does* store its variables in the tmux
+session environment, so a session created for a room hands `THALAMUS_ROOM` and
+`CLAUDE_CONFIG_DIR` to every later window: a solo spawn joins the room's roster
+and writes its transcripts into the room's `projects/` while every surface still
+shows an ordinary session. Two answers, both applied — the launcher takes the
+variables back out of the session environment after creating a session with them,
+and a roomless command is wrapped `env -u THALAMUS_ROOM -u CLAUDE_CONFIG_DIR`.
+Unset, never `CLAUDE_CONFIG_DIR=$HOME/.claude`: naming the default is not a no-op,
+because with the variable set the harness reads `$CLAUDE_CONFIG_DIR/.claude.json`
+while an unset one stays at `$HOME/.claude.json`, so spelling out the default
+hands the session an empty file and no MCP servers. An operator's own deliberate
+override is passed through untouched.
+
+The room is legible per-window through `#{pane_start_command}`, which renders that
+same `env` prefix: the control plane reads each window's room from it, the way it
+reads cwd from `#{pane_current_path}`. The tmux **window name stays the bare
+scope** — a room is a second dimension over the roster, not a renaming of it — and
+roster idempotency keys on (name, room), so a room's `main` and the roster's own
+`main` are two windows and neither suppresses the other.
 
 Two variables one word apart govern different trees, and neither should ever be
 called just "the config dir": **`CLAUDE_CONFIG_DIR`** is the harness's user-config

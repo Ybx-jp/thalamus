@@ -30,6 +30,12 @@ from thalamus.plane.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
 
+ROOM_FLAG_HELP = (
+    "Launch into this room — a private config dir (~/.thalamus/rooms/<room>/) that "
+    "partitions peer discovery, so members see only each other. Created on first "
+    "use. Default: $THALAMUS_ROOM, else no room."
+)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Thalamus — federated graph memory for coding agents")
@@ -587,6 +593,7 @@ def main():
         "pin", help="Launch a claude session pinned to an expert scope"
     )
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
+    pin_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
 
     spawn_parser = subparsers.add_parser(
         "spawn", help="Open one on-demand pinned tmux window (a chosen scope + directory)"
@@ -599,6 +606,7 @@ def main():
     spawn_parser.add_argument(
         "--session", default="thalamus", help="tmux session to open the window in"
     )
+    spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
 
     roster_parser = subparsers.add_parser(
         "roster", help="Bring up the control plane (the `main` anchor; --all for every expert)"
@@ -607,6 +615,19 @@ def main():
         "--all", action="store_true",
         help="Open one window per expert manifest (legacy full roster)"
     )
+    roster_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
+
+    room_parser = subparsers.add_parser(
+        "room", help="Rooms: the collaborations sessions are launched into"
+    )
+    room_sub = room_parser.add_subparsers(dest="room_command")
+    room_sub.add_parser("list", help="Every room that has a config dir")
+    room_show = room_sub.add_parser("show", help="What one room's config dir holds")
+    room_show.add_argument("room", help="Room name")
+    room_create = room_sub.add_parser(
+        "create", help="Provision a room's config dir without launching anything"
+    )
+    room_create.add_argument("room", help="Room name (lowercase letters, digits, hyphens)")
 
     # Visualize command
     visualize_parser = subparsers.add_parser(
@@ -713,6 +734,8 @@ def main():
         _cmd_spawn(args)
     elif args.command == "roster":
         _cmd_roster(args)
+    elif args.command == "room":
+        _cmd_room(args, parser)
     elif args.command == "visualize":
         _cmd_visualize(args)
     elif args.command == "console":
@@ -1789,7 +1812,7 @@ def _cmd_pin(args):
     from thalamus.harness.pin import PROJECT_ROOT, launch
 
     try:
-        launch(args.scope, PROJECT_ROOT)
+        launch(args.scope, PROJECT_ROOT, room=args.room)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"Pin failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1802,7 +1825,7 @@ def _cmd_spawn(args):
 
     cwd = args.dir if args.dir is not None else PROJECT_ROOT
     try:
-        spawn(args.scope, cwd, session=args.session)
+        spawn(args.scope, cwd, session=args.session, room=args.room)
     except (FileNotFoundError, ValueError, RuntimeError, subprocess.CalledProcessError) as e:
         print(f"Spawn failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1812,10 +1835,66 @@ def _cmd_roster(args):
     from thalamus.harness.pin import PROJECT_ROOT, roster
 
     try:
-        roster(PROJECT_ROOT, full=getattr(args, "all", False))
-    except RuntimeError as e:
+        roster(PROJECT_ROOT, full=getattr(args, "all", False), room=args.room)
+    except (ValueError, RuntimeError) as e:
         print(f"Roster failed: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _cmd_room(args, parser):
+    from thalamus.harness import pin
+
+    if args.room_command == "create":
+        try:
+            config = pin.ensure_room(args.room)
+        except (ValueError, RuntimeError) as e:
+            print(f"Room failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Room `{args.room}` ready at {config}")
+        return
+
+    if args.room_command == "show":
+        config = pin.room_config_dir(args.room)
+        if not config.is_dir():
+            print(f"No room `{args.room}` — `thalamus room create {args.room}` makes one.",
+                  file=sys.stderr)
+            sys.exit(1)
+        print(f"Room `{args.room}` — {config}")
+        sessions = sorted((config / "sessions").glob("*.json")) \
+            if (config / "sessions").is_dir() else []
+        print(f"  live members: {len(sessions)}")
+        transcripts_dir = config / "projects"
+        count = len(list(transcripts_dir.glob("*/*.jsonl"))) if transcripts_dir.is_dir() else 0
+        print(f"  transcripts:  {count} (distilled from here, not ~/.claude/projects)")
+        host = pin.host_config_dir()
+        for name in pin.ROOM_LINKED:
+            link = config / name
+            if link.is_symlink():
+                state = "→ " + str(link.readlink())
+            elif not (host / name).exists():
+                # Nothing to borrow. Reported plainly rather than as a fault: an
+                # operator with no `commands/` should not be told a room is broken.
+                state = f"— none at {host / name}"
+            else:
+                state = "MISSING" if not link.exists() else "not a link (stale copy)"
+            print(f"  {name:22} {state}")
+        copied = config / pin.ROOM_COPIED
+        print(f"  {pin.ROOM_COPIED:22} {'copy' if copied.is_file() else 'MISSING'}")
+        return
+
+    if args.room_command == "list":
+        names = pin.rooms()
+        if not names:
+            print("No rooms. `thalamus spawn <scope> --room <name>` opens one.")
+            return
+        for name in names:
+            config = pin.room_config_dir(name)
+            live = len(list((config / "sessions").glob("*.json"))) \
+                if (config / "sessions").is_dir() else 0
+            print(f"{name:20} {live} live member(s)   {config}")
+        return
+
+    parser.parse_args(["room", "--help"])
 
 
 def _cmd_visualize(args):

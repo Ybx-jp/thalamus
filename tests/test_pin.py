@@ -8,6 +8,7 @@ verified live (docs/07, lab/003) — a launcher can only be tested by the proces
 it launches, which is exactly the lab/001 boundary.
 """
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -168,7 +169,8 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     - the room reaches the process through BOTH channels: tmux `-e` and an `env`
       prefix on the window's own argv
     - CLAUDE_CONFIG_DIR points at the room's config dir, which IS the boundary
-    - no room set leaves the argv untouched
+    - the member is named `<room>-<scope>`, the address the guard admits
+    - outside a room the argv *unsets* both variables rather than staying silent
 
     The argv prefix is the load-bearing one. `-e` on `new-window` sets only the
     initial process environment — tmux does not store it in the session env — so
@@ -188,6 +190,7 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
     monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus.harness.pin.ensure_room", lambda room, host=None: None)
     monkeypatch.setenv("THALAMUS_ROOM", "alpha")
 
     spawn("homelab", tmp_path, base=REPO_CONFIG)
@@ -205,10 +208,215 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     assert f"CLAUDE_CONFIG_DIR={room_dir}" in after[: after.index("claude")]
     assert "THALAMUS_ROOM=alpha" in after[: after.index("claude")]
 
-    # Verifies: outside a room nothing is wrapped
+    # Verifies: the member carries the name the guard's roommate pattern admits
+    assert after[after.index("--name") + 1] == "alpha-homelab"
+
+    # Verifies: outside a room the argv says so, rather than saying nothing.
+    # `new-session -e` stores its variables in the tmux SESSION environment (unlike
+    # `new-window -e`), so a session created for a room hands them to every later
+    # window; silence would let a roomless spawn inherit the room's config dir and
+    # join its roster invisibly. `-u`, not `CLAUDE_CONFIG_DIR=$HOME/.claude`:
+    # naming the default is not a no-op, it moves `.claude.json` to an empty file.
     calls.clear()
     monkeypatch.delenv("THALAMUS_ROOM")
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     spawn("homelab", tmp_path, base=REPO_CONFIG)
     plain = [c for c in calls if "new-session" in c][0]
-    assert plain[plain.index("--") + 1] == "claude"
-    assert not [a for a in plain if a.startswith("CLAUDE_CONFIG_DIR")]
+    after = plain[plain.index("--") + 1:]
+    assert after[: after.index("claude")] == ["env", "-u", "THALAMUS_ROOM",
+                                              "-u", "CLAUDE_CONFIG_DIR"]
+    assert "--name" not in after
+    assert not [a for a in plain if a.startswith("CLAUDE_CONFIG_DIR=")]
+
+
+def test_a_deliberate_config_dir_override_survives_a_roomless_launch(tmp_path, monkeypatch):
+    """
+    Scenario: the operator runs with their own CLAUDE_CONFIG_DIR, and spawns outside a room
+
+    Verifications:
+    - the override is passed through, not unset
+
+    Clearing the room must not clear an operator's own config tree. The variable is
+    only stripped when it is unset or points into ROOMS_DIR — the leak this guards
+    against is a room's dir arriving where no room was asked for, not a config dir
+    the operator chose.
+    """
+    calls: list[list[str]] = []
+    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus.harness.pin.subprocess.run",
+                        lambda cmd, *a, **kw: (calls.append(cmd), subprocess.CompletedProcess(
+                            cmd, 1 if "has-session" in cmd else 0, stdout="", stderr=""))[1])
+    monkeypatch.delenv("THALAMUS_ROOM", raising=False)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/home/someone/.config/claude")
+
+    spawn("homelab", tmp_path, base=REPO_CONFIG)
+
+    after = [c for c in calls if "new-session" in c][0]
+    after = after[after.index("--") + 1:]
+    assert "CLAUDE_CONFIG_DIR=/home/someone/.config/claude" in after[: after.index("claude")]
+    assert "-u" in after[: after.index("claude")]  # THALAMUS_ROOM still cleared
+
+
+def _host(tmp_path: Path) -> Path:
+    """A stand-in for the operator's own ~/.claude, with the entries a room borrows."""
+    host = tmp_path / "host-claude"
+    (host / "skills").mkdir(parents=True)
+    (host / "agents").mkdir()
+    (host / "plugins").mkdir()
+    (host / ".credentials.json").write_text('{"token": "x"}')
+    (host / "settings.json").write_text('{"hooks": {}}')
+    (host / "settings.local.json").write_text('{"permissions": {}}')
+    return host
+
+
+def test_ensure_room_builds_the_measured_layout(tmp_path, monkeypatch):
+    """
+    Scenario: a room is entered for the first time
+
+    Verifications:
+    - the trees a room must own are real directories, not links
+    - the trees it borrows are symlinks onto the operator's own
+    - a host entry that does not exist produces no dangling link
+    - `.claude.json` is a copy, and carries the operator's mcpServers
+
+    The own/borrow split is the whole design (lab/046): `projects/` shared is a
+    transcript channel out of the room, while `settings.json` NOT shared is a
+    member with zero Thalamus hooks — each side of the split fails a different way.
+    """
+    monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
+    host = _host(tmp_path)
+    (host.parent / ".claude.json").write_text('{"mcpServers": {"thalamus": {"cmd": "x"}}}')
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: host.parent))
+
+    config = pin.ensure_room("alpha", host=host)
+
+    for owned in pin.ROOM_OWNED:
+        assert (config / owned).is_dir() and not (config / owned).is_symlink(), owned
+    for linked in ("skills", "agents", "plugins", "settings.json",
+                   "settings.local.json", ".credentials.json"):
+        assert (config / linked).is_symlink(), linked
+        assert (config / linked).readlink() == host / linked
+    assert not (config / "commands").exists()  # the host has none — no dead link
+
+    copied = config / ".claude.json"
+    assert copied.is_file() and not copied.is_symlink()
+    assert json.loads(copied.read_text())["mcpServers"] == {"thalamus": {"cmd": "x"}}
+
+
+def test_ensure_room_replaces_a_symlinked_projects_dir(tmp_path, monkeypatch):
+    """
+    Scenario: a room dir built under the withdrawn lab/045 shape, where `projects/`
+              was symlinked back to the real config dir
+
+    Verifications:
+    - the link is replaced by a directory the room owns
+    - the operator's own transcripts are untouched
+
+    This is the repair that closes the third channel. `claude --resume` consults
+    neither the discovery roster nor the send path — it reads transcripts off disk,
+    so while that link stands, any non-member can fork a member's session and read
+    its context verbatim (measured in both directions, lab/046).
+    """
+    monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
+    host = _host(tmp_path)
+    real_projects = host / "projects"
+    real_projects.mkdir()
+    (real_projects / "keep.jsonl").write_text("the operator's own transcript")
+
+    config = pin.room_config_dir("alpha")
+    config.mkdir(parents=True)
+    (config / "projects").symlink_to(real_projects)
+
+    pin.ensure_room("alpha", host=host)
+
+    assert (config / "projects").is_dir() and not (config / "projects").is_symlink()
+    assert not any((config / "projects").iterdir())
+    assert (real_projects / "keep.jsonl").exists()  # unlinking a link is not a delete
+
+
+def test_ensure_room_refreshes_mcp_servers_without_resetting_the_member(tmp_path, monkeypatch):
+    """
+    Scenario: the operator adds an MCP server after a room already exists
+
+    Verifications:
+    - the new server reaches the room's copied .claude.json
+    - the member's own state in that file survives
+
+    A copy taken once goes stale silently: the member keeps starting fine and
+    simply has no memory tools. Only mcpServers is carried over, because the rest
+    of the file is the member's state and overwriting it resets the room.
+    """
+    monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
+    host = _host(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: host.parent))
+    source = host.parent / ".claude.json"
+    source.write_text('{"mcpServers": {"thalamus": {"cmd": "x"}}}')
+    pin.ensure_room("alpha", host=host)
+
+    copied = pin.room_config_dir("alpha") / ".claude.json"
+    copied.write_text(json.dumps({"mcpServers": {}, "hasTrustDialogAccepted": True,
+                                  "projects": {"/room/work": {}}}))
+    source.write_text('{"mcpServers": {"thalamus": {"cmd": "x"}, "other": {"cmd": "y"}}}')
+
+    pin.ensure_room("alpha", host=host)
+
+    after = json.loads(copied.read_text())
+    assert set(after["mcpServers"]) == {"thalamus", "other"}
+    assert after["hasTrustDialogAccepted"] is True
+    assert after["projects"] == {"/room/work": {}}
+
+
+@pytest.mark.parametrize("name", ["../escape", "a/b", "Alpha.", "", "-lead", "a b", "x|y"])
+def test_ensure_room_refuses_a_name_that_is_not_a_room(name, tmp_path, monkeypatch):
+    """
+    Scenario: a room name carrying a path or regex metacharacter
+
+    Verifications:
+    - it is refused before any directory is made
+
+    The name is three things at once: a path segment under ROOMS_DIR, a session-name
+    prefix, and an interpolation into room-guard.sh's roommate pattern. A name with
+    a metacharacter would rewrite the boundary it is meant to be checked against.
+    """
+    monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
+    with pytest.raises(ValueError):
+        pin.ensure_room(name, host=_host(tmp_path))
+
+
+def test_ensure_room_refuses_without_credentials(tmp_path, monkeypatch):
+    """
+    Scenario: a room is entered on a box that has never run `claude /login`
+
+    Verifications:
+    - the launcher refuses, naming the missing file
+
+    A member gets its own config dir, so it cannot reach a login that is not there:
+    without the token it starts, reports "Not logged in" and exits in well under a
+    second — which, watched from a phone, reads as nothing happening at all.
+    """
+    monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
+    host = _host(tmp_path)
+    (host / ".credentials.json").unlink()
+    with pytest.raises(RuntimeError, match="credentials"):
+        pin.ensure_room("alpha", host=host)
+
+
+def test_rooms_lists_what_is_on_disk(tmp_path, monkeypatch):
+    """
+    Scenario: two rooms exist, plus a stray file and an invalid directory name
+
+    Verifications:
+    - both rooms are listed, and nothing else is
+
+    Read off the filesystem rather than a registry, for the same reason the pin is
+    read off the process: a room exists exactly when its config dir does, and a
+    separate list could disagree with that.
+    """
+    rooms = tmp_path / "rooms"
+    monkeypatch.setattr(pin, "ROOMS_DIR", rooms)
+    assert pin.rooms() == []
+    for name in ("alpha", "beta", "Not A Room"):
+        (rooms / name).mkdir(parents=True)
+    (rooms / "loose.txt").write_text("x")
+    assert sorted(pin.rooms()) == ["alpha", "beta"]

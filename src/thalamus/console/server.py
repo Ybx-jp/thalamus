@@ -28,6 +28,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -178,12 +179,13 @@ def parse_windows(raw: str) -> list[dict]:
         closing = set(CLOSING)
     out = []
     for line in raw.splitlines():
-        parts = (line.split("\t") + [""] * 8)[:8]
-        idx, name, active, cmd, width, height, dead, cwd = parts
+        parts = (line.split("\t") + [""] * 9)[:9]
+        idx, name, active, cmd, width, height, dead, cwd, start = parts
         try:
             index = int(idx)
         except ValueError:
             continue
+        room = re.search(r"THALAMUS_ROOM=(\S+)", start)
         out.append({
             "index": index, "name": name,
             "active": active == "1", "command": cmd,
@@ -195,6 +197,12 @@ def parse_windows(raw: str) -> list[dict]:
             # thalamus` from `homelab in some-other-repo`.
             "cwd": cwd, "cwd_label": os.path.basename(cwd.rstrip("/")) or cwd,
             "cwd_short": _tildify(cwd),
+            # Which collaboration this window is in, read from the command it was
+            # created with. The launcher puts the room in an `env` prefix on that
+            # argv (so it survives the respawn a recycle runs), which makes the
+            # start command the one field that cannot disagree with the process —
+            # the window *name* stays the bare scope.
+            "room": room.group(1) if room else "",
         })
     anchor_idx = min((w["index"] for w in out), default=None)
     for w in out:
@@ -205,7 +213,8 @@ def parse_windows(raw: str) -> list[dict]:
 def list_windows(cfg: Config) -> list[dict]:
     r = tmux("list-windows", "-t", cfg.session, "-F",
              "#{window_index}\t#{window_name}\t#{window_active}\t#{pane_current_command}"
-             "\t#{window_width}\t#{window_height}\t#{pane_dead}\t#{pane_current_path}")
+             "\t#{window_width}\t#{window_height}\t#{pane_dead}\t#{pane_current_path}"
+             "\t#{pane_start_command}")
     return parse_windows(r.stdout) if r.returncode == 0 else []
 
 
@@ -341,14 +350,24 @@ def _run_capturing(fn, *args, **kwargs) -> tuple[bool, str]:
 
 def roster_sync(cfg: Config) -> tuple[bool, str]:
     """Recreate any missing roster window. Idempotent, so it only opens what isn't
-    there (e.g. the anchor after an uncaught exit)."""
-    return _run_capturing(pin.roster, cfg.project_root, session=cfg.session)
+    there (e.g. the anchor after an uncaught exit).
+
+    Explicitly roomless: the anchor is the roster's own window, and leaving the room
+    to the environment would put it in whatever room this long-lived server process
+    was started in — where it would stop being the roster's anchor at all.
+    """
+    return _run_capturing(pin.roster, cfg.project_root, session=cfg.session, room="")
 
 
-def do_spawn(cfg: Config, scope: str, directory: Path) -> tuple[bool, str]:
+def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "") -> tuple[bool, str]:
     """Open one on-demand pinned window. `harness.pin` owns the mechanics: derived
-    agent write, detached create, window-size pin."""
-    return _run_capturing(pin.spawn, scope, directory, session=cfg.session)
+    agent write, detached create, window-size pin, room provisioning.
+
+    `room` is always passed explicitly, never left to the environment: this server
+    is a long-lived process, and letting it fall through to `resolve_room()` would
+    put every spawn in whatever room the *server* happened to be started in.
+    """
+    return _run_capturing(pin.spawn, scope, directory, session=cfg.session, room=room)
 
 
 def known_scopes() -> list[str]:
@@ -451,7 +470,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "recycling": recycling})
         if path == "/api/spawn-options":
             dirs, _ = spawn_dirs(self.cfg)
-            return self._send(200, {"scopes": known_scopes(), "dirs": dirs})
+            return self._send(200, {"scopes": known_scopes(), "dirs": dirs,
+                                    "rooms": pin.rooms()})
         if path in STATIC:
             fname, ctype = STATIC[path]
             fpath = STATIC_DIR / fname
@@ -481,14 +501,21 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/spawn":
             scope = data.get("scope")
             directory = data.get("dir")
+            room = data.get("room") or ""
             if scope not in known_scopes():
                 return self._send(400, {"error": "unknown scope"})
+            # Validated rather than matched against the existing list: naming a new
+            # room IS how one is created, and `pin.ensure_room` builds it. The
+            # charset check is the security-relevant half — the name reaches a path
+            # and the guard's roommate pattern.
+            if room and not pin.valid_room(room):
+                return self._send(400, {"error": "invalid room name"})
             # The directory must be one the picker offered — recomputed here, never
             # trusted from the request.
             _, allowed = spawn_dirs(self.cfg)
             if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
                 return self._send(400, {"error": "directory not in the allowed list"})
-            ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)))
+            ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)), room)
             return self._send(200 if ok else 500, {"ok": ok, "output": output})
 
         windows = list_windows(self.cfg)
