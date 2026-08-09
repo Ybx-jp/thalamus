@@ -166,11 +166,18 @@ Under semiring provenance (Green, Karvounarakis & Tannen 2007, held) the collaps
 `a + a = a` requires the room's *event* to be the provenance variable and each
 distillation to be a mapping over it. Thalamus records the opposite modeling: a Source
 vertex is `vid("Source", content_hash, scope)`, so N experts in one room mint N Sources
-in disjoint id spaces — N distinct variables, which **no commutative semiring
-collapses**. The N-count is formally correct under session-as-source, which is precisely
-why the failure is silent. A counter tallying distinct parent `Session` vertices is
-evaluating in the bag semiring `N` where set semantics was intended; the idempotent,
-absorptive `PosBool(X)` is the reading that collapses it. Since RA+ over any commutative
+in disjoint id spaces — N distinct variables, and **distinct variables collapse only
+under a valuation that identifies them**. Idempotence is necessary and not sufficient:
+`x₁ + x₂` stays a sum of two variables in `PosBool(X)` as much as in `N[X]`, because
+what `a + a = a` collapses is two occurrences of *one* variable. Since a homomorphism
+out of `N[X]` is fixed by where it sends the variables, and session-as-source has
+already minted two, no downstream reading can merge them — the identity is settled
+upstream at annotation time, not chosen later by picking a semiring. The N-count is
+formally correct under session-as-source, which is precisely why the failure is silent.
+A counter tallying distinct parent `Session` vertices is evaluating in the bag semiring
+`N` where set semantics was intended; the idempotent, absorptive `PosBool(X)` is the
+reading under which a *recorded* mapping — a fork onto its parent's material — collapses
+rather than accumulating. Since RA+ over any commutative
 semiring factors through the polynomial, the resolution is one write path and two
 readings — `N` for "how often was this said", `PosBool(X)` for "how many independent
 groundings" — rather than a second field. Both readings are computed today, and the

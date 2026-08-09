@@ -356,6 +356,31 @@ def _retained_transcript(g: GraphTraversalSource, session_vid: str) -> bytes | N
     return _retained_snapshot(g, session_vid)[0]
 
 
+def _session_correlates(g: GraphTraversalSource, session_vid: str) -> tuple[str, str]:
+    """This session's `(room, forked_from)` — the two axes that correlate it with
+    another session (docs/09 §Scope, `substrate/witnesses`).
+
+    Read off `Session` rather than `Trace` on purpose. The tap never recorded either
+    field, so stamping them onto Trace would leave every trace written before the
+    change permanently uncorrelatable; joining at read time prices the whole corpus,
+    including its history, against whatever the write path knows now.
+
+    Missing properties read as empty, which is also what a session that worked alone
+    carries — the two are deliberately indistinguishable here, since neither is a
+    reason to refuse a null partner.
+    """
+    row = (
+        g.V(session_vid)
+        .project("room", "forked_from")
+        .by(__.coalesce(__.values("room"), __.constant("")))
+        .by(__.coalesce(__.values("forked_from"), __.constant("")))
+        .to_list()
+    )
+    if not row:
+        return ("", "")
+    return (str(row[0].get("room") or ""), str(row[0].get("forked_from") or ""))
+
+
 def _retained_snapshot(
     g: GraphTraversalSource, session_vid: str
 ) -> tuple[bytes | None, str]:

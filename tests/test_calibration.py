@@ -272,3 +272,94 @@ def test_restricting_a_corpus_keeps_the_terms_auditability_is_measured_from():
     # Verifies: the verdict is still reported as auditable after narrowing
     with_terms, _immutable, total = calibration.auditable(claims_only)
     assert (with_terms, total) == (1, 1)
+
+
+def _correlated_case(trace, session, *, room="", forked_from=""):
+    case = _case(trace, session, "graph memory substrate", "graph memory substrate")
+    case.room = room
+    case.forked_from = forked_from
+    return case
+
+
+def test_a_room_mate_is_not_a_null_partner():
+    """
+    Scenario: two sessions ran in the same room, so they witnessed one conversation
+    and share its vocabulary by construction.
+
+    Verification: `uncorrelated` refuses the pair. The rotation's premise is that a
+    different session supplies *unrelated* vocabulary; pairing room-mates measures
+    topic overlap and reports it as chance, inflating the null and shrinking kappa.
+    """
+    a = _correlated_case("t1", "s1", room="alpha")
+    b = _correlated_case("t2", "s2", room="alpha")
+    # Verifies: shared room disqualifies, in both directions
+    assert not calibration.uncorrelated(a, b)
+    assert not calibration.uncorrelated(b, a)
+
+
+def test_sessions_in_different_rooms_still_partner():
+    """
+    Scenario: two sessions each ran in a room, but not the same one.
+
+    Verification: the exclusion keys on shared membership, not on membership itself
+    — otherwise every room session would lose its whole partner pool.
+    """
+    a = _correlated_case("t1", "s1", room="alpha")
+    b = _correlated_case("t2", "s2", room="beta")
+    assert calibration.uncorrelated(a, b)
+
+
+def test_a_fork_and_its_parent_are_not_null_partners():
+    """
+    Scenario: s2 was forked from s1, so it inherited s1's context rather than
+    reaching its own conclusions.
+
+    Verification: refused in both directions. Unlike a room, where the correlation is
+    plausible, a fork makes it certain (docs/09 §Scope).
+    """
+    parent = _correlated_case("t1", "s1")
+    child = _correlated_case("t2", "s2", forked_from="s1")
+    assert not calibration.uncorrelated(child, parent)
+    assert not calibration.uncorrelated(parent, child)
+
+
+def test_fork_siblings_are_not_null_partners():
+    """
+    Scenario: two sessions forked from one parent. Neither descends from the other.
+
+    Verification: still refused — both inherited the same context, which is the thing
+    that makes the vocabulary shared.
+    """
+    a = _correlated_case("t1", "s1", forked_from="s0")
+    b = _correlated_case("t2", "s2", forked_from="s0")
+    assert not calibration.uncorrelated(a, b)
+
+
+def test_an_unrelated_session_is_still_a_partner():
+    """
+    Verification: the ordinary case is untouched — two cold sessions with no room and
+    no fork parent remain eligible, so the null keeps its corpus.
+    """
+    a = _correlated_case("t1", "s1")
+    b = _correlated_case("t2", "s2")
+    assert calibration.uncorrelated(a, b)
+    # Verifies: a case is never its own partner
+    assert not calibration.uncorrelated(a, a)
+
+
+def test_rotation_reports_a_room_only_stratum_as_unpartnered():
+    """
+    Scenario: a case whose only same-stratum candidate is a room-mate.
+
+    Verification: it is counted `unpartnered` rather than paired loosely. A null
+    computed over a different set than the rate is not that rate's null, so the loss
+    has to be visible in the denominator instead of silently absorbed.
+    """
+    a = _correlated_case("t1", "s1", room="alpha")
+    b = _correlated_case("t2", "s2", room="alpha")
+    cases = [a, b]
+    calibration._assign_strata(cases)
+    result = calibration.JudgeResult(judge="shipped")
+    calibration.rotate(cases, JUDGES["shipped"], result, rotations=1, seed=1)
+    # Verifies: both cases lost their only partner to the room exclusion
+    assert result.unpartnered == 2
