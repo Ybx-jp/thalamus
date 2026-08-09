@@ -78,19 +78,26 @@ literature expert.
    adjacent claims instead. When a *specific* mechanism has to be citable, feed that
    section as its own file. The excerpt's header names the parent file and what the
    pass missed, so the two are never mistaken for independent sources.
-   **Length predicts the loss before the run does.** The digest is capped at ~24,000
-   characters, so a document far above it is not summarized but *sampled*, and which
-   handful survives is not the operator's choice. Measured 2026-08-08: the
-   cluster-robust guide (2.44 MB) distilled nine claims and not one of them concerned
-   few treated clusters — the single mechanism it was procured for — which a 19,595-byte
-   section feed of the same paper then yielded twelve of. Treat a long guide, survey, or
-   textbook chapter as a section feed by default rather than discovering the hole
-   afterwards; the whole-document pass is still worth writing for breadth, but it is a
-   map, not the territory.
+   **Length predicts the loss before the run does, and the loss is the tail.** The
+   digest is capped at ~24,000 characters, so a document above it is not summarized
+   but **truncated**: the claims come from the opening, and everything past the cap is
+   invisible rather than thinly covered. A survey's methods sections and a guide's
+   hard cases both live past it. Measured 2026-08-08 on a truth-discovery survey
+   (89,697 chars, ~3.7× the budget): every claim came from the first ~24,000, and the
+   source-independence material it was procured for — sitting in §3.2 — produced
+   nothing, which a 7,585-byte section feed then yielded in full. So compare fetched
+   length against the budget *before* writing, and treat a long guide, survey, or
+   chapter as a section feed by default. The whole-document pass is still worth
+   writing for breadth; it is the front of the document, not a map of it.
 5. **Dry-run, verify, then write.** Every ingest runs without `--write` first and
    the operator confirms the extracted title matches the document intended —
    mis-resolved references are a measured failure mode (docs/10), and the archive
-   retains whatever was fetched either way.
+   retains whatever was fetched either way. Since the dry run and the write are two
+   fetches, a host serving per-request content mints **two archive entries with
+   different hashes for one document** (measured on `pmc.ncbi.nlm.nih.gov`). The
+   written Source points at the `--write` fetch, which is the one its claims were
+   extracted from, so the pair is a duplicate blob and never a provenance break —
+   but do not read two hashes for one URL as evidence the document changed.
 
 ## Contract obligations (every feed, forever)
 

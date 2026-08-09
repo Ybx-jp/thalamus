@@ -1086,7 +1086,21 @@ not a scan.
   inference is the recommended fallback. Any design whose treatment is applied to a
   handful of clusters (a room is one cluster, and rooms accumulate slowly) inherits
   this hazard directly, and the hard-coded session-level `_DESIGN_EFFECT = 4.0` in
-  `eval/report.py` prices no level above the session.
+  `eval/report.py` prices no level above the session. Cameron, Gelbach & Miller
+  (NBER TWP 344, 2007; *ReStat* 90(3), 2008 — same feed) is the wild cluster
+  bootstrap's own source, and agrees from the other side: cluster-robust standard
+  errors are biased **downward** with few clusters, and the pairs-cluster bootstrap
+  is inestimable with a cluster-invariant indicator at G ≤ 10.
+
+  **Three literatures, three vocabularies, and conflating them reads as confused.**
+  *Cluster-robust inference* names the analysis-side fix (the two above).
+  *Cluster-randomized / group-randomized trial* names the design-side shape, where
+  the randomization unit is the group. *Multi-level modelling* names the
+  variance-components framing. Killip, Mahfoud & Pearce (Ann Fam Med 2004, same
+  feed) anchors the design-side vocabulary: the **ICC** as between-cluster variance
+  over total, and the **design effect** as the divisor turning a nominal sample size
+  into an **effective** one — held in worked form (a trial where a design effect of
+  1.527 took n from 128 to 84 and power to 61%) rather than as a bare formula.
 - **Dependent evidence aggregation is anchored** (§ convergence). Dong,
   Berti-Équille & Srivastava, *Integrating Conflicting Data: The Role of Source
   Dependence* (VLDB 2009, `eval-methodology`, feed `evidence-independence`) is the
@@ -1096,7 +1110,12 @@ not a scan.
   **because the majority are copiers**. That is the failure `room` and `forked_from`
   are stamped to expose. The gap that remains is one of kind, not of coverage: that
   work *infers* dependence from agreement patterns, where Thalamus refuses to and
-  reads a recorded launch fact instead (docs/09 §Scope).
+  reads a recorded launch fact instead (docs/09 §Scope). Li et al., *A Survey on
+  Truth Discovery* (1505.02463, same feed) gives the field around it — the source
+  consistency and **source independence** assumptions by name, copy detection via
+  shared mistakes, transitive copying, latent group structure, and correlation that
+  is not copying at all. Held as two Sources: the whole-document pass for breadth
+  and a §3.2 section feed for the independence layer, which the whole pass missed.
 - **Attribution beyond lexical** — the survey (2603.07670) and the benchmarks make
   the case that inferred-intent retrieval is the hard part; our used-vs-ignored
   attribution is lexical (lab/002). This is the honest weak point of the eval loop.
