@@ -257,7 +257,7 @@ the literature the decision rests on.
 - Experts are cattle behind the contract: creatable, archivable, mergeable. Episodic
   memory archives with the expert — history is never deleted by roster surgery.
 - The mechanics of a roster addition — manifest, anchors, the tmux window, and what
-  the control plane does and doesn't need — are the `add-roster-expert` skill,
+  the console does and doesn't need — are the `add-roster-expert` skill,
   jointly held by main and homelab; homelab keeps it current. It lives here, in
   `harness/skills/`, beside the code that declares the agents it governs: the
   manifest, `pin.py`'s window mechanics, and the procedure for adding an expert

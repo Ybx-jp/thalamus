@@ -409,7 +409,8 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    (`.claude/agents/thalamus-<scope>.md` — generated from the manifest, never
    hand-written), and hands the terminal to
    `THALAMUS_SCOPE=<scope> claude --agent thalamus-<scope>` (a tmux window when
-   available, `execvp` otherwise). `thalamus roster` brings up the control plane:
+   available, `execvp` otherwise). `thalamus roster` brings up the roster —
+   tmux is the control plane, and this is what populates it:
    by default just the `main` **anchor** window (idempotent); `--all` opens one
    window per expert manifest (the legacy full roster). Experts are otherwise
    **spawned on demand** — `thalamus spawn <scope> --dir <path>` opens one
@@ -570,7 +571,7 @@ description, enforced by nothing, and orthogonal to trust tier. Nothing in the
 channel marks a claim that crosses scopes.
 
 **A room is entered with `--room`, on any launcher.** `thalamus pin`, `spawn` and
-`roster` all take it; the flag beats `$THALAMUS_ROOM` so the control plane — a
+`roster` all take it; the flag beats `$THALAMUS_ROOM` so the console — a
 long-lived server process — can put a window in a room without being in one, and
 `--room ''` says explicitly not in a room. `thalamus room list|show|create`
 inspects them. Naming a room is what creates it: `pin.ensure_room` provisions the
@@ -650,7 +651,7 @@ than inferred. Retroactive sweeps (`thalamus bootstrap`) still default to
 through the argv.** tmux does not pass an exported variable to a new window —
 only `-e` does — and `-e` is durable only on `new-session`, which stores it in the
 session environment. On `new-window` it sets the initial process environment and
-nothing else, so `respawn-window` (the control plane's recycle button) re-executes
+nothing else, so `respawn-window` (the console's recycle button) re-executes
 the creation command with those variables gone. That is every spawned member
 window. The pin is unharmed because `--agent thalamus-<scope>` rides the creation
 argv, which is exactly what a respawn re-runs; `resolve_room` is env-only by
@@ -675,7 +676,7 @@ hands the session an empty file and no MCP servers. An operator's own deliberate
 override is passed through untouched.
 
 The room is legible per-window through `#{pane_start_command}`, which renders that
-same `env` prefix: the control plane reads each window's room from it, the way it
+same `env` prefix: the console reads each window's room from it, the way it
 reads cwd from `#{pane_current_path}`. The tmux **window name stays the bare
 scope** — a room is a second dimension over the roster, not a renaming of it — and
 roster idempotency keys on (name, room), so a room's `main` and the roster's own

@@ -43,6 +43,15 @@ nli = [
     "transformers>=4.46",
     "sentence-transformers>=3.3",
 ]
+# The console's frame-theme generators (tools/build-frames.py, make-sample-frame.py).
+# Optional because they are authoring tools, not a runtime path: the console reads
+# only the file they emit, and that file is a contract anything can produce by hand.
+# A tmux bridge has no business depending on an imaging stack.
+frames = [
+    "pillow>=10.0",
+    "numpy>=2.1",
+    "scipy>=1.14",
+]
 
 [project.scripts]
 thalamus = "thalamus.cli:main"

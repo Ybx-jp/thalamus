@@ -1,4 +1,4 @@
-# The control plane
+# The console
 
 **Drive your pinned sessions from your phone.**
 
@@ -169,6 +169,10 @@ poll speeds up while you're typing. `full` is fullscreen. The phone surface is
 deliberately untouched by all of it — it's the one whose failure mode is
 relaunching an app from a home screen.
 
+With `--frames`, the desktop surface can also render the pane inside a panel drawn
+in a background image — `frame` toggles (F12), `▸` cycles (F9). Off by default and
+no artwork ships with it; see [frame-themes.md](frame-themes.md).
+
 ### Install it to your home screen
 
 On a secure origin, Chrome offers an install prompt and the app gets its own icon,
@@ -187,12 +191,14 @@ A user unit, so it starts with your session and restarts if it dies:
 ```ini
 # ~/.config/systemd/user/thalamus-console.service
 [Unit]
-Description=Thalamus control plane
+Description=Thalamus console — tmux bridge for the pinned roster
 After=default.target
 
 [Service]
 Type=simple
 WorkingDirectory=%h/code/thalamus
+# PATH must be pinned, not inherited — see "Pin PATH in the unit" below.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/code/thalamus/.venv/bin/thalamus console --service thalamus-console.service
 Restart=on-failure
 RestartSec=2
@@ -210,6 +216,24 @@ loginctl enable-linger $USER     # so it survives logout / starts at boot
 **It is a *user* unit.** Without `--user`, `systemctl is-active` reports
 `inactive` while the console is plainly serving, and `restart` hangs asking for a
 root password it will never get.
+
+### Pin PATH in the unit
+
+A tmux pane inherits the PATH of the *client that created the window* — which, for
+a spawn from your phone, is the console process. A systemd user unit gets no
+login-shell PATH, and **at boot** the user manager's PATH has no `~/.local/bin`,
+which is where `claude` and `uv` live. A desktop login later adds it via
+`import-environment`, so the box looks fine until it reboots unattended.
+
+The failure is silent in every layer: `tmux new-window` returns 0 as soon as it has
+forked, so a command that cannot exec leaves a window that dies instantly and is
+reaped while tmux, `pin`, and the console all report success. It presents as
+"spawning is broken" — and worse, the roster's anchor dies the same way, and with
+no windows left the tmux server exits, taking the whole roster with it.
+
+Hence `Environment=PATH=` in the unit, and hence the console confirms a spawned
+window is still alive before reporting success. Never trust an exit code alone
+here.
 
 `--service thalamus-console.service` is what puts a unit in the admin sheet's
 Services section. Listing the console's own unit there is the point: restarting it
@@ -264,10 +288,30 @@ nothing about one operator's setup is baked into the code.
 | `--dir PATH` | the project root | Star a directory in the spawn picker (repeatable) |
 | `--scan ROOT` | the project root's parent | Offer every git repo one level under ROOT (repeatable) |
 | `--service UNIT` | none | A systemd `--user` unit the admin sheet may restart (repeatable) |
+| `--frames PATH` | none | Frame-theme definitions for the desktop client ([frame-themes.md](frame-themes.md)) |
 
 The spawn picker's directory list is also the **whitelist**: a spawn request is
 checked against the same computation that built the list, so the client can only
 ever open a session somewhere it was offered.
+
+### Running it without a checkout
+
+The tmux bridge is stdlib-only and the expert layer is imported on use, so the
+console runs under a bare `python3` with nothing else installed:
+
+```bash
+tmux new -d -s thalamus -n main
+python3 -m thalamus.console.server      # or: python3 src/thalamus/console/server.py
+```
+
+You get panes, input, keys, the composer and the whole client. What you don't get
+is the expert layer — the scope list is empty, and spawn, roster sync and rooms
+report themselves unavailable rather than failing to import. Nothing else changes.
+
+This is not a supported-configuration matrix so much as a design constraint: one of
+this server's jobs is restarting the unit that hosts it, so the fewer moving parts
+between a tap and a tmux call, the better. Keeping the bare path working is what
+keeps that true.
 
 ---
 
@@ -311,3 +355,40 @@ dismiss. It force-respawns after 4 minutes; that path skips distillation.
 
 **Slash commands are missing.** They're read per-window from `~/.claude/skills`
 and that window's `.claude/skills`, fresh on each tab switch.
+
+### When it lies to you
+
+Every layer here reports success early, so the useful question is rarely "did it
+fail" but "which layer is answering".
+
+**A spawn reports success and no window appears.** The console now catches this by
+diffing the window list around the spawn, but to see it directly, make dead windows
+stay put and read the pane:
+
+```bash
+tmux set -wg remain-on-exit on     # -wg: a session-level set is NOT inherited by new windows
+```
+
+Spawn again, then `tmux list-windows -a -F '#{window_index} #{pane_dead} #{pane_start_command}'`.
+A window with `pane_dead 1` never execed its command — almost always PATH.
+
+**The phone disagrees with the server.** Rule the layers out in this order, because
+each one masks the next:
+
+1. `curl 127.0.0.1:8378/api/panes` on the host — if this is wrong, nothing else
+   matters and the problem is tmux or the console.
+2. Load the page in a desktop browser on the same network. If desktop is right and
+   the phone is wrong, it is the client, not the server.
+3. In the phone's browser, unregister the service worker and hard-reload. The shell
+   is network-first, so a stale SW is rare but not impossible.
+4. If the phone is a home-screen install, suspect **WebAPK scope**. Android installs
+   ignore ports and match on path prefix, so two apps published under overlapping
+   paths on one host collide, and the icon can silently open the other one. Keep
+   each app's mount path disjoint.
+
+**A restart of the console kills the console.** Restart it through `systemd-run`,
+not `systemctl restart` from inside itself — the transient unit escapes the
+console's own cgroup, which is exactly what the admin sheet's Services button does.
+
+**tmux 3.4 segfaults on startup.** `window-size manual` set *globally* does it.
+`pin` sets it per-window for this reason.

@@ -50,7 +50,7 @@ USER_AGENTS_DIR = Path.home() / ".claude" / "agents"
 # enumerates `$CLAUDE_CONFIG_DIR/sessions/*.json` and name resolution answers from
 # that roster, so members of one room see only each other (lab/045). The location is
 # chosen against the rest of the box — `$HOME` must not move (the pin ledger, archive
-# and logs are anchored there), `~/code` is scanned by the control plane's spawn
+# and logs are anchored there), `~/code` is scanned by the console's spawn
 # picker, and `~/.claude` is swept by the harness's own cleanup.
 ROOMS_DIR = Path.home() / ".thalamus" / "rooms"
 
@@ -270,7 +270,7 @@ def _with_room(argv: list[str], room: str) -> list[str]:
 
     tmux `-e` on `new-window` sets the initial process environment and is *not*
     stored in the session environment, so `respawn-window` — which is exactly what
-    the control plane's recycle button runs — re-executes this argv with those
+    the console's recycle button runs — re-executes this argv with those
     variables gone (measured on tmux 3.4; `new-session -e` does survive, since that
     one does populate the session env). The pin already survives a recycle for this
     reason: `--agent thalamus-<scope>` rides the argv. `resolve_room` is env-only by
@@ -495,7 +495,7 @@ def _open_window(scope: str, argv: list[str], project_root: Path, target: str | 
 def _pin_window_sizes(target: str | None) -> None:
     """Set every roster window's LOCAL window-size to manual, post-creation.
 
-    The mobile control plane needs windows held at default-size (60 cols) even
+    The mobile console needs windows held at default-size (60 cols) even
     while a desktop /tty client is attached — that's what `manual` does. It cannot
     live in .tmux.conf as a global: tmux 3.4's server segfaults creating a window
     while the global window-size is manual and no client is attached (measured
@@ -516,7 +516,7 @@ def _entered_room(room: str | None) -> str:
     """The room this launch enters, provisioned and ready — flag first, env second.
 
     The flag wins because it is the launch decision being made right now, while the
-    environment is whatever the launching shell (or the control plane's own long-
+    environment is whatever the launching shell (or the console's own long-
     lived server process) happened to carry; the plane in particular must be able to
     put a window in a room without being in one. Passing `None` asks for the
     environment, `""` says explicitly not in a room.
@@ -627,7 +627,7 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
 
 def roster(project_root: Path, base: Path | None = None, full: bool = False,
            session: str | None = None, room: str | None = None) -> None:
-    """Bring up the control plane. Default: only the `main` anchor window (experts
+    """Bring up the roster. Default: only the `main` anchor window (experts
     are spawned on demand from the plane). `full=True` opens one window per expert.
 
     Opening every expert at bring-up was retired: idle expert windows never get a
@@ -643,7 +643,7 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
 
     `session` names the target session explicitly. Left None (the CLI's case) the
     target is the surrounding tmux session when there is one, else ROSTER_SESSION.
-    The control-plane server passes it: it drives a session by name and must not
+    The console server passes it: it drives a session by name and must not
     behave differently depending on whether the server process happens to have
     been started from inside a tmux of its own.
     """

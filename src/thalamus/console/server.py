@@ -1,4 +1,4 @@
-"""The control plane — a tiny tmux bridge, so the roster is drivable from a phone.
+"""The console — a tiny tmux bridge, so the roster is drivable from a phone.
 
 A pinned session is an OS process in a tmux window (docs/07, "the process is the
 pin"), which makes tmux the one place all of them are addressable. This server
@@ -15,11 +15,15 @@ Two properties are load-bearing:
 - **It binds loopback by default.** There is no authentication here and none is
   pretended; reaching it from a phone is a job for whatever already authenticates
   your network (a VPN/overlay network, an authenticating reverse proxy, an SSH
-  tunnel). See docs/control-plane.md.
+  tunnel). See docs/console.md.
 
-Deliberately stdlib-only, unlike the FastAPI surfaces in `pulse/` and `plane/`:
-one of its jobs is restarting the systemd unit that hosts it, so the fewer moving
-parts between a tap and a tmux call, the better.
+The bridge itself is stdlib-only, unlike the FastAPI surfaces in `pulse/` and
+`viewer/`: one of its jobs is restarting the systemd unit that hosts it, so the
+fewer moving parts between a tap and a tmux call, the better. The expert layer —
+the scope list, spawn, roster sync — is the one part that needs the rest of the
+package, so those imports are deferred to the call that uses them. Run this
+module with a bare `python3` and you get the tmux bridge and the whole client;
+the expert controls report themselves unavailable instead of failing to import.
 """
 
 from __future__ import annotations
@@ -35,18 +39,72 @@ import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs
-
-from thalamus.contract.manifest import available_scopes
-from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.harness import pin
+from urllib.parse import parse_qs, unquote
 
 STATIC_DIR = Path(__file__).with_name("static")
 DEFAULT_PORT = 8378
 
+# Defaults for a console running without the rest of Thalamus importable. `pin` owns
+# the real ones; these only have to be sane enough to bridge a tmux session.
+FALLBACK_SESSION = "thalamus"
+
+# The expert layer — scopes, spawn, roster sync, rooms — is the only part of this
+# module that needs the package. It is imported on use, not at module scope, so the
+# bridge runs under a bare `python3` with no yaml and no pydantic installed. Import
+# failure is a fact about this deployment, not an error: it means the expert controls
+# are unavailable, which the client renders as their absence.
+_PIN_UNSET = object()
+_pin_cache: object = _PIN_UNSET
+
+
+def pin_module():
+    """`thalamus.harness.pin`, or None if this console has no package around it."""
+    global _pin_cache
+    if _pin_cache is _PIN_UNSET:
+        try:
+            from thalamus.harness import pin
+        except Exception:  # noqa: BLE001 — any import failure means "not available"
+            _pin_cache = None
+        else:
+            _pin_cache = pin
+    return _pin_cache
+
+
+def has_experts() -> bool:
+    """Whether the expert controls (scope list, spawn, roster, rooms) can work."""
+    return pin_module() is not None
+
 # Graceful-exit budget before force-respawning a window. SessionEnd runs
 # `thalamus extract` (distillation), which can take a while; killing early loses it.
 RECYCLE_GRACE_S = 240
+
+# On-demand spawn is serialized and confirmed. Confirmation works by diffing the
+# window list around the spawn, so two concurrent spawns would scramble each other's
+# before-picture; the lock keeps that diff meaningful.
+SPAWN_LOCK = threading.Lock()
+
+# How long to let a freshly spawned window prove it is really running. The failure
+# being caught is an exec failure, which is immediate — see do_spawn.
+SPAWN_SETTLE_S = 1.2
+
+# Shown when a spawn produced no living window. The overwhelmingly likely cause is
+# that the window's command could not be executed at all, and the overwhelmingly
+# likely reason for THAT is PATH: a pane inherits the PATH of the client that created
+# it (this server), so a console started without ~/.local/bin on PATH cannot find the
+# `claude` that every expert window runs. Systemd user units get no login shell, and
+# at boot the user manager's PATH is barer than the one a desktop login later
+# imports — so this bites after a reboot and not before.
+SPAWN_FAILED_HINT = (
+    "the window was created but exited immediately — its command probably could not "
+    "be executed. Check that `claude` is on this server's PATH; a systemd user unit "
+    "started at boot does not inherit ~/.local/bin unless the unit sets PATH itself."
+)
+
+# What every expert control reports when the console is running without the package.
+EXPERTS_UNAVAILABLE = (
+    "this console is running without Thalamus importable, so the expert controls "
+    "(spawn, roster sync, rooms) are unavailable. The tmux bridge is unaffected."
+)
 
 # send-keys accepts these named keys (the client sends the left value — it names a
 # key, it never hands us a tmux argument).
@@ -100,8 +158,12 @@ class Config:
     program on every box, and this is the whole of what differs between them.
     """
 
-    session: str = pin.ROSTER_SESSION
-    project_root: Path = pin.PROJECT_ROOT
+    # Both default from `pin` when the package is importable, and to a bare tmux
+    # session in the checkout-less case — resolved in __post_init__ rather than here,
+    # because a dataclass default is evaluated at class-definition time and would
+    # drag the import back to module scope.
+    session: str = ""
+    project_root: Path | str = ""
     # Directory picker for on-demand spawn. `favorites` are shown first, starred;
     # `scan_roots` are globbed one level deep for git repos.
     favorites: list[Path] = field(default_factory=list)
@@ -109,8 +171,16 @@ class Config:
     # systemd --user units the admin sheet may restart. Empty (the default) hides
     # the section entirely — the console never invents units it might not own.
     services: list[str] = field(default_factory=list)
+    # Frame-theme definitions (see `frames`). None — the default — means no frame
+    # themes: the feature is opt-in because it names image paths on this machine.
+    frames_file: Path | None = None
 
     def __post_init__(self) -> None:
+        pin = pin_module()
+        if not self.session:
+            self.session = pin.ROSTER_SESSION if pin else FALLBACK_SESSION
+        if not self.project_root:
+            self.project_root = pin.PROJECT_ROOT if pin else Path.cwd()
         self.project_root = Path(self.project_root).expanduser().resolve()
         if not self.favorites:
             self.favorites = [self.project_root]
@@ -118,6 +188,97 @@ class Config:
             self.scan_roots = [self.project_root.parent]
         self.favorites = [Path(p).expanduser() for p in self.favorites]
         self.scan_roots = [Path(p).expanduser() for p in self.scan_roots]
+        if self.frames_file:
+            self.frames_file = Path(self.frames_file).expanduser()
+
+
+# ---- Frame themes ----
+# A desktop client can render the pane inside a panel drawn in a background image —
+# the same look a terminal emulator paints as GPU background art. That art never
+# crosses the wire from the emulator, so what is ported is the *data*: a frame file
+# holds {name, path, panel fractions} and this server reads it. The file is a
+# contract, not a dependency on any particular emulator — anything that emits the
+# shape works, and hand-authoring it is supported (docs/frame-themes.md).
+#
+# There is no default location and no art in this package. `--frames PATH` opts in;
+# without it `frames()` is empty, the deskbar says so, and nothing is offered. A
+# shipping package has no business reading another application's config directory
+# unasked.
+_FRAME_RE = re.compile(
+    r'\{\s*name\s*=\s*"(?P<name>[^"]+)"\s*,\s*path\s*=\s*"(?P<path>[^"]+)"\s*,\s*'
+    r'panel\s*=\s*\{\s*left\s*=\s*(?P<left>[-\d.]+)\s*,\s*right\s*=\s*(?P<right>[-\d.]+)\s*,\s*'
+    r'top\s*=\s*(?P<top>[-\d.]+)\s*,\s*bottom\s*=\s*(?P<bottom>[-\d.]+)',
+    re.S,
+)
+IMAGE_TYPES = {".png": "image/png", ".gif": "image/gif", ".jpg": "image/jpeg",
+               ".jpeg": "image/jpeg", ".webp": "image/webp"}
+
+# Parsed frames, keyed by (path, mtime) so an edit is picked up without a restart.
+_FRAMES_CACHE: dict[str, object] = {"key": None, "frames": []}
+_FRAMES_LOCK = threading.Lock()
+
+
+def frames(cfg: Config) -> list[dict]:
+    """Parse the frame file → [{name, path, panel}], cached by mtime.
+
+    Every degradation is silent and total: no file configured, no file on disk, an
+    unreadable file, an entry whose image is missing or whose extension isn't an
+    image — each just means fewer frames, never an exception and never a broken
+    background. A frame theme is decoration; it must not be able to take down the
+    surface an operator reaches for when something else is already wrong.
+    """
+    if not cfg.frames_file:
+        return []
+    path = str(cfg.frames_file)
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return []
+    with _FRAMES_LOCK:
+        if _FRAMES_CACHE["key"] == key:
+            return _FRAMES_CACHE["frames"]
+        try:
+            raw = Path(path).read_text()
+        except OSError:
+            return []
+        out = []
+        for m in _FRAME_RE.finditer(raw):
+            image = m.group("path")
+            if os.path.splitext(image)[1].lower() not in IMAGE_TYPES:
+                continue
+            if not os.path.isfile(image):
+                continue
+            out.append({
+                "name": m.group("name"),
+                "path": image,
+                "panel": {k: float(m.group(k)) for k in ("left", "right", "top", "bottom")},
+            })
+        _FRAMES_CACHE["key"] = key
+        _FRAMES_CACHE["frames"] = out
+        return out
+
+
+def frame_bytes(cfg: Config, name: str) -> tuple[bytes | None, str | None]:
+    """Image bytes + content type for a frame, or (None, None).
+
+    The request contributes a *name*, matched for equality against the parsed list;
+    the path served is the one the frame file recorded. No request-supplied string
+    ever becomes a path component, so traversal is not expressible even though these
+    files live outside the package.
+
+    The trust boundary is therefore the frame file, not the request: whoever writes
+    it can name any absolute path with an image extension, and this will serve it.
+    That is the same trust already given to `--dir`, and it is why there is no
+    default frame file.
+    """
+    for f in frames(cfg):
+        if f["name"] == name:
+            try:
+                return (Path(f["path"]).read_bytes(),
+                        IMAGE_TYPES[os.path.splitext(f["path"])[1].lower()])
+            except OSError:
+                return None, None
+    return None, None
 
 
 # Window indexes with a restart in flight, and windows being closed (graceful
@@ -279,9 +440,20 @@ def recycle_window(cfg: Config, idx: int) -> None:
     survives the exit), Escape + C-u (dismiss any dialog, clear the composer),
     `/exit` (fires SessionEnd → distillation), wait for pane death, then
     `tmux respawn-window` — which re-runs the window's CREATION command
-    (`claude --agent thalamus-<scope>`) with its env (THALAMUS_SCOPE) intact. If
-    the session won't die within the grace budget, force with `respawn-window -k`,
-    which skips distillation. Runs in a background thread.
+    (`claude --agent thalamus-<scope>`).
+
+    What survives that is the ARGV, not the environment. `-e` on `new-window` sets
+    only the initial process env and is never stored in the session env, so a
+    respawn re-executes the creation command with those variables gone (measured,
+    tmux 3.4; `new-session -e` does survive, because that one populates the session
+    env). The pin is unaffected because it rides the argv — `--agent
+    thalamus-<scope>` — and `resolve_pin` prefers the picked agent over
+    THALAMUS_SCOPE anyway. Anything whose only channel is `-e` is lost here, which
+    is why `pin` wraps a room member's command in an `env` prefix rather than
+    trusting `-e`.
+
+    If the session won't die within the grace budget, force with
+    `respawn-window -k`, which skips distillation. Runs in a background thread.
     """
     target = f"{cfg.session}:{idx}"
     try:
@@ -356,6 +528,9 @@ def roster_sync(cfg: Config) -> tuple[bool, str]:
     to the environment would put it in whatever room this long-lived server process
     was started in — where it would stop being the roster's anchor at all.
     """
+    pin = pin_module()
+    if pin is None:
+        return False, EXPERTS_UNAVAILABLE
     return _run_capturing(pin.roster, cfg.project_root, session=cfg.session, room="")
 
 
@@ -366,12 +541,45 @@ def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "") -> tuple[
     `room` is always passed explicitly, never left to the environment: this server
     is a long-lived process, and letting it fall through to `resolve_room()` would
     put every spawn in whatever room the *server* happened to be started in.
+
+    A clean return from `pin.spawn` is NOT evidence that a window exists.
+    `tmux new-window` reports success once it has forked, before the command it was
+    given has execed, so a command that cannot start at all leaves a window that
+    dies instantly and is reaped — while tmux, `pin`, and this function all still
+    see success. Measured 2026-08-08: with `claude` off the server's PATH every
+    spawn answered `{"ok": true}` and produced nothing, which reads on the phone as
+    a button that does nothing. So the window is confirmed alive here, and the spawn
+    is reported failed if it is not.
     """
-    return _run_capturing(pin.spawn, scope, directory, session=cfg.session, room=room)
+    pin = pin_module()
+    if pin is None:
+        return False, EXPERTS_UNAVAILABLE
+    with SPAWN_LOCK:
+        before = {w["index"] for w in list_windows(cfg)}
+        ok, output = _run_capturing(pin.spawn, scope, directory,
+                                    session=cfg.session, room=room)
+        if not ok:
+            return False, output
+
+        # Settle before judging: an exec failure is immediate, so a window still
+        # alive after this has really started.
+        time.sleep(SPAWN_SETTLE_S)
+        fresh = [w for w in list_windows(cfg) if w["index"] not in before]
+        if any(not w["dead"] for w in fresh):
+            return True, output
+        return False, "\n\n".join(x for x in (output, SPAWN_FAILED_HINT) if x)
 
 
 def known_scopes() -> list[str]:
-    """Spawnable scopes: `main` plus every expert manifest in the checkout."""
+    """Spawnable scopes: `main` plus every expert manifest in the checkout.
+
+    Empty without the package — the client hides the spawn sheet rather than
+    offering a picker whose every choice would fail.
+    """
+    if not has_experts():
+        return []
+    from thalamus.contract.manifest import available_scopes
+    from thalamus.contract.ontology import MAIN_SCOPE
     return [MAIN_SCOPE, *available_scopes()]
 
 
@@ -469,9 +677,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"services": service_status(self.cfg),
                                     "recycling": recycling})
         if path == "/api/spawn-options":
+            pin = pin_module()
             dirs, _ = spawn_dirs(self.cfg)
             return self._send(200, {"scopes": known_scopes(), "dirs": dirs,
-                                    "rooms": pin.rooms()})
+                                    "rooms": pin.rooms() if pin else [],
+                                    "experts": pin is not None})
+        if path == "/api/frames":
+            # Absolute paths stay server-side; the client addresses a frame by name.
+            return self._send(200, {"frames": [{"name": f["name"], "panel": f["panel"]}
+                                               for f in frames(self.cfg)]})
+        if path.startswith("/frame/"):
+            blob, ctype = frame_bytes(self.cfg, unquote(path[len("/frame/"):]))
+            if blob is None:
+                return self._send(404, {"error": "unknown frame"})
+            # Multi-MB art, addressed by name; let the browser keep it rather than
+            # refetching on every theme toggle.
+            return self._send(200, blob, ctype, cache="public, max-age=86400")
         if path in STATIC:
             fname, ctype = STATIC[path]
             fpath = STATIC_DIR / fname
@@ -502,6 +723,9 @@ class Handler(BaseHTTPRequestHandler):
             scope = data.get("scope")
             directory = data.get("dir")
             room = data.get("room") or ""
+            pin = pin_module()
+            if pin is None:
+                return self._send(503, {"error": EXPERTS_UNAVAILABLE})
             if scope not in known_scopes():
                 return self._send(400, {"error": "unknown scope"})
             # Validated rather than matched against the existing list: naming a new

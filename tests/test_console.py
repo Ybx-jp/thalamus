@@ -34,6 +34,15 @@ def _repo(path: Path) -> Path:
     return path
 
 
+def _pin():
+    """The real `harness.pin`, which the console imports lazily rather than holding.
+
+    Tests patch the module the console resolves at call time, not an attribute on
+    the console — there is deliberately no `server.pin` to reach for.
+    """
+    return server.pin_module()
+
+
 # ---- the projection the client renders ----
 
 
@@ -183,14 +192,92 @@ def test_the_spawn_endpoint_names_the_room_and_never_inherits_one(tmp_path, monk
     code = tmp_path / "code"
     cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
     seen: list[dict] = []
-    monkeypatch.setattr(server.pin, "spawn",
+    monkeypatch.setattr(_pin(), "spawn",
                         lambda scope, cwd, **kw: seen.append({"scope": scope, **kw}))
+    monkeypatch.setattr(server, "SPAWN_SETTLE_S", 0)
 
-    with _serving(cfg) as post:
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
         post("/api/spawn", {"scope": "main", "dir": str(code / "alpha"), "room": "alpha"})
         post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
 
     assert [s["room"] for s in seen] == ["alpha", ""]
+
+
+def test_a_spawn_that_produced_no_living_window_is_reported_failed(tmp_path, monkeypatch):
+    """
+    Scenario: `pin.spawn` returns cleanly, but the window it made is already dead
+
+    Verifications:
+    - the response is a failure, not the success every layer below it reported
+    - the operator is told to check PATH, which is the cause in almost every case
+
+    `tmux new-window` returns 0 as soon as it has forked — before the command it
+    was given has execed. A window whose command cannot be executed at all dies
+    instantly and is reaped, while tmux, `pin`, and the console all still see
+    success. Measured 2026-08-08: with `claude` off the server's PATH every spawn
+    answered ok and produced nothing, which reads on a phone as a button that does
+    nothing at all. Only the window list can tell the difference.
+    """
+    code = tmp_path / "code"
+    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
+    monkeypatch.setattr(_pin(), "spawn", lambda *a, **k: None)
+    monkeypatch.setattr(server, "SPAWN_SETTLE_S", 0)
+
+    # The window list never gains a live window: exactly what an exec failure leaves.
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
+
+    assert status == 500 and body["ok"] is False
+    assert "PATH" in body["output"]
+
+
+def test_a_dead_window_does_not_count_as_a_spawn(tmp_path, monkeypatch):
+    """A *new* window is not enough — tmux keeps reporting one whose pane has died.
+
+    The confirmation asks whether a new window is alive, not whether one appeared,
+    because the failure being caught produces a window either way.
+    """
+    code = tmp_path / "code"
+    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
+    monkeypatch.setattr(server, "SPAWN_SETTLE_S", 0)
+    live = "0\tmain\t1\tclaude\t60\t50\t0\t/home/op/code/thalamus\t"
+    # index 1 is new since the spawn, and its pane_dead flag is set.
+    dead = live + "\n1\tmain\t0\tclaude\t60\t50\t1\t/home/op/code/alpha\t"
+
+    serving = _serving(cfg, windows=live)
+    monkeypatch.setattr(_pin(), "spawn",
+                        lambda *a, **k: setattr(serving.fake, "windows", dead))
+    with serving as post:
+        status, body = post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
+
+    assert status == 500 and body["ok"] is False
+
+
+def test_the_console_runs_with_no_thalamus_around_it(tmp_path, monkeypatch):
+    """
+    Scenario: `server.py` run by a bare python3, with the package unimportable
+
+    Verifications:
+    - the tmux bridge still serves — panes, keys, input are unaffected
+    - the expert controls report themselves unavailable instead of raising
+
+    The bridge is stdlib-only on purpose; only the expert layer (scopes, spawn,
+    roster, rooms) needs the package. Keeping that seam real is what lets the
+    console be run without a checkout, and what keeps a missing dependency from
+    taking down the surface an operator reaches for when something is already wrong.
+    """
+    monkeypatch.setattr(server, "_pin_cache", None)
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"), session="s")
+
+    assert server.has_experts() is False
+    assert server.known_scopes() == []
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        spawned, body = post("/api/spawn", {"scope": "main", "dir": str(tmp_path)})
+        keyed, _ = post("/api/key", {"index": 0, "key": "enter"})
+
+    assert spawned == 503 and "unavailable" in body["error"]
+    assert keyed == 200  # the bridge is untouched by the package being absent
 
 
 def test_an_unknown_scope_is_refused_before_any_directory_check(tmp_path):
@@ -210,6 +297,89 @@ def test_defaults_describe_one_machine_and_nothing_is_hardcoded_elsewhere(tmp_pa
     assert cfg.favorites == [tmp_path / "code" / "thalamus"]
     assert cfg.scan_roots == [tmp_path / "code"]
     assert cfg.services == []
+
+
+# ---- frame themes ----
+
+
+def _frames_file(tmp_path: Path, entries: str) -> Path:
+    f = tmp_path / "frames.lua"
+    f.write_text(entries)
+    return f
+
+
+def _frame_entry(name: str, path: Path) -> str:
+    return (f'{{ name = "{name}", path = "{path}", '
+            'panel = { left = 0.1, right = 0.2, top = 0.05, bottom = 0.3 } },')
+
+
+def test_no_frames_are_configured_by_default(tmp_path):
+    """A shipped package reads no other application's config directory unasked, so
+    the feature is off until a path is named. Off means empty, never an error."""
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"))
+
+    assert cfg.frames_file is None
+    assert server.frames(cfg) == []
+    assert server.frame_bytes(cfg, "anything") == (None, None)
+
+
+def test_a_frame_whose_image_is_missing_is_dropped_not_offered(tmp_path):
+    """A stale frame file degrades to fewer frames, never to a broken background.
+
+    The file names absolute paths on one machine; images move and are deleted. The
+    client must only ever be offered frames that can actually be served.
+    """
+    art = tmp_path / "real.png"
+    art.write_bytes(b"\x89PNG\r\n\x1a\n")
+    entries = (_frame_entry("real.png", art)
+               + _frame_entry("gone.png", tmp_path / "gone.png")
+               + _frame_entry("notanimage.txt", tmp_path / "notanimage.txt"))
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
+                 frames_file=_frames_file(tmp_path, entries))
+
+    assert [f["name"] for f in server.frames(cfg)] == ["real.png"]
+
+
+def test_a_frame_is_addressed_by_name_and_never_by_path(tmp_path):
+    """
+    Scenario: a client asks for a frame, and then asks for a file it names itself
+
+    Verifications:
+    - a known name serves the bytes the frame file recorded
+    - a path-shaped request matches no name, so it is a 404 rather than a read
+
+    The request contributes only a name, matched for equality against the parsed
+    list; the path served is always the one on record. Traversal is not expressible
+    even though the art lives outside the package.
+    """
+    art = tmp_path / "real.png"
+    art.write_bytes(b"\x89PNG\r\n\x1a\nDATA")
+    secret = tmp_path / "secret.png"
+    secret.write_bytes(b"\x89PNG\r\n\x1a\nSECRET")
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
+                 frames_file=_frames_file(tmp_path, _frame_entry("real.png", art)))
+
+    blob, ctype = server.frame_bytes(cfg, "real.png")
+    assert blob == b"\x89PNG\r\n\x1a\nDATA" and ctype == "image/png"
+    assert server.frame_bytes(cfg, f"../../{secret}") == (None, None)
+    assert server.frame_bytes(cfg, str(secret)) == (None, None)
+
+
+def test_the_frame_list_never_leaks_a_path_from_this_machine(tmp_path):
+    """The client addresses frames by name, so the absolute paths stay server-side —
+    they describe one operator's disk and the client has no use for them."""
+    art = tmp_path / "real.png"
+    art.write_bytes(b"\x89PNG\r\n\x1a\n")
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
+                 frames_file=_frames_file(tmp_path, _frame_entry("real.png", art)))
+
+    with _serving(cfg) as post:
+        body = post.get("/api/frames")
+
+    assert body["frames"] == [{"name": "real.png",
+                               "panel": {"left": 0.1, "right": 0.2,
+                                         "top": 0.05, "bottom": 0.3}}]
+    assert str(tmp_path) not in json.dumps(body)
 
 
 # ---- input the client names, never composes ----
@@ -314,6 +484,15 @@ class _serving:
             conn.close()
             return response.status, body
 
+        def get(path: str) -> dict:
+            conn = HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", path)
+            response = conn.getresponse()
+            body = json.loads(response.read() or "{}")
+            conn.close()
+            return body
+
+        post.get = get
         return post
 
     def __exit__(self, *exc):

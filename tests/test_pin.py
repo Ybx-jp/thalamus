@@ -174,7 +174,7 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
 
     The argv prefix is the load-bearing one. `-e` on `new-window` sets only the
     initial process environment — tmux does not store it in the session env — so
-    `respawn-window`, which is what the control plane's recycle button runs,
+    `respawn-window`, which is what the console's recycle button runs,
     re-executes this argv with those variables gone (measured, tmux 3.4). The pin
     survives a recycle because `--agent thalamus-<scope>` rides the argv;
     `resolve_room` is env-only by design and would otherwise have no second

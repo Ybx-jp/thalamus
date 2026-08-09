@@ -1,4 +1,4 @@
-/* Thalamus control plane — a signal console. Dark, mobile-first, one-handed.
+/* Thalamus console — a signal console. Dark, mobile-first, one-handed.
    Signature: each expert is a relay channel with its own hue and a live signal dot
    that pulses when its screen changes. Everything else stays quiet. */
 
@@ -240,6 +240,59 @@ header {
   padding: 2rem 1rem;
   white-space: normal;
 }
+/* The zero-windows state carries shell commands, so unlike the idle-window message it
+   has to keep its own line breaks. Held to a readable measure and centred, since it is
+   the whole screen rather than a note above real output. */
+.screen-empty.onboard {
+  white-space: pre-wrap;
+  max-width: 44ch;
+  margin: 0 auto;
+  line-height: 1.65;
+}
+
+/* ---- Frame theme (desktop only) ----
+   The same art and the same panel geometry the terminal emulator paints on its GPU
+   compositor, drawn in CSS instead. The wrap carries the contain-fit art and stops
+   scrolling; the text box is absolutely placed on the panel (rect computed in JS,
+   since CSS can't map image fractions through a contain letterbox) and scrolls
+   inside it, so text is genuinely clipped by the frame rather than sliding out over
+   the picture.
+   Only ever applied when the desktop engine is live — the mobile surface never gets
+   this class, so its rendering path is unchanged. */
+.screen-wrap.framed {
+  overflow: hidden;
+  background-color: #100f1b;   /* the base layer under the art */
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+.screen-wrap.framed > .screen,
+.screen-wrap.framed > .screen-empty {
+  position: absolute;
+  left: var(--panel-x);
+  top: var(--panel-y);
+  width: var(--panel-w);
+  height: var(--panel-h);
+  overflow: auto;
+  padding: 0;
+  min-width: 0;                /* the panel bounds the line box; max-content would escape it */
+  scrollbar-width: none;       /* a scrollbar over the art reads as a rendering bug */
+}
+.screen-wrap.framed > .screen::-webkit-scrollbar,
+.screen-wrap.framed > .screen-empty::-webkit-scrollbar { width: 0; height: 0; }
+.screen-wrap.framed > .screen-empty {
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+/* Sticky and opaque, it would punch a rectangle through the art at the top of the
+   pane. Float it over the frame instead. */
+.screen-wrap.framed > .recycle-note {
+  background: color-mix(in srgb, var(--panel-hi) 78%, transparent);
+  backdrop-filter: blur(6px);
+  border-radius: 6px;
+  margin: .35rem;
+}
 
 /* ---- Desktop chrome ---- */
 .deskbar {
@@ -261,6 +314,13 @@ header {
   cursor: pointer;
 }
 .deskbar button:hover { color: var(--ink); border-color: var(--faint); }
+/* Reserves its width so toggling a frame doesn't shuffle the buttons beside it. */
+.frame-label {
+  font-family: var(--mono);
+  font-size: .68rem;
+  color: var(--faint);
+  min-width: 6.5em;
+}
 .deskbar button[aria-pressed="true"] { color: var(--chan); border-color: var(--chan); }
 /* Keystrokes go straight to the pane, so the composer is no longer the input path —
    dim it to say so, without removing it (it still takes multi-line paste and the

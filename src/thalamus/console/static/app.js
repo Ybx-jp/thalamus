@@ -1,4 +1,4 @@
-// Thalamus control plane — client. Polls /api/panes, renders the active session's
+// Thalamus console — client. Polls /api/panes, renders the active session's
 // screen, and drives every window by index — never changing the tmux active
 // window, so a terminal attached to the same session stays where the operator
 // left it.
@@ -257,6 +257,27 @@ function linkify(text) {
     (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
 }
 
+// Zero windows is a different failure from a window with no output, and it is the
+// first thing a fresh install shows. The server answered, so the beacon is already
+// green; without this the page is a blank rectangle that manages to look connected
+// and broken at the same time. `thalamus console` deliberately serves before the
+// roster exists — it prints that to its own stderr, which nobody holding a phone can
+// read, so this is where that sentence actually reaches the operator. Say which
+// session was looked for and how to make one: the console bridges a session, it
+// never creates one.
+function renderNoSession(session) {
+  const s = session || "thalamus";
+  els.screen.className = "screen-empty onboard";
+  els.screen.textContent =
+    `No windows in tmux session "${s}".\n\n` +
+    `The console bridges a tmux session — it doesn't create one. ` +
+    `Start the roster on the host:\n\n` +
+    `  thalamus roster\n\n` +
+    `Or bridge any tmux session you like:\n\n` +
+    `  tmux new -d -s ${s} -n main`;
+  renderedText = "";
+}
+
 function paintScreen(text) {
   if (!text || !text.trim()) {
     els.screen.className = "screen-empty";
@@ -269,13 +290,16 @@ function paintScreen(text) {
 }
 
 function renderScreen(text) {
-  const sc = els.wrap;
+  const sc = scroller();
   const atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40;
   if (selectionInScreen()) { pendingScreen = text; return; } // don't clobber a highlight
   if (text === renderedText) return;                         // unchanged; keep links stable
   pendingScreen = null;
   paintScreen(text);
-  if (atBottom) sc.scrollTop = sc.scrollHeight;
+  // Re-resolve: paintScreen swaps `.screen` for `.screen-empty` and back, so under a
+  // frame the element that scrolls is not the one measured a moment ago.
+  const after = scroller();
+  if (atBottom) after.scrollTop = after.scrollHeight;
 }
 
 // When the user releases a selection, apply whatever repaint we deferred.
@@ -358,6 +382,7 @@ async function poll() {
     updateDots(next);
     const cur = windows.find((w) => w.index === activeIdx);
     if (cur) renderScreen(cur.lines);
+    else renderNoSession(data.session);
     if (cur && cur.closing) {
       els.recycleNote.hidden = false;
       els.recycleNote.textContent = "session ending & distilling to memory — this tab will close";
@@ -430,7 +455,9 @@ function lineWidthAt(px, cols) {
 function computeFit() {
   const cs = getComputedStyle(els.screen);
   const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-  const avail = els.wrap.clientWidth - padX - 1; // -1 guards rounding overflow
+  // Under a frame the text is sized to the panel, not to the window.
+  const box = framed() ? panelRect().w : els.wrap.clientWidth;
+  const avail = box - padX - 1; // -1 guards rounding overflow
   const cols = activeCols();
   let px = (avail / cols) / (lineWidthAt(100, cols) / 100 / cols); // linear first guess
   px = Math.max(7, Math.min(30, px));
@@ -758,6 +785,130 @@ document.getElementById("admin-roster").addEventListener("click", async () => {
 const DESKTOP_Q = window.matchMedia("(pointer: fine) and (min-width: 900px)");
 let isDesktop = DESKTOP_Q.matches;
 
+// ---- Frame theme (desktop only) ----
+// The pane can render inside a panel drawn in a background image — the look a
+// terminal emulator paints as GPU background art. That art never crosses the wire
+// from the emulator, so no amount of emulator integration would transport it; what
+// travels is the *data*. The server parses the frame file and is the single source
+// of truth; here we reproduce the same contain-fit + panel inset in CSS, so a frame
+// added there shows up with no copying. The file is a contract, not a dependency on
+// any one emulator: anything emitting {name, path, panel} works. Absent or empty →
+// the controls read "no frames" and do nothing. See docs/frame-themes.md.
+let frames = [];
+// Storage keys keep their `plane-` prefix deliberately. They are private to the
+// browser and their only job is to stay stable — renaming them to match the app's
+// name would silently reset every operator's saved preferences to buy nothing.
+let frameIdx = +(localStorage.getItem("plane-frame-idx") || 0);
+let frameOn = localStorage.getItem("plane-frame-on") === "1";
+const frameDims = new Map(); // name -> {w,h}, needed to reproduce background-size:contain
+
+const framed = () => isDesktop && frameOn && frames.length > 0;
+
+// Under a frame the pane text is clipped to the panel and scrolls inside it, so the
+// scrolling element moves from the wrap to the text node itself. Everything that
+// pins scroll position has to ask rather than assume.
+function scroller() { return framed() ? els.screen : els.wrap; }
+
+function currentFrame() {
+  if (!frames.length) return null;
+  return frames[((frameIdx % frames.length) + frames.length) % frames.length];
+}
+
+// Where the panel lands, in wrap-local px. The art is contain-fit and centred, so the
+// panel fractions (which are fractions of the IMAGE) have to be mapped through the
+// letterbox offset — CSS alone can't express that.
+function panelRect() {
+  const W = els.wrap.clientWidth, H = els.wrap.clientHeight;
+  const f = currentFrame();
+  const dim = f && frameDims.get(f.name);
+  if (!f || !dim) return { x: 0, y: 0, w: W, h: H };
+  const scale = Math.min(W / dim.w, H / dim.h);
+  const dw = dim.w * scale, dh = dim.h * scale;
+  const ox = (W - dw) / 2, oy = (H - dh) / 2;
+  return {
+    x: ox + dw * f.panel.left,
+    y: oy + dh * f.panel.top,
+    w: Math.max(80, dw * (1 - f.panel.left - f.panel.right)),
+    h: Math.max(60, dh * (1 - f.panel.top - f.panel.bottom)),
+  };
+}
+
+function applyFrame() {
+  const on = framed();
+  els.wrap.classList.toggle("framed", on);
+  if (!on) {
+    els.wrap.style.backgroundImage = "";
+    computeFit();
+    return;
+  }
+  const f = currentFrame();
+  els.wrap.style.backgroundImage = `url("frame/${encodeURIComponent(f.name)}")`;
+  const r = panelRect();
+  const s = els.wrap.style;
+  s.setProperty("--panel-x", r.x.toFixed(1) + "px");
+  s.setProperty("--panel-y", r.y.toFixed(1) + "px");
+  s.setProperty("--panel-w", r.w.toFixed(1) + "px");
+  s.setProperty("--panel-h", r.h.toFixed(1) + "px");
+  computeFit();
+}
+
+// naturalWidth/Height rather than a server-side image parse: the browser has to
+// decode the art anyway, so this costs nothing extra and keeps PNG/GIF/WebP support
+// as whatever the browser handles.
+function measureFrame(f) {
+  if (frameDims.has(f.name)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { frameDims.set(f.name, { w: img.naturalWidth, h: img.naturalHeight }); resolve(); };
+    img.onerror = resolve; // a frame that won't decode just never themes
+    img.src = `frame/${encodeURIComponent(f.name)}`;
+  });
+}
+
+async function loadFrames() {
+  if (!isDesktop) return;
+  try {
+    const r = await fetch("api/frames");
+    frames = (await r.json()).frames || [];
+  } catch (e) { frames = []; }
+  renderFrameLabel();
+  if (!frames.length) return;
+  await measureFrame(currentFrame());
+  applyFrame();
+  renderFrameLabel();
+}
+
+function setFrame(i) {
+  if (!frames.length) return;
+  frameIdx = ((i % frames.length) + frames.length) % frames.length;
+  localStorage.setItem("plane-frame-idx", frameIdx);
+  // Measure before applying, else the first paint of a new frame uses the previous
+  // frame's dimensions and the panel lands in the wrong place for one tick.
+  measureFrame(currentFrame()).then(() => { applyFrame(); renderFrameLabel(); });
+}
+
+function toggleFrame() {
+  frameOn = !frameOn;
+  localStorage.setItem("plane-frame-on", frameOn ? "1" : "0");
+  if (frameOn && frames.length) {
+    measureFrame(currentFrame()).then(() => { applyFrame(); renderFrameLabel(); });
+  } else { applyFrame(); renderFrameLabel(); }
+}
+
+function nextFrame() {
+  // With the theme off, next turns it back on where you left it.
+  if (!frameOn) { toggleFrame(); return; }
+  setFrame(frameIdx + 1);
+}
+
+function renderFrameLabel() {
+  const el = document.getElementById("frame-label");
+  if (!el) return;
+  const f = currentFrame();
+  el.textContent = !frames.length ? "no frames"
+    : frameOn && f ? f.name.replace(/\.(png|gif|jpe?g|webp)$/i, "") : "theme off";
+}
+
 // ---- Desktop keystroke passthrough ----
 // Native feel means keys reach tmux as you type, not a line at a time. Two things
 // make that safe: printable characters coalesce into one send (a POST per keypress
@@ -818,6 +969,14 @@ document.addEventListener("keydown", (e) => {
   if (isDesktop && !typingInField() && e.key === "F11") {
     e.preventDefault(); toggleFullscreen(); return;
   }
+  // F9/F12 mirror the emulator's own frame bindings, so the same keys do the same
+  // thing whether the pane is in a terminal or in this page.
+  if (isDesktop && !typingInField() && e.key === "F9") {
+    e.preventDefault(); nextFrame(); return;
+  }
+  if (isDesktop && !typingInField() && e.key === "F12") {
+    e.preventDefault(); toggleFrame(); return;
+  }
   if (!isDesktop || !passthrough || typingInField()) return;
   if (!els.admin.hidden || !els.spawn.hidden) return; // a panel is open; leave it alone
   if (activeIdx === null) return;
@@ -874,11 +1033,17 @@ function buildDesktopBar() {
   bar.className = "deskbar";
   bar.id = "deskbar";
   bar.innerHTML =
+    '<button type="button" id="frame-toggle" title="Frame theme on/off (F12)">frame</button>' +
+    '<button type="button" id="frame-next" title="Next frame (F9)">▸</button>' +
+    '<span class="frame-label" id="frame-label"></span>' +
     '<button type="button" id="pass-toggle" title="Send keystrokes straight to the pane" aria-pressed="true">keys: direct</button>' +
     '<button type="button" id="full-toggle" title="Fullscreen (F11)">full</button>';
   document.querySelector("header").appendChild(bar);
   document.getElementById("full-toggle").addEventListener("click", toggleFullscreen);
   document.getElementById("pass-toggle").addEventListener("click", () => setPassthrough(!passthrough));
+  document.getElementById("frame-toggle").addEventListener("click", toggleFrame);
+  document.getElementById("frame-next").addEventListener("click", nextFrame);
+  renderFrameLabel();
 }
 
 // A capability change (window dragged to another monitor, browser resized across
@@ -888,9 +1053,14 @@ function onDesktopChange() {
   const was = isDesktop;
   isDesktop = DESKTOP_Q.matches;
   if (was === isDesktop) return;
-  if (isDesktop) { buildDesktopBar(); setPassthrough(passthrough); }
+  if (isDesktop) { buildDesktopBar(); setPassthrough(passthrough); loadFrames(); }
   else {
     document.body.classList.remove("passthrough");
+    // A frame is a desktop-only surface: strip it rather than leaving art behind a
+    // mobile layout that never sized itself to a panel.
+    els.wrap.classList.remove("framed");
+    els.wrap.style.backgroundImage = "";
+    computeFit();
     const bar = document.getElementById("deskbar");
     if (bar) bar.remove();
     computeFit();
@@ -927,7 +1097,9 @@ document.getElementById("font-dn").addEventListener("click", () => nudgeFont(-1)
 let fitTimer = null;
 function scheduleFit() {
   clearTimeout(fitTimer);
-  fitTimer = setTimeout(computeFit, 120);
+  // A resize moves the letterbox, so under a frame the panel has to be re-placed
+  // before the text is re-fitted to it — applyFrame ends in computeFit.
+  fitTimer = setTimeout(() => { framed() ? applyFrame() : computeFit(); }, 120);
 }
 window.addEventListener("resize", scheduleFit);
 window.addEventListener("orientationchange", scheduleFit);
@@ -983,6 +1155,7 @@ computeFit();
 setConn("connecting");
 buildDesktopBar();
 setPassthrough(passthrough);
+loadFrames();
 
 // Adaptive poll. Was `setInterval(poll, POLL_MS)`, which could stack overlapping
 // requests whenever a poll outran its own interval; a self-scheduling chain can't.

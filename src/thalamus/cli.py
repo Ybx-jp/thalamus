@@ -609,7 +609,7 @@ def main():
     spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
 
     roster_parser = subparsers.add_parser(
-        "roster", help="Bring up the control plane (the `main` anchor; --all for every expert)"
+        "roster", help="Bring up the tmux roster (the `main` anchor; --all for every expert)"
     )
     roster_parser.add_argument(
         "--all", action="store_true",
@@ -647,15 +647,15 @@ def main():
         "--no-open", action="store_true", help="Start the viewer without opening a browser"
     )
 
-    # Console command — the tmux control plane, drivable from a phone
+    # Console command — the operator surface onto the tmux roster, drivable from a phone
     console_parser = subparsers.add_parser(
         "console",
-        help="Serve the control plane: drive the pinned tmux roster from a browser",
+        help="Serve the console: drive the pinned tmux roster from a browser",
     )
     console_parser.add_argument(
         "--host", default="127.0.0.1",
         help="Bind address (default: localhost — the console has no auth of its own; "
-             "see docs/control-plane.md)"
+             "see docs/console.md)"
     )
     console_parser.add_argument(
         "--port", type=int, default=CONSOLE_PORT, help=f"Port (default: {CONSOLE_PORT})"
@@ -682,6 +682,11 @@ def main():
         "--service", action="append", default=[], metavar="UNIT",
         help="A systemd --user unit the admin sheet may restart (repeatable; "
              "default: none, which hides the section)"
+    )
+    console_parser.add_argument(
+        "--frames", type=Path, default=None, metavar="PATH",
+        help="Frame-theme definitions for the desktop client, e.g. "
+             "$WEZTERM_CONFIG_DIR/frames.lua (default: none — no frame themes)"
     )
 
     # Pulse command — the live telemetry dashboard (docs/03)
@@ -1955,7 +1960,7 @@ def _cmd_console(args):
     from thalamus.harness.pin import PROJECT_ROOT
 
     if not shutil.which("tmux"):
-        print("The control plane needs tmux — it drives the pinned roster's windows.",
+        print("The console needs tmux — it drives the pinned roster's windows.",
               file=sys.stderr)
         sys.exit(1)
 
@@ -1965,13 +1970,14 @@ def _cmd_console(args):
         favorites=args.dir,
         scan_roots=args.scan,
         services=args.service,
+        frames_file=args.frames,
     )
     if subprocess.run(["tmux", "has-session", "-t", cfg.session],
                       capture_output=True).returncode != 0:
-        # Serve anyway: the plane showing an empty roster and a working spawn
+        # Serve anyway: the console showing an empty roster and a working spawn
         # button is a better answer than a refusal the operator reads on a phone.
         print(f"! no tmux session `{cfg.session}` yet — start one with `thalamus roster`, "
-              "or use the plane's ＋ button once it's up.")
+              "or use the console's ＋ button once it's up.")
     print("Press Ctrl+C to stop.")
     serve(cfg, host=args.host, port=args.port)
 
