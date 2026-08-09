@@ -20,6 +20,7 @@ collaboration step (arXiv 2606.04990) and the citation gate is a write-path defe
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -288,6 +289,75 @@ def test_between_turns_is_busy_or_not(tmp_path):
         )
         session = quick.live_sessions(tmp_path)[0]
         assert session.between_turns is expected, status
+
+
+def test_a_busy_parent_is_forked_not_refused(tmp_path):
+    """
+    Scenario: The only live session for the scope is mid-turn, and the caller does not
+    ask to wait
+
+    Verifications:
+    - the busy target is returned, immediately, with no sleeping
+
+    Non-interruption is the reason this tier forks rather than messaging the expert.
+    An expert that has to be free before it can be consulted is an expert you
+    interrupted, so `busy` is the case the design is *for* — its 13x price and its
+    missed message body are recorded, not enforced.
+    """
+    write_descriptor(
+        tmp_path, pid=os.getpid(), session_id="busy-one",
+        agent="thalamus-homelab", status="busy",
+    )
+    slept: list[float] = []
+
+    target = quick.await_target(
+        "homelab", wait=0, config_dir_override=tmp_path, sleeper=slept.append
+    )
+
+    assert target.session_id == "busy-one"
+    assert target.between_turns is False
+    assert slept == []
+
+
+def test_waiting_is_offered_and_gives_up_by_forking(tmp_path):
+    """
+    Scenario: The caller passes --wait, and the parent lands its turn partway through;
+    then a second caller waits out the full deadline on a parent that never does
+
+    Verifications:
+    - the wait ends the moment the parent is between turns
+    - an expired deadline forks the busy parent rather than refusing
+
+    Waiting spends the caller's latency — the endpoint the tier is justified on — to
+    save the fork's dollars, so it is the optimisation and never the gate. A deadline
+    that expires means the optimisation did not pay off, not that the consultation
+    failed.
+    """
+    descriptor = write_descriptor(
+        tmp_path, pid=os.getpid(), session_id="p", agent="thalamus-homelab",
+        status="busy",
+    )
+    calls: list[float] = []
+
+    def land_the_turn(seconds):
+        calls.append(seconds)
+        if len(calls) == 2:
+            write_descriptor(
+                tmp_path, pid=os.getpid(), session_id="p",
+                agent="thalamus-homelab", status="idle",
+            )
+
+    landed = quick.await_target(
+        "homelab", wait=60, config_dir_override=tmp_path, poll=0, sleeper=land_the_turn
+    )
+    assert landed.between_turns and len(calls) == 2
+
+    descriptor.write_text(descriptor.read_text().replace('"idle"', '"busy"'))
+    expired = quick.await_target(
+        "homelab", wait=1, config_dir_override=tmp_path, poll=0.5,
+        sleeper=time.sleep,
+    )
+    assert expired.between_turns is False
 
 
 def test_scope_comes_from_the_launch_agent(tmp_path):

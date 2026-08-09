@@ -356,6 +356,14 @@ prefix, and a **mid-turn** fork pays 13× the post-turn price, because a truncat
 conversation lands on no cached block boundary. Warmth decays inside the nominal TTL
 (44.8% at 38 minutes).
 
+**Recency decides whether you hit the cache; the parent's growth decides what a partial
+miss costs.** A fork of a large, actively-working expert at a 66% hit created 174,724
+tokens and cost **$1.95 on 1,120 output tokens** — twice the price of a call that wrote
+four times as much ([lab/050](../lab/050-the-first-live-quick-call.md)). So "bimodal on
+recency, not size" is right about the hit and wrong about the bill: the created half
+scales with everything the parent has added since its prefix was last cached. The
+expensive expert is the busy one, which is the expert a blocked caller most wants.
+
 This is a scheduling property, not a budget line. **The room largely answers it**: a room
 is a co-working cluster by construction, so its members are active in the same window and
 the warm case is the common one — the "roster is normally idle" figure that first
@@ -363,18 +371,28 @@ suggested otherwise was drawn from the *solo* roster, which is the wrong populat
 room in use. What survives is narrower and still unmeasured: how often a room-mate is warm
 *enough*, given that warmth decays inside the nominal TTL, and the mid-turn case, where
 non-interruption steers `quick` toward a busy expert and a truncated conversation lands on
-no cached boundary. Waiting for the current turn to land is the cheapest available
-optimisation, and a room-level cache pre-warm would close the rest.
+no cached boundary.
+
+**A busy parent is forked, not refused.** It is the case the tier exists for: an expert
+that has to be free before it can be consulted is an expert you interrupted, and the
+caller is blocked *now*. The 13× price and the missed message body are recorded on the
+exchange (`parent_status`, `parent_between_turns`) and warned about at the caller's
+boundary. Waiting for the current turn to land is the cheapest available optimisation and
+is therefore **offered, never imposed** — `thalamus quick ask --wait <seconds>` holds for
+it, defaulting to zero, because waiting spends the caller's latency, which is the endpoint
+this whole tier is justified on, to save the fork's dollars. A room-level cache pre-warm
+would close the rest.
 
 **Availability is a harder constraint than warmth, and the solo roster fails it
 outright.** A session is registered in the live roster from the moment it starts but files
 no transcript until its first *turn*, so a spawned-and-untouched expert is live and
 **unforkable** — `--resume` exits 1. Measured on this roster: of four live pinned expert
-sessions, three had never been spoken to and the fourth was mid-turn
-([lab/050](../lab/050-the-first-live-quick-call.md)). The launcher checks for the parent's
-transcript before minting, so an unforkable parent costs nothing, and `thalamus quick
-targets` reports it. The room remains the only argument that this tier has anyone to call,
-and it is still the unmeasured one.
+sessions, three had never been spoken to, leaving one forkable
+([lab/050](../lab/050-the-first-live-quick-call.md)). That it was mid-turn costs money and
+does not cost availability. The launcher checks for the parent's transcript before
+minting, so an unforkable parent costs nothing, and `thalamus quick targets` reports it.
+The room remains the only argument that this tier has anyone to call, and it is still the
+unmeasured one.
 
 ### Prior work
 

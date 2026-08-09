@@ -41,6 +41,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -92,14 +93,15 @@ class LiveSession:
 
     @property
     def between_turns(self) -> bool:
-        """Not mid-turn — the cheap moment to fork.
+        """Not mid-turn — the cheap moment to fork, and never a precondition for it.
 
         A mid-turn fork costs 13× the post-turn price, because a truncated
         conversation lands on no cached block boundary (lab/049), and it also misses
-        the message body the caller is asking about. The harness writes several
-        resting states (`idle`, `waiting`) and one working one, so the test is
-        `busy`-or-not rather than an allow-list: an unrecognised status must not be
-        read as "mid-turn" and turn a cheap call into a refusal.
+        the message body the parent is still writing. Both are recorded on the
+        exchange and neither gates the call: forking a *busy* expert without
+        disturbing it is what this tier is for. The harness writes several resting
+        states (`idle`, `waiting`) and one working one, so the test is `busy`-or-not
+        rather than an allow-list.
         """
         return self.status != "busy"
 
@@ -206,6 +208,40 @@ def resolve_target(scope: str, config_dir_override: Path | None = None) -> LiveS
             f"to pick between them: {rows}. Close one, or consult by full ticket."
         )
     return candidates[0]
+
+
+def await_target(
+    scope: str,
+    wait: int = 0,
+    config_dir_override: Path | None = None,
+    poll: float = 2.0,
+    sleeper=time.sleep,
+) -> LiveSession:
+    """Resolve the target, optionally holding for a mid-turn parent to land its turn.
+
+    **A busy parent is not refused.** Non-interruption is the reason this tier forks
+    rather than messaging the live expert — an expert that has to be free before it can
+    be consulted is an expert you interrupted (docs/02). A mid-turn fork costs ~13× and
+    misses the message body its parent is still writing, and both are recorded on the
+    exchange; neither is a reason to send a blocked caller away.
+
+    Waiting is therefore the *optimisation*, offered and never imposed: it spends the
+    caller's latency, which is the endpoint the tier is justified on, to save the
+    fork's dollars. `wait=0` — fork now — is the default for that reason. The deadline
+    expiring is not a failure either; it just forks.
+    """
+    target = resolve_target(scope, config_dir_override)
+    if wait <= 0 or target.between_turns:
+        return target
+    deadline = datetime.now(timezone.utc).timestamp() + wait
+    while datetime.now(timezone.utc).timestamp() < deadline:
+        sleeper(poll)
+        # Re-resolved rather than re-read: a parent can exit inside the wait, and a
+        # second same-scope session can appear, both of which change the answer.
+        target = resolve_target(scope, config_dir_override)
+        if target.between_turns:
+            return target
+    return target
 
 
 def grant_text(target: LiveSession, scope: str, fork_point: datetime) -> str:

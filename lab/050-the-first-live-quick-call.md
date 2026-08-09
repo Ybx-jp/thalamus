@@ -1,10 +1,10 @@
-# 050 — The first live quick call, and the four things it broke
+# 050 — The first live quick call, and the eight things it broke
 
 `thalamus quick ask homelab "…"` was run against a real live `homelab` session on
 2026-08-09, minutes after the launcher was written and the suite was green. It
-answered, correctly and with citations. It also broke in four places, three of which
-no unit test could have caught, because each one is a seam between two components
-that were each fine.
+answered, correctly and with citations. It also broke in eight places — seven of them
+seams between two components that were each fine, and one a design sentence the
+implementation had inverted.
 
 The call itself:
 
@@ -122,7 +122,7 @@ Turning that check on the roster is the finding:
 
 | Live pinned expert session | Age | Forkable |
 |---|---|---|
-| `homelab` | 10 min | yes — and `busy` |
+| `homelab` | 10 min | yes — `busy`, which costs money and not availability |
 | `teacher` ×3 | ~16.5 h | **no — never had a turn** |
 
 lab/049 said the roster's normal state is *idle*, and docs/02 answered that a room is a
@@ -167,10 +167,33 @@ was never negotiable. This is the second time dropping the brief has needed a
 compensating record (`brief_served: false` was the first): **a projection of the
 exchange record is legitimate only where something says which projection it is.**
 
+## 8. An optimisation promoted to a gate deleted the feature
+
+The launcher shipped refusing a mid-turn parent unless `--force-busy` was passed. The
+design says the opposite, in the sentence that justifies the whole tier: **non-
+interruption is why this forks rather than messaging the live expert**. An expert that
+has to be free before it can be consulted is an expert you interrupted. Refusing `busy`
+turns the quick tier into a slower version of asking someone who is already idle — the
+one case that never needed it.
+
+The measured facts were right and the inference was not. A mid-turn fork *does* cost
+13× and *does* miss the message body its parent is still writing. Both are costs to
+record, and lab/049's own consequence was that waiting is "the cheapest available
+optimisation" — an optimisation, offered. Making it the default flipped a cost onto the
+caller's latency, which is the endpoint the tier is justified on, in order to save the
+fork's dollars, which is not.
+
+`--force-busy` is gone; `--wait <seconds>` replaces it, defaulting to zero, and an
+expired deadline forks rather than refusing. Caught by the operator, and the general
+form is worth keeping: **when a design names something a preference, a launcher that
+enforces it has changed the design.** Every refusal this launcher makes should be
+re-read against that — 0 targets, 2 targets and no-conversation each make the call
+*impossible*, which is a different thing from expensive.
+
 ## What this says about the suite
 
 27 unit tests passed before the first call and after it. They pin the launcher against
-fakes: a fake roster, a fake subprocess, a fake graph. **All seven defects live in the
+fakes: a fake roster, a fake subprocess, a fake graph. **All eight defects live in the
 seams the fakes stand in for** — the real ledger's other writers, the real parser's
 rules, the real MCP server's availability to the fork, the real harness's
 transcript-on-first-turn behaviour, the real hook lifecycle, the real contract audit,
@@ -197,3 +220,25 @@ launcher is written, not after it is trusted.
 
 Half the wall clock and 40% of the price of the first call, on a third of the output
 tokens. Same reduction as before: **the tier's cost is what the expert writes.**
+
+## The third call, and the limit of "recency, not size"
+
+With the mid-turn refusal removed, the same `homelab` parent — now an hour into a large
+piece of work — was forked again:
+
+| | First call | Third call |
+|---|---|---|
+| Cache read / created | 318,423 / 69,643 | **340,579 / 174,724** |
+| Hit | 82% | 66% |
+| Output tokens | 4,784 | 1,120 |
+| Cost | $0.975 | **$1.946** |
+
+Twice the price on a *quarter* of the output. lab/049's "cost is bimodal on the parent's
+recency rather than its size" holds for whether you hit the cache at all; it does not
+hold for what a partial hit costs. **Recency decides whether you hit; the parent's growth
+since its last cached prefix decides how much the miss costs**, and that grows with the
+parent. A large, actively-working expert is the expensive case even when it is warm —
+which is exactly the expert a blocked caller most wants to ask.
+
+That is a price to record and warn about, not to refuse over (§8). The fields are already
+on the exchange: both cache counts, the derived `cache_hit`, and `parent_status`.

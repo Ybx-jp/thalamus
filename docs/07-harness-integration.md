@@ -782,8 +782,10 @@ So cost is bimodal and the discriminator is **parent recency, not parent size**:
 0.08 warm, $0.55–1.35 cold or agent-mismatched, and **13× for a mid-turn fork**, which
 misses the message body because a truncated conversation lands on no cached block
 boundary. Warmth also decays well inside the nominal 1-hour TTL — 44.8% at 38 minutes,
-tools+system only. A `quick` launcher records both cache fields and prefers a
-parent between turns.
+tools+system only. `thalamus quick` records both cache fields and *prefers* a parent
+between turns without requiring one: forking a busy expert without disturbing it is
+the point of the tier, so the mid-turn price is warned about and recorded, and
+`--wait <seconds>` is there for a caller who would rather spend latency than money.
 
 **Fork overhead is 2–7% of a real call, and the fork does not generate faster.** The
 1.6–2.5 s figures are process start, transcript load and prefill, measured on a one-word

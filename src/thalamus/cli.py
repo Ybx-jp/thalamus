@@ -672,9 +672,11 @@ def main():
         help="Seconds to wait for the fork's answer (default: %(default)s)"
     )
     quick_ask.add_argument(
-        "--force-busy", action="store_true",
-        help="Fork a parent that is mid-turn. Costs 13x the between-turns price and "
-             "misses the message body the parent is still writing (lab/049)."
+        "--wait", type=int, default=0, metavar="SECONDS",
+        help="Hold up to this long for a mid-turn parent to land its turn before "
+             "forking (default: 0 — fork now). A mid-turn fork costs ~13x and misses "
+             "the message body its parent is still writing, but waiting spends the "
+             "caller's latency, which is what this tier exists to save."
     )
     quick_ask.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     quick_targets = quick_sub.add_parser(
@@ -2004,19 +2006,20 @@ def _cmd_quick(args, parser):
 
     from_scope = args.from_scope or pin.resolve_pin()
     try:
-        target = quick_mod.resolve_target(args.expert)
+        # A busy parent is the case this tier exists for. Non-interruption is why it
+        # forks instead of messaging the expert, and the caller is blocked *now* — so
+        # `--wait` is offered and never imposed. It costs the caller latency, which is
+        # the endpoint the whole tier is justified on, to save the fork dollars.
+        target = quick_mod.await_target(args.expert, wait=args.wait)
     except quick_mod.QuickRefused as e:
         print(f"Quick consultation refused: {e}", file=sys.stderr)
         sys.exit(1)
-    if not target.between_turns and not args.force_busy:
+    if not target.between_turns:
         print(
-            f"Quick consultation refused: `{args.expert}` (session "
-            f"{target.session_id[:8]}) is mid-turn. Forking now costs 13x the "
-            "between-turns price and misses the message body it is still writing. "
-            "Wait for the turn to land, or pass --force-busy.",
+            f"— forking `{args.expert}` mid-turn: ~13x the between-turns price, and "
+            "the fork will not see the message its parent is still writing.",
             file=sys.stderr,
         )
-        sys.exit(1)
 
     graph = connect(args.url)
     try:
