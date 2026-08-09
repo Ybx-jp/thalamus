@@ -346,11 +346,14 @@ def _transcript(home, cwd, session_id, body="{}\n"):
     return path
 
 
-def _session_end(home, cwd, session_id, bin_dir, scope="literature"):
+def _session_end(home, cwd, session_id, bin_dir, scope="literature", transcript_path=""):
+    payload = {"session_id": session_id, "cwd": str(cwd),
+               "hook_event_name": "SessionEnd", "reason": "exit"}
+    if transcript_path:
+        payload["transcript_path"] = str(transcript_path)
     return subprocess.run(
         [str(HOOKS / "session-end.sh")],
-        input=json.dumps({"session_id": session_id, "cwd": str(cwd),
-                          "hook_event_name": "SessionEnd", "reason": "exit"}),
+        input=json.dumps(payload),
         capture_output=True, text=True, timeout=30,
         env={"HOME": str(home),
              "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin",
@@ -420,6 +423,29 @@ class TestTranscriptlessSessionsAreNotDistilled:
         while time.time() < deadline and not argv_log.exists():
             time.sleep(0.2)
         assert argv_log.exists()
+        assert "thalamus extract" in argv_log.read_text()
+
+    def test_the_guard_looks_where_the_transcript_actually_landed(self, tmp_path):
+        """A room runs under its own CLAUDE_CONFIG_DIR and files its transcript in
+        that dir's `projects/`, which ~/.claude/projects never sees (lab/046). The
+        guard has to resolve against the root the transcript came from; anchored to
+        the default root instead, every room session reads as transcriptless and is
+        skipped — the guard would silently become the memory loss it prevents.
+        """
+        bin_dir, argv_log = self._stub_uv(tmp_path)
+        room_projects = tmp_path / "room-config" / "projects" / "-some-project"
+        room_projects.mkdir(parents=True)
+        transcript = room_projects / "room-sess-1.jsonl"
+        transcript.write_text("{}\n")
+        assert not (tmp_path / ".claude" / "projects").exists()   # not the default root
+
+        _session_end(tmp_path, tmp_path, "room-sess-1", bin_dir,
+                     transcript_path=transcript)
+
+        deadline = time.time() + 20
+        while time.time() < deadline and not argv_log.exists():
+            time.sleep(0.2)
+        assert argv_log.exists(), "a room session was skipped as transcriptless"
         assert "thalamus extract" in argv_log.read_text()
 
 

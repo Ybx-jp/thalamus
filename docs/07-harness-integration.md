@@ -510,7 +510,16 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    land as priced Trace nodes, and any backlog from other distilled sessions is
    swept in the same pass (trace identity is content-addressed, so concurrent
    session-ends converge). The Pulse dashboard's pending stamp (docs/03) is the
-   observable for this loop.
+   observable for this loop. SessionEnd fires for **subagents** too — they are
+   sessions to the harness — so it first checks that a transcript exists for the
+   session id and exits without spawning anything when one does not. A subagent
+   has no transcript of its own, so extracting it can only fail, and discovering
+   that costs a `uv run` plus a model call each: on a fanning-out box that was two
+   thirds of all session-end runs, enough to oversubscribe the machine and starve
+   a real distillation into failure. The test is the transcript and not the pin
+   ledger on purpose — ledger absence would also catch subagents, but it would
+   silently skip a real session whenever SessionStart failed to record one, which
+   trades wasted CPU for lost memory.
 3. **Pin immutability is enforced by process lifetime, not policy.** A pin cannot
    change mid-session because nothing can re-scope a running process (lab/001) —
    the property v1 wanted is the property the harness gives. "Wrong pin" is data,
