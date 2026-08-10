@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import html as html_lib
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -45,6 +46,37 @@ class IngestError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class DigestReport:
+    """What of the document actually reached the extraction model.
+
+    The archive keeps every fetched byte, but only `_DIGEST_BUDGET` chars of extracted
+    text are handed to the model, and the discard is silent at the model's end: claims
+    come from the opening and the tail is invisible rather than thinly covered. The
+    operator's confirm step (docs/06 §5) can only weigh that if it is told, and raw
+    payload bytes cannot tell it — markup-to-text ratio varies by an order of magnitude
+    across sources, so bytes are not a proxy for what got read.
+    """
+
+    text_chars: int
+    budget: int = _DIGEST_BUDGET
+
+    @property
+    def truncated(self) -> bool:
+        return self.text_chars > self.budget
+
+    @property
+    def discarded(self) -> int:
+        return max(0, self.text_chars - self.budget)
+
+    @property
+    def coverage(self) -> float:
+        """Fraction of the document's text the extractor actually saw."""
+        if not self.text_chars:
+            return 0.0
+        return min(self.text_chars, self.budget) / self.text_chars
+
+
 def fetch(location: str) -> tuple[bytes, str]:
     """Fetch a URL or read a local file. Returns (payload, origin)."""
     if location.startswith(("http://", "https://")):
@@ -70,8 +102,11 @@ def to_text(payload: bytes) -> str:
     """
     if payload[:5] == b"%PDF-":
         raise IngestError(
-            "PDF parsing is deliberately unbuilt (docs/06) — ingest the abstract "
-            "page or a text export instead; the archive will retain whatever you feed"
+            "PDF parsing is deliberately unbuilt (docs/06) — feed an HTML rendering "
+            "(for arXiv, arxiv.org/html/<id>) or hand-feed the relevant sections as a "
+            "local text file under ~/.thalamus/hand-fed/. Do NOT settle for the "
+            "abstract page: /abs/ yields abstract-level claims only, and the failure "
+            "is silent (docs/06 §4). The archive will retain whatever you feed"
         )
     text = payload.decode("utf-8", errors="ignore")
     if "<" in text and ">" in text:
@@ -226,7 +261,7 @@ def ingest(
     harness: str = "claude",
     title: str = "",
     known_entities: list[dict] | None = None,
-) -> tuple[KnowledgeBatch, extraction.ExtractionRun]:
+) -> tuple[KnowledgeBatch, extraction.ExtractionRun, DigestReport]:
     """The full v0 path: fetch → retain → extract → assemble. Contract checks and
     graph writes belong to the caller (the CLI), which also owns dry-run semantics.
 
@@ -259,4 +294,4 @@ def ingest(
         title_override=title,
         known_entities=known_entities,
     )
-    return batch, run
+    return batch, run, DigestReport(text_chars=len(text))

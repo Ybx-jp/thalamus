@@ -113,8 +113,39 @@ def test_html_becomes_text_and_scripts_do_not():
 
 
 def test_pdfs_are_refused_not_half_parsed():
-    with pytest.raises(IngestError, match="deliberately unbuilt"):
+    with pytest.raises(IngestError, match="deliberately unbuilt") as caught:
         to_text(b"%PDF-1.7 ...")
+
+    # The refusal fires at exactly the moment docs/06 §4 warns about — no HTML
+    # rendering available — so it must not send the operator to the landing page,
+    # whose abstract-only extraction fails silently. Pinned because the original
+    # message did precisely that for three weeks.
+    message = str(caught.value)
+    assert "hand-feed" in message and "arxiv.org/html/" in message
+    assert "ingest the abstract" not in message
+
+
+def test_digest_report_names_what_the_extractor_never_saw():
+    """
+    Scenario: A document whose extracted text runs past the digest budget
+
+    The archive keeps every byte, but the model only ever sees `budget` chars, and
+    the discard is silent on the model's side. Payload bytes cannot stand in for
+    this — markup-to-text ratio swings by an order of magnitude — so the report is
+    denominated in text chars, the same unit as the budget.
+    """
+    from thalamus.harness.ingest import DigestReport
+
+    over = DigestReport(text_chars=90_025, budget=24_000)
+    assert over.truncated
+    assert over.discarded == 66_025
+    assert round(over.coverage, 2) == 0.27
+
+    within = DigestReport(text_chars=4_862, budget=24_000)
+    assert not within.truncated
+    assert within.discarded == 0 and within.coverage == 1.0
+
+    assert DigestReport(text_chars=0).coverage == 0.0
 
 
 def test_build_batch_stamps_provenance_and_drops_malformed_items():

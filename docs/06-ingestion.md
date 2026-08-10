@@ -85,9 +85,14 @@ literature expert.
    hard cases both live past it. Measured 2026-08-08 on a truth-discovery survey
    (89,697 chars, ~3.7× the budget): every claim came from the first ~24,000, and the
    source-independence material it was procured for — sitting in §3.2 — produced
-   nothing, which a 7,585-byte section feed then yielded in full. So compare fetched
-   length against the budget *before* writing, and treat a long guide, survey, or
-   chapter as a section feed by default. The whole-document pass is still worth
+   nothing, which a 7,585-byte section feed then yielded in full. **The dry run
+   reports the loss rather than leaving it to be remembered:** every ingest prints the
+   extracted text length and what fraction of it fell inside the budget, and a
+   truncated document raises a warning naming the discarded chars. Payload bytes
+   cannot carry this — markup-to-text ratio swings by an order of magnitude, so a
+   508,263-byte arXiv HTML page and a 44,256-byte `/abs/` page say nothing about which
+   was read in full (they are 27% and 100% respectively). Treat a long guide, survey,
+   or chapter as a section feed by default. The whole-document pass is still worth
    writing for breadth; it is the front of the document, not a map of it.
 5. **Dry-run, verify, then write.** Every ingest runs without `--write` first and
    the operator confirms the extracted title matches the document intended —

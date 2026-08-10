@@ -1288,7 +1288,7 @@ def _cmd_ingest(args):
         pass
 
     try:
-        batch, run = ingest_mod.ingest(
+        batch, run, digest = ingest_mod.ingest(
             args.location,
             scope=args.scope,
             feed=args.feed,
@@ -1302,6 +1302,21 @@ def _cmd_ingest(args):
         sys.exit(1)
 
     print(f"Retained: {batch.source.uri} ({batch.source.byte_size:,} bytes)")
+    print(
+        f"Read: {digest.text_chars:,} chars of text, "
+        f"{digest.coverage:.0%} of it within the {digest.budget:,}-char digest budget"
+    )
+    if digest.truncated:
+        print(
+            f"\n  ⚠ TRUNCATED — {digest.discarded:,} chars past the budget were never "
+            f"seen by the extractor.\n"
+            f"    The claims below come from the opening {digest.budget:,} chars; the "
+            f"tail is invisible,\n"
+            f"    not thinly covered. If a specific mechanism has to be citable, feed "
+            f"that section as\n"
+            f"    its own file (docs/06 §4).",
+            file=sys.stderr,
+        )
     priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "cost not reported"
     print(f"Extracted: {len(batch.claims)} claims, {len(batch.entities)} entities "
           f"({priced})")
