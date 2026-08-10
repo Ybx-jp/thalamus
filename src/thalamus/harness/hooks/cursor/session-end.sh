@@ -5,13 +5,13 @@
 # final_status, ...} + common fields (transcript_path, workspace_roots).
 # Fire-and-forget; no output is honored.
 #
-# ⚠️ This hook records the session's end — it does NOT distill. Distillation
-# (`thalamus extract`) parses Claude Code's JSONL transcript format
-# (harness/transcripts.py); Cursor transcripts are a different format, and no
-# adapter exists yet (lab/010 — a wall, not an oversight). Until one does, a
-# Cursor session's episodic memory is NOT captured. This hook logs the ended
-# session with its transcript_path and pinned scope so the evidence pointer
-# survives and a future adapter can backfill from Cursor's own storage.
+# ⚠️ This hook records the session's end — it does NOT distill. Distillation runs
+# as a later sweep (`thalamus extract --harness cursor`, harness/cursor_transcripts.py)
+# because Cursor is not documented to flush the transcript before firing this hook,
+# so reading it here races an async writer and can distill a truncated session.
+# This hook logs the ended session with its transcript_path and pinned scope; the
+# sweep reads that pointer, which is also what makes backfill of everything logged
+# so far possible.
 #
 # Install (project <root>/.cursor/hooks.json):
 #   {"version": 1, "hooks": {"sessionEnd": [{"command":
@@ -54,7 +54,7 @@ jq -cn --arg sid "$session_id" --arg scope "$scope" --arg tp "$transcript_path" 
   --arg reason "$reason" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   '{ts: $ts, harness: "cursor", session_id: $sid, scope: $scope,
     transcript_path: $tp, reason: $reason,
-    distilled: false, note: "no Cursor transcript adapter (lab/010)"}' \
+    distilled: false}' \
   >> "$log_dir/cursor-session-end.jsonl"
 
 exit 0

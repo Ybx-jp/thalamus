@@ -275,7 +275,12 @@ class TestSessionEnd:
         assert ends[-1]["scope"] == "literature"
         assert ends[-1]["distilled"] is False
         assert ends[-1]["transcript_path"] == "/home/user/.cursor/transcripts/c4.json"
-        assert "lab/010" in ends[-1]["note"]
+        # The row is the pointer the later `extract --harness cursor` sweep reads,
+        # so what it must carry is the pointer and the scope — not commentary. An
+        # assertion on a prose note pins the note's wording rather than the
+        # contract, and outlives whatever the note was explaining.
+        assert ends[-1]["harness"] == "cursor"
+        assert ends[-1]["session_id"] == "c4"
 
 
 class TestDeferredInjection:

@@ -98,7 +98,17 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # The Cursor wiring, as (event, script). Event names and their I/O shapes were
 # re-verified against cursor.com/docs/hooks.md on 2026-07-29 (lab/027).
 #
-# Parity with HOOK_WIRING above is 8 of 9 scripts. The prompt-side tiers reach
+# Parity with HOOK_WIRING above: 11 distinct Claude scripts, 9 Cursor, 7 shared by
+# name. Of the four Claude-only names, `post-tool-use.sh` is not a gap but an
+# undeclared **rename** — `mcp-tap.sh` is its Cursor counterpart, and only the
+# filenames differ. The three real gaps are `recipe-stage.sh`, `role-guard.sh` and
+# `room-guard.sh`, so on Cursor there is today no recipe staging, no room boundary
+# and — load-bearing — no `write_boundary` enforcement.
+#
+# A name-set difference cannot tell a rename from a gap, which is why this comment
+# has to say which is which, and why saying it in prose is not enough: the count
+# here was wrong for the three scripts that joined the Claude list after it was
+# written, and nothing failed. The prompt-side tiers reach
 # Cursor through the spool: `beforeSubmitPrompt` can read the prompt but not
 # inject, so timestamp.sh and conditioning.sh record there and `inject.sh`
 # delivers on the next `postToolUse` — one of only two Cursor events that can

@@ -3,10 +3,11 @@
 **Status:** implementing — MCP + the full Claude Code hook suite (eleven scripts
 across five events, over a shared scope-resolution helper) installed and live;
 session pinning built ("the process is the pin"); Cursor installed at user scope
-by the same `thalamus init`, with every tier crossing except distillation
-(lab/010, lab/027). This doc covers how Thalamus meets the Claude Code harness
-primarily, the Cursor port's shape and its one remaining wall, and how we find
-the harness's limits on purpose.
+by the same `thalamus init`, with every tier crossing — including distillation,
+exercised end to end against a live Cursor on 2026-08-10 (lab/054). This doc
+covers how Thalamus meets the Claude Code harness primarily, the Cursor port's
+shape and what it still cannot reach, and how we find the harness's limits on
+purpose.
 
 ## Surfaces
 
@@ -200,10 +201,13 @@ Cursor's format and each is carried explicitly rather than inferred away:
   fetched, only not what came back.
 - **No message ids**, so Touch anchors are positional (`cursor:msg:<row>`),
   namespaced so a synthesized anchor cannot pass for a real UUID.
-- **No timestamps and no cwd on any row.** Both come from the hooks' own
-  ledgers — `pins.jsonl` for the start and the workspace, the sessionEnd log for
-  the end — which is why those hooks shipping first is what makes backfill of
-  everything logged since possible at all.
+- **No per-row timestamps and no cwd on any row**, but neither is lost. Cursor
+  writes `<timestamp>` into the user query text itself, so wall-clock is
+  recoverable from the transcript, and `~/.cursor/chats/<hash>/<id>/meta.json`
+  carries `cwd`, `createdAtMs` and `updatedAtMs`. The hook ledgers
+  (`pins.jsonl`, the sessionEnd log) are one source for these rather than the
+  only one — which matters because it means a session that ran before the hooks
+  were installed is not, in principle, unrecoverable.
 
 Extraction runs as a **later sweep, not at sessionEnd**: Cursor is not documented
 to flush the transcript before firing the hook (an open request asks it to fsync
@@ -213,10 +217,16 @@ sessionEnd record, ledger-first, not from the `--scope` flag.
 
 **Every headless invocation resolves its CLI from one registry**
 (`harness/agents.py`): binary, default model, whether the envelope prices the
-call, and what the CLI cannot yet do. Nothing spells `claude` inline any more,
-because a hardcoded vendor binary is invisible until the machine that lacks it
-tries to use it — and then it fails as "distillation stopped happening" rather
-than as an error anyone reads.
+call, and what the CLI cannot yet do. A hardcoded vendor binary is invisible
+until the machine that lacks it tries to use it — and then it fails as
+"distillation stopped happening" rather than as an error anyone reads.
+
+The **launchers** are the deliberate exception and spell `claude` directly
+(`pin.py`, twice): launching resolves an expert through the agent picker, which
+Cursor has no equivalent of, so there is no second binary for the registry to
+choose between. That exception is load-bearing to read correctly — it is the
+reason `thalamus pin`, `spawn`, `roster`, rooms and `quick` are all Claude-Code-only,
+and none of them declares it the way `arm_blockers` declares the eval-arm gap.
 
 A session distills through its own harness's CLI: Claude Code sessions go to
 `claude -p`, Cursor sessions to Cursor's `agent -p` defaulting to Composer 2.5.
@@ -268,15 +278,14 @@ both say so rather than substituting a binary:
 
 The deliberately-not-fast variant is the batch argument: distillation is a sweep
 where nothing waits on the result, so the quality/latency trade runs the other way
-from interactive use. Two honest caveats. Cursor's envelope carries **no cost or
-token fields**, so `ExtractionRun.cost_usd` is `None` rather than `0.0` and the
-sweep counts unpriced runs separately — a zero meaning "not reported" is
-indistinguishable from a zero meaning "free", which is the same absent-vs-negative
-trap as the ingress floor. And the Composer identifier is **unverified**: Cursor
-documents `--model` and `--list-models` but publishes no identifier strings, and
-Composer 2.5 has no public API model id. A wrong string fails at invocation rather
-than silently selecting another model, and the error carries
-`agent --list-models` so the fix is one command away.
+from interactive use — `composer-2.5-fast` is the variant being declined, and both
+identifiers are verified against a live `agent --list-models`. One honest caveat
+remains: Cursor's envelope carries **no dollar figure**, so `ExtractionRun.cost_usd`
+is `None` rather than `0.0` and the sweep counts unpriced runs separately — a zero
+meaning "not reported" is indistinguishable from a zero meaning "free", which is the
+same absent-vs-negative trap as the ingress floor. It does carry a `usage` block
+(`inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`), so the gap is
+**pricing, not instrumentation**: closing it needs a rate table, not a vendor change.
 
 The `PostToolUse:TaskCreate` milestone conditioning class remains without a
 carrier — TaskCreate is Claude Code task-list UI, while Cursor's `Task` tool type
@@ -323,11 +332,18 @@ with no research claim to make.
 
 Pin resolution on Cursor is env-only — no agent picker — so a Cursor session is
 `main` unless launched with `THALAMUS_SCOPE`. Cursor cloud agents load neither
-the session hooks nor the MCP hooks; local Cursor only. Conformance is tested
-with synthetic payloads (`tests/test_cursor_hooks.py`) against shapes read from
-Cursor's docs and re-verified 2026-07-29 — **no Thalamus code has yet run inside
-a live Cursor**, which remains the standing caveat on everything in this
-section.
+the session hooks nor the MCP hooks; local Cursor only.
+
+**What is measured against a live CLI, and what is still synthetic**, is now two
+different lists (lab/054, CLI 2026.08.04). Measured: the model identifiers, the
+JSON envelope's field names, the transcript store's location and record shapes,
+the absence of `tool_result`, the workspace-trust refusal, and the config-root
+redirect. Synthetic: **the hook suite itself** — `tests/test_cursor_hooks.py`
+still drives shapes read from Cursor's docs, and **no Thalamus hook has yet fired
+inside a live Cursor session**, which remains the standing caveat on the
+instrumentation half of this section. The two halves fail differently and should
+not be quoted as one: a wrong envelope field breaks loudly at invocation, while a
+hook that never fires is silent by construction.
 
 ## Session pinning mechanics: the process is the pin
 

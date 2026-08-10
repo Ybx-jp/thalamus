@@ -449,8 +449,13 @@ def run_extraction(
             raise ExtractionError(f"extraction timed out after {timeout}s") from exc
 
     if proc.returncode != 0:
-        stderr = proc.stderr.strip()[:500]
-        hint = f" ({cli.model_hint})" if cli.model_hint else ""
+        stderr = (proc.stderr.strip() or proc.stdout.strip())[:500]
+        # The model hint only applies to a failure about the model. Appending it to
+        # every non-zero exit sent a workspace-trust refusal out advising
+        # `agent --list-models`, which points the reader at the one thing that was
+        # not wrong. Cursor also writes this class of refusal to stdout rather than
+        # stderr, so an empty stderr must fall back rather than report nothing.
+        hint = f" ({cli.model_hint})" if cli.model_hint and "model" in stderr.lower() else ""
         raise ExtractionError(
             f"{cli.binary} -p --model {model} exited {proc.returncode}{hint}: {stderr}"
         )

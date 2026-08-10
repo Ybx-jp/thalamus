@@ -44,12 +44,18 @@ Three consequences, each handled explicitly rather than papered over:
    be mistaken for a real UUID, and still resolvable, because the archived
    transcript is the retained bytes and the row index addresses it.
 
-3. **Time and place come from our own ledgers, not the transcript.** No row
-   carries a timestamp and no row carries a cwd. The session's sessionStart
-   record in `~/.thalamus/pins/pins.jsonl` holds both, and its sessionEnd record
-   in `~/.thalamus/logs/cursor-session-end.jsonl` holds the end. Those hooks have
-   been writing since the port shipped, which is what makes backfill possible at
-   all.
+3. **Time and place come from our own ledgers.** No row carries a timestamp field
+   and no row carries a cwd, so the session's sessionStart record in
+   `~/.thalamus/pins/pins.jsonl` holds both and its sessionEnd record in
+   `~/.thalamus/logs/cursor-session-end.jsonl` holds the end. Those hooks have
+   been writing since the port shipped, which is what makes backfill possible.
+
+   The ledgers are not the *only* source, which matters for anything they never
+   saw. Cursor writes a `<timestamp>` element into the user query text itself, and
+   `~/.cursor/chats/<hash>/<session-id>/meta.json` carries `cwd`, `createdAtMs`
+   and `updatedAtMs` (lab/054). So a session that ran before the hooks were
+   installed — every Cursor session on a machine Thalamus reaches late — is
+   recoverable in principle, where the ledger-only reading says it is lost.
 
 **Distillation is deliberately not run at sessionEnd.** Cursor is not documented
 to flush the transcript before firing the hook — an open request asks it to
@@ -118,9 +124,10 @@ from thalamus.substrate.schema import SessionGraph, Tool
 CURSOR_SESSION_END_LOG = Path.home() / ".thalamus" / "logs" / "cursor-session-end.jsonl"
 PIN_LEDGER = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 
-# Cursor's own web tools, for the ingress *detection* half. Naming these is a
-# guess — the tool roster is not documented and no live Cursor has been observed
-# — so nothing depends on the guess being complete: `ingress_verifiable=False`
+# Cursor's own web tools, for the ingress *detection* half. Naming these is still
+# a guess — the tool roster is undocumented, and the live sessions observed so far
+# exercised only `Shell`, so no web-tool name has been seen in a transcript yet —
+# so nothing depends on the guess being complete: `ingress_verifiable=False`
 # already floors the session whether or not a name here matches. A hit only
 # sharpens the reported reason from "unverifiable" to "unverifiable, and we can
 # see it fetched something".
@@ -215,6 +222,15 @@ def parse(
         # cover is counted, never quietly dropped (see TranscriptFacts.unrecognized).
         if not decodable or not isinstance(record, dict):
             facts.unrecognized += 1
+            continue
+
+        # Cursor closes each turn with a `{"type": "turn_ended", "status": ...}`
+        # row carrying no `role`. It is structure, not a message, so it is neither
+        # a turn to count nor a record we failed to read — recognised and skipped.
+        # Measured on the first live Cursor session (lab/054); before it was named
+        # here, every real session reported at least one unreadable record, which
+        # is the signal that a format change would have to raise.
+        if record.get("type") == "turn_ended":
             continue
 
         role = record.get("role")

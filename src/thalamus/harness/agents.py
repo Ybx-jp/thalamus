@@ -33,13 +33,12 @@ CLAUDE_DEFAULT_MODEL = "sonnet"
 
 # Composer 2.5, deliberately not the fast variant: distillation is a batch sweep
 # where nothing waits on the result, so the quality/latency trade runs the other
-# way from interactive use.
+# way from interactive use. `composer-2.5-fast` is the variant being declined, and
+# it is a real identifier — the choice is between two things that both exist.
 #
-# ⚠️ Unverified. Cursor documents `--model <model>` and `--list-models` but
-# publishes no identifier strings, Composer 2.5 has no public API model id (it is
-# Cursor-platform-only), and no live Cursor has been observed from here. A wrong
-# string fails at invocation rather than silently selecting another model, and
-# `MODEL_HINT` turns that failure into one command's worth of fixing.
+# Verified against a live `agent --list-models` (2026-08-10, CLI 2026.08.04, lab/054).
+# A wrong string fails at invocation rather than silently selecting another model,
+# and `MODEL_HINT` turns that failure into one command's worth of fixing.
 CURSOR_DEFAULT_MODEL = "composer-2.5"
 
 MODEL_HINT = "run `agent --list-models` for the accepted identifiers"
@@ -87,21 +86,42 @@ class AgentCLI:
     binary: str
     default_model: str
     # Claude Code's JSON envelope prices the call (`total_cost_usd`); Cursor's
-    # carries no cost or token fields at all. Kept as a capability rather than
-    # defaulted to 0.0, because a zero meaning "not reported" is indistinguishable
-    # from one meaning "free" and would under-report the spend `eval cost` totals.
+    # carries no dollar figure. It does carry a `usage` block — `inputTokens`,
+    # `outputTokens`, `cacheReadTokens`, `cacheWriteTokens` (lab/054) — so the gap
+    # is pricing, not instrumentation, and a future rate table could close it.
+    # Kept as a capability rather than defaulted to 0.0, because a zero meaning
+    # "not reported" is indistinguishable from one meaning "free" and would
+    # under-report the spend `eval cost` totals.
     reports_cost: bool
     # Why this CLI cannot yet drive an eval arm. Empty means it can. Arms need far
     # more than a binary — see `eval/arms.py` — and a half-ported arm produces
     # records that look like measurements and are not.
     arm_blockers: tuple[str, ...] = field(default_factory=tuple)
     # Extra hint appended to invocation failures, where the vendor gives us a way
-    # to discover the right value.
+    # to discover the right value. Attached to the *model* argument specifically —
+    # a hint appended to every failure misattributes unrelated ones, which is how
+    # a workspace-trust refusal came to advise running `agent --list-models`.
     model_hint: str = ""
+    # Flags this CLI needs before it will run non-interactively in a directory it
+    # has never seen. Not a preference: Cursor refuses an untrusted workspace with
+    # exit 1 and a human-readable prompt *instead of* the JSON envelope, so every
+    # sandbox extraction fails before doing any work (measured live, lab/054 — the
+    # extraction sandbox is a fresh mkdtemp every run and is therefore never
+    # trusted). Claude Code has no equivalent precondition and declares none.
+    #
+    # This is the seam the shared `argv()` hid: the two CLIs agree on `-p`,
+    # `--model` and `--output-format json`, and the near-identity made an
+    # invocation shape look like a shared one. It is not — one side has a
+    # precondition the other lacks, and a method returning a single argv had
+    # nowhere to say so.
+    headless_preconditions: tuple[str, ...] = field(default_factory=tuple)
 
     def argv(self, model: str) -> list[str]:
-        """The print-mode invocation both CLIs share."""
-        return [self.binary, "-p", "--model", model, "--output-format", "json"]
+        """The print-mode invocation, plus whatever this CLI needs to run at all."""
+        return [
+            self.binary, "-p", "--model", model, "--output-format", "json",
+            *self.headless_preconditions,
+        ]
 
     @property
     def runs_arms(self) -> bool:
@@ -121,15 +141,25 @@ AGENT_CLIS: dict[str, AgentCLI] = {
         default_model=CURSOR_DEFAULT_MODEL,
         reports_cost=False,
         model_hint=MODEL_HINT,
+        # `--trust` and not `--force`: the refusal is about the *workspace*, and
+        # the narrower flag is the one that answers it. `--force`/`--yolo` would
+        # also clear it, by additionally allowing every tool call — authority the
+        # extraction pass has no use for, since it reads a transcript handed to it
+        # on stdin and calls nothing.
+        headless_preconditions=("--trust",),
+        # One claim per row, each independently falsifiable. A row bundling a true
+        # and a false claim cannot be checked or retired: the permission-flag half
+        # of the former second row was false from the day Cursor shipped `--force`,
+        # and it survived because retiring it would have meant retiring `--max-turns`
+        # with it. Rows retired on live evidence are deleted, not annotated.
         arm_blockers=(
             "credential staging copies ~/.claude.json and "
-            "~/.claude/.credentials.json into the arm HOME",
-            "--max-turns, --permission-mode and --dangerously-skip-permissions "
-            "are Claude Code flags with no confirmed Cursor equivalent",
-            "the run envelope is read for num_turns and total_cost_usd, neither "
-            "of which Cursor reports",
-            "transcript capture, escape detection and session-fault "
-            "classification all read Claude Code JSONL and its error strings",
+            "~/.claude/.credentials.json into the arm HOME; Cursor authenticates "
+            "from its own config root, which XDG_CONFIG_HOME moves (lab/054)",
+            "--max-turns has no Cursor equivalent, so an arm cannot bound turns",
+            "the run envelope is read for num_turns, which Cursor does not report",
+            "escape detection and session-fault classification read Claude Code's "
+            "error strings, which Cursor's envelope does not carry",
         ),
     ),
 }
