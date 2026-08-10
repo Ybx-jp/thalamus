@@ -263,6 +263,133 @@ function linkify(text) {
     (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
 }
 
+// ---- Markdown ----
+// The transcript carries Claude's own markdown, and the read view was delivering it
+// as literal characters: a fence arrived as three backticks and a language name, `**`
+// bracketed every emphasis. Rendering it is not decoration. A code block is the one
+// thing in a turn that must *not* reflow — a wrapped shell command is a misread
+// command — and prose is the one thing that must. A single `white-space` rule cannot
+// serve both, which is why this projects to block elements rather than tuning the
+// wrap; `.rd-prose` drops to `normal` and structure carries the line breaks.
+//
+// Escaping happens ONCE, at the top of `mdInline`, and every later pass runs over
+// already-escaped text and injects only tags written here. That ordering is the whole
+// safety argument, and it is load-bearing: transcript text is not the operator's own
+// writing, it is whatever a tool printed, so no path may reach innerHTML with raw
+// input. Link hrefs are restricted to http(s) and site-relative for the same reason —
+// a `javascript:` URL in a tool result must stay inert text.
+//
+// The subset is deliberate: fences, inline code, headings, lists, quotes, rules,
+// emphasis, links. Pipe tables stay literal — a table on a 390px screen is less
+// readable than the text it came from, and half-rendering one is worse than neither.
+// Both fences must own their line — triple backticks mid-sentence are prose, not a
+// block. The closing alternative is `(?![\s\S])`, absolute end of input, and NOT `$`:
+// under /m, `$` matches end of *line*, which closes every block after its first line.
+const MD_FENCE = /^ {0,3}```([A-Za-z0-9_+#.-]*)[ \t]*\n([\s\S]*?)(?:^ {0,3}```[ \t]*$|(?![\s\S]))/gm;
+
+function renderMarkdown(text) {
+  // NUL is the placeholder sentinel below; it has no business in a transcript.
+  const src = String(text == null ? "" : text).replace(/\r\n/g, "\n").replace(/\u0000/g, "");
+  let out = "";
+  let last = 0;
+  let m;
+  MD_FENCE.lastIndex = 0;
+  while ((m = MD_FENCE.exec(src)) !== null) {
+    if (m[0] === "") { MD_FENCE.lastIndex++; continue; }   // zero-width guard
+    out += mdBlocks(src.slice(last, m.index));
+    out += mdCode(m[1], m[2]);
+    last = MD_FENCE.lastIndex;
+  }
+  return out + mdBlocks(src.slice(last));
+}
+
+// An unterminated fence is normal, not an error: a turn can be written while the
+// block is still open, and showing the code is better than showing the backticks.
+function mdCode(lang, code) {
+  const label = lang
+    ? `<div class="rd-code-lang">${escapeHtml(lang)}</div>`
+    : "";
+  return `<div class="rd-codewrap">${label}` +
+         `<pre class="rd-code"><code>${escapeHtml(code.replace(/\n+$/, ""))}</code></pre></div>`;
+}
+
+function mdBlocks(chunk) {
+  if (!chunk) return "";
+  const out = [];
+  let para = [];
+  let list = null;
+  let quote = [];
+  const flushPara = () => {
+    if (para.length) out.push(`<p class="rd-p">${mdInline(para.join("\n"))}</p>`);
+    para = [];
+  };
+  const flushList = () => {
+    if (list) {
+      out.push(`<${list.tag} class="rd-list">` +
+        list.items.map((i) => `<li>${mdInline(i)}</li>`).join("") + `</${list.tag}>`);
+    }
+    list = null;
+  };
+  const flushQuote = () => {
+    if (quote.length) out.push(`<blockquote class="rd-quote">${mdInline(quote.join("\n"))}</blockquote>`);
+    quote = [];
+  };
+  const flushAll = () => { flushPara(); flushList(); flushQuote(); };
+
+  for (const line of chunk.split("\n")) {
+    let m;
+    if (!line.trim()) { flushAll(); continue; }
+    if ((m = /^ {0,3}(#{1,6})\s+(.*)$/.exec(line))) {
+      flushAll();
+      out.push(`<div class="rd-h rd-h${m[1].length}">${mdInline(m[2].trim())}</div>`);
+    } else if (/^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$/.test(line)) {
+      flushAll();
+      out.push('<hr class="rd-hr">');
+    } else if ((m = /^ {0,3}>\s?(.*)$/.exec(line))) {
+      flushPara(); flushList();
+      quote.push(m[1]);
+    } else if ((m = /^\s*[-*+]\s+(.*)$/.exec(line))) {
+      flushPara(); flushQuote();
+      if (!list || list.tag !== "ul") { flushList(); list = { tag: "ul", items: [] }; }
+      list.items.push(m[1]);
+    } else if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(line))) {
+      flushPara(); flushQuote();
+      if (!list || list.tag !== "ol") { flushList(); list = { tag: "ol", items: [] }; }
+      list.items.push(m[1]);
+    } else if (list && /^\s{2,}\S/.test(line)) {
+      // A wrapped or continued list item belongs to the bullet above it, not to a
+      // new paragraph that would break the list in half.
+      list.items[list.items.length - 1] += "\n" + line.trim();
+    } else {
+      flushList(); flushQuote();
+      para.push(line);
+    }
+  }
+  flushAll();
+  return out.join("");
+}
+
+function mdInline(raw) {
+  // Held spans are finished HTML parked behind a sentinel so later passes cannot
+  // reach inside them — emphasis must not fire inside code, and linkify must not
+  // re-wrap an anchor it already made.
+  const holds = [];
+  const hold = (html) => `\u0000${holds.push(html) - 1}\u0000`;
+  let s = escapeHtml(raw);
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => hold(`<code class="rd-ic">${c}</code>`));
+  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)/g,
+    (_, t, u) => hold(`<a href="${u}" target="_blank" rel="noopener noreferrer">${t}</a>`));
+  s = s.replace(/(https?:\/\/[^\s<>"'()]+[^\s<>"'().,;:!?])/g,
+    (u) => hold(`<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`));
+  s = s.replace(/\*\*([^\s*][^*]*?)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+  // Emphasis needs boundaries on both sides or `snake_case_name` and a bare `*`
+  // in a glob become italics.
+  s = s.replace(/(^|[\s(])[*_]([^\s*_][^*_]*?)[*_](?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
+  s = s.replace(/\n/g, "<br>");
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => holds[+i]);
+}
+
 // Zero windows is a different failure from a window with no output, and it is the
 // first thing a fresh install shows. The server answered, so the beacon is already
 // green; without this the page is a blank rectangle that manages to look connected
@@ -394,8 +521,9 @@ function updateReadNode(el, it) {
   } else if (it.kind === "thinking") {
     el.querySelector(".rd-sum").textContent = " ".concat(it.text).replace(/\s+/g, " ").slice(0, 90) + "…";
   } else {
-    // Prose and operator turns are the point of this view: real wrapped text.
-    el.innerHTML = linkify(it.text);
+    // Prose and operator turns are the point of this view: real wrapped text,
+    // with the markdown it was written in actually rendered.
+    el.innerHTML = renderMarkdown(it.text);
   }
 }
 

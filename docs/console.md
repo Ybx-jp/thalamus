@@ -133,6 +133,16 @@ go back. Text wraps to your screen instead of to the session's columns, and sinc
 the transcript is written a turn at a time rather than a token at a time, text
 lands as finished blocks instead of shifting mid-sentence.
 
+Prose is rendered as the markdown it was written in: fenced code, inline code,
+headings, lists, quotes, rules, emphasis, and links. The split that matters on a
+phone is that **prose reflows and code does not** — a code block holds its lines
+and scrolls on its own axis, because a wrapped shell command is a misread shell
+command, and the page itself never scrolls sideways. Pipe tables are left as
+literal text: a table narrower than its columns is less readable than the source.
+Rendering escapes first and injects only its own tags, and link targets are held
+to http(s) and site-relative — transcript text is whatever a tool printed, not
+something the operator wrote.
+
 It is a second view, not a replacement, for one specific reason: **a pending
 permission prompt is never written to the transcript.** Nothing is recorded while
 the dialog is on screen, so a tool call with no result is either still running or

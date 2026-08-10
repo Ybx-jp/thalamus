@@ -278,9 +278,69 @@ header {
   font-size: var(--read-size);
   line-height: 1.55;
   color: var(--ink);
-  white-space: pre-wrap;     /* keeps paragraph breaks, still wraps to the screen */
+  /* Structure comes from the rendered blocks below, not from the wrap rule: a
+     code block must hold its lines while prose reflows, and `pre-wrap` here
+     would double every paragraph break the markdown already encodes. */
+  white-space: normal;
   overflow-wrap: anywhere;   /* a long path must not widen the page */
 }
+/* ---- Rendered markdown ---- */
+.rd-p { margin: 0 0 .55rem; }
+.rd-prose > :last-child, .rd-user > :last-child { margin-bottom: 0; }
+.rd-h { font-weight: 600; color: var(--ink); margin: .75rem 0 .3rem; line-height: 1.3; }
+.rd-prose > .rd-h:first-child, .rd-user > .rd-h:first-child { margin-top: 0; }
+.rd-h1 { font-size: calc(var(--read-size) + 3px); }
+.rd-h2 { font-size: calc(var(--read-size) + 1px); }
+.rd-h3, .rd-h4, .rd-h5, .rd-h6 { font-size: var(--read-size); color: var(--muted); }
+.rd-list { margin: .35rem 0 .55rem; padding-left: 1.35rem; }
+.rd-list li { margin: .15rem 0; }
+.rd-quote {
+  margin: .45rem 0;
+  padding: .1rem 0 .1rem .6rem;
+  border-left: 2px solid var(--hair);
+  color: var(--muted);
+}
+.rd-hr { border: 0; border-top: 1px solid var(--hair); margin: .75rem 0; }
+.rd-prose strong, .rd-user strong { font-weight: 600; color: var(--ink); }
+/* Inline code sits inside a sentence, so it may wrap with it; a block may not. */
+.rd-ic {
+  font-family: var(--mono);
+  font-size: .92em;
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  padding: 0 .25em;
+}
+.rd-codewrap {
+  margin: .55rem 0;
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  overflow: hidden;          /* keeps the scroll inside the rounded corners */
+  max-width: 100%;
+}
+.rd-code-lang {
+  font-family: var(--mono);
+  font-size: calc(var(--read-size) - 5px);
+  color: var(--faint);
+  letter-spacing: .04em;
+  padding: .18rem .55rem;
+  border-bottom: 1px solid var(--hair);
+}
+/* `pre`, never `pre-wrap`: a wrapped shell command is a misread shell command.
+   The block scrolls on its own axis so the page never scrolls sideways. */
+.rd-code {
+  margin: 0;
+  padding: .5rem .55rem;
+  font-family: var(--mono);
+  font-size: calc(var(--read-size) - 3px);
+  line-height: 1.45;
+  color: var(--ink);
+  white-space: pre;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.rd-code code { font: inherit; color: inherit; }
 /* The operator's own turns, marked by the channel hue rather than a label. */
 .rd-user {
   border-left: 2px solid var(--chan);
