@@ -9,6 +9,22 @@ update that doc in the same change. Docs describe the **current state only** —
 changelog narration, no self-correction, no apologizing for past designs. History
 lives in git and the memory graph, not in docs/.
 
+**Delete ghosts; do not annotate them.** A reference to something that no longer
+exists gets removed where it stands, not labelled as gone. "`/plane` was unmounted
+2026-08-08", "no longer used", "never reinstate this" are all still the dead name —
+they keep it in the reader's context, cost tokens on every read, and tell no one
+anything that naming the current state wouldn't. Rewrite the reference to what exists
+now, or cut the sentence. This binds **as you pass through a file for any reason**: a
+stale name noticed while doing something else is deleted in that change, never filed
+as a follow-up, and never fixed by adding a note beside it.
+
+The exception is the load-bearing kind, and it is narrow. A dated decision-log entry
+in [docs/index.md](docs/index.md) records what was true when it was decided and is
+never rewritten. A hazard that still bites is knowledge, not history — "a bare-port
+target 404s because serve strips the mount path" earns its place because a reader
+acts on it. The test is the same one the skills rule uses: does someone need this to
+act correctly *now*?
+
 **Skills are procedure and knowledge — nothing else.** The same current-state-only rule
 binds every `SKILL.md`, harder: a skill is read to *do* something, so a paragraph about
 what the procedure used to be, which run exposed the flaw, or when it was rewritten is
