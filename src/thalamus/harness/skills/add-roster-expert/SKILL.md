@@ -104,6 +104,8 @@ it, not a substitute.
 | 6 | Global `window-size manual` segfaults tmux 3.4 | Per-window, post-creation only — a global set killed the whole roster once |
 | 7 | Stale SW / Android WebAPK scope collisions | Network-first shell, never intercept `/api/`, disjoint path scopes per surface |
 | 8 | `tailscale serve` strips the mount path | Relative fetch paths in the client |
+| 9 | Typing into a pane showing a modal *answers* the modal | Check the target's state first; never send a bare `Enter` to a pane that might be modal |
+| 10 | Everything a session spawns inherits its `TMUX_PANE` | A headless `claude -p` is a full session that would claim the window's join key; the SessionStart hook gates the claim on `CLAUDE_CODE_ENTRYPOINT=cli` |
 
 Graph provenance for the above, for consultations that need to cite it:
 tmux geometry + WebAPK scopes

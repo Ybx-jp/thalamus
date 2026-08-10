@@ -173,6 +173,12 @@ by a narrower fallback — process start time joined on scope and directory — 
 session's transcript is worse than showing none. Restart the window (⚙ → restart)
 and it resolves exactly from then on.
 
+A read view showing one short exchange that never advances is a third state, and it
+is not a stall: the window's pane id was claimed by a headless `claude -p` spawned
+inside it, which inherits `TMUX_PANE` like any child process
+([console-hazards.md](console-hazards.md) §10). The next SessionStart in that window
+takes the key back.
+
 A window that has been identified but has written nothing is a different state,
 and the view says so plainly rather than reporting the refusal above: Claude Code
 creates the transcript on the first turn, so a freshly spawned window has none
@@ -426,7 +432,10 @@ keeps that true.
   SessionStart hook. A window *index* renumbers when a window closes, and name,
   scope and directory are all routinely shared by two windows at once; the pane id
   is unique per window, stable for its life, and survives the respawn a recycle
-  performs.
+  performs. Only an interactive session records one: everything a session spawns
+  inherits its `TMUX_PANE`, so a `claude -p` run from a Bash tool is a full
+  session holding a live window's join key, and last-row-wins would hand it the
+  read view.
 - **Distillation state is derived, not tracked.** The SessionEnd hook forks and
   exits, so there is no lockfile, pid file or status record to read — the whole
   state machine is `~/.thalamus/logs/session-end-<sid8>.log`, joined against the

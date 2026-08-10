@@ -97,14 +97,36 @@ if [ -n "$session_id" ]; then
   # across the respawn a console recycle performs — so a recycled window's new
   # session simply appends a fresher row under the same key, and last-row-wins
   # resolves it. Empty outside tmux, which is the correct answer there.
+  #
+  # Only an *interactive* session may claim a pane. A `claude -p` spawned from a
+  # Bash tool inside a roster window is a full session — it fires this hook — and
+  # it inherits TMUX_PANE from the window that spawned it, so an unconditional
+  # claim hands the pane's key to a headless probe and last-row-wins points the
+  # console's read view at it. Measured 2026-08-10: a two-message `reply with OK
+  # only` probe took over the main window's read view for five hours, and the
+  # operator read it as the console stalling. CLAUDE_CODE_ENTRYPOINT is the
+  # discriminator — `cli` for a terminal session, `sdk-cli` for the nested one.
+  # The obvious alternatives are not: the nested process re-exports
+  # CLAUDE_CODE_SESSION_ID as *its own* id, so comparing it against the id on
+  # stdin proves nothing, and CLAUDE_CODE_CHILD_SESSION is 1 in both. Unset is
+  # treated as interactive, which keeps a harness that exports no entrypoint at
+  # all resolving as it does today. The row records the entrypoint either way, so
+  # a pane claim can be audited against what made it without rerunning anything.
+  entrypoint="${CLAUDE_CODE_ENTRYPOINT:-}"
+  pane=""
+  case "$entrypoint" in
+    cli|"") pane="${TMUX_PANE:-}" ;;
+  esac
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$cwd" \
     --arg agent "${CLAUDE_CODE_AGENT:-}" \
     --arg room "$(thalamus_resolve_room)" \
     --arg forked_from "$(thalamus_resolve_forked_from)" \
-    --arg tmux_pane "${TMUX_PANE:-}" \
+    --arg entrypoint "$entrypoint" \
+    --arg tmux_pane "$pane" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{session_id: $sid, scope: $scope, agent: $agent, room: $room,
-      forked_from: $forked_from, cwd: $cwd, tmux_pane: $tmux_pane, ts: $ts}' \
+      forked_from: $forked_from, cwd: $cwd, entrypoint: $entrypoint,
+      tmux_pane: $tmux_pane, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi
 

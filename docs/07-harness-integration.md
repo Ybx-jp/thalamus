@@ -464,7 +464,15 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    system identifies a window durably: an index renumbers when a window closes,
    and name, scope and cwd are all routinely shared by two live windows at once,
    while a pane id is unique, stable for the window's life, and preserved across
-   the respawn a recycle performs. SessionStart also states the session's **own id** in the
+   the respawn a recycle performs. The pane is claimed only by an **interactive**
+   session, gated on `CLAUDE_CODE_ENTRYPOINT` and recorded beside the claim as
+   `entrypoint`. A `claude -p` spawned from a Bash tool inside a roster window is
+   a full session that fires this hook and inherits that window's `TMUX_PANE`, so
+   an unconditional claim gives a headless probe the window's key and last-row-wins
+   points the read view at it. Neither obvious alternative discriminates: the
+   nested process re-exports `CLAUDE_CODE_SESSION_ID` as its own id, and
+   `CLAUDE_CODE_CHILD_SESSION` is set in both. Refusing the pane is not refusing
+   the pin — the row is written in full, because that session distills too. SessionStart also states the session's **own id** in the
    injected context, marked authoritative: a session is otherwise blind to which
    session it is, and self-referential reasoning then guesses its subject —
    lab/026 records a session inferring its id from a subagent task path, landing

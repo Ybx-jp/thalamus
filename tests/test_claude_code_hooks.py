@@ -263,6 +263,51 @@ class TestForeignCwdPinResolution:
         assert (Path(root) / "pyproject.toml").is_file()
 
 
+class TestPaneClaim:
+    """`tmux_pane` is the console read view's join key, and it is claimable.
+
+    Every session this hook fires for inherits TMUX_PANE from whatever spawned
+    it, so a `claude -p` run from a Bash tool inside a roster window arrives
+    carrying that window's pane id. Last-row-wins then points the window's read
+    view at the probe: measured 2026-08-10, a two-message `reply with OK only`
+    subprocess held the main window's read view for five hours and presented as
+    the console stalling. Only an interactive session may claim a pane.
+    """
+
+    def row(self, tmp_path, env):
+        run_hook(session_start_payload(cwd=str(tmp_path)), tmp_path, env=env)
+        return json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+
+    def test_interactive_session_claims_its_pane(self, tmp_path):
+        row = self.row(tmp_path, {"TMUX_PANE": "%0", "CLAUDE_CODE_ENTRYPOINT": "cli"})
+        assert row["tmux_pane"] == "%0"
+        assert row["entrypoint"] == "cli"
+
+    def test_headless_subprocess_does_not_claim_the_pane_it_inherited(self, tmp_path):
+        """The bug: `claude -p` from inside a roster window, TMUX_PANE and all."""
+        row = self.row(tmp_path, {"TMUX_PANE": "%0", "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+        assert row["tmux_pane"] == ""
+        assert row["entrypoint"] == "sdk-cli"
+
+    def test_the_row_is_still_written_in_full(self, tmp_path):
+        """Refusing the pane is not refusing the pin. A headless session still
+        distills, and session-end resolves its scope from this row."""
+        row = self.row(tmp_path, {"TMUX_PANE": "%0", "CLAUDE_CODE_ENTRYPOINT": "sdk-cli",
+                                  "CLAUDE_CODE_AGENT": "thalamus-literature"})
+        assert row["session_id"] == "cc-sess-1"
+        assert row["scope"] == "literature"
+
+    def test_unset_entrypoint_still_claims(self, tmp_path):
+        """A harness that exports no entrypoint resolves as it did before this
+        gate existed, rather than losing pane resolution entirely."""
+        row = self.row(tmp_path, {"TMUX_PANE": "%3"})
+        assert row["tmux_pane"] == "%3" and row["entrypoint"] == ""
+
+    def test_outside_tmux_there_is_no_pane_to_claim(self, tmp_path):
+        assert self.row(tmp_path, {"CLAUDE_CODE_ENTRYPOINT": "cli"})["tmux_pane"] == ""
+
+
 class TestDistillationAnchor:
     """session-end must run `thalamus` from the checkout, not the session's cwd.
 

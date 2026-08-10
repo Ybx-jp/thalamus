@@ -221,6 +221,34 @@ advance rather than by reading back the screen.
 
 ---
 
+## 10. Everything a session spawns inherits its `TMUX_PANE`
+
+The pane id is the only durable handle on a window (hazard 1's cousin: indexes renumber,
+names and scopes are shared), so surfaces join windows to sessions on it. But it is an
+environment variable, and a variable is inherited by every child — including a
+`claude -p` fired from a Bash tool, which is not a helper process but a **full session**
+that fires the same SessionStart hook and writes the same ledger row. Under last-row-wins
+it takes the window's key, and the window's read view becomes a two-message headless
+transcript that never advances.
+
+The symptom does not look like a mis-join. It looks like the view is **stuck** — one
+short exchange, frozen, unrelated to anything you typed — so the instinct is to blame
+whatever you did last in that window. Read the ledger before believing that:
+
+```sh
+grep '"tmux_pane":"%0"' ~/.thalamus/pins/pins.jsonl | tail -3
+curl -s 127.0.0.1:8378/api/read?index=0 | head -c 200   # which session it resolved to
+```
+
+The hook gates the claim on `CLAUDE_CODE_ENTRYPOINT` (`cli` claims, `sdk-cli` does not)
+and records the entrypoint beside it. Session id does not discriminate — a nested
+process re-exports `CLAUDE_CODE_SESSION_ID` as its own. Any other consumer that joins on
+a pane id inherits this problem and needs the same gate. A window whose row was already
+clobbered re-registers on the next SessionStart in it: `/compact` or `/clear` is enough,
+and restart works too.
+
+---
+
 ## The one-line version
 
 **Every layer here reports success early** — tmux when it forks, systemd when it starts
