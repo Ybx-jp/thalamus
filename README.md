@@ -50,7 +50,7 @@ spool, and reads each skill back through its user-scope path:
 
 ```
 Verification (exercised, not assumed):
-  ✓ hook scripts present: all 9 wired scripts found
+  ✓ hook scripts present: all 11 wired scripts found
   ✓ distillation entry point: `thalamus` resolves from a foreign cwd
   ✓ graph reachable: 0 vertices at ws://localhost:8182/gremlin (fresh — every install starts empty)
   ! cursor distillation CLI: `agent` not on PATH — cursor sessions will retrieve
@@ -89,13 +89,23 @@ buys. See [Command reference](#command-reference) for everything else.
   held in an immutable content-addressed archive outside the repo. The graph is a
   materialized view over that log — re-extract, never migrate
   ([docs/10](docs/10-evidence-archive.md)).
-- **Four experts**: technical-literature, evaluation-methodology, homelab, and
-  teacher — each declared by an operator-owned manifest in `config/experts/` and
-  nothing else — the zero-glue contract test
-  ([docs/01](docs/01-federation-contract.md), [docs/02](docs/02-expert-subgraphs.md)).
-  Knowledge is fed by `thalamus ingest`
-  (allowlist-gated, evidence-first) and returns blockquoted with citation and tier:
-  it informs, it never instructs ([docs/05](docs/05-trust-model.md)).
+- **Seven experts**: technical-literature, evaluation-methodology, homelab, teacher,
+  qe, designer, and architect — each declared by an operator-owned manifest in
+  `config/experts/` and nothing else — the zero-glue contract test
+  ([docs/01](docs/01-federation-contract.md), [docs/02](docs/02-expert-subgraphs.md),
+  [docs/08](docs/08-roster-candidates.md)). Knowledge is fed by `thalamus ingest`
+  (allowlist-gated, evidence-first), co-indexed as `Chunk` vertices beside the claims
+  drawn from it, and returns blockquoted with citation and tier: it informs, it never
+  instructs ([docs/05](docs/05-trust-model.md)).
+- **Role boundaries are structural**: where a scope is defined by what it must *not*
+  produce, its manifest declares a `write_boundary` and the `role-guard` PreToolUse
+  hook enforces it — `qe` writes `tests/` and `lab/` but not `src/`; `designer` writes
+  markup, markdown, SVG and token files but not executable source; `architect` carries
+  no boundary, by charter. MAST names "disobey role specification" as a failure mode
+  whose recorded repair was structural authority rather than a better prompt, so a
+  boundary that exists only as a paragraph in `domain` is the configuration that was
+  measured failing ([docs/08](docs/08-roster-candidates.md)). The guard governs the
+  file-editing tools only — Bash still writes.
 - **Session pinning**: one OS process = one immutable pin. `thalamus pin` / `thalamus
   roster` launch scope-pinned sessions; the MCP server reads the scope from its
   environment at startup and no tool accepts a scope argument
@@ -104,12 +114,25 @@ buys. See [Command reference](#command-reference) for everything else.
   roster is addressable from one place. `thalamus console` serves it to a browser —
   a tab per window, the live pane, a composer, the terminal keys a phone keyboard
   lacks, and one tap to spawn an expert in a project or to restart one so a wiring
-  change arms. Installable as a PWA, loopback-bound, and it never moves the active
-  window, so the terminal on your desk stays where you left it
+  change arms. It binds `127.0.0.1` and carries no authentication; reaching it from a
+  phone is `tailscale serve` connecting to that loopback port and publishing it at
+  `/console/` on your tailnet, which is also what makes it installable as a PWA. It
+  never moves the active window, so the terminal on your desk stays where you left it
   ([docs/console.md](docs/console.md)).
 - **The consultation protocol**: cross-expert questions ride single-use tickets where
   minting the ticket *is* writing the exchange record, and answers must cite nodes
-  inside the consulted scope ([docs/02](docs/02-expert-subgraphs.md)).
+  inside the consulted scope ([docs/02](docs/02-expert-subgraphs.md)). Beside it, the
+  **quick protocol** (`thalamus quick ask`) forks an expert's own live session rather
+  than cold-starting one: a warm parent answered for **$0.037 against $0.595 cold**,
+  and cost is bimodal on the parent's recency, not on how the question is phrased
+  (lab/049–050). A fork distills its delta, never the parent's transcript.
+- **Rooms**: a room is a private roster — members see and message each other and
+  nobody else, enforced by a per-room `CLAUDE_CONFIG_DIR` and an outbound guard rather
+  than by convention. The boundary is built (`--room`, `thalamus room`, and
+  `thalamus eval rooms` as its manipulation check); the lifecycle designed on top of it
+  — ceremonies, Contract-Net dispatch, live-not-frozen reads — is not
+  ([docs/12](docs/12-room-lifecycle.md)). Rooms have never been measured for efficacy,
+  and room-level causal inference is out of reach at this corpus size.
 - **The eval loop, layers 1–2**: every memory-tool call is trace-tapped, landed as
   `Trace` nodes, judged used-vs-ignored against the session's retained transcript,
   and priced in injected tokens — decay candidates rank by wasted tokens
@@ -118,9 +141,16 @@ buys. See [Command reference](#command-reference) for everything else.
   memory-on / memory-off / scoping-degraded in a confined worktree with its own
   `HOME` and its own store (`thalamus eval run --sandbox --isolate-store`), and a
   graded oracle whose rungs are validated against a mutant set before any arm is
-  scored (`thalamus eval oracle`). Fourteen campaigns are written up in
-  [`lab/`](lab/) (011–024). What is measured so far is retrieval *surfacing*;
-  retrieval *use* remains unevidenced, so the utility claim is still open.
+  scored (`thalamus eval oracle`). Every campaign is written up in [`lab/`](lab/) —
+  52 entries, each classified by what it ends in. What is measured so far is retrieval
+  *surfacing*; retrieval *use* remains unevidenced, so the utility claim is still open.
+- **Two genres of write-up, and one wins ties.** [`lab/`](lab/) is this project's own
+  voice — what broke, why, workaround or wall. [`experiments/`](experiments/) is
+  written for a reader outside the project: seven pre-registered studies, each stating
+  what it committed to before the data was seen and regenerating every number from a
+  **pinned** graph state and a seed, since a figure computed against the live graph is
+  not reproducible even by its own author. When a lab figure and an experiment
+  disagree, the experiment wins — it is the one that can be re-run.
 - **First trust enforcement**: the transcript-ingress floor down-tiers distilled
   claims that rest on fetched web content, so a poisoned page can't launder into
   tier-1 memory ([docs/05](docs/05-trust-model.md)).
@@ -131,14 +161,18 @@ places the design in the 2026 literature.
 
 ## Results
 
-Every campaign is written up in [`lab/`](lab/) — the negative ones especially. In
-the order the evidence arrived:
+Every campaign is written up in [`lab/`](lab/) — the negative ones especially — and
+the load-bearing figures are re-derived in [`experiments/`](experiments/) against
+pinned state. In the order the evidence arrived:
 
-- **Layer 1: retrieval is priced.** The first priced run found **half the injected
-  retrieval tokens were never used** ([006](lab/006-priced-verdicts-first-run.md)).
-  The autopsy cleared the suspect the operator had in mind — the blanket
-  session-start recall — and convicted the query shape instead
-  ([007](lab/007-query-shape-refinement.md)).
+- **Layer 1: retrieval is priced.** Against a pinned graph state, **33.8% of injected
+  retrieval tokens go unused**, 95% CI [27.2, 40.5], of which ~17.5% is
+  chance-corrected as demonstrably earned
+  ([experiments/002](experiments/002-what-the-waste-figure-means/)). The autopsy of
+  where the waste comes from cleared the suspect the operator had in mind — the
+  blanket session-start recall — and convicted the query shape instead: the trust
+  floor cut 1% of fan-out, the detail cap 8%, and query shape **28%**
+  ([030](lab/030-the-miss-rate-was-the-consultation.md)).
 - **Layer 2: the harness got debugged before any number was trusted.** The first
   three counterfactual campaigns surfaced three bugs in the runner itself — project
   scoping, worktrees freezing the runner's own hooks at a pre-fix ref, and a fresh
@@ -178,9 +212,45 @@ the order the evidence arrived:
   that the new detector could not see
   ([022](lab/022-confinement-and-the-leak-nobody-was-watching.md)). Confinement
   closed both.
+- **Distillation was distilling itself.** A census of `Session` vertices by cwd found
+  **307 of 445 (69%)** were extraction sandboxes — the harness's own headless
+  invocations, recorded as if they were work
+  ([033](lab/033-the-graph-was-mostly-remembering-itself.md)). Fixed and purged; every
+  per-`Session` count taken before 2026-07-29 is recalibrated by it.
+- **The used-vs-ignored judge is a topic detector.** Rotated against a permutation
+  null it scores **63.3% used on its own output against a 57.3% null, κ = 0.140
+  [0.028, 0.272]** ([experiments/001](experiments/001-the-topic-detector/)) — a few
+  points of discrimination on a very high floor. It is reported as what it is.
+- **Calibration withdrew more numbers than it produced.**
+  [034](lab/034-the-corrections-the-instrument-forced.md) re-derived the
+  layer-1 figures against pinned state and published a standing **withdrawal list**
+  covering earlier headline magnitudes, including the original "half the injected
+  tokens are wasted". Withdrawn figures carry a stamp pointing at the entry that
+  killed them; the arm-level results, the zero-model gates, and the null conclusions
+  survive.
+- **The ceiling campaign cancelled the programme it was built to feed.** Twelve arms
+  handed a candidate the *exact* right memory against memory-off
+  ([036](lab/036-the-ceiling-that-lost.md)). It was null on the pre-registered endpoint — 0/6
+  vs 0/6 reaching rung ≥ 4 — and the ceiling arm **lost every pair** at rung ≥ 3.
+  A perfect memory could not clear this task's gate, so the battery is the binding
+  constraint, and the work queued behind it was cancelled rather than rescheduled.
+- **A proposed feature was falsified before it was built.** Across all **307,720**
+  problem-claim pairs, only 14 cleared the similarity threshold belief-revision would
+  need, and the measure ranks contradictions *more* similar (0.812) than duplicates
+  (0.800) — so the feature would preferentially merge the pairs it must keep apart
+  ([041](lab/041-three-proposals-and-the-audit-nobody-ran.md)). Build nothing.
+- **A citation anchors provenance and carries no fidelity.** A pre-registered coverage
+  assay over 154 literature `Source`s put verbatim-literal placement at **0.9% against
+  a pre-registered 31% bar, 0/46 sources clearing it**: the stored `citation` field
+  adds 52% more text for 0.8pp of coverage ([051](lab/051-the-representation-we-never-measured.md)).
+  Co-indexed `Chunk` vertices replaced it as the fidelity mechanism, at 0.35× vertex
+  growth ([052](lab/052-the-passage-the-note-came-from.md)).
 
-**The utility claim is open.** What is measured is that memory gets *surfaced*; that
-it changes task outcomes is not yet evidenced. This section says so until a campaign
+**The utility claim is open, and the instrument is the reason.** What is measured is
+that memory gets *surfaced*; that it changes task outcomes is not. The ceiling
+campaign is why that gap has not closed: a task whose gate a *perfect* memory cannot
+clear measures the battery, not the memory. Building a battery that can register the
+difference comes before any utility claim, and this section says so until a campaign
 says otherwise.
 
 ## What's here
@@ -201,16 +271,19 @@ src/thalamus/
   pulse/       live telemetry dashboard over the eval loop's measurements
 frontend/      viewer source; builds into viewer/static
 config/        expert manifests (tier-0, operator-owned)
+deploy/        self-hosted services an expert's tooling needs (the designer's Penpot)
 docs/          design docs
 lab/           harness-limit notebook — what broke, why, workaround or wall
+experiments/   pre-registered studies, regenerated from pinned state and a seed
 ```
 
 Both **Claude Code** and **Cursor** are supported; their hook contracts differ, so
 each has its own hook suite under `src/thalamus/harness/hooks/`. Claude Code is the
-primary harness: eight scripts across five events (wired by `thalamus init` into
+primary harness: eleven scripts across five events (wired by `thalamus init` into
 `~/.claude/settings.json`, so they arm in any directory), over a
 shared scope-resolution helper, cover memory priming, the pin ledger, distillation,
-the trace taps, the gremlin guard, and the conditioning/timestamp injections. The Cursor suite
+the trace taps, the gremlin guard, the role and room boundaries, and the
+conditioning/timestamp injections. The Cursor suite
 (`~/.cursor/hooks.json`, written by the same `thalamus init`) ports everything
 portable — session-start priming + pin ledger, engagement marking, the gremlin
 guard (`beforeShellExecution`), both trace taps (`afterShellExecution`,
@@ -238,9 +311,11 @@ thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log via 
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus contract check            # audit the live graph against the contract
 thalamus ingest <url|file>         # feed one document to an expert (dry-run; --write to persist)
+thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
 thalamus pin <scope>               # launch a claude session pinned to an expert
 thalamus roster                    # bring up the tmux roster (--all for every expert)
 thalamus spawn <scope>             # one on-demand pinned tmux window
+thalamus room create|list|show     # rooms: the private rosters sessions are launched into
 thalamus quick ask <scope> "<q>"   # consult a live expert by forking its own session
 thalamus quick targets             # which experts are forkable, and how warm each is
 thalamus console                   # drive the roster from a browser or phone (docs/console.md)
@@ -265,12 +340,16 @@ thalamus eval pins                 # per-expert routing signal: pinned vs consul
 thalamus eval conditioning         # per-firing behavioral join on injected reminders
 thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
 thalamus eval recipes              # smoke-run every stored gremlin recipe read-only
+thalamus eval rooms                # manipulation check on the room boundary
+thalamus eval gold --draw|--score  # hand-labelled sample the attribution judge is scored against
 
 # layer 2 — counterfactuals
 thalamus eval tasks                # validate and list the task battery (config/tasks/)
 thalamus eval oracle               # grade anchors + mutants against pre-registered rungs
 thalamus eval run <task>           # run one task under arms (worktree + headless session)
 thalamus eval rescore              # apply new detectors backwards over past campaigns
+thalamus eval corpus --name        # seal the current run log as a citable corpus pin
+thalamus eval randomize            # design-only feasibility check on a clustered assignment
 thalamus eval rakes                # solved problems later sessions could have re-stepped on
 thalamus eval rake-audit           # draw/score the hand-audited precision sample
 ```
@@ -388,10 +467,11 @@ rewritten is not evidence.
 
 ## Schema
 
-Five node types — `Session`, `Claim`, `Thread`, `Source`, `Artifact` — joined by
-`CONTAINS` / `TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` / `SOLVED_BY` /
-`DERIVED_FROM`, plus the knowledge side an expert manifest declares (`Entity`,
-literature claims, `KnowledgeBatch`) and the eval loop's `Trace` / `Exchange` records.
+Five episodic node types — `Session`, `Claim`, `Thread`, `Source`, `Artifact` — joined
+by `CONTAINS` / `TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` /
+`SOLVED_BY` / `DERIVED_FROM`, plus the knowledge side an expert manifest declares
+(`Entity`, literature claims, `KnowledgeBatch`, and the `Chunk` vertices an ingested
+document is co-indexed into) and the eval loop's `Trace` / `Exchange` records.
 Declared once in [`contract/ontology.py`](src/thalamus/contract/ontology.py);
 everything else derives from it. Run `thalamus schema` for the JSON schema.
 

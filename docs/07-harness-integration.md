@@ -1,6 +1,6 @@
 # Harness Integration — MCP, Hooks, Directives, and the Limit Lab
 
-**Status:** implementing — MCP + the full Claude Code hook suite (eight scripts
+**Status:** implementing — MCP + the full Claude Code hook suite (eleven scripts
 across five events, over a shared scope-resolution helper) installed and live;
 session pinning built ("the process is the pin"); Cursor installed at user scope
 by the same `thalamus init`, with every tier crossing except distillation

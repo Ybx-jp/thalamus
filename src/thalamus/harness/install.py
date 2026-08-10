@@ -676,9 +676,11 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     """
     checks: list[Check] = []
 
-    missing = [s for _, _, s in HOOK_WIRING if not (HOOK_DIR / s).is_file()]
+    wired = sorted({s for _, _, s in HOOK_WIRING})
+    missing = [s for s in wired if not (HOOK_DIR / s).is_file()]
     checks.append(Check("hook scripts present", not missing,
-                        "all 9 wired scripts found" if not missing else f"missing: {missing}"))
+                        f"all {len(wired)} wired scripts found" if not missing
+                        else f"missing: {missing}"))
 
     unexec = sorted({s for _, _, s in HOOK_WIRING
                      if (HOOK_DIR / s).is_file() and not os.access(HOOK_DIR / s, os.X_OK)})

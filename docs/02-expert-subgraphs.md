@@ -480,11 +480,11 @@ directions.
 
 ## Roster discipline
 
-- The roster ([08](08-roster-candidates.md) records each selection) is two
-  consultants — **technical-literature**, **evaluation-methodology** — and two
-  spines — **homelab**, **teacher**. The second expert was the point: it proved
-  the contract. Two proves N — the manifest was the whole rollout, and it stayed
-  that way for #3 and #4.
+- The roster ([08](08-roster-candidates.md) records each selection) is seven scopes:
+  **technical-literature**, **evaluation-methodology**, **homelab**, **teacher**,
+  **qe**, **designer**, **architect**. The second expert was the point: it proved
+  the contract. Two proves N — the manifest was the whole rollout, and it has stayed
+  that way for every expert since.
 - New experts must justify themselves against the null hypothesis of "just put it in
   an existing expert." The eval loop arbitrates: if a candidate domain's retrievals
   don't cluster, it isn't an expert.
