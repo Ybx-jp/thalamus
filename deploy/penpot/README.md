@@ -73,12 +73,16 @@ and fails instantly, so retrying harder makes it strictly worse and piles up sta
 `_acme-challenge` TXT records.
 
 The fix is to stop touching it. Leave it alone for an hour, then request exactly
-once:
+once — on one line, since the doubled `tailscale` reads as a typo and a broken line
+continuation silently splits it into two failing commands:
 
 ```bash
-docker --context default compose -f compose.yml exec tailscale \
-  tailscale cert penpot.<tailnet>.ts.net
+docker --context default compose -f compose.yml exec -T tailscale tailscale cert penpot.<tailnet>.ts.net
 ```
+
+Success is two lines, `Wrote public cert…` / `Wrote private key…`, after which the
+public URL answers 200 with a valid chain. Confirmed on this box: the first request
+after the hour elapsed succeeded with no other change.
 
 Check before blaming the sidecar: that the tailnet has HTTPS certificates enabled at
 all (if another host on the same tailnet already serves HTTPS, it does), and that the
