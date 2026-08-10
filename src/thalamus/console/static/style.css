@@ -426,6 +426,40 @@ header {
   white-space: pre-wrap;
   overflow-x: auto;
 }
+/* A question to the operator. Everything else in the feed is a report of work
+   already done and collapses to a chip; this one is a request, so it stays open
+   and legible. While it is unanswered it carries the channel hue — the session is
+   stopped until the reader acts, and that should look different from a slow tool. */
+.rd-ask {
+  margin: .3rem 0 .2rem;
+  padding: .45rem .6rem;
+  border-left: 2px solid var(--hair);
+  background: var(--panel);
+  border-radius: 0 4px 4px 0;
+}
+.rd-ask.waiting { border-left-color: var(--chan); }
+.rd-q {
+  font-size: var(--read-size);
+  line-height: 1.45;
+  color: var(--ink);
+  font-weight: 600;
+  margin-bottom: .25rem;
+}
+.rd-q ~ .rd-q { margin-top: .5rem; }
+.rd-opts {
+  margin: 0 0 .1rem;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: calc(var(--read-size) - 1px);
+  line-height: 1.5;
+}
+.rd-ask-note {
+  margin-top: .4rem;
+  font-size: calc(var(--read-size) - 3px);
+  color: var(--chan);
+  letter-spacing: .01em;
+}
+.rd-ask:not(.waiting) .rd-q { font-weight: 500; color: var(--muted); }
 .rd-thinking .rd-head { font-style: italic; opacity: .7; }
 /* Subagent work, one step back from the session's own voice. */
 .rd-side { margin-left: .9rem; opacity: .72; }

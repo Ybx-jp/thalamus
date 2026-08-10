@@ -11,6 +11,29 @@
 const POLL_MS = 1200;
 const STALE_MS = 5000;
 
+// `fetch` has no default timeout, and a phone gives it every chance to need one:
+// a network handoff, a sleeping radio, a tailnet re-handshake. A request that
+// stalls that way never settles — it neither resolves nor rejects — and the poll
+// chain below is single-flight, so `pollInFlight` clears only in `poll()`'s
+// `finally`. One stalled request therefore wedges the whole app until a reload:
+// no transcript item ever lands again, and the view toggle stops repainting
+// because every later `pollLoop()` returns at the latch. Both read as "the
+// session paused". A request that cannot finish has to fail instead of hanging.
+const REQ_TIMEOUT_MS = 10000;
+// The latch is meant to be released by the timeout above. This is the backstop for
+// the case that release never happens — belt and braces on the one failure that
+// costs a reload.
+const POLL_STUCK_MS = REQ_TIMEOUT_MS * 2;
+
+// Same signature as `fetch`, so call sites read unchanged. AbortError surfaces as
+// a rejection, which every caller already handles as "this poll failed".
+function req(url, opts) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), REQ_TIMEOUT_MS);
+  return fetch(url, Object.assign({}, opts, { signal: ctl.signal }))
+    .finally(() => clearTimeout(timer));
+}
+
 // Per-session channel hue. `main` is fixed — it is the anchor every roster has —
 // and every other scope draws a stable colour from its own name, so adding an
 // expert manifest colours its tab without anyone editing a table here.
@@ -589,7 +612,8 @@ function readItemNode(idx, it) {
   if (it.kind === "tool") {
     el.innerHTML =
       `<div class="rd-head"><span class="rd-name"></span><span class="rd-sum"></span>` +
-      `<span class="rd-dot"></span></div><div class="rd-body" hidden></div>`;
+      `<span class="rd-dot"></span></div><div class="rd-ask" hidden></div>` +
+      `<div class="rd-body" hidden></div>`;
     el.querySelector(".rd-head").addEventListener("click", () => toggleBody(idx, it.id, el));
   } else if (it.kind === "thinking") {
     el.innerHTML = `<div class="rd-head"><span class="rd-name">thinking</span>` +
@@ -609,12 +633,61 @@ function updateReadNode(el, it) {
     el.querySelector(".rd-sum").textContent =
       it.summary.startsWith(it.name) ? it.summary.slice(it.name.length).trim() : it.summary;
     el.querySelector(".rd-dot").className = "rd-dot " + (it.status || "pending");
+    renderAsk(el.querySelector(".rd-ask"), it);
   } else if (it.kind === "thinking") {
     el.querySelector(".rd-sum").textContent = " ".concat(it.text).replace(/\s+/g, " ").slice(0, 90) + "…";
   } else {
     // Prose and operator turns are the point of this view: real wrapped text,
     // with the markdown it was written in actually rendered.
     el.innerHTML = renderMarkdown(it.text);
+  }
+}
+
+// A question put to the operator, shown in full rather than collapsed to a chip:
+// it is the one tool call in the feed that is not a report of work done but a
+// request for something only the reader can supply. The dialog itself is a TUI
+// modal that writes nothing while it is up, so without this the session simply
+// stops — the read view's most confusing state, and the whole reason the pane had
+// to be the only place a blocked session was visible.
+//
+// Built with textContent throughout. This is tool input, the same trust class as
+// every other string in the feed, and it must not reach innerHTML.
+function renderAsk(host, it) {
+  if (!host) return;
+  const asks = (it.ask || []).filter((q) => q && q.question);
+  if (!asks.length) { host.hidden = true; return; }
+  const pending = (it.status || "pending") === "pending";
+  // Rebuilt only when something the reader can see actually changed.
+  const stamp = asks.length + ":" + pending;
+  if (host.dataset.stamp === stamp) return;
+  host.dataset.stamp = stamp;
+  host.hidden = false;
+  host.className = "rd-ask" + (pending ? " waiting" : "");
+  host.textContent = "";
+  for (const q of asks) {
+    const qEl = document.createElement("div");
+    qEl.className = "rd-q";
+    qEl.textContent = q.question;
+    host.appendChild(qEl);
+    if (q.options && q.options.length) {
+      const ul = document.createElement("ul");
+      ul.className = "rd-opts";
+      for (const label of q.options) {
+        const li = document.createElement("li");
+        li.textContent = label;
+        ul.appendChild(li);
+      }
+      host.appendChild(ul);
+    }
+  }
+  if (pending) {
+    // Say where to act, not just that action is needed. Typing an answer into the
+    // composer is the trap: a modal discards the text and Enter actuates whatever
+    // option is highlighted, so the answer would be silently wrong.
+    const note = document.createElement("div");
+    note.className = "rd-ask-note";
+    note.textContent = "waiting on you — answer in term with ↑ ↓ and ⏎";
+    host.appendChild(note);
   }
 }
 
@@ -625,7 +698,7 @@ async function toggleBody(idx, id, el) {
   if (body.dataset.loaded) return;
   body.textContent = "…";
   try {
-    const r = await fetch(`api/read/body?index=${idx}&item=${id}`, { cache: "no-store" });
+    const r = await req(`api/read/body?index=${idx}&item=${id}`, { cache: "no-store" });
     const d = await r.json();
     body.textContent = d.body || "(no output)";
     body.dataset.loaded = "1";
@@ -682,18 +755,23 @@ function renderRead(idx) {
     els.read.className = "read read-note";
     els.read.textContent = "Nothing in this session's transcript yet.";
   }
-  const waiting = st.pendingSince && Date.now() - st.pendingSince > PENDING_HINT_MS;
+  // A question is known to be blocked on the reader the moment it is asked, so it
+  // says so immediately; an ordinary tool call has to wait out the hint delay,
+  // since a slow one is normal and a banner over every test run is noise.
+  const waiting = st.pendingSince &&
+    (st.pendingAsk || Date.now() - st.pendingSince > PENDING_HINT_MS);
   els.readWait.hidden = !waiting;
   if (waiting) {
-    els.readWait.textContent =
-      "a tool call is still open — if it's waiting for your approval, that prompt is in the terminal view";
+    els.readWait.textContent = st.pendingAsk
+      ? "this session is waiting on your answer — open term and pick with ↑ ↓ then ⏎"
+      : "a tool call is still open — if it's waiting for your approval, that prompt is in the terminal view";
   }
   if (atBottom) { const after = scroller(); after.scrollTop = after.scrollHeight; }
 }
 
 async function pollRead(idx) {
   const st = readStateFor(idx);
-  const r = await fetch(`api/read?index=${idx}&since=${st.seq}`, { cache: "no-store" });
+  const r = await req(`api/read?index=${idx}&since=${st.seq}`, { cache: "no-store" });
   if (!r.ok) throw new Error(r.status);
   const d = await r.json();
   if (!d.available) { st.reason = d.reason || "unresolved"; renderRead(idx); return; }
@@ -713,11 +791,21 @@ async function pollRead(idx) {
   }
   st.order.sort((a, b) => a - b);
   st.seq = Math.max(st.seq, d.seq || 0);
-  const last = st.order.length ? st.items.get(st.order[st.order.length - 1]) : null;
-  if (last && last.kind === "tool" && last.status === "pending") {
+  // The newest item on the *main* thread, not simply the newest item. A subagent
+  // writes into the same transcript, so while the session sits blocked on a
+  // question its sidechain keeps emitting — and a bare last-item test then reads
+  // that traffic as progress and never says the session is waiting on you.
+  let latest = null;
+  for (let i = st.order.length - 1; i >= 0; i--) {
+    const it = st.items.get(st.order[i]);
+    if (it && !it.sidechain) { latest = it; break; }
+  }
+  if (latest && latest.kind === "tool" && latest.status === "pending") {
     if (!st.pendingSince) st.pendingSince = Date.now();
+    st.pendingAsk = !!(latest.ask && latest.ask.length);
   } else {
     st.pendingSince = 0;
+    st.pendingAsk = false;
   }
   renderRead(idx);
 }
@@ -760,7 +848,7 @@ function setConn(state) {
 
 async function poll() {
   try {
-    const r = await fetch("api/panes", { cache: "no-store" });
+    const r = await req("api/panes", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const data = await r.json();
     const next = data.windows || [];
@@ -833,7 +921,7 @@ async function poll() {
 
 async function post(path, body) {
   try {
-    await fetch(path, {
+    await req(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -919,7 +1007,7 @@ async function loadCommands() {
   let list = [];
   try {
     // Scoped to the active window — its project's .claude/skills, not the anchor's.
-    const r = await fetch(`api/commands?index=${idx}`);
+    const r = await req(`api/commands?index=${idx}`);
     if (r.ok) list = (await r.json()).commands || [];
   } catch (e) { /* strip just stays hidden */ }
   commandsPending = false;
@@ -972,7 +1060,7 @@ function adminLog(line) {
   els.adminLog.scrollTop = els.adminLog.scrollHeight;
 }
 async function postJson(path, body) {
-  const r = await fetch(path, {
+  const r = await req(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
@@ -1155,7 +1243,7 @@ async function openSpawn() {
   if (!spawnOpts) {
     els.spawnScopes.textContent = "…";
     try {
-      const r = await fetch("api/spawn-options", { cache: "no-store" });
+      const r = await req("api/spawn-options", { cache: "no-store" });
       spawnOpts = await r.json();
     } catch (e) { spawnOpts = { scopes: [], dirs: [], rooms: [] }; }
   }
@@ -1239,7 +1327,7 @@ async function loadServices() {
   const sec = document.getElementById("admin-services-sec");
   els.adminServices.textContent = "…";
   try {
-    const r = await fetch("api/admin", { cache: "no-store" });
+    const r = await req("api/admin", { cache: "no-store" });
     const data = await r.json();
     const units = data.services || [];
     sec.hidden = units.length === 0;
@@ -1387,7 +1475,7 @@ function measureFrame(f) {
 async function loadFrames() {
   if (!isDesktop) return;
   try {
-    const r = await fetch("api/frames");
+    const r = await req("api/frames");
     frames = (await r.json()).frames || [];
   } catch (e) { frames = []; }
   renderFrameLabel();
@@ -1713,6 +1801,7 @@ loadFrames();
 let pollTimer = null;
 let pollInFlight = false;
 let pollAgain = false;
+let pollStartedAt = 0;
 function pollDelay() {
   return (isDesktop && passthrough && Date.now() < fastUntil) ? FAST_POLL_MS : POLL_MS;
 }
@@ -1724,8 +1813,19 @@ function pollDelay() {
 // arrives mid-flight is remembered and served the moment the current one lands.
 function pollLoop() {
   clearTimeout(pollTimer);
-  if (pollInFlight) { pollAgain = true; return; }
+  if (pollInFlight) {
+    // A latch held longer than a request can legally take means the promise never
+    // settled and never will. Releasing it costs at worst one overlapping poll;
+    // holding it costs every future repaint, which is the failure this guards.
+    if (pollStartedAt && Date.now() - pollStartedAt > POLL_STUCK_MS) {
+      setConn("stale");
+    } else {
+      pollAgain = true;
+      return;
+    }
+  }
   pollInFlight = true;
+  pollStartedAt = Date.now();
   poll().finally(() => {
     pollInFlight = false;
     clearTimeout(pollTimer);

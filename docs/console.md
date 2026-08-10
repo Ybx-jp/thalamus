@@ -147,6 +147,19 @@ Rendering escapes first and injects only its own tags, and link targets are held
 to http(s) and site-relative — transcript text is whatever a tool printed, not
 something the operator wrote.
 
+**A question put to you renders open, not collapsed.** `AskUserQuestion` is the
+one tool call the reader must act on rather than watch, and unlike a permission
+prompt it *is* written to the transcript the moment it is asked — question,
+options, and all. So the read view shows it in full for as long as the session
+sits blocked, marked as waiting on you, instead of collapsing it to a chip that
+looks like a slow tool. Answer it in `term` with the ↑ ↓ keycaps and `⏎`: the
+dialog is a modal, and typing into the composer would discard the text and
+actuate whichever option happened to be highlighted (hazard 9).
+
+The waiting state reads the newest item on the *main* thread rather than the
+newest item outright, because a subagent writes into the same transcript — its
+traffic would otherwise look like progress while the session is stopped.
+
 It is a second view, not a replacement, for one specific reason: **a pending
 permission prompt is never written to the transcript.** Nothing is recorded while
 the dialog is on screen, so a tool call with no result is either still running or
@@ -436,12 +449,26 @@ keeps that true.
   renderer, and the operator has to relaunch the app from the home screen. The poll
   is a self-scheduling chain armed from one completion callback, never a promise
   chained back into its own caller.
+- **Every request carries its own timeout.** `fetch` has none by default, and a
+  phone supplies every reason to need one — a network handoff, a sleeping radio, a
+  tailnet re-handshake. Because the chain is single-flight and its latch clears
+  only in the completion callback, one request that neither resolves nor rejects
+  would wedge the app until a reload: no transcript item lands again, and the view
+  toggle stops repainting because every later poll returns at the latch. Both look
+  to the operator like the session paused. A request that cannot finish must fail
+  instead of hanging, and a latch held past that deadline is released anyway.
 
 ## Troubleshooting
 
 **"connecting" forever.** The server is unreachable — check `curl
 127.0.0.1:8378/api/panes` on the host, and `systemctl --user status
 thalamus-console` if you unitized it.
+
+**The session looks paused and the view toggle does nothing.** Both are the same
+symptom, and the first thing to check is whether it is waiting on you: a question
+renders open in `read`, marked waiting, and is answered in `term` with ↑ ↓ and
+`⏎`. If nothing at all repaints, the beacon reads "no signal" once a request has
+outlived its deadline; the next poll recovers on its own without a reload.
 
 **No tabs, or "No output captured".** There's no tmux session by that name yet, or
 it has no windows. `thalamus roster` creates it; the console prints a warning at

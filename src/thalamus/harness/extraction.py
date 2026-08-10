@@ -154,8 +154,42 @@ def _tool_use_line(block: dict) -> str:
         return f"{name} $ {_clip(str(tool_input['command']), _COMMAND_CAP)}"
     if tool_input.get("description"):
         return f"{name} — {_clip(str(tool_input['description']), _COMMAND_CAP)}"
+    # A question put to the operator carries its own summary. Without this the
+    # fallback below dumps the whole option tree as escaped JSON, which is the
+    # least readable line in the feed and the one most worth reading — it is the
+    # session saying it is blocked on a human.
+    asked = _questions(tool_input)
+    if asked:
+        more = f" (+{len(asked) - 1} more)" if len(asked) > 1 else ""
+        return f"{name} — {_clip(asked[0]['question'], _COMMAND_CAP)}{more}"
     rendered = json.dumps(tool_input, default=str)
     return f"{name} {_clip(rendered, _COMMAND_CAP)}"
+
+
+def _questions(tool_input: dict) -> list[dict]:
+    """The questions in an `AskUserQuestion` input, normalised, or []."""
+    raw = tool_input.get("questions")
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for q in raw:
+        if not isinstance(q, dict):
+            continue
+        text = str(q.get("question") or "").strip()
+        if not text:
+            continue
+        options = [
+            str(o.get("label") or "").strip()
+            for o in (q.get("options") or [])
+            if isinstance(o, dict) and str(o.get("label") or "").strip()
+        ]
+        out.append({
+            "question": text,
+            "header": str(q.get("header") or "").strip(),
+            "options": options,
+            "multi": bool(q.get("multiSelect")),
+        })
+    return out
 
 
 def _tool_result_text(block: dict) -> str:

@@ -348,3 +348,88 @@ def test_feed_store_evicts_least_recently_used(tmp_path):
 def test_shorten_leaves_a_summary_alone_without_a_cwd():
     assert tr.shorten("Edit /repo/a.py", "") == "Edit /repo/a.py"
     assert tr.shorten("Bash $ cd /repo; ls", "/repo") == "Bash $ ls"
+
+
+# ---- Questions put to the operator ----
+#
+# `AskUserQuestion` is the one tool call the reader must act on rather than watch.
+# The dialog is a TUI modal that writes nothing while it is up, but the question
+# itself is written the moment it is asked — so unlike a permission prompt, the
+# read view can show it in full for the whole time the session sits blocked.
+
+ASK_INPUT = {
+    "questions": [
+        {
+            "question": "Which format worries you most?",
+            "header": "Format",
+            "multiSelect": True,
+            "options": [
+                {"label": "DS&A / live coding", "description": "whiteboard"},
+                {"label": "System design", "description": "architecture"},
+            ],
+        },
+        {
+            "question": "How should the course run?",
+            "header": "Mode",
+            "options": [{"label": "Mock interviews", "description": "graded"}],
+        },
+    ]
+}
+
+
+def test_a_question_summarises_as_the_question_not_raw_json(tmp_path):
+    """The fallback dumps the whole option tree as escaped JSON — the least
+    readable line in the feed, and the one most worth reading."""
+    path = tmp_path / "s.jsonl"
+    write_jsonl(path, [assistant({"type": "tool_use", "id": "t1",
+                                  "name": "AskUserQuestion", "input": ASK_INPUT})])
+    feed = tr.Feed(session_id="s", path=path)
+    feed.refresh()
+    summary = feed.items[-1]["summary"]
+    assert "Which format worries you most?" in summary
+    assert "(+1 more)" in summary
+    assert "{" not in summary and "label" not in summary
+
+
+def test_a_question_travels_with_its_options(tmp_path):
+    path = tmp_path / "s.jsonl"
+    write_jsonl(path, [assistant({"type": "tool_use", "id": "t1",
+                                  "name": "AskUserQuestion", "input": ASK_INPUT})])
+    feed = tr.Feed(session_id="s", path=path)
+    feed.refresh()
+    ask = feed.items[-1]["ask"]
+    assert [q["question"] for q in ask] == [
+        "Which format worries you most?", "How should the course run?"]
+    assert ask[0]["options"] == ["DS&A / live coding", "System design"]
+    assert ask[0]["multi"] is True
+    assert ask[1]["multi"] is False
+
+
+def test_a_question_reaches_the_wire_and_other_calls_carry_no_ask(tmp_path):
+    path = tmp_path / "s.jsonl"
+    write_jsonl(path, [
+        assistant({"type": "tool_use", "id": "t1", "name": "AskUserQuestion",
+                   "input": ASK_INPUT}),
+        assistant({"type": "tool_use", "id": "t2", "name": "Bash",
+                   "input": {"command": "ls"}}),
+    ])
+    feed = tr.Feed(session_id="s", path=path)
+    feed.refresh()
+    wired = tr.wire(feed.since(0))
+    asked = [w for w in wired if w.get("name") == "AskUserQuestion"]
+    plain = [w for w in wired if w.get("name") == "Bash"]
+    assert asked and asked[0]["ask"][0]["options"][0] == "DS&A / live coding"
+    assert "ask" not in plain[0]
+
+
+def test_a_malformed_question_input_degrades_instead_of_raising(tmp_path):
+    path = tmp_path / "s.jsonl"
+    write_jsonl(path, [
+        assistant({"type": "tool_use", "id": "t1", "name": "AskUserQuestion",
+                   "input": {"questions": "not a list"}}),
+        assistant({"type": "tool_use", "id": "t2", "name": "AskUserQuestion",
+                   "input": {"questions": [{"header": "no question text"}, None]}}),
+    ])
+    feed = tr.Feed(session_id="s", path=path)
+    feed.refresh()
+    assert all(item["ask"] == [] for item in feed.items)

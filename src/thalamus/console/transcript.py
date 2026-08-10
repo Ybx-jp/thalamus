@@ -41,7 +41,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..harness.extraction import _tool_use_line
+from ..harness.extraction import _questions, _tool_use_line
 from ..harness.transcripts import CLAUDE_PROJECTS, tool_result_text
 
 PINS = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
@@ -399,11 +399,18 @@ class Feed:
                 if text:
                     self._emit({"kind": "thinking", "text": text, "sidechain": sidechain})
             elif btype == "tool_use":
+                # A question to the operator is the one tool call the reader must
+                # act on rather than watch, so it travels with its options instead
+                # of being collapsed to a chip like the rest. The dialog itself is
+                # a TUI modal and writes nothing while it is up — but the question
+                # was written here the moment it was asked, so the read view can
+                # show it in full for the whole time the session sits blocked.
                 item = self._emit({
                     "kind": "tool",
                     "name": block.get("name") or "?",
                     "summary": shorten(_tool_use_line(block), self.cwd),
                     "status": "pending",
+                    "ask": _questions(block.get("input") or {}),
                     "result": "",
                     "truncated": False,
                     "sidechain": sidechain,
@@ -467,6 +474,8 @@ def wire(items: list[dict]) -> list[dict]:
             shown["summary"] = summary[:SUMMARY_CAP] + " …"
         shown["preview"] = " ".join(result.split())[:PREVIEW_CAP]
         shown["has_body"] = bool(result)
+        if not shown.get("ask"):
+            shown.pop("ask", None)   # every other tool call would carry an empty list
         out.append(shown)
     return out
 
