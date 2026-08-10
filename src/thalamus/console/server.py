@@ -108,11 +108,17 @@ _FEEDS = None
 
 
 def read_feed(cfg: Config, idx: int):
-    """(window, feed) for a roster window, or (window, None) if unresolvable."""
+    """(window, feed, reason) for a roster window.
+
+    `reason` is None when a feed came back, and otherwise names which failure it
+    was: `unresolved` (cannot tell which session is here) or `pending` (we know
+    exactly which session, it has not written its first turn). They read very
+    differently to whoever is holding the phone.
+    """
     tr = transcript_module()
     window = next((w for w in list_windows(cfg) if w["index"] == idx), None)
     if tr is None or window is None:
-        return window, None
+        return window, None, "no-package" if window is not None else "unresolved"
     global _LEDGER, _FEEDS
     with READ_LOCK:
         if _LEDGER is None:
@@ -122,9 +128,11 @@ def read_feed(cfg: Config, idx: int):
         got = tr.resolve(window.get("pane_id", ""), window.get("name", ""),
                          window.get("cwd", ""), window.get("pane_pid", 0), _LEDGER)
         if got is None:
-            return window, None
+            return window, None, "unresolved"
         session_id, path, launch_cwd = got
-        return window, _FEEDS.get(session_id, path, launch_cwd)
+        if path is None:
+            return window, None, "pending"
+        return window, _FEEDS.get(session_id, path, launch_cwd), None
 
 # One watcher for the process. `.distill` is stdlib-only, but it is still reached
 # through an accessor like the rest of the package: a console run as a bare script
@@ -774,14 +782,16 @@ class Handler(BaseHTTPRequestHandler):
             tr = transcript_module()
             if tr is None:
                 return self._send(200, {"available": False, "reason": "no-package"})
-            window, feed = read_feed(self.cfg, int(raw))
+            window, feed, reason = read_feed(self.cfg, int(raw))
             if window is None:
                 return self._send(404, {"error": "no such window"})
             if feed is None:
-                # Resolution refuses rather than guesses — a session launched
-                # before the ledger carried pane ids, in a window whose scope and
-                # cwd it shares with another. It resolves itself on recycle.
-                return self._send(200, {"available": False, "reason": "unresolved"})
+                # `unresolved` is a refusal: resolution declines to guess when a
+                # pre-ledger session shares a scope and cwd with another window,
+                # and it fixes itself on recycle. `pending` is not a failure at
+                # all — the session is identified and has not written its first
+                # turn, which is where every freshly spawned window starts.
+                return self._send(200, {"available": False, "reason": reason})
             with READ_LOCK:
                 return self._send(200, {
                     "available": True,
@@ -799,9 +809,9 @@ class Handler(BaseHTTPRequestHandler):
             item = q.get("item", [""])[0]
             if not raw.lstrip("-").isdigit() or not item.isdigit():
                 return self._send(400, {"error": "index and item required"})
-            _, feed = read_feed(self.cfg, int(raw))
+            _, feed, reason = read_feed(self.cfg, int(raw))
             if feed is None:
-                return self._send(404, {"error": "unresolved"})
+                return self._send(404, {"error": reason or "unresolved"})
             with READ_LOCK:
                 body = feed.body(int(item))
             if body is None:

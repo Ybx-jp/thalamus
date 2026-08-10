@@ -156,6 +156,11 @@ by a narrower fallback — process start time joined on scope and directory — 
 session's transcript is worse than showing none. Restart the window (⚙ → restart)
 and it resolves exactly from then on.
 
+A window that has been identified but has written nothing is a different state,
+and the view says so plainly rather than reporting the refusal above: Claude Code
+creates the transcript on the first turn, so a freshly spawned window has none
+until someone types into it. Send it a message and the feed starts.
+
 **＋ spawns a session**: pick an expert scope, a directory, and a room, and the
 server opens a detached pinned window there. The scope decides which memory it
 reads and writes; the directory decides what the work is about. See

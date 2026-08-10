@@ -145,6 +145,55 @@ def test_legacy_match_ignores_a_later_session_in_the_same_place(tmp_path):
     assert idx.legacy_match("main", "/repo", start)["session_id"] == "mine"
 
 
+# ---- identified vs identifiable ----
+
+def test_resolve_reports_a_known_session_with_no_transcript_yet(tmp_path, monkeypatch):
+    """A freshly spawned window is the normal case here, not an edge one.
+
+    Claude Code writes the JSONL on the first turn, so between spawn and the first
+    message the session is fully identified and has no transcript. That must not
+    read as the ambiguity refusal — the console knows exactly which session it is.
+    """
+    monkeypatch.setattr(tr, "CLAUDE_PROJECTS", tmp_path / "projects")
+    pins = tmp_path / "pins.jsonl"
+    write_jsonl(pins, [ledger_row("fresh", pane="%42")])
+    idx = tr.LedgerIndex(pins)
+    idx.refresh()
+
+    got = tr.resolve("%42", "main", "/repo", 0, idx)
+    assert got is not None, "an identified session must not resolve to None"
+    session_id, path, launch_cwd = got
+    assert session_id == "fresh"
+    assert path is None          # nothing written yet
+    assert launch_cwd == "/repo"
+
+
+def test_resolve_returns_none_only_when_the_window_is_unidentifiable(tmp_path, monkeypatch):
+    monkeypatch.setattr(tr, "CLAUDE_PROJECTS", tmp_path / "projects")
+    pins = tmp_path / "pins.jsonl"
+    write_jsonl(pins, [ledger_row("s1", pane="%1")])
+    idx = tr.LedgerIndex(pins)
+    idx.refresh()
+    # No row for this pane and no pid to fall back on: genuinely unknown.
+    assert tr.resolve("%99", "main", "/repo", 0, idx) is None
+
+
+def test_resolve_finds_the_transcript_once_the_first_turn_lands(tmp_path, monkeypatch):
+    projects = tmp_path / "projects"
+    monkeypatch.setattr(tr, "CLAUDE_PROJECTS", projects)
+    proj = projects / tr.project_slug("/repo")
+    proj.mkdir(parents=True)
+    (proj / "fresh.jsonl").write_text("")
+    pins = tmp_path / "pins.jsonl"
+    write_jsonl(pins, [ledger_row("fresh", pane="%42")])
+    idx = tr.LedgerIndex(pins)
+    idx.refresh()
+
+    session_id, path, _ = tr.resolve("%42", "main", "/repo", 0, idx)
+    assert session_id == "fresh"
+    assert path == proj / "fresh.jsonl"
+
+
 def test_row_epoch_reads_timestamps_as_utc():
     # 1970-01-02T00:00:00Z is exactly one day. mktime would skew this by the
     # box's offset and the assertion would fail anywhere but UTC.

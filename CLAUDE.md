@@ -72,3 +72,8 @@ so the doc and the memory stay in step.
 - `uv run pytest` — the suite must stay green.
 - `uv run thalamus contract check` after any live write path change — the federation
   contract is enforced, not aspirational.
+- The console ships a real client, and it is tested: `tests/js/*.test.mjs` run under
+  node, driven by `tests/test_console_js.py` as part of the same pytest run. They lift
+  functions out of `static/app.js` by name, so **renaming one breaks extraction loudly**
+  — that is the intended failure, not a flake. node is optional; a checkout without it
+  skips them.

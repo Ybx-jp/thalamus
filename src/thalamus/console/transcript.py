@@ -218,13 +218,22 @@ def pane_started_at(pane_pid: int) -> float:
 
 
 def resolve(pane_id: str, scope: str, cwd: str, pane_pid: int,
-            ledger: LedgerIndex) -> tuple[str, Path, str] | None:
+            ledger: LedgerIndex) -> tuple[str, Path | None, str] | None:
     """(session_id, transcript path, launch cwd) for the session in a window.
 
     The cwd returned is the ledger's — where the session *started*, which is both
     what names its transcript directory and what its tool paths are relative to.
     The pane's current directory can differ (a worktree entered mid-run) and is
     only ever an input to the fallback match.
+
+    Two failures live here and they are not the same failure. `None` means the
+    window could not be identified at all — no ledger row, or a fallback that
+    refused because two windows share a scope and a directory. A row with a `None`
+    path means the opposite: the session is known, and it simply has not written a
+    transcript yet. Claude Code creates the JSONL on the first turn, so every
+    freshly spawned window sits in that state until someone types into it.
+    Collapsing the two told the operator a brand-new window was ambiguous, which
+    is both wrong and alarming — the console knows exactly which session it is.
     """
     ledger.refresh()
     row = ledger.by_pane(pane_id)
@@ -234,10 +243,7 @@ def resolve(pane_id: str, scope: str, cwd: str, pane_pid: int,
         return None
     session_id = row.get("session_id") or ""
     launch_cwd = row.get("cwd") or ""
-    path = transcript_path(session_id, launch_cwd)
-    if path is None:
-        return None
-    return session_id, path, launch_cwd
+    return session_id, transcript_path(session_id, launch_cwd), launch_cwd
 
 
 def shorten(summary: str, cwd: str) -> str:

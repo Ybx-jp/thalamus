@@ -560,8 +560,14 @@ function renderRead(idx) {
 
   if (st.reason) {
     els.read.className = "read read-note";
-    els.read.textContent = st.reason === "no-package"
-      ? "The read view needs the thalamus package alongside the console; this one is running as a bare tmux bridge."
+    // `pending` is the state every new window starts in and is not a fault: the
+    // transcript is written on the first turn, so saying "can't tell which session"
+    // here was both wrong and alarming — the session is known, it is just empty.
+    els.read.textContent =
+      st.reason === "no-package"
+        ? "The read view needs the thalamus package alongside the console; this one is running as a bare tmux bridge."
+      : st.reason === "pending"
+        ? "Nothing written yet — this session hasn't taken its first turn. Send it a message and the transcript starts here."
       : "Can't tell which session is in this window yet. Sessions started before the console learned to record it resolve on their next restart (INFRA → restart).";
     readShownIdx = null;
     return;
