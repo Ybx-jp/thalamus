@@ -9,7 +9,7 @@ through `scope:main:exchange:d0060228a7454be0` (literature, 54 citations), follo
 
 ## The design
 
-For the **literature corpus only**:
+For **every ingested document, in every expert scope**:
 
 - **Chunk vertices** over the retained source text, fixed width.
 - **Chunks join the first-pass retrieval pool**, ranked against claims and summaries.
@@ -23,6 +23,14 @@ For the **literature corpus only**:
 
 Claims, citations and extraction are unchanged. Nothing about the episodic corpus
 changes.
+
+**The boundary is `ingest` versus `extract`, not one scope versus another.** An earlier
+draft of this entry said "literature corpus only", which was the corpus that had been
+measured rather than a rule the design needs. Every expert that ingests documents gets
+chunks — measured 2026-08-10 across seven scopes, 187 article Sources, 4,309,673 chars,
+**3,292 chunk vertices**. Session transcripts get none, because they arrive through
+`extract`, which never touches this path. That is where the 2026-07-14 node-explosion
+estimate remains correct and binding: transcripts are 98% of the archive.
 
 ### One correction to an earlier draft of this entry
 

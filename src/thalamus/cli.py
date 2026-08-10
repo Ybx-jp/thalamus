@@ -197,6 +197,27 @@ def main():
     )
     contract_check_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
+    # Chunk backfill — co-indexing for documents ingested before chunks existed.
+    # Model-free by construction: chunking reads the retained bytes, so this costs
+    # compute and nothing else, and it is safe to re-run (lab/052).
+    backfill_parser = subparsers.add_parser(
+        "backfill-chunks",
+        help="Build co-indexed Chunk vertices for already-ingested documents",
+    )
+    backfill_parser.add_argument(
+        "--scope", default="", help="Limit to one expert scope (default: every scope)"
+    )
+    backfill_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    backfill_parser.add_argument(
+        "--write", action="store_true",
+        help="Write to the graph. Without it, the work is reported but not persisted.",
+    )
+    backfill_parser.add_argument(
+        "--force", action="store_true",
+        help="Re-process Sources that already have chunks. Writes are idempotent "
+        "(merge on vertex id), so this repairs a partial run rather than duplicating.",
+    )
+
     # Snapshot command — durability on demand (docs/09)
     snapshot_parser = subparsers.add_parser(
         "snapshot",
@@ -805,6 +826,8 @@ def main():
         _cmd_ingest(args)
     elif args.command == "contract":
         _cmd_contract(args, contract_parser)
+    elif args.command == "backfill-chunks":
+        _cmd_backfill_chunks(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -1364,6 +1387,134 @@ def _cmd_ingest(args):
         source_vid = write_knowledge(graph, batch)
         _persist(graph)
         print(f"\nWritten into scope `{batch.scope}`: {source_vid}")
+    finally:
+        close_connection(graph)
+
+
+def _cmd_backfill_chunks(args):
+    """Co-index documents that were ingested before chunks existed.
+
+    Needs no model: a chunk is a slice of retained bytes, and the entity vocabulary it
+    tags itself with is already in the graph. So this is a rebuild, not a re-extraction
+    — which is the property that makes chunk geometry a dial rather than a commitment
+    (lab/052). Claims, entities and Sources are left exactly as they are.
+    """
+    from pathlib import Path
+
+    from gremlin_python.process.graph_traversal import __
+    from gremlin_python.process.traversal import Merge, T
+
+    from thalamus.contract.ontology import vid
+    from thalamus.harness import ingest as ingest_mod
+    from thalamus.harness.ingest import anchor_citations, build_chunks
+    from thalamus.substrate.schema import Entity, Provenance, Tier
+    from thalamus.substrate.writer import _ensure_edge, _iterate, _provenance_properties
+
+    graph = connect(args.url)
+    try:
+        query = graph.V().has_label("Source").has("kind", "article")
+        if args.scope:
+            query = query.has("scope", args.scope)
+        rows = (
+            query.project("vid", "scope", "hash", "uri", "title", "chunks")
+            .by(T.id).by("scope").by("content_hash").by("uri").by("title")
+            .by(__.in_("DERIVED_FROM").has_label("Chunk").count())
+            .to_list()
+        )
+
+        planned = 0
+        skipped_existing = 0
+        missing_bytes = 0
+        for row in rows:
+            if row["chunks"] and not args.force:
+                skipped_existing += 1
+                continue
+            digest = str(row["uri"] or "").replace("archive://", "")
+            hits = list(Path.home().glob(f".thalamus/archive/{digest[:2]}/{digest}.*"))
+            if not hits:
+                missing_bytes += 1
+                continue
+            try:
+                text = ingest_mod.to_text(hits[0].read_bytes())
+            except Exception as exc:  # a PDF or unreadable payload — say so, skip it
+                print(f"  skip {row['title'][:50]}: {exc}", file=sys.stderr)
+                continue
+
+            scope = row["scope"]
+            # The claim's vertex ID travels with its citation — without it the anchor
+            # can be computed and printed but never written, which is the whole point
+            # of the edge. (It was, in the first run of this command.)
+            claims = (
+                graph.V(row["vid"]).in_("DERIVED_FROM").has_label("Claim")
+                .project("vid", "citation").by(T.id).by(
+                    __.coalesce(__.values("citation"), __.constant(""))
+                ).to_list()
+            )
+            entity_names = [
+                str(name[0] if isinstance(name, list) else name)
+                for name in graph.V().has_label("Entity").has("scope", scope)
+                .values("name").to_list()
+            ]
+
+            class _Cited:
+                def __init__(self, citation):
+                    self.citation = citation
+
+            cited = [_Cited(str(c.get("citation") or "")) for c in claims]
+            chunks = build_chunks(text, cited, entity_names)
+            anchored = anchor_citations(chunks, cited)
+            planned += len(chunks)
+            print(f"  {row['title'][:52]:<54} {len(chunks):>4} chunks  "
+                  f"{len(anchored)}/{len(cited)} anchored  [{scope}]")
+
+            if not args.write:
+                continue
+
+            entity_vids = {
+                name: vid("Entity", Entity(name=name).slug(), scope) for name in entity_names
+            }
+            previous = ""
+            for chunk in chunks:
+                chunk_vid = vid("Chunk", chunk.local_id(row["hash"]), scope)
+                properties = {
+                    "text": chunk.text, "ordinal": chunk.ordinal,
+                    "start": chunk.start, "end": chunk.end, "scope": scope,
+                    **_provenance_properties(
+                        Provenance(tier=Tier.CURATED, source=str(row["uri"] or ""))
+                    ),
+                }
+                _iterate(
+                    graph.merge_v({T.id: chunk_vid, T.label: "Chunk"})
+                    .option(Merge.on_create, {T.id: chunk_vid, **properties})
+                    .option(Merge.on_match, properties),
+                    "upsert Chunk", chunk_vid,
+                )
+                _ensure_edge(graph, chunk_vid, row["vid"], "DERIVED_FROM")
+                if previous:
+                    _ensure_edge(graph, previous, chunk_vid, "ADJACENT_IN_TEXT")
+                previous = chunk_vid
+                for name in chunk.about:
+                    if name in entity_vids:
+                        _ensure_edge(graph, chunk_vid, entity_vids[name], "ABOUT")
+
+            # The anchor edges, written last because they need every chunk to exist.
+            ordinal_vids = {
+                c.ordinal: vid("Chunk", c.local_id(row["hash"]), scope) for c in chunks
+            }
+            for claim_index, ordinal in anchored.items():
+                if ordinal in ordinal_vids:
+                    _ensure_edge(
+                        graph, str(claims[claim_index]["vid"]),
+                        ordinal_vids[ordinal], "ANCHORS",
+                    )
+
+        print(f"\n{len(rows)} article Sources: {planned:,} chunks "
+              f"({skipped_existing} already chunked, {missing_bytes} missing bytes)")
+        if args.write:
+            _persist(graph)
+            print("Written.")
+        else:
+            print("DRY RUN — nothing written. Re-run with --write to persist.")
     finally:
         close_connection(graph)
 
