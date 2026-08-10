@@ -58,10 +58,10 @@ people should try them:
 and a private address; the console then only has to be reachable on that network.
 
 ```bash
-tailscale serve --bg --set-path /plane http://127.0.0.1:8378
+tailscale serve --bg --set-path /console http://127.0.0.1:8378
 ```
 
-That publishes it at `https://<your-machine>.<tailnet>.ts.net/plane/` over HTTPS,
+That publishes it at `https://<your-machine>.<tailnet>.ts.net/console/` over HTTPS,
 reachable from your phone anywhere, and not reachable from the internet. Keep the
 console bound to loopback — `serve` connects to it locally.
 
@@ -87,7 +87,7 @@ example:
 ```caddyfile
 your.domain {
   basic_auth { you $2a$14$... }          # or forward_auth to your IdP
-  handle_path /plane/* {
+  handle_path /console/* {
     reverse_proxy 127.0.0.1:8378
   }
 }

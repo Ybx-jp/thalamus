@@ -183,7 +183,7 @@ Two things reliably cause "the server is fine but the phone isn't":
 
 ## 8. Reverse proxies strip the mount path
 
-`tailscale serve --set-path /plane http://127.0.0.1:8378` forwards `/plane/api/panes`
+`tailscale serve --set-path /console http://127.0.0.1:8378` forwards `/console/api/panes`
 to the backend as `/api/panes`. That is usually what you want, but it means:
 
 - the backend must not expect its own prefix,

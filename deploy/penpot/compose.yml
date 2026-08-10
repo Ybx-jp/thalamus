@@ -36,6 +36,11 @@
 name: penpot
 
 services:
+  # The service names below are short, but every container also answers to its
+  # `penpot-` prefixed alias, because the frontend image ships a baked nginx.conf
+  # with `upstream penpot-backend` / `penpot-exporter` hardcoded. Without the
+  # aliases nginx dies at startup with "host not found in upstream" and the
+  # frontend restart-loops while every other container looks healthy.
   frontend:
     image: penpotapp/frontend:latest
     restart: unless-stopped
@@ -43,6 +48,9 @@ services:
     depends_on:
       - backend
       - exporter
+    networks:
+      default:
+        aliases: [penpot-frontend]
     volumes:
       - penpot-assets:/opt/data/assets
     environment:
@@ -59,6 +67,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    networks:
+      default:
+        aliases: [penpot-backend]
     volumes:
       - penpot-assets:/opt/data/assets
     environment:
@@ -82,8 +93,16 @@ services:
     # Headless Chromium. This is the container homelab named as the one that
     # spikes during large exports, and the reason every service here is capped.
     mem_limit: 1g
+    networks:
+      default:
+        aliases: [penpot-exporter]
     environment:
-      PENPOT_PUBLIC_URI: "http://frontend"
+      # Shared with the backend, and required — the exporter refuses to start
+      # without it (`:secret-key` is the one non-optional key in its config
+      # schema, and the failure is a malli validation dump, not a clear message).
+      PENPOT_SECRET_KEY: "$PENPOT_SECRET_KEY"
+      PENPOT_PUBLIC_URI: "http://penpot-frontend:8080"
+      PENPOT_REDIS_URI: "redis://redis/0"
 
   postgres:
     image: postgres:15

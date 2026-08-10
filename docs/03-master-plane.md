@@ -106,7 +106,7 @@ queryable by the agent it grades.
 `thalamus pulse` (`src/thalamus/pulse/`) serves the eval loop's measurements as
 a live second-screen dashboard — FastAPI on loopback :8379, run by the
 `thalamus-pulse` systemd user service, published tailnet-only at
-`https://<host>.ts.net/pulse/` (path-scoped like `/plane/`; Android WebAPKs
+`https://<host>.ts.net/pulse/` (path-scoped like `/console/`; Android WebAPKs
 ignore ports). PC-first three-column layout, single-column gist view on mobile.
 
 It is a **projection, not an instrument**: every number comes from records the

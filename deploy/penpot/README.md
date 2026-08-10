@@ -58,6 +58,33 @@ you actually use (H264, HEVC, VP9). The UI writes schema-valid config and applie
 a hand-edited `encoding.xml` that fails to parse takes the service down, and this
 file is owned by `jellyfin` so editing it needs root anyway.
 
+## If HTTPS fails but every container is healthy
+
+Symptom: all six containers `running`, `tailscale serve status` shows the proxy,
+`getent hosts penpot.<tailnet>.ts.net` resolves, and the app answers on
+`http://frontend:8080` from inside the network — but curl to the public name returns
+`000` and the sidecar logs `acme: order ... status: invalid`.
+
+That is the certificate, not the deployment. The tell is **timing**: if `invalid`
+arrives roughly one second after `did SetDNS`, Let's Encrypt never re-checked DNS —
+it reused a cached failed authorization from an earlier attempt. LE keeps a failed
+authz for about an hour, and every on-demand retry (one per TLS handshake) reuses it
+and fails instantly, so retrying harder makes it strictly worse and piles up stale
+`_acme-challenge` TXT records.
+
+The fix is to stop touching it. Leave it alone for an hour, then request exactly
+once:
+
+```bash
+docker --context default compose -f compose.yml exec tailscale \
+  tailscale cert penpot.<tailnet>.ts.net
+```
+
+Check before blaming the sidecar: that the tailnet has HTTPS certificates enabled at
+all (if another host on the same tailnet already serves HTTPS, it does), and that the
+TXT records are visible — `nslookup -type=TXT _acme-challenge.penpot.<tailnet>.ts.net`.
+Several TXT records is normal after retries and is not itself the failure.
+
 ## What this stack deliberately does not do
 
 - **No host ports.** Nothing is published; the tailscale sidecar is the only

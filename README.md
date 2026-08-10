@@ -191,14 +191,15 @@ src/thalamus/
                (below the contract: knows nodes and edges, not experts or tiers)
   contract/    the federation boundary — the ontology, expert manifests, and the
                checks a subgraph must pass before it may be written
-  plane/       the connective plane — FastAPI read layer + React/Cytoscape viewer
+  viewer/      the graph viewer — FastAPI read layer + React/Cytoscape frontend
+  console/     the mobile PWA over the tmux roster, published tailnet-only at /console/
   archive/     immutable content-addressed store for retained primary evidence
   harness/     where it meets the agent — MCP server, hooks, skills, transcript bootstrap
   eval/        the eval loop — trace tap reader, used-vs-ignored attribution,
                Trace-node sync, per-scope utility and cost reports, and the
                counterfactual harness (task battery, arm runner, graded oracle)
   pulse/       live telemetry dashboard over the eval loop's measurements
-frontend/      viewer source; builds into plane/static
+frontend/      viewer source; builds into viewer/static
 config/        expert manifests (tier-0, operator-owned)
 docs/          design docs
 lab/           harness-limit notebook — what broke, why, workaround or wall

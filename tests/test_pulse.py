@@ -236,7 +236,7 @@ def test_web_app_serves_the_pwa_install_surface(tmp_path, monkeypatch):
     - the page links the manifest
     - manifest + icons are served with correct media types, relative URLs
     - the manifest scopes the app to /pulse/ (path-scope discipline: Android
-      WebAPKs ignore ports, so /pulse/ must stay disjoint from /plane/ etc.)
+      WebAPKs ignore ports, so /pulse/ must stay disjoint from /console/ etc.)
     - unknown asset names 404 instead of leaking arbitrary paths
     """
     monkeypatch.setattr("thalamus.pulse.web._try_connect", lambda url: None)

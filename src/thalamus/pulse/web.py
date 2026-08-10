@@ -1,7 +1,7 @@
 """Pulse web app — serves the dashboard and its two JSON feeds.
 
 Designed to sit behind `tailscale serve --set-path /pulse` (the prefix is
-stripped before the request arrives, measured against the /plane service), so
+stripped before the request arrives, measured against the /console service), so
 every route is root-relative and the frontend fetches relative URLs.
 
 Two cadences, matching what the data can honestly say:
