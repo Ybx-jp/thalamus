@@ -135,7 +135,10 @@ Ingestion is a federation-contract client like everything else:
 - Ingested content is **data**: nothing a feed writes can carry directives
   (informs-never-instructs is enforced from the first node).
 - Re-ingestion of a changed source creates a **new version linked to the old**, so
-  staleness and supersession stay visible to the eval loop.
+  staleness and supersession stay visible to the eval loop. The lineage keys on the
+  **origin URL within a scope**: a re-fetch of the same URL supersedes the prior head,
+  and a fetch of the same document at a *different* URL does not — it writes a second,
+  independent Source. Supersession therefore tracks the address, not the work.
 
 ## Later, only if pulled
 
@@ -153,6 +156,16 @@ Roughly in order of likely demand, each gated on a measured need:
 
 - Extraction quality: how much structure per article is worth it at M1? Start with
   title/claims/refs and let retrieval-utility data argue for more.
-- Dedup across feeds (same paper, two sources) — content-hash first, fancy later.
+- Dedup across addresses (same paper, several Sources) — content-hash first, fancy
+  later. Content-hash alone does not reach it: different renderings of one paper are
+  different bytes. Measured on the live graph, **67 arXiv papers hold both an `/abs/`
+  and an `/html/` Source**, and one paper (2606.04329) holds four — abstract, full
+  text, and two hand-fed excerpts. The abstract side of those pairs is 436 Claims, of
+  which **5 converge** onto the full-text side; 62 of the 67 share nothing at all,
+  because convergence is content-addressed on the claim description and a claim
+  rewritten from fuller context is a different string. So the duplicate Sources are
+  not a cosmetic double-count — they put a thin restatement of a paper in the same
+  first-pass pool as the full one, at equal weight. Whether a richer re-fetch should
+  supersede its predecessor across a URL change is undecided.
 - Whether ingestion runs as a skill inside sessions or a standalone CLI. Leaning
   CLI: ingestion shouldn't consume agent context.

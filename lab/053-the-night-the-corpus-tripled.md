@@ -1,4 +1,4 @@
-# 053 — The night the corpus doubled
+# 053 — The night the corpus tripled
 
 **Status: measurements + two fixes.** The follow-through on
 [052](052-the-passage-the-note-came-from.md): co-indexing shipped, and the corpus it
@@ -141,14 +141,28 @@ not uniform.
 
 ## Re-ingest does not replace, it accumulates
 
-`SUPERSEDES` keys on matching origin, and `/html/…` ≠ `/abs/…`, so **each re-ingested
-paper now has two Sources** — the abstract-derived one and the full-text one. Both
-fetches really happened and the abstract claims are not false, so this is defensible;
-identical claim descriptions converge by content hash, near-identical ones do not.
+`_article_heads` looks for prior heads by **exact `origin` string within a scope**, and
+`/html/…` ≠ `/abs/…`, so no head is found and no edge is written: **all 67 re-ingested
+papers now hold two Sources**, the abstract-derived one and the full-text one. Both
+fetches really happened and the abstract claims are not false, so this is defensible.
+
+The hedge that identical descriptions would converge and near-identical ones would not
+is now measured, and it lands almost entirely on the second branch. The abstract side of
+those 67 pairs is **436 Claims, of which 5 converge** onto the full-text side — **62 of
+67 papers share nothing at all**. Convergence is content-addressed on the claim
+description, and a claim written from the whole paper is not the string the abstract
+produced, even when it says the same thing.
+
+So this is not a cosmetic double-count. 431 abstract-level claims sit in the same
+first-pass pool as the full-text claims of the same papers, at equal retrieval weight,
+and the thin one can win. Supersession tracks the address, not the work.
 
 Left as-is deliberately rather than resolved with an ad-hoc write path at 2am. It is a
 real question — whether a richer re-fetch of the same document should supersede its
-predecessor across a URL change — and it wants the ticketed channel, not a script.
+predecessor across a URL change — and it wants the ticketed channel, not a script. It is
+not new either: the standing thread `same-paper-multiple-sources-dedup-still-open` has
+2606.04329 behind **four** Sources (abstract, full text, two hand-fed excerpts, 84 claims
+between them), which is the same defect reached by a different route.
 
 ## Ends in
 
