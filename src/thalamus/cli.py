@@ -196,6 +196,11 @@ def main():
         "evidence-floor integrity",
     )
     contract_check_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    contract_check_parser.add_argument(
+        "--capabilities", action="store_true",
+        help="Re-ask the harness CLIs whether the capability declarations still hold. "
+        "Reads no graph and makes no model call; needs the CLIs on PATH.",
+    )
 
     # Chunk backfill — co-indexing for documents ingested before chunks existed.
     # Model-free by construction: chunking reads the retained bytes, so this costs
@@ -1728,10 +1733,54 @@ def _cmd_eval_gold(args):
     print("\nLabel a batch, then: thalamus eval gold --score")
 
 
+def _report_capabilities():
+    """Re-ask the harness CLIs, and print the unchecked count beside the verdict.
+
+    The count is not decoration. A checker that prints only "OK" reports a green
+    light over an unknown denominator — if half the rows were unprobeable or the
+    binary was missing, "no drift" and "nothing asked" are the same output. So the
+    rows that could not be answered are always shown, including on a clean run.
+    """
+    from thalamus.contract.probes import Outcome, check_capabilities
+
+    results = check_capabilities()
+    drift = [r for r in results if r.outcome is Outcome.DRIFT]
+    malformed = [r for r in results if r.outcome is Outcome.MALFORMED]
+    unchecked = [r for r in results
+                 if r.outcome in (Outcome.UNPROBEABLE, Outcome.UNAVAILABLE)]
+
+    for result in results:
+        mark = {Outcome.CONFIRMED: "✓", Outcome.DRIFT: "✗",
+                Outcome.MALFORMED: "✗"}.get(result.outcome, "?")
+        detail = f" — {result.detail}" if result.detail else ""
+        print(f"  {mark} {result.probe.binary} {result.probe.flag}"
+              f" [{result.outcome.value}]{detail}")
+
+    print(f"\nProbed {len(results)} declaration(s): {len(results) - len(drift) - len(malformed) - len(unchecked)} "
+          f"confirmed, {len(drift)} drifted, {len(malformed)} malformed, "
+          f"{len(unchecked)} unchecked.")
+    if drift or malformed:
+        print("\nA declaration no longer matches the CLI that answers it.",
+              file=sys.stderr)
+        sys.exit(1)
+    if unchecked:
+        print("Every declaration that could be asked still holds. "
+              "The unchecked rows are not evidence of anything.")
+        return
+    print("Capability declarations OK — every one re-asked and confirmed.")
+
+
 def _cmd_contract(args, contract_parser):
     if getattr(args, "contract_command", None) != "check":
         contract_parser.print_help()
         sys.exit(1)
+
+    # Short-circuit before `connect`: the capability check asks CLIs, not the graph,
+    # and a checker that needs a running graph to verify a command-line flag would be
+    # unrunnable in exactly the situation it is for — a fresh box being wired up.
+    if getattr(args, "capabilities", False):
+        _report_capabilities()
+        return
 
     from thalamus.contract.conformance import check_graph
 

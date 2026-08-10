@@ -262,6 +262,47 @@ the time a retroactive sweep reads the same transcript:
 - `thalamus extract` re-checks the cwd each transcript recorded, so a sandbox
   transcript reached any other way is still skipped.
 
+**A declaration nothing re-asks is the failure mode, not the wrong value.** lab/054
+found five wrong declarations at once with the suite green throughout, and the
+common cause was that no surface ever asked a CLI a second time.
+`thalamus contract check --capabilities`
+(`contract/probes.py`) asks: it re-probes each declaration against the CLI that
+answers it, reads no graph, makes no model call, and runs in ~6 s.
+
+The mechanism is the **sentinel probe**. Both CLIs are commander.js, and commander
+rejects an unknown option during argument parsing — before auth, network, workspace
+trust and any model call. So the flag under test goes first and a guaranteed-unknown
+sentinel second, and the answer is which one the CLI names:
+
+```
+agent --trust       --thalamus-probe-sentinel -p x  → names the sentinel  → present
+agent --max-turns 5 --thalamus-probe-sentinel -p x  → names --max-turns   → absent
+```
+
+Two shapes are ruled out by measurement rather than taste. **An action option
+short-circuits validation** — `agent --max-turns 5 --version` exits 0 and prints the
+version, so a `--version`-based probe reports every absent flag as present. And
+**help text is unsound in both directions**: `claude --help` does not mention
+`--max-turns`, which `eval/arms.py` passes in production and the parser accepts,
+while `agent create-chat` is a subcommand missing from `agent --help`. The parser is
+the authority; the help is marketing.
+
+The control is checked before the measurement. If a CLI ever *accepts* the sentinel,
+every flag would read as present — a silent, unanimous sweep of confirmations — so
+the checker probes the bare sentinel first and refuses rather than reporting. Three
+outcomes are not answers and are never rounded into one: `UNPROBEABLE` (the CLI did
+something other than reject an unknown option), `UNAVAILABLE` (the binary is not on
+this box, which is not the same as the flag being gone), and `MALFORMED` (the record
+is wrong independently of the world). The unchecked count prints beside the verdict
+on every run, clean or not, because "no drift" and "nothing asked" are otherwise the
+same output.
+
+What it does **not** catch is as important. A probe is sound as a falsifier and
+unsound as a generalizer: that `--trust` parses says nothing about what it does, and
+nothing about a mode the probe never entered. Claims about the *repo* rather than the
+harness — "nothing spells `claude` inline" — are outside it entirely and belong to
+`qe` as invariants.
+
 **Capability is declared, not assumed.** Two surfaces stay Claude-Code-only, and
 both say so rather than substituting a binary:
 
