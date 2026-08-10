@@ -37,3 +37,6 @@ frontend/dist/
 
 # Case studies — session-generated analysis, not shipped docs.
 /docs/studies/
+
+# Penpot deployment secrets (template is .env.example)
+deploy/penpot/.env

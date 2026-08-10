@@ -1,0 +1,133 @@
+# Penpot — the `designer` expert's design tool, self-hosted (docs/08).
+#
+# Deployed under the four conditions the homelab expert measured on this box
+# (consultation `scope:main:exchange:432ff6f9cd6f43ba`). Two of them are encoded
+# in this file and the other two are in README.md, because they are not compose's
+# to enforce.
+#
+# 1. THE SYSTEM ENGINE, NOT DOCKER DESKTOP. Every command here must carry
+#    `--context default`. The active context on this box is `desktop-linux`, a
+#    qemu VM with a hard 8GiB ceiling that also holds the unbounded graph
+#    container, and it is bound to `graphical-session.target` — a GNOME logout
+#    tears down the engine and everything in it. An unqualified `docker compose
+#    up -d` lands there silently. The user unit in this directory pins the
+#    context so the daily path cannot get it wrong.
+#
+# 2. ITS OWN TAILNET HOSTNAME, via the sidecar below. Not a subpath: Penpot is a
+#    root-scoped SPA emitting absolute asset and websocket URLs, and
+#    `tailscale serve` strips the mount path, so `/penpot/` resolves its `/js/...`
+#    against the existing `/` mount and 404s — ttyd only survives a subpath
+#    because it has `--base-path`, which Penpot has no equivalent of. And not a
+#    port: Android WebAPKs ignore the port, so the ts.net hostname is ONE app
+#    namespace, and a root-scoped install would capture `/console`, `/pulse`,
+#    `/course` and block the phone control plane
+#    (`scope:homelab:claim:84bce1c8c285f6dd`). A distinct MagicDNS name is a
+#    distinct Android namespace, which is the only shape that satisfies both.
+#    It also isolates Penpot's own service worker, which root-scoped would claim
+#    fetches for every other surface — a cost this box has already paid once
+#    (`scope:homelab:claim:b8b1aa2cbd3c2b53`).
+#
+# 3. EXPLICIT mem_limit ON EVERY CONTAINER, below. The exporter is the one that
+#    spikes: it drives headless Chromium.
+#
+# 4. Jellyfin NVENC — see README.md. Not compose's business, but it is where the
+#    CPU headroom this stack consumes comes from.
+
+name: penpot
+
+services:
+  frontend:
+    image: penpotapp/frontend:latest
+    restart: unless-stopped
+    mem_limit: 256m
+    depends_on:
+      - backend
+      - exporter
+    volumes:
+      - penpot-assets:/opt/data/assets
+    environment:
+      PENPOT_FLAGS: "$PENPOT_FLAGS"
+
+  backend:
+    image: penpotapp/backend:latest
+    restart: unless-stopped
+    # The JVM. Measured Penpot guidance puts steady state well under this; the
+    # limit exists so a runaway cannot reach the host, not as a tuning target.
+    mem_limit: 2g
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - penpot-assets:/opt/data/assets
+    environment:
+      PENPOT_FLAGS: "$PENPOT_FLAGS"
+      PENPOT_PUBLIC_URI: "$PENPOT_PUBLIC_URI"
+      PENPOT_SECRET_KEY: "$PENPOT_SECRET_KEY"
+      PENPOT_DATABASE_URI: "postgresql://postgres/penpot"
+      PENPOT_DATABASE_USERNAME: penpot
+      PENPOT_DATABASE_PASSWORD: "$PENPOT_DATABASE_PASSWORD"
+      PENPOT_REDIS_URI: "redis://redis/0"
+      PENPOT_ASSETS_STORAGE_BACKEND: assets-fs
+      PENPOT_STORAGE_ASSETS_FS_DIRECTORY: /opt/data/assets
+      # No outbound mail configured, so email verification would strand the only
+      # account this instance will ever have. Single operator, tailnet-only.
+      PENPOT_SMTP_ENABLED: "false"
+      PENPOT_TELEMETRY_ENABLED: "false"
+
+  exporter:
+    image: penpotapp/exporter:latest
+    restart: unless-stopped
+    # Headless Chromium. This is the container homelab named as the one that
+    # spikes during large exports, and the reason every service here is capped.
+    mem_limit: 1g
+    environment:
+      PENPOT_PUBLIC_URI: "http://frontend"
+
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    mem_limit: 1g
+    stop_signal: SIGINT  # postgres fast shutdown
+    environment:
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      POSTGRES_DB: penpot
+      POSTGRES_USER: penpot
+      POSTGRES_PASSWORD: "$PENPOT_DATABASE_PASSWORD"
+    volumes:
+      - penpot-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U penpot"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    mem_limit: 256m
+
+  # Condition 2. Its own tailnet identity, so Penpot gets `/` on a hostname that
+  # is not the one carrying the console PWA. TS_SERVE_CONFIG terminates TLS and
+  # proxies to the frontend over the compose network; nothing is published to the
+  # host, so this listens on the tailnet and nowhere else.
+  tailscale:
+    image: tailscale/tailscale:latest
+    restart: unless-stopped
+    mem_limit: 128m
+    hostname: penpot
+    environment:
+      TS_AUTHKEY: "$TS_AUTHKEY"
+      TS_HOSTNAME: penpot
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_USERSPACE: "true"
+    volumes:
+      - penpot-tailscale:/var/lib/tailscale
+      - ./serve.json:/config/serve.json:ro
+
+volumes:
+  penpot-assets:
+  penpot-postgres:
+  penpot-tailscale:

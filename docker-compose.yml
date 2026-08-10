@@ -7,6 +7,13 @@ services:
     # SIGTERM makes TinkerGraph flush graphLocation on the way out. Give the JVM
     # room to finish that write rather than letting compose SIGKILL it at 10s.
     stop_grace_period: 60s
+    # Unbounded, this container is the fattest RSS inside Docker Desktop's fixed
+    # 8GiB VM, so any other container that balloons gets it killed by the VM's OOM
+    # killer first — and TinkerGraph is in-memory, which makes that a data-loss
+    # event rather than a restart (homelab, exchange 432ff6f9cd6f43ba). Measured
+    # steady state is ~970MiB; 3g leaves the JVM room to grow without being the
+    # kernel's preferred victim.
+    mem_limit: 3g
     ports:
       - "127.0.0.1:8182:8182"
     volumes:
