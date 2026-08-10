@@ -1223,6 +1223,62 @@ not a scan.
 
 ## 5. Open challenges this literature puts to the design
 
+- **Verbatim text is not reachable from retrieval, and the measured penalty for that
+  is large** (Fidelity Before Structure, arXiv 2601.00821; consultation
+  `scope:main:exchange:7848872f9deb464c`, 38 citations). In a fixed
+  retrieve-rerank-reason pipeline varying only the stored representation, verbatim
+  chunks beat LLM-extracted typed artifacts by 15.9 points on LoCoMo and 22.0 on
+  LongMemEval-S, with six confound controls
+  (`scope:literature:claim:0a5efda94cf2d814`, `8c5b0141f8db68d2`); accuracy tracks how
+  much source text survives in the store (`scope:literature:claim:8328d2e1c7a732e3`),
+  and the artifact pipeline does not beat naive RAG
+  (`scope:literature:claim:d6e4740f90e44dce`). Thalamus's retrieval surface is
+  extracted claims and session summaries; the archive retains every byte and Sources
+  resolve to them via `DERIVED_FROM`, but no retrieval path reaches that text.
+  **The escape hatch is measured shut.** The 2026-07-14 decision against `Chunk`
+  nodes rests on chunk nodes earning their keep only under per-chunk retrieval *or*
+  embeddings, embeddings being a stated non-goal. The paper's retriever-family
+  ablation reports the gap surviving without embeddings at all — BM25 sparse lexical,
+  14.7pp, the *largest* of three families. Per-chunk retrieval is still required; the
+  embeddings half of that disjunction is not. One detail is unconfirmed and
+  load-bearing: whether the cross-encoder reranker stayed active in the BM25 arm.
+  **What "augment" costs is structural, not cheap.** The measured augmenting
+  configuration is co-indexing — artifacts and chunks in one first-pass candidate
+  pool, ranked against each other (union 42.5% vs 43.9% chunks-alone vs 28.0%
+  artifacts-alone), so artifacts are accuracy-*neutral* there and the chunks carry the
+  gain. Drill-down from a retrieved claim was never measured, and 69% of the
+  diagnosable gap is write-time loss — facts the extractor never wrote down — which a
+  drill-down keyed on an artifact structurally cannot reach.
+  **The most transferable number is neither pole.** Near-verbatim,
+  provenance-preserving event units land *between* typed artifacts and raw text, both
+  gaps significant. A Thalamus `LiteratureClaim` carrying its verbatim `citation` is
+  that shape, so the design sits at a measured intermediate position rather than at
+  the 15.9-point indictment.
+  **Conditions not met, so this licenses no change yet:** static technical documents
+  are untested (all four corpora are conversational); *proactive, non-QA recall — our
+  dominant surface — is flagged untested by the authors themselves*; and the largest
+  store measured is 2,938 turns, orders of magnitude under this archive.
+  **A cost none of the accuracy papers price:** making retained bytes retrievable
+  widens the poisoning surface. Retrieval unioning lexical and embedding similarity
+  reliably surfaces grafted memories (`scope:literature:claim:ae6c87c8e28712b8`) and
+  agents treat retrieved memories as ground truth, retrieval carrying no provenance
+  check (`scope:literature:claim:ba6b62409b3d8b95`). Today's retrieval surface is
+  claims that passed a write path; the archive passed none. That ties this challenge
+  to the open `transcript-mediated-laundering-gap` thread rather than leaving it a
+  pure accuracy question.
+  **Zep is not the counter-citation it looks like:** its three tiers retain the
+  episode subgraph alongside the semantic one (`scope:literature:claim:be332cc35a6f9ab5`),
+  which is the augment configuration, not the replace one. Whether those episodes
+  enter first-pass retrieval is not established in scope.
+  **The live disagreement, held open rather than resolved:** GraphRAG's measured win
+  is on query-focused summarization and corpus sensemaking
+  (`scope:literature:claim:712f1ef242c6bbfa`), Fidelity's benchmarks are specific-fact
+  QA, and nothing in scope measures both in one harness. Fidelity's 1-hop
+  cosine/Jaccard similarity graph (`scope:literature:claim:bdb705b5183f7782`) is a far
+  weaker structure than a Leiden community hierarchy and does **not** refute GraphRAG;
+  citing it that way overclaims. TSM's 12.2-point gain from *more* temporal structure
+  (`scope:literature:claim:7d86cefd55c075f0`) varies a different axis with fidelity
+  held fixed — both can be true, and nobody has crossed them.
 - **Static tiers vs. Bayesian trust** (SuperLocalMemory, 2603.02240). Our four-tier
   ladder is simpler and more legible; is legibility worth giving up learned trust?
   The single-operator scope is the defensible answer — but it must be *argued*, in
