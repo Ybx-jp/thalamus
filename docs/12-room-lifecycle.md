@@ -558,13 +558,22 @@ room reports is that instrument with its floor removed. Instead:
   125 sessions) and would read as "nothing durable happened" regardless of truth.
 - **Harm** — inflated-witness count: claims converging across ≥2 member scopes whose
   provenance is one room. No judge required; `witnesses.py` already computes the reading.
-  Two named instruments sit alongside it and both are seeded rather than judged, so both
-  are runnable here: **Instruction Decay Rate** (does a member abandon a hard constraint
-  after peers normalize violating it — conformity toward a dispatcher) and **Consensus
-  Pollution Rate** (seed one falsehood in one member's context, measure the fraction of
-  downstream responses endorsing or implicitly relying on it — conformity toward a
-  majority). Worst values observed on the weakest model evaluated: IDR 10.1%, CPR 40.3%.
-  CPR is the direct measurement of the harm the fan-in design is built against.
+  Two named instruments sit alongside it: **Instruction Decay Rate** (does a member
+  abandon a hard constraint after peers normalize violating it — conformity toward a
+  dispatcher) and **Consensus Pollution Rate** (seed one falsehood in one member's
+  context, measure how widely it spreads — conformity toward a majority). Worst values
+  observed on the weakest model evaluated: IDR 10.1%, CPR 40.3%. CPR is the direct
+  measurement of the harm the fan-in design is built against.
+
+  What these two buy is a **seeded stimulus**, not a judge-free score. The planted
+  constraint and the planted falsehood give ground truth by construction, which is the
+  property the deliverables report can never have. But the scoring still has a judgment
+  step — IDR is the fraction of constrained turns *judged* as violating
+  (`scope:literature:claim:5be3b4fa2fc79e05`), CPR the fraction of downstream responses
+  *judged* as influenced (`scope:literature:claim:9acb46f8bac39eba`). The exact-match
+  members of the family are RTD and CLC. So the judge cost is carried here, not
+  eliminated, and the claim to defend is that the *stimulus* is known — never that these
+  metrics avoid a judge.
 - **Denominator** — cost per ceremony, via `eval/cost.py` keyed on the occasion id.
 
 **No collaboration-volume quantity is an outcome.** More ceremonies means more sends, so a
@@ -638,3 +647,7 @@ read-snapshot isolation helping or hurting agent *collaboration*.
 - SendMessage delivery between two live room members is **unmeasured** — the room-boundary
   rows in the guard ledger are fixtures. Any part of this design that assumes SendMessage
   delivers to an interactive session is unevidenced.
+- Decline-as-a-legal-reply has real prior art — Smith's refusal message carries a
+  justification slot — but it is present only in the hand-fed text and is not carded as a
+  claim, so the design's most-defended dispatch decision currently has no citable vertex.
+  An ingest pass over the refusal and immediate-response-bid sections would close it.
