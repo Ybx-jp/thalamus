@@ -123,3 +123,65 @@ class TestProbeShape:
         # into a tuple. The reason is what tells a later reader whether to retire it.
         for probe, _, reason in probes.CAPABILITY_ROWS:
             assert len(reason) > 20, f"{probe.binary} {probe.flag} has no reason"
+
+
+class TestDerivedRows:
+    """Claims the repo makes about itself, recomputed from the thing they describe.
+
+    A CLI probe cannot reach these — the subject is the repo, not the harness — but
+    the failure is identical: a declaration nothing re-asks, drifting while the data
+    underneath it moves.
+    """
+
+    def test_the_declared_parity_matches_the_wirings(self):
+        probe, _ = probes._declared_parity_row()
+        assert probes.probe_derived(probe).outcome is Outcome.CONFIRMED
+
+    def test_a_script_joining_one_wiring_is_drift(self, monkeypatch):
+        """The lab/054 event: three scripts joined HOOK_WIRING and the count did not.
+
+        Nothing failed at the time, because the count lived in a comment. Here the
+        declaration is fixed data and the derivation reads the tables, so the two
+        diverge the moment one of them moves.
+        """
+        from thalamus.harness import install
+
+        monkeypatch.setattr(
+            install, "HOOK_WIRING",
+            [*install.HOOK_WIRING, ("PostToolUse", "Bash", "newly-added.sh")],
+        )
+        probe, _ = probes._declared_parity_row()
+        result = probes.probe_derived(probe)
+        assert result.outcome is Outcome.DRIFT
+        # The message must name the newcomer: "a count changed" sends the reader
+        # back to diff two tables by hand, which is the work the checker exists to do.
+        assert "newly-added.sh" in result.detail
+        assert "declared 11, computed 12" in result.detail
+
+    def test_only_declared_fields_are_compared(self):
+        # A partial declaration is checked on what it names and stays silent on the
+        # rest, rather than being forced to invent values it has no opinion about.
+        probe = probes.DerivedProbe(derivation="hook_parity", declared={"shared": 7})
+        assert probes.probe_derived(probe).outcome is Outcome.CONFIRMED
+
+    def test_an_unknown_derivation_is_malformed_not_skipped(self):
+        # A row pointing at a derivation that no longer exists is itself the drift.
+        probe = probes.DerivedProbe(derivation="gone", declared={"x": 1})
+        result = probes.probe_derived(probe)
+        assert result.outcome is Outcome.MALFORMED
+        assert "gone" in result.detail
+
+    def test_a_rename_is_not_counted_as_a_gap(self):
+        """`mcp-tap.sh` is `post-tool-use.sh` under another filename.
+
+        A name-set difference cannot tell the two apart, so reporting raw
+        `claude_only` would say Cursor has no MCP tap when it has one — a capability
+        the adapter *has*, reported as one it lacks.
+        """
+        from thalamus.harness.install import DECLARED_PARITY
+
+        assert "post-tool-use.sh" in DECLARED_PARITY.claude_only
+        assert "post-tool-use.sh" not in DECLARED_PARITY.real_gaps
+        assert DECLARED_PARITY.real_gaps == (
+            "recipe-stage.sh", "role-guard.sh", "room-guard.sh",
+        )

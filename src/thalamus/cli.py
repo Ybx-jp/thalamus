@@ -1753,8 +1753,7 @@ def _report_capabilities():
         mark = {Outcome.CONFIRMED: "✓", Outcome.DRIFT: "✗",
                 Outcome.MALFORMED: "✗"}.get(result.outcome, "?")
         detail = f" — {result.detail}" if result.detail else ""
-        print(f"  {mark} {result.probe.binary} {result.probe.flag}"
-              f" [{result.outcome.value}]{detail}")
+        print(f"  {mark} {result.label} [{result.outcome.value}]{detail}")
 
     print(f"\nProbed {len(results)} declaration(s): {len(results) - len(drift) - len(malformed) - len(unchecked)} "
           f"confirmed, {len(drift)} drifted, {len(malformed)} malformed, "

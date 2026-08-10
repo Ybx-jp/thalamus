@@ -98,17 +98,13 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # The Cursor wiring, as (event, script). Event names and their I/O shapes were
 # re-verified against cursor.com/docs/hooks.md on 2026-07-29 (lab/027).
 #
-# Parity with HOOK_WIRING above: 11 distinct Claude scripts, 9 Cursor, 7 shared by
-# name. Of the four Claude-only names, `post-tool-use.sh` is not a gap but an
-# undeclared **rename** — `mcp-tap.sh` is its Cursor counterpart, and only the
-# filenames differ. The three real gaps are `recipe-stage.sh`, `role-guard.sh` and
-# `room-guard.sh`, so on Cursor there is today no recipe staging, no room boundary
-# and — load-bearing — no `write_boundary` enforcement.
-#
-# A name-set difference cannot tell a rename from a gap, which is why this comment
-# has to say which is which, and why saying it in prose is not enough: the count
-# here was wrong for the three scripts that joined the Claude list after it was
-# written, and nothing failed. The prompt-side tiers reach
+# Parity with HOOK_WIRING above is declared in `DECLARED_PARITY` below and re-derived
+# by `thalamus contract check --capabilities`, because stating it here in prose is
+# what failed: the count was wrong for the three scripts that joined the Claude list
+# after it was written, and nothing failed with it. What the numbers *mean* stays
+# prose, since no derivation can supply it — on Cursor there is today no recipe
+# staging, no room boundary and, load-bearing, no `write_boundary` enforcement.
+# The prompt-side tiers reach
 # Cursor through the spool: `beforeSubmitPrompt` can read the prompt but not
 # inject, so timestamp.sh and conditioning.sh record there and `inject.sh`
 # delivers on the next `postToolUse` — one of only two Cursor events that can
@@ -151,6 +147,62 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("afterMCPExecution", "mcp-tap.sh"),
     ("postToolUse", "inject.sh"),
 ]
+
+
+@dataclass(frozen=True)
+class HookParity:
+    """What the two wirings above are believed to add up to.
+
+    Written as data so it can be re-derived and disagreed with. The same claim as a
+    comment was wrong for three scripts and no test could notice, because a comment
+    is not compared to anything.
+
+    It is not circular to pin a hand-written expectation beside the tables it
+    describes and then recompute it: the derivation reads `HOOK_WIRING` and
+    `CURSOR_HOOK_WIRING`, this record does not, so adding a script to either table
+    moves one and not the other. That divergence is precisely the event that went
+    unnoticed before.
+    """
+
+    claude_scripts: int
+    cursor_scripts: int
+    shared: int
+    claude_only: tuple[str, ...]
+    cursor_only: tuple[str, ...]
+    # A name-set difference cannot tell a rename from a gap — the two are the same
+    # shape — so the renames are named. Without this, `post-tool-use.sh` reads as a
+    # missing MCP tap on Cursor when `mcp-tap.sh` is doing that job under a different
+    # filename, which is a capability the adapter *has* being reported as one it lacks.
+    renames: tuple[tuple[str, str], ...]
+
+    @property
+    def real_gaps(self) -> tuple[str, ...]:
+        """Claude-only scripts that are genuinely absent on Cursor, renames excluded."""
+        renamed = {claude_name for claude_name, _ in self.renames}
+        return tuple(name for name in self.claude_only if name not in renamed)
+
+
+DECLARED_PARITY = HookParity(
+    claude_scripts=11,
+    cursor_scripts=9,
+    shared=7,
+    claude_only=("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh", "room-guard.sh"),
+    cursor_only=("inject.sh", "mcp-tap.sh"),
+    renames=(("post-tool-use.sh", "mcp-tap.sh"),),
+)
+
+
+def derive_hook_parity() -> dict:
+    """Recompute the parity claim from the wirings themselves."""
+    claude = {script for _, _, script in HOOK_WIRING}
+    cursor = {script for _, script in CURSOR_HOOK_WIRING}
+    return {
+        "claude_scripts": len(claude),
+        "cursor_scripts": len(cursor),
+        "shared": len(claude & cursor),
+        "claude_only": tuple(sorted(claude - cursor)),
+        "cursor_only": tuple(sorted(cursor - claude)),
+    }
 
 
 @dataclass

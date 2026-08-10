@@ -297,11 +297,28 @@ is wrong independently of the world). The unchecked count prints beside the verd
 on every run, clean or not, because "no drift" and "nothing asked" are otherwise the
 same output.
 
-What it does **not** catch is as important. A probe is sound as a falsifier and
-unsound as a generalizer: that `--trust` parses says nothing about what it does, and
-nothing about a mode the probe never entered. Claims about the *repo* rather than the
-harness — "nothing spells `claude` inline" — are outside it entirely and belong to
-`qe` as invariants.
+**Not every stale declaration is about a vendor.** The second lab/054 failure was a
+claim the repo made about *itself*: `install.py` asserted a hook-parity count that
+was wrong for three scripts, because a count in a comment is compared to nothing. So
+the checker carries `DERIVED` rows beside the flag probes — same checker, because it
+is the same failure. `DECLARED_PARITY` is the hand-authored expectation and
+`derive_hook_parity()` recomputes from `HOOK_WIRING` and `CURSOR_HOOK_WIRING`; the
+declaration does not read the tables, so adding a script moves one and not the other,
+and the drift names the newcomer rather than reporting that a number changed.
+
+The declaration carries its **renames** explicitly, because a name-set difference
+cannot tell a rename from a gap — the two are the same shape. Without that,
+`post-tool-use.sh` reads as a missing MCP tap on Cursor when `mcp-tap.sh` is doing
+that job under another filename: a capability the adapter *has*, reported as one it
+lacks. `real_gaps` is what remains after renames, and it is three —
+`recipe-stage.sh`, `role-guard.sh`, `room-guard.sh`.
+
+What the checker does **not** catch is as important. A probe is sound as a falsifier
+and unsound as a generalizer: that `--trust` parses says nothing about what it does,
+and nothing about a mode the probe never entered. And a `DERIVED` row only checks a
+claim someone thought to write down as data — a belief still living in prose is
+outside it, which is the standing reason to move claims out of comments as they are
+touched.
 
 **Capability is declared, not assumed.** Two surfaces stay Claude-Code-only, and
 both say so rather than substituting a binary:

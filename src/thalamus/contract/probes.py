@@ -128,12 +128,44 @@ class FlagProbe:
 
 
 @dataclass(frozen=True)
+class DerivedProbe:
+    """Recompute a claim the repo makes about *itself* from the data it is about.
+
+    The second failure mode in lab/054 is not a vendor changing something — it is a
+    claim about our own tables going stale while the tables move underneath it.
+    `install.py` asserted a hook-parity count that was wrong for three scripts, and
+    no test could notice, because a prose count is compared to nothing.
+
+    A CLI probe cannot reach this: the subject is the repo, not the harness. But it
+    is the *same* failure — a declaration nothing re-asks — so it belongs to the same
+    checker rather than to a separate one that would be run at a different time.
+
+    The derivation is named, not held: a row carrying a function is no longer data
+    that can be listed, diffed or serialized, and this table's whole value is that it
+    can be read. `DERIVATIONS` resolves the name, and an unresolvable name is
+    MALFORMED rather than skipped — a row pointing at a derivation that no longer
+    exists is exactly the drift being hunted.
+    """
+
+    derivation: str
+    # The hand-authored expectation. Compared field by field, so a partial record
+    # checks the fields it names and stays silent about the rest.
+    declared: dict
+
+
+@dataclass(frozen=True)
 class ProbeResult:
-    probe: FlagProbe
-    declared: bool
-    observed: bool | None
+    probe: FlagProbe | DerivedProbe
+    declared: bool | dict
+    observed: bool | dict | None
     outcome: Outcome
     detail: str = ""
+
+    @property
+    def label(self) -> str:
+        if isinstance(self.probe, DerivedProbe):
+            return f"derived {self.probe.derivation}"
+        return f"{self.probe.binary} {self.probe.flag}"
 
 
 def _run(argv: list[str]) -> str:
@@ -222,6 +254,65 @@ CAPABILITY_ROWS: tuple[tuple[FlagProbe, bool, str], ...] = (
 )
 
 
+def _derive_hook_parity() -> dict:
+    # Imported here rather than at module scope: `contract/` does not depend on
+    # `harness/`, and a derivation is not a reason to invert that.
+    from thalamus.harness.install import derive_hook_parity
+
+    return derive_hook_parity()
+
+
+# Name -> the function that recomputes it. Adding a derivation here is what makes a
+# self-claim checkable; a claim with no entry is prose again.
+DERIVATIONS = {"hook_parity": _derive_hook_parity}
+
+
+def probe_derived(probe: DerivedProbe) -> ProbeResult:
+    """Recompute, and compare field by field with what was declared."""
+    compute = DERIVATIONS.get(probe.derivation)
+    if compute is None:
+        return ProbeResult(
+            probe, probe.declared, None, Outcome.MALFORMED,
+            f"no derivation named `{probe.derivation}`",
+        )
+
+    observed = compute()
+    # Only the declared fields are compared. A record that names three of five fields
+    # is checked on three and makes no claim about the other two, which keeps a
+    # partial declaration honest instead of forcing it to invent the rest.
+    disagreements = [
+        f"{field}: declared {value!r}, computed {observed.get(field)!r}"
+        for field, value in probe.declared.items()
+        if observed.get(field) != value
+    ]
+    if disagreements:
+        return ProbeResult(probe, probe.declared, observed, Outcome.DRIFT,
+                           "; ".join(disagreements))
+    return ProbeResult(probe, probe.declared, observed, Outcome.CONFIRMED)
+
+
+def _declared_parity_row() -> tuple[DerivedProbe, str]:
+    from thalamus.harness.install import DECLARED_PARITY
+
+    return (
+        DerivedProbe(
+            derivation="hook_parity",
+            declared={
+                "claude_scripts": DECLARED_PARITY.claude_scripts,
+                "cursor_scripts": DECLARED_PARITY.cursor_scripts,
+                "shared": DECLARED_PARITY.shared,
+                "claude_only": DECLARED_PARITY.claude_only,
+                "cursor_only": DECLARED_PARITY.cursor_only,
+            },
+        ),
+        "install.DECLARED_PARITY — the count that was wrong for three scripts while "
+        "the suite stayed green (lab/054)",
+    )
+
+
 def check_capabilities() -> list[ProbeResult]:
-    """Re-ask every probeable declaration. Opens no graph connection, by design."""
-    return [probe_flag(probe, declared=declared) for probe, declared, _ in CAPABILITY_ROWS]
+    """Re-ask every checkable declaration. Opens no graph connection, by design."""
+    results = [probe_flag(probe, declared=declared) for probe, declared, _ in CAPABILITY_ROWS]
+    parity_probe, _ = _declared_parity_row()
+    results.append(probe_derived(parity_probe))
+    return results
