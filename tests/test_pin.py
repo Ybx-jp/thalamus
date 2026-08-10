@@ -130,6 +130,46 @@ def test_main_is_pinnable_without_a_manifest_and_unknown_scopes_are_not():
         resolve("nonexistent-expert", REPO_CONFIG)
 
 
+def test_only_a_scope_with_its_own_mcp_file_pays_for_extra_tools(tmp_path):
+    """
+    Scenario: `designer` works through a 68-tool Penpot server; nobody else should
+
+    A tool surface carried in `.mcp.json` arms in every session in the project, so
+    one scope's tooling becomes the whole roster's context tax. The per-scope file
+    keeps it where it is used. `--mcp-config` is additive (no --strict-mcp-config),
+    so the house `thalamus` server survives alongside it.
+    """
+    from thalamus.harness.pin import _claude_argv, scope_mcp_config
+
+    experts = tmp_path / "experts"
+    experts.mkdir()
+    for scope in ("designer", "qe"):
+        (experts / f"{scope}.yaml").write_text(f"scope: {scope}\nname: {scope.title()}\n")
+    mcp = tmp_path / "mcp"
+    mcp.mkdir()
+    (mcp / "designer.json").write_text('{"mcpServers": {"penpot": {"type": "http"}}}')
+
+    assert scope_mcp_config("designer", tmp_path) == mcp / "designer.json"
+    assert scope_mcp_config("qe", tmp_path) is None
+    assert scope_mcp_config("main", tmp_path) is None
+
+    argv = _claude_argv("designer", tmp_path, base=tmp_path)
+    assert "--mcp-config" in argv
+    assert argv[argv.index("--mcp-config") + 1] == str(mcp / "designer.json")
+
+    assert "--mcp-config" not in _claude_argv("qe", tmp_path, base=tmp_path)
+
+
+def test_the_shipped_designer_scope_is_the_only_one_carrying_a_tool_surface():
+    """The repo's own config, so a second scope acquiring 68 tools is a decision
+    someone has to make deliberately rather than a file that quietly appeared."""
+    from thalamus.contract.manifest import available_scopes
+    from thalamus.harness.pin import scope_mcp_config
+
+    carrying = [s for s in available_scopes(REPO_CONFIG) if scope_mcp_config(s, REPO_CONFIG)]
+    assert carrying == ["designer"]
+
+
 def test_resolve_pin_prefers_the_picked_agent_over_the_env_scope():
     """
     Scenario: The agent picker launched `claude --agent thalamus-homelab` from a

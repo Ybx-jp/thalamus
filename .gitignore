@@ -40,3 +40,5 @@ frontend/dist/
 
 # Penpot deployment secrets (template is .env.example)
 deploy/penpot/.env
+# Third-party MCP server, built from the pinned commit in deploy/penpot/README.md
+deploy/penpot/penpot-mcp-server/

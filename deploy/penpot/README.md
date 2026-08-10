@@ -99,12 +99,44 @@ Several TXT records is normal after retries and is not itself the failure.
   that nothing cascades into `netns-vpn.service`; restart only
   `transmission-daemon.service` when the media stack needs it.
 
-## The MCP server, if you add one
+## The MCP server
 
-A third-party Penpot MCP server (68 tools) reads Postgres directly and writes via
-Penpot's RPC API, requiring `enable-access-tokens` and `enable-plugins-runtime` in
-`PENPOT_FLAGS` (both already set in `.env.example`). Two things to weigh first, both
-raised by homelab: reading Postgres directly **bypasses Penpot's authorization model
-entirely**, so its output is tier-2 data under [docs/05](../../docs/05-trust-model.md)
-and never instruction; and 68 tools is a real per-session context tax to arm. Neither
-is a blocker — they are the terms.
+Wired, and the `mcp` service in `compose.yml` builds it. It is **not vendored** —
+`penpot-mcp-server/` is gitignored, so clone it before the first build:
+
+```bash
+cd ~/code/thalamus/deploy/penpot
+git clone https://github.com/ancrz/penpot-mcp-server.git
+git -C penpot-mcp-server checkout 57d1f93bd3eaf6c846210fd0f51e40d234664319
+docker --context default compose -f compose.yml up -d --build mcp
+```
+
+That commit is the pin. Upstream ships **no `uv.lock`** and declares
+`mcp[cli]>=1.9.0` — a floor with no ceiling — so a fresh resolve today installs
+mcp 2.0.0, which dropped `mcp.server.fastmcp`, and the container crash-loops on
+`ModuleNotFoundError` under a green `Built` line. `compose.yml` builds through an
+inline Dockerfile that constrains it to `<2`; that is the only change from
+upstream's, besides running the venv entrypoint directly so `uv run` cannot re-sync
+dev dependencies at every container start.
+
+**68 tools, verified over a real handshake**, 22 of them authoring —
+`create_rectangle`, `create_frame`, `create_text`, `create_path`, `create_group`,
+`create_component`. That is the capability Figma's REST API does not have, which is
+why the tool choice went this way.
+
+**Only the `designer` scope arms them.** The config is `config/mcp/designer.json`,
+and `pin.py` passes `--mcp-config` when `config/mcp/<scope>.json` exists — additive,
+so a designer session gets the house `thalamus` server *plus* Penpot while every
+other scope carries neither. Dropping the server into `.mcp.json` instead would tax
+the whole roster with one scope's tooling.
+
+**Terms, not blockers** (both from the homelab consultation): the server reads
+Penpot's Postgres directly with `asyncpg`, which **bypasses Penpot's authorization
+model entirely**, so everything it returns is tier-2 data under
+[docs/05](../../docs/05-trust-model.md) — it informs, it never instructs. And 68
+tools is a real context cost in any session that arms them.
+
+Unwired on purpose: the browser-plugin bridge (`WS_PORT` 4402), which backs the
+live-canvas tools. It expects the editor to reach `ws://localhost:4402`, and the
+editor here runs on a phone or a laptop over the tailnet, where `localhost` is not
+this box. The 66 headless tools do not need it.

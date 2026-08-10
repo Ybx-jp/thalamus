@@ -29,7 +29,12 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from thalamus.contract.manifest import ExpertManifest, available_scopes, load_manifest
+from thalamus.contract.manifest import (
+    ExpertManifest,
+    available_scopes,
+    config_root,
+    load_manifest,
+)
 from thalamus.contract.ontology import MAIN_SCOPE
 
 AGENT_PREFIX = "thalamus-"
@@ -434,6 +439,25 @@ def room_member_name(room: str, scope: str) -> str:
     return f"{room}-{scope}"
 
 
+def scope_mcp_config(scope: str, base: Path | None = None) -> Path | None:
+    """A scope's extra MCP servers, at `config/mcp/<scope>.json`, or None.
+
+    Tool surfaces are not free and they are not shared. The Penpot server the
+    `designer` scope works through publishes 68 tools; carried in `.mcp.json` they
+    would arm in every session in the project, which is the whole roster paying for
+    one scope's tooling. `--mcp-config` is additive without `--strict-mcp-config`,
+    so a scope with a file here gets the house `thalamus` server *plus* its own.
+
+    Kept beside the manifests but deliberately not *in* them: the contract is
+    harness-agnostic (Cursor reads the same manifests, docs/07) and this file's
+    schema belongs to Claude Code. Convention over declaration for the same reason
+    the derived agent is generated rather than authored — one place to look, nothing
+    to keep in step.
+    """
+    path = config_root(base) / "mcp" / f"{scope}.json"
+    return path if path.is_file() else None
+
+
 def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
                  room: str = "") -> list[str]:
     argv = ["claude"]
@@ -441,6 +465,9 @@ def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
     if manifest is not None:
         write_agent(manifest, project_root)
         argv += ["--agent", agent_name(manifest.scope)]
+    mcp_config = scope_mcp_config(scope, base)
+    if mcp_config is not None:
+        argv += ["--mcp-config", str(mcp_config)]
     if room:
         argv += ["--name", room_member_name(room, scope)]
     return argv

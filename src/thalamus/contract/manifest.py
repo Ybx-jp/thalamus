@@ -124,10 +124,14 @@ class ExpertManifest(BaseModel):
         return issues
 
 
-def experts_dir(base: Path | None = None) -> Path:
+def config_root(base: Path | None = None) -> Path:
+    """The tier-0 configuration directory — manifests and anything beside them."""
     override = os.environ.get("THALAMUS_CONFIG_DIR")
-    root = base or (Path(override) if override else _DEFAULT_CONFIG)
-    return root / "experts"
+    return base or (Path(override) if override else _DEFAULT_CONFIG)
+
+
+def experts_dir(base: Path | None = None) -> Path:
+    return config_root(base) / "experts"
 
 
 def load_manifest(scope: str, base: Path | None = None) -> ExpertManifest:
