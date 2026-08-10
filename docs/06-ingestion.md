@@ -78,22 +78,31 @@ literature expert.
    adjacent claims instead. When a *specific* mechanism has to be citable, feed that
    section as its own file. The excerpt's header names the parent file and what the
    pass missed, so the two are never mistaken for independent sources.
-   **Length predicts the loss before the run does, and the loss is the tail.** The
-   digest is capped at ~24,000 characters, so a document above it is not summarized
-   but **truncated**: the claims come from the opening, and everything past the cap is
-   invisible rather than thinly covered. A survey's methods sections and a guide's
-   hard cases both live past it. Measured 2026-08-08 on a truth-discovery survey
-   (89,697 chars, ~3.7× the budget): every claim came from the first ~24,000, and the
-   source-independence material it was procured for — sitting in §3.2 — produced
-   nothing, which a 7,585-byte section feed then yielded in full. **The dry run
-   reports the loss rather than leaving it to be remembered:** every ingest prints the
-   extracted text length and what fraction of it fell inside the budget, and a
-   truncated document raises a warning naming the discarded chars. Payload bytes
-   cannot carry this — markup-to-text ratio swings by an order of magnitude, so a
-   508,263-byte arXiv HTML page and a 44,256-byte `/abs/` page say nothing about which
-   was read in full (they are 27% and 100% respectively). Treat a long guide, survey,
-   or chapter as a section feed by default. The whole-document pass is still worth
-   writing for breadth; it is the front of the document, not a map of it.
+   **A document longer than one pass is chunked, not truncated.** Text over the
+   ~24,000-character digest budget is split into overlapping ~9,600-char windows and
+   each is extracted in its own pass, so the whole document reaches the model. Chunk
+   size is a recall decision with a measurement behind it: GraphRAG found GPT-4
+   extracting almost twice as many entity references at 600-token chunks as at 2,400
+   (`scope:literature:claim:16cd76dd0d63ea12`), so extraction recall falls as chunks
+   grow — and a single 24,000-char pass (~6,000 tokens) sits past the right edge of
+   that curve. 9,600 chars is the *worse* of the two measured sizes, taken to bound
+   claim volume and cost rather than because it is the recall optimum; the overlap
+   exists so a claim spanning a boundary is not cut in half, and its size is
+   ungrounded — nothing in the literature scope measures overlap or boundary policy.
+   Chunked passes thread the document's own entity vocabulary forward (each chunk's
+   prompt carries the names earlier chunks minted), which is the cross-article
+   convergence feed pointed inward at one document. Claims are **retained, never
+   merged** across passes, and entities dedup on exact name only — see
+   [11 §3f](11-related-work.md).
+   **The run reports what was read**, rather than leaving it to be remembered: every
+   ingest prints the extracted text length, and either the number of chunked passes or
+   what fraction fell inside the budget, warning with the discarded count when a
+   document really is truncated. Payload bytes cannot carry this — markup-to-text
+   ratio swings by an order of magnitude, so a 508,263-byte arXiv HTML page and a
+   44,256-byte `/abs/` page say nothing about which was read in full (90,025 and 4,862
+   chars of text respectively). Section feeds are still the answer for the *specific
+   mechanism* case above and wherever no HTML rendering exists; they are no longer the
+   default for mere length.
 5. **Dry-run, verify, then write.** Every ingest runs without `--write` first and
    the operator confirms the extracted title matches the document intended —
    mis-resolved references are a measured failure mode (docs/10), and the archive

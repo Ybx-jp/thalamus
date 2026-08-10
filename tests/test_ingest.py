@@ -147,6 +147,131 @@ def test_digest_report_names_what_the_extractor_never_saw():
 
     assert DigestReport(text_chars=0).coverage == 0.0
 
+    # Chunking reads past the budget, so an over-budget document is no longer a
+    # truncated one — the warning must not fire for a document that was read in full.
+    chunked = DigestReport(text_chars=90_025, budget=24_000, chunks=10)
+    assert not chunked.truncated
+    assert chunked.discarded == 0 and chunked.coverage == 1.0
+
+
+def test_chunking_covers_the_whole_document_without_severing_words():
+    """
+    Scenario: Text longer than one chunk is split for multi-pass extraction
+
+    Every char must land in some chunk — the point of chunking is that nothing is
+    silently dropped, which is the defect it exists to fix. Boundaries fall on
+    whitespace because the model is asked for verbatim citations, and a half-word
+    is an anchor that will not match the source.
+    """
+    from thalamus.harness.ingest import chunk_text
+
+    words = " ".join(f"word{n:04d}" for n in range(4000))
+    chunks = chunk_text(words, size=1000, overlap=100)
+
+    assert len(chunks) > 1
+    assert all(chunk == chunk.strip() for chunk in chunks)
+    assert not any(chunk.endswith("wor") or chunk.endswith("word") for chunk in chunks)
+
+    # Coverage: every token of the source survives into at least one chunk.
+    covered = set()
+    for chunk in chunks:
+        covered.update(chunk.split())
+    assert covered == set(words.split())
+
+    # A document at or under the size is one chunk — no cost regression for short docs.
+    assert chunk_text("short document", size=1000) == ["short document"]
+
+    with pytest.raises(ValueError):
+        chunk_text(words, size=100, overlap=100)
+
+
+def test_chunked_prompts_thread_the_document_vocabulary_forward():
+    """
+    Scenario: Building the prompt for part 3 of a chunked document
+
+    The convergence feed points inward for a chunked ingest: names minted by earlier
+    chunks are offered to later ones, so one paper's vocabulary converges instead of
+    fragmenting per chunk. The part banner also has to stop the model inventing a
+    title from a section heading it happens to be looking at.
+    """
+    from thalamus.harness.ingest import build_prompt
+
+    prompt = build_prompt("chunk text", "file://doc", ["Gleaning"], part=(3, 7))
+    assert "PART 3 OF 7" in prompt
+    assert "- Gleaning" in prompt
+    assert "2-6" in prompt and "3-12" not in prompt
+    assert "never invent one" in prompt
+
+    whole = build_prompt("chunk text", "file://doc", ["Gleaning"])
+    assert "PART" not in whole and "3-12" in whole
+
+
+def test_merge_retains_duplicate_claims_and_dedups_entities_by_exact_name():
+    """
+    Scenario: Two chunks of one document each report claims, with an entity in common
+
+    Claims are retained verbatim, never collapsed: the one measurement in scope on
+    merging near-duplicates at write time has it regressing below plain RAG
+    (`scope:literature:claim:1404d8270a1ab463`), so duplication is accepted as the
+    cheaper error. Entities dedup on exact name only — that is upsert identity, not
+    a similarity judgement — and a near-name stays a separate entity rather than
+    being silently fused.
+    """
+    from thalamus.harness.ingest import merge_extractions
+
+    merged = merge_extractions([
+        {
+            "title": "",
+            "claims": [{"description": "Chunking raises recall."}],
+            "entities": [{"name": "Gleaning", "kind": "technique", "description": "from part 1"}],
+        },
+        {
+            "title": "The Real Title",
+            "claims": [
+                {"description": "Chunking raises recall."},
+                {"description": "Overlap is ungrounded."},
+            ],
+            "entities": [
+                {"name": "Gleaning", "kind": "technique", "description": "from part 2"},
+                {"name": "Gleanings", "kind": "technique", "description": "near-name"},
+            ],
+        },
+    ])
+
+    assert len(merged["claims"]) == 3  # the repeated claim survives twice
+    assert merged["title"] == "The Real Title"  # first non-empty title wins
+
+    entities = {entity["name"]: entity for entity in merged["entities"]}
+    assert set(entities) == {"Gleaning", "Gleanings"}
+    assert entities["Gleaning"]["description"] == "from part 1"  # first declaration wins
+
+
+def test_combined_run_never_reports_an_unpriced_pass_as_free():
+    """
+    Scenario: Multi-pass costs are summed for the operator's confirm step
+
+    A None cost means the CLI did not report one, not that the call was free
+    (extraction.ExtractionRun says so explicitly). Summing it as zero would
+    understate a chunked ingest — the run whose cost the operator most needs.
+    """
+    from thalamus.harness.extraction import ExtractionRun
+    from thalamus.harness.ingest import _combine_runs
+
+    combined = _combine_runs([
+        ExtractionRun(text="a", cost_usd=0.15, duration_ms=1000),
+        ExtractionRun(text="b", cost_usd=0.20, duration_ms=2000),
+    ])
+    assert combined.cost_usd == pytest.approx(0.35)
+    assert combined.duration_ms == 3000
+
+    partial = _combine_runs([
+        ExtractionRun(text="a", cost_usd=None),
+        ExtractionRun(text="b", cost_usd=0.20),
+    ])
+    assert partial.cost_usd == pytest.approx(0.20)
+
+    assert _combine_runs([ExtractionRun(text="a"), ExtractionRun(text="b")]).cost_usd is None
+
 
 def test_build_batch_stamps_provenance_and_drops_malformed_items():
     """

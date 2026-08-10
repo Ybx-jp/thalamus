@@ -800,6 +800,89 @@ from critique-and-reflect over retrieved passages. A readiness brief is a long-f
 generation that must carry citations, so that is the cited precedent for a reflection
 pass over a drafted brief.
 
+### 3f. Extraction-time chunking — reading a whole document into a scope
+
+Grounded via consultation `scope:main:exchange:ead29adeb9414661` (25 validated
+citations). The question: `thalamus ingest` handed one pass the first 24,000 chars of
+a document and discarded the rest silently, so a 90,025-char paper entered the graph
+as its opening 27%.
+
+**What is measured.** Chunk size trades cost against extraction recall — GraphRAG
+names it "a fundamental design decision" because longer chunks mean fewer LLM calls
+but "degraded recall of information appearing early in the chunk"
+(`scope:literature:claim:7e7f7a4acc0debbd`), and on a HotPotQA sample GPT-4 extracted
+almost twice as many entity references at 600 tokens as at 2,400
+(`scope:literature:claim:16cd76dd0d63ea12`). Note the stated failure direction is
+decay of *early*-in-chunk material, a recency effect in the output, not a
+middle-of-context curve. The scope holds no lost-in-the-middle measurement.
+
+**Thalamus's choice is an instantiation of GraphRAG's chunked extraction, minus its
+gleaning stage.** Two of the three mechanisms GraphRAG pairs are declined on the
+evidence, not on cost. *Gleaning* — feeding extracted entities back and asking the
+model to glean what it missed, gated by a logit-bias-forced yes/no
+(`scope:literature:claim:629fd3195fe0e278`) — rests on an assertion that it preserves
+quality at larger chunk sizes (`scope:literature:claim:f879a716760ef34a`) with no
+ablation in scope; the 2× figure attaches to chunk size, not to gleaning. Against it
+sits the shape of its gate: Self-Refine's model could not tell whether its own output
+was deficient, answering "everything looks good" for 94% of instances
+(`scope:literature:claim:1ec4e612bf2d6bc1`), which would make gleaning a billed no-op.
+The logit bias forces the *format* of the answer, not its calibration. Graphiti
+reaching for the same reflection tool (`scope:literature:claim:aed942dddb3b1e8d`) is
+convergent practitioner evidence, not a measurement. Self-Refine's 5–40% absolute band
+(`scope:literature:claim:9a7c08f173d345e4`) is generation quality, not extraction
+recall, and its gains concentrate in the earliest iterations
+(`scope:literature:claim:4a387bc0a32cab12`). The falsifier is cheap and unrun: force
+one unconditional gleaning round over a sample and count what the "nothing missing"
+chunks still yield.
+
+*Cross-pass dedup* is declined more sharply. MemStrata's aggressive-compression
+ablation, which merges near-duplicate facts at write time, regressed **below plain
+RAG** (0.62 on project-fact QA, 0.13 on dialogue recall), concluding "retain, then
+supersede" (`scope:literature:claim:1404d8270a1ab463`). So claims are concatenated
+verbatim across chunks and duplication is accepted as the cheaper error. **Conditions
+differ and the transfer is inference, not measurement:** that ablation concerned
+temporally evolving knowledge, where merging destroyed distinctions between facts true
+at different times; two passes over one static document have no such structure.
+Entities dedup on exact name only, which is upsert identity rather than a similarity
+judgement. Graphiti's reconciliation (`scope:literature:claim:b8e733b89eed1443`) is a
+working cross-pass mechanism whose tie-break is newer-wins — **conditions not met**,
+since pass 2 over static text is not more recent truth than pass 1, and importing the
+rule would launder pass ordering into authority. Toki's four-heuristic taxonomy
+(`scope:literature:claim:e5476602b0b0bffd`) names the choice being made.
+
+**What the volume costs.** More passes multiply extraction candidates, and unvalidated
+growth degrades a graph through duplication, false precision, false equivalence, vague
+relationships and missing provenance — "ontology debt"
+(`scope:literature:claim:2090b18576ac5927`) — with the hidden cost landing downstream
+in review, duplicate resolution and versioning (`scope:literature:claim:5bdb6299200cf623`),
+and hallucinated elements getting *harder* to spot as models improve
+(`scope:literature:claim:3a6a15132baeabdf`). These are argued practitioner positions,
+not measurements. The mitigations taken are per-chunk claim budgets and a tight
+extraction schema, the Minimum Valuable Ontology instinct
+(`scope:literature:claim:52d0c12fa90aa2f9`). RAPTOR's hierarchy
+(`scope:literature:claim:71f398594a2230db`) and BudgetMem's tiered router
+(`scope:literature:claim:b8c03d1584fa22e0`) are the two structurally different answers
+not taken; BudgetMem routes at query time over runtime memory, so **conditions are not
+met** for ingest-time document triage, though the tiering shape would transfer if
+gleaning ever earns its place.
+
+**Six gaps the scope does not close**, recorded so the design does not read as better
+grounded than it is: entity-resolution algorithms; chunk overlap and boundary policy;
+positional effects as a measured curve; extraction recall measured anywhere near a
+6,000-token window; gleaning's own recall gain; and precision across multiple passes
+over one document. The chunk geometry shipped (9,600-char windows, 400-char overlap)
+is therefore a volume-and-cost judgement sitting on the pessimistic end of the one
+measured curve — 600 tokens is where recall was best — and the overlap size is
+ungrounded outright.
+
+**A note on the measurement's own provenance.** GraphRAG's chunk-size finding lives in
+its Appendix A.1, at char offset ~61,700 of a 90,025-char document — 2.6× past the
+budget that made this a question. It entered the graph only as a hand-fed section
+excerpt, because the whole-document pass that would have captured it could not reach
+it. The gap was invisible in exactly the way [06 §4](06-ingestion.md) describes: the
+graph held GraphRAG cited to `arxiv.org/abs/2404.16130`, title resolved, claim count
+normal.
+
 ## 4. What the scan did *not* find claimed elsewhere
 
 Stated narrowly and provisionally — absence in one scan is weak evidence, and this

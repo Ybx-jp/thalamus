@@ -1302,10 +1302,16 @@ def _cmd_ingest(args):
         sys.exit(1)
 
     print(f"Retained: {batch.source.uri} ({batch.source.byte_size:,} bytes)")
-    print(
-        f"Read: {digest.text_chars:,} chars of text, "
-        f"{digest.coverage:.0%} of it within the {digest.budget:,}-char digest budget"
-    )
+    if digest.chunks > 1:
+        print(
+            f"Read: {digest.text_chars:,} chars of text in full, "
+            f"across {digest.chunks} chunked extraction passes"
+        )
+    else:
+        print(
+            f"Read: {digest.text_chars:,} chars of text, "
+            f"{digest.coverage:.0%} of it within the {digest.budget:,}-char digest budget"
+        )
     if digest.truncated:
         print(
             f"\n  ⚠ TRUNCATED — {digest.discarded:,} chars past the budget were never "
