@@ -74,6 +74,7 @@ class DigestReport:
     text_chars: int
     budget: int = _DIGEST_BUDGET
     chunks: int = 1
+    failed_chunks: tuple[int, ...] = ()
 
     @property
     def truncated(self) -> bool:
@@ -413,6 +414,7 @@ def ingest(
     known_names = [str(row["name"]) for row in known_entities or [] if row.get("name")]
     chunks = chunk_text(text)
 
+    chunk_failures: tuple[int, ...] = ()
     if len(chunks) == 1:
         run = extraction.run_extraction(
             build_prompt(text, origin, known_names), model=model, harness=harness
@@ -426,7 +428,7 @@ def ingest(
         # cross-article feed (d60372e), pointed inward at one document.
         vocabulary = list(known_names)
         seen = set(vocabulary)
-        runs, parts = [], []
+        runs, parts, failed = [], [], []
         for index, chunk in enumerate(chunks, start=1):
             runs.append(
                 extraction.run_extraction(
@@ -435,15 +437,32 @@ def ingest(
                     harness=harness,
                 )
             )
-            parsed = extraction.parse_extraction(runs[-1].text)
+            # Partial acceptance at chunk granularity — the same rule the extraction
+            # path already applies to items (e470620): one malformed pass costs its own
+            # chunk, never the nine that parsed. The cost is already spent either way,
+            # and the archive holds the bytes, so a re-run is the repair. What is not
+            # allowed is losing a chunk quietly: the failure rides back on the
+            # DigestReport, because a silent coverage hole is the exact defect this
+            # whole chunking path exists to close.
+            try:
+                parsed = extraction.parse_extraction(runs[-1].text)
+            except extraction.ExtractionError:
+                failed.append(index)
+                continue
             parts.append(parsed)
             for item in parsed.get("entities") or []:
                 name = str(item.get("name") or "") if isinstance(item, dict) else ""
                 if name and name not in seen:
                     seen.add(name)
                     vocabulary.append(name)
+        if not parts:
+            raise IngestError(
+                f"every one of the {len(chunks)} chunked extraction passes failed to "
+                "parse; the fetch is archived, so a re-run costs no refetch"
+            )
         run = _combine_runs(runs)
         data = merge_extractions(parts)
+        chunk_failures = tuple(failed)
 
     batch = build_batch(
         data,
@@ -456,4 +475,6 @@ def ingest(
         title_override=title,
         known_entities=known_entities,
     )
-    return batch, run, DigestReport(text_chars=len(text), chunks=len(chunks))
+    return batch, run, DigestReport(
+        text_chars=len(text), chunks=len(chunks), failed_chunks=chunk_failures
+    )

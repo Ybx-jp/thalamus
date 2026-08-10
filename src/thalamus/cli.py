@@ -1303,10 +1303,21 @@ def _cmd_ingest(args):
 
     print(f"Retained: {batch.source.uri} ({batch.source.byte_size:,} bytes)")
     if digest.chunks > 1:
+        read = digest.chunks - len(digest.failed_chunks)
         print(
             f"Read: {digest.text_chars:,} chars of text in full, "
             f"across {digest.chunks} chunked extraction passes"
         )
+        if digest.failed_chunks:
+            print(
+                f"\n  ⚠ {len(digest.failed_chunks)} of {digest.chunks} passes failed to "
+                f"parse (chunk{'s' if len(digest.failed_chunks) > 1 else ''} "
+                f"{', '.join(str(n) for n in digest.failed_chunks)}).\n"
+                f"    The claims below come from the other {read}; those chunks' text "
+                f"is archived but uncovered.\n"
+                f"    Re-running costs no refetch.",
+                file=sys.stderr,
+            )
     else:
         print(
             f"Read: {digest.text_chars:,} chars of text, "

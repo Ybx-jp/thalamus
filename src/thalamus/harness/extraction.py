@@ -476,17 +476,53 @@ def _requote_scalars(raw: str) -> str:
     return "\n".join(lines)
 
 
+_VALID_ESCAPES = set('"\\/bfnrtu0abevNLP_ \t\n\rx')
+
+
+def _repair_escapes(raw: str) -> str:
+    """Neutralize invalid backslash escapes inside double-quoted scalars.
+
+    Citations are verbatim quotes, so whatever notation the source uses rides into
+    the value — arXiv HTML renders math as literal `\\sim`, `\\times`, `\\rightarrow`
+    beside the glyph. YAML rejects an unknown escape in a double-quoted scalar
+    outright, which fails the whole document over one character in one quote. A lone
+    backslash is doubled so it survives as the literal the source actually contained.
+    """
+    out, in_quote, i = [], False, 0
+    while i < len(raw):
+        ch = raw[i]
+        if ch == "\n":
+            in_quote = False
+        elif ch == '"' and (not out or out[-1] != "\\"):
+            in_quote = not in_quote
+        elif ch == "\\" and in_quote:
+            nxt = raw[i + 1] if i + 1 < len(raw) else ""
+            if nxt in _VALID_ESCAPES:
+                out.append(raw[i : i + 2])
+                i += 2
+                continue
+            out.append("\\\\")
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def parse_extraction(text: str) -> dict:
     """Pull the YAML block out of the model's response."""
     match = _YAML_FENCE.search(text)
     raw = match.group(1) if match else text
-    try:
-        data = yaml.safe_load(raw)
-    except yaml.YAMLError:
+    data = None
+    for repair in (lambda s: s, _requote_scalars, _repair_escapes,
+                   lambda s: _repair_escapes(_requote_scalars(s))):
         try:
-            data = yaml.safe_load(_requote_scalars(raw))
+            data = yaml.safe_load(repair(raw))
+            break
         except yaml.YAMLError as exc:
-            raise ExtractionError(f"unparseable extraction YAML: {exc}") from exc
+            last = exc
+    if data is None:
+        raise ExtractionError(f"unparseable extraction YAML: {last}")
     if not isinstance(data, dict):
         raise ExtractionError(f"extraction is not a mapping: {str(data)[:200]}")
     return data

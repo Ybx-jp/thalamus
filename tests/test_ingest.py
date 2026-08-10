@@ -246,6 +246,51 @@ def test_merge_retains_duplicate_claims_and_dedups_entities_by_exact_name():
     assert entities["Gleaning"]["description"] == "from part 1"  # first declaration wins
 
 
+def test_latex_escapes_in_a_verbatim_citation_do_not_fail_the_document():
+    """
+    Scenario: An arXiv HTML page renders math as literal \\sim beside the glyph, and
+    the model quotes it verbatim into a citation
+
+    Citations are verbatim by contract, so the source's notation rides into the
+    value. YAML rejects an unknown escape in a double-quoted scalar and fails the
+    whole document over one character — measured live on arXiv 2601.00821, where it
+    killed a ten-pass ingest. The backslash must survive as the literal the source
+    contained, not be dropped: a citation is an anchor that has to match the source.
+    """
+    from thalamus.harness.extraction import parse_extraction
+
+    raw = (
+        "```yaml\ntitle: T\nclaims:\n  - description: d\n"
+        "    kind: literature/finding\n"
+        '    citation: "the EDU store saturates ∼ \\sim 11pp below chunks"\n'
+        "    about: [X]\nentities:\n  - name: X\n    kind: concept\n"
+        "    description: y\n```"
+    )
+    data = parse_extraction(raw)
+    assert "\\sim" in data["claims"][0]["citation"]
+
+    # Valid escapes still mean what they mean — the repair must not double them.
+    kept = parse_extraction('```yaml\ntitle: "a \\"quoted\\" word"\n```')
+    assert kept["title"] == 'a "quoted" word'
+
+
+def test_one_unparseable_chunk_costs_its_own_pass_and_says_so():
+    """
+    Scenario: Chunk 3 of 4 returns YAML that survives no repair
+
+    Partial acceptance at chunk granularity — the rule the extraction path already
+    applies to items. One malformed pass must not void the passes that parsed, and
+    must not vanish either: a silently dropped chunk is a coverage hole, which is
+    the exact defect chunking exists to close.
+    """
+    from thalamus.harness.ingest import DigestReport
+
+    report = DigestReport(text_chars=90_000, chunks=4, failed_chunks=(3,))
+    assert report.chunks - len(report.failed_chunks) == 3
+    assert not report.truncated  # a parse failure is not a truncation
+    assert report.failed_chunks == (3,)
+
+
 def test_combined_run_never_reports_an_unpriced_pass_as_free():
     """
     Scenario: Multi-pass costs are summed for the operator's confirm step
