@@ -231,6 +231,16 @@ poll speeds up while you're typing. `full` is fullscreen. The phone surface is
 deliberately untouched by all of it — it's the one whose failure mode is
 relaunching an app from a home screen.
 
+Keystrokes are coalesced before they leave the browser, and a held key is the case
+that forces it: repeat fires at roughly 30/s, sends are serialised to preserve
+order, and one request per repeat would still be draining after the key came up.
+Typed characters batch into one send per 24ms window; a run of the same named key
+becomes one request carrying a count, replayed inside tmux with `send-keys -N`.
+So holding backspace costs a couple of round trips rather than a hundred. The
+count is clamped server-side as well as client-side — it arrives over an
+unauthenticated loopback API, and nothing reachable there should be able to ask
+for unbounded work.
+
 With `--frames`, the desktop surface can also render the pane inside a panel drawn
 in a background image — `frame` toggles (F12), `▸` cycles (F9). Off by default and
 no artwork ships with it; see [frame-themes.md](frame-themes.md).

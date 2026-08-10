@@ -1358,8 +1358,13 @@ const FAST_WINDOW_MS = 3000; // how long typing keeps the poll hot
 let passthrough = localStorage.getItem("plane-passthrough") !== "0";
 let keyBuf = "";
 let keyTimer = null;
+let namedBuf = null;        // {key, count} — a run of the same held key
+let namedTimer = null;
 let sendChain = Promise.resolve();
 let fastUntil = 0;
+// One request may stand for at most this many repeats. A held key that outruns the
+// cap starts another request rather than growing one without bound.
+const KEY_REPEAT_CAP = 64;
 
 // Named keys we forward. Anything not here and not printable is left to the browser.
 const PASS_KEYS = {
@@ -1381,15 +1386,38 @@ function flushKeys() {
 }
 
 function typeChar(ch) {
+  flushNamed();   // ordering: a held key queued before this text lands before it
   keyBuf += ch;
   if (!keyTimer) keyTimer = setTimeout(flushKeys, KEY_COALESCE_MS);
+}
+
+// A held key repeats at ~30/s. Printable characters were already coalesced into one
+// `api/send` per 24ms window, but every named key was its own request, and `queue`
+// serialises them — so holding backspace for three seconds built a chain of ~90
+// round trips, each spawning its own `tmux send-keys`, that went on draining long
+// after the key came up. The UI is not doing anything else during that, which is
+// what "locked up" looked like. Repeats now coalesce exactly like text does, into
+// one request carrying a count.
+function flushNamed() {
+  clearTimeout(namedTimer);
+  namedTimer = null;
+  if (!namedBuf || activeIdx === null) { namedBuf = null; return; }
+  const { key, count } = namedBuf;
+  namedBuf = null;
+  const idx = activeIdx;
+  queue(() => post("api/key", { index: idx, key, count }));
 }
 
 function sendNamed(key) {
   flushKeys(); // ordering: buffered text must land before the control key
   if (activeIdx === null) return;
-  const idx = activeIdx;
-  queue(() => post("api/key", { index: idx, key }));
+  if (namedBuf && namedBuf.key === key && namedBuf.count < KEY_REPEAT_CAP) {
+    namedBuf.count++;
+  } else {
+    flushNamed();             // a different key ends the run, in order
+    namedBuf = { key, count: 1 };
+  }
+  if (!namedTimer) namedTimer = setTimeout(flushNamed, KEY_COALESCE_MS);
 }
 
 function goFast() { fastUntil = Date.now() + FAST_WINDOW_MS; }
@@ -1516,13 +1544,13 @@ els.msg.addEventListener("keydown", (e) => {
   // `mode` keycap.
   if (e.key === "Tab" && e.shiftKey) {
     e.preventDefault();
-    if (activeIdx !== null) post("api/key",{ index: activeIdx, key: "shift-tab" });
+    sendNamed("shift-tab");
   }
 });
 for (const b of document.querySelectorAll(".keycap")) {
-  b.addEventListener("click", () => {
-    if (activeIdx !== null) post("api/key",{ index: activeIdx, key: b.dataset.key });
-  });
+  // Through `sendNamed`, not a bare post: a tap must queue behind whatever text or
+  // held key is still buffered, or it arrives out of order.
+  b.addEventListener("click", () => sendNamed(b.dataset.key));
 }
 function nudgeFont(d) {
   fontDelta += d;

@@ -207,6 +207,10 @@ KEYMAP = {
 # Ctrl-<letter>, generated rather than hand-listed.
 KEYMAP.update({f"ctrl-{c}": f"C-{c}" for c in "abcdefghijklmnopqrstuvwxyz"})
 
+# Ceiling on the repeat count one `/api/key` request may carry. Matches the client's
+# own cap; enforced here because the client is not the only thing that can post.
+KEY_REPEAT_CAP = 64
+
 # Slash commands built into the claude CLI itself (not discoverable on disk).
 BUILTIN_COMMANDS = [
     ("clear", "Start a fresh session (fires SessionEnd → thalamus extract)"),
@@ -942,7 +946,20 @@ class Handler(BaseHTTPRequestHandler):
             key = KEYMAP.get(data.get("key", ""))
             if not key:
                 return self._send(400, {"error": "unknown key"})
-            tmux("send-keys", "-t", target, key)
+            # A held key arrives as one request carrying its repeat count, not as one
+            # request per repeat — `tmux send-keys -N` replays it without paying for
+            # a process launch each time. Clamped because the count is client-supplied
+            # and this server has no authentication: nothing reachable here should be
+            # able to ask for an unbounded amount of work.
+            try:
+                count = int(data.get("count", 1))
+            except (TypeError, ValueError):
+                count = 1
+            count = max(1, min(count, KEY_REPEAT_CAP))
+            if count > 1:
+                tmux("send-keys", "-N", str(count), "-t", target, key)
+            else:
+                tmux("send-keys", "-t", target, key)
             return self._send(200, {"ok": True})
 
         return self._send(404, {"error": "not found"})

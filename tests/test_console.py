@@ -280,6 +280,56 @@ def test_the_console_runs_with_no_thalamus_around_it(tmp_path, monkeypatch):
     assert keyed == 200  # the bridge is untouched by the package being absent
 
 
+def test_a_held_key_replays_in_one_tmux_call(tmp_path):
+    """Holding a key must cost one process launch, not one per repeat.
+
+    The client coalesces a run of the same key into a single request carrying its
+    count; this is the other half — `send-keys -N` replays it inside tmux instead
+    of the console spawning a process per keystroke.
+    """
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"), session="s")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, _ = post("/api/key", {"index": 0, "key": "backspace", "count": 12})
+        sends = [c for c in post.fake.calls if c[0] == "send-keys"]
+
+    assert status == 200
+    assert len(sends) == 1, "a counted repeat must not fan out into many calls"
+    assert "-N" in sends[0] and sends[0][sends[0].index("-N") + 1] == "12"
+    assert sends[0][-1] == "BSpace"
+
+
+def test_a_single_key_does_not_use_the_repeat_flag(tmp_path):
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"), session="s")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        post("/api/key", {"index": 0, "key": "enter"})
+        sends = [c for c in post.fake.calls if c[0] == "send-keys"]
+
+    assert len(sends) == 1 and "-N" not in sends[0]
+
+
+@pytest.mark.parametrize(
+    "count,expected",
+    [(10_000, "64"), (-5, None), (0, None), ("nonsense", None), (None, None)],
+)
+def test_the_repeat_count_is_clamped_whatever_the_client_sends(tmp_path, count, expected):
+    """The count is client-supplied and this server has no authentication, so
+    nothing reachable here may ask it for an unbounded amount of work."""
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"), session="s")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, _ = post("/api/key", {"index": 0, "key": "backspace", "count": count})
+        sends = [c for c in post.fake.calls if c[0] == "send-keys"]
+
+    assert status == 200
+    assert len(sends) == 1
+    if expected is None:
+        assert "-N" not in sends[0]          # clamped to a single press
+    else:
+        assert sends[0][sends[0].index("-N") + 1] == expected
+
+
 def test_an_unknown_scope_is_refused_before_any_directory_check(tmp_path):
     cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"))
 
@@ -493,6 +543,9 @@ class _serving:
             return body
 
         post.get = get
+        # The recorded argv is the only place some behaviour is observable — a
+        # counted key repeat has no response body that differs from a single press.
+        post.fake = self.fake
         return post
 
     def __exit__(self, *exc):
