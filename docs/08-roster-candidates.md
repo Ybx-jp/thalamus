@@ -6,42 +6,82 @@ lives in [02-expert-subgraphs.md](02-expert-subgraphs.md) ("two proves N", null
 hypothesis, cattle-behind-the-contract) — this is the shortlist that discipline
 gets applied to.
 
-## The granularity rule: two kinds fall out of pinning
+## The granularity rule: one litmus, then measurement
 
 "Many narrow experts vs. few broad" is not a taste question; the pinning
 architecture ([02-expert-subgraphs.md](02-expert-subgraphs.md)) resolves it. An
 expert is a **retrieval scope**, and the scope that governs granularity is *the
 dominant domain of a session* — the thing you pin. So the litmus for any candidate
-is not "narrow or broad" but:
+is:
 
-> Does this knowledge form the **spine** of whole sessions, or does it get
-> **consulted across** many different sessions' spines?
+> Is this the dominant domain of real sessions — sessions you would actually launch
+> pinned to it?
 
-That yields two kinds, and the split falls straight out of the consultation
-protocol:
+Yes and it is an expert; no and it is a feed, a skill, or nothing. Every expert is
+pinnable and every expert is consultable: the two are properties of the roster, not
+kinds of member. Nothing in the contract distinguishes them — a manifest declares
+`scope`, `name`, `domain`, `tier`, `claim_kinds`, `allowlist`, and optionally a
+`write_boundary`, and never how often the scope expects to be pinned.
 
-- **Spine experts** — coarse, one per dominant-session-domain, the thing you *pin*.
-  Should be **few and broad**: they must match how sessions actually cluster, and
-  breadth keeps each one's episodic narrative coherent.
-- **Consultant experts** — narrow, cross-cutting, rarely pinned but frequently
-  *consulted* from many spines. Should be **narrow**: their value is being a sharp,
-  reusable answer source that recurs across many sessions' collaboration edges.
-
-**The collaboration graph audits the granularity.** A narrow consultant nobody
-consults → archive it (cattle). A spine expert that consults the same narrow one
-every session → they are one expert; merge. Granularity is not decided up front;
-it is instrumented.
+**The collaboration graph audits the rest.** How broad a scope should be, and
+whether it earned its partition at all, are questions with data behind them: a scope
+nobody consults and nobody pins → archive it (cattle); a scope that consults the
+same neighbour every session → they are one expert, merge. Granularity is not
+decided up front; it is instrumented.
 
 ### Default move: split top-down, don't merge bottom-up
 
-Start broad (few spine experts). Let the eval loop **split** a spine expert only
-when its retrievals bifurcate into two non-overlapping clusters. Splitting is the
-safer default than starting narrow and merging: splitting preserves clean episodic
-narratives ("this session was about X"), whereas merging two histories destroys the
-per-session coherence [02](02-expert-subgraphs.md) explicitly protects. This is
-also the honest position for a project whose identity is measuring hard-to-measure
-quality — "if retrievals don't cluster, it isn't an expert" is a *measurement*
-claim, so measurement makes the cut.
+Start broad. Let the eval loop **split** a scope only when its retrievals bifurcate
+into two non-overlapping clusters. Splitting is the safer default than starting
+narrow and merging: splitting preserves clean episodic narratives ("this session was
+about X"), whereas merging two histories destroys the per-session coherence
+[02](02-expert-subgraphs.md) explicitly protects. This is also the honest position
+for a project whose identity is measuring hard-to-measure quality — "if retrievals
+don't cluster, it isn't an expert" is a *measurement* claim, so measurement makes
+the cut.
+
+### Why partition at all — the objection that governs the answer
+
+The case for a roster is **not** that role specialization makes the system smarter.
+Measured at equal reasoning-token budget, single-agent systems match or outperform
+multi-agent ones across three model families, with a Data Processing Inequality
+argument behind the result (`scope:literature:claim:414011b1207b38ef`). The same
+work names the condition under which multi-agent becomes competitive: **when
+single-agent context utilization is degraded**
+(`scope:literature:claim:24bd7f990bd37f8a`).
+
+That is the citable justification, and it is a claim about *corpora*, not roles. A
+scope earns its partition when it carries a standing body — a regression corpus, a
+token system, a structural map of a codebase — that one session's context cannot
+hold. A candidate that would fit comfortably inside the asking session is not an
+expert however cleanly it names a job. (The bridge from that measurement, taken on
+multi-hop reasoning, to persistent-corpus partitioning is inference, not a result
+anyone has measured; flagged by the literature expert as the weakest joint in its
+own answer, ticket `scope:main:exchange:7f953992f0c347e7`.)
+
+Role specialization does have direct support — removing role assignments from every
+agent's system prompt was the single largest ablation drop measured in ChatDev
+(`scope:literature:claim:dc0520a3b45fda00`) — but that is evidence about prompting a
+fixed pipeline, not about how to cut a memory roster.
+
+### Role drift is the documented failure mode, so boundaries are structural
+
+MAST, the empirically grounded taxonomy of multi-agent failures (14 modes over 150
+traces, κ = 0.88, `scope:literature:claim:11750ab72cf137b8`), names **FM 1.2
+"Disobey Role Specification"** as a mode in its own right. The instance it records
+is exact: ChatDev's CPO terminated without CEO consensus, and the repair that worked
+was **structural authority — giving the CEO final say, worth 9.4% task success — not
+a better prompt** (`scope:literature:claim:db0928fe2cfd3616`).
+
+The consequence for this roster: a scope boundary that exists only as a paragraph in
+`domain` is the configuration that was measured failing. Where a scope is defined by
+what it must *not* produce, the manifest declares a `write_boundary` and the
+`role-guard` PreToolUse hook enforces it (`contract/manifest.WriteBoundary`). The
+guard governs the file-editing tools only; Bash still writes, and an unconventional
+repository layout escapes a path deny. Those are misses, and lab/008's standing
+trade applies — a false positive teaches route-around, which costs more than a gap.
+
+A scope whose charter *is* to write code carries no boundary, and says so.
 
 ## Skill vs. expert — the boundary that keeps the roster honest
 
@@ -64,18 +104,25 @@ from [02](02-expert-subgraphs.md).)
 Shortlist only. Each must still clear the null hypothesis ("just put it in an
 existing expert") before it ships.
 
-| Candidate | Kind | Serves | Status / note |
+The `Kind` column is gone with the typology that produced it. What replaces it is
+the standing corpus — the thing a session's context cannot hold, which is what the
+partition is actually for.
+
+| Candidate | Standing corpus | Serves | Status / note |
 |---|---|---|---|
-| Technical-literature | Consultant | everything | **Live** (`config/experts/literature.yaml`). GraphRAG/retrieval papers are a *feed into this*, not a separate expert. |
-| Evaluation-methodology | Consultant | all projects + career | **Live** (`config/experts/eval-methodology.yaml`) — see below. Metrics design, LLM-as-judge, ablation/counterfactual design, calibration, taste-critic patterns. The through-line made a node; the eval loop dogfooded. |
-| DL / training | Spine | StepMania | PyTorch, autoregressive decoding, KV-cache, CFG, sampling. Compounds via "what training run did what." |
-| Agent-systems | Spine | Thalamus, Nodeglass | Harness design, MCP, tool-use, context mgmt, subagent orchestration. Spine for infra sessions. |
-| Structural-safety / trust | Consultant | Nodeglass, Thalamus | Provenance, gating, poisoning, policy engines, red-teaming. Second pillar. |
-| Retrieval / memory-architecture | Consultant | Thalamus | Vector vs. graph memory, chunking, reranking, RAG eval. Self-referential dogfooding; where the "graphrag expert" instinct actually belongs. |
-| Rhythm-game / music-domain | Consultant | StepMania | Chart conventions, biomechanics, groove radar, onset/music-theory. The *taste* side; pairs with DL expert. |
-| Homelab / self-hosting | Spine (ops) | media server + machine + console surfaces | **Live** (`config/experts/homelab.yaml`) — see below. First spine expert; distillation-fed, empty feed surface. |
-| Teacher | Spine | every learning initiative + career narrative | **Live** (`config/experts/teacher.yaml`) — see below. Curriculum design over a persistent learner model; second spine, first dual-fed. |
-| Career-narrative / interview | Consultant | job hunt | **Absorbed into `teacher`** — which framings landed is a learning record; the experience library rides in the teacher's manifest. |
+| Technical-literature | the ingested paper graph | everything | **Live** (`config/experts/literature.yaml`). GraphRAG/retrieval papers are a *feed into this*, not a separate expert. |
+| Evaluation-methodology | metric designs, campaign verdicts, instrument defects | all projects + career | **Live** (`config/experts/eval-methodology.yaml`) — see below. Metrics design, LLM-as-judge, ablation/counterfactual design, calibration. The through-line made a node; the eval loop dogfooded. |
+| Homelab / self-hosting | what happened on this machine the last N times | media server + machine + console surfaces | **Live** (`config/experts/homelab.yaml`) — see below. First distillation-fed expert, empty feed surface. |
+| Teacher | the learner model — what stuck, which framings landed | every learning initiative + career narrative | **Live** (`config/experts/teacher.yaml`) — see below. Curriculum design over a persistent learner model; first dual-fed. |
+| Quality engineer | the regression corpus of every bug that shipped | all projects | **Live** (`config/experts/qe.yaml`) — see below. Holds the oracle; carries a `write_boundary`. |
+| Visual designer | the design system, tokens, and prior comps | all projects | **Live** (`config/experts/designer.yaml`) — see below. Shipped with an empty scope and no tooling, both deliberately. |
+| Code advisor | the structural map — seams, leaked abstractions, rejected refactors | all projects | **Live** (`config/experts/architect.yaml`) — see below. The one live expert with no `write_boundary`, by charter. |
+| DL / training | training-run history | StepMania | PyTorch, autoregressive decoding, KV-cache, CFG, sampling. Compounds via "what training run did what." |
+| Agent-systems | harness decisions and their outcomes | Thalamus, Nodeglass | Harness design, MCP, tool-use, context mgmt, subagent orchestration. |
+| Structural-safety / trust | attack surface and what was tried against it | Nodeglass, Thalamus | Provenance, gating, poisoning, policy engines, red-teaming. Second pillar. Overlaps `qe` and eval's canary work — check both before minting. |
+| Retrieval / memory-architecture | retrieval-design tradeoffs and their measurements | Thalamus | Vector vs. graph memory, chunking, reranking, RAG eval. Self-referential dogfooding; where the "graphrag expert" instinct actually belongs. |
+| Rhythm-game / music-domain | chart-taste judgements over time | StepMania | Chart conventions, biomechanics, groove radar, onset/music-theory. The *taste* side; pairs with DL expert. |
+| Career-narrative / interview | — | job hunt | **Absorbed into `teacher`** — which framings landed is a learning record; the experience library rides in the teacher's manifest. |
 
 ## The second expert: evaluation-methodology (two proves N)
 
@@ -190,6 +237,199 @@ experience library as standing learner context, which is how a *derived* agent
 definition (no hand-written persona, [07](07-harness-integration.md)) still
 knows who it teaches: the pointer is tier-0 manifest content; the skill remains
 the procedure it complements.
+
+## Experts five, six, and seven: qe, designer, architect
+
+Shipped together as `config/experts/{qe,designer,architect}.yaml`. Zero-glue held a
+fourth, fifth and sixth time for the manifests themselves; the `write_boundary`
+field and its guard are a genuine contract addition, and the first since v0 —
+justified above by MAST's role-drift finding, not by these three scopes needing
+somewhere to put a preference.
+
+**Rollout, and what it costs.** All three at once forecloses a signal: treating a
+role set as a search space, each addition has a cost and the cheapest configuration
+is learnable only if additions are separable (`scope:literature:claim:75001312d7b6e351`).
+Shipping three simultaneously means no scope gets a clean before-and-after. That was
+the operator's call, made with the objection in view, and the compensation is that
+the audit is pre-registered here rather than reconstructed later:
+
+> A scope has failed its partition if, after fifty sessions in which it could have
+> been pinned or consulted, its episodic subgraph holds nothing a session could not
+> have derived in context — no accumulated corpus, no retrieval another scope's
+> recall would not have served. For `qe` the corpus is regression cases and their
+> findings; for `designer`, the design system and prior comps; for `architect`, the
+> structural map and the rejected-refactor record. A scope with a `write_boundary`
+> that never once fired is also suspect — not proof of failure, but evidence its
+> boundary was never load-bearing.
+
+**Prior work.** The role set is not new and is not claimed as such: MetaGPT
+assigns five roles including **Architect and QA Engineer** in a sequential workflow
+(`scope:literature:claim:6fde48b087433b6c`), encoding SOPs as prompt sequences so
+agents can verify intermediate results (`scope:literature:claim:a7ffc88b00c4fa58`).
+The unit-test division adopted here is prior art in the same system: MetaGPT's
+Engineer runs its own unit tests through executable feedback *while a separate QA
+Engineer exists* (`scope:literature:claim:c01ad32f66dcc9fd`). What Thalamus does
+with it is an **instantiation**, on two axes the cited work does not have: the roles
+are retrieval scopes with their own episodic memory rather than prompt personas in
+one pipeline, and the boundary between them is enforced by a hook over tier-0
+configuration rather than by the system prompt whose disobedience MAST measured.
+
+### `qe` — quality engineer
+
+**Charter.** Adversarial quality of running applications: hostile and malformed
+inputs against real surfaces, invariant and metamorphic suites over write paths, and
+a regression corpus where every shipped bug becomes a permanent case. Unit tests are
+out of scope by construction — they belong to whoever writes the code.
+
+**The eval-methodology boundary is the consulted one, not the one first drawn.** The
+operator's line was "experiment or invariant." Consulted under ticket
+`scope:main:exchange:019917aadba24811`, that expert disagreed usefully: the oracle
+line is **graded, not a partition**. Metamorphic testing exists precisely to
+*alleviate* the oracle problem (`scope:eval-methodology:claim:3ade7ca7aeeaeca2`), and
+a family of adequacy metrics scores how much oracle a suite has
+(`scope:eval-methodology:claim:fc692333943d493a`) — a field does not build metrics
+for how much of a thing you have if having it is a boolean. Its counterexample:
+SWE-bench+ found that filtering solution leakage and weak test cases dropped
+SWE-Agent+GPT-4 from 12.47% to 3.97% (`scope:eval-methodology:claim:992313bd47b27dad`)
+— a hard pass/fail oracle that was *wrong*, established by measurement. The
+first-party version is this project's own: 9 of 88 counterfactual arms read their
+pre-registered answer key through the git object store
+(`scope:eval-methodology:claim:30663540dd870284`).
+
+The adopted line is that expert's repair: **qe owns the oracle; eval-methodology
+owns the oracle's warrant.** A qe finding indicts the system under test; an eval
+finding indicts the instrument.
+
+**Anchors are not duplicated.** The metamorphic and mutation anchors stay in
+eval-methodology as single copies, split by use rather than by topic — the precedent
+that scope splits follow use (`scope:eval-methodology:claim:716fccb5dedc0e12`), and
+the recorded cost of ambiguity: a session already misread a correct use-split as
+doc/graph drift and had to retract (`scope:eval-methodology:claim:0c62f6e184504755`).
+The seam runs *inside* the papers — qe's interest is metamorphic-relation
+identification and input generation, eval's is adequacy measurement
+(`scope:eval-methodology:claim:d0805f6911a167af`) — which is the strongest argument
+that topic-level duplication is the wrong unit. qe reaches them by consultation.
+
+**The M5 canary splits rather than routes.** To qe: the missing regression tests
+(`tests/` contains no occurrence of curl, wget, mailbox or SendMessage —
+`scope:eval-methodology:claim:f1919fb9d5e81d68`) and the detectors with their unit
+tests (`scope:eval-methodology:claim:fcf77e1039c7583c`). Staying with eval: the
+defense-off control arm and contrast estimand
+(`scope:eval-methodology:claim:86155d50448b73b6`), the confound that makes a 0%
+reading uninterpretable (`scope:eval-methodology:claim:38628d1a8e7167b3`), the
+pre-registration spine, and endpoint placement — where this class of design fails
+silently, 1/10 vs 0/9 at rung ≥ 4 against 7/10 vs 2/9 at rung ≥ 3
+(`scope:eval-methodology:claim:ee6fd5ddd9972b17`). A green qe suite will not catch a
+misplaced ASR endpoint.
+
+**Green rule.** Adversarial campaigns are allowed to fail; a confirmed finding
+graduates into the green pytest suite as a permanent regression test. This is why
+the `write_boundary` denies `*/src/*` and leaves `tests/` and `lab/` open.
+
+**Null hypothesis** ("adversarial cases are just tests `main` should write, and the
+oracle work belongs to eval") fails on the corpus: the value is a growing body of
+real failures and the conditions that produced them, which is longitudinal by
+construction — and safety is a longitudinal property rather than a snapshot
+(`scope:literature:claim:623a8c4eaa444be8`). It also fails on independence: a scope
+that repairs what it asserts against has no assertion worth anything, which is the
+`write_boundary`'s whole content.
+
+### `designer` — visual designer
+
+**Charter.** Visual and interaction design whose deliverables are design artifacts
+and never software: mockups, wireframes, comps, design systems and tokens, handoff
+specs, diagrams, and visual critique of built surfaces against design intent.
+
+**It shipped empty, twice over, and that is the notable fact.** The literature
+consultation reported the `literature` scope holds *nothing* on visual or
+interaction design — two recalls returned only token-level false positives — so
+unlike every prior expert this one had no carry-over to inherit, and every citable
+claim in it arrives by procurement. It also has no tooling: Figma access is wired
+separately, and until then deliverables are code-native mockups and written specs.
+A scope with nothing to cite refuses the consultation mint
+([02](02-expert-subgraphs.md)), so anchoring was a precondition of shipping, not a
+follow-up.
+
+**Skill-vs-expert** passes where the `frontend-design` and `dataviz` skills stop —
+the same boundary as homelab vs. `home-media-server`, and teacher vs.
+`thalamus-design-readiness`. Those skills are how to design well on first contact;
+the expert is the design system this project has actually converged on and what was
+tried on these surfaces before.
+
+**The boundary is structural because prose could not hold this one.** The operator's
+definition is explicit that this is "not a front end developer in dressy language,"
+and the shortest path from a mockup to a demo is always to write the component. The
+`write_boundary` denies executable source and leaves markup, markdown, SVG,
+diagrams, and token files open.
+
+**The qe seam.** Accessibility conformance is where this scope's judgement becomes
+machine-checkable, which makes WCAG the natural hand-off from `designer` to `qe` —
+the one part of the design canon with pass/fail semantics.
+
+**Null hypothesis** ("design is a skill, not a scope; hand-feed a style guide")
+fails on accumulation: a design system *is* the standing corpus, and which comps
+were rejected and why is exactly the episodic record a stateless procedure cannot
+carry.
+
+### `architect` — code advisor
+
+**Charter.** Organizational and architectural health plus performance and
+reliability: where the seams are, which abstractions leaked, which refactors were
+tried and rejected and why; hot paths, unbounded growth, retry and timeout behavior,
+with before-and-after numbers rather than assertions of improvement.
+
+**Structurally the odd one: no `write_boundary` at all.** Writing the changes it
+proposes is its charter, so a path deny would block the work rather than bound the
+role. Its boundary is a **pin trigger** instead — campaign sessions only, where the
+session's goal is reorganization, a measured performance fix, or a reliability
+hardening pass, while feature work stays with `main` and consults it. That is
+enforced by operator intent at launch and audited afterwards by what its pinned
+sessions actually did, which is a materially weaker guarantee than the guard. Named
+here rather than papered over: it makes `architect` the roster's test of whether a
+when-you-pin boundary holds as well as a what-you-may-write one.
+
+**Boundaries against the neighbours.** A structural property that should hold
+permanently and be checked is an invariant, and belongs to `qe`. A performance claim
+that needs a control or a statistic to mean anything belongs to eval-methodology.
+What is left — the judgement about whether a shape is right, and the memory of every
+shape this codebase has been — is this scope.
+
+**Null hypothesis** ("`/code-review` and `/simplify` already do this; `main` can
+refactor") fails on the 50-session test more clearly than any other candidate here:
+a review skill sees one diff, and the entire value of this scope is the standing
+structural map plus the record of rejected refactors, which is precisely what a
+per-diff procedure cannot accumulate. Conway's law also cuts here, and against us —
+a codebase grows seams matching the organization that builds it, so a roster with an
+architect scope should expect its own structure to start showing up in the tree
+whether or not that was intended.
+
+## Parked: project attribution as leaf, compression as the connective core
+
+Raised by the operator while defining the three experts above, and parked rather
+than built — the manifests do not depend on it.
+
+The proposal: an expert should hold **deep episodic knowledge per project** and, over
+that, **compressed representations of those experiences as generic insights**, so
+that the compressions and the ingested knowledge are the connective core of an
+expert and the projects hang off it as leaves. Every scope on the roster is now
+cross-project, which makes this the natural next question about what a scope *is*.
+
+Half of it already exists: episodic nodes carry a project and `memory_recall_by_project`
+resolves on it. The unbuilt half is the compression — distilling per-project episodes
+upward into scope-level insights that apply where no project matches.
+
+It is a memory mechanism, not a manifest field, and it needs its own grounding pass
+before design. The prior work to start from: cross-task insight extraction from an
+experience pool (ExpeL), reflection over an episodic stream (Generative Agents), and
+reusable routines induced from past trajectories (Agent Workflow Memory). None of
+these is held in the graph yet; the design is not started until they are.
+
+The falsification risk to carry in: the project's own record of a precomputed
+summary layer that was cited, consulted on, committed and documented before anyone
+asked whether the graph already answered the question at runtime — it did, and the
+layer was withdrawn (lab/025, `scope:main:claim:bb647ce95f0ff23a`). A compression
+layer is the same shape of design. Step A0 of `ground-in-literature` is not optional
+for it.
 
 ## Anti-candidate (recorded so it stays dead)
 

@@ -561,6 +561,57 @@ recorded as first-class, bidirectional, provenance-tracked episodic memory formi
 a collaboration graph — now has direct analogues (Neo4j's ReasoningTrace chains).
 It remains a good design; it is no longer unclaimed.
 
+### 3a1. Role-specialized rosters — and whether the partition helps at all
+
+Procured against the demand of adding `qe`, `designer` and `architect` to the
+roster (docs/08), via literature consultation `scope:main:exchange:7f953992f0c347e7`.
+
+- **MetaGPT** — five assigned roles including **Architect and QA Engineer** in a
+  sequential workflow (`scope:literature:claim:6fde48b087433b6c`), SOPs encoded as
+  prompt sequences so agents verify intermediate results
+  (`scope:literature:claim:a7ffc88b00c4fa58`). Its Engineer runs its own unit tests
+  via executable feedback *while a separate QA Engineer exists*
+  (`scope:literature:claim:c01ad32f66dcc9fd`) — the unit-test division in `qe`'s
+  charter is this, not new ground.
+- **ChatDev ablation** — removing role assignments from every agent's system prompt
+  produced the largest performance drop of any ablation measured
+  (`scope:literature:claim:dc0520a3b45fda00`).
+- **MAST** (arXiv 2503.13657) — 14 failure modes over 150 traces, κ = 0.88
+  (`scope:literature:claim:11750ab72cf137b8`), later extended to 1,642 traces across
+  7 frameworks (`scope:literature:claim:81cbcfe73a0f48a5`). **FM 1.2 "Disobey Role
+  Specification"** is a mode in its own right, and the repair that worked in the
+  studied system was structural authority — the CEO given final say, +9.4% task
+  success — not a better prompt (`scope:literature:claim:db0928fe2cfd3616`).
+- **The objection that governs the design.** At equal reasoning-token budget,
+  single-agent systems match or outperform multi-agent across three model families
+  (`scope:literature:claim:414011b1207b38ef`), with a Data Processing Inequality
+  argument behind it (`scope:literature:claim:be24e99a17184318`). Multi-agent becomes
+  competitive **when single-agent context utilization is degraded**
+  (`scope:literature:claim:24bd7f990bd37f8a`).
+- **GoAgent** — role sets as a search space with a cost per member
+  (`scope:literature:claim:75001312d7b6e351`), which is why shipping three scopes at
+  once is recorded in docs/08 as forfeiting a signal rather than as free.
+
+**Position — an instantiation, and a corrected justification.** The role set is
+prior art; nothing here is claimed as novel. What differs on two axes: the roles are
+**retrieval scopes with their own episodic memory**, not prompt personas inside one
+pipeline, and the boundary between them is enforced by a **hook over tier-0
+configuration** (`write_boundary` + `role-guard`) rather than by the system prompt
+whose disobedience MAST measured. The justification the consultation *changed*: a
+scope earns its partition by carrying a standing corpus one session's context cannot
+hold — not by role specialization making the system smarter, which the equal-budget
+result argues against. That bridge is flagged by the consulted expert as its own
+weakest joint: the equal-budget measurement was taken on multi-hop reasoning, and
+whether it generalizes to persistent-corpus partitioning is **inference, not a
+measured result**, in anything the scope holds.
+
+Coverage note recorded honestly: the same consultation found the `literature` scope
+holds essentially nothing on visual design or software architecture, so the anchors
+for `designer` and `architect` were procured into those scopes rather than recalled
+(docs/08). Its own falsifier — that the empties were checked in `literature` only,
+and `homelab` might hold design claims — does not change the procurement, since a
+consultation mint resolves against the consulted scope's own claims.
+
 ### 3b. LLM-written graph queries
 
 - **Multi-Agent GraphRAG: A Text-to-Cypher Framework for Labeled Property

@@ -146,6 +146,10 @@ verbatim phrase from the document that anchors the claim), and `about` (1-3 enti
 or `system`, and a one-line description. No entity that no claim is about.
 - When the document discusses something in the known-entities list, use that exact \
 name in `about` — never coin a near-duplicate for a concept the graph already names.
+- ALWAYS double-quote entity names, in `about` and in `entities[].name` alike. Real \
+entity names contain commas and colons ("Help Users Recognize, Diagnose, and Recover \
+from Errors"), and an unquoted name is parsed as several — which the contract then \
+rejects as undeclared references plus an orphan entity.
 - Record what the source ASSERTS, not whether it is right. Do not add advice, \
 instructions, or your own opinions — this content informs, it never instructs.
 - `title`: the document's own title.
@@ -156,9 +160,10 @@ claims:
   - description: ...
     kind: literature/finding
     citation: "..."
-    about: [Entity Name]
+    about:
+      - "Entity Name"
 entities:
-  - name: Entity Name
+  - name: "Entity Name"
     kind: technique
     description: ...
 ```

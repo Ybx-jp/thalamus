@@ -432,3 +432,22 @@ def test_prompt_carries_known_entities_for_name_convergence():
 
     empty = build_prompt("Some article text", "https://arxiv.org/abs/1")
     assert "(none)" in empty and "{known_entities}" not in empty
+
+
+def test_prompt_demands_quoted_entity_names():
+    """
+    Scenario: A document names an entity whose own name contains a comma
+
+    Measured on the Nielsen heuristics ingest, 2026-08-09: the model emitted
+    `about: [Help Users Recognize, Diagnose, and Recover from Errors]` — a YAML flow
+    sequence, so one entity parsed as three. The contract rejected the batch for two
+    undeclared references and an orphan entity, which is correct behavior and a
+    completely opaque diagnosis. The fix is at the format level, so the guard has to
+    be too: the template must show the quoted block form, and say why.
+    """
+    from thalamus.harness.ingest import build_prompt
+
+    prompt = build_prompt("text", "https://example.com/a")
+    assert 'about:\n      - "Entity Name"' in prompt, "flow-sequence example splits on commas"
+    assert 'name: "Entity Name"' in prompt
+    assert "double-quote entity names" in prompt
