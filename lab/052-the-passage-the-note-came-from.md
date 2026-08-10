@@ -1,6 +1,6 @@
 # 052 — The passage the note came from
 
-**Status: design, to build.** Continues
+**Status: built** (2026-08-10). Continues
 [051](051-the-representation-we-never-measured.md), whose coverage endpoint falsified
 the hope that a claim's verbatim `citation` already occupies the intermediate
 representation — it does not; it is the artifact pole with a provenance anchor. Grounded
@@ -18,7 +18,8 @@ For **every ingested document, in every expert scope**:
   a chunk carries **its location in the source** (character offset and ordinal).
 - **`ADJACENT_IN_TEXT`** edges in document order, so a retrieved chunk can be expanded
   to its neighbours.
-- **`MENTIONS`** edges on shared entities, under a degree bound (below).
+- **Shared-entity reachability via the existing `ABOUT` edge** — see below; no
+  `MENTIONS` edge exists.
 - **The full original text stays retained as the floor**, as now.
 
 Claims, citations and extraction are unchanged. Nothing about the episodic corpus
@@ -80,10 +81,11 @@ against retained bytes — extraction is disposable by design (docs/10).
 
 The 2026-07-14 decision rejected `Chunk` nodes on a ~100× node-explosion estimate. That
 estimate is right about the archive — 275.7M chars over 419 documents, ~183,800 chunks
-against 9,636 vertices — and does not reach this design, because **the literature corpus
-is 2.1% of the archive**: 154 sources, 5,685,696 chars, **~3,790 chunks, 0.4× graph
-growth**. The scoping is structural rather than imposed: only literature claims carry a
-`citation`, so the anchor edge is papers-only by construction. Measured 2026-08-10.
+against 9,636 vertices — and does not reach this design, because **ingested documents are
+1.6% of the archive**: 187 sources across seven scopes, 4,309,673 chars. Built out:
+**3,292 chunk vertices**, 1,489 anchor edges, 3,105 adjacency edges, and a graph of
+12,978 vertices against 9,636 before — 0.35× growth. Measured 2026-08-10, before and
+after.
 
 ## Build-time constraints that are not optional
 
@@ -106,13 +108,15 @@ token-waste regression wearing a fidelity story. Performance also degrades when 
 material sits mid-context (`scope:literature:claim:2268d735ff10a67e`) and pruning
 irrelevant context improves responses (`scope:literature:claim:6843553dde27884a`).
 
-**`MENTIONS` degree bound.** Chunk count is linear in corpus; shared-entity edges are
-quadratic in entity cliques. A common name would connect a large fraction of 3,790
-chunks, and uncontrolled connectivity has a measured harm signature — dense connections
-incur redundant token overhead and let task-irrelevant noise distract agents
-(`scope:literature:claim:9db15d4954c4958f`; conditions differ, multi-agent topology
-rather than document graphs). A maximum degree and an entity-specificity floor are
-written before the edge is, not after.
+**No `MENTIONS` edge — the problem was dissolved rather than bounded.** Chunk count is
+linear in corpus but shared-entity edges are quadratic in entity cliques, and a common
+name would connect a large fraction of 3,292 chunks; uncontrolled connectivity has a
+measured harm signature (`scope:literature:claim:9db15d4954c4958f`; conditions differ,
+multi-agent topology rather than document graphs). So chunks reuse the existing `ABOUT`
+edge to entities the batch already declared, and chunk-to-chunk co-reachability is a
+2-hop walk through deduped entities. The quadratic edge set never forms, and the degree
+bound moves to query time where it belongs. 5,786 chunk `ABOUT` edges exist against
+3,292 chunks — linear, as intended.
 
 ## Prior art, labelled
 
@@ -153,5 +157,10 @@ results, remembering that flag scores lexical overlap and will flatter long text
 
 ## Ends in
 
-**design** — co-indexing plus a provenance anchor, built on someone else's measurement,
-with the three constraints that make it safe written down before the code.
+**build** — co-indexing plus a provenance anchor, on someone else's measurement, with
+the constraints that make it safe written before the code and one of them (the
+`MENTIONS` degree bound) dissolved by reusing an edge that already existed. Whether it
+helps *our* work is still unmeasured, and per `6557ba9dbe024210` a downstream campaign
+is unpowered at this scale — so the honest position is that we have instantiated a
+configuration measured elsewhere, and the cheap monitor is the used-vs-ignored share on
+chunk results versus claim results, remembering that flag flatters long text (lab/051).
