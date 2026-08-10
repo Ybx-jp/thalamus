@@ -344,11 +344,26 @@ specs, diagrams, and visual critique of built surfaces against design intent.
 consultation reported the `literature` scope holds *nothing* on visual or
 interaction design — two recalls returned only token-level false positives — so
 unlike every prior expert this one had no carry-over to inherit, and every citable
-claim in it arrives by procurement. It also has no tooling: Figma access is wired
-separately, and until then deliverables are code-native mockups and written specs.
-A scope with nothing to cite refuses the consultation mint
-([02](02-expert-subgraphs.md)), so anchoring was a precondition of shipping, not a
-follow-up.
+claim in it arrives by procurement — Nielsen's heuristics, Atomic Design, and the
+W3C accessibility principles. A scope with nothing to cite refuses the consultation
+mint ([02](02-expert-subgraphs.md)), so anchoring was a precondition of shipping,
+not a follow-up.
+
+**The tool is self-hosted Penpot, and the deciding fact is authoring.** Figma's REST
+API cannot create design content — its write endpoints are comments, variables,
+webhooks and dev resources — so a `designer` on Figma could read, export, critique
+and spec, but never produce the mockup its charter is named for. Penpot's plugin and
+RPC surface creates shapes, frames, text and components, and its files are an open
+format, which makes design artifacts inspectable and versionable the way every other
+artifact here is. It also sits better against the `write_boundary`: an MCP that
+writes *into* a design tool is boundary-compatible, whereas Figma's MCP is oriented
+toward emitting code from designs, which the deny list blocks. Deployment is gated
+on four conditions the homelab expert measured on the box (ticket
+`scope:main:exchange:432ff6f9cd6f43ba`) — the system Docker engine rather than the
+GNOME-session-bound Desktop VM, its own tailnet hostname (Penpot is a root-scoped
+SPA and Android WebAPKs are port-blind, so neither a subpath nor a port works), an
+explicit `mem_limit` on every container, and NVENC confirmed for Jellyfin. Two of
+those fix standing fragilities that predate Penpot.
 
 **Skill-vs-expert** passes where the `frontend-design` and `dataviz` skills stop —
 the same boundary as homelab vs. `home-media-server`, and teacher vs.
