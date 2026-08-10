@@ -36,6 +36,16 @@ driven over HTTP — and are written up separately in
    roster run mid-loop (`load_manifest` raises inside `roster()`'s scope loop),
    which the console's roster-sync button surfaces as a failed sync — fix the
    YAML, don't debug the console.
+2b. **If the scope is defined by what it must NOT produce, declare a
+   `write_boundary`** — `deny_globs` (fnmatch over the **absolute** POSIX path, so
+   `*` crosses `/` and the rule survives `spawn --dir` into another repo) plus a
+   `reason` the blocked session will read. The `role-guard` PreToolUse hook enforces
+   it on Edit/Write/NotebookEdit; Bash still writes, and an unconventional layout
+   escapes a path deny. State the boundary in `domain` too — the guard is
+   defence-in-depth, not the definition. A scope whose charter *is* to write code
+   declares nothing and says why (`architect` is the worked example).
+   Write the denies narrow: `qe` denies `*/src/*` and leaves `tests/` and `lab/`
+   open, because its campaign findings graduate into the green suite.
 3. **Anchor the scope if it must be consultable now** — a scope with nothing to
    cite refuses the consultation mint (docs/02). Procure anchors *into the new
    scope* (docs/06 rule 1's scope note), `--feed` named for the demand, and
