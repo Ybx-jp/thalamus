@@ -249,6 +249,13 @@ let renderedText = null;    // text currently painted (skip no-op repaints)
 // 1.2s repaint used to replace the pane every poll, wiping the highlight before it
 // could be copied. While a selection is held we defer the repaint instead.
 function selectionInScreen() {
+  // A hidden pane holds no highlight worth protecting, and this is not a shortcut:
+  // switching to the read view hides `.screen` with the selection still anchored
+  // inside it, and the browser does not reliably collapse it. Without this line the
+  // guard below answers "yes" forever, every repaint defers, and the pane is frozen
+  // on the snapshot it held at the moment of the toggle — including after switching
+  // back, since `applyView` resets `renderedText` but this check runs first.
+  if (els.screen.hidden) return false;
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
   return els.screen.contains(sel.anchorNode) && els.screen.contains(sel.focusNode);
@@ -479,7 +486,10 @@ function applyView() {
   els.viewToggle.classList.toggle("on", readMode);
   els.screen.hidden = readMode;
   els.read.hidden = !readMode;
-  if (!readMode) { els.readWait.hidden = true; renderedText = null; }
+  // Returning to the pane repaints from scratch, so a capture deferred before the
+  // toggle is stale by definition — dropping it keeps it from being flushed over
+  // fresher content by a later `selectionchange`.
+  if (!readMode) { els.readWait.hidden = true; renderedText = null; pendingScreen = null; }
   else { readShownIdx = null; }   // force a re-attach of this window's nodes
 }
 
@@ -1586,14 +1596,27 @@ loadFrames();
 // starved the event loop in 8b483c0. The floor is 100ms of real network work, so
 // there is no microtask-starvation path here.
 let pollTimer = null;
+let pollInFlight = false;
+let pollAgain = false;
 function pollDelay() {
   return (isDesktop && passthrough && Date.now() < fastUntil) ? FAST_POLL_MS : POLL_MS;
 }
+// Single-flight. `clearTimeout` cancels a pending *timer*; it cannot cancel a `poll()`
+// that is already awaiting its fetch. Every caller here is an event — the view toggle,
+// a tab becoming visible — so without this guard a tap during an in-flight poll runs a
+// second one beside the first, and two responses race to paint the same pane. The
+// caller's intent is "refresh now", not "refresh concurrently", so a request that
+// arrives mid-flight is remembered and served the moment the current one lands.
 function pollLoop() {
   clearTimeout(pollTimer);
+  if (pollInFlight) { pollAgain = true; return; }
+  pollInFlight = true;
   poll().finally(() => {
+    pollInFlight = false;
     clearTimeout(pollTimer);
-    pollTimer = setTimeout(pollLoop, pollDelay());
+    const soon = pollAgain;
+    pollAgain = false;
+    pollTimer = setTimeout(pollLoop, soon ? 0 : pollDelay());
   });
 }
 applyView();
