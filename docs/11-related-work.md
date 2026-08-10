@@ -1330,6 +1330,24 @@ not a scan.
   citing it that way overclaims. TSM's 12.2-point gain from *more* temporal structure
   (`scope:literature:claim:7d86cefd55c075f0`) varies a different axis with fidelity
   held fixed — both can be true, and nobody has crossed them.
+  **The corpus answered more of this once the paper was read in full** (consultation
+  `scope:main:exchange:d0060228a7454be0`, 54 citations). Two measurements now bound any
+  design here. A **union store** — artifacts co-indexed with verbatim chunks in one
+  first-pass pool — scores 42.5% against 43.9% chunks-alone and 28.0% artifacts-alone
+  (`scope:literature:claim:00aeb8542b0e3f30`), recovering ~14.5 of the 15.9pp, so
+  *reachability* is what the gap is made of. Against that, the **identical 1-hop
+  expansion applied over verbatim chunks is a no-op** (43.1% vs 43.9%,
+  `scope:literature:claim:e9cfc1dac2ed55d7`) — expansion helped only inside the lossy
+  artifact representation. Conditions differ (those chunks were already the first-pass
+  pool, so no write-time loss existed to escape), but together they say co-indexing is
+  the configuration with evidence and traversal-expansion is not. Note also that
+  expansion's large retrieval-recall gain (25.8%→71.8%,
+  `scope:literature:claim:f2cb29a74cbb943d`) **did not convert** to answer quality
+  (`scope:literature:claim:e490d8900938402e`) — keyword recall is not a proxy here.
+  Design consequences are worked in [lab/052](../lab/052-the-passage-the-note-came-from.md);
+  the anchor pattern (typed node → text chunk) has asserted prior art
+  (`scope:literature:claim:2fd0cfa3ca7f01b8`) and may not be called novel, while
+  document-order adjacency edges between passages are not found in the 2026 scan.
 - **Static tiers vs. Bayesian trust** (SuperLocalMemory, 2603.02240). Our four-tier
   ladder is simpler and more legible; is legibility worth giving up learned trust?
   The single-operator scope is the defensible answer — but it must be *argued*, in
