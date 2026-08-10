@@ -385,10 +385,44 @@ def _fake_run(recorder, *, stdout, returncode=0, stderr=""):
 
 _OK = json.dumps({"type": "result", "is_error": False, "result": "yaml here",
                   "duration_ms": 12, "total_cost_usd": 0.25})
-# Cursor's envelope: same result/is_error/duration_ms names, no cost fields at all.
+# Cursor's envelope, copied field-for-field from a live run (lab/054): the same
+# result/is_error/duration_ms names, no dollar figure, and a `usage` block that
+# does count tokens. The fixture used to omit `usage` and assert in a comment that
+# there were "no cost fields at all" — which is how the reader came to throw the
+# token counts away, with a passing test agreeing that there was nothing to keep.
 _OK_CURSOR = json.dumps({"type": "result", "subtype": "success", "is_error": False,
                          "result": "yaml here", "duration_ms": 12, "duration_api_ms": 9,
-                         "session_id": "s"})
+                         "session_id": "s", "request_id": "r",
+                         "usage": {"inputTokens": 4983, "outputTokens": 35,
+                                   "cacheReadTokens": 8897, "cacheWriteTokens": 0}})
+
+
+def test_cursor_tokens_survive_an_unpriced_run(monkeypatch):
+    """No price is not no data — they are two measurements, not one.
+
+    Cursor reports tokens and no dollar figure; Claude Code reports both. Gating
+    the token read on `reports_cost` discarded Cursor's counts on every single
+    extraction, because a flag about *pricing* was being read as a flag about
+    instrumentation.
+    """
+    monkeypatch.setattr(subprocess, "run", _fake_run([], stdout=_OK_CURSOR))
+    run = extraction.run_extraction("prompt", harness="cursor")
+    assert run.cost_usd is None
+    assert run.input_tokens == 4983
+    assert run.output_tokens == 35
+    assert run.cache_read_tokens == 8897
+    # Zero is reported, and must not be confused with the absent case below.
+    assert run.cache_write_tokens == 0
+
+
+def test_absent_usage_is_none_not_zero(monkeypatch):
+    # Claude Code's envelope carries no `usage` block, and a 0 there would read as
+    # "measured, and it was zero" — the same absent-vs-zero trap `cost_usd` avoids.
+    monkeypatch.setattr(subprocess, "run", _fake_run([], stdout=_OK))
+    run = extraction.run_extraction("prompt")
+    assert run.cost_usd == 0.25
+    assert run.input_tokens is None
+    assert run.output_tokens is None
 
 
 def test_cursor_sessions_distill_through_the_cursor_cli(monkeypatch):

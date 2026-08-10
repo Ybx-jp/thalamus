@@ -392,6 +392,14 @@ class ExtractionRun:
     # None means the CLI does not report cost — not that the call was free.
     cost_usd: float | None = None
     duration_ms: int = 0
+    # Tokens are reported separately from price, because one CLI reports each.
+    # Claude Code prices the call and Cursor counts the tokens, so a run that
+    # carries no `cost_usd` is not an uninstrumented run — reading "no price" as
+    # "no data" is what threw Cursor's counts away on every extraction.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
 
 
 class ExtractionError(RuntimeError):
@@ -473,10 +481,24 @@ def run_extraction(
         )
 
     cost = float(envelope.get("total_cost_usd") or 0.0) if cli.reports_cost else None
+    # Read regardless of `reports_cost`: the two are different measurements and the
+    # flag governs only the price. Absent keys stay None rather than becoming 0 —
+    # the same absent-vs-zero distinction `cost_usd` already makes.
+    usage = envelope.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+
+    def _count(key: str) -> int | None:
+        value = usage.get(key)
+        return int(value) if isinstance(value, (int, float)) else None
+
     return ExtractionRun(
         text=envelope.get("result", ""),
         cost_usd=cost,
         duration_ms=int(envelope.get("duration_ms") or 0),
+        input_tokens=_count("inputTokens"),
+        output_tokens=_count("outputTokens"),
+        cache_read_tokens=_count("cacheReadTokens"),
+        cache_write_tokens=_count("cacheWriteTokens"),
     )
 
 

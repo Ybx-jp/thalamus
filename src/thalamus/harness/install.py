@@ -114,6 +114,22 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # delivers on the next `postToolUse` — one of only two Cursor events that can
 # inject at all.
 #
+# ⚠️ The clock tier may be redundant on Cursor, and wired anyway pending one
+# probe. A live headless session's transcript carried a `<timestamp>` element
+# inside the user query text, written before any Thalamus hook was installed, so
+# in `agent -p` the clock is Cursor's own and ours is a second one arriving a
+# tool call later in the tool-result slot — two disagreeing clocks in one prompt,
+# which is the drift this tier exists to prevent (lab/054). It stays wired
+# because that was measured in **print mode only**, and unwiring it on one
+# observation would strip the clock from interactive sessions if Cursor injects
+# only in `-p` — and long-running interactive sessions are exactly what the tier
+# was built for. The probe that settles it is an interactive Cursor session.
+#
+# Either answer needs somewhere to be recorded. A capability the adapter must
+# *decline* because the harness already provides it is a different thing from one
+# the harness lacks, and today the two are indistinguishable here: a script
+# missing from this list reads the same as the three genuine gaps above.
+#
 # The taps stay on the *specialized* events rather than moving to the generic
 # postToolUse, even though the generic one would additionally work in Cursor
 # cloud agents: the docs do not say whether an MCP call fires both the generic
