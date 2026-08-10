@@ -1357,6 +1357,28 @@ def _cmd_ingest(args):
             f"    its own file (docs/06 §4).",
             file=sys.stderr,
         )
+    if digest.dropped_refs or digest.dropped_entities:
+        lines = []
+        if digest.dropped_refs:
+            lines.append(
+                f"    {len(digest.dropped_refs)} entity reference"
+                f"{'s' if len(digest.dropped_refs) > 1 else ''} dropped from claims — "
+                f"declared nowhere, and unknown to this scope:\n"
+                f"      {', '.join(repr(n) for n in digest.dropped_refs)}"
+            )
+        if digest.dropped_entities:
+            lines.append(
+                f"    {len(digest.dropped_entities)} entit"
+                f"{'ies' if len(digest.dropped_entities) > 1 else 'y'} dropped — "
+                f"no claim is about them:\n"
+                f"      {', '.join(repr(n) for n in digest.dropped_entities)}"
+            )
+        print(
+            "\n  ⚠ The extraction's entity graph did not close; it was narrowed, not "
+            "rejected.\n" + "\n".join(lines) + "\n"
+            "    The claims themselves are intact — only these edges are absent.",
+            file=sys.stderr,
+        )
     priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "cost not reported"
     print(f"Extracted: {len(batch.claims)} claims, {len(batch.entities)} entities "
           f"({priced})")

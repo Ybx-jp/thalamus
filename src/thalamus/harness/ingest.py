@@ -89,6 +89,8 @@ class DigestReport:
     budget: int = _DIGEST_BUDGET
     chunks: int = 1
     failed_chunks: tuple[int, ...] = ()
+    dropped_refs: tuple[str, ...] = ()
+    dropped_entities: tuple[str, ...] = ()
 
     @property
     def truncated(self) -> bool:
@@ -273,6 +275,41 @@ def build_prompt(
     )
 
 
+def reconcile_entity_references(
+    claims: list[LiteratureClaim], entities: list[Entity]
+) -> tuple[list[LiteratureClaim], list[Entity]]:
+    """Make the extraction's entity graph internally consistent, by narrowing only.
+
+    Extraction emits claims and entities as two independent lists and does not keep
+    them in step: a claim arrives `about` a name nothing declared, or an entity arrives
+    that no claim reaches. Both are contract violations (`check_knowledge`), and because
+    the contract judges a batch whole, one stray name in a 17-pass document rejects all
+    17 passes — the document is lost over an edge, which is the worst available trade.
+
+    So the producer is made to conform instead of the contract made to bend. The two
+    operations here are **narrowing**: an unresolvable reference is dropped from the
+    claim that made it, and an entity no surviving claim reaches is dropped from the
+    batch. Nothing is invented — no placeholder description, no synthesised entity —
+    which is what keeps this on the safe side of docs/05: the write path may discard
+    what it cannot verify, never manufacture what the model did not assert.
+
+    A claim stripped to no entities is kept. `about` is a retrieval affordance, not a
+    claim's identity; its description, citation and provenance are intact, and dropping
+    the claim would discard verified content to tidy an index.
+
+    `prune_orphan_artifacts` does the same job for sessions on the same reasoning.
+    """
+    declared = {entity.name for entity in entities}
+    reconciled = [
+        claim.model_copy(update={"about": [n for n in claim.about if n in declared]})
+        if any(n not in declared for n in claim.about)
+        else claim
+        for claim in claims
+    ]
+    reachable = {name for claim in reconciled for name in claim.about}
+    return reconciled, [entity for entity in entities if entity.name in reachable]
+
+
 def build_batch(
     data: dict,
     *,
@@ -298,8 +335,9 @@ def build_batch(
     as not needing re-declaration — which the contract then rejects as undeclared.
     Re-declaring a known entity requires no model judgement, so it is backfilled here,
     with the graph's own shape (never placeholders — the writer overwrites on match).
-    Unknown undeclared names still reject: a genuinely new entity needs a description
-    only the model can supply.
+    A name the graph does not hold either cannot be resolved without inventing a
+    description the model never supplied, so `reconcile_entity_references` drops the
+    reference rather than the document.
     """
     provenance = Provenance(
         tier=Tier.CURATED,
@@ -344,6 +382,8 @@ def build_batch(
                     provenance=provenance,
                 )
             )
+
+    claims, entities = reconcile_entity_references(claims, entities)
 
     return KnowledgeBatch(
         scope=scope,
@@ -558,8 +598,8 @@ def ingest(
     # Chunks are built against the assembled batch, not the raw extraction, so anchor
     # indices cannot drift: build_batch drops malformed items, and an anchor computed
     # before that filtering would point at the wrong claim. Only `ingest` reaches here
-    # — session transcripts distil through `extract` — so the literature-only scoping
-    # of lab/052 is structural rather than a flag anyone has to remember.
+    # — session transcripts distil through `extract` — so every ingested document is
+    # chunked in whatever scope it lands in, and no transcript ever is (lab/052).
     source_chunks = build_chunks(text, batch.claims, [e.name for e in batch.entities])
     batch = batch.model_copy(
         update={
@@ -567,6 +607,21 @@ def ingest(
             "anchors": anchor_citations(source_chunks, batch.claims),
         }
     )
+
+    # What `reconcile_entity_references` narrowed, recovered by comparing the extraction
+    # against the assembled batch rather than threaded back out of build_batch — one set
+    # difference, so the reporting cannot drift from the reconciliation it describes.
+    raw_claims = [c for c in data.get("claims") or [] if isinstance(c, dict)]
+    raw_refs = {str(n) for c in raw_claims for n in c.get("about") or []}
+    raw_declared = {
+        str(e.get("name")) for e in data.get("entities") or [] if isinstance(e, dict) and e.get("name")
+    }
+    survived = {entity.name for entity in batch.entities}
+
     return batch, run, DigestReport(
-        text_chars=len(text), chunks=len(chunks), failed_chunks=chunk_failures
+        text_chars=len(text),
+        chunks=len(chunks),
+        failed_chunks=chunk_failures,
+        dropped_refs=tuple(sorted(raw_refs - survived)),
+        dropped_entities=tuple(sorted(raw_declared - survived)),
     )

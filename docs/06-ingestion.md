@@ -94,6 +94,16 @@ literature expert.
    convergence feed pointed inward at one document. Claims are **retained, never
    merged** across passes, and entities dedup on exact name only — see
    [11 §3f](11-related-work.md).
+   Extraction emits claims and entities as two independent lists and does not keep them
+   in step, so a batch can arrive with a claim `about` a name nothing declared, or an
+   entity no claim reaches. Both violate the contract, and the contract judges a batch
+   whole — one stray name would reject all seventeen passes of a long document. So the
+   batch is **narrowed to close it**: the unresolvable reference is dropped from the
+   claim that made it, then any entity left unreachable is dropped too, and the run says
+   which names it lost. Narrowing only — an unknown name is never resolved by inventing
+   a description, because the write path may discard what it cannot verify and never
+   manufacture what the model did not assert. A claim stripped of every entity is still
+   kept: `about` is a retrieval affordance, not the claim's identity.
    **The run reports what was read**, rather than leaving it to be remembered: every
    ingest prints the extracted text length, and either the number of chunked passes or
    what fraction fell inside the budget, warning with the discarded count when a

@@ -9,6 +9,7 @@ the model pass are exercised live; everything either side of them is pinned here
 
 import pytest
 
+from thalamus.contract.conformance import check_knowledge
 from thalamus.contract.manifest import ExpertManifest, available_scopes, load_manifest
 from thalamus.harness.ingest import IngestError, build_batch, to_text
 from thalamus.substrate.schema import Tier
@@ -364,8 +365,8 @@ def test_build_batch_backfills_referenced_known_entities_faithfully():
     Verifications:
     - the known name is backfilled into the batch with the graph's own kind and
       description (the writer overwrites on match, so placeholders would clobber)
-    - the unknown name is NOT backfilled — it must stay a contract rejection,
-      because a new entity needs a description only the model can supply
+    - the unknown name is NOT backfilled — a new entity needs a description only the
+      model can supply, and inventing one would manufacture content on the write path
     """
     data = {
         "title": "A Survey of Evidence Tracing",
@@ -402,7 +403,7 @@ def test_build_batch_backfills_referenced_known_entities_faithfully():
     assert backfilled.description == "How agent memory systems store and retrieve"
 
     data["claims"][0]["about"].append("Never Seen Before")
-    rejected = build_batch(
+    narrowed = build_batch(
         data,
         scope="literature",
         feed="thalamus",
@@ -413,7 +414,56 @@ def test_build_batch_backfills_referenced_known_entities_faithfully():
         known_entities=[{"name": "Memory Mechanism", "kind": "concept",
                          "description": "How agent memory systems store and retrieve"}],
     )
-    assert "Never Seen Before" not in {entity.name for entity in rejected.entities}
+    assert "Never Seen Before" not in {entity.name for entity in narrowed.entities}
+
+
+def test_an_unresolvable_entity_reference_costs_its_edge_not_the_document():
+    """
+    Scenario: extraction emits the two lists out of step — one claim is `about` a name
+    nothing declared, and one declared entity is reached by no claim. Both are
+    `check_knowledge` violations, and the contract judges a batch whole, so left alone
+    they reject every claim in the document over an edge.
+
+    Verifications:
+    - the surviving claim keeps its resolvable `about` name and loses only the dangling
+      one; its description and citation are untouched
+    - a claim stripped to no entities at all is still kept — `about` is a retrieval
+      affordance, not the claim's identity
+    - the orphan entity is dropped, since nothing can reach it
+    - the assembled batch now passes the contract that would have rejected it
+    """
+    data = {
+        "title": "Interrupted Time Series",
+        "claims": [
+            {"description": "Rank correlation survives non-normal residuals",
+             "kind": "literature/finding", "citation": "Table 3",
+             "about": ["Effect Size", "Spearman's rank correlation"]},
+            {"description": "Autocorrelation inflates the false positive rate",
+             "kind": "literature/finding", "citation": "Sec 2",
+             "about": ["Spearman's rank correlation"]},
+        ],
+        "entities": [
+            {"name": "Effect Size", "kind": "concept", "description": "Magnitude"},
+            {"name": "Reached By Nothing", "kind": "concept", "description": "y"},
+        ],
+    }
+
+    batch = build_batch(
+        data,
+        scope="eval-methodology",
+        feed="campaign-statistics",
+        origin="https://arxiv.org/html/2603.17281",
+        content_hash="cafe",
+        uri="archive://cafe",
+        byte_size=99,
+    )
+
+    assert len(batch.claims) == 2
+    assert batch.claims[0].about == ["Effect Size"]
+    assert batch.claims[0].citation == "Table 3"
+    assert batch.claims[1].about == []
+    assert {entity.name for entity in batch.entities} == {"Effect Size"}
+    assert check_knowledge(batch) == []
 
 
 def test_prompt_carries_known_entities_for_name_convergence():
