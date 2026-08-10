@@ -14,6 +14,9 @@ const parts = [
   extractRegion("const MD_FENCE", "\nfunction renderMarkdown", src),
   extractFunction("renderMarkdown", src),
   extractFunction("mdCode", src),
+  extractFunction("mdCells", src),
+  extractFunction("mdTableAt", src),
+  extractFunction("mdTable", src),
   extractFunction("mdBlocks", src),
   extractFunction("mdInline", src),
 ].join("\n");
@@ -48,6 +51,35 @@ contains("an unterminated fence still shows its code", md("```js\nlet a = 1"), "
 contains("markup inside a block stays literal", md("```\n**not bold**\n```"), "**not bold**");
 lacks("emphasis never fires inside inline code", md("`a * b * c`"), "<em>");
 
+suite("markdown — pipe tables");
+const TBL = "| Name | Count |\n| --- | ---: |\n| alpha | 3 |\n| beta | 12 |";
+contains("a table renders as a table", md(TBL), '<table class="rd-table">');
+contains("the header row is a header", md(TBL), "<thead>");
+check("every body row lands", (md(TBL).match(/<tr>/g) || []).length === 3);
+contains("a cell keeps its text", md(TBL), ">alpha<");
+contains("right alignment comes from the delimiter", md(TBL), 'class="rd-td rd-tr"');
+contains("centre alignment comes from the delimiter",
+  md("| a |\n| :-: |\n| x |"), 'class="rd-td rd-tc"');
+contains("borderless pipes still make a table", md("a | b\n--- | ---\n1 | 2"),
+  '<table class="rd-table">');
+check("cells are inline-rendered",
+  md("| a |\n| --- |\n| `x` |").includes('<code class="rd-ic">x</code>'));
+check("a short row is padded to the header width",
+  (md("| a | b |\n| --- | --- |\n| 1 |").match(/<td/g) || []).length === 2);
+check("an escaped pipe is one cell, not two",
+  (md("| a | b |\n| --- | --- |\n| x \\| y | z |").match(/<td/g) || []).length === 2);
+contains("an escaped pipe survives as a pipe", md("| a |\n| --- |\n| x \\| y |"), "x | y");
+lacks("a rule under a sentence is still a rule", md("text\n---"), "rd-table");
+lacks("a dash row with no pipes is not a delimiter", md("a | b\n---\n1 | 2"), "rd-table");
+lacks("a delimiter of the wrong width is not a table",
+  md("| a | b |\n| --- |\n| 1 | 2 |"), "rd-table");
+lacks("a bullet containing a pipe stays a bullet",
+  md("- a | b\n- --- | ---"), "rd-table");
+contains("prose before a table survives", md("intro\n\n" + TBL), "<p class=\"rd-p\">intro</p>");
+contains("prose after a table survives", md(TBL + "\n\noutro"), "outro");
+lacks("a pipe table inside a fence stays literal",
+  md("```\n| a |\n| --- |\n```"), "rd-table");
+
 suite("markdown — untrusted text");
 lacks("script tags are escaped", md("<script>alert(1)</script>"), "<script>");
 lacks("html inside a code block is escaped", md("```\n<img onerror=x>\n```"), "<img");
@@ -66,5 +98,9 @@ check("a bare url is linked exactly once",
   (md("https://x.io/a").match(/<a /g) || []).length === 1);
 check("a wrapped list item stays in its bullet",
   md("- one\n  continued\n- two").includes("one<br>continued"));
+lacks("html in a table cell is escaped",
+  md("| a |\n| --- |\n| <img onerror=x> |"), "<img");
+check("a table row is not eaten by the list that precedes it",
+  md("- bullet\n\n| a | b |\n| --- | --- |\n| 1 | 2 |").includes("<table"));
 
 done();

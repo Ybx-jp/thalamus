@@ -287,12 +287,27 @@ function linkify(text) {
 // a `javascript:` URL in a tool result must stay inert text.
 //
 // The subset is deliberate: fences, inline code, headings, lists, quotes, rules,
-// emphasis, links. Pipe tables stay literal — a table on a 390px screen is less
-// readable than the text it came from, and half-rendering one is worse than neither.
-// Both fences must own their line — triple backticks mid-sentence are prose, not a
-// block. The closing alternative is `(?![\s\S])`, absolute end of input, and NOT `$`:
-// under /m, `$` matches end of *line*, which closes every block after its first line.
+// emphasis, links, pipe tables. Both fences must own their line — triple backticks
+// mid-sentence are prose, not a block. The closing alternative is `(?![\s\S])`,
+// absolute end of input, and NOT `$`: under /m, `$` matches end of *line*, which
+// closes every block after its first line.
 const MD_FENCE = /^ {0,3}```([A-Za-z0-9_+#.-]*)[ \t]*\n([\s\S]*?)(?:^ {0,3}```[ \t]*$|(?![\s\S]))/gm;
+
+// A table is the one block whose meaning is positional: the column a cell sits in
+// is what the cell says. So it renders as a real table and holds its columns, the
+// way a code block holds its lines, and scrolls on its own axis — the page still
+// never scrolls sideways. Reflowing the columns to fit 390px would preserve every
+// character and lose the thing the characters were arranged to say.
+//
+// A table is claimed only on a header row *plus* a delimiter row directly beneath
+// it with a matching cell count — GFM's rule, and the reason a lone `---` under a
+// sentence is still a rule under a paragraph. Both rows must carry a real `|`, so
+// single-column tables are written `| Name |`; without that, every paragraph
+// followed by `---` becomes a one-column table.
+const MD_TDELIM = /^ {0,3}[|\-: \t]*-[|\-: \t]*$/; // shape only; cells checked in mdTableAt
+const MD_TCELL = /^:?-+:?$/;                       // one delimiter cell, alignment optional
+const MD_TBAR = /(?:^|[^\\])\|/;                   // a pipe that isn't escaped as `\|`
+const MD_TBULLET = /^\s*(?:[-*+]|\d+[.)])\s/;      // a bullet outranks a table row
 
 function renderMarkdown(text) {
   // NUL is the placeholder sentinel below; it has no business in a transcript.
@@ -320,6 +335,61 @@ function mdCode(lang, code) {
          `<pre class="rd-code"><code>${escapeHtml(code.replace(/\n+$/, ""))}</code></pre></div>`;
 }
 
+// Cells split on unescaped pipes; `\|` is a literal pipe and never a border. The
+// split runs before any inline pass, so a pipe inside backticks still ends a cell —
+// that is GFM's ordering, and the fix a writer reaches for (`\|`) works here too.
+// A leading or trailing bar is a border, not an empty column.
+function mdCells(row) {
+  const s = row.trim();
+  const cells = [];
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\" && s[i + 1] === "|") { cur += "|"; i++; continue; }
+    if (s[i] === "|") { cells.push(cur); cur = ""; continue; }
+    cur += s[i];
+  }
+  cells.push(cur);
+  if (cells.length > 1 && s.startsWith("|") && !cells[0].trim()) cells.shift();
+  if (cells.length > 1 && MD_TBAR.test(s) && s.endsWith("|") && !cells[cells.length - 1].trim()) cells.pop();
+  return cells.map((c) => c.trim());
+}
+
+// Claim a table at `i` or return null — the caller keeps its line loop either way.
+// The delimiter row must have exactly as many cells as the header: a row of dashes
+// that happens to sit under a sentence is a rule, and a mismatch means whatever this
+// is, it is not a table whose columns line up.
+function mdTableAt(lines, i) {
+  const head = lines[i], delim = lines[i + 1];
+  if (delim == null || !MD_TBAR.test(head) || !MD_TBAR.test(delim)) return null;
+  if (MD_TBULLET.test(head) || !MD_TDELIM.test(delim)) return null;
+  const cols = mdCells(head);
+  const spec = mdCells(delim);
+  if (spec.length !== cols.length || !spec.every((c) => MD_TCELL.test(c))) return null;
+  const rows = [];
+  let end = i + 2;
+  while (end < lines.length && lines[end].trim() && MD_TBAR.test(lines[end])
+         && !MD_TBULLET.test(lines[end])) {
+    rows.push(mdCells(lines[end]));
+    end++;
+  }
+  return { html: mdTable(cols, spec, rows), end: end - 1 };
+}
+
+// Short rows are padded and long ones truncated to the header's width, because a
+// ragged row would silently shift every cell after the gap into the wrong column.
+function mdTable(cols, spec, rows) {
+  const align = spec.map((c) =>
+    c.endsWith(":") ? (c.startsWith(":") ? " rd-tc" : " rd-tr") : "");
+  const cell = (tag, text, n) =>
+    `<${tag} class="rd-td${align[n] || ""}">${mdInline(text || "")}</${tag}>`;
+  const head = `<tr>${cols.map((c, n) => cell("th", c, n)).join("")}</tr>`;
+  const body = rows.map((r) =>
+    `<tr>${cols.map((_, n) => cell("td", r[n], n)).join("")}</tr>`).join("");
+  return `<div class="rd-tablewrap"><table class="rd-table">` +
+         `<thead>${head}</thead>` + (body ? `<tbody>${body}</tbody>` : "") +
+         `</table></div>`;
+}
+
 function mdBlocks(chunk) {
   if (!chunk) return "";
   const out = [];
@@ -343,7 +413,12 @@ function mdBlocks(chunk) {
   };
   const flushAll = () => { flushPara(); flushList(); flushQuote(); };
 
-  for (const line of chunk.split("\n")) {
+  // Indexed rather than for-of: a table is the one block that cannot be recognised
+  // from its own line — a header row is prose until the delimiter row under it says
+  // otherwise — so the loop needs to look ahead and then skip what it consumed.
+  const lines = chunk.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     let m;
     if (!line.trim()) { flushAll(); continue; }
     if ((m = /^ {0,3}(#{1,6})\s+(.*)$/.exec(line))) {
@@ -355,6 +430,12 @@ function mdBlocks(chunk) {
     } else if ((m = /^ {0,3}>\s?(.*)$/.exec(line))) {
       flushPara(); flushList();
       quote.push(m[1]);
+    } else if ((m = mdTableAt(lines, i))) {
+      // Ahead of the list branches, so a table may interrupt a paragraph the way
+      // GFM allows; behind them by MD_TBULLET, so `- a | b` stays a bullet.
+      flushAll();
+      out.push(m.html);
+      i = m.end;
     } else if ((m = /^\s*[-*+]\s+(.*)$/.exec(line))) {
       flushPara(); flushQuote();
       if (!list || list.tag !== "ul") { flushList(); list = { tag: "ul", items: [] }; }

@@ -341,6 +341,43 @@ header {
   -webkit-overflow-scrolling: touch;
 }
 .rd-code code { font: inherit; color: inherit; }
+/* A table holds its columns for the same reason a code block holds its lines: the
+   column is the meaning. It scrolls on its own axis so the page never does — cells
+   do not wrap, or a five-column table on a 390px screen reflows into five stacks of
+   single words that no longer read across. */
+.rd-tablewrap {
+  margin: .55rem 0;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  /* Shrink to the columns, then stop at the container: a narrow table that drew its
+     border at full width would claim a span it does not occupy. */
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.rd-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: calc(var(--read-size) - 1px);
+  line-height: 1.45;
+  color: var(--ink);
+}
+.rd-td {
+  white-space: nowrap;
+  text-align: left;
+  padding: .3rem .55rem;
+  border-bottom: 1px solid var(--hair);
+  vertical-align: top;
+}
+.rd-table tr:last-child .rd-td { border-bottom: 0; }
+.rd-table thead .rd-td {
+  font-weight: 600;
+  background: var(--panel);
+  white-space: nowrap;
+}
+.rd-tc { text-align: center; }
+.rd-tr { text-align: right; }
 /* The operator's own turns, marked by the channel hue rather than a label. */
 .rd-user {
   border-left: 2px solid var(--chan);

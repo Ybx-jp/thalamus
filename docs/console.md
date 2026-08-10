@@ -134,11 +134,15 @@ the transcript is written a turn at a time rather than a token at a time, text
 lands as finished blocks instead of shifting mid-sentence.
 
 Prose is rendered as the markdown it was written in: fenced code, inline code,
-headings, lists, quotes, rules, emphasis, and links. The split that matters on a
-phone is that **prose reflows and code does not** — a code block holds its lines
-and scrolls on its own axis, because a wrapped shell command is a misread shell
-command, and the page itself never scrolls sideways. Pipe tables are left as
-literal text: a table narrower than its columns is less readable than the source.
+headings, lists, quotes, rules, emphasis, links, and pipe tables. The split that
+matters on a phone is that **prose reflows and code does not** — a code block holds
+its lines and scrolls on its own axis, because a wrapped shell command is a misread
+shell command, and the page itself never scrolls sideways. A table holds its columns
+for the same reason and scrolls the same way: the column a cell sits in is what the
+cell says, so reflowing a five-column table to 390px would keep every character and
+lose the arrangement that carried the meaning. A table is claimed only on a header
+row plus a delimiter row of matching width beneath it, which is why a lone `---`
+under a sentence is still a rule.
 Rendering escapes first and injects only its own tags, and link targets are held
 to http(s) and site-relative — transcript text is whatever a tool printed, not
 something the operator wrote.
