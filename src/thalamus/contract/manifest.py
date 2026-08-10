@@ -13,7 +13,8 @@ can write.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from fnmatch import fnmatch
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 import yaml
@@ -22,6 +23,48 @@ from pydantic import BaseModel, Field
 # src/thalamus/contract/manifest.py -> parents[3] is the repo root. Local-first
 # project; THALAMUS_CONFIG_DIR overrides for anything fancier.
 _DEFAULT_CONFIG = Path(__file__).resolve().parents[3] / "config"
+
+
+class WriteBoundary(BaseModel):
+    """Paths a scope's own sessions may not edit — the role boundary made structural.
+
+    A role boundary stated only in `domain` prose is the configuration that was
+    measured failing: MAST names "Disobey Role Specification" as a distinct failure
+    mode, and the repair that worked in the studied system was structural authority
+    rather than a better prompt (`scope:literature:claim:db0928fe2cfd3616`). This
+    field is the structure — declared tier-0 beside the rest of the contract,
+    enforced by the `role-guard` PreToolUse hook.
+
+    Patterns match the **absolute** POSIX path of the file being written, via
+    `fnmatch`, so `*` crosses `/`: `*.py` denies every Python file anywhere, and
+    `*/src/*` denies any conventionally-laid-out source tree. Matching the absolute
+    path is what lets the boundary survive `thalamus spawn --dir` into another
+    repository, where nothing repo-relative would resolve.
+
+    The under-enforcement is named rather than closed: a repository that does not
+    put implementation under `src/` escapes a `*/src/*` deny. The guard is
+    defence-in-depth over a boundary the operator also states in `domain`, and
+    lab/008's standing trade applies — a false positive teaches route-around, which
+    costs more than a miss.
+    """
+
+    deny_globs: list[str] = Field(
+        default_factory=list,
+        description="fnmatch patterns over the absolute POSIX path; a match blocks the write",
+    )
+    reason: str = Field(
+        "", description="Shown to the blocked session — why this scope does not write here"
+    )
+
+    def denies(self, file_path: str) -> str | None:
+        """The pattern that blocks this path, or None. Empty globs deny nothing."""
+        if not file_path:
+            return None
+        target = PurePosixPath(Path(file_path).as_posix()).as_posix()
+        for pattern in self.deny_globs:
+            if fnmatch(target, pattern):
+                return pattern
+        return None
 
 
 class ExpertManifest(BaseModel):
@@ -37,6 +80,11 @@ class ExpertManifest(BaseModel):
         default_factory=list,
         description="Host suffixes ingestion may fetch from. Local files bypass this — "
         "an operator hand-feeding a file IS the curation decision (docs/06).",
+    )
+    write_boundary: WriteBoundary = Field(
+        default_factory=WriteBoundary,
+        description="Paths this scope's sessions may not edit (docs/08). Absent means "
+        "unbounded — the honest default for a scope whose role is to write code.",
     )
 
     def allows(self, origin: str) -> bool:

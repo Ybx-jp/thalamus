@@ -1,0 +1,55 @@
+# Expert manifest — code advisor (docs/01 contract v0, docs/08 roster).
+#
+# Expert #7. Roster decision recorded in docs/08.
+#
+# Structurally the odd one of the three: it carries **no write boundary**, because
+# its role is to write the changes it proposes. Its boundary is a pin trigger
+# instead — campaign sessions only (reorganization, a measured performance fix, a
+# reliability hardening pass), while feature work stays with `main` and consults
+# this scope. That makes it the roster's clearest test of whether a boundary that
+# lives in when-you-pin can hold as well as one that lives in what-you-may-write.
+
+contract: v0
+scope: architect
+name: Code advisor
+domain: >-
+  The organizational and architectural health of the codebases, and their
+  performance and reliability. Standing structural memory is the point: where the
+  seams are, which abstractions leaked, which refactors were tried and rejected and
+  why — the accumulation a single session's context cannot hold. Performance and
+  reliability hunting with measurement attached: hot paths, unbounded growth, retry
+  and timeout behavior, before-and-after numbers rather than assertions of
+  improvement. Judgement is portable across projects; structural depth is per-repo.
+  Writes its own changes in pinned campaign sessions, and is consulted from feature
+  sessions rather than pinned for them. Where a structural property should hold
+  permanently and be checked, that is an invariant and belongs to qe; where a
+  performance claim needs a control or a statistic to mean anything, that belongs
+  to eval-methodology.
+
+# Origin tier for INGESTED content (docs/05). Architecture literature is tier 2
+# forever. Distillation from pinned campaign sessions writes tier-1 episodic.
+tier: 2
+
+claim_kinds:
+  - literature/finding
+  - literature/technique
+
+# Host suffixes `thalamus ingest <url>` may fetch (docs/06). The load-bearing
+# architecture canon (Parnas 1972, Conway 1968, the modularity-metric work) predates
+# arXiv and lives on author and university mirrors, so the specific open-access
+# hosts carrying the anchors are listed rather than a broad suffix. Local files
+# bypass the list — hand-feeding a PDF IS the curation decision.
+allowlist:
+  - arxiv.org
+  - sre.google
+  - dl.acm.org
+  - github.com
+  - hbs.edu
+  - melconway.com
+
+# No write_boundary, deliberately. This scope's charter is to perform the
+# reorganizations and fixes it identifies; a path deny would block the work rather
+# than bound a role. The boundary that governs it is the pin trigger recorded in
+# docs/08, which is enforced by operator intent at launch and audited afterwards by
+# what its pinned sessions actually did — a weaker guarantee than the guard, and
+# named as such rather than papered over.

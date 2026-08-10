@@ -86,6 +86,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("UserPromptSubmit", None, "pin-engaged.sh"),
     ("PreToolUse", "Bash", "gremlin-guard.sh"),
     ("PreToolUse", "SendMessage", "room-guard.sh"),
+    ("PreToolUse", "Edit|Write|NotebookEdit", "role-guard.sh"),
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
