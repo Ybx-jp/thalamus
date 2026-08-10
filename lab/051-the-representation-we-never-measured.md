@@ -195,7 +195,66 @@ proactive, non-QA recall, our dominant retrieval surface — is flagged untested
 paper's own authors and stays unmet after every measurement proposed above. That is an
 honest gap, not something the assay closes.
 
+## First result — the coverage endpoint, run 2026-08-10
+
+Run against 154 `literature` Sources with retained bytes; 46 qualify on decimal
+literals, 140 on all numeric tokens. Margin fixed before the run.
+
+| | decimal literals (n=46) | numeric tokens (n=140) |
+|---|---|---|
+| A — descriptions only | 18.4% | 9.6% |
+| B — descriptions + verbatim citations | 19.2% | 10.2% |
+| C — retained bytes | 100% (by construction) | 100% |
+| placement `(B−A)/(C−A)` | **0.9%** | **0.7%** |
+| sources clearing the 31% bar | **0 / 46** | **1 / 140** |
+
+**Condition (d) is falsified on this endpoint.** A claim carrying its verbatim
+`citation` is *not* the paper's intermediate representation on this corpus — it sits at
+the artifact pole with a provenance anchor attached. Per the stop conditions above,
+this is the one outcome that licenses further design work.
+
+The falsifier for the measurement itself was run first and did not fire: 96.9% of 1,242
+literature claims carry a non-empty citation, median 109 chars against a 210-char median
+description. So B is not B-equals-A by default — **the citation adds 52% more text and
+buys 0.8pp of literal coverage.** The mechanism is redundancy, not absence: a citation
+quotes the sentence its description already summarizes, so it anchors provenance without
+carrying new information. That is a sharper result than a null would have been, and it
+is what makes `citation` a *provenance* mechanism rather than a fidelity one.
+
+**Three limits on this result, stated so it is not over-read.**
+1. **The ranking endpoint has not been run.** It needs a query set with known-correct
+   items, which is unbuilt. Coverage is one of the two pre-registered endpoints.
+2. **Stop condition 1 cannot fire on this endpoint.** C is 100% by construction when
+   scoring coverage against the document's own literals, so the "does the verbatim pole
+   buy anything here" test is degenerate and needs the ranking endpoint to mean
+   anything. This run can falsify (d); it cannot terminate the inquiry.
+3. **The 31% bar was derived from an accuracy-gap closure and applied to a coverage
+   statistic.** The margin was pre-registered, but that mapping between quantities is an
+   inference, not an equivalence. A margin defined natively on coverage would be better
+   and does not exist.
+
+Still unchecked, and it gates belief in all of the above: whether these offline
+endpoints correlate with downstream rung outcomes on the lab/023 arms already on disk.
+
+### Side result — chunking, measured within-document
+
+The between-document comparison (few-claim vs many-claim sources) is **confounded and
+not reported as a finding**: n=2 on the chunked side, and those documents are 2.6×
+longer, which inflates the denominator in the same direction as the apparent effect.
+
+The valid test is within a document — which literals matched by claims appear *only*
+past char 24,000, where a single truncated pass would have stopped:
+
+- **GraphRAG** (90,025 chars, 3.8× the budget): **13** such literals, including 51.3%,
+  52.4%, 58.1%, 64.88, 82%.
+- **Fidelity Before Structure** (148,209 chars, 6.2× the budget): **82** such literals,
+  including 0.86, 13.6, 14.9%, 15.0%.
+
+Those are figures now citable that no single-pass ingest could have reached, on this
+corpus, measured rather than argued. It is a coverage result, not a utility one.
+
 ## Ends in
 
-**pre-registration** — endpoints, margin, stop conditions and blockers recorded before
-the first run, which is the whole point of writing it now rather than after.
+**pre-registration + first result** — endpoints, margin and stop conditions were
+recorded before the run; the coverage endpoint then falsified condition (d), and the
+ranking endpoint remains unbuilt.
