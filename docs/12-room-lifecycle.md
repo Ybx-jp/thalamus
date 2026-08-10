@@ -630,6 +630,44 @@ against free-form chat, since the staged systems benchmark only against each oth
 pathology for a self-fork participating in a group it dispatched to; and any measurement of
 read-snapshot isolation helping or hurting agent *collaboration*.
 
+## What a room would need on Cursor
+
+Measured 2026-08-10 against a live Cursor CLI (`2026.08.04-aaa8809`, lab/054), while
+none of this design is built. Recorded as findings; the build-or-not decision is
+open, and none of the three channels below has been designed for.
+
+**The boundary channel ports.** `XDG_CONFIG_HOME` moves Cursor's config root to
+`$XDG_CONFIG_HOME/cursor/` without moving `$HOME`, and `HOME` moves it too. Both
+then report `Not logged in`, so credentials follow the root and a room would have to
+provision them — the same obligation `ensure_room` already carries for
+`.credentials.json` on Claude Code.
+
+**The discovery channel has nothing behind it.** A room partitions the roster because
+peer discovery enumerates `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` and reads each
+descriptor's `messagingSocketPath`. **Cursor writes no `sessions/` directory at
+all**, and `~/.cursor/agent-cli-state.json` is two fields of global state. So moving
+the config root partitions a roster that does not exist: the structural boundary
+doing the real work on Claude Code has no Cursor referent, rather than a weaker one.
+
+**The delivery channel does not port.** There is no `--name` and no peer-messaging
+surface, so members cannot be addressed. The room guard's roommate pattern matches a
+name the launcher gives; without names it has no allow-path.
+
+**The resumption channel ports, and means something different.** Cursor has
+`--resume [chatId]` and `create-chat`, but `--resume` continues the parent chat
+rather than forking it, so the quick protocol's delta-only distillation — an exact
+set difference over message UUIDs — has no Cursor analogue in this shape.
+
+The live-measured consequence for what a Cursor room could be: **isolation without
+addressing.** Whether that is worth building is exactly the question, because a room
+that isolates but cannot dispatch writes ceremony rows and room provenance for
+members that never coordinate — and [lab/048](../lab/048-the-treatment-that-was-only-a-label.md)
+is the entry about a treatment that existed only as a label.
+
+Independently of that decision, `pin.py:246` returns a hardcoded
+`("CLAUDE_CONFIG_DIR", …)` pair, so the room's boundary is spelled as one harness's
+variable rather than declared as a capability.
+
 ## Open questions
 
 - Whether co-assertion within a single ceremony occasion should collapse in
