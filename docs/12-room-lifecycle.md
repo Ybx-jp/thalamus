@@ -51,12 +51,43 @@ with overall multi-agent failure rates of 41%–86.7% across seven systems
 
 | Ceremony | Human constraint | Survives? |
 |---|---|---|
-| Planning / delegation | shared awareness, capacity, commitment | **Yes, stripped.** Disobeying *task* spec is 11.8% of design failures; disobeying *role* spec is 1.5%. The artifact earns its place; the role-casting does not |
+| Planning / delegation | shared awareness, capacity, commitment | **Yes, as a specification artifact.** Disobeying *task* spec is 11.8% of design failures. Role *casting* is not negotiated here — not because roles are cheap but because a room already has them (see below) |
 | Peer refinement | nobody holds it all | **Yes, with the fan-in redesigned** |
 | Demo / presentation | stakeholders can't read diffs; morale; a deadline | **No.** Roommates read the artifact losslessly. Replaced by an *executed* acceptance gate, justified by failure-to-recognize-completion at 12.4% |
 | Periodic status update | managers can't observe work | **No.** The harness can observe. See below |
-| Retrospective | fallible memory; blame-free reconstruction | **Split.** Reconstruction cut; generalization kept as a gated promotion |
+| Retrospective | fallible memory; blame-free reconstruction | **Split.** The reconstruction *narrative* is cut; the structured trajectory record it would have been written from is kept, because cross-episode learning consumes it. Generalization is kept as a gated promotion |
 | Deliverables report | a legible summary for a person | **Yes**, as a projection over the log and a forecast, not a narrative |
+
+### Roles are already paid for
+
+Agents rarely *disobey* an assigned role — 1.5% of MAST design failures — but that is a
+statement about compliance, not about value. In the only head-to-head ablation available,
+**removing role assignments from all agents' system prompts produces the most substantial
+performance drop of any ablation**, with Executability falling to 0.58 and Quality to
+0.2212 (`scope:literature:claim:dc0520a3b45fda00`) — a larger single effect than the whole
+phase chain, which moves Quality 0.2512 → 0.3953.
+
+Role specialization therefore outweighs phase structure on the only evidence held. The
+consequence for this design is favourable and easy to miss: **a Thalamus room gets that
+effect for free**, because every member is a pinned expert before the room exists. The
+planning ceremony does not need to cast roles, and stripping it of role negotiation costs
+nothing — the roles were assigned at `--agent` time.
+
+### Phases trade off; they are not uniformly additive
+
+The one real per-phase ablation available halts a staged chain after each phase in turn:
+halting after the code-complete phase most enhances Completeness, the testing phase is
+what carries Executability, and Quality rises steadily as more phases are included
+(`scope:literature:claim:7408878870906722`). The underlying table is sharper than the
+summary — running the later phases after Complete **lowers** Completeness (0.6250 → 0.5600)
+while raising Executability. Adding a stage is a trade, not an improvement, and a lifecycle
+that assumes each ceremony is additive is assuming something the only measurement
+available contradicts.
+
+**Whether staged structure beats free-form chat at all remains unmeasured.** The staged
+systems benchmark against other staged systems; the nearest available result is that
+explicitly decomposing a task into subtasks beats a single-step solution, which is a
+weaker claim. This is a gap in the record, not a settled point in the design's favour.
 
 ## Topology is declared, not derived
 
@@ -92,7 +123,14 @@ the rest without paying to process it (`scope:literature:claim:eab9a0a7009286ed`
 
 Members reply with a **bid or a decline**. Declining is a protocol-legal reply and
 carries information — this expert judged itself ineligible. Silence past expiration is a
-**timeout**, a third state distinct from both. Award follows by mutual selection
+**timeout**, a third state distinct from both.
+
+Making decline legal is a mitigation with a named instrument behind it. **Instruction
+Decay Rate** measures whether an agent keeps obeying a hard behavioral constraint after
+peer messages implicitly or explicitly normalize violating it — conformity toward a
+dispatcher or a peer — and reaches 10.1% on the weakest model measured. An expert with no
+protocol-legal way to say *this is not mine* is an expert under exactly the pressure IDR
+scores. Whether a legal decline actually lowers it is testable rather than assumed. Award follows by mutual selection
 (`scope:literature:claim:6cf315a4dc9ee645`), and no member is designated manager or
 contractor a priori: any node takes either role, which is what lets `main` and an expert
 dispatch through one mechanism (`scope:literature:claim:e6ae389d5dbb70cf`).
@@ -126,7 +164,33 @@ tau2-Bench, for both weaker and stronger action agents
 The **update** message survives for the case it was actually needed: an operator-initiated
 change to the task landing mid-flight. It expects no reply and does not interrupt.
 
-### 3. Peer review — per deliverable, verdict-structured
+### 3. Peer review — per deliverable, adaptive, verdict-structured
+
+**Review rounds are capped and break early; they do not run to convergence.** Three
+independent measurements agree on the shape and disagree only on the ceiling: Self-Refine
+caps feedback-refine iterations at **4** per task, continuing until a task-specific quality
+criterion is met or the cap is reached (`scope:literature:claim:83138f9449e95a1f`), with
+gains concentrated in round one (Code Optimization 22.0 → 27.0 → 27.9 → 28.8); debate
+performance rises monotonically with rounds at three agents but **flattens above four**
+(`scope:literature:claim:0e96be689f7cd38d`); and in translation most examples reach their
+optimal answer after a *single* round, where forcing the debate onward **harms** the
+result. Returns can also go negative inside the cap — in multi-aspect tasks an iteration
+improves one quality dimension while degrading another.
+
+So the ceremony is an adaptive loop with a hard cap of 4, an early break, and a
+**keep-best-scored-output** rule rather than keep-last. A fixed per-deliverable round count
+is the shape the evidence argues against.
+
+That has a measurement consequence worth stating: the round count becomes endogenous, so
+it is a *mediator* to record and not part of the treatment. The assignable contrast stays
+review-versus-equal-cost-non-peer-pass.
+
+**Rooms stay small.** Increasing debaters from 2 to 3 or 4 *degrades* performance, because
+longer debate text causes participants to forget prior views and makes summarization harder
+(`scope:literature:claim:4faaac2ea7553b4b`; COMET 84.4 → 83.1 → 82.9). Measured on
+translation with same-backbone debaters, so the transfer to a heterogeneous-scope room is
+an argument rather than a result — but it is the only direction the evidence points, and it
+argues against wide rooms.
 
 Cross-scope critique is the room's value proposition and the configuration the project
 has already argued is safe: cross-role review between different scopes, pins and goals
@@ -139,8 +203,25 @@ differ in retrieved context, not in weights, priors, or decoding. If diversity c
 in same-model debate is driven by shared priors, scope pinning buys *different evidence
 over identical priors*, not diversity. Retrieval state is a real lever — memory-induced
 risk is detectable from the retrieval state before generation occurs
-(`scope:literature:claim:2ccb4a49b8c47659`) — but *"differently-pinned agents avoid
-diversity collapse"* is an untested hypothesis in this architecture, not a finding. The
+(`scope:literature:claim:2ccb4a49b8c47659`).
+
+The debate literature was procured to settle this and **does not support it.** One weak
+datapoint in favour: initializing each debating agent with a *different persona* rather
+than identical prompts improved MMLU accuracy 71.1 → 74.2 (Du et al., arXiv 2305.14325) —
++3.1 points on one benchmark, from persona diversity inside one model. Against it: MAD
+raises diversity substantially over self-reflection (Self-BLEU 19.3 → 49.7, human-judged
+bias 29.0 → 24.8) while using **the same backbone in different debate roles**, and the
+paper recommends that configuration explicitly; and adding debaters degrades results
+(above). CAMEL measures role-play win rates (76.3% vs 10.4% preference) and does not
+measure diversity at all, so it cannot support the premise either.
+
+One nearby finding is *not* applicable and is recorded so it does not get misread: with
+**different backbone LLMs**, a judge disproportionately favours the debater whose backbone
+matches its own. Thalamus members share a backbone and differ in retrieval, so that
+particular bias is out of scope here.
+
+Net: one weak supporting number, two pointing the other way. *"Differently-pinned agents
+avoid diversity collapse"* remains an untested hypothesis in this architecture, and the
 test is cheap: run one critique loop with all roommates on a single scope versus their
 own, and measure whether minority constraints survive.
 
@@ -163,9 +244,15 @@ prediction, and a forecaster cannot Goodhart a resolution it does not control. I
 yields a calibration curve, which is a real result at any corpus size, unlike a treatment
 effect.
 
-**The retrospective is split.** Its reconstruction half is cut: it exists to defeat human
-memory decay, and the transcript already holds the episode losslessly. Its generalization
-half is kept as **proposals, never as writes** — see below.
+**The retrospective is split.** What is cut is the *narrative* — a prose reconstruction
+written for a reader who cannot re-read the episode, which is a human constraint. What is
+**kept** is the structured trajectory record underneath it: the two affirmative
+cross-episode learning methods both consume exactly that, one by comparing a failed
+trajectory against a successful trajectory for the same task to pinpoint mistakes, the
+other by identifying common patterns across successful trajectories from different tasks
+(`scope:literature:claim:bcc46db731c6cbc2`). Cutting reconstruction wholesale would remove
+the input the mechanism runs on. The generalization half is kept as **proposals, never as
+writes** — see below.
 
 ## The fan-in is where rooms fail
 
@@ -193,6 +280,22 @@ Two mitigations, both mandatory at every fan-in:
 2. **Persist dissent as a durable artifact.** The failure mode is *discard*, so the fix
    is a record the discard cannot erase. Every fan-in writes which constraints were
    carried by a minority and what became of them.
+3. **Route hard constraints past the aggregator, not through it.** Converging DAG
+   produces the *lowest* mean tracer durability of the evaluated topologies for three of
+   four models, while direct-routing topologies preserve tracers almost completely. So
+   aggregation is what you do with *opinions*; a constraint that must survive travels
+   direct to the party that has to honour it, and appears at the fan-in as a checked
+   precondition rather than as one input among four.
+
+Two consequences follow, and they bound the first mitigation rather than reversing it.
+**Minimize the number of fan-ins** — verdict aggregation is the right thing to do at a
+converging node, and a converging node is still the worst-measured topology, so a ceremony
+that adds one must be paying for it. And **consensus events are themselves the vector for
+false-belief spread**: Consensus Pollution Rate — the fraction of downstream responses
+endorsing or implicitly relying on a single falsehood seeded in one agent's context —
+reaches 40.3% on the weakest model measured. Maximizing consensus events maximizes
+exposure, which is a second reason the answer is *fewer, better-structured* fan-ins rather
+than more.
 
 ## The retrospective is a promotion event
 
@@ -232,9 +335,19 @@ provenance; retrospective-authored claims are scope-tagged distinctly and **deca
 so the question *"which future rooms did this reach, and did it help?"* stays answerable.
 Building the amplifier without the meter is the failure to avoid.
 
-## Memory: reads stay live and timestamped
+**The gate is graded, not binary.** The working prior art is ExpeL's insight store, which
+promotes and demotes through four operators — ADD, EDIT, UPVOTE, DOWNVOTE — where each
+insight carries an importance count starting at two, moves with UPVOTE/EDIT/DOWNVOTE, and
+is **removed when it reaches zero**. That is a promotion gate with a demotion path and a
+built-in death, which is strictly better here than an accept/reject decision made once at
+write time: the hazard being defended against compounds with accumulated exposure, so the
+defence has to keep acting after the write. Agent Workflow Memory pairs the same shape with
+an evaluator gating induction on judged success.
 
-**The room does not read a frozen snapshot.** Freezing costs three things:
+## Memory: isolation is per operation, not per room
+
+**The room does not read a frozen snapshot.** Freezing *everything the room reads* costs
+three things:
 
 1. A room on a read-only snapshot cannot recall **its own** earlier work — on day two, a
    member reading a day-one snapshot cannot see its own day-one distillation. The pinned
@@ -252,16 +365,44 @@ room read live. Run-level replay is already covered by the trace tap
 (`~/.thalamus/traces/*.jsonl`), which records verbatim what each recall actually
 returned, whether or not the store moved.
 
-The general form, and the direction to grow in: a frozen per-room copy is the degenerate
-special case of transaction-time-as-of reads. Isolation is a property of the *operation*,
-not a global setting — the Berenson–Adya hierarchy has been lifted onto the agent write
-path, where replay inconsistency reads as a fuzzy read forbidden by snapshot isolation
-(`scope:literature:claim:50aceaa7c47f413e`), with bitemporal event/ingestion time as the
-established substrate (`scope:literature:claim:b738e9bce09f762f`,
-`scope:literature:claim:c1d0cce6d2ffea1e`). The alternative of reading live and detecting
-contradictions by similarity is measured to fail: surprise-gate supersession is worse than
-naive RAG in the abstention regime, leaking stale facts 25–60% of the time
-(`scope:literature:claim:6d92063c4fbf3b77`).
+### The adjudicating read is the exception
+
+"Live everywhere" would be the wrong conclusion, and a room that resolves disagreements is
+exactly where it breaks. Isolation is a property of the **operation**, not a global
+setting: the Berenson–Adya hierarchy has been lifted onto the agent write path, where each
+contradiction-resolution operator carries an isolation *precondition* — last-writer-wins at
+read-committed, **evidence-weighted merge at snapshot isolation**, await-confirmation at
+read-committed-with-callback, per-rule at serializable — and replay inconsistency reads as
+a fuzzy read forbidden by snapshot isolation (`scope:literature:claim:50aceaa7c47f413e`).
+Unversioned live reads are read-committed at best, the level that admits replay
+inconsistency: *re-adjudicating the same contradiction returns a different winner.*
+
+A verdict-based fan-in **is** an evidence-weighted merge. So:
+
+> **Ordinary recall reads live. An adjudicating read — any fan-in resolving competing
+> member verdicts — reads as-of a pinned transaction time and logs the adjudicating judge
+> by key.** Keyed logging of the judge is what makes the verdict replayable at all; a
+> verdict-based room with a live-read judge and no keyed verdict log admits replay
+> inconsistency by construction.
+
+This costs nothing the room needs. The three costs above are costs of freezing *ordinary
+recall* — a member's own history, the fresh cross-scope material, the mid-room
+cross-pollination. None of them apply to a single adjudication step reading a pinned point
+for the duration of one resolution.
+
+The alternative of reading live and resolving contradictions by similarity is measured to
+fail outright: surprise-gate supersession is worse than naive RAG in the abstention regime,
+leaking stale facts 25–60% of the time (`scope:literature:claim:6d92063c4fbf3b77`).
+
+### Two time axes, not one
+
+"Timestamped" understates what is required. The substrate is **bitemporal** — event time
+separated from ingestion/transaction time (`scope:literature:claim:b738e9bce09f762f`,
+`scope:literature:claim:c1d0cce6d2ffea1e`) — and collapsing them is measured to cost real
+accuracy: separating dialogue time from occurrence time recovers **12.2 accuracy points**
+on LongMemEval and LoCoMo, an axis production memories routinely collapse. A room-open
+snapshot name pins the transaction axis; it does not supply the event axis, and the two are
+not substitutes.
 
 ## Correlated writes, and the occasion as event identifier
 
@@ -417,6 +558,13 @@ room reports is that instrument with its floor removed. Instead:
   125 sessions) and would read as "nothing durable happened" regardless of truth.
 - **Harm** — inflated-witness count: claims converging across ≥2 member scopes whose
   provenance is one room. No judge required; `witnesses.py` already computes the reading.
+  Two named instruments sit alongside it and both are seeded rather than judged, so both
+  are runnable here: **Instruction Decay Rate** (does a member abandon a hard constraint
+  after peers normalize violating it — conformity toward a dispatcher) and **Consensus
+  Pollution Rate** (seed one falsehood in one member's context, measure the fraction of
+  downstream responses endorsing or implicitly relying on it — conformity toward a
+  majority). Worst values observed on the weakest model evaluated: IDR 10.1%, CPR 40.3%.
+  CPR is the direct measurement of the harm the fan-in design is built against.
 - **Denominator** — cost per ceremony, via `eval/cost.py` keyed on the occasion id.
 
 **No collaboration-volume quantity is an outcome.** More ceremonies means more sends, so a
@@ -452,17 +600,26 @@ atomic-unit and communication compression are GoAgent; the failure taxonomy and
 prevalences are MAST; verdict-based aggregation against the Consistent Minority Effect is
 SMSR (arXiv 2606.12703); the write-path-over-input-boundary gate is arXiv 2606.04329, the
 experience-store amplification is MemoryGraft (arXiv 2512.16962), and temporal memory
-contamination is arXiv 2605.17830. Isolation levels over an agent write path are TOKI
-(arXiv 2606.06240); bitemporal graph memory is Graffiti-style event/ingestion time.
-Event-sourced orchestration with replay verification is ESAA. The statistical position —
-few treated clusters, randomization inference, anytime-valid monitoring — is carried in
+contamination is arXiv 2605.17830. Isolation-level preconditions on contradiction-resolution
+operators are TOKI (arXiv 2606.06240); bitemporal graph memory is Graphiti-style
+event/ingestion time. Event-sourced orchestration with replay verification is ESAA.
+Phase and role ablations are ChatDev (arXiv 2307.07924) and MetaGPT (arXiv 2308.00352);
+refinement-round caps are Self-Refine (arXiv 2303.17651) and Du et al. (arXiv 2305.14325);
+debate diversity, debater-count degradation and degeneration-of-thought are Liang et al.
+(arXiv 2305.19118); role-play without a diversity measurement is CAMEL (arXiv 2303.17760);
+the graded insight gate is ExpeL (arXiv 2308.10144) with Agent Workflow Memory
+(arXiv 2409.07429) as the induction-gated variant. The statistical position — few treated
+clusters, randomization inference, anytime-valid monitoring — is carried in
 `eval-methodology` and applied in [04](04-eval-loop.md).
 
-Provisionally not found in the 2026 scan (see [11](11-related-work.md) §4): a measurement
-of whether identical-prompt fan-out to heterogeneous specialists yields independent or
-correlated contributions; a named pathology for a self-fork participating in a group it
-dispatched to; and any measurement of read-snapshot isolation helping or hurting agent
-*collaboration*.
+Provisionally not found in the 2026 scan (see [11](11-related-work.md) §4), each checked
+against a procurement pass rather than a single recall: a measurement of whether
+identical-prompt fan-out to *differently-specialized* agents yields independent or
+correlated contributions — the debate literature measures diversity for one backbone in
+different debate roles, which is a different construct; a comparison of staged workflows
+against free-form chat, since the staged systems benchmark only against each other; a named
+pathology for a self-fork participating in a group it dispatched to; and any measurement of
+read-snapshot isolation helping or hurting agent *collaboration*.
 
 ## Open questions
 
@@ -470,6 +627,12 @@ dispatched to; and any measurement of read-snapshot isolation helping or hurting
   `witnesses.py`, where room co-membership does not — a [09](09-schema-and-federation.md)
   amendment, not decided here.
 - Whether scope pinning buys diversity or only different evidence over identical priors.
+  Procured against and **not supported**: one weak datapoint for (persona diversity, +3.1
+  MMLU), two against (same-backbone debate already achieves the diversity gain; more
+  debaters degrades results). The single-scope-versus-own-scope critique loop is the test.
+- Whether adding a ceremony is worth the converging node it installs, given that phases are
+  measured to trade off rather than accumulate and that staged-versus-free-form has never
+  been measured at all.
 - Whether `eval/rooms.py`'s node identity should become a member id rather than a scope,
   which any design placing two same-scope members in one room requires.
 - SendMessage delivery between two live room members is **unmeasured** — the room-boundary
