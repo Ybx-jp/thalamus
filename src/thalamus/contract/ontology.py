@@ -84,6 +84,14 @@ CORE_NODES: tuple[NodeType, ...] = (
     # through claims and global artifacts, never through shared entities: a shared
     # entity vocabulary would be a channel, and channels route through consultation.
     NodeType("Entity", "entity", "name", kinds=("concept", "technique", "system")),
+    # A verbatim slice of a retained Source, co-indexed into retrieval beside claims
+    # (lab/052). Tier 2 by construction — it is third-party source text, not a belief —
+    # so it informs and never instructs (docs/05), and its DERIVED_FROM edge is what
+    # makes reaching it provenance-mediated rather than provenance-free.
+    # Literature scope only: the 2026-07-14 decision against chunk nodes stands for the
+    # 98% of the archive that is session transcripts, where the node count is the
+    # ~100x it predicted.
+    NodeType("Chunk", "chunk", "text", expandable=False),
     # The one global. Not scoped, deliberately. See module docstring.
     NodeType("Artifact", "artifact", "identifier", scoped=False),
     # A retrieval event: one memory-tool call, recorded verbatim by the PostToolUse tap
@@ -161,7 +169,20 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     # Claim -> Entity: what an assertion is about. The knowledge subgraph's connective
     # tissue — entities are reached through the claims that mention them, so an entity
     # nobody asserts anything about is an orphan the contract rejects.
-    EdgeType("ABOUT", note="Claim -> Entity"),
+    EdgeType("ABOUT", note="Claim/Chunk -> Entity"),
+    EdgeType(
+        "ANCHORS",
+        note="Claim -> Chunk. The claim's verbatim `citation` was found inside that "
+        "chunk, so a note reaches the passage it came from. Carries `start`/`end`: "
+        "the citation's character offsets within the Source text, which is the "
+        "locator the 2026-07-14 decision promised and never built.",
+    ),
+    EdgeType(
+        "ADJACENT_IN_TEXT",
+        note="Chunk -> Chunk, document order, next-only. Lets a retrieved chunk expand "
+        "to its neighbours — a secondary affordance, not the mechanism: expansion over "
+        "verbatim chunks measured a no-op (lab/052).",
+    ),
     EdgeType(
         "RETURNS",
         may_cross_scope=True,

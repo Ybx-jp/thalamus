@@ -1338,6 +1338,12 @@ def _cmd_ingest(args):
     print(f"Extracted: {len(batch.claims)} claims, {len(batch.entities)} entities "
           f"({priced})")
     print(f"  {batch.source.title}")
+    if batch.chunks:
+        anchored = len(batch.anchors)
+        print(
+            f"Co-indexed: {len(batch.chunks)} verbatim chunks, "
+            f"{anchored}/{len(batch.claims)} claims anchored to the passage they quote"
+        )
     for claim in batch.claims:
         print(f"  - [{claim.kind.split('/')[-1]}] {claim.description[:90]}")
 

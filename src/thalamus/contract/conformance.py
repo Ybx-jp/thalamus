@@ -157,6 +157,27 @@ def check_knowledge(batch) -> list[str]:
     for name in sorted(referenced - declared_entities):
         issues.append(f"Claim references undeclared entity: '{name}'")
 
+    # Chunks are verbatim by definition, so the only thing to enforce is that they are
+    # *reachable and located* — an anchor pointing at no chunk would strand the claim
+    # it was meant to ground, which is the one failure that makes the edge worse than
+    # its absence (lab/052).
+    ordinals = {chunk.ordinal for chunk in batch.chunks}
+    if len(ordinals) != len(batch.chunks):
+        issues.append("Chunk ordinals are not unique — chunk identity is (source, ordinal)")
+    for chunk in batch.chunks:
+        if not chunk.text.strip():
+            issues.append(f"Empty chunk at ordinal {chunk.ordinal} — a chunk is its text")
+        if chunk.end <= chunk.start:
+            issues.append(f"Chunk {chunk.ordinal} has a non-positive span ({chunk.start}:{chunk.end})")
+    for claim_index, ordinal in sorted(batch.anchors.items()):
+        if ordinal not in ordinals:
+            issues.append(
+                f"Claim {claim_index} anchors to chunk ordinal {ordinal}, which is not "
+                "in this batch — a dangling anchor is worse than no anchor"
+            )
+        if claim_index >= len(batch.claims):
+            issues.append(f"Anchor references claim index {claim_index}, out of range")
+
     for claim in batch.claims:
         if "/" not in claim.kind:
             issues.append(

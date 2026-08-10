@@ -79,5 +79,5 @@ def test_label_properties_cover_every_core_node_type():
     # Verifies: the registry is complete, so view_query needs no literal of its own
     assert set(LABEL_PROPERTIES) == {
         "Session", "Thread", "Claim", "Source", "Artifact", "Trace", "Entity",
-        "Exchange",
+        "Exchange", "Chunk",
     }

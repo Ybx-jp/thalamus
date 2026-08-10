@@ -427,6 +427,36 @@ class SessionGraph(BaseModel):
     }
 
 
+class Chunk(BaseModel):
+    """A verbatim slice of a retained Source, co-indexed into retrieval (lab/052).
+
+    Tier 2 always: this is third-party source text, never a belief the agent formed, so
+    it informs and never instructs (docs/05). It carries no judgement and no
+    interpretation — the whole point is that nothing was decided about it at write time,
+    which is what an extracted claim cannot say. Where a claim is what the extractor
+    chose to record, a chunk is what the document said.
+
+    Identity is content-addressed on (source hash, ordinal): re-ingesting an unchanged
+    document converges onto the same vertices, and a changed one mints a new Source and
+    therefore a new chunk set, so versions never blend.
+    """
+
+    text: str = Field(description="The verbatim slice, exactly as the source had it")
+    ordinal: int = Field(description="0-based position in document order")
+    start: int = Field(description="Character offset of the slice within the Source text")
+    end: int = Field(description="Character offset of the slice's end")
+    about: list[str] = Field(
+        default_factory=list,
+        description="Entity names this chunk mentions. Chunk-to-chunk 'mentions' is a "
+        "2-hop walk through these shared entities rather than a direct edge — entities "
+        "are already deduped, so co-reachability costs no quadratic edge set.",
+    )
+    provenance: Optional[Provenance] = None
+
+    def local_id(self, source_hash: str) -> str:
+        return f"{source_hash}-{self.ordinal:04d}"
+
+
 class KnowledgeBatch(BaseModel):
     """One ingestion event: what a feed writes into an expert's knowledge subgraph.
 
@@ -441,6 +471,17 @@ class KnowledgeBatch(BaseModel):
     source: Source
     claims: list[LiteratureClaim] = Field(default_factory=list)
     entities: list[Entity] = Field(default_factory=list)
+    chunks: list[Chunk] = Field(
+        default_factory=list,
+        description="Verbatim slices of the Source, co-indexed beside the claims "
+        "(lab/052). Empty is legal and is what every pre-chunking batch has.",
+    )
+    anchors: dict[int, int] = Field(
+        default_factory=dict,
+        description="claim index -> chunk ordinal, where the claim's verbatim citation "
+        "was located in that chunk. Sparse by design: a citation the model paraphrased "
+        "gets no anchor rather than a guessed one.",
+    )
 
     def default_provenance(self) -> Provenance:
         """Tier 2 by construction: curated third-party content, sourced to its origin.

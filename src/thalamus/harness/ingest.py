@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 from thalamus.archive import archive_bytes
 from thalamus.harness import extraction
 from thalamus.substrate.schema import (
+    Chunk,
     Entity,
     KnowledgeBatch,
     LiteratureClaim,
@@ -48,6 +49,19 @@ _DIGEST_BUDGET = 24_000  # chars of article text handed to the extraction model 
 # work in the literature scope measures overlap or boundary policy.
 _CHUNK_SIZE = 9_600
 _CHUNK_OVERLAP = 400
+
+# Retrieval chunk geometry, and deliberately NOT the extraction geometry above. Those
+# 9,600 chars are sized to bound claim volume and model cost per pass; these are sized
+# to be injected into a recall result, where the binding constraints are the injection
+# budget (lab/006: 33.8% of injected retrieval tokens go unused) and precision. Reusing
+# the extraction size here would put a 9,600-char passage in a result window. Nearest
+# measurement: enlarging a verbatim window from 512 to 768 chars lifted accuracy
+# 43.1%->47.2%, with 512 called conservative for the verbatim side
+# (`scope:literature:claim:00aeb8542b0e3f30` neighbourhood, lab/052) — so bigger than
+# 512 is supported and 1,500 is past where anyone measured. Ungrounded, and the graph
+# is rebuildable from retained bytes, so this is a dial rather than a commitment.
+_RETRIEVAL_CHUNK_SIZE = 1_500
+_RETRIEVAL_CHUNK_OVERLAP = 150
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _DROP_BLOCKS_RE = re.compile(
@@ -270,6 +284,7 @@ def build_batch(
     byte_size: int,
     title_override: str = "",
     known_entities: list[dict] | None = None,
+    chunks: list[Chunk] | None = None,
 ) -> KnowledgeBatch:
     """Assemble the contract-facing batch from a parsed extraction.
 
@@ -344,7 +359,66 @@ def build_batch(
         ),
         claims=claims,
         entities=entities,
+        chunks=chunks or [],
     )
+
+
+def build_chunks(text: str, claims: list, entity_names: list[str]) -> list[Chunk]:
+    """Slice the source text into co-indexable chunks and anchor claims into them.
+
+    Fixed width, reusing the extraction chunker so a chunk boundary is a boundary
+    either way. Semantic segmentation is declined: an extra full-corpus LLM pass has a
+    measured record of not paying, and finer units at constant fidelity cost accuracy
+    (lab/052). Extraction is disposable, so a better segmenter is a re-run away.
+
+    `about` is filled by scanning for entity names the extraction already declared,
+    rather than by asking a model — the entity vocabulary is the batch's own, no
+    judgement is needed to spot a literal occurrence, and chunk-to-chunk 'mentions'
+    then falls out as a 2-hop walk instead of a quadratic edge set.
+    """
+    chunks: list[Chunk] = []
+    cursor = 0
+    for ordinal, body in enumerate(
+        chunk_text(text, size=_RETRIEVAL_CHUNK_SIZE, overlap=_RETRIEVAL_CHUNK_OVERLAP)
+    ):
+        start = text.find(body[:80], cursor) if body else -1
+        if start < 0:
+            start = cursor
+        end = start + len(body)
+        cursor = max(start + 1, end - _RETRIEVAL_CHUNK_OVERLAP)
+        lowered = body.lower()
+        chunks.append(
+            Chunk(
+                text=body,
+                ordinal=ordinal,
+                start=start,
+                end=end,
+                about=[name for name in entity_names if name.lower() in lowered],
+            )
+        )
+    return chunks
+
+
+def anchor_citations(chunks: list[Chunk], claims: list) -> dict[int, int]:
+    """Map claim index -> chunk ordinal, by locating each claim's verbatim citation.
+
+    A citation is a quote lifted from the document, so it is findable by string search;
+    when it is not (the model paraphrased, or the quote straddles a chunk boundary) the
+    claim simply gets no anchor. An anchor that had to be guessed would be worse than
+    none — the edge's whole value is that it points at the passage the note actually
+    came from.
+    """
+    anchors: dict[int, int] = {}
+    for index, claim in enumerate(claims):
+        citation = (getattr(claim, "citation", "") or "").strip()
+        if len(citation) < 24:
+            continue
+        needle = citation[:60].lower()
+        for chunk in chunks:
+            if needle in chunk.text.lower():
+                anchors[index] = chunk.ordinal
+                break
+    return anchors
 
 
 def _combine_runs(runs: list[extraction.ExtractionRun]) -> extraction.ExtractionRun:
@@ -479,6 +553,19 @@ def ingest(
         byte_size=entry.byte_size,
         title_override=title,
         known_entities=known_entities,
+    )
+
+    # Chunks are built against the assembled batch, not the raw extraction, so anchor
+    # indices cannot drift: build_batch drops malformed items, and an anchor computed
+    # before that filtering would point at the wrong claim. Only `ingest` reaches here
+    # — session transcripts distil through `extract` — so the literature-only scoping
+    # of lab/052 is structural rather than a flag anyone has to remember.
+    source_chunks = build_chunks(text, batch.claims, [e.name for e in batch.entities])
+    batch = batch.model_copy(
+        update={
+            "chunks": source_chunks,
+            "anchors": anchor_citations(source_chunks, batch.claims),
+        }
     )
     return batch, run, DigestReport(
         text_chars=len(text), chunks=len(chunks), failed_chunks=chunk_failures

@@ -451,7 +451,38 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         _iterate(graph_traversal, "upsert Entity", entity_vid)
         entity_vids[entity.name] = entity_vid
 
-    for claim in batch.claims:
+    # Chunks before claims, so the anchor edge has something to point at (lab/052).
+    chunk_vids: dict[int, str] = {}
+    previous_vid = ""
+    for chunk in batch.chunks:
+        chunk_vid = vid("Chunk", chunk.local_id(source.content_hash), batch.scope)
+        chunk_properties = {
+            "text": chunk.text,
+            "ordinal": chunk.ordinal,
+            "start": chunk.start,
+            "end": chunk.end,
+            "scope": batch.scope,
+            **_provenance_properties(chunk.provenance or provenance),
+        }
+        graph_traversal = (
+            g.merge_v({T.id: chunk_vid, T.label: "Chunk"})
+            .option(Merge.on_create, {T.id: chunk_vid, **chunk_properties})
+            .option(Merge.on_match, chunk_properties)
+        )
+        _iterate(graph_traversal, "upsert Chunk", chunk_vid)
+        chunk_vids[chunk.ordinal] = chunk_vid
+
+        # Same floor the claims get, and the reason reaching a chunk is
+        # provenance-mediated rather than provenance-free (docs/05).
+        _ensure_edge(g, chunk_vid, source_vid, "DERIVED_FROM")
+        if previous_vid:
+            _ensure_edge(g, previous_vid, chunk_vid, "ADJACENT_IN_TEXT")
+        previous_vid = chunk_vid
+        for name in chunk.about:
+            if name in entity_vids:
+                _ensure_edge(g, chunk_vid, entity_vids[name], "ABOUT")
+
+    for index, claim in enumerate(batch.claims):
         claim_vid = vid("Claim", claim.content_id(), batch.scope)
         claim_properties = {
             "kind": claim.kind,
@@ -475,12 +506,20 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
             if name in entity_vids:
                 _ensure_edge(g, claim_vid, entity_vids[name], "ABOUT")
 
+        # The anchor: this claim's verbatim citation was located inside that chunk, so
+        # the note reaches the passage it came from. Absent when the citation could not
+        # be found verbatim — an anchor that had to be guessed is worse than none.
+        anchor = batch.anchors.get(index)
+        if anchor is not None and anchor in chunk_vids:
+            _ensure_edge(g, claim_vid, chunk_vids[anchor], "ANCHORS")
+
     logger.info(
-        "Wrote knowledge batch: %s (scope=%s, %d claims, %d entities)",
+        "Wrote knowledge batch: %s (scope=%s, %d claims, %d entities, %d chunks)",
         source.origin or source.title,
         batch.scope,
         len(batch.claims),
         len(batch.entities),
+        len(batch.chunks),
     )
     return source_vid
 

@@ -451,3 +451,63 @@ def test_prompt_demands_quoted_entity_names():
     assert 'about:\n      - "Entity Name"' in prompt, "flow-sequence example splits on commas"
     assert 'name: "Entity Name"' in prompt
     assert "double-quote entity names" in prompt
+
+
+def test_chunks_carry_their_location_and_anchor_only_on_a_real_quote():
+    """
+    Scenario: A document is chunked for co-indexing and its claims anchored
+
+    The anchor edge's whole value is that it points at the passage the note actually
+    came from, so a citation the model paraphrased must get NO anchor rather than a
+    guessed one (lab/052). Chunk `about` is filled by literal occurrence of names the
+    batch already declared, which is why chunk-to-chunk "mentions" is a 2-hop walk
+    through shared entities instead of a quadratic edge set.
+    """
+    from thalamus.harness.ingest import anchor_citations, build_chunks
+    from thalamus.substrate.schema import LiteratureClaim
+
+    text = ("alpha " * 2000) + "the measured gap was 15.9 points " + ("omega " * 2000)
+    claims = [
+        LiteratureClaim(description="A real quote", citation="the measured gap was 15.9 points"),
+        LiteratureClaim(description="Paraphrased", citation="the authors found a sizeable gap"),
+        LiteratureClaim(description="No citation at all", citation=None),
+    ]
+
+    chunks = build_chunks(text, claims, ["Omega"])
+    assert len(chunks) > 1
+    assert all(c.end > c.start for c in chunks)
+    assert [c.ordinal for c in chunks] == list(range(len(chunks)))
+    # Located: the slice really lives where the chunk says it does.
+    for chunk in chunks:
+        assert text[chunk.start:chunk.start + 40].strip().startswith(chunk.text[:30].strip()[:20])
+    # `about` is literal-occurrence over declared names only.
+    assert any("Omega" in c.about for c in chunks)
+
+    anchors = anchor_citations(chunks, claims)
+    assert 0 in anchors                      # the verbatim quote anchors
+    assert 1 not in anchors and 2 not in anchors  # paraphrase and absence do not
+    assert anchors[0] in {c.ordinal for c in chunks}
+
+
+def test_contract_rejects_a_dangling_anchor():
+    """
+    Scenario: A batch anchors a claim to a chunk ordinal it does not contain
+
+    A dangling anchor strands the claim it was meant to ground, which is the one
+    failure that makes the edge worse than its absence.
+    """
+    from thalamus.contract.conformance import check_knowledge
+    from thalamus.substrate.schema import Chunk
+
+    batch = _arxiv_batch()
+    good = batch.model_copy(update={
+        "chunks": [Chunk(text="a passage", ordinal=0, start=0, end=9)],
+        "anchors": {0: 0},
+    })
+    assert not [i for i in check_knowledge(good) if "anchor" in i]
+
+    dangling = good.model_copy(update={"anchors": {0: 7}})
+    assert any("dangling anchor" in issue for issue in check_knowledge(dangling))
+
+    empty = good.model_copy(update={"chunks": [Chunk(text="   ", ordinal=0, start=0, end=3)]})
+    assert any("a chunk is its text" in issue for issue in check_knowledge(empty))
