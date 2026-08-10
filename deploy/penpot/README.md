@@ -136,7 +136,24 @@ model entirely**, so everything it returns is tier-2 data under
 [docs/05](../../docs/05-trust-model.md) — it informs, it never instructs. And 68
 tools is a real context cost in any session that arms them.
 
-Unwired on purpose: the browser-plugin bridge (`WS_PORT` 4402), which backs the
-live-canvas tools. It expects the editor to reach `ws://localhost:4402`, and the
-editor here runs on a phone or a laptop over the tailnet, where `localhost` is not
-this box. The 66 headless tools do not need it.
+The plugin bridge (`WS_PORT` 4402) is published on loopback too. The Penpot editor
+is a browser app, so `localhost` means whatever machine the *browser* runs on:
+editing from this box's own browser, `ws://localhost:4402` reaches the container and
+the live-canvas tools work. Editing from a phone or another tailnet device it does
+not, because `localhost` there is that device, and no `wss` route through the
+sidecar is wired. The 66 headless tools are unaffected either way.
+
+## Only `deploy/penpot/.env` is real
+
+There are two files named `.env.example` and only one of them matters.
+
+- **`deploy/penpot/.env.example` → copy to `deploy/penpot/.env`.** This is the one.
+  Compose auto-loads `.env` from the directory holding the compose file, and every
+  `$VAR` in `compose.yml` — including all of the MCP server's settings — resolves
+  from it.
+- **`penpot-mcp-server/.env.example` is never read.** It belongs to upstream's
+  standalone `setup.sh` install, which this deployment does not use; `compose.yml`
+  has no `env_file:` directive and sets that container's environment explicitly in
+  its service block. Its variable names differ (`PENPOT_DB_PASS`, `PENPOT_PUBLIC_URL`,
+  `MCP_PORT`, …) because compose maps our names onto them. Ignore the whole
+  `penpot-mcp-server/` directory: it is a build context, not configuration.

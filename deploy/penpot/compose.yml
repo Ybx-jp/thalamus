@@ -172,6 +172,12 @@ services:
         condition: service_started
     ports:
       - "127.0.0.1:8787:8787"
+      # The plugin bridge, for the live-canvas tools. The Penpot editor is a browser
+      # app, so `localhost` is wherever the browser runs: editing from THIS box's own
+      # browser, ws://localhost:4402 reaches this container. Editing from a phone or
+      # another tailnet device it does not, because localhost is that device — the
+      # headless tools are unaffected either way.
+      - "127.0.0.1:4402:4402"
     environment:
       PENPOT_BASE_URL: "http://penpot-frontend:8080"
       PENPOT_PUBLIC_URL: "$PENPOT_PUBLIC_URI"
@@ -185,6 +191,9 @@ services:
       PENPOT_DB_PASS: "$PENPOT_DATABASE_PASSWORD"
       MCP_HOST: "0.0.0.0"
       MCP_PORT: "8787"
+      WS_HOST: "0.0.0.0"
+      WS_PORT: "4402"
+      PLUGIN_WS_URL: "ws://localhost:4402"
 
   # Condition 2. Its own tailnet identity, so Penpot gets `/` on a hostname that
   # is not the one carrying the console PWA. TS_SERVE_CONFIG terminates TLS and
