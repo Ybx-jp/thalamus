@@ -48,6 +48,8 @@ CASE_MODULES = (
     "qe.cases.tmux_socket",
     "qe.cases.ranker_dials",
     "qe.cases.served_tier_rule",
+    "qe.cases.doc_mcp_snippet",
+    "qe.cases.secret_scan_heard",
 )
 
 

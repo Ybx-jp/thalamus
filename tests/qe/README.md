@@ -36,8 +36,21 @@ exception is MALFORMED, which says the check is broken, not the code. Declare th
 because an expectation could not have anticipated it.
 
 **Every case that asserts an absence needs a positive control.** "Nothing was archived"
-and "nothing ran" are the same output otherwise, and the second one passes forever. All
-four current cases carry one, and building the guard control took four attempts —
-three earlier versions demonstrated a fail-open using input the guard would never have
-blocked anyway. That history is in `cases/guard_failopen.py`'s docstring because the
-next person will reach for the same wrong controls.
+and "nothing ran" are the same output otherwise, and the second one passes forever.
+Every case carries one, and building the guard control took four attempts — three
+earlier versions demonstrated a fail-open using input the guard would never have blocked
+anyway. That history is in `cases/guard_failopen.py`'s docstring because the next person
+will reach for the same wrong controls.
+
+**A green case must be shown capable of going red.** A case that guards a defect already
+fixed proves nothing until its detector has been run against the defect as it shipped —
+mutate the code or feed the detector a poisoned fixture, and watch it fail. Where the
+mutation cannot live in the case, it belongs in the docstring so the next reader can
+repeat it; where it can, it runs as the control (`cases/doc_mcp_snippet.py`).
+
+## Where the cases come from
+
+`findings/qe-corpus-draft.md` mines 152 defects that actually shipped and marks which
+dev's suite already covers. Cases here are drawn from the escaped and partial rows —
+each case docstring names its corpus record, so a case and the defect it descends from
+can always be read together.

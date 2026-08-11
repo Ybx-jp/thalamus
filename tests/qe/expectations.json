@@ -66,6 +66,17 @@
       "failure_class": "doc-code-drift",
       "witness_contains": "_select_details(cap=_DETAIL_CAP)",
       "triaged_at_rev": "b88cf9d",
+      "case": "retained-bytes-secret-scan-is-heard",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "2 site(s)",
+      "triaged_at_rev": "caaaeb8",
+      "note": "Two halves of one property, and the pin is the count so closing either half drifts this entry rather than shrinking it quietly. Session-end extract computes scan_for_secrets and binds it to `_`; ingest archives fetched bytes without scanning at all. Not a claim that the scanner is wrong (it flags the canary) or that redaction is owed — docs/10 chose report-never-redact on purpose. The claim is that the report has no reader on either path that runs."
+    },
+    {
+      "case": "ranker-fingerprint-names-dials-in-force",
+      "failure_class": "doc-code-drift",
+      "witness_contains": "_select_details(cap=_DETAIL_CAP)",
+      "triaged_at_rev": "b88cf9d",
       "note": "The claim is narrow and it is the claim being pinned: a dial stamped into ranker_fingerprint as the configuration in force is captured where rebinding cannot reach it. Not a claim that the shipped value 8 is wrong. This shape has already produced a published wrong number once (lab/030 measured the cap as having zero effect because patching the constant did nothing while the run labelled itself with the patched value). Pinned on the capture site rather than the line number, which unrelated edits would move; a second dial acquiring a capture changes the witness and drifts this entry."
     }
   ]
