@@ -156,25 +156,20 @@ Roughly in order of likely demand, each gated on a measured need:
 
 - Extraction quality: how much structure per article is worth it at M1? Start with
   title/claims/refs and let retrieval-utility data argue for more.
-- Dedup across addresses (same paper, several Sources) — content-hash first, fancy
-  later. Content-hash alone does not reach it: different renderings of one paper are
-  different bytes. Measured on the live graph, **67 arXiv papers hold both an `/abs/`
-  and an `/html/` Source**, and one paper (2606.04329) holds four — abstract, full
-  text, and two hand-fed excerpts. The abstract side of those pairs is 436 Claims, of
-  which **5 converge** onto the full-text side; 62 of the 67 share nothing at all,
-  because convergence is content-addressed on the claim description and a claim
-  rewritten from fuller context is a different string.
+- A document reached at several addresses writes several Sources, and that is settled
+  (decision log, 2026-08-10): **72 arXiv ids hold more than one Source origin**, one
+  paper holds four — abstract, full text, and two section excerpts. Convergence between
+  an abstract-derived Source and its full-text twin is 5 claims of 436, because claims
+  are content-addressed on the description and a claim written from the whole paper is
+  a different string. No `SUPERSEDES` edge is written across the address change and none
+  should be; a section excerpt is a *proper part* of the work, and one edge cannot mean
+  both "richer rendering of" and "excerpt from".
 
-  What that costs is **not** established to be retrieval quality. Both tiers sitting in
-  one flat pool is the configuration RAPTOR chooses for its main results, selecting
-  across layers by the granularity a question needs
-  (`scope:literature:claim:b035e16d6aa3af7e`), and *Fidelity Before Structure* isolates
-  fidelity rather than granularity as the load-bearing variable in its own gap — pure
-  granularity is 3.7 of 16.3pp (`scope:literature:claim:af0c3da6c8456689`). What the
-  duplication actually destroyed is the **layer label**: nothing marks which claims came
-  from the abstract tier, so the question "do the abstract-side claims help or hurt"
-  cannot currently be asked of this corpus. Whether a richer re-fetch should supersede
-  its predecessor across a URL change is undecided, and the label is the prerequisite
-  for deciding it on evidence.
+  Both tiers sitting in one flat pool is the configuration RAPTOR chooses for its main
+  results (`scope:literature:claim:b035e16d6aa3af7e`), and measured on 1,047 real
+  queries the abstract tier takes 17.2% of knowledge slots while never outranking a
+  full-text claim. What remains is a tie-break: 15.4% of queries resolve a mixed-tier
+  tie by graph iteration order (lab/053). That is a **ranking** question, not an
+  ingestion one, and rank-time diversification is where it is open.
 - Whether ingestion runs as a skill inside sessions or a standalone CLI. Leaning
   CLI: ingestion shouldn't consume agent context.
