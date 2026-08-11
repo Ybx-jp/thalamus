@@ -31,3 +31,8 @@ allowlist:
   - transformer-circuits.pub
   - huggingface.co
   - github.com
+  # Pre-arXiv IR classics live on their authors' faculty pages and nowhere else the
+  # list already reaches. Host-scoped rather than whole-university, since the claim
+  # being approved is "this author's own copy", not "anything at this university".
+  - cs.princeton.edu
+  - cs.cmu.edu
