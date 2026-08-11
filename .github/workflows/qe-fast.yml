@@ -1,0 +1,46 @@
+# The adversarial suite's fast tier. Hermetic by construction: every FAST case runs
+# without docker, tmux, a graph, or a model, so this workflow needs no secrets and
+# spends nothing. Cases that need real substrate declare it and SKIP here rather than
+# failing — a suite that fails on a runner without tmux is reporting on the runner.
+#
+# Exit codes are load-bearing and are NOT collapsed (see tests/qe/run.py):
+#   0  passed, or failed exactly as triaged in tests/qe/expectations.json
+#   1  a NEW failure, or a known-red that drifted into a different defect
+#   2  a triaged defect now passes — delete its expectation
+#   3  a case, or an expectation, is broken
+#
+# `continue-on-error` is deliberately absent. The whole point of the expectations file
+# is that known defects exit 0 on their own, so anything red here is genuinely new.
+name: qe-fast
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  adversarial:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The suite stamps the revision into every ledger row and reads it via
+          # `git rev-parse`, which needs real history rather than a shallow clone.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install
+        run: uv sync
+
+      # jq is a declared substrate for the guard case and is present on ubuntu-latest,
+      # but asserting it keeps a silent skip from being mistaken for a pass.
+      - name: Confirm declared substrate
+        run: jq --version
+
+      - name: Run the fast tier
+        run: uv run python tests/qe/run.py --tier fast
+
+      - name: Ledger
+        if: always()
+        run: cat ~/.thalamus/qe/runs.jsonl || echo "no ledger written"

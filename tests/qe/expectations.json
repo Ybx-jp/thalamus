@@ -1,0 +1,44 @@
+{
+  "_comment": [
+    "Known-red entries: defects that are real, triaged, and not yet fixed.",
+    "Committed to the repo on purpose. `thalamus ceremony ack` keeps its store machine-local,",
+    "which would leave it empty in CI and make every known-red read there as a new regression.",
+    "",
+    "`witness_contains` is the positive pin, and it is what stops this file being a mute button:",
+    "an entry that only says 'this fails' absorbs any future failure at the same site, while one",
+    "that names part of the witness breaks the moment the defect changes shape.",
+    "",
+    "Delete an entry in the same change that fixes its defect. A stale entry makes the suite",
+    "exit 2, which is deliberate - a silently-fixed defect hides the next regression at that site."
+  ],
+  "expectations": [
+    {
+      "case": "ingress-floor-unliftable",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "joiner='-'",
+      "triaged_at_rev": "61213e4",
+      "note": "docs/05's unliftability claim is false; all four separators in _TOKEN_RE's class lift. Handed to main in NOTE-for-main-unliftability-defect.md. If a fix closes hyphen but not _ . /, this entry DRIFTS and the run goes red - which is the intent."
+    },
+    {
+      "case": "unarmed-hook-must-gate",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "check.advisory=True",
+      "triaged_at_rev": "61213e4",
+      "note": "verify_armed() detects correctly but is advisory, and install.py:1023 excludes advisory from the failure set. Not a claim that init is wrong - a claim that CI has no non-advisory path to consume the signal."
+    },
+    {
+      "case": "guards-fail-closed-on-unparseable-input",
+      "failure_class": "failed-open",
+      "witness_contains": "malformed-stdin rc=5",
+      "triaged_at_rev": "61213e4",
+      "note": "Shared jq prologue under set -e. Three distinct exit signatures (5 malformed / 0 empty / 127 no-jq); the pin is on 5 so that closing only one of the three drifts this entry rather than silencing it."
+    },
+    {
+      "case": "ingest-allowlist-gates-fetch",
+      "failure_class": "gate-ordering",
+      "witness_contains": "run_extraction was reached",
+      "triaged_at_rev": "61213e4",
+      "note": "Allowlist is consulted in check_batch() after fetch/archive/extract. Pinned on the model-exposure half rather than the archive half, since that is the one with a security consequence. Port is random, so it is not part of the pin."
+    }
+  ]
+}
