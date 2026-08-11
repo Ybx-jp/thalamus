@@ -195,6 +195,39 @@ Left as-is deliberately rather than resolved with an ad-hoc write path at 2am, a
 ticketed channel has now reframed it — from a dedup question to a labelling one, on a key
 that is not yet stable.
 
+## The duplicate generator was never the URL
+
+Auditing the four papers bought for that consultation turned up the finding the whole
+line had been looking past. MMR came in as 10 claims, and **four of them are two
+near-duplicate pairs** — from one document, one ingest, two extraction passes, no
+re-fetch anywhere near it:
+
+> MMR is asserted to be especially useful for extracting passages from multiple documents
+> on the same topic, since news stories in particular contain…
+>
+> MMR is extremely useful for extraction of passages from multiple documents about the
+> same topics, such as news stories that repeat background information…
+
+Measured across the scope at word-level Jaccard ≥ 0.6: **89 near-duplicate pairs sitting
+inside a single Source, across 25 of 199 sources — 13%.** The worst holds 7 pairs among
+16 claims.
+
+[06](../docs/06-ingestion.md) already records the mechanism as a deliberate choice —
+claims are *retained, never merged* across passes, and entities dedup on exact name only.
+That two passes over adjacent text would restate one point twice is the obvious
+consequence, and is an inference here rather than a traced one; what is measured is the
+89 pairs.
+
+This reverses the direction of the whole investigation. The `/abs/`↔`/html/` duplication
+is larger in volume (431 claims) but it was a **one-time artifact of one migration**. The
+extractor's is **structural and recurs on every multi-pass ingest**, which is every
+ingest of a real paper. A dedup keyed on document identity would not have touched it: both
+claims in every one of those 89 pairs already share a Source, an origin, and a content
+hash.
+
+The paper about eliminating redundancy was ingested redundantly, and it took reading its
+own claims to notice.
+
 ## Ends in
 
 **measurements + fixes.** The corpus co-indexing was built for now actually contains the
