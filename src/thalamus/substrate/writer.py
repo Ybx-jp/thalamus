@@ -127,8 +127,14 @@ def _provenance_properties(provenance: Provenance) -> dict[str, object]:
 #
 # `origin` is the key `_article_heads` searches by. Rewriting it moves an article's
 # supersession lineage under readers that already walked it, and an article Source
-# carries no body digest to detect the move with.
-_SOURCE_WRITE_ONCE = ("tier", "origin")
+# carries no body digest to detect the move with. `source` travels with it because
+# `KnowledgeBatch.default_provenance` derives one from the other — freezing the address
+# but not the provenance string that restates it leaves the two disagreeing silently.
+_SOURCE_WRITE_ONCE = ("tier", "origin", "source")
+
+# Held at the first value once set. `tier` is not among them: it has its own rule below,
+# because trust must still be able to fall.
+_SOURCE_HELD_FIRST = ("origin", "source")
 
 
 def _source_on_match(
@@ -146,9 +152,20 @@ def _source_on_match(
     refreshable = {k: v for k, v in properties.items() if k not in _SOURCE_WRITE_ONCE}
     try:
         rows = g.V(source_vid).value_map(*_SOURCE_WRITE_ONCE).limit(1).to_list()
+        readable = True
     except Exception:
-        # An unreadable vertex has nothing held to protect; treat it as a first write.
-        rows = []
+        # A read that *failed* is not a read that found nothing. `to_list()` on a
+        # missing vertex returns [] without raising, so this branch is a real fault —
+        # a dropped connection, a serializer error — and the held values are unknown.
+        # Fail closed: write none of the protected properties and leave whatever the
+        # graph holds. Safe because this never feeds `Merge.on_create`, so a genuine
+        # first write still lands with full provenance.
+        logger.warning(
+            "Source %s: could not read held provenance; leaving tier, origin and "
+            "source untouched on this match",
+            source_vid,
+        )
+        return refreshable
     stored = rows[0] if rows and isinstance(rows[0], dict) else {}
 
     def held(key: str) -> object:
@@ -156,7 +173,9 @@ def _source_on_match(
         return value[0] if isinstance(value, list) and value else value
 
     held_tier, incoming_tier = held("tier"), properties.get("tier")
-    if held_tier is None:
+    if incoming_tier is None:
+        pass  # nothing offered; never write an absent property as null
+    elif held_tier is None:
         # Nothing recorded — a first write, or a vertex predating the property. Let the
         # incoming value through, or the node would end up with no tier at all and fail
         # the contract's provenance obligation.
@@ -173,17 +192,21 @@ def _source_on_match(
             keep,
         )
 
-    held_origin, incoming_origin = held("origin"), properties.get("origin")
-    if not held_origin:
-        refreshable["origin"] = incoming_origin
-    elif incoming_origin and incoming_origin != held_origin:
-        logger.warning(
-            "Source %s holds origin %s and was re-written from %s; keeping the first — "
-            "identical bytes reached under two addresses",
-            source_vid,
-            held_origin,
-            incoming_origin,
-        )
+    for key in _SOURCE_HELD_FIRST:
+        if key not in properties:
+            continue
+        held_value, incoming = held(key), properties.get(key)
+        if not held_value:
+            refreshable[key] = incoming
+        elif incoming and incoming != held_value:
+            logger.warning(
+                "Source %s holds %s %s and was re-written with %s; keeping the first — "
+                "identical bytes reached under two addresses",
+                source_vid,
+                key,
+                held_value,
+                incoming,
+            )
 
     return refreshable
 

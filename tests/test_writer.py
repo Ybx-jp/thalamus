@@ -399,8 +399,9 @@ def test_rewriting_the_same_snapshot_does_not_supersede_itself():
 class _PropertyFake:
     """Just enough traversal source for _source_on_match: one vertex's stored properties."""
 
-    def __init__(self, stored=None):
+    def __init__(self, stored=None, raises=False):
         self.stored = stored  # None => the vertex does not exist yet
+        self.raises = raises  # True => the read itself faults
 
     def V(self, *_args):
         return self
@@ -412,6 +413,8 @@ class _PropertyFake:
         return self
 
     def to_list(self):
+        if self.raises:
+            raise RuntimeError("connection dropped")
         # TinkerGraph hands back list-valued properties; mirror that so the unwrapping
         # is exercised rather than assumed.
         return [] if self.stored is None else [{k: [v] for k, v in self.stored.items()}]
@@ -421,7 +424,15 @@ _A_SOURCE = "scope:literature:source:abc123"
 
 
 def _properties(tier: int, origin: str) -> dict:
-    return {"content_hash": "abc123", "title": "A paper", "tier": tier, "origin": origin}
+    return {
+        "content_hash": "abc123",
+        "title": "A paper",
+        "tier": tier,
+        "origin": origin,
+        # KnowledgeBatch.default_provenance derives `source` from `origin`, so the two
+        # move together or they disagree.
+        "source": origin,
+    }
 
 
 def test_reingest_under_friendlier_provenance_cannot_raise_a_sources_trust():
@@ -492,6 +503,47 @@ def test_a_first_write_passes_trust_and_origin_through():
 
     assert on_match["tier"] == 2
     assert on_match["origin"] == "u"
+
+
+def test_a_failed_read_writes_none_of_the_protected_properties():
+    """
+    Scenario: the held-value read faults (dropped connection, serializer error)
+
+    A read that *failed* is not a read that found nothing — `to_list()` on a missing
+    vertex returns [] without raising. Treating the two alike would grant the incoming
+    tier whenever the graph hiccuped, which is a ratchet that fails open: the cheapest
+    way past it would be to induce the fault. Failing closed is safe because this never
+    feeds `Merge.on_create`, so a genuine first write still lands with full provenance.
+    """
+    from thalamus.substrate.writer import _source_on_match
+
+    on_match = _source_on_match(
+        _PropertyFake(raises=True), _A_SOURCE, _properties(1, "https://evil.example/x")
+    )
+
+    assert "tier" not in on_match
+    assert "origin" not in on_match
+    assert "source" not in on_match
+    assert on_match["title"] == "A paper"  # refreshable properties still pass
+
+
+def test_the_provenance_string_is_frozen_alongside_the_address():
+    """
+    Scenario: identical bytes re-ingested from a second URL
+
+    `KnowledgeBatch.default_provenance` derives `source` from `origin`, so freezing the
+    address while letting the provenance string that restates it move would leave the
+    two disagreeing on one vertex, with nothing logged.
+    """
+    from thalamus.substrate.writer import _source_on_match
+
+    fake = _PropertyFake(
+        {"tier": 2, "origin": "https://arxiv.org/abs/x", "source": "https://arxiv.org/abs/x"}
+    )
+    on_match = _source_on_match(fake, _A_SOURCE, _properties(2, "https://arxiv.org/html/x"))
+
+    assert "origin" not in on_match
+    assert "source" not in on_match
 
 
 def test_a_source_predating_the_tier_property_still_gets_one():

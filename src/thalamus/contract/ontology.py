@@ -127,7 +127,7 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     EdgeType(
         "DERIVED_FROM",
         may_cross_scope=True,
-        note="Session/Claim -> Source. Effective tier = min(tier) over this closure — "
+        note="Session/Claim -> Source. Effective tier = max(tier) over this closure — "
         "'distillation does not launder' (docs/05). Carries an `anchors` property: the "
         "message UUIDs inside the Source that this node was distilled from, so the "
         "provenance walk lands on the exact evidence rather than a whole transcript.",
