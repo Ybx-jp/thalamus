@@ -50,6 +50,8 @@ CASE_MODULES = (
     "qe.cases.served_tier_rule",
     "qe.cases.doc_mcp_snippet",
     "qe.cases.secret_scan_heard",
+    "qe.cases.prompt_template_roundtrip",
+    "qe.cases.probe_vocabulary",
 )
 
 

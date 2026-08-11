@@ -66,6 +66,13 @@
       "failure_class": "doc-code-drift",
       "witness_contains": "_select_details(cap=_DETAIL_CAP)",
       "triaged_at_rev": "b88cf9d",
+      "case": "probe-vocabulary-has-no-dead-members",
+      "failure_class": "doc-code-drift",
+      "witness_contains": "Condition unproduced: ['INTERACTIVE', 'PRINT']",
+      "triaged_at_rev": "9f23f8b",
+      "note": "Two of three Condition members are emitted by nothing, so no probe result can carry them. Not a claim that the members are wrong to want — the module's reasoning about print-vs-interactive observation is sound, and lab/054 is the evidence for it. The claim is that the vocabulary records a distinction nothing observes. Either fix discharges it: produce them from real probes, or mark them declared-ahead-of-use where contract/ontology.py already does that in a comment next to its unwritten edges. Pinned on the exact unproduced set so producing one drifts this entry."
+    },
+    {
       "case": "retained-bytes-secret-scan-is-heard",
       "failure_class": "unenforced-signal",
       "witness_contains": "2 site(s)",
