@@ -100,6 +100,105 @@ class TestLatestTurnSelection:
         assert feed.latest_turn_prose() == ""
 
 
+class TestResumeCursor:
+    """Where the second tap starts."""
+
+    def test_a_first_listen_falls_back_to_the_latest_turn(self, tmp_path):
+        # Not the whole session: a first tap on an hour-old window should not
+        # start an hour ago, which is the complaint that produced this.
+        feed = feed_for(tmp_path, [
+            user("old ask"),
+            assistant({"type": "text", "text": "Ancient history."}),
+            user("new ask"),
+            assistant({"type": "text", "text": "The current reply."}),
+        ])
+        text, _ = feed.prose_since(0)
+        assert text == "The current reply."
+
+    def test_resuming_skips_what_was_already_heard(self, tmp_path):
+        feed = feed_for(tmp_path, [
+            user("go"),
+            assistant({"type": "text", "text": "First block."}),
+            assistant({"type": "text", "text": "Second block."}),
+        ])
+        first = next(i for i in feed.items if i["kind"] == "prose")
+        text, high = feed.prose_since(first["seq"])
+        assert text == "Second block."
+        assert high > first["seq"]
+
+    def test_caught_up_yields_nothing(self, tmp_path):
+        feed = feed_for(tmp_path, [
+            user("go"),
+            assistant({"type": "text", "text": "All of it."}),
+        ])
+        text, _ = feed.prose_since(feed.seq)
+        assert text == ""
+
+    def test_new_prose_after_catching_up_is_picked_up(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        write_jsonl(path, [user("go"), assistant({"type": "text", "text": "One."})])
+        feed = tr.Feed(session_id="s", path=path, cwd="/repo")
+        feed.refresh()
+        _, high = feed.prose_since(0)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(assistant({"type": "text", "text": "Two."})) + "\n")
+        feed.refresh()
+        text, _ = feed.prose_since(high)
+        assert text == "Two."
+
+    def test_resume_still_excludes_subagent_narration(self, tmp_path):
+        feed = feed_for(tmp_path, [
+            user("go"),
+            assistant({"type": "text", "text": "Mine."}),
+            assistant({"type": "text", "text": "Not mine."}, sidechain=True),
+        ])
+        first = next(i for i in feed.items if i["kind"] == "prose")
+        text, _ = feed.prose_since(first["seq"] - 1)
+        assert "Not mine." not in text
+
+
+class TestCursorCommit:
+    """Generating audio is not hearing it."""
+
+    def setup_method(self):
+        server.SPOKEN_THROUGH.clear()
+        server.SAY_PENDING.clear()
+
+    def test_a_pending_utterance_does_not_move_the_cursor(self):
+        server.say_pending("s", 40)
+        assert server.say_cursor("s") == 0
+
+    def test_acking_moves_it(self):
+        server.say_pending("s", 40)
+        assert server.say_commit("s") == 40
+        assert server.say_cursor("s") == 40
+
+    def test_stopping_early_replays_the_same_material(self):
+        # No ack, so the next tap asks from the same place — which is the point.
+        server.say_pending("s", 40)
+        server.SAY_PENDING.pop("s")
+        assert server.say_cursor("s") == 0
+
+    def test_the_cursor_never_goes_backwards_on_a_late_ack(self):
+        server.say_mark("s", 90)
+        server.say_pending("s", 40)
+        assert server.say_commit("s") == 90
+
+    def test_marking_a_block_treats_everything_above_as_heard(self):
+        server.say_mark("s", 25)
+        assert server.say_cursor("s") == 25
+
+    def test_marking_discards_an_utterance_in_flight(self):
+        server.say_pending("s", 99)
+        server.say_mark("s", 10)
+        assert server.say_commit("s") == 10
+
+    def test_cursors_are_per_session(self):
+        server.say_mark("a", 10)
+        server.say_mark("b", 20)
+        assert (server.say_cursor("a"), server.say_cursor("b")) == (10, 20)
+
+
 # ---- the contract, at the point audio would be produced ----
 
 class TestSynthesisGate:

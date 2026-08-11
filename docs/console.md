@@ -123,12 +123,34 @@ cycle), arrows, page up/down, `tab`, `⏎`, `clr` (Ctrl-U) and `⌃C`. `A−`/`A
 the font off the auto-fit size, which is computed so a full pane line fits your
 screen without horizontal scrolling.
 
-**`say` reads the active window's latest reply aloud.** It speaks on a tap and
-never on its own: nothing is narrated unattended, and only the window you have
-selected can talk, so a roster of five sessions can never talk over itself. Tap
-again to stop. The control sits in the always-visible key row rather than inside
-the read view, because the read view is opt-in per device — a control behind a
-toggle a device never enabled is a control that device does not have.
+**`say` reads the active window aloud, from wherever you left off.** It speaks on
+a tap and never on its own: nothing is narrated unattended, and only the window
+you have selected can talk, so a roster of five sessions can never talk over
+itself. Tap again to stop. The control sits in the always-visible key row rather
+than inside the read view, because the read view is opt-in per device — a control
+behind a toggle a device never enabled is a control that device does not have.
+
+Each session keeps a listening position:
+
+- **Tap** speaks what you have not heard yet. The first tap on a session falls
+  back to its latest turn rather than the whole history.
+- **The position moves when playback ends,** not when the audio is made. Stopping
+  halfway means the next tap resumes where your ears stopped, not where the
+  synthesiser got to.
+- **Caught up** greys the control and stays silent — that is the ordinary resting
+  state of a session you follow, not a failure worth announcing.
+- **Long-press** re-reads the current turn from its start, for when you missed it
+  rather than when you want what came next.
+- **Tap any paragraph in the read view** to start listening there; everything
+  above it counts as heard, since you just read it to find the place. The chosen
+  block keeps a coloured left edge.
+
+The start point travels in the audio request rather than a call that precedes it.
+Marking and *then* playing is the natural shape and puts `play()` after an await,
+which spends the user activation a phone requires — the same reason the plain tap
+assigns `src` and plays in one gesture. Positions are process-local and are not
+persisted: where you are in listening to a session is a fact about the last few
+minutes, and a console restart is a fine time to forget it.
 
 What you hear is not the reply read out. It is rewritten for the ear: fenced code
 is dropped, `src/thalamus/console/server.py` becomes "console server", identifiers

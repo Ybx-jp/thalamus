@@ -21,7 +21,9 @@ const source = [
   extractFunction("sayUrl", src),
   extractFunction("setSayState", src),
   extractFunction("stopSaying", src),
+  extractFunction("startSaying", src),
   extractFunction("speakActiveWindow", src),
+  extractFunction("speakFrom", src),
 ].join("\n");
 
 function load(activeIdx = 3) {
@@ -48,7 +50,7 @@ function load(activeIdx = 3) {
   // browser, which is the behaviour under test — the toggle is that flag.
   const api = evaluate(
     source + "\nfunction _saying(){ return saying; }",
-    ["sayUrl", "setSayState", "stopSaying", "speakActiveWindow", "_saying"],
+    ["sayUrl", "setSayState", "stopSaying", "startSaying", "speakActiveWindow", "speakFrom", "_saying"],
     { els, sayAudio, activeIdx, encodeURIComponent, saying: false },
   );
   return { api, events, els, classes };
@@ -105,6 +107,49 @@ suite("say: failure is visible");
   api.setSayState("err");
   check("marks the control bad", classes.has("bad"));
   check("and does not also claim to be speaking", !classes.has("on"));
+}
+
+suite("say: caught up is not a failure");
+{
+  const { api, classes } = load(4);
+  api.setSayState("done");
+  check("shows the caught-up state", classes.has("done"));
+  check("without reading as an error", !classes.has("bad"));
+}
+
+suite("say: resuming and restarting are different requests");
+{
+  const { api } = load(2);
+  check("an ordinary tap asks for no particular start — the server resumes",
+    !api.sayUrl(2).includes("restart") && !api.sayUrl(2).includes("from"));
+  contains("a long press asks for the turn from its beginning",
+    api.sayUrl(2, true), "restart=1");
+  contains("a tapped block carries its own start point", api.sayUrl(2, false, 41), "from=41");
+}
+
+suite("say: tapping a block plays in the same gesture");
+{
+  // The regression that matters: marking via a POST and playing in its callback
+  // reads naturally and loses the activation the phone requires.
+  const { api, events } = load(5);
+  api.speakFrom(5, 12);
+  const order = events.map((e) => e.type);
+  check("src then play, nothing awaited between",
+    order[0] === "src" && order[1] === "play", `got: ${order.join(",")}`);
+  contains("and the start point is in the url it played", events[1].src, "from=12");
+}
+
+suite("say: tapping a new block while speaking replaces the utterance");
+{
+  const { api, events } = load(5);
+  api.speakFrom(5, 3);
+  api.speakFrom(5, 9);
+  check("the first is paused rather than left overlapping",
+    events.filter((e) => e.type === "pause").length === 1,
+    `got: ${events.map((e) => e.type).join(",")}`);
+  const plays = events.filter((e) => e.type === "play");
+  check("two utterances started", plays.length === 2);
+  contains("the second starts where the second tap pointed", plays[1].src, "from=9");
 }
 
 done();

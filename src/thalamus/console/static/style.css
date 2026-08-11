@@ -467,6 +467,18 @@ header {
 /* A failed utterance has to be visible: the whole point of the control is that
    you are not looking at the screen, so silence alone is ambiguous. */
 .viewcap.bad { color: var(--danger); border-color: var(--danger); }
+/* Caught up — nothing new since you last listened. Distinct from a failure, and
+   quieter, because it is the ordinary resting state of a session you follow. */
+.viewcap.done { color: var(--faint); border-color: var(--faint); }
+
+/* The block listening starts from. A left edge rather than a fill: it marks a
+   position in the text without recolouring the text you are trying to read. */
+.rd-prose { cursor: pointer; }
+.rd-mark {
+  border-left: 2px solid var(--chan);
+  margin-left: -.55rem;
+  padding-left: .45rem;
+}
 .wait-note { color: #e0a45c; }
 
 /* ---- Frame theme (desktop only) ----

@@ -202,6 +202,43 @@ def _post_to_voice(text: str, timeout: float):
         return None, "synthesis failed"
 
 
+# How far each session has been listened to, and what the last utterance covered
+# but has not yet been confirmed heard. Two dictionaries rather than one because
+# generating audio is not hearing it: the cursor advances when playback *ends*, so
+# stopping halfway replays from where your ears stopped rather than skipping to
+# where the synthesiser got to. Process-local and deliberately not persisted — a
+# listening position is a fact about the last few minutes, not about the session.
+SAY_LOCK = threading.Lock()
+SPOKEN_THROUGH: dict[str, int] = {}
+SAY_PENDING: dict[str, int] = {}
+
+
+def say_cursor(session_id: str) -> int:
+    with SAY_LOCK:
+        return SPOKEN_THROUGH.get(session_id, 0)
+
+
+def say_pending(session_id: str, high: int) -> None:
+    with SAY_LOCK:
+        SAY_PENDING[session_id] = high
+
+
+def say_commit(session_id: str) -> int:
+    """Confirm the last utterance was heard. Returns the new cursor."""
+    with SAY_LOCK:
+        high = SAY_PENDING.pop(session_id, 0)
+        if high > SPOKEN_THROUGH.get(session_id, 0):
+            SPOKEN_THROUGH[session_id] = high
+        return SPOKEN_THROUGH.get(session_id, 0)
+
+
+def say_mark(session_id: str, seq: int) -> None:
+    """Start listening from a chosen point: everything before it counts as heard."""
+    with SAY_LOCK:
+        SPOKEN_THROUGH[session_id] = max(0, seq)
+        SAY_PENDING.pop(session_id, None)
+
+
 # One ledger index and one feed store for the process, both stateful across polls
 # so a poll reads only the bytes appended since the last one. ThreadingHTTPServer
 # serves requests concurrently and a phone plus a desktop on the same window is the
@@ -937,10 +974,23 @@ class Handler(BaseHTTPRequestHandler):
             _, feed, reason = read_feed(self.cfg, int(raw))
             if feed is None:
                 return self._send(404, {"error": reason or "unresolved"})
+            # `restart` re-reads the current turn from its beginning, for when you
+            # missed it rather than when you want what came next.
+            restart = q.get("restart", ["0"])[0] == "1"
+            # `from` is a tapped block: start there, and treat what precedes it as
+            # heard. It rides the audio request rather than a POST before it so the
+            # client can play in the same gesture as the tap.
+            start = q.get("from", [""])[0]
+            if start.isdigit():
+                say_mark(feed.session_id, max(0, int(start) - 1))
+            cursor = 0 if restart else say_cursor(feed.session_id)
             with READ_LOCK:
-                source = feed.latest_turn_prose()
+                source, high = feed.prose_since(cursor)
             if not source.strip():
-                return self._send(404, {"error": "nothing to say yet"})
+                # Caught up. Not an error, and not worth speaking a sentence to
+                # say so — the control flashes and stays quiet.
+                return self._send(204, b"", "application/json")
+            say_pending(feed.session_id, high)
             audio, err = synthesise_update(source)
             if err:
                 return self._send(502, {"error": err})
@@ -1124,6 +1174,16 @@ class Handler(BaseHTTPRequestHandler):
                 tmux("send-keys", "-t", target, "Enter")
             return self._send(200, {"ok": True})
 
+        if path == "/api/say/ack":
+            # Playback finished. Only now does the listening position move — the
+            # request that produced the audio cannot know whether it was heard.
+            idx = data.get("index")
+            if not isinstance(idx, int):
+                return self._send(400, {"error": "index required"})
+            _, feed, reason = read_feed(self.cfg, idx)
+            if feed is None:
+                return self._send(404, {"error": reason or "unresolved"})
+            return self._send(200, {"ok": True, "through": say_commit(feed.session_id)})
         if path == "/api/key":
             key = KEYMAP.get(data.get("key", ""))
             if not key:
