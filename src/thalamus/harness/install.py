@@ -809,12 +809,73 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
         f"{len(shipped_skills())} readable via {USER_SKILLS_DIR}" if not unreadable
         else f"unreadable: {unreadable}"))
 
+    if "claude" in harnesses:
+        checks.append(verify_armed())
+
     if "cursor" in harnesses:
         checks.extend(verify_cursor())
 
     checks.extend(verify_runtime(harnesses))
 
     return checks
+
+
+def armed_hooks(settings: dict | None = None) -> set[tuple[str, str | None, str]]:
+    """The wirings actually present in the settings file, in `HOOK_WIRING`'s shape.
+
+    Read back out of the file rather than assumed from what install last computed:
+    the whole point is to catch a settings.json that has drifted from the module,
+    including by an edit nothing here made.
+    """
+    data = _load_json(USER_SETTINGS) if settings is None else settings
+    armed = set()
+    for event, groups in (data.get("hooks") or {}).items():
+        for group in groups:
+            matcher = group.get("matcher")
+            for hook in group.get("hooks") or []:
+                command = hook.get("command") or ""
+                script = command.rsplit("/", 1)[-1].strip('"')
+                if script:
+                    armed.add((event, matcher or None, script))
+    return armed
+
+
+def verify_armed() -> Check:
+    """Every declared wiring is actually armed in the settings file.
+
+    The gap this closes is one that corrupted a real measurement. `room-guard.sh`
+    was declared in `HOOK_WIRING` and absent from `~/.claude/settings.json`, so it
+    had never once run — and because `eval/rooms.py` builds a room's realized edges
+    exclusively from the rows that guard writes, every real room read as
+    *"TREATMENT DID NOT OCCUR — a set of solo sessions wearing a room label"*. The
+    manipulation check was reporting on the hook's installation, not on the room.
+
+    Nothing caught it, and that is the structural part: `verify()` already checked
+    that each wired script **exists** and is **executable**, which `room-guard.sh`
+    both was. A hook that is present, runnable, and unwired passes every check
+    written about the filesystem and fires for nothing. Declared-versus-armed is a
+    different question from present-versus-absent, and only the second was asked.
+
+    Reported rather than repaired, and advisory rather than fatal: `thalamus init`
+    without `--check` writes the block that fixes it, so the finding names that
+    command. A stale settings file is not a reason to refuse to verify the rest.
+    """
+    declared = {(event, matcher, script) for event, matcher, script in HOOK_WIRING}
+    missing = sorted(declared - armed_hooks())
+    if not missing:
+        return Check("declared hooks armed",
+                     True, f"all {len(declared)} wirings present in {USER_SETTINGS}")
+    named = ", ".join(
+        f"{script} on {event}" + (f"/{matcher}" if matcher else "")
+        for event, matcher, script in missing
+    )
+    return Check(
+        "declared hooks armed", False,
+        f"{len(missing)} of {len(declared)} declared wirings are NOT in "
+        f"{USER_SETTINGS}: {named} — these fire for nothing, and a hook that "
+        "writes an eval ledger silently zeroes it. Run `thalamus init` to arm them",
+        advisory=True,
+    )
 
 
 def relaunch_checks(env_drift: list[str]) -> list[Check]:

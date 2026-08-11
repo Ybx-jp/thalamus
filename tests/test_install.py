@@ -575,3 +575,48 @@ def test_dropping_a_variable_is_drift_too():
     """
     drift = install.mcp_env_drift({"THALAMUS_WITHHOLD": "0.25"}, {})
     assert drift == ["THALAMUS_WITHHOLD unset (was `0.25`)"]
+
+
+def test_a_declared_hook_missing_from_settings_is_a_finding():
+    """
+    Scenario: `room-guard.sh` is declared in HOOK_WIRING and absent from the
+    settings file — the real state of this machine until 2026-08-11
+
+    This is the defect that corrupted a measurement rather than an install.
+    `eval/rooms.py` builds a room's realized edges exclusively from the rows
+    `room-guard.sh` writes, so an unarmed guard made every real room report
+    "TREATMENT DID NOT OCCUR" — the manipulation check answering a question about
+    the hook's installation while appearing to answer one about the room.
+
+    The existing checks could not catch it: the script was present and executable,
+    which is what they ask. Present-and-runnable and actually-wired are different
+    questions, and only the first was being asked.
+    """
+    hooks: dict[str, list] = {}
+    for event, matcher, script in install.HOOK_WIRING:
+        if script == "room-guard.sh":
+            continue
+        hooks.setdefault(event, []).append(
+            {"matcher": matcher, "hooks": [{"command": f"/x/hooks/{script}"}]})
+    settings = {"hooks": hooks}
+    armed = install.armed_hooks(settings)
+    declared = {(e, m, s) for e, m, s in install.HOOK_WIRING}
+
+    assert ("PreToolUse", "SendMessage", "room-guard.sh") in declared - armed
+    # Verifies: nothing else is reported missing, so the finding names the real
+    # gap rather than drowning it in false positives from the matcher shapes
+    assert declared - armed == {("PreToolUse", "SendMessage", "room-guard.sh")}
+
+
+def test_armed_hooks_reads_the_script_out_of_a_full_command_line():
+    """
+    Scenario: settings.json holds the absolute path install actually writes
+
+    The comparison is against `HOOK_WIRING`'s bare script names, so a wiring that
+    is present would read as missing if the path were compared whole — which would
+    make the check fire on every correctly-installed machine and get ignored.
+    """
+    settings = {"hooks": {"SessionEnd": [
+        {"matcher": None, "hooks": [{"command": "/home/u/repo/hooks/session-end.sh"}]}
+    ]}}
+    assert install.armed_hooks(settings) == {("SessionEnd", None, "session-end.sh")}
