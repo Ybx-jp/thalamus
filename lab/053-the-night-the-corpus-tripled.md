@@ -172,12 +172,28 @@ full-text one. The falsifier — retrieval quality with the abstract-side claims
 versus absent, over one query set — cannot be run today for want of the label, not for
 want of a corpus.
 
-Left as-is deliberately rather than resolved with an ad-hoc write path at 2am. It is a
-real question — whether a richer re-fetch of the same document should supersede its
-predecessor across a URL change — and it wants the ticketed channel, not a script. It is
-not new either: the standing thread `same-paper-multiple-sources-dedup-still-open` has
-2606.04329 behind **four** Sources (abstract, full text, two hand-fed excerpts, 84 claims
-between them), which is the same defect reached by a different route.
+The `/abs/`↔`/html/` pairs are the tidy part of a wider surface: **72 arXiv ids hold more
+than one Source origin**, 3 of them three or more, and 39 article Sources have non-URL
+origins (hand-fed files) that no URL rule reaches at all. The standing thread
+`same-paper-multiple-sources-dedup-still-open` has 2606.04329 behind **four** — abstract,
+full text, and two section excerpts fed deliberately, which is a *proper part* of the
+work and must never supersede the whole. One edge cannot mean both "richer rendering of"
+and "excerpt from".
+
+Two findings from the architect scope make the bookkeeping fix less attractive than it
+looks. First, **writing `SUPERSEDES` would change retrieval by exactly zero**: the edge
+appears nowhere in `reader.py`, and Sources are loaded only to render provenance *after*
+candidates are selected, never to rank them. The harm, if any, is at retrieval; the fix
+under discussion is bookkeeping. Second, **the lineage key is itself mutable** —
+`write_knowledge` hands one property dict to both `Merge.on_create` and `Merge.on_match`,
+`origin` included, so a byte-identical re-ingest rewrites the very field `_article_heads`
+searches by. There is no `text_digest` on an article Source to detect it with: all 251
+carry neither `written_at` nor `text_digest`, because `write_knowledge` never calls
+`_text_stamp` (and that helper digests the *title* regardless).
+
+Left as-is deliberately rather than resolved with an ad-hoc write path at 2am, and the
+ticketed channel has now reframed it — from a dedup question to a labelling one, on a key
+that is not yet stable.
 
 ## Ends in
 
