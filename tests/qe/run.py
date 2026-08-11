@@ -52,6 +52,7 @@ CASE_MODULES = (
     "qe.cases.secret_scan_heard",
     "qe.cases.prompt_template_roundtrip",
     "qe.cases.probe_vocabulary",
+    "qe.cases.shadowed_tests",
 )
 
 
