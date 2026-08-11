@@ -51,6 +51,7 @@ repeat it; where it can, it runs as the control (`cases/doc_mcp_snippet.py`).
 ## Where the cases come from
 
 `findings/qe-corpus-draft.md` mines 152 defects that actually shipped and marks which
-dev's suite already covers. Cases here are drawn from the escaped and partial rows —
-each case docstring names its corpus record, so a case and the defect it descends from
-can always be read together.
+dev's suite already covers. Most cases here are drawn from its escaped and partial rows,
+and those name their record in the docstring so a case and the defect it descends from
+can be read together. The rest were found live, against the running system, and cite
+what they were found by instead.

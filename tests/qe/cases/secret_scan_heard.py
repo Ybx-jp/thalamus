@@ -18,6 +18,10 @@ unenforced signal rather than a design: the detector is correct, runs constantly
 has no consumer. Bootstrap is the one-time historical import; extract is the recurring
 one, and the recurring one is silent.
 
+Corpus record: `archive-bytes-hash-the-whole-fork` names this as the adjacent testable
+property — assert the secret scan reaches every archived Source a fork produces. It does
+not: a fork's delta is retained through the same discarding call site.
+
 The second half of the invariant is coverage: `ingest.py` archives fetched third-party
 bytes through `archive_bytes` directly, never through `retain`, so those bytes are never
 scanned at all. Both halves are the same property — bytes entering the archive are
