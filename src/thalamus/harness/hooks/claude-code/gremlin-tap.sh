@@ -44,7 +44,7 @@ trace_file="$trace_dir/$(date -u +%Y-%m).jsonl"
 # gremlin output too.
 printf '%s' "$input" | jq -c \
   --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg scope "$(thalamus_resolve_scope)" \
+  --arg scope "$(thalamus_scope_from_payload "$input")" \
   '{ts: $ts,
     session_id: (.session_id // ""),
     scope: $scope,

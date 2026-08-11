@@ -46,6 +46,15 @@ driven over HTTP — and are written up separately in
    declares nothing and says why (`architect` is the worked example).
    Write the denies narrow: `qe` denies `*/src/*` and leaves `tests/` and `lab/`
    open, because its campaign findings graduate into the green suite.
+2c. **Know what the new scope inherits without asking for it.** `capability_boundary`
+   defaults the other way from `write_boundary`: declaring nothing inherits
+   `ROSTER_CAPABILITY_DEFAULT`, so a new expert silently arrives denied the design
+   skills and the `Artifact` tool. That is usually right. If the scope you are adding
+   genuinely needs them, it must opt out with an explicit block — `deny_tools: []`,
+   `deny_skills: []`, and a `reason` — the way `designer` does; omitting the field
+   inherits the deny instead of clearing it. Run `thalamus contract check --roster`
+   after the manifest lands and read the row for your scope, because an inherited
+   policy appears nowhere in the file you just wrote.
 3. **Anchor the scope if it must be consultable now** — a scope with nothing to
    cite refuses the consultation mint (docs/02). Procure anchors *into the new
    scope* (docs/06 rule 1's scope note), `--feed` named for the demand, and

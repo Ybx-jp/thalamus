@@ -21,7 +21,8 @@ Yes and it is an expert; no and it is a feed, a skill, or nothing. Every expert 
 pinnable and every expert is consultable: the two are properties of the roster, not
 kinds of member. Nothing in the contract distinguishes them — a manifest declares
 `scope`, `name`, `domain`, `tier`, `claim_kinds`, `allowlist`, and optionally a
-`write_boundary`, and never how often the scope expects to be pinned.
+`write_boundary` or a `capability_boundary`, and never how often the scope expects
+to be pinned.
 
 **The collaboration graph audits the rest.** How broad a scope should be, and
 whether it earned its partition at all, are questions with data behind them: a scope
@@ -75,13 +76,39 @@ a better prompt** (`scope:literature:claim:db0928fe2cfd3616`).
 
 The consequence for this roster: a scope boundary that exists only as a paragraph in
 `domain` is the configuration that was measured failing. Where a scope is defined by
-what it must *not* produce, the manifest declares a `write_boundary` and the
-`role-guard` PreToolUse hook enforces it (`contract/manifest.WriteBoundary`). The
-guard governs the file-editing tools only; Bash still writes, and an unconventional
-repository layout escapes a path deny. Those are misses, and lab/008's standing
-trade applies — a false positive teaches route-around, which costs more than a gap.
+what it must *not* produce, the manifest declares that boundary and the `role-guard`
+PreToolUse hook enforces it. There are two, and their defaults deliberately run
+opposite ways.
 
-A scope whose charter *is* to write code carries no boundary, and says so.
+**`write_boundary` bounds paths** (`contract/manifest.WriteBoundary`) and defaults
+open: a scope that declares nothing is unbounded, which is the honest default for a
+scope whose charter *is* to write code, and such a scope says so.
+
+**`capability_boundary` bounds tools and named skills**
+(`contract/manifest.CapabilityBoundary`) and defaults *closed*: a scope that declares
+nothing inherits `ROSTER_CAPABILITY_DEFAULT`, which denies the design skills and the
+`Artifact` tool. `designer` is the one scope that opts out, with an explicit empty
+block, because those are its charter. The defaults differ because the decisions did —
+path bounds were drawn per scope, and this one was drawn once for the whole roster, so
+storing it six times would be a normalization error rather than a redundancy. Omission
+therefore has a written meaning rather than an unspecified one, which is LSP's rule
+for capability properties (`scope:architect:claim:5d76e83a27802b2f`). Because the
+policy is inherited rather than restated, `thalamus contract check --roster` prints
+what is actually in force per scope; a single-source default that no one can read back
+would be worse than the copies it replaced.
+
+The guard binds the file-editing tools, `Skill` and `Artifact`. It misses Bash, an
+unconventional repository layout, a `Read` of a `SKILL.md` (which reaches the
+procedure without a `Skill` call), a skill name the deny globs have never seen, and
+the Cursor harness, which has no role guard at all. Those are misses, and lab/008's
+standing trade applies — a false positive teaches route-around, which costs more than
+a gap.
+
+Scope is resolved from the tool payload's `agent_type` first and the environment only
+as a fallback, because a subagent inherits its launcher's environment wholesale. Both
+boundaries are unenforceable without that: measured over 1132 subagent tool calls,
+env-only resolution named the right scope 6.4% of the time and a *different* expert's
+scope 17.8%, applying the wrong boundary rather than none.
 
 ## Skill vs. expert — the boundary that keeps the roster honest
 
@@ -115,8 +142,8 @@ partition is actually for.
 | Homelab / self-hosting | what happened on this machine the last N times | media server + machine + console surfaces | **Live** (`config/experts/homelab.yaml`) — see below. First distillation-fed expert, empty feed surface. |
 | Teacher | the learner model — what stuck, which framings landed | every learning initiative + career narrative | **Live** (`config/experts/teacher.yaml`) — see below. Curriculum design over a persistent learner model; first dual-fed. |
 | Quality engineer | the regression corpus of every bug that shipped | all projects | **Live** (`config/experts/qe.yaml`) — see below. Holds the oracle; carries a `write_boundary`. |
-| Visual designer | the design system, tokens, and prior comps | all projects | **Live** (`config/experts/designer.yaml`) — see below. Shipped with an empty scope and no tooling, both deliberately. |
-| Code advisor | the structural map — seams, leaked abstractions, rejected refactors | all projects | **Live** (`config/experts/architect.yaml`) — see below. The one live expert with no `write_boundary`, by charter. |
+| Visual designer | the design system, tokens, and prior comps | all projects | **Live** (`config/experts/designer.yaml`) — see below. Shipped with an empty scope and no tooling, both deliberately. The only scope that opts out of the roster capability deny. |
+| Code advisor | the structural map — seams, leaked abstractions, rejected refactors | all projects | **Live** (`config/experts/architect.yaml`) — see below. The one live expert with no `write_boundary`, by charter; it carries the inherited `capability_boundary` like every other scope. |
 | DL / training | training-run history | StepMania | PyTorch, autoregressive decoding, KV-cache, CFG, sampling. Compounds via "what training run did what." |
 | Agent-systems | harness decisions and their outcomes | Thalamus, Nodeglass | Harness design, MCP, tool-use, context mgmt, subagent orchestration. |
 | Structural-safety / trust | attack surface and what was tried against it | Nodeglass, Thalamus | Provenance, gating, poisoning, policy engines, red-teaming. Second pillar. Overlaps `qe` and eval's canary work — check both before minting. |
@@ -260,7 +287,9 @@ the audit is pre-registered here rather than reconstructed later:
 > findings; for `designer`, the design system and prior comps; for `architect`, the
 > structural map and the rejected-refactor record. A scope with a `write_boundary`
 > that never once fired is also suspect — not proof of failure, but evidence its
-> boundary was never load-bearing.
+> boundary was never load-bearing. The `capability_boundary` does not carry the same
+> inference: it is inherited rather than chosen per scope, so a scope that never hit
+> it was never claimed to need it.
 
 **Prior work.** The role set is not new and is not claimed as such: MetaGPT
 assigns five roles including **Architect and QA Engineer** in a sequential workflow
@@ -376,6 +405,14 @@ definition is explicit that this is "not a front end developer in dressy languag
 and the shortest path from a mockup to a demo is always to write the component. The
 `write_boundary` denies executable source and leaves markup, markdown, SVG,
 diagrams, and token files open.
+
+**It is also the one scope that holds design capability, and the only one that opts
+out of the roster capability deny.** The design skills and the `Artifact` tool are
+denied to every other pinned expert, because a scope that spends a design budget
+trades its own charter for presentation; here they are the charter. `designer` is
+therefore the only manifest carrying an explicit empty `capability_boundary` — and
+that opt-out is what earns the inherited default its place, since without a scope
+that needs the exemption the policy could simply have been hard-coded in the guard.
 
 **The qe seam.** Accessibility conformance is where this scope's judgement becomes
 machine-checkable, which makes WCAG the natural hand-off from `designer` to `qe` —

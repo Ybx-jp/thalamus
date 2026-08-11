@@ -75,3 +75,15 @@ write_boundary:
     design record stops being separable from the build. Markup, markdown, SVG,
     diagrams, token files (JSON/YAML) and design-tool exports are all unrestricted —
     what is blocked is shipping the implementation.
+
+# The capability opt-out, and the whole reason the roster default is stated once
+# rather than six times (contract/manifest.ROSTER_CAPABILITY_DEFAULT). Every other
+# pinned expert inherits a deny on the design skills and on artifact publishing;
+# this scope is the one whose charter those things ARE. An explicit empty block is
+# the opt-out — omitting the field would inherit the deny and silently disarm the
+# only scope meant to hold these.
+capability_boundary:
+  deny_tools: []
+  deny_skills: []
+  reason: >-
+    Design is this scope's deliverable, not a distraction from it.

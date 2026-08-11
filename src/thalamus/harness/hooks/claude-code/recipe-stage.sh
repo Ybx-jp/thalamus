@@ -72,7 +72,7 @@ mkdir -p "$stage_dir"
 
 printf '%s' "$input" | jq -c \
   --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg scope "$(thalamus_resolve_scope)" \
+  --arg scope "$(thalamus_scope_from_payload "$input")" \
   --arg surface "$surface" \
   --arg query "$query" \
   --arg chars "$(printf '%s' "$response" | wc -c)" \

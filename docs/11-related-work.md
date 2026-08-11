@@ -592,12 +592,24 @@ roster (docs/08), via literature consultation `scope:main:exchange:7f953992f0c34
   (`scope:literature:claim:75001312d7b6e351`), which is why shipping three scopes at
   once is recorded in docs/08 as forfeiting a signal rather than as free.
 
+- **Agentverse gap analysis** (arXiv 2606.20570) names, for agent platforms
+  generally, the two gaps this enforcement sits on: **"no capability permissions —
+  agents have undifferentiated access to all APIs"** (cloud analogue: IAM
+  least-privilege) and **"no policy engine — no declarative rules constraining agent
+  actions"** (cloud analogue: org SCPs), both severity High
+  (`scope:literature:chunk:1eb2c87d5ea1d21aedf440f78ecb6faac6d589b8f13843bda0fe79a1aad5b3f7-0025`).
+  `capability_boundary` is an instantiation of exactly that for one roster. It takes
+  the framing and **declines the least-privilege default it implies**: an allow-list
+  over a vendor-owned skill namespace fails closed whenever upstream renames
+  something, and allow semantics are incoherent inside a guard that fails open by
+  design.
+
 **Position — an instantiation, and a corrected justification.** The role set is
 prior art; nothing here is claimed as novel. What differs on two axes: the roles are
 **retrieval scopes with their own episodic memory**, not prompt personas inside one
 pipeline, and the boundary between them is enforced by a **hook over tier-0
-configuration** (`write_boundary` + `role-guard`) rather than by the system prompt
-whose disobedience MAST measured. The justification the consultation *changed*: a
+configuration** (`write_boundary` and `capability_boundary` + `role-guard`) rather
+than by the system prompt whose disobedience MAST measured. The justification the consultation *changed*: a
 scope earns its partition by carrying a standing corpus one session's context cannot
 hold — not by role specialization making the system smarter, which the equal-budget
 result argues against. That bridge is flagged by the consulted expert as its own

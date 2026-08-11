@@ -1,5 +1,5 @@
 #!/bin/bash
-# Thalamus PreToolUse hook — role boundary on file writes (Claude Code).
+# Thalamus PreToolUse hook — role boundary on writes and on capability (Claude Code).
 #
 # Some expert scopes are defined as much by what they do NOT produce as by what
 # they do: the visual designer's deliverables are design artifacts and never
@@ -11,27 +11,47 @@
 # rather than better instructions (`scope:literature:claim:db0928fe2cfd3616`).
 # This hook is that structure.
 #
-# The boundary is declared tier-0 in the manifest (`write_boundary.deny_globs`,
-# contract/manifest.WriteBoundary), so it versions with the rest of the contract
-# and no model can widen it. Scopes that declare nothing are untouched, which is
-# every scope that exists today except `qe` and `designer` — `architect` writes
-# code by charter and carries no boundary at all.
+# Two boundaries, declared tier-0 in the manifest so they version with the rest of
+# the contract and no model can widen them.
 #
-# Env-based rather than agent-frontmatter based, deliberately. A `tools:` list on
-# the derived agent file would bind only sessions launched through the agent
-# picker; the pin also arrives by THALAMUS_SCOPE, and resolve-scope.sh is the one
-# place that reconciles the two (the 2026-07-18 mis-arming measurement). Gating
+# `write_boundary.deny_globs` (contract/manifest.WriteBoundary) bounds paths, and a
+# scope that declares nothing is untouched — every scope today except `qe` and
+# `designer`, since `architect` writes code by charter.
+#
+# `capability_boundary` (contract/manifest.CapabilityBoundary) bounds tools and
+# named skills, and its default runs the other way: a scope that declares nothing
+# inherits ROSTER_CAPABILITY_DEFAULT, which denies the design skills and artifact
+# publishing. `designer` is the one scope that opts out, because those are its
+# charter. The defaults differ because the decisions did — path bounds were drawn
+# per scope, this one was drawn once for the whole roster.
+#
+# Gated on the resolved pin rather than on the derived agent file, deliberately. A
+# `tools:` list in agent frontmatter would bind only sessions launched through the
+# agent picker; the pin also arrives by THALAMUS_SCOPE and, inside a subagent, only
+# by the payload's `agent_type`. resolve-scope.sh reconciles all three, so gating
 # where the pin is resolved means the guard covers every launch path.
 #
-# Scope of enforcement, named rather than papered over: this gates the file-editing
-# tools. A determined session can still write through Bash, and a repository that
-# does not put implementation under `src/` escapes qe's `*/src/*` deny. Both are
-# misses, and lab/008's standing trade says a miss is the cheaper error — a false
-# positive teaches route-around, and route-around costs more than a gap.
+# Scope of enforcement, named rather than papered over. This gates the file-editing
+# tools, `Skill`, and `Artifact`, and each has a live route around it:
+#
+#   - Bash writes files without touching an editing tool, and a repository that does
+#     not put implementation under `src/` escapes qe's `*/src/*` deny.
+#   - `Read` on a SKILL.md gets the procedure into context with no `Skill` call. No
+#     tool-name matcher can see that.
+#   - A denied `Artifact` can become a hand-written page: qe's write boundary denies
+#     `*/src/*` and says nothing about `.html`.
+#   - A skill name this list has never heard of is permitted silently, because the
+#     namespace is owned upstream and a boundary that is never hit looks exactly
+#     like one that is respected.
+#   - The Cursor harness has no role guard at all, so neither boundary binds there.
+#
+# All misses, and lab/008's standing trade says a miss is the cheaper error — a
+# false positive teaches route-around, and route-around costs more than a gap.
 #
 # Install (user or project settings.json):
-#   {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|NotebookEdit", "hooks":
-#     [{"type": "command", "command": ".../hooks/claude-code/role-guard.sh"}]}]}}
+#   {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|NotebookEdit|Skill|Artifact",
+#     "hooks": [{"type": "command",
+#     "command": ".../hooks/claude-code/role-guard.sh"}]}]}}
 
 set -euo pipefail
 
@@ -41,19 +61,30 @@ thalamus_sandbox_guard
 input=$(cat)
 
 tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty')
-case "$tool_name" in
-  Edit|Write|NotebookEdit) ;;
-  *) exit 0 ;;
-esac
 
-scope="$(thalamus_resolve_scope)"
+scope="$(thalamus_scope_from_payload "$input")"
 # `main` has no manifest by design, and is the overwhelmingly common case. Test it
-# before spending a Python start-up on every edit in every unpinned session.
+# before spending a Python start-up on every call in every unpinned session.
 [ "$scope" != "main" ] || exit 0
 
-# NotebookEdit names its target differently from the two text editors.
-file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
-[ -n "$file_path" ] || exit 0
+# Two boundaries, one guard, because they are one role decision resolved from one
+# manifest. `kind` selects which of them the Python below consults.
+case "$tool_name" in
+  # NotebookEdit names its target differently from the two text editors.
+  Edit|Write|NotebookEdit)
+    kind=path
+    target=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty') ;;
+  Skill)
+    kind=skill
+    target=$(printf '%s' "$input" | jq -r '.tool_input.skill // empty') ;;
+  Artifact)
+    # Listing is read-only: a scope that may not publish may still see what exists.
+    [ "$(printf '%s' "$input" | jq -r '.tool_input.action // empty')" != "list" ] || exit 0
+    kind=tool
+    target="$tool_name" ;;
+  *) exit 0 ;;
+esac
+[ -n "$target" ] || exit 0
 
 repo_root="$(thalamus_repo_root)"
 py="$repo_root/.venv/bin/python"
@@ -64,12 +95,21 @@ py="$repo_root/.venv/bin/python"
 # is missing or unreadable fails OPEN: this guard is defence-in-depth over a
 # boundary the manifest also states in prose, and a hook that hard-fails every
 # edit because a YAML file moved is a worse outcome than an unenforced boundary.
-verdict=$("$py" - "$scope" "$file_path" <<'PY' 2>/dev/null || true
+verdict=$("$py" - "$scope" "$kind" "$target" <<'PY' 2>/dev/null || true
 import sys
 try:
     from thalamus.contract.manifest import load_manifest
-    boundary = load_manifest(sys.argv[1]).write_boundary
-    pattern = boundary.denies(sys.argv[2])
+    scope, kind, target = sys.argv[1], sys.argv[2], sys.argv[3]
+    manifest = load_manifest(scope)
+    if kind == "path":
+        boundary = manifest.write_boundary
+        pattern = boundary.denies(target)
+    else:
+        # Never the raw field: its None is "inherit the roster default", and
+        # reading it directly would unbind every scope that declared nothing.
+        boundary = manifest.effective_capability_boundary
+        pattern = (boundary.denies_skill(target) if kind == "skill"
+                   else boundary.denies_tool(target))
     if pattern:
         print(pattern)
         print(boundary.reason.strip())
@@ -86,15 +126,18 @@ log_event() {
     --arg scope "$scope" \
     --arg verdict "$1" \
     --arg pattern "$2" \
-    --arg path "$file_path" \
+    --arg kind "$kind" \
+    --arg path "$target" \
     '{ts: $ts,
       session_id: (.session_id // ""),
+      agent_type: (.agent_type // ""),
       scope: $scope,
       cwd: (.cwd // ""),
       guard: "role-boundary",
-      guard_version: 1,
+      guard_version: 2,
       verdict: $verdict,
       tool: (.tool_name // ""),
+      kind: $kind,
       pattern: $pattern,
       path: $path}' >> "$guard_dir/$(date -u +%Y-%m).jsonl" || true
 }
@@ -111,16 +154,27 @@ pattern=$(printf '%s' "$verdict" | head -n1)
 reason=$(printf '%s' "$verdict" | tail -n +2)
 log_event block "$pattern"
 
+case "$kind" in
+  path)
+    verb="does not write"
+    declared="config/experts/${scope}.yaml (\`write_boundary\`)" ;;
+  skill)
+    verb="does not invoke the skill"
+    declared="the roster capability default (contract/manifest.ROSTER_CAPABILITY_DEFAULT), unless config/experts/${scope}.yaml overrides it" ;;
+  *)
+    verb="does not use the tool"
+    declared="the roster capability default (contract/manifest.ROSTER_CAPABILITY_DEFAULT), unless config/experts/${scope}.yaml overrides it" ;;
+esac
+
 cat >&2 <<EOF
-Blocked: scope \`${scope}\` does not write \`${file_path}\` (matched \`${pattern}\`).
+Blocked: scope \`${scope}\` ${verb} \`${target}\` (matched \`${pattern}\`).
 
 ${reason}
 
-This boundary is declared tier-0 in config/experts/${scope}.yaml
-(\`write_boundary\`) and is not something this session can widen. If the work
-genuinely belongs to another scope, hand it over: open a thread describing it, or
-mint a consultation ticket to the scope that owns it. If the boundary itself is
-wrong, that is an operator decision and an edit to the manifest — say so rather
-than routing around it.
+This boundary is declared tier-0 in ${declared}, and is not something this session
+can widen. If the work genuinely belongs to another scope, hand it over: open a
+thread describing it, or mint a consultation ticket to the scope that owns it. If
+the boundary itself is wrong, that is an operator decision and an edit to the
+manifest — say so rather than routing around it.
 EOF
 exit 2

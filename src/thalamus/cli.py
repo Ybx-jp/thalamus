@@ -220,6 +220,11 @@ def main():
         help="Re-ask the harness CLIs whether the capability declarations still hold. "
         "Reads no graph and makes no model call; needs the CLIs on PATH.",
     )
+    contract_check_parser.add_argument(
+        "--roster", action="store_true",
+        help="Print the boundaries in force for every expert scope, resolved. Reads "
+        "no graph: the manifests and the roster default are the whole answer.",
+    )
 
     # Chunk backfill — co-indexing for documents ingested before chunks existed.
     # Model-free by construction: chunking reads the retained bytes, so this costs
@@ -2065,6 +2070,35 @@ def _report_capabilities():
     print("Capability declarations OK — every one re-asked and confirmed.")
 
 
+def _report_roster_boundaries():
+    """Print what actually binds each scope, resolved rather than as declared.
+
+    The capability boundary is stored once and inherited, which is what keeps six
+    manifests from drifting — and it is also what makes it invisible, since the
+    scope it binds says nothing about it. Printing the resolved policy is what stops
+    a single-source default from being worse than the copies it replaced. Inherited
+    rows are marked, so "this scope was never bounded" and "this scope inherited the
+    roster's bound" cannot read the same.
+    """
+    from thalamus.contract.manifest import available_scopes, load_manifest
+
+    for scope in available_scopes():
+        manifest = load_manifest(scope)
+        capability = manifest.effective_capability_boundary
+        origin = "declared" if manifest.capability_boundary is not None else "inherited"
+        print(f"\n  {scope}")
+        writes = manifest.write_boundary.deny_globs
+        print(f"    writes     denied: {', '.join(writes) if writes else '(nothing)'}")
+        tools = capability.deny_tools
+        skills = capability.deny_skills
+        print(f"    tools      denied [{origin}]: {', '.join(tools) if tools else '(nothing)'}")
+        print(f"    skills     denied [{origin}]: {', '.join(skills) if skills else '(nothing)'}")
+
+    print("\nBoundaries are enforced by the role-guard PreToolUse hook, which binds "
+          "the file-editing tools, `Skill` and `Artifact`. Bash, `Read` on a "
+          "SKILL.md, and the Cursor harness are named misses (role-guard.sh).")
+
+
 def _cmd_contract(args, contract_parser):
     if getattr(args, "contract_command", None) != "check":
         contract_parser.print_help()
@@ -2075,6 +2109,10 @@ def _cmd_contract(args, contract_parser):
     # unrunnable in exactly the situation it is for — a fresh box being wired up.
     if getattr(args, "capabilities", False):
         _report_capabilities()
+        return
+
+    if getattr(args, "roster", False):
+        _report_roster_boundaries()
         return
 
     from thalamus.contract.conformance import check_graph

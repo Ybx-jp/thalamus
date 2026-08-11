@@ -60,7 +60,7 @@ log_event() {
   mkdir -p "$guard_dir"
   printf '%s' "$input" | jq -c \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg scope "$(thalamus_resolve_scope)" \
+    --arg scope "$(thalamus_scope_from_payload "$input")" \
     --arg verdict "$verdict" \
     --arg branch "$branch" \
     --arg guard "terminal-step" \

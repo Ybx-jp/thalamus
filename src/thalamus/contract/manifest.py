@@ -67,6 +67,86 @@ class WriteBoundary(BaseModel):
         return None
 
 
+class CapabilityBoundary(BaseModel):
+    """Tools and named skills a scope's sessions may not invoke.
+
+    The same structural answer as `WriteBoundary` to the same measured failure
+    (`scope:literature:claim:db0928fe2cfd3616`), applied to capability rather than
+    to path. It instantiates what the Agentverse gap analysis names as two High
+    gaps in agent platforms — no capability permissions (cloud analogue: IAM
+    least-privilege) and no policy engine (cloud analogue: org SCPs), arXiv
+    2606.20570 — for one roster rather than for a platform.
+
+    **Omission does not mean unbounded, unlike `WriteBoundary`.** The operator's
+    decision here was made once for the whole roster, so the default lives in
+    `ROSTER_CAPABILITY_DEFAULT` and a manifest that declares nothing inherits it;
+    an explicit block overrides it, and an explicit empty block is the opt-out.
+    Three states, each with a written meaning — LSP's rule for omitted capability
+    properties (`scope:architect:claim:5d76e83a27802b2f`). The defaults differ
+    because the spaces do: path-space is infinite and project-specific, so a
+    default deny over paths is unwritable, while tool- and skill-space are small
+    and enumerable.
+
+    Patterns are fnmatch, matching as `WriteBoundary` does so the contract has one
+    matching semantics rather than two. Glob rather than equality because the skill
+    namespace is owned upstream: `artifact-*` survives a rename to
+    `artifact-design-web`, and `frontend-design*` matches the plugin-prefixed form
+    (`frontend-design:frontend-design`) that an exact list would already miss.
+
+    The residual is named rather than closed: a skill this list has never heard of
+    is permitted, silently and in the permissive direction, because a boundary that
+    is never hit looks identical to one that is respected. Reading a `SKILL.md`
+    with `Read` also reaches the procedure without a `Skill` call, and no tool-name
+    matcher can see that.
+    """
+
+    deny_tools: list[str] = Field(
+        default_factory=list,
+        description="fnmatch patterns over the tool name; a match blocks the call",
+    )
+    deny_skills: list[str] = Field(
+        default_factory=list,
+        description="fnmatch patterns over the invoked skill's name",
+    )
+    reason: str = Field(
+        "", description="Shown to the blocked session — why this scope does not invoke this"
+    )
+
+    def denies_skill(self, skill: str) -> str | None:
+        """The pattern that blocks this skill, or None."""
+        if not skill:
+            return None
+        return next((p for p in self.deny_skills if fnmatch(skill, p)), None)
+
+    def denies_tool(self, tool: str) -> str | None:
+        """The pattern that blocks this tool, or None."""
+        if not tool:
+            return None
+        return next((p for p in self.deny_tools if fnmatch(tool, p)), None)
+
+
+# One roster-wide decision, stored once. Six identical manifest blocks would be a
+# normalization error, and duplicated declarations have drifted in this codebase
+# before — `install.py`'s prose parity claim went stale unnoticed, which is why that
+# count is now derived rather than stated. Every pinned expert inherits this;
+# `designer` opts out in its own manifest; `main` never reaches the guard.
+ROSTER_CAPABILITY_DEFAULT = CapabilityBoundary(
+    deny_tools=["Artifact"],
+    deny_skills=[
+        "artifact-*",
+        "frontend-design*",
+        "dataviz",
+        "author-repo-diagram",
+    ],
+    reason=(
+        "Design is the `designer` scope's deliverable, and a pinned expert that "
+        "spends a design budget trades its own charter for presentation. Hand back "
+        "a markdown file and its path, and the operator can read or publish it; if "
+        "the artifact itself matters, open a thread for `designer`."
+    ),
+)
+
+
 class ExpertManifest(BaseModel):
     contract: str = "v0"
     scope: str
@@ -86,6 +166,25 @@ class ExpertManifest(BaseModel):
         description="Paths this scope's sessions may not edit (docs/08). Absent means "
         "unbounded — the honest default for a scope whose role is to write code.",
     )
+    capability_boundary: CapabilityBoundary | None = Field(
+        None,
+        description="Tools and skills this scope may not invoke (docs/08). Absent means "
+        "inherit ROSTER_CAPABILITY_DEFAULT — the opposite of write_boundary's default, "
+        "because this decision was made once for the whole roster rather than per scope. "
+        "An explicit empty block is the opt-out.",
+    )
+
+    @property
+    def effective_capability_boundary(self) -> CapabilityBoundary:
+        """What actually binds this scope — the declared block, or the roster default.
+
+        Read this rather than the field: the field's `None` is a real third state,
+        and a caller that treats it as an empty boundary silently unbinds every
+        scope that never declared one, which is all of them but `designer`.
+        """
+        if self.capability_boundary is not None:
+            return self.capability_boundary
+        return ROSTER_CAPABILITY_DEFAULT
 
     def allows(self, origin: str) -> bool:
         """Is this origin inside the allowlist? Non-URL origins are operator-fed."""

@@ -81,7 +81,7 @@ emit() {  # $1 = class, $2 = message
   jq -cn \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg session_id "$session" \
-    --arg scope "$(thalamus_resolve_scope)" \
+    --arg scope "$(thalamus_scope_from_payload "$input")" \
     --arg event "$event" \
     --arg harness "${THALAMUS_HARNESS:-claude-code}" \
     --arg agent "$agent" \

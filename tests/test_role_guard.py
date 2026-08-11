@@ -16,7 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.contract.manifest import ExpertManifest, WriteBoundary, load_manifest
+from thalamus.contract.manifest import (
+    ROSTER_CAPABILITY_DEFAULT,
+    CapabilityBoundary,
+    ExpertManifest,
+    WriteBoundary,
+    load_manifest,
+)
 from thalamus.harness.install import HOOK_WIRING
 
 HOOKS = Path(__file__).resolve().parents[1] / "src" / "thalamus" / "harness" / "hooks" / "claude-code"
@@ -82,6 +88,77 @@ class TestShippedManifests:
             assert manifest.write_boundary.reason.strip(), f"{scope} blocks without a reason"
 
 
+class TestCapabilityBoundary:
+    def test_an_undeclared_boundary_inherits_the_roster_default(self):
+        """The opposite of WriteBoundary's default, and the whole design rests on
+        it: the operator's decision was roster-wide, so silence means inherit. A
+        caller reading the raw field would unbind every scope but `designer`."""
+        manifest = ExpertManifest(scope="x", name="X")
+        assert manifest.capability_boundary is None
+        assert manifest.effective_capability_boundary is ROSTER_CAPABILITY_DEFAULT
+
+    def test_an_explicit_empty_block_is_the_opt_out(self):
+        """Three states, each with a written meaning. Without this one, a scope
+        whose charter IS design has no way to say so."""
+        manifest = ExpertManifest(scope="x", name="X", capability_boundary={})
+        assert manifest.effective_capability_boundary.denies_tool("Artifact") is None
+        assert manifest.effective_capability_boundary.denies_skill("artifact-design") is None
+
+    def test_skills_match_by_glob_so_an_upstream_rename_still_lands(self):
+        """The skill namespace is owned upstream and can be renamed or split without
+        warning; equality matching would fail silently toward permitting."""
+        boundary = CapabilityBoundary(deny_skills=["artifact-*", "frontend-design*"])
+        assert boundary.denies_skill("artifact-design") == "artifact-*"
+        assert boundary.denies_skill("artifact-design-web") == "artifact-*"
+        assert boundary.denies_skill("frontend-design:frontend-design") == "frontend-design*"
+        assert boundary.denies_skill("recall-strategy") is None
+
+    def test_the_roster_default_covers_the_design_surface(self):
+        """Named individually: a bundled assertion cannot say which half failed."""
+        for skill in ("artifact-design", "artifact-diagramming", "artifact-capabilities",
+                      "frontend-design:frontend-design", "dataviz", "author-repo-diagram"):
+            assert ROSTER_CAPABILITY_DEFAULT.denies_skill(skill), f"{skill} is design work"
+        assert ROSTER_CAPABILITY_DEFAULT.denies_tool("Artifact")
+
+    def test_it_leaves_the_working_skills_alone(self):
+        """A capability boundary that caught the skills an expert needs to do its job
+        would teach route-around, which lab/008 prices above the gap it closes."""
+        for skill in ("recall-strategy", "gremlin-python", "ground-in-literature",
+                      "consult-an-expert", "add-roster-expert"):
+            assert ROSTER_CAPABILITY_DEFAULT.denies_skill(skill) is None
+        for tool in ("Read", "Write", "Bash", "Task"):
+            assert ROSTER_CAPABILITY_DEFAULT.denies_tool(tool) is None
+
+    def test_an_empty_name_is_not_a_match(self):
+        """Payloads reach the guard without a skill name; they are not invocations."""
+        boundary = CapabilityBoundary(deny_skills=["*"], deny_tools=["*"])
+        assert boundary.denies_skill("") is None
+        assert boundary.denies_tool("") is None
+
+
+class TestShippedCapabilityBoundaries:
+    def test_designer_is_the_one_scope_that_opts_out(self):
+        boundary = load_manifest("designer").effective_capability_boundary
+        assert boundary.denies_tool("Artifact") is None
+        assert boundary.denies_skill("author-repo-diagram") is None
+
+    @pytest.mark.parametrize(
+        "scope", ["qe", "architect", "literature", "eval-methodology", "homelab", "teacher"]
+    )
+    def test_every_other_pinned_scope_inherits_the_deny(self, scope):
+        """Declared once, inherited everywhere — the property that makes storing it
+        once safe rather than merely tidy."""
+        boundary = load_manifest(scope).effective_capability_boundary
+        assert boundary.denies_skill("artifact-design")
+        assert boundary.denies_tool("Artifact")
+
+    def test_the_default_explains_itself_and_names_the_alternative(self):
+        """A block that cannot say what to do instead teaches route-around."""
+        reason = ROSTER_CAPABILITY_DEFAULT.reason
+        assert reason.strip()
+        assert "markdown" in reason.lower()
+
+
 def run_guard(payload, home, env=None):
     full_env = {"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin"}
     if env:
@@ -137,6 +214,83 @@ class TestRoleGuardHook:
             tmp_path,
             {"CLAUDE_CODE_AGENT": "thalamus-architect"},
         )
+        assert result.returncode == 0
+
+    def test_a_subagent_is_bound_by_its_own_scope_not_its_launcher(self, tmp_path):
+        """A subagent inherits its launcher's environment wholesale, so both env
+        channels name whoever spawned it. Only the payload's `agent_type` names the
+        agent actually running, and it wins. Measured 2026-08-11 over 1132 subagent
+        tool calls: env-only resolution named the right scope 6.4% of the time."""
+        payload = write_payload(f"{REPO}/src/thalamus/console/static/app.js")
+        payload["agent_type"] = "thalamus-designer"
+        result = run_guard(payload, tmp_path, {"THALAMUS_SCOPE": "main"})
+        assert result.returncode == 2
+        assert "*.js" in result.stderr
+
+    def test_a_generic_subagent_still_inherits_the_pin(self, tmp_path):
+        """`Explore` and `general-purpose` name no manifest, so resolution falls
+        through to the launcher's pin. Short-circuiting on any agent_type instead
+        would make `Agent(subagent_type="general-purpose")` a one-line route around
+        every boundary in the roster."""
+        payload = write_payload(f"{REPO}/src/thalamus/console/static/app.js")
+        payload["agent_type"] = "general-purpose"
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-designer"})
+        assert result.returncode == 2
+
+    def test_it_blocks_a_design_skill_from_a_bounded_scope(self, tmp_path):
+        """The incident this boundary answers: a pinned expert reaching for the
+        design skills and spending its charter on presentation."""
+        payload = {
+            "session_id": "rg-1",
+            "cwd": str(REPO),
+            "tool_name": "Skill",
+            "tool_input": {"skill": "artifact-design"},
+        }
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-qe"})
+        assert result.returncode == 2
+        assert "artifact-*" in result.stderr
+
+    def test_it_passes_a_design_skill_for_the_designer(self, tmp_path):
+        payload = {
+            "session_id": "rg-1",
+            "cwd": str(REPO),
+            "tool_name": "Skill",
+            "tool_input": {"skill": "author-repo-diagram"},
+        }
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-designer"})
+        assert result.returncode == 0
+
+    def test_it_passes_a_working_skill_for_a_bounded_scope(self, tmp_path):
+        payload = {
+            "session_id": "rg-1",
+            "cwd": str(REPO),
+            "tool_name": "Skill",
+            "tool_input": {"skill": "recall-strategy"},
+        }
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-qe"})
+        assert result.returncode == 0
+
+    def test_it_blocks_artifact_publishing_from_a_bounded_scope(self, tmp_path):
+        payload = {
+            "session_id": "rg-1",
+            "cwd": str(REPO),
+            "tool_name": "Artifact",
+            "tool_input": {"file_path": f"{REPO}/qe-triage.html", "favicon": "🔬"},
+        }
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-qe"})
+        assert result.returncode == 2
+        assert "Artifact" in result.stderr
+
+    def test_listing_artifacts_stays_open(self, tmp_path):
+        """Listing is read-only. A scope that may not publish may still see what
+        exists, or it cannot even tell the operator what it would have written."""
+        payload = {
+            "session_id": "rg-1",
+            "cwd": str(REPO),
+            "tool_name": "Artifact",
+            "tool_input": {"action": "list"},
+        }
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-qe"})
         assert result.returncode == 0
 
     def test_it_governs_the_edit_tools_and_nothing_else(self, tmp_path):
@@ -203,8 +357,18 @@ class TestRoleGuardHook:
 
 
 def test_the_guard_is_wired_into_the_installer():
-    """A guard that ships uninstalled is prose with extra steps."""
-    assert ("PreToolUse", "Edit|Write|NotebookEdit", "role-guard.sh") in HOOK_WIRING
+    """A guard that ships uninstalled is prose with extra steps.
+
+    The matcher is asserted per tool rather than as one string: a boundary the guard
+    enforces but the installer never routes to it is exactly the silent gap this
+    test exists to catch, and an equality assertion hides which tool went missing.
+    """
+    matchers = [m for event, m, script in HOOK_WIRING
+                if (event, script) == ("PreToolUse", "role-guard.sh")]
+    assert len(matchers) == 1, "the role guard should be wired exactly once"
+    wired = set(matchers[0].split("|"))
+    for tool in ("Edit", "Write", "NotebookEdit", "Skill", "Artifact"):
+        assert tool in wired, f"{tool} is bounded by the guard but never routed to it"
 
 
 def test_a_manifest_round_trips_the_boundary():

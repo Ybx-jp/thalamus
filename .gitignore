@@ -38,6 +38,9 @@ frontend/dist/
 # Case studies — session-generated analysis, not shipped docs.
 /docs/studies/
 
+# qe findings — session-generated triage and corpus drafts, not the shipped suite.
+/tests/qe/findings/
+
 # Penpot deployment secrets (template is .env.example)
 deploy/penpot/.env
 # Third-party MCP server, built from the pinned commit in deploy/penpot/README.md
