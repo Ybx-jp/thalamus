@@ -163,9 +163,18 @@ Roughly in order of likely demand, each gated on a measured need:
   text, and two hand-fed excerpts. The abstract side of those pairs is 436 Claims, of
   which **5 converge** onto the full-text side; 62 of the 67 share nothing at all,
   because convergence is content-addressed on the claim description and a claim
-  rewritten from fuller context is a different string. So the duplicate Sources are
-  not a cosmetic double-count — they put a thin restatement of a paper in the same
-  first-pass pool as the full one, at equal weight. Whether a richer re-fetch should
-  supersede its predecessor across a URL change is undecided.
+  rewritten from fuller context is a different string.
+
+  What that costs is **not** established to be retrieval quality. Both tiers sitting in
+  one flat pool is the configuration RAPTOR chooses for its main results, selecting
+  across layers by the granularity a question needs
+  (`scope:literature:claim:b035e16d6aa3af7e`), and *Fidelity Before Structure* isolates
+  fidelity rather than granularity as the load-bearing variable in its own gap — pure
+  granularity is 3.7 of 16.3pp (`scope:literature:claim:af0c3da6c8456689`). What the
+  duplication actually destroyed is the **layer label**: nothing marks which claims came
+  from the abstract tier, so the question "do the abstract-side claims help or hurt"
+  cannot currently be asked of this corpus. Whether a richer re-fetch should supersede
+  its predecessor across a URL change is undecided, and the label is the prerequisite
+  for deciding it on evidence.
 - Whether ingestion runs as a skill inside sessions or a standalone CLI. Leaning
   CLI: ingestion shouldn't consume agent context.

@@ -153,9 +153,24 @@ those 67 pairs is **436 Claims, of which 5 converge** onto the full-text side �
 description, and a claim written from the whole paper is not the string the abstract
 produced, even when it says the same thing.
 
-So this is not a cosmetic double-count. 431 abstract-level claims sit in the same
-first-pass pool as the full-text claims of the same papers, at equal retrieval weight,
-and the thin one can win. Supersession tracks the address, not the work.
+Supersession tracks the address, not the work.
+
+The obvious next sentence — *431 thin claims now compete with the full-text claims at
+equal weight, and the thin one can win* — was written here and does not survive the
+literature scope. Both tiers in one flat pool is what RAPTOR **chooses**, selecting
+across layers by the granularity a question needs
+(`scope:literature:claim:b035e16d6aa3af7e`), and our own *Fidelity Before Structure*
+isolates fidelity, not granularity, as the load-bearing variable — granularity is 3.7 of
+16.3pp (`scope:literature:claim:af0c3da6c8456689`), the paper [051](051-the-representation-we-never-measured.md)
+already turns on. Whether the abstract tier hurts retrieval here is **unmeasured**: not
+supported, not refuted, and no measurement in scope names it.
+
+What the duplication actually destroyed is the **layer label**. RAPTOR can report which
+layer a retrieved node came from because its nodes carry that relation; ours were minted
+by a hash that keys on the URL, so nothing distinguishes an abstract-derived claim from a
+full-text one. The falsifier — retrieval quality with the abstract-side claims present
+versus absent, over one query set — cannot be run today for want of the label, not for
+want of a corpus.
 
 Left as-is deliberately rather than resolved with an ad-hoc write path at 2am. It is a
 real question — whether a richer re-fetch of the same document should supersede its
@@ -169,4 +184,7 @@ between them), which is the same defect reached by a different route.
 **measurements + fixes.** The corpus co-indexing was built for now actually contains the
 documents it claims to. What remains is a dated discontinuity, 45 papers held at abstract
 depth with a publication-date bias that runs against importance, and an open question
-about whether a second fetch of the same paper should supersede the first.
+about whether a second fetch of the same paper should supersede the first — reframed by
+the literature scope from a dedup question into a **labelling** one, since the harm the
+duplication was assumed to cause is unmeasured and cannot be measured while the two tiers
+are indistinguishable.
