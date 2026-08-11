@@ -288,6 +288,33 @@ def audit_edges(edges: list[AuditEdge]) -> list[str]:
                 "never expert-to-expert (docs/02)"
             )
 
+        # An Agent-written close carries its evidence in properties rather than in the
+        # closer, so the safety property moves with it: the *basis* must be readable
+        # from the thread's own scope. Topology already permits the edge — an Agent is
+        # global, so `edge_crosses_scope` waves it through — and that is correct,
+        # because a close moves no content. What would move content is a basis
+        # pointing into a third scope: the thread's readers would then hold a citation
+        # they cannot resolve, and the close would have smuggled a reference across a
+        # boundary the partition exists to keep closed. Constrain the payload, not the
+        # topology.
+        if edge.label == "RESOLVES" and edge.from_label == "Agent":
+            basis = edge.properties.get("basis")
+            if not basis:
+                issues.append(
+                    f"Uncited close: `{edge.from_vid}` -[RESOLVES]-> `{edge.to_vid}` "
+                    "carries no basis — an agent-written close cites the evidence it "
+                    "rests on, or it is a status flip with a name on it"
+                )
+            else:
+                basis_scope = scope_of(str(basis))
+                thread_scope = scope_of(edge.to_vid)
+                if basis_scope is not None and basis_scope != thread_scope:
+                    issues.append(
+                        f"Unreadable basis: `{edge.from_vid}` -[RESOLVES]-> "
+                        f"`{edge.to_vid}` cites `{basis}` from scope `{basis_scope}`, "
+                        f"which a reader confined to `{thread_scope}` cannot resolve"
+                    )
+
         if edge.label == "SUPERSEDES" and (
             edge.from_label != "Source" or edge.to_label != "Source"
         ):

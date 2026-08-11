@@ -272,3 +272,74 @@ def test_evidence_floor_requires_the_blob_to_exist(tmp_path):
 
     assert len(issues) == 1
     assert "no such blob is retained" in issues[0]
+
+
+def _close_edge(basis, thread_vid="scope:homelab:thread:t1"):
+    return AuditEdge(
+        label="RESOLVES",
+        from_vid="agent:operator", from_label="Agent",
+        to_vid=thread_vid, to_label="Thread",
+        properties={"basis": basis} if basis is not None else {},
+    )
+
+
+def test_an_agent_may_close_a_thread_in_any_scope():
+    """
+    Scenario: the operator approves the close of a homelab thread
+
+    Verifications:
+    - `Agent -> Thread` is legal across scopes, with no exception on RESOLVES
+
+    An Agent is global, so this is not a crossing at all — which is what lets the
+    operator close a thread anywhere without relaxing `RESOLVES.may_cross_scope`. The
+    partition guards a channel for content, and a close carries none.
+    """
+    legal = _close_edge("scope:homelab:session:s9")
+
+    # Verifies: no complaint about the topology
+    assert audit_edges([legal]) == []
+
+
+def test_an_agent_close_must_cite_a_basis():
+    """
+    Scenario: an agent-written close arrives with no evidence property
+
+    Verifications:
+    - it is rejected
+
+    Distillation's `Session -> Thread` needs no basis: the session IS the evidence and
+    its transcript is archived. An Agent has no transcript, so without a basis the edge
+    is a status flip with a name on it — and the whole reason not to do a bare flip was
+    that an adjudication has nothing to walk.
+    """
+    issues = audit_edges([_close_edge(None)])
+
+    # Verifies: named as uncited, not silently accepted
+    assert len(issues) == 1
+    assert "Uncited close" in issues[0]
+
+
+def test_a_close_may_not_cite_evidence_its_readers_cannot_resolve():
+    """
+    Scenario: a close on a homelab thread cites a literature-scope vertex
+
+    Verifications:
+    - a foreign-scope basis is rejected
+    - a basis in the thread's own scope passes
+    - a global basis passes
+
+    This is where the safety property moved when the closer became global. The edge is
+    legal because an Agent carries no content; a basis pointing into a third scope
+    would put content back on it, leaving the thread's own readers holding a citation
+    they are confined away from.
+    """
+    foreign = _close_edge("scope:literature:claim:c1")
+    own_scope = _close_edge("scope:homelab:session:s9")
+    global_basis = _close_edge("artifact:src/app.js")
+
+    issues = audit_edges([foreign, own_scope, global_basis])
+
+    # Verifies: exactly the foreign one, and it says why
+    assert len(issues) == 1
+    assert "Unreadable basis" in issues[0]
+    assert "literature" in issues[0]

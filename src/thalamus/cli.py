@@ -16,7 +16,7 @@ from pathlib import Path
 import uvicorn
 import yaml
 
-from thalamus.substrate.schema import SessionGraph
+from thalamus.substrate.schema import CloseDisposition, SessionGraph, ThreadClose
 from thalamus.archive import archive_dir
 from thalamus.console.server import DEFAULT_PORT as CONSOLE_PORT
 from thalamus.contract.conformance import check_session
@@ -24,6 +24,7 @@ from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval.rake_audit import SAMPLE_SIZE
 from thalamus.eval import snapshots
 from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
+from thalamus.harness import closes as closes_mod
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.harness.ceremonies import (
@@ -793,6 +794,62 @@ def main():
     )
     room_create.add_argument("room", help="Room name (lowercase letters, digits, hyphens)")
 
+    # Thread closing. `propose` writes a ledger row and nothing to the graph; `approve`
+    # writes the row and then the edge. The split is the whole mechanism: an agent may
+    # propose, only the operator approves, and a pending proposal never becomes a vertex
+    # that the next session's brief has to read past.
+    thread_parser = subparsers.add_parser(
+        "thread", help="Close threads: propose, approve, and audit the close ledger"
+    )
+    thread_sub = thread_parser.add_subparsers(dest="thread_command")
+
+    thread_propose = thread_sub.add_parser(
+        "propose", help="Propose a close (ledger only — writes nothing to the graph)"
+    )
+    thread_propose.add_argument("thread_id", help="Thread id, unqualified")
+    thread_propose.add_argument("--scope", default=MAIN_SCOPE, help="Scope it lives in")
+    thread_propose.add_argument(
+        "--basis", required=True,
+        help="Vertex ID the close rests on. Must resolve in the thread's own scope, or "
+             "be global. For a thread that was never work, its own spawning session",
+    )
+    thread_propose.add_argument(
+        "--disposition", required=True, choices=[d.value for d in CloseDisposition],
+        help="Why it closed — the stratification variable that keeps 'never was work' "
+             "out of the resolution-latency distribution",
+    )
+    thread_propose.add_argument("--rationale", default="", help="Why, in one line")
+    thread_propose.add_argument(
+        "--by", default="", dest="proposed_by", help="Who proposed (default: this pin)"
+    )
+
+    thread_approve = thread_sub.add_parser(
+        "approve", help="Approve a proposal: writes the ledger row, then the graph edge"
+    )
+    thread_approve.add_argument("ref", help="Proposal ref from `thread pending`")
+    thread_approve.add_argument(
+        "--surface", default="cli", choices=list(closes_mod.SURFACES),
+        help="Where the approval was given",
+    )
+    thread_approve.add_argument(
+        "--evidence", default="",
+        help="What kind of evidence exists that the operator approved. Defaults to the "
+             "surface's own (cli:tty). Never a bare assertion of approval",
+    )
+    thread_approve.add_argument("--notes", default="", help="Operator's own words")
+    thread_approve.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
+    thread_reject = thread_sub.add_parser("reject", help="Decline a proposed close")
+    thread_reject.add_argument("ref", help="Proposal ref")
+    thread_reject.add_argument("--reason", default="", help="Why it was declined")
+
+    thread_sub.add_parser("pending", help="Proposals awaiting the operator")
+
+    thread_audit = thread_sub.add_parser(
+        "audit", help="Corroborate graph-side closes against the ledger"
+    )
+    thread_audit.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
     # Ceremony ledger — docs/12's capture layer. Every verb here writes a row that
     # cannot be reconstructed after the fact, which is why they exist before any of
     # the lifecycle they record.
@@ -1115,6 +1172,8 @@ def main():
         _cmd_quick(args, quick_parser)
     elif args.command == "room":
         _cmd_room(args, parser)
+    elif args.command == "thread":
+        _cmd_thread(args, thread_parser)
     elif args.command == "ceremony":
         _cmd_ceremony(args, parser)
     elif args.command == "dispatch":
@@ -2747,6 +2806,128 @@ def _cmd_room(args, parser):
         return
 
     parser.parse_args(["room", "--help"])
+
+
+def _cmd_thread(args, parser):
+    """Propose, approve, reject and audit thread closes.
+
+    `propose` never touches the graph and `approve` writes the ledger row before the
+    edge — so a crash between them leaves a visible, repairable gap rather than a close
+    nobody can corroborate.
+    """
+    from thalamus.contract.ontology import vid
+    from thalamus.substrate.writer import write_thread_close
+
+    command = getattr(args, "thread_command", None)
+
+    if command == "propose":
+        row = closes_mod.propose(
+            thread_id=args.thread_id,
+            scope=args.scope,
+            basis=args.basis,
+            disposition=args.disposition,
+            rationale=args.rationale,
+            proposed_by=args.proposed_by or pin.resolve_pin(),
+        )
+        print(f"proposed {row['ref']}  {args.scope}:{args.thread_id}  ({args.disposition})")
+        print("Nothing written to the graph. Approve with:")
+        print(f"  thalamus thread approve {row['ref']}")
+        return
+
+    if command == "pending":
+        rows = closes_mod.pending()
+        if not rows:
+            print("No proposals awaiting approval.")
+            return
+        for row in rows:
+            print(f"{row['ref']}  {row['scope']}:{row['thread_id']}  [{row['disposition']}]")
+            print(f"    basis: {row['basis']}")
+            if row.get("rationale"):
+                print(f"    why:   {row['rationale']}")
+            print(f"    by {row.get('proposed_by') or '(unrecorded)'} at {row['ts']}")
+        return
+
+    if command == "reject":
+        row = closes_mod.reject(args.ref, args.reason)
+        print(f"rejected {row['ref']}  {row['scope']}:{row['thread_id']}")
+        return
+
+    if command == "approve":
+        proposal = closes_mod.find_proposal(args.ref)
+        if proposal is None:
+            print(f"No proposal `{args.ref}` in the close ledger.", file=sys.stderr)
+            sys.exit(1)
+        # The evidence names what kind of corroboration exists, never that approval
+        # happened — nothing here can establish the latter (harness/closes.py).
+        evidence = args.evidence or {
+            "cli": "cli:tty",
+            "console": "console:unattributed",
+            "session": "session:unattributed",
+        }[args.surface]
+        approval = closes_mod.approve(
+            args.ref, surface=args.surface, approver_evidence=evidence
+        )
+        close = ThreadClose(
+            thread_id=proposal["thread_id"],
+            scope=proposal["scope"],
+            disposition=CloseDisposition(proposal["disposition"]),
+            basis=proposal["basis"],
+            on_behalf_of=proposal.get("proposed_by") or None,
+            surface=args.surface,
+            approval_ref=args.ref,
+            approver_evidence=evidence,
+            closed_at=approval["ts"],
+            notes=args.notes or proposal.get("rationale") or None,
+        )
+        graph = connect(args.url)
+        try:
+            agent_vid = write_thread_close(graph, close)
+            _persist(graph)
+        finally:
+            close_connection(graph)
+        print(f"closed {close.scope}:{close.thread_id} as {close.status.value}")
+        print(f"  {agent_vid} -[RESOLVES {{basis: {close.basis}}}]-> "
+              f"{vid('Thread', close.thread_id, close.scope)}")
+        return
+
+    if command == "audit":
+        graph = connect(args.url)
+        try:
+            written = _agent_closes(graph)
+        finally:
+            close_connection(graph)
+        approved = {row["ref"] for row in closes_mod.approvals()}
+        unbacked = [c for c in written if c["approval_ref"] not in approved]
+        print(f"{len(written)} agent-written close(s), {len(approved)} approval row(s).")
+        if unbacked:
+            print("\nCloses with no approval row — the ledger cannot corroborate these:")
+            for close in unbacked:
+                print(f"  {close['thread']}  approval_ref={close['approval_ref']}")
+            sys.exit(1)
+        print("Every agent-written close is backed by an approval row.")
+        return
+
+    parser.parse_args(["--help"])
+
+
+def _agent_closes(graph) -> list[dict]:
+    """Every `Agent -[RESOLVES]-> Thread` edge, as flat rows."""
+    from gremlin_python.process.graph_traversal import __
+    from gremlin_python.process.traversal import T
+
+    return [
+        {
+            "thread": str(row["thread"]),
+            "approval_ref": str(row["approval_ref"]),
+        }
+        for row in graph.V()
+        .has_label("Agent")
+        .out_e("RESOLVES")
+        .project("thread", "approval_ref")
+        .by(__.in_v().id_())
+        .by(__.coalesce(__.values("approval_ref"), __.constant("")))
+        .to_list()
+    ]
 
 
 def _cmd_ceremony(args, parser):

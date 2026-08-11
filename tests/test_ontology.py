@@ -16,18 +16,23 @@ from thalamus.contract.ontology import (
 )
 
 
-def test_artifact_is_the_only_global_node_type():
+def test_artifact_and_agent_are_the_global_node_types():
     """
-    Scenario: Distinguish the global join key from scoped node types
+    Scenario: Distinguish the global join keys from scoped node types
 
     Verifications:
-    - Artifact vertex IDs carry no scope segment
+    - Artifact and Agent vertex IDs carry no scope segment
     - Session, Thread, and Claim vertex IDs are scoped
     """
     # Verifies: Artifact is global — one vertex per identifier, shared by every scope
     assert is_global("Artifact")
     assert vid("Artifact", "src/foo.py") == "artifact:src/foo.py"
     assert vid("Artifact", "src/foo.py", scope="literature") == "artifact:src/foo.py"
+
+    # Verifies: Agent is global — one vertex per identity, whatever scope it acts in
+    assert is_global("Agent")
+    assert vid("Agent", "operator") == "agent:operator"
+    assert vid("Agent", "operator", scope="homelab") == "agent:operator"
 
     # Verifies: everything else is scoped
     for label in ("Session", "Thread", "Claim"):
@@ -79,5 +84,30 @@ def test_label_properties_cover_every_core_node_type():
     # Verifies: the registry is complete, so view_query needs no literal of its own
     assert set(LABEL_PROPERTIES) == {
         "Session", "Thread", "Claim", "Source", "Artifact", "Trace", "Entity",
-        "Exchange", "Chunk",
+        "Exchange", "Chunk", "Agent",
     }
+
+
+def test_an_agent_closing_a_thread_in_any_scope_is_not_a_crossing():
+    """
+    Scenario: The operator approves the close of a thread that lives in an expert
+    scope, from outside that scope
+
+    Verifications:
+    - `Agent -> Thread` is not a scope crossing, whatever scope the thread is in
+
+    This is what makes the operator-approved close expressible without touching
+    `RESOLVES.may_cross_scope`. The incident that demands it (lab/009) is resolution
+    evidence for one scope's thread landing in another scope's session; a scoped
+    closer would need an illegal edge, and the legal-looking alternatives are a bare
+    status flip (nothing for an adjudication to walk) or a Session for a conversation
+    that never happened. The partition guards a channel for *content*, and an Agent
+    carries none — only the identity that acted.
+    """
+    operator = vid("Agent", "operator")
+
+    # Verifies: neither direction is a crossing, in any scope
+    for scope in ("homelab", "literature", MAIN_SCOPE):
+        thread = vid("Thread", "some-thread", scope)
+        assert not edge_crosses_scope(operator, thread)
+        assert not edge_crosses_scope(thread, operator)

@@ -13,7 +13,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Direction, Merge, T
 
 from thalamus.contract.ontology import vid
-from thalamus.substrate.schema import Claim, Provenance, SessionGraph
+from thalamus.substrate.schema import Claim, Provenance, SessionGraph, ThreadClose, Tier
 
 logger = logging.getLogger(__name__)
 
@@ -710,6 +710,64 @@ def close_exchange(
 
     for ref_vid in citation_refs:
         _ensure_edge(g, exchange_vid, ref_vid, "REFERENCES", {"role": "citation"})
+
+
+def write_thread_close(
+    g: GraphTraversalSource,
+    close: ThreadClose,
+) -> str:
+    """Close a thread on an operator's authority, with no session behind it.
+
+    `Agent -[RESOLVES {basis, ...}]-> Thread`. Distillation's bare
+    `Session -[RESOLVES]-> Thread` is untouched and both coexist: one edge label at two
+    levels of detail, which is the qualification pattern already used by `RETURNS.used`
+    and `DERIVED_FROM.anchors`. Anything asking only "is this closed, and by what" keeps
+    working against the label alone.
+
+    The Agent is global, so this edge is not a scope crossing and an operator can close
+    a thread in any scope without `RESOLVES.may_cross_scope` being relaxed — the
+    partition guards a channel for content, and a close carries none. What *is*
+    constrained is the payload: `audit_edges` requires `basis` to resolve in the
+    thread's own scope, or be global, so a close cannot smuggle a citation its readers
+    are confined away from.
+
+    Returns the Agent's vertex ID. Raises `ValueError` if the thread does not exist —
+    unlike a distilled `thread_ref`, which is model output and is dropped when it names
+    memory that was never formed, this is an operator naming a specific thread, and
+    silently writing nothing would report success for work not done.
+    """
+    thread_vid = vid("Thread", close.thread_id, close.scope)
+    if not g.V(thread_vid).has_label("Thread").has_next():
+        raise ValueError(
+            f"no thread `{close.thread_id}` in scope `{close.scope}` — nothing to close"
+        )
+
+    agent_vid = vid("Agent", close.agent)
+    graph_traversal = (
+        g.merge_v({T.id: agent_vid, T.label: "Agent"})
+        .option(
+            Merge.on_create,
+            {
+                T.id: agent_vid,
+                "name": close.agent,
+                # An Agent is an identity, not an assertion, so its provenance envelope
+                # records where the identity came from rather than what it claims.
+                "tier": Tier.FIRST_PARTY.value,
+                "source": "operator",
+                "ingested_at": close.closed_at,
+            },
+        )
+        .option(Merge.on_match, {"name": close.agent})
+    )
+    _iterate(graph_traversal, "upsert Agent", agent_vid)
+
+    _ensure_edge(g, agent_vid, thread_vid, "RESOLVES", close.edge_properties())
+
+    graph_traversal = (
+        g.V(thread_vid).has_label("Thread").property("status", close.status.value)
+    )
+    _iterate(graph_traversal, "close Thread", thread_vid)
+    return agent_vid
 
 
 def write_trace(

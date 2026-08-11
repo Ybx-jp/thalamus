@@ -69,11 +69,27 @@ authoring rules, the dialect split, and the wider proven-query store are the
 
 ## Tested memory_query recipes
 
-Thread lifecycle — which sessions touched a thread, in order:
+Thread lifecycle — who touched a thread, in order:
 
-    g.V('scope:main:thread:<id>').in('SPAWNS','CONTINUES','RESOLVES')
-      .order().by('timestamp').project('session','when')
-      .by(values('session_id')).by(values('timestamp'))
+    g.V('scope:main:thread:<id>').inE('SPAWNS','CONTINUES','RESOLVES')
+      .project('by','when','how')
+      .by(outV().coalesce(values('session_id'),values('name')))
+      .by(coalesce(values('closed_at'),outV().values('timestamp')))
+      .by(label())
+
+Walk the **edge**, not the vertex: a thread can be closed by an `Agent`
+(`agent:operator`, an operator-approved close) as well as by a `Session`, and an
+Agent carries no `timestamp` and no `session_id` — a traversal that hops straight
+to the source vertex and reads those returns nothing for exactly the closes an
+audit is looking for. The time of an agent-written close lives on the edge as
+`closed_at`, beside its `basis`, `disposition` and `approval_ref`.
+
+Agent-written closes and what they cite:
+
+    g.V().hasLabel('Agent').outE('RESOLVES')
+      .project('thread','basis','why','approved_on')
+      .by(inV().values('title')).by(values('basis'))
+      .by(values('disposition')).by(values('surface'))
 
 Provenance walk — a claim back to its retained evidence (docs/03 inspector):
 

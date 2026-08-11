@@ -8,7 +8,8 @@ schema as it stands and the design decisions that shape it; the decision log in
 
 | | |
 |---|---|
-| **Core node types** | `Session`, `Artifact`, `Claim`, `Thread`, `Source`, `Entity` (+ `Trace`, `Exchange`, `KnowledgeBatch` for the eval and consultation records) |
+| **Core node types** | `Session`, `Artifact`, `Claim`, `Thread`, `Source`, `Entity`, `Agent` (+ `Trace`, `Exchange`, `KnowledgeBatch` for the eval and consultation records) |
+| **The globals** | `Artifact` and `Agent` — unscoped, one vertex per identifier, and edges touching them are not scope crossings (see [the global carve-out](#the-global-carve-out-and-a-trap-it-sets)). Safe to share because neither carries an assertion: an Artifact is a tier-1 observation of the operator's own repo, an Agent is only an identity that acted |
 | **Core edge types** | `CONTAINS`, `TOUCHES`, `SPAWNS`, `BLOCKS`, `CONTINUES`, `RESOLVES`, `SOLVED_BY`, `DERIVED_FROM`, `REFERENCES`, `CONSULTS`, `QUERIES`, `RETURNS`, `ABOUT`, `SUPERSEDES` |
 | **Vertex IDs** | `scope:<scope>:<type>:<local_id>` — scope is a segment of identity |
 | **Entrypoints** | `memory_open_threads`, `memory_open_problems`, `memory_recall_recent`, `memory_recall_by_project` |
@@ -211,13 +212,22 @@ model-written text, which this layer refuses on the same grounds it refuses to i
 room from co-timing. `THALAMUS_FORKED_FROM` carries it, the pin ledger holds it, and
 distillation reads it back ledger-first.
 
-### The global-Artifact carve-out (and a trap it sets)
+### The global carve-out (and a trap it sets)
 
-**`Artifact` is global** — one vertex per identifier, shared across every scope,
-the only unscoped node type. Two experts touching `src/foo.py` land on the same
-node, deliberately: artifacts are the **join key** between scopes and a large part
-of why the main plane is connective at all. This is safe because artifacts are
-tier-1 observations of the operator's own repo, not a poisoning vector.
+**`Artifact` and `Agent` are global** — one vertex per identifier, shared across
+every scope. Two experts touching `src/foo.py` land on the same node, deliberately:
+artifacts are the **join key** between scopes and a large part of why the main plane
+is connective at all. This is safe because artifacts are tier-1 observations of the
+operator's own repo, not a poisoning vector.
+
+`Agent` is global for the same reason and a stronger one: it carries no content at
+all, only an identity that acted. That is what makes an operator-approved thread
+close expressible without relaxing `RESOLVES.may_cross_scope` — the partition guards
+a channel for content, and a close moves none. The safety property moves to the
+payload instead, and `audit_edges` enforces it: an agent-written close must cite a
+`basis`, and that basis must resolve in the closed thread's own scope or be global.
+A basis pointing into a third scope would leave the thread's own readers holding a
+citation they are confined away from, which is the crossing that actually matters.
 
 Two consequences, the second one a trap:
 

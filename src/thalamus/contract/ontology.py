@@ -8,10 +8,14 @@ immediately. Everything downstream now derives from the tuples below.
 
 Two contract rules are encoded here rather than described in prose:
 
-1. **`Artifact` is global.** It is the one unscoped node type — a single vertex per
-   identifier, shared across every scope. Artifacts are the join key between scopes
-   and much of why the main plane is connective at all. They are safe to share because
-   they are tier-1 observations of the operator's own repo, not a poisoning vector.
+1. **`Artifact` and `Agent` are global.** They are the unscoped node types — a single
+   vertex per identifier, shared across every scope. Artifacts are the join key between
+   scopes and much of why the main plane is connective at all. They are safe to share
+   because they are tier-1 observations of the operator's own repo, not a poisoning
+   vector. An Agent is safe for the same reason and one more: it carries no content at
+   all, only an identity that acted, so sharing it moves no claim across a boundary.
+   That is what lets an operator close a thread in any scope without the close becoming
+   a scope crossing — the partition guards a channel for content, and a close has none.
 
 2. **Which edges may cross a scope.** Direct expert→expert edges between *scoped*
    nodes are illegal: consultation routes through a session in the main scope, which is
@@ -45,7 +49,7 @@ class NodeType:
     """Which property renders as the human-readable label in the viewer."""
 
     scoped: bool = True
-    """False only for globals. Today that is `Artifact` and `Artifact` alone."""
+    """False only for globals: `Artifact` and `Agent`."""
 
     kinds: tuple[str, ...] = ()
     """Discriminator values, if this label has subtypes. Extensions may add more."""
@@ -92,8 +96,19 @@ CORE_NODES: tuple[NodeType, ...] = (
     # 98% of the archive that is session transcripts, where the node count is the
     # ~100x it predicted.
     NodeType("Chunk", "chunk", "text", expandable=False),
-    # The one global. Not scoped, deliberately. See module docstring.
+    # Global. Not scoped, deliberately. See module docstring.
     NodeType("Artifact", "artifact", "identifier", scoped=False),
+    # Who acted, when the actor is not a session. Global for the same reason Artifact
+    # is, plus one stronger: an Agent carries no content, only an identity, so it can
+    # be an endpoint in any scope without moving anything across the boundary.
+    #
+    # It exists because a thread closed by the operator has no session behind it, and
+    # the two alternatives are both worse: a bare status flip leaves nothing for an
+    # adjudication to walk, and minting a Session for a conversation that never
+    # happened corrupts the entrypoint surface. PROV-O's *attribution without activity*
+    # pattern is the precedent — ascribe to the agent when the generating activity is
+    # irrelevant (`scope:architect:source:6b96671ab84faf12ce3f041aca12c3f93a6df2ed242348810743179a68e69555`).
+    NodeType("Agent", "agent", "name", scoped=False, expandable=False),
     # A retrieval event: one memory-tool call, recorded verbatim by the PostToolUse tap
     # and landed here by `thalamus eval sync`. The eval loop reads the same substrate it
     # grades — "the trace store IS a property graph" (docs/04) — so utility verdicts sit
@@ -113,7 +128,18 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     EdgeType("CONTAINS", note="Session -> Claim"),
     EdgeType("SPAWNS", note="Session -> Thread"),
     EdgeType("CONTINUES", note="Session -> Thread"),
-    EdgeType("RESOLVES", note="Session -> Thread"),
+    # Two closers, one label, at two levels of detail. Distillation writes the bare
+    # `Session -> Thread` when a transcript settles a thread; an operator-approved
+    # close writes `Agent -> Thread` carrying its evidence in edge properties (basis,
+    # role, on_behalf_of, surface, approval_ref, approver_evidence, closed_at,
+    # disposition). PROV-O's qualification pattern licenses exactly this — the
+    # qualified form implies the unqualified — and it is already the house idiom
+    # (`RETURNS.used`, `DERIVED_FROM.anchors`). Consumers that only ask "is this thread
+    # closed and by what" keep working against the label alone.
+    #
+    # `may_cross_scope` stays False and needs no exception: an Agent is global, and
+    # `edge_crosses_scope` does not count a global endpoint as a crossing.
+    EdgeType("RESOLVES", note="Session|Agent -> Thread"),
     EdgeType("BLOCKS", note="Thread -> Thread"),
     EdgeType("SOLVED_BY", note="Claim(problem) -> Claim(solution)"),
     EdgeType(

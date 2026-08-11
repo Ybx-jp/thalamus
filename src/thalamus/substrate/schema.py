@@ -301,6 +301,94 @@ class ThreadRef(BaseModel):
     notes: Optional[str] = Field(None, description="What progress was made")
 
 
+class CloseDisposition(str, Enum):
+    """Why a thread closed, as a closed set — the stratification variable.
+
+    Without it, resolution latency conflates "the work got done" with "this was never
+    work", and the two have nothing to do with each other. `never_work` is the one that
+    matters most here: a thread minted from a probe's return value was born wrong, and
+    counting the weeks it sat open as latency measures nothing.
+    """
+
+    DONE = "done"
+    SUPERSEDED = "superseded"
+    NEVER_WORK = "never-work"
+    ABANDONED = "abandoned"
+
+
+class ThreadClose(BaseModel):
+    """One operator-authorized close of a thread, written by an Agent, not a Session.
+
+    The evidence rides on the edge. `basis` is the vertex the close rests on and is
+    mandatory — an uncited close is a status flip with a name on it, and `audit_edges`
+    rejects it. For a thread that was *born* wrong the basis is its own spawning
+    session: unciteable-for-resolution is not unciteable.
+
+    **A close is attributable, never authenticated, and this schema is deliberately
+    incapable of claiming otherwise.** There is no `approved: bool`. The console has no
+    authentication and does not pretend to; an in-session agent runs Bash at the
+    operator's own uid and can read any secret the operator could. So what is recorded
+    is *what kind of evidence exists* that the operator approved — `approver_evidence`
+    — and a pointer to it. A forged approval is caught by corroborating the ledger
+    afterwards, not prevented at the write.
+    """
+
+    thread_id: str = Field(description="Thread ID being closed, unqualified")
+    scope: str = Field(default=MAIN_SCOPE, description="Scope the thread lives in")
+    disposition: CloseDisposition = Field(description="Why it closed")
+    basis: str = Field(
+        description="Vertex ID this close rests on. Must resolve in the thread's own "
+        "scope, or be global"
+    )
+    agent: str = Field(default="operator", description="Identity that closed it")
+    role: str = Field(
+        default="approver",
+        description="What the agent did — PROV-O's prov:hadRole on the association",
+    )
+    on_behalf_of: Optional[str] = Field(
+        None, description="Session that proposed this close, if one did"
+    )
+    surface: str = Field(description="Where approval was given: cli | console | session")
+    approval_ref: str = Field(description="Ledger row this close was approved in")
+    approver_evidence: str = Field(
+        description="What kind of evidence exists that the operator approved — "
+        "`cli:tty`, `console:<request-id>`, `session:<id>`. Never a bare assertion."
+    )
+    closed_at: str = Field(description="ISO-8601 timestamp of the approval")
+    notes: Optional[str] = Field(None, description="Why, in the operator's words")
+
+    @property
+    def status(self) -> ThreadStatus:
+        """The terminal status, derived rather than set.
+
+        Two fields that can disagree will, and a thread marked `resolved` with
+        disposition `never-work` is a contradiction a reader has to arbitrate. Work
+        that got done or was overtaken is `resolved`; a thread that was never work, or
+        that is being dropped undone, is `abandoned`.
+        """
+        if self.disposition in (CloseDisposition.NEVER_WORK, CloseDisposition.ABANDONED):
+            return ThreadStatus.ABANDONED
+        return ThreadStatus.RESOLVED
+
+    def edge_properties(self) -> dict[str, object]:
+        """The RESOLVES edge's payload. Absent optionals are omitted, never written
+        empty — a property that is present and blank reads as an answered question."""
+        properties: dict[str, object] = {
+            "basis": self.basis,
+            "role": self.role,
+            "surface": self.surface,
+            "approval_ref": self.approval_ref,
+            "approver_evidence": self.approver_evidence,
+            "closed_at": self.closed_at,
+            "disposition": self.disposition.value,
+        }
+        if self.on_behalf_of:
+            properties["on_behalf_of"] = self.on_behalf_of
+        if self.notes:
+            properties["notes"] = self.notes
+        return properties
+
+
 class SessionGraph(BaseModel):
     """A single session's extracted graph. This is what the extraction skill outputs."""
 
