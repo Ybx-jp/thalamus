@@ -12,7 +12,7 @@ motive, and the commands. Ten minutes end to end.
 
 ## 1. The memory loop — how it remembers
 
-![The loop: a Tuesday session writes nothing to memory while it runs; when it ends a SessionEnd hook runs thalamus extract, which archives the transcript and distils it into claims and threads written to a local graph. A separate Friday session calls memory_recall, its words are matched literally against the stored text, and what matches is returned as quoted data that informs the agent and never instructs it.](visual/loop.svg)
+![The memory loop: a Tuesday session writes down nothing it learns until it ends, its claims and threads being produced afterwards; when it ends a SessionEnd hook runs thalamus extract, which archives the transcript and distils it into claims and threads written to a local graph. A separate Friday session calls memory_recall, its words are matched literally against the stored text, and what matches is returned as quoted data that informs the agent and never instructs it.](visual/loop.svg)
 
 The thing to take from this: **the memory is the agent's own history, not a document
 corpus**, and **you never save anything by hand**. A session is read-only against memory
@@ -174,7 +174,8 @@ backgrounds this page does not control:
 | secondary text | `#57606a` | `#f7f7f5` | 5.96:1 | 1.4.3, needs 4.5:1 |
 | dashed markers that carry meaning | `#6e7781` | `#f7f7f5` | 4.24:1 | 1.4.11, needs 3:1 |
 
-All clear WCAG AA, and the text pairs clear AAA. No distinction in any aid is carried by
+All three clear WCAG AA. `#1f2328` also clears AAA (7:1); `#57606a` at 5.96:1 does **not**
+— it clears AAA only at large text sizes, and it is not used at those sizes. No distinction in any aid is carried by
 colour alone: each is also carried by dash pattern, position, weight, or label. That is a
 property the set was designed for, not one that has been tested — no reader has been run
 against a greyscaled or contrast-reduced rendering, and until one has, "survives greyscale"
