@@ -26,6 +26,7 @@ from thalamus.eval import snapshots
 from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
+from thalamus.harness.ceremonies import CEREMONY_KINDS
 from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
 from thalamus.viewer.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
@@ -735,6 +736,95 @@ def main():
     )
     room_create.add_argument("room", help="Room name (lowercase letters, digits, hyphens)")
 
+    # Ceremony ledger — docs/12's capture layer. Every verb here writes a row that
+    # cannot be reconstructed after the fact, which is why they exist before any of
+    # the lifecycle they record.
+    ceremony_parser = subparsers.add_parser(
+        "ceremony", help="The ceremony ledger: occasions, skips, deliverables, assignments"
+    )
+    ceremony_sub = ceremony_parser.add_subparsers(dest="ceremony_command")
+
+    ceremony_start = ceremony_sub.add_parser(
+        "start", help="Open an occasion — written at start so an abort still leaves a row"
+    )
+    ceremony_start.add_argument("room", help="Room the ceremony is held in")
+    ceremony_start.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
+    ceremony_start.add_argument(
+        "--scope", action="append", default=[], dest="scopes",
+        help="A participating scope; repeat for each member",
+    )
+    ceremony_start.add_argument(
+        "--deliverable", action="append", default=[], dest="deliverables",
+        help="A deliverable id this occasion concerns; repeat as needed",
+    )
+    ceremony_start.add_argument(
+        "--arm", default="",
+        help="The arm this occasion realizes. Must match a prior assignment — the "
+             "audit reports a disagreement rather than resolving it",
+    )
+    ceremony_start.add_argument("--prereg", default="", help="Pre-registration id")
+
+    ceremony_end = ceremony_sub.add_parser("end", help="Close an occasion (appends, never mutates)")
+    ceremony_end.add_argument("occasion", help="Occasion id, e.g. alpha:review:1")
+    ceremony_end.add_argument(
+        "--outcome", default="", help="How it ended — never how well it went"
+    )
+
+    ceremony_skip = ceremony_sub.add_parser(
+        "skip", help="Record a ceremony that did NOT happen — the ablation is only "
+                     "readable if a skip writes"
+    )
+    ceremony_skip.add_argument("room", help="Room the ceremony was due in")
+    ceremony_skip.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
+    ceremony_skip.add_argument("--reason", default="", help="Free text; the row is the datum")
+
+    ceremony_mint = ceremony_sub.add_parser(
+        "mint", help="Mint a deliverable's permanent id, carried across every revision"
+    )
+    ceremony_mint.add_argument("room", help="Room the deliverable belongs to")
+    ceremony_mint.add_argument("title", help="What it is; the id is derived once and then fixed")
+    ceremony_mint.add_argument("--owner", default="", help="Owning scope")
+    ceremony_mint.add_argument("--occasion", default="", help="Occasion that minted it")
+
+    ceremony_revise = ceremony_sub.add_parser(
+        "revise", help="Attach a revision to an existing deliverable id"
+    )
+    ceremony_revise.add_argument("deliverable", help="Deliverable id")
+    ceremony_revise.add_argument(
+        "--artifact", default="", help="What names this revision — a path, commit, or vertex id"
+    )
+    ceremony_revise.add_argument("--occasion", default="", help="Occasion that produced it")
+    ceremony_revise.add_argument("--author", default="", help="Authoring scope")
+
+    ceremony_assign = ceremony_sub.add_parser(
+        "assign",
+        help="Deal deliverables to arms from a seed, BEFORE the ceremony runs — "
+             "unrecorded in advance, the reference distribution does not exist",
+    )
+    ceremony_assign.add_argument("room", help="Room; also the block permutation is restricted to")
+    ceremony_assign.add_argument("kind", choices=CEREMONY_KINDS, help="Which ceremony")
+    ceremony_assign.add_argument(
+        "--unit", action="append", default=[], dest="units", required=True,
+        help="A deliverable id to assign; repeat for each",
+    )
+    ceremony_assign.add_argument(
+        "--arm", action="append", default=[], dest="arms", required=True,
+        help="An arm name; repeat. Pair each with a --count in the same order",
+    )
+    ceremony_assign.add_argument(
+        "--count", action="append", type=int, default=[], dest="counts", required=True,
+        help="How many units that arm takes; must sum to the unit count",
+    )
+    ceremony_assign.add_argument(
+        "--seed", type=int, required=True, help="The seed the deal is replayable from"
+    )
+    ceremony_assign.add_argument("--prereg", default="", help="Pre-registration id")
+
+    ceremony_sub.add_parser("show", help="The ledger room by room, with the audit under it")
+    ceremony_sub.add_parser(
+        "audit", help="Read the ledger against its own obligations; exits 1 if unclean"
+    )
+
     # Visualize command
     visualize_parser = subparsers.add_parser(
         "visualize", help="Open an interactive session graph in the local viewer"
@@ -851,6 +941,8 @@ def main():
         _cmd_quick(args, quick_parser)
     elif args.command == "room":
         _cmd_room(args, parser)
+    elif args.command == "ceremony":
+        _cmd_ceremony(args, parser)
     elif args.command == "visualize":
         _cmd_visualize(args)
     elif args.command == "console":
@@ -2378,6 +2470,93 @@ def _cmd_room(args, parser):
         return
 
     parser.parse_args(["room", "--help"])
+
+
+def _cmd_ceremony(args, parser):
+    from thalamus.harness import ceremonies
+
+    try:
+        if args.ceremony_command == "start":
+            row = ceremonies.start(
+                args.room,
+                args.kind,
+                participant_scopes=args.scopes,
+                deliverable_ids=args.deliverables,
+                arm=args.arm,
+                prereg_id=args.prereg,
+            )
+            # The id is printed alone on the last line so a caller can capture it
+            # without parsing: every later row about this occasion is keyed on it,
+            # including the session record item 8 puts it on.
+            print(f"Occasion open — {row['ceremony_kind']} in `{row['room']}`, "
+                  f"{len(row['participant_scopes'])} participant(s)")
+            print(row["occasion_id"])
+            return
+
+        if args.ceremony_command == "end":
+            row = ceremonies.end(args.occasion, outcome=args.outcome)
+            print(f"Occasion {row['occasion_id']} closed at {row['ts_end']}")
+            return
+
+        if args.ceremony_command == "skip":
+            row = ceremonies.skip(args.room, args.kind, reason=args.reason)
+            print(f"Non-occurrence recorded — {row['occasion_id']}")
+            return
+
+        if args.ceremony_command == "mint":
+            row = ceremonies.mint_deliverable(
+                args.room, args.title, owner_scope=args.owner, occasion=args.occasion
+            )
+            print(f"Deliverable minted — {row['title']}")
+            print(row["deliverable_id"])
+            return
+
+        if args.ceremony_command == "revise":
+            row = ceremonies.record_revision(
+                args.deliverable,
+                artifact=args.artifact,
+                occasion=args.occasion,
+                author_scope=args.author,
+            )
+            print(f"Revision recorded on {row['deliverable_id']}")
+            return
+
+        if args.ceremony_command == "assign":
+            row = ceremonies.record_assignment(
+                args.room,
+                args.kind,
+                args.units,
+                args.arms,
+                args.counts,
+                args.seed,
+                prereg_id=args.prereg,
+            )
+            print(f"Assignment written for `{row['room']}` {row['ceremony_kind']} — "
+                  f"seed {row['assignment_seed']}, procedure {row['procedure']}, "
+                  f"{row['space']} possible assignment(s)")
+            for unit, arm in sorted(row["assignment"].items()):
+                print(f"  {unit:32} {arm}")
+            if row["space"] > 0:
+                # The floor is a property of the design and knowable now, which is the
+                # only time it is still free to change (eval/randomization.py).
+                print(f"  smallest attainable p from this block alone: {1 / row['space']:.3f}")
+            return
+    except ValueError as e:
+        print(f"Ceremony failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.ceremony_command == "show":
+        print(ceremonies.render())
+        return
+
+    if args.ceremony_command == "audit":
+        report = ceremonies.audit()
+        print(report.note())
+        if not report.clean():
+            sys.exit(1)
+        return
+
+    parser.parse_args(["ceremony", "--help"])
 
 
 def _cmd_visualize(args):

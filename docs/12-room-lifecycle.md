@@ -1,14 +1,16 @@
 # Room Lifecycle — Ceremonies, Dispatch, and What Gets Recorded
 
-**Status:** design. The room *boundary* is built — `--room`, `thalamus room
-create/list/show`, the outbound room guard, per-room `CLAUDE_CONFIG_DIR` with its own
-`projects/` and `sessions/`, and the `thalamus eval rooms` manipulation check
+**Status:** design, with the capture layer built. The room *boundary* is built —
+`--room`, `thalamus room create/list/show`, the outbound room guard, per-room
+`CLAUDE_CONFIG_DIR` with its own `projects/` and `sessions/`, and the `thalamus eval
+rooms` manipulation check
 ([lab/045](../lab/045-the-registry-that-was-not-the-socket.md),
 [lab/046](../lab/046-the-third-channel-is-the-transcript.md),
 [lab/047](../lab/047-the-room-that-was-only-a-variable.md),
-[lab/048](../lab/048-the-treatment-that-was-only-a-label.md)). The lifecycle below is
-not built. Nothing here is a measured result about rooms; rooms have never been
-measured for efficacy.
+[lab/048](../lab/048-the-treatment-that-was-only-a-label.md)). **Items 1–4 of *What is
+recorded*, below, are built** — `harness/ceremonies.py` and `thalamus ceremony`. The
+ceremonies themselves, dispatch, and the promotion path are not. Nothing here is a
+measured result about rooms; rooms have never been measured for efficacy.
 
 ## What a room is for
 
@@ -432,18 +434,47 @@ Capture is now-or-never; analysis never is
 ([lab/048](../lab/048-the-treatment-that-was-only-a-label.md)). Items 1–4 make later
 analysis *possible*; 5–10 make it *honest*. If anything is cut, it is not from 1–4.
 
+**Items 1–4 are built** — `harness/ceremonies.py`, driven by `thalamus ceremony
+start/end/skip/mint/revise/assign/show/audit`, writing
+`~/.thalamus/ceremonies/ceremonies.jsonl`.
+
 1. **A ceremony ledger** — one append-only row per *occasion*, written at ceremony
    **start** so an aborted ceremony still leaves a row:
    `{room, ceremony_kind, occasion_index, ts_start, ts_end, participant_scopes[],
    deliverable_ids[], arm, assignment_seed, prereg_id}`. Modeled on `pins.jsonl`.
+   `ts_end` arrives as its own `end` row rather than as a mutation, so an append-only
+   file never has to be rewritten in place; the pairing key is `occasion_id`,
+   `<room>:<kind>:<index>`, which is also what item 8 puts on the session record.
 2. **Ceremony non-occurrence** — a skipped retrospective is a row. Otherwise a skip is
    indistinguishable from an unlogged ceremony, and the only naturally-occurring ablation
-   available is lost.
+   available is lost. **A skip consumes an occasion index**: the counter numbers the
+   moments a ceremony was due, not the times it ran, so renumbering around a skip would
+   erase the non-occurrence the row exists to preserve.
 3. **A stable `deliverable_id`**, minted at planning and carried across every revision.
    Nothing in a finished graph tells you two artifacts at two times were one deliverable.
+   Minting one title twice yields two ids rather than merging, because a false merge
+   interleaves two revision histories beyond later separation.
 4. **The assignment record and its seed, written before the ceremony runs.** A
    randomization-inference reference distribution is the set of assignments that *could
-   have* happened; unrecorded in advance, that set does not exist.
+   have* happened; unrecorded in advance, that set does not exist. The row carries what
+   a seed alone cannot replay: the eligible units *as they stood*, the arm sizes, the
+   block (the room, which is how the never-swap-across-rooms restriction becomes
+   structural), the space, and a versioned `procedure` naming the deal that consumed the
+   seed.
+
+**The four share one ledger, and every row carries an `event`.** Sharing is what makes
+"the assignment preceded the occasion" answerable by *position* rather than by a
+second-resolution timestamp two writes can tie on. The discriminator is not optional
+decoration: undiscriminated rows sharing the pin ledger are what made last-row-wins
+read a correctly-launched fork as having met no obligation.
+
+`thalamus ceremony audit` reads the ledger against these obligations and exits non-zero
+on a defect it can still name today: an occasion carrying an arm nothing assigned in
+advance, an assignment written after its occasion started, a realized arm contradicting
+the deal, a deliverable id used but never minted, an orphaned end, a duplicated
+occasion id. A `start` row never defaults its `arm` from the assignment — copying one
+into the other would make a randomization that was not honoured unobservable from
+either record alone.
 5. **Commitment rows** — `{room, deliverable_id, owner_scope, commitment_text,
    predicted_artifact, resolve_by}`.
 6. **Resolution rows, written by tooling and never by a member**, at each later occasion

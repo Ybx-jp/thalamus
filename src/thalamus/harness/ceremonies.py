@@ -1,0 +1,670 @@
+"""The ceremony ledger — what a room records while it can still be recorded.
+
+Capture is now-or-never and analysis never is ([lab/048](../../../lab/048-the-treatment-that-was-only-a-label.md)),
+so this module is the first thing built of [docs/12](../../../docs/12-room-lifecycle.md)'s
+lifecycle and deliberately not the most interesting one. It writes the four records
+that make later analysis *possible at all* — the ones no amount of care after the fact
+can reconstruct:
+
+1. **A ceremony occasion**, written at ceremony **start**, so an aborted ceremony still
+   leaves a row. A ceremony that only writes on success cannot be distinguished from one
+   that never ran.
+2. **Non-occurrence.** A skipped retrospective is a row. Otherwise a skip is
+   indistinguishable from an unlogged ceremony and the only naturally-occurring
+   ablation in the design is lost.
+3. **A stable `deliverable_id`**, minted once and carried across every revision. Nothing
+   in a finished graph tells you two artifacts at two times were one deliverable.
+4. **The assignment and its seed, written before the ceremony runs.** A
+   randomization-inference reference distribution is the set of assignments that *could
+   have* happened; unrecorded in advance, that set does not exist
+   (`eval/randomization.py`).
+
+**Nothing here is an outcome.** The ledger records that an occasion happened, to whom,
+under which arm — never whether it worked. Room-level inference is descriptive forever
+at this corpus size (docs/12 §How this is measured), and a capture layer that started
+scoring things would be manufacturing the outcome it was built to make honest.
+
+## One file, and an `event` on every row
+
+All four records share `~/.thalamus/ceremonies/ceremonies.jsonl` for a reason item 4
+supplies: the assignment must be provably *prior* to the occasion it assigns, and a
+single append-only file orders its rows by position rather than only by a timestamp
+two writers could tie on.
+
+Sharing a ledger is exactly what went wrong in the pin ledger, where `pin-engaged.sh`'s
+`{event: "engaged"}` rows carried none of the launch fields and last-row-wins read a
+correctly-launched fork as having met no obligation (docs/index, 2026-08-09). The fix
+generalises rather than argues against sharing: **every row here carries `event` from
+row one**, and every reader filters on it before reading anything else. A row kind that
+cannot be told apart from another is the defect; two kinds in one file is not.
+
+## What this module does not do
+
+There is no dispatch, no ceremony *conduct*, and no promotion path. Those are the rest
+of docs/12 and they can be added later without losing anything; these four cannot.
+"""
+
+from __future__ import annotations
+
+import fcntl
+import json
+import math
+import random
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+CEREMONIES_DIR = Path.home() / ".thalamus" / "ceremonies"
+LEDGER_FILE = CEREMONIES_DIR / "ceremonies.jsonl"
+
+# The surviving ceremonies of docs/12's filter, and a closed set on purpose. The
+# lifecycle's whole discipline is that a ceremony must earn its place against a
+# constraint agent sessions actually have — three were cut — so a kind arriving by
+# typo is not a new ceremony, it is a silently forked occasion counter. `retrospective`
+# stays separate from `close` because it is the one whose *non-occurrence* the design
+# most wants countable.
+CEREMONY_KINDS = ("open", "review", "acceptance", "retrospective", "close")
+
+# Row kinds. `assigned` precedes `start`; `end` and `skipped` are terminal.
+EVENT_ASSIGNED = "assigned"
+EVENT_START = "start"
+EVENT_END = "end"
+EVENT_SKIPPED = "skipped"
+EVENT_DELIVERABLE = "deliverable"
+EVENT_REVISION = "revision"
+
+# The draw algorithm, versioned in every assignment row. A seed replays an assignment
+# only against the procedure that consumed it, so changing the deal without changing
+# this name would silently invalidate every earlier row's reference distribution while
+# leaving it looking replayable.
+PROCEDURE = "blocked-shuffle-v1"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _slug(text: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
+    return cleaned or "deliverable"
+
+
+def read_rows(path: Path | None = None) -> list[dict]:
+    """Every ledger row in write order, malformed lines skipped.
+
+    Order is load-bearing rather than incidental: `audit()` decides whether an
+    assignment preceded its occasion by position, so a reader that sorted these by
+    timestamp would answer item 4's question with the field two concurrent writers are
+    most likely to tie on.
+    """
+    ledger = path or LEDGER_FILE
+    if not ledger.is_file():
+        return []
+    rows: list[dict] = []
+    with ledger.open(errors="ignore") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict) and record.get("event"):
+                rows.append(record)
+    return rows
+
+
+def _append(row: dict, path: Path | None = None) -> dict:
+    """Append one row under an exclusive lock, and return it.
+
+    The lock is held across read-then-append, not just the write, because
+    `occasion_index` is computed from the rows already present: two ceremonies opening
+    in one room at once would otherwise both read the same count and claim the same
+    occasion. Sessions run concurrently in this checkout by design, so that race is the
+    expected case rather than the exotic one.
+    """
+    ledger = path or LEDGER_FILE
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    with ledger.open("a") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return row
+
+
+def occasion_id(room: str, kind: str, index: int) -> str:
+    """The occasion's name, and the key item 8 puts on a session record.
+
+    Readable and derivable rather than random: `eval/cost.py` attributes burn per
+    ceremony by this string, and an operator reading a cost table should be able to see
+    which occasion a row is without joining back to the ledger.
+    """
+    return f"{room}:{kind}:{index}"
+
+
+def next_index(room: str, kind: str, rows: list[dict] | None = None,
+                path: Path | None = None) -> int:
+    """The next occasion number for one (room, kind), counting from 1.
+
+    **A skipped ceremony consumes an index.** The counter numbers *occasions* — the
+    moments the ceremony was due — not the times it ran, so a room whose third
+    retrospective was skipped has no fourth-that-is-really-third. Renumbering around
+    skips would erase the non-occurrence item 2 exists to preserve.
+    """
+    records = rows if rows is not None else read_rows(path)
+    seen = sum(
+        1
+        for row in records
+        if row.get("event") in (EVENT_START, EVENT_SKIPPED)
+        and row.get("room") == room
+        and row.get("ceremony_kind") == kind
+    )
+    return seen + 1
+
+
+# --- 4. The assignment, written before the ceremony runs ----------------------------
+
+
+def assignment_space(units: int, counts: tuple[int, ...]) -> int:
+    """How many ways this many units could have been dealt into these arm sizes.
+
+    The multinomial coefficient — the size of the reference distribution for one block.
+    Reported at assignment time rather than at analysis time because it is a property of
+    the design, knowable while the design is still free to change
+    (`randomization.feasible` makes the same argument for the two-arm case).
+    """
+    if units < 0 or any(count < 0 for count in counts) or sum(counts) != units:
+        return 0
+    total = math.factorial(units)
+    for count in counts:
+        total //= math.factorial(count)
+    return total
+
+
+def draw(units: list[str], arms: list[str], counts: list[int], seed: int) -> dict[str, str]:
+    """Deal units to arms deterministically from a seed. `PROCEDURE`'s definition.
+
+    Sorted first, then shuffled, so the result depends on the *set* of units and the
+    seed and not on the order the caller happened to pass them in — otherwise two
+    replays of the same recorded assignment could disagree while both looking faithful.
+    """
+    if len(arms) != len(counts):
+        raise ValueError("every arm needs a count")
+    if sum(counts) != len(units):
+        raise ValueError(
+            f"counts sum to {sum(counts)} but there are {len(units)} unit(s) — an "
+            "assignment that does not deal every unit has no reference distribution"
+        )
+    if len(set(units)) != len(units):
+        raise ValueError("units must be distinct — a repeated unit is assigned twice")
+
+    pool = sorted(units)
+    random.Random(seed).shuffle(pool)
+    assignment: dict[str, str] = {}
+    cursor = 0
+    for arm, count in zip(arms, counts, strict=True):
+        for unit in pool[cursor : cursor + count]:
+            assignment[unit] = arm
+        cursor += count
+    return assignment
+
+
+def record_assignment(
+    room: str,
+    kind: str,
+    units: list[str],
+    arms: list[str],
+    counts: list[int],
+    seed: int,
+    *,
+    prereg_id: str = "",
+    path: Path | None = None,
+) -> dict:
+    """Write the assignment for one room's next occasions, before any of them run.
+
+    The row carries what a reference distribution needs and a seed alone does not: the
+    eligible units *as they stood at assignment time*, the arm sizes, the block, and the
+    procedure that consumed the seed. A unit added after this row is not in the space,
+    which is the correct and uncomfortable reading — hence writing it late is a design
+    error the audit reports rather than a bookkeeping slip.
+
+    The block is the room. docs/12 restricts permutation so a deliverable is never
+    swapped across rooms, and since a row assigns within one room, the restriction is
+    structural here rather than a rule analysis has to remember to apply.
+    """
+    if kind not in CEREMONY_KINDS:
+        raise ValueError(f"unknown ceremony kind `{kind}` — one of {CEREMONY_KINDS}")
+    assignment = draw(units, arms, counts, seed)
+    return _append(
+        {
+            "event": EVENT_ASSIGNED,
+            "room": room,
+            "ceremony_kind": kind,
+            "units": sorted(units),
+            "arms": list(arms),
+            "counts": list(counts),
+            "assignment": assignment,
+            "assignment_seed": seed,
+            "procedure": PROCEDURE,
+            "block": room,
+            "space": assignment_space(len(units), tuple(counts)),
+            "prereg_id": prereg_id,
+            "ts": _now(),
+        },
+        path,
+    )
+
+
+def assigned_arm(room: str, kind: str, unit: str, rows: list[dict] | None = None,
+                 path: Path | None = None) -> str:
+    """The arm a unit was dealt, or "" if it was never assigned.
+
+    Last matching assignment wins, so a re-drawn block supersedes its predecessor while
+    both rows survive — the superseded draw is evidence about what the design did, and
+    deleting it would hide a re-randomization.
+    """
+    records = rows if rows is not None else read_rows(path)
+    arm = ""
+    for row in records:
+        if (
+            row.get("event") == EVENT_ASSIGNED
+            and row.get("room") == room
+            and row.get("ceremony_kind") == kind
+        ):
+            mapping = row.get("assignment")
+            if isinstance(mapping, dict) and unit in mapping:
+                arm = str(mapping[unit])
+    return arm
+
+
+# --- 1. The occasion, written at start ----------------------------------------------
+
+
+def start(
+    room: str,
+    kind: str,
+    *,
+    participant_scopes: list[str] | None = None,
+    deliverable_ids: list[str] | None = None,
+    arm: str = "",
+    prereg_id: str = "",
+    path: Path | None = None,
+) -> dict:
+    """Open an occasion. Returns the row, whose `occasion_id` is the handle for it.
+
+    Written before the ceremony does anything, which is the whole point: an occasion
+    that crashes, is abandoned, or is interrupted mid-flight has still left the row that
+    says it was attempted, and `audit()` reports it as unfinished rather than as absent.
+
+    `arm` is not defaulted from the assignment record on purpose. This field records
+    what the occasion *realized*; the assignment records what it was *supposed* to
+    realize, and silently copying one into the other would make the disagreement between
+    them — the only evidence that a randomization was not honoured — unobservable.
+    """
+    if kind not in CEREMONY_KINDS:
+        raise ValueError(f"unknown ceremony kind `{kind}` — one of {CEREMONY_KINDS}")
+    ledger = path or LEDGER_FILE
+    index = next_index(room, kind, path=ledger)
+    return _append(
+        {
+            "event": EVENT_START,
+            "room": room,
+            "ceremony_kind": kind,
+            "occasion_index": index,
+            "occasion_id": occasion_id(room, kind, index),
+            "participant_scopes": sorted(participant_scopes or []),
+            "deliverable_ids": sorted(deliverable_ids or []),
+            "arm": arm,
+            "assignment_seed": "",
+            "prereg_id": prereg_id,
+            "ts_start": _now(),
+        },
+        ledger,
+    )
+
+
+def end(occasion: str, *, outcome: str = "", path: Path | None = None) -> dict:
+    """Close an occasion with a second row. The ledger is append-only.
+
+    `ts_end` arrives as its own row rather than as a mutation of the start row because a
+    file that is rewritten in place can lose the very rows an abort was supposed to
+    leave behind — and because two readers of a mutable ledger can disagree about what
+    it said. The pairing is by `occasion_id`.
+
+    `outcome` says how the occasion ended, never how well it went. Scoring lives outside
+    the capture layer.
+    """
+    return _append(
+        {
+            "event": EVENT_END,
+            "occasion_id": occasion,
+            "outcome": outcome,
+            "ts_end": _now(),
+        },
+        path,
+    )
+
+
+# --- 2. Non-occurrence ---------------------------------------------------------------
+
+
+def skip(room: str, kind: str, *, reason: str = "", path: Path | None = None) -> dict:
+    """Record that a due ceremony did **not** happen.
+
+    This is the row that makes the design's only naturally-occurring ablation readable.
+    Rooms will skip ceremonies — for cost, for irrelevance, because nobody triggered one
+    — and the difference between "skipped" and "ran but was never logged" is invisible
+    unless the skip writes. `reason` is free text and analysis should not lean on it;
+    the row's existence is the datum.
+    """
+    if kind not in CEREMONY_KINDS:
+        raise ValueError(f"unknown ceremony kind `{kind}` — one of {CEREMONY_KINDS}")
+    ledger = path or LEDGER_FILE
+    index = next_index(room, kind, path=ledger)
+    return _append(
+        {
+            "event": EVENT_SKIPPED,
+            "room": room,
+            "ceremony_kind": kind,
+            "occasion_index": index,
+            "occasion_id": occasion_id(room, kind, index),
+            "reason": reason,
+            "ts": _now(),
+        },
+        ledger,
+    )
+
+
+# --- 3. The stable deliverable id ----------------------------------------------------
+
+
+def mint_deliverable(
+    room: str,
+    title: str,
+    *,
+    owner_scope: str = "",
+    occasion: str = "",
+    path: Path | None = None,
+) -> dict:
+    """Mint a deliverable's permanent id at planning time.
+
+    The id is `<room>:<slug>` and never changes, including when the title does: the
+    title describes the deliverable, the id *is* it. Collisions inside a room take a
+    numeric suffix, so minting twice under one name produces two deliverables rather
+    than quietly merging them into one — a false merge is the error that cannot be
+    detected later, since the two revision histories would be interleaved beyond
+    separation.
+    """
+    ledger = path or LEDGER_FILE
+    rows = read_rows(ledger)
+    taken = {
+        str(row.get("deliverable_id"))
+        for row in rows
+        if row.get("event") == EVENT_DELIVERABLE
+    }
+    base = f"{room}:{_slug(title)}"
+    candidate, suffix = base, 2
+    while candidate in taken:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return _append(
+        {
+            "event": EVENT_DELIVERABLE,
+            "room": room,
+            "deliverable_id": candidate,
+            "title": title,
+            "owner_scope": owner_scope,
+            "occasion_id": occasion,
+            "ts": _now(),
+        },
+        ledger,
+    )
+
+
+def record_revision(
+    deliverable: str,
+    *,
+    artifact: str = "",
+    occasion: str = "",
+    author_scope: str = "",
+    path: Path | None = None,
+) -> dict:
+    """Attach a revision to an existing deliverable id.
+
+    The row is what carries identity across time. `artifact` is whatever names this
+    revision concretely — a path, a commit, a vertex id — and is deliberately untyped
+    here, because the fate of a commitment is resolved by tooling against git and the
+    graph (docs/12 item 6) and pinning the format now would decide that later question
+    early.
+    """
+    return _append(
+        {
+            "event": EVENT_REVISION,
+            "deliverable_id": deliverable,
+            "artifact": artifact,
+            "occasion_id": occasion,
+            "author_scope": author_scope,
+            "ts": _now(),
+        },
+        path,
+    )
+
+
+def deliverables(room: str = "", rows: list[dict] | None = None,
+                 path: Path | None = None) -> dict[str, list[dict]]:
+    """Deliverable id → its revision rows in order, for one room or all of them."""
+    records = rows if rows is not None else read_rows(path)
+    minted = {
+        str(row.get("deliverable_id")): []
+        for row in records
+        if row.get("event") == EVENT_DELIVERABLE
+        and (not room or row.get("room") == room)
+    }
+    for row in records:
+        if row.get("event") == EVENT_REVISION:
+            key = str(row.get("deliverable_id"))
+            if key in minted:
+                minted[key].append(row)
+    return minted
+
+
+# --- The audit that makes the four worth writing -------------------------------------
+
+
+@dataclass(frozen=True)
+class LedgerAudit:
+    """What the ledger says about its own completeness.
+
+    Every finding here is a defect the ledger can still name *today* and could not
+    reconstruct later, which is the same standard that put items 1–4 first.
+    """
+
+    occasions: int = 0
+    skipped: int = 0
+    unfinished: tuple[str, ...] = ()
+    """Occasions with a start and no end. Not an error — an aborted ceremony leaving a
+    row is the behaviour item 1 was built for — but a live room with a growing count
+    here is a ceremony that never closes."""
+
+    unassigned: tuple[str, ...] = ()
+    """Occasions carrying an arm whose deliverables were never assigned in advance. The
+    sharp one: post-hoc assignment does not merely weaken the inference, it means the
+    reference distribution does not exist."""
+
+    late_assignments: tuple[str, ...] = ()
+    """Occasions whose assignment row was written *after* their start row. Detected by
+    position in the file, which is why the four record kinds share one ledger."""
+
+    arm_mismatches: tuple[str, ...] = ()
+    """Occasions whose realized arm contradicts the arm its deliverable was dealt. A
+    randomization not honoured, and unreadable from either record alone."""
+
+    unminted: tuple[str, ...] = ()
+    """Deliverable ids referenced by an occasion or a revision but never minted."""
+
+    orphan_ends: tuple[str, ...] = ()
+    """End rows naming an occasion that never started."""
+
+    duplicate_occasions: tuple[str, ...] = ()
+    """Occasion ids claimed more than once — the shape a lost lock would produce."""
+
+    def clean(self) -> bool:
+        return not (
+            self.unassigned
+            or self.late_assignments
+            or self.arm_mismatches
+            or self.unminted
+            or self.orphan_ends
+            or self.duplicate_occasions
+        )
+
+    def note(self) -> str:
+        lines = [
+            f"Ceremony ledger: {self.occasions} occasion(s), {self.skipped} recorded "
+            f"non-occurrence(s), {len(self.unfinished)} unfinished"
+        ]
+        for label, items in (
+            ("occasion(s) with an arm but no prior assignment — no reference distribution "
+             "exists for these", self.unassigned),
+            ("occasion(s) assigned after they started", self.late_assignments),
+            ("occasion(s) whose realized arm contradicts the assignment", self.arm_mismatches),
+            ("deliverable id(s) used but never minted", self.unminted),
+            ("end row(s) for an occasion that never started", self.orphan_ends),
+            ("duplicated occasion id(s)", self.duplicate_occasions),
+        ):
+            if items:
+                lines.append(f"  {len(items)} {label}: {', '.join(sorted(items))}")
+        if self.clean():
+            lines.append("  clean — every occasion is assigned in advance and accounted for")
+        return "\n".join(lines)
+
+
+def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAudit:
+    """Read the ledger against its own obligations.
+
+    Ordering is read from the file, not from timestamps: `late_assignments` asks whether
+    the assignment was written before the occasion, and a second-resolution timestamp
+    ties routinely on rows a script writes back to back.
+    """
+    records = rows if rows is not None else read_rows(path)
+
+    started: dict[str, int] = {}
+    duplicates: list[str] = []
+    ended: set[str] = set()
+    orphan_ends: list[str] = []
+    minted: set[str] = set()
+    used: dict[str, None] = {}
+    assigned_at: dict[tuple[str, str, str], int] = {}
+    assignment_arm: dict[tuple[str, str, str], str] = {}
+    occasions: list[dict] = []
+    skipped = 0
+
+    for position, row in enumerate(records):
+        event = row.get("event")
+        if event == EVENT_DELIVERABLE:
+            minted.add(str(row.get("deliverable_id")))
+        elif event == EVENT_REVISION:
+            used.setdefault(str(row.get("deliverable_id")), None)
+        elif event == EVENT_ASSIGNED:
+            mapping = row.get("assignment")
+            if isinstance(mapping, dict):
+                for unit, arm in mapping.items():
+                    key = (str(row.get("room")), str(row.get("ceremony_kind")), str(unit))
+                    assigned_at[key] = position
+                    assignment_arm[key] = str(arm)
+        elif event == EVENT_SKIPPED:
+            skipped += 1
+        elif event == EVENT_START:
+            key = str(row.get("occasion_id"))
+            if key in started:
+                duplicates.append(key)
+            started[key] = position
+            occasions.append(row)
+            for deliverable in row.get("deliverable_ids") or []:
+                used.setdefault(str(deliverable), None)
+        elif event == EVENT_END:
+            key = str(row.get("occasion_id"))
+            if key not in started:
+                orphan_ends.append(key)
+            ended.add(key)
+
+    unassigned: list[str] = []
+    late: list[str] = []
+    mismatched: list[str] = []
+    for row in occasions:
+        arm = str(row.get("arm") or "")
+        if not arm:
+            # An occasion with no arm is not in an experiment, and demanding an
+            # assignment for it would report every ordinary ceremony as a defect.
+            continue
+        room = str(row.get("room"))
+        kind = str(row.get("ceremony_kind"))
+        keys = [
+            (room, kind, str(unit)) for unit in (row.get("deliverable_ids") or [])
+        ]
+        known = [key for key in keys if key in assigned_at]
+        if not known:
+            unassigned.append(str(row.get("occasion_id")))
+            continue
+        start_position = started.get(str(row.get("occasion_id")), 0)
+        if any(assigned_at[key] > start_position for key in known):
+            late.append(str(row.get("occasion_id")))
+        if any(assignment_arm[key] != arm for key in known):
+            mismatched.append(str(row.get("occasion_id")))
+
+    return LedgerAudit(
+        occasions=len(occasions),
+        skipped=skipped,
+        unfinished=tuple(sorted(key for key in started if key not in ended)),
+        unassigned=tuple(sorted(set(unassigned))),
+        late_assignments=tuple(sorted(set(late))),
+        arm_mismatches=tuple(sorted(set(mismatched))),
+        unminted=tuple(sorted(key for key in used if key and key not in minted)),
+        orphan_ends=tuple(sorted(set(orphan_ends))),
+        duplicate_occasions=tuple(sorted(set(duplicates))),
+    )
+
+
+def render(rows: list[dict] | None = None, path: Path | None = None) -> str:
+    """The ledger as a room-by-room reading, with the audit under it."""
+    records = rows if rows is not None else read_rows(path)
+    if not records:
+        return (
+            "Ceremony ledger: empty. No occasion has been recorded — and an occasion "
+            "not recorded while it happened cannot be recovered afterwards."
+        )
+
+    per_room: dict[str, list[dict]] = {}
+    for row in records:
+        if row.get("event") in (EVENT_START, EVENT_SKIPPED):
+            per_room.setdefault(str(row.get("room")), []).append(row)
+
+    ended = {
+        str(row.get("occasion_id"))
+        for row in records
+        if row.get("event") == EVENT_END
+    }
+    lines = []
+    for room in sorted(per_room):
+        held = per_room[room]
+        lines.append(f"room `{room}` — {len(held)} occasion(s):")
+        for row in held:
+            key = str(row.get("occasion_id"))
+            if row.get("event") == EVENT_SKIPPED:
+                reason = f" — {row.get('reason')}" if row.get("reason") else ""
+                lines.append(f"  {key:32} SKIPPED{reason}")
+                continue
+            scopes = ", ".join(row.get("participant_scopes") or []) or "no participants"
+            arm = f" [arm {row.get('arm')}]" if row.get("arm") else ""
+            state = "" if key in ended else "  UNFINISHED"
+            lines.append(f"  {key:32} {scopes}{arm}{state}")
+        held_deliverables = deliverables(room, records)
+        for deliverable, revisions in sorted(held_deliverables.items()):
+            lines.append(f"  {deliverable:32} {len(revisions)} revision(s)")
+    lines.append("")
+    lines.append(audit(records).note())
+    return "\n".join(lines)

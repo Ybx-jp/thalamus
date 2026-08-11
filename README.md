@@ -129,10 +129,14 @@ buys. See [Command reference](#command-reference) for everything else.
 - **Rooms**: a room is a private roster — members see and message each other and
   nobody else, enforced by a per-room `CLAUDE_CONFIG_DIR` and an outbound guard rather
   than by convention. The boundary is built (`--room`, `thalamus room`, and
-  `thalamus eval rooms` as its manipulation check); the lifecycle designed on top of it
-  — ceremonies, Contract-Net dispatch, live-not-frozen reads — is not
-  ([docs/12](docs/12-room-lifecycle.md)). Rooms have never been measured for efficacy,
-  and room-level causal inference is out of reach at this corpus size.
+  `thalamus eval rooms` as its manipulation check), and so is the capture layer the
+  lifecycle needs first — `thalamus ceremony` records occasions at their **start**, the
+  ceremonies that were skipped, a `deliverable_id` stable across revisions, and the
+  arm assignment with its seed *before* the ceremony runs, since none of those four can
+  be reconstructed afterwards. The ceremonies themselves, Contract-Net dispatch and the
+  promotion path are not built ([docs/12](docs/12-room-lifecycle.md)). Rooms have never
+  been measured for efficacy, and room-level causal inference is out of reach at this
+  corpus size.
 - **The eval loop, layers 1–2**: every memory-tool call is trace-tapped, landed as
   `Trace` nodes, judged used-vs-ignored against the session's retained transcript,
   and priced in injected tokens — decay candidates rank by wasted tokens
@@ -316,6 +320,10 @@ thalamus pin <scope>               # launch a claude session pinned to an expert
 thalamus roster                    # bring up the tmux roster (--all for every expert)
 thalamus spawn <scope>             # one on-demand pinned tmux window
 thalamus room create|list|show     # rooms: the private rosters sessions are launched into
+thalamus ceremony start|end|skip   # the ceremony ledger: an occasion, its close, its non-occurrence
+thalamus ceremony mint|revise      # a deliverable_id, and the revisions carried under it
+thalamus ceremony assign           # deal deliverables to arms from a seed, before the ceremony runs
+thalamus ceremony show|audit       # the ledger, and its own obligations checked against it
 thalamus quick ask <scope> "<q>"   # consult a live expert by forking its own session
 thalamus quick targets             # which experts are forkable, and how warm each is
 thalamus console                   # drive the roster from a browser or phone (docs/console.md)
