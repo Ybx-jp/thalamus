@@ -1,6 +1,6 @@
 ---
 name: consult-an-expert
-description: How to run a consultation with a Thalamus roster expert so it produces both a good answer and a smarter expert — round structure, demand-driven feeding, verifying what the expert tells you, and what to do when the operator overrules it. Use BEFORE minting a `consult_request` for any scope (architect, qe, eval-methodology, homelab, designer, teacher, literature), when a first consultation comes back thin or generic, and when a consultation is substantial enough that one round will not settle it.
+description: How to run a consultation with a Thalamus roster expert so it produces both a good answer and a smarter expert — the operator-interview gate that precedes the first mint, round structure, demand-driven feeding, verifying what the expert tells you, and what to do when the operator overrules it. Use BEFORE minting a `consult_request` for any scope (architect, qe, eval-methodology, homelab, designer, teacher, literature), when a first consultation comes back thin or generic, and when a consultation is substantial enough that one round will not settle it.
 ---
 
 # Consult an Expert
@@ -22,6 +22,34 @@ grounding, and reaching the literature scope specifically, is
 - When an answer comes back thin, generic, or agrees with everything you said.
 - When the question is big enough that one round will not settle it — a new
   component, a contract, a migration, a measurement design.
+
+## Interview the operator before you mint
+
+**Binding, and it comes first.** Before minting the first ticket on a question, ask
+yourself whether an operator answer would change the ticket. If it would, put the
+choice to them with `AskUserQuestion` **before** minting — not after the answer comes
+back, and not "between rounds."
+
+An expert answers the question it is given, and it will fill an unstated scope choice
+with an assumption. Every constraint the operator alone can settle — where output
+lands, how often something fires, what is in and out, hosted or self-hosted, who
+arbitrates a conflict — becomes an invented premise if you leave it open, and the
+expert spends the round designing against it. That work is not recoverable by a good
+round two; it was spent on a problem the operator does not have.
+
+Ask only where different answers produce materially different work. Questions the
+code, the docs, or a sensible default already answers are not operator questions —
+answer them yourself and say which default you took.
+
+**Worked example.** A ticket for a spoken-audio channel asks the expert how to
+arbitrate several concurrent sessions competing for one voice: queueing, barge-in,
+cross-session dedup. The operator, asked, wants it to speak *only when asked*, on the
+*one session he picks*. There is no arbitration problem, and there never was — the
+round's concurrency design answers a question nobody posed. Two `AskUserQuestion`
+options ahead of the mint buy the whole round back.
+
+Between rounds, keep doing it: put to the operator the choices the expert cannot make,
+and let their answers reshape the next ticket.
 
 ## Never answer your own ticket
 
@@ -108,17 +136,9 @@ recommendation as though it were still open invites the expert to re-argue settl
 ground; hiding the overrule invites it to design against constraints that no longer
 hold.
 
-## Interviewing the operator between rounds
-
-Not a rule and not a round count — a pattern worth reaching for when rounds are
-expensive. Between consultations, put to the operator the choices the expert cannot
-make: scope, ambition, what is in and out, which of two defensible options to take.
-Their answers reshape the next ticket, and the questions worth asking are the ones
-where different answers produce materially different work — not questions the code or
-a sensible default already answers.
-
 ## What a good consultation leaves behind
 
+- A ticket whose scope constraints came from the operator, not from your assumptions.
 - An answer whose claims you have checked.
 - An expert scope with more in it than before, every addition traceable to a request
   it made.
