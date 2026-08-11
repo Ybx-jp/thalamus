@@ -613,6 +613,11 @@ def outstanding(rows: list[dict] | None = None,
     reconstructed later, and an unresolved commitment is the ordinary state of a
     forecast whose horizon has not arrived — it stays resolvable for as long as the
     row exists, which is the whole design.
+
+    Resolution is matched on `deliverable_id`, following docs/12's commitment shape,
+    so one resolution settles every commitment made about that deliverable. Two
+    forecasts about one deliverable that could come out differently need two
+    deliverables, and minting is cheap for exactly that reason.
     """
     records = rows if rows is not None else read_rows(path)
     resolved = {

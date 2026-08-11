@@ -620,6 +620,44 @@ def test_occasion_burn_attributes_to_the_innermost_window_and_counts_once(tmp_pa
     assert "outsider" not in burn.unattributed["r"].sessions
 
 
+def test_cost_report_reaches_a_room_members_own_config_dir(tmp_path):
+    """
+    Scenario: a pinned expert sits in a room, so its transcript is written under the
+    room's config dir rather than the operator's projects directory.
+
+    Verification: its burn appears in the report. The boundary that partitions
+    session discovery also partitions the transcripts cost is computed from, and a
+    reader that walks only the operator's directory reports a room's entire burn as
+    absent — which reads as a room that was cheap rather than one that was unseen.
+    """
+    projects, rooms_base, pins, _ = _occasion_fixture(tmp_path)
+
+    report = cost_report(
+        tmp_path / "p",
+        date(2026, 7, 10),
+        projects_base=projects,
+        rooms_base=rooms_base,
+        traces_base=tmp_path / "no-traces",
+        pins_path=pins,
+    )
+
+    assert "member" in report.buckets["expert:qe"].sessions
+    assert report.buckets["expert:qe"].weighted == (2 + 4 + 8) * 5 + 16 * 5
+
+    # The room directory is what supplies it: without that root the member's burn
+    # vanishes while the non-member sharing its scope stays, which is exactly the
+    # reading that made a room look cheap.
+    blind = cost_report(
+        tmp_path / "p",
+        date(2026, 7, 10),
+        projects_base=projects,
+        traces_base=tmp_path / "no-traces",
+        pins_path=pins,
+    )
+    assert "member" not in blind.buckets["expert:qe"].sessions
+    assert blind.buckets["expert:qe"].weighted == 16 * 5
+
+
 def test_occasion_burn_says_so_when_no_room_transcript_is_reachable(tmp_path):
     """
     Scenario: occasions exist in the ledger but no session carries a room.

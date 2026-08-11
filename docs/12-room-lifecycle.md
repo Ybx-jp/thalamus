@@ -7,10 +7,13 @@ rooms` manipulation check
 ([lab/045](../lab/045-the-registry-that-was-not-the-socket.md),
 [lab/046](../lab/046-the-third-channel-is-the-transcript.md),
 [lab/047](../lab/047-the-room-that-was-only-a-variable.md),
-[lab/048](../lab/048-the-treatment-that-was-only-a-label.md)). **Items 1–4 of *What is
-recorded*, below, are built** — `harness/ceremonies.py` and `thalamus ceremony`. The
-ceremonies themselves, dispatch, and the promotion path are not. Nothing here is a
-measured result about rooms; rooms have never been measured for efficacy.
+[lab/048](../lab/048-the-treatment-that-was-only-a-label.md)). **Items 1–9 of *What is
+recorded*, below, are built** — `harness/ceremonies.py` and `thalamus ceremony`, with
+burn-per-occasion in `eval/cost.py` — and **item 10 is registered** as
+[`prereg-room-lifecycle-001`](appendix/room-lifecycle-prereg.md). `thalamus dispatch`
+is built. The ceremonies themselves and the promotion path are not. Nothing here is a
+measured result about rooms; rooms have never been measured for efficacy, and the
+ablation that would measure one ceremony currently stands at n = 0.
 
 ## What a room is for
 
@@ -532,8 +535,29 @@ record is incomplete, this one says a result is void.
    write time, resolved ledger-first so a re-extraction from a plain shell cannot
    erase it, and `witnesses.py` reads it to flag claims whose converging witnesses
    shared a room.
-10. **The pre-registration itself, committed to git before room one**: primary endpoint,
-    harm endpoint, α, ρ, equivalence margin, exclusion rule, and the falsifiers.
+10. **The pre-registration itself** —
+    [appendix/room-lifecycle-prereg.md](appendix/room-lifecycle-prereg.md),
+    `prereg-room-lifecycle-001`, carried on ceremony rows via `--prereg`. It fixes the
+    endpoints and their **outcome coding** (`appeared` 1.0, `absent` 0.0, `superseded`
+    0.5 — registered while it is still arguable), α = 0.05, ρ = 0.1369, the exclusion
+    rule and the falsifiers.
+
+    Two parameters are **deferred with their resolution procedure fixed**, which is the
+    honest form when a value cannot yet be derived. The **equivalence margin**: every
+    margin available at n = 60 is either unattainable or meaningless, because
+    `SequenceState.within` needs the whole interval inside the region, so futility
+    requires `margin ≥ radius(n) + |mean − null|` = 0.196 at n = 60 — and a margin that
+    large calls peer review "practically equivalent" while it flips ~39% of deliverables
+    by a full category. It is set instead at a trigger of 25 control-arm resolutions, by
+    a rule registered in advance, and the futility branch stays dead rather than being
+    widened to make it reachable. The **cost match** for the ablation's equal-cost
+    control: it cannot key on occasion burn as the ledger is currently used, since
+    `atlas`'s occasions were brief brackets — `open:1` ran 5m16s while 15 of 20 revisions
+    landed outside every window — so matching on it would match the bracket rather than
+    the treatment. No assignment may be dealt until a basis is registered.
+
+    **n counts pairs.** `sequential.paired_differences` is per-unit, so 60 reviewed
+    deliverables split 30/30 is n = 30, not 60.
 
 **Dispatch rows** live in `~/.thalamus/guards/` in the existing row shape, carrying
 `dispatch_id`, `fanout`, `via`, `sender`, `target`, and a per-target delivery outcome

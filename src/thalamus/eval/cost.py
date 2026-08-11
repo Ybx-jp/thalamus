@@ -394,6 +394,7 @@ def cost_report(
     since: date,
     *,
     projects_base: Path | None = None,
+    rooms_base: Path | None = None,
     traces_base: Path | None = None,
     pins_path: Path | None = None,
 ) -> CostReport:
@@ -402,8 +403,19 @@ def cost_report(
     slug = project_slug(project_dir)
     report = CostReport(since=since, project=project_dir.name)
 
-    if base.is_dir():
-        for pdir in base.iterdir():
+    # Room members write under the room's own config dir, so a walk of the operator's
+    # projects directory alone reports a room's entire burn as absent — and absent
+    # reads as cheap. Every room the pin ledger knows about is walked too.
+    rooms = sorted(set(load_rooms(pins_path).values()))
+    roots = [base]
+    if rooms_base is not None:
+        roots.extend(rooms_base / room / "projects" for room in rooms)
+    elif projects_base is None:
+        roots.extend(room_config_dir(room) / "projects" for room in rooms)
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for pdir in root.iterdir():
             if not pdir.is_dir():
                 continue
             for transcript in pdir.glob("*.jsonl"):
