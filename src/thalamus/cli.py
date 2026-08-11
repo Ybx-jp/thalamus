@@ -40,6 +40,17 @@ ROOM_FLAG_HELP = (
 )
 
 
+def legibility_arms() -> tuple[str, ...]:
+    """The arm names, read from the module that defines them rather than restated.
+
+    Imported lazily like every other heavy import here, but at *parse* time rather than
+    dispatch time, because argparse needs the choices to build `--help`.
+    """
+    from thalamus.eval.legibility import ARMS
+
+    return ARMS
+
+
 def main():
     parser = argparse.ArgumentParser(description="Thalamus — federated graph memory for coding agents")
     parser.add_argument(
@@ -350,6 +361,35 @@ def main():
     eval_rooms_parser.add_argument(
         "--guards", type=Path, default=None, help="Guard event dir (default: ~/.thalamus/guards)"
     )
+
+    eval_legibility_parser = eval_sub.add_parser(
+        "legibility",
+        help="Audit an aid's contrast, and emit the degraded arms a cold read is run on",
+    )
+    eval_legibility_parser.add_argument(
+        "svg", type=Path, nargs="+", help="SVG aid(s) to read")
+    eval_legibility_parser.add_argument(
+        "--arm", choices=legibility_arms(), default=None,
+        help="Write this arm's variant beside the source instead of reporting")
+    eval_legibility_parser.add_argument(
+        "--out", type=Path, default=None,
+        help="Directory for --arm output (default: alongside the source)")
+    eval_legibility_parser.add_argument(
+        "--surface", default="", help="Canvas to measure against (default: auto-detected)")
+    eval_legibility_parser.add_argument(
+        "--threshold", type=float, default=None,
+        help="WCAG ratio placed on the floor by the contrast arm (default: 3.0, "
+             "criterion 1.4.11 for meaningful non-text)")
+    eval_legibility_parser.add_argument(
+        "--floor", type=float, default=None,
+        help="Where the threshold lands after degradation (default: 1.5)")
+    eval_legibility_parser.add_argument(
+        "--mutate", nargs=2, metavar=("COLOUR", "RATIO"), default=None,
+        help="Re-shade COLOUR to sit at exactly RATIO against the surface — a "
+             "known-bad variant for checking the arm discriminates at all")
+    eval_legibility_parser.add_argument(
+        "--strict", action="store_true",
+        help="Exit 1 if any governed colour is below its threshold")
 
     eval_ri_parser = eval_sub.add_parser(
         "randomize",
@@ -2022,6 +2062,36 @@ def _cmd_eval(args, eval_parser):
         from thalamus.eval.rooms import room_topologies
 
         print(render_rooms(room_topologies(pins_file=args.pins, guards_base=args.guards)))
+    elif getattr(args, "eval_command", None) == "legibility":
+        from thalamus.eval import legibility as leg
+
+        kwargs = {}
+        if args.threshold is not None:
+            kwargs["threshold"] = args.threshold
+        if args.floor is not None:
+            kwargs["floor"] = args.floor
+        failed = False
+        for path in args.svg:
+            source = leg.load(path)
+            if args.mutate:
+                colour, ratio = args.mutate
+                source = leg.mutate(source, colour, float(ratio), args.surface)
+            if args.arm:
+                variant = leg.degrade(source, args.arm, surface=args.surface, **kwargs)
+                out_dir = args.out or path.parent
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out = out_dir / f"{path.stem}-{args.arm}{path.suffix}"
+                out.write_text(variant)
+                print(f"{out}")
+                continue
+            if len(args.svg) > 1:
+                print(f"=== {path}")
+            print(leg.report(source, surface=args.surface, **kwargs))
+            failed |= any(f.fails for f in leg.audit(source, args.surface))
+        if args.strict and failed:
+            print("\nA governed colour is below its threshold — see FAILS above.",
+                  file=sys.stderr)
+            sys.exit(1)
     elif getattr(args, "eval_command", None) == "rake-audit":
         from thalamus.eval import rake_audit as ra
         from thalamus.eval.rakes import build_rake_report, read_rakes

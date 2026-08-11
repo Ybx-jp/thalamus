@@ -949,6 +949,57 @@ volume, or using realized density to *discount* correlated witnesses in
 `substrate/witnesses`, would change a settled decision (docs/09 §Scope refuses to
 reduce a count on room membership alone) and needs a consultation, not an inference.
 
+## Layer 2c′ — The degraded-rendering arm (`eval/legibility.py`, `thalamus eval legibility`)
+
+A comprehension test run only at full fidelity is **blind to contrast failure by
+construction**, and room `atlas` proved it the expensive way: two dashed markers carrying
+meaning shipped at 2.07:1 and 2.97:1 — under WCAG 1.4.11's 3:1 floor for non-text content
+— past two reviewers, three rounds, and a cold-read instrument whose every reader received
+a perfect rasterisation ([lab/056](../lab/056-the-charter-was-wrong-about-our-own-walls.md),
+[lab/057](../lab/057-the-reader-who-could-not-say-which.md)). No comprehension score could
+have caught them, because every reader could see them perfectly.
+
+**The arm turns an accessibility check into a comprehension check** — which is the
+finding, because for those two defects they were the same check.
+
+**The degradation is applied to the SVG, not the raster.** Rasterising then filtering
+needs an imaging stack that the runtime dependency set deliberately does not carry; the
+source transform needs none, is exact rather than resampled, and leaves a variant that can
+be diffed. It then renders through whatever already renders the original.
+
+**The factor is derived, not picked.** Relative luminance is linear in the linearised
+channels, so compressing every channel toward the surface compresses the luminance
+difference by the same factor. Requiring a pair at threshold `T` to land on a legibility
+floor `F` gives `a = (1/F − 1)/(1/T − 1)` — the surface term **cancels**, so one number
+degrades any aid. At `T=3.0, F=1.5` it is exactly `0.5`, and the arm becomes a *threshold
+amplifier*: contrast above the criterion survives, contrast below it is pushed under the
+floor. The two real defects land at 1.35:1 and 1.50:1 against a corrected 1.62:1.
+
+**Both criteria are carried, because the room checked one and missed the other.** Roles are
+read off usage rather than declared — `text` (1.4.3, 4.5:1) from `<text>` elements and the
+inherited root fill, `meaningful` (1.4.11, 3:1) from anything with `stroke-dasharray`,
+`decorative` otherwise with no floor. A colour that fails against the surface but would
+clear its threshold against another fill in the file is reported **indeterminate** naming
+that fill, not as a failure: white text on a dark chip is correct and reads as a 1.07:1
+catastrophe if the page canvas is assumed, and an instrument that cries wolf is one nobody
+runs.
+
+**Validated by mutation and then by a reader.** `--mutate <colour> <ratio>` re-shades one
+marking to sit at exactly a chosen contrast, which gives ground truth by construction —
+"the degraded reader missed it" is unfalsifiable on its own. Two readers were then given
+the same aid, same prompt, same spawn, differing in one colour: the reader on the corrected
+artifact named the marked tiers correctly, and the reader on the mutant reported that it
+could see two treatments but **explicitly could not say which tiers carried them**. Its
+first instinct named the wrong pair.
+
+Greyscale is a **separate arm**, deliberately: it holds luminance fixed so what it tests is
+only whether hue was load-bearing. Composing the two would make a failure unattributable.
+
+**What it does not claim.** It is a screening instrument keyed to a published threshold,
+not a simulation of any particular person's vision, and `report()` prints the arithmetic so
+the claim can be disputed rather than trusted. A reader who loses a distinction has shown
+that the distinction was carried by contrast the threshold does not protect — no more.
+
 ## Layer 2d — Cluster inference: the test, and whether the design can reject at all
 
 When the treatment is assigned to a **group** rather than a run — a room, a switchback
