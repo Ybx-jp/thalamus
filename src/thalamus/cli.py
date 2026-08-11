@@ -26,7 +26,11 @@ from thalamus.eval import snapshots
 from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
-from thalamus.harness.ceremonies import CEREMONY_KINDS
+from thalamus.harness.ceremonies import (
+    CEREMONY_KINDS,
+    COMPARATOR_ARMS,
+    RESOLUTION_OUTCOMES,
+)
 from thalamus.harness import pin
 from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
 from thalamus.viewer.web import create_app
@@ -327,6 +331,11 @@ def main():
     )
     eval_cost_parser.add_argument(
         "--traces", type=Path, default=None, help="Trace tap directory (default: ~/.thalamus/traces)"
+    )
+    eval_cost_parser.add_argument(
+        "--by-occasion", action="store_true", dest="by_occasion",
+        help="Attribute room members' burn to the ceremony occasion it happened "
+             "inside (docs/12 item 8), with each room's out-of-occasion burn beside it",
     )
 
     eval_pins_parser = eval_sub.add_parser(
@@ -862,6 +871,64 @@ def main():
         "--seed", type=int, required=True, help="The seed the deal is replayable from"
     )
     ceremony_assign.add_argument("--prereg", default="", help="Pre-registration id")
+
+    # Items 5-7 — the forecast, its resolution, and the unit the room is read against.
+    ceremony_commit = ceremony_sub.add_parser(
+        "commit",
+        help="Record a forecast about a deliverable — what will be true, and by when",
+    )
+    ceremony_commit.add_argument("room", help="Room making the commitment")
+    ceremony_commit.add_argument("deliverable", help="Deliverable id the forecast is about")
+    ceremony_commit.add_argument("text", help="What is being committed to")
+    ceremony_commit.add_argument("--owner", default="", help="Owning scope")
+    ceremony_commit.add_argument(
+        "--artifact", default="", dest="predicted",
+        help="What should exist if this came true — a path, a commit, a vertex id",
+    )
+    ceremony_commit.add_argument(
+        "--resolve-by", default="", dest="resolve_by",
+        help="The horizon tooling resolves this at (YYYY-MM-DD)",
+    )
+    ceremony_commit.add_argument("--occasion", default="", help="Occasion that committed it")
+
+    ceremony_resolve = ceremony_sub.add_parser(
+        "resolve",
+        help="Record what became of a commitment. Run by tooling — a resolver who sat "
+             "in the room is a finding, not a shortcut",
+    )
+    ceremony_resolve.add_argument("deliverable", help="Deliverable id being resolved")
+    ceremony_resolve.add_argument(
+        "outcome", choices=RESOLUTION_OUTCOMES, help="How the forecast came out"
+    )
+    ceremony_resolve.add_argument(
+        "--resolver", required=True, help="What did the checking (a tool, a job)"
+    )
+    ceremony_resolve.add_argument(
+        "--evidence", required=True,
+        help="What it checked — a path, a commit, a vertex id",
+    )
+    ceremony_resolve.add_argument("--room", default="", help="Room, when not derivable")
+    ceremony_resolve.add_argument("--occasion", default="", help="Occasion that resolved it")
+
+    ceremony_comparator = ceremony_sub.add_parser(
+        "comparator",
+        help="Name the out-of-room unit this room is read against, while it still "
+             "counts — one chosen after the outcomes are visible has absorbed them",
+    )
+    ceremony_comparator.add_argument("room", help="Room being compared")
+    ceremony_comparator.add_argument(
+        "arm", choices=COMPARATOR_ARMS, help="Which out-of-room arm"
+    )
+    ceremony_comparator.add_argument(
+        "reference", help="The unit itself — a session id, a ticket id"
+    )
+    ceremony_comparator.add_argument(
+        "--basis", default="", help="Why it is comparable"
+    )
+
+    ceremony_sub.add_parser(
+        "outstanding", help="Commitments with no resolution yet, oldest first"
+    )
 
     # Dispatch — docs/12 §Delivery mechanics. A separate verb rather than a loop over
     # send-keys because `waiting` must be refused, not handled carefully.
@@ -2028,7 +2095,12 @@ def _cmd_eval(args, eval_parser):
             date.fromisoformat(args.since) if args.since else date.today() - timedelta(days=14)
         )
         project_dir = (args.project_dir or Path.cwd()).resolve()
-        print(cost_report(project_dir, since, traces_base=args.traces).render())
+        if args.by_occasion:
+            from thalamus.eval.cost import occasion_burn
+
+            print(occasion_burn(since).render())
+        else:
+            print(cost_report(project_dir, since, traces_base=args.traces).render())
     elif getattr(args, "eval_command", None) == "gremlin":
         from thalamus.eval.gremlin import gremlin_report
 
@@ -2668,12 +2740,63 @@ def _cmd_ceremony(args, parser):
                 # only time it is still free to change (eval/randomization.py).
                 print(f"  smallest attainable p from this block alone: {1 / row['space']:.3f}")
             return
+
+        if args.ceremony_command == "commit":
+            row = ceremonies.commit(
+                args.room,
+                args.deliverable,
+                args.text,
+                owner_scope=args.owner,
+                predicted_artifact=args.predicted,
+                resolve_by=args.resolve_by,
+                occasion=args.occasion,
+            )
+            print(f"Commitment recorded on {row['deliverable_id']}")
+            if not row["predicted_artifact"] or not row["resolve_by"]:
+                # Not refused: a forecast the room cannot yet make concrete is still
+                # better recorded than dropped. But an unresolvable one is a sentence
+                # about intent, and tooling cannot resolve what was never predicted.
+                print("  warning: no predicted artifact or no horizon — nothing can "
+                      "resolve this later", file=sys.stderr)
+            return
+
+        if args.ceremony_command == "resolve":
+            row = ceremonies.resolve(
+                args.deliverable,
+                args.outcome,
+                resolver=args.resolver,
+                evidence=args.evidence,
+                room=args.room,
+                occasion=args.occasion,
+            )
+            print(f"{row['deliverable_id']} resolved {row['outcome']} "
+                  f"by `{row['resolver']}` ({row['evidence']})")
+            return
+
+        if args.ceremony_command == "comparator":
+            row = ceremonies.record_comparator(
+                args.room, args.arm, args.reference, basis=args.basis
+            )
+            print(f"Comparator for `{row['room']}` — {row['arm']} arm, {row['reference']}")
+            return
     except ValueError as e:
         print(f"Ceremony failed: {e}", file=sys.stderr)
         sys.exit(1)
 
     if args.ceremony_command == "show":
         print(ceremonies.render())
+        return
+
+    if args.ceremony_command == "outstanding":
+        rows = ceremonies.outstanding()
+        if not rows:
+            print("No commitment is awaiting resolution.")
+            return
+        print(f"{len(rows)} commitment(s) awaiting resolution:")
+        for row in rows:
+            horizon = row.get("resolve_by") or "no horizon"
+            print(f"  {row['deliverable_id']:32} by {horizon:12} "
+                  f"{row.get('commitment_text', '')}")
         return
 
     if args.ceremony_command == "audit":

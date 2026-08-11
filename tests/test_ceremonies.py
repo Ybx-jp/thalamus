@@ -206,6 +206,7 @@ def test_skipping_a_ceremony_discharges_the_obligation_to_account_for_it(ledger)
     one naturally-occurring ablation cheap to record rather than penalised.
     """
     ceremonies.start("alpha", "open", path=ledger)
+    ceremonies.record_comparator("alpha", "solo", "sess-1", path=ledger)
     ceremonies.skip("alpha", "review", reason="single deliverable", path=ledger)
     ceremonies.skip("alpha", "acceptance", reason="no gate", path=ledger)
     ceremonies.skip("alpha", "retrospective", reason="cost", path=ledger)
@@ -431,6 +432,183 @@ def test_a_redraw_supersedes_without_deleting_the_first(ledger):
     assert ceremonies.assigned_arm("alpha", "review", "d1", path=ledger) == (
         second["assignment"]["d1"]
     )
+
+
+# --- 5-7. The forecast, its resolution, and the comparator ----------------------------
+
+
+def test_a_commitment_is_resolvable_only_if_it_predicted_something(ledger):
+    """
+    Scenario: two commitments — one naming a predicted artifact and a horizon, one
+    naming neither.
+
+    Verification: both are recorded, and the fields that make a forecast resolvable
+    are present on the row either way. docs/12 makes the deliverables report a
+    forecast precisely so tooling can settle it later; a commitment carrying no
+    prediction and no horizon is a sentence about intent, and the row has to show
+    that rather than hide it behind a default.
+    """
+    ceremonies.mint_deliverable("alpha", "The verb", path=ledger)
+    concrete = ceremonies.commit(
+        "alpha", "alpha:the-verb", "the dispatch verb ships",
+        predicted_artifact="src/thalamus/cli.py", resolve_by="2026-09-01", path=ledger,
+    )
+    vague = ceremonies.commit(
+        "alpha", "alpha:the-verb", "things improve", path=ledger
+    )
+
+    assert concrete["predicted_artifact"] and concrete["resolve_by"]
+    assert vague["predicted_artifact"] == "" and vague["resolve_by"] == ""
+
+
+def test_a_resolution_without_evidence_is_refused(ledger):
+    """
+    Scenario: a resolution is written with an outcome but nothing to back it.
+
+    Verification: refused. An unevidenced resolution is a self-report wearing a
+    measurement's shape, which is strictly worse than an unresolved commitment —
+    the latter is visibly open, the former reads as settled.
+    """
+    with pytest.raises(ValueError, match="evidence"):
+        ceremonies.resolve(
+            "alpha:the-verb", "appeared", resolver="ci", evidence="  ", path=ledger
+        )
+    with pytest.raises(ValueError, match="resolver"):
+        ceremonies.resolve(
+            "alpha:the-verb", "appeared", resolver="", evidence="commit abc", path=ledger
+        )
+    with pytest.raises(ValueError, match="outcome"):
+        ceremonies.resolve(
+            "alpha:the-verb", "went well", resolver="ci", evidence="commit abc", path=ledger
+        )
+
+
+def test_a_member_resolving_its_own_rooms_forecast_is_named(ledger):
+    """
+    Scenario: `qe` sits in room alpha and later resolves one of alpha's commitments.
+
+    Verification: the audit names it. Nothing can stop a member running the verb, so
+    the design's "written by tooling and never by a member" is enforced by being
+    checkable — the forecast's entire value is that the forecaster does not control
+    the resolution, and a member-written resolution voids the result rather than
+    merely blemishing the record.
+    """
+    ceremonies.start("alpha", "open", participant_scopes=["qe", "designer"], path=ledger)
+    ceremonies.mint_deliverable("alpha", "The verb", path=ledger)
+    ceremonies.commit("alpha", "alpha:the-verb", "ships", path=ledger)
+    ceremonies.resolve(
+        "alpha:the-verb", "appeared", resolver="qe", evidence="commit abc",
+        room="alpha", path=ledger,
+    )
+
+    report = ceremonies.audit(path=ledger)
+    assert report.member_resolutions == ("alpha:the-verb by `qe`",)
+    assert not report.clean()
+
+
+def test_a_resolution_by_tooling_is_clean(ledger):
+    """
+    Scenario: the same commitment, resolved by a job that was never in the room.
+
+    Verification: clean. The check discriminates on who resolved it, not on the fact
+    that a resolution happened — otherwise it would penalise exactly the behaviour
+    item 6 asks for.
+    """
+    ceremonies.start("alpha", "open", participant_scopes=["qe"], path=ledger)
+    ceremonies.record_comparator("alpha", "solo", "sess-1", path=ledger)
+    ceremonies.mint_deliverable("alpha", "The verb", path=ledger)
+    ceremonies.commit("alpha", "alpha:the-verb", "ships", path=ledger)
+    ceremonies.start("alpha", "close", path=ledger)
+    ceremonies.skip("alpha", "review", path=ledger)
+    ceremonies.skip("alpha", "acceptance", path=ledger)
+    ceremonies.skip("alpha", "retrospective", path=ledger)
+    ceremonies.resolve(
+        "alpha:the-verb", "appeared", resolver="resolve-commitments.py",
+        evidence="commit abc", room="alpha", path=ledger,
+    )
+
+    report = ceremonies.audit(path=ledger)
+    assert report.member_resolutions == ()
+    assert report.clean()
+
+
+def test_a_comparator_named_after_the_room_closed_is_named(ledger):
+    """
+    Scenario: a room closes, and only then is an out-of-room comparator identified.
+
+    Verification: the audit reports it as late, by file position — the same mechanism
+    item 4 uses for assignments, and for the same reason. A comparator chosen once
+    the outcomes are visible has absorbed them, so lateness here is not untidiness,
+    it is the comparison being dead.
+    """
+    ceremonies.start("alpha", "open", path=ledger)
+    ceremonies.start("alpha", "close", path=ledger)
+    ceremonies.record_comparator("alpha", "ticket", "ticket-7", path=ledger)
+
+    report = ceremonies.audit(path=ledger)
+    assert report.late_comparators == ("alpha",)
+    assert report.uncompared == ()
+
+
+def test_a_closed_room_that_never_named_a_comparator_is_named(ledger):
+    """
+    Scenario: a room runs and closes without ever identifying what it will be read
+    against.
+
+    Verification: reported. Nothing later supplies this — the arms are solo, ticket
+    and room, and a room with no out-of-room unit is an arm with no contrast.
+    """
+    ceremonies.start("alpha", "open", path=ledger)
+    ceremonies.start("alpha", "close", path=ledger)
+
+    assert ceremonies.audit(path=ledger).uncompared == ("alpha",)
+
+
+def test_a_room_cannot_be_its_own_comparator(ledger):
+    """
+    Scenario: someone names the `room` arm as the comparator.
+
+    Verification: refused. `room` is the treatment, so accepting it would record a
+    contrast of the treatment against itself in the field built to prevent exactly
+    that.
+    """
+    with pytest.raises(ValueError, match="cannot compare against itself"):
+        ceremonies.record_comparator("alpha", "room", "alpha", path=ledger)
+
+
+def test_outstanding_lists_commitments_no_resolution_has_settled(ledger):
+    """
+    Scenario: two commitments, one resolved.
+
+    Verification: only the unresolved one is outstanding, and it is *not* an audit
+    finding. An open forecast is the ordinary state of a horizon that has not
+    arrived; treating it as a defect would push rooms toward resolving early, which
+    is the one thing the forecaster must not control.
+    """
+    ceremonies.mint_deliverable("alpha", "One", path=ledger)
+    ceremonies.mint_deliverable("alpha", "Two", path=ledger)
+    ceremonies.commit("alpha", "alpha:one", "lands", path=ledger)
+    ceremonies.commit("alpha", "alpha:two", "lands", path=ledger)
+    ceremonies.resolve(
+        "alpha:one", "appeared", resolver="ci", evidence="commit abc", path=ledger
+    )
+
+    open_rows = ceremonies.outstanding(path=ledger)
+    assert [row["deliverable_id"] for row in open_rows] == ["alpha:two"]
+    # An open commitment is not a defect: the audit stays clean while it waits.
+    assert ceremonies.audit(path=ledger).clean()
+
+
+def test_a_commitment_on_an_unminted_deliverable_is_reported(ledger):
+    """
+    Scenario: a commitment names a deliverable id that was never minted.
+
+    Verification: the existing unminted check catches it. A forecast about something
+    with no stable identity cannot be resolved against anything later, which is the
+    same loss item 3 exists to prevent.
+    """
+    ceremonies.commit("alpha", "alpha:ghost", "lands", path=ledger)
+    assert ceremonies.audit(path=ledger).unminted == ("alpha:ghost",)
 
 
 # --- The ledger as a whole ------------------------------------------------------------

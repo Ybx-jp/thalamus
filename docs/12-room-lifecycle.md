@@ -434,9 +434,12 @@ Capture is now-or-never; analysis never is
 ([lab/048](../lab/048-the-treatment-that-was-only-a-label.md)). Items 1–4 make later
 analysis *possible*; 5–10 make it *honest*. If anything is cut, it is not from 1–4.
 
-**Items 1–4 are built** — `harness/ceremonies.py`, driven by `thalamus ceremony
-start/end/skip/mint/revise/assign/show/audit`, writing
-`~/.thalamus/ceremonies/ceremonies.jsonl`.
+**Items 1–9 are built** — `harness/ceremonies.py`, driven by `thalamus ceremony
+start/end/skip/mint/revise/assign/commit/resolve/comparator/outstanding/show/audit`,
+writing `~/.thalamus/ceremonies/ceremonies.jsonl`; item 8 lives in `eval/cost.py` and
+item 9 in the session write path. **Item 10 is not**, and room one has already run,
+so the pre-registration cannot cover it: `atlas` is observational and excluded from
+any arm, not retrofitted into one.
 
 1. **A ceremony ledger** — one append-only row per *occasion*, written at ceremony
    **start** so an aborted ceremony still leaves a row:
@@ -476,23 +479,59 @@ occasion id. A `start` row never defaults its `arm` from the assignment — copy
 into the other would make a randomization that was not honoured unobservable from
 either record alone.
 
-**One check reads the absence rather than the rows: a ceremony kind a *closed* room
-neither held nor skipped.** Every other finding above inspects a row that exists, so
-a room can hold the only measurable ceremony on the list, write nothing, and audit
-clean — which is what room `atlas` did with three review rounds. The obligation lands
-at close, because before it a missing ceremony is *not yet* and an audit that failed
-every live room is one nobody runs. A skip row discharges it: the room is asked to
-say what happened, not to hold every ceremony.
+**Two checks read the absence rather than the rows**, and a closed room is where both
+land — before close a missing record is *not yet*, and an audit that failed every live
+room is one nobody runs. A ceremony kind the room neither **held nor skipped**: every
+other finding above inspects a row that exists, so a room can hold the only measurable
+ceremony on the list, write nothing, and audit clean — which is what `atlas` did with
+three review rounds. A skip row discharges it, since the room is asked to say what
+happened rather than to hold every ceremony. And a room that named **no out-of-room
+comparator**: nothing later supplies one, because a comparator chosen once the outcomes
+are visible has absorbed them.
+
+The audit also names a **resolution written by a member of the room being resolved**.
+That one is different in kind from everything else in the list: the others say the
+record is incomplete, this one says a result is void.
 5. **Commitment rows** — `{room, deliverable_id, owner_scope, commitment_text,
-   predicted_artifact, resolve_by}`.
-6. **Resolution rows, written by tooling and never by a member**, at each later occasion
-   and at a fixed post-close horizon.
-7. **The out-of-room comparator, identified contemporaneously.** The arms are
-   solo / ticket / room; a comparator chosen after the fact is a dead comparison.
-8. **A ceremony-occasion id on the session record**, so `eval/cost.py` can attribute burn
-   per ceremony.
-9. **Room provenance on every claim the room produces**, so `witnesses.py` can flag
-   correlated witnesses.
+   predicted_artifact, resolve_by}`, via `thalamus ceremony commit`. A commitment
+   carrying no predicted artifact and no horizon is recorded and warned about rather
+   than refused: it is a sentence about intent, and tooling cannot resolve what was
+   never predicted.
+6. **Resolution rows, written by tooling and never by a member** — `thalamus ceremony
+   resolve`, which refuses an outcome outside `appeared`/`absent`/`superseded` and
+   refuses any resolution carrying no resolver or no evidence. The prohibition is
+   **checkable rather than merely stated**: nothing can stop a member running the
+   verb, so the row records who resolved it and the audit names a resolver that sat
+   in the room being resolved. That is the one finding in the audit that voids a
+   *result* rather than a record. `thalamus ceremony outstanding` lists what is still
+   awaiting a horizon; an open commitment is deliberately not an audit defect, since
+   treating it as one would push a room toward resolving early — the single thing the
+   forecaster must not control.
+7. **The out-of-room comparator, identified contemporaneously** — `thalamus ceremony
+   comparator`. The arms are solo / ticket / room, and `room` is refused as its own
+   comparator. A comparator named after its room closed is caught by **file position**,
+   the same mechanism item 4 uses for assignments and for the same reason: a choice
+   made once the outcomes are visible has absorbed them.
+8. **Burn attributed to the occasion it happened inside** — `thalamus eval cost
+   --by-occasion`, joining each API call's timestamp against the ledger's occasion
+   windows for the rooms the pin ledger places its session in. Attribution is to the
+   **most recently started** containing occasion: occasions nest, a review runs while
+   the room is open, and charging a call to every enclosing window would scale a
+   room's measured cost by how deeply its ceremonies nest. This is a join rather than
+   a field on the session record because **a room member is one session that sits in
+   many occasions** — atlas's four members each spanned open, acceptance and close —
+   so a single id per session cannot answer the question at all.
+
+   The report keeps each room's **out-of-occasion burn** beside its occasions rather
+   than dropping it. That number is the work the ceremony structure does not describe,
+   and reading it as waste would reward rooms that hold ceremonies over rooms that do
+   work. It also reads the room's own `CLAUDE_CONFIG_DIR/projects/`: the boundary that
+   partitions session discovery partitions the transcripts cost is computed from, so a
+   reader walking only the operator's projects directory sees a room's burn as zero.
+9. **Room provenance on every claim the room produces** — `Session.room` is stamped at
+   write time, resolved ledger-first so a re-extraction from a plain shell cannot
+   erase it, and `witnesses.py` reads it to flag claims whose converging witnesses
+   shared a room.
 10. **The pre-registration itself, committed to git before room one**: primary endpoint,
     harm endpoint, α, ρ, equivalence margin, exclusion rule, and the falsifiers.
 

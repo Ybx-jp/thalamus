@@ -38,10 +38,25 @@ generalises rather than argues against sharing: **every row here carries `event`
 row one**, and every reader filters on it before reading anything else. A row kind that
 cannot be told apart from another is the defect; two kinds in one file is not.
 
+## And three that make the analysis honest rather than possible
+
+5. **A commitment** — the room's forecast about a deliverable, which converts a
+   self-report into something falsifiable.
+6. **A resolution**, written by tooling and never by a member. The asymmetry is the
+   whole value: a forecaster cannot Goodhart a resolution it does not control. Nothing
+   here can stop a member running the verb, so the obligation is made *checkable* —
+   the row names its resolver and `audit()` reports one that sat in the room.
+7. **The out-of-room comparator**, named while the room is still running. Position in
+   the file catches one named afterwards, exactly as it does for item 4.
+
 ## What this module does not do
 
 There is no dispatch, no ceremony *conduct*, and no promotion path. Those are the rest
-of docs/12 and they can be added later without losing anything; these four cannot.
+of docs/12 and they can be added later without losing anything; these cannot.
+
+**Nothing here attributes cost.** Burn per occasion is a join between these rows'
+timestamps and the harness transcripts (`eval/cost.py`), because a room member is one
+session that sits in many occasions — a field on this side could only ever name one.
 """
 
 from __future__ import annotations
@@ -73,6 +88,17 @@ EVENT_END = "end"
 EVENT_SKIPPED = "skipped"
 EVENT_DELIVERABLE = "deliverable"
 EVENT_REVISION = "revision"
+EVENT_COMMITMENT = "commitment"
+EVENT_RESOLUTION = "resolution"
+EVENT_COMPARATOR = "comparator"
+
+# How a commitment came out. A closed set because the primary endpoint counts these,
+# and free text would make the count a judgement call made once, at write time, by
+# whoever happened to be resolving.
+RESOLUTION_OUTCOMES = ("appeared", "absent", "superseded")
+
+# The out-of-room arms. `room` is the treatment, so it is not a comparator for itself.
+COMPARATOR_ARMS = ("solo", "ticket")
 
 # The draw algorithm, versioned in every assignment row. A seed replays an assignment
 # only against the procedure that consumed it, so changing the deal without changing
@@ -454,6 +480,154 @@ def record_revision(
     )
 
 
+def commit(
+    room: str,
+    deliverable: str,
+    commitment_text: str,
+    *,
+    owner_scope: str = "",
+    predicted_artifact: str = "",
+    resolve_by: str = "",
+    occasion: str = "",
+    path: Path | None = None,
+) -> dict:
+    """Record one forecast: what this deliverable will have done by when.
+
+    This is the row that converts a self-report into something falsifiable. The room
+    says what it expects to be true later; `resolve()` — run by tooling, against git
+    and the graph — says what actually was. The asymmetry is the point: **a forecaster
+    cannot Goodhart a resolution it does not control**, which is why the deliverables
+    report is a commitment list rather than a narrative, and why no LLM judge over the
+    room's own prose can stand in for it (docs/12 §How this is measured).
+
+    `predicted_artifact` and `resolve_by` are what make the forecast resolvable at all.
+    A commitment with neither is a sentence about intent, so both are recorded even
+    when empty and the audit can see which rooms wrote unresolvable forecasts.
+    """
+    return _append(
+        {
+            "event": EVENT_COMMITMENT,
+            "room": room,
+            "deliverable_id": deliverable,
+            "owner_scope": owner_scope,
+            "commitment_text": commitment_text,
+            "predicted_artifact": predicted_artifact,
+            "resolve_by": resolve_by,
+            "occasion_id": occasion,
+            "ts": _now(),
+        },
+        path,
+    )
+
+
+def resolve(
+    deliverable: str,
+    outcome: str,
+    *,
+    resolver: str,
+    evidence: str,
+    room: str = "",
+    occasion: str = "",
+    path: Path | None = None,
+) -> dict:
+    """Record what became of a commitment. **Written by tooling, never by a member.**
+
+    `resolver` names what did the checking and `evidence` is what it checked — a path,
+    a commit, a vertex id. Both are required rather than defaulted: a resolution with
+    no evidence is the room grading its own homework in a format that looks like a
+    measurement, which is worse than no row at all.
+
+    The prohibition is enforced by being *checkable* rather than by being stated.
+    Nothing here can stop a member running this verb, so the row records who resolved
+    it and `audit()` names any resolution whose resolver is a scope that sat in the
+    room it resolves.
+    """
+    if outcome not in RESOLUTION_OUTCOMES:
+        raise ValueError(
+            f"unknown outcome `{outcome}` — one of {RESOLUTION_OUTCOMES}"
+        )
+    if not resolver.strip():
+        raise ValueError("a resolution must name its resolver — see docs/12 item 6")
+    if not evidence.strip():
+        raise ValueError(
+            "a resolution must carry evidence — an unevidenced resolution is a "
+            "self-report wearing a measurement's shape"
+        )
+    return _append(
+        {
+            "event": EVENT_RESOLUTION,
+            "room": room,
+            "deliverable_id": deliverable,
+            "outcome": outcome,
+            "resolver": resolver,
+            "evidence": evidence,
+            "occasion_id": occasion,
+            "ts": _now(),
+        },
+        path,
+    )
+
+
+def record_comparator(
+    room: str,
+    arm: str,
+    reference: str,
+    *,
+    basis: str = "",
+    path: Path | None = None,
+) -> dict:
+    """Name the out-of-room unit this room will be read against, while it can still count.
+
+    A comparator chosen after the outcomes are known is not a comparison — the choice
+    absorbs the result. So this row is written at open, and `audit()` reads *position*
+    to catch one written after the room closed, the same way item 4's assignment check
+    does.
+
+    `reference` identifies the unit concretely (a session id, a ticket id); `basis`
+    says why it is comparable. The arms are solo and ticket, because `room` is the
+    treatment and cannot be a comparator for itself.
+    """
+    if arm not in COMPARATOR_ARMS:
+        raise ValueError(
+            f"unknown comparator arm `{arm}` — one of {COMPARATOR_ARMS}; `room` is the "
+            "treatment and cannot compare against itself"
+        )
+    return _append(
+        {
+            "event": EVENT_COMPARATOR,
+            "room": room,
+            "arm": arm,
+            "reference": reference,
+            "basis": basis,
+            "ts": _now(),
+        },
+        path,
+    )
+
+
+def outstanding(rows: list[dict] | None = None,
+                path: Path | None = None) -> list[dict]:
+    """Commitment rows with no resolution yet, in write order.
+
+    Deliberately *not* an audit finding. The audit names defects that could not be
+    reconstructed later, and an unresolved commitment is the ordinary state of a
+    forecast whose horizon has not arrived — it stays resolvable for as long as the
+    row exists, which is the whole design.
+    """
+    records = rows if rows is not None else read_rows(path)
+    resolved = {
+        str(row.get("deliverable_id"))
+        for row in records
+        if row.get("event") == EVENT_RESOLUTION
+    }
+    return [
+        row
+        for row in records
+        if row.get("event") == EVENT_COMMITMENT
+        and str(row.get("deliverable_id")) not in resolved
+    ]
+
+
 def deliverables(room: str = "", rows: list[dict] | None = None,
                  path: Path | None = None) -> dict[str, list[dict]]:
     """Deliverable id → its revision rows in order, for one room or all of them."""
@@ -512,6 +686,19 @@ class LedgerAudit:
     duplicate_occasions: tuple[str, ...] = ()
     """Occasion ids claimed more than once — the shape a lost lock would produce."""
 
+    member_resolutions: tuple[str, ...] = ()
+    """Resolutions whose resolver sat in the room being resolved. The forecast's whole
+    value is that the forecaster does not control the resolution, so this is the one
+    finding here that voids a *result* rather than a record."""
+
+    uncompared: tuple[str, ...] = ()
+    """Closed rooms that never named an out-of-room comparator. Nothing later supplies
+    one: a comparator picked once the outcomes are visible has absorbed them."""
+
+    late_comparators: tuple[str, ...] = ()
+    """Rooms whose comparator row was written after the room closed — detected by
+    position, like `late_assignments`, and for the same reason."""
+
     unaccounted: tuple[str, ...] = ()
     """`<room>:<kind>` for a ceremony a closed room neither held nor skipped. Every
     other finding here reads rows that exist; this one reads the absence, which is the
@@ -528,6 +715,9 @@ class LedgerAudit:
             or self.orphan_ends
             or self.duplicate_occasions
             or self.unaccounted
+            or self.member_resolutions
+            or self.uncompared
+            or self.late_comparators
         )
 
     def note(self) -> str:
@@ -545,6 +735,11 @@ class LedgerAudit:
             ("duplicated occasion id(s)", self.duplicate_occasions),
             ("ceremony(s) a closed room neither held nor skipped — the record cannot "
              "say whether these happened", self.unaccounted),
+            ("resolution(s) written by a member of the room being resolved — the "
+             "forecaster does not get to grade the forecast", self.member_resolutions),
+            ("closed room(s) with no out-of-room comparator named while it counted",
+             self.uncompared),
+            ("room(s) whose comparator was named after they closed", self.late_comparators),
         ):
             if items:
                 lines.append(f"  {len(items)} {label}: {', '.join(sorted(items))}")
@@ -574,11 +769,30 @@ def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAud
     skipped = 0
     accounted: dict[str, set[str]] = {}
     closed_rooms: set[str] = set()
+    closed_at: dict[str, int] = {}
+    deliverable_room: dict[str, str] = {}
+    participants: dict[str, set[str]] = {}
+    compared_at: dict[str, int] = {}
+    resolutions: list[tuple[str, str, str]] = []
 
     for position, row in enumerate(records):
         event = row.get("event")
         if event == EVENT_DELIVERABLE:
             minted.add(str(row.get("deliverable_id")))
+            deliverable_room[str(row.get("deliverable_id"))] = str(row.get("room"))
+        elif event == EVENT_COMMITMENT:
+            used.setdefault(str(row.get("deliverable_id")), None)
+        elif event == EVENT_COMPARATOR:
+            compared_at.setdefault(str(row.get("room")), position)
+        elif event == EVENT_RESOLUTION:
+            used.setdefault(str(row.get("deliverable_id")), None)
+            resolutions.append(
+                (
+                    str(row.get("deliverable_id")),
+                    str(row.get("room") or ""),
+                    str(row.get("resolver") or ""),
+                )
+            )
         elif event == EVENT_REVISION:
             used.setdefault(str(row.get("deliverable_id")), None)
         elif event == EVENT_ASSIGNED:
@@ -601,7 +815,11 @@ def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAud
             occasions.append(row)
             kind = str(row.get("ceremony_kind"))
             accounted.setdefault(str(row.get("room")), set()).add(kind)
+            participants.setdefault(str(row.get("room")), set()).update(
+                str(scope) for scope in (row.get("participant_scopes") or [])
+            )
             if kind == "close":
+                closed_at.setdefault(str(row.get("room")), position)
                 # Close is when the record becomes final. Before it, a missing ceremony
                 # is `not yet`; demanding one from a live room would report every room
                 # mid-flight as defective.
@@ -645,7 +863,25 @@ def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAud
         if kind not in accounted.get(room, set())
     ]
 
+    member_resolutions = [
+        f"{deliverable} by `{resolver}`"
+        for deliverable, stated_room, resolver in resolutions
+        if resolver
+        and resolver in participants.get(
+            stated_room or deliverable_room.get(deliverable, ""), set()
+        )
+    ]
+    uncompared = [room for room in closed_rooms if room not in compared_at]
+    late_comparators = [
+        room
+        for room, position in compared_at.items()
+        if room in closed_at and position > closed_at[room]
+    ]
+
     return LedgerAudit(
+        member_resolutions=tuple(sorted(set(member_resolutions))),
+        uncompared=tuple(sorted(set(uncompared))),
+        late_comparators=tuple(sorted(set(late_comparators))),
         occasions=len(occasions),
         skipped=skipped,
         unaccounted=tuple(sorted(unaccounted)),

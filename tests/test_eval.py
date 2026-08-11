@@ -513,6 +513,138 @@ def test_cost_report_buckets_by_operation_and_respects_since(tmp_path):
     assert "consult_request" in rendered
 
 
+def _occasion_fixture(tmp_path):
+    """A room with a nested review inside its open occasion, and burn in three places.
+
+    Member transcripts are written under the *room's* config dir rather than the
+    operator's, which is where a real room puts them — the same boundary that
+    partitions session discovery partitions the transcripts cost is computed from.
+    """
+    from thalamus.harness import ceremonies
+
+    ledger = tmp_path / "ceremonies.jsonl"
+    ledger.write_text(
+        "\n".join(
+            [
+                json.dumps({
+                    "event": ceremonies.EVENT_START, "room": "r", "ceremony_kind": "open",
+                    "occasion_id": "r:open:1", "ts_start": "2026-07-15T10:00:00Z",
+                }),
+                json.dumps({
+                    "event": ceremonies.EVENT_START, "room": "r", "ceremony_kind": "review",
+                    "occasion_id": "r:review:1", "ts_start": "2026-07-15T10:10:00Z",
+                }),
+                json.dumps({
+                    "event": ceremonies.EVENT_END, "occasion_id": "r:review:1",
+                    "ts_end": "2026-07-15T10:20:00Z",
+                }),
+                json.dumps({
+                    "event": ceremonies.EVENT_END, "occasion_id": "r:open:1",
+                    "ts_end": "2026-07-15T10:30:00Z",
+                }),
+            ]
+        )
+    )
+
+    pins = tmp_path / "pins.jsonl"
+    pins.write_text(
+        "\n".join(
+            [
+                json.dumps({"session_id": "member", "scope": "qe", "room": "r"}),
+                json.dumps({"session_id": "outsider", "scope": "qe"}),
+            ]
+        )
+    )
+
+    rooms_base = tmp_path / "rooms"
+    member_dir = rooms_base / "r" / "projects" / "-p"
+    member_dir.mkdir(parents=True)
+
+    def call(ts, output):
+        return json.dumps({
+            "timestamp": ts, "message": {"usage": {"output_tokens": output}},
+        })
+
+    (member_dir / "member.jsonl").write_text(
+        "\n".join(
+            [
+                # Exactly at the open boundary: the `.000Z` vs `Z` dialect trap.
+                call("2026-07-15T10:00:00.000Z", 2),
+                # Inside the nested review.
+                call("2026-07-15T10:15:00.000Z", 4),
+                # After everything closed.
+                call("2026-07-15T11:00:00.000Z", 8),
+            ]
+        )
+    )
+
+    projects = tmp_path / "projects"
+    (projects / "-p").mkdir(parents=True)
+    (projects / "-p" / "outsider.jsonl").write_text(call("2026-07-15T10:15:00.000Z", 16))
+    return projects, rooms_base, pins, ledger
+
+
+def test_occasion_burn_attributes_to_the_innermost_window_and_counts_once(tmp_path):
+    """
+    Scenario: a room member burns tokens at an occasion's exact start instant, inside
+    a review nested within the still-open room, and after every occasion closed. A
+    non-member burns during the same window.
+
+    Verifications:
+    - a call inside a nested occasion is charged to the review, not to both it and
+      the enclosing open — counting once per containing window would scale a room's
+      measured cost by how deeply its ceremonies nest rather than by its work
+    - a call at the exact start instant lands inside, which a string comparison of
+      the two timestamp dialects gets wrong (`.` sorts before `Z`)
+    - burn outside every occasion is kept per room rather than discarded, because it
+      is the work the ceremony structure does not describe
+    - a session with no room in the pin ledger is never attributed to one
+    """
+    from thalamus.eval.cost import occasion_burn
+
+    projects, rooms_base, pins, ledger = _occasion_fixture(tmp_path)
+
+    burn = occasion_burn(
+        date(2026, 7, 10),
+        projects_base=projects,
+        rooms_base=rooms_base,
+        pins_path=pins,
+        ledger_path=ledger,
+    )
+
+    assert burn.windows["r:open:1"].weighted == 2 * 5
+    assert burn.windows["r:review:1"].weighted == 4 * 5
+    assert burn.unattributed["r"].weighted == 8 * 5
+    assert burn.windows["r:review:1"].calls == 1
+    assert set(burn.windows) == {"r:open:1", "r:review:1"}
+    assert "outsider" not in burn.unattributed["r"].sessions
+
+
+def test_occasion_burn_says_so_when_no_room_transcript_is_reachable(tmp_path):
+    """
+    Scenario: occasions exist in the ledger but no session carries a room.
+
+    Verification: the render names the two reasons rather than printing a zero. A
+    room whose members carry no room in the pin ledger is invisible to `eval rooms`
+    for the same reason, and a bare zero here reads as "the room was cheap".
+    """
+    from thalamus.eval.cost import occasion_burn
+
+    projects, rooms_base, _, ledger = _occasion_fixture(tmp_path)
+    empty_pins = tmp_path / "empty.jsonl"
+    empty_pins.write_text("")
+
+    burn = occasion_burn(
+        date(2026, 7, 10),
+        projects_base=projects,
+        rooms_base=rooms_base,
+        pins_path=empty_pins,
+        ledger_path=ledger,
+    )
+    assert burn.windows == {}
+    assert "invisible here" in burn.render()
+
+
 def test_pin_ledger_last_write_wins_and_junk_is_skipped(tmp_path):
     pins = tmp_path / "pins.jsonl"
     pins.write_text(
