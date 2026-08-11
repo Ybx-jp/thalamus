@@ -241,12 +241,78 @@ the content, and reading it as one is a mistake this entry made. Re-running to f
 the missing claim was declined on the spot — the same bytes re-extracted would land under
 the same content hash and simply add another near-duplicate to the pile above.
 
+## The falsifier, run
+
+Both experts said measure before building, and the architect specified the measurement:
+**tie contention, not rank inversion.** Abstract-derived claims are shorter (184 chars
+against 265), so they hit fewer keywords and score lower or equal — they essentially never
+outrank a full-text claim. The live question is whether they take slots at the *boundary*,
+where `knowledge_ranked` sorts on score alone
+([reader.py](../src/thalamus/substrate/reader.py):522) and scores are integer multiples of
+`_KNOWLEDGE_HIT_SCORE`, so ties fall to `sorted()` stability over graph iteration order.
+
+Query set: **1,047 distinct real `memory_recall` queries** recovered from Trace vertices —
+what the system was actually asked, not what would flatter it. 911 produced a knowledge
+ranking. One read pass, vertex count 21,002 either side.
+
+| | |
+|---|---|
+| abstract-tier share of filled knowledge slots | **17.2%** (306 of 1,780) |
+| queries with a mixed-tier tie at the cut | **46.9%** (427 of 911) |
+| …where an abstract claim took a slot a tied full-text claim lost | **140 (15.4%)** |
+| tie size at the cut | median **5**, max **243** |
+
+So the mechanism is real and common. **What it is not is established harm.** An
+abstract-derived claim is thinner, not wrong, and nothing here says the tied full-text
+claim would have served better — that needs a quality endpoint this does not have. What is
+measured is **arbitrariness**: in 15.4% of real queries, which tier fills a slot is decided
+by graph iteration order. This is the ranking-displacement gap the literature scope named
+in *Power of Noise*, which holds the gold document present and never measures displacement;
+it measures displacement's *occurrence* and still not its cost.
+
+The extractor's near-duplicates were put through the same instrument, and they are the
+cheaper problem than they look:
+
+| | |
+|---|---|
+| queries where a near-duplicate pair **ties on score** somewhere | **40.7%** (371) |
+| queries where a pair **shares the 2-slot window** | **2.2%** (20) |
+
+A pair hits the same keywords by construction, so it always ties and the ranker cannot
+separate it — but the pair reaches the window together only 2.2% of the time. When it does,
+the waste is total:
+
+> …the chunk-vs-artifact gap widens to **33.3 points**
+> …the chunk-vs-artifact gap widens to **33.3pp**
+
+**Validation** — the replication reuses `_extract_keywords` and `_keyword_predicate` so the
+lexical semantics are the reader's own, and its top-2 for a spot-check query matched
+`recall(knowledge_scopes=["literature"])` exactly, in order. Three limits are named rather
+than buried: it excludes 8 session-less `main` claims (of 2,409, immaterial); it does not
+model the chunk tier, which takes its own two slots; and the 0.6 Jaccard threshold and the
+`byte_size` band that labels non-arXiv Sources are both chosen, not derived.
+
+**What this argues for is one change, not two.** Both findings are the same defect wearing
+different clothes — a tie-break that is graph iteration order. Neither a dedup keyed on
+document identity nor a supersession edge touches either one. The literature scope's answer
+to redundancy-in-results was rank-time diversification rather than index-time deletion, and
+that is the one intervention both measurements point at. It is not built here: it is a
+design, and the design goes through the ticketed channel.
+
 ## Ends in
 
-**measurements + fixes.** The corpus co-indexing was built for now actually contains the
-documents it claims to. What remains is a dated discontinuity, 45 papers held at abstract
-depth with a publication-date bias that runs against importance, and an open question
-about whether a second fetch of the same paper should supersede the first — reframed by
-the literature scope from a dedup question into a **labelling** one, since the harm the
-duplication was assumed to cause is unmeasured and cannot be measured while the two tiers
-are indistinguishable.
+**measurements + fixes + a falsified premise.** The corpus co-indexing was built for now
+actually contains the documents it claims to. What remains is a dated discontinuity and 45
+papers held at abstract depth with a publication-date bias that runs against importance.
+
+The question this entry opened with — whether a second fetch should supersede the first —
+is closed, and not in its own terms. Supersession across a URL change is **refused**: it
+would change retrieval by nothing and corrupt evidence-head selection in
+[`eval/sync.py`](../src/thalamus/eval/sync.py), which filters `SUPERSEDES` with no `kind`
+guard. The duplication was never shown to cost anything; the tie-break was, twice. Both
+measurements land on one intervention, rank-time diversification, which is unbuilt on
+purpose.
+
+The premise that started it — thin claims crowd out full ones — survives only as
+*arbitrariness*, and only because it was measured. Three separate fixes were prepared
+against it before that measurement existed, and all three were wrong.
