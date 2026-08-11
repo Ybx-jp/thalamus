@@ -51,7 +51,17 @@ One round answers a question. Several rounds build an expert. A shape that works
    remaining thread.
 
 Say explicitly which round you are on and tell it to recall its own prior answers by
-passing the current `ticket` to the `memory_recall*` and `memory_consultations` tools.
+passing the current `ticket` to the `memory_recall*` tools — under a ticket those serve
+the *consulted* expert's memory, so they work from a spawned subagent.
+
+**`memory_consultations` does not, and a later round must not be built on it.** It takes
+no ticket and confines on `expert == <the calling process's scope>`; a subagent spawned
+to voice an expert shares the *caller's* MCP process, which is armed `main`, and no
+Exchange carries `expert: main` — so it returns empty rather than erroring. An expert
+that needs its own prior rounds either recalls them with the ticket or is given them,
+and a round-N ticket that assumes self-recall gets an answer built from the round-N
+statement alone.
+
 Do not restate its findings back to it — restating invites agreement.
 
 ## Feed it what it asks for, and check that you did
