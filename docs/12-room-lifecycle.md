@@ -475,6 +475,14 @@ the deal, a deliverable id used but never minted, an orphaned end, a duplicated
 occasion id. A `start` row never defaults its `arm` from the assignment — copying one
 into the other would make a randomization that was not honoured unobservable from
 either record alone.
+
+**One check reads the absence rather than the rows: a ceremony kind a *closed* room
+neither held nor skipped.** Every other finding above inspects a row that exists, so
+a room can hold the only measurable ceremony on the list, write nothing, and audit
+clean — which is what room `atlas` did with three review rounds. The obligation lands
+at close, because before it a missing ceremony is *not yet* and an audit that failed
+every live room is one nobody runs. A skip row discharges it: the room is asked to
+say what happened, not to hold every ceremony.
 5. **Commitment rows** — `{room, deliverable_id, owner_scope, commitment_text,
    predicted_artifact, resolve_by}`.
 6. **Resolution rows, written by tooling and never by a member**, at each later occasion

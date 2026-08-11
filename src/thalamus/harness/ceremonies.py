@@ -512,6 +512,13 @@ class LedgerAudit:
     duplicate_occasions: tuple[str, ...] = ()
     """Occasion ids claimed more than once — the shape a lost lock would produce."""
 
+    unaccounted: tuple[str, ...] = ()
+    """`<room>:<kind>` for a ceremony a closed room neither held nor skipped. Every
+    other finding here reads rows that exist; this one reads the absence, which is the
+    only defect in the list a ledger cannot show you by being read. A skip row makes a
+    non-occurrence into the ablation it is, so a kind with neither row is not a room
+    that declined a ceremony — it is a room whose record cannot say whether it did."""
+
     def clean(self) -> bool:
         return not (
             self.unassigned
@@ -520,6 +527,7 @@ class LedgerAudit:
             or self.unminted
             or self.orphan_ends
             or self.duplicate_occasions
+            or self.unaccounted
         )
 
     def note(self) -> str:
@@ -535,6 +543,8 @@ class LedgerAudit:
             ("deliverable id(s) used but never minted", self.unminted),
             ("end row(s) for an occasion that never started", self.orphan_ends),
             ("duplicated occasion id(s)", self.duplicate_occasions),
+            ("ceremony(s) a closed room neither held nor skipped — the record cannot "
+             "say whether these happened", self.unaccounted),
         ):
             if items:
                 lines.append(f"  {len(items)} {label}: {', '.join(sorted(items))}")
@@ -562,6 +572,8 @@ def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAud
     assignment_arm: dict[tuple[str, str, str], str] = {}
     occasions: list[dict] = []
     skipped = 0
+    accounted: dict[str, set[str]] = {}
+    closed_rooms: set[str] = set()
 
     for position, row in enumerate(records):
         event = row.get("event")
@@ -578,12 +590,22 @@ def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAud
                     assignment_arm[key] = str(arm)
         elif event == EVENT_SKIPPED:
             skipped += 1
+            accounted.setdefault(str(row.get("room")), set()).add(
+                str(row.get("ceremony_kind"))
+            )
         elif event == EVENT_START:
             key = str(row.get("occasion_id"))
             if key in started:
                 duplicates.append(key)
             started[key] = position
             occasions.append(row)
+            kind = str(row.get("ceremony_kind"))
+            accounted.setdefault(str(row.get("room")), set()).add(kind)
+            if kind == "close":
+                # Close is when the record becomes final. Before it, a missing ceremony
+                # is `not yet`; demanding one from a live room would report every room
+                # mid-flight as defective.
+                closed_rooms.add(str(row.get("room")))
             for deliverable in row.get("deliverable_ids") or []:
                 used.setdefault(str(deliverable), None)
         elif event == EVENT_END:
@@ -616,9 +638,17 @@ def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAud
         if any(assignment_arm[key] != arm for key in known):
             mismatched.append(str(row.get("occasion_id")))
 
+    unaccounted = [
+        f"{room}:{kind}"
+        for room in closed_rooms
+        for kind in CEREMONY_KINDS
+        if kind not in accounted.get(room, set())
+    ]
+
     return LedgerAudit(
         occasions=len(occasions),
         skipped=skipped,
+        unaccounted=tuple(sorted(unaccounted)),
         unfinished=tuple(sorted(key for key in started if key not in ended)),
         unassigned=tuple(sorted(set(unassigned))),
         late_assignments=tuple(sorted(set(late))),

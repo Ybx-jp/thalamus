@@ -161,6 +161,61 @@ def test_a_skip_is_distinguishable_from_an_unlogged_ceremony(ledger):
     ]
 
 
+def test_a_closed_room_that_neither_held_nor_skipped_a_ceremony_is_named(ledger):
+    """
+    Scenario: room atlas as it actually ran (2026-08-11) — open, acceptance, close,
+    and a recorded retrospective skip, while three review rounds happened and wrote
+    nothing at all.
+
+    Verification: the audit names `atlas:review` and is not clean. Every other finding
+    reads rows that exist; the ledger had nothing to read here, so a room could hold
+    the one ceremony docs/12 calls measurable, log none of it, and still audit clean.
+    """
+    ceremonies.start("atlas", "open", path=ledger)
+    ceremonies.start("atlas", "acceptance", path=ledger)
+    ceremonies.skip("atlas", "retrospective", reason="cost", path=ledger)
+    ceremonies.start("atlas", "close", path=ledger)
+
+    report = ceremonies.audit(path=ledger)
+    assert report.unaccounted == ("atlas:review",)
+    assert not report.clean()
+
+
+def test_a_room_still_open_is_not_asked_for_ceremonies_it_has_not_reached(ledger):
+    """
+    Scenario: a room has held its open ceremony and nothing else. It has not closed.
+
+    Verification: nothing is reported unaccounted. Before close a missing ceremony is
+    `not yet`, and an audit that demanded the full set from a live room would report
+    every room mid-flight as defective — which is the reading that gets an instrument
+    ignored.
+    """
+    ceremonies.start("alpha", "open", path=ledger)
+
+    report = ceremonies.audit(path=ledger)
+    assert report.unaccounted == ()
+    assert report.clean()
+
+
+def test_skipping_a_ceremony_discharges_the_obligation_to_account_for_it(ledger):
+    """
+    Scenario: a room skips every ceremony it does not hold, then closes.
+
+    Verification: clean. The check asks the room to *say* what happened, not to hold
+    every ceremony — a skip row is a complete answer, which is what keeps the design's
+    one naturally-occurring ablation cheap to record rather than penalised.
+    """
+    ceremonies.start("alpha", "open", path=ledger)
+    ceremonies.skip("alpha", "review", reason="single deliverable", path=ledger)
+    ceremonies.skip("alpha", "acceptance", reason="no gate", path=ledger)
+    ceremonies.skip("alpha", "retrospective", reason="cost", path=ledger)
+    ceremonies.start("alpha", "close", path=ledger)
+
+    report = ceremonies.audit(path=ledger)
+    assert report.unaccounted == ()
+    assert report.clean()
+
+
 # --- 3. The stable deliverable id ----------------------------------------------------
 
 
