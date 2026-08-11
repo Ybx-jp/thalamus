@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="680" viewBox="0 0 1020 680" role="img" aria-labelledby="loopTitle loopDesc" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <title id="loopTitle">The memory loop: a session becomes memory, and memory becomes the next session's context</title>
+  <desc id="loopDesc">A coding session on Tuesday writes down nothing it learns until it ends; its claims, threads and session record are all produced afterwards. When it ends, a SessionEnd hook runs thalamus extract, which archives the transcript and distils it into claims and threads written to a local graph. A separate session on Friday calls memory_recall; its words are matched against the stored text and what matches comes back as quoted data. The returned memory informs the agent and never instructs it.</desc>
+
+  <rect x="0" y="0" width="1020" height="680" fill="#f7f7f5"/>
+  <rect x="0.5" y="0.5" width="1019" height="679" fill="none" stroke="#dcdcd6"/>
+
+  <text x="44" y="58" font-size="30" font-weight="600" fill="#1f2328">The memory loop</text>
+  <text x="44" y="86" font-size="15.5" fill="#57606a">A session becomes memory. Memory becomes the next session&#8217;s context.</text>
+  <line x1="44" y1="106" x2="976" y2="106" stroke="#e2e2dc" stroke-width="1"/>
+
+  <!-- ============ the two sessions ============ -->
+  <rect x="44" y="126" width="356" height="150" rx="10" fill="#ffffff" stroke="#cfcfc8"/>
+  <text x="66" y="152" font-size="10.5" font-weight="600" letter-spacing="1.3" fill="#57606a">TUESDAY</text>
+  <text x="66" y="180" font-size="19" font-weight="600" fill="#1f2328">A session</text>
+  <text x="66" y="207" font-size="13.5" fill="#1f2328">You work. The agent recalls, reads files,</text>
+  <text x="66" y="226" font-size="13.5" fill="#1f2328">edits, runs commands.</text>
+  <line x1="66" y1="243" x2="66" y2="259" stroke="#1f2328" stroke-width="2"/>
+  <text x="78" y="256" font-size="13.5" font-weight="600" fill="#1f2328">Nothing it learns is written down until it ends.</text>
+
+  <rect x="620" y="126" width="356" height="150" rx="10" fill="#ffffff" stroke="#cfcfc8"/>
+  <text x="642" y="152" font-size="10.5" font-weight="600" letter-spacing="1.3" fill="#57606a">FRIDAY</text>
+  <text x="642" y="180" font-size="19" font-weight="600" fill="#1f2328">A different session</text>
+  <text x="642" y="207" font-size="13.5" fill="#1f2328">Same repo. A new process, started</text>
+  <text x="642" y="226" font-size="13.5" fill="#1f2328">from nothing.</text>
+  <line x1="642" y1="243" x2="642" y2="259" stroke="#1f2328" stroke-width="2"/>
+  <text x="654" y="256" font-size="13.5" font-weight="600" fill="#1f2328">Tuesday is not in its context window.</text>
+
+  <!-- between the sessions: they are separated in time -->
+  <line x1="412" y1="205" x2="608" y2="205" stroke="#6e7781" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <text x="510" y="194" font-size="12.5" font-weight="600" fill="#57606a" text-anchor="middle">days later</text>
+  <text x="510" y="228" font-size="11.5" fill="#57606a" text-anchor="middle">two separate runs of the agent;</text>
+  <text x="510" y="244" font-size="11.5" fill="#57606a" text-anchor="middle">nothing is carried across in the process</text>
+
+  <!-- ============ arrows ============ -->
+  <defs>
+    <marker id="headDown" markerWidth="12" markerHeight="12" refX="6" refY="9" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1,1 L6,9 L11,1 Z" fill="#1f2328"/>
+    </marker>
+    <marker id="headUp" markerWidth="12" markerHeight="12" refX="6" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1,11 L6,3 L11,11 Z" fill="#1f2328"/>
+    </marker>
+  </defs>
+
+  <!-- write edge: session end -> graph -->
+  <line x1="180" y1="284" x2="180" y2="452" stroke="#1f2328" stroke-width="2.5" marker-end="url(#headDown)"/>
+  <text x="202" y="312" font-size="13.5" font-weight="600" fill="#1f2328">when the session ends</text>
+  <text x="202" y="337" font-size="12" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">SessionEnd hook fires</text>
+  <text x="202" y="355" font-size="12" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">&#8594; thalamus extract --write</text>
+  <text x="202" y="381" font-size="12.5" fill="#57606a">The transcript is archived, then read</text>
+  <text x="202" y="398" font-size="12.5" fill="#57606a">back and distilled into claims and</text>
+  <text x="202" y="415" font-size="12.5" fill="#57606a">threads, which are written to the graph.</text>
+  <text x="202" y="440" font-size="12.5" font-weight="600" fill="#1f2328">You do not save anything by hand.</text>
+
+  <!-- read edge: graph -> later session -->
+  <line x1="862" y1="452" x2="862" y2="284" stroke="#1f2328" stroke-width="2.5" marker-end="url(#headUp)"/>
+  <text x="600" y="306" font-size="13.5" font-weight="600" fill="#1f2328">when the new session asks</text>
+  <text x="600" y="329" font-size="12" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">memory_recall(&quot;the console PWA&quot;)</text>
+  <text x="600" y="352" font-size="12.5" fill="#57606a">Your words are matched against the</text>
+  <text x="600" y="369" font-size="12.5" fill="#57606a">stored text, and whatever matches is</text>
+  <text x="600" y="386" font-size="12.5" fill="#57606a">quoted back with its source attached.</text>
+  <rect x="598" y="394" width="230" height="58" rx="6" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="612" y="412" font-size="12.5" font-weight="600" fill="#1f2328">It is returned as data.</text>
+  <text x="612" y="429" font-size="12.5" font-weight="600" fill="#1f2328">It informs the agent;</text>
+  <text x="612" y="446" font-size="12.5" font-weight="600" fill="#1f2328">it never instructs it.</text>
+
+  <!-- ============ the graph ============ -->
+  <rect x="44" y="460" width="932" height="180" rx="10" fill="#ffffff" stroke="#cfcfc8"/>
+  <text x="66" y="492" font-size="19" font-weight="600" fill="#1f2328">the graph</text>
+  <text x="66" y="516" font-size="13" fill="#57606a">One graph on your own machine. Everything the agent has learned is a vertex in it.</text>
+
+  <rect x="66" y="532" width="104" height="26" rx="5" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="118" y="549" font-size="12.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328" text-anchor="middle">Session</text>
+  <text x="118" y="574" font-size="11" fill="#57606a" text-anchor="middle">what happened</text>
+
+  <rect x="186" y="532" width="104" height="26" rx="5" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="238" y="549" font-size="12.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328" text-anchor="middle">Claim</text>
+  <text x="238" y="574" font-size="11" fill="#57606a" text-anchor="middle">something settled:</text>
+  <text x="238" y="589" font-size="11" fill="#57606a" text-anchor="middle">decided, hit, or solved</text>
+
+  <rect x="306" y="532" width="104" height="26" rx="5" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="358" y="549" font-size="12.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328" text-anchor="middle">Thread</text>
+  <text x="358" y="574" font-size="11" fill="#57606a" text-anchor="middle">something still open:</text>
+  <text x="358" y="589" font-size="11" fill="#57606a" text-anchor="middle">unfinished work</text>
+
+  <rect x="426" y="532" width="104" height="26" rx="5" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="478" y="549" font-size="12.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328" text-anchor="middle">Artifact</text>
+  <text x="478" y="574" font-size="11" fill="#57606a" text-anchor="middle">which file or</text>
+  <text x="478" y="589" font-size="11" fill="#57606a" text-anchor="middle">module it touched</text>
+
+  <line x1="558" y1="530" x2="558" y2="600" stroke="#e2e2dc" stroke-width="1"/>
+
+  <text x="584" y="546" font-size="12.5" fill="#1f2328">Every vertex records where it came from: which session or</text>
+  <text x="584" y="564" font-size="12.5" fill="#1f2328">which document, and how far that is from first-hand experience.</text>
+  <text x="584" y="590" font-size="12.5" fill="#57606a">Matching is literal, on the words themselves &#8212; there is no</text>
+  <text x="584" y="607" font-size="12.5" fill="#57606a">embedding and no similarity search.</text>
+
+  <text x="66" y="609" font-size="11.5" fill="#57606a">Who is allowed to read it, and</text>
+  <text x="66" y="624" font-size="11.5" fill="#57606a">how far it is trusted, come next.</text>
+</svg>

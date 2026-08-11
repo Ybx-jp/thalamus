@@ -26,6 +26,34 @@ Each expert owns two graph regions behind one contract manifest:
 Both regions conform to the federation contract; the episodic schema follows the
 base memory system's design (session summaries + open threads as entrypoints).
 
+### The two regions are confined differently, and only one of them is private
+
+Ownership is not confinement, and reading "each expert owns two regions" as "an expert
+sees only its own two" is the wrong model. The split at read time falls between the
+regions, not between the experts:
+
+- **Episodic memory is private to the pinned scope.** Sessions, the threads left open
+  inside them, and the claims those sessions contain are filtered to the pin alone
+  (`reader.py:634, 649`).
+- **Knowledge is an ambient commons.** Every session reads the knowledge claims *and
+  chunks* of every other expert scope, with no ticket, no record, and no deliberate act
+  — `KNOWLEDGE_SCOPES` is assembled at process start (`mcp_server.py:80`) and
+  `claim_scopes = [scope, *knowledge_scopes]` is applied to both populations
+  (`reader.py:621, 665-673, 687-691`). Chunks carry no `CONTAINS` filter at all, and
+  they are the larger population.
+
+The boundary is therefore **one edge, not a partition between scopes**: a `Claim` inside
+a `Session` is episodic and confined; a `Claim` in no session is knowledge and shared.
+Same graph, same vertex label, same query — whether one `CONTAINS` edge exists decides
+who may read it.
+
+Only `memory_recall` passes `knowledge_scopes`; the other recall tools pass the granted
+scope alone, so the commons is reachable through exactly one tool.
+
+This is stated here because it is otherwise discoverable only from a comment in
+`mcp_server.py`, and a reader who believes a scope is sealed will put something in a
+knowledge claim they would not put in a commons.
+
 ## Routing: pin an expert to the session
 
 Per-query routing (classify each query, pick an expert) is a hard, failure-prone
@@ -129,6 +157,13 @@ Mechanics, in the order a consultation runs:
    the recall tools accept the ticket and resolve the granted scope **from the
    exchange record server-side**. An invented or burned ticket grants nothing and
    fails closed. Grants are per-exchange and non-transitive (depth 1, as designed).
+
+   **A ticket is a swap, not an additional door.** `_granted_scope` returns
+   `(granted, [])` (`mcp_server.py:109`): under a ticket the ambient knowledge commons
+   is *dropped*, and recall returns the consulted scope alone — its episodic memory
+   included. So a consultation buys **depth by giving up breadth**, and the thing it
+   uniquely reaches is the consulted expert's *episodic* memory, which is what no
+   ambient read can see.
 3. **Close** — the validated answer lands on the Exchange with `role: citation`
    REFERENCES edges: the answer's evidence-support record. The ticket is burned;
    answered exchanges refuse further answers and grant no further retrieval.

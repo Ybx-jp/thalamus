@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="790" viewBox="0 0 1020 790" role="img" aria-labelledby="decTitle decDesc" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <title id="decTitle">The decision: recall, consult, or open a room — the choice is about whose memory you need</title>
+  <desc id="decDesc">The question is whose memory has the answer, not how big the job is. If it is your own scope's memory plus the shared knowledge every scope reads, call memory_recall — a tool call inside a pinned session, with no command-line form. If it is one other expert's lived sessions, mint a consultation ticket with consult_request, let a subagent answer as that expert, and close with consult_answer; remember that under a ticket you lose the shared knowledge commons. That branch has a faster form, uv run thalamus quick ask, but unlike the tool calls it is a shell command run from the repo and not a tool call, and it works only when that expert already has a live session. If several experts must make and independently review one artifact, open a room with thalamus room create and thalamus spawn, and pass work with thalamus dispatch. These are not three sizes of the same job and you do not escalate along them.</desc>
+
+  <rect x="0" y="0" width="1020" height="790" fill="#f7f7f5"/>
+  <rect x="0.5" y="0.5" width="1019" height="789" fill="none" stroke="#dcdcd6"/>
+
+  <text x="44" y="58" font-size="30" font-weight="600" fill="#1f2328">The decision</text>
+  <text x="44" y="86" font-size="15.5" fill="#57606a">Recall, consult, or open a room. The question is not how big the job is.</text>
+  <line x1="44" y1="106" x2="976" y2="106" stroke="#e2e2dc" stroke-width="1"/>
+
+  <text x="510" y="150" font-size="23" font-weight="600" fill="#1f2328" text-anchor="middle">Whose memory has the answer?</text>
+  <line x1="240" y1="170" x2="780" y2="170" stroke="#cfcfc8" stroke-width="1"/>
+
+  <!-- ============ branch 1 : recall ============ -->
+  <rect x="44" y="190" width="296" height="418" rx="10" fill="#ffffff" stroke="#cfcfc8"/>
+  <rect x="44" y="190" width="296" height="5" rx="2.5" fill="#1f2328"/>
+  <text x="66" y="226" font-size="17" font-weight="600" fill="#1f2328">Mine</text>
+  <text x="66" y="250" font-size="12.5" fill="#1f2328">My own scope&#8217;s sessions and threads &#8212;</text>
+  <text x="66" y="268" font-size="12.5" fill="#1f2328">plus the knowledge every scope shares.</text>
+  <rect x="66" y="282" width="146" height="22" rx="4" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="78" y="297" font-size="10.5" font-weight="600" letter-spacing="0.6" fill="#57606a">TOOL CALL, IN-SESSION</text>
+  <rect x="66" y="314" width="252" height="76" rx="5" fill="#f7f7f5" stroke="#cfcfc8"/>
+  <text x="78" y="334" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">memory_recall(</text>
+  <text x="78" y="350" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">  query=&quot;the console PWA&quot;)</text>
+  <text x="78" y="372" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">memory_open_threads(</text>
+  <text x="78" y="386" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">  project=&quot;thalamus&quot;)</text>
+  <text x="66" y="414" font-size="12.5" fill="#57606a">These have no command line. There is no</text>
+  <text x="66" y="432" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#57606a">thalamus recall</text>
+  <text x="66" y="450" font-size="12.5" fill="#57606a">at all: the memory tools exist only</text>
+  <text x="66" y="468" font-size="12.5" fill="#57606a">inside a session that is already pinned.</text>
+  <text x="66" y="506" font-size="12.5" font-weight="600" fill="#1f2328">Start here every time.</text>
+  <text x="66" y="524" font-size="12.5" fill="#57606a">It is one call, and it is the only one</text>
+  <text x="66" y="542" font-size="12.5" fill="#57606a">of the three that costs nothing to</text>
+  <text x="66" y="560" font-size="12.5" fill="#57606a">get wrong.</text>
+
+  <!-- ============ branch 2 : consult ============ -->
+  <rect x="362" y="190" width="296" height="418" rx="10" fill="#ffffff" stroke="#cfcfc8"/>
+  <rect x="362" y="190" width="296" height="5" rx="2.5" fill="#1f2328"/>
+  <text x="384" y="226" font-size="17" font-weight="600" fill="#1f2328">One other expert&#8217;s</text>
+  <text x="384" y="250" font-size="12.5" fill="#1f2328">What <tspan font-style="italic">they</tspan> lived through &#8212; the sessions</text>
+  <text x="384" y="268" font-size="12.5" fill="#1f2328">an ordinary recall cannot reach.</text>
+  <rect x="384" y="282" width="146" height="22" rx="4" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="396" y="297" font-size="10.5" font-weight="600" letter-spacing="0.6" fill="#57606a">TOOL CALL, IN-SESSION</text>
+  <rect x="384" y="314" width="252" height="76" rx="5" fill="#f7f7f5" stroke="#cfcfc8"/>
+  <text x="396" y="334" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">consult_request(</text>
+  <text x="396" y="350" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">  expert=&quot;architect&quot;,</text>
+  <text x="396" y="366" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">  question=&quot;&#8230;&quot;)</text>
+  <text x="396" y="384" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#57606a">&#8230; then consult_answer(&#8230;)</text>
+  <text x="384" y="414" font-size="12.5" fill="#57606a">Minting the ticket <tspan font-style="italic">is</tspan> the record. A</text>
+  <text x="384" y="432" font-size="12.5" fill="#57606a">subagent answers as that expert and</text>
+  <text x="384" y="450" font-size="12.5" fill="#57606a">must cite real nodes to close it.</text>
+  <rect x="382" y="466" width="256" height="60" rx="5" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="394" y="486" font-size="12.5" font-weight="600" fill="#1f2328">It costs you something.</text>
+  <text x="394" y="503" font-size="12" fill="#1f2328">While the ticket is open you lose the</text>
+  <text x="394" y="518" font-size="12" fill="#1f2328">shared knowledge: depth, not breadth.</text>
+  <text x="384" y="544" font-size="12" fill="#57606a">If that expert already has a live session,</text>
+  <text x="384" y="560" font-size="12" fill="#57606a">there is a faster form &#8212; but that one is a</text>
+  <text x="384" y="576" font-size="12" font-weight="600" fill="#1f2328">shell command, not a tool call:</text>
+  <text x="384" y="596" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#57606a">uv run thalamus quick ask architect &quot;&#8230;&quot;</text>
+
+  <!-- ============ branch 3 : room ============ -->
+  <rect x="680" y="190" width="296" height="418" rx="10" fill="#ffffff" stroke="#cfcfc8"/>
+  <rect x="680" y="190" width="296" height="5" rx="2.5" fill="#1f2328"/>
+  <text x="702" y="226" font-size="17" font-weight="600" fill="#1f2328">Several, on one artifact</text>
+  <text x="702" y="250" font-size="12.5" fill="#1f2328">When a thing has to be made and</text>
+  <text x="702" y="268" font-size="12.5" fill="#1f2328">independently reviewed, with a record.</text>
+  <rect x="702" y="282" width="176" height="22" rx="4" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="714" y="297" font-size="10.5" font-weight="600" letter-spacing="0.6" fill="#57606a">SHELL, FROM THE REPO</text>
+  <rect x="702" y="314" width="252" height="76" rx="5" fill="#f7f7f5" stroke="#cfcfc8"/>
+  <text x="714" y="332" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">uv run thalamus room create atlas</text>
+  <text x="714" y="350" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">uv run thalamus spawn designer \</text>
+  <text x="714" y="364" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">  --room atlas</text>
+  <text x="714" y="382" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1f2328">uv run thalamus dispatch atlas &quot;&#8230;&quot;</text>
+  <text x="702" y="412" font-size="12.5" fill="#57606a">A <tspan font-weight="600" fill="#1f2328">room</tspan> is one long-lived pinned session</text>
+  <text x="702" y="430" font-size="12.5" fill="#57606a">per member, each with its own memory,</text>
+  <text x="702" y="448" font-size="12.5" fill="#57606a">passing work to the others by dispatch.</text>
+  <rect x="700" y="464" width="256" height="78" rx="5" fill="#eeeeea" stroke="#cfcfc8"/>
+  <text x="712" y="484" font-size="12.5" font-weight="600" fill="#1f2328">Not for big jobs.</text>
+  <text x="712" y="501" font-size="12" fill="#1f2328">Size is not the trigger. A room is for</text>
+  <text x="712" y="516" font-size="12" fill="#1f2328">work needing more than one expert&#8217;s</text>
+  <text x="712" y="531" font-size="12" fill="#1f2328">judgement on the same artifact.</text>
+  <text x="702" y="562" font-size="12" fill="#57606a">A long solo task is still one recall</text>
+  <text x="702" y="578" font-size="12" fill="#57606a">and a lot of work.</text>
+
+  <!-- ============ the anti-ladder ============ -->
+  <rect x="44" y="628" width="932" height="150" rx="10" fill="#ffffff" stroke="#cfcfc8"/>
+  <text x="66" y="658" font-size="16.5" font-weight="600" fill="#1f2328">These are not three sizes of the same thing, and you do not escalate along them.</text>
+  <text x="66" y="682" font-size="12.5" fill="#1f2328">It is tempting to read them as small, medium and large &#8212; cheap recall, pricier consultation, expensive room. That is the wrong axis and it will</text>
+  <text x="66" y="700" font-size="12.5" fill="#1f2328">send you to the wrong one. A tiny question whose answer lives in another expert&#8217;s sessions still needs a ticket; no amount of recalling will</text>
+  <text x="66" y="718" font-size="12.5" fill="#1f2328">reach it, because it is a filter and not a ranking. Pick by <tspan font-weight="600">whose memory</tspan>, then by nothing else.</text>
+  <line x1="66" y1="730" x2="954" y2="730" stroke="#e2e2dc"/>
+  <text x="66" y="746" font-size="11.5" fill="#57606a">Where you run it matters, and one branch does both: <tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">memory_recall</tspan> and <tspan font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">consult_request</tspan> are tool calls with no command-line form at all.</text>
+  <text x="66" y="764" font-size="11.5" fill="#57606a">Rooms &#8212; and the quicker form of a consultation &#8212; are shell commands, run from the repo.</text>
+</svg>
