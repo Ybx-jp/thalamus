@@ -410,6 +410,75 @@ def test_answered_consultations_come_back_newest_first():
     assert len(recall_exchanges(graph, "literature", 2)) == 2
 
 
+def test_a_query_outranks_recency_so_the_settled_answer_is_not_capped_out():
+    """
+    Scenario: An expert is asked something it already settled several rounds ago
+
+    Verifications:
+    - the topically matching exchange is returned even though three newer ones exist
+    - recency alone would have cut it, which is the failure being fixed
+    - ties fall back to recency, because the sort is stable over ordered rows
+
+    This is lab/055 as a test. A five-state capability contract was designed, and the
+    next session re-derived it across three more rounds; the exchange holding the
+    first design was the sixth most recent of seven, so every recency-capped list hid
+    the one thing that would have stopped the rework.
+    """
+    rows = [
+        _exchange("scope:main:exchange:n1", "architect", "answered", "2026-08-11T04:00:00",
+                  question="the sandbox dir leak", answer="prune the transcript dirs"),
+        _exchange("scope:main:exchange:n2", "architect", "answered", "2026-08-11T03:00:00",
+                  question="cost capture on cursor", answer="tokens are not dollars"),
+        _exchange("scope:main:exchange:n3", "architect", "answered", "2026-08-11T02:00:00",
+                  question="hook parity drift", answer="derive it from the wiring tables"),
+        _exchange("scope:main:exchange:design", "architect", "answered", "2026-08-10T22:32:00",
+                  question="a harness capability contract layer",
+                  answer="a five-state Provision enum in contract/capabilities.py"),
+    ]
+
+    ranked = recall_exchanges(_ExchangeGraph(rows), "architect", 3,
+                              "should the launcher surface be declared as capability")
+
+    assert "design" in [r.ticket for r in ranked]
+    # Verifies: without the query the same call caps it out entirely
+    assert "design" not in [
+        r.ticket for r in recall_exchanges(_ExchangeGraph(rows), "architect", 3)
+    ]
+
+    # Verifies: nothing matches, so recency is left untouched rather than shuffled
+    unmatched = recall_exchanges(_ExchangeGraph(rows), "architect", 3, "zzzznomatch")
+    assert [r.ticket for r in unmatched] == ["n1", "n2", "n3"]
+
+
+def test_an_exchange_header_carries_the_shape_without_the_body():
+    """
+    Scenario: A brief must name what the expert already answered without quoting it
+
+    Verifications:
+    - the node id survives, since it is how the body is read when it matters
+    - a long answer is condensed rather than reproduced
+    - the full-body renderer is unaffected
+
+    An answer runs 15k-40k characters. A brief that carried bodies would be the
+    transcript, and the reason to carry anything is recognition, not recall.
+    """
+    result = ExchangeResult(
+        ticket="abc123", question="what shape should the contract take?",
+        answer="x" * 5000, from_scope="main",
+        answered_at="2026-08-10T22:32:00+00:00", node_id="scope:main:exchange:abc123",
+    )
+
+    header = result.format_header()
+
+    assert "scope:main:exchange:abc123" in header
+    assert "2026-08-10" in header
+    assert "what shape should the contract take?" in header
+    assert len(header) < 800
+    assert "…" in header
+    # Verifies: the body renderer still emits the whole answer
+    assert len(result.format()) > 5000
+
+
 def test_a_recalled_consultation_attributes_the_question_to_its_asker():
     """
     Scenario: Render a closed exchange back into the answering expert's context

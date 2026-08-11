@@ -105,10 +105,22 @@ left open, and on success records the answer and burns the ticket.
 Mechanics, in the order a consultation runs:
 
 1. **Mint** — the server (never the model) validates the expert against the manifest
-   roster, assembles the **expert brief** from the consulted scope's own memory (open
-   threads, recent sessions, question-matched recall; manifest identity is the only
-   tier-0 framing — no hand-written personas), and writes the Exchange: `main` scope,
-   `status: open`, with `role: brief` REFERENCES edges to every node the brief served.
+   roster, assembles the **expert brief** from the consulted scope's own memory (its
+   own answered exchanges, open threads, recent sessions, question-matched recall;
+   manifest identity is the only tier-0 framing — no hand-written personas), and
+   writes the Exchange: `main` scope, `status: open`, with `role: brief` REFERENCES
+   edges to every node the brief served.
+
+   The exchanges come first, and they are the section the other three cannot supply.
+   An Exchange is written to the *asking* scope, so an expert's own answers are absent
+   from every scope-confined read it has, and Exchange text is on no lexical surface —
+   `recall()` searches `Session`, `Claim` and `Chunk` only. Without this section an
+   expert asked something it settled last week has no way to discover that, which is
+   how one design was derived twice (lab/055). They are served as **headers** ranked
+   against the question being asked, never bodies: an answer runs 15k–40k characters,
+   and ranking by recency alone re-creates the failure, since the exchange holding
+   that design was the sixth most recent of seven. The header carries the node id; the
+   body is read from it when the header says it matters.
    A scope with nothing to cite refuses the mint — an expert with no memory cannot
    produce a citable answer. The question is classified at mint (`kind: design |
    general`, the same lexical rule `conditioning.sh` fires on at UserPromptSubmit),

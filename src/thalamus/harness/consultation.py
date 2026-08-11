@@ -34,6 +34,7 @@ from thalamus.contract.ontology import CORE_NODES, MAIN_SCOPE, scope_of, vid
 from thalamus.substrate.reader import (
     load_exchange,
     recall,
+    recall_exchanges,
     recall_open_threads,
     recall_recent,
 )
@@ -49,6 +50,12 @@ _SCOPED_PREFIXES = "|".join(
     sorted(re.escape(node.id_prefix) for node in CORE_NODES if node.scoped)
 )
 CITATION_RE = re.compile(rf"`(scope:[^:`\s]+:(?:{_SCOPED_PREFIXES}):[^`]+)`")
+
+
+# Answered exchanges carried into a brief as headers. Higher than the other sections'
+# five because a header is ~4 lines against a recalled session's block, and because
+# missing the one relevant answer costs a whole round (lab/055).
+_BRIEF_EXCHANGES = 8
 
 
 def mint_ticket() -> str:
@@ -328,13 +335,34 @@ def _assemble_brief(
 ) -> tuple[list[str], list[str]]:
     """The expert's voice, assembled server-side from its own scope's memory.
 
-    Open threads, recent sessions, and question-matched recall — the same entrypoints
-    the expert would see serving its own session. Returns the rendered sections and
-    the vertex IDs served, which become the exchange's `role: brief` REFERENCES edges
-    (the consulted expert's record of what it served).
+    Its own answered exchanges, open threads, recent sessions, and question-matched
+    recall — the same entrypoints the expert would see serving its own session.
+    Returns the rendered sections and the vertex IDs served, which become the
+    exchange's `role: brief` REFERENCES edges (the consulted expert's record of what
+    it served).
+
+    The exchanges come first and are the reason this function is not just the other
+    three. An Exchange is written to the *asking* scope, so an expert's own answers
+    are absent from every scope-confined read it has, and its text is on no lexical
+    surface — an expert asked a question it settled last week has no way to find that
+    out. Headers only: an answer runs 15k–40k characters, and the body is read from
+    the node when the header says it matters (lab/055).
     """
     sections: list[str] = []
     refs: dict[str, None] = {}
+
+    answered = recall_exchanges(g, scope, _BRIEF_EXCHANGES, question)
+    if answered:
+        sections.append(
+            "## You have answered these already\n\n"
+            "Ranked against the question now being asked, headers only. Read the node "
+            "before designing anything adjacent to one of them — a round that repeats "
+            "a settled design costs the asker the round and teaches this scope "
+            "nothing.\n\n" + "\n".join(result.format_header() for result in answered)
+        )
+        for result in answered:
+            if result.node_id:
+                refs.setdefault(result.node_id)
 
     threads = recall_open_threads(g, None, 5, scope)
     if threads:

@@ -87,6 +87,10 @@ _MATCH_FLOOR = 2
 _DETAIL_CAP = 8
 # Knowledge holds up to 1/this of the result window when sessions also matched.
 _KNOWLEDGE_WINDOW_DIVISOR = 2
+# Answered exchanges read before ranking a query against them. Wide because an expert
+# accumulates few of these and the ranking is the only path from a question to an
+# answer already given — a window that stops short of the relevant one ranks nothing.
+_EXCHANGE_RANK_WINDOW = 50
 # Co-indexed verbatim chunks (lab/052). Scored BELOW a knowledge claim per keyword
 # hit: a chunk is ~1,500 chars against a claim's ~210, so equal scoring would let a
 # passage outrank a claim by sheer surface area rather than by relevance. The cap is
@@ -393,15 +397,54 @@ class ExchangeResult:
         )
         return "\n".join(lines)
 
+    def format_header(self, excerpt: int = 240) -> str:
+        """The recognisable shell of an answered exchange, without its body.
+
+        An answer runs 15k–40k characters, so a brief carrying bodies would be the
+        transcript. A header is enough to recognise a question already settled, and
+        the node id is how the body is read on the occasion that it matters — which
+        is the step that did not happen when a five-state capability contract was
+        designed twice (lab/055).
+        """
+        head = f"- **`{self.ticket}`**"
+        if self.answered_at:
+            head += f" · answered {self.answered_at[:10]}"
+        if self.from_scope:
+            head += f" · asked by `{self.from_scope}`"
+        lines = [head]
+        if self.node_id:
+            lines.append(f"  **Node:** `{self.node_id}`")
+        lines.append(f"  **They asked:** {self._condense(self.question, excerpt)}")
+        lines.append(f"  **You answered:** {self._condense(self.answer, excerpt)}")
+        return "\n".join(lines)
+
     @staticmethod
     def _quote(text: str) -> str:
         return "\n> ".join((text or "").strip().splitlines()) or "(empty)"
 
+    @staticmethod
+    def _condense(text: str, limit: int) -> str:
+        flat = " ".join((text or "").split())
+        if not flat:
+            return "(empty)"
+        return flat if len(flat) <= limit else flat[:limit].rstrip() + " …"
+
 
 def recall_exchanges(
-    g: GraphTraversalSource, scope: str, limit: int = 5
+    g: GraphTraversalSource, scope: str, limit: int = 5, query: str = ""
 ) -> list[ExchangeResult]:
     """Consultations this expert has answered, most recent first.
+
+    Given a `query`, a wider window is read and ranked by keyword overlap against the
+    question and answer text before being cut to `limit` — recency alone is not enough
+    for the case this serves. When a five-state capability contract was designed twice
+    (lab/055), the exchange holding the first design was the sixth most recent of
+    seven, so any recency-capped list would have hidden the one that mattered. Ties
+    keep recency order, because the sort is stable and the rows arrive in it.
+
+    Exchange text is on no lexical recall surface — `recall()` searches `Session`,
+    `Claim` and `Chunk` labels only — so this ranking is the sole way a question
+    reaches an answer already given.
 
     Scope-confined the same way every other read is, but on the `expert` property:
     an Exchange vertex is always `scope:main:exchange:<ticket>`, and the consulted
@@ -420,7 +463,7 @@ def recall_exchanges(
         .has("status", "answered")
         .order()
         .by("answered_at", Order.desc)
-        .limit(limit)
+        .limit(max(limit, _EXCHANGE_RANK_WINDOW) if query else limit)
         .value_map(True)
         .to_list()
     )
@@ -437,7 +480,18 @@ def recall_exchanges(
                 node_id=node_id,
             )
         )
-    return results
+    keywords = _extract_keywords(query) if query else []
+    if keywords:
+        overlap = {
+            result.node_id: sum(
+                1
+                for keyword in keywords
+                if keyword in f"{result.question}\n{result.answer}".lower()
+            )
+            for result in results
+        }
+        results.sort(key=lambda result: -overlap[result.node_id])
+    return results[:limit]
 
 
 def recall(

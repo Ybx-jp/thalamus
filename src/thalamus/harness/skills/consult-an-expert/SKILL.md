@@ -78,17 +78,22 @@ One round answers a question. Several rounds build an expert. A shape that works
    names its design's limitation; that limitation is usually the most valuable
    remaining thread.
 
-Say explicitly which round you are on and tell it to recall its own prior answers by
-passing the current `ticket` to the `memory_recall*` tools — under a ticket those serve
-the *consulted* expert's memory, so they work from a spawned subagent.
+Say explicitly which round you are on. You do not need to tell it to fetch its prior
+rounds: the mint serves the expert its own answered exchanges as **headers**, ranked
+against the question you are asking, ahead of every other section of the brief. Tell it
+instead to **read the node** behind any header that looks adjacent to what you are
+asking — the header is for recognition, the body is the answer, and a header that goes
+unread is how one design came to be derived twice (lab/055).
 
-**`memory_consultations` does not, and a later round must not be built on it.** It takes
-no ticket and confines on `expert == <the calling process's scope>`; a subagent spawned
-to voice an expert shares the *caller's* MCP process, which is armed `main`, and no
-Exchange carries `expert: main` — so it returns empty rather than erroring. An expert
-that needs its own prior rounds either recalls them with the ticket or is given them,
-and a round-N ticket that assumes self-recall gets an answer built from the round-N
-statement alone.
+**`memory_consultations` is not that surface, and no round may be built on it.** It
+takes no ticket and confines on `expert == <the calling process's scope>`; a subagent
+voicing an expert shares the *caller's* MCP process, armed `main`, and no Exchange
+carries `expert: main` — so it returns empty rather than erroring.
+
+`memory_recall*` under the ticket serves the consulted expert's *episodic* scope, which
+for a consult-only expert can be empty — `architect` holds no sessions and no episodic
+claims, because it is asked questions and never pinned to answer them. A round that
+depends on the expert recalling itself gets nothing there; the brief is what carries it.
 
 Do not restate its findings back to it — restating invites agreement.
 
