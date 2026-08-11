@@ -118,6 +118,76 @@ def _provenance_properties(provenance: Provenance) -> dict[str, object]:
     }
 
 
+# Source properties a matching upsert may not silently rewrite.
+#
+# `tier` is where every DERIVED_FROM chain terminates — effective trust is the floor of
+# the derivation chain (docs/05) — so the same bytes arriving under a friendlier
+# provenance must never *raise* trust. The two readings combine to the least trusted
+# instead, which can lower trust and never lift it.
+#
+# `origin` is the key `_article_heads` searches by. Rewriting it moves an article's
+# supersession lineage under readers that already walked it, and an article Source
+# carries no body digest to detect the move with.
+_SOURCE_WRITE_ONCE = ("tier", "origin")
+
+
+def _source_on_match(
+    g: GraphTraversalSource, source_vid: str, properties: dict[str, object]
+) -> dict[str, object]:
+    """The subset of a Source's properties a matching upsert may refresh.
+
+    Identical bytes in one scope hash to one vertex id, so a re-ingest of the same
+    document lands here as a match. Title, size and timestamps are refreshable; trust
+    and lineage identity are not. Those are held at what the graph already carries, and
+    an attempt to change either is **reported** rather than applied — a corpus can be
+    built entirely out of successful operations and still be wrong, and a silent
+    relabel is how.
+    """
+    refreshable = {k: v for k, v in properties.items() if k not in _SOURCE_WRITE_ONCE}
+    try:
+        rows = g.V(source_vid).value_map(*_SOURCE_WRITE_ONCE).limit(1).to_list()
+    except Exception:
+        # An unreadable vertex has nothing held to protect; treat it as a first write.
+        rows = []
+    stored = rows[0] if rows and isinstance(rows[0], dict) else {}
+
+    def held(key: str) -> object:
+        value = stored.get(key)
+        return value[0] if isinstance(value, list) and value else value
+
+    held_tier, incoming_tier = held("tier"), properties.get("tier")
+    if held_tier is None:
+        # Nothing recorded — a first write, or a vertex predating the property. Let the
+        # incoming value through, or the node would end up with no tier at all and fail
+        # the contract's provenance obligation.
+        refreshable["tier"] = incoming_tier
+    elif incoming_tier is not None and int(incoming_tier) != int(held_tier):
+        keep = max(int(held_tier), int(incoming_tier))
+        refreshable["tier"] = keep
+        logger.warning(
+            "Source %s holds tier %s and was re-written at tier %s; keeping %s — "
+            "effective trust is the floor of the derivation chain (docs/05)",
+            source_vid,
+            held_tier,
+            incoming_tier,
+            keep,
+        )
+
+    held_origin, incoming_origin = held("origin"), properties.get("origin")
+    if not held_origin:
+        refreshable["origin"] = incoming_origin
+    elif incoming_origin and incoming_origin != held_origin:
+        logger.warning(
+            "Source %s holds origin %s and was re-written from %s; keeping the first — "
+            "identical bytes reached under two addresses",
+            source_vid,
+            held_origin,
+            incoming_origin,
+        )
+
+    return refreshable
+
+
 def _upsert_session_vertex(g: GraphTraversalSource, session: SessionGraph) -> str:
     """Create or update the Session entry node."""
     session_vid = vid("Session", session.session_id, session.scope)
@@ -217,7 +287,7 @@ def _write_sources(g: GraphTraversalSource, session: SessionGraph, session_vid: 
         graph_traversal = (
             g.merge_v({T.id: source_vid, T.label: "Source"})
             .option(Merge.on_create, {T.id: source_vid, **properties})
-            .option(Merge.on_match, properties)
+            .option(Merge.on_match, _source_on_match(g, source_vid, properties))
         )
         _iterate(graph_traversal, "upsert Source", source_vid)
 
@@ -424,7 +494,7 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
     graph_traversal = (
         g.merge_v({T.id: source_vid, T.label: "Source"})
         .option(Merge.on_create, {T.id: source_vid, **properties})
-        .option(Merge.on_match, properties)
+        .option(Merge.on_match, _source_on_match(g, source_vid, properties))
     )
     _iterate(graph_traversal, "upsert Source", source_vid)
 

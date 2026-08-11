@@ -69,6 +69,13 @@ its effective trust for gating purposes is the floor of its derivation chain.
   that can push commits").
 - **Episodic integrity:** tier-1 episodic records are append-only; nothing derived
   from tier 2–3 content may rewrite the agent's own history.
+- **Trust is write-once on a Source:** identical bytes in one scope hash to one vertex,
+  so re-ingesting a document lands as a match on the existing node. A match may refresh
+  title, size and timestamps; it may not silently relabel `tier`. The two readings
+  combine to the **least trusted** of the pair — trust can fall on new evidence about
+  where bytes came from, and can never be lifted by re-submitting them under a
+  friendlier provenance. The same rule holds `origin`, which the article supersession
+  lineage searches by. Both conflicts are logged rather than applied silently.
 
 ## Contradiction detection
 

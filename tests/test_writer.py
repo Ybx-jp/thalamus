@@ -396,6 +396,120 @@ def test_rewriting_the_same_snapshot_does_not_supersede_itself():
     assert not [e for e in fake.edges if e[T.label] == "SUPERSEDES"]
 
 
+class _PropertyFake:
+    """Just enough traversal source for _source_on_match: one vertex's stored properties."""
+
+    def __init__(self, stored=None):
+        self.stored = stored  # None => the vertex does not exist yet
+
+    def V(self, *_args):
+        return self
+
+    def value_map(self, *_keys):
+        return self
+
+    def limit(self, *_args):
+        return self
+
+    def to_list(self):
+        # TinkerGraph hands back list-valued properties; mirror that so the unwrapping
+        # is exercised rather than assumed.
+        return [] if self.stored is None else [{k: [v] for k, v in self.stored.items()}]
+
+
+_A_SOURCE = "scope:literature:source:abc123"
+
+
+def _properties(tier: int, origin: str) -> dict:
+    return {"content_hash": "abc123", "title": "A paper", "tier": tier, "origin": origin}
+
+
+def test_reingest_under_friendlier_provenance_cannot_raise_a_sources_trust():
+    """
+    Scenario: bytes already held at tier 2 are re-written claiming tier 1
+
+    Effective trust is the floor of the derivation chain (docs/05), and every Claim
+    hangs its floor off the Source it was derived from. If a re-ingest could relabel
+    that Source, the cheapest attack on the trust model is to re-submit the same bytes
+    under a friendlier provenance — so the two readings combine to the least trusted.
+    """
+    from thalamus.substrate.writer import _source_on_match
+
+    fake = _PropertyFake({"tier": 2, "origin": "https://arxiv.org/html/2601.00821"})
+    on_match = _source_on_match(
+        fake, _A_SOURCE, _properties(1, "https://arxiv.org/html/2601.00821")
+    )
+
+    assert on_match["tier"] == 2
+
+
+def test_reingest_under_wilder_provenance_does_lower_trust():
+    """
+    Scenario: bytes already held at tier 2 are re-written at tier 3
+
+    The rule is a floor, not a freeze: trust may fall on new evidence about where the
+    bytes came from. Only lifting it silently is forbidden.
+    """
+    from thalamus.substrate.writer import _source_on_match
+
+    fake = _PropertyFake({"tier": 2, "origin": "https://example.org/x"})
+    on_match = _source_on_match(fake, _A_SOURCE, _properties(3, "https://example.org/x"))
+
+    assert on_match["tier"] == 3
+
+
+def test_reingest_from_a_second_address_keeps_the_first_origin():
+    """
+    Scenario: identical bytes are reached at a second URL
+
+    `origin` is the key `_article_heads` searches by, so rewriting it moves an
+    article's supersession lineage under readers that already walked it — and an
+    article Source carries no body digest to detect the move with.
+    """
+    from thalamus.substrate.writer import _source_on_match
+
+    fake = _PropertyFake({"tier": 2, "origin": "https://arxiv.org/abs/2601.00821"})
+    on_match = _source_on_match(
+        fake, _A_SOURCE, _properties(2, "https://arxiv.org/html/2601.00821")
+    )
+
+    # The match writes no origin at all, which is what leaves the stored one standing.
+    assert "origin" not in on_match
+    # Refreshable properties still go through — this holds one field, not the write.
+    assert on_match["title"] == "A paper"
+
+
+def test_a_first_write_passes_trust_and_origin_through():
+    """
+    Scenario: the Source does not exist yet
+
+    Nothing is held, so nothing is protected — and the node must still come out
+    carrying provenance, which the contract rejects it for lacking.
+    """
+    from thalamus.substrate.writer import _source_on_match
+
+    on_match = _source_on_match(_PropertyFake(None), _A_SOURCE, _properties(2, "u"))
+
+    assert on_match["tier"] == 2
+    assert on_match["origin"] == "u"
+
+
+def test_a_source_predating_the_tier_property_still_gets_one():
+    """
+    Scenario: a vertex exists but carries no `tier`
+
+    Holding "what the graph already has" would hold *nothing* here and leave the node
+    with no tier at all, which fails the contract's provenance obligation.
+    """
+    from thalamus.substrate.writer import _source_on_match
+
+    on_match = _source_on_match(
+        _PropertyFake({"origin": "u"}), _A_SOURCE, _properties(2, "u")
+    )
+
+    assert on_match["tier"] == 2
+
+
 # --------------------------------------------------------------------------------------
 # written_at — the transaction-time axis ingested_at could not carry.
 # --------------------------------------------------------------------------------------
