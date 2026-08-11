@@ -540,6 +540,20 @@ undeliverable target refuses the whole dispatch naming it. `--partial` proceeds 
 records the undelivered names **on every row**, which is what keeps the later reading of
 a silence honest rather than merely permitted.
 
+**SendMessage between two live room members delivers — measured 2026-08-11, room `atlas`.**
+Never on the bare `<room>-<scope>` name at first contact: a cross-session target is
+refused with a message naming the exact ref, and the retry carrying ` [ref]` succeeds.
+`ListAgents` first, then carry the suffix; `eval/rooms.py:peer_scope()` already normalizes
+both forms, so the design anticipated this and only the instruction to a member did not.
+
+Two readings of the guard ledger follow, and both bound what a realized edge count means.
+**A `room-boundary` row records permission, not delivery**: the guard sits at PreToolUse
+and cannot know the tool call it passed then failed, so a fumbled address writes a row and
+delivers nothing — `permitted sends` is an upper bound, and a room whose members fumble
+scores *higher* than one that gets it right. And membership comes from the pin ledger, so
+a session that joins a room by accident enlarges the denominator: density falls while the
+collaboration is unchanged.
+
 `harness/quick.py` already parses that descriptor (`LiveSession.status`, `between_turns`),
 and for a room the descriptors live in the room's own `sessions/`, so enumerating them
 *is* enumerating live membership. Liveness is `pid` + `procStart` against `/proc`; where
@@ -780,9 +794,11 @@ variable rather than declared as a capability.
   been measured at all.
 - Whether `eval/rooms.py`'s node identity should become a member id rather than a scope,
   which any design placing two same-scope members in one room requires.
-- SendMessage delivery between two live room members is **unmeasured** — the room-boundary
-  rows in the guard ledger are fixtures. Any part of this design that assumes SendMessage
-  delivers to an interactive session is unevidenced.
+- Whether a room's `main` should be addressable. `dispatch --to` filters on
+  `LiveSession.scope`, derived from the `--agent thalamus-<scope>` flag, which `main` has
+  no manifest for and so never carries — while `eval/rooms.py:peer_scope()` parses the
+  *name* and resolves it fine. The two halves disagree about what a member's scope is, and
+  `--to main` refuses with "no live members" against a room that has four.
 - Decline-as-a-legal-reply has real prior art — Smith's refusal message carries a
   justification slot — but it is present only in the hand-fed text and is not carded as a
   claim, so the design's most-defended dispatch decision currently has no citable vertex.
