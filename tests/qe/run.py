@@ -42,6 +42,10 @@ CASE_MODULES = (
     "qe.cases.hook_arming",
     "qe.cases.guard_failopen",
     "qe.cases.ingest_gate",
+    "qe.cases.floor_coverage",
+    "qe.cases.ingest_redirect",
+    "qe.cases.home_isolation",
+    "qe.cases.tmux_socket",
 )
 
 

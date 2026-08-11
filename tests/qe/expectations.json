@@ -39,6 +39,27 @@
       "witness_contains": "run_extraction was reached",
       "triaged_at_rev": "61213e4",
       "note": "Allowlist is consulted in check_batch() after fetch/archive/extract. Pinned on the model-exposure half rather than the archive half, since that is the one with a security consequence. Port is random, so it is not part of the pin."
+    },
+    {
+      "case": "ingress-floor-covers-every-tiered-claim",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "UNCOVERED: ['artifacts', 'threads']",
+      "triaged_at_rev": "ce7f7f6",
+      "note": "apply_ingress_floor rewrites decisions/problems/solutions but not threads/artifacts, though both carry provenance. ThreadRef is correctly absent - it has no tier to floor. Pinned on the exact uncovered set so covering one of the two drifts this entry."
+    },
+    {
+      "case": "ingest-origin-survives-redirect",
+      "failure_class": "boundary-leak",
+      "witness_contains": "/looks-allowlisted",
+      "triaged_at_rev": "ce7f7f6",
+      "note": "fetch() returns the requested URL, discarding response.url, while urlopen follows redirects. Survives the obvious fix to ingest-allowlist-gates-fetch: moving the check ahead of fetch() still checks the pre-redirect URL."
+    },
+    {
+      "case": "tmux-invocations-name-their-socket",
+      "failure_class": "boundary-leak",
+      "witness_contains": "13/13 unscoped",
+      "triaged_at_rev": "ce7f7f6",
+      "note": "No -L/-S anywhere in src/. tmux ignores HOME, so no environment redirection isolates it, and the arm-runner image has no tmux at all. Pinned on the count so scoping any subset drifts this entry rather than silently shrinking it."
     }
   ]
 }
