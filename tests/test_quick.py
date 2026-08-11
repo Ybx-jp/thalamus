@@ -420,6 +420,32 @@ def test_the_fork_carries_the_parents_agent_and_a_preassigned_id():
     assert argv[argv.index("--session-id") + 1] == "fork-uuid"
 
 
+def test_the_fork_carries_whatever_preconditions_the_harness_declares(monkeypatch):
+    """
+    Scenario: the launched harness declares a precondition for running headless
+
+    Verifications:
+    - a declared precondition reaches the launch line
+    - it precedes the flags it is a precondition of
+
+    This is the lab/054 seam, which is invisible while Claude Code declares none: a
+    launch line rebuilt from `binary` reads correct and silently drops the flag the
+    harness refuses to start without. Cursor's `--trust` reached extraction and no
+    other call site for exactly that reason.
+    """
+    from dataclasses import replace
+
+    from thalamus.harness import agents
+
+    declared = replace(agents.cli_for("claude"), headless_preconditions=("--trust",))
+    monkeypatch.setattr(agents, "AGENT_CLIS", {**agents.AGENT_CLIS, "claude": declared})
+
+    argv = quick.fork_argv(_target(), "homelab", "fork-uuid")
+
+    assert "--trust" in argv
+    assert argv.index("--trust") < argv.index("--resume")
+
+
 def test_the_fork_inherits_the_room_and_is_told_its_parent():
     """
     Scenario: A caller inside a room launches a fork

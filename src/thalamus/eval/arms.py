@@ -703,8 +703,11 @@ def run_agent(
     env.pop("CLAUDE_CODE_AGENT", None)
 
     cli = agent_cli(harness)
-    cmd = [cli.binary, "-p", "--model", model, "--output-format", "json",
-           "--max-turns", str(max_turns)]
+    # Through `argv()` rather than rebuilt from `binary`: the preconditions a harness
+    # needs before it will run headless at all live on the declaration, and a second
+    # hand-built invocation is how `--trust` came to reach extraction and nothing else
+    # (lab/054). Identical output on Claude Code, which declares none.
+    cmd = [*cli.argv(model), "--max-turns", str(max_turns)]
     cmd += (
         ["--dangerously-skip-permissions"] if full_auto
         else ["--permission-mode", "acceptEdits"]

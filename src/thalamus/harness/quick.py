@@ -364,9 +364,14 @@ def fork_argv(
     name: str = "",
 ) -> list[str]:
     """The launch line. `--agent` carries the *parent's* scope, never the caller's."""
+    cli = agents.cli_for("claude")
     argv = [
-        agents.cli_for("claude").binary,
+        cli.binary,
         "-p",
+        # Declared preconditions, not a rebuilt invocation: this line cannot use
+        # `argv()` because a fork inherits the parent's model rather than naming one,
+        # but dropping them silently is the lab/054 seam. Empty on Claude Code.
+        *cli.headless_preconditions,
         "--output-format", "json",
         "--resume", target.session_id,
         "--fork-session",
