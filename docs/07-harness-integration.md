@@ -30,7 +30,17 @@ purpose.
     layer-1 feed ([04-eval-loop.md](04-eval-loop.md)).
   - *Session stop:* distill the session — summary + open threads into the pinned
     expert's episodic subgraph (the base system's maintenance scheme, now
-    per-expert and eventually utility-weighted).
+    per-expert and eventually utility-weighted). **Only a session with a
+    substantive exchange is distilled** (`TranscriptFacts.has_substance`): a typed
+    prompt, or slash commands the assistant actually acted on. Commands count as
+    user turns deliberately — a `/teach` session is nothing but commands and its
+    eligibility rests entirely on the tool calls — so the second clause is what
+    separates it from a shell the operator opened, checked `/usage` in, and
+    cleared. Withheld sessions are named in the log and exit clean; that is not
+    the `No session matching` refusal, which means the project dir is wrong.
+    Two cheaper refusals run ahead of it, in `session-end.sh`: a session with no
+    transcript is a subagent and leaves nothing behind, and a sandbox is not a
+    session at all.
   - *Pre-tool-use on Bash (`gremlin-guard.sh`):* block inline gremlin-python
     whose traversal never invokes the iterator — lazy traversals with no
     terminal step silently do nothing, so the hook fails them fast with

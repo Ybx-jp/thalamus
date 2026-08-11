@@ -65,9 +65,9 @@ def _bootstrap_one(
 
     # A transcript with no real exchange has nothing to remember. Writing it would add a
     # node the operator has to scroll past forever.
-    if facts.user_turns == 0:
+    if not facts.has_substance:
         return BootstrapResult(
-            session=None, transcript=path, skipped="no user turns — nothing to remember"
+            session=None, transcript=path, skipped="no substantive exchange — nothing to remember"
         )
 
     entry, secrets = transcripts.retain(path, archive_base=archive_base)

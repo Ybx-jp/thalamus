@@ -260,6 +260,11 @@ def parse(
             ).strip()
             if text:
                 facts.user_turns += 1
+                # Cursor's transcript carries no slash-command scaffolding, so every
+                # user turn it records is the operator typing. Setting both keeps
+                # `has_substance` meaningful on this reader instead of making a
+                # Cursor session look command-only and skipping all of them.
+                facts.prompt_turns += 1
                 if not facts.first_prompt:
                     facts.first_prompt = text
             continue

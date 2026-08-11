@@ -70,6 +70,12 @@ class TranscriptFacts:
     ended_at: datetime | None = None
     message_count: int = 0
     user_turns: int = 0
+    # The subset of `user_turns` that is the operator typing rather than invoking a
+    # slash command. A command is a deliberate user turn — a `/teach` session is
+    # nothing but commands and must still distill — but it is also what a session
+    # consists of when the operator only checked `/usage` or hit `/clear`. Carrying
+    # the two counts separately is what lets `has_substance` tell those apart.
+    prompt_turns: int = 0
     tool_calls: int = 0
     # artifact identifier -> message UUIDs of the tool calls that touched it
     touched: dict[str, list[str]] = field(default_factory=dict)
@@ -104,6 +110,29 @@ class TranscriptFacts:
     @property
     def project(self) -> str:
         return Path(self.cwd).name if self.cwd else ""
+
+    @property
+    def has_substance(self) -> bool:
+        """Is there an episode here worth paying a model to summarise?
+
+        A transcript with no user turn at all has nothing to remember. Neither does
+        one whose only turns are slash commands that the assistant never acted on:
+        `/usage`, `/login`, `/model`, a bare `/clear`. Those pass the turn count
+        because commands are counted as user turns on purpose — without that a
+        `/teach` session, which is *only* commands, silently never distills
+        (measured: ef3e3d6a, 87 assistant messages, ineligible). So the test is not
+        "did the operator type prose" but "did anything happen": a typed prompt, or
+        the assistant actually reaching for a tool. `/teach` passes on the second
+        clause, a `/clear` on its own passes neither.
+
+        Measured over the 133 transcripts on this box with a recorded distillation
+        yield: blocks 20 of the 24 that extracted nothing usable, and blocks none of
+        the 109 productive ones. The four junk sessions that survive it all carry a
+        real typed prompt, and the extractor's own "no substantive content" verdict
+        is the right and cheap backstop there — a structural test cannot know that
+        `reply with the single word DONE` was not work.
+        """
+        return self.user_turns > 0 and (self.prompt_turns > 0 or self.tool_calls > 0)
 
 
 def is_sandbox_project(name: str) -> bool:
@@ -216,6 +245,8 @@ def parse(path: Path) -> TranscriptFacts:
                 )
                 if text and (not stripped.startswith("<") or is_command):
                     facts.user_turns += 1
+                    if not is_command:
+                        facts.prompt_turns += 1
                     if not facts.first_prompt:
                         facts.first_prompt = text.strip()
                 continue

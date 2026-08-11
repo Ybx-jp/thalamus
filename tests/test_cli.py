@@ -144,6 +144,7 @@ def test_extract_refuses_an_explicit_session_that_matches_nothing(monkeypatch, c
         lambda path: SimpleNamespace(
             session_id="aaaa1111-real",
             user_turns=3,
+            has_substance=True,
             cwd="/home/someone",
             started_at="2026-01-01",
             path=path,
@@ -175,3 +176,73 @@ def test_extract_refuses_an_explicit_session_that_matches_nothing(monkeypatch, c
     err = capsys.readouterr().err
     assert "bbbb2222" in err
     assert "-proj" in err
+
+
+def test_extract_reports_a_withheld_session_as_skipped_not_missing(monkeypatch, capsys):
+    """
+    Scenario: the SessionEnd hook names a session the substance gate withheld —
+    the operator opened a shell, hit /clear, and closed it
+
+    Requires:
+    - monkeypatched transcripts.discover / parse (no ~/.claude, no graph server)
+
+    Observable via:
+    - SystemExit code
+    - stdout
+
+    Verifications:
+    - a withheld session exits 0, not 1
+    - it says nothing was substantive, and does not print the "No session matching"
+      diagnostic that means the project dir is wrong
+    - no graph connection is opened
+
+    Both cases select nothing, so without this they read identically in a detached
+    hook log — and the message that once caught three lost sessions would fire on
+    every `/clear`-only close until it meant nothing.
+    """
+    from pathlib import Path
+
+    from thalamus.harness import transcripts
+
+    monkeypatch.setattr(
+        transcripts, "discover", lambda *a, **k: {"-proj": [Path("/nope/cccc3333.jsonl")]}
+    )
+    monkeypatch.setattr(
+        transcripts,
+        "parse",
+        lambda path: SimpleNamespace(
+            session_id="cccc3333-real",
+            user_turns=1,
+            has_substance=False,
+            cwd="/home/someone",
+            started_at="2026-01-01",
+            path=path,
+        ),
+    )
+
+    def unexpected_connect(*a, **k):
+        raise AssertionError("must not open a graph connection when nothing is selected")
+
+    monkeypatch.setattr(cli, "connect", unexpected_connect)
+
+    args = SimpleNamespace(
+        harness="claude",
+        projects=["-proj"],
+        projects_dir=None,
+        session=["cccc3333"],
+        scope="main",
+        model=None,
+        limit=0,
+        force=False,
+        write=False,
+        url="ws://unused/gremlin",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli._cmd_extract(args)
+
+    assert exit_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "no substantive exchange" in captured.out
+    assert "cccc3333" in captured.out
+    assert "No session matching" not in captured.err

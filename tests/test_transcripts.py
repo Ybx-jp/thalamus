@@ -239,7 +239,54 @@ def test_sessions_with_no_user_turns_are_not_remembered(tmp_path):
     # Verifies: nothing to remember, nothing remembered
     assert len(results) == 1
     assert results[0].session is None
-    assert "no user turns" in results[0].skipped
+    assert "no substantive exchange" in results[0].skipped
+
+
+def test_command_only_sessions_with_no_work_are_not_remembered(tmp_path):
+    """
+    Scenario: The operator opens a session, checks `/usage`, hits `/clear`. The
+    only user records are command invocations and the assistant never acted.
+
+    Verifications:
+    - the turns are still counted (commands are real user turns)
+    - but the session is withheld from distillation rather than summarised
+
+    These pass the turn count on purpose — the `/teach` case below needs them to.
+    What separates them is that nothing happened: no typed prompt, no tool use.
+    Measured origin: 59c1da4b, whose entire transcript is one `/clear`, distilled
+    for $0.16 and produced a Session node summarised "No substantive session
+    content was present in this session."
+    """
+    project = tmp_path / "projects" / "proj"
+    _write_transcript(
+        project,
+        "cleared",
+        [
+            {
+                "type": "user",
+                "timestamp": "2026-08-11T09:28:00Z",
+                "message": {"role": "user", "content": "<command-name>/usage</command-name>"},
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-08-11T09:28:20Z",
+                "message": {"role": "user", "content": "<command-name>/clear</command-name>"},
+            },
+        ],
+    )
+
+    facts = transcripts.parse(project / "cleared.jsonl")
+
+    # Verifies: counted as turns, but not as an episode
+    assert facts.user_turns == 2
+    assert facts.prompt_turns == 0
+    assert facts.has_substance is False
+
+    results = bootstrap_project(
+        "proj", projects_dir=tmp_path / "projects", archive_base=tmp_path / "archive"
+    )
+    assert results[0].session is None
+    assert "no substantive exchange" in results[0].skipped
 
 
 def test_slash_command_sessions_count_as_conversations(tmp_path):
@@ -249,9 +296,13 @@ def test_slash_command_sessions_count_as_conversations(tmp_path):
 
     Verifications:
     - command invocations count as user turns; caveats/reminders still do not
+    - the session still distills, on the work the assistant did rather than on a
+      typed prompt it never got
 
     Measured origin: ef3e3d6a (87 assistant messages) was silently ineligible
-    for distillation because every human turn started with "<".
+    for distillation because every human turn started with "<". Its live shape is
+    3 command turns, 0 typed prompts and 49 tool calls — the second clause of
+    `has_substance` is the only thing keeping it eligible.
     """
     project = tmp_path / "projects" / "proj"
     _write_transcript(
@@ -274,7 +325,13 @@ def test_slash_command_sessions_count_as_conversations(tmp_path):
             {
                 "type": "assistant",
                 "timestamp": "2026-07-17T10:01:00Z",
-                "message": {"role": "assistant", "content": [{"type": "text", "text": "Lesson."}]},
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "Lesson."},
+                        {"type": "tool_use", "name": "Read", "input": {"file_path": "NOTES.md"}},
+                    ],
+                },
             },
         ],
     )
@@ -282,6 +339,8 @@ def test_slash_command_sessions_count_as_conversations(tmp_path):
     facts = transcripts.parse(project / "teachy.jsonl")
 
     assert facts.user_turns == 1
+    assert facts.prompt_turns == 0
+    assert facts.has_substance is True
 
 
 def test_bootstrap_retains_evidence_and_is_idempotent(tmp_path):

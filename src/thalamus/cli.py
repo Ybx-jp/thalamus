@@ -1329,6 +1329,9 @@ def _cmd_extract(args):
     # whose graph is down.
     # Chronological across all requested projects: threads resolve forward in time.
     parsed = []
+    # Sessions the substance gate withheld, kept by id so an explicitly named one can
+    # be reported as *skipped* rather than as *missing* below.
+    insubstantial: list[str] = []
     if cursor:
         # Scope comes from the session's own sessionEnd record, not the flag:
         # ledger-first resolution is what keeps a pinned Cursor session out of
@@ -1344,7 +1347,8 @@ def _cmd_extract(args):
                 started_at=started_at,
                 ended_at=ended_session.ended_at,
             )
-            if facts.user_turns == 0:
+            if not facts.has_substance:
+                insubstantial.append(facts.session_id)
                 continue
             scopes[facts.session_id] = ended_session.scope
             parsed.append(facts)
@@ -1365,7 +1369,8 @@ def _cmd_extract(args):
         for project in args.projects:
             for path in available[project]:
                 facts = transcripts.parse(path)
-                if facts.user_turns == 0:
+                if not facts.has_substance:
+                    insubstantial.append(facts.session_id)
                     continue
                 # An extraction sandbox is not a session (harness/agents.py).
                 # `discover()` already withholds the project dir; this reads the
@@ -1388,6 +1393,23 @@ def _cmd_extract(args):
         # before anyone noticed. Named input, no match, non-zero.
         if not parsed:
             requested = ", ".join(args.session)
+            # A named session the substance gate withheld is not a missing session,
+            # and must not print the message that means "wrong project dir". This is
+            # the SessionEnd hook's own invocation shape: it runs detached into a log,
+            # so collapsing the two would put the diagnostic that once cost three
+            # sessions on every `/clear`-only close, and the exit code would fail a
+            # hook that behaved correctly. Named, found, deliberately not distilled —
+            # say so, and exit clean.
+            withheld = [
+                sid for sid in insubstantial
+                if any(sid.startswith(s) for s in args.session)
+            ]
+            if withheld:
+                print(
+                    f"{', '.join(s[:8] for s in withheld)}: no substantive exchange "
+                    "(slash commands only, no tool use) — nothing to distill."
+                )
+                sys.exit(0)
             where = "the Cursor sessionEnd log" if cursor else ", ".join(args.projects)
             print(
                 f"No session matching {requested} under {where} — nothing distilled.",
