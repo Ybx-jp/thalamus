@@ -364,7 +364,14 @@ def _assemble_brief(
             if result.node_id:
                 refs.setdefault(result.node_id)
 
-    threads = recall_open_threads(g, None, 5, scope)
+    # Ranked against the question, like every other section here. Unranked, the order
+    # is `status` ascending — a sample, not a list — and in a scope holding five
+    # threads it is the whole scope, served to every consultation whatever was asked.
+    # Measured 2026-08-11: this section is 40% of a literature brief, and one thread
+    # in it ("Thalamus memory store currently has zero open threads", minted from a
+    # probe's return value while 402 were open) rode 43 briefs into the scope whose
+    # job is grounding.
+    threads = recall_open_threads(g, None, 5, scope, question)
     if threads:
         sections.append(
             "## Open threads in this scope\n\n"

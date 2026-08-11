@@ -137,7 +137,10 @@ Mechanics, in the order a consultation runs:
    own answered exchanges, open threads, recent sessions, question-matched recall;
    manifest identity is the only tier-0 framing — no hand-written personas), and
    writes the Exchange: `main` scope, `status: open`, with `role: brief` REFERENCES
-   edges to every node the brief served.
+   edges to every node the brief served. Every section is ranked against the question
+   being asked, threads included — unranked, threads come back ordered by status,
+   which is a sample rather than a list, and in a scope holding five of them it is the
+   whole scope served to every consultation whatever was asked.
 
    The exchanges come first, and they are the section the other three cannot supply.
    An Exchange is written to the *asking* scope, so an expert's own answers are absent

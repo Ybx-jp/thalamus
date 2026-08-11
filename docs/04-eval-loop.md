@@ -1161,14 +1161,30 @@ live by the Pulse dashboard ([03-master-plane.md](03-master-plane.md)).
   judge (pairwise, arm-blinded) is not built.
 - Battery growth: both seeds are memorization-stratum; transferable-stratum
   tasks must be authored before any campaign can claim beyond memorization.
-- Open-thread staleness (designed, not built — lab/009, consultation
-  `2e0f6a574658470a`): an eval-sync sweep proposing cross-scope RESOLVES
-  *candidates* (detector may be noisy; the closer must cite specific evidence —
-  nothing auto-closes), graded by resolution latency with still-open threads as
-  censored observations and re-open rate as the Goodhart guard. Thread
-  resolution is a consequence-level fact in MQuAKE's sense (arXiv 2305.14795):
-  a thread can be perfectly recalled as "open" while the entailed consequence
-  of another scope's evidence — "this should close" — goes unevaluated.
+- Open-thread staleness (designed, not built — lab/009, consultations
+  `2e0f6a574658470a` and `fad034208c1c44cf`): an eval-sync sweep over *every* open
+  thread, matching thread slug **and its named artifacts** against session summaries
+  in all scopes, restricted to a temporal window after thread-open, proposing
+  cross-scope RESOLVES *candidates*. The load-bearing rule is the
+  **detection/adjudication split**: the detector may be cheap and noisy, but the
+  closer is evidence-anchored — a RESOLVES edge is written only with a citation to a
+  specific provenance vertex and, where the confirmation is external, the confirming
+  actor. **The judge proposes; it never closes**, because false-close via lexical
+  collision or temporal coincidence is the failure that bans auto-close outright; and
+  the detector's own candidate precision is meta-evaluated against human adjudication
+  before its ranking is trusted. Graded by resolution latency (not raw age) with
+  still-open threads as censored observations, and re-open rate as the Goodhart guard
+  against the pressure the staleness flags themselves create. Thread resolution is a
+  consequence-level fact in MQuAKE's sense (arXiv 2305.14795): a thread can be
+  perfectly recalled as "open" while the entailed consequence of another scope's
+  evidence — "this should close" — goes unevaluated.
+
+  Two things the build must clear first. `RESOLVES` is declared
+  `may_cross_scope=False` and conformance enforces it, so the cross-scope edge this
+  sweep exists to write is currently illegal — the federation call is part of the
+  design, not a detail after it. And the closer's own quality signal is only as good
+  as attribution: 84% of `used=true` verdicts on Thread `RETURNS` rest on lexical
+  overlap alone, so retrieval counts do not measure whether a thread earned its place.
 - Attribution refinement: when does lexical matching mislead, and is an LLM-judge
   pass worth its cost/noise?
 - Sample efficiency: a single operator generates limited sessions. Lean on paired

@@ -598,3 +598,38 @@ def test_closing_a_general_ticket_says_nothing_about_readiness():
 
     assert "closed" in message
     assert "thalamus-design-readiness" not in message
+
+
+def test_the_brief_ranks_open_threads_against_the_question(monkeypatch):
+    """
+    Scenario: a brief is assembled for a scope whose open threads outnumber the
+    section's limit
+
+    Verifications:
+    - the question is passed through to the thread recall as its ranking topic
+
+    Every other section of the brief is question-matched. Unranked, threads come back
+    ordered by status — a sample, not a list — and in a small scope that sample is the
+    whole scope, served to every consultation whatever was asked. Measured 2026-08-11:
+    the section was 40% of a literature brief, and a thread minted from a probe's
+    return value ("Thalamus memory store currently has zero open threads", while 402
+    were open) rode 43 briefs into the scope whose job is grounding.
+    """
+    seen = {}
+
+    def fake_open_threads(g, project, limit, scope, topic=""):
+        seen["project"], seen["limit"], seen["scope"], seen["topic"] = (
+            project, limit, scope, topic,
+        )
+        return []
+
+    monkeypatch.setattr(consultation, "recall_open_threads", fake_open_threads)
+    monkeypatch.setattr(consultation, "recall_exchanges", lambda *a, **k: [])
+    monkeypatch.setattr(consultation, "recall_recent", lambda *a, **k: [])
+    monkeypatch.setattr(consultation, "recall", lambda *a, **k: [])
+
+    consultation._assemble_brief(FakeGraph(), "literature", "how should a thread close?")
+
+    # Verifies: the question reaches the ranker, not just the other sections
+    assert seen["topic"] == "how should a thread close?"
+    assert seen["scope"] == "literature"

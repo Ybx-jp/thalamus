@@ -282,7 +282,11 @@ problems).
 ids. Threads are the primary entrypoint for future agents.
 6. **thread_refs** — if this session continued or resolved one of the EXISTING OPEN \
 THREADS listed below, reference it by its exact id with the new status. Prefer \
-resolving an existing thread over spawning a duplicate.
+resolving an existing thread over spawning a duplicate. `open` is a status you may \
+set: a thread this session found was closed prematurely — the work was not actually \
+done, or it came back — is **reopened**, not respawned under a new id. A duplicate id \
+hides the reopening, and how often a close does not hold is the only check on closes \
+being made too easily.
 7. **artifacts** — only list artifacts you reference from a decision/problem/solution/\
 thread. Every artifact you list MUST appear in at least one such reference, or it will \
 be rejected as an orphan. Use exact file paths as they appear in the transcript.
@@ -332,7 +336,7 @@ threads:
     artifacts: ["<identifiers>"]
 thread_refs:
   - id: "<existing thread id>"
-    status: "in_progress|resolved|abandoned"
+    status: "open|in_progress|resolved|abandoned"
     notes: "<progress made>"
 ```
 
