@@ -398,13 +398,19 @@ class ExchangeResult:
         return "\n".join(lines)
 
     def format_header(self, excerpt: int = 240) -> str:
-        """The recognisable shell of an answered exchange, without its body.
+        """What was asked and where the answer is — never what was concluded.
 
         An answer runs 15k–40k characters, so a brief carrying bodies would be the
-        transcript. A header is enough to recognise a question already settled, and
-        the node id is how the body is read on the occasion that it matters — which
-        is the step that did not happen when a five-state capability contract was
-        designed twice (lab/055).
+        transcript. But the excerpt is dropped for a stronger reason than length: a
+        header summarising an expert's own prior conclusion, injected into every
+        later brief, is the self-anchoring case the 2026-08-09 decision-log entry
+        names, and tier-2 informs rather than instructs (docs/05). Round 3 of the
+        capability consultation overturned round 2 on measured facts, which is
+        exactly the move a conclusion restated back at the expert makes less likely.
+
+        So the header carries the *question* — the asker's words, already quoted as
+        attribution rather than recollection — and the node id. An expert that wants
+        to know what it concluded reads the body, and reads the reasoning with it.
         """
         head = f"- **`{self.ticket}`**"
         if self.answered_at:
@@ -415,7 +421,10 @@ class ExchangeResult:
         if self.node_id:
             lines.append(f"  **Node:** `{self.node_id}`")
         lines.append(f"  **They asked:** {self._condense(self.question, excerpt)}")
-        lines.append(f"  **You answered:** {self._condense(self.answer, excerpt)}")
+        lines.append(
+            f"  **You answered** ({len(self.answer or '')} chars) — read the node "
+            "before treating this ground as new."
+        )
         return "\n".join(lines)
 
     @staticmethod

@@ -456,15 +456,18 @@ def test_an_exchange_header_carries_the_shape_without_the_body():
 
     Verifications:
     - the node id survives, since it is how the body is read when it matters
-    - a long answer is condensed rather than reproduced
+    - the question is carried, because that is what makes the ground recognisable
+    - **no part of the answer is reproduced**, not even an excerpt
     - the full-body renderer is unaffected
 
-    An answer runs 15k-40k characters. A brief that carried bodies would be the
-    transcript, and the reason to carry anything is recognition, not recall.
+    The excerpt is withheld deliberately. A header restating an expert's own prior
+    conclusion into every later brief is self-anchoring, and an expert that cannot
+    overrule itself is worth less than one that re-reads. Round 3 of the capability
+    consultation overturned round 2 on measured facts.
     """
     result = ExchangeResult(
         ticket="abc123", question="what shape should the contract take?",
-        answer="x" * 5000, from_scope="main",
+        answer="a five-state Provision enum " + "x" * 5000, from_scope="main",
         answered_at="2026-08-10T22:32:00+00:00", node_id="scope:main:exchange:abc123",
     )
 
@@ -473,8 +476,9 @@ def test_an_exchange_header_carries_the_shape_without_the_body():
     assert "scope:main:exchange:abc123" in header
     assert "2026-08-10" in header
     assert "what shape should the contract take?" in header
-    assert len(header) < 800
-    assert "…" in header
+    assert "five-state" not in header
+    assert "xxx" not in header
+    assert len(header) < 500
     # Verifies: the body renderer still emits the whole answer
     assert len(result.format()) > 5000
 
