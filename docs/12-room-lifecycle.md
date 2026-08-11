@@ -491,9 +491,11 @@ either record alone.
 **Dispatch rows** live in `~/.thalamus/guards/` in the existing row shape, carrying
 `dispatch_id`, `fanout`, `via`, `sender`, `target`, and a per-target delivery outcome
 (pre-flight status, performed-or-refused, post-send `updatedAt` delta). They are kept
-**out of `RoomTopology.edges`** and surfaced as a separate `dispatched` count: a broadcast
-is the stimulus, not the collaboration, and folding it into edges would let a room pass
-its own manipulation check on operator action alone.
+**out of `RoomTopology.edges`**: a broadcast is the stimulus, not the collaboration, and
+folding it into edges would let a room pass its own manipulation check on operator
+action alone. The exclusion is structural rather than remembered — rows carry
+`guard: "dispatch"`, which `eval/rooms.py`'s existing `guard == "room-boundary"` filter
+drops without needing to know dispatch exists.
 
 ## Delivery mechanics
 
@@ -514,6 +516,19 @@ message to a freshly spawned member is the most likely to hit it.
 > **Dispatch reads `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` per target, delivers on
 > `idle` and `busy`, and refuses on `waiting`, naming the target.** Never a bare Enter
 > into a `waiting` window.
+
+**Built** — `harness/dispatch.py`, `thalamus dispatch <room> [message]` with `--to`,
+`--partial`, `--dry-run` and the four announcement slots. A status outside the measured
+three is refused rather than assumed to behave like `idle`.
+
+**Pre-flight covers the whole fan-out, not each target in turn.** Delivering to the
+reachable members and skipping the rest is the tolerant-looking choice that corrupts the
+protocol: an announcement admits a bid, a decline, and silence-past-expiration as three
+distinct states, so a member that never *received* one is silent in a way that reads as
+a timeout. Every target is therefore pre-flighted before any is written to, and one
+undeliverable target refuses the whole dispatch naming it. `--partial` proceeds and
+records the undelivered names **on every row**, which is what keeps the later reading of
+a silence honest rather than merely permitted.
 
 `harness/quick.py` already parses that descriptor (`LiveSession.status`, `between_turns`),
 and for a room the descriptors live in the room's own `sessions/`, so enumerating them
@@ -699,7 +714,10 @@ room provenance; and ceremony rows come from an explicit `thalamus ceremony` ver
 from a member's lifecycle, so they exist only where someone writes them. A Cursor room
 is therefore **invisible rather than mislabelled** — it cannot be counted as a room arm,
 which also means it cannot be excluded as a failed one. That argues for more capture,
-not for refusing to launch one.
+not for refusing to launch one. `thalamus dispatch` is the same story from the other
+end: it resolves panes through the pin ledger's `tmux_pane`, which the Cursor
+session-start hook does not write, so a Cursor member is undispatchable by the same
+absence that makes it uncountable.
 
 Independently of that decision, `pin.py:246` returns a hardcoded
 `("CLAUDE_CONFIG_DIR", …)` pair, so the room's boundary is spelled as one harness's

@@ -820,6 +820,47 @@ def main():
     )
     ceremony_assign.add_argument("--prereg", default="", help="Pre-registration id")
 
+    # Dispatch — docs/12 §Delivery mechanics. A separate verb rather than a loop over
+    # send-keys because `waiting` must be refused, not handled carefully.
+    dispatch_parser = subparsers.add_parser(
+        "dispatch", help="Deliver a message to live room members, refusing on `waiting`"
+    )
+    dispatch_parser.add_argument("room", help="Room whose members are addressed")
+    dispatch_parser.add_argument(
+        "message", nargs="?", default="",
+        help="What to send. Omit when building an announcement with --task",
+    )
+    dispatch_parser.add_argument(
+        "--to", action="append", default=[], dest="scopes",
+        help="Restrict to this scope; repeat. Default: every live member",
+    )
+    dispatch_parser.add_argument(
+        "--sender", default="",
+        help="Who is dispatching (default: this process's scope)",
+    )
+    dispatch_parser.add_argument(
+        "--partial", action="store_true",
+        help="Deliver to the reachable members anyway, recording who missed it. "
+             "Without this, one undeliverable target refuses the whole fan-out, "
+             "because a partial announcement makes silence ambiguous between a "
+             "decline and never having been asked",
+    )
+    dispatch_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Pre-flight only: report what would land, send nothing, write no rows",
+    )
+    dispatch_parser.add_argument(
+        "--no-submit", action="store_true",
+        help="Type the text without the following Enter",
+    )
+    announce = dispatch_parser.add_argument_group(
+        "Contract Net announcement", "All four slots are mandatory together"
+    )
+    announce.add_argument("--task", default="", help="Task abstraction")
+    announce.add_argument("--eligibility", default="", help="Who this is for")
+    announce.add_argument("--bid", default="", help="What a bid must contain")
+    announce.add_argument("--expires", default="", help="Expiration; silence past it is a timeout")
+
     ceremony_sub.add_parser("show", help="The ledger room by room, with the audit under it")
     ceremony_sub.add_parser(
         "audit", help="Read the ledger against its own obligations; exits 1 if unclean"
@@ -943,6 +984,8 @@ def main():
         _cmd_room(args, parser)
     elif args.command == "ceremony":
         _cmd_ceremony(args, parser)
+    elif args.command == "dispatch":
+        _cmd_dispatch(args)
     elif args.command == "visualize":
         _cmd_visualize(args)
     elif args.command == "console":
@@ -2560,6 +2603,47 @@ def _cmd_ceremony(args, parser):
         return
 
     parser.parse_args(["ceremony", "--help"])
+
+
+def _cmd_dispatch(args):
+    from thalamus.harness import dispatch as dispatch_mod
+    from thalamus.harness.pin import resolve_pin
+
+    sender = args.sender or resolve_pin()
+    slots = (args.task, args.eligibility, args.bid, args.expires)
+
+    try:
+        if any(slots):
+            if args.message:
+                print(
+                    "Pass a message or the four announcement slots, not both — a "
+                    "message beside a formatted announcement is a second, unstructured "
+                    "channel the eligibility slot cannot be read from.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            text = dispatch_mod.announcement(*slots, sender=sender)
+        else:
+            text = args.message
+
+        result = dispatch_mod.dispatch(
+            args.room,
+            text,
+            sender=sender,
+            scopes=args.scopes,
+            partial=args.partial,
+            dry_run=args.dry_run,
+            submit=not args.no_submit,
+        )
+    except dispatch_mod.DispatchRefused as e:
+        print(f"Dispatch refused: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(result.note())
+    # A fan-out that reached nobody is not a successful no-op: the caller asked for
+    # delivery and got none, and a zero exit would report the opposite.
+    if not args.dry_run and not result.performed:
+        sys.exit(1)
 
 
 def _cmd_visualize(args):

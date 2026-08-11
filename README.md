@@ -324,6 +324,7 @@ thalamus ceremony start|end|skip   # the ceremony ledger: an occasion, its close
 thalamus ceremony mint|revise      # a deliverable_id, and the revisions carried under it
 thalamus ceremony assign           # deal deliverables to arms from a seed, before the ceremony runs
 thalamus ceremony show|audit       # the ledger, and its own obligations checked against it
+thalamus dispatch <room> "<msg>"   # deliver to live room members; refuses on `waiting`
 thalamus quick ask <scope> "<q>"   # consult a live expert by forking its own session
 thalamus quick targets             # which experts are forkable, and how warm each is
 thalamus console                   # drive the roster from a browser or phone (docs/console.md)
