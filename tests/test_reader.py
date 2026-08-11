@@ -529,3 +529,62 @@ def test_an_uncorrelated_recurrence_carries_no_extra_line():
 
     assert "Recurred" in rendered
     assert "Correlated" not in rendered
+
+
+def test_tied_candidates_rank_the_same_whatever_order_the_graph_yielded_them():
+    """
+    Scenario: two candidates the score cannot separate, seen in either order
+
+    Ties are not an edge case here — scores are integer multiples of the hit
+    constants, and over 1,047 real recorded queries 657 held a tie spanning the cut,
+    median tie-set 9 and max 243 (lab/053). Until the tie-break existed the winner
+    was whichever the graph happened to yield first, so a window was reproducible
+    only by accident. This is the property the change exists to buy.
+    """
+    from thalamus.substrate.reader import _ranked
+
+    hits = {"a": {"k1", "k2"}, "b": {"k1", "k2"}}
+    forward = _ranked({"a": 4.0, "b": 4.0}, hits, floor=2, query="q")
+    backward = _ranked({"b": 4.0, "a": 4.0}, hits, floor=2, query="q")
+
+    assert forward == backward
+
+
+def test_score_still_decides_when_it_can():
+    """The tie-break is a tie-break: it may never reorder candidates the score
+    separates, or it would be a ranking change wearing a reproducibility story."""
+    from thalamus.substrate.reader import _ranked
+
+    hits = {"a": {"k1", "k2"}, "b": {"k1", "k2"}}
+    ranked = _ranked({"a": 2.0, "b": 4.0}, hits, floor=2, query="q")
+
+    assert [vid for vid, _ in ranked] == ["b", "a"]
+
+
+def test_no_claim_holds_a_fixed_advantage_across_queries():
+    """
+    Scenario: the same tied pair, reached by two different queries
+
+    Seeding on the node alone would convert an arbitrary choice into a consistent
+    one — a claim that wins every tie forever, looking stable while quietly
+    favouring whatever the hash liked. Seeding on the query means a winner here is
+    a loser there, which is what keeps this from becoming a ranking claim.
+    """
+    from thalamus.substrate.reader import _tie_break
+
+    pair = ("scope:literature:claim:aaaa", "scope:literature:claim:bbbb")
+    winners = {
+        min(pair, key=lambda vid: _tie_break(query, vid))
+        for query in (f"query number {n}" for n in range(40))
+    }
+
+    assert len(winners) == 2, "one node won every tie — the seed is not query-varying"
+
+
+def test_the_tie_break_is_stable_for_one_query():
+    """Replay is the endpoint this change is measured on, so the same query against
+    the same corpus must produce the same order every time it is asked."""
+    from thalamus.substrate.reader import _tie_break
+
+    assert _tie_break("q", "n") == _tie_break("q", "n")
+    assert _tie_break("q", "n") != _tie_break("q", "m")

@@ -14,6 +14,7 @@ content rather than being dropped on the floor at render time.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -55,7 +56,7 @@ def _tier_label(tier: object) -> str:
 #
 # Changing any value here is a ranker change: bump RANKER_VERSION so the
 # fingerprint moves even if two dials cancel out numerically.
-RANKER_VERSION = "2"
+RANKER_VERSION = "3"
 
 # Score a matched session accumulates per distinct keyword: its own summary hitting,
 # and each contained claim that hits. The ranking unit is the *session* — a claim hit
@@ -94,6 +95,47 @@ _KNOWLEDGE_WINDOW_DIVISOR = 2
 # uncapped chunk tier is a token-waste regression wearing a fidelity story.
 _CHUNK_HIT_SCORE = 1.0
 _CHUNK_WINDOW_CAP = 2
+
+
+def _tie_break(query: str, node_id: str) -> str:
+    """Stable, query-seeded ordering for candidates the score cannot separate.
+
+    Scores are integer multiples of the hit constants, so ties are not an edge case:
+    measured over 1,047 real recorded queries, **657 have a tie spanning the cut**, with
+    a median tie-set of 9 and a maximum of 243 (lab/053). Until this existed the winner
+    was decided by `sorted()` stability over graph iteration order — reproducible only
+    by accident, and silently sensitive to write order.
+
+    This asserts **nothing about relevance**, and that is deliberate. Every candidate
+    key that would have — claim length, the manifestation tier, recency — was either
+    unavailable on a Claim or carried a ranking claim no measurement here supports: the
+    detail-cap tuning found used-rate flat across claim length, and on this corpus
+    "prefer full text" is "prefer recent", because the papers stuck at abstract depth
+    are the older, foundational end (lab/053). Ordering ties on any of them would have
+    made a preference true by construction and destroyed the ability to measure whether
+    it was ever real.
+
+    Seeded on the *query* rather than the node alone, so no claim holds a fixed global
+    advantage: a claim that wins a tie for one query loses it for the next. A bare node
+    hash would have converted arbitrary selection into consistent bias, which is worse —
+    it would look stable while quietly favouring whatever the hash happened to like.
+    """
+    return hashlib.sha256(f"{query}\x00{node_id}".encode("utf-8")).hexdigest()
+
+
+def _ranked(
+    matched: dict[str, float], hits: dict[str, set[str]], floor: int, query: str
+) -> list[tuple[str, float]]:
+    """Candidates over the match floor, score descending, ties broken reproducibly.
+
+    One helper for all three rankings — sessions, knowledge claims and chunks share
+    this shape exactly, and an ordering fix applied to one of them would leave the
+    other two deciding their windows by graph iteration order.
+    """
+    return sorted(
+        (item for item in matched.items() if len(hits.get(item[0], ())) >= floor),
+        key=lambda item: (-item[1], _tie_break(query, item[0])),
+    )
 
 
 def ranker_fingerprint() -> str:
@@ -510,37 +552,15 @@ def recall(
     # query must hit at least two distinct terms to rank. Single-keyword queries are
     # untouched: the floor is about queries whose breadth outruns their intent.
     floor = min(_MATCH_FLOOR, len(keywords))
-    sessions_ranked = sorted(
-        (
-            item
-            for item in matched_session_ids.items()
-            if len(session_hits.get(item[0], ())) >= floor
-        ),
-        key=lambda item: item[1],
-        reverse=True,
-    )
-    knowledge_ranked = sorted(
-        (
-            item
-            for item in matched_knowledge_vids.items()
-            if len(knowledge_hits.get(item[0], ())) >= floor
-        ),
-        key=lambda item: item[1],
-        reverse=True,
-    )
+    sessions_ranked = _ranked(matched_session_ids, session_hits, floor, query)
+    knowledge_ranked = _ranked(matched_knowledge_vids, knowledge_hits, floor, query)
 
     # Chunks are held to the same floor and then capped: they are the largest thing
     # the reader can inject, and lab/006 already measured 33.8% of injected retrieval
     # tokens going unused. The cap is the stopping rule the design owes.
-    chunks_ranked = sorted(
-        (
-            item
-            for item in matched_chunk_vids.items()
-            if len(chunk_hits.get(item[0], ())) >= floor
-        ),
-        key=lambda item: item[1],
-        reverse=True,
-    )[:_CHUNK_WINDOW_CAP]
+    chunks_ranked = _ranked(matched_chunk_vids, chunk_hits, floor, query)[
+        :_CHUNK_WINDOW_CAP
+    ]
 
     results = []
     for chunk_vid, _ in chunks_ranked:
