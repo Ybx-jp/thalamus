@@ -495,6 +495,19 @@ are visible has absorbed them.
 The audit also names a **resolution written by a member of the room being resolved**.
 That one is different in kind from everything else in the list: the others say the
 record is incomplete, this one says a result is void.
+
+**A permanent finding is acknowledged, never repaired.** `thalamus ceremony ack
+<category>:<item> --reason ...` discharges a finding's contribution to the **exit code
+only** — the ledger is untouched, `LedgerAudit.clean()` still returns False, and the
+finding is still printed with its reason beside it. `--strict` ignores acknowledgements
+and reports what the ledger actually says. Three properties keep this from becoming a
+suppression file: an acknowledgement names one finding exactly, so the same defect in
+another room is a new finding and fails again; one cannot be written for a finding the
+audit does not currently report, so a class of failure cannot be pre-approved; and the
+store sits beside the ledger under `~/.thalamus`, which is machine-local like the ledger
+it describes. The reason a permanent finding is retired at all is that a gate which is
+always red stops being read — the same argument that keeps the unaccounted check off
+live rooms.
 5. **Commitment rows** — `{room, deliverable_id, owner_scope, commitment_text,
    predicted_artifact, resolve_by}`, via `thalamus ceremony commit`. A commitment
    carrying no predicted artifact and no horizon is recorded and warned about rather

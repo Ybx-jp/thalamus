@@ -611,6 +611,122 @@ def test_a_commitment_on_an_unminted_deliverable_is_reported(ledger):
     assert ceremonies.audit(path=ledger).unminted == ("alpha:ghost",)
 
 
+# --- Acknowledgement: the exit code, and nothing else ---------------------------------
+
+
+@pytest.fixture
+def acks(tmp_path):
+    return tmp_path / "acknowledged.jsonl"
+
+
+def _room_missing_review_and_comparator(ledger):
+    ceremonies.start("alpha", "open", path=ledger)
+    ceremonies.skip("alpha", "acceptance", path=ledger)
+    ceremonies.skip("alpha", "retrospective", path=ledger)
+    ceremonies.start("alpha", "close", path=ledger)
+
+
+def test_acknowledging_discharges_the_exit_code_but_not_the_finding(ledger, acks):
+    """
+    Scenario: a permanent, understood finding is acknowledged.
+
+    Verification: `unacknowledged()` empties while `clean()` stays False and the
+    finding is still printed with its reason. The ledger is evidence; the way to stop
+    an audit failing must never be to make it stop saying what happened. Only the
+    caller's gate policy moves.
+    """
+    _room_missing_review_and_comparator(ledger)
+    ceremonies.acknowledge(
+        "unaccounted:alpha:review", reason="ran before the ledger took reviews",
+        ledger=ledger, path=acks,
+    )
+    ceremonies.acknowledge(
+        "uncompared:alpha", reason="predates the pre-registration",
+        ledger=ledger, path=acks,
+    )
+
+    seen = ceremonies.load_acknowledged(acks)
+    report = ceremonies.audit(path=ledger)
+
+    assert report.unacknowledged(seen) == ()
+    assert not report.clean()
+    note = report.note(seen)
+    assert "alpha:review" in note
+    assert "ran before the ledger took reviews" in note
+
+
+def test_an_acknowledgement_names_one_finding_and_a_new_one_still_fails(ledger, acks):
+    """
+    Scenario: alpha's findings are acknowledged, then room beta closes with the same
+    two defects.
+
+    Verification: beta's findings are unacknowledged and the gate fails again. This is
+    the property the whole mechanism rests on — an acknowledgement that generalised to
+    a category would turn one read finding into a permanently silenced class, which is
+    how a suppression file becomes the reason nobody sees the next real defect.
+    """
+    _room_missing_review_and_comparator(ledger)
+    ceremonies.acknowledge(
+        "unaccounted:alpha:review", reason="understood", ledger=ledger, path=acks
+    )
+    ceremonies.acknowledge(
+        "uncompared:alpha", reason="understood", ledger=ledger, path=acks
+    )
+    assert ceremonies.audit(path=ledger).unacknowledged(
+        ceremonies.load_acknowledged(acks)
+    ) == ()
+
+    ceremonies.start("beta", "open", path=ledger)
+    ceremonies.skip("beta", "acceptance", path=ledger)
+    ceremonies.skip("beta", "retrospective", path=ledger)
+    ceremonies.start("beta", "close", path=ledger)
+
+    still_open = ceremonies.audit(path=ledger).unacknowledged(
+        ceremonies.load_acknowledged(acks)
+    )
+    assert ("unaccounted", "beta:review") in still_open
+    assert ("uncompared", "beta") in still_open
+
+
+def test_a_finding_cannot_be_acknowledged_before_it_exists(ledger, acks):
+    """
+    Scenario: an acknowledgement is written for a finding the ledger does not report.
+
+    Verification: refused. Acknowledging ahead of the defect would pre-approve a class
+    of failure, which inverts the mechanism — it exists to retire a finding someone has
+    read, never to arrange in advance that nobody has to.
+    """
+    _room_missing_review_and_comparator(ledger)
+    with pytest.raises(ValueError, match="not a current finding"):
+        ceremonies.acknowledge(
+            "unaccounted:gamma:review", reason="pre-approving", ledger=ledger, path=acks
+        )
+    with pytest.raises(ValueError, match="reason"):
+        ceremonies.acknowledge(
+            "uncompared:alpha", reason="   ", ledger=ledger, path=acks
+        )
+
+
+def test_categories_keep_two_findings_about_one_room_apart(ledger, acks):
+    """
+    Scenario: room alpha carries both an unaccounted ceremony and a missing comparator,
+    and only the comparator one is acknowledged.
+
+    Verification: the ceremony finding still fails. The category is part of the key
+    precisely because both findings can name the same room, and a key of `alpha` alone
+    would retire a finding nobody read.
+    """
+    _room_missing_review_and_comparator(ledger)
+    ceremonies.acknowledge(
+        "uncompared:alpha", reason="understood", ledger=ledger, path=acks
+    )
+
+    still_open = ceremonies.audit(path=ledger).unacknowledged(
+        ceremonies.load_acknowledged(acks)
+    )
+    assert still_open == (("unaccounted", "alpha:review"),)
+
+
 # --- The ledger as a whole ------------------------------------------------------------
 
 

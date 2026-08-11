@@ -73,6 +73,17 @@ from pathlib import Path
 CEREMONIES_DIR = Path.home() / ".thalamus" / "ceremonies"
 LEDGER_FILE = CEREMONIES_DIR / "ceremonies.jsonl"
 
+# Findings the operator has read and accepted as permanent. Deliberately a *second*
+# file: the ledger is append-only and its rows are evidence, so the way to stop an
+# audit failing is never to write a row asserting something that did not happen.
+#
+# This changes the exit code and nothing else. `LedgerAudit.clean()` still reports
+# the defect, `note()` still prints it, and an acknowledgement names one finding
+# exactly — so the same defect arising in a different room is a new finding and
+# fails again. Acknowledging is how a permanent, already-understood finding stops
+# drowning the next real one; it is not how a finding is disposed of.
+ACK_FILE = CEREMONIES_DIR / "acknowledged.jsonl"
+
 # The surviving ceremonies of docs/12's filter, and a closed set on purpose. The
 # lifecycle's whole discipline is that a ceremony must earn its place against a
 # constraint agent sessions actually have — three were cut — so a kind arriving by
@@ -654,6 +665,23 @@ def deliverables(room: str = "", rows: list[dict] | None = None,
 # --- The audit that makes the four worth writing -------------------------------------
 
 
+FINDING_LABELS = {
+    "unassigned": "occasion(s) with an arm but no prior assignment — no reference "
+                  "distribution exists for these",
+    "late-assignment": "occasion(s) assigned after they started",
+    "arm-mismatch": "occasion(s) whose realized arm contradicts the assignment",
+    "unminted": "deliverable id(s) used but never minted",
+    "orphan-end": "end row(s) for an occasion that never started",
+    "duplicate-occasion": "duplicated occasion id(s)",
+    "unaccounted": "ceremony(s) a closed room neither held nor skipped — the record "
+                   "cannot say whether these happened",
+    "member-resolution": "resolution(s) written by a member of the room being resolved "
+                         "— the forecaster does not get to grade the forecast",
+    "uncompared": "closed room(s) with no out-of-room comparator named while it counted",
+    "late-comparator": "room(s) whose comparator was named after they closed",
+}
+
+
 @dataclass(frozen=True)
 class LedgerAudit:
     """What the ledger says about its own completeness.
@@ -725,32 +753,69 @@ class LedgerAudit:
             or self.late_comparators
         )
 
-    def note(self) -> str:
+    def findings(self) -> tuple[tuple[str, str], ...]:
+        """`(category, item)` for every defect, in the order `note()` prints them.
+
+        The category is part of the key rather than decoration: `uncompared` and
+        `unaccounted` can both name the same room, and an acknowledgement that
+        covered both because they share a room name would retire a finding nobody
+        read.
+        """
+        found: list[tuple[str, str]] = []
+        for category, items in self._categories():
+            found.extend((category, item) for item in items)
+        return tuple(found)
+
+    def _categories(self) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        return (
+            ("unassigned", self.unassigned),
+            ("late-assignment", self.late_assignments),
+            ("arm-mismatch", self.arm_mismatches),
+            ("unminted", self.unminted),
+            ("orphan-end", self.orphan_ends),
+            ("duplicate-occasion", self.duplicate_occasions),
+            ("unaccounted", self.unaccounted),
+            ("member-resolution", self.member_resolutions),
+            ("uncompared", self.uncompared),
+            ("late-comparator", self.late_comparators),
+        )
+
+    def note(self, acknowledged: dict[str, str] | None = None) -> str:
+        seen = acknowledged or {}
         lines = [
             f"Ceremony ledger: {self.occasions} occasion(s), {self.skipped} recorded "
             f"non-occurrence(s), {len(self.unfinished)} unfinished"
         ]
-        for label, items in (
-            ("occasion(s) with an arm but no prior assignment — no reference distribution "
-             "exists for these", self.unassigned),
-            ("occasion(s) assigned after they started", self.late_assignments),
-            ("occasion(s) whose realized arm contradicts the assignment", self.arm_mismatches),
-            ("deliverable id(s) used but never minted", self.unminted),
-            ("end row(s) for an occasion that never started", self.orphan_ends),
-            ("duplicated occasion id(s)", self.duplicate_occasions),
-            ("ceremony(s) a closed room neither held nor skipped — the record cannot "
-             "say whether these happened", self.unaccounted),
-            ("resolution(s) written by a member of the room being resolved — the "
-             "forecaster does not get to grade the forecast", self.member_resolutions),
-            ("closed room(s) with no out-of-room comparator named while it counted",
-             self.uncompared),
-            ("room(s) whose comparator was named after they closed", self.late_comparators),
-        ):
-            if items:
-                lines.append(f"  {len(items)} {label}: {', '.join(sorted(items))}")
+        for category, items in self._categories():
+            if not items:
+                continue
+            lines.append(f"  {len(items)} {FINDING_LABELS[category]}:")
+            for item in sorted(items):
+                key = f"{category}:{item}"
+                if key in seen:
+                    # Still printed, and printed first-class. A finding that stops
+                    # being shown is a finding nobody will ever revisit.
+                    lines.append(f"    {item}  [acknowledged — {seen[key]}]")
+                else:
+                    lines.append(f"    {item}")
         if self.clean():
             lines.append("  clean — every occasion is assigned in advance and accounted for")
+        elif not self.unacknowledged(seen):
+            lines.append(
+                "  every finding above is acknowledged — the ledger is unchanged and "
+                "still holds them; only the exit code is discharged"
+            )
         return "\n".join(lines)
+
+    def unacknowledged(self, acknowledged: dict[str, str] | None = None
+                       ) -> tuple[tuple[str, str], ...]:
+        """Findings with no acknowledgement — what the exit code is allowed to read."""
+        seen = acknowledged or {}
+        return tuple(
+            (category, item)
+            for category, item in self.findings()
+            if f"{category}:{item}" not in seen
+        )
 
 
 def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAudit:
@@ -898,6 +963,62 @@ def audit(rows: list[dict] | None = None, path: Path | None = None) -> LedgerAud
         orphan_ends=tuple(sorted(set(orphan_ends))),
         duplicate_occasions=tuple(sorted(set(duplicates))),
     )
+
+
+def load_acknowledged(path: Path | None = None) -> dict[str, str]:
+    """`<category>:<item>` -> reason, last write wins.
+
+    Machine-local by construction: it sits beside the ledger under `~/.thalamus`,
+    which is not the repository, so acknowledging a finding on one box never
+    discharges it on another. That is the intended blast radius — the ledger it
+    describes is local too.
+    """
+    store = path or ACK_FILE
+    if not store.is_file():
+        return {}
+    seen: dict[str, str] = {}
+    for line in store.read_text(errors="ignore").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("finding"):
+            seen[str(row["finding"])] = str(row.get("reason") or "no reason given")
+    return seen
+
+
+def acknowledge(finding: str, *, reason: str, rows: list[dict] | None = None,
+                ledger: Path | None = None, path: Path | None = None) -> dict:
+    """Accept one named finding as permanent, discharging only the exit code.
+
+    Refused unless the finding is currently reported. An acknowledgement written
+    ahead of the defect it names would pre-approve a class of failure, which is the
+    one thing this must not become — the point is to retire an understood finding so
+    the next unread one is visible, not to make the audit quiet.
+    """
+    if not reason.strip():
+        raise ValueError(
+            "an acknowledgement must carry a reason — the finding stays in the "
+            "report, and an unexplained one is worse than a red exit code"
+        )
+    report = audit(rows, ledger)
+    live = {f"{category}:{item}" for category, item in report.findings()}
+    if finding not in live:
+        raise ValueError(
+            f"`{finding}` is not a current finding — nothing to acknowledge. "
+            f"Run `thalamus ceremony audit` to see the exact keys."
+        )
+    store = path or ACK_FILE
+    store.parent.mkdir(parents=True, exist_ok=True)
+    row = {"finding": finding, "reason": reason.strip(), "ts": _now()}
+    with store.open("a") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.write(json.dumps(row) + "\n")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return row
 
 
 def render(rows: list[dict] | None = None, path: Path | None = None) -> str:

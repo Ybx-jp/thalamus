@@ -930,6 +930,18 @@ def main():
         "outstanding", help="Commitments with no resolution yet, oldest first"
     )
 
+    ceremony_ack = ceremony_sub.add_parser(
+        "ack",
+        help="Accept a permanent finding so the audit's exit code stops reporting it. "
+             "The ledger is untouched and the finding is still printed",
+    )
+    ceremony_ack.add_argument(
+        "finding", help="Exact `<category>:<item>` key as `audit` prints it"
+    )
+    ceremony_ack.add_argument(
+        "--reason", required=True, help="Why this one is permanent and understood"
+    )
+
     # Dispatch — docs/12 §Delivery mechanics. A separate verb rather than a loop over
     # send-keys because `waiting` must be refused, not handled carefully.
     dispatch_parser = subparsers.add_parser(
@@ -972,8 +984,14 @@ def main():
     announce.add_argument("--expires", default="", help="Expiration; silence past it is a timeout")
 
     ceremony_sub.add_parser("show", help="The ledger room by room, with the audit under it")
-    ceremony_sub.add_parser(
-        "audit", help="Read the ledger against its own obligations; exits 1 if unclean"
+    ceremony_audit = ceremony_sub.add_parser(
+        "audit", help="Read the ledger against its own obligations; exits 1 on any "
+                      "finding that has not been acknowledged"
+    )
+    ceremony_audit.add_argument(
+        "--strict", action="store_true",
+        help="Ignore acknowledgements entirely — exits 1 on every finding the ledger "
+             "holds, which is what the ledger actually says",
     )
 
     # Visualize command
@@ -2773,6 +2791,12 @@ def _cmd_ceremony(args, parser):
                   f"by `{row['resolver']}` ({row['evidence']})")
             return
 
+        if args.ceremony_command == "ack":
+            row = ceremonies.acknowledge(args.finding, reason=args.reason)
+            print(f"Acknowledged {row['finding']} — {row['reason']}")
+            print("The ledger is unchanged; `ceremony audit --strict` still fails on it.")
+            return
+
         if args.ceremony_command == "comparator":
             row = ceremonies.record_comparator(
                 args.room, args.arm, args.reference, basis=args.basis
@@ -2801,8 +2825,12 @@ def _cmd_ceremony(args, parser):
 
     if args.ceremony_command == "audit":
         report = ceremonies.audit()
-        print(report.note())
-        if not report.clean():
+        seen = {} if args.strict else ceremonies.load_acknowledged()
+        print(report.note(seen))
+        # The exit code reads acknowledgements; `clean()` never does. An acknowledged
+        # finding is one the operator has read and accepted as permanent, not one the
+        # ledger has stopped holding — `--strict` shows the undischarged truth.
+        if report.unacknowledged(seen):
             sys.exit(1)
         return
 
