@@ -60,6 +60,13 @@
       "witness_contains": "13/13 unscoped",
       "triaged_at_rev": "ce7f7f6",
       "note": "No -L/-S anywhere in src/. tmux ignores HOME, so no environment redirection isolates it, and the arm-runner image has no tmux at all. Pinned on the count so scoping any subset drifts this entry rather than silently shrinking it."
+    },
+    {
+      "case": "ranker-fingerprint-names-dials-in-force",
+      "failure_class": "doc-code-drift",
+      "witness_contains": "_select_details(cap=_DETAIL_CAP)",
+      "triaged_at_rev": "b88cf9d",
+      "note": "The claim is narrow and it is the claim being pinned: a dial stamped into ranker_fingerprint as the configuration in force is captured where rebinding cannot reach it. Not a claim that the shipped value 8 is wrong. This shape has already produced a published wrong number once (lab/030 measured the cap as having zero effect because patching the constant did nothing while the run labelled itself with the patched value). Pinned on the capture site rather than the line number, which unrelated edits would move; a second dial acquiring a capture changes the witness and drifts this entry."
     }
   ]
 }

@@ -46,6 +46,8 @@ CASE_MODULES = (
     "qe.cases.ingest_redirect",
     "qe.cases.home_isolation",
     "qe.cases.tmux_socket",
+    "qe.cases.ranker_dials",
+    "qe.cases.served_tier_rule",
 )
 
 
