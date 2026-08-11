@@ -228,6 +228,19 @@ hash.
 The paper about eliminating redundancy was ingested redundantly, and it took reading its
 own claims to notice.
 
+The same nondeterminism has a second edge worth stating, found re-feeding Broder's §2–§3
+to recover two sentences the full-text pass had lost. **The dry run and the write are two
+separate extractions, and they do not produce the same claims.** The dry run returned both
+target sentences; the write returned the containment definition and dropped the caveat
+that containment estimation is error-prone for a very short document inside a much larger
+one — which is precisely the abstract-inside-full-text case it was fetched for.
+
+[06](../docs/06-ingestion.md)'s dry-run rule is sound for what it claims: it catches a
+mis-resolved *reference*, and the title is stable across passes. It is not a preview of
+the content, and reading it as one is a mistake this entry made. Re-running to fish for
+the missing claim was declined on the spot — the same bytes re-extracted would land under
+the same content hash and simply add another near-duplicate to the pile above.
+
 ## Ends in
 
 **measurements + fixes.** The corpus co-indexing was built for now actually contains the
