@@ -111,7 +111,7 @@ def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monk
     argv = created[0]
     assert argv[argv.index("-n") + 1] == "homelab", "first window must be the scope's"
     assert "claude" in argv, "the first window must run claude, not a bare shell"
-    assert f"THALAMUS_SCOPE=homelab" in argv, "the anchor must be armed for its scope"
+    assert "THALAMUS_SCOPE=homelab" in argv, "the anchor must be armed for its scope"
     # A second window beside the placeholder is exactly the bug — the create path
     # already opened the window, so nothing should call new-window.
     assert not [c for c in calls if "new-window" in c]
@@ -379,21 +379,31 @@ def test_a_tuned_room_allowlist_survives_the_next_launch(tmp_path, monkeypatch):
     assert json.loads(policy.read_text())["permissions"]["allow"] == ["Bash(make:*)"]
 
 
-def test_room_members_launch_in_accept_edits_and_solo_pins_do_not(tmp_path, monkeypatch):
+def test_every_pinned_session_launches_in_auto_and_only_a_room_gets_a_name(tmp_path,
+                                                                          monkeypatch):
     """
     Scenario: the same scope launched into a room, and outside one.
 
-    Verification: the room member carries `--permission-mode acceptEdits`, the solo
-    pin carries no mode at all. A member that stops at a prompt reports `waiting`,
-    which is the one status dispatch refuses to send into — so in a room the
-    permission mode and the dispatch pre-flight are the same mechanism seen twice.
+    Verifications:
+    - both carry `--permission-mode auto` — the operator drives every session in that
+      mode by hand, so a launcher starting them stricter made them behave unlike the
+      sessions they were modelled on
+    - only the room member carries `--name`, which is the address SendMessage routes
+      on and the prefix room-guard.sh matches; a solo session has nothing to answer to
+    - the mode is not `bypassPermissions`
+
+    That last one is the substantive half. `auto` still resolves allow/deny rules and
+    PreToolUse hooks before anything else, which is what keeps the room guard and the
+    role guard standing; bypass is the mode that removes the control FIDES measured as
+    the one that stops prompt injection outright.
     """
     monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
 
-    assert pin.room_member_flags("", "qe") == []
-    flags = pin.room_member_flags("alpha", "qe")
-    assert flags == ["--name", "alpha-qe", "--permission-mode", "acceptEdits"]
-    assert pin.ROOM_PERMISSION_MODE != "bypassPermissions"
+    assert pin.launch_flags("", "qe") == ["--permission-mode", "auto"]
+    assert pin.launch_flags("alpha", "qe") == [
+        "--permission-mode", "auto", "--name", "alpha-qe",
+    ]
+    assert pin.PERMISSION_MODE != "bypassPermissions"
 
 
 def test_the_room_allowlist_reaches_neither_the_network_nor_history(tmp_path):

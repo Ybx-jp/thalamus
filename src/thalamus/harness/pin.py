@@ -90,22 +90,32 @@ ROOM_OWNED = ("sessions", "projects", "todos", "statsig")
 ROOM_LINKED = ("skills", "agents", "plugins", "commands",
                "settings.json", ".credentials.json")
 
-# The permission mode every room member launches under, and the reason the allowlist
-# below has to exist. A dispatched member that stops at a permission prompt is a
-# dispatch that silently did not happen — and worse than silently, since a session
-# sitting on a prompt reports `waiting`, which is exactly the status `harness/dispatch.py`
-# refuses to send into. The mode and the allowlist are therefore not a convenience:
-# they are what keeps a room addressable at all.
+# The permission mode EVERY pinned session launches under — room member and solo pin
+# alike. Operator decision (2026-08-11): this is the mode the operator drives by hand
+# in every session, so a launcher that started sessions in a stricter one was making
+# them behave unlike the sessions they were modelled on.
 #
-# `acceptEdits` rather than `bypassPermissions`, which would remove the one control
-# measured to fully stop prompt injection — with policy checks enabled FIDES stops all
-# attacks in AgentDojo, without them every planner succumbs
-# (`scope:literature:claim:073ccf38c98a731a`).
-ROOM_PERMISSION_MODE = "acceptEdits"
+# `auto` rather than `bypassPermissions`, and the distinction is the whole reason this
+# is not simply "turn permissions off". `auto` auto-approves while still resolving
+# allow/deny rules and PreToolUse hooks *first*, then routing the remainder through a
+# safety classifier; `bypassPermissions` removes the one control measured to fully stop
+# prompt injection — with policy checks enabled FIDES stops all attacks in AgentDojo,
+# without them every planner succumbs (`scope:literature:claim:073ccf38c98a731a`).
+# So the citation docs/12 rests on is what selects `auto`, not what argues against it.
+#
+# In a room the mode is also load-bearing for delivery: a member stopped at a prompt
+# reports `waiting`, which is exactly the status `harness/dispatch.py` refuses to send
+# into, so a prompting member is an unaddressable one.
+PERMISSION_MODE = "auto"
 
 # The seed allowlist a fresh room is provisioned with, written once and never
-# overwritten. `acceptEdits` covers file edits and silently denies Bash, so without
-# these a member stops on its first verification command.
+# overwritten.
+#
+# Under `auto` this is no longer what keeps Bash working — the classifier handles what
+# no rule matches. What an allow rule still buys is determinism: it resolves at step one
+# and never reaches the classifier, so a room's routine verification commands cannot be
+# held up by a judgement call, and the room's policy stays something declared rather
+# than inferred per call.
 #
 # The shape is read-mostly plus this project's own verification commands: enough to
 # inspect the repo and check its own work, and nothing that reaches the network or
@@ -559,25 +569,22 @@ def scope_mcp_config(scope: str, base: Path | None = None) -> Path | None:
     return path if path.is_file() else None
 
 
-def room_member_flags(room: str, scope: str) -> list[str]:
-    """The launch flags that make a session a *room member*, or [] outside a room.
+def launch_flags(room: str, scope: str) -> list[str]:
+    """The flags common to every launch path: the permission mode, and a room's name.
 
     One function because there are two launch paths — `_claude_argv` for the roster and
     `spawn` for the console's on-demand button — and a flag added to only one of them
     is a divergence nothing reports: the console spawn button is how room members
     actually get made from a phone, so a mode missing there is missing where it counts.
 
-    `--permission-mode` is room-only. A solo pin keeps manual mode, where the operator
-    is sitting in front of the window and a prompt costs a keystroke; a room member's
-    prompt costs the dispatch that was sent to it, and leaves the session in `waiting`,
-    which `harness/dispatch.py` then refuses to send into.
+    `--permission-mode` applies to **every** pinned session, in a room or not. `--name`
+    is the room-only half: it is the address `SendMessage` routes on and the prefix
+    `room-guard.sh` matches, so a solo session has nothing to answer to.
     """
-    if not room:
-        return []
-    return [
-        "--name", room_member_name(room, scope),
-        "--permission-mode", ROOM_PERMISSION_MODE,
-    ]
+    flags = ["--permission-mode", PERMISSION_MODE]
+    if room:
+        flags += ["--name", room_member_name(room, scope)]
+    return flags
 
 
 def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
@@ -590,7 +597,7 @@ def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
     mcp_config = scope_mcp_config(scope, base)
     if mcp_config is not None:
         argv += ["--mcp-config", str(mcp_config)]
-    argv += room_member_flags(room, scope)
+    argv += launch_flags(room, scope)
     return argv
 
 
@@ -748,7 +755,7 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
     if manifest is not None:
         write_all_agents(USER_AGENTS_DIR, base)
         argv += ["--agent", agent_name(scope)]
-    argv += room_member_flags(room, scope)
+    argv += launch_flags(room, scope)
 
     # The session must exist (the tty unit's `tmux new -A -s thalamus` creates it,
     # as does `thalamus roster`); create it if somehow absent so spawn never fails.

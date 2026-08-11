@@ -553,35 +553,50 @@ Dispatch follows the console's confirmed-spawn path and never `pin.spawn` direct
 with the room passed explicitly, because `room_members()` reads the room off `pins.jsonl`
 and a room whose members carry no room row is invisible to `eval rooms`.
 
-**Roommates launch in an auto permission mode.** Built — `pin.room_member_flags`, one
-function for both launch paths, since the console's spawn button is how room members
-actually get made and a flag reaching only `_claude_argv` would be missing where it
-counts. A dispatched member that stops at a permission prompt is a dispatch that
-silently did not happen, and worse than silently: **a session sitting on a prompt
-reports `waiting`, which is the one status dispatch refuses to send into**. The
-permission mode and the dispatch pre-flight are therefore the same mechanism seen
-twice, and the allowlist is what keeps a room addressable rather than a convenience.
+**Every pinned session launches in `auto`, room member and solo pin alike.** Built —
+`pin.launch_flags`, one function for both launch paths, since the console's spawn button
+is how room members actually get made and a flag reaching only `_claude_argv` would be
+missing where it counts. The mode is not room-specific: it is the mode the operator
+drives by hand in every session, so a launcher starting sessions stricter made them
+behave unlike the sessions they were modelled on.
 
-The mode is `acceptEdits` plus a **room-owned** `settings.local.json` allowlist rather
-than a blanket bypass: `acceptEdits` alone silently denies Bash, and bypass removes the
-one control measured to fully stop prompt injection — with policy checks enabled FIDES
-stops all attacks in AgentDojo, without them every planner succumbs
-(`scope:literature:claim:073ccf38c98a731a`) — while turn caps buy nothing, attack success
-being flat across caps of 3, 5 and 7 (`scope:literature:claim:bfeb0aa001de6b45`). The
-room's config dir partitions discovery, transcripts and MCP servers and **nothing else**:
-not the filesystem, the network, or the operator's credentials.
+In a room it is additionally load-bearing for delivery. A dispatched member that stops
+at a permission prompt is a dispatch that silently did not happen, and worse than
+silently: **a session sitting on a prompt reports `waiting`, which is the one status
+dispatch refuses to send into.** The permission mode and the dispatch pre-flight are the
+same mechanism seen twice.
 
-Room-owned means `settings.local.json` left `ROOM_LINKED`: a room's permission surface
-is declared for the room rather than inherited from whatever the operator's own session
-accumulated, and a borrowed file would move the room's policy underneath it whenever the
-operator accepted a prompt elsewhere. The seed allowlist is read-mostly plus this
-project's verification commands, and it is written **once and never repaired** — every
-other entry in the room dir is idempotently rebuilt because drift there is corruption,
-but this is the file an operator is expected to edit, and widening it is how a room gets
-work done. `curl`/`wget` are absent deliberately rather than by oversight: Bash curl is
-a laundering channel still open, and a room — several differently-pinned experts writing
-into one memory — is the last place to widen it. `git commit`/`push` are absent because
-a member's commit is a decision the operator should see happen.
+`auto` rather than `bypassPermissions`, and the distinction is what keeps this from
+being "turn permissions off". `auto` auto-approves while still resolving allow/deny
+rules and **PreToolUse hooks first**, routing only the remainder through a safety
+classifier; bypass removes the one control measured to fully stop prompt injection —
+with policy checks enabled FIDES stops all attacks in AgentDojo, without them every
+planner succumbs (`scope:literature:claim:073ccf38c98a731a`) — while turn caps buy
+nothing, attack success being flat across caps of 3, 5 and 7
+(`scope:literature:claim:bfeb0aa001de6b45`). So the citation selects `auto` rather than
+arguing against it, and the room guard and role guard keep standing: **verified by
+measurement 2026-08-11**, not by reading the flag — a headless `--permission-mode auto`
+run had its inline traversal blocked by `gremlin-guard.sh`, with the `terminal-step`
+block row in `~/.thalamus/guards/` to show for it. The room's config dir partitions
+discovery, transcripts and MCP servers and **nothing else**: not the filesystem, the
+network, or the operator's credentials.
+
+The **room-owned** `settings.local.json` allowlist stays, with a narrower justification
+than it had under `acceptEdits`: it is no longer what keeps Bash working, since the
+classifier handles what no rule matches. What an allow rule still buys is determinism —
+it resolves at step one and never reaches the classifier, so a room's routine
+verification commands cannot be held up by a judgement call, and the room's policy stays
+declared rather than inferred per call. Room-owned means it left `ROOM_LINKED`: a room's
+permission surface is declared for the room rather than inherited from whatever the
+operator's own session accumulated, and a borrowed file would move the room's policy
+underneath it whenever the operator accepted a prompt elsewhere. It is written **once
+and never repaired** — every other entry in the room dir is idempotently rebuilt because
+drift there is corruption, but this is the file an operator is expected to edit, and
+widening it is how a room gets work done. `curl`/`wget` are absent deliberately rather
+than by oversight: Bash curl is a laundering channel still open, and a room — several
+differently-pinned experts writing into one memory — is the last place to widen it.
+`git commit`/`push` are absent because a member's commit is a decision the operator
+should see happen.
 
 ## How this is measured
 
