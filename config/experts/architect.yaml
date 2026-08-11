@@ -46,6 +46,14 @@ allowlist:
   - github.com
   - hbs.edu
   - melconway.com
+  # Provenance and approval-record canon, procured against the thread-close design:
+  # what a close writes when no session performed it, and who is recorded as having
+  # approved it. PROV-O is the anchor — its Activity/Agent/wasAssociatedWith
+  # vocabulary is the entity set the rest converge on.
+  - w3.org
+  - gerritcodereview.com
+  - docs.datomic.com
+  - docs.temporal.io
 
 # No write_boundary, deliberately. This scope's charter is to perform the
 # reorganizations and fixes it identifies; a path deny would block the work rather
