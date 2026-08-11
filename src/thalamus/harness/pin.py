@@ -75,11 +75,52 @@ ROOM_OWNED = ("sessions", "projects", "todos", "statsig")
 # operator's own, so an edit reaches a live room. `settings.json` is not optional
 # decor: every Thalamus hook is registered user-scope, and that scope moves with
 # the config dir, so a room without it arms *zero* hooks and distills nothing.
-# `settings.local.json` carries the permission allowlist (without it a member
-# prompts for everything), and `.credentials.json` holds the OAuth token — without
-# it a fresh config dir cannot authenticate at all.
+# `.credentials.json` holds the OAuth token — without it a fresh config dir cannot
+# authenticate at all.
+#
+# `settings.local.json` is deliberately NOT here: the permission allowlist is
+# room-*owned* (docs/12), because a room's permission surface has to be declared for
+# the room rather than inherited from whatever the operator's own session happened to
+# accumulate. Borrowing it would also make the room's policy move under it whenever
+# the operator accepted a prompt elsewhere.
 ROOM_LINKED = ("skills", "agents", "plugins", "commands",
-               "settings.json", "settings.local.json", ".credentials.json")
+               "settings.json", ".credentials.json")
+
+# The permission mode every room member launches under, and the reason the allowlist
+# below has to exist. A dispatched member that stops at a permission prompt is a
+# dispatch that silently did not happen — and worse than silently, since a session
+# sitting on a prompt reports `waiting`, which is exactly the status `harness/dispatch.py`
+# refuses to send into. The mode and the allowlist are therefore not a convenience:
+# they are what keeps a room addressable at all.
+#
+# `acceptEdits` rather than `bypassPermissions`, which would remove the one control
+# measured to fully stop prompt injection — with policy checks enabled FIDES stops all
+# attacks in AgentDojo, without them every planner succumbs
+# (`scope:literature:claim:073ccf38c98a731a`).
+ROOM_PERMISSION_MODE = "acceptEdits"
+
+# The seed allowlist a fresh room is provisioned with, written once and never
+# overwritten. `acceptEdits` covers file edits and silently denies Bash, so without
+# these a member stops on its first verification command.
+#
+# The shape is read-mostly plus this project's own verification commands: enough to
+# inspect the repo and check its own work, and nothing that reaches the network or
+# rewrites history. `curl`/`wget` are absent on purpose rather than by oversight —
+# transcript-mediated laundering is closed for WebFetch/WebSearch and Bash curl is a
+# residual channel still open, so a room is not where it gets widened. Commit and push
+# are absent for a different reason: a room member's commit is a decision the operator
+# should see happen.
+ROOM_ALLOWLIST = (
+    "Bash(uv run pytest:*)",
+    "Bash(uv run thalamus:*)",
+    "Bash(uv run ruff:*)",
+    "Bash(git status:*)",
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git show:*)",
+    "Bash(rg:*)",
+    "Bash(ls:*)",
+)
 
 # `.claude.json` is the one that must be a *copy*: members write to it. Copying it
 # is also what carries `mcpServers`, so a member keeps the `thalamus` MCP server —
@@ -193,8 +234,27 @@ def ensure_room(room: str, host: Path | None = None) -> Path:
             shutil.rmtree(link) if link.is_dir() else link.unlink()
         link.symlink_to(target)
 
+    _seed_room_settings(config)
     _sync_mcp_servers(config / ROOM_COPIED, host_claude_json(host))
     return config
+
+
+def _seed_room_settings(config: Path) -> Path:
+    """Write the room's own `settings.local.json`, once.
+
+    Seeded and never repaired, unlike everything else `ensure_room` touches. The rest
+    of the room dir is idempotently rebuilt because drift there is corruption; this
+    file is the one an operator is *expected* to edit — widening a room's allowlist is
+    how a room gets work done — so rewriting it on the next launch would silently
+    revert that. A room whose policy has been tuned keeps it.
+    """
+    settings = config / "settings.local.json"
+    if settings.exists():
+        return settings
+    settings.write_text(
+        json.dumps({"permissions": {"allow": list(ROOM_ALLOWLIST)}}, indent=2) + "\n"
+    )
+    return settings
 
 
 def _sync_mcp_servers(copied: Path, source: Path) -> None:
@@ -458,6 +518,27 @@ def scope_mcp_config(scope: str, base: Path | None = None) -> Path | None:
     return path if path.is_file() else None
 
 
+def room_member_flags(room: str, scope: str) -> list[str]:
+    """The launch flags that make a session a *room member*, or [] outside a room.
+
+    One function because there are two launch paths — `_claude_argv` for the roster and
+    `spawn` for the console's on-demand button — and a flag added to only one of them
+    is a divergence nothing reports: the console spawn button is how room members
+    actually get made from a phone, so a mode missing there is missing where it counts.
+
+    `--permission-mode` is room-only. A solo pin keeps manual mode, where the operator
+    is sitting in front of the window and a prompt costs a keystroke; a room member's
+    prompt costs the dispatch that was sent to it, and leaves the session in `waiting`,
+    which `harness/dispatch.py` then refuses to send into.
+    """
+    if not room:
+        return []
+    return [
+        "--name", room_member_name(room, scope),
+        "--permission-mode", ROOM_PERMISSION_MODE,
+    ]
+
+
 def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
                  room: str = "") -> list[str]:
     argv = ["claude"]
@@ -468,8 +549,7 @@ def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
     mcp_config = scope_mcp_config(scope, base)
     if mcp_config is not None:
         argv += ["--mcp-config", str(mcp_config)]
-    if room:
-        argv += ["--name", room_member_name(room, scope)]
+    argv += room_member_flags(room, scope)
     return argv
 
 
@@ -627,8 +707,7 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
     if manifest is not None:
         write_all_agents(USER_AGENTS_DIR, base)
         argv += ["--agent", agent_name(scope)]
-    if room:
-        argv += ["--name", room_member_name(room, scope)]
+    argv += room_member_flags(room, scope)
 
     # The session must exist (the tty unit's `tmux new -A -s thalamus` creates it,
     # as does `thalamus roster`); create it if somehow absent so spawn never fails.

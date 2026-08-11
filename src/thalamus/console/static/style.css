@@ -912,3 +912,30 @@ textarea:focus { outline: none; border-color: var(--chan); }
   letter-spacing: .04em;
   vertical-align: middle;
 }
+
+/* The room dialogue. A composer that addresses a room rather than a window — so
+   unlike the pane composer it has no live view of what it is typing into, which is
+   why the server pre-flights every target before writing to any of them. */
+.dialogue-text {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 4.5rem;
+  padding: .5rem .6rem;
+  background: #0b0e12;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: .78rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+.dialogue-text:focus { outline: none; border-color: var(--chan, var(--accent)); }
+.dialogue-opt {
+  display: block;
+  margin: .5rem 0 .2rem;
+  font-size: .7rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.dialogue-opt .admin-note { display: inline; margin: 0; }

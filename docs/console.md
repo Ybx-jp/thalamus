@@ -250,6 +250,24 @@ colours, and the workspace bar grows a room row — a second filter that compose
 with the directory one, because "what project" and "which collaboration" are
 different questions about the same window.
 
+**Selecting one room adds a `✎ say` button**, which opens a composer addressed to the
+whole room rather than to a window. It appears only for a single named room — `any` and
+`solo` name nothing a message could be sent to, and offering it there would invite a
+fan-out across the boundary a room is.
+
+The room composer behaves differently from the pane composer, and the difference is
+worth knowing before you use it. Every member is checked *before* any of them is
+written to, and a member sitting on a permission prompt is **refused rather than sent
+into**: text typed into that window would be discarded and the Enter after it would
+answer the prompt instead. One unreachable member refuses the whole message, because a
+half-delivered announcement makes the silence of the members who missed it
+indistinguishable from a considered "not mine". `deliver to whoever is reachable`
+overrides that and records who missed it; `check only` runs the whole check and sends
+nothing.
+
+The ordinary pane composer keeps no such check, deliberately — it types into the window
+you are watching, where answering a permission prompt yourself is the point.
+
 **⚙ is the admin sheet**:
 
 - **restart** replaces a window's claude process. MCP servers and hooks arm *per

@@ -563,3 +563,101 @@ def _no_leaked_state():
     yield
     server.RECYCLING.clear()
     server.CLOSING.clear()
+
+
+# ---- the room dialogue, as a thin client over the dispatch verb ----
+
+
+def test_the_dialogue_refuses_a_room_name_that_could_reach_a_path(tmp_path):
+    """The room name reaches `room_config_dir` as a path segment and the guard's
+    roommate pattern as a regex, so the console validates it with `pin.valid_room`
+    before it reaches either — the same check `/api/spawn` already makes."""
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg) as post:
+        for bad in ("../escape", "Room", "a b", ""):
+            status, body = post("/api/dispatch", {"room": bad, "message": "hi"})
+            assert status == 400, bad
+            assert "room name" in body["error"] or "dispatch" in body["error"]
+
+
+def test_the_dialogue_refuses_an_empty_message(tmp_path):
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg) as post:
+        status, body = post("/api/dispatch", {"room": "alpha", "message": "   "})
+        assert status == 400 and "nothing to dispatch" in body["error"]
+
+
+def test_a_room_refusal_is_409_and_carries_the_reason(tmp_path, monkeypatch):
+    """
+    Scenario: the verb refuses — here, a room with no live members.
+
+    Verification: 409 rather than 400, and the refusal text survives to the client.
+    The request was well-formed; the room said no, and the reason names what the
+    operator has to fix. Flattening it to 400 would make a room that cannot be
+    reached indistinguishable from a malformed request.
+    """
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg) as post:
+        status, body = post("/api/dispatch", {"room": "alpha", "message": "hello"})
+        assert status == 409
+        assert "no live members" in body["error"]
+
+
+def test_the_dialogue_delegates_rather_than_reimplementing_the_preflight(tmp_path,
+                                                                        monkeypatch):
+    """
+    Scenario: a dispatch that the verb accepts.
+
+    Verification: the console calls `harness.dispatch.dispatch` and renders what it
+    returns — it does not decide anything about `waiting` itself. A second
+    implementation here, however small, would be a second policy about when it is
+    safe to type into somebody's session, and the two would drift.
+    """
+    from thalamus.harness import dispatch as dispatch_mod
+
+    seen = {}
+
+    def fake_dispatch(room, message, **kwargs):
+        seen["room"] = room
+        seen["message"] = message
+        seen["kwargs"] = kwargs
+        target = dispatch_mod.Target(
+            scope="qe", session_id="sid", name="alpha-qe", pane="%1",
+            status="idle", updated_at=1,
+        )
+        return dispatch_mod.DispatchResult(
+            room=room, sender=kwargs.get("sender", ""), handle="abcd1234",
+            deliveries=(dispatch_mod.Delivery(target=target, performed=True),),
+            undelivered=(),
+        )
+
+    monkeypatch.setattr(dispatch_mod, "dispatch", fake_dispatch)
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg) as post:
+        status, body = post("/api/dispatch", {
+            "room": "alpha", "message": "stand up", "to": ["qe"], "partial": True,
+        })
+
+    assert status == 200 and body["ok"] is True
+    assert body["handle"] == "abcd1234" and body["delivered"] == 1
+    assert body["targets"][0]["name"] == "alpha-qe"
+    assert seen["room"] == "alpha" and seen["message"] == "stand up"
+    assert seen["kwargs"]["scopes"] == ["qe"] and seen["kwargs"]["partial"] is True
+
+
+def test_send_keeps_no_waiting_preflight_because_the_operator_can_see_it(tmp_path):
+    """
+    Scenario: the composer types into the one window the operator is watching.
+
+    Verification: it goes through with no status check. This is the line between the
+    two send paths — `/api/dispatch` refuses a `waiting` target because the sender
+    cannot see it, while answering a permission prompt through the composer is a
+    primary use of the console. Gating this on `waiting` would break the case the
+    console exists for, so the asymmetry is deliberate and tested.
+    """
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/send", {"index": 0, "text": "1"})
+        assert status == 200 and body["ok"] is True
+    sent = [args for args in post.fake.calls if "send-keys" in args]
+    assert any("1" in args for args in sent)

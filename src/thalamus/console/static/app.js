@@ -80,6 +80,14 @@ const els = {
   spawnGo: document.getElementById("spawn-go"),
   spawnLog: document.getElementById("spawn-log"),
   spawnPip: document.getElementById("spawn-pip"),
+  dialogue: document.getElementById("dialogue"),
+  dialogueRoom: document.getElementById("dialogue-room"),
+  dialogueText: document.getElementById("dialogue-text"),
+  dialoguePartial: document.getElementById("dialogue-partial"),
+  dialogueGo: document.getElementById("dialogue-go"),
+  dialogueCheck: document.getElementById("dialogue-check"),
+  dialogueLog: document.getElementById("dialogue-log"),
+  dialogueX: document.getElementById("dialogue-x"),
   distillSec: document.getElementById("distill-sec"),
   distillList: document.getElementById("distill-list"),
   read: document.getElementById("read"),
@@ -178,6 +186,19 @@ function renderWsBar() {
   }
   const solo = windows.filter((x) => !x.room).length;
   if (solo) els.wsbar.appendChild(mkRoom(`solo ${solo}`, "", "Only sessions in no room"));
+  // Only when ONE room is selected. `null` is "any room" and `""` is "no room", and
+  // neither names something a message could be addressed to — offering the control
+  // there would invite a fan-out across rooms, which is the boundary a room is.
+  if (activeRoom) {
+    const say = document.createElement("button");
+    say.type = "button";
+    say.className = "ws room-ws room-say";
+    say.textContent = "✎ say";
+    say.title = `Say something to every live member of ${activeRoom}`;
+    say.style.setProperty("--chan-room", hueForRoom(activeRoom));
+    say.addEventListener("click", () => openDialogue(activeRoom));
+    els.wsbar.appendChild(say);
+  }
 }
 
 function selectRoom(room) {
@@ -1890,4 +1911,68 @@ if ("serviceWorker" in navigator) {
     if (hadController) location.reload();
     hadController = true;
   });
+}
+
+// ---- The room dialogue ----
+// A composer addressed to a ROOM instead of a window. The difference from the pane
+// composer is not the fan-out, it is the blindness: sending into a window you are
+// watching lets you answer a permission prompt on purpose, while a room message goes
+// to members nobody is looking at, where the Enter after the text would answer a
+// prompt the sender never saw. So every refusal here comes from the server's
+// pre-flight — this file decides nothing about who is safe to type into, and a copy
+// of that rule living in the client would be a second policy that drifts.
+let dialogueRoom = null;
+
+function openDialogue(room) {
+  if (!room) return;
+  dialogueRoom = room;
+  els.dialogueRoom.textContent = room;
+  els.dialogueLog.hidden = true;
+  els.dialogueLog.textContent = "";
+  els.dialogueText.value = "";
+  els.dialogueGo.disabled = true;
+  els.dialogue.hidden = false;
+  els.dialogueText.focus();
+}
+
+function closeDialogue() {
+  els.dialogue.hidden = true;
+  dialogueRoom = null;
+}
+
+// `check only` is a real dry run on the server: it pre-flights every member and
+// writes nothing, which is how an operator asks "would this land?" without the send
+// that answers it destructively.
+async function runDialogue(dryRun) {
+  const text = (els.dialogueText.value || "").trim();
+  if (!dialogueRoom || !text) return;
+  els.dialogueGo.disabled = true;
+  els.dialogueCheck.disabled = true;
+  els.dialogueLog.hidden = false;
+  els.dialogueLog.textContent = dryRun
+    ? `checking ${dialogueRoom}…`
+    : `saying to ${dialogueRoom}…`;
+  const { ok, data } = await postJson("api/dispatch", {
+    room: dialogueRoom,
+    message: text,
+    partial: !!els.dialoguePartial.checked,
+    dryRun: !!dryRun,
+  });
+  // The refusal text names the target that refused and what to do about it, so it is
+  // rendered verbatim rather than replaced with a generic failure line.
+  els.dialogueLog.textContent = ok
+    ? (data.note || "delivered.")
+    : "refused:\n" + (data.error || "unknown error");
+  els.dialogueCheck.disabled = false;
+  els.dialogueGo.disabled = false;
+  if (ok && !dryRun) setTimeout(poll, 200);
+}
+
+if (els.dialogueText) {
+  els.dialogueText.addEventListener("input", () => {
+    els.dialogueGo.disabled = !els.dialogueText.value.trim();
+  });
+  els.dialogueGo.addEventListener("click", () => runDialogue(false));
+  els.dialogueCheck.addEventListener("click", () => runDialogue(true));
+  els.dialogueX.addEventListener("click", closeDialogue);
 }

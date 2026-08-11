@@ -319,10 +319,17 @@ def test_ensure_room_builds_the_measured_layout(tmp_path, monkeypatch):
     - the trees it borrows are symlinks onto the operator's own
     - a host entry that does not exist produces no dangling link
     - `.claude.json` is a copy, and carries the operator's mcpServers
+    - `settings.local.json` is the room's OWN file, seeded with the allowlist
 
     The own/borrow split is the whole design (lab/046): `projects/` shared is a
     transcript channel out of the room, while `settings.json` NOT shared is a
     member with zero Thalamus hooks — each side of the split fails a different way.
+
+    `settings.local.json` sits on the owned side for a third reason (docs/12): a
+    room's permission surface has to be declared for the room, not inherited from
+    whatever the operator's own session accumulated — and borrowing it would let the
+    room's policy move underneath it whenever the operator accepted a prompt
+    somewhere else entirely.
     """
     monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
     host = _host(tmp_path)
@@ -334,14 +341,76 @@ def test_ensure_room_builds_the_measured_layout(tmp_path, monkeypatch):
     for owned in pin.ROOM_OWNED:
         assert (config / owned).is_dir() and not (config / owned).is_symlink(), owned
     for linked in ("skills", "agents", "plugins", "settings.json",
-                   "settings.local.json", ".credentials.json"):
+                   ".credentials.json"):
         assert (config / linked).is_symlink(), linked
         assert (config / linked).readlink() == host / linked
     assert not (config / "commands").exists()  # the host has none — no dead link
 
+    policy = config / "settings.local.json"
+    assert policy.is_file() and not policy.is_symlink()
+    assert json.loads(policy.read_text())["permissions"]["allow"] == list(pin.ROOM_ALLOWLIST)
+
     copied = config / ".claude.json"
     assert copied.is_file() and not copied.is_symlink()
     assert json.loads(copied.read_text())["mcpServers"] == {"thalamus": {"cmd": "x"}}
+
+
+def test_a_tuned_room_allowlist_survives_the_next_launch(tmp_path, monkeypatch):
+    """
+    Scenario: an operator widens a room's allowlist, and the room is launched again.
+
+    Verification: the edit survives. `ensure_room` runs on every launch and
+    idempotently repairs everything else, because drift there is corruption — but
+    this is the one file an operator is *expected* to edit, since widening the
+    allowlist is how a room gets work done. Rewriting it on the next launch would
+    silently revert that, and the revert would show up as a member stopping at a
+    prompt, which reads as a dispatch that never arrived.
+    """
+    monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
+    host = _host(tmp_path)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: host.parent))
+
+    config = pin.ensure_room("alpha", host=host)
+    policy = config / "settings.local.json"
+    policy.write_text(json.dumps({"permissions": {"allow": ["Bash(make:*)"]}}))
+
+    pin.ensure_room("alpha", host=host)
+
+    assert json.loads(policy.read_text())["permissions"]["allow"] == ["Bash(make:*)"]
+
+
+def test_room_members_launch_in_accept_edits_and_solo_pins_do_not(tmp_path, monkeypatch):
+    """
+    Scenario: the same scope launched into a room, and outside one.
+
+    Verification: the room member carries `--permission-mode acceptEdits`, the solo
+    pin carries no mode at all. A member that stops at a prompt reports `waiting`,
+    which is the one status dispatch refuses to send into — so in a room the
+    permission mode and the dispatch pre-flight are the same mechanism seen twice.
+    """
+    monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
+
+    assert pin.room_member_flags("", "qe") == []
+    flags = pin.room_member_flags("alpha", "qe")
+    assert flags == ["--name", "alpha-qe", "--permission-mode", "acceptEdits"]
+    assert pin.ROOM_PERMISSION_MODE != "bypassPermissions"
+
+
+def test_the_room_allowlist_reaches_neither_the_network_nor_history(tmp_path):
+    """
+    Verification: the seed allows no network fetch and no history rewrite.
+
+    Not a style preference. Transcript-mediated laundering is closed for
+    WebFetch/WebSearch while Bash curl remains a residual channel, so a room — which
+    exists to let several differently-pinned experts write into one memory — is the
+    last place to widen it. `git commit`/`push` are out for a separate reason: a room
+    member's commit is a decision the operator should see happen.
+    """
+    seed = " ".join(pin.ROOM_ALLOWLIST)
+    for forbidden in ("curl", "wget", "nc ", "ssh", "git commit", "git push", "rm "):
+        assert forbidden not in seed, forbidden
+    # And it is a real allowlist rather than a wildcard wearing one's clothes.
+    assert "Bash(:*)" not in seed and "Bash(*)" not in seed
 
 
 def test_ensure_room_replaces_a_symlinked_projects_dir(tmp_path, monkeypatch):

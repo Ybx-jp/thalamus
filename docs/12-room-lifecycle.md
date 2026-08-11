@@ -519,7 +519,17 @@ message to a freshly spawned member is the most likely to hit it.
 
 **Built** — `harness/dispatch.py`, `thalamus dispatch <room> [message]` with `--to`,
 `--partial`, `--dry-run` and the four announcement slots. A status outside the measured
-three is refused rather than assumed to behave like `idle`.
+three is refused rather than assumed to behave like `idle`. The console reaches the same
+verb through `POST /api/dispatch` and a room composer that appears only when one room is
+selected — a thin client in the literal sense: every refusal, the pre-flight and the row
+writing stay in the module, and the client renders the refusal text verbatim rather than
+deciding anything about who is reachable.
+
+**The console's own `/api/send` keeps no `waiting` check, and that asymmetry is the
+design.** It types into the one window the operator is watching live, where *answering*
+a permission prompt is a primary use of the composer and the terminal keys beside it.
+Dispatch refuses `waiting` because its sender cannot see the target; gating the pane
+composer the same way would break the case the console exists for.
 
 **Pre-flight covers the whole fan-out, not each target in turn.** Delivering to the
 reachable members and skipping the rest is the tolerant-looking choice that corrupts the
@@ -543,9 +553,15 @@ Dispatch follows the console's confirmed-spawn path and never `pin.spawn` direct
 with the room passed explicitly, because `room_members()` reads the room off `pins.jsonl`
 and a room whose members carry no room row is invisible to `eval rooms`.
 
-**Roommates launch in an auto permission mode.** A dispatched member that stops at a
-permission prompt is a dispatch that silently did not happen, and nothing in `pin.py`
-passes a permission mode today, so every spawned member currently launches in manual mode.
+**Roommates launch in an auto permission mode.** Built — `pin.room_member_flags`, one
+function for both launch paths, since the console's spawn button is how room members
+actually get made and a flag reaching only `_claude_argv` would be missing where it
+counts. A dispatched member that stops at a permission prompt is a dispatch that
+silently did not happen, and worse than silently: **a session sitting on a prompt
+reports `waiting`, which is the one status dispatch refuses to send into**. The
+permission mode and the dispatch pre-flight are therefore the same mechanism seen
+twice, and the allowlist is what keeps a room addressable rather than a convenience.
+
 The mode is `acceptEdits` plus a **room-owned** `settings.local.json` allowlist rather
 than a blanket bypass: `acceptEdits` alone silently denies Bash, and bypass removes the
 one control measured to fully stop prompt injection — with policy checks enabled FIDES
@@ -554,6 +570,18 @@ stops all attacks in AgentDojo, without them every planner succumbs
 being flat across caps of 3, 5 and 7 (`scope:literature:claim:bfeb0aa001de6b45`). The
 room's config dir partitions discovery, transcripts and MCP servers and **nothing else**:
 not the filesystem, the network, or the operator's credentials.
+
+Room-owned means `settings.local.json` left `ROOM_LINKED`: a room's permission surface
+is declared for the room rather than inherited from whatever the operator's own session
+accumulated, and a borrowed file would move the room's policy underneath it whenever the
+operator accepted a prompt elsewhere. The seed allowlist is read-mostly plus this
+project's verification commands, and it is written **once and never repaired** — every
+other entry in the room dir is idempotently rebuilt because drift there is corruption,
+but this is the file an operator is expected to edit, and widening it is how a room gets
+work done. `curl`/`wget` are absent deliberately rather than by oversight: Bash curl is
+a laundering channel still open, and a room — several differently-pinned experts writing
+into one memory — is the last place to widen it. `git commit`/`push` are absent because
+a member's commit is a decision the operator should see happen.
 
 ## How this is measured
 

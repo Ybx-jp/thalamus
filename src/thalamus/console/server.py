@@ -76,6 +76,29 @@ def has_experts() -> bool:
     return pin_module() is not None
 
 
+_dispatch_cache: object = _PIN_UNSET
+
+
+def dispatch_module():
+    """`thalamus.harness.dispatch`, or None when the package is absent.
+
+    Deferred for the same reason as the expert layer. Kept as its own accessor rather
+    than reached through `pin_module()` because the console is a *thin client* over
+    the verb: every refusal, the whole-fan-out pre-flight and the row writing live in
+    `harness/dispatch.py`, and a second implementation here — even a small one — would
+    be a second policy about when it is safe to type into somebody's session.
+    """
+    global _dispatch_cache
+    if _dispatch_cache is _PIN_UNSET:
+        try:
+            from thalamus.harness import dispatch
+        except Exception:  # noqa: BLE001 — any import failure means "not available"
+            _dispatch_cache = None
+        else:
+            _dispatch_cache = dispatch
+    return _dispatch_cache
+
+
 _read_cache: object = _PIN_UNSET
 _speech_cache: object = _PIN_UNSET
 
@@ -1006,6 +1029,57 @@ class Handler(BaseHTTPRequestHandler):
             ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)), room)
             return self._send(200 if ok else 500, {"ok": ok, "output": output})
 
+        if path == "/api/dispatch":
+            # Addressed to a *room*, so it is deliberately above the window-index gate
+            # below: a dispatch fans out to members the operator is not looking at,
+            # which is the entire difference from /api/send.
+            room = data.get("room") or ""
+            message = data.get("message") or ""
+            pin = pin_module()
+            dispatch = dispatch_module()
+            if pin is None or dispatch is None:
+                return self._send(503, {"error": EXPERTS_UNAVAILABLE})
+            if not isinstance(room, str) or not pin.valid_room(room):
+                return self._send(400, {"error": "invalid room name"})
+            if not isinstance(message, str) or not message.strip():
+                return self._send(400, {"error": "nothing to dispatch"})
+            scopes = data.get("to")
+            if scopes is not None and (
+                not isinstance(scopes, list)
+                or not all(isinstance(s, str) for s in scopes)
+            ):
+                return self._send(400, {"error": "`to` must be a list of scopes"})
+            try:
+                result = dispatch.dispatch(
+                    room,
+                    message,
+                    sender=str(data.get("sender") or "console"),
+                    scopes=scopes or None,
+                    partial=bool(data.get("partial")),
+                    dry_run=bool(data.get("dryRun")),
+                )
+            except dispatch.DispatchRefused as e:
+                # 409, not 400: the request was well-formed and the room said no. The
+                # client renders the reason, which names the target that refused.
+                return self._send(409, {"error": str(e)})
+            return self._send(200, {
+                "ok": result.performed > 0,
+                "handle": result.handle,
+                "delivered": result.performed,
+                "targets": [
+                    {
+                        "scope": delivery.target.scope,
+                        "name": delivery.target.name,
+                        "status": delivery.target.status,
+                        "performed": delivery.performed,
+                        "refusal": delivery.target.refusal or delivery.error,
+                    }
+                    for delivery in result.deliveries
+                ],
+                "undelivered": list(result.undelivered),
+                "note": result.note(),
+            })
+
         windows = list_windows(self.cfg)
         idx = data.get("index")
         if not isinstance(idx, int) or not any(w["index"] == idx for w in windows):
@@ -1034,6 +1108,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "already": already})
 
         if path == "/api/send":
+            # No `waiting` pre-flight here, and that is not an oversight — it is the
+            # line between the two send paths. `/api/dispatch` refuses a `waiting`
+            # target because the sender cannot see it, so the Enter would actuate a
+            # highlighted default nobody read. This endpoint types into the one window
+            # the operator is watching live, where *answering* a permission prompt is a
+            # primary use of the composer and the terminal keys beside it. Gating it on
+            # `waiting` would break exactly the case the console exists for.
             text = data.get("text", "")
             if not isinstance(text, str):
                 return self._send(400, {"error": "text must be a string"})

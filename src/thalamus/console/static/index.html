@@ -89,6 +89,32 @@
   </section>
 </div>
 
+<div class="admin" id="dialogue" hidden>
+  <div class="admin-head">
+    <span class="admin-title">SAY TO ROOM</span>
+    <button type="button" class="install-x" id="dialogue-x" aria-label="Close">✕</button>
+  </div>
+  <section class="admin-sec">
+    <p class="admin-note">One message to every live member of <b id="dialogue-room"></b>.
+      Each target is checked before any of them is written to: a member sitting on a
+      permission prompt is refused rather than sent into, because the Enter after the
+      text would answer that prompt instead of delivering.</p>
+    <textarea id="dialogue-text" class="dialogue-text" rows="4"
+              placeholder="What the room should hear…"></textarea>
+    <label class="dialogue-opt">
+      <input type="checkbox" id="dialogue-partial">
+      deliver to whoever is reachable
+      <span class="admin-note">— records who missed it, so their silence is not read
+        later as a decline</span>
+    </label>
+    <div class="admin-actions">
+      <button type="button" class="admin-act" id="dialogue-check">check only</button>
+      <button type="button" class="admin-act primary" id="dialogue-go" disabled>say</button>
+    </div>
+    <pre class="admin-log" id="dialogue-log" hidden></pre>
+  </section>
+</div>
+
 <div class="install-bar" id="install-bar" hidden>
   <span class="install-msg" id="install-msg"></span>
   <button type="button" class="install-do" id="install-do">Install</button>
