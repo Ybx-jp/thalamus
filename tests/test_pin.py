@@ -529,3 +529,45 @@ def test_rooms_lists_what_is_on_disk(tmp_path, monkeypatch):
         (rooms / name).mkdir(parents=True)
     (rooms / "loose.txt").write_text("x")
     assert sorted(pin.rooms()) == ["alpha", "beta"]
+
+
+def test_the_ledger_answers_what_room_a_session_was_launched_into(tmp_path):
+    """
+    Scenario: A session is re-extracted later, from a shell that was never in its room
+
+    Verifications:
+    - the room is recovered from the launch row, not from the current environment
+    - lifecycle rows are skipped rather than read as "no room"
+    - the newest launch row wins, so a recycled window's later row is the answer
+    - a session with no row at all returns nothing, rather than borrowing another's
+
+    `resolve_room` is env-only and correct inside the session; afterwards the variable
+    is gone. Reading the environment then stamps `room=""` on a member, and
+    `witnesses.py` counts that room's correlated writes as independent corroboration —
+    the failure that invents evidence rather than losing it.
+    """
+    ledger = tmp_path / "pins.jsonl"
+    ledger.write_text("\n".join([
+        json.dumps({"session_id": "s1", "scope": "main", "room": "alpha", "ts": "1"}),
+        # pin-engaged.sh appends this shape: no room, no fork parent.
+        json.dumps({"session_id": "s1", "scope": "main", "event": "engaged", "ts": "2"}),
+        json.dumps({"session_id": "s2", "scope": "qe", "room": "", "ts": "3"}),
+        json.dumps({"session_id": "s3", "scope": "main", "forked_from": "s1", "ts": "4"}),
+        "not json at all",
+    ]) + "\n")
+
+    assert pin.ledger_facts("s1", ledger)["room"] == "alpha"
+    assert pin.ledger_facts("s2", ledger) == {}
+    assert pin.ledger_facts("s3", ledger)["forked_from"] == "s1"
+    assert pin.ledger_facts("never-launched", ledger) == {}
+
+    # Verifies: a later launch row for the same session supersedes the earlier one
+    with ledger.open("a") as handle:
+        handle.write(json.dumps({"session_id": "s1", "room": "beta", "ts": "5"}) + "\n")
+    assert pin.ledger_facts("s1", ledger)["room"] == "beta"
+
+
+def test_a_missing_ledger_is_not_an_error(tmp_path):
+    """A box that never launched a pinned session has no ledger, and re-extraction
+    there is ordinary rather than broken."""
+    assert pin.ledger_facts("s1", tmp_path / "absent.jsonl") == {}

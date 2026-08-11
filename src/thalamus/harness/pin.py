@@ -59,6 +59,10 @@ USER_AGENTS_DIR = Path.home() / ".claude" / "agents"
 # picker, and `~/.claude` is swept by the harness's own cleanup.
 ROOMS_DIR = Path.home() / ".thalamus" / "rooms"
 
+# The pin ledger the session-start hooks append to — one row per (session, launch),
+# and the only record of a launch decision that outlives the process that made it.
+PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
+
 # What a room dir owns outright, and what it borrows. Measured in lab/046: every
 # entry here is load-bearing, and the split is the whole design.
 #
@@ -391,6 +395,43 @@ def resolve_room(env: os._Environ | dict[str, str] | None = None) -> str:
     if env is None:
         env = os.environ
     return env.get("THALAMUS_ROOM", "")
+
+
+def ledger_facts(session_id: str, pins_file: Path | None = None) -> dict[str, str]:
+    """What the pin ledger recorded about one session at launch: room, fork parent.
+
+    `resolve_room` and `resolve_forked_from` read the *current* process's environment,
+    which is the right answer inside the session and the wrong one afterwards. A
+    re-extraction runs from a plain shell where those variables are gone, so an
+    env-only read stamps `room=""` on a session that was in a room — and `witnesses.py`
+    then counts that room's correlated writes as independent corroboration, which is
+    the failure direction that manufactures evidence rather than losing it.
+
+    Lifecycle rows are skipped. `pin-engaged.sh` appends `{event, session_id, scope,
+    ts}` carrying no room and no fork parent, so a plain last-row-wins would read those
+    absences as answers — the same `has("event") | not` filter the session-end hook
+    applies. Last row wins among the rest: a recycled window appends a fresher row.
+    """
+    facts: dict[str, str] = {}
+    path = pins_file or PINS_FILE
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return facts
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or "event" in row:
+            continue
+        if row.get("session_id") != session_id:
+            continue
+        for key in ("room", "forked_from"):
+            value = row.get(key) or ""
+            if value:
+                facts[key] = value
+    return facts
 
 
 def resolve_forked_from(env: os._Environ | dict[str, str] | None = None) -> str:

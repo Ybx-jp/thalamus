@@ -45,15 +45,37 @@ project="${THALAMUS_PROJECT:-$(basename "$workspace_root")}"
 scope="$(thalamus_resolve_scope)"
 session_id=$(printf '%s' "$input" | jq -r '.session_id // .conversation_id // empty')
 
-# The pin ledger: one line per (session, pin), append-only — same record shape
-# as the Claude Code hook writes, so session-end's ledger-first scope resolution
-# and eval's pin-quality reads work identically across harnesses.
+# The pin ledger: one line per (session, pin), append-only. A subset of the fields
+# the Claude Code hook writes — session-end's ledger-first scope resolution and eval's
+# pin-quality reads work identically, and the fields below that one carries are absent
+# for stated reasons rather than by oversight.
+#
+# `room` is here because its absence had two surfaces and both looked like something
+# else. A room a Cursor session was launched into left no record at all, so the room
+# was not mislabelled in the analysis — it was *invisible*, which means it can neither
+# be counted as a room arm nor excluded as a failed one (the inverse of lab/048's
+# hazard). Env-only, matching `pin.resolve_room`: a room is a launch decision, and
+# guessing one from co-timing manufactures the correlation the field exists to detect.
+#
+# `tmux_pane` is deliberately NOT written, and this is the interesting absence. The
+# Claude Code hook claims a pane only for an interactive entrypoint, because a headless
+# `-p` run spawned from a Bash tool inherits `TMUX_PANE` from the window that spawned
+# it, and an unconditional claim hands the console's read view to a probe — measured
+# 2026-08-10, five hours of a window's read view lost to a two-message probe. Cursor
+# exposes no entrypoint discriminator to condition on, so writing the pane here would
+# reproduce that failure with no way to prevent it. An absent pane costs dispatch the
+# ability to address a Cursor member; a wrong pane costs the operator their console.
+#
+# `agent` and `forked_from` have no Cursor referent: the pin arrives as an environment
+# variable rather than a picked agent, and the fork protocol is Claude-Code-only.
 if [ -n "$session_id" ]; then
   pin_dir="$HOME/.thalamus/pins"
   mkdir -p "$pin_dir"
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$workspace_root" \
+    --arg room "${THALAMUS_ROOM:-}" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{session_id: $sid, scope: $scope, cwd: $cwd, ts: $ts}' >> "$pin_dir/pins.jsonl"
+    '{session_id: $sid, scope: $scope, cwd: $cwd, room: $room, ts: $ts}' \
+    >> "$pin_dir/pins.jsonl"
 fi
 
 # Bare tool names: Cursor surfaces MCP tools without the mcp__<server>__ prefix.

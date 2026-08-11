@@ -27,6 +27,7 @@ from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
 from thalamus.harness.ceremonies import CEREMONY_KINDS
+from thalamus.harness import pin
 from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
 from thalamus.viewer.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
@@ -123,16 +124,18 @@ def main():
     extract_parser.add_argument(
         "--room",
         default=None,
-        help="Collaboration these sessions witnessed, stamped on the Session (default: "
-        "$THALAMUS_ROOM, else none). Sessions sharing a room distilled one conversation, "
-        "so their claims are correlated rather than independent.",
+        help="Collaboration these sessions witnessed, stamped on the Session. Default: "
+        "each session's own pin-ledger row, else $THALAMUS_ROOM, else none — the ledger "
+        "outranks this shell because it records the launch rather than the re-extraction. "
+        "Sessions sharing a room distilled one conversation, so their claims are "
+        "correlated rather than independent.",
     )
     extract_parser.add_argument(
         "--forked-from",
         default=None,
-        help="Session these were forked from (default: $THALAMUS_FORKED_FROM, else "
-        "none). A fork inherited its parent's context, so it derives from that session "
-        "rather than corroborating it.",
+        help="Session these were forked from. Default: each session's own pin-ledger "
+        "row, else $THALAMUS_FORKED_FROM, else none. A fork inherited its parent's "
+        "context, so it derives from that session rather than corroborating it.",
     )
     extract_parser.add_argument(
         "--model",
@@ -1269,17 +1272,17 @@ def _cmd_extract(args):
     if args.limit:
         parsed = parsed[: args.limit]
 
-    # Flag first, then the launch-time env var, and nothing after it — `resolve_room`
-    # is env-only by design (no second channel can disagree about a launch decision).
-    # The hazard that leaves, live and worth knowing before you re-extract: scope has a
-    # ledger fallback and room does not, so a re-extraction run from a plain shell
-    # stamps `room=""` on sessions that were in one, and `witnesses.py` then reads a
-    # room's correlated writes as independent corroboration. Pass `--room` explicitly
-    # when extracting a member's transcripts outside its own session.
-    room = args.room if args.room is not None else resolve_room()
-    forked_from = (
-        args.forked_from if args.forked_from is not None else resolve_forked_from()
-    )
+    # Flag, then the ledger, then this process's environment — and the ledger is
+    # consulted per session inside the loop below, because a sweep spans sessions that
+    # were launched into different rooms and one answer for all of them is wrong for
+    # most. The env is last rather than first: it describes the shell running the
+    # re-extraction, not the session being re-extracted, so preferring it stamps
+    # `room=""` on members and `witnesses.py` then counts a room's correlated writes as
+    # independent corroboration — the failure direction that invents evidence instead
+    # of losing it. The flag still wins, for extracting a transcript whose launch the
+    # ledger never saw.
+    env_room = resolve_room()
+    env_forked_from = resolve_forked_from()
 
     print(f"{len(parsed)} sessions to extract (model: {args.model})")
 
@@ -1294,6 +1297,14 @@ def _cmd_extract(args):
                 skipped += 1
                 print(f"  · {name}  already extracted — skipping (--force to redo)")
                 continue
+
+            launched = pin.ledger_facts(facts.session_id)
+            room = args.room if args.room is not None else (
+                launched.get("room") or env_room
+            )
+            forked_from = args.forked_from if args.forked_from is not None else (
+                launched.get("forked_from") or env_forked_from
+            )
 
             entry, _ = transcripts.retain(facts.path)
             base = reader.to_session_graph(

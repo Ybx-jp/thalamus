@@ -90,6 +90,7 @@ class TestSessionStart:
                 "session_id": "cur-sess-1",
                 "scope": "main",
                 "cwd": "/home/user/code/myproject",
+                "room": "",
                 "ts": pins[0]["ts"],
             }
         ]
