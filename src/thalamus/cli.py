@@ -1226,10 +1226,13 @@ def _cmd_extract(args):
     if args.limit:
         parsed = parsed[: args.limit]
 
-    # Ledger-first for the room the same way session-end.sh resolves the scope: the
-    # spawner's env is authoritative, but a re-extraction from a plain shell must not
-    # silently drop the room and turn correlated witnesses back into apparent
-    # independent ones.
+    # Flag first, then the launch-time env var, and nothing after it — `resolve_room`
+    # is env-only by design (no second channel can disagree about a launch decision).
+    # The hazard that leaves, live and worth knowing before you re-extract: scope has a
+    # ledger fallback and room does not, so a re-extraction run from a plain shell
+    # stamps `room=""` on sessions that were in one, and `witnesses.py` then reads a
+    # room's correlated writes as independent corroboration. Pass `--room` explicitly
+    # when extracting a member's transcripts outside its own session.
     room = args.room if args.room is not None else resolve_room()
     forked_from = (
         args.forked_from if args.forked_from is not None else resolve_forked_from()

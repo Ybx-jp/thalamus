@@ -690,10 +690,16 @@ rather than forking it, so the quick protocol's delta-only distillation — an e
 set difference over message UUIDs — has no Cursor analogue in this shape.
 
 The live-measured consequence for what a Cursor room could be: **isolation without
-addressing.** Whether that is worth building is exactly the question, because a room
-that isolates but cannot dispatch writes ceremony rows and room provenance for
-members that never coordinate — and [lab/048](../lab/048-the-treatment-that-was-only-a-label.md)
-is the entry about a treatment that existed only as a label.
+addressing.** The lab/048 hazard that shape invites is the *inverse* of the obvious
+one, and the difference decides what to build. A Cursor room does not produce a
+falsely-labelled treatment: `hooks/cursor/session-start.sh` writes
+`{session_id, scope, cwd, ts}` and **no `room`** (against
+`hooks/claude-code/session-start.sh`, which resolves one), so a Cursor member stamps no
+room provenance; and ceremony rows come from an explicit `thalamus ceremony` verb, not
+from a member's lifecycle, so they exist only where someone writes them. A Cursor room
+is therefore **invisible rather than mislabelled** — it cannot be counted as a room arm,
+which also means it cannot be excluded as a failed one. That argues for more capture,
+not for refusing to launch one.
 
 Independently of that decision, `pin.py:246` returns a hardcoded
 `("CLAUDE_CONFIG_DIR", …)` pair, so the room's boundary is spelled as one harness's
