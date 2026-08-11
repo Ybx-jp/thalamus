@@ -387,11 +387,12 @@ you whatever was written since the last flush.
 | `memory_recall_by_artifact` | `identifier`, `limit` | Sessions that touched a file/class/dep |
 | `memory_recall_by_project` | `project`, `limit` | Recent sessions for a project |
 | `memory_recall_recent` | `limit` | Most recent sessions |
-| `memory_open_threads` | `project`, `limit` | Active continuation points — **the entrypoint** |
+| `memory_open_threads` | `project`, `limit`, `topic` | Active continuation points — **the entrypoint**. Pass `topic`: the graph holds hundreds, and a bare call returns one page of them |
 | `memory_open_problems` | `project`, `limit` | Problems with no recorded solution, recurrence-ranked |
 | `memory_thread` | `thread_id` | Full context on one thread |
 | `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
 | `memory_consultations` | `limit` | This expert's own answered consultations |
+| `memory_exchanges` | `query`, `limit`, `read_ticket` | Consultations this scope asked **or** answered, by topic — index lines, then one in full |
 | `consult_request` | `expert`, `question` | Mint a consultation ticket = open the exchange record |
 | `consult_answer` | `ticket`, `answer` | Close a consultation; citations validated, ticket burned |
 | `memory_visualize` | `session_yaml` | Mermaid render of a pending extraction (read-only) |

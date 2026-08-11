@@ -79,10 +79,19 @@ restating an expert's own prior conclusion into every later brief is self-anchor
 on measured facts — precisely the move a conclusion quoted back at an expert makes less
 likely. Discoverability is the goal; agreement is not.
 
-The asking side has no code fix here. A0 has to name the graph as the thing it searches,
-and a printed elision notice has to be read as an unread result. The open question this
-leaves is whether `memory_open_threads` should rank against the work at hand the way the
-brief now does, since fifteen of three hundred and twenty-five is a sample, not a list.
+The residual hazard is that awareness anchors even without content: an expert told it has
+ruled here before may defer to a ruling it cannot see. That is cheap to falsify and worth
+falsifying — a round where the expert reverses itself *with* a header present settles it,
+and there is already a natural before-observation, since round 3 overturned round 2 while
+no header existed. n=1 a side, so it is an observation to accumulate rather than a result.
+
+The asking side is fixed by ranking rather than by capacity. `memory_open_threads` now
+takes a `topic` and ranks the whole population against it — the capability thread, absent
+from a bare fifteen-row call, comes back second of five when the topic is asked for. And
+`memory_exchanges(query=...)` matches exchanges a scope *asked* as well as answered, which
+is what `main` needed and never had: from `main`, `memory_consultations` returns nothing,
+because `main` answers no consultations at all. A0 now names those two reads instead of a
+grep, and an elision notice is called what it is — an unread result.
 
 ## Found while verifying an expert rather than by any recall
 

@@ -91,6 +91,10 @@ _KNOWLEDGE_WINDOW_DIVISOR = 2
 # accumulates few of these and the ranking is the only path from a question to an
 # answer already given — a window that stops short of the relevant one ranks nothing.
 _EXCHANGE_RANK_WINDOW = 50
+# Open threads read before ranking a topic against them. The whole population is the
+# right window here: 325 main-scope threads at 2026-08-11, and the failure this ranking
+# exists to prevent was a relevant thread sitting outside a fifteen-row page.
+_THREAD_RANK_WINDOW = 400
 # Co-indexed verbatim chunks (lab/052). Scored BELOW a knowledge claim per keyword
 # hit: a chunk is ~1,500 chars against a claim's ~210, so equal scoring would let a
 # passage outrank a claim by sheer surface area rather than by relevance. The cap is
@@ -397,6 +401,25 @@ class ExchangeResult:
         )
         return "\n".join(lines)
 
+    def format_index(self, excerpt: int = 300) -> str:
+        """Neutral index line — who asked whom, what about, and where to read it.
+
+        `format_header` speaks to the expert in second person because it appears in
+        that expert's own brief. A search runs from either side of the exchange, so
+        this one names both parties instead of assuming which one is reading.
+        """
+        head = f"- **`{self.ticket}`**"
+        if self.from_scope:
+            head += f" · `{self.from_scope}` asked"
+        if self.answered_at:
+            head += f" · answered {self.answered_at[:10]}"
+        lines = [head]
+        if self.node_id:
+            lines.append(f"  **Node:** `{self.node_id}`")
+        lines.append(f"  **Question:** {self._condense(self.question, excerpt)}")
+        lines.append(f"  **Answer:** {len(self.answer or '')} chars — read the node.")
+        return "\n".join(lines)
+
     def format_header(self, excerpt: int = 240) -> str:
         """What was asked and where the answer is — never what was concluded.
 
@@ -439,6 +462,80 @@ class ExchangeResult:
         return flat if len(flat) <= limit else flat[:limit].rstrip() + " …"
 
 
+def search_exchanges(
+    g: GraphTraversalSource, scope: str, query: str = "", limit: int = 5
+) -> list[ExchangeResult]:
+    """Answered exchanges this scope took part in — either side — ranked by `query`.
+
+    `recall_exchanges` answers "what have I been asked", confined to `expert`. That is
+    the right question from a pinned expert and the wrong one from `main`, which is
+    the *asker* of almost every exchange in the graph and matches `expert` on none of
+    them. So this matches either role: a session can ask "has anyone been consulted
+    about X" and get an answer whichever end of the ticket it sat on.
+
+    Headers are the intended rendering (`format_index`). The bodies run 15k–40k
+    characters each and reading one is a deliberate second step, not a side effect of
+    searching (the drill-down discipline in `recall-strategy`).
+    """
+    rows = (
+        g.V()
+        .has_label("Exchange")
+        .has("status", "answered")
+        .or_(__.has("expert", scope), __.has("from_scope", scope))
+        .order()
+        .by("answered_at", Order.desc)
+        .limit(max(limit, _EXCHANGE_RANK_WINDOW))
+        .value_map(True)
+        .to_list()
+    )
+    results = [_exchange_result(row) for row in rows]
+    keywords = _extract_keywords(query) if query else []
+    if keywords:
+        overlap = {
+            result.node_id: sum(
+                1
+                for keyword in keywords
+                if keyword in f"{result.question}\n{result.answer}".lower()
+            )
+            for result in results
+        }
+        results.sort(key=lambda result: -overlap[result.node_id])
+    return results[:limit]
+
+
+def read_exchange(
+    g: GraphTraversalSource, exchange_vid: str, scope: str
+) -> ExchangeResult | None:
+    """One exchange in full, if this scope was party to it.
+
+    The scope test rides in the traversal rather than being applied to the result, so
+    "no such exchange" and "not yours to read" return the same None. That is the
+    conservative reading: a ticket id is guessable, and confirming a stranger's
+    exchange exists is a disclosure the drill-down does not need to make.
+    """
+    rows = (
+        g.V(exchange_vid)
+        .has_label("Exchange")
+        .or_(__.has("expert", scope), __.has("from_scope", scope))
+        .limit(1)
+        .value_map(True)
+        .to_list()
+    )
+    return _exchange_result(rows[0]) if rows else None
+
+
+def _exchange_result(row: dict) -> ExchangeResult:
+    node_id = _first(row.get(T.id)) or ""
+    return ExchangeResult(
+        ticket=node_id.rsplit(":", 1)[-1],
+        question=_first(row.get("question", "")),
+        answer=_first(row.get("answer", "")),
+        from_scope=_first(row.get("from_scope", "")),
+        answered_at=_first(row.get("answered_at", "")),
+        node_id=node_id,
+    )
+
+
 def recall_exchanges(
     g: GraphTraversalSource, scope: str, limit: int = 5, query: str = ""
 ) -> list[ExchangeResult]:
@@ -476,19 +573,7 @@ def recall_exchanges(
         .value_map(True)
         .to_list()
     )
-    results = []
-    for row in rows:
-        node_id = _first(row.get(T.id)) or ""
-        results.append(
-            ExchangeResult(
-                ticket=node_id.rsplit(":", 1)[-1],
-                question=_first(row.get("question", "")),
-                answer=_first(row.get("answer", "")),
-                from_scope=_first(row.get("from_scope", "")),
-                answered_at=_first(row.get("answered_at", "")),
-                node_id=node_id,
-            )
-        )
+    results = [_exchange_result(row) for row in rows]
     keywords = _extract_keywords(query) if query else []
     if keywords:
         overlap = {
@@ -754,8 +839,21 @@ def recall_open_threads(
     project: str | None = None,
     limit: int = 10,
     scope: str = MAIN_SCOPE,
+    topic: str = "",
 ) -> list[ThreadResult]:
-    """Return open/in-progress threads — the active continuation points."""
+    """Return open/in-progress threads — the active continuation points.
+
+    Given a `topic`, a wider window is read and ranked by keyword overlap against the
+    thread's title, description and id before being cut to `limit`. Without one the
+    order is `status` ascending, which puts every `in_progress` row ahead of every
+    `open` one — and that is a sample, not a list. The graph holds 325 main-scope
+    threads (2026-08-11); a default call returns ten of them, and a thread titled
+    "Build the full five-state capability-negotiation contract" sat outside the page
+    while a session re-derived exactly that (lab/055).
+
+    The title and description carry the substance a distilled thread records, so
+    ranking reads both. Ties keep the status ordering, because the sort is stable.
+    """
     query = (
         g.V()
         .has_label("Thread")
@@ -769,12 +867,21 @@ def recall_open_threads(
     threads = (
         query.order()
         .by("status", Order.asc)
-        .limit(limit)
+        .limit(max(limit, _THREAD_RANK_WINDOW) if topic else limit)
         .value_map("thread_id", "title", "description", "status", "project", "scope")
         .to_list()
     )
 
-    return [_thread_result(g, thread, scope) for thread in threads]
+    keywords = _extract_keywords(topic) if topic else []
+    if keywords:
+        def overlap(thread: dict) -> int:
+            haystack = " ".join(
+                _first(thread.get(key, "")) for key in ("thread_id", "title", "description")
+            ).lower()
+            return sum(1 for keyword in keywords if keyword in haystack)
+
+        threads.sort(key=lambda thread: -overlap(thread))
+    return [_thread_result(g, thread, scope) for thread in threads[:limit]]
 
 
 def recall_open_problems(

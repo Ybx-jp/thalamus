@@ -1103,7 +1103,7 @@ def test_every_retrieval_mcp_tool_is_traced_and_tapped():
     exposed = set(re.findall(r"@mcp\.tool\s*\ndef (memory_\w+)", server))
     retrieval_shaped = {
         name for name in exposed if name.startswith(("memory_recall", "memory_open"))
-    } | {"memory_thread", "memory_query"}
+    } | {"memory_thread", "memory_query", "memory_exchanges"}
 
     missing_from_traces = retrieval_shaped - set(RETRIEVAL_TOOLS)
     assert not missing_from_traces, (

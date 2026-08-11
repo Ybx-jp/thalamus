@@ -88,10 +88,23 @@ Three questions, in order of how cheaply they kill a design:
    carries provenance to retained bytes. Check `gremlin-python` RECIPES.md and the
    `memory_query` schema before proposing a new node type. **A new node type is a
    claim that no existing edge expresses this** — make that claim explicitly, or drop it.
-2. **Does another surface already hold it?** The teach workspace, the skills, the
-   lab notebook, `docs/`. Hand-maintained duplicates are the common case, and the
-   right move is usually to *generate* the existing artifact from the graph rather
-   than to build a third copy.
+2. **Has it already been designed?** Three graph reads, and grepping the checkout is
+   **not** one of them — a design lives in the graph before it lives in `src/`, so a
+   `grep` over the repo returns nothing and reads as "nobody has done this":
+
+   - `memory_open_threads(topic="<the thing>")` — **always pass a topic.** There are
+     hundreds of open threads; a bare call returns one page ordered by status, and a
+     thread titled "Build the full five-state capability-negotiation contract" sat one
+     page past the cut while that contract was designed a second time (lab/055).
+   - `memory_exchanges(query="<the thing>")` — consultations this scope asked *or*
+     answered. `memory_consultations` is the wrong tool here: it serves what the
+     *pinned expert* answered, so it is empty in a main session.
+   - `memory_recall` — and when it prints an elision notice, **that is an unread
+     result, not a footnote.** Expand it before concluding absence.
+
+   Then the teach workspace, the skills, the lab notebook, `docs/`. Hand-maintained
+   duplicates are the common case, and the right move is usually to *generate* the
+   existing artifact from the graph rather than to build a third copy.
 3. **Is the thing you'd precompute already earned somewhere?** Records the system
    writes for other reasons (exchanges, traces, the pin ledger) are usually better
    evidence than anything derived up front, because they capture what was actually

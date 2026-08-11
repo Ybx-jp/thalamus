@@ -49,6 +49,8 @@ from thalamus.substrate.reader import (
     recall_open_threads,
     recall_recent,
     recall_thread,
+    read_exchange,
+    search_exchanges,
 )
 from thalamus.substrate.query import run_query, schema_summary as query_schema_summary
 from thalamus.substrate.schema import SessionGraph
@@ -181,10 +183,16 @@ def memory_recall_recent(limit: int = 5, ticket: str = "") -> str:
 
 
 @mcp.tool
-def memory_open_threads(project: str = "", limit: int = 10, ticket: str = "") -> str:
+def memory_open_threads(
+    project: str = "", limit: int = 10, ticket: str = "", topic: str = ""
+) -> str:
     """Return open and in-progress threads for a project.
     Threads are active continuation points — unfinished work, next steps, and open questions.
     Use at session start to see what needs attention.
+    Pass `topic` whenever you have one — the graph holds hundreds of open threads and a
+    bare call returns the first `limit` of them by status, which is a sample and not a
+    list. A topic ranks the whole population against your words first, so the thread
+    describing the thing you are about to build is not sitting one page past the cut.
     """
     g = _connect()
     if isinstance(g, str):
@@ -193,7 +201,7 @@ def memory_open_threads(project: str = "", limit: int = 10, ticket: str = "") ->
         grant = _granted_scope(g, ticket)
         if isinstance(grant, str):
             return grant
-        results = recall_open_threads(g, project or None, limit, grant[0])
+        results = recall_open_threads(g, project or None, limit, grant[0], topic)
         if not results:
             return "No open threads found."
         return "\n\n---\n\n".join(r.format() for r in results)
@@ -240,6 +248,39 @@ def memory_thread(thread_id: str, ticket: str = "") -> str:
         if not result:
             return f"Thread `{thread_id}` not found."
         return result.format()
+    finally:
+        _close(g)
+
+
+@mcp.tool
+def memory_exchanges(query: str = "", limit: int = 5, read_ticket: str = "") -> str:
+    """Search consultations this scope took part in — asked OR answered — by topic.
+    Use BEFORE designing anything an expert might already have settled: a design can be
+    perfectly grounded and still already exist. `memory_consultations` serves only what
+    the *pinned expert* answered, so it is empty in a main session, which is the asker
+    of nearly every exchange; this one matches both sides.
+    Returns index lines, not answers — an answer runs tens of thousands of characters.
+    Pass `read_ticket` with a ticket from the index to read that one exchange in full.
+    """
+    g = _connect()
+    if isinstance(g, str):
+        return g
+    try:
+        if read_ticket:
+            found = read_exchange(g, consultation.exchange_vid(read_ticket), SCOPE)
+            if found is None:
+                return (
+                    f"No exchange `{read_ticket}` that scope `{SCOPE}` asked or "
+                    "answered."
+                )
+            return found.format()
+        results = search_exchanges(g, SCOPE, query, limit)
+        if not results:
+            return (
+                f"No answered exchanges involving scope `{SCOPE}`"
+                + (f" match `{query}`." if query else ".")
+            )
+        return "\n".join(r.format_index() for r in results)
     finally:
         _close(g)
 

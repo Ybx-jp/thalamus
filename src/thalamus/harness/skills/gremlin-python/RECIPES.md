@@ -215,6 +215,47 @@ expert-to-expert — so `.has("scope", "literature")` returns nothing and looks 
 lands, so the answered filter is what separates a record from a live question. The
 shipped path is `reader.recall_exchanges` / the `memory_consultations` MCP tool.
 
+## Exchanges a scope took part in — either side
+
+**Question:** Has anyone been consulted about X already? Asked from `main`, which is the
+*asker* of nearly every exchange and the answerer of none — so the `expert` filter above
+returns nothing and reads as "never consulted".
+**Surface:** gremlin-python
+**Validated:** 2026-08-11 against the live graph (5 rows for `main` on "harness
+capability contract", including the two rounds that settled a design a later session
+then re-derived — lab/055)
+
+```python
+from thalamus.substrate.writer import connect, close_connection
+from gremlin_python.process.graph_traversal import __
+from gremlin_python.process.traversal import Order, T
+
+g = connect()
+try:
+    rows = (
+        g.V()
+        .has_label("Exchange")
+        .has("status", "answered")
+        .or_(__.has("expert", "main"), __.has("from_scope", "main"))
+        .order().by("answered_at", Order.desc)
+        .limit(50)
+        .value_map(True)
+        .to_list()
+    )
+    for row in rows:
+        print(row[T.id], row.get("from_scope"), str(row.get("question"))[:70])
+finally:
+    close_connection(g)
+```
+
+**Notes:** `or_`, not `or` — Rule 2. Both branches are anonymous `__.has(...)`, so the
+import is `graph_traversal.__`, not the predicate module. Order by `answered_at` and
+rank in Python afterwards: recency alone put the exchange that mattered sixth of seven.
+Do **not** print the `answer` values — they run 15k–40k characters each and five of them
+will bury the session that ran the query. Read one by id once the index names it. The
+shipped path is `reader.search_exchanges` / `reader.read_exchange` and the
+`memory_exchanges` MCP tool.
+
 ## One session's subgraph census, by exact vertex id
 **Question:** For a named session, how much did it actually write — and does it have
 a Source at all (i.e. was it distilled, or written some other way)?

@@ -45,6 +45,11 @@ RETRIEVAL_TOOLS = frozenset(
         "memory_open_problems",
         "memory_thread",
         "memory_query",
+        # A ranked query over answered exchanges, so it is retrieval in the shape
+        # the eval loop measures — unlike memory_consultations, which serves a
+        # fixed list and rank-orders nothing. Whether pointing a session at a
+        # settled design prevents rework is exactly a used-vs-ignored question.
+        "memory_exchanges",
         "bash_gremlin",
     }
 )

@@ -13,7 +13,9 @@ from thalamus.substrate.reader import (
     ThreadResult,
     _extract_keywords,
     _keyword_predicate,
+    read_exchange,
     recall_exchanges,
+    search_exchanges,
 )
 from thalamus.substrate.schema import Tier
 
@@ -312,7 +314,8 @@ class _ExchangeGraph:
         self._limit = None
 
     # Traversal surface
-    def V(self):
+    def V(self, vertex_id=None):
+        self._vertex_id = vertex_id
         return self
 
     def has_label(self, label):
@@ -334,16 +337,31 @@ class _ExchangeGraph:
         self._limit = n
         return self
 
+    def or_(self, *traversals):
+        # Each branch is an anonymous `__.has(key, value)`; read the pair back off the
+        # bytecode rather than re-implementing traversal semantics in a test double.
+        self._or = [
+            (step[1], step[2])
+            for traversal in traversals
+            for step in traversal.bytecode.step_instructions
+            if step[0] == "has"
+        ]
+        return self
+
     def value_map(self, _tokens):
         return self
 
     def to_list(self):
         from gremlin_python.process.traversal import T
 
+        wanted = getattr(self, "_vertex_id", None)
         rows = [
             row for row in self._rows
             if row["label"] == self._label
+            and (wanted is None or row["id"] == wanted)
             and all(row.get(k) == v for k, v in self._filters.items())
+            and (not getattr(self, "_or", None)
+                 or any(row.get(k) == v for k, v in self._or))
         ]
         rows.sort(key=lambda r: r.get("answered_at", ""), reverse=True)
         return [
@@ -661,3 +679,58 @@ def test_the_tie_break_is_stable_for_one_query():
 
     assert _tie_break("q", "n") == _tie_break("q", "n")
     assert _tie_break("q", "n") != _tie_break("q", "m")
+
+
+def test_a_main_session_finds_the_exchanges_it_asked_not_only_ones_it_answered():
+    """
+    Scenario: A main session asks whether anyone has been consulted about a topic
+
+    Verifications:
+    - an exchange this scope *asked* is found, though it answered none of them
+    - an exchange between two other parties stays invisible
+    - the topic ranks, so the match is not merely the most recent
+
+    `recall_exchanges` confines on `expert`, which is right from a pinned expert and
+    useless from `main` — main is the asker of nearly every exchange and the answerer
+    of none, so the tool that exists to stop a question being re-derived returned
+    nothing to the only session positioned to ask it (lab/055).
+    """
+    rows = [
+        _exchange("scope:main:exchange:newest", "qe", "answered", "2026-08-11T05:00:00",
+                  from_scope="main", question="flaky arm runner", answer="retry policy"),
+        _exchange("scope:main:exchange:wanted", "architect", "answered",
+                  "2026-08-10T22:00:00", from_scope="main",
+                  question="a harness capability contract layer",
+                  answer="five states and an Evidence type"),
+        _exchange("scope:main:exchange:other", "architect", "answered",
+                  "2026-08-11T06:00:00", from_scope="homelab",
+                  question="tailscale serve", answer="path-scoped"),
+    ]
+
+    found = search_exchanges(_ExchangeGraph(rows), "main", "capability contract", 5)
+
+    assert [r.ticket for r in found] == ["wanted", "newest"]
+    # Verifies: recall_exchanges alone still answers the other question and finds none
+    assert recall_exchanges(_ExchangeGraph(rows), "main", 5) == []
+
+
+def test_reading_one_exchange_requires_having_been_party_to_it():
+    """
+    Scenario: A scope drills into an exchange by ticket
+
+    Verifications:
+    - a scope that asked it may read it
+    - a scope that answered it may read it
+    - an unrelated scope gets nothing, indistinguishable from "no such exchange"
+
+    A ticket id is short and guessable, so confirming that a stranger's exchange
+    exists is a disclosure the drill-down has no need to make.
+    """
+    rows = [
+        _exchange("scope:main:exchange:t1", "architect", "answered",
+                  "2026-08-10T22:00:00", from_scope="main")
+    ]
+
+    assert read_exchange(_ExchangeGraph(rows), "scope:main:exchange:t1", "main")
+    assert read_exchange(_ExchangeGraph(rows), "scope:main:exchange:t1", "architect")
+    assert read_exchange(_ExchangeGraph(rows), "scope:main:exchange:t1", "qe") is None

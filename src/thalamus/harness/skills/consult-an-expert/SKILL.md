@@ -90,6 +90,14 @@ takes no ticket and confines on `expert == <the calling process's scope>`; a sub
 voicing an expert shares the *caller's* MCP process, armed `main`, and no Exchange
 carries `expert: main` — so it returns empty rather than erroring.
 
+**`memory_exchanges(query=...)` is the surface, and it is yours, not the expert's.**
+Before you mint round 1, search it for the thing you are about to ask — it matches
+exchanges this scope *asked* as well as answered, which is the half `memory_consultations`
+cannot see and the half a main session always has. `read_ticket` pulls one back in full.
+A consultation that re-settles a settled question costs the rounds and teaches the scope
+nothing (lab/055). The gremlin-python skill's RECIPES.md carries the same query for when
+you want it by hand.
+
 `memory_recall*` under the ticket serves the consulted expert's *episodic* scope, which
 for a consult-only expert can be empty — `architect` holds no sessions and no episodic
 claims, because it is asked questions and never pinned to answer them. A round that
