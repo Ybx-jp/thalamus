@@ -45,16 +45,16 @@ Two traps this shape avoids, both measured rather than reasoned about:
 
 A probe is **sound as a falsifier and unsound as a generalizer.** That `--trust`
 parses says the flag exists; it does not say what it does, nor that anything holds
-in a mode the probe never entered. This is not pedantry — it is the specific error
-this session nearly shipped, when a `<timestamp>` observed in print mode was one
-inference away from unwiring the clock tier for interactive sessions that had never
-been looked at.
+in a mode the probe never entered. This is not pedantry: a `<timestamp>` observed in
+print mode is one inference away from unwiring the clock tier for interactive sessions
+nobody has looked at (lab/054).
 
-So a probe carries the `condition` it was taken under, a declaration carries the
-`holds_under` it claims, and a claim wider than its evidence is **MALFORMED** — a
-defect in the record, reported separately from DRIFT, which is a defect in the world.
-The default condition is the narrowest one, because a wide default is exactly how one
-print-mode observation becomes a general belief.
+So a probe carries the `condition` it was taken under, and the default is the narrowest
+one, because a wide default is exactly how one print-mode observation becomes a general
+belief. A declaration does not state a condition it claims to hold under, so the checker
+cannot compare the two and a claim wider than its evidence is not detectable here.
+**MALFORMED** reports the defects in the record it can see — an unresolvable derivation,
+or a sentinel the CLI accepted — and stays separate from DRIFT, a defect in the world.
 """
 
 from __future__ import annotations

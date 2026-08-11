@@ -401,24 +401,18 @@ thing the next session reads. Distilling a session before it ends is supported â
 is `thalamus extract --session <id> --force --write`, run by the operator from
 outside the session.
 
-For Claude Code, `thalamus init` registers the server at **user** scope, so it is
-available in every directory rather than only inside this checkout. Cursor still
-takes a `.cursor/mcp.json`:
+`thalamus init` registers the server at **user** scope for both harnesses, so it is
+available in every directory rather than only inside this checkout. Claude Code takes
+the registration through `claude mcp add`; Cursor has no equivalent CLI, so init writes
+`~/.cursor/mcp.json` itself. A project-scope copy in the checkout is removed on both
+legs: with the server registered at user scope a surviving project entry is a second
+definition of the same server, and Cursor ranks project above user, so it would
+silently outrank the one init just wrote.
 
-```json
-{
-  "mcpServers": {
-    "thalamus": {
-      "command": "uv",
-      "args": ["run", "--project", "/path/to/thalamus", "thalamus-mcp"],
-      "env": {
-        "THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin",
-        "THALAMUS_SCOPE": "${THALAMUS_SCOPE:-main}"
-      }
-    }
-  }
-}
-```
+The registration carries no `THALAMUS_SCOPE`. `main` is the default for a plainly
+launched process, and a pinned session takes its scope from the picked agent
+(`harness/pin.resolve_pin`), which a static user-scope config cannot express â€” baking
+one in would pin every session on the box to a single expert.
 
 **`THALAMUS_SCOPE` is the session's pin, and no tool accepts a scope argument.** The
 server decides what the session can see; the model cannot widen its own view by asking.
