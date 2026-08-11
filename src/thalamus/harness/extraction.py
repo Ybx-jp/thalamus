@@ -514,6 +514,10 @@ _YAML_FENCE = re.compile(r"```ya?ml\s*\n(.*?)```", re.DOTALL)
 # branch because they have nothing after the colon.
 _KEYED_LINE_RE = re.compile(r"^(\s*(?:-\s+)?[A-Za-z_][A-Za-z0-9_]*: )(\S.*?)\s*$")
 
+# Characters that cannot open a plain scalar. `#` is the dangerous one: it fails
+# silently by starting a comment, so the claim is dropped rather than reported.
+_RESERVED_HEADS = ("@", "`", "%", "!", "#")
+
 
 def _requote_scalars(raw: str) -> str:
     """Quote bare scalar values that break YAML block-mapping parsing.
@@ -521,8 +525,14 @@ def _requote_scalars(raw: str) -> str:
     The extraction prompts show free-text fields unquoted (`description: ...`),
     so the model legitimately emits prose after the key — and prose containing
     ": " reads as a nested mapping key, which is a scanner error mid-line.
-    Only bare values with that failure shape are rewritten; already-quoted
-    values and flow/block openers pass through untouched.
+
+    Two failure shapes are rewritten. The second is the leading character: YAML
+    reserves `@` and a backtick as indicators and lets neither open a plain scalar,
+    `%` opens a directive and `!` a tag, and a leading `#` starts a comment that
+    swallows the value into `None` without erroring at all. Prose legitimately
+    begins with each of them — `@supports`, `!important`, `#hashtag` — so the value
+    is quoted rather than lost. Already-quoted values and flow/block openers pass
+    through untouched.
     """
     lines = []
     for line in raw.splitlines():
@@ -530,7 +540,7 @@ def _requote_scalars(raw: str) -> str:
         if match:
             value = match.group(2)
             if not value.startswith(('"', "'", "[", "{", "|", ">", "&", "*")) and (
-                ": " in value or value.endswith(":")
+                ": " in value or value.endswith(":") or value.startswith(_RESERVED_HEADS)
             ):
                 line = match.group(1) + json.dumps(value, ensure_ascii=False)
         lines.append(line)

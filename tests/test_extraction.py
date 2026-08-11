@@ -250,6 +250,27 @@ def test_parse_extraction_repairs_bare_scalars_with_colons():
         extraction.parse_extraction("claims:\n  - description: [unclosed\n")
 
 
+def test_parse_extraction_repairs_scalars_opening_on_a_reserved_indicator():
+    # The failure shape from the MDN feature-detection ingest (2026-08-10): a claim
+    # about `@supports` opens on a character YAML reserves, which no amount of ": "
+    # repair reaches because the line contains no colon at all.
+    raw = (
+        "claims:\n"
+        "  - description: @supports is the preferred way to test CSS support\n"
+        "  - description: !important overrides the cascade\n"
+        "  - description: #hashtag routing was never specified\n"
+        "  - description: 100% of the budget was spent\n"
+    )
+    claims = extraction.parse_extraction(raw)["claims"]
+    assert claims[0]["description"] == "@supports is the preferred way to test CSS support"
+    assert claims[1]["description"] == "!important overrides the cascade"
+    # `#` is the silent one: unquoted it starts a comment and the claim becomes None
+    # rather than raising, so the repair is what keeps it from being dropped.
+    assert claims[2]["description"] == "#hashtag routing was never specified"
+    # A reserved character mid-value is ordinary text and must not trigger a rewrite.
+    assert claims[3]["description"] == "100% of the budget was spent"
+
+
 def _stage1_graph() -> SessionGraph:
     return SessionGraph(
         session_id="abc-123",
