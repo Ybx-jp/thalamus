@@ -5,6 +5,7 @@ what these assert and what was actually listened to are the same sentences.
 """
 
 from thalamus.console.speech import (
+    TRUNCATION_TAIL,
     KIND_ACRONYM,
     KIND_HASH,
     KIND_IDENTIFIER,
@@ -148,6 +149,43 @@ class TestProtectedTokenExtraction:
     def test_a_date_is_not_also_harvested_as_bare_numbers(self):
         tokens = protected_tokens("Shipped on 2026-08-11.")
         assert not any(t.literal == "2026" for t in tokens)
+
+
+class TestTheLengthBudget:
+    def test_a_short_update_is_untouched(self):
+        update = spoken_update("All 940 tests pass.")
+        assert update.text == "All 940 tests pass."
+        assert update.faithful
+
+    def test_a_long_update_is_cut_at_a_sentence_and_says_so(self):
+        raw = " ".join(f"Sentence number {n} says something." for n in range(1, 200))
+        update = spoken_update(raw, budget=300)
+        assert update.text.endswith("The rest is in the console.")
+        # Cut at a sentence, not mid-phrase.
+        body = update.text.replace(TRUNCATION_TAIL.strip(), "").strip()
+        assert body.endswith(".")
+
+    def test_trimming_is_not_reported_as_a_fidelity_failure(self):
+        # The contract covers what was chosen to be said. A number dropped by a
+        # deliberate cut is not the corruption the gate exists to catch, and
+        # reporting it as one would withhold every long update.
+        raw = "First fact is 11. " + " ".join(
+            f"Filler sentence {n} carries no value." for n in range(60)
+        ) + " Final fact is 99."
+        update = spoken_update(raw, budget=200)
+        assert update.faithful, [t.literal for t in update.missing]
+        assert "99" not in update.text
+
+    def test_what_survives_the_cut_is_still_protected(self):
+        update = spoken_update("There are 17 citations. " + "Padding sentence. " * 100,
+                               budget=120)
+        assert "17" in update.text
+        assert update.faithful
+
+    def test_a_budget_landing_mid_number_does_not_split_it(self):
+        raw = "The count is 12345678 and then some more words follow here."
+        update = spoken_update(raw, budget=20)
+        assert "1234" not in update.text or "12345678" in update.text
 
 
 class TestTheContract:

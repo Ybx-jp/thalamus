@@ -318,8 +318,41 @@ def verify_protected(
     return tuple(token for token in tokens if not token.satisfied_by(spoken))
 
 
-def spoken_update(raw: str) -> SpokenUpdate:
+# Roughly ninety seconds of speech. A whole turn read end to end is not what
+# "fewer, clearer updates" asks for, and a listener cannot skim or skip — the
+# update that does not fit is cut at a sentence and says so, which is the one
+# ending a listener can act on.
+DEFAULT_BUDGET_CHARS = 1200
+
+TRUNCATION_TAIL = " That is the first part. The rest is in the console."
+
+
+def trim_to_budget(raw: str, budget: int = DEFAULT_BUDGET_CHARS) -> tuple[str, bool]:
+    """Cut the source to a listenable length at a sentence boundary.
+
+    Trimming happens *before* protection, not after. Cutting the finished
+    utterance would strip tokens the contract had already promised to keep and
+    report a deliberate edit as a fidelity failure; trimming the source first
+    means the contract covers exactly what was chosen to be said.
+    """
+    if len(raw) <= budget:
+        return raw, False
+    window = raw[:budget]
+    cut = max(window.rfind(". "), window.rfind(".\n"),
+              window.rfind("! "), window.rfind("? "), window.rfind("\n\n"))
+    if cut < budget // 3:
+        # No sentence ended in the usable part; fall back to a word boundary
+        # rather than slicing a word — or a number — in half.
+        cut = window.rfind(" ")
+    return (window[: cut + 1] if cut > 0 else window).strip(), True
+
+
+def spoken_update(raw: str, budget: int = DEFAULT_BUDGET_CHARS) -> SpokenUpdate:
     """The whole transform, carrying the audit that says whether to speak it."""
-    tokens = protected_tokens(raw)
-    text = to_speakable(raw)
-    return SpokenUpdate(text=text, protected=tokens, missing=verify_protected(text, tokens))
+    source, trimmed = trim_to_budget(raw, budget)
+    tokens = protected_tokens(source)
+    text = to_speakable(source)
+    missing = verify_protected(text, tokens)
+    if trimmed and text:
+        text = text.rstrip() + TRUNCATION_TAIL
+    return SpokenUpdate(text=text, protected=tokens, missing=missing)

@@ -125,8 +125,13 @@
     <button type="button" class="keycap" data-key="ctrl-u">clr</button>
     <button type="button" class="keycap danger" data-key="ctrl-c">⌃C</button>
     <span class="spacer"></span>
-    <!-- A view control, grouped with the font caps rather than the terminal keys:
-         it changes what you are looking at, not what the session receives. -->
+    <!-- View controls, grouped with the font caps rather than the terminal keys:
+         they change what you are looking at, not what the session receives.
+         `say` sits here and not in the read view, which is opt-in per device and
+         off by default — a control buried behind a toggle nobody found is a
+         feature nobody has. -->
+    <button type="button" class="fontcap viewcap" id="say-toggle"
+      title="Read this window's latest reply aloud">say</button>
     <button type="button" class="fontcap viewcap" id="view-toggle"
       title="Switch between the readable transcript and the raw terminal">read</button>
     <button type="button" class="fontcap" id="font-dn">A−</button>

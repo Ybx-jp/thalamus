@@ -34,6 +34,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -76,6 +77,7 @@ def has_experts() -> bool:
 
 
 _read_cache: object = _PIN_UNSET
+_speech_cache: object = _PIN_UNSET
 
 
 def transcript_module():
@@ -96,6 +98,85 @@ def transcript_module():
         else:
             _read_cache = transcript
     return _read_cache
+
+
+def speech_module():
+    """`.speech`, or None under a bare `python3` with no package around it.
+
+    Deferred for the same reason `.transcript` is — the bridge is documented to
+    run without the package, and a console that cannot import the transform
+    simply has no voice rather than no console.
+    """
+    global _speech_cache
+    if _speech_cache is _PIN_UNSET:
+        try:
+            from . import speech
+        except Exception:  # noqa: BLE001 — any import failure means "not available"
+            _speech_cache = None
+        else:
+            _speech_cache = speech
+    return _speech_cache
+
+
+# The voice service is a separate unit on loopback: it holds a GPU-resident model
+# and this process restarts itself on edit, which are incompatible lifecycles.
+VOICE_URL = os.environ.get("THALAMUS_VOICE_URL", "http://127.0.0.1:8380")
+
+# Spoken when the transform drops something it promised to keep. A listener who
+# hears nothing knows to go and look; a listener fed a fluent sentence with the
+# wrong number in it has no way to know at all, and no way to rewind and check.
+WITHHELD_NOTICE = (
+    "This update was withheld. The spoken summary lost a value it was required "
+    "to keep, so it was not read out. Check the console."
+)
+
+
+def synthesise_update(source: str, timeout: float = 60.0):
+    """Raw turn text to wav bytes, via the transform and the voice service.
+
+    Returns `(audio, error)`. The protected-token contract is enforced here
+    rather than in the client: a summary that lost a number is replaced by a
+    notice saying so, because the failure it guards against is audio that sounds
+    entirely correct.
+    """
+    speech = speech_module()
+    if speech is None:
+        return None, "speech transform unavailable"
+
+    update = speech.spoken_update(source)
+    if not update.faithful:
+        lost = ", ".join(token.literal for token in update.missing)
+        print(f"say: withheld — protected tokens lost: {lost}", file=sys.stderr, flush=True)
+        spoken = WITHHELD_NOTICE
+    else:
+        spoken = update.text
+    if not spoken.strip():
+        return None, "nothing to say"
+    return _post_to_voice(spoken, timeout)
+
+
+def _post_to_voice(text: str, timeout: float):
+    """The transport half, separate so the gate above can be tested without one."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    url = f"{VOICE_URL}/say?" + urllib.parse.urlencode({"text": text})
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return response.read(), None
+    except urllib.error.HTTPError as exc:
+        # The service answered and refused. Reporting that as "unreachable" sends
+        # the next reader to check whether it is running, which it is.
+        print(f"say: voice service refused: {exc}", file=sys.stderr, flush=True)
+        return None, f"voice service refused: {exc.code}"
+    except urllib.error.URLError as exc:
+        print(f"say: voice service unreachable at {VOICE_URL}: {exc}",
+              file=sys.stderr, flush=True)
+        return None, "voice service unreachable"
+    except Exception as exc:  # noqa: BLE001 — the console must survive this
+        print(f"say: synthesis failed: {exc}", file=sys.stderr, flush=True)
+        return None, "synthesis failed"
 
 
 # One ledger index and one feed store for the process, both stateful across polls
@@ -420,7 +501,7 @@ def parse_windows(raw: str) -> list[dict]:
 
     The anchor — the lowest-indexed window — is the one on-demand spawn must never
     close: it is the console's reference cwd for roster sync and slash-command
-    scanning, and it keeps the plane from going empty. Lowest index is robust to
+    scanning, and it keeps the console from going empty. Lowest index is robust to
     tmux's base-index setting and can't be confused with a second window that
     happens to share the anchor's name, since new windows take higher indexes.
     """
@@ -821,6 +902,26 @@ class Handler(BaseHTTPRequestHandler):
             if body is None:
                 return self._send(404, {"error": "no such item"})
             return self._send(200, {"body": body})
+        if path == "/api/say":
+            # Tap-to-listen: this window's latest turn, rewritten for the ear and
+            # synthesised by the voice service. Audio is returned inline so the
+            # client can set an <audio> src and play it in the same click — a
+            # phone will not autoplay anything that arrives after an await.
+            q = parse_qs(query)
+            raw = q.get("index", [""])[0]
+            if not raw.lstrip("-").isdigit():
+                return self._send(400, {"error": "index required"})
+            _, feed, reason = read_feed(self.cfg, int(raw))
+            if feed is None:
+                return self._send(404, {"error": reason or "unresolved"})
+            with READ_LOCK:
+                source = feed.latest_turn_prose()
+            if not source.strip():
+                return self._send(404, {"error": "nothing to say yet"})
+            audio, err = synthesise_update(source)
+            if err:
+                return self._send(502, {"error": err})
+            return self._send(200, audio, "audio/wav", cache="no-store")
         if path == "/api/admin":
             with RECYCLING_LOCK:
                 recycling = sorted(RECYCLING)

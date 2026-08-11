@@ -123,6 +123,28 @@ cycle), arrows, page up/down, `tab`, `⏎`, `clr` (Ctrl-U) and `⌃C`. `A−`/`A
 the font off the auto-fit size, which is computed so a full pane line fits your
 screen without horizontal scrolling.
 
+**`say` reads the active window's latest reply aloud.** It speaks on a tap and
+never on its own: nothing is narrated unattended, and only the window you have
+selected can talk, so a roster of five sessions can never talk over itself. Tap
+again to stop. The control sits in the always-visible key row rather than inside
+the read view, because the read view is opt-in per device — a control behind a
+toggle a device never enabled is a control that device does not have.
+
+What you hear is not the reply read out. It is rewritten for the ear: fenced code
+is dropped, `src/thalamus/console/server.py` becomes "console server", identifiers
+are split into words, acronyms are spelled, and a commit hash goes character by
+character. Numbers, versions, hashes, identifiers and acronyms are extracted from
+the raw turn *before* the rewrite and checked against the finished utterance; if
+one went missing, the console speaks a short notice instead of the update. A
+listener told nothing knows to go and look, while a fluent sentence with the wrong
+number in it is undetectable and cannot be rewound. Long turns are cut at a
+sentence at roughly ninety seconds and say so, rather than reading for five
+minutes. The transform is `console/speech.py`; the budget is
+`DEFAULT_BUDGET_CHARS`.
+
+Speech needs `thalamus-voice.service` (below). Without it the control turns red
+and the console is otherwise unaffected.
+
 **`read` switches to the transcript view.** The pane view mirrors a *rendering* of
 the session: an 80-column repaint, colours stripped by tmux, reflowing under you
 while a turn streams. The read view shows the session itself — Claude Code writes
@@ -312,6 +334,49 @@ loginctl enable-linger $USER     # so it survives logout / starts at boot
 `inactive` while the console is plainly serving, and `restart` hangs asking for a
 root password it will never get.
 
+### The voice unit
+
+`say` needs a second unit. It holds a neural TTS model resident and answers on
+loopback; the console proxies to it.
+
+```ini
+# ~/.config/systemd/user/thalamus-voice.service
+[Service]
+Environment=HF_HOME=%h/.cache/huggingface
+ExecStart=%h/.local/share/thalamus-voice/venv/bin/python \
+    %h/code/thalamus/src/thalamus/voice/daemon.py \
+    --host 127.0.0.1 --port 8380 --device cuda
+AllowedCPUs=2-3
+Nice=5
+Restart=on-failure
+```
+
+Three things about it are deliberate:
+
+- **Its own venv, outside the checkout.** torch and a CUDA build do not belong in
+  the package's environment. `uv pip install` writes into whatever `VIRTUAL_ENV`
+  the calling shell exports, which is how a GPU stack lands in a checkout nobody
+  meant to put it in — clear that variable before installing here.
+- **A separate process from the console.** The console restarts itself on demand
+  and is stdlib-only by design; a GPU-resident model has the opposite lifecycle.
+- **Pinned to two cores.** Synthesis runs on the GPU but the Python around it does
+  not, and torch helps itself to every core it can see. On a four-core box also
+  running the roster, ttyd and a media stack, `AllowedCPUs` is what keeps a long
+  utterance from being felt in the terminal. `torch.set_num_threads(1)` in the
+  daemon is the other half.
+
+Model load is most of the cost — about 2.3s, against ~0.02 real-time for
+synthesis once warm — so the daemon loads at start and synthesises a throwaway
+word before it listens. That second step is not a smoke test: the voice tensor is
+fetched separately from the model on first use, so a pipeline that has only been
+constructed still owes a network round trip, and a box that is offline when the
+first tap arrives would fail outright.
+
+The console reaches it at `THALAMUS_VOICE_URL` (default `http://127.0.0.1:8380`).
+It is never exposed through `tailscale serve` — audio reaches the phone through
+the console's own `/api/say`, which the service worker leaves uncached along with
+every other `/api/` path.
+
 ### Pin PATH in the unit
 
 A tmux pane inherits the PATH of the *client that created the window* — which, for
@@ -415,7 +480,7 @@ keeps that true.
 `src/thalamus/console/` — `server.py`, `transcript.py` and `distill.py` plus
 `static/`. Stdlib Python and a dependency-free client.
 
-- **Stdlib `http.server`, not FastAPI** like `pulse/` and `plane/`. One of its jobs
+- **Stdlib `http.server`, not FastAPI** like `pulse/` and `viewer/`. One of its jobs
   is restarting the systemd unit hosting it; the fewer moving parts between a tap
   on a phone and a tmux call, the better.
 - **The read view is a deferred import.** It reuses the harness's transcript

@@ -464,6 +464,9 @@ header {
 /* Subagent work, one step back from the session's own voice. */
 .rd-side { margin-left: .9rem; opacity: .72; }
 .viewcap.on { color: var(--chan); border-color: var(--chan); }
+/* A failed utterance has to be visible: the whole point of the control is that
+   you are not looking at the screen, so silence alone is ambiguous. */
+.viewcap.bad { color: var(--danger); border-color: var(--danger); }
 .wait-note { color: #e0a45c; }
 
 /* ---- Frame theme (desktop only) ----

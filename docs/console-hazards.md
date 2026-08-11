@@ -30,7 +30,7 @@ logic hangs for its full timeout.
 `Before=` everything else that might.
 
 ```ini
-Before=my-tty.service my-plane.service
+Before=my-tty.service my-console.service
 ```
 
 **Repair a live one:** confirm index 0 really is an idle shell (`tmux list-panes`, no

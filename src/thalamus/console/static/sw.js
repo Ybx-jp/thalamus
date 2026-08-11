@@ -8,7 +8,7 @@
 // whatever path a reverse proxy mounts it at without caring where it's rooted.
 // Upgrades need no VERSION bump to become visible; bump only to purge renamed or
 // removed files from the cache.
-const VERSION = "plane-v1";
+const VERSION = "console-v1";
 const SHELL = [
   "./", "index.html", "app.js", "style.css",
   "manifest.webmanifest", "icon-192.png", "icon-512.png",

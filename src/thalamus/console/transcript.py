@@ -445,6 +445,26 @@ class Feed:
             out = out[-limit:]
         return out
 
+    def latest_turn_prose(self) -> str:
+        """The assistant's most recent turn as plain text, for speaking.
+
+        Walks back to the last thing the user said and takes the prose emitted
+        after it, which is the unit a listener means by "read me the update".
+        Thinking and tool calls are left out — they are working, not the report
+        — and sidechain items are too, since a subagent's narration is not this
+        session speaking.
+        """
+        collected: list[str] = []
+        for item in reversed(self.items):
+            if item["kind"] == "user" and not item.get("sidechain"):
+                break
+            if item["kind"] != "prose" or item.get("sidechain"):
+                continue
+            text = (item.get("text") or "").strip()
+            if text:
+                collected.append(text)
+        return "\n\n".join(reversed(collected))
+
     def body(self, item_id: int) -> str | None:
         """The retained result text for one tool item, fetched on expand."""
         for item in self.items:

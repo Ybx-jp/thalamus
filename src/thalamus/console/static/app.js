@@ -85,6 +85,7 @@ const els = {
   read: document.getElementById("read"),
   readWait: document.getElementById("read-wait"),
   viewToggle: document.getElementById("view-toggle"),
+  sayToggle: document.getElementById("say-toggle"),
 };
 
 let windows = [];          // last known window list
@@ -606,6 +607,46 @@ function setReadMode(on) {
 
 els.viewToggle.addEventListener("click", () => setReadMode(!readMode));
 
+// --- Speaking the latest reply -------------------------------------------
+// One <audio> for the app, reused rather than recreated: a mobile browser grants
+// playback permission to an element the user has activated, and a fresh element
+// per tap starts from no permission every time.
+const sayAudio = new Audio();
+let saying = false;
+
+function sayUrl(idx) {
+  return "api/say?index=" + encodeURIComponent(idx);
+}
+
+function setSayState(state) {
+  // "" idle · "on" speaking · "err" the last attempt failed
+  els.sayToggle.classList.toggle("on", state === "on");
+  els.sayToggle.classList.toggle("bad", state === "err");
+  els.sayToggle.textContent = state === "on" ? "stop" : "say";
+}
+
+function stopSaying() {
+  sayAudio.pause();
+  saying = false;
+  setSayState("");
+}
+
+function speakActiveWindow() {
+  if (saying) { stopSaying(); return; }
+  if (activeIdx === null) return;
+  // Assign src and play in the same turn as the click. Awaiting the fetch first
+  // and playing the result loses the user activation, and the phone — the device
+  // this exists for — silently refuses to play.
+  sayAudio.src = sayUrl(activeIdx);
+  saying = true;
+  setSayState("on");
+  sayAudio.play().catch(() => { saying = false; setSayState("err"); });
+}
+
+sayAudio.addEventListener("ended", () => { saying = false; setSayState(""); });
+sayAudio.addEventListener("error", () => { saying = false; setSayState("err"); });
+els.sayToggle.addEventListener("click", speakActiveWindow);
+
 function readItemNode(idx, it) {
   const el = document.createElement("div");
   el.className = "rd rd-" + it.kind + (it.sidechain ? " rd-side" : "");
@@ -1093,7 +1134,7 @@ function renderAdminWindows() {
     btn.disabled = busy;
     btn.addEventListener("click", () => recycle(w));
     row.appendChild(btn);
-    // The main anchor stays put (the plane's reference cwd); everything else can be
+    // The main anchor stays put (the console's reference cwd); everything else can be
     // closed — /exit distills it to memory, then the window is removed.
     if (!w.anchor) {
       const cbtn = document.createElement("button");
@@ -1114,7 +1155,7 @@ const wlabel = (w) => (w.room ? `${w.room}-${w.name}` : w.name) +
   (w.cwd_label ? ` (${w.cwd_label})` : "");
 
 async function recycle(w, quiet) {
-  // Recycling the window you're conversing in ends that conversation. The plane
+  // Recycling the window you're conversing in ends that conversation. The console
   // can't know which window "you" are in beyond the one you're viewing, so the
   // viewed window gets the sharp warning.
   if (!quiet) {
@@ -1347,7 +1388,7 @@ async function loadServices() {
       btn.textContent = "restart";
       btn.addEventListener("click", async () => {
         if (!confirm(`Restart ${s.unit}? If it is the unit serving this page, ` +
-                     "the plane blips offline for a moment and comes back.")) return;
+                     "the console blips offline for a moment and comes back.")) return;
         adminLog(`restart ${s.unit}`);
         await postJson("api/service", { unit: s.unit });
         setTimeout(loadServices, 1500);
