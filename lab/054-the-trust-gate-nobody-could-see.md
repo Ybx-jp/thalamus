@@ -122,6 +122,51 @@ assume:
   analogue of `CLAUDE_CONFIG_DIR` exists, which is the room boundary's
   precondition — this refuted a prediction that it would not.
 
+## The control built in response
+
+Fixing five declarations fixes five declarations. The reusable part is that **nothing
+ever asked a CLI a second time**, so `thalamus contract check --capabilities`
+(`contract/probes.py`) asks — no graph, no model call, ~6 s.
+
+The mechanism is a **sentinel probe**. Both CLIs are commander.js and reject an
+unknown option during argument parsing, before auth, network, workspace trust and any
+model call. Put the flag under test first and a guaranteed-unknown sentinel second,
+and read which one gets named. Replayed against the row that was false for weeks it
+returns DRIFT on `--force`, `--yolo` and `--auto-review` and CONFIRMED on
+`--max-turns` — separating the true half of that bundled sentence from the false
+half, which is exactly what kept it unretireable.
+
+Two shapes ruled out by measurement rather than taste:
+
+- **An action option short-circuits validation.** `agent --max-turns 5 --version`
+  exits 0 and prints the version, so a `--version`-based probe calls every absent
+  flag present.
+- **Help text is unsound in both directions.** `claude --help` does not mention
+  `--max-turns`, which `eval/arms.py:707` passes in production and the parser
+  accepts; `agent create-chat` is a subcommand absent from `agent --help`.
+
+`DERIVED` rows cover the other half — the parity count was a claim about *our own
+tables*, which no CLI probe can reach. `DECLARED_PARITY` is hand-authored and does
+not read the wirings; `derive_hook_parity()` does. Adding a script moves one and not
+the other, which is precisely the event that went unnoticed.
+
+Of this entry's five wrong declarations the checker now catches four. The fifth
+("nothing spells `claude` inline") is a claim about the repo's source text rather
+than about a harness or a table, and belongs to `qe` as an invariant.
+
+## Unbounded growth, found while looking at something else
+
+`~/.claude/projects` holds **1,142 `thalamus-extract-*` sandbox directories, all
+carrying transcripts — 83 MB of the tree's 459 MB.** Cursor is accumulating its own
+at `~/.cursor/projects`. Every headless extraction is a full session to its own
+harness, so it files a transcript, and nothing ever removes it.
+
+This is not a correctness fault: `is_sandbox_project()` is a *substring* test, so it
+catches the flattened forms both harnesses produce (`-tmp-thalamus-extract-…`,
+`tmp-thalamus-extract-…`) and the refusals hold. It is retention with no upper bound
+and no owner, on the one path that runs on every session end. Nobody had looked
+because the guard's job is to make these invisible, and it succeeds.
+
 ## What this says about the layer
 
 Four capability states showed up today, where the registry has two:
