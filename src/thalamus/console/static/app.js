@@ -1377,6 +1377,21 @@ function chip(text, on, onClick) {
   b.addEventListener("click", onClick);
   return b;
 }
+// Rooms live and dead in one list: a room whose members have all been closed is
+// still a room (its config dir, and its members' transcripts, are still there),
+// and rejoining it is the normal way to pick a collaboration back up.
+//
+// `chosen` is in the list even when it is in neither source, which is the whole
+// point of the `+ new` chip: naming a room IS creating it, so a name typed into
+// the prompt has no config dir and no live window yet, and a list built only from
+// what already exists renders no chip for it. The sheet then answers a typed name
+// by turning `solo` off and showing nothing on — indistinguishable from having
+// dismissed the prompt.
+function spawnRoomChoices(known, wins, chosen) {
+  return [...new Set([...(known || []),
+                      ...(wins || []).map((w) => w.room).filter(Boolean),
+                      ...(chosen ? [chosen] : [])])];
+}
 function renderSpawnChips() {
   els.spawnScopes.innerHTML = "";
   for (const s of spawnOpts.scopes || []) {
@@ -1391,11 +1406,7 @@ function renderSpawnChips() {
       chip(label, d.path === spawnDir, () => { spawnDir = d.path; renderSpawnChips(); }));
   }
   els.spawnRooms.innerHTML = "";
-  const known = spawnOpts.rooms || [];
-  // Rooms live and dead in one list: a room whose members have all been closed is
-  // still a room (its config dir, and its members' transcripts, are still there),
-  // and rejoining it is the normal way to pick a collaboration back up.
-  const rooms = [...new Set([...known, ...windows.map((w) => w.room).filter(Boolean)])];
+  const rooms = spawnRoomChoices(spawnOpts.rooms, windows, spawnRoom);
   els.spawnRooms.appendChild(
     chip("solo", spawnRoom === "", () => { spawnRoom = ""; renderSpawnChips(); }));
   for (const r of rooms) {
