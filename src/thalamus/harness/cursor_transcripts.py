@@ -24,25 +24,22 @@ describe (forum thread 166592, confirmed by Cursor staff 2026; read 2026-07-29):
 
 Three consequences, each handled explicitly rather than papered over:
 
-1. **The ingress floor cannot be computed from a Cursor transcript.** docs/05's
-   mechanical floor — the layer no prompt content can lift — judges extracted
-   claims against the verbatim text of external-ingress tool *results*, and no
-   transcript carries them. An empty `external_texts` therefore does not mean
-   "nothing was fetched", it means "we cannot know", and the two must never
-   collapse: silently returning the empty list would delete the unliftable half
-   of the laundering defence while appearing to apply it. So facts carry
-   `ingress_verifiable=False` and `apply_ingress_floor` floors the whole session
-   rather than trusting the extractor's self-marks alone. Down-tier is the only
-   direction the floor moves, and docs/05 already prices that cost: first-party
-   memory rendering as tier 2 informs, and costs nothing but emphasis.
+1. **The ingress floor cannot be computed from a Cursor transcript alone.**
+   docs/05's mechanical floor — the layer no prompt content can lift — judges
+   extracted claims against the verbatim text of external-ingress tool *results*,
+   and no transcript carries them. An empty `external_texts` therefore does not
+   mean "nothing was fetched", it means "we cannot know", and the two must never
+   collapse: silently returning the empty list would delete the unliftable half of
+   the laundering defence while appearing to apply it.
 
-   The results themselves are retained by Cursor, in a per-session
-   content-addressed SQLite store, `~/.cursor/chats/<hash>/<id>/store.db`: an
-   ingress result verbatim in `result`, joined to its call by `toolCallId`, under
-   the same `WebFetch`/`WebSearch` names Claude Code uses (lab/060). This module
-   does not read it. Reading it is not sufficient either — a check that asks only
-   whether some external text was found passes a partial read as readily as a
-   whole one, which is the same collapse in a new place.
+   So the results are read from where Cursor actually keeps them — the per-session
+   store at `~/.cursor/chats/<hash>/<id>/store.db`, via `cursor_store` — and
+   `ingress_verifiable` is true only for a store recognized **whole**. Partial is
+   the failure that matters: a check asking merely whether some external text was
+   found passes a partial read as readily as a complete one, which is the same
+   collapse in a new place. Where the store is absent, incomplete or unrecognized,
+   the session is floored exactly as it always was, so this can only move a session
+   up. `ingress_verdict` records which of those it was.
 
 2. **Touch anchors are positional, not identifiers.** Anchors let docs/03's
    provenance walk land on the exact tool call instead of handing the operator
@@ -123,6 +120,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.harness import cursor_store
 from thalamus.harness.agents import is_sandbox_cwd
 from thalamus.harness.transcripts import (
     EXTERNAL_INGRESS_TOOLS,
@@ -411,18 +409,29 @@ def parse(
     cwd: str = "",
     started_at: datetime | None = None,
     ended_at: datetime | None = None,
+    chats_dir: Path | None = None,
 ) -> TranscriptFacts:
     """Recover every fact a Cursor transcript records exactly. No model involved.
 
     Everything the format carries is taken; everything it cannot carry is left at
     its default and reported through `ingress_verifiable`, never inferred.
+
+    The ingress texts come from the session's `store.db` rather than this file, and
+    only a store the reader recognized *whole* lifts the floor — see `cursor_store`
+    for why partial is the failure mode that matters and why anything unknown floors.
     """
     facts = TranscriptFacts(session_id=session_id or path.stem, path=path)
     facts.harness = "cursor"
-    # Structural to this file, not incidental: no Cursor transcript of any session
-    # carries the tool results the floor needs. They exist in the session's
-    # store.db, which this parser does not open (see module docstring).
-    facts.ingress_verifiable = False
+    # No Cursor transcript carries the tool results the floor needs; the store does.
+    # A session whose store is absent, incomplete or unrecognized keeps exactly the
+    # behaviour this adapter has always had — floored whole — so reaching for the
+    # store can only ever add sessions to tier 1, never move one down.
+    reading = cursor_store.read(facts.session_id, chats_dir)
+    facts.ingress_verifiable = reading.verifiable
+    facts.ingress_verdict = reading.verdict.value
+    facts.external_texts = list(reading.external_texts)
+    if reading.results:
+        facts.ingress_receipt = cursor_store.receipt(reading, facts.session_id)
     facts.cwd = cwd
     facts.started_at = started_at
     facts.ended_at = ended_at

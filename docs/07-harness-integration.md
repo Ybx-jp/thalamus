@@ -204,11 +204,15 @@ producing the same `TranscriptFacts` the Claude Code reader produces so
 extraction, merging and provenance stay unchanged. Three gaps are structural in
 Cursor's format and each is carried explicitly rather than inferred away:
 
-- **No tool results, for any tool** — excluded deliberately because they can be
-  large. So the ingress floor's evidence does not exist, and a Cursor session is
-  floored whole rather than checked ([05](05-trust-model.md)). Ingress tool
-  *calls* are still counted: their inputs survive, so we can see that a session
-  fetched, only not what came back.
+- **No tool results in the transcript, for any tool** — excluded deliberately
+  because they can be large. They are in the session's `store.db`, a
+  content-addressed SQLite blob store, verbatim and joined to their calls by
+  `toolCallId`; `harness/cursor_store.py` reads it, so the ingress floor's evidence
+  is reachable and a Cursor session is checked rather than floored whole
+  ([05](05-trust-model.md)). It floors only where the store is absent, incomplete or
+  unrecognized, and `ingress_verdict` says which. Cursor's ingress tools carry the
+  same names as Claude Code's — `WebFetch` and `WebSearch` — so
+  `EXTERNAL_INGRESS_TOOLS` transfers unchanged (lab/060).
 - **No message ids**, so Touch anchors are positional (`cursor:msg:<row>`),
   namespaced so a synthesized anchor cannot pass for a real UUID.
 - **No per-row timestamps and no cwd on any row**, but neither is lost. Cursor
@@ -241,9 +245,9 @@ written into vertex IDs, so defaulting an unattested session into the operator's
 own subgraph is an unmade routing decision that cannot be walked back. Such
 sessions are listed and skipped; `--assign-scope <scope>` is how an operator
 claims them, on both `thalamus extract --harness cursor` and `thalamus bootstrap
---harness cursor`. This is a different absence from the missing tool results
-above: there a value existed and the format could not carry it, here no value was
-ever determined — FHIR R4's `DataAbsentReason` separates the two as `unsupported`
+--harness cursor`. This is a different absence from the transcript's missing tool
+results above: there a value existed and that file could not carry it, here no value
+was ever determined — FHIR R4's `DataAbsentReason` separates the two as `unsupported`
 and `not-asked`.
 
 **Both bootstrap stages reach Cursor.** Stage 1 (`thalamus bootstrap --harness
@@ -395,13 +399,11 @@ The `PostToolUse:TaskCreate` milestone conditioning class remains without a
 carrier — TaskCreate is Claude Code task-list UI, while Cursor's `Task` tool type
 is subagent spawning.
 
-**Open, and the way to earn tier-1 back on Cursor:** capture tool outputs
-out-of-band. Cursor's own recommendation for full traces is a `postToolUse` hook
-writing them to a file, and Thalamus already runs a hook on that event. The
-blocker is not the mechanism but the roster — Cursor's built-in web-tool names
-are undocumented and unobserved, so the ingress set would be a guess. A live
-session settles it; until then the conservative floor stands and costs emphasis
-rather than correctness.
+Cursor's built-in ingress tools are `WebFetch` (args `{url}`) and `WebSearch` (args
+`{search_term, explanation}`) — measured live, and the same names Claude Code uses, so
+`EXTERNAL_INGRESS_TOOLS` needed no Cursor branch. A successful result is framed
+(`"# Content from " + args.url`); a refused one is bare prose in the same field, which
+is why the reader classifies on the frame and never on the refusal text.
 
 ### Prior work
 

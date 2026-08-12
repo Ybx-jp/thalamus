@@ -153,9 +153,19 @@ texts and the mechanical echo floor has nothing to run against.
 The results are not gone, only elsewhere: Cursor keeps them in a per-session
 content-addressed store, `~/.cursor/chats/<hash>/<id>/store.db`, where an ingress
 result is retained verbatim and joins its call by `toolCallId`, under tool names
-identical to Claude Code's (lab/060). Reaching them is a change to the ingress
-floor's evidence base and to what the archive retains, so it is grounded and
-designed before it is built, not assumed here.
+identical to Claude Code's (lab/060). `harness/cursor_store.py` reads it, and that
+is what lets a Cursor session earn tier 1 rather than being floored whole.
+
+**Only a store recognized whole lifts anything.** The failure that matters is not a
+store we cannot read — it is one we read *partially* while believing otherwise. So
+recognition is complete before any text is emitted (LangSec's anti-Postel doctrine,
+Sassaman et al., Dartmouth TR2011-709): the reader resolves the root's every message
+reference, reconciles every tool call against its result by id, checks the root
+revisions form a prefix chain, and **raises on any surprise rather than skipping it**.
+A tool name it does not recognize floors the session too, because an unrecognized tool
+may be an ingress tool and its absence from the corpus cannot be told from its never
+having run. Every one of those paths lands where this adapter already was, so reading
+the store can only move a session *up*.
 
 The failure mode this creates is the dangerous kind: an empty external-texts list
 is indistinguishable from a session that fetched nothing, so the floor would
@@ -171,20 +181,46 @@ are separable in the graph afterwards. Ingress tool *calls* are still counted
 (`ingress_detected`), because their inputs survive: we can see that a session
 fetched, only not what came back.
 
-This is deliberately heavy-handed. It takes the trade the floor already prices —
-first-party memory rendering as tier 2 informs, and costs nothing but emphasis —
-at the one moment the cheap mechanical check is unavailable, and it makes
-reaching the results the way to earn tier-1 back rather than something to
-remember to do.
+The floor has two behaviours, so that flag is a bool — but the *verdict* beside it is
+not. `ingress_verdict` is one of `verified`, `no-store`, `incomplete` or
+`unrecognized`, because three decisions need to tell those apart that a bool cannot:
+which sessions to re-run after a reader fix, what a format-drift monitor can count, and
+what this document is entitled to claim. Under a bool alone a Cursor release that
+breaks the reader arrives in the same channel as the wholly benign case of a session
+that has no store at all.
 
-Whatever reaches them must satisfy the same premise this section is built on, and
-that is the hard part rather than the reading. A predicate that merely asks
-whether any external text was found reports success on a *partial* read as
-readily as a complete one — measured, by deleting one of two ingress results from
-a store and watching a non-empty check still pass while a whole fetched page was
-missing from the corpus the floor judged against (lab/060). Non-empty is not
-complete. Earning tier-1 back therefore requires evidence that the read was
-whole, not merely non-empty.
+**What the archive retains, and why not the store.** `store.db` holds every `Read`,
+`Grep` and `Shell` result as well, a far larger and more sensitive surface than the
+transcript, and this archive's posture is scan-and-report-never-redact (docs/10). So
+the retained artifact is derived: the ingress texts, plus what makes the extraction
+checkable — `source_blob`, which is **Cursor's own `sha256` of the bytes** we read them
+out of, and `payload_sha256`, ours for the text we produced. Anyone still holding the
+store can recompute both and verify the transform without trusting us, which is
+strictly more than in-toto's link metadata offers, since there the materials are hashed
+by the party under audit. The receipt also records the selection itself — what was
+acquired against the full result count — because a partial acquisition is only
+defensible if a reader can see what was deliberately left (selective imaging §3.4,
+arXiv 2012.02573).
+
+Flooring stays deliberately heavy-handed wherever it still applies. It takes the
+trade the floor already prices — first-party memory rendering as tier 2 informs,
+and costs nothing but emphasis — at the one moment the cheap mechanical check is
+unavailable.
+
+The bar for lifting is *whole*, not *non-empty*, and the difference is measured
+rather than assumed: deleting one of two ingress results from a store leaves
+`external_texts` non-empty at 825 characters, so a non-emptiness check reports
+success while a whole fetched page is missing from the corpus the floor judged
+against (lab/060). That is why recognition completes before emission — a reader
+that emits as it walks cannot tell the two apart.
+
+One more thing the store's own structure supplies. Cursor keeps every root revision
+it has ever written, and each revision's message list is a strict prefix of the next
+— RFC 6962's consistency-proof shape, in the vendor's data, so this is a check rather
+than a construction. It catches an interior deletion or a reorder and does **not**
+catch tail truncation, since a shortened list is still a valid prefix of the honest
+one. Tail truncation is exactly the shape of "the last fetch is missing", which is
+why reconciling calls against results stays load-bearing beside it.
 
 **Prior work.** This is the write-path stance of the memory-poisoning literature
 applied to the *distillation* channel: "defenses must operate at the write path, not
@@ -221,7 +257,9 @@ happened to scan is exactly what this table replaces.
 |---|---|---|
 | `WebFetch`/`WebSearch` results in the transcript | V-S1, V-S2 | **closed for `Claim` subtypes** — `apply_ingress_floor` forces tier 2, the contract rejects `external ∧ tier<2`; canary-tested end-to-end (lab/005) |
 | …the same results distilled into a `Thread` | V-S2 | **open, unchecked** — the floor updates only `decisions`/`problems`/`solutions`, `Thread` has no `external` field to mark, and the conformance audit keys on `label == "Claim"`, so thread descriptions write tier-1. Cross-session, and served first by `memory_open_threads` (lab/040) |
-| Cursor transcripts (results not in the parsed file) | V-S1 | **closed by flooring whole** — `ingress_verifiable=False` stamps every claim `transcript-ingress-unverifiable` (lab/028). The results exist in the session's `store.db` and the adapter does not read it (lab/060) |
+| Cursor ingress results (in `store.db`, not the transcript) | V-S1 | **closed by reading the store** — `harness/cursor_store.py` recognizes it whole or floors the session; `ingress_verdict` separates `verified` from `no-store`/`incomplete`/`unrecognized` (lab/060) |
+| A Cursor store that is partially readable | V-S1 | **closed by failing closed** — recognition completes before emission, so a partial read floors rather than judging against a partial corpus; a store that verifies but reconciles 0 results is not the same state |
+| Vendor refusal prose in an ingress `result` field | V-S1 | **closed by frame-matching** — a successful result is framed with `args.url`; refusals are unframed and never enter `external_texts`. Matching the refusal *prose* instead would let a fetched page beginning with that string delete itself from the corpus |
 | Bash-tunnelled `curl`/`wget` | V-S2 | **open, unchecked** — outside `EXTERNAL_INGRESS_TOOLS`, so collection never sees the fetched bytes and the claims distill tier-1; no test in `tests/` exercises it |
 | Peer-session messages (`SendMessage`) | V-S2 | **open, unchecked** — a peer's summary arrives with *no ingress tool at all* and distills tier-1; the sharper of the two residuals, and generally available to every live session on the machine and in the cloud rather than to one team. Unlike the in-process teams mailbox (lab/004), it leaves a collectable boundary: the receiver's transcript wraps it as `<cross-session-message from="...">` |
 | Operator's checkout by absolute path | V-S2 | `detect_worktree_escape` — 13 of 88 arms reached it; 3 of one campaign's 24 gradeable arms reached an answer key (lab/021). Confinement is `--sandbox` |

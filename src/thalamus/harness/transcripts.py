@@ -94,6 +94,18 @@ class TranscriptFacts:
     # against. Collapsing the two would delete that defence while appearing to
     # apply it, so the distinction is carried rather than inferred downstream.
     ingress_verifiable: bool = True
+    # *Why* `ingress_verifiable` came out as it did. The floor has two behaviours, so
+    # the bool above is right for the action; this is the verdict, and it is not
+    # two-valued. Three decisions need to tell these apart that the bool cannot:
+    # which sessions to re-run after a reader fix, what a format-drift monitor can
+    # count — under a bool, a vendor format change arrives in the same channel as the
+    # benign "this session has no store" — and what docs/05 is entitled to claim.
+    # Values are `harness.cursor_store.StoreVerdict`; Claude Code embeds its results
+    # in the transcript, so it is `verified` by construction.
+    ingress_verdict: str = "verified"
+    # The derived artifact retained in place of the vendor's store (docs/05, docs/10).
+    # Empty for Claude Code, whose transcript *is* the retained evidence.
+    ingress_receipt: dict = field(default_factory=dict)
     # Count of external-ingress tool *calls* seen. Present even when their results
     # are not, so an unverifiable session can still say whether it fetched at all.
     ingress_detected: int = 0
@@ -293,6 +305,20 @@ def retain(path: Path, *, archive_base: Path | None = None):
     payload = path.read_bytes()
     entry = archive_bytes(payload, suffix=".jsonl", base=archive_base)
     return entry, scan_for_secrets(payload)
+
+
+def retain_ingress_receipt(facts: TranscriptFacts, *, archive_base: Path | None = None):
+    """Archive the derived ingress artifact, if this harness produced one.
+
+    Returns the `ArchiveEntry` or None. Claude Code produces none: its transcript
+    already *is* the retained bytes the floor judged against, and `retain()` above
+    keeps it. Cursor's evidence lives in a store we deliberately do not retain whole
+    (`cursor_store.receipt`), so what the chain reaches is this receipt instead.
+    """
+    if not facts.ingress_receipt:
+        return None
+    payload = json.dumps(facts.ingress_receipt, indent=2, sort_keys=True).encode()
+    return archive_bytes(payload, suffix=".ingress.json", base=archive_base)
 
 
 def to_session_graph(

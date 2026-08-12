@@ -148,6 +148,10 @@ def _bootstrap_one(
         )
 
     entry, secrets = transcripts.retain(path, archive_base=archive_base)
+    # The ingress evidence a Cursor session was judged against is not in `path`, so
+    # retaining the transcript alone would leave the floor's verdict resting on bytes
+    # the archive never saw (docs/05).
+    transcripts.retain_ingress_receipt(facts, archive_base=archive_base)
     session = to_session_graph(
         facts,
         content_hash=entry.content_hash,
