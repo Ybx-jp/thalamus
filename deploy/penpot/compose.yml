@@ -144,6 +144,14 @@ services:
   mcp:
     build:
       context: ./penpot-mcp-server
+      # Our fixes to the upstream server live in ./patches as git-format diffs and
+      # are applied HERE, during the build, never in the checkout. The clone stays
+      # byte-identical to the pinned commit, so the README's `git clone && git
+      # checkout <pin>` remains the whole install and a re-clone destroys nothing.
+      # `patch -F0` refuses any fuzz, so if the pin ever moves and a hunk no longer
+      # matches, the build fails loudly instead of producing a half-fixed image.
+      additional_contexts:
+        patches: ./patches
       # Upstream's own Dockerfile, plus one constraint, inline so it survives a
       # re-clone. The repo ships no uv.lock and declares `mcp[cli]>=1.9.0`, a
       # floor with no ceiling — so a build today resolves mcp 2.0.0, which dropped
@@ -152,11 +160,16 @@ services:
       dockerfile_inline: |
         FROM python:3.13-slim
         COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+        RUN apt-get update \
+            && apt-get install -y --no-install-recommends patch \
+            && rm -rf /var/lib/apt/lists/*
         WORKDIR /app
         COPY pyproject.toml ./
         RUN sed -i 's/mcp\[cli\]>=1.9.0/mcp[cli]>=1.9.0,<2/' pyproject.toml \
             && uv sync --no-dev --no-install-project
         COPY src/ src/
+        COPY --from=patches . /patches/
+        RUN for p in /patches/*.patch; do patch -p1 -F0 --no-backup-if-mismatch < "$$p"; done
         RUN uv sync --no-dev
         EXPOSE 8787
         # The venv entrypoint, not `uv run`: `uv run` re-syncs at every container
@@ -184,6 +197,14 @@ services:
       # Generated in Penpot: avatar → Access Tokens. Without it the server starts
       # but every write is unauthenticated and fails.
       PENPOT_ACCESS_TOKEN: "$PENPOT_ACCESS_TOKEN"
+      # Rendering only. The exporter authenticates by an `auth-token` COOKIE and
+      # by nothing else, and Penpot mints that cookie only from
+      # login-with-password (or SSO/LDAP) — an access token has no exchange path
+      # to a session. Every other tool runs on the access token alone; without
+      # these two, export_frame_png and export_frame_svg return an error saying
+      # so. See README.md.
+      PENPOT_EMAIL: "$PENPOT_EMAIL"
+      PENPOT_PASSWORD: "$PENPOT_PASSWORD"
       PENPOT_DB_HOST: postgres
       PENPOT_DB_PORT: "5432"
       PENPOT_DB_NAME: penpot

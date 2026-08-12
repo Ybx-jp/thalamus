@@ -44,6 +44,10 @@ which is the whole point of condition 2. Register the single account immediately
 `enable-registration` is on because there is no SMTP to send an invite through, and
 you should turn it off in `.env` (`PENPOT_FLAGS`) once your account exists.
 
+Then fill in the three MCP values in `.env` — `PENPOT_ACCESS_TOKEN` from
+avatar → Access Tokens, and `PENPOT_EMAIL`/`PENPOT_PASSWORD`, which exist only so
+the MCP can render (see [Why rendering needs a password](#why-rendering-needs-a-password)).
+
 ## Condition 4 — Jellyfin is transcoding on the CPU
 
 Measured 2026-08-10: `/etc/jellyfin/encoding.xml` has
@@ -111,13 +115,102 @@ git -C penpot-mcp-server checkout 57d1f93bd3eaf6c846210fd0f51e40d234664319
 docker --context default compose -f compose.yml up -d --build mcp
 ```
 
-That commit is the pin. Upstream ships **no `uv.lock`** and declares
-`mcp[cli]>=1.9.0` — a floor with no ceiling — so a fresh resolve today installs
-mcp 2.0.0, which dropped `mcp.server.fastmcp`, and the container crash-loops on
-`ModuleNotFoundError` under a green `Built` line. `compose.yml` builds through an
-inline Dockerfile that constrains it to `<2`; that is the only change from
-upstream's, besides running the venv entrypoint directly so `uv run` cannot re-sync
-dev dependencies at every container start.
+That commit is the pin, and those three lines are the whole install — there is
+nothing to apply by hand afterwards.
+
+Upstream ships **no `uv.lock`** and declares `mcp[cli]>=1.9.0` — a floor with no
+ceiling — so a fresh resolve today installs mcp 2.0.0, which dropped
+`mcp.server.fastmcp`, and the container crash-loops on `ModuleNotFoundError` under
+a green `Built` line. `compose.yml` builds through an inline Dockerfile that
+constrains it to `<2` and runs the venv entrypoint directly, so `uv run` cannot
+re-sync dev dependencies at every container start.
+
+### Our fixes live in `patches/`, not in the checkout
+
+`patches/*.patch` are git-format diffs against the pinned commit, and the inline
+Dockerfile applies them to the build context after `COPY src/`. **The clone itself
+is never modified**, which is what makes the three-line install above complete and
+what makes `rm -rf penpot-mcp-server && git clone …` safe: a re-clone destroys
+nothing, because there was never anything in it to destroy. The alternatives were
+worse — a local edit dies on the next clone with no trace of what was lost, a fork
+moves the fix somewhere this repo's review never sees, and vendoring buries a
+one-page delta inside several thousand lines of third-party code and dissolves the
+pin.
+
+`patch -F0` refuses all fuzz. If the pin is ever moved and a hunk no longer
+matches, the **build fails** rather than producing a half-patched image — that is
+the intended failure, and the signal to re-cut the patch against the new commit:
+
+```bash
+cd ~/code/thalamus/deploy/penpot
+git -C penpot-mcp-server apply patches/0001-*.patch   # edit, test
+git -C penpot-mcp-server diff > patches/0001-<name>.patch
+git -C penpot-mcp-server checkout -- .                # leave the clone pristine
+```
+
+What the current patch changes, all of it in `src/penpot_mcp/`:
+
+- **`create_path` speaks Penpot's path format.** Upstream lowercased the SVG
+  command letter and shipped `{"command": "m"}`; `app.common.types.path.impl/
+  from-plain` dispatches on `:move-to`, `:line-to`, `:curve-to` and `:close-path`
+  and threw `No matching clause: :m`, so every call 500'd. The tool now accepts
+  either the SVG letters or the long names, rejects the commands Penpot has no
+  clause for (`H`, `V`, `S`, `Q`, `T`, `A`) with a message that says so instead of
+  posting a request the backend will refuse, and emits `close-path` with no
+  `params` because its schema has none. Cubic control points were already correct:
+  flat `c1x`/`c1y`/`c2x`/`c2y` inside `params`, not nested maps.
+- **A curved path gets a bounding box that contains the curve.** The selrect was
+  computed from anchor points alone, so a Bézier that bulges outside its endpoints
+  got a box too small to hold it — and the selrect is what the exporter
+  screenshots, so the render came out clipped. It is now the exact cubic extent,
+  interior extrema included.
+- **`export_frame_*` authenticate to the exporter**, see below.
+- **The SVG "export" that was not an export is gone.** On any exporter failure,
+  upstream silently fell back to a local reimplementation supporting one fill and
+  one stroke with no gradients, shadows, blur or clipping, and returned it as a
+  **success** carrying a `note` key. A caller that did not read `note` could not
+  tell a render from a sketch. Both export tools now return an error when the
+  exporter does not render, and the local approximation is not offered as a
+  substitute for one.
+
+### Why rendering needs a password
+
+`PENPOT_ACCESS_TOKEN` drives every tool here except the two that render, and those
+two need `PENPOT_EMAIL` and `PENPOT_PASSWORD` as well. This is a Penpot
+constraint, not a choice:
+
+- The exporter authenticates by **cookie only**. Its `app.http/wrap-auth` reads a
+  cookie named `auth-token`, ignores the `Authorization` header entirely, and
+  hands the cookie value to its headless Chromium as a cookie on the frontend
+  origin so the render page can load the file.
+- Penpot's backend accepts that cookie only if it decodes as a **session** token —
+  issuer `authentication`. An access token carries issuer `access-token`, and
+  `app.http.middleware/wrap-auth` reads the cookie *before* the header, so
+  presenting an access token as the cookie authenticates nothing. Measured: the
+  export then passes spec and the browser renders an empty page, indistinguishable
+  from a junk cookie.
+- Sessions are minted by `login-with-password`, SSO and LDAP, and by nothing else.
+  There is no RPC command that exchanges an access token for one.
+- Share links do not route around it. `get-view-only-bundle` accepts a `share-id`
+  anonymously, but the exporter's object route renders through `get-page`, which
+  returns `401` with or without a `share-id`.
+
+So export is unavailable without a password. What you can control is **whose**.
+The account named here needs to *read* the files you export and nothing more, so
+give it its own registration and add it to your team as a **viewer** — verified:
+a viewer with no edit rights renders fine. That keeps a password out of `.env`
+that could change your primary account's email, and it stays revocable from
+Team → Members without disturbing the access token. On this box that account is
+`penpot-renderer@thalamus.local`, a viewer on the Default team.
+
+The credentials are used lazily — no login happens until the first export — on a
+throwaway HTTP client, so the session cookie never lands on the shared client
+where Penpot's cookie-before-header precedence would silently switch every other
+RPC call off the access token. A session that has expired (7 days) is re-minted
+once on the failed call.
+
+With `PENPOT_EMAIL`/`PENPOT_PASSWORD` empty the other 66 headless tools work
+normally and the two export tools return an error naming both variables.
 
 **68 tools, verified over a real handshake**, and **66 of them headless** — no
 browser, no open editor tab, nothing on screen. **25 author shapes**: 8 create
