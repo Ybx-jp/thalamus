@@ -1286,3 +1286,53 @@ def test_every_retrieval_mcp_tool_is_traced_and_tapped():
         f"MCP tools absent from the Cursor tap roster (untraced on Cursor): "
         f"{sorted(missing_from_tap)}"
     )
+
+
+def test_the_aligned_judge_recovers_terms_the_shipped_one_cannot_match():
+    """
+    Scenario: node text carrying ordinary prose punctuation, matched against an output
+    window that is byte-identical to it
+
+    The shipped judge tokenises the node by splitting on whitespace and the window with
+    `_TOKEN_RE`, so a term keeps punctuation the window has already stripped. That is a
+    floor on false negatives with nothing to do with whether the node was used: it
+    fires even when the agent reproduced the text exactly. `aligned` is a variant
+    rather than a fix in place — swapping `node_terms` would redefine every verdict
+    already stored in the graph.
+    """
+    from thalamus.eval.attribution import JUDGES, aligned_node_terms, node_terms, prepare
+
+    content = (
+        'Fixed the YAML parser; it crashed on colons (see lab/029), and the '
+        'LLM-as-a-Judge survey — arXiv 2606.04329 — says "write-path".'
+    )
+    _lower, window_tokens = prepare(content)
+
+    shipped_unmatchable = [t for t in node_terms(content) if t not in window_tokens]
+    aligned_unmatchable = [t for t in aligned_node_terms(content) if t not in window_tokens]
+
+    assert shipped_unmatchable == ['"write-path".', '(see', 'lab/029),', 'parser;']
+    assert aligned_unmatchable == []
+    # Both judges exist side by side, and the shipped one is untouched.
+    assert JUDGES["shipped"].terms_from == "split"
+    assert JUDGES["aligned"].terms_from == "aligned"
+
+
+def test_calibration_prepares_terms_with_the_judge_it_was_built_for():
+    """
+    Scenario: the per-judge term cache, asked for the same node under both judges
+
+    `_Prepared` caches node terms per judge. It hardcoded `node_terms`, which would
+    have fed the shipped extraction to the very judge built to correct it — reporting a
+    delta of exactly zero, the one result that looks like a finding rather than a bug.
+    """
+    from thalamus.eval.attribution import JUDGES
+    from thalamus.eval.calibration import _Prepared
+
+    nodes = {"n1": "the parser; crashed on lab/029), see"}
+
+    shipped = _Prepared(JUDGES["shipped"]).terms(nodes)["n1"]
+    aligned = _Prepared(JUDGES["aligned"]).terms(nodes)["n1"]
+
+    assert "parser;" in shipped and "parser" not in shipped
+    assert "parser" in aligned and "parser;" not in aligned

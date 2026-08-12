@@ -45,8 +45,8 @@ from thalamus.eval.attribution import (
     JUDGES,
     Judge,
     OutputWindow,
+    TERM_EXTRACTORS,
     attribute_prepared,
-    node_terms,
     output_window,
     prepare,
 )
@@ -357,14 +357,22 @@ class _Prepared:
         return self._windows[key]
 
     def terms(self, nodes: dict[str, str]) -> dict[str, list[str]]:
+        # Keyed to *this* judge's extractor, not to `node_terms`. The cache is per
+        # judge, so hardcoding one extractor here silently fed the shipped terms to a
+        # judge that varies them — and a variant scored against the very reading it
+        # was built to correct reports a delta of exactly zero, which is the one
+        # result that looks like a finding.
+        extract = TERM_EXTRACTORS[self.judge.terms_from]
         for node_id, content in nodes.items():
             if node_id not in self._terms:
-                self._terms[node_id] = node_terms(content)
+                self._terms[node_id] = extract(content)
         return self._terms
 
     def judge_against(self, nodes: dict[str, str], window: OutputWindow):
         lower, tokens = self.window(window)
-        return attribute_prepared(nodes, lower, tokens, self.terms(nodes))
+        return attribute_prepared(
+            nodes, lower, tokens, self.terms(nodes), terms_from=self.judge.terms_from
+        )
 
 
 def score(cases: list[Case], judge: Judge, prepared: "_Prepared | None" = None) -> JudgeResult:

@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
-from thalamus.substrate.reader import _extract_keywords
+from thalamus.substrate.reader import STOPWORDS, _extract_keywords
 
 # A node is "used" when at least this many of its distinctive terms — and this fraction
 # of them — appear in the session's subsequent output. Two dials, both arbitrary, both
@@ -165,8 +165,35 @@ def outputs_after(transcript: bytes, after: datetime) -> str:
 
 
 def node_terms(content: str) -> list[str]:
-    """The node's distinctive terms — what a lexical verdict matches on."""
+    """The node's distinctive terms — what a lexical verdict matches on.
+
+    Kept exactly as the stored verdicts mean it, defect and all: `_extract_keywords`
+    splits on whitespace and keeps the punctuation attached, while the window it is
+    matched against is tokenised by `_TOKEN_RE`, which strips it. `aligned_node_terms`
+    is the corrected reading, and it is a *variant* rather than a replacement for the
+    same reason `outputs_after` is frozen — swapping this silently redefines every
+    verdict in the graph.
+    """
     return sorted(set(_extract_keywords(content)))
+
+
+def aligned_node_terms(content: str) -> list[str]:
+    """`node_terms` tokenised the way the output window is.
+
+    The two sides disagreeing is a floor on false negatives that has nothing to do with
+    whether a node was used: measured on a 13-term sample, 4 terms cannot match even
+    when the window is byte-identical to the node's own text — `"write-path".`, `(see`,
+    `lab/029),`, `parser;`. Every stored `used%` is biased low by an unmeasured amount,
+    on top of the ~59-point topic-overlap floor lab/032 already reports.
+
+    Only the tokenizer changes. The stopword list and length cut are `_extract_keywords`'
+    own, and compound splitting is deliberately *not* borrowed from the ingress floor:
+    that floor wants to over-catch because down-tiering is its safe direction, while a
+    judge that matches more terms reports more use, which is the direction this
+    instrument is least able to afford.
+    """
+    tokens = _TOKEN_RE.findall(content.lower())
+    return sorted({t for t in tokens if len(t) > 2 and t not in STOPWORDS})
 
 
 def prepare(outputs: str) -> tuple[str, set[str]]:
@@ -180,14 +207,23 @@ def prepare(outputs: str) -> tuple[str, set[str]]:
     return output_lower, set(_TOKEN_RE.findall(output_lower))
 
 
-def attribute(returned: dict[str, str], outputs: str) -> list[Verdict]:
+# How a node's text becomes the terms a verdict matches on. `split` is what every
+# stored verdict means; `aligned` is the same extraction with the two sides tokenised
+# alike. Named rather than passed as a function so a judge stays a comparable
+# configuration and a fingerprint can say which reading produced a number.
+TERM_EXTRACTORS = {"split": node_terms, "aligned": aligned_node_terms}
+
+
+def attribute(
+    returned: dict[str, str], outputs: str, *, terms_from: str = "split"
+) -> list[Verdict]:
     """Judge each returned node against the session's subsequent outputs.
 
     `returned` maps vertex ID -> the node's retrievable text (summary, description,
     title — whatever the graph holds for it).
     """
     output_lower, output_tokens = prepare(outputs)
-    return attribute_prepared(returned, output_lower, output_tokens)
+    return attribute_prepared(returned, output_lower, output_tokens, terms_from=terms_from)
 
 
 def attribute_prepared(
@@ -195,8 +231,11 @@ def attribute_prepared(
     output_lower: str,
     output_tokens: set[str],
     terms: dict[str, list[str]] | None = None,
+    *,
+    terms_from: str = "split",
 ) -> list[Verdict]:
     """`attribute` with the window — and optionally the nodes' terms — precomputed."""
+    extract = TERM_EXTRACTORS[terms_from]
     return [
         _judge(
             node_id,
@@ -204,6 +243,7 @@ def attribute_prepared(
             output_lower,
             output_tokens,
             terms=None if terms is None else terms.get(node_id),
+            extract=extract,
         )
         for node_id, content in returned.items()
     ]
@@ -215,6 +255,7 @@ def _judge(
     output_lower: str,
     output_tokens: set[str],
     terms: list[str] | None = None,
+    extract=node_terms,
 ) -> Verdict:
     # Strongest signal first: the agent quoted the node's identity itself. The reader
     # renders vertex IDs precisely so this becomes possible.
@@ -226,7 +267,7 @@ def _judge(
     if node_id.split(":")[-2:-1] == ["thread"] and len(local_id) > 3 and local_id in output_lower:
         return Verdict(node_id, True, f"thread slug `{local_id}` referenced")
 
-    terms = terms if terms is not None else node_terms(content)
+    terms = terms if terms is not None else extract(content)
     if not terms:
         return Verdict(node_id, False, "no distinctive terms to match on")
 
@@ -257,10 +298,18 @@ class Judge:
     turns: int | None = None
     prose: bool = True
     tools: bool = True
+    # Which side of the match this judge varies. Every variant above narrows the
+    # *window*; this one narrows nothing and instead fixes the node side, which is the
+    # only axis on which `shipped` is not merely a choice but a defect.
+    terms_from: str = "split"
     description: str = ""
 
     def __call__(self, returned: dict[str, str], window: OutputWindow) -> list[Verdict]:
-        return attribute(returned, window.text(turns=self.turns, prose=self.prose, tools=self.tools))
+        return attribute(
+            returned,
+            window.text(turns=self.turns, prose=self.prose, tools=self.tools),
+            terms_from=self.terms_from,
+        )
 
 
 # The variants worth separating, and why each exists. Every one of them is
@@ -289,6 +338,21 @@ JUDGES: dict[str, Judge] = {
             turns=3,
             prose=False,
             description="both narrowings at once: near, and acted on",
+        ),
+        Judge(
+            "aligned",
+            terms_from="aligned",
+            description="the shipped window, with the node's terms tokenised the way "
+            "the window is — the only variant that corrects a defect rather than "
+            "choosing a narrowing, so its delta is measurement error, not utility",
+        ),
+        Judge(
+            "aligned-tool-bounded-3",
+            turns=3,
+            prose=False,
+            terms_from="aligned",
+            description="the narrowest window with the corrected term side, so the two "
+            "kinds of change can be read apart from their combination",
         ),
     )
 }
