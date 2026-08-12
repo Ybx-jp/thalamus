@@ -12,15 +12,19 @@ and result is graded in the image.
 
 ## Arming
 
-Penpot arms only for this scope, only through `thalamus pin designer` — that path adds
-`--mcp-config config/mcp/designer.json` (`pin.py:_claude_argv`). Launching by hand with
-`claude --agent thalamus-designer` reproduces the pin flags but not the MCP config, and
-produces a designer with no design tool and no error. See the open finding below.
+Penpot arms for this scope alone. The declaration is `config/mcp/designer.json`, which
+`write_agent` copies into the generated agent's frontmatter, so the tools ride the
+`--agent` flag itself and any launch path that names the agent arms them. A session that
+should have Penpot and does not is caught by the session-start hook, which compares the
+scope's declaration against the agent definition and prepends a stop-and-report warning.
+
+If `mcp__penpot__*` tools are absent in a session that expects them, stop and report
+rather than working around it — the warning exists because a designer with no design
+tool used to be indistinguishable from one with a tool that happened to be idle.
 
 ## Instrument facts the drills are built on
 
-Established by source survey, not by the deployment README (which is wrong on all three
-counts: it says 68 tools / 22 authoring / a 46-22 live-headless split).
+Established by source survey and by live probes against the running stack.
 
 - **68 tools. 25 author. 66 are headless.** Only `get_active_selection` and
   `execute_plugin_script` need the browser bridge on `:4402`.
@@ -44,6 +48,16 @@ counts: it says 68 tools / 22 authoring / a 46-22 live-headless split).
   per-corner radii, rotation, constraints, and gradient fills.
 - **Every tool call is its own file revision.** A 40-shape screen is 40 round trips, 40
   undo steps, and a real race if the file is open elsewhere. No transaction tool.
+
+- **A path cannot be read back.** `get_shape_details` returns `content: null` and
+  `selrect: None` for any path, because the DB reader never decodes the binary v2
+  `PathData` blob. `x`/`y`/`width`/`height` still come back, so a path can be located
+  but not introspected — the shape you wrote is the only record of what it is.
+- **`get_shape_svg` still dresses an approximation as a result.** It renders through
+  `transformers/svg.py` — first fill, first stroke, no gradients, shadows, blur or
+  clipping — and presents that as "SVG representation of a shape" with no caveat. It
+  is the trap `export_frame_svg` used to carry, in a tool that still carries it. Use
+  `export_frame_svg` when the answer has to be true.
 
 Suspected broken, not yet proven:
 
@@ -104,10 +118,11 @@ one-call-one-revision model at ~40 shapes, and whether text survives being built
 A six-icon set on a 24px grid at uniform 2px stroke, optically corrected rather than
 mathematically aligned: node, edge, memory, recall, thread, expert.
 
-This is where `create_path` is load-bearing and is suspected broken. Grades vector
-craft and, harder, consistency *across* a set — the thing no single icon reveals.
-Expected to surface: the absence of boolean ops and of align/distribute, and whether
-optical correction is possible without a canvas to eyeball.
+This is where `create_path` is load-bearing. Grades vector craft and, harder,
+consistency *across* a set — the thing no single icon reveals. Expected to surface: the
+absence of boolean ops and of align/distribute, whether optical correction survives
+being computed rather than eyeballed, and how much a path costs to iterate on when it
+cannot be read back.
 
 ### D3 — Brand and identity, directional brief
 
