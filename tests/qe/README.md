@@ -3,13 +3,21 @@
 Run it:
 
 ```bash
+uv sync --extra dev                           # substrate, not convenience — see below
 uv run python tests/qe/run.py --tier fast     # hermetic; what CI runs
 uv run python tests/qe/run.py --all-tiers     # everything the box can support
 ```
 
+The `dev` extra is a prerequisite of the fast tier. Three cases borrow probe helpers out
+of dev's suite (`test_extraction._floor_graph`, `test_dispatch._descriptor`) rather than
+reimplementing a SessionGraph or a dispatch descriptor that would drift from the real
+one, and those modules import pytest at module scope. Without the extra the cases die on
+import and report MALFORMED. `uv sync` alone does not supply it: pytest is declared in
+the `dev` *extra*, and a bare sync installs only the `dev` dependency-group.
+
 Not pytest, and not shipped in the wheel. Both on purpose.
 
-**Not pytest**, because pytest is a dev-only extra and because this suite carries
+**Not pytest**, because this suite carries
 entries that are *supposed* to be red. `pyproject.toml` sets `testpaths = ["tests"]`,
 so containment rests on filenames: **nothing in this tree may be named `test_*.py` or
 `*_test.py`**, or dev's in-loop suite inherits an intentionally red corpus. Verify with

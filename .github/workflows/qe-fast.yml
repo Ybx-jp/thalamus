@@ -30,13 +30,23 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
+      # `--extra dev` is load-bearing, not a convenience. Three FAST cases borrow probe
+      # helpers out of dev's suite (`test_extraction._floor_graph`,
+      # `test_dispatch._descriptor`), and those modules import pytest at module scope —
+      # so pytest is substrate for the fast tier even though the suite never runs under
+      # it. A bare `uv sync` installs the `dev` dependency-group, not the `dev` extra
+      # where pytest is declared, and the cases then die on import.
       - name: Install
-        run: uv sync
+        run: uv sync --extra dev
 
       # jq is a declared substrate for the guard case and is present on ubuntu-latest,
-      # but asserting it keeps a silent skip from being mistaken for a pass.
+      # but asserting it keeps a silent skip from being mistaken for a pass. pytest is
+      # asserted for the same reason and one step earlier than the cases would find it:
+      # a missing import surfaces here as an install fault, not as a broken case.
       - name: Confirm declared substrate
-        run: jq --version
+        run: |
+          jq --version
+          uv run python -c "import pytest; print(pytest.__version__)"
 
       - name: Run the fast tier
         run: uv run python tests/qe/run.py --tier fast

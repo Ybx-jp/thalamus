@@ -63,14 +63,20 @@ def _echoing_instance(model):
                     f"letting this case silently skip a claim type")
 
 
-def _graph_with(attr: str, claim):
-    """A SessionGraph carrying one claim in one list.
+def _floor_graph_helper():
+    """dev's `_floor_graph`, resolved once and outside any guard.
 
-    Borrows dev's `_floor_graph` helper rather than constructing a SessionGraph here.
-    Hand-rolling it produced validation errors against required fields (`tool`,
-    `summary`) that the helper already supplies, and a second constructor would drift
-    from the one the example tests use — meaning this case could pass against a graph
-    shape nothing else builds.
+    Borrowed rather than reimplemented here: hand-rolling a SessionGraph produced
+    validation errors against required fields (`tool`, `summary`) that the helper
+    already supplies, and a second constructor would drift from the one the example
+    tests use — meaning this case could pass against a graph shape nothing else builds.
+
+    Borrowing costs a dependency: `test_extraction` imports pytest at module scope, so
+    this case needs the `dev` extra installed (`uv sync --extra dev`). When it is not,
+    the import raises out of `run()` and the case is MALFORMED — which is the true
+    report. Resolving it inside the per-claim `except` instead made a missing
+    interpreter package look like a claim type that could not be probed, i.e. a finding
+    about the ingress floor.
     """
     import sys  # noqa: PLC0415
     from pathlib import Path as _Path  # noqa: PLC0415
@@ -80,7 +86,7 @@ def _graph_with(attr: str, claim):
         sys.path.insert(0, tests_dir)
     from test_extraction import _floor_graph  # noqa: PLC0415
 
-    return _floor_graph(**{attr: [claim]})
+    return _floor_graph
 
 
 def run() -> Finding | None:
@@ -120,12 +126,14 @@ def run() -> Finding | None:
     # the scan did not reach. That is a false positive in a case whose whole job is
     # detecting under-coverage — it would have been triaged as a defect in the code under
     # test. Behaviour is checkable; a guess about bytecode layout is not.
+    floor_graph = _floor_graph_helper()
+
     floored: set[str] = set()
     unconstructible: dict[str, str] = {}
     for attr, model in tierable.items():
         try:
             probe = _echoing_instance(model)
-            graph = _graph_with(attr, probe)
+            graph = floor_graph(**{attr: [probe]})
         except Exception as exc:  # noqa: BLE001
             unconstructible[attr] = f"{type(exc).__name__}: {exc}"
             continue
