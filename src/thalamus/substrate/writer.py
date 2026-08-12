@@ -5,14 +5,16 @@ from __future__ import annotations
 import hashlib
 import logging
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 
 from gremlin_python.driver.driver_remote_connection import DriverRemoteConnection
 from gremlin_python.driver.protocol import GremlinServerError
 from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
-from gremlin_python.process.traversal import Direction, Merge, T
+from gremlin_python.process.traversal import Direction, Merge, P, T
 
 from thalamus.contract.ontology import vid
+from thalamus.substrate.artifact_paths import checkout_registry, relativize
 from thalamus.substrate.schema import Claim, Provenance, SessionGraph, ThreadClose, Tier
 
 logger = logging.getLogger(__name__)
@@ -242,6 +244,61 @@ def _upsert_session_vertex(g: GraphTraversalSource, session: SessionGraph) -> st
     return session_vid
 
 
+def _held_projections(
+    g: GraphTraversalSource, identifiers: list[str]
+) -> dict[str, tuple[str, str]]:
+    """identifier -> the `(repo, path)` already on that Artifact, where one exists.
+
+    Both halves, because a session that cannot anchor an artifact has to write the held
+    pair back unchanged — carrying only the repo would blank the path on every write
+    that had nothing to say.
+
+    Fetched in one query rather than per artifact: a session touching fifty files would
+    otherwise pay fifty round trips to learn what it is about to reconcile against.
+    """
+    if not identifiers:
+        return {}
+    rows = (
+        g.V().has_label("Artifact").has("identifier", P.within(identifiers))
+        .project("identifier", "repo", "path").by("identifier")
+        .by(__.coalesce(__.values("repo"), __.constant("")))
+        .by(__.coalesce(__.values("path"), __.constant("")))
+        .to_list()
+    )
+    return {
+        str(row["identifier"]): (str(row["repo"]), str(row["path"])) for row in rows
+    }
+
+
+def _project_artifact(identifier: str, registry: list[str], repo_root: str) -> tuple[str, str]:
+    """This session's reading of an artifact's `(repo, path)`.
+
+    An absolute path is cut against the registry; a relative one is this session's, so
+    the session's own checkout anchors it. A session outside any checkout anchors
+    nothing, which is the honest answer rather than a gap.
+    """
+    if identifier.startswith("/"):
+        return relativize(identifier, registry)
+    if not repo_root:
+        return "", ""
+    return PurePosixPath(repo_root.rstrip("/")).name, identifier
+
+
+def _reconcile(held: tuple[str, str] | None, repo: str, path: str) -> tuple[str, str]:
+    """What to write, given what the artifact already carries.
+
+    Absence is not disagreement — the rule the project migration was rebuilt around.
+    A session that cannot anchor an artifact says nothing about it and must not erase
+    another session's answer; a session that anchors it to a *different* checkout does
+    disagree, and the honest result of two owners is none.
+    """
+    if held is None or not held[0]:
+        return repo, path
+    if not repo:
+        return held
+    return (repo, path) if repo == held[0] else ("", "")
+
+
 def _upsert_artifacts(g: GraphTraversalSource, session: SessionGraph) -> dict[str, str]:
     """Upsert Artifact nodes. Returns identifier -> vertex ID.
 
@@ -249,26 +306,52 @@ def _upsert_artifacts(g: GraphTraversalSource, session: SessionGraph) -> dict[st
     identifier alone. Two experts touching the same file land on the same node by design —
     that is what makes artifacts the join key between scopes (contract/ontology.py).
 
-    The raw tool-call string is a weak identity and the join is measurably leaky because
-    of it: one file arrives absolute from one call and repo-relative from the next, so
-    620 vertices duplicate a sibling and strand 2,297 touch edges (`thalamus
-    audit-artifacts`). The fix is not applied here because every rule for making an
-    absolute path repo-relative needs an anchor this data does not carry — `project`
-    holds values like `ybx`, `tmp` and `code`, so anchoring on it splits one file two
-    ways rather than merging it. Recording the checkout root at extraction time is the
-    candidate, and it is a schema question, not a writer one.
+    The raw tool-call string is a weak identity — one file arrives absolute from one
+    call and repo-relative from the next — so a derived `(repo, path)` is written
+    beside it and *is* the join key. The identifier itself is never re-keyed: it feeds
+    `vid("Artifact", identifier)`, so moving it breaks every citation ever minted, and
+    it is the string the tool call actually carried, where a derivation over it is an
+    inference (docs/09).
+
+    Anchoring here uses the session's own `repo_root` alongside every root the graph
+    already proves, so a file lands projected as it is written rather than waiting for
+    `thalamus derive-artifact-paths` to sweep. Absence and disagreement are kept apart,
+    the same distinction the batch makes: a session that cannot anchor an artifact
+    leaves an existing projection alone, while a session that anchors it *differently*
+    clears it, because an artifact reached from two checkouts has no single owner and
+    inventing one is the false merge re-keying was rejected for.
     """
     artifact_vids: dict[str, str] = {}
+    try:
+        registry = checkout_registry(g)
+        if session.repo_root and session.repo_root.rstrip("/") not in registry:
+            registry = sorted(
+                [*registry, session.repo_root.rstrip("/")], key=len, reverse=True
+            )
+        held = _held_projections(g, [a.identifier for a in session.artifacts])
+        projectable = True
+    except Exception as exc:
+        # Fail closed, the same way a Source's protected properties do: a read that
+        # failed is not a read that found nothing, and without `held` this cannot tell
+        # absence from disagreement — so it would overwrite another session's anchor
+        # with a guess. The projection is derived and `thalamus derive-artifact-paths`
+        # recomputes it; the write itself must not be held hostage to that.
+        logger.warning("artifact projection unavailable, writing without it: %s", exc)
+        registry, held, projectable = [], {}, False
 
     for artifact in session.artifacts:
         artifact_vid = vid("Artifact", artifact.identifier)
         provenance = artifact.provenance or session.default_provenance()
-
         properties = {
             "type": artifact.type.value,
             "project": artifact.project or session.project or "",
             **_provenance_properties(provenance),
         }
+        if projectable:
+            repo, path = _project_artifact(artifact.identifier, registry, session.repo_root)
+            properties["repo"], properties["path"] = _reconcile(
+                held.get(artifact.identifier), repo, path
+            )
 
         graph_traversal = (
             g.merge_v({"identifier": artifact.identifier, T.label: "Artifact"})

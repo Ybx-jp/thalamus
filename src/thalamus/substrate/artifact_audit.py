@@ -5,16 +5,16 @@ join key between scopes (docs/index.md, 2026-07-14). The join is leaky, because 
 tool-call strings are not identity: the same file arrives absolute from one call,
 repo-relative from the next, and via a worktree from a third.
 
-This module reports the damage. It deliberately does **not** repair it. Repair needs a
-rule that turns an absolute path into a repo-relative one, every such rule needs an
-anchor, and the only anchor in the data is `project` — which carries values like `ybx`,
-`tmp`, `code` and `Avatar - The Last Airbender - Season 2`. Anchoring on a wrong project
-does not merely fail to merge, it *splits*: with `project="ybx"`,
-`/home/ybx/code/thalamus/docs/x.md` cuts at `/ybx/` while the relative spelling of the
-same file cuts nowhere, yielding two identities for one file. Recording the checkout
-root at extraction time is the candidate fix, and that is a schema question.
+This module reports the damage over the raw identifiers, which is still the honest place
+to measure it: the identifiers are what the tool calls carried, and they are never
+re-keyed. The join is repaired *beside* them by the `(repo, path)` projection
+(`substrate/artifact_paths.py`), anchored on `Session.repo_root` and admitted only from
+sessions whose `project_evidence` proves it — so the numbers here are the fragmentation
+that projection has to reach, not a backlog waiting on a decision.
 
-So the audit is the shipped half, and the repair waits on that decision.
+Read the two together. A split pair that shares a `(repo, path)` is joined and its
+stranded touches are reachable; one that does not is a file the registry cannot anchor,
+and that is the residue worth looking at.
 """
 
 from __future__ import annotations

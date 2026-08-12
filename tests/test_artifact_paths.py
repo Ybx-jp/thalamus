@@ -119,3 +119,25 @@ def test_a_checkout_root_itself_is_not_relativized_to_nothing():
     directory with anything else that failed to resolve. It is left unanchored instead.
     """
     assert artifact_paths.relativize("/home/u/repo", ["/home/u/repo"]) == ("", "")
+
+
+def test_absence_and_disagreement_are_reconciled_differently_on_a_rewrite():
+    """
+    Scenario: an artifact already projected onto one checkout, met by a later session
+    that (a) cannot anchor it, (b) anchors it to the same checkout, (c) to a different one
+
+    Artifacts are global, so every session that touches a file rewrites this. The
+    distinction is the one the project migration was rebuilt around: a session with no
+    anchor to offer says nothing and must not erase another's answer, while a session
+    offering a *different* checkout genuinely disagrees — and two owners honestly means
+    none, which is the false merge re-keying the identifier was rejected to avoid.
+    """
+    from thalamus.substrate.writer import _reconcile
+
+    held = ("thalamus", "docs/x.md")
+
+    assert _reconcile(held, "", "") == held                       # absence: keep
+    assert _reconcile(held, "thalamus", "docs/x.md") == held      # agreement
+    assert _reconcile(held, "charlie-things", "src/a.py") == ("", "")   # disagreement
+    assert _reconcile(None, "thalamus", "docs/x.md") == ("thalamus", "docs/x.md")
+    assert _reconcile(("", ""), "thalamus", "docs/x.md") == ("thalamus", "docs/x.md")

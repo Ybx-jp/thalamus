@@ -2037,8 +2037,9 @@ def _cmd_audit_artifacts(args):
 
     `Artifact` is global so that two experts touching one file land on one vertex — it
     is the join key between scopes. Raw tool-call strings do not deliver that, and this
-    says by how much. Read-only: the repair needs an anchor for turning absolute paths
-    relative, and `project` is not one (see substrate/artifact_audit.py).
+    says by how much, over the raw identifiers. Read-only, and measured there on
+    purpose: the identifiers are never re-keyed, and the join is repaired beside them by
+    `thalamus derive-artifact-paths`. Run that to see how much of this is reached.
     """
     from thalamus.substrate.artifact_audit import audit_artifact_identity
 
