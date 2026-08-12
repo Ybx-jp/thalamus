@@ -3,6 +3,12 @@
 **Date:** 2026-08-11 · **Harness:** Cursor CLI `2026.08.04-aaa8809`, 6 sessions on one
 box · **Verdict:** wall closed, plus a withdrawal
 
+> **Erratum (2026-08-11).** This entry's claims about `store.db` — the id-less join, the
+> positional ordering, and the reach of `blobEncryptionKey` — are withdrawn by
+> [lab/060](060-the-caveats-were-artifacts-of-the-other-file.md), which read the store
+> directly instead of reasoning about it from the JSONL. The "wall that closed" half
+> stands.
+
 Two things about Cursor's on-disk stores, one closed and one overturned. Both were
 settled by opening a file nobody had opened.
 
