@@ -140,6 +140,22 @@ interconnection. That is an enforceable constraint *and* a metric:
 `scope` answers *which expert*. `Session`, `Thread`, and `Claim` carry both;
 `Artifact` carries `project` only.
 
+A `Session` also records **how** its `project` was reached, in `project_evidence`
+(`cwd` — its working directory resolved to that checkout at extraction time; `touch` —
+every repo file it touched sat in one checkout). The value is asked to serve two
+standards of proof at once. As the **anchor** an absolute path is cut against, a wrong
+`project` does not fail to merge, it splits one file into two identities, so only a
+proven value may be used; as a **recall key**, an absent value simply loses the
+session, and a plausible one beats none. One property cannot be both unless it says
+which it is. Absent means *unknown*, never *proven* — 10 of 243 sessions carry a
+project no recovered evidence confirms, and naming that is the point. The vocabulary
+holds only kinds something writes: a member for an attribution nothing produces is a
+distinction the system cannot record.
+
+`cwd` and `repo_root` are recorded beside it because the resolution is not repeatable
+later — directories move and are deleted, and a path that resolves to no repo today
+may have had one when it was touched.
+
 `Session` carries a third: **`room`** answers *which collaboration* — empty when the
 session worked alone. It is deliberately **not** an event identifier: a room hosts many
 turns, so collapsing convergence by room would trade a false-count error for a

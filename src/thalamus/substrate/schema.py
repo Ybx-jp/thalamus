@@ -65,6 +65,32 @@ def _normalized(description: str) -> str:
     return " ".join(description.split()).rstrip(".")
 
 
+class ProjectEvidence(str, Enum):
+    """How a session's `project` was reached — the value's own provenance.
+
+    `project` answers two questions that want different standards of proof. As the
+    **anchor** an absolute path is cut against, a wrong value does not fail to merge,
+    it splits one file into two identities (`substrate/artifact_audit.py`), so only a
+    proven value may be used. As a **recall key** — "show me my thalamus work" — an
+    absent value simply loses the session, and a plausible one is better than none.
+    One property served both, and nothing recorded which kind of claim it was.
+
+    That gap is not hypothetical: re-anchoring the graph had to leave four sessions
+    alone because a value `basename(cwd)` could not have produced is indistinguishable
+    from a deliberate `THALAMUS_PROJECT` override, and there was no way to ask.
+
+    Members are only the kinds something actually writes. A vocabulary carrying states
+    no code path produces is a distinction the system cannot record, and adding one
+    here later is a line of code.
+    """
+
+    # The session's working directory resolved to a checkout at extraction time.
+    CWD = "cwd"
+    # Every repo file the session touched sat in one checkout. Tool-call inputs, so
+    # this is recorded evidence rather than a reading of what the session was about.
+    TOUCH = "touch"
+
+
 class Tool(str, Enum):
     CURSOR = "cursor"
     CLAUDE_CODE = "claude_code"
@@ -423,6 +449,12 @@ class SessionGraph(BaseModel):
         "and a path that resolves to no repo today may have had one when it was touched. "
         "Empty when the session ran outside a repo, which is a state and not a gap. This "
         "is the anchor a repo-relative path is cut against.",
+    )
+    project_evidence: Optional[ProjectEvidence] = Field(
+        None,
+        description="How `project` was reached, so a consumer can hold it to the "
+        "standard its own use needs. Absent when there is no project to justify, and on "
+        "sessions written before the field existed — absent means unknown, never proven.",
     )
     room: str = Field(
         default="",

@@ -13,7 +13,7 @@ import subprocess
 from thalamus.contract.conformance import check_session
 from thalamus.harness import cursor_transcripts, transcripts
 from thalamus.harness.bootstrap import bootstrap_cursor, bootstrap_project
-from thalamus.substrate.schema import Tier, Tool
+from thalamus.substrate.schema import ProjectEvidence, Tier, Tool
 
 
 def _write_transcript(directory, session_id, records):
@@ -108,6 +108,11 @@ def test_tool_calls_recover_touched_files_and_their_message_anchors(tmp_path):
     assert facts.title == "Fix the fatigue governor"
     assert facts.project == "chartgen"
     assert facts.repo_root == checkout
+    # The evidence rides with the value, set from the same expression that produced it
+    # — a second derivation elsewhere would be a claim about this one, not a record.
+    built = transcripts.to_session_graph(facts, content_hash="h", uri="u", byte_size=1)
+    assert built.project == "chartgen"
+    assert built.project_evidence is ProjectEvidence.CWD
     assert facts.git_branch == "main"
     assert facts.user_turns == 1
 

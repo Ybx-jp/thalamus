@@ -1956,11 +1956,18 @@ def _cmd_repair_projects(args):
             for value, count in sorted(kept.items(), key=lambda kv: -kv[1])[:12]:
                 print(f"  {count:4d}  {value!r}")
 
+        if repair.stamps:
+            kinds: dict[str, int] = {}
+            for _vid, kind in repair.stamps:
+                kinds[kind.value] = kinds.get(kind.value, 0) + 1
+            print(f"\n{len(repair.stamps)} already-correct sessions to stamp with "
+                  f"their evidence: {kinds}")
+
         if not args.write:
             print("\nDry run. Re-run with --write to apply.")
             return
         moved = apply(graph, repair)
-        print(f"\nWrote {moved} vertices.")
+        print(f"\nWrote {moved} vertices, stamped {len(repair.stamps)}.")
     finally:
         close_connection(graph)
 

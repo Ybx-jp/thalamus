@@ -34,6 +34,7 @@ from thalamus.harness.agents import SANDBOX_TMP_PREFIX
 from thalamus.substrate.schema import (
     Artifact,
     ArtifactType,
+    ProjectEvidence,
     SessionGraph,
     Source,
     SourceKind,
@@ -414,6 +415,10 @@ def to_session_graph(
         tool=Tool.CLAUDE_CODE,
         scope=scope,
         project=facts.project or None,
+        # Set from the same expression that produced the value, so the two cannot drift.
+        # A second derivation elsewhere would be a claim about this one rather than a
+        # record of it.
+        project_evidence=ProjectEvidence.CWD if facts.project else None,
         cwd=facts.cwd,
         repo_root=facts.repo_root,
         room=room,

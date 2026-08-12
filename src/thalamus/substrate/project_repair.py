@@ -49,6 +49,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import T
 
 from thalamus.harness.transcripts import is_sandbox_project
+from thalamus.substrate.schema import ProjectEvidence
 
 PIN_LEDGER = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 ARCHIVE = Path.home() / ".thalamus" / "archive"
@@ -66,6 +67,11 @@ class Change:
     before: str
     after: str
     evidence: str
+    # Which *kind* of evidence, in the vocabulary a later reader can act on
+    # (`schema.ProjectEvidence`). `evidence` above is prose for the operator reading a
+    # dry run; this is the part that gets written down. None where the value is being
+    # cleared — there is no project left to justify.
+    kind: ProjectEvidence | None = None
 
 
 @dataclass
@@ -74,6 +80,12 @@ class RepairPlan:
     # Vertices whose current value could not be disproved. Reported rather than
     # silently skipped: an unexplained survivor is the shape a bad migration takes.
     left_alone: list[tuple[str, str, str]] = field(default_factory=list)
+    # Sessions whose project was already right, with the evidence that confirms it.
+    # No value moves; the reason it is trusted gets written down. Without this the
+    # field would arrive almost entirely empty — every session distilled before it
+    # existed — and a provenance field that is blank on the whole corpus cannot be
+    # read as anything but unknown, which is exactly what it was meant to replace.
+    stamps: list[tuple[str, ProjectEvidence]] = field(default_factory=list)
 
     def by_label(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -244,13 +256,17 @@ def plan(
 
         root = resolve_repo_root(cwd)
         after = Path(root).name if root else ""
+        kind = ProjectEvidence.CWD if after else None
+        detail = f"{source} cwd={cwd}"
         if not after:
             after = _attribute_by_touch(row["paths"])
+            if after:
+                kind, detail = ProjectEvidence.TOUCH, f"every touched repo file in {after}"
         settled[str(row["vid"])] = after
         testable.add(before)
         if after == before:
             confirmed.add(before)
-        verdicts.setdefault(before, []).append((str(row["vid"]), after, f"{source} cwd={cwd}"))
+        verdicts.setdefault(before, []).append((str(row["vid"]), after, detail, kind))
 
     disproved = {value for value in testable if value and value not in confirmed}
     # An extraction sandbox is disproved by definition, not by evidence, and needs to
@@ -262,8 +278,10 @@ def plan(
     disproved |= {value for value in _values(g) if value and is_sandbox_project(value)}
 
     for value, seen in verdicts.items():
-        for vid, after, evidence in seen:
+        for vid, after, evidence, kind in seen:
             if after == value:
+                if value and kind is not None:
+                    result.stamps.append((vid, kind))
                 continue
             # Filling an empty value is the one move that needs no disproof: there is
             # nothing there to be wrong about, and attribution recovered from evidence
@@ -274,7 +292,7 @@ def plan(
                 continue
             if not value and not after:
                 continue
-            result.changes.append(Change(vid, "Session", value, after, evidence))
+            result.changes.append(Change(vid, "Session", value, after, evidence, kind))
 
     _plan_threads(g, settled, disproved, result)
     _plan_artifacts(g, disproved, result)
@@ -349,7 +367,19 @@ def _plan_artifacts(g, disproved: set[str], result: RepairPlan) -> None:
 
 
 def apply(g: GraphTraversalSource, repair: RepairPlan) -> int:
-    """Write the planned changes. Returns how many vertices moved."""
+    """Write the planned changes. Returns how many vertices moved.
+
+    `project_evidence` rides along on Sessions only. A Session is where the question is
+    settled; a Thread's project is its session's and an Artifact's is its path's, so
+    stamping them would record an answer about a decision they did not make.
+    """
     for change in repair.changes:
-        g.V(change.vid).property("project", change.after).iterate()
+        traversal = g.V(change.vid).property("project", change.after)
+        if change.label == "Session":
+            traversal = traversal.property(
+                "project_evidence", change.kind.value if change.kind else ""
+            )
+        traversal.iterate()
+    for vid, kind in repair.stamps:
+        g.V(vid).property("project_evidence", kind.value).iterate()
     return len(repair.changes)

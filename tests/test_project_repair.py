@@ -291,3 +291,40 @@ def test_touched_files_attribute_a_session_its_cwd_cannot_and_only_when_unanimou
     repair = project_repair.plan(g, ledger=ledger, archive=tmp_path / "archive")
 
     assert [(c.vid, c.after) for c in repair.changes] == [("v-1", "solo")]
+
+
+def test_a_correct_value_is_stamped_with_its_evidence_without_moving(tmp_path):
+    """
+    Scenario: a session whose project already matches the checkout it ran in
+
+    Nothing to re-anchor, but the reason it is trusted was never written down. Without
+    this the field arrives blank on every session distilled before it existed — and a
+    provenance field that is empty across the whole corpus reads as "unknown", which is
+    the state it was added to replace. 219 sessions on the live graph are in this case.
+    """
+    repo = _checkout(tmp_path / "myrepo")
+    ledger = _ledger(tmp_path, [{"session_id": "s-1", "cwd": repo}])
+    g = _FakeTraversal([{"vid": "v-1", "project": "myrepo", "sid": "s-1", "hashes": []}])
+
+    repair = project_repair.plan(g, ledger=ledger, archive=tmp_path / "archive")
+
+    assert repair.changes == []
+    assert repair.stamps == [("v-1", project_repair.ProjectEvidence.CWD)]
+
+
+def test_a_cleared_value_carries_no_evidence(tmp_path):
+    """
+    Scenario: a session run outside any checkout, whose directory name was its project
+
+    There is no project left to justify, so the evidence is absent rather than some
+    token meaning "proved to have none". The vocabulary holds only kinds something
+    writes; a member for absence would be a state no consumer could act on.
+    """
+    loose = tmp_path / "home"
+    loose.mkdir()
+    ledger = _ledger(tmp_path, [{"session_id": "s-1", "cwd": str(loose)}])
+    g = _FakeTraversal([{"vid": "v-1", "project": "home", "sid": "s-1", "hashes": []}])
+
+    repair = project_repair.plan(g, ledger=ledger, archive=tmp_path / "archive")
+
+    assert [(c.after, c.kind) for c in repair.changes] == [("", None)]

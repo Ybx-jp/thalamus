@@ -222,6 +222,7 @@ def _upsert_session_vertex(g: GraphTraversalSource, session: SessionGraph) -> st
         "tool": session.tool.value,
         "scope": session.scope,
         "project": session.project or "",
+        "project_evidence": session.project_evidence.value if session.project_evidence else "",
         "cwd": session.cwd,
         "repo_root": session.repo_root,
         "room": session.room,
