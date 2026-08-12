@@ -145,19 +145,47 @@ is not complete, and full lift has no predicate that can tell the difference.
 The conditional predicate holds on **10/10** untampered stores, so on this corpus the
 two produce identical output and the conditional costs nothing.
 
-## `external_texts` is not two-valued
+## The store keeps its own consistency proof
 
-Of 26 tool results, 4 are ingress. Two carry fetched content; **two carry vendor prose
-in the same field** — `"result": "Web fetch rejected: User Rejected"` — with no
-discriminator distinguishing a refusal from a page that happened to say that. A refusal
-fed to `_echoes` as third-party corpus text is a category error in the direction that
-*lifts*: it adds tokens a claim can echo against.
+The prior root revisions are not dead weight. Each root's message list is a **strict
+prefix** of the next — measured across **10/10 stores and 52 prior revisions**. That is
+RFC 6962's consistency-proof shape, already present in the vendor's own data, so the
+check is *read it*, not *build it*.
+
+What that buys, and does not, follows from the structure rather than from a
+measurement: an interior deletion or a reorder breaks the prefix relation against every
+later root and is caught, while **truncating the tail is not** — a shortened list is
+still a valid prefix, indistinguishable from an earlier honest state. Tail truncation is
+exactly the shape of "the last fetch is missing", so the prefix chain does not on its
+own replace reconciling calls against results.
+
+## `external_texts` is not two-valued, and the discriminator is the frame
+
+Of 26 tool results, 6 are ingress. Four carry fetched content; **two carry vendor prose
+in the same field** — `"result": "Web fetch rejected: User Rejected"`.
 
 | class | count |
 |---|---|
-| ingress, content | 2 |
+| ingress, content | 4 |
 | ingress, refused | 2 |
 | local (`Glob` 8, `Grep` 6, `Read` 5, `Shell` 1) | 20 |
+
+A discriminator exists, and it is not the prose. A successful result is **framed, and
+the frame binds to the call**:
+
+| tool | frame |
+|---|---|
+| `WebFetch` | `"# Content from " + args.url + "\n\n"` then the payload |
+| `WebSearch` | `"Title: Web search results\nContent: "` |
+
+Refusals carry no frame. Classifying on frame-prefix: **6/6 correct.**
+
+**The polarity is the whole point.** A rule that matched the refusal *text* would be an
+attacker-controlled channel in the lifting direction — a fetched page whose body opens
+with `Web fetch rejected: User Rejected` would be discarded from the corpus, removing
+the very evidence a claim should have been judged against. Matching the frame inverts
+that: the attacker would have to forge a prefix containing `args.url`, which is our
+record of our own call, not theirs.
 
 ## The caveat that stands
 
@@ -184,11 +212,17 @@ def f1refs(b):                      # the message ids, in order
         if wt == 0:   _, i = varint(b, i)
         elif wt == 2:
             ln, i = varint(b, i)
-            if fn == 1 and ln == 32: out.append(b[i:i+ln].hex())
+            if fn == 1:
+                # Refuse, don't skip: a field-1 entry of another length means the
+                # shape assumed here is wrong, and skipping it returns a short list
+                # that looks complete. Lengths other than 32 DO occur elsewhere in
+                # the blob population — 40 distinct ones on this box.
+                if ln != 32: raise ValueError(f"field 1 length {ln}, expected 32")
+                out.append(b[i:i+ln].hex())
             i += ln
         elif wt == 5: i += 4
         elif wt == 1: i += 8
-        else: break
+        else: raise ValueError(f"unhandled wiretype {wt}")   # never `break`
     return out
 
 for p in sorted(glob.glob(os.path.expanduser("~/.cursor/chats/*/*/store.db"))):
@@ -207,7 +241,7 @@ for p in sorted(glob.glob(os.path.expanduser("~/.cursor/chats/*/*/store.db"))):
 
 ## Scope of these measurements
 
-One machine, one CLI version, 10 stores, 26 tool calls, 4 of them ingress. Six sessions
+One machine, one CLI version, 10 stores, 26 tool calls, 6 of them ingress. Six sessions
 are Thalamus's own test and extraction runs and four are probes written to produce these
 exact rows. The counts are exact for that set and are a sample of nothing wider.
 
