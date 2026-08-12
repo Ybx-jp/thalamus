@@ -147,8 +147,15 @@ Layers 1 and 3 both rest on a premise the Claude Code format satisfies silently:
 that the transcript embeds tool *results*. Cursor's does not — it records user
 messages, assistant text and tool call *inputs*, and excludes tool outputs
 deliberately because they can be large (harness/cursor_transcripts.py, lab/028).
-So for a Cursor session there are no external texts to collect and nothing for
-the mechanical echo floor to run against.
+The adapter parses that transcript and nothing else, so it collects no external
+texts and the mechanical echo floor has nothing to run against.
+
+The results are not gone, only elsewhere: Cursor keeps them in a per-session
+content-addressed store, `~/.cursor/chats/<hash>/<id>/store.db`, where an ingress
+result is retained verbatim and joins its call by `toolCallId`, under tool names
+identical to Claude Code's (lab/060). Reaching them is a change to the ingress
+floor's evidence base and to what the archive retains, so it is grounded and
+designed before it is built, not assumed here.
 
 The failure mode this creates is the dangerous kind: an empty external-texts list
 is indistinguishable from a session that fetched nothing, so the floor would
@@ -167,10 +174,17 @@ fetched, only not what came back.
 This is deliberately heavy-handed. It takes the trade the floor already prices —
 first-party memory rendering as tier 2 informs, and costs nothing but emphasis —
 at the one moment the cheap mechanical check is unavailable, and it makes
-capturing tool outputs out-of-band the way to earn tier-1 back rather than
-something to remember to do. Cursor's own recommendation for full traces is a
-`postToolUse` hook writing them to a file, which Thalamus already has an event
-on; wiring that is the open item in docs/07, not a silent assumption here.
+reaching the results the way to earn tier-1 back rather than something to
+remember to do.
+
+Whatever reaches them must satisfy the same premise this section is built on, and
+that is the hard part rather than the reading. A predicate that merely asks
+whether any external text was found reports success on a *partial* read as
+readily as a complete one — measured, by deleting one of two ingress results from
+a store and watching a non-empty check still pass while a whole fetched page was
+missing from the corpus the floor judged against (lab/060). Non-empty is not
+complete. Earning tier-1 back therefore requires evidence that the read was
+whole, not merely non-empty.
 
 **Prior work.** This is the write-path stance of the memory-poisoning literature
 applied to the *distillation* channel: "defenses must operate at the write path, not
@@ -207,7 +221,7 @@ happened to scan is exactly what this table replaces.
 |---|---|---|
 | `WebFetch`/`WebSearch` results in the transcript | V-S1, V-S2 | **closed for `Claim` subtypes** — `apply_ingress_floor` forces tier 2, the contract rejects `external ∧ tier<2`; canary-tested end-to-end (lab/005) |
 | …the same results distilled into a `Thread` | V-S2 | **open, unchecked** — the floor updates only `decisions`/`problems`/`solutions`, `Thread` has no `external` field to mark, and the conformance audit keys on `label == "Claim"`, so thread descriptions write tier-1. Cross-session, and served first by `memory_open_threads` (lab/040) |
-| Cursor transcripts (no tool results) | V-S1 | **closed by flooring whole** — `ingress_verifiable=False` stamps every claim `transcript-ingress-unverifiable` (lab/028) |
+| Cursor transcripts (results not in the parsed file) | V-S1 | **closed by flooring whole** — `ingress_verifiable=False` stamps every claim `transcript-ingress-unverifiable` (lab/028). The results exist in the session's `store.db` and the adapter does not read it (lab/060) |
 | Bash-tunnelled `curl`/`wget` | V-S2 | **open, unchecked** — outside `EXTERNAL_INGRESS_TOOLS`, so collection never sees the fetched bytes and the claims distill tier-1; no test in `tests/` exercises it |
 | Peer-session messages (`SendMessage`) | V-S2 | **open, unchecked** — a peer's summary arrives with *no ingress tool at all* and distills tier-1; the sharper of the two residuals, and generally available to every live session on the machine and in the cloud rather than to one team. Unlike the in-process teams mailbox (lab/004), it leaves a collectable boundary: the receiver's transcript wraps it as `<cross-session-message from="...">` |
 | Operator's checkout by absolute path | V-S2 | `detect_worktree_escape` — 13 of 88 arms reached it; 3 of one campaign's 24 gradeable arms reached an answer key (lab/021). Confinement is `--sandbox` |

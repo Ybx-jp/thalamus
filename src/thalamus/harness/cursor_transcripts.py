@@ -17,25 +17,32 @@ describe (forum thread 166592, confirmed by Cursor staff 2026; read 2026-07-29):
 - `message` carries `content` only — no `id`, no `usage`, no model
 - content blocks are `text` and `tool_use` only
 - `tool_use` carries `type`, `name`, `input` — **no `id`**
-- **`tool_result` blocks are absent entirely.** Cursor excludes tool outputs from
-  transcripts deliberately, because they can be very large (Cursor staff, forum
-  thread 157311). Extended thinking arrives as `[REDACTED]` when the provider
-  redacts it.
+- **`tool_result` blocks are absent from this file.** Cursor excludes tool outputs
+  from transcripts deliberately, because they can be very large (Cursor staff,
+  forum thread 157311). They are retained elsewhere — see consequence 1. Extended
+  thinking arrives as `[REDACTED]` when the provider redacts it.
 
 Three consequences, each handled explicitly rather than papered over:
 
 1. **The ingress floor cannot be computed from a Cursor transcript.** docs/05's
    mechanical floor — the layer no prompt content can lift — judges extracted
-   claims against the verbatim text of external-ingress tool *results*. Those
-   results do not exist here for any tool. An empty `external_texts` therefore
-   does not mean "nothing was fetched", it means "we cannot know", and the two
-   must never collapse: silently returning the empty list would delete the
-   unliftable half of the laundering defence while appearing to apply it. So
-   facts carry `ingress_verifiable=False` and `apply_ingress_floor` floors the
-   whole session rather than trusting the extractor's self-marks alone. Down-tier
-   is the only direction the floor moves, and docs/05 already prices that cost:
-   first-party memory rendering as tier 2 informs, and costs nothing but
-   emphasis.
+   claims against the verbatim text of external-ingress tool *results*, and no
+   transcript carries them. An empty `external_texts` therefore does not mean
+   "nothing was fetched", it means "we cannot know", and the two must never
+   collapse: silently returning the empty list would delete the unliftable half
+   of the laundering defence while appearing to apply it. So facts carry
+   `ingress_verifiable=False` and `apply_ingress_floor` floors the whole session
+   rather than trusting the extractor's self-marks alone. Down-tier is the only
+   direction the floor moves, and docs/05 already prices that cost: first-party
+   memory rendering as tier 2 informs, and costs nothing but emphasis.
+
+   The results themselves are retained by Cursor, in a per-session
+   content-addressed SQLite store, `~/.cursor/chats/<hash>/<id>/store.db`: an
+   ingress result verbatim in `result`, joined to its call by `toolCallId`, under
+   the same `WebFetch`/`WebSearch` names Claude Code uses (lab/060). This module
+   does not read it. Reading it is not sufficient either — a check that asks only
+   whether some external text was found passes a partial read as readily as a
+   whole one, which is the same collapse in a new place.
 
 2. **Touch anchors are positional, not identifiers.** Anchors let docs/03's
    provenance walk land on the exact tool call instead of handing the operator
@@ -412,8 +419,9 @@ def parse(
     """
     facts = TranscriptFacts(session_id=session_id or path.stem, path=path)
     facts.harness = "cursor"
-    # Structural, not incidental: no Cursor transcript of any session carries the
-    # tool results the floor needs (see module docstring).
+    # Structural to this file, not incidental: no Cursor transcript of any session
+    # carries the tool results the floor needs. They exist in the session's
+    # store.db, which this parser does not open (see module docstring).
     facts.ingress_verifiable = False
     facts.cwd = cwd
     facts.started_at = started_at
