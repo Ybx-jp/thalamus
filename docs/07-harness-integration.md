@@ -239,10 +239,21 @@ project name *and* by the cwd the session recorded.
 A session no hook ever saw has **no scope, and does not get `main`**. Scope is
 written into vertex IDs, so defaulting an unattested session into the operator's
 own subgraph is an unmade routing decision that cannot be walked back. Such
-sessions are listed and skipped; `thalamus extract --harness cursor
---assign-scope <scope>` is how an operator claims them. This is a different
-absence from the missing tool results above: there a value existed and the format
-could not carry it, here no value was ever determined.
+sessions are listed and skipped; `--assign-scope <scope>` is how an operator
+claims them, on both `thalamus extract --harness cursor` and `thalamus bootstrap
+--harness cursor`. This is a different absence from the missing tool results
+above: there a value existed and the format could not carry it, here no value was
+ever determined — FHIR R4's `DataAbsentReason` separates the two as `unsupported`
+and `not-asked`.
+
+**Both bootstrap stages reach Cursor.** Stage 1 (`thalamus bootstrap --harness
+cursor`) is the deterministic, model-free half — retain the bytes, derive Session,
+Source, Artifact and anchored TOUCHES — and it is session-oriented rather than
+project-oriented, because Cursor's discovery is: an `EndedSession` already carries
+the scope, cwd and end time that Claude Code reads out of its own transcript. That
+asymmetry is the entire seam. Both readers emit one `TranscriptFacts`, the archive
+has no opinion about which harness wrote the bytes, and Cursor's graph builder
+delegates to Claude Code's before re-stamping the tool.
 
 Extraction runs as a **later sweep, not at sessionEnd**: Cursor is not documented
 to flush the transcript before firing the hook (an open request asks it to fsync

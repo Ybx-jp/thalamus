@@ -2,7 +2,7 @@
 Deterministic transcript extraction tests.
 
 Interfaces: thalamus.harness.transcripts.parse, to_session_graph;
-            thalamus.harness.bootstrap.bootstrap_project
+            thalamus.harness.bootstrap.bootstrap_project, bootstrap_cursor
 Infrastructure: none; synthetic JSONL in tmp_path
 Scope: the half of extraction that needs no model, and the anchors it recovers
 """
@@ -10,8 +10,8 @@ Scope: the half of extraction that needs no model, and the anchors it recovers
 import json
 
 from thalamus.contract.conformance import check_session
-from thalamus.harness import transcripts
-from thalamus.harness.bootstrap import bootstrap_project
+from thalamus.harness import cursor_transcripts, transcripts
+from thalamus.harness.bootstrap import bootstrap_cursor, bootstrap_project
 from thalamus.substrate.schema import Tier, Tool
 
 
@@ -466,3 +466,88 @@ def test_a_room_members_transcripts_are_discoverable_under_its_own_config_dir(tm
     assert len(results) == 1
     assert results[0].session is not None
     assert results[0].session.session_id == "inroom"
+
+
+def _cursor_session(tmp_path, session_id, cwd, scope, records):
+    """An EndedSession pointing at a real Cursor-shaped transcript on disk."""
+    directory = tmp_path / "cursor" / session_id
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{session_id}.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    return cursor_transcripts.EndedSession(
+        session_id=session_id, scope=scope, transcript_path=path,
+        ended_at=None, cwd=cwd,
+    )
+
+
+def test_bootstrap_reaches_cursor_sessions_through_the_same_stage_one(tmp_path, monkeypatch):
+    """
+    Scenario: Cursor sessions found by discovery are bootstrapped without a model.
+
+    Verifications:
+    - the deterministic subgraph is built and passes the contract
+    - it is stamped as Cursor's, not Claude Code's
+    - time and place come from discovery, since Cursor's rows carry neither
+
+    Stage 1 was Claude-Code-only because `bootstrap` named one reader module, not
+    because the harnesses differ after parsing. They produce one intermediate.
+    """
+    # The pin ledger is the primary source for cwd; an empty one forces the
+    # fallback to what discovery already recovered.
+    monkeypatch.setattr(cursor_transcripts, "PIN_LEDGER", tmp_path / "no-pins.jsonl")
+    session = _cursor_session(
+        tmp_path, "cur-1", "/home/u/work", "homelab",
+        [
+            {"role": "user", "message": {"content": [{"type": "text", "text": "port it"}]}},
+            {"role": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "Edit", "input": {"file_path": "/w/a.py"}}]}},
+        ],
+    )
+
+    results = bootstrap_cursor([session], archive_base=tmp_path / "archive")
+
+    assert len(results) == 1
+    built = results[0].session
+    assert built is not None and results[0].issues == []
+    assert built.tool == Tool.CURSOR
+    assert built.scope == "homelab"          # the session's own, never a default
+    assert built.project == "work"           # from discovery's cwd, not the path
+    assert check_session(built) == []
+
+
+def test_bootstrap_refuses_a_cursor_extraction_sandbox(tmp_path, monkeypatch):
+    """
+    Scenario: a sandbox transcript reaches stage 1 despite its project dir.
+
+    Verifications: it is skipped, not remembered.
+
+    Every headless extraction is a full Cursor session that files its own
+    transcript, so distilling one writes memory about the act of remembering —
+    and the sandbox's own run would distill in turn.
+    """
+    monkeypatch.setattr(cursor_transcripts, "PIN_LEDGER", tmp_path / "no-pins.jsonl")
+    session = _cursor_session(
+        tmp_path, "cur-2", "/tmp/thalamus-extract-abc123", "main",
+        [{"role": "user", "message": {"content": [{"type": "text", "text": "distill this"}]}}],
+    )
+
+    results = bootstrap_cursor([session], archive_base=tmp_path / "archive")
+
+    assert results[0].session is None
+    assert "sandbox" in results[0].skipped
+
+
+def test_claude_bootstrap_also_refuses_a_sandbox_transcript(tmp_path):
+    """The same refusal on the Claude Code path, where `discover()` withholds the
+    project dir but a directly-named one would otherwise slip through."""
+    project = tmp_path / "projects" / "proj"
+    _write_transcript(project, "sand", [
+        {"type": "user", "cwd": "/tmp/thalamus-extract-zzz",
+         "message": {"role": "user", "content": "do a thing"}},
+    ])
+
+    results = bootstrap_project(
+        "proj", projects_dir=tmp_path / "projects", archive_base=tmp_path / "archive"
+    )
+    assert results[0].session is None
+    assert "sandbox" in results[0].skipped

@@ -79,13 +79,26 @@ def main():
 
     # Bootstrap command
     bootstrap_parser = subparsers.add_parser(
-        "bootstrap", help="Build memory from retained Claude Code session transcripts"
+        "bootstrap", help="Build memory from retained session transcripts (stage 1, no model)"
     )
     bootstrap_parser.add_argument(
         "projects",
         nargs="*",
         help="Claude Code project dir names (e.g. -home-you-code-thalamus). "
-        "Omit to list what is available.",
+        "Omit to list what is available. Ignored with --harness cursor, which is "
+        "session-oriented and sweeps every discovered Cursor session.",
+    )
+    bootstrap_parser.add_argument(
+        "--harness", choices=agents.HARNESSES, default="claude",
+        help="Which harness wrote the transcripts (default: claude). `cursor` sweeps "
+        "both discovery surfaces — the sessionEnd hook log and ~/.cursor/projects — "
+        "so sessions predating the hooks are included.",
+    )
+    bootstrap_parser.add_argument(
+        "--assign-scope", default="",
+        help="Scope for Cursor sessions no hook ever saw, which therefore have no "
+        "resolved scope. Without it they are listed and skipped rather than defaulted "
+        "into `main`; scope is part of the vertex ID and cannot be walked back.",
     )
     bootstrap_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     bootstrap_parser.add_argument(
@@ -1253,7 +1266,8 @@ def _cmd_schema():
     print(json.dumps(SessionGraph.model_json_schema(), indent=2))
 
 
-def _cmd_bootstrap(args):
+def _claude_bootstrap_groups(args):
+    """(label, results) per named project dir, or None when the run only listed."""
     root = args.projects_dir or transcripts.CLAUDE_PROJECTS
     available = transcripts.discover(args.projects_dir)
     if not available:
@@ -1268,12 +1282,76 @@ def _cmd_bootstrap(args):
         print("\nBootstrap them with (note the `--`; the names start with a dash):")
         print("  thalamus bootstrap -- <project-dir> [<project-dir> ...] [--write]")
         print(f"Archive: {archive_dir()}  (outside the repo, deliberately)")
-        return
+        return None
 
     unknown = [p for p in args.projects if p not in available]
     if unknown:
         print(f"Unknown project dir(s): {', '.join(unknown)}", file=sys.stderr)
         sys.exit(1)
+
+    return [
+        (project, bootstrap_project(
+            project, projects_dir=args.projects_dir, scope=args.scope))
+        for project in args.projects
+    ]
+
+
+def _cursor_bootstrap_groups(args):
+    """One group per resolved scope — Cursor discovery is session-oriented.
+
+    Grouping by scope rather than by directory because that is the axis a Cursor
+    session actually varies on: it is pinned by `THALAMUS_SCOPE` at launch, and
+    the sanitized project directory it lands under is a flattened cwd we
+    deliberately never un-flatten.
+    """
+    from thalamus.harness.bootstrap import bootstrap_cursor
+
+    found = [s for s in cursor_transcripts.discover() if s.exists]
+    if not found:
+        print(
+            "No Cursor sessions found. Discovery reads the sessionEnd hook log "
+            f"({cursor_transcripts.CURSOR_SESSION_END_LOG}) and sweeps "
+            f"{cursor_transcripts.CURSOR_PROJECTS}; nothing in either means no Cursor "
+            "session has run on this machine.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    ready, refused = cursor_transcripts.claim_unresolved(found, args.assign_scope)
+    if refused:
+        print(
+            f"  ! {len(refused)} session(s) found on disk that no hook ever saw, so no "
+            "scope was ever resolved for them. They are NOT being bootstrapped. Re-run "
+            "with `--assign-scope <scope>` to route them, after checking they belong "
+            "there:",
+            file=sys.stderr,
+        )
+        for session in refused:
+            print(
+                f"      {session.session_id[:8]}  {session.cwd or 'cwd unknown'}",
+                file=sys.stderr,
+            )
+    if not ready:
+        return None
+
+    by_scope: dict[str, list] = {}
+    for session in ready:
+        by_scope.setdefault(session.scope, []).append(session)
+    return [
+        (f"cursor · scope {scope}", bootstrap_cursor(sessions))
+        for scope, sessions in sorted(by_scope.items())
+    ]
+
+
+def _cmd_bootstrap(args):
+    if args.harness == "cursor":
+        groups = _cursor_bootstrap_groups(args)
+        if groups is None:
+            return
+    else:
+        groups = _claude_bootstrap_groups(args)
+        if groups is None:
+            return
 
     graph = connect(args.url) if args.write else None
     all_secrets: dict[str, int] = {}
@@ -1281,11 +1359,8 @@ def _cmd_bootstrap(args):
     nodes = 0
 
     try:
-        for project in args.projects:
-            results = bootstrap_project(
-                project, projects_dir=args.projects_dir, scope=args.scope
-            )
-            print(f"\n=== {project} ({len(results)} transcripts) ===")
+        for label, results in groups:
+            print(f"\n=== {label} ({len(results)} transcripts) ===")
             for result in results:
                 name = result.transcript.stem[:8]
                 if result.skipped:
