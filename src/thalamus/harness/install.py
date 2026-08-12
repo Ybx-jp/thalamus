@@ -1032,6 +1032,7 @@ def run(dry_run: bool = False, check_only: bool = False,
               "every session already open keeps the old config until the editor is "
               "relaunched, and `/clear` is not enough.")
         if "cursor" in harnesses:
-            print("Cursor: no distillation yet — sessions retrieve and trace but leave no "
-                  "episodic memory (docs/07, lab/010).")
+            print("Cursor: discovery reads the sessionEnd hook log, not the filesystem "
+                  "(cursor_transcripts.discover), so sessions that ran on this box before "
+                  "now will never be distilled — only ones ending from here on (lab/054).")
     return 0

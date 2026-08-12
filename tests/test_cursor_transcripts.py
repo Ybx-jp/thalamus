@@ -5,13 +5,15 @@ Interfaces: harness/cursor_transcripts.py, driven with synthetic transcripts in
 the shape Cursor staff and users describe (forum threads 157311/166592, read
 2026-07-29). Infrastructure: tmp_path for transcripts and ledgers; no live
 graph, no Cursor.
-Scope: this is a **contract test against documentation**, not against Cursor.
-No Thalamus code has run inside a live Cursor, so the assertions divide into two
-kinds and the distinction is the point. Some pin what we believe Cursor emits
-and will need revisiting if that belief is wrong. The rest pin how the adapter
-behaves when the format disappoints it — unknown blocks, missing fields,
-malformed lines — and those hold regardless, because a parser that has never met
-its input must degrade to an absent field rather than a wrong one.
+Scope: the transcript-shape assertions are a **contract test against
+documentation**, not against Cursor, and they divide into two kinds. Some pin
+what we believe Cursor emits and will need revisiting if that belief is wrong.
+The rest pin how the adapter behaves when the format disappoints it — unknown
+blocks, missing fields, malformed lines — and those hold regardless, because a
+parser meeting an unfamiliar input must degrade to an absent field rather than a
+wrong one. The on-disk layout the discovery tests build is the exception: it was
+read off a live Cursor install (lab/054), so those fixtures are copied from
+observation rather than from documentation.
 
 The load-bearing test in this file is the ingress one: Cursor transcripts carry
 no tool results for any tool, so an empty `external_texts` means "we cannot
@@ -21,6 +23,7 @@ half of docs/05's laundering floor that no prompt content can lift.
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -169,7 +172,7 @@ class TestParse:
             json.dumps({"session_id": "a", "scope": "main",
                         "transcript_path": str(tmp_path / "gone.jsonl")}) + "\n"
         )
-        assert [s.exists for s in cursor_transcripts.discover(log)] == [False]
+        assert [s.exists for s in cursor_transcripts.discover(log, tmp_path / "none")] == [False]
 
     def test_an_empty_transcript_yields_nothing_to_remember(self, tmp_path):
         path = write_transcript(tmp_path / "c.jsonl", [])
@@ -236,7 +239,7 @@ class TestDiscovery:
             + "\n"
         )
         (tmp_path / "a.jsonl").write_text("")
-        found = {s.session_id: s for s in cursor_transcripts.discover(log)}
+        found = {s.session_id: s for s in cursor_transcripts.discover(log, tmp_path / "none")}
         assert set(found) == {"a", "b"}
         assert found["b"].scope == "literature"
         assert found["a"].exists and not found["b"].exists
@@ -253,15 +256,15 @@ class TestDiscovery:
             )
             + "\n"
         )
-        assert [s.scope for s in cursor_transcripts.discover(log)] == ["homelab"]
+        assert [s.scope for s in cursor_transcripts.discover(log, tmp_path / "none")] == ["homelab"]
 
     def test_rows_without_a_transcript_pointer_are_ignored(self, tmp_path):
         log = tmp_path / "log.jsonl"
         log.write_text(json.dumps({"session_id": "a", "scope": "main"}) + "\n")
-        assert cursor_transcripts.discover(log) == []
+        assert cursor_transcripts.discover(log, tmp_path / "none") == []
 
     def test_a_missing_log_is_empty_not_an_error(self, tmp_path):
-        assert cursor_transcripts.discover(tmp_path / "nope.jsonl") == []
+        assert cursor_transcripts.discover(tmp_path / "nope.jsonl", tmp_path / "none") == []
 
     def test_session_context_comes_from_the_pin_ledger(self, tmp_path):
         ledger = tmp_path / "pins.jsonl"
@@ -279,6 +282,197 @@ class TestDiscovery:
         cwd, started = cursor_transcripts.session_context("a", ledger)
         assert cwd == "/home/u/proj"
         assert started == datetime(2026, 7, 29, 9, 0, tzinfo=timezone.utc)
+
+
+def _cursor_tree(root, sessions):
+    """Build Cursor's real on-disk layout (lab/054) for a list of sessions.
+
+    Each entry is (project_dir_name, session_id, cwd_or_None). `cwd` None writes
+    no meta.json at all, which is the shape of a session Cursor recorded before
+    it wrote one, or one whose chats entry has been cleaned up.
+    """
+    projects, chats = root / "projects", root / "chats"
+    for index, (project, session_id, cwd) in enumerate(sessions):
+        transcript_dir = projects / project / "agent-transcripts" / session_id
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+        (transcript_dir / f"{session_id}.jsonl").write_text(
+            json.dumps({"role": "user", "message": {"content": "hello"}}) + "\n"
+        )
+        if cwd is not None:
+            # The hash directory is not derivable from the session id — that is
+            # why the reader globs for it rather than addressing it.
+            meta_dir = chats / f"{index:032x}" / session_id
+            meta_dir.mkdir(parents=True, exist_ok=True)
+            (meta_dir / "meta.json").write_text(json.dumps({
+                "schemaVersion": 1, "createdAtMs": 1786398926686,
+                "updatedAtMs": 1786398973904, "hasConversation": True, "cwd": cwd,
+            }))
+    return projects, chats
+
+
+class TestFilesystemDiscovery:
+    """The second discovery surface: sessions no hook ever saw.
+
+    Reading only the sessionEnd log made every session predating the hooks
+    undiscoverable while its transcript sat on disk — lost by policy rather than
+    by format, which bites hardest on the machine Thalamus arrives at late
+    (lab/054).
+    """
+
+    def test_a_session_no_hook_saw_is_found_with_its_scope_unresolved(self, tmp_path, monkeypatch):
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", "/home/u/work")])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        found = cursor_transcripts.discover(tmp_path / "nolog.jsonl", projects)
+        assert [s.session_id for s in found] == ["sess-a"]
+        assert found[0].found_by == frozenset({cursor_transcripts.DISCOVERED_BY_FILESYSTEM})
+        # The load-bearing assertion: NOT `main`. Routing an unattested session
+        # into the operator's own subgraph is a decision nobody made.
+        assert found[0].scope == cursor_transcripts.UNRESOLVED_SCOPE
+        assert not found[0].scope_resolved
+
+    def test_cwd_is_read_from_cursors_own_record_not_the_directory_name(
+        self, tmp_path, monkeypatch
+    ):
+        """Un-sanitizing `home-u-work` back to a path is a guess that arrives
+        with no error signal; meta.json is evidence Cursor wrote at the time."""
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", "/home/u/actual")])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        found = cursor_transcripts.discover(tmp_path / "nolog.jsonl", projects)
+        assert found[0].cwd == "/home/u/actual"
+        assert found[0].ended_at is not None
+
+    def test_a_session_with_no_meta_json_is_still_found_without_a_cwd(
+        self, tmp_path, monkeypatch
+    ):
+        """Absent, not guessed. The transcript is still distillable."""
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", None)])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        found = cursor_transcripts.discover(tmp_path / "nolog.jsonl", projects)
+        assert [s.session_id for s in found] == ["sess-a"]
+        assert found[0].cwd == "" and found[0].ended_at is None
+
+    def test_extraction_sandboxes_are_refused_by_project_name(self, tmp_path, monkeypatch):
+        """Every headless extraction is a full Cursor session that files its own
+        transcript, so the sweep would otherwise distill the act of remembering."""
+        projects, chats = _cursor_tree(tmp_path, [
+            ("tmp-thalamus-extract-brs58tqj", "sand-a", "/tmp/thalamus-extract-brs58tqj"),
+            ("home-u-work", "sess-a", "/home/u/work"),
+        ])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        found = cursor_transcripts.discover(tmp_path / "nolog.jsonl", projects)
+        assert [s.session_id for s in found] == ["sess-a"]
+
+    def test_a_sandbox_is_still_refused_when_its_project_dir_is_unrecognisable(
+        self, tmp_path, monkeypatch
+    ):
+        """Defence in depth, and the reason recovering a real cwd earns its keep:
+        the project name carries no marker here, and only meta.json's cwd does."""
+        projects, chats = _cursor_tree(
+            tmp_path, [("some-other-name", "sand-a", "/tmp/thalamus-extract-mq2pdfe7")]
+        )
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        assert cursor_transcripts.discover(tmp_path / "nolog.jsonl", projects) == []
+
+    def test_a_missing_projects_tree_is_empty_not_an_error(self, tmp_path):
+        assert cursor_transcripts.discover(tmp_path / "nolog.jsonl", tmp_path / "nope") == []
+
+
+class TestSurfaceMerge:
+    """Per-field merge: each surface supplies what only it can know.
+
+    Hook rows carry a resolved scope no filesystem read can recover; the
+    filesystem sees sessions the log never recorded. Last-writer-wins across the
+    whole record would let a filesystem row's unresolved scope overwrite a
+    resolved one, which is why the rule is per-field (TOKI, arXiv 2606.06240).
+    """
+
+    def test_the_hook_row_supplies_the_scope_and_both_surfaces_are_recorded(
+        self, tmp_path, monkeypatch
+    ):
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", "/home/u/work")])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        log = tmp_path / "log.jsonl"
+        log.write_text(json.dumps({
+            "session_id": "sess-a", "scope": "homelab", "ts": "2026-08-10T09:00:00Z",
+            "transcript_path": str(
+                projects / "home-u-work" / "agent-transcripts" / "sess-a" / "sess-a.jsonl"),
+        }) + "\n")
+        found = cursor_transcripts.discover(log, projects)
+        assert len(found) == 1
+        assert found[0].scope == "homelab" and found[0].scope_resolved
+        assert found[0].found_by == frozenset({
+            cursor_transcripts.DISCOVERED_BY_HOOK,
+            cursor_transcripts.DISCOVERED_BY_FILESYSTEM,
+        })
+
+    def test_the_filesystem_fills_a_cwd_the_hook_row_lacks(self, tmp_path, monkeypatch):
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", "/home/u/actual")])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        log = tmp_path / "log.jsonl"
+        log.write_text(json.dumps({
+            "session_id": "sess-a", "scope": "main", "ts": "2026-08-10T09:00:00Z",
+            "transcript_path": str(
+                projects / "home-u-work" / "agent-transcripts" / "sess-a" / "sess-a.jsonl"),
+        }) + "\n")
+        assert cursor_transcripts.discover(log, projects)[0].cwd == "/home/u/actual"
+
+    def test_the_newest_hook_row_wins_by_timestamp_not_by_file_order(self, tmp_path):
+        """An out-of-order log must not elect the wrong scope. Position was the
+        implicit tie-break, and it holds only while the log is append-ordered."""
+        log = tmp_path / "log.jsonl"
+        log.write_text("\n".join(json.dumps(r) for r in [
+            {"session_id": "a", "scope": "homelab", "transcript_path": "/t.jsonl",
+             "ts": "2026-07-29T10:00:00Z"},
+            {"session_id": "a", "scope": "main", "transcript_path": "/t.jsonl",
+             "ts": "2026-07-29T09:00:00Z"},
+        ]) + "\n")
+        assert [s.scope for s in cursor_transcripts.discover(log, tmp_path / "nope")] == ["homelab"]
+
+    def test_an_undated_row_does_not_displace_a_dated_one(self, tmp_path):
+        log = tmp_path / "log.jsonl"
+        log.write_text("\n".join(json.dumps(r) for r in [
+            {"session_id": "a", "scope": "homelab", "transcript_path": "/t.jsonl",
+             "ts": "2026-07-29T10:00:00Z"},
+            {"session_id": "a", "scope": "main", "transcript_path": "/t.jsonl"},
+        ]) + "\n")
+        assert [s.scope for s in cursor_transcripts.discover(log, tmp_path / "nope")] == ["homelab"]
+
+
+class TestClaimUnresolved:
+    """An unmade routing decision is refused, never defaulted.
+
+    A scope is written into vertex IDs, so distilling an unattested session into
+    `main` is not a mistake an operator can walk back later.
+    """
+
+    def _sessions(self):
+        return [
+            cursor_transcripts.EndedSession(
+                session_id="attested", scope="homelab",
+                transcript_path=Path("/t.jsonl"), ended_at=None),
+            cursor_transcripts.EndedSession(
+                session_id="globbed", scope=cursor_transcripts.UNRESOLVED_SCOPE,
+                transcript_path=Path("/u.jsonl"), ended_at=None),
+        ]
+
+    def test_without_an_assignment_the_unresolved_one_is_refused_not_defaulted(self):
+        ready, refused = cursor_transcripts.claim_unresolved(self._sessions())
+        assert [s.session_id for s in ready] == ["attested"]
+        # Returned, not dropped: the caller has to be able to name it, or the
+        # operator can never learn there is anything to assign.
+        assert [s.session_id for s in refused] == ["globbed"]
+
+    def test_an_assignment_claims_only_the_unresolved_one(self):
+        ready, refused = cursor_transcripts.claim_unresolved(self._sessions(), "literature")
+        assert refused == []
+        assert {s.session_id: s.scope for s in ready} == {
+            "attested": "homelab",     # a resolved scope is never overwritten
+            "globbed": "literature",
+        }
+
+    def test_an_empty_assignment_cannot_stand_in_for_main(self):
+        _ready, refused = cursor_transcripts.claim_unresolved(self._sessions(), "")
+        assert len(refused) == 1
 
 
 class TestSessionGraph:

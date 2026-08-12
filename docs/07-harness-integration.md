@@ -216,8 +216,33 @@ Cursor's format and each is carried explicitly rather than inferred away:
   recoverable from the transcript, and `~/.cursor/chats/<hash>/<id>/meta.json`
   carries `cwd`, `createdAtMs` and `updatedAtMs`. The hook ledgers
   (`pins.jsonl`, the sessionEnd log) are one source for these rather than the
-  only one — which matters because it means a session that ran before the hooks
-  were installed is not, in principle, unrecoverable.
+  only one, which is what lets a session predating the hooks be dated and placed
+  at all.
+
+**Discovery reads two surfaces, because each sees what the other cannot.** The
+sessionEnd log is the only place a *resolved scope* appears — no filesystem read
+recovers a routing decision a hook made. A sweep of
+`~/.cursor/projects/<sanitized-cwd>/agent-transcripts/<id>/<id>.jsonl` is the only
+surface that sees a session which ran before the hooks existed, which on a machine
+Thalamus reaches late is every session on it. Where both see a session the hook row
+supplies the scope — a fixed per-field rule (TOKI's `PerRule`, arXiv 2606.06240),
+not last-writer-wins, which would let an unresolved scope overwrite a resolved one.
+`found_by` records which surfaces saw it, as a set, since the two are not exclusive.
+
+Neither surface un-sanitizes a project directory name back into a path: the
+flattening is not known to be injective, and a wrong answer from it would arrive
+with no error signal. `cwd` is read from Cursor's own `meta.json` instead. That is
+also what makes the sandbox refusal work on this side — an extraction sandbox is a
+full Cursor session that files its own transcript, so the sweep refuses it by
+project name *and* by the cwd the session recorded.
+
+A session no hook ever saw has **no scope, and does not get `main`**. Scope is
+written into vertex IDs, so defaulting an unattested session into the operator's
+own subgraph is an unmade routing decision that cannot be walked back. Such
+sessions are listed and skipped; `thalamus extract --harness cursor
+--assign-scope <scope>` is how an operator claims them. This is a different
+absence from the missing tool results above: there a value existed and the format
+could not carry it, here no value was ever determined.
 
 Extraction runs as a **later sweep, not at sessionEnd**: Cursor is not documented
 to flush the transcript before firing the hook (an open request asks it to fsync
@@ -405,13 +430,15 @@ the session hooks nor the MCP hooks; local Cursor only.
 **What is measured against a live CLI, and what is still synthetic**, is now two
 different lists (lab/054, CLI 2026.08.04). Measured: the model identifiers, the
 JSON envelope's field names, the transcript store's location and record shapes,
-the absence of `tool_result`, the workspace-trust refusal, and the config-root
-redirect. Synthetic: **the hook suite itself** — `tests/test_cursor_hooks.py`
-still drives shapes read from Cursor's docs, and **no Thalamus hook has yet fired
-inside a live Cursor session**, which remains the standing caveat on the
-instrumentation half of this section. The two halves fail differently and should
-not be quoted as one: a wrong envelope field breaks loudly at invocation, while a
-hook that never fires is silent by construction.
+the absence of `tool_result`, the workspace-trust refusal, the config-root
+redirect, and one end-to-end pass in which the hooks fired, wrote a pin-ledger row
+carrying the right cwd and scope, logged the sessionEnd pointer, and distilled the
+transcript that was found. Synthetic: **the hook suite's payload shapes** —
+`tests/test_cursor_hooks.py` still drives events read from Cursor's docs rather
+than captured from the CLI, so a payload field Cursor renamed would pass the suite
+and fail in the field. The two halves fail differently and should not be quoted as
+one: a wrong envelope field breaks loudly at invocation, while a hook that never
+fires is silent by construction.
 
 ## Session pinning mechanics: the process is the pin
 

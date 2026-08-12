@@ -55,7 +55,8 @@ Three consequences, each handled explicitly rather than papered over:
    `~/.cursor/chats/<hash>/<session-id>/meta.json` carries `cwd`, `createdAtMs`
    and `updatedAtMs` (lab/054). So a session that ran before the hooks were
    installed — every Cursor session on a machine Thalamus reaches late — is
-   recoverable in principle, where the ledger-only reading says it is lost.
+   reached by `discover()`'s filesystem surface and dated from Cursor's own
+   record, with its scope left `UNRESOLVED_SCOPE` for an operator to assign.
 
 **Distillation is deliberately not run at sessionEnd.** Cursor is not documented
 to flush the transcript before firing the hook — an open request asks it to
@@ -108,21 +109,43 @@ function of *which trace fields* are present.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.harness.agents import is_sandbox_cwd
 from thalamus.harness.transcripts import (
     EXTERNAL_INGRESS_TOOLS,
     TranscriptFacts,
     _PATH_INPUTS,
+    is_sandbox_project,
     to_session_graph as _to_session_graph,
 )
 from thalamus.substrate.schema import SessionGraph, Tool
 
 CURSOR_SESSION_END_LOG = Path.home() / ".thalamus" / "logs" / "cursor-session-end.jsonl"
 PIN_LEDGER = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
+CURSOR_PROJECTS = Path.home() / ".cursor" / "projects"
+CURSOR_CHATS = Path.home() / ".cursor" / "chats"
+
+# How a session came to our attention. Set-valued on the record rather than an
+# enum, because the two surfaces are not exclusive: a session that ended after
+# the hooks were installed is seen by both, and an enum would force one of those
+# two true facts to be written as false. It is deliberately not called an
+# *attestation* — AuditWeave reserves that word for an actor signing off on a
+# record (arXiv 2607.09682), and nothing here signs anything. A hook row records
+# that our hook observed the session end; it does not vouch for the transcript.
+DISCOVERED_BY_HOOK = "hook"
+DISCOVERED_BY_FILESYSTEM = "filesystem"
+
+# A scope that no hook ever resolved. Not `main`: defaulting an unattested
+# session into the operator's own subgraph is a routing decision nobody made,
+# and it is unrecoverable once written. This is an *unmade decision*, which is a
+# different absence from the `unsupported` one this module records for Cursor's
+# missing tool results — there, a value existed and the format could not carry
+# it; here no value was ever determined, because no hook ran to determine one.
+UNRESOLVED_SCOPE = ""
 
 # Cursor's own web tools, for the ingress *detection* half. Naming these is still
 # a guess — the tool roster is undocumented, and the live sessions observed so far
@@ -138,50 +161,221 @@ CURSOR_INGRESS_TOOLS = frozenset(
 
 @dataclass
 class EndedSession:
-    """One row of the Cursor sessionEnd log — the pointer to a distillable session."""
+    """A distillable Cursor session, and how it came to our attention."""
 
     session_id: str
     scope: str
     transcript_path: Path
     ended_at: datetime | None
     distilled: bool = False
+    found_by: frozenset[str] = frozenset({DISCOVERED_BY_HOOK})
+    cwd: str = ""
 
     @property
     def exists(self) -> bool:
         return bool(self.transcript_path) and self.transcript_path.is_file()
 
+    @property
+    def scope_resolved(self) -> bool:
+        """Did a hook actually resolve this session's scope?
 
-def discover(log_path: Path | None = None) -> list[EndedSession]:
-    """Every Cursor session logged at sessionEnd, newest row per session wins.
+        Distillation must consult this rather than reading `scope` and finding a
+        truthy string, because the two failure modes differ: an unresolved scope
+        is a decision to route to an operator, not a value to substitute.
+        """
+        return self.scope != UNRESOLVED_SCOPE
 
-    The log is the discovery surface rather than a path glob because it is the
-    only place the session id, its resolved scope and its transcript path appear
-    together — and because a scope resolved at session end is the one
-    distillation must use (docs/07, ledger-first).
+
+def discover(
+    log_path: Path | None = None, projects_dir: Path | None = None
+) -> list[EndedSession]:
+    """Every Cursor session either surface can see, merged.
+
+    Two surfaces, because each sees what the other cannot. The **hook log** is
+    the only place a session's *resolved scope* appears at all — no filesystem
+    read can recover a routing decision that a hook made. The **filesystem** is
+    the only surface that sees a session which ran before the hooks existed,
+    which on a machine Thalamus reaches late is every session on it (lab/054).
+    Reading only the log made those unrecoverable by policy rather than by
+    format, since their transcripts were on disk the whole time.
+
+    **Merging is per-field, not per-record.** Where both surfaces see a session,
+    the hook row supplies `scope` — a fixed rule tied to which surface can know
+    the field, which is TOKI's `PerRule` policy and specifically *not*
+    last-writer-wins (arXiv 2606.06240); LWW here would let a filesystem row's
+    absent scope overwrite a resolved one. Provenance semirings are deliberately
+    not the frame: Green et al.'s construction is conditional on the operations
+    being positive relational algebra (PODS 2007), and a field-level preference
+    between two records that disagree is not in that algebra — the semiring also
+    never ranks its sources, which is the entire content of the rule here.
+    `found_by` records which surfaces saw the session, and *that* field is a plain
+    set union, the one part of this the semiring framing would describe exactly.
     """
-    path = log_path or CURSOR_SESSION_END_LOG
+    hook = _hook_sessions(log_path or CURSOR_SESSION_END_LOG)
+    merged = dict(hook)
+    for session_id, found in _filesystem_sessions(projects_dir or CURSOR_PROJECTS).items():
+        attested = merged.get(session_id)
+        if attested is None:
+            merged[session_id] = found
+            continue
+        merged[session_id] = replace(
+            attested,
+            found_by=attested.found_by | found.found_by,
+            # Only ever fills a gap: the ledger's cwd is our own hook's record and
+            # outranks Cursor's, and neither is inference from a path.
+            cwd=attested.cwd or found.cwd,
+            ended_at=attested.ended_at or found.ended_at,
+        )
+    return list(merged.values())
+
+
+def _hook_sessions(path: Path) -> dict[str, EndedSession]:
+    """Sessions our sessionEnd hook logged, newest row per session winning.
+
+    Newest by the row's own `ts`, not by position in the file. Those coincide
+    only while the log is append-ordered by time, and nothing enforces that —
+    a hand-edited or concatenated log silently elected a different winner, and
+    with a second surface merging into the same map the tie-break would have
+    become iteration order.
+    """
     latest: dict[str, EndedSession] = {}
     for record in _records(path):
         session_id = str(record.get("session_id") or "")
         transcript = str(record.get("transcript_path") or "")
         if not session_id or not transcript:
             continue
-        latest[session_id] = EndedSession(
+        candidate = EndedSession(
             session_id=session_id,
             scope=str(record.get("scope") or MAIN_SCOPE),
             transcript_path=Path(transcript),
             ended_at=_timestamp(record.get("ts")),
             distilled=bool(record.get("distilled")),
+            found_by=frozenset({DISCOVERED_BY_HOOK}),
         )
-    return list(latest.values())
+        held = latest.get(session_id)
+        if held is None or _not_older(candidate.ended_at, held.ended_at):
+            latest[session_id] = candidate
+    return latest
+
+
+def _not_older(candidate: datetime | None, held: datetime | None) -> bool:
+    """Should `candidate` replace `held`? Undated rows lose to dated ones.
+
+    An undated row replacing a dated one would discard the only ordering
+    evidence there is; two undated rows keep the later-read one, which is the
+    old positional behaviour and the best available when nothing is stamped.
+    """
+    if candidate is None:
+        return held is None
+    return held is None or candidate >= held
+
+
+def _filesystem_sessions(projects_dir: Path) -> dict[str, EndedSession]:
+    """Sessions found by globbing Cursor's own transcript tree.
+
+    Nothing here is inferred from a path. The session id is the directory Cursor
+    named after it, and `cwd` is read from Cursor's `meta.json`; un-sanitizing
+    the project directory name back into a path is the one route deliberately not
+    taken, since the flattening is not known to be injective and a wrong answer
+    from it would arrive with no error signal.
+
+    Scope is `UNRESOLVED_SCOPE` for every session found this way, and that is a
+    property of the surface rather than of any session: no hook ran, so no scope
+    was ever resolved to be recovered.
+    """
+    found: dict[str, EndedSession] = {}
+    if not projects_dir.is_dir():
+        return found
+    for project_dir in sorted(projects_dir.iterdir()):
+        if not project_dir.is_dir() or is_sandbox_project(project_dir.name):
+            continue
+        for session_dir in sorted((project_dir / "agent-transcripts").glob("*")):
+            transcript = session_dir / f"{session_dir.name}.jsonl"
+            if not transcript.is_file():
+                continue
+            cwd, _created, updated = _chat_meta(session_dir.name)
+            # Defence in depth, and the reason recovering a real `cwd` is
+            # load-bearing rather than cosmetic: an extraction sandbox reached by
+            # a project dir this test does not recognise is still refused here.
+            if cwd and is_sandbox_cwd(cwd):
+                continue
+            found[session_dir.name] = EndedSession(
+                session_id=session_dir.name,
+                scope=UNRESOLVED_SCOPE,
+                transcript_path=transcript,
+                ended_at=updated,
+                found_by=frozenset({DISCOVERED_BY_FILESYSTEM}),
+                cwd=cwd,
+            )
+    return found
+
+
+def _chat_meta(session_id: str) -> tuple[str, datetime | None, datetime | None]:
+    """(cwd, created, updated) from Cursor's own per-session `meta.json`.
+
+    Lives at `~/.cursor/chats/<hash>/<session-id>/meta.json`, where the hash is
+    not the session and not derivable from it, so the session directory is
+    globbed for rather than addressed. Cursor writes `cwd`, `createdAtMs` and
+    `updatedAtMs` there (lab/054) — evidence it recorded at the time, which is
+    what makes this a read rather than a guess.
+    """
+    for meta_path in sorted(CURSOR_CHATS.glob(f"*/{session_id}/meta.json")):
+        try:
+            meta = json.loads(meta_path.read_text(errors="ignore") or "{}")
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(meta, dict):
+            return (
+                str(meta.get("cwd") or ""),
+                _epoch_ms(meta.get("createdAtMs")),
+                _epoch_ms(meta.get("updatedAtMs")),
+            )
+    return "", None, None
+
+
+def _epoch_ms(value) -> datetime | None:
+    if not isinstance(value, (int, float)) or value <= 0:
+        return None
+    try:
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def claim_unresolved(
+    sessions: list[EndedSession], assign_scope: str = ""
+) -> tuple[list[EndedSession], list[EndedSession]]:
+    """Split into (distillable, refused) on whether a scope was ever resolved.
+
+    The two answers to an unresolved scope are the same design at two layers, not
+    alternatives: the session has to be *discoverable while unassigned* for an
+    operator to be able to assign it at all, and distillation has to *wait* until
+    one does. So a refused session is returned rather than dropped — the caller
+    names it, and `assign_scope` is how the operator claims it.
+
+    An empty `assign_scope` claims nothing. It cannot mean `main`, because the
+    whole point is that no default may stand in for a routing decision nobody
+    made; a scope written into the graph is not retractable, since vertex IDs
+    carry it.
+    """
+    if not assign_scope:
+        return ([s for s in sessions if s.scope_resolved],
+                [s for s in sessions if not s.scope_resolved])
+    return ([s if s.scope_resolved else replace(s, scope=assign_scope) for s in sessions], [])
 
 
 def session_context(session_id: str, ledger_path: Path | None = None) -> tuple[str, datetime | None]:
-    """(cwd, started_at) for a session, from the tier-0 pin ledger.
+    """(cwd, started_at) for a session — our own ledger first, Cursor's second.
 
     Cursor transcripts carry neither, and guessing a project from the transcript
     path would be inference this layer exists to avoid. The sessionStart hook
     recorded both at the time, which is strictly better evidence.
+
+    Cursor's own `meta.json` is the fallback rather than the primary for the same
+    ordering reason the merge uses: the pin ledger is our tier-0 record of what a
+    hook observed, so where both speak the ledger is preferred. Where no hook ever
+    ran the ledger is silent, and `meta.json` is still evidence Cursor wrote at the
+    time rather than something reconstructed from a directory name.
     """
     cwd, started_at = "", None
     for record in _records(ledger_path or PIN_LEDGER):
@@ -192,7 +386,10 @@ def session_context(session_id: str, ledger_path: Path | None = None) -> tuple[s
         stamp = _timestamp(record.get("ts"))
         if stamp and (started_at is None or stamp < started_at):
             started_at = stamp
-    return cwd, started_at
+    if cwd and started_at:
+        return cwd, started_at
+    meta_cwd, created, _updated = _chat_meta(session_id)
+    return cwd or meta_cwd, started_at or created
 
 
 def parse(

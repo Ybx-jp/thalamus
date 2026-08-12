@@ -138,6 +138,13 @@ def main():
         "--scope", default=MAIN_SCOPE, help="Scope the sessions are pinned to (default: main)"
     )
     extract_parser.add_argument(
+        "--assign-scope", default="",
+        help="Scope for Cursor sessions found on disk that no hook ever saw, and which "
+        "therefore have no resolved scope of their own. Without this they are listed "
+        "and skipped rather than defaulted into `main` — separate from `--scope` so an "
+        "unmade routing decision can never be made by a flag's default value.",
+    )
+    extract_parser.add_argument(
         "--room",
         default=None,
         help="Collaboration these sessions witnessed, stamped on the Session. Default: "
@@ -1359,12 +1366,31 @@ def _cmd_extract(args):
         ended = [s for s in cursor_transcripts.discover() if s.exists]
         if not ended:
             print(
-                "No Cursor sessions to extract. The sessionEnd hook logs each one to "
-                f"{cursor_transcripts.CURSOR_SESSION_END_LOG}; an empty or missing log "
-                "means no Cursor session has ended on this machine yet.",
+                "No Cursor sessions to extract. Sessions are found two ways: the "
+                f"sessionEnd hook's log ({cursor_transcripts.CURSOR_SESSION_END_LOG}) "
+                f"and a sweep of {cursor_transcripts.CURSOR_PROJECTS}. Nothing in "
+                "either means no Cursor session has ended on this machine yet.",
                 file=sys.stderr,
             )
             return
+
+        # A session no hook ever saw has no resolved scope, and `main` is not a
+        # safe stand-in — routing an unattested session into the operator's own
+        # subgraph is a decision nobody made and cannot be undone once written.
+        ended, refused = cursor_transcripts.claim_unresolved(ended, args.assign_scope)
+        if refused:
+            print(
+                f"  ! {len(refused)} session(s) found on disk that no hook ever saw, so no "
+                "scope was ever resolved for them. They are NOT being extracted. Re-run "
+                "with `--assign-scope <scope>` to route them, after checking they belong "
+                "there:",
+                file=sys.stderr,
+            )
+            for session in refused:
+                print(
+                    f"      {session.session_id[:8]}  {session.cwd or 'cwd unknown'}",
+                    file=sys.stderr,
+                )
     else:
         available = transcripts.discover(args.projects_dir)
         if not args.projects:
@@ -1413,6 +1439,14 @@ def _cmd_extract(args):
             )
             if not facts.has_substance:
                 insubstantial.append(facts.session_id)
+                continue
+            # An extraction sandbox is not a session (harness/agents.py). The
+            # Cursor sweep withholds sandbox project dirs, and this is the same
+            # second refusal the Claude Code path makes below, on the cwd the
+            # session itself recorded — every headless extraction is a full
+            # Cursor session that files its own transcript, so a sandbox reached
+            # by any other route still has to be refused here.
+            if agents.is_sandbox_cwd(facts.cwd):
                 continue
             scopes[facts.session_id] = ended_session.scope
             parsed.append(facts)
