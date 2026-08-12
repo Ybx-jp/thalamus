@@ -125,11 +125,25 @@ boundary binds only on a session whose operator exported the variable by hand.**
 mechanism is real; the population is three sessions built to test it. An enforcement
 claim about Cursor is a claim about hand-built sessions until a launcher exists.
 
-Relatedly, Cursor's `preToolUse` payload carries no `agent_type`. The payload route
-that fixed 6.4% subagent scope resolution on Claude Code has no analogue here — which
-happens to be harmless, because Cursor subagents are `generalPurpose|explore|shell`
-and never a differently-pinned expert, so inheriting the launcher's pin is correct
-rather than the bug it was on the other harness.
+Relatedly, Cursor's `preToolUse` payload carries no `agent_type`, so the payload route
+that fixed 6.4% subagent scope resolution on Claude Code has no analogue here. That is
+**not** harmless: `computeAgentsDirs()` reads the *workspace's* `.claude/agents` beside
+`.cursor/agents`, so inside this checkout a Cursor session can spawn the derived
+`thalamus-<scope>` subagents, and every tool call one makes resolves to the launcher's
+scope with no channel to correct it. Cursor's parser honours `name`, `description`,
+`tools`, `model`, `prompt` and `permissionMode` from those files and does **not** read
+`mcpServers` — servers come only from `~/.cursor/mcp.json` and the workspace's own.
+Whether such a subagent can still reach the Thalamus tools through the global config,
+and what Cursor's `tools:` allow-list does with names written in Claude Code's
+`mcp__thalamus__` namespace, is unmeasured.
+
+`~/.claude/agents/` is **not** read — that directory is home-rooted and
+`computeAgentsDirs()` is workspace-rooted. The user-scope directory Cursor *does* read
+is `~/.claude/skills` (`scope: "user"`, gated on third-party extensibility), which on
+this box holds eleven skills, six of them Thalamus's. `thalamus init` links them there
+for Claude Code; serving them into every Cursor session on the machine is a
+consequence nobody chose, and it belongs to the deployment gates rather than to this
+entry.
 
 ## What shipped
 

@@ -503,6 +503,21 @@ Pin resolution on Cursor is env-only — no agent picker — so a Cursor session
 `main` unless launched with `THALAMUS_SCOPE`. Cursor cloud agents load neither
 the session hooks nor the MCP hooks; local Cursor only.
 
+**What Cursor reads of Claude Code's configuration, measured in the bundle.** The
+`settings.json` translation above is one of four channels, and they have different
+roots. Skills are read at **user** scope from `~/.claude/skills` as well as from the
+workspace — so every skill `thalamus init` links for Claude Code is offered to every
+Cursor session on the machine, which is a deployment-gate question rather than a
+harness one. Agent definitions are read from the **workspace's** `.claude/agents` only
+(`~/.claude/agents` is not read), as *subagents*: the parser honours `name`,
+`description`, `tools`, `model`, `prompt` and `permissionMode`, and drops
+`mcpServers`, since servers come from `~/.cursor/mcp.json` and the workspace's own.
+
+There is no persona carrier for a *main* session. `--agent` does not exist on `agent`,
+and the one flag that could replace a system prompt — `--system-prompt <file>` — is
+hidden from `--help` and documented in the bundle as **"Anysphere/OpenAI team only"**,
+so it is not a mechanism this project may build on.
+
 That is also the ceiling on the guard above, and it is a low one: `pin.py` launches
 `claude` and has no Cursor launcher, so **the write boundary binds only on a session
 whose operator exported the variable by hand.** The mechanism is real and the
