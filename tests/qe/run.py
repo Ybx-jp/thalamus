@@ -53,6 +53,8 @@ CASE_MODULES = (
     "qe.cases.prompt_template_roundtrip",
     "qe.cases.probe_vocabulary",
     "qe.cases.shadowed_tests",
+    "qe.cases.hook_detachment",
+    "qe.cases.dispatch_addressability",
 )
 
 

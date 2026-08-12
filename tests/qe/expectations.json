@@ -66,6 +66,13 @@
       "failure_class": "doc-code-drift",
       "witness_contains": "_select_details(cap=_DETAIL_CAP)",
       "triaged_at_rev": "b88cf9d",
+      "case": "every-room-member-is-addressable",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "--to main returns 0 target(s)",
+      "triaged_at_rev": "a929b07",
+      "note": "The room's main is visible to an unfiltered preflight and invisible the moment it is named, because the scope filter reads a scope derived from the launch agent and main has no manifest to be launched with. Pinned on the named-call returning zero rather than on the member id, so a fix that lets main through drifts this entry while a fix that merely renames the fixture's session does not. The unfiltered call is the case's own control: if it stopped seeing the membership, the finding would be a fixture artifact and reports as malformed instead."
+    },
+    {
       "case": "probe-vocabulary-has-no-dead-members",
       "failure_class": "doc-code-drift",
       "witness_contains": "Condition unproduced: ['INTERACTIVE', 'PRINT']",
