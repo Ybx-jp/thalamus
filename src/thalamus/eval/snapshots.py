@@ -35,8 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from thalamus.substrate.snapshot import snapshot
-from thalamus.substrate.writer import close_connection, connect
+from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot
+from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect
 
 # Server-side, inside the graph container's data volume — the same directory
 # `graphLocation` lives in, so a snapshot is reachable by the same mount.
@@ -208,6 +208,81 @@ def serve(name: str, *, port: int = 8183, timeout: int = 90):
         )
     with _serve_path(name, row.server_path, digest, port=port, timeout=timeout) as url:
         yield url
+
+
+def restore(name: str, *, safety_pin: bool = True, url: str | None = None) -> SnapshotRow:
+    """Make a pinned snapshot the live graph again.
+
+    Pinning exists so a state can be returned to, and until this the returning half
+    did not exist: `serve` reads the past read-only, and nothing put it back. The gap
+    is only visible when it matters, which is after a bad write — recovery then meant
+    hand-run `docker` against the data volume, exactly the operation that should not
+    be improvised under pressure.
+
+    The order is forced by TinkerGraph holding the graph in memory: the container is
+    stopped **before** the file is swapped, because a running server flushes memory to
+    `graphLocation` on clean shutdown and would write the state being discarded back
+    over the state being restored.
+
+    A safety pin of the current graph is taken first, so this is reversible in the
+    direction it is most likely to be needed — a restore run against the wrong name.
+    """
+    row = find(name)
+
+    # Verified before anything is stopped: a snapshot that no longer hashes to its
+    # registry entry is not the state that was cited, and restoring it would put the
+    # graph into a condition nothing on record describes.
+    digest, _size = _sha256_and_size(row.server_path)
+    if digest != row.sha256:
+        raise SnapshotError(
+            f"snapshot `{name}` no longer hashes to its registry entry "
+            f"({digest[:12]} != {row.sha256[:12]}) — refusing to restore it"
+        )
+
+    pinned: SnapshotRow | None = None
+    if safety_pin:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        pinned = take(
+            f"pre-restore-{stamp}",
+            note=f"Live graph immediately before restoring `{name}`.",
+            url=url,
+        )
+
+    _run_or_raise(["docker", "stop", CONTAINER], f"cannot stop {CONTAINER}")
+    # A throwaway container does the copy: the graph container is down, and reaching
+    # into /var/lib/docker/volumes from the host needs root the CLI does not have.
+    _run_or_raise(
+        [
+            "docker", "run", "--rm", "-v", f"{VOLUME}:/data", "--entrypoint", "sh", IMAGE,
+            "-c", f"cp /data/{row.name}.kryo /data/{Path(DEFAULT_SNAPSHOT_PATH).name}",
+        ],
+        f"cannot swap {DEFAULT_SNAPSHOT_PATH} for {row.server_path}",
+    )
+    _run_or_raise(["docker", "start", CONTAINER], f"cannot start {CONTAINER}")
+
+    endpoint = url or DEFAULT_URL
+    _wait_ready(endpoint, CONTAINER, 90)
+
+    g = connect(endpoint)
+    try:
+        vertices = int(g.V().count().next())
+        edges = int(g.E().count().next())
+    finally:
+        close_connection(g)
+
+    if (vertices, edges) != (row.vertices, row.edges):
+        raise SnapshotError(
+            f"restored `{name}` but the live graph holds {vertices}V/{edges}E where the "
+            f"registry records {row.vertices}V/{row.edges}E"
+            + (f" — the prior state is pinned as `{pinned.name}`" if pinned else "")
+        )
+    return row
+
+
+def _run_or_raise(command: list[str], message: str) -> None:
+    proc = subprocess.run(command, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise SnapshotError(f"{message}: {proc.stderr.strip()[:200]}")
 
 
 @contextmanager

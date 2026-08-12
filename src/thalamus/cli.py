@@ -308,6 +308,18 @@ def main():
     snapshot_parser.add_argument(
         "--port", type=int, default=8183, help="Port for --serve (default: 8183)"
     )
+    snapshot_parser.add_argument(
+        "--restore",
+        help="Make a pinned snapshot the live graph again. Verifies its hash first, "
+        "pins the current graph as a safety net, then stops the server, swaps the file "
+        "and restarts. Destructive: the live graph is replaced.",
+    )
+    snapshot_parser.add_argument(
+        "--no-safety-pin",
+        action="store_true",
+        help="Skip pinning the current graph before --restore. Only when the state "
+        "being discarded is already known-bad.",
+    )
 
     # Eval command — layer 1 of the eval loop (docs/04)
     eval_parser = subparsers.add_parser(
@@ -1637,6 +1649,9 @@ def _cmd_extract(args):
             )
 
             entry, _ = transcripts.retain(facts.path)
+            # A Cursor session's ingress evidence lives outside its transcript, so the
+            # transcript alone would not reach what the floor judged (docs/05).
+            transcripts.retain_ingress_receipt(facts)
             base = reader.to_session_graph(
                 facts,
                 content_hash=entry.content_hash,
@@ -2179,6 +2194,22 @@ def _cmd_snapshot(args):
         )
         print(f"  registry: {snapshots.REGISTRY}")
         print(f"  serve it: thalamus snapshot --serve {row.name}")
+        return
+
+    if args.restore:
+        try:
+            row = snapshots.restore(
+                args.restore, safety_pin=not args.no_safety_pin, url=args.url
+            )
+        except snapshots.SnapshotError as e:
+            print(str(e), file=sys.stderr)
+            sys.exit(1)
+        print(
+            f"Restored `{row.name}`: {row.vertices} vertices, {row.edges} edges, "
+            f"sha256 {row.sha256[:12]} @{row.git_ref}"
+        )
+        if row.note:
+            print(f"  {row.note}")
         return
 
     if args.serve:

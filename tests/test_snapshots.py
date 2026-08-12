@@ -144,3 +144,119 @@ def test_find_names_what_is_registered_when_it_misses(registry, stub_server, mon
     snapshots.take("one")
     with pytest.raises(snapshots.SnapshotError, match="registered: one"):
         snapshots.find("two")
+
+
+@pytest.fixture
+def docker_log(monkeypatch):
+    """Record the docker commands a restore issues, in order, without running them."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(snapshots, "_run_or_raise", lambda command, message: calls.append(command))
+    monkeypatch.setattr(snapshots, "_wait_ready", lambda url, container, timeout: None)
+    return calls
+
+
+def _verb(command: list[str]) -> str:
+    """The docker subcommand, e.g. `stop` / `run` / `start`."""
+    return command[1]
+
+
+def test_restoring_stops_the_server_before_swapping_the_file(
+    registry, stub_server, docker_log, monkeypatch
+):
+    """
+    Scenario: A pinned snapshot is restored over the live graph
+
+    Verifications:
+    - The current graph is pinned as a safety net first
+    - The container is stopped BEFORE the file is swapped, and started after
+
+    The ordering is the whole correctness argument, not a tidiness preference.
+    TinkerGraph holds the graph in memory and flushes `graphLocation` on clean
+    shutdown, so swapping the file under a running server means the shutdown writes
+    the state being discarded straight back over the state being restored — a
+    restore that silently does nothing.
+    """
+    _fake_graph(monkeypatch, stub_server, vertices=42, edges=99)
+    snapshots.take("good-state", note="known good")
+
+    snapshots.restore("good-state")
+
+    # Verifies: a safety pin of the live graph exists before the destructive part
+    names = [json.loads(line)["name"] for line in registry.read_text().splitlines()]
+    assert names[0] == "good-state"
+    assert names[1].startswith("pre-restore-")
+
+    # Verifies: stop, then swap, then start — in that order
+    assert [_verb(command) for command in docker_log] == ["stop", "run", "start"]
+
+    swap = docker_log[1]
+    assert "cp /data/good-state.kryo /data/thalamus-graph.kryo" in swap[-1]
+
+
+def test_a_snapshot_that_no_longer_hashes_to_its_citation_is_not_restored(
+    registry, stub_server, docker_log, monkeypatch
+):
+    """
+    Scenario: The pinned .kryo on the server has changed since it was registered
+
+    Verifications:
+    - The restore is refused
+    - Nothing was stopped, swapped or started
+
+    Restoring a file that no longer matches its registry row would put the graph
+    into a state nothing on record describes — worse than the bad state it replaces,
+    because the bad state at least has a snapshot describing it. The check runs
+    before the container is touched so a refusal costs no downtime.
+    """
+    _fake_graph(monkeypatch, stub_server)
+    snapshots.take("drifted", note="")
+    stub_server["hash"] = "b" * 64
+
+    with pytest.raises(snapshots.SnapshotError, match="refusing to restore"):
+        snapshots.restore("drifted")
+
+    # Verifies: refused before any container command ran
+    assert docker_log == []
+
+
+def test_a_restore_that_lands_on_the_wrong_counts_says_where_the_old_state_went(
+    registry, stub_server, docker_log, monkeypatch
+):
+    """
+    Scenario: The restore completes but the live graph does not hold what the
+    registry says the snapshot held
+
+    Verifications:
+    - It raises rather than reporting success
+    - The error names the safety pin holding the pre-restore state
+
+    A restore is run when something has already gone wrong, so the failure mode that
+    matters is the operator being told "restored" while holding a third unknown
+    state. Naming the safety pin is what makes the situation recoverable rather than
+    merely reported.
+    """
+    _fake_graph(monkeypatch, stub_server, vertices=42, edges=99)
+    snapshots.take("good-state", note="")
+
+    # The live graph now answers with counts that do not match the registry row.
+    _fake_graph(monkeypatch, stub_server, vertices=7, edges=7)
+
+    with pytest.raises(snapshots.SnapshotError, match=r"pre-restore-"):
+        snapshots.restore("good-state")
+
+
+def test_an_unknown_snapshot_name_is_refused_before_anything_is_touched(
+    registry, stub_server, docker_log
+):
+    """
+    Scenario: A restore names a snapshot that was never registered
+
+    Verifications:
+    - It raises, listing what is registered
+    - No container command runs
+    """
+    with pytest.raises(snapshots.SnapshotError, match="unknown snapshot"):
+        snapshots.restore("never-pinned")
+
+    # Verifies: an unknown name costs nothing
+    assert docker_log == []
