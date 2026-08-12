@@ -289,6 +289,17 @@ def main():
         help="Apply the plan. Without this, nothing is written.",
     )
 
+    derive_paths_parser = subparsers.add_parser(
+        "derive-artifact-paths",
+        help="Project Artifact identifiers onto (repo, path) without re-keying them "
+        "(dry-run unless --write)",
+    )
+    derive_paths_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    derive_paths_parser.add_argument(
+        "--write", action="store_true",
+        help="Apply the plan. Without this, nothing is written.",
+    )
+
     # Snapshot command — durability on demand (docs/09)
     snapshot_parser = subparsers.add_parser(
         "snapshot",
@@ -1211,6 +1222,8 @@ def main():
         _cmd_audit_artifacts(args)
     elif args.command == "repair-projects":
         _cmd_repair_projects(args)
+    elif args.command == "derive-artifact-paths":
+        _cmd_derive_artifact_paths(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -1923,6 +1936,47 @@ def _cmd_ingest(args):
         source_vid = write_knowledge(graph, batch)
         _persist(graph)
         print(f"\nWritten into scope `{batch.scope}`: {source_vid}")
+    finally:
+        close_connection(graph)
+
+
+def _cmd_derive_artifact_paths(args):
+    """Give every Artifact a derived `(repo, path)` beside its untouched identifier.
+
+    The counts are the point of the dry run: how many artifacts the registry can anchor,
+    how many belong to no repo at all, and how many spellings collapse onto one file.
+    """
+    from thalamus.substrate.artifact_paths import apply, plan
+
+    graph = connect(args.url)
+    try:
+        projection_plan = plan(graph)
+        registry = projection_plan.registry
+        print(f"Proven checkout roots in the registry: {len(registry)}")
+        for root in registry[:10]:
+            print(f"  {root}")
+        if len(registry) > 10:
+            print(f"  … and {len(registry) - 10} more")
+
+        counts = projection_plan.counts()
+        print("\n" + "  ".join(f"{key}: {value}" for key, value in counts.items()))
+
+        fragmented = {
+            key: spellings
+            for key, spellings in projection_plan.groups().items()
+            if len(spellings) > 1
+        }
+        print(f"\nfiles reachable under more than one spelling: {len(fragmented)}")
+        for (repo, path), spellings in sorted(
+            fragmented.items(), key=lambda kv: -len(kv[1])
+        )[:8]:
+            print(f"  {len(spellings)}x  {repo}/{path}")
+
+        if not args.write:
+            print("\nDry run. Re-run with --write to apply.")
+            return
+        resolved = apply(graph, projection_plan)
+        print(f"\nWrote {len(projection_plan.projections)} artifacts, {resolved} anchored.")
     finally:
         close_connection(graph)
 

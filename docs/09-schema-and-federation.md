@@ -156,6 +156,25 @@ distinction the system cannot record.
 later — directories move and are deleted, and a path that resolves to no repo today
 may have had one when it was touched.
 
+`Artifact` carries a derived **`(repo, path)`** beside its identifier, and the
+identifier itself is never re-keyed: it drives `vid("Artifact", identifier)`, so moving
+it breaks every citation ever minted, and it is the raw string the tool call carried —
+a tier-1 observation, where a derivation over it is an inference. The projection is the
+join key; the identifier stays the evidence. 1,709 of 2,307 artifacts anchor, collapsing
+onto 1,146 identities, so 563 files that were reachable only under two separate
+spellings are now one addressable thing without a vertex moving. `README.md` claimed by
+five projects becomes five `(repo, path)` groups, which is correct — the collision count
+turns into a queryable fact rather than a defect.
+
+Anchoring is a **registry** of proven checkout roots, longest-prefix first, not a single
+project name: cutting against one name is what split identities in the first place, and
+longest-first is what lets a vendored subrepo keep its own files. A root is admitted
+only from a session whose `project_evidence` proves it — this is where that field is
+consumed, so the guarantee sits at the point of damage instead of in a rule that fires
+on values which merely look wrong. An absolute path in no known checkout, and a relative
+one whose sessions disagree, both resolve to empty: **belongs to no repo is an outcome**,
+and a rule without it invents a repo-relative path for all 575 of them.
+
 `Session` carries a third: **`room`** answers *which collaboration* — empty when the
 session worked alone. It is deliberately **not** an event identifier: a room hosts many
 turns, so collapsing convergence by room would trade a false-count error for a

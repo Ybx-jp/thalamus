@@ -86,6 +86,13 @@ class RepairPlan:
     # existed — and a provenance field that is blank on the whole corpus cannot be
     # read as anything but unknown, which is exactly what it was meant to replace.
     stamps: list[tuple[str, ProjectEvidence]] = field(default_factory=list)
+    # (session vid, cwd, repo_root) for every session whose working directory was
+    # recovered. Written because the recovery is not repeatable: these paths are read
+    # out of a pin ledger and archived transcripts, and resolving them depends on a
+    # filesystem that keeps changing. Discarding them after computing `project` is what
+    # left the checkout registry with one member — the derived-path work downstream
+    # needs the roots themselves, not the names taken off them.
+    anchors: list[tuple[str, str, str]] = field(default_factory=list)
 
     def by_label(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -263,6 +270,7 @@ def plan(
             if after:
                 kind, detail = ProjectEvidence.TOUCH, f"every touched repo file in {after}"
         settled[str(row["vid"])] = after
+        result.anchors.append((str(row["vid"]), cwd, root))
         testable.add(before)
         if after == before:
             confirmed.add(before)
@@ -382,4 +390,6 @@ def apply(g: GraphTraversalSource, repair: RepairPlan) -> int:
         traversal.iterate()
     for vid, kind in repair.stamps:
         g.V(vid).property("project_evidence", kind.value).iterate()
+    for vid, cwd, root in repair.anchors:
+        g.V(vid).property("cwd", cwd).property("repo_root", root).iterate()
     return len(repair.changes)
