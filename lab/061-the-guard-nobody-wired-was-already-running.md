@@ -80,10 +80,12 @@ explanation in `agent_message` and a bare one-liner in `user_message` — so a C
 session that trips that guard has been told it was blocked and never told why. The
 suite's own test asserted the opposite behaviour and passed, because it drives the
 script rather than the CLI. Fixed: the reason rides both fields. A block with no
-reason is not a harmless silence — 24.6% of failed trajectories in Harness-Bench are
-blocked commands with no effective recovery (arXiv 2605.27922), so the measured cost
-of a bare denial is a **stall**, not the route-around lab/008's standing trade
-assumes.
+reason is not a harmless silence — in Harness-Bench, 24.6% of failed trajectories are
+tool errors *or* blocked commands not followed by effective recovery (arXiv
+2605.27922, Table 3; the symptom categories are non-exclusive and this row ranks
+second behind contract/format at 36.4%). So the nearest measured price of a bare
+denial is a **stall**, while the route-around half of lab/008's standing trade is
+argued and not measured.
 
 **3. `cwd` arrives as `""`, and jq's `//` does not catch it.** Cursor sends an empty
 string rather than omitting the field on shell payloads, and `//` falls through on

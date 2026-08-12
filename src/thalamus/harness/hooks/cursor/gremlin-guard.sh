@@ -47,8 +47,9 @@ if [ "$rc" -eq 2 ]; then
   # silence. `agent_message` is the field the vendor documents for the agent and is
   # unmeasured interactively, so it keeps the same text rather than a stub: a reason
   # delivered twice costs a few tokens, and a block with no reason costs a stall —
-  # 24.6% of failed trajectories are blocked commands with no effective recovery
-  # (Harness-Bench, arXiv 2605.27922).
+  # 24.6% of failed trajectories are tool errors *or* blocked commands not followed
+  # by effective recovery (Harness-Bench, arXiv 2605.27922, Table 3; the symptom
+  # categories are non-exclusive, so this is not a clean slice of either).
   jq -n --arg msg "$stderr_msg" \
     '{permission: "deny",
       agent_message: $msg,

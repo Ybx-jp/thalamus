@@ -1289,8 +1289,10 @@ not a scan.
      final say, +9.4% — and never varied the *feedback given at the moment of
      denial*, so the gap is in what that line of work did rather than in what the
      graph holds. What is measured nearby: a bare deny is expensive, since 24.6% of
-     Harness-Bench's failed trajectories are blocked commands with no effective
-     recovery (arXiv 2605.27922); explanation-only feedback is not inert, worth
+     Harness-Bench's failed trajectories are tool errors *or* blocked commands not
+     followed by effective recovery (arXiv 2605.27922, Table 3 — non-exclusive
+     categories, and second behind contract/format at 36.4%, so it prices the
+     neighbourhood rather than the deny alone); explanation-only feedback is worth
      +2–3% and +9% on the hardest split in Self-Debugging's no-unit-test arm; and
      AgentCollabBench's IDR rubric scores "refusal **or** a compliant alternative"
      as non-violation, which is the shape a handover instruction already has. The

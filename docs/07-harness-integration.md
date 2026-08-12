@@ -149,8 +149,9 @@ the 2026-07-29 re-verification):
   fields: a denial's tool result carries the `user_message` text and no
   occurrence of `agent_message`, so the documented agent channel alone delivers
   nothing and the block arrives without its reason. A block with no reason is a
-  stall, which is the measured cost — 24.6% of failed trajectories are blocked
-  commands with no effective recovery (Harness-Bench, arXiv 2605.27922).
+  stall: 24.6% of failed trajectories are tool errors *or* blocked commands not
+  followed by effective recovery (Harness-Bench, arXiv 2605.27922, Table 3 —
+  non-exclusive categories, so not a clean slice of either).
 - *afterShellExecution* / *afterMCPExecution* → the two trace taps; Cursor
   reports MCP tools by bare name, and the adapter restores the
   `mcp__thalamus__` prefix so `eval sync` stays harness-blind.
