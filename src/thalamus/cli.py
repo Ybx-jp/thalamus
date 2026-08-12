@@ -268,6 +268,14 @@ def main():
         "(merge on vertex id), so this repairs a partial run rather than duplicating.",
     )
 
+    audit_artifacts_parser = subparsers.add_parser(
+        "audit-artifacts",
+        help="Measure how fragmented Artifact identity is (read-only)",
+    )
+    audit_artifacts_parser.add_argument(
+        "--url", default=DEFAULT_URL, help="Gremlin endpoint"
+    )
+
     # Snapshot command — durability on demand (docs/09)
     snapshot_parser = subparsers.add_parser(
         "snapshot",
@@ -1174,6 +1182,8 @@ def main():
         _cmd_contract(args, contract_parser)
     elif args.command == "backfill-chunks":
         _cmd_backfill_chunks(args)
+    elif args.command == "audit-artifacts":
+        _cmd_audit_artifacts(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -1883,6 +1893,49 @@ def _cmd_ingest(args):
         source_vid = write_knowledge(graph, batch)
         _persist(graph)
         print(f"\nWritten into scope `{batch.scope}`: {source_vid}")
+    finally:
+        close_connection(graph)
+
+
+def _cmd_audit_artifacts(args):
+    """Report how far `Artifact` identity has drifted from one-vertex-per-file.
+
+    `Artifact` is global so that two experts touching one file land on one vertex — it
+    is the join key between scopes. Raw tool-call strings do not deliver that, and this
+    says by how much. Read-only: the repair needs an anchor for turning absolute paths
+    relative, and `project` is not one (see substrate/artifact_audit.py).
+    """
+    from thalamus.substrate.artifact_audit import audit_artifact_identity
+
+    graph = connect(args.url)
+    try:
+        audit = audit_artifact_identity(graph)
+
+        print(f"Artifact vertices: {audit.total}")
+        print(f"  absolute paths duplicating a relative sibling: {len(audit.split_pairs)}")
+        print(f"  touch edges stranded on those duplicates:      {audit.stranded_touches}")
+        print(f"  relative paths claimed by >1 project:          {len(audit.collisions)}")
+
+        if audit.split_pairs:
+            print("\nmost-stranded duplicates:")
+            for _, relative, touches in sorted(
+                audit.split_pairs, key=lambda row: -row[2]
+            )[:10]:
+                print(f"  {touches:4d} touches  {relative}")
+
+        if audit.collisions:
+            print("\npaths claimed by more than one project:")
+            for path, owners in sorted(audit.collisions.items())[:10]:
+                print(f"  {path}  <- {sorted(owners)}")
+
+        print("\nproject values in use:")
+        for project, count in audit.projects.items():
+            print(f"  {count:5d}  {project}")
+        print(
+            "\nRead-only. Repair is blocked on an anchor for making absolute paths "
+            "repo-relative;\n`project` cannot serve as one while values like these are "
+            "in it."
+        )
     finally:
         close_connection(graph)
 

@@ -245,6 +245,15 @@ def _upsert_artifacts(g: GraphTraversalSource, session: SessionGraph) -> dict[st
     Artifacts are GLOBAL: one vertex per identifier, shared across every scope, merged on
     identifier alone. Two experts touching the same file land on the same node by design —
     that is what makes artifacts the join key between scopes (contract/ontology.py).
+
+    The raw tool-call string is a weak identity and the join is measurably leaky because
+    of it: one file arrives absolute from one call and repo-relative from the next, so
+    620 vertices duplicate a sibling and strand 2,297 touch edges (`thalamus
+    audit-artifacts`). The fix is not applied here because every rule for making an
+    absolute path repo-relative needs an anchor this data does not carry — `project`
+    holds values like `ybx`, `tmp` and `code`, so anchoring on it splits one file two
+    ways rather than merging it. Recording the checkout root at extraction time is the
+    candidate, and it is a schema question, not a writer one.
     """
     artifact_vids: dict[str, str] = {}
 
