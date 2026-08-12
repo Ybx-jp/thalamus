@@ -13,13 +13,6 @@
   ],
   "expectations": [
     {
-      "case": "ingress-floor-unliftable",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "joiner='-'",
-      "triaged_at_rev": "61213e4",
-      "note": "docs/05's unliftability claim is false; all four separators in _TOKEN_RE's class lift. Handed to main in NOTE-for-main-unliftability-defect.md. If a fix closes hyphen but not _ . /, this entry DRIFTS and the run goes red - which is the intent."
-    },
-    {
       "case": "unarmed-hook-must-gate",
       "failure_class": "unenforced-signal",
       "witness_contains": "check.advisory=True",

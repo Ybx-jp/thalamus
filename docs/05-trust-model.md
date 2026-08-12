@@ -118,9 +118,14 @@ The floor closes it in four places, weakest to strongest:
 3. **The mechanical echo floor** (`apply_ingress_floor`). Every extracted claim whose
    distinctive terms echo the external texts is forced `external` and stamped tier-2
    `CURATED` provenance, **regardless of the model's mark** — the same lexical dials
-   as used-vs-ignored attribution (docs/04), and the layer no prompt content can
-   lift. Down-tier is the only direction: the worst failure is a first-party claim
-   rendered as tier 2, which informs and costs nothing but emphasis.
+   as used-vs-ignored attribution (docs/04), and the layer no instruction reaches.
+   Because the claim's *spelling* is attacker-chosen too, one tokenizer runs over both
+   the page and the claim and emits each compound token beside its parts, so
+   `tool-calls` and `tool calls` echo each other and no separator moves the verdict.
+   The bar is therefore vocabulary, not spelling: a claim that restates the page in
+   words the page never used is not caught. Down-tier is the only direction: the worst
+   failure is a first-party claim rendered as tier 2, which informs and costs nothing
+   but emphasis.
 4. **Write-gate audit + visible read.** The contract rejects any live `Claim` that is
    `external` yet carries tier < 2 (`conformance.py`) — a laundered node cannot sit
    in the graph unnoticed. Recall renders down-tiered episodic detail lines with
@@ -255,7 +260,7 @@ happened to scan is exactly what this table replaces.
 
 | Channel | Class | Detector / status |
 |---|---|---|
-| `WebFetch`/`WebSearch` results in the transcript | V-S1, V-S2 | **closed for `Claim` subtypes** — `apply_ingress_floor` forces tier 2, the contract rejects `external ∧ tier<2`; canary-tested end-to-end (lab/005) |
+| `WebFetch`/`WebSearch` results in the transcript | V-S1, V-S2 | **closed for `Claim` subtypes, against respelling** — `apply_ingress_floor` forces tier 2, the contract rejects `external ∧ tier<2`; canary-tested end-to-end (lab/005), and pinned against the separator family by a witness search (`tests/qe/cases/ingress_floor.py`) rather than one example, since the claim is universal over spellings. **Paraphrase is unchecked**: the match is lexical, so a claim carrying the page's substance in none of its words distills tier-1 |
 | …the same results distilled into a `Thread` | V-S2 | **open, unchecked** — the floor updates only `decisions`/`problems`/`solutions`, `Thread` has no `external` field to mark, and the conformance audit keys on `label == "Claim"`, so thread descriptions write tier-1. Cross-session, and served first by `memory_open_threads` (lab/040) |
 | Cursor ingress results (in `store.db`, not the transcript) | V-S1 | **closed by reading the store** — `harness/cursor_store.py` recognizes it whole or floors the session; `ingress_verdict` separates `verified` from `no-store`/`incomplete`/`unrecognized` (lab/060) |
 | A Cursor store that is partially readable | V-S1 | **closed by failing closed** — recognition completes before emission, so a partial read floors rather than judging against a partial corpus; a store that verifies but reconciles 0 results is not the same state |

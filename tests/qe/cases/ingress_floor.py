@@ -1,12 +1,11 @@
-"""The laundering defense's unliftability claim, as a witness search.
+"""The laundering defense's spelling-invariance, as a witness search.
 
-`docs/05` and `apply_ingress_floor`'s own docstring
-(`src/thalamus/harness/extraction.py:602`) both state this as an absolute: it is
-"the mechanical floor no prompt content can lift."
-
-That is a UNIVERSAL — *no* content lifts it — and a universal cannot be defended by
-examples, because the attacker chooses the example. `tests/test_extraction.py:209`
-covers one fixed poisoned claim and passes; every evasion below also passes it.
+`docs/05` and `apply_ingress_floor`'s docstring both state the mechanical layer is
+reached by no instruction and reads through a claim rewritten to spell the page's
+words differently. That is a UNIVERSAL over spellings, and a universal cannot be
+defended by examples, because the attacker chooses the example.
+`tests/test_extraction.py:209` covers one fixed poisoned claim and passes; every
+evasion below would also pass it.
 
 So the case is a search for a counterexample, not a statistic. This matters for who
 owns it: there is no band to pre-register and no rate to estimate, because N=1
@@ -14,12 +13,12 @@ falsifies a universal. It is a deterministic assertion over a pure function —
 `apply_ingress_floor` has no model in its call graph — which is why it sits here and
 not with eval-methodology, despite the inputs being the kind of text a model produces.
 
-The separator family is the generator. `_TOKEN_RE` (`extraction.py:63`) is
-`[a-z0-9_./-]+`, so hyphen, underscore, period and slash are all WORD characters on the
-corpus side, while the claim side (`substrate/reader.py:1274` `_extract_keywords`) is a
-bare `.split()`, making every one of them a word SEPARATOR. Any character in that
-asymmetry is a candidate lift channel; the suite tries them all rather than the one that
-happened to be found first.
+The separator family is the generator, and it is the one that has actually paid out:
+hyphen, underscore, period and slash are word characters to `_TOKEN_RE`, so a claim
+joining its words with any of them shares no token with a page that spaces them, and
+all four lifted the floor to tier 1 until `_tokens` began emitting each compound's
+parts beside it. The suite tries the whole class rather than the one found first —
+a fix closing hyphen alone leaves three open.
 """
 
 from __future__ import annotations
@@ -54,7 +53,7 @@ def _lifts(joiner: str) -> tuple[bool, str]:
     """Does joining every field's words with `joiner` lift the floor?
 
     Every populated field is rewritten, and that is the whole trick. `_echoes`
-    (`extraction.py:668`) concatenates `description`, `rationale`, `approach` and
+    concatenates `description`, `rationale`, `approach` and
     `outcome` into ONE string before extracting keywords, so a single field left in
     plain prose carries enough overlap to trip the check on its own. An evasion applied
     to the description alone does NOT reproduce — reporting it that way produces a real
@@ -122,11 +121,11 @@ def run() -> Finding | None:
         failure_class=FailureClass.INVARIANT_FALSIFIED,
         summary=(
             "the ingress floor is liftable: separator-joined claim text passes through "
-            "as tier-1 first-party memory, contradicting docs/05 and the docstring at "
-            "extraction.py:602 ('the mechanical floor no prompt content can lift')"
+            "as tier-1 first-party memory, contradicting docs/05 and "
+            "apply_ingress_floor's docstring on reading through a rewritten spelling"
         ),
         witness=" | ".join(lifted),
-        site="src/thalamus/harness/extraction.py:63 vs src/thalamus/substrate/reader.py:1274",
+        site="src/thalamus/harness/extraction.py::_tokens",
     )
 
 

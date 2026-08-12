@@ -1271,28 +1271,32 @@ def _keyword_predicate(keyword: str) -> TextP:
     return TextP.regex("(?i)" + re.escape(keyword))
 
 
+STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "need", "dare", "ought",
+    "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+    "about", "into", "through", "during", "before", "after", "above",
+    "below", "between", "under", "again", "further", "then", "once",
+    "what", "which", "who", "whom", "this", "that", "these", "those",
+    "i", "me", "my", "we", "our", "you", "your", "it", "its", "how",
+    "when", "where", "why", "all", "any", "both", "each", "few", "more",
+    "most", "other", "some", "such", "no", "not", "only", "same", "so",
+    "than", "too", "very", "just", "know", "work", "thing", "things",
+    "and", "but", "nor", "yet", "also", "they", "them", "their",
+    "there", "here", "because", "while", "still",
+}
+"""Terms too common to discriminate. Shared with the ingress floor's term extraction
+(`harness/extraction.py`), which needs the same list under a different tokenizer."""
+
+
 def _extract_keywords(query: str) -> list[str]:
     """Extract meaningful keywords from a natural language query.
 
     Simple heuristic: split on whitespace, drop stopwords and short tokens.
     """
-    stopwords = {
-        "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "shall", "can", "need", "dare", "ought",
-        "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
-        "about", "into", "through", "during", "before", "after", "above",
-        "below", "between", "under", "again", "further", "then", "once",
-        "what", "which", "who", "whom", "this", "that", "these", "those",
-        "i", "me", "my", "we", "our", "you", "your", "it", "its", "how",
-        "when", "where", "why", "all", "any", "both", "each", "few", "more",
-        "most", "other", "some", "such", "no", "not", "only", "same", "so",
-        "than", "too", "very", "just", "know", "work", "thing", "things",
-        "and", "but", "nor", "yet", "also", "they", "them", "their",
-        "there", "here", "because", "while", "still",
-    }
     tokens = query.lower().split()
-    return [t for t in tokens if len(t) > 2 and t not in stopwords]
+    return [t for t in tokens if len(t) > 2 and t not in STOPWORDS]
 
 
 def _first(val) -> str:

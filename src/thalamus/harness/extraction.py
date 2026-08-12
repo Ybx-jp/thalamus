@@ -46,7 +46,7 @@ from thalamus.harness.agents import (  # re-exported: extraction is their main c
     sandbox_env,
 )
 from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS
-from thalamus.substrate.reader import _extract_keywords
+from thalamus.substrate.reader import STOPWORDS
 from thalamus.substrate.schema import (
     Artifact,
     Claim,
@@ -61,6 +61,7 @@ from thalamus.substrate.schema import (
 )
 
 _TOKEN_RE = re.compile(r"[a-z0-9_./-]+")
+_WORD_RE = re.compile(r"[a-z0-9]+")
 
 DEFAULT_MODEL = CLAUDE_DEFAULT_MODEL
 
@@ -620,8 +621,12 @@ def apply_ingress_floor(
     - the extractor's `external: true` marks are honored (good recall, but a poisoned
       page can talk the model out of marking);
     - claims whose distinctive terms echo the external texts are forced external
-      **regardless of the mark** — the mechanical floor no prompt content can lift.
+      **regardless of the mark** — no instruction reaches this layer, and `_tokens`
+      makes it read through a claim rewritten to spell the page's words differently.
       Same dials as used-vs-ignored attribution: crude, cheap, honest (docs/04).
+
+    It is lexical, so the residual is vocabulary: a claim that restates the page in
+    words the page does not use is not caught. Paraphrase is the bar, not spelling.
 
     Down-tier is the only direction: nothing here ever raises trust, so the worst
     failure is first-party memory rendering as tier 2 — which informs, and costs
@@ -643,8 +648,7 @@ def apply_ingress_floor(
     elif not external_texts and not any(c.external for c in graph.claims()):
         return graph
 
-    corpus = " ".join(external_texts).lower()
-    corpus_tokens = set(_TOKEN_RE.findall(corpus))
+    corpus_tokens = _tokens(" ".join(external_texts))
 
     reason = "transcript-ingress" if ingress_verifiable else "transcript-ingress-unverifiable"
     floored = Provenance(
@@ -670,6 +674,33 @@ def apply_ingress_floor(
     )
 
 
+def _tokens(text: str) -> set[str]:
+    """Every form of every word in `text` that either side could spell it as.
+
+    One tokenizer, run over the page and over the claim, emitting a compound token
+    **and** its separator-delimited parts: `tool-calls` yields `tool-calls`, `tool`,
+    `calls`, and so does `tool calls` minus the compound. That redundancy is the whole
+    mechanism. A single tokenizer is not enough on its own — the claim's spelling is
+    attacker-chosen, so a page saying `tool calls` and a claim saying `tool-calls`
+    share no token however identically the two sides tokenize, and joining a claim's
+    words with any of `_TOKEN_RE`'s in-class separators lifted the floor outright.
+    Emitting both forms makes the match invariant to which separator, if any, the
+    claim used; characters outside `_TOKEN_RE`'s class (`~`, `,`, `|`, U+200B) split
+    on both sides and never survived a shared tokenizer anyway.
+
+    The cost is a coarser signal — `docs/05-trust-model.md` also contributes `docs`,
+    `trust`, `model` — which lands as more first-party claims read as tier 2. That is
+    the direction this whole layer is allowed to fail in.
+    """
+    found: set[str] = set()
+    for token in _TOKEN_RE.findall(text.lower()):
+        found.add(token)
+        parts = _WORD_RE.findall(token)
+        if len(parts) > 1:
+            found.update(parts)
+    return found
+
+
 def _echoes(claim: Claim, corpus_tokens: set[str]) -> bool:
     """Does this claim's content lexically echo the external texts?"""
     if not corpus_tokens:
@@ -679,7 +710,7 @@ def _echoes(claim: Claim, corpus_tokens: set[str]) -> bool:
         for field_name in ("description", "rationale", "approach", "outcome")
         if (value := getattr(claim, field_name, None))
     )
-    terms = sorted(set(_extract_keywords(text)))
+    terms = sorted(t for t in _tokens(text) if len(t) > 2 and t not in STOPWORDS)
     if not terms:
         return False
     matched = [term for term in terms if term in corpus_tokens]
