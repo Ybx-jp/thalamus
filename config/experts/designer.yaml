@@ -2,11 +2,11 @@
 #
 # Expert #6. Roster decision recorded in docs/08.
 #
-# The scope shipped **empty of anchors and empty of tooling**, which is unusual and
-# deliberate: the literature consultation (ticket 7f953992f0c347e7) reported the
-# `literature` scope holds nothing whatever on visual or interaction design — two
-# recalls returned only token-level false positives — so every citable claim in this
-# scope arrives by procurement rather than by carry-over.
+# The scope holds **no anchors of its own**, which is unusual and deliberate: the
+# literature consultation (ticket 7f953992f0c347e7) reported the `literature` scope
+# holds nothing whatever on visual or interaction design — two recalls returned only
+# token-level false positives — so every citable claim in this scope arrives by
+# procurement rather than by carry-over.
 #
 # The tool is **self-hosted Penpot**, not Figma, and the deciding fact is authoring:
 # Figma's REST API cannot create design content at all (its write endpoints are
@@ -15,8 +15,15 @@
 # plugin/RPC surface creates shapes, frames, text and components. It also sits better
 # against the boundary below — an MCP that writes *into* a design tool is
 # boundary-compatible, while Figma's MCP is oriented toward emitting code, which the
-# deny list blocks. Deployment is gated on homelab's four conditions (ticket
-# 432ff6f9cd6f43ba); until it lands, deliverables are code-native mockups and specs.
+# deny list blocks. Deployment and operation are `deploy/penpot/`; the 68-tool MCP
+# server arms for this scope alone, declared in `config/mcp/designer.json` and carried
+# into the generated agent by `pin.py`.
+#
+# `claim_kinds` below are the ingest extractor's kinds, not this scope's deliverables.
+# They gate ingestion batches only (docs/06) and must name kinds a writer actually
+# produces. Design critique, defects and preferences are distilled, not ingested, and
+# land under the core kinds — a `design/*` kind would need an extractor that emits one
+# before the manifest could honestly declare it.
 
 contract: v0
 scope: designer
