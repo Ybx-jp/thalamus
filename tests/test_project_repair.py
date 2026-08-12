@@ -24,13 +24,20 @@ def _checkout(path):
 
 
 class _FakeTraversal:
-    """Serves the three `plan` queries by label, in the order it asks for them."""
+    """Serves `plan`'s queries: rows per label, plus the flat distinct-values sweep."""
 
     def __init__(self, sessions, threads=(), artifacts=()):
-        self._rows = {"Session": sessions, "Thread": list(threads), "Artifact": list(artifacts)}
+        rows = {"Session": [], "Thread": list(threads), "Artifact": list(artifacts)}
+        # `paths` is optional at the call site so the cases that say nothing about
+        # touched files do not have to carry an empty list each.
+        rows["Session"] = [{"paths": [], **row} for row in sessions]
+        self._rows = rows
         self._label = None
+        self._flat = False
 
     def V(self):
+        self._label = None
+        self._flat = False
         return self
 
     def has_label(self, label):
@@ -46,7 +53,17 @@ class _FakeTraversal:
     def by(self, *_args, **_kwargs):
         return self
 
+    def values(self, _key):
+        self._flat = True
+        return self
+
+    def dedup(self):
+        return self
+
     def to_list(self):
+        if self._flat:
+            every = [r for rows in self._rows.values() for r in rows]
+            return sorted({str(r.get("project", "")) for r in every})
         return self._rows[self._label]
 
 
@@ -218,3 +235,59 @@ def test_an_artifact_keeps_a_value_that_was_never_disproved(tmp_path):
     moved = {c.vid for c in repair.changes}
     assert "a-keep" not in moved
     assert {"a-fix", "a-name"} <= moved
+
+
+def test_an_extraction_sandbox_is_disproved_without_any_filesystem_evidence(tmp_path):
+    """
+    Scenario: artifacts touched inside an extraction sandbox, whose throwaway cwd was
+    deleted with the subprocess and which no Session carries at all
+
+    The evidence path cannot reach these — the sandbox's own run is never distilled, so
+    no session carries the value and no directory survives to resolve. `is_sandbox_project`
+    is the same test the transcript reader uses to refuse these sessions, so treating it
+    as a definitional disproof adds no new judgement about what a sandbox is.
+    """
+    g = _FakeTraversal(
+        [],
+        artifacts=[
+            {"vid": "a-1", "project": "thalamus-extract-lpe3snna", "identifier": "/gone/x.py"},
+            {"vid": "a-2", "project": "notasandbox", "identifier": "/gone/y.py"},
+        ],
+    )
+
+    repair = project_repair.plan(g, ledger=tmp_path / "none.jsonl", archive=tmp_path / "none")
+
+    assert [(c.vid, c.after) for c in repair.changes] == [("a-1", "")]
+
+
+def test_touched_files_attribute_a_session_its_cwd_cannot_and_only_when_unanimous(tmp_path):
+    """
+    Scenario: two sessions run from a directory that is no repo — one touched files in a
+    single checkout, the other touched files in two
+
+    Touched paths are recorded tool-call inputs, so this is evidence of the same kind as
+    cwd rather than inference about it, and filling an empty value needs no disproof:
+    there is nothing there to be wrong about. Unanimity is what keeps it from being a
+    guess — one live session names 25 paths across three repos, and a plurality rule
+    would hand it to one of them on a 4-1-1 split.
+    """
+    one = _checkout(tmp_path / "solo")
+    other = _checkout(tmp_path / "second")
+    (tmp_path / "solo" / "a.py").write_text("")
+    (tmp_path / "second" / "b.py").write_text("")
+    loose = tmp_path / "home"
+    loose.mkdir()
+    ledger = _ledger(tmp_path, [
+        {"session_id": "s-1", "cwd": str(loose)},
+        {"session_id": "s-2", "cwd": str(loose)},
+    ])
+    g = _FakeTraversal([
+        {"vid": "v-1", "project": "", "sid": "s-1", "hashes": [],
+         "paths": [f"{one}/a.py"]},
+        {"vid": "v-2", "project": "", "sid": "s-2", "hashes": [],
+         "paths": [f"{one}/a.py", f"{other}/b.py"]},
+    ])
+
+    repair = project_repair.plan(g, ledger=ledger, archive=tmp_path / "archive")
+
+    assert [(c.vid, c.after) for c in repair.changes] == [("v-1", "solo")]

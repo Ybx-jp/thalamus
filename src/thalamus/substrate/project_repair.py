@@ -48,6 +48,8 @@ from pathlib import Path
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import T
 
+from thalamus.harness.transcripts import is_sandbox_project
+
 PIN_LEDGER = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 ARCHIVE = Path.home() / ".thalamus" / "archive"
 
@@ -148,6 +150,41 @@ def _archived_cwd(content_hash: str, archive: Path) -> str:
     return ""
 
 
+def _attribute_by_touch(identifiers) -> str:
+    """The one repo a session's touched files all sit in, or `""`.
+
+    Reached only when the working directory says nothing — a session run from `$HOME`
+    that spent itself editing a checkout is that checkout's work, and the files it named
+    say so. This is evidence of the same kind as `cwd`, not inference about it: touched
+    paths are recorded tool-call inputs, written by the harness rather than judged.
+
+    **Unanimity is required, and it is what keeps this from being a guess.** One session
+    here names 25 absolute paths across `resume-workbench`, `nodeglass` and
+    `stepmania-chart-generator`; a plurality rule would hand it to the first of those on
+    a 4-to-1-to-1 split, inventing a single owner for work that genuinely had three. A
+    session with no single answer keeps none.
+
+    Measured over the 15 sessions the cwd could not attribute: this settles 1, refuses
+    the 3-repo case, and cannot help the 13 that either touched nothing or touched
+    nothing inside a checkout. It is a small win taken because it is free of judgement,
+    not a general solution to attribution.
+    """
+    repos = set()
+    for identifier in identifiers:
+        path = str(identifier)
+        if not path.startswith("/") or not _exists(path):
+            continue
+        root = resolve_repo_root(str(Path(path).parent))
+        if root:
+            repos.add(Path(root).name)
+    return repos.pop() if len(repos) == 1 else ""
+
+
+def _values(g: GraphTraversalSource) -> set[str]:
+    """Every distinct `project` value in the graph, whatever carries it."""
+    return {str(v) for v in g.V().has("project").values("project").dedup().to_list()}
+
+
 def plan(
     g: GraphTraversalSource,
     *,
@@ -161,9 +198,10 @@ def plan(
 
     sessions = (
         g.V().has_label("Session").has("project")
-        .project("vid", "project", "sid", "hashes")
+        .project("vid", "project", "sid", "hashes", "paths")
         .by(T.id).by("project").by("session_id")
         .by(__.out("DERIVED_FROM").has_label("Source").values("content_hash").fold())
+        .by(__.out("TOUCHES").has_label("Artifact").values("identifier").fold())
         .to_list()
     )
 
@@ -206,6 +244,8 @@ def plan(
 
         root = resolve_repo_root(cwd)
         after = Path(root).name if root else ""
+        if not after:
+            after = _attribute_by_touch(row["paths"])
         settled[str(row["vid"])] = after
         testable.add(before)
         if after == before:
@@ -213,15 +253,28 @@ def plan(
         verdicts.setdefault(before, []).append((str(row["vid"]), after, f"{source} cwd={cwd}"))
 
     disproved = {value for value in testable if value and value not in confirmed}
+    # An extraction sandbox is disproved by definition, not by evidence, and needs to
+    # be: its throwaway cwd is deleted with the subprocess, so no filesystem lookup can
+    # ever reach a verdict, and no Session carries the value at all — the sandbox's own
+    # run is never distilled (`transcripts.discover`). Only Artifacts touched inside one
+    # keep the name. `is_sandbox_project` is the same test the reader already uses to
+    # refuse these sessions, so this adds no new judgement about what a sandbox is.
+    disproved |= {value for value in _values(g) if value and is_sandbox_project(value)}
 
     for value, seen in verdicts.items():
         for vid, after, evidence in seen:
-            if value not in disproved:
-                if after != value:
-                    result.left_alone.append((vid, "Session", value))
+            if after == value:
                 continue
-            if after != value:
-                result.changes.append(Change(vid, "Session", value, after, evidence))
+            # Filling an empty value is the one move that needs no disproof: there is
+            # nothing there to be wrong about, and attribution recovered from evidence
+            # is strictly better than none. Only the reverse direction — a name replaced
+            # by emptiness — is the one this migration has to earn.
+            if value and value not in disproved:
+                result.left_alone.append((vid, "Session", value))
+                continue
+            if not value and not after:
+                continue
+            result.changes.append(Change(vid, "Session", value, after, evidence))
 
     _plan_threads(g, settled, disproved, result)
     _plan_artifacts(g, disproved, result)
