@@ -55,6 +55,7 @@ CASE_MODULES = (
     "qe.cases.shadowed_tests",
     "qe.cases.hook_detachment",
     "qe.cases.dispatch_addressability",
+    "qe.cases.tool_write_freedom",
 )
 
 
