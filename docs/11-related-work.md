@@ -1283,6 +1283,21 @@ not a scan.
      (arXiv 2510.02837). This one is cheap to close in-house and is now an open
      thread: re-run the existing extractor over archived Claude Code transcripts
      with `tool_use_id` linkage stripped, and diff the claims. We hold the corpus.
+   - **What a *denial message* should say to a blocked agent.** Consulted
+     2026-08-12 (exchange `scope:main:exchange:89762a0cbedb4373`). MAST's role-
+     compliance work changed the decision topology — a structural authority with
+     final say, +9.4% — and never varied the *feedback given at the moment of
+     denial*, so the gap is in what that line of work did rather than in what the
+     graph holds. What is measured nearby: a bare deny is expensive, since 24.6% of
+     Harness-Bench's failed trajectories are blocked commands with no effective
+     recovery (arXiv 2605.27922); explanation-only feedback is not inert, worth
+     +2–3% and +9% on the hardest split in Self-Debugging's no-unit-test arm; and
+     AgentCollabBench's IDR rubric scores "refusal **or** a compliant alternative"
+     as non-violation, which is the shape a handover instruction already has. The
+     route-around worry that our own standing trade rests on (lab/008) is argued
+     rather than measured, and the human-facing version of it is confirmation
+     fatigue, not an agent result. Cheap to close in-house: the guard ledger already
+     records every block with its message version.
 
 ## 5. Open challenges this literature puts to the design
 

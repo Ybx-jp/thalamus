@@ -2347,26 +2347,32 @@ def _report_capabilities():
     binary was missing, "no drift" and "nothing asked" are the same output. So the
     rows that could not be answered are always shown, including on a clean run.
     """
-    from thalamus.contract.probes import Outcome, check_capabilities
+    from thalamus.contract.boundaries import check_boundaries
+    from thalamus.contract.probes import check_capabilities
 
-    results = check_capabilities()
-    drift = [r for r in results if r.outcome is Outcome.DRIFT]
-    malformed = [r for r in results if r.outcome is Outcome.MALFORMED]
-    unchecked = [r for r in results
-                 if r.outcome in (Outcome.UNPROBEABLE, Outcome.UNAVAILABLE)]
+    # Two kinds of declaration, one report. A flag row says what a CLI accepts; a
+    # boundary row says what actually binds on a harness — and the second is the one
+    # that was wrong while the first was clean, because a derivation over our own
+    # tables never asks a harness anything (lab/061).
+    rows = [(r.label, r.outcome.value, r.detail) for r in check_capabilities()]
+    rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
+             for row, outcome, detail in check_boundaries()]
 
-    for result in results:
-        mark = {Outcome.CONFIRMED: "✓", Outcome.DRIFT: "✗",
-                Outcome.MALFORMED: "✗"}.get(result.outcome, "?")
-        detail = f" — {result.detail}" if result.detail else ""
-        print(f"  {mark} {result.label} [{result.outcome.value}]{detail}")
+    drift = [r for r in rows if r[1] == "drift"]
+    malformed = [r for r in rows if r[1] == "malformed"]
+    unchecked = [r for r in rows if r[1] in ("unprobeable", "unavailable")]
 
-    print(f"\nProbed {len(results)} declaration(s): {len(results) - len(drift) - len(malformed) - len(unchecked)} "
+    for label, outcome, detail in rows:
+        mark = {"confirmed": "✓", "drift": "✗", "malformed": "✗"}.get(outcome, "?")
+        suffix = f" — {detail}" if detail else ""
+        print(f"  {mark} {label} [{outcome}]{suffix}")
+
+    print(f"\nProbed {len(rows)} declaration(s): {len(rows) - len(drift) - len(malformed) - len(unchecked)} "
           f"confirmed, {len(drift)} drifted, {len(malformed)} malformed, "
           f"{len(unchecked)} unchecked.")
     if drift or malformed:
-        print("\nA declaration no longer matches the CLI that answers it.",
-              file=sys.stderr)
+        print("\nA declaration no longer matches what answers it — the CLI's parser, "
+              "or the wiring a boundary claims to bind through.", file=sys.stderr)
         sys.exit(1)
     if unchecked:
         print("Every declaration that could be asked still holds. "
@@ -2400,8 +2406,10 @@ def _report_roster_boundaries():
         print(f"    skills     denied [{origin}]: {', '.join(skills) if skills else '(nothing)'}")
 
     print("\nBoundaries are enforced by the role-guard PreToolUse hook, which binds "
-          "the file-editing tools, `Skill` and `Artifact`. Bash, `Read` on a "
-          "SKILL.md, and the Cursor harness are named misses (role-guard.sh).")
+          "the file-editing tools, `Skill` and `Artifact`. Bash and `Read` on a "
+          "SKILL.md are named misses (role-guard.sh). Which of these binds on which "
+          "harness is a separate question with a separate record: "
+          "`thalamus contract check --capabilities`.")
 
 
 def _cmd_contract(args, contract_parser):

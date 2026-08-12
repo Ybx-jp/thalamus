@@ -178,10 +178,88 @@ class TestDerivedRows:
         `claude_only` would say Cursor has no MCP tap when it has one — a capability
         the adapter *has*, reported as one it lacks.
         """
-        from thalamus.harness.install import DECLARED_PARITY
+        from thalamus.harness.install import DECLARED_HOOK_PARITY
 
-        assert "post-tool-use.sh" in DECLARED_PARITY.claude_only
-        assert "post-tool-use.sh" not in DECLARED_PARITY.real_gaps
-        assert DECLARED_PARITY.real_gaps == (
-            "recipe-stage.sh", "role-guard.sh", "room-guard.sh",
-        )
+        assert "post-tool-use.sh" in DECLARED_HOOK_PARITY.claude_only
+        assert "post-tool-use.sh" not in DECLARED_HOOK_PARITY.real_gaps
+
+    def test_a_native_path_is_not_counted_as_a_gap_either(self):
+        """`role-guard.sh` is wired for Claude Code only and binds on Cursor anyway.
+
+        Cursor translates `~/.claude/settings.json` into its own event names, so the
+        guard runs there through the vendor's path with nothing under `.cursor/`.
+        Wiring a Cursor adapter for it would run the same guard twice on one call —
+        so its absence from `CURSOR_HOOK_WIRING` is the decision, not the gap, and
+        this assertion is what stops a later reader from "fixing" it.
+        """
+        from thalamus.harness.install import DECLARED_HOOK_PARITY
+
+        assert "role-guard.sh" in DECLARED_HOOK_PARITY.claude_only
+        assert "role-guard.sh" in DECLARED_HOOK_PARITY.native
+        assert DECLARED_HOOK_PARITY.real_gaps == ("recipe-stage.sh", "room-guard.sh")
+
+
+class TestBoundaryRows:
+    """The record whose subject is the obligation rather than the wiring table.
+
+    The wiring-parity record was clean and green while `role-guard.sh` was listed as
+    a Cursor gap and was in fact binding there, because a derivation over our own
+    tables never asks a harness anything (lab/061). These rows are what carries the
+    answer instead, so what must stay true of them is that they cannot quietly become
+    a boolean again.
+    """
+
+    def test_every_row_names_what_it_was_verified_against(self):
+        from thalamus.contract.boundaries import BOUNDARY_ROWS
+
+        for row in BOUNDARY_ROWS:
+            assert row.evidence.verified_against, row.label
+            assert row.evidence.reask in ("free", "live-session"), row.label
+
+    def test_the_cursor_rows_report_unprobeable_rather_than_confirmed(self):
+        """A vendor's undocumented compat path has no free re-ask, and says so.
+
+        This is the row that would be most comfortable as a green tick and must not
+        be: nothing in this repo can re-ask it without a live session, so it belongs
+        in the unchecked count on every run.
+        """
+        from thalamus.contract.boundaries import check_boundaries
+
+        cursor = [(row, outcome) for row, outcome, _ in check_boundaries()
+                  if row.harness == "cursor"]
+        assert cursor
+        assert all(outcome == "unprobeable" for _, outcome in cursor)
+
+    def test_the_claude_rows_are_recomputed_against_the_wiring(self):
+        from thalamus.contract.boundaries import check_boundaries
+
+        claude = [(row, outcome) for row, outcome, _ in check_boundaries()
+                  if row.harness == "claude"]
+        assert len(claude) == 4
+        assert all(outcome == "confirmed" for _, outcome in claude)
+
+    def test_a_boundary_declared_but_never_armed_is_drift(self, monkeypatch):
+        """lab/056: room-guard.sh was declared here and never wired, and every room
+        reported a treatment that had not occurred. A record that cannot catch that
+        is decoration."""
+        from thalamus.contract import boundaries
+        from thalamus.harness import install
+
+        monkeypatch.setattr(install, "HOOK_WIRING", [
+            (event, matcher, script) for event, matcher, script in install.HOOK_WIRING
+            if script != "room-guard.sh"
+        ])
+        verdicts = {row.label: outcome for row, outcome, _ in boundaries.check_boundaries()}
+        assert verdicts["room_boundary.message on claude"] == "drift"
+        assert verdicts["write_boundary.path on claude"] == "confirmed"
+
+    def test_absent_and_unknown_are_not_merged(self):
+        """`Artifact` has no referent on Cursor; skills have one with no interception
+        point. Collapsing those into "unenforced" is how an unmeasured thing acquires
+        a measured-sounding state."""
+        from thalamus.contract.boundaries import BOUNDARY_ROWS, Provision
+
+        states = {(r.boundary, r.harness): r.state for r in BOUNDARY_ROWS}
+        assert states[("capability_boundary.tool", "cursor")] is Provision.ABSENT
+        assert states[("capability_boundary.skill", "cursor")] is Provision.UNKNOWN
+        assert states[("write_boundary.path", "cursor")] is Provision.NATIVE

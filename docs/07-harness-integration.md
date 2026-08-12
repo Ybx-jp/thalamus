@@ -145,17 +145,66 @@ the 2026-07-29 re-verification):
 - *beforeSubmitPrompt* → engagement marking, and the prompt-side half of the
   two injection tiers (below).
 - *beforeShellExecution* → the gremlin terminal-step guard (exit-2 protocol
-  mapped to `permission: deny` + `agent_message`).
+  mapped to `permission: deny`). The guard's reason rides **both** message
+  fields: a denial's tool result carries the `user_message` text and no
+  occurrence of `agent_message`, so the documented agent channel alone delivers
+  nothing and the block arrives without its reason. A block with no reason is a
+  stall, which is the measured cost — 24.6% of failed trajectories are blocked
+  commands with no effective recovery (Harness-Bench, arXiv 2605.27922).
 - *afterShellExecution* / *afterMCPExecution* → the two trace taps; Cursor
   reports MCP tools by bare name, and the adapter restores the
   `mcp__thalamus__` prefix so `eval sync` stays harness-blind.
 - *postToolUse* → delivery of the spooled injection. It deliberately does **not**
-  tap: `postToolUse` is generic (it fires for every tool type, MCP included) and
-  the docs do not say whether a tool call fires both it and the specialized
-  event. If it does, tapping both double-counts every retrieval in `eval sync`,
-  so the taps stay specialized until a live Cursor settles it. The cost of that
-  caution is that tracing does not reach Cursor **cloud agents**, where the
+  tap, and the reason is now measured rather than cautious: the generic and
+  specialized events are **not exclusive**. One `echo` fires `preToolUse` *and*
+  `beforeShellExecution`, then `postToolUse` *and* `afterShellExecution`; one MCP
+  call fires both members of its own pair (lab/061). Tapping the generic event
+  beside the specialized one would double-count every retrieval in `eval sync`.
+  The cost stands: tracing does not reach Cursor **cloud agents**, where the
   MCP-specific events do not load but `postToolUse` would.
+
+**`cwd` arrives as an empty string, not as absent**, on shell payloads — and jq's
+`//` falls through on `null` and `false` only, so the natural
+`(.cwd // .workspace_roots[0])` wrote an empty `cwd` into the guard and trace
+ledgers for every one of them. The adapters test for emptiness explicitly.
+
+### The guard Cursor runs without being wired
+
+Cursor reads **`~/.claude/settings.json`** and translates it. Its bundle carries the
+event table verbatim — `{PreToolUse: preToolUse, UserPromptSubmit: beforeSubmitPrompt,
+PostToolUse: postToolUse, …}` — parses Claude Code's `|`-separated matcher syntax, and
+shims a `permissionDecision` response onto its own `permission` field.
+
+So `hooks/claude-code/role-guard.sh` **runs in Cursor sessions**, with nothing wired
+under `.cursor/` and no adapter written. Measured on `cursor/2026.08.11-e8db854`: in a
+directory holding no `.cursor/hooks.json` at all, a `THALAMUS_SCOPE=qe` session's
+`Write` to `*/src/*` was blocked, the file was unchanged, the agent came back with the
+guard's own handover instruction, and `~/.thalamus/guards/` took a `role-boundary`
+block row under a Cursor conversation id.
+
+**Do not write a Cursor adapter for this guard.** A second registration on
+`preToolUse` runs the same guard twice on one call: the agent receives both denials
+concatenated into one tool result, and the guard ledger takes two rows per block —
+which corrupts the denominator of the roster's granularity audit, since passes are
+logged there deliberately as evidence that a scope never came near its boundary.
+`install.HookParity.native` is where that decision is recorded, so a later reader does
+not "fix" the absence.
+
+Of the two boundaries the guard enforces, only one has anything to bind to here:
+
+| boundary | on Cursor | why |
+|---|---|---|
+| `write_boundary.deny_globs` | **binds** | `Write` is Cursor's only edit tool, and it carries an absolute `file_path`; the boundary never needed `cwd` |
+| `capability_boundary.deny_tools` | **vacuous** | the roster default's only entry is `Artifact`, and Cursor has no such tool |
+| `capability_boundary.deny_skills` | **no interception point** | a skill is reached by `Read` of its `SKILL.md` and then `Task`; there is no `Skill` call to match. `beforeReadFile` could see the read — an interception point Claude Code lacks — and is deliberately not used: a guard on `Read` is a high-false-positive surface, and a false positive teaches route-around (lab/008) |
+
+Two conditions bound all of this. It was observed under `agent -p --trust` on one
+build, so it is a falsifier and not a generalizer; and it is **undocumented vendor
+behaviour**, which can leave in a release with no announcement. That is why the record
+in [`contract/boundaries.py`](../src/thalamus/contract/boundaries.py) stores
+`verified_against: "cursor/2026.08.11-e8db854"` rather than a boolean, and why its
+Cursor rows report `unprobeable` on every check: nothing here can re-ask them without
+a live session.
 
 **The two injection tiers cross by splitting compute from delivery.** Cursor
 gives the prompt text to an event that cannot inject (`beforeSubmitPrompt`) and
@@ -351,17 +400,30 @@ same output.
 claim the repo made about *itself*: `install.py` asserted a hook-parity count that
 was wrong for three scripts, because a count in a comment is compared to nothing. So
 the checker carries `DERIVED` rows beside the flag probes — same checker, because it
-is the same failure. `DECLARED_PARITY` is the hand-authored expectation and
+is the same failure. `DECLARED_HOOK_PARITY` is the hand-authored expectation and
 `derive_hook_parity()` recomputes from `HOOK_WIRING` and `CURSOR_HOOK_WIRING`; the
 declaration does not read the tables, so adding a script moves one and not the other,
 and the drift names the newcomer rather than reporting that a number changed.
 
-The declaration carries its **renames** explicitly, because a name-set difference
-cannot tell a rename from a gap — the two are the same shape. Without that,
-`post-tool-use.sh` reads as a missing MCP tap on Cursor when `mcp-tap.sh` is doing
-that job under another filename: a capability the adapter *has*, reported as one it
-lacks. `real_gaps` is what remains after renames, and it is three —
-`recipe-stage.sh`, `role-guard.sh`, `room-guard.sh`.
+The declaration carries its **renames** and its **natives** explicitly, because a
+name-set difference cannot tell either of them from a gap — all three are the same
+shape. Without renames, `post-tool-use.sh` reads as a missing MCP tap on Cursor when
+`mcp-tap.sh` is doing that job under another filename. Without natives,
+`role-guard.sh` reads as a missing role guard on Cursor while it is in fact running
+there through the vendor's own translation of `~/.claude/settings.json` — which is
+what it did for a release. `real_gaps` is what remains after both, and it is two:
+`recipe-stage.sh` and `room-guard.sh`.
+
+A name lands in `real_gaps` by default, so it is a **floor on the gaps rather than a
+measurement of them**: a script nobody has probed on Cursor is indistinguishable from
+one probed and found absent. That is the limit of a record whose subject is two
+tables, and it is why the obligations have their own record —
+[`contract/boundaries.py`](../src/thalamus/contract/boundaries.py), one row per
+boundary per harness, five states (`PROVIDED`, `NATIVE`, `ABSENT`, `OPAQUE`,
+`UNKNOWN`), each carrying the evidence it rests on and what re-asking would cost. The
+Claude Code rows re-ask themselves against the wiring for free; the Cursor rows
+cannot be re-asked without a live session, so they report `unprobeable` on every run
+and land in the unchecked count rather than being smoothed into a green tick.
 
 What the checker does **not** catch is as important. A probe is sound as a falsifier
 and unsound as a generalizer: that `--trust` parses says nothing about what it does,
@@ -439,6 +501,16 @@ with no research claim to make.
 Pin resolution on Cursor is env-only — no agent picker — so a Cursor session is
 `main` unless launched with `THALAMUS_SCOPE`. Cursor cloud agents load neither
 the session hooks nor the MCP hooks; local Cursor only.
+
+That is also the ceiling on the guard above, and it is a low one: `pin.py` launches
+`claude` and has no Cursor launcher, so **the write boundary binds only on a session
+whose operator exported the variable by hand.** The mechanism is real and the
+population is not — an enforcement claim about Cursor is a claim about hand-built
+sessions until a launcher exists. Cursor's `preToolUse` payload also carries no
+`agent_type`, so the payload route that corrects subagent scope resolution on Claude
+Code has no analogue; a Cursor subagent inherits its launcher's pin, which is the
+right answer there only because Cursor subagents are `generalPurpose|explore|shell`
+and never a differently-pinned expert.
 
 **What is measured against a live CLI, and what is still synthetic**, is now two
 different lists (lab/054, CLI 2026.08.04). Measured: the model identifiers, the

@@ -98,17 +98,22 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # The Cursor wiring, as (event, script). Event names and their I/O shapes were
 # re-verified against cursor.com/docs/hooks.md on 2026-07-29 (lab/027).
 #
-# Parity with HOOK_WIRING above is declared in `DECLARED_PARITY` below and re-derived
+# Parity between the two tables is declared in `DECLARED_HOOK_PARITY` below and re-derived
 # by `thalamus contract check --capabilities`, because stating it here in prose is
 # what failed: the count was wrong for the three scripts that joined the Claude list
-# after it was written, and nothing failed with it. What the numbers *mean* stays
-# prose, since no derivation can supply it — on Cursor there is today no recipe
-# staging, no room boundary and, load-bearing, no `write_boundary` enforcement.
-# The prompt-side tiers reach
-# Cursor through the spool: `beforeSubmitPrompt` can read the prompt but not
-# inject, so timestamp.sh and conditioning.sh record there and `inject.sh`
-# delivers on the next `postToolUse` — one of only two Cursor events that can
-# inject at all.
+# after it was written, and nothing failed with it.
+#
+# What that record is about is **these two tables and nothing else**. It cannot say
+# whether an obligation binds, because a boundary can bind through a path in neither
+# table — Cursor runs `role-guard.sh` off `~/.claude/settings.json` with nothing wired
+# under `.cursor/`, so this list's silence about it is correct and reads as a gap
+# only to someone asking the wrong question. `contract/boundaries.py` answers the
+# right one, per boundary and per harness, and carries the evidence.
+#
+# The prompt-side tiers reach Cursor through the spool: `beforeSubmitPrompt` can read
+# the prompt but not inject, so timestamp.sh and conditioning.sh record there and
+# `inject.sh` delivers on the next `postToolUse` — one of only two Cursor events that
+# can inject at all.
 #
 # ⚠️ The clock tier may be redundant on Cursor, and wired anyway pending one
 # probe. A live headless session's transcript carried a `<timestamp>` element
@@ -121,17 +126,17 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # only in `-p` — and long-running interactive sessions are exactly what the tier
 # was built for. The probe that settles it is an interactive Cursor session.
 #
-# Either answer needs somewhere to be recorded. A capability the adapter must
-# *decline* because the harness already provides it is a different thing from one
-# the harness lacks, and today the two are indistinguishable here: a script
-# missing from this list reads the same as the three genuine gaps above.
+# Either answer needs somewhere to be recorded, and `contract/boundaries.py` is where:
+# `NATIVE` is a capability the adapter must *decline* because the harness already
+# provides it, and it is a different state from `ABSENT` and from `UNKNOWN`.
 #
-# The taps stay on the *specialized* events rather than moving to the generic
-# postToolUse, even though the generic one would additionally work in Cursor
-# cloud agents: the docs do not say whether an MCP call fires both the generic
-# and the specialized hook, and if it does, a tap on both double-counts every
-# retrieval in `eval sync`. That is a measurement question a live Cursor
-# settles, not a guess to ship.
+# The taps stay on the *specialized* events, and the reason is now measured rather
+# than cautious: a single `echo` fires `preToolUse` **and** `beforeShellExecution`,
+# and completes into `postToolUse` **and** `afterShellExecution`; one MCP call fires
+# both members of its pair too (lab/061). The generic events are not exclusive with
+# the specialized ones, so moving a tap to `postToolUse` while the specialized tap
+# stands would double-count every retrieval in `eval sync`. The cost stands with it:
+# tracing does not reach Cursor cloud agents, where only the generic event loads.
 #
 # No carrier: Claude Code's PostToolUse:TaskCreate milestone class. TaskCreate
 # is task-list UI; Cursor's `Task` tool type is subagent spawning, which is a
@@ -151,7 +156,7 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
 
 @dataclass(frozen=True)
 class HookParity:
-    """What the two wirings above are believed to add up to.
+    """What the two wirings above are believed to add up to — the tables, only.
 
     Written as data so it can be re-derived and disagreed with. The same claim as a
     comment was wrong for three scripts and no test could notice, because a comment
@@ -162,6 +167,13 @@ class HookParity:
     `CURSOR_HOOK_WIRING`, this record does not, so adding a script to either table
     moves one and not the other. That divergence is precisely the event that went
     unnoticed before.
+
+    **The subject is the wiring, never the obligation.** This record cannot say
+    whether a boundary binds, and a reader who takes it for that gets a false answer
+    in both directions: it over-reported gaps until `renames` was added, and it
+    under-reported enforcement until `native` was, because a script absent from both
+    tables can still be running through the vendor's own compatibility path.
+    `contract/boundaries.py` is the record that speaks about obligations.
     """
 
     claude_scripts: int
@@ -174,21 +186,34 @@ class HookParity:
     # missing MCP tap on Cursor when `mcp-tap.sh` is doing that job under a different
     # filename, which is a capability the adapter *has* being reported as one it lacks.
     renames: tuple[tuple[str, str], ...]
+    # Scripts wired for Claude Code only *on purpose*, because Cursor already runs
+    # them: it translates `~/.claude/settings.json` into its own event names, so a
+    # second registration under `.cursor/` would run the same guard twice on one
+    # call. Absence from `CURSOR_HOOK_WIRING` is the decision here, not the gap —
+    # and without this field the two are the same shape, exactly as a rename was.
+    native: tuple[str, ...] = ()
 
     @property
     def real_gaps(self) -> tuple[str, ...]:
-        """Claude-only scripts that are genuinely absent on Cursor, renames excluded."""
-        renamed = {claude_name for claude_name, _ in self.renames}
-        return tuple(name for name in self.claude_only if name not in renamed)
+        """Claude-only scripts with no Cursor path, renames and natives excluded.
+
+        A name lands here by *default*, so this is a floor on the gaps and not a
+        measurement of them: a script nobody has probed on Cursor is indistinguishable
+        from one probed and found missing. `role-guard.sh` sat here for a release
+        while it was in fact binding.
+        """
+        accounted = {claude_name for claude_name, _ in self.renames} | set(self.native)
+        return tuple(name for name in self.claude_only if name not in accounted)
 
 
-DECLARED_PARITY = HookParity(
+DECLARED_HOOK_PARITY = HookParity(
     claude_scripts=11,
     cursor_scripts=9,
     shared=7,
     claude_only=("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh", "room-guard.sh"),
     cursor_only=("inject.sh", "mcp-tap.sh"),
     renames=(("post-tool-use.sh", "mcp-tap.sh"),),
+    native=("role-guard.sh",),
 )
 
 

@@ -43,7 +43,15 @@
 #   - A skill name this list has never heard of is permitted silently, because the
 #     namespace is owned upstream and a boundary that is never hit looks exactly
 #     like one that is respected.
-#   - The Cursor harness has no role guard at all, so neither boundary binds there.
+#
+# This script runs on Cursor too, and nothing under `.cursor/` wires it: Cursor
+# translates `~/.claude/settings.json`, including the `|`-separated matcher, and
+# shims `permissionDecision` onto its own `permission` field. So the path boundary
+# binds there — measured, `cursor/2026.08.11-e8db854` — while the capability boundary
+# is vacuous, because Cursor has no `Artifact` tool and reaches a skill by reading its
+# SKILL.md rather than by a call this matcher could see. Do not add a Cursor adapter
+# for this guard: a second registration runs it twice on one call. The per-harness
+# states and their evidence live in `contract/boundaries.py`.
 #
 # All misses, and lab/008's standing trade says a miss is the cheaper error — a
 # false positive teaches route-around, and route-around costs more than a gap.
