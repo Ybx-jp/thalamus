@@ -545,6 +545,36 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    pin-ledger spawn, inflating the `pinned, never retrieved` metric (lab/roster
    metric-confound, 2026-07-19). `main` is the default for any plainly-launched
    process — an unpinned session *is* a main-plane session.
+
+   **A scope's tooling rides the same agent definition.** A scope may declare MCP
+   servers of its own in `config/mcp/<scope>.json` (the `mcpServers` key, in
+   `.mcp.json`'s schema); `designer` declares the self-hosted Penpot server it
+   exists to work through. `write_agent` copies that declaration into the
+   generated agent's `mcpServers` frontmatter, which Claude Code honours for an
+   agent run as the **main** session via `--agent`, connecting it at startup
+   alongside `.mcp.json` and settings (v2.1.153+). The arming is therefore
+   inseparable from the pin — the roster, `thalamus spawn`, FleetView, the agent
+   picker and `claude --agent thalamus-designer` typed by hand all arm
+   identically, and no launcher flag is involved, because a flag reaches only the
+   one launch route that passes through it. Declared per scope rather than in
+   `.mcp.json` since a tool surface is not free (Penpot's 68 tools carried
+   project-wide would be the whole roster paying for one scope's tooling), and
+   kept beside the manifests rather than in them because the manifest contract is
+   harness-agnostic — Cursor reads the same files — while this schema is Claude
+   Code's. Verified against 2.1.228: `--agent thalamus-designer` alone reports
+   `penpot` connected with 68 tools; `qe` and an unpinned session report none.
+
+   **A pin whose tooling did not arrive says so at startup.** The session-start
+   hook (`thalamus_mcp_arming_warning` in `resolve-scope.sh`) compares the scope's
+   declaration against the agent definition the process would have loaded, and
+   prepends a stop-and-report warning to the injected context when they disagree:
+   the process never picked the scope's agent, or the generated file is stale or
+   absent. Detection is needed on top of the arming because the state is otherwise
+   invisible from inside — a `designer` session with no design tool has a system
+   prompt asserting it is one, nothing contradicting that, and no way to find out.
+   The generated agent carries a second copy of the check in its own body, naming
+   the tool prefix (`mcp__penpot__*`), which covers the case a file check cannot:
+   the declaration correct and the server behind it down.
 2. **The pin is resolved once, everywhere, by the same rule.** Resolution is
    **picked-agent-first, env-fallback** (`harness/pin.resolve_pin`; hooks source
    the mirror `resolve-scope.sh`): `CLAUDE_CODE_AGENT=thalamus-<scope>` wins

@@ -130,34 +130,156 @@ def test_main_is_pinnable_without_a_manifest_and_unknown_scopes_are_not():
         resolve("nonexistent-expert", REPO_CONFIG)
 
 
+def _tooled_config(tmp_path, url="http://127.0.0.1:8787/mcp"):
+    """A config root where `designer` declares a server and `qe` declares none."""
+    experts = tmp_path / "experts"
+    experts.mkdir(exist_ok=True)
+    for scope in ("designer", "qe"):
+        (experts / f"{scope}.yaml").write_text(f"scope: {scope}\nname: {scope.title()}\n")
+    mcp = tmp_path / "mcp"
+    mcp.mkdir(exist_ok=True)
+    (mcp / "designer.json").write_text(
+        json.dumps({"mcpServers": {"penpot": {"type": "http", "url": url}}})
+    )
+    return tmp_path
+
+
+def agent_frontmatter(text: str) -> dict:
+    """Parse the generated agent file's frontmatter the way Claude Code will."""
+    import yaml
+
+    assert text.startswith("---\n")
+    return yaml.safe_load(text.split("---\n", 2)[1])
+
+
 def test_only_a_scope_with_its_own_mcp_file_pays_for_extra_tools(tmp_path):
     """
     Scenario: `designer` works through a 68-tool Penpot server; nobody else should
 
     A tool surface carried in `.mcp.json` arms in every session in the project, so
     one scope's tooling becomes the whole roster's context tax. The per-scope file
-    keeps it where it is used. `--mcp-config` is additive (no --strict-mcp-config),
-    so the house `thalamus` server survives alongside it.
+    keeps it where it is used, and the declaration is additive — the house
+    `thalamus` server survives alongside it.
     """
-    from thalamus.harness.pin import _claude_argv, scope_mcp_config
+    from thalamus.harness.pin import scope_mcp_config, scope_mcp_servers
 
-    experts = tmp_path / "experts"
-    experts.mkdir()
-    for scope in ("designer", "qe"):
-        (experts / f"{scope}.yaml").write_text(f"scope: {scope}\nname: {scope.title()}\n")
-    mcp = tmp_path / "mcp"
-    mcp.mkdir()
-    (mcp / "designer.json").write_text('{"mcpServers": {"penpot": {"type": "http"}}}')
+    base = _tooled_config(tmp_path)
 
-    assert scope_mcp_config("designer", tmp_path) == mcp / "designer.json"
-    assert scope_mcp_config("qe", tmp_path) is None
-    assert scope_mcp_config("main", tmp_path) is None
+    assert scope_mcp_config("designer", base) == base / "mcp" / "designer.json"
+    assert scope_mcp_config("qe", base) is None
+    assert scope_mcp_config("main", base) is None
 
-    argv = _claude_argv("designer", tmp_path, base=tmp_path)
-    assert "--mcp-config" in argv
-    assert argv[argv.index("--mcp-config") + 1] == str(mcp / "designer.json")
+    assert set(scope_mcp_servers("designer", base)) == {"penpot"}
+    assert scope_mcp_servers("qe", base) == {}
+    assert scope_mcp_servers("main", base) == {}
 
-    assert "--mcp-config" not in _claude_argv("qe", tmp_path, base=tmp_path)
+    qe = render_agent(load_manifest("qe", base), scope_mcp_servers("qe", base))
+    assert "mcpServers" not in qe, "a scope that declares nothing must arm nothing"
+
+
+def test_the_arming_travels_with_the_agent_not_with_one_launchers_argv(tmp_path):
+    """
+    Scenario: `claude --agent thalamus-designer` typed by hand — no launcher, no flags
+
+    THE defect this guards. A scope's MCP servers used to be a `--mcp-config` flag on
+    `_claude_argv`, which is one launch route out of several: the agent picker,
+    FleetView, `thalamus spawn` and a bare shell all reach `--agent` without passing
+    through it. Every one of those produced a session whose system prompt asserts it
+    is a visual designer working in a design tool, in a process with no design tool
+    and no way to notice.
+
+    So the servers must be ON the agent definition, in the schema Claude Code reads:
+    a `mcpServers` list whose entries are single-key maps of server name to the same
+    config `.mcp.json` uses. Verified live against Claude Code 2.1.228 — `--agent
+    thalamus-designer` alone reports `penpot` connected with 68 tools, and both `qe`
+    and an unpinned session report zero.
+    """
+    from thalamus.harness.pin import _claude_argv, scope_mcp_servers
+
+    base = _tooled_config(tmp_path)
+
+    front = agent_frontmatter(
+        render_agent(load_manifest("designer", base), scope_mcp_servers("designer", base))
+    )
+    assert front["mcpServers"] == [
+        {"penpot": {"type": "http", "url": "http://127.0.0.1:8787/mcp"}}
+    ], "the documented schema is a LIST of single-key maps, not a mapping"
+
+    # The flag is gone, and its absence is the point: nothing may depend on it.
+    argv = _claude_argv("designer", tmp_path / "proj", base=base)
+    assert "--mcp-config" not in argv
+    assert argv[:3] == ["claude", "--agent", "thalamus-designer"]
+
+    # ...because the file the launcher just regenerated carries the servers instead.
+    written = (tmp_path / "proj" / ".claude" / "agents" / "thalamus-designer.md").read_text()
+    assert agent_frontmatter(written)["mcpServers"] == front["mcpServers"]
+
+
+def test_spawn_arms_the_scopes_servers_too(tmp_path, monkeypatch):
+    """
+    Scenario: the console's spawn button — how room members are made from a phone
+
+    `spawn` builds its own argv and never carried the MCP flag at all, so this route
+    was mis-arming `designer` even when the roster was not. It writes agent files to
+    the user agents dir; with the arming on the definition, writing them IS arming
+    them, and the route cannot diverge from the roster's again.
+    """
+    from thalamus.harness.pin import write_all_agents
+
+    base = _tooled_config(tmp_path)
+    agents = tmp_path / "user-agents"
+
+    write_all_agents(agents, base)
+
+    designer = agent_frontmatter((agents / "thalamus-designer.md").read_text())
+    assert designer["mcpServers"] == [
+        {"penpot": {"type": "http", "url": "http://127.0.0.1:8787/mcp"}}
+    ]
+    assert "mcpServers" not in agent_frontmatter((agents / "thalamus-qe.md").read_text())
+
+
+def test_a_tooled_agent_tells_its_session_what_to_do_when_the_tools_are_absent(tmp_path):
+    """
+    Scenario: the declaration is right, and the server behind it is down anyway
+
+    Frontmatter closes the launch routes; it cannot close the server. A dead endpoint
+    or a policy that skipped it lands in the same place — a prompt asserting a
+    capability the process lacks — so the generated agent carries its own check,
+    naming the tool prefix concretely and requiring stop-and-report rather than
+    working around the gap.
+    """
+    from thalamus.harness.pin import scope_mcp_servers
+
+    base = _tooled_config(tmp_path)
+    body = render_agent(load_manifest("designer", base), scope_mcp_servers("designer", base))
+
+    assert "mcp__penpot__*" in body, "a session cannot act on 'check your tools'"
+    assert "mis-armed" in body
+    assert "thalamus pin designer" in body, "the remedy must be in the same artifact"
+
+    plain = render_agent(load_manifest("qe", base), scope_mcp_servers("qe", base))
+    assert "mis-armed" not in plain, "a scope with no tooling gets no warning to ignore"
+
+
+def test_an_unreadable_mcp_declaration_fails_the_launch_instead_of_arming_nothing(tmp_path):
+    """
+    Scenario: `config/mcp/<scope>.json` is malformed, or has the key spelled wrong
+
+    Resolving that to "no extra tools" reproduces the whole defect quietly, at the one
+    moment the operator is watching. It must raise.
+    """
+    from thalamus.harness.pin import scope_mcp_servers
+
+    base = _tooled_config(tmp_path)
+    mcp_file = base / "mcp" / "designer.json"
+
+    mcp_file.write_text("{not json")
+    with pytest.raises(ValueError, match="unreadable MCP config"):
+        scope_mcp_servers("designer", base)
+
+    mcp_file.write_text('{"mcp_servers": {"penpot": {}}}')  # snake_case typo
+    with pytest.raises(ValueError, match="declares no `mcpServers`"):
+        scope_mcp_servers("designer", base)
 
 
 def test_the_shipped_designer_scope_is_the_only_one_carrying_a_tool_surface():

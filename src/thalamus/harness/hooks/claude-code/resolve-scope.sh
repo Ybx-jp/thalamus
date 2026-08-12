@@ -99,3 +99,75 @@ thalamus_resolve_scope() {
 thalamus_scope_from_payload() {
   thalamus_resolve_scope "$(printf '%s' "${1:-}" | jq -r '.agent_type // empty' 2>/dev/null)"
 }
+
+# The agent definition a session with this pin would actually load, or empty.
+#
+# Precedence mirrors Claude Code's: the definition closest to the working directory
+# wins, so the project's `.claude/agents/` outranks the user scope. CLAUDE_CONFIG_DIR
+# is honoured for the user half because a room member's config dir is somewhere else
+# entirely (harness/pin.ROOMS_DIR), and its `agents` is a symlink to the operator's.
+thalamus_agent_file() {
+  local scope="$1" candidate
+  for candidate in "${CLAUDE_PROJECT_DIR:-}/.claude/agents/thalamus-$scope.md" \
+                   "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agents/thalamus-$scope.md"; do
+    case "$candidate" in /.claude/*) continue ;; esac
+    if [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return
+    fi
+  done
+}
+
+# Warn when this scope declares MCP servers that this process cannot have. Prints the
+# warning, or nothing at all. Always succeeds — a detector that aborts its own hook
+# reports less than no detector.
+#
+# The condition is worth detecting because it is otherwise invisible from inside. A
+# scope whose tooling is its reason for existing (`designer` works through the Penpot
+# server) gets a system prompt asserting that it is a visual designer working in a
+# design tool; if the process has no design tool, nothing in the session says so and
+# the model has no way to find out. Measured: a designer session ran this way for a
+# whole task. Same shape as the Cursor workspace-trust gate — a launch condition the
+# shared argv knew about and the hand path had nowhere to declare.
+#
+# Arming rides the agent definition (harness/pin._mcp_frontmatter), which is what
+# makes the check possible at all: both failure modes reduce to a file on disk, so
+# this needs neither a probe of the MCP surface (a hook cannot see it) nor a network
+# call. Either the process did not pick this scope's agent, or the generated agent is
+# stale and predates the scope's tooling.
+thalamus_mcp_arming_warning() {
+  local scope="${1:-main}" config mcp_file agent_file frontmatter name missing=""
+  config="${THALAMUS_CONFIG_DIR:-$(thalamus_repo_root)/config}"
+  mcp_file="$config/mcp/$scope.json"
+  [ -f "$mcp_file" ] || return 0
+
+  local servers
+  servers=$(jq -r '(.mcpServers // {}) | keys[]' "$mcp_file" 2>/dev/null) || return 0
+  [ -n "$servers" ] || return 0
+
+  if [ "${CLAUDE_CODE_AGENT:-}" != "thalamus-$scope" ]; then
+    printf 'MIS-ARMED SESSION — READ THIS FIRST. The `%s` scope arms its own MCP servers (%s), declared in `config/mcp/%s.json` and carried on the `thalamus-%s` agent definition. This process was not launched with `--agent thalamus-%s`, so it does NOT have them. Do not attempt work that depends on those tools and do not improvise a substitute: report this to the operator and stop. The fix is to relaunch as `claude --agent thalamus-%s` (or `thalamus pin %s`); MCP servers arm per process, so nothing can repair it from inside this one.' \
+      "$scope" "$(printf '%s' "$servers" | tr '\n' ' ' | sed 's/ $//')" "$scope" "$scope" "$scope" "$scope" "$scope"
+    return 0
+  fi
+
+  agent_file="$(thalamus_agent_file "$scope")"
+  if [ -z "$agent_file" ]; then
+    printf 'MIS-ARMED SESSION — READ THIS FIRST. This session is pinned to `%s`, whose MCP servers (%s) are declared on its agent definition — and no `thalamus-%s.md` is on disk in either the project or user agents directory. Report this to the operator and stop; `thalamus pin %s` regenerates it, but only a new process can arm the servers.' \
+      "$scope" "$(printf '%s' "$servers" | tr '\n' ' ' | sed 's/ $//')" "$scope" "$scope"
+    return 0
+  fi
+
+  # Frontmatter only: the body names the servers in prose (the self-check paragraph
+  # render_agent writes), so scanning the whole file would find the names in the very
+  # text that exists to describe their absence and report every stale file as healthy.
+  frontmatter=$(awk 'NR==1 && $0=="---"{inside=1; next} inside && $0=="---"{exit} inside' "$agent_file")
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    printf '%s' "$frontmatter" | grep -qE "^[[:space:]]*-[[:space:]]*${name}:" || missing="$missing $name"
+  done <<< "$servers"
+
+  [ -n "$missing" ] || return 0
+  printf 'MIS-ARMED SESSION — READ THIS FIRST. `config/mcp/%s.json` declares MCP servers (%s) that `%s` does not carry in its frontmatter, so this process never armed them. The generated agent file is stale. Report this to the operator and stop rather than working around the missing tools; `thalamus pin %s` regenerates the file, and the servers arm only in a new process.' \
+    "$scope" "${missing# }" "$agent_file" "$scope"
+}

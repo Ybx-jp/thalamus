@@ -119,16 +119,33 @@ inline Dockerfile that constrains it to `<2`; that is the only change from
 upstream's, besides running the venv entrypoint directly so `uv run` cannot re-sync
 dev dependencies at every container start.
 
-**68 tools, verified over a real handshake**, 22 of them authoring —
-`create_rectangle`, `create_frame`, `create_text`, `create_path`, `create_group`,
-`create_component`. That is the capability Figma's REST API does not have, which is
-why the tool choice went this way.
+**68 tools, verified over a real handshake**, and **66 of them headless** — no
+browser, no open editor tab, nothing on screen. **25 author shapes**: 8 create
+(`create_rectangle`, `create_frame`, `create_ellipse`, `create_text`,
+`create_path`, `create_group`, `create_component`, `create_page`), 12 modify
+(geometry, fill, stroke, opacity, layout, z-order, rename, delete), 5 text
+(content, font, size, align, style). All 25 write through Penpot's `update-file`
+RPC command, so authoring is unattended by default. Another 11 tools change state
+without touching shapes — file and project lifecycle, comments, `upload_media`,
+snapshots, `execute_plugin_script` — for 36 that write in total; the remaining 32
+read, query, export or introspect. Unattended authoring is the capability Figma's
+REST API does not have, which is why the tool choice went this way.
 
-**Only the `designer` scope arms them.** The config is `config/mcp/designer.json`,
-and `pin.py` passes `--mcp-config` when `config/mcp/<scope>.json` exists — additive,
-so a designer session gets the house `thalamus` server *plus* Penpot while every
-other scope carries neither. Dropping the server into `.mcp.json` instead would tax
-the whole roster with one scope's tooling.
+**Exactly two tools need a browser.** `get_active_selection` and
+`execute_plugin_script` are the whole of `server.py`'s Interactive Mode category,
+and they are the only callers of the plugin bridge; both return a JSON error
+rather than hanging when no plugin tab is connected. Everything else — including
+PNG export, which renders in the `penpot-exporter` container's own headless
+Chromium — runs with nothing open.
+
+**Only the `designer` scope arms them.** The servers are declared in
+`config/mcp/designer.json` and `pin.py` copies that declaration into the generated
+`thalamus-designer` agent's `mcpServers` frontmatter, so the arming travels with
+`--agent thalamus-designer` on every launch route rather than with one launcher's
+flags. A designer session gets the house `thalamus` server *plus* Penpot; every
+other scope carries neither. Dropping the server into `.mcp.json` instead would
+tax the whole roster with one scope's tooling. A pinned session that ends up
+without them is told so at startup — see [docs/07](../../docs/07-harness-integration.md).
 
 **Terms, not blockers** (both from the homelab consultation): the server reads
 Penpot's Postgres directly with `asyncpg`, which **bypasses Penpot's authorization
@@ -136,12 +153,14 @@ model entirely**, so everything it returns is tier-2 data under
 [docs/05](../../docs/05-trust-model.md) — it informs, it never instructs. And 68
 tools is a real context cost in any session that arms them.
 
-The plugin bridge (`WS_PORT` 4402) is published on loopback too. The Penpot editor
-is a browser app, so `localhost` means whatever machine the *browser* runs on:
-editing from this box's own browser, `ws://localhost:4402` reaches the container and
-the live-canvas tools work. Editing from a phone or another tailnet device it does
-not, because `localhost` there is that device, and no `wss` route through the
-sidecar is wired. The 66 headless tools are unaffected either way.
+The plugin bridge (`WS_PORT` 4402) is published on loopback too, and it serves only
+the two live-canvas tools. The Penpot editor is a browser app, so `localhost` means
+whatever machine the *browser* runs on: editing from this box's own browser,
+`ws://localhost:4402` reaches the container and those two work. From a phone or
+another tailnet device they do not, because `localhost` there is that device and no
+`wss` route through the sidecar is wired. The other 66 tools are unaffected either
+way — losing the bridge costs the current selection and arbitrary plugin scripts,
+not the ability to author.
 
 ## Only `deploy/penpot/.env` is real
 

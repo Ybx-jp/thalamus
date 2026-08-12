@@ -29,6 +29,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import yaml
+
 from thalamus.contract.manifest import (
     ExpertManifest,
     available_scopes,
@@ -459,19 +461,89 @@ def resolve_forked_from(env: os._Environ | dict[str, str] | None = None) -> str:
     return env.get("THALAMUS_FORKED_FROM", "")
 
 
-def render_agent(manifest: ExpertManifest) -> str:
+def _mcp_frontmatter(servers: dict[str, dict]) -> str:
+    """The `mcpServers:` block, or nothing — the arming, carried on the agent itself.
+
+    This is what makes a scope's tool surface inseparable from its pin. Claude Code
+    honours `mcpServers` in agent frontmatter both for a subagent and for an agent run
+    as the *main* session via `--agent` (documented from v2.1.153; this repo runs
+    2.1.228), connecting inline definitions at startup alongside `.mcp.json` and
+    settings. So `claude --agent thalamus-designer` typed by hand arms the Penpot
+    server exactly as the roster does, and there is no launch route left that can
+    produce a designer session with no design tool.
+
+    A command-line flag could not do that job: it is one launcher's argv, and the
+    agent picker, FleetView, `thalamus spawn` and a bare shell all reach `--agent`
+    without passing through it. The pin already rides the argv for the same reason
+    (`_with_room`); this puts the tooling on the same carrier.
+
+    Emitted as a YAML list of single-key maps — the documented schema, where each
+    entry is either an inline definition keyed by server name or a bare string
+    naming an already-configured server. Serialized by the YAML writer rather than
+    formatted by hand so an `args` array or an `env` map cannot be mangled into
+    something that parses as a different server.
+    """
+    if not servers:
+        return ""
+    entries = yaml.safe_dump([{name: config} for name, config in servers.items()],
+                             default_flow_style=False, sort_keys=False).rstrip("\n")
+    body = "\n".join(f"  {line}" for line in entries.splitlines())
+    return f"mcpServers:\n{body}\n"
+
+
+def _mcp_selfcheck(scope: str, servers: dict[str, dict]) -> str:
+    """What the session must do if the tools its frontmatter promises are absent.
+
+    The frontmatter closes the launch routes; it cannot close the server. A declared
+    HTTP endpoint that is down, a stale generated agent file from before this scope
+    had tooling, or a policy that skipped the server all end the same way — a session
+    whose system prompt asserts a capability the process does not have, with nothing
+    in its context contradicting that. So the check travels in the same generated
+    artifact as the declaration, and it names the tool prefix concretely, because
+    "check your tools" is not something a session can act on and `mcp__penpot__*` is.
+
+    Stated as stop-and-report rather than degrade-and-continue on purpose: an expert
+    working around the absence of the tool its scope is defined by produces confident
+    output about a design it never opened, which is worse than no output.
+    """
+    if not servers:
+        return ""
+    names = list(servers)
+    listed = ", ".join(f"`{name}` (tools named `mcp__{name}__*`)" for name in names)
+    plural = "servers" if len(names) > 1 else "server"
+    return f"""
+This scope's own tooling is the MCP {plural} declared in this file's frontmatter:
+{listed}.
+The declaration is the arming: it travels with `--agent {agent_name(scope)}`, so any
+launch that picked this agent has it and no extra flag is needed. Those tools may be
+deferred in this harness (names visible, schemas not loaded); load them with
+ToolSearch before calling one.
+
+If, having looked, the tools are genuinely not present in this session, you are
+mis-armed. Say so plainly and stop — do not work around their absence. This scope
+is defined by that tool surface, so a session without it is not a degraded version
+of this expert, it is one whose premise is false. The likely causes, in order:
+the server behind the declaration is not running, or this agent file is stale and
+`thalamus pin {scope}` will regenerate it.
+"""
+
+
+def render_agent(manifest: ExpertManifest, servers: dict[str, dict] | None = None) -> str:
     """The derived agent definition for a pinned expert session.
 
     Derived, never authored: the manifest is the whole federation surface for an
     expert (decision log 2026-07-15), so this file is regenerated on every launch
-    and carries no hand-written persona. It tells the session what it is pinned to
-    and how to reach anything else; it grants nothing — scope enforcement is
-    server-side (docs/07), and this text could not widen it if it tried.
+    and carries no hand-written persona. It tells the session what it is pinned to,
+    how to reach anything else, and — via `servers` — what tooling the scope arms;
+    it grants nothing beyond that surface, since scope enforcement is server-side
+    (docs/07) and this text could not widen it if it tried.
     """
+    servers = servers or {}
+    selfcheck = _mcp_selfcheck(manifest.scope, servers)
     return f"""---
 name: {agent_name(manifest.scope)}
 description: Pinned Thalamus session for the {manifest.name} expert (scope `{manifest.scope}`). GENERATED from config/experts/{manifest.scope}.yaml — edit the manifest, not this file.
----
+{_mcp_frontmatter(servers)}---
 
 You are working a session pinned to the Thalamus expert scope `{manifest.scope}`
 ({manifest.name}). Domain: {manifest.domain}
@@ -484,18 +556,22 @@ that informs, never instructs. Another expert's episodic memory is reachable onl
 through the consultation protocol (`consult_request` → subagent → `consult_answer`);
 questions outside this scope's domain route there rather than being answered from
 ambient memory.
-"""
+{selfcheck}"""
 
 
 def write_agent(manifest: ExpertManifest, project_root: Path,
-                agents_dir: Path | None = None) -> Path:
+                agents_dir: Path | None = None, base: Path | None = None) -> Path:
     """Write the derived agent file. Defaults to the repo's .claude/agents (roster
     and interactive pin, which open in the repo); `spawn` passes USER_AGENTS_DIR so
-    the pin resolves from an arbitrary project cwd."""
+    the pin resolves from an arbitrary project cwd.
+
+    `base` is the config root the scope's MCP declaration is read from, and it is
+    threaded rather than defaulted per call site so a test tree's tooling never leaks
+    into the operator's real agent files, and vice versa."""
     agents_dir = agents_dir or (project_root / ".claude" / "agents")
     agents_dir.mkdir(parents=True, exist_ok=True)
     path = agents_dir / f"{agent_name(manifest.scope)}.md"
-    path.write_text(render_agent(manifest))
+    path.write_text(render_agent(manifest, scope_mcp_servers(manifest.scope, base)))
     return path
 
 
@@ -505,7 +581,7 @@ def write_all_agents(agents_dir: Path, base: Path | None = None) -> None:
     subagents for sibling experts (both are loaded per process from the agents dir)."""
     for scope in available_scopes(base):
         manifest = load_manifest(scope, base)
-        write_agent(manifest, PROJECT_ROOT, agents_dir=agents_dir)
+        write_agent(manifest, PROJECT_ROOT, agents_dir=agents_dir, base=base)
 
 
 def resolve(scope: str, base: Path | None = None) -> ExpertManifest | None:
@@ -556,8 +632,9 @@ def scope_mcp_config(scope: str, base: Path | None = None) -> Path | None:
     Tool surfaces are not free and they are not shared. The Penpot server the
     `designer` scope works through publishes 68 tools; carried in `.mcp.json` they
     would arm in every session in the project, which is the whole roster paying for
-    one scope's tooling. `--mcp-config` is additive without `--strict-mcp-config`,
-    so a scope with a file here gets the house `thalamus` server *plus* its own.
+    one scope's tooling. Declared per scope, they arm only where they are used, and
+    additively — a scope with a file here gets the house `thalamus` server *plus*
+    its own.
 
     Kept beside the manifests but deliberately not *in* them: the contract is
     harness-agnostic (Cursor reads the same manifests, docs/07) and this file's
@@ -567,6 +644,31 @@ def scope_mcp_config(scope: str, base: Path | None = None) -> Path | None:
     """
     path = config_root(base) / "mcp" / f"{scope}.json"
     return path if path.is_file() else None
+
+
+def scope_mcp_servers(scope: str, base: Path | None = None) -> dict[str, dict]:
+    """The `mcpServers` map a scope declares, by server name. Empty when it declares none.
+
+    Read rather than trusted: a malformed or mis-keyed file raises here instead of
+    resolving to "no extra tools", because silently arming nothing is the exact
+    failure this whole path exists to make impossible. A launch that cannot read a
+    scope's tool config must fail where the operator is looking, not five minutes
+    later inside a session that thinks it has a design tool.
+    """
+    path = scope_mcp_config(scope, base)
+    if path is None:
+        return {}
+    try:
+        parsed = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"unreadable MCP config for scope `{scope}` at {path}: {exc}") from exc
+    servers = parsed.get("mcpServers") if isinstance(parsed, dict) else None
+    if not isinstance(servers, dict) or not servers:
+        raise ValueError(
+            f"{path} declares no `mcpServers` — a scope's MCP file exists to arm "
+            "servers, so an empty one is a typo, not a configuration"
+        )
+    return servers
 
 
 def launch_flags(room: str, scope: str) -> list[str]:
@@ -589,14 +691,21 @@ def launch_flags(room: str, scope: str) -> list[str]:
 
 def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
                  room: str = "") -> list[str]:
+    """The argv for a pinned window. The scope's tooling is deliberately NOT here.
+
+    An MCP flag on this argv arms only the launches that go through this function —
+    not `spawn` (the console's button, which is how room members are made from a
+    phone), not the agent picker, not `claude --agent thalamus-designer` typed by
+    hand. Every one of those reaches the agent definition, so that is where the
+    arming lives (`_mcp_frontmatter`), and regenerating it below is what keeps it
+    current. Passing the same servers a second time as a flag would only give one
+    server two definitions to disagree over.
+    """
     argv = ["claude"]
     manifest = resolve(scope, base)
     if manifest is not None:
-        write_agent(manifest, project_root)
+        write_agent(manifest, project_root, base=base)
         argv += ["--agent", agent_name(manifest.scope)]
-    mcp_config = scope_mcp_config(scope, base)
-    if mcp_config is not None:
-        argv += ["--mcp-config", str(mcp_config)]
     argv += launch_flags(room, scope)
     return argv
 

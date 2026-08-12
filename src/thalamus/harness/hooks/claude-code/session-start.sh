@@ -181,6 +181,19 @@ if [ "$scope" != "main" ]; then
   context="This session is pinned to expert scope \`${scope}\` — all memory operations flow through that scope, enforced server-side; recall serves other experts' knowledge as tier-2 context, and their episodic memory is reachable only by consultation ticket. ${context}"
 fi
 
+# A pin whose tooling did not arrive with it, said first and said plainly. Silent in
+# the ordinary case: the check only speaks for a scope that declares MCP servers, and
+# only when the process demonstrably lacks them (thalamus_mcp_arming_warning).
+#
+# Prepended rather than appended because everything above is advisory — open threads
+# to pull, a project to recall — and acting on any of it presumes the session is the
+# expert its prompt says it is. A scope defined by a tool surface it does not have is
+# not a session that should be getting on with the work.
+arming="$(thalamus_mcp_arming_warning "$scope")"
+if [ -n "$arming" ]; then
+  context="${arming} ${context}"
+fi
+
 jq -n --arg ctx "$context" '{
   hookSpecificOutput: {
     hookEventName: "SessionStart",

@@ -789,3 +789,105 @@ class TestForkedFromLedger:
         row = json.loads(
             (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
         assert row["forked_from"] == "parent-sess-9" and row["room"] == ""
+
+
+class TestMisArmedPinDetection:
+    """
+    The scope-tooling arming check (resolve-scope.sh:thalamus_mcp_arming_warning).
+
+    A scope may declare its own MCP servers in `config/mcp/<scope>.json`; `designer`
+    declares the Penpot server it exists to work through. The arming rides the
+    generated agent definition, so a process that did not pick that agent, or picked
+    a stale copy of it, has a system prompt asserting a capability it does not have
+    and no way to discover the gap from inside. This hook is the discovery.
+
+    Hermetic on purpose: the fixtures below build their own agent files rather than
+    reading `.claude/agents/`, which is generated and gitignored — a checkout that
+    never ran the launcher would otherwise fail the healthy case.
+    """
+
+    SCOPE = "designer"  # the shipped scope that declares servers
+
+    def _project(self, tmp_path, stale=False, tooled=True):
+        agents = tmp_path / "proj" / ".claude" / "agents"
+        agents.mkdir(parents=True)
+        if tooled:
+            from thalamus.contract.manifest import load_manifest
+            from thalamus.harness.pin import render_agent, scope_mcp_servers
+
+            config = Path(__file__).resolve().parents[1] / "config"
+            servers = {} if stale else scope_mcp_servers(self.SCOPE, config)
+            (agents / f"thalamus-{self.SCOPE}.md").write_text(
+                render_agent(load_manifest(self.SCOPE, config), servers))
+        return tmp_path / "proj"
+
+    def _env(self, project, tmp_path, agent=None):
+        env = {
+            "CLAUDE_PROJECT_DIR": str(project),
+            "CLAUDE_CONFIG_DIR": str(tmp_path / "empty-config"),
+        }
+        if agent:
+            env["CLAUDE_CODE_AGENT"] = agent
+        return env
+
+    def test_a_correctly_armed_pin_says_nothing(self, tmp_path):
+        """The check must be silent in the ordinary case, or it teaches the session
+        to skim past it in the case it exists for."""
+        project = self._project(tmp_path)
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env=self._env(project, tmp_path, agent=f"thalamus-{self.SCOPE}")))
+
+        assert "MIS-ARMED" not in ctx
+        assert f"pinned to expert scope `{self.SCOPE}`" in ctx
+
+    def test_the_hand_launch_that_drops_the_agent_is_reported(self, tmp_path):
+        """
+        Scenario: the reported defect. A session pinned by THALAMUS_SCOPE alone —
+        no `--agent`, so no agent definition, so none of the scope's servers.
+
+        The warning must name the scope, the servers, and a remedy that actually
+        works. "Restart with --agent" is the only real one: MCP servers arm per
+        process (lab/001), so nothing repairs this from inside the session.
+        """
+        project = self._project(tmp_path)
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env={**self._env(project, tmp_path), "THALAMUS_SCOPE": self.SCOPE}))
+
+        assert "MIS-ARMED" in ctx
+        assert "penpot" in ctx
+        assert f"--agent thalamus-{self.SCOPE}" in ctx
+        assert ctx.startswith("MIS-ARMED"), "it must precede the advisory context"
+
+    def test_a_stale_generated_agent_is_reported(self, tmp_path):
+        """
+        Scenario: the agent file predates the scope acquiring its tooling — the one
+        failure the frontmatter cannot close by itself, since `--agent` resolved
+        fine and simply armed nothing.
+        """
+        project = self._project(tmp_path, stale=True)
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env=self._env(project, tmp_path, agent=f"thalamus-{self.SCOPE}")))
+
+        assert "MIS-ARMED" in ctx and "stale" in ctx
+        assert "penpot" in ctx
+
+    def test_a_missing_agent_file_is_reported(self, tmp_path):
+        project = self._project(tmp_path, tooled=False)
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env=self._env(project, tmp_path, agent=f"thalamus-{self.SCOPE}")))
+
+        assert "MIS-ARMED" in ctx
+        assert f"thalamus-{self.SCOPE}.md" in ctx
+
+    def test_a_scope_that_declares_no_servers_is_never_warned_about(self, tmp_path):
+        """Every other expert. The check keys on the declaration, so scopes without
+        one cannot acquire a warning they can do nothing about."""
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env={"THALAMUS_SCOPE": "qe", "CLAUDE_PROJECT_DIR": str(tmp_path)}))
+
+        assert "MIS-ARMED" not in ctx
