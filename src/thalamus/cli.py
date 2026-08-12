@@ -770,10 +770,13 @@ def main():
     )
 
     pin_parser = subparsers.add_parser(
-        "pin", help="Launch a claude session pinned to an expert scope"
+        "pin", help="Launch a session pinned to an expert scope"
     )
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
     pin_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
+    pin_parser.add_argument(
+        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). `cursor` carries the scope as an argv prefix and passes no permission mode — it has none that keeps `auto`'s property of never stopping at a prompt, so the session obeys your own ~/.cursor/cli-config.json. No persona: Cursor has no `--agent` (see contract/pinning.py for what `pinned` covers there)."
+    )
 
     spawn_parser = subparsers.add_parser(
         "spawn", help="Open one on-demand pinned tmux window (a chosen scope + directory)"
@@ -787,6 +790,9 @@ def main():
         "--session", default="thalamus", help="tmux session to open the window in"
     )
     spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
+    spawn_parser.add_argument(
+        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). `cursor` carries the scope as an argv prefix and passes no permission mode — it has none that keeps `auto`'s property of never stopping at a prompt, so the session obeys your own ~/.cursor/cli-config.json. No persona: Cursor has no `--agent` (see contract/pinning.py for what `pinned` covers there)."
+    )
 
     roster_parser = subparsers.add_parser(
         "roster", help="Bring up the tmux roster (the `main` anchor; --all for every expert)"
@@ -2409,6 +2415,7 @@ def _report_capabilities():
     rows that could not be answered are always shown, including on a clean run.
     """
     from thalamus.contract.boundaries import check_boundaries
+    from thalamus.contract.pinning import check_pinning
     from thalamus.contract.probes import check_capabilities
 
     # Two kinds of declaration, one report. A flag row says what a CLI accepts; a
@@ -2418,6 +2425,8 @@ def _report_capabilities():
     rows = [(r.label, r.outcome.value, r.detail) for r in check_capabilities()]
     rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
              for row, outcome, detail in check_boundaries()]
+    rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
+             for row, outcome, detail in check_pinning()]
 
     drift = [r for r in rows if r[1] == "drift"]
     malformed = [r for r in rows if r[1] == "malformed"]
@@ -2930,7 +2939,7 @@ def _cmd_pin(args):
     from thalamus.harness.pin import PROJECT_ROOT, launch
 
     try:
-        launch(args.scope, PROJECT_ROOT, room=args.room)
+        launch(args.scope, PROJECT_ROOT, room=args.room, harness=args.harness)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"Pin failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -2943,7 +2952,8 @@ def _cmd_spawn(args):
 
     cwd = args.dir if args.dir is not None else PROJECT_ROOT
     try:
-        spawn(args.scope, cwd, session=args.session, room=args.room)
+        spawn(args.scope, cwd, session=args.session, room=args.room,
+              harness=args.harness)
     except (FileNotFoundError, ValueError, RuntimeError, subprocess.CalledProcessError) as e:
         print(f"Spawn failed: {e}", file=sys.stderr)
         sys.exit(1)

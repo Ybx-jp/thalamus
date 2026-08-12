@@ -182,7 +182,7 @@ def test_the_arming_travels_with_the_agent_not_with_one_launchers_argv(tmp_path)
     Scenario: `claude --agent thalamus-designer` typed by hand — no launcher, no flags
 
     THE defect this guards. A scope's MCP servers used to be a `--mcp-config` flag on
-    `_claude_argv`, which is one launch route out of several: the agent picker,
+    `_session_argv`, which is one launch route out of several: the agent picker,
     FleetView, `thalamus spawn` and a bare shell all reach `--agent` without passing
     through it. Every one of those produced a session whose system prompt asserts it
     is a visual designer working in a design tool, in a process with no design tool
@@ -194,7 +194,7 @@ def test_the_arming_travels_with_the_agent_not_with_one_launchers_argv(tmp_path)
     thalamus-designer` alone reports `penpot` connected with 68 tools, and both `qe`
     and an unpinned session report zero.
     """
-    from thalamus.harness.pin import _claude_argv, scope_mcp_servers
+    from thalamus.harness.pin import _session_argv, scope_mcp_servers
 
     base = _tooled_config(tmp_path)
 
@@ -206,7 +206,7 @@ def test_the_arming_travels_with_the_agent_not_with_one_launchers_argv(tmp_path)
     ], "the documented schema is a LIST of single-key maps, not a mapping"
 
     # The flag is gone, and its absence is the point: nothing may depend on it.
-    argv = _claude_argv("designer", tmp_path / "proj", base=base)
+    argv = _session_argv("designer", tmp_path / "proj", base=base)
     assert "--mcp-config" not in argv
     assert argv[:3] == ["claude", "--agent", "thalamus-designer"]
 
@@ -521,11 +521,14 @@ def test_every_pinned_session_launches_in_auto_and_only_a_room_gets_a_name(tmp_p
     """
     monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
 
-    assert pin.launch_flags("", "qe") == ["--permission-mode", "auto"]
-    assert pin.launch_flags("alpha", "qe") == [
-        "--permission-mode", "auto", "--name", "alpha-qe",
+    from thalamus.harness.launcher import PERMISSION_MODE, launch_argv
+
+    assert launch_argv("claude", "qe", persona="thalamus-qe") == [
+        "claude", "--agent", "thalamus-qe", "--permission-mode", "auto",
     ]
-    assert pin.PERMISSION_MODE != "bypassPermissions"
+    assert pin.launch_flags("", "qe") == []
+    assert pin.launch_flags("alpha", "qe") == ["--name", "alpha-qe"]
+    assert PERMISSION_MODE != "bypassPermissions"
 
 
 def test_the_room_allowlist_reaches_neither_the_network_nor_history(tmp_path):

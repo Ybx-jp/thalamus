@@ -518,15 +518,58 @@ and the one flag that could replace a system prompt — `--system-prompt <file>`
 hidden from `--help` and documented in the bundle as **"Anysphere/OpenAI team only"**,
 so it is not a mechanism this project may build on.
 
-That is also the ceiling on the guard above, and it is a low one: `pin.py` launches
-`claude` and has no Cursor launcher, so **the write boundary binds only on a session
-whose operator exported the variable by hand.** The mechanism is real and the
-population is not — an enforcement claim about Cursor is a claim about hand-built
-sessions until a launcher exists. Cursor's `preToolUse` payload also carries no
-`agent_type`, so the payload route that corrects subagent scope resolution on Claude
-Code has no analogue; a Cursor subagent inherits its launcher's pin, which is the
-right answer there only because Cursor subagents are `generalPurpose|explore|shell`
-and never a differently-pinned expert.
+`thalamus pin --harness cursor <scope>` (and `spawn --harness cursor`) is the launch
+path, and `harness/launcher.py` holds each harness's launch shape — a **second**
+surface from `agents.py`'s headless registry, because the two move independently:
+across two Cursor builds the JSON envelope was unchanged while the launch surface
+gained four flags.
+
+**A Cursor pin is a smaller object than a Claude Code one, and the record says so.**
+`--agent` fuses four things — persona, per-scope MCP arming, the routing tag, and
+survival through a recycle. On Cursor only routing and the boundary have carriers:
+there is no persona flag, and MCP arming is global (`~/.cursor/mcp.json`, which
+`thalamus init` already writes) rather than per-scope. So a pinned Cursor session
+routes and is bounded and does not think like the expert.
+[`contract/pinning.py`](../src/thalamus/contract/pinning.py) carries one row per
+component per harness, so "pinned" cannot quietly mean four things on one side and two
+on the other.
+
+**The scope rides the argv, and that is load-bearing rather than tidy.** `tmux
+new-window -e` is not stored in the session environment, so `respawn-window` — the
+console's restart button — re-executes the argv with those variables gone. Claude Code
+survives because `--agent` rides the argv; Cursor has no such flag, so the launcher
+emits `env THALAMUS_SCOPE=<scope> -- agent --trust`. Measured both ways in a throwaway
+session whose session env holds `THALAMUS_SCOPE=main`, as the roster's does: with the
+prefix the window came back `qe`, without it `main` — and the guard short-circuits on
+`main` before loading any manifest, so the failure it prevents is a bounded window
+becoming an unbounded one, silently, from a phone tap.
+
+**No permission mode is passed, and that is a decision.** Claude Code launches under
+`--permission-mode auto`, chosen so a member never sits at a prompt. Cursor has no mode
+that keeps that property: `--auto-review` prompts on whatever its classifier will not
+auto-run, and `--force`/`--yolo` ("Run Everything") is strictly more permissive than
+`auto` rather than equivalent. A Cursor window therefore obeys the operator's own
+`~/.cursor/cli-config.json` and can stop at a prompt — tolerable only because rooms
+have no Cursor referent, so nothing dispatches into it. `--trust` *is* passed: without
+it a fresh workspace parks on a hotkey-driven modal where a stray literal `q` was
+measured killing the process. The config file is not used as the mechanism, and not
+because it is global — because a session can rewrite it mid-run (`/config`,
+`/run-everything`, `/sandbox` are live slash commands), so policy expressed there is a
+preference rather than a constraint.
+
+**A Cursor window does not claim its pane.** The pane claim is what joins a window to
+its transcript for the console's read view, and on Claude Code it is gated on
+`CLAUDE_CODE_ENTRYPOINT=cli` because an unconditional claim once hijacked a live
+window's console view for five hours. Cursor offers no discriminator at all: it sets no
+environment marker, and the `sessionStart` payload is identical between `agent -p` and
+an interactive session. A cwd-based substitute was considered and refused — the
+incident's own reproduction was a headless run in the *repo* cwd, so that gate screens
+a population the incident was not drawn from. The cost is that a Cursor window has no
+read view.
+
+Cursor's `preToolUse` payload also carries no `agent_type`, so the payload route that
+corrects subagent scope resolution on Claude Code has no analogue, and a Cursor
+subagent's calls resolve to its launcher's scope with nothing to correct them.
 
 **What is measured against a live CLI, and what is still synthetic**, is now two
 different lists (lab/054, CLI 2026.08.04). Measured: the model identifiers, the

@@ -92,24 +92,6 @@ ROOM_OWNED = ("sessions", "projects", "todos", "statsig")
 ROOM_LINKED = ("skills", "agents", "plugins", "commands",
                "settings.json", ".credentials.json")
 
-# The permission mode EVERY pinned session launches under — room member and solo pin
-# alike. Operator decision (2026-08-11): this is the mode the operator drives by hand
-# in every session, so a launcher that started sessions in a stricter one was making
-# them behave unlike the sessions they were modelled on.
-#
-# `auto` rather than `bypassPermissions`, and the distinction is the whole reason this
-# is not simply "turn permissions off". `auto` auto-approves while still resolving
-# allow/deny rules and PreToolUse hooks *first*, then routing the remainder through a
-# safety classifier; `bypassPermissions` removes the one control measured to fully stop
-# prompt injection — with policy checks enabled FIDES stops all attacks in AgentDojo,
-# without them every planner succumbs (`scope:literature:claim:073ccf38c98a731a`).
-# So the citation docs/12 rests on is what selects `auto`, not what argues against it.
-#
-# In a room the mode is also load-bearing for delivery: a member stopped at a prompt
-# reports `waiting`, which is exactly the status `harness/dispatch.py` refuses to send
-# into, so a prompting member is an unaddressable one.
-PERMISSION_MODE = "auto"
-
 # The seed allowlist a fresh room is provisioned with, written once and never
 # overwritten.
 #
@@ -671,26 +653,30 @@ def scope_mcp_servers(scope: str, base: Path | None = None) -> dict[str, dict]:
     return servers
 
 
-def launch_flags(room: str, scope: str) -> list[str]:
-    """The flags common to every launch path: the permission mode, and a room's name.
+def launch_flags(room: str, scope: str, harness: str = "claude") -> list[str]:
+    """The room-membership half of a launch. The permission mode is the harness's.
 
-    One function because there are two launch paths — `_claude_argv` for the roster and
-    `spawn` for the console's on-demand button — and a flag added to only one of them
-    is a divergence nothing reports: the console spawn button is how room members
-    actually get made from a phone, so a mode missing there is missing where it counts.
+    One function because there are two launch paths — `_session_argv` for the roster
+    and `spawn` for the console's on-demand button — and a flag added to only one of
+    them is a divergence nothing reports: the console spawn button is how room members
+    actually get made from a phone, so a flag missing there is missing where it counts.
 
-    `--permission-mode` applies to **every** pinned session, in a room or not. `--name`
-    is the room-only half: it is the address `SendMessage` routes on and the prefix
-    `room-guard.sh` matches, so a solo session has nothing to answer to.
+    `--name` is the address `SendMessage` routes on and the prefix `room-guard.sh`
+    matches, so a solo session has nothing to answer to. It is Claude-Code-only because
+    a room is: Cursor has no peer discovery to partition and no message to guard, so a
+    `--name` there would address nothing (`contract/boundaries.py`).
+
+    The permission mode moved to `harness/launcher.py`, because the two harnesses do
+    not merely spell it differently — Cursor has no mode that keeps `auto`'s defining
+    property of never stopping at a prompt.
     """
-    flags = ["--permission-mode", PERMISSION_MODE]
-    if room:
-        flags += ["--name", room_member_name(room, scope)]
-    return flags
+    if room and harness == "claude":
+        return ["--name", room_member_name(room, scope)]
+    return []
 
 
-def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
-                 room: str = "") -> list[str]:
+def _session_argv(scope: str, project_root: Path, base: Path | None = None,
+                  room: str = "", harness: str = "claude") -> list[str]:
     """The argv for a pinned window. The scope's tooling is deliberately NOT here.
 
     An MCP flag on this argv arms only the launches that go through this function —
@@ -700,14 +686,23 @@ def _claude_argv(scope: str, project_root: Path, base: Path | None = None,
     arming lives (`_mcp_frontmatter`), and regenerating it below is what keeps it
     current. Passing the same servers a second time as a flag would only give one
     server two definitions to disagree over.
+
+    The harness's own shape — binary, persona flag, whether the pin needs an argv
+    carrier — lives in `harness/launcher.py`, because a launch surface and a headless
+    invocation surface move independently and a module that answered both would carry
+    one claim's staleness into the other.
     """
-    argv = ["claude"]
+    from thalamus.harness.launcher import launch_argv
+
     manifest = resolve(scope, base)
+    persona = None
     if manifest is not None:
+        # Written on every harness, even where no flag selects it: Cursor reads a
+        # workspace's `.claude/agents` as *subagents*, so the file is live there in a
+        # role no flag names.
         write_agent(manifest, project_root, base=base)
-        argv += ["--agent", agent_name(manifest.scope)]
-    argv += launch_flags(room, scope)
-    return argv
+        persona = agent_name(manifest.scope)
+    return [*launch_argv(harness, scope, persona=persona), *launch_flags(room, scope, harness)]
 
 
 ROSTER_SESSION = "thalamus"
@@ -822,10 +817,16 @@ def window_room(target: str | None) -> dict[int, str]:
 
 
 def launch(scope: str, project_root: Path, base: Path | None = None,
-           room: str | None = None) -> None:
-    """Hand this terminal (or a new tmux window) to a pinned claude process."""
+           room: str | None = None, harness: str = "claude") -> None:
+    """Hand this terminal (or a new tmux window) to a pinned session.
+
+    `harness` selects which CLI is pinned. On Cursor the scope rides the argv as an
+    `env` prefix rather than a persona flag, so the exec path below hands the terminal
+    to `env` and `env` to the agent — one extra process, and the price of a pin that
+    survives a window recycle.
+    """
     room = _entered_room(room)
-    argv = _claude_argv(scope, project_root, base, room)
+    argv = _session_argv(scope, project_root, base, room, harness)
     if os.environ.get("TMUX"):
         _open_window(scope, argv, project_root, target=None, room=room)
         _pin_window_sizes(target=None)
@@ -842,7 +843,8 @@ def launch(scope: str, project_root: Path, base: Path | None = None,
 
 
 def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
-          base: Path | None = None, room: str | None = None) -> None:
+          base: Path | None = None, room: str | None = None,
+          harness: str = "claude") -> None:
     """Open ONE detached pinned window on demand — the plane's spawn button.
 
     Unlike `roster` (which opens the whole set at bring-up), spawn creates a single
@@ -858,13 +860,15 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
     if not cwd.is_dir():
         raise ValueError(f"not a directory: {cwd}")
 
+    from thalamus.harness.launcher import launch_argv
+
     room = _entered_room(room)
     manifest = resolve(scope, base)  # validates scope; raises with available-scopes
-    argv = ["claude"]  # main has no manifest/agent by design
+    persona = None
     if manifest is not None:
         write_all_agents(USER_AGENTS_DIR, base)
-        argv += ["--agent", agent_name(scope)]
-    argv += launch_flags(room, scope)
+        persona = agent_name(scope)  # main has no manifest/agent by design
+    argv = [*launch_argv(harness, scope, persona=persona), *launch_flags(room, scope, harness)]
 
     # The session must exist (the tty unit's `tmux new -A -s thalamus` creates it,
     # as does `thalamus roster`); create it if somehow absent so spawn never fails.
@@ -929,7 +933,7 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
             ["tmux", "new-session", "-d", "-s", target,
              "-n", first,
              "-c", str(project_root), "-e", f"THALAMUS_SCOPE={first}", *room_flags,
-             "--", *_with_room(_claude_argv(first, project_root, base, room), room)],
+             "--", *_with_room(_session_argv(first, project_root, base, room), room)],
             check=True,
         )
         _unleak_session_env(target, room)
@@ -939,7 +943,7 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
         if (scope, room) in existing:
             print(f"`{scope}`{_in_room(room)} already has a window — skipped")
             continue
-        _open_window(scope, _claude_argv(scope, project_root, base, room), project_root,
+        _open_window(scope, _session_argv(scope, project_root, base, room), project_root,
                      target, detached=True, room=room)
         print(f"Pinned window `{scope}`{_in_room(room)} opened")
 
