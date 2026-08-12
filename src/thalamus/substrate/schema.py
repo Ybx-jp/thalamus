@@ -407,7 +407,22 @@ class SessionGraph(BaseModel):
         None,
         description="Primary project/repo. Orthogonal to scope: `project` is WHICH REPO, "
         "`scope` is WHICH EXPERT. A Thalamus session pinned to the agent-systems expert "
-        "has both.",
+        "has both. Derived from `repo_root`'s basename, and absent when the session ran "
+        "outside a checkout — a directory name is not a project.",
+    )
+    cwd: str = Field(
+        default="",
+        description="The directory the session started in, kept rather than consumed. "
+        "`project` used to be this path's basename and nothing else survived, so a "
+        "session's location was unrecoverable once the derivation proved wrong.",
+    )
+    repo_root: str = Field(
+        default="",
+        description="The checkout containing `cwd`, resolved at extraction time and "
+        "stored because it is not re-derivable later: directories move and are deleted, "
+        "and a path that resolves to no repo today may have had one when it was touched. "
+        "Empty when the session ran outside a repo, which is a state and not a gap. This "
+        "is the anchor a repo-relative path is cut against.",
     )
     room: str = Field(
         default="",

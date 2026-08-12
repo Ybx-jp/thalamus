@@ -72,9 +72,31 @@ class TestInjectedInstruction:
         )
         assert ctx.index("ToolSearch") < ctx.index("At the start of this session")
 
-    def test_project_comes_from_cwd_by_default(self, tmp_path):
-        ctx = context_of(run_hook(session_start_payload(), tmp_path))
+    def test_project_comes_from_the_checkout_by_default(self, tmp_path):
+        """The recalled project is the repo's name, resolved the same way the write
+        path resolves it (`transcripts.resolve_repo_root`). The two have to agree: this
+        one picks whose threads get pulled at session start, that one picks what the
+        session distills under, and a session opened in a subdirectory would otherwise
+        recall `src` while filing under `thalamus`."""
+        checkout = tmp_path / "myproject"
+        (checkout / "src").mkdir(parents=True)
+        subprocess.run(["git", "init", "-q"], cwd=checkout, check=True, capture_output=True)
+
+        ctx = context_of(run_hook(session_start_payload(cwd=str(checkout / "src")), tmp_path))
+
         assert 'project="myproject"' in ctx
+
+    def test_a_session_outside_a_repo_recalls_with_no_project(self, tmp_path):
+        """Empty, not the directory's name. The write path files these sessions with no
+        project at all, so asking for one named after a scratch directory would recall a
+        project nothing has ever been filed under — silently returning nothing, which is
+        the shape of the bug that made two campaigns' memory-on arms inert (lab/012)."""
+        loose = tmp_path / "not-a-repo"
+        loose.mkdir()
+
+        ctx = context_of(run_hook(session_start_payload(cwd=str(loose)), tmp_path))
+
+        assert 'project=""' in ctx
 
     def test_thalamus_project_overrides_the_cwd_guess(self, tmp_path):
         """

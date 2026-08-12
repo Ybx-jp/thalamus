@@ -52,10 +52,24 @@ if [ -z "$cwd" ]; then
   exit 0
 fi
 
-# THALAMUS_PROJECT overrides the cwd-derived guess — needed inside a
-# disposable worktree (thalamus.eval.arms), where basename(cwd) is a run
-# timestamp no session has ever distilled under, not the real repo (lab/012).
-project="${THALAMUS_PROJECT:-$(basename "$cwd")}"
+# The checkout's name, not the cwd's — the same derivation the write path uses
+# (`harness/transcripts.py` `resolve_repo_root`). These two have to agree: this one
+# decides which project's threads get recalled, that one decides which project the
+# session distills under, and a session opened in a subdirectory would otherwise
+# recall `src` while filing under `thalamus`. Empty when outside a repo, which the
+# recall tools read as "no project filter" — the right answer for a session that
+# has no project.
+#
+# THALAMUS_PROJECT still overrides, and is still needed inside a disposable
+# worktree (thalamus.eval.arms): a worktree is its own checkout, so the resolved
+# name is a run timestamp no session has ever distilled under (lab/012).
+# Written out rather than folded into the expansion: under `set -e` a `[ -n .. ] &&`
+# inside a command substitution exits non-zero when the test fails, which aborts the
+# hook for the ordinary case of a session outside a repo.
+repo_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+repo_name=""
+if [ -n "$repo_root" ]; then repo_name="$(basename "$repo_root")"; fi
+project="${THALAMUS_PROJECT:-$repo_name}"
 scope="$(thalamus_resolve_scope)"
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 

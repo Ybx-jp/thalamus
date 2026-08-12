@@ -23,6 +23,7 @@ private chain of thought.
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -119,9 +120,30 @@ class TranscriptFacts:
     # outside pre-declared extension points).
     unrecognized: int = 0
 
+    # The checkout the session's cwd sat in, resolved at extraction time while that
+    # cwd still exists. Empty when the session ran outside a repo — which is a real
+    # state, not a gap: 11 of the sessions on this box ran from `$HOME` or `/tmp`.
+    repo_root: str = ""
+
     @property
     def project(self) -> str:
-        return Path(self.cwd).name if self.cwd else ""
+        """The repo this session's work belongs to, or nothing.
+
+        Derived from `repo_root`, never from `cwd`. A cwd basename answers a
+        different question — *what is this directory called* — and answering the
+        project question with it is what put `ybx`, `tmp`, `code`, a 64-char content
+        hash and `Avatar - The Last Airbender - Season 2` into the graph as project
+        names. The damage is not cosmetic: `project` is the anchor a repo-relative
+        path is cut against, and a wrong anchor does not merely fail to merge, it
+        *splits* — `/home/ybx/code/thalamus/docs/x.md` cuts at `/ybx/` while the
+        relative spelling of the same file cuts nowhere, yielding two identities for
+        one file (`substrate/artifact_audit.py`).
+
+        Empty beats a guess for the same reason. A session that ran outside a repo has
+        no project, and saying so leaves the anchor absent where an invented one would
+        leave it wrong.
+        """
+        return Path(self.repo_root).name if self.repo_root else ""
 
     @property
     def has_substance(self) -> bool:
@@ -145,6 +167,38 @@ class TranscriptFacts:
         `reply with the single word DONE` was not work.
         """
         return self.user_turns > 0 and (self.prompt_turns > 0 or self.tool_calls > 0)
+
+
+def resolve_repo_root(cwd: str) -> str:
+    """The checkout root containing `cwd`, or `""` — asked now, while it still exists.
+
+    This runs at extraction time on purpose, and the result is stored rather than
+    recomputed. A later filesystem walk is not an anchor but a time-dependent guess:
+    measured over the 1,467 Artifact vertices carrying absolute paths, walking to the
+    nearest `.git` today resolves 901 — 239 have lost the parent directory entirely
+    and 327 still exist with no `.git` above them, because they are not repo files at
+    all (`/tmp/claude-*/scratchpad`, `~/.claude/skills`). Recording the root when the
+    session ends is the only version of this that is data.
+
+    Nested checkouts resolve to the **inner** root, which is what `--show-toplevel`
+    returns and the right answer for a session working in a vendored subrepo. A
+    worktree resolves to the worktree path, so worktree sessions carry their own repo
+    identity rather than the checkout's.
+
+    Every failure is `""`: no repo, no git, a cwd that no longer exists, a git that
+    hangs. None of them are worth raising over — the caller's honest fallback for all
+    four is the same, and this must never be the reason a session fails to distill.
+    """
+    if not cwd:
+        return ""
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def is_sandbox_project(name: str) -> bool:
@@ -292,6 +346,10 @@ def parse(path: Path) -> TranscriptFacts:
                 if uuid and uuid not in anchors:
                     anchors.append(uuid)
 
+    # Once, after the cwd is settled — not per record, and not lazily on read. `project`
+    # is derived from this, so resolving it here is what makes the derivation a fact
+    # about when the session ran rather than about when someone later asked.
+    facts.repo_root = resolve_repo_root(facts.cwd)
     return facts
 
 
@@ -356,6 +414,8 @@ def to_session_graph(
         tool=Tool.CLAUDE_CODE,
         scope=scope,
         project=facts.project or None,
+        cwd=facts.cwd,
+        repo_root=facts.repo_root,
         room=room,
         forked_from=forked_from,
         summary=_summary(facts),

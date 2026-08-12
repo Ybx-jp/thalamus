@@ -22,6 +22,7 @@ half of docs/05's laundering floor that no prompt content can lift.
 """
 
 import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -88,16 +89,26 @@ class TestParse:
         anchors = facts.touched["/w/hooks.py"]
         assert all(a.startswith("cursor:msg:") for a in anchors)
 
-    def test_time_and_place_come_from_the_ledgers_not_the_transcript(self, transcript):
+    def test_time_and_place_come_from_the_ledgers_not_the_transcript(self, transcript, tmp_path):
         """No Cursor row carries a timestamp or a cwd; both are supplied by the
-        hooks' own records, which is strictly better evidence than a guess."""
+        hooks' own records, which is strictly better evidence than a guess.
+
+        `project` still resolves through the checkout, the same as Claude Code's. This
+        reader assembles its own facts rather than going through `transcripts.parse`,
+        so that resolution is a second call site and this is what pins it — without it
+        every Cursor session distills with no project at all.
+        """
+        checkout = tmp_path / "work"
+        checkout.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=checkout, check=True, capture_output=True)
         started = datetime(2026, 7, 29, 9, 0, tzinfo=timezone.utc)
         ended = datetime(2026, 7, 29, 10, 0, tzinfo=timezone.utc)
         facts = cursor_transcripts.parse(
-            transcript, session_id="conv-1", cwd="/home/u/work", started_at=started,
+            transcript, session_id="conv-1", cwd=str(checkout), started_at=started,
             ended_at=ended,
         )
         assert (facts.started_at, facts.ended_at) == (started, ended)
+        assert facts.repo_root == str(checkout)
         assert facts.project == "work"
 
     def test_a_bare_string_content_is_accepted(self, tmp_path):

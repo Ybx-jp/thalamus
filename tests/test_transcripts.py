@@ -8,6 +8,7 @@ Scope: the half of extraction that needs no model, and the anchors it recovers
 """
 
 import json
+import subprocess
 
 from thalamus.contract.conformance import check_session
 from thalamus.harness import cursor_transcripts, transcripts
@@ -22,14 +23,27 @@ def _write_transcript(directory, session_id, records):
     return path
 
 
-def _transcript_records():
+def _git_repo(path) -> str:
+    """A real checkout at `path`, returned as the string a transcript's `cwd` holds.
+
+    Real rather than mocked because `project` is now `git rev-parse --show-toplevel`
+    resolved at extraction time, and the whole point of that design is that the answer
+    comes from the filesystem as it was. A test that patches the resolver would pass
+    against a derivation that never runs.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True, capture_output=True)
+    return str(path)
+
+
+def _transcript_records(cwd: str = "/home/dev/chartgen"):
     return [
         {"type": "ai-title", "aiTitle": "Fix the fatigue governor"},
         {
             "type": "user",
             "uuid": "u1",
             "timestamp": "2026-07-01T10:00:00Z",
-            "cwd": "/home/dev/chartgen",
+            "cwd": cwd,
             "gitBranch": "main",
             "message": {"content": "the governor is clamping too early"},
         },
@@ -81,7 +95,8 @@ def test_tool_calls_recover_touched_files_and_their_message_anchors(tmp_path):
     "Which files did this session edit, in which messages" is recorded exactly. An LLM
     could only add error here, so it is not asked.
     """
-    path = _write_transcript(tmp_path / "proj", "s1", _transcript_records())
+    checkout = _git_repo(tmp_path / "chartgen")
+    path = _write_transcript(tmp_path / "proj", "s1", _transcript_records(cwd=checkout))
 
     facts = transcripts.parse(path)
 
@@ -92,8 +107,30 @@ def test_tool_calls_recover_touched_files_and_their_message_anchors(tmp_path):
     assert facts.touched["src/model.py"] == ["a1"]
     assert facts.title == "Fix the fatigue governor"
     assert facts.project == "chartgen"
+    assert facts.repo_root == checkout
     assert facts.git_branch == "main"
     assert facts.user_turns == 1
+
+
+def test_a_session_outside_any_checkout_has_no_project(tmp_path):
+    """
+    Scenario: A session whose cwd is a real directory that is not in a git repo
+
+    `project` used to be the cwd's basename unconditionally, which is how `ybx`, `tmp`,
+    `code`, a 64-char content hash and an Avatar episode title became project names on
+    3,078 vertices. The anchor is the thing at stake: a wrong one does not fail to
+    merge, it splits one file into two identities (`substrate/artifact_audit.py`), so
+    absent beats guessed.
+    """
+    loose = tmp_path / "not-a-repo"
+    loose.mkdir()
+    path = _write_transcript(tmp_path / "proj", "s1", _transcript_records(cwd=str(loose)))
+
+    facts = transcripts.parse(path)
+
+    assert facts.repo_root == ""
+    assert facts.project == ""
+    assert facts.cwd == str(loose)  # kept, so the session's location is still recoverable
 
 
 def test_a_session_that_moved_is_attributed_to_where_it_started(tmp_path):
@@ -112,22 +149,28 @@ def test_a_session_that_moved_is_attributed_to_where_it_started(tmp_path):
     the session's identity, so it is read once; the branch describes the work, so it
     tracks.
     """
+    # Two real checkouts, not one repo and a subdirectory of it: a worktree resolves to
+    # its own root under `--show-toplevel`, so if the exit cwd ever won, `project` would
+    # read `console-consolidation`. Nesting them would make both spellings resolve to the
+    # same root and the test would pass without discriminating.
+    checkout = _git_repo(tmp_path / "thalamus")
+    worktree = _git_repo(tmp_path / "console-consolidation")
     records = [
         {
             "type": "user", "uuid": "u1", "timestamp": "2026-08-08T22:00:00Z",
-            "cwd": "/home/dev/thalamus", "gitBranch": "control-plane",
+            "cwd": checkout, "gitBranch": "control-plane",
             "message": {"content": "fold the two copies together"},
         },
         {
             "type": "assistant", "uuid": "a1", "timestamp": "2026-08-08T22:30:00Z",
-            "cwd": "/home/dev/thalamus/.claude/worktrees/console-consolidation",
+            "cwd": worktree,
             "gitBranch": "console-consolidation",
             "message": {"content": [{"type": "text", "text": "working in the worktree"}]},
         },
         {
             # Ends in the worktree — the case last-wins got wrong.
             "type": "assistant", "uuid": "a2", "timestamp": "2026-08-08T23:00:00Z",
-            "cwd": "/home/dev/thalamus/.claude/worktrees/console-consolidation",
+            "cwd": worktree,
             "gitBranch": "console-consolidation",
             "message": {"content": [{"type": "text", "text": "done"}]},
         },
@@ -137,7 +180,8 @@ def test_a_session_that_moved_is_attributed_to_where_it_started(tmp_path):
     facts = transcripts.parse(path)
 
     # Verifies: attribution follows the cwd the transcript was filed under, not the exit cwd
-    assert facts.cwd == "/home/dev/thalamus"
+    assert facts.cwd == checkout
+    assert facts.repo_root == checkout
     assert facts.project == "thalamus"
     # Verifies: the branch still reflects where the work ended up
     assert facts.git_branch == "console-consolidation"
@@ -495,8 +539,9 @@ def test_bootstrap_reaches_cursor_sessions_through_the_same_stage_one(tmp_path, 
     # The pin ledger is the primary source for cwd; an empty one forces the
     # fallback to what discovery already recovered.
     monkeypatch.setattr(cursor_transcripts, "PIN_LEDGER", tmp_path / "no-pins.jsonl")
+    checkout = _git_repo(tmp_path / "work")
     session = _cursor_session(
-        tmp_path, "cur-1", "/home/u/work", "homelab",
+        tmp_path, "cur-1", checkout, "homelab",
         [
             {"role": "user", "message": {"content": [{"type": "text", "text": "port it"}]}},
             {"role": "assistant", "message": {"content": [

@@ -127,6 +127,7 @@ from thalamus.harness.transcripts import (
     TranscriptFacts,
     _PATH_INPUTS,
     is_sandbox_project,
+    resolve_repo_root,
     to_session_graph as _to_session_graph,
 )
 from thalamus.substrate.schema import SessionGraph, Tool
@@ -433,6 +434,12 @@ def parse(
     if reading.results:
         facts.ingress_receipt = cursor_store.receipt(reading, facts.session_id)
     facts.cwd = cwd
+    # Cursor's cwd arrives from a ledger or `meta.json` rather than from the transcript
+    # rows, but it anchors the same way and `project` derives from the same place. This
+    # reader builds its facts itself instead of going through `transcripts.parse`, so
+    # the resolution has to be repeated here — omitting it leaves every Cursor session
+    # with no project at all rather than with the wrong one.
+    facts.repo_root = resolve_repo_root(cwd)
     facts.started_at = started_at
     facts.ended_at = ended_at
 

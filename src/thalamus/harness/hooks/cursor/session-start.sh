@@ -40,8 +40,12 @@ if [ "$is_background" = "true" ]; then
   exit 0
 fi
 
-# THALAMUS_PROJECT overrides the cwd-derived guess — see ../claude-code/session-start.sh.
-project="${THALAMUS_PROJECT:-$(basename "$workspace_root")}"
+# The checkout's name, not the workspace dir's, and THALAMUS_PROJECT still overrides
+# — see ../claude-code/session-start.sh for why the two must match the write path.
+repo_root="$(git -C "$workspace_root" rev-parse --show-toplevel 2>/dev/null || true)"
+repo_name=""
+if [ -n "$repo_root" ]; then repo_name="$(basename "$repo_root")"; fi
+project="${THALAMUS_PROJECT:-$repo_name}"
 scope="$(thalamus_resolve_scope)"
 session_id=$(printf '%s' "$input" | jq -r '.session_id // .conversation_id // empty')
 

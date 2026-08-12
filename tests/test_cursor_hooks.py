@@ -74,7 +74,17 @@ class TestSessionStart:
         - the pin ledger gets one line in the same record shape the Claude
           Code hook writes (session-end + eval read both harnesses' lines)
         """
-        result = run_hook("session-start.sh", session_start_payload(), tmp_path)
+        # A real checkout: `project` is the repo's name resolved through git, the same
+        # derivation the write path uses, so a synthetic path would resolve to nothing.
+        checkout = tmp_path / "myproject"
+        checkout.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=checkout, check=True, capture_output=True)
+
+        result = run_hook(
+            "session-start.sh",
+            session_start_payload(workspace_roots=[str(checkout)]),
+            tmp_path,
+        )
         assert result.returncode == 0
         out = json.loads(result.stdout)
         ctx = out["additional_context"]
@@ -89,7 +99,7 @@ class TestSessionStart:
             {
                 "session_id": "cur-sess-1",
                 "scope": "main",
-                "cwd": "/home/user/code/myproject",
+                "cwd": str(checkout),
                 "room": "",
                 "ts": pins[0]["ts"],
             }
