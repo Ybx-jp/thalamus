@@ -42,5 +42,5 @@ printf '%s' "$input" | jq -c --arg name "mcp__thalamus__${bare}" \
     tool_input: (.tool_input // {}),
     tool_response: (.result_json // ""),
     session_id: (.session_id // .conversation_id // ""),
-    cwd: (.cwd // .workspace_roots[0] // "")}' \
+    cwd: (if (.cwd // "") != "" then .cwd else (.workspace_roots[0] // "") end)}' \
   | "$here/../claude-code/post-tool-use.sh"

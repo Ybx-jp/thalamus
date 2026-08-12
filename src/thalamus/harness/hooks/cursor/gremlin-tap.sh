@@ -25,5 +25,5 @@ printf '%s' "$(cat)" | jq -c \
     tool_input: {command: (.command // "")},
     tool_response: {stdout: (.output // ""), stderr: ""},
     session_id: (.session_id // .conversation_id // ""),
-    cwd: (.cwd // .workspace_roots[0] // "")}' \
+    cwd: (if (.cwd // "") != "" then .cwd else (.workspace_roots[0] // "") end)}' \
   | "$here/../claude-code/gremlin-tap.sh"
