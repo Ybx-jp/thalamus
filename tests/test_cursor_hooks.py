@@ -142,7 +142,11 @@ class TestGremlinGuard:
 
         Verifications:
         - the Claude Code guard's exit-2 protocol maps to permission=deny
-        - the block instruction reaches the agent via agent_message
+        - the reason rides *both* message channels. Measured on
+          `cursor/2026.08.11-e8db854`: the denial's tool result carries the
+          `user_message` text and no occurrence of `agent_message`, so a guard
+          that explains itself only through the documented agent channel blocks
+          in silence — and a block with no reason is a stall (lab/061).
         - the shared guard event log gets the block verdict (one log, two
           harnesses)
         """
@@ -155,6 +159,7 @@ class TestGremlinGuard:
         out = json.loads(result.stdout)
         assert out["permission"] == "deny"
         assert "terminal step" in out["agent_message"]
+        assert "terminal step" in out["user_message"]
 
         guard_dir = tmp_path / ".thalamus" / "guards"
         events = read_jsonl(next(guard_dir.glob("*.jsonl")))
@@ -203,6 +208,23 @@ class TestGremlinTap:
     def test_non_gremlin_command_leaves_no_trace(self, tmp_path):
         run_hook("gremlin-tap.sh", {"command": "git status", "output": "clean"}, tmp_path)
         assert not (tmp_path / ".thalamus" / "traces").exists()
+
+    def test_an_empty_cwd_falls_back_to_the_workspace_root(self, tmp_path):
+        """Cursor sends `cwd` as an empty string on shell payloads, not as null.
+
+        jq's `//` falls through on `null` and `false` only, so the obvious
+        `(.cwd // .workspace_roots[0])` idiom wrote an empty cwd into the ledgers
+        for every such payload. Measured, not hypothesised: the guard rows from a
+        live Cursor session all carry `cwd:""` (lab/061).
+        """
+        run_hook(
+            "gremlin-tap.sh",
+            {"command": DOOMED_GREMLIN, "output": "v[abc]", "cwd": "",
+             "workspace_roots": ["/repo"], "conversation_id": "c9"},
+            tmp_path,
+        )
+        traces = read_jsonl(next((tmp_path / ".thalamus" / "traces").glob("*.jsonl")))
+        assert traces[-1]["cwd"] == "/repo"
 
 
 class TestMcpTap:
