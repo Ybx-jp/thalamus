@@ -276,6 +276,19 @@ def main():
         "--url", default=DEFAULT_URL, help="Gremlin endpoint"
     )
 
+    repair_projects_parser = subparsers.add_parser(
+        "repair-projects",
+        help="Re-anchor project values that named a directory instead of a repo "
+        "(dry-run unless --write)",
+    )
+    repair_projects_parser.add_argument(
+        "--url", default=DEFAULT_URL, help="Gremlin endpoint"
+    )
+    repair_projects_parser.add_argument(
+        "--write", action="store_true",
+        help="Apply the plan. Without this, nothing is written.",
+    )
+
     # Snapshot command — durability on demand (docs/09)
     snapshot_parser = subparsers.add_parser(
         "snapshot",
@@ -1196,6 +1209,8 @@ def main():
         _cmd_backfill_chunks(args)
     elif args.command == "audit-artifacts":
         _cmd_audit_artifacts(args)
+    elif args.command == "repair-projects":
+        _cmd_repair_projects(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -1908,6 +1923,44 @@ def _cmd_ingest(args):
         source_vid = write_knowledge(graph, batch)
         _persist(graph)
         print(f"\nWritten into scope `{batch.scope}`: {source_vid}")
+    finally:
+        close_connection(graph)
+
+
+def _cmd_repair_projects(args):
+    """Re-anchor project values that named a working directory rather than a checkout.
+
+    Dry-run by default and loud about what it will not touch: the vertices it leaves
+    alone are the ones whose value it could not disprove, and a migration that reports
+    only its changes cannot be checked for having been too eager.
+    """
+    from thalamus.substrate.project_repair import apply, plan
+
+    graph = connect(args.url)
+    try:
+        repair = plan(graph)
+
+        print(f"{len(repair.changes)} vertices to re-anchor  {repair.by_label()}")
+        moves: dict[tuple[str, str], int] = {}
+        for change in repair.changes:
+            key = (change.before, change.after)
+            moves[key] = moves.get(key, 0) + 1
+        for (before, after), count in sorted(moves.items(), key=lambda kv: -kv[1]):
+            print(f"  {count:4d}  {before or '(empty)'!r:44} -> {after or '(empty)'!r}")
+
+        if repair.left_alone:
+            kept: dict[str, int] = {}
+            for _vid, _label, value in repair.left_alone:
+                kept[value] = kept.get(value, 0) + 1
+            print(f"\n{len(repair.left_alone)} left alone — not disproved:")
+            for value, count in sorted(kept.items(), key=lambda kv: -kv[1])[:12]:
+                print(f"  {count:4d}  {value!r}")
+
+        if not args.write:
+            print("\nDry run. Re-run with --write to apply.")
+            return
+        moved = apply(graph, repair)
+        print(f"\nWrote {moved} vertices.")
     finally:
         close_connection(graph)
 
