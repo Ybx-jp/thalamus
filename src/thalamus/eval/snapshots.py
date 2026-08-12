@@ -19,6 +19,19 @@ The registry is committed; the `.kryo` files are not. The graph is one operator'
 session history and is never shipped (docs/index, 2026-07-29) — what travels is the
 *claim* that a number came from a named, hash-identified state, which is falsifiable
 by anyone holding the same snapshot and is honest about what they cannot check.
+
+**The sha256 identifies the file, not the state.** A graph loaded from a `.kryo` does
+not re-serialize to those bytes. Measured: restoring a snapshot leaves the live file
+byte-identical to it, while a fresh `take()` of that same in-memory graph — identical
+counts, no writes in between — lands a different digest, and the two safety pins of a
+restore round-trip differ from the snapshots they were taken of on digest while
+matching them exactly on counts. Two consequences a reader has to hold. `verify()`
+answers *has this file been corrupted or replaced since it was recorded*, which is what
+`restore()` needs before it swaps anything; it does not answer *do these two snapshots
+hold the same graph*, and equal counts under different digests is the ordinary case
+across a restart rather than evidence of drift. And the live file's digest moves on its
+own at the next clean shutdown, when the server flushes memory to `graphLocation`, so
+hashing it is not a change detector either.
 """
 
 from __future__ import annotations
