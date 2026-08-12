@@ -92,12 +92,14 @@ tool content — so routing through it would *lower* the primary-evidence floor
 docs/10 exists to raise. W3C PROV, extended to agents by PROV-AGENT (arXiv
 2508.02866), is the right shape at the wrong granularity: a provenance
 vocabulary, not a transcript format. For fields Cursor cannot supply, absence is
-recorded with a *reason* rather than a sentinel, following the three-way
-distinction FHIR's `dataAbsentReason` makes — `not-applicable`, `unknown`,
-`unsupported` — where Cursor's missing tool results are `unsupported`: a value
-exists and the format cannot carry it. Rubin's MCAR/MAR/MNAR is deliberately not
-the frame, since each of its categories presupposes a latent value that could
-have been observed. Backfilling sessions logged before this reader existed is
+recorded with a *reason* rather than a sentinel, borrowing codes from FHIR R4's
+`DataAbsentReason` — a 15-concept, two-level value set, Normative since R4, not a
+three-way split. Cursor's missing tool results are `unsupported`: a value exists
+and the format cannot carry it. An unresolved scope is a different code in the
+same set, `not-asked` ("the workflow didn't lead to this value being known"),
+which is why it is refused rather than defaulted — see `UNRESOLVED_SCOPE`. Rubin's
+MCAR/MAR/MNAR is deliberately not the frame, since each of its categories
+presupposes a latent value that could have been observed. Backfilling sessions logged before this reader existed is
 replay over an immutable log, which is the position docs/10 already takes as
 "re-extract, not migrate".
 
@@ -141,10 +143,13 @@ DISCOVERED_BY_FILESYSTEM = "filesystem"
 
 # A scope that no hook ever resolved. Not `main`: defaulting an unattested
 # session into the operator's own subgraph is a routing decision nobody made,
-# and it is unrecoverable once written. This is an *unmade decision*, which is a
-# different absence from the `unsupported` one this module records for Cursor's
-# missing tool results — there, a value existed and the format could not carry
-# it; here no value was ever determined, because no hook ran to determine one.
+# and it is unrecoverable once written, because scope is part of the vertex ID.
+# FHIR R4's `DataAbsentReason` names this exact case `not-asked` — "the workflow
+# didn't lead to this value being known" — and it is a different absence from the
+# `unsupported` this module records for Cursor's missing tool results, where a
+# value existed and the format could not carry it. The distinction decides the
+# handling: an `unsupported` field is recorded absent and the session distills
+# anyway, while a `not-asked` one has to wait for someone to ask.
 UNRESOLVED_SCOPE = ""
 
 # Cursor's own web tools, for the ingress *detection* half. Naming these is still

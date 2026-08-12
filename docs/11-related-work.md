@@ -1986,14 +1986,18 @@ something signs or chains it, and nothing here signs anything. The word
 for a human signing off, and reusing it for "our hook wrote a line" would imply a
 signature that does not exist.
 
-**An unresolved scope is not one of FHIR's three absence reasons.** The Cursor adapter
-records absent fields with `dataAbsentReason`'s distinction (`not-applicable` /
-`unknown` / `unsupported`), and Cursor's missing tool results are `unsupported` — a
-value exists and the format cannot carry it. An unresolved scope fails that test: no
-hook ran, so no value was ever determined. All three FHIR reasons describe a field
-whose value was settled somewhere else, which is why Rubin's MCAR/MAR/MNAR was already
-rejected here and would be *more* wrong for scope. It is an unmade decision, and the
-handling follows from that — refuse, name it, and let an operator make it.
+**An unresolved scope and a missing tool result are different codes in the same
+vocabulary.** FHIR R4's `DataAbsentReason` (ValueSet `data-absent-reason`, Normative
+since R4) is **15 concepts in a two-level hierarchy**, not the three-way split this
+repo previously described — `unknown` and `error` are parents with children, and the
+set includes `masked`, `as-text`, `not-performed` and `not-permitted` besides. Cursor's
+missing tool results are `unsupported`: a value exists and the format cannot carry it.
+An unresolved scope is `not-asked` — *"the workflow didn't lead to this value being
+known"* — which is the case exactly, since no hook ran to resolve one. The distinction
+is what decides the handling: an `unsupported` field is recorded absent and the session
+distills anyway, while a `not-asked` field has to wait for someone to ask. Rubin's
+MCAR/MAR/MNAR remains rejected for both, since its categories presuppose a latent value
+that could have been observed.
 
 ## Maintenance
 

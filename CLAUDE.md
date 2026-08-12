@@ -69,6 +69,11 @@ so the doc and the memory stay in step.
 - Ingestion follows the procurement protocol ([docs/06](docs/06-ingestion.md)):
   demand-driven against open threads, anchor document first, per-project `--feed`,
   and always dry-run the title check before `--write`.
+- **A proposed thread close is reported with its title, a 1–2 sentence description,
+  and its proposal id — all three, every time.** The operator approves these remotely
+  and cannot inspect the ledger to find out what they are approving, so a bare
+  `thalamus thread approve <id>` asks for a decision on an unreadable subject. The id
+  alone is not the report; it is only the command's argument.
 
 ## Repo hygiene
 
