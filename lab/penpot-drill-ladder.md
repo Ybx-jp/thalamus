@@ -35,10 +35,22 @@ Established by source survey and by live probes against the running stack.
 - **Export takes an `object_id`.** Shapes parented to the page root are inside no frame
   and cannot be exported. Author into an explicit `create_frame` or there is nothing to
   look at.
-- **Fonts that actually render offline:** `sourcesanspro` (default), `worksans`,
-  `robotomono`, `vazirmatn`. The 1,910 catalogued Google families need outbound
-  internet *and* a `font-id` on the text node, which no tool writes. `list_fonts`
-  reads custom team uploads only and returns `[]`.
+- **`font_family` is stored and then ignored. Every text renders in the default.**
+  Measured: `create_text(font_family="worksans")` stores `font-family: worksans` —
+  `get_shape_details` reads it back verbatim — and the exporter emits
+  `font-family: sourcesanspro` with only that `@font-face` declared. Penpot's renderer
+  keys font loading off `font-id`/`font-variant-id`, which no tool writes, so the
+  family string is inert. `sourcesanspro`, `worksans`, `robotomono` and `vazirmatn` are
+  all bundled locally and all unreachable; the 1,910 catalogued Google families need
+  outbound internet *as well as* the missing id. `list_fonts` reads custom team uploads
+  only and returns `[]`.
+
+  Typography is therefore **not currently a variable this scope controls**, which makes
+  D3's type pairing undeliverable as written and any font choice elsewhere decorative.
+  Do not read a rendered PNG and conclude the font resolved — that inference was made
+  once here and was wrong; the family name renders in a lookalike humanist sans and
+  eyeballing cannot separate them. The check is `export_frame_svg` and reading
+  `font-family` off the text element.
 - **Set style at creation time.** `move_shape` and `resize_shape` write `x`/`y`/`width`/
   `height` without refreshing `selrect` and `points`. The five text-mutation tools
   (`set_font`, `set_font_size`, `set_text_align`, `set_text_style`, `set_text_content`)
