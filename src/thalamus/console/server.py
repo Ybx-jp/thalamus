@@ -821,6 +821,27 @@ def known_scopes() -> list[str]:
     return [MAIN_SCOPE, *available_scopes()]
 
 
+def spawn_harnesses() -> list[dict]:
+    """The harnesses a window can be pinned on, and what a pin means on each.
+
+    `persona` is the difference the operator is picking between, not a detail: a
+    Claude Code pin fuses persona, MCP arming and routing onto `--agent`, while a
+    Cursor pin routes and is bounded and has no persona flag to select at all
+    (`harness/launcher.py`). Offering both as the same object would make the sheet
+    claim the second is something it is not, so the flag rides the payload and the
+    client says so at the point of choosing.
+
+    First entry is the default the endpoint falls back to. Empty without the
+    package, like every other expert-layer option — the client then offers the one
+    harness it can name rather than a picker whose choices it cannot check.
+    """
+    if not has_experts():
+        return []
+    from thalamus.harness.launcher import LAUNCH_SHAPES
+    return [{"harness": s.harness, "persona": s.persona_flag is not None}
+            for s in LAUNCH_SHAPES.values()]
+
+
 def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
     """The directory picker: favorites first, then git repos one level under each
     scan root. Deduped by resolved path; the label defaults to the basename.
@@ -1004,6 +1025,7 @@ class Handler(BaseHTTPRequestHandler):
             dirs, _ = spawn_dirs(self.cfg)
             return self._send(200, {"scopes": known_scopes(), "dirs": dirs,
                                     "rooms": pin.rooms() if pin else [],
+                                    "harnesses": spawn_harnesses(),
                                     "experts": pin is not None})
         if path == "/api/frames":
             # Absolute paths stay server-side; the client addresses a frame by name.
@@ -1059,10 +1081,10 @@ class Handler(BaseHTTPRequestHandler):
             scope = data.get("scope")
             directory = data.get("dir")
             room = data.get("room") or ""
-            # The sheet's chips do not offer a harness, so the phone always spawns the
-            # default. The field is here because the endpoint is also driven by hand
-            # over the tailnet, and an API that quietly ignored it would launch a
-            # different CLI than the one asked for.
+            # Defaulted rather than required: the sheet names the chip that was
+            # tapped, but this endpoint is also driven by hand over the tailnet, and
+            # a client older than the harness row sends nothing at all. A request
+            # that names no harness gets the one whose pin carries everything.
             harness = data.get("harness") or "claude"
             pin = pin_module()
             if pin is None:

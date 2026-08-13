@@ -228,10 +228,19 @@ and the view says so plainly rather than reporting the refusal above: Claude Cod
 creates the transcript on the first turn, so a freshly spawned window has none
 until someone types into it. Send it a message and the feed starts.
 
-**＋ spawns a session**: pick an expert scope, a directory, and a room, and the
-server opens a detached pinned window there. The scope decides which memory it
-reads and writes; the directory decides what the work is about. See
+**＋ spawns a session**: pick an expert scope, a harness, a directory, and a room,
+and the server opens a detached pinned window there. The scope decides which memory
+it reads and writes; the directory decides what the work is about. See
 [02](02-expert-subgraphs.md) for what that pairing means.
+
+**The harness row is `LAUNCH_SHAPES`**, sent by `/api/spawn-options` rather than held
+by the client, because that table is also what a spawn request is validated against —
+a chip the phone invented would be refused after the tap. Each entry carries whether
+that harness's pin has a persona, and the sheet prints the caveat when it does not:
+a Cursor window routes its memory and holds its boundary but never reads the expert's
+charter, which is a different object from a Claude Code pin ([07](07-harness-integration.md))
+and is invisible once the window exists. A request that names no harness gets Claude
+Code — the endpoint is driven by hand over the tailnet too.
 
 The same sheet reports **distillation**, because ending a session and distilling it
 are not the same event. `/exit` fires SessionEnd, which launches `thalamus extract`

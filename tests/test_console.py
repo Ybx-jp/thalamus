@@ -263,6 +263,37 @@ def test_only_a_dead_window_gets_the_path_hint(tmp_path, monkeypatch):
     assert "PATH" not in body["output"]
 
 
+def test_the_harness_the_phone_picked_is_the_one_that_launches(tmp_path, monkeypatch):
+    """
+    Scenario: the sheet's harness chip is tapped over to Cursor and a session spawned
+
+    Verifications:
+    - the harness from the request reaches `pin.spawn`
+    - the picker offers exactly the harnesses that can be pinned, and says which of
+      them carries a persona
+
+    The sheet cannot hold its own harness list: `LAUNCH_SHAPES` is what a spawn is
+    validated against, so a chip the client invented would be refused after the tap.
+    `persona` rides along because the two choices are not the same object — a Cursor
+    pin routes and is bounded and has no charter — and the sheet is the only place
+    that difference is visible before the window exists.
+    """
+    code = tmp_path / "code"
+    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
+    seen: list[dict] = []
+    monkeypatch.setattr(_pin(), "spawn",
+                        lambda scope, cwd, **kw: seen.append({"scope": scope, **kw}))
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        options = post.get("/api/spawn-options")
+        post("/api/spawn", {"scope": "main", "dir": str(code / "alpha"),
+                            "harness": "cursor"})
+
+    assert [s["harness"] for s in seen] == ["cursor"]
+    assert options["harnesses"] == [{"harness": "claude", "persona": True},
+                                    {"harness": "cursor", "persona": False}]
+
+
 def test_a_harness_with_no_launch_shape_is_refused(tmp_path):
     """A harness that cannot be pinned is refused before anything is created.
 
@@ -297,6 +328,7 @@ def test_the_console_runs_with_no_thalamus_around_it(tmp_path, monkeypatch):
 
     assert server.has_experts() is False
     assert server.known_scopes() == []
+    assert server.spawn_harnesses() == []
 
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         spawned, body = post("/api/spawn", {"scope": "main", "dir": str(tmp_path)})

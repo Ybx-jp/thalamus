@@ -75,6 +75,8 @@ const els = {
   recycleNote: document.getElementById("recycle-note"),
   spawn: document.getElementById("spawn"),
   spawnScopes: document.getElementById("spawn-scopes"),
+  spawnHarnesses: document.getElementById("spawn-harnesses"),
+  spawnHarnessNote: document.getElementById("spawn-harness-note"),
   spawnRooms: document.getElementById("spawn-rooms"),
   spawnDirs: document.getElementById("spawn-dirs"),
   spawnGo: document.getElementById("spawn-go"),
@@ -1351,6 +1353,10 @@ async function dismissDistill(session) {
 
 // `thalamus spawn`. Experts are no longer all booted at bring-up — only spawned when used.
 let spawnOpts = null, spawnScope = null, spawnDir = null, selectNewestOnNextPoll = false;
+// Which CLI the window runs. Chosen alongside the scope rather than derived from it,
+// because the pair is what decides how much of an expert the session is: see
+// `harnessCaveat`.
+let spawnHarness = "claude";
 // "" is solo — the ordinary roster. A room is chosen, or typed to make a new one:
 // naming it IS creating it, since the launcher provisions the config dir on the way
 // in. There is no separate create step to forget from a phone.
@@ -1392,6 +1398,38 @@ function spawnRoomChoices(known, wins, chosen) {
                       ...(wins || []).map((w) => w.room).filter(Boolean),
                       ...(chosen ? [chosen] : [])])];
 }
+// The harness row. `/api/spawn-options` names every harness that can be pinned and
+// whether that harness's pin carries a persona; the server is the only thing that
+// knows, since the list is `harness/launcher.py`'s and a spawn is validated against
+// the same table.
+//
+// The empty case is version skew and it is real, not defensive padding: the static
+// files are read from disk on every request while `server.py` is whatever was loaded
+// at the last restart, so an updated client routinely runs for a while against an
+// older server that sends no harnesses at all. Falling back to the default keeps the
+// sheet spawnable instead of showing an empty row above a working button.
+function spawnHarnessChoices(offered) {
+  const named = (offered || []).filter((h) => h && h.harness);
+  return named.length ? named : [{ harness: "claude", persona: true }];
+}
+// A chosen harness the server no longer offers is not honoured — the spawn would be
+// refused with `unknown harness` after the tap, which on a phone reads as the button
+// having failed for no reason.
+function pickHarness(offered, chosen) {
+  const list = spawnHarnessChoices(offered);
+  return list.some((h) => h.harness === chosen) ? chosen : list[0].harness;
+}
+// What the operator is giving up by picking this one. A Cursor pin has no `--agent`
+// equivalent, so the scope still routes its memory and still holds its boundary, but
+// the session never reads the expert's charter — it is a smaller object than a Claude
+// Code pin and the sheet is where that has to be said, because everything else about
+// the two choices looks identical.
+function harnessCaveat(offered, chosen) {
+  const h = spawnHarnessChoices(offered).find((x) => x.harness === chosen);
+  if (!h || h.persona) return "";
+  return `${h.harness} has no persona flag: this session's scope routes its memory ` +
+         `and holds its boundary, but it will not think like the expert.`;
+}
 function renderSpawnChips() {
   els.spawnScopes.innerHTML = "";
   for (const s of spawnOpts.scopes || []) {
@@ -1399,6 +1437,16 @@ function renderSpawnChips() {
     c.style.setProperty("--tab", hueFor(s, 0));
     els.spawnScopes.appendChild(c);
   }
+  els.spawnHarnesses.innerHTML = "";
+  spawnHarness = pickHarness(spawnOpts.harnesses, spawnHarness);
+  for (const h of spawnHarnessChoices(spawnOpts.harnesses)) {
+    els.spawnHarnesses.appendChild(
+      chip(h.harness, h.harness === spawnHarness,
+           () => { spawnHarness = h.harness; renderSpawnChips(); }));
+  }
+  const caveat = harnessCaveat(spawnOpts.harnesses, spawnHarness);
+  els.spawnHarnessNote.textContent = caveat;
+  els.spawnHarnessNote.hidden = !caveat;
   els.spawnDirs.innerHTML = "";
   for (const d of spawnOpts.dirs || []) {
     const label = (d.favorite ? "★ " : "") + d.label;
@@ -1438,10 +1486,10 @@ async function doSpawn() {
   if (!(spawnScope && spawnDir)) return;
   els.spawnGo.disabled = true;
   els.spawnLog.hidden = false;
-  els.spawnLog.textContent = `spawning ${spawnScope} in ${spawnDir}` +
+  els.spawnLog.textContent = `spawning ${spawnScope} on ${spawnHarness} in ${spawnDir}` +
     (spawnRoom ? ` — room ${spawnRoom}` : "") + "…";
   const { ok, data } = await postJson("api/spawn",
-    { scope: spawnScope, dir: spawnDir, room: spawnRoom });
+    { scope: spawnScope, dir: spawnDir, room: spawnRoom, harness: spawnHarness });
   if (ok && data.ok) {
     els.spawnLog.textContent = data.output || "spawned.";
     selectNewestOnNextPoll = true;
