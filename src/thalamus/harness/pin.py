@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import yaml
@@ -732,7 +733,7 @@ def _tmux_windows(target: str | None) -> set[tuple[str, str]]:
 
 
 def _open_window(scope: str, argv: list[str], project_root: Path, target: str | None,
-                 detached: bool = False, room: str = "") -> None:
+                 detached: bool = False, room: str = "") -> str:
     # detached (-d): don't switch the session's active window. Roster additions run
     # underneath attached clients (/tty, PC attaches), which must not be yanked to
     # the new window; an interactive `thalamus pin` keeps the switch — the operator
@@ -741,14 +742,115 @@ def _open_window(scope: str, argv: list[str], project_root: Path, target: str | 
     # Room variables go through both channels deliberately: `-e` so the window's own
     # environment agrees with what the process got, and the argv prefix so the room
     # survives a `respawn-window` recycle (see `_with_room`).
+    #
+    # `-P -F #{window_id}` returns the id of the window just made. Callers confirm
+    # against that id rather than diffing the window list: the id names one window
+    # for as long as it exists, while a diff can only ask whether *some* new window
+    # is alive — which is the wrong question the moment two things create windows.
     room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
     cmd = ["tmux", "new-window", *(["-d"] if detached else []),
-           "-n", scope,
+           "-P", "-F", "#{window_id}", "-n", scope,
            "-c", str(project_root), "-e", f"THALAMUS_SCOPE={scope}", *room_flags,
            "--", *_with_room(argv, room)]
     if target:
         cmd[2:2] = ["-t", target]
-    subprocess.run(cmd, check=True)
+    # stdout only: tmux's own errors keep going to this process's stderr, where the
+    # console's journal and an operator's terminal already read them.
+    return subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
+                          text=True).stdout.strip()
+
+
+class WindowDied(RuntimeError):
+    """A pinned window was created and its command did not survive the settle window.
+
+    Distinct from every other launch failure because it is the one that reports as a
+    success everywhere else: tmux forked, so `new-window` exited 0, so the caller and
+    its caller and the phone all saw a spawn that worked.
+    """
+
+
+def _pane_state(window_id: str) -> tuple[bool, str]:
+    """(dead, exit status) for a window, where a window that is gone counts as dead.
+
+    Both spellings of death are real and which one appears depends on timing:
+    `remain-on-exit` leaves a corpse with `pane_dead` set, and anything that outran
+    the option being set was reaped, leaving no window for tmux to describe.
+    """
+    out = subprocess.run(["tmux", "display-message", "-p", "-t", window_id,
+                          "#{pane_dead}\t#{pane_dead_status}"],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        return True, ""
+    dead, _, status = out.stdout.strip().partition("\t")
+    return dead == "1", status.strip()
+
+
+def _pane_epitaph(window_id: str) -> str:
+    """The last thing a dead window printed, for the operator who is holding a phone.
+
+    Worth the capture because the deaths that survive the exec-failure case are
+    articulate: a rejected Cursor API key prints which variable it read the key from,
+    which is the whole diagnosis. tmux's own "Pane is dead" banner is dropped — it is
+    drawn into the corpse's viewport and says only what the caller already knows.
+
+    `-S -` reaches into the history, and without it this returns nothing useful: when
+    a pane dies, tmux pushes what it printed up out of the viewport and leaves the
+    banner alone on the visible screen. A pane pinned to `window-size manual` is 200
+    lines tall, so a program that printed three lines and exited has all three in
+    history and 200 blanks in view.
+
+    `-J` rejoins the lines tmux wrapped. A roster pane is 60 columns wide, so a
+    sentence of vendor English is three screen lines, and taking the last few
+    without joining first quotes a fragment that starts mid-word.
+    """
+    out = subprocess.run(["tmux", "capture-pane", "-p", "-J", "-S", "-",
+                          "-t", window_id], capture_output=True, text=True)
+    lines = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+    lines = [ln for ln in lines if not ln.startswith("Pane is dead")]
+    return " ".join(lines[-3:])[:400]
+
+
+def _set_remain_on_exit(window_id: str, value: str) -> None:
+    subprocess.run(["tmux", "set", "-w", "-t", window_id, "remain-on-exit", value],
+                   capture_output=True)
+
+
+def confirm_started(window_id: str, harness: str = "claude") -> None:
+    """Hold a freshly created window to its harness's settle deadline, or raise.
+
+    Polling rather than sleeping the deadline out: a window that dies at 20 ms is
+    reported at 20 ms, and only a launch that succeeds pays the full wait. That
+    matters because the deadline is no longer one number — `launcher.settle_s` sizes
+    it per harness, and Cursor's is measured in seconds because its one fatal failure
+    (a rejected API key) resolves after a round trip to its API.
+
+    `remain-on-exit` is turned on for the duration so a death leaves a corpse to read
+    the reason off, and turned back off the moment the window proves alive — a window
+    that keeps the option would leave a corpse at the end of its real session, which
+    the console's close and recycle paths read as a window still there.
+    """
+    from thalamus.harness.launcher import settle_s
+
+    if not window_id:
+        raise WindowDied("tmux created a window but reported no window id")
+    _set_remain_on_exit(window_id, "on")
+    deadline = time.monotonic() + settle_s(harness)
+    while True:
+        dead, status = _pane_state(window_id)
+        if dead:
+            detail = _pane_epitaph(window_id)
+            subprocess.run(["tmux", "kill-window", "-t", window_id], capture_output=True)
+            status_part = f" (exit {status})" if status else ""
+            raise WindowDied(
+                f"the window was created and its command exited{status_part} before it "
+                f"could be called started"
+                + (f" — it printed: {detail}" if detail else "")
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _set_remain_on_exit(window_id, "off")
+            return
+        time.sleep(min(0.05, remaining))
 
 
 def _pin_window_sizes(target: str | None) -> None:
@@ -828,7 +930,8 @@ def launch(scope: str, project_root: Path, base: Path | None = None,
     room = _entered_room(room)
     argv = _session_argv(scope, project_root, base, room, harness)
     if os.environ.get("TMUX"):
-        _open_window(scope, argv, project_root, target=None, room=room)
+        window_id = _open_window(scope, argv, project_root, target=None, room=room)
+        confirm_started(window_id, harness)
         _pin_window_sizes(target=None)
         print(f"Pinned window `{scope}`{_in_room(room)} opened: {' '.join(argv)}")
         return
@@ -881,13 +984,21 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
     room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
     if subprocess.run(["tmux", "has-session", "-t", session],
                       capture_output=True).returncode != 0:
-        subprocess.run(["tmux", "new-session", "-d", "-s", session,
-                        "-n", scope,
-                        "-c", str(cwd), "-e", f"THALAMUS_SCOPE={scope}", *room_flags,
-                        "--", *_with_room(argv, room)], check=True)
+        window_id = subprocess.run(
+            ["tmux", "new-session", "-d", "-s", session,
+             "-P", "-F", "#{window_id}", "-n", scope,
+             "-c", str(cwd), "-e", f"THALAMUS_SCOPE={scope}", *room_flags,
+             "--", *_with_room(argv, room)],
+            check=True, stdout=subprocess.PIPE, text=True).stdout.strip()
         _unleak_session_env(session, room)
     else:
-        _open_window(scope, argv, cwd, target=session, detached=True, room=room)
+        window_id = _open_window(scope, argv, cwd, target=session, detached=True,
+                                 room=room)
+    # A clean return from tmux is not evidence that anything is running: `new-window`
+    # reports success once it has forked, before the command it was given has execed
+    # or reached whatever it authenticates against. Confirmed here rather than in any
+    # one caller, so the phone and the terminal get the same verdict.
+    confirm_started(window_id, harness)
     _pin_window_sizes(target=session)
     print(f"Spawned `{scope}`{_in_room(room)} in {cwd}")
 

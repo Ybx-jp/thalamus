@@ -108,7 +108,7 @@ it, not a substitute.
 | 1 | Session creator defines window 0 | Order `thalamus-roster.service` `Before=` tty and console; identify the anchor by lowest index, never by name |
 | 2 | tmux server lives in the creating unit's cgroup | `KillMode=process`; check `/proc/<tmux>/cgroup` before restarting anything |
 | 3 | A pane inherits the *creating client's* PATH | Units pin `Environment=PATH=%h/.local/bin:…`; without it a boot-started unit spawns panes that can't exec `claude` |
-| 4 | `tmux new-window` returns 0 before the command execs | Confirm a live window; never trust the exit code (`do_spawn` does this) |
+| 4 | `tmux new-window` returns 0 before the command execs | Confirm the window you made (`-P -F '#{window_id}'`) is alive after its harness's settle deadline; never trust the exit code (`pin.confirm_started`, 1.2 s claude / 4.0 s cursor — its auth failure is a network round trip away) |
 | 5 | Undetached `new-window` yanks every attached client | pin.py's roster path uses `-d` (bit on the teacher rollout, 2026-07-18) |
 | 6 | Global `window-size manual` segfaults tmux 3.4 | Per-window, post-creation only — a global set killed the whole roster once |
 | 7 | Stale SW / Android WebAPK scope collisions | Network-first shell, never intercept `/api/`, disjoint path scopes per surface |

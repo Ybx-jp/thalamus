@@ -29,6 +29,17 @@ from thalamus.harness.pin import (
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
 
 
+def _argv_only(monkeypatch):
+    """Launch far enough to inspect the argv, and no further.
+
+    A launch ends by holding the window it made to its harness's settle deadline,
+    which drives tmux for real — a `subprocess.run` faked to return empty output
+    cannot answer it, and these tests are not asking. The confirmation is exercised
+    against a live tmux server in tests/test_spawn_settle.py.
+    """
+    monkeypatch.setattr("thalamus.harness.pin.confirm_started", lambda *a, **kw: None)
+
+
 def test_agent_definition_is_derived_from_the_manifest():
     """
     Scenario: Render the pinned-agent definition for a live manifest
@@ -103,6 +114,7 @@ def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monk
     monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
     monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    _argv_only(monkeypatch)
 
     spawn("homelab", tmp_path, base=REPO_CONFIG)
 
@@ -353,6 +365,7 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
     monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
     monkeypatch.setattr("thalamus.harness.pin.ensure_room", lambda room, host=None: None)
+    _argv_only(monkeypatch)
     monkeypatch.setenv("THALAMUS_ROOM", "alpha")
 
     spawn("homelab", tmp_path, base=REPO_CONFIG)
@@ -409,6 +422,7 @@ def test_a_deliberate_config_dir_override_survives_a_roomless_launch(tmp_path, m
     monkeypatch.setattr("thalamus.harness.pin.subprocess.run",
                         lambda cmd, *a, **kw: (calls.append(cmd), subprocess.CompletedProcess(
                             cmd, 1 if "has-session" in cmd else 0, stdout="", stderr=""))[1])
+    _argv_only(monkeypatch)
     monkeypatch.delenv("THALAMUS_ROOM", raising=False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/home/someone/.config/claude")
 

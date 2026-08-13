@@ -1,0 +1,191 @@
+"""
+Spawn confirmation: whether a window that dies late is reported as a failure.
+
+Interfaces: thalamus.harness.pin, thalamus.harness.launcher, thalamus.console.server
+Infrastructure: a real tmux server on a private socket, reached by shadowing `tmux`
+on PATH, plus fake harness binaries that die on a schedule. No claude, no `agent`,
+no network, no graph — and nothing that can see the operator's roster.
+Scope: the one hazard where every layer below reports success. `tmux new-window`
+exits 0 when it has forked, so a launch is only confirmed by a window that is still
+alive later; how much later is a per-harness measurement (launcher's docstring), and
+these tests are what stop that number from being decorative.
+
+The private socket is the whole reason this can run at all. Nothing in `src/` passes
+`-L`, so `pin` addresses whatever tmux server the box is running — which on this box
+is the live roster. Shadowing the binary puts the socket in the environment instead
+of in the source, so the code under test is the code that ships.
+"""
+
+import os
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+import pytest
+
+from thalamus.console import server
+from thalamus.console.server import Config, do_spawn
+from thalamus.harness import pin
+from thalamus.harness.launcher import LAUNCH_SHAPES, settle_s
+
+pytestmark = pytest.mark.skipif(shutil.which("tmux") is None,
+                                reason="the control plane IS tmux")
+
+# The settle window this file's late-death case is written against: the retired
+# global constant. A harness whose deaths land past it is exactly what a single
+# number could not cover.
+RETIRED_GLOBAL_SETTLE_S = 1.2
+
+
+@pytest.fixture
+def private_tmux(tmp_path, monkeypatch):
+    """A tmux server of our own, plus a `bin` directory that shadows PATH.
+
+    Yields the bin directory: a test writes its fake harness binaries there, and
+    `pin` finds them the same way a pane finds the real ones.
+    """
+    real = shutil.which("tmux")
+    socket = f"thalamus-test-{os.getpid()}"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    shim = bindir / "tmux"
+    shim.write_text(f'#!/bin/sh\nexec {real} -L {socket} "$@"\n')
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    yield bindir
+    subprocess.run([real, "-L", socket, "kill-server"], capture_output=True)
+
+
+def _fake_harness(bindir: Path, name: str, body: str) -> None:
+    path = bindir / name
+    path.write_text(f"#!/bin/sh\n{body}\n")
+    path.chmod(0o755)
+
+
+def _windows(session: str) -> list[str]:
+    out = subprocess.run(["tmux", "list-windows", "-t", session, "-F",
+                          "#{window_id} #{pane_dead}"], capture_output=True, text=True)
+    return out.stdout.split("\n") if out.returncode == 0 else []
+
+
+def test_a_window_that_dies_after_the_old_settle_window_is_reported_failed(
+        private_tmux, tmp_path):
+    """
+    Scenario: a Cursor spawn whose command runs for 2 s and then exits 1
+
+    Verifications:
+    - the spawn is reported as a failure, not the success tmux saw
+    - it was still alive at the retired 1.2 s settle, so a single global constant
+      would have called it started
+    - what the dying window printed comes back with the failure
+
+    This is the shape of Cursor's one measured fatal failure: a rejected API key,
+    which is decided by a round trip to its API rather than locally. Measured at
+    1.07-1.14 s on this box and 3.14-3.20 s with 2 s of added latency in front of
+    the same call — a death whose timing is the network's, which is why the settle
+    window is per-harness and generous there.
+    """
+    _fake_harness(private_tmux, "agent",
+                  "printf 'Not logged in. Check CURSOR_API_KEY.\\n'\n"
+                  "sleep 2\nexit 1")
+    cfg = Config(project_root=tmp_path, session="settle-late")
+
+    start = time.monotonic()
+    ok, output = do_spawn(cfg, "main", tmp_path, "", "cursor")
+    elapsed = time.monotonic() - start
+
+    assert ok is False
+    assert elapsed > RETIRED_GLOBAL_SETTLE_S
+    assert "exit 1" in output
+    assert "CURSOR_API_KEY" in output
+    # The corpse is cleared, not left for the console's close and recycle paths to
+    # read as a window still there.
+    assert _windows("settle-late") == []
+
+
+def test_a_window_that_cannot_exec_at_all_is_reported_failed(private_tmux, tmp_path,
+                                                             monkeypatch):
+    """
+    Scenario: the harness binary is not on PATH — the 2026-08-08 incident
+
+    Verifications:
+    - the failure is reported, and fast: no waiting out the settle window
+    - the operator is pointed at PATH, which is the cause when nothing was printed
+
+    A command that never execs prints nothing, so there is no epitaph to quote and
+    the hint is all the operator gets. That is exactly the case it exists for.
+
+    PATH is cut to the shim directory plus the system ones, which is the state a
+    systemd user unit started at boot is actually in: no `~/.local/bin`, hence no
+    harness binary, while `env` and the rest of the launch still resolve. No fake
+    `claude` is written — this suite must never launch a real session.
+    """
+    monkeypatch.setenv("PATH", os.pathsep.join([str(private_tmux), "/usr/bin", "/bin"]))
+    cfg = Config(project_root=tmp_path, session="settle-noexec")
+
+    start = time.monotonic()
+    ok, output = do_spawn(cfg, "main", tmp_path, "", "claude")
+    elapsed = time.monotonic() - start
+
+    assert ok is False
+    assert "PATH" in output
+    assert elapsed < settle_s("claude"), "a dead window is not worth waiting out"
+
+
+def test_a_window_that_survives_its_settle_is_reported_started(private_tmux, tmp_path):
+    """
+    Scenario: a spawn whose command keeps running
+
+    Verifications:
+    - the spawn is reported started
+    - the window is alive and `remain-on-exit` is back off
+
+    The option is on only for the settle: a window that kept it would leave a
+    corpse when its real session ends, and the console reads a corpse as a window
+    that is still there.
+    """
+    _fake_harness(private_tmux, "claude", "sleep 60")
+    cfg = Config(project_root=tmp_path, session="settle-live")
+
+    ok, _ = do_spawn(cfg, "main", tmp_path, "", "claude")
+
+    assert ok is True
+    live = [w for w in _windows("settle-live") if w.endswith(" 0")]
+    assert len(live) == 1
+    window_id = live[0].split()[0]
+    shown = subprocess.run(["tmux", "show-options", "-w", "-t", window_id,
+                            "remain-on-exit"], capture_output=True, text=True)
+    assert shown.stdout.split() == ["remain-on-exit", "off"]
+
+
+def test_the_settle_window_is_per_harness_and_no_harness_gets_less():
+    """
+    Scenario: the settle policy read straight off the launch shapes
+
+    Verifications:
+    - Cursor waits longer than Claude Code, and longer than the retired constant
+    - an unknown harness gets the longest window rather than the shortest
+
+    Claude Code decides everything that can kill it locally (0.010 s for a missing
+    binary, 0.278 s for a rejected flag, and its trust and credential failures do
+    not kill it at all — they park on a modal). Cursor's fatal case is decided
+    across the network. One constant cannot be both.
+    """
+    assert settle_s("cursor") > settle_s("claude")
+    assert settle_s("cursor") > RETIRED_GLOBAL_SETTLE_S
+    assert settle_s("no-such-harness") == max(s.settle_s
+                                              for s in LAUNCH_SHAPES.values())
+
+
+def test_pin_owns_the_confirmation_so_every_surface_gets_the_same_verdict():
+    """The console is not the only spawner: `thalamus spawn` and `thalamus pin` are
+    the same launch from a terminal, and a window that died is a failure there too.
+
+    Asserted over the module rather than by launching, because the point is *where*
+    the check lives — a second copy in the console is how the CLI kept reporting a
+    success the console had already learned to doubt.
+    """
+    assert "confirm_started" in pin.spawn.__code__.co_names
+    assert "confirm_started" in pin.launch.__code__.co_names
+    assert not hasattr(server, "SPAWN_SETTLE_S")

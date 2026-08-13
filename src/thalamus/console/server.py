@@ -305,26 +305,24 @@ def distill_rows() -> list[dict]:
 # `thalamus extract` (distillation), which can take a while; killing early loses it.
 RECYCLE_GRACE_S = 240
 
-# On-demand spawn is serialized and confirmed. Confirmation works by diffing the
-# window list around the spawn, so two concurrent spawns would scramble each other's
-# before-picture; the lock keeps that diff meaningful.
+# On-demand spawn is serialized. Two spawns arriving while the roster session does
+# not exist would both find it missing and both try to create it; serializing is
+# cheaper than reasoning about which one won.
 SPAWN_LOCK = threading.Lock()
 
-# How long to let a freshly spawned window prove it is really running. The failure
-# being caught is an exec failure, which is immediate — see do_spawn.
-SPAWN_SETTLE_S = 1.2
-
-# Shown when a spawn produced no living window. The overwhelmingly likely cause is
-# that the window's command could not be executed at all, and the overwhelmingly
-# likely reason for THAT is PATH: a pane inherits the PATH of the client that created
-# it (this server), so a console started without ~/.local/bin on PATH cannot find the
-# `claude` that every expert window runs. Systemd user units get no login shell, and
-# at boot the user manager's PATH is barer than the one a desktop login later
-# imports — so this bites after a reboot and not before.
+# Appended when a spawned window died without saying anything the operator can act
+# on. The overwhelmingly likely cause is that the window's command could not be
+# executed at all, and the overwhelmingly likely reason for THAT is PATH: a pane
+# inherits the PATH of the client that created it (this server), so a console started
+# without ~/.local/bin on PATH cannot find the CLI every expert window runs — and a
+# command that never execs prints nothing to quote. Systemd user units get no login
+# shell, and at boot the user manager's PATH is barer than the one a desktop login
+# later imports — so this bites after a reboot and not before.
 SPAWN_FAILED_HINT = (
-    "the window was created but exited immediately — its command probably could not "
-    "be executed. Check that `claude` is on this server's PATH; a systemd user unit "
-    "started at boot does not inherit ~/.local/bin unless the unit sets PATH itself."
+    "if nothing above says why, the likeliest cause is that the command could not be "
+    "executed at all. Check that the harness binary is on this server's PATH; a "
+    "systemd user unit started at boot does not inherit ~/.local/bin unless the unit "
+    "sets PATH itself."
 )
 
 # What every expert control reports when the console is running without the package.
@@ -743,20 +741,21 @@ def close_window(cfg: Config, idx: int) -> None:
             CLOSING.discard(idx)
 
 
-def _run_capturing(fn, *args, **kwargs) -> tuple[bool, str]:
+def _run_capturing(fn, *args, **kwargs) -> tuple[bool, str, Exception | None]:
     """Call a `harness.pin` entry point and hand its console output to the client.
 
     pin's launchers report by printing and by raising, and the operator is holding
     a phone — both halves have to reach the admin log or a failed spawn reads as
-    nothing happening at all.
+    nothing happening at all. The exception comes back alongside its message so a
+    caller can tell *which* failure it was without reading the prose.
     """
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             fn(*args, **kwargs)
     except Exception as e:  # noqa: BLE001 — the message is the product here
-        return False, (buf.getvalue() + f"\n{type(e).__name__}: {e}").strip()
-    return True, buf.getvalue().strip() or "done."
+        return False, (buf.getvalue() + f"\n{type(e).__name__}: {e}").strip(), e
+    return True, buf.getvalue().strip() or "done.", None
 
 
 def roster_sync(cfg: Config) -> tuple[bool, str]:
@@ -770,10 +769,13 @@ def roster_sync(cfg: Config) -> tuple[bool, str]:
     pin = pin_module()
     if pin is None:
         return False, EXPERTS_UNAVAILABLE
-    return _run_capturing(pin.roster, cfg.project_root, session=cfg.session, room="")
+    ok, output, _ = _run_capturing(pin.roster, cfg.project_root,
+                                   session=cfg.session, room="")
+    return ok, output
 
 
-def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "") -> tuple[bool, str]:
+def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "",
+             harness: str = "claude") -> tuple[bool, str]:
     """Open one on-demand pinned window. `harness.pin` owns the mechanics: derived
     agent write, detached create, window-size pin, room provisioning.
 
@@ -781,32 +783,29 @@ def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "") -> tuple[
     is a long-lived process, and letting it fall through to `resolve_room()` would
     put every spawn in whatever room the *server* happened to be started in.
 
-    A clean return from `pin.spawn` is NOT evidence that a window exists.
-    `tmux new-window` reports success once it has forked, before the command it was
-    given has execed, so a command that cannot start at all leaves a window that
-    dies instantly and is reaped — while tmux, `pin`, and this function all still
-    see success. Measured 2026-08-08: with `claude` off the server's PATH every
-    spawn answered `{"ok": true}` and produced nothing, which reads on the phone as
-    a button that does nothing. So the window is confirmed alive here, and the spawn
-    is reported failed if it is not.
+    A clean return from `tmux new-window` is NOT evidence that a window exists, so
+    `pin.spawn` holds the new window to its harness's settle deadline and raises
+    `pin.WindowDied` if it does not survive. Measured 2026-08-08: with `claude` off
+    the server's PATH every spawn answered `{"ok": true}` and produced nothing, which
+    reads on the phone as a button that does nothing. Only a death is a failure here
+    — a window that is still alive at the deadline is reported started, and one that
+    dies after it is visible only in the window list.
     """
     pin = pin_module()
     if pin is None:
         return False, EXPERTS_UNAVAILABLE
     with SPAWN_LOCK:
-        before = {w["index"] for w in list_windows(cfg)}
-        ok, output = _run_capturing(pin.spawn, scope, directory,
-                                    session=cfg.session, room=room)
-        if not ok:
-            return False, output
-
-        # Settle before judging: an exec failure is immediate, so a window still
-        # alive after this has really started.
-        time.sleep(SPAWN_SETTLE_S)
-        fresh = [w for w in list_windows(cfg) if w["index"] not in before]
-        if any(not w["dead"] for w in fresh):
+        ok, output, error = _run_capturing(pin.spawn, scope, directory,
+                                           session=cfg.session, room=room,
+                                           harness=harness)
+        if ok:
             return True, output
-        return False, "\n\n".join(x for x in (output, SPAWN_FAILED_HINT) if x)
+        # The PATH hint belongs to exactly one failure. A window that died is
+        # overwhelmingly a window whose command could not be executed; a scope that
+        # does not exist or a directory that is not one has already said so itself.
+        if isinstance(error, pin.WindowDied):
+            return False, "\n\n".join(x for x in (output, SPAWN_FAILED_HINT) if x)
+        return False, output
 
 
 def known_scopes() -> list[str]:
@@ -1060,11 +1059,19 @@ class Handler(BaseHTTPRequestHandler):
             scope = data.get("scope")
             directory = data.get("dir")
             room = data.get("room") or ""
+            # The sheet's chips do not offer a harness, so the phone always spawns the
+            # default. The field is here because the endpoint is also driven by hand
+            # over the tailnet, and an API that quietly ignored it would launch a
+            # different CLI than the one asked for.
+            harness = data.get("harness") or "claude"
             pin = pin_module()
             if pin is None:
                 return self._send(503, {"error": EXPERTS_UNAVAILABLE})
             if scope not in known_scopes():
                 return self._send(400, {"error": "unknown scope"})
+            from thalamus.harness.launcher import LAUNCH_SHAPES
+            if harness not in LAUNCH_SHAPES:
+                return self._send(400, {"error": "unknown harness"})
             # Validated rather than matched against the existing list: naming a new
             # room IS how one is created, and `pin.ensure_room` builds it. The
             # charset check is the security-relevant half — the name reaches a path
@@ -1076,7 +1083,8 @@ class Handler(BaseHTTPRequestHandler):
             _, allowed = spawn_dirs(self.cfg)
             if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
                 return self._send(400, {"error": "directory not in the allowed list"})
-            ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)), room)
+            ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)),
+                                  room, harness)
             return self._send(200 if ok else 500, {"ok": ok, "output": output})
 
         if path == "/api/dispatch":

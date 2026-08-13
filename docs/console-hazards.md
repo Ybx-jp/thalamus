@@ -108,20 +108,63 @@ wrong PATH, missing binary, bad interpreter — produces:
 The API answers `{"ok": true}` and the button does nothing. There is no error anywhere,
 because nothing errored — the evidence deleted itself.
 
-**Never treat a zero exit as proof a window exists.** Diff the window list around the
-spawn and confirm a live window survives a short settle:
+**Never treat a zero exit as proof a window exists.** Ask `new-window` for the id of
+the window it just made (`-P -F '#{window_id}'`) and poll *that* window until it has
+survived a settle deadline:
 
 ```python
-before = {w["index"] for w in list_windows()}
-run_the_spawn()
-time.sleep(SETTLE)                       # exec failure is immediate
-fresh = [w for w in list_windows() if w["index"] not in before]
-if not any(not w["dead"] for w in fresh):
-    return False, "window exited immediately — check the service's PATH"
+window_id = tmux("new-window", "-d", "-P", "-F", "#{window_id}", "--", *argv)
+deadline = time.monotonic() + SETTLE
+while True:
+    if pane_dead(window_id):             # or the window is gone entirely
+        return False, epitaph(window_id)
+    if time.monotonic() >= deadline:
+        return True
+    time.sleep(0.05)
 ```
 
-Serialize spawns while you do this, or two concurrent ones scramble each other's
-before-picture.
+Poll, don't sleep the deadline out: only a launch that succeeds should pay the full
+wait. Confirm against the id rather than a diff of the window list — a diff can only
+ask whether *some* new window is alive, which stops being the same question the
+moment anything else creates windows.
+
+**How long to settle is a property of the command, not of tmux**, and the gap between
+two commands is large enough that one constant cannot serve both. Measured on this box
+(2026-08-12), launching each CLI in a window and timing the death:
+
+| launch | outcome | measured |
+|---|---|---|
+| missing binary (any) | dies, status 127 | 0.010 s |
+| `claude`, rejected flag | dies, status 1 | 0.278 s |
+| `claude`, untrusted dir / bad API key / no credentials | **lives** — parks on a modal | alive at 30 s |
+| `agent` (Cursor), untrusted dir / no credentials | **lives** — parks on a modal | alive at 30 s |
+| `agent`, rejected API key | dies, status 1 | 1.07–1.14 s (n=9) |
+| `agent`, rejected API key, +2 s of proxy latency | dies, status 1 | 3.14–3.20 s (n=3) |
+
+The last two rows are the same failure under two network conditions: the time to death
+moved by exactly the latency added in front of it. **A death that resolves after a
+round trip has no bound**, so the deadline for such a command is a bet sized on a
+measurement, not a guarantee — pick it per command, name the residual, and remember
+the window list is what shows a death that lands after it. The tempting fix of one
+generous global deadline is worse than it looks: it is paid on **every** successful
+spawn, by an operator watching a phone.
+
+Serialize spawns anyway if the session may not exist yet, or two of them race to
+create it.
+
+**Read the corpse, don't just count it.** Turn `remain-on-exit` on for the settle and
+the window that died is still there to explain itself — `pane_dead_status` for the exit
+code, `capture-pane` for what it printed. Two details or you get nothing back:
+
+- **`-S -`.** When a pane dies its output is pushed up out of the viewport and the
+  "Pane is dead" banner is left alone on the visible screen. Without the history flag
+  you capture 200 blank lines and the banner.
+- **`-J`.** A roster pane is 60 columns, so one sentence of vendor English is three
+  screen lines; taking the last few unjoined quotes a fragment starting mid-word.
+
+Turn the option **back off** the moment the window proves alive. A window that keeps it
+leaves a corpse when its real session ends, which every close and recycle path reads as
+a window still there.
 
 **To debug one live:** `tmux set -wg remain-on-exit on` makes the corpse stay so you can
 read `pane_dead_status` and `capture-pane`. Note the *global* (`-wg`) form — a

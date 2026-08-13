@@ -538,11 +538,28 @@ on the other.
 new-window -e` is not stored in the session environment, so `respawn-window` — the
 console's restart button — re-executes the argv with those variables gone. Claude Code
 survives because `--agent` rides the argv; Cursor has no such flag, so the launcher
-emits `env THALAMUS_SCOPE=<scope> -- agent --trust`. Measured both ways in a throwaway
+emits `env THALAMUS_SCOPE=<scope> agent --trust` — with no `--` before the binary,
+since GNU `env` stops scanning for options at the first `NAME=VALUE` and would take a
+later `--` as the command to run, exiting 127. Measured both ways in a throwaway
 session whose session env holds `THALAMUS_SCOPE=main`, as the roster's does: with the
 prefix the window came back `qe`, without it `main` — and the guard short-circuits on
 `main` before loading any manifest, so the failure it prevents is a bounded window
 becoming an unbounded one, silently, from a phone tap.
+
+**A Cursor window is given seconds to prove it started, not the fraction Claude Code
+needs.** `tmux new-window` exits 0 when it has forked, so a launcher only knows a
+window exists by finding it alive later, and how much later is a property of the CLI.
+Everything that kills `claude` is decided locally (0.010 s for a missing binary,
+0.278 s for a rejected flag; its trust and credential failures do not kill it at all —
+they park on a modal). Cursor's one fatal failure is an **authentication rejection**,
+decided across the network: 1.07–1.14 s on this box, and 3.14–3.20 s with 2 s of
+latency added in front of the same call. `launcher.LaunchShape.settle_s` therefore
+carries the deadline per harness — 1.2 s for Claude Code, 4.0 s for Cursor — and
+`pin.confirm_started` polls the new window until it dies or the deadline passes,
+raising `pin.WindowDied` with the exit status and the last thing the pane printed. A
+rejected key comes back to the phone as the vendor's own sentence, naming the variable
+it read the key from. A death *after* the deadline is caught by nothing and shows up
+only as a window missing from the roster.
 
 **No permission mode is passed, and that is a decision.** Claude Code launches under
 `--permission-mode auto`, chosen so a member never sits at a prompt. Cursor has no mode

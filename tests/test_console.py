@@ -194,21 +194,24 @@ def test_the_spawn_endpoint_names_the_room_and_never_inherits_one(tmp_path, monk
     seen: list[dict] = []
     monkeypatch.setattr(_pin(), "spawn",
                         lambda scope, cwd, **kw: seen.append({"scope": scope, **kw}))
-    monkeypatch.setattr(server, "SPAWN_SETTLE_S", 0)
 
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         post("/api/spawn", {"scope": "main", "dir": str(code / "alpha"), "room": "alpha"})
         post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
 
     assert [s["room"] for s in seen] == ["alpha", ""]
+    # And the harness the request did not name is the default, never the last one
+    # some other request asked for.
+    assert [s["harness"] for s in seen] == ["claude", "claude"]
 
 
-def test_a_spawn_that_produced_no_living_window_is_reported_failed(tmp_path, monkeypatch):
+def test_a_spawn_whose_window_died_is_reported_failed(tmp_path, monkeypatch):
     """
-    Scenario: `pin.spawn` returns cleanly, but the window it made is already dead
+    Scenario: `pin.spawn` reports the window it made did not survive its settle
 
     Verifications:
     - the response is a failure, not the success every layer below it reported
+    - what the window printed on the way out reaches the phone
     - the operator is told to check PATH, which is the cause in almost every case
 
     `tmux new-window` returns 0 as soon as it has forked — before the command it
@@ -216,41 +219,64 @@ def test_a_spawn_that_produced_no_living_window_is_reported_failed(tmp_path, mon
     instantly and is reaped, while tmux, `pin`, and the console all still see
     success. Measured 2026-08-08: with `claude` off the server's PATH every spawn
     answered ok and produced nothing, which reads on a phone as a button that does
-    nothing at all. Only the window list can tell the difference.
+    nothing at all. The verdict is `pin`'s, since it is the only layer holding the
+    id of the window it made; the console's job is that it reaches the operator.
     """
     code = tmp_path / "code"
     cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
-    monkeypatch.setattr(_pin(), "spawn", lambda *a, **k: None)
-    monkeypatch.setattr(server, "SPAWN_SETTLE_S", 0)
+    pin = _pin()
 
-    # The window list never gains a live window: exactly what an exec failure leaves.
+    def died(*a, **k):
+        raise pin.WindowDied("the window was created and its command exited (exit 1) "
+                             "— it printed: Not logged in.")
+
+    monkeypatch.setattr(pin, "spawn", died)
+
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         status, body = post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
 
     assert status == 500 and body["ok"] is False
+    assert "Not logged in." in body["output"]
     assert "PATH" in body["output"]
 
 
-def test_a_dead_window_does_not_count_as_a_spawn(tmp_path, monkeypatch):
-    """A *new* window is not enough — tmux keeps reporting one whose pane has died.
+def test_only_a_dead_window_gets_the_path_hint(tmp_path, monkeypatch):
+    """A launch that refused itself already said why, and PATH is not it.
 
-    The confirmation asks whether a new window is alive, not whether one appeared,
-    because the failure being caught produces a window either way.
+    The hint is a guess — a good one for a window that died silently, noise on top
+    of a refusal that named its own reason, and misleading if the operator acts on
+    it.
     """
     code = tmp_path / "code"
     cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
-    monkeypatch.setattr(server, "SPAWN_SETTLE_S", 0)
-    live = "0\tmain\t1\tclaude\t60\t50\t0\t/home/op/code/thalamus\t"
-    # index 1 is new since the spawn, and its pane_dead flag is set.
-    dead = live + "\n1\tmain\t0\tclaude\t60\t50\t1\t/home/op/code/alpha\t"
 
-    serving = _serving(cfg, windows=live)
-    monkeypatch.setattr(_pin(), "spawn",
-                        lambda *a, **k: setattr(serving.fake, "windows", dead))
-    with serving as post:
+    def refused(*a, **k):
+        raise ValueError("not a directory: /home/op/code/gone")
+
+    monkeypatch.setattr(_pin(), "spawn", refused)
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
         status, body = post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
 
     assert status == 500 and body["ok"] is False
+    assert "not a directory" in body["output"]
+    assert "PATH" not in body["output"]
+
+
+def test_a_harness_with_no_launch_shape_is_refused(tmp_path):
+    """A harness that cannot be pinned is refused before anything is created.
+
+    `launch_argv` raises for it, which would otherwise reach the phone as the last
+    line of a stack trace instead of a reason.
+    """
+    code = tmp_path / "code"
+    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/spawn", {"scope": "main", "dir": str(code / "alpha"),
+                                           "harness": "codex"})
+
+    assert status == 400 and body["error"] == "unknown harness"
 
 
 def test_the_console_runs_with_no_thalamus_around_it(tmp_path, monkeypatch):
