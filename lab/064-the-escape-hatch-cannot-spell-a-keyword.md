@@ -138,24 +138,24 @@ maps-of-numbers pass and enums fail.
 But the transport does not need to change. Penpot ships an **`:assign`
 change-operation** whose handler runs `(sm/decoder cts/schema:shape-attrs
 sm/json-transformer)` — the same coercion `add-obj` gets — over a plain JSON body.
-Architect measured the four failing enums applying `200` via `:assign`, a bogus enum
-still `500`ing (so validation is not weakened), and asymmetric padding applying via
-`layout-padding-type: "multiple"`.
+Architect measured the four failing enums applying `200` via `:assign`, and a bogus
+enum still `500`ing, so validation is not weakened.
 
 Three consequences:
 
-1. **The second limit dies in the same ten lines.** This entry asserted that
-   `set_layout`'s scalar `padding` would survive any transport fix. It does not —
-   `layout-padding-type: "multiple"` expresses asymmetric padding, so the 16/8 this
-   button spec needs is reachable.
+1. **The second limit was never in the wire format at all.** This entry asserted that
+   `set_layout`'s scalar `padding` would survive any transport fix. It does not, but
+   not for the reason first recorded here: `ctsl/paddings` collapses to uniform only
+   when `layout-padding-type` is `:simple`, and with the attribute absent it already
+   reads per-side values. **The scalar tool signature was the entire barrier** — a
+   Python default, not a Penpot constraint.
 2. **The defect is wider than filed.** It is not "enum-valued attributes" but *any*
-   `mod-obj` set-op whose value contains a keyword anywhere in its tree. **`set_stroke`
-   is broken today** and no drill caught it, because D0 and D1 both set strokes at
-   creation time. Reproduced independently here: a plain `set_stroke(color, width=2)`
-   on a fresh rect returns 500, and the log shows the `#{:solid :mixed :dashed :dotted}`
-   and `#{:center :inner :outer}` schemas rejecting `"solid"` and the alignment.
-   **This binds D2**, whose six icons are specified at uniform 2px stroke: stroke must
-   be set through `create_path`, never adjusted afterwards.
+   set-op whose value contains a keyword anywhere in its tree. **`set_stroke` was
+   broken** and no drill caught it, because D0 and D1 both set strokes at creation
+   time. Reproduced independently here before the fix: a plain
+   `set_stroke(color, width=2)` on a fresh rect returned 500, with the log showing the
+   `#{:solid :mixed :dashed :dotted}` and `#{:center :inner :outer}` schemas rejecting
+   `"solid"` and the alignment.
 3. **The repair is a split, not a swap.** `components-changed` and `frames-changed`
    both match `(= (:type operation) :set)` and would silently skip `:assign` ops, and
    every affected attribute is in `sync-attrs` — so `:set` stays where it already
@@ -246,3 +246,19 @@ authored, because Penpot computes reflow in the editor and persists the result, 
 exporter's render page runs no layout pipeline. Controlled against `add-obj` with layout
 baked in — identical, so it is authoring-without-an-editor and not an artefact of
 `:assign`. Compose with absolute coordinates and treat auto-layout as metadata.
+
+## Verified from the designer side after the fix shipped
+
+Re-measured in this scope's own session against the running image, on a throwaway
+shape, because the tools this unblocks are the ones D2 depends on:
+
+| probe | before | after |
+|---|---|---|
+| `set_stroke(color, width=2)` | 500 | **200**, read back `stroke-style: solid`, `stroke-alignment: center` |
+| `blend-mode` + `constraints-h` in one call | 500 | **200**, read back `multiply` / `left` |
+| `blend-mode: "banana"` | 500 | **500** |
+
+The last row is the one that matters, and the log says why: the rejection is now
+`:value :banana` — a **keyword**. Before the fix, rejections read `:value "flex"`, a
+string that never reached the enum check. The decoder now runs and the enum check
+still refuses, which is the difference between a fix and a disabled validator.
