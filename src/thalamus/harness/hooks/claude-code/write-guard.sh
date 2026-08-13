@@ -26,8 +26,10 @@
 #     its own allowlist and dry-run-by-default (docs/06). It is not self-memory.
 #   - Graph maintenance that operates over the whole graph rather than distilling this
 #     session: `repair-projects`, `derive-artifact-paths`, `backfill-chunks`,
-#     `snapshot`. These mutate, and an operator may well want them gated one day, but
-#     gating them here would attach an unrelated decision to this one.
+#     `retire-scans`, `snapshot`. These mutate, and an operator may well want them
+#     gated one day, but gating them here would attach an unrelated decision to this
+#     one. `retire-scans` is the only one that removes vertices, and it is dry-run by
+#     default and prints what it keeps beside what it takes.
 #   - `thalamus thread approve` — the close path is explicitly an in-session verb with
 #     operator approval (2026-08-11), and blocking it would invert that decision.
 #

@@ -350,6 +350,17 @@ def main():
         help="Apply the plan. Without this, nothing is written.",
     )
 
+    retire_scans_parser = subparsers.add_parser(
+        "retire-scans",
+        help="Remove the graph records of architecture scans, which are no longer "
+        "written (dry-run unless --write)",
+    )
+    retire_scans_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    retire_scans_parser.add_argument(
+        "--write", action="store_true",
+        help="Apply the plan. Without this, nothing is removed.",
+    )
+
     # Snapshot command — durability on demand (docs/09)
     snapshot_parser = subparsers.add_parser(
         "snapshot",
@@ -1280,6 +1291,8 @@ def main():
         _cmd_repair_projects(args)
     elif args.command == "derive-artifact-paths":
         _cmd_derive_artifact_paths(args)
+    elif args.command == "retire-scans":
+        _cmd_retire_scans(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -2035,6 +2048,59 @@ def _cmd_derive_artifact_paths(args):
             return
         resolved = write_projection(graph, projection_plan)
         print(f"\nWrote {len(projection_plan.projections)} artifacts, {resolved} anchored.")
+    finally:
+        close_connection(graph)
+
+
+def _cmd_retire_scans(args):
+    """Remove the Sources and Claims that architecture scans used to land.
+
+    Dry-run by default, and it prints what it keeps as well as what it takes: the
+    Artifacts a scan touched are usually the same vertices sessions touched, so the
+    kept list is the check that this did not reach past its own records.
+    """
+    from thalamus.substrate.scan_retirement import plan, retire
+
+    graph = connect(args.url)
+    try:
+        retirement = plan(graph)
+
+        if not retirement.total():
+            print("Nothing to retire — no scan Source or scanner Claim in the graph.")
+            return
+
+        print(f"{len(retirement.sources)} scan Source(s):")
+        for doomed in retirement.sources:
+            print(f"  {doomed.detail}")
+        print(f"\n{len(retirement.claims)} scanner Claim(s):")
+        for doomed in retirement.claims:
+            print(f"  {doomed.detail}")
+
+        if retirement.artifacts:
+            print(f"\n{len(retirement.artifacts)} Artifact(s) left with no other edge:")
+            for doomed in retirement.artifacts:
+                print(f"  {doomed.detail}")
+        if retirement.kept_artifacts:
+            print(f"\n{len(retirement.kept_artifacts)} Artifact(s) kept — still referenced:")
+            for identifier, survivors in retirement.kept_artifacts[:12]:
+                print(f"  {survivors:3d} other edge(s)  {identifier}")
+            if len(retirement.kept_artifacts) > 12:
+                print(f"  … and {len(retirement.kept_artifacts) - 12} more")
+
+        if retirement.uncited_blobs:
+            print(
+                f"\n{len(retirement.uncited_blobs)} archived blob(s) become uncited. "
+                "Bytes are kept; `thalamus arch growth` ranks unreferenced stock."
+            )
+
+        if not args.write:
+            print(f"\nDry run. Re-run with --write to remove {retirement.total()} vertices.")
+            return
+
+        removed = retire(graph, retirement)
+        print(f"\nRemoved {removed} vertices.")
+        _persist(graph)
+        print("Run `thalamus contract check` to confirm the graph is still whole.")
     finally:
         close_connection(graph)
 
