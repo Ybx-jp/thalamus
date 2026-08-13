@@ -4126,7 +4126,6 @@ wheels = [
 
 [[package]]
 name = "thalamus"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -4173,11 +4172,6 @@ voice = [
     { name = "torch" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "httpx" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.139.0" },
@@ -4206,10 +4200,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'nli'", specifier = ">=4.46" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
 ]
-provides-extras = ["dev", "experiments", "nli", "frames", "voice"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "httpx", specifier = ">=0.28.1" }]
+provides-extras = ["dev", "experiments", "frames", "nli", "voice"]
 
 [[package]]
 name = "thinc"

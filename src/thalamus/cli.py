@@ -805,6 +805,15 @@ def main():
         "--harness", choices=("claude", "cursor", "both"), default="both",
         help="Which editor to wire (default: both)"
     )
+    init_parser.add_argument(
+        "--uninstall", action="store_true",
+        help="Remove the hooks, MCP registration, skill links and derived agents "
+             "this wrote. Leaves the graph and the transcript archive alone"
+    )
+    init_parser.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Skip the confirmation — for non-interactive installs"
+    )
 
     rescope_parser = subparsers.add_parser(
         "rescope", help="Redirect a session's distillation scope (before it distills)"
@@ -3274,7 +3283,8 @@ def _cmd_init(args):
     from thalamus.harness.install import run
 
     try:
-        sys.exit(run(dry_run=args.dry_run, check_only=args.check, harness=args.harness))
+        sys.exit(run(dry_run=args.dry_run, check_only=args.check, harness=args.harness,
+                     uninstall_mode=args.uninstall, assume_yes=args.yes))
     except RuntimeError as e:
         print(f"Init failed: {e}", file=sys.stderr)
         sys.exit(1)

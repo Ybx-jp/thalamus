@@ -42,6 +42,32 @@ directory rather than only inside this checkout. It wires Claude Code and Cursor
 by default; use `--harness claude` or `--harness cursor` for one. `--dry-run`
 reports without writing, and `--check` re-verifies any time.
 
+Because user scope means *outside this checkout*, it lists what it will write
+and asks before writing — `~/.claude/settings.json` and `~/.cursor/hooks.json`
+(hook entries that then run in every session on the box), `~/.claude.json` (the
+MCP server), plus skill symlinks and one derived agent per expert. Pass `--yes`
+to skip the prompt in a script; a non-interactive stdin declines rather than
+assumes. **`thalamus init --uninstall` takes all of it back out**, removing only
+what it can prove it installed, and leaving your graph, `~/.thalamus/` and the
+transcript archive alone.
+
+### What this release is
+
+**0.1.0 runs from a checkout, and only from a checkout.** There is no
+`pip install thalamus` — `harness/pin.py` and `contract/manifest.py` anchor on
+the repo root, and the expert manifests in `config/` live outside the package, so
+an installed wheel would resolve paths that exist only in a clone. The package
+metadata says so mechanically (`Private :: Do Not Upload`). Real packaging is a
+later milestone.
+
+Two features are **experimental and off by default**, each behind a flag on
+`thalamus console`:
+
+| | Flag | Off means |
+|---|---|---|
+| `say` — reads the active window aloud | `--voice URL` | no control, no endpoints. Needs a separate TTS unit (`--extra voice`, [docs/console.md](docs/console.md)) |
+| Frame themes — the pane inside artwork | `--frames PATH` | no controls and no key bindings; no artwork ships ([docs/frame-themes.md](docs/frame-themes.md)) |
+
 ### Read what it tells you
 
 Install ends by *exercising* what it wired rather than asserting it — it spawns

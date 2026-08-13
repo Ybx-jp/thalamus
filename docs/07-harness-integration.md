@@ -716,6 +716,23 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    until an event fires, and SessionEnd fires detached). `--dry-run` reports
    without writing; `--check` verifies an existing install. Arming is
    per-process, so existing sessions need a relaunch — `/clear` is not enough.
+
+   Because all of that lands **outside** the checkout, install names its write
+   targets and asks before proceeding; `--yes` skips the prompt and a
+   non-interactive stdin declines rather than assuming consent. `--uninstall` is
+   the mirror, and removes only what it can prove is ours: hook entries via the
+   same `_strip_*` helpers install uses to avoid duplicating itself, a skill link
+   only when it is a symlink resolving into the package's skill dir, the MCP
+   server through `claude mcp remove`. It does **not** touch the graph,
+   `~/.thalamus/` or the transcript archive — uninstalling wiring is not a request
+   to delete an operator's memory, and that deletion would not be undoable.
+
+   Deregistration goes through a named `deregister_mcp()` rather than an inline
+   subprocess call, because `~/.claude.json` is **not reliably contained by
+   overriding `HOME`** for the child process: measured 2026-08-13, a removal run
+   against a throwaway `HOME` wrote its backup into the fake home and edited the
+   real file anyway. One named seam is what lets the test suite stub it, and an
+   unstubbed test deregisters the server of whoever ran it.
    When the MCP server's **env** changes, that stops being a nicety and becomes
    an advisory naming the variable and both values: an open session keeps the old
    env for its whole lifetime while looking entirely normal from the inside, so a
