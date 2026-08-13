@@ -338,42 +338,47 @@ intersection is structurally empty. The real signal is one hop out, through
 before intersecting them. Cluster on the **exchange**, never the pair — 89 positives
 sat in 12 exchanges with 79% in one expert's.
 
-## Claims no session contains — the retrieval blind spot
+## Claims no session contains — knowledge, or orphans?
 
-**Question it answered:** "`thalamus arch scan --write` reported 5 findings landed,
-but `memory_open_problems` returns none of them. Are they in the graph at all?"
-(2026-08-13)
+**Question it answered:** "Which claims does no `Session` contain, and is that by
+design or is it damage?" `memory_open_problems` admits only session-contained claims,
+so anything outside that set is invisible to it and the split decides whether that is
+correct. (2026-08-13)
 
 **Surface:** gremlin-python
 
 ```python
 from gremlin_python.process.graph_traversal import __
 from thalamus.substrate.writer import connect, close_connection
+from collections import Counter
 
 g = connect()
 try:
-    base = lambda: g.V().has_label("Claim").has("kind", "problem").has("scope", "architect")
-    total = base().count().next()
-    sessionless = base().where(__.not_(__.in_("CONTAINS").has_label("Session"))).count().next()
-    print(total, sessionless, total - sessionless)   # total, hidden, reachable
-    rows = (base().where(__.not_(__.in_("CONTAINS").has_label("Session")))
-            .element_map().to_list())
+    total = g.V().has_label("Claim").count().next()
+    rows = (g.V().has_label("Claim").not_(__.in_e("CONTAINS"))
+            .value_map("source", "kind", "scope").to_list())
+    first = lambda r, k: (r.get(k)[0] if isinstance(r.get(k), list) and r.get(k) else "?")
+    print(total, len(rows))
+    print(Counter(first(r, "kind") for r in rows))          # knowledge vs episodic
+    print(Counter(first(r, "source").split(":")[0] for r in rows))   # actor vs orphan
 finally:
     close_connection(g)
 ```
 
-**Validated:** 16 architect problem-claims, 5 with no containing Session — exactly the
-5 findings the scan reported, every one `source='agent:arch-scanner'`, tier 1.
+**Validated:** 6163 of 9512 claims are session-less, but 6150 are `literature/*` from
+`thalamus ingest` — served on purpose by the `not_(in_e("CONTAINS"))` knowledge branch
+in `reader.py`. Only **13** are of an episodic kind, and `source` splits them cleanly:
+`agent:` prefixes are written by a non-session actor, `session:` prefixes are claims
+orphaned from a session that no longer holds them.
 
-**Notes.** `recall_open_problems` (`substrate/reader.py`) filters
-`.where(__.in_("CONTAINS").has_label("Session"))`, and claims land inside a Session
-only through distillation. Anything written by an agent rather than by a session —
-`thalamus arch` today — is therefore in the graph, contract-clean, and invisible to
-the recall surface built for exactly its question. The same filter is how `project`
-is resolved, so these claims are unfilterable by project too.
+**Notes.** The headline count is the trap. "65% of claims have no session" sounds like
+a systemic break and is almost entirely one deliberate representation; the real
+population is found by filtering to episodic kinds first. Split on the `source` prefix
+before concluding anything — a session-less claim whose provenance still names a
+`session:` is an orphan, and one naming an `agent:` never had a session to lose.
 
-Reach for `element_map()` when confirming *which* vertices came back. The first cut
-of this query guessed `value_map("statement", "provenance_source")` and printed five
-blank rows — the properties are `description` and `source`. A guessed property name
-does not error, it returns empty strings, which reads as "found nothing" when the
-truth was "found everything and asked it the wrong question."
+Reach for `element_map()` when confirming *which* vertices came back. An early cut of
+this query guessed `value_map("statement", "provenance_source")` and printed blank
+rows — the properties are `description` and `source`. A guessed property name does not
+error, it returns empty strings, which reads as "found nothing" when the truth was
+"found everything and asked it the wrong question."

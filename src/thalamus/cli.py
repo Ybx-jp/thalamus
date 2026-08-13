@@ -2547,7 +2547,7 @@ def _cmd_arch(args, arch_parser):
     import tempfile
     from pathlib import Path
 
-    from thalamus.arch import graph as arch_graph
+    from thalamus.arch import findings as arch_findings
     from thalamus.arch import model as arch_model
     from thalamus.arch.extractor import scan_repo
     from thalamus.arch.metrics import measure
@@ -2599,7 +2599,7 @@ def _cmd_arch(args, arch_parser):
     # scan
     text, derived, metrics = arch_model.build(repo, graph, model)
     dirty = arch_model.dirty_paths(repo, policy)
-    found = arch_graph.findings(graph, metrics, model)
+    found = arch_findings.findings(graph, metrics, model)
 
     print(f"Scan {derived['scan']}")
     print(f"  policy      import_depth={policy.import_depth} resolve={policy.resolve} "
@@ -2634,8 +2634,9 @@ def _cmd_arch(args, arch_parser):
 
     if dirty:
         # The walk read the working tree; the scan id names HEAD. With a dirty tree
-        # those are different codebases and the Source would assert a measurement of a
-        # commit that never contained it.
+        # those are different codebases, and the model file would record a measurement
+        # of a commit that never contained it — the one falsehood git cannot correct
+        # later, because the file will be committed alongside the code it misdescribes.
         print(f"\n{len(dirty)} uncommitted file(s) under the scanned roots:")
         for path in dirty[:10]:
             print(f"  {path}")
@@ -2643,7 +2644,7 @@ def _cmd_arch(args, arch_parser):
             print(f"  … and {len(dirty) - 10} more")
 
     if not args.write:
-        print("\nDry run. Re-run with --write to regenerate the model file and land the scan.")
+        print("\nDry run. Re-run with --write to regenerate the model file.")
         return
 
     if dirty:
@@ -2658,36 +2659,7 @@ def _cmd_arch(args, arch_parser):
     model_path.parent.mkdir(parents=True, exist_ok=True)
     model_path.write_text(text, encoding="utf-8")
     print(f"\nWrote {model_path.relative_to(repo)}")
-
-    from thalamus.archive import archive_bytes, scan_for_secrets
-    from thalamus.substrate.writer import close_connection, connect, write_scan
-
-    payload_bytes = text.encode("utf-8")
-    # The archive's secret scan is a warning surface, and a warning nobody prints warns
-    # nobody. A model file is structure rather than transcript, so a hit here is
-    # unlikely — which is exactly when an unread scan goes unnoticed.
-    for pattern, hits in sorted(scan_for_secrets(payload_bytes).items()):
-        print(f"  warning: retained bytes match {pattern} ({hits} hit(s))", file=sys.stderr)
-    entry = archive_bytes(payload_bytes, suffix=".yaml")
-    graph_connection = connect(args.url)
-    try:
-        new_findings = arch_graph.unseen(graph_connection, arch_graph.ARCH_SCOPE, found)
-        payload = arch_graph.payload(
-            repo=model.repo or repo.name,
-            origin=derived["scan"],
-            lineage=f"arch:scan:{model.repo or repo.name}:{policy.digest()[:7]}",
-            commit=derived["commit"],
-            content_hash=entry.content_hash,
-            uri=entry.uri,
-            byte_size=entry.byte_size,
-            found=found,
-        )
-        source_vid = write_scan(graph_connection, payload)
-        print(f"Landed {source_vid}")
-        print(f"  {len(new_findings)} new finding(s), {len(found) - len(new_findings)} recurring")
-        _persist(graph_connection)
-    finally:
-        close_connection(graph_connection)
+    print("Commit it — the file is the record, and git is what dates it to this tree.")
 
 
 def _arch_growth(args, repo) -> None:

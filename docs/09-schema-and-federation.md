@@ -112,34 +112,21 @@ and it's a graph traversal, which is the entire reason the substrate is a graph
 and not a vector store. (The read path does not yet compute the floor over the
 chain — a named open item in [05](05-trust-model.md)'s open questions.)
 
-## Sources, and the three kinds of evidence
+## Sources, and the two kinds of evidence
 
 `Source` is where a belief chain terminates: retained bytes, content-addressed, with
-the node holding a pointer rather than the blob. Three kinds, differing only by tier
-and locator — a transcript (`transcript`, tier 1), a retained document (`article`,
-tier 2), and a **measurement of the operator's own code** (`scan`, tier 1).
+the node holding a pointer rather than the blob. Two kinds, differing only by tier and
+locator — a transcript (`transcript`, tier 1) and a retained document (`article`,
+tier 2).
 
-A scan Source is what `thalamus arch` lands: the `arch/model.yaml` it produced,
-archived under its sha256, with the scan id as `origin`
-(`arch:scan:<repo>:<sha7>:<policy-digest7>`). It carries one property the other kinds
-do not:
-
-```
-lineage:  arch:scan:<repo>:<policy-digest7>   — the supersession chain this belongs to
-```
-
-`lineage` is a property rather than a prefix of `origin` because the policy digest sits
-at the *end* of a scan id, and matching a lineage by string prefix would thread every
-extractor policy onto one chain. Two scans of one repo under different policies are
-incomparable measurements, so they must not supersede each other — which is the same
-reason the digest is in the id at all.
-
-Findings from a scan land as ordinary `Claim`s `DERIVED_FROM` that Source. Metrics do
-not land at all: they are recomputable from the retained file, and a claim per
-measurement would bury the scope's real assertions under a per-run metric dump. A
-finding that persists across scans keeps one claim identity and accumulates a
-`DERIVED_FROM` edge per scan, so "this keeps coming up" is a graph fact rather than
-near-duplicate sentences.
+Measurement of the operator's own code is deliberately not among them. A structural
+fact is true of the commit it was taken at, no recall surface is commit-aware, and a
+file in git already says "this described commit X" without any supersession machinery
+to carry the qualifier. `thalamus arch` therefore writes `arch/model.yaml` and stops;
+its findings recompute from the working tree on demand ([index](index.md), 2026-08-13).
+What the architect *judges* — the layer partition, the seams, the refactors rejected
+and why — outlives any commit and reaches memory the way every other judgement does,
+through session distillation.
 
 ## Scope
 

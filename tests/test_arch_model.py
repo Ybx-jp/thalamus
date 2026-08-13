@@ -1,14 +1,14 @@
-"""Interfaces: thalamus.arch.model, thalamus.arch.graph
+"""Interfaces: thalamus.arch.model, thalamus.arch.findings
 Infrastructure: none — model files are written into tmp_path; no graph connection
 Scope: the authored/derived split and what may overwrite what, rule checking against a
-       measured graph, scan identity, and the claim shapes a scan emits.
+       measured graph, scan identity, and the findings a scan emits.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from thalamus.arch import graph as arch_graph
+from thalamus.arch import findings as arch_findings
 from thalamus.arch import model as arch_model
 from thalamus.arch.extractor import ExtractorPolicy, scan_repo
 from thalamus.arch.metrics import measure
@@ -172,7 +172,11 @@ def test_stale_authored_paths_reports_a_seam_on_a_deleted_file(tmp_path):
 
 
 def test_findings_name_no_scan_id(tmp_path):
-    """Claim identity is the description; folding the scan id in mints a vertex a run."""
+    """A finding names what it found, never the run that found it.
+
+    Folding the scan id into the sentence would make every scan's output differ from
+    the last one's, so `arch diff` would report churn where there was no change.
+    """
     repo = tmp_path
     (repo / "src").mkdir()
     (repo / "src" / "a.py").write_text("import b\n")
@@ -180,7 +184,7 @@ def test_findings_name_no_scan_id(tmp_path):
 
     graph = scan_repo(repo, ExtractorPolicy(roots=("src",)))
     metrics = measure(graph)
-    found = arch_graph.findings(graph, metrics, arch_model.ArchModel())
+    found = arch_findings.findings(graph, metrics, arch_model.ArchModel())
 
     assert len(found) == 1
     assert "Import cycle" in found[0].description
@@ -188,58 +192,41 @@ def test_findings_name_no_scan_id(tmp_path):
     assert sorted(found[0].artifacts) == ["src/a.py", "src/b.py"]
 
 
-def test_the_same_finding_keeps_one_identity_across_scans(tmp_path):
-    """A persisting cycle is one claim with more evidence, not a claim per run."""
+def test_two_scans_of_an_unchanged_tree_produce_an_identical_list(tmp_path):
+    """What makes `arch diff` mean anything: no change in, no difference out."""
     repo = tmp_path
     (repo / "src").mkdir()
     (repo / "src" / "a.py").write_text("import b\n")
     (repo / "src" / "b.py").write_text("def f():\n    import a\n    return a\n")
 
     graph = scan_repo(repo, ExtractorPolicy(roots=("src",)))
-    first = arch_graph.findings(graph, measure(graph), arch_model.ArchModel())
-    second = arch_graph.findings(graph, measure(graph), arch_model.ArchModel())
+    first = arch_findings.findings(graph, measure(graph), arch_model.ArchModel())
+    second = arch_findings.findings(graph, measure(graph), arch_model.ArchModel())
 
-    assert first[0].content_id() == second[0].content_id()
+    assert first == second
 
 
 def test_a_clean_repo_emits_no_findings(tmp_path):
     repo = _repo(tmp_path)
     graph = scan_repo(repo, ExtractorPolicy(roots=("src",)))
-    found = arch_graph.findings(graph, measure(graph), arch_model.ArchModel())
+    found = arch_findings.findings(graph, measure(graph), arch_model.ArchModel())
     assert found == []
 
 
-def test_scan_payload_is_first_party_and_names_the_scanner(tmp_path):
-    payload = arch_graph.payload(
-        repo="demo",
-        origin="arch:scan:demo:abc1234:def5678",
-        lineage="arch:scan:demo:def5678",
-        commit="abc1234567",
-        content_hash="f" * 64,
-        uri="archive://" + "f" * 64,
-        byte_size=10,
-        found=[],
-    )
-    assert payload.scope == "architect"
-    assert int(payload.provenance.tier) == 1
-    assert payload.provenance.source == "agent:arch-scanner"
-    assert payload.title == "Architecture scan — demo @ abc1234"
+def test_a_finding_carries_no_provenance_envelope(tmp_path):
+    """Findings are recomputed, never landed, so they carry no memory-write machinery.
 
+    A finding that grew a tier or a provenance source would be a finding someone could
+    store, and a stored structural fact outlives the commit it was true of.
+    """
+    repo = tmp_path
+    (repo / "src").mkdir()
+    (repo / "src" / "a.py").write_text("import b\n")
+    (repo / "src" / "b.py").write_text("def f():\n    import a\n    return a\n")
 
-def test_citation_tells_the_reader_when_a_value_was_superseded():
-    rendered = arch_graph.citation(
-        "`thalamus.contract.ontology` is import-reachable from 41 of 76 modules (54%).",
-        scan="arch:scan:thalamus:041797a:e3f1a0d",
-        commit="041797abcd",
-        policy_line="`import_depth=all`",
-        superseded_by="arch:scan:thalamus:9c1f2ab:e3f1a0d",
-    )
-    assert "Structural fact" in rendered
-    assert "Scanned at `041797a`" in rendered
-    assert "Superseded by" in rendered
-    assert "this value held at the commit named" in rendered
+    graph = scan_repo(repo, ExtractorPolicy(roots=("src",)))
+    found = arch_findings.findings(graph, measure(graph), arch_model.ArchModel())
 
-
-def test_citation_without_supersession_makes_no_such_claim():
-    rendered = arch_graph.citation("x", scan="s", commit="abcdefg", policy_line="p")
-    assert "Superseded" not in rendered
+    assert found
+    for attribute in ("provenance", "tier", "content_id", "scope"):
+        assert not hasattr(found[0], attribute), attribute
