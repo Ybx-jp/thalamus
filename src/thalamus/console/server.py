@@ -1121,6 +1121,9 @@ class Handler(BaseHTTPRequestHandler):
                                     "recycling": recycling})
         if path == "/api/launch-policy":
             return self._send(200, {"harnesses": launch_policy_view()})
+        if path == "/api/cursor-sweep":
+            from thalamus.console import sweep
+            return self._send(200, sweep.status())
         if path == "/api/spawn-options":
             pin = pin_module()
             dirs, _ = spawn_dirs(self.cfg)
@@ -1260,6 +1263,17 @@ class Handler(BaseHTTPRequestHandler):
                 "undelivered": list(result.undelivered),
                 "note": result.note(),
             })
+
+        if path == "/api/cursor-sweep":
+            if not has_experts():
+                return self._send(503, {"error": "the expert layer is not importable"})
+            from thalamus.console import sweep
+            started, message = sweep.start()
+            # 409 rather than 500: a sweep already running is the request being refused
+            # on state, not the server failing, and the phone shows the sentence either
+            # way.
+            return self._send(200 if started else 409,
+                              {"ok": started, "message": message, **sweep.status()})
 
         if path == "/api/launch-policy":
             if not has_experts():

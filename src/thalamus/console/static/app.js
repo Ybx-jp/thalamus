@@ -72,6 +72,7 @@ const els = {
   adminWindows: document.getElementById("admin-windows"),
   adminServices: document.getElementById("admin-services"),
   adminPolicy: document.getElementById("admin-policy"),
+  adminSweep: document.getElementById("admin-sweep"),
   adminLog: document.getElementById("admin-log"),
   recycleNote: document.getElementById("recycle-note"),
   spawn: document.getElementById("spawn"),
@@ -1505,6 +1506,80 @@ async function doSpawn() {
     els.spawnGo.disabled = false;
   }
 }
+// ---- Cursor distillation ----
+// Cursor sessions do not distill themselves, so an unswept one is a session whose
+// memory never exists. The count is what makes that visible; the button is what a
+// laptop used to be needed for.
+let sweepState = null;
+
+function sweepSummary(s) {
+  if (!s || !s.available) return "";
+  if (s.running) return "sweeping…";
+  const bits = [`${s.ready} session${s.ready === 1 ? "" : "s"} on disk`];
+  // Surfaced rather than hidden: these are found on the filesystem with no scope any
+  // hook ever resolved, so the sweep refuses them instead of defaulting them into
+  // `main`. Without a line here they sit undistillable with nothing saying why.
+  if (s.unresolved) bits.push(`${s.unresolved} awaiting a scope`);
+  return bits.join(" · ");
+}
+
+function renderSweep() {
+  const sec = document.getElementById("admin-sweep-sec");
+  sec.hidden = !(sweepState && sweepState.available);
+  if (sec.hidden) return;
+  const go = document.getElementById("admin-sweep-go");
+  go.disabled = !!sweepState.running || sweepState.ready === 0;
+  go.textContent = sweepState.running ? "sweeping…" : "sweep now";
+  els.adminSweep.innerHTML = "";
+  const row = document.createElement("div");
+  row.className = "admin-row";
+  row.innerHTML =
+    `<span class="admin-dot${sweepState.running ? "" : " ok"}"></span>` +
+    `<span class="admin-name">${escapeHtml(sweepSummary(sweepState))}</span>`;
+  els.adminSweep.appendChild(row);
+  if (sweepState.last) {
+    const last = document.createElement("div");
+    last.className = "admin-row";
+    last.innerHTML = `<span class="admin-name pol-title">last: ` +
+      `${escapeHtml(sweepState.last)}</span>`;
+    els.adminSweep.appendChild(last);
+  }
+}
+
+async function loadSweep() {
+  try {
+    const r = await req("api/cursor-sweep", { cache: "no-store" });
+    sweepState = await r.json();
+  } catch (e) {
+    sweepState = null;
+  }
+  renderSweep();
+}
+
+async function runSweep() {
+  const { ok, data } = await postJson("api/cursor-sweep", {});
+  adminLog(data.message || (ok ? "sweep started" : "sweep refused"));
+  sweepState = data.available === undefined ? sweepState : data;
+  renderSweep();
+  // It runs for minutes and outlives this request, so the panel follows it rather
+  // than reporting once and going quiet.
+  if (ok) sweepFollow();
+}
+
+let sweepTimer = null;
+function sweepFollow() {
+  clearInterval(sweepTimer);
+  sweepTimer = setInterval(async () => {
+    const before = sweepState && sweepState.running;
+    await loadSweep();
+    if (before && sweepState && !sweepState.running) {
+      clearInterval(sweepTimer);
+      adminLog(sweepState.last || "sweep finished");
+    }
+    if (els.admin.hidden) clearInterval(sweepTimer);
+  }, 5000);
+}
+
 // ---- Launch posture ----
 // Which capability is mid-choice, as "<harness>/<key>", while its lifetime chips are
 // showing. A loose posture needs two taps — the rung, then how long — and the second
@@ -1513,12 +1588,14 @@ async function doSpawn() {
 let policyPending = null;
 let policyState = [];
 
-// How long a loose posture lasts, in words. The server ships the hours and owns the
-// list; this only spells them, so adding a lifetime server-side needs no client change.
+// How long a loose posture lasts, in words — including the option of not lapsing at
+// all, which is `null`. The server ships the hours and owns the list; this only spells
+// them, so adding a lifetime server-side needs no client change.
 function ttlLabel(hours) {
-  if (hours === 1) return "1 hour";
-  if (hours % 24 === 0) return `${hours / 24} day${hours === 24 ? "" : "s"}`;
-  return `${hours} hours`;
+  if (hours === null || hours === undefined) return "until I turn it off";
+  if (hours === 1) return "for 1 hour";
+  if (hours % 24 === 0) return `for ${hours / 24} day${hours === 24 ? "" : "s"}`;
+  return `for ${hours} hours`;
 }
 
 // What the countdown says with `expires_at` this far off. Minutes below an hour,
@@ -1531,9 +1608,11 @@ function expiryLabel(expiresAt, now) {
   return mins < 60 ? `reverts in ${mins}m` : `reverts in ${Math.round(mins / 60)}h`;
 }
 
-// Is picking `option` a step up from what is in force? The server already decided and
-// sent `widening`; this is only the read, so the two cannot disagree about the rule.
-function needsLifetime(option) {
+// Is picking `option` a step up, and to a rung looser than the harness default? Those
+// are the picks that get the second row — a confirmation, and the offer of a lifetime.
+// The server already decided and sent both flags; this is only the read, so the two
+// cannot disagree about which taps are which.
+function loosens(option) {
   return !!(option && option.widening && option.above_default);
 }
 
@@ -1568,7 +1647,7 @@ function renderLaunchPolicy() {
         chip.textContent = opt.label;
         chip.addEventListener("click", () => {
           if (opt.value === cap.value) return;
-          if (needsLifetime(opt)) {
+          if (loosens(opt)) {
             // Don't commit yet: a loose posture is chosen together with its lifetime,
             // so the second row is the confirmation rather than a modal on top of it.
             policyPending = { key: pendKey, value: opt.value, cap, harness: h.harness };
@@ -1591,11 +1670,12 @@ function renderLaunchPolicy() {
       if (pending) {
         const ttl = document.createElement("div");
         ttl.className = "chips";
-        for (const hours of cap.ttl_choices) {
+        // `null` last: the lifetimes read as the safer answers, so they come first.
+        for (const hours of [...cap.ttl_choices, null]) {
           const chip = document.createElement("button");
           chip.type = "button";
           chip.className = "chip loose";
-          chip.textContent = `for ${ttlLabel(hours)}`;
+          chip.textContent = ttlLabel(hours);
           chip.addEventListener("click", () =>
             setPolicy(h.harness, cap.key, pending.value, hours));
           ttl.appendChild(chip);
@@ -1691,6 +1771,7 @@ document.getElementById("admin-btn").addEventListener("click", () => {
     renderAdminWindows();
     loadServices();
     loadLaunchPolicy();
+    loadSweep();
   }
 });
 document.getElementById("admin-x").addEventListener("click", () => { els.admin.hidden = true; });

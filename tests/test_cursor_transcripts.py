@@ -303,11 +303,11 @@ class TestDiscovery:
         assert [s.scope for s in cursor_transcripts.discover(log, tmp_path / "none")] == ["homelab"]
 
     def test_a_row_without_a_transcript_pointer_keeps_its_scope(self, tmp_path):
-        """Cursor sends `transcript_path: null` to an interactive session's
-        sessionEnd hook. Dropping the row discarded the scope and the end time —
-        the two things only this surface knows — over a field the filesystem owns,
-        which left every interactive Cursor session unroutable. The row is kept
-        with no path, so callers filtering on `exists` still skip it."""
+        """Cursor sends `transcript_path: null` for a session that produced no
+        transcript — one that ended without completing a turn. Dropping the row
+        discarded the scope and the end time, the two things only this surface
+        knows, over a field the filesystem owns. The row is kept with no path, so
+        callers filtering on `exists` still skip it."""
         log = tmp_path / "log.jsonl"
         log.write_text(json.dumps({"session_id": "a", "scope": "main"}) + "\n")
         found = cursor_transcripts.discover(log, tmp_path / "none")

@@ -68,13 +68,17 @@ Three consequences, each handled explicitly rather than papered over:
    record. Cursor keeps no scope anywhere, so one of those is left
    `UNRESOLVED_SCOPE` for an operator to assign.
 
-**Distillation is deliberately not run at sessionEnd.** Cursor is not documented
-to flush the transcript before firing the hook — an open request asks it to
-fsync first, or to add a `transcript_ready` field (forum thread 166592, no
-implementation timeline) — so reading at sessionEnd races an async writer and can
-silently distill a truncated session. Instead sessionEnd logs the pointer with
-`distilled: false` and `thalamus extract --harness cursor` sweeps afterwards,
-which also picks up everything logged before this module existed.
+**Distillation waits for the transcript to settle rather than trusting a flush.**
+Cursor is not documented to flush before firing sessionEnd — an open request asks
+it to fsync first, or to add a `transcript_ready` field (forum thread 166592, no
+implementation timeline) — so reading there could race an async writer and
+silently distill a truncated session, which is a corrupted memory rather than a
+missing one. `hooks/cursor/distill.sh` therefore polls the file's size and mtime
+and only extracts once they have stopped changing, which holds whether or not the
+vendor ever documents a guarantee. `session-end.sh` still logs the pointer with
+`distilled: false`, and `thalamus extract --harness cursor` still sweeps, since
+backfill covers everything logged before either existed and every session whose
+hook never fired.
 
 Reads are guarded, but **not tolerant**. Recognition is complete and kept
 separate from processing: a record this grammar does not cover is counted in
@@ -334,13 +338,15 @@ def _hook_sessions(path: Path) -> dict[str, EndedSession]:
     become iteration order.
 
     **A row with no `transcript_path` is kept, not dropped.** Cursor sends
-    `transcript_path: null` to the sessionEnd hook of an interactive session
-    (measured against 2026.08.11-e8db854; `workspace_roots` is populated in the
-    same payload, so this is the field's absence and not the hook's). Dropping
-    the row discarded the two things only this surface knows — the scope and the
-    end time — over a field the filesystem surface owns and supplies on merge.
-    That is the same per-record handling of a per-field gap the scope rule exists
-    to prevent, and it made every interactive Cursor session unroutable.
+    `transcript_path: null` for a session that produced no transcript at all — one
+    that ended without completing a turn (measured against 2026.08.11-e8db854:
+    three such sessions carried null and had no `agent-transcripts` directory,
+    while a session with one completed turn carried the real path). Those rows
+    still hold the two things only this surface knows, the scope and the end time,
+    and dropping the whole record over a field the filesystem surface owns is the
+    per-record handling of a per-field gap that the scope rule exists to prevent.
+    It is also the defence if Cursor ever sends null for a session that *does*
+    have a transcript: the merge fills the path rather than losing the session.
     """
     latest: dict[str, EndedSession] = {}
     for record in _records(path):

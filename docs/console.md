@@ -316,13 +316,14 @@ you are watching, where answering a permission prompt yourself is the point.
   the cost is on screen. There are no free-text fields anywhere in this section: a
   value nothing can check is a policy the panel cannot promise to honour.
 
-  A posture looser than the harness's default takes two taps — the rung, then a
-  lifetime from a closed list — and **reverts on its own** when that lifetime runs
-  out. What makes a permissive posture dangerous is not choosing it, it's choosing it
-  once for a reason and then forgetting; there is deliberately no "until I change it".
-  Tightening is one tap and never expires. Every change lands a row in
-  `~/.thalamus/launch/policy.jsonl` with its direction, so "when did this box become
-  permissive" has an answer.
+  A posture looser than the harness's default takes two taps — the rung, then either
+  a lifetime (`for 1 day`) or `until I turn it off`. Given a lifetime it **reverts on
+  its own**; the expiry is offered rather than forced, because this panel is passed
+  through often enough that the setting is re-decided in the normal course of work.
+  Tightening is one tap and is refused a lifetime outright — a posture reverting
+  toward *more* permission on a timer is the same failure with its sign flipped.
+  Every change lands a row in `~/.thalamus/launch/policy.jsonl` with its direction,
+  so "when did this box become permissive" has an answer.
 
   Flags ride the argv and the argv is fixed when a window is created — a recycle
   re-runs the *creation* command — so a posture change cannot reach a running session.

@@ -25,14 +25,14 @@ DSL over tool names and arguments; ours is a short ordered list per harness, so 
 ordering is the classification. What the rule buys is the same: no path exists by which
 a posture becomes more permissive without a record saying so.
 
-**Widening expires; narrowing does not.** What makes a permissive posture dangerous is
-not choosing it, it is choosing it once for a reason and then forgetting — the setting
-outlives the migration it was for, and the next session inherits it having never been
-told. So a rung above the harness's default *requires* a lifetime and reverts on its
-own, and there is deliberately no "until I change it" option: that value is the failure
-mode wearing the shape of a choice. Narrowing carries no expiry, because a posture
-reverting toward *more* permission on a timer is the same forgotten-setting bug with
-the sign flipped.
+**A loosening may carry a lifetime; a tightening may not.** A rung above the harness's
+default is offered an expiry and reverts on its own if given one, because a permissive
+posture fails by outliving the reason for it. It is offered rather than required: this
+panel is passed through often enough that the setting is seen and re-decided in the
+normal course of work, which is the safeguard a short forced lifetime would be
+duplicating (operator decision, 2026-08-13). A rung at or below the default takes no
+lifetime at all and is refused one — a posture reverting toward *more* permission on a
+timer is the forgotten-setting failure with its sign flipped.
 
 **Every change is a ledger row**, which is the one thing the graph's own literature is
 unambiguous about: configuration adjustments should follow a controlled workflow, and
@@ -59,11 +59,13 @@ LEDGER = LAUNCH_DIR / "policy.jsonl"
 
 STORE_VERSION = 1
 
-# The lifetimes a widening selection may carry. A closed list for the same reason the
-# postures are one: a duration typed into a box is a value nothing can check, and the
-# panel's whole contract is that it cannot express something invalid. Hours rather than
-# days because the honest unit of "I am doing a migration" is a working session.
-TTL_CHOICES = (1, 8, 24)
+# The lifetimes a loosening selection may carry, alongside the option of none at all.
+# A closed list for the same reason the postures are one: a duration typed into a box is
+# a value nothing can check, and the panel's whole contract is that it cannot express
+# something invalid. One day, because the operator passes through this panel often
+# enough that a shorter lifetime is friction rather than a safeguard — the setting is
+# seen and re-decided in the normal course of work (operator decision, 2026-08-13).
+TTL_CHOICES = (24,)
 
 WIDEN = "widen"
 NARROW = "narrow"
@@ -241,17 +243,16 @@ def select(
     above_default = capability.rank(value) > capability.default_rank
     if above_default:
         if ttl_hours is None:
-            raise PolicyRefused(
-                f"`{capability.option(value).label}` is more permissive than the "
-                f"default and has to be given a lifetime — a permissive posture that "
-                f"never lapses is the one that outlives the reason for it."
-            )
-        if ttl_hours not in TTL_CHOICES:
+            # Chosen to stay until it is changed. Legitimate, and the reason it is not
+            # forced is in the module docstring.
+            expires_at = None
+        elif ttl_hours not in TTL_CHOICES:
             raise PolicyRefused(
                 f"{ttl_hours}h is not one of the offered lifetimes "
                 f"({', '.join(f'{h}h' for h in TTL_CHOICES)})."
             )
-        expires_at = moment + timedelta(hours=ttl_hours)
+        else:
+            expires_at = moment + timedelta(hours=ttl_hours)
     else:
         # A lifetime on a posture at or below the default would revert *toward* more
         # permission on a timer, which is the forgotten-setting bug with its sign

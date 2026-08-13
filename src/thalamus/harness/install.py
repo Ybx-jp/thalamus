@@ -145,6 +145,11 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("sessionStart", "session-start.sh"),
     ("sessionEnd", "session-end.sh"),
+    # A second sessionEnd entry rather than a branch inside the first: logging the
+    # pointer is free and must always happen, while distilling costs a model call per
+    # session. Separate entries mean auto-distill is disarmed by removing one line,
+    # leaving the ledger row — and the session's routing — intact.
+    ("sessionEnd", "distill.sh"),
     ("beforeSubmitPrompt", "pin-engaged.sh"),
     ("beforeSubmitPrompt", "timestamp.sh"),
     ("beforeSubmitPrompt", "conditioning.sh"),
@@ -213,10 +218,10 @@ class HookParity:
 
 DECLARED_HOOK_PARITY = HookParity(
     claude_scripts=12,
-    cursor_scripts=10,
+    cursor_scripts=11,
     shared=8,
     claude_only=("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh", "room-guard.sh"),
-    cursor_only=("inject.sh", "mcp-tap.sh"),
+    cursor_only=("distill.sh", "inject.sh", "mcp-tap.sh"),
     renames=(("post-tool-use.sh", "mcp-tap.sh"),),
     native=("role-guard.sh",),
 )

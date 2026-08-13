@@ -657,11 +657,13 @@ def test_a_refused_posture_reaches_the_phone_as_its_reason(tmp_path, monkeypatch
     cfg = Config(project_root=_repo(tmp_path / "alpha"))
     _own_store(tmp_path, monkeypatch)
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        # Tightening is the case that still refuses a lifetime: a posture reverting
+        # toward *more* permission on a timer is the forgotten-setting failure inverted.
         status, body = post("/api/launch-policy",
-                            {"harness": "cursor", "capability": "permission_posture",
-                             "value": "force"})
+                            {"harness": "claude", "capability": "permission_posture",
+                             "value": "manual", "ttl_hours": 24})
 
-    assert status == 409 and "lifetime" in body["error"]
+    assert status == 409 and "does not take a lifetime" in body["error"]
 
 
 def test_an_unknown_posture_is_a_refusal_not_a_crash(tmp_path, monkeypatch):

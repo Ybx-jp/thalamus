@@ -959,11 +959,12 @@ classification; ActPlane places policy enforcement at the agent-harness boundary
 (arXiv 2606.25189), which is the layer. Neither makes the *duration* of a setting a
 function of its direction — Progent's policies are updated during execution rather
 than given a time-to-live, and its adaptation is per-task rather than per-operator.
-Thalamus's launch posture requires a lifetime exactly when a selection sits above the
+Thalamus's launch posture offers a lifetime exactly when a selection sits above the
 harness's default and refuses one otherwise, on the argument that a permissive setting
-fails by outliving the reason for it rather than by being chosen. That argument is
-ours and is **not measured**: no evidence here says expiry reduces the harm, only that
-the forgotten-setting path is closed by construction. The ordering-as-classification
+fails by outliving the reason for it rather than by being chosen. That argument is ours
+and is **not measured** — no evidence here says expiry reduces the harm — which is part
+of why the lifetime is offered rather than required: the operator judged that passing
+through the setting regularly already supplies the review a forced expiry would buy. The ordering-as-classification
 shortcut is an *instantiation* of Progent at a coarser granularity, not an extension —
 a closed ordered list per harness needs no SMT solver precisely because it gives up the
 expressiveness Progent's solver exists to handle.

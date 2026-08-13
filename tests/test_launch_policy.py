@@ -6,14 +6,14 @@ Interfaces: `select`/`effective`/`describe`, and `capability_argv`/`launch_argv`
 what a posture contributes to a launch. Infrastructure: tmp_path for the store and the
 ledger, injected clocks — nothing here reads the operator's real `~/.thalamus/launch`.
 Scope: the rules that make this surface safe rather than merely present. The
-load-bearing ones are that a widening change cannot be made without a lifetime, that a
-lapsed posture reverts *on read* rather than needing a sweep to have run, and that the
-defaults produce exactly the argv the launcher produced before this module existed —
-a settings surface that changed behaviour by existing would be a migration in disguise.
+load-bearing ones are that a lapsed posture reverts *on read* rather than needing a
+sweep to have run, and that the defaults produce exactly the argv the launcher produced
+before this module existed — a settings surface that changed behaviour by existing
+would be a migration in disguise.
 
-The expiry rule is asymmetric on purpose and is tested as such: loosening expires,
-tightening does not. A posture reverting toward *more* permission on a timer is the
-same forgotten-setting failure with its sign flipped.
+The lifetime rule is asymmetric on purpose and is tested as such: a loosening may be
+given one, a tightening may not. A posture reverting toward *more* permission on a
+timer is the forgotten-setting failure with its sign flipped.
 """
 
 import json
@@ -72,11 +72,14 @@ class TestDefaultsAreUnchanged:
                 assert capability.option(capability.default) is not None
 
 
-class TestWideningNeedsALifetime:
-    def test_a_loose_posture_without_one_is_refused(self, store, ledger):
-        with pytest.raises(lp.PolicyRefused, match="lifetime"):
-            pick(store, ledger, "cursor", "force")
-        assert not store.exists(), "a refused selection must not be written"
+class TestLifetimes:
+    def test_a_loose_posture_may_be_left_until_it_is_changed(self, store, ledger):
+        """Offered, not required: the panel is passed through often enough that the
+        setting is re-decided in the normal course of work."""
+        row = pick(store, ledger, "cursor", "force")
+        assert row["direction"] == lp.WIDEN and row["expires_at"] is None
+        far = NOW + timedelta(days=400)
+        assert lp.effective("cursor", store=store, now=far)[PERMISSION_POSTURE] == "force"
 
     def test_a_lifetime_off_the_offered_list_is_refused(self, store, ledger):
         """The lifetimes are a closed list for the same reason the postures are: a
@@ -88,18 +91,18 @@ class TestWideningNeedsALifetime:
         """A posture reverting toward more permission on a timer is the forgotten
         setting with its sign flipped, so it is refused rather than ignored."""
         with pytest.raises(lp.PolicyRefused, match="does not take a lifetime"):
-            pick(store, ledger, "claude", "manual", ttl_hours=8)
+            pick(store, ledger, "claude", "manual", ttl_hours=24)
 
     def test_a_posture_at_the_default_takes_no_lifetime(self, store, ledger):
         with pytest.raises(lp.PolicyRefused, match="does not take a lifetime"):
-            pick(store, ledger, "claude", "auto", ttl_hours=1)
+            pick(store, ledger, "claude", "auto", ttl_hours=24)
 
     def test_stepping_down_but_still_above_default_still_expires(self, store, ledger):
         """`auto-review` is a narrowing from `force` and still above Cursor's default.
         Judging by direction alone would park the box permanently above its default
         with nothing recording that anything was still elevated."""
-        pick(store, ledger, "cursor", "force", ttl_hours=8)
-        row = pick(store, ledger, "cursor", "auto-review", ttl_hours=1)
+        pick(store, ledger, "cursor", "force", ttl_hours=24)
+        row = pick(store, ledger, "cursor", "auto-review", ttl_hours=24)
         assert row["direction"] == lp.NARROW
         assert row["expires_at"] is not None
 
@@ -109,28 +112,28 @@ class TestLapsing:
         """On a box where the console has been shut for a week, the expiry that
         matters is the one the next launch enforces — so reverting is a property of
         reading, not of a sweep that may never have run."""
-        pick(store, ledger, "cursor", "force", ttl_hours=1)
+        pick(store, ledger, "cursor", "force", ttl_hours=24)
         assert lp.effective("cursor", store=store, now=NOW)[PERMISSION_POSTURE] == "force"
         assert capability_argv("cursor", lp.effective("cursor", store=store, now=NOW)) \
             == ["--force"]
 
-        later = NOW + timedelta(hours=2)
+        later = NOW + timedelta(hours=25)
         assert lp.effective("cursor", store=store, now=later) == {}
         assert capability_argv("cursor", lp.effective("cursor", store=store, now=later)) == []
 
     def test_the_lapsed_choice_is_still_shown(self, store, ledger):
         """The panel has to say a posture lapsed; silently showing the default would
         make a reverted setting indistinguishable from one never chosen."""
-        pick(store, ledger, "cursor", "force", ttl_hours=1)
-        cap = lp.describe("cursor", store=store, now=NOW + timedelta(hours=2))[0]
+        pick(store, ledger, "cursor", "force", ttl_hours=24)
+        cap = lp.describe("cursor", store=store, now=NOW + timedelta(hours=25))[0]
         assert cap["value"] == "manual" and cap["lapsed"] is True
         assert cap["expires_at"] is None, "a lapsed deadline is not a live countdown"
 
     def test_a_live_choice_reports_its_deadline(self, store, ledger):
-        pick(store, ledger, "cursor", "force", ttl_hours=8)
+        pick(store, ledger, "cursor", "force", ttl_hours=24)
         cap = lp.describe("cursor", store=store, now=NOW)[0]
         assert cap["value"] == "force" and cap["lapsed"] is False
-        assert cap["expires_at"] == (NOW + timedelta(hours=8)).isoformat()
+        assert cap["expires_at"] == (NOW + timedelta(hours=24)).isoformat()
         assert cap["is_default"] is False
 
 
@@ -166,14 +169,14 @@ class TestTheLedger:
     def test_every_change_lands_a_row_carrying_its_direction(self, store, ledger):
         """"When did this box become permissive" has to be a question with an answer;
         access auditing that records escalations is the whole point (arXiv 2503.23278)."""
-        pick(store, ledger, "cursor", "force", ttl_hours=1)
+        pick(store, ledger, "cursor", "force", ttl_hours=24)
         pick(store, ledger, "claude", "manual")
         rows = [json.loads(line) for line in ledger.read_text().splitlines()]
         assert [(r["harness"], r["from"], r["to"], r["direction"]) for r in rows] == [
             ("cursor", "manual", "force", lp.WIDEN),
             ("claude", "auto", "manual", lp.NARROW),
         ]
-        assert rows[0]["ttl_hours"] == 1 and rows[0]["expires_at"]
+        assert rows[0]["ttl_hours"] == 24 and rows[0]["expires_at"]
         assert rows[1]["ttl_hours"] is None and rows[1]["expires_at"] is None
 
     def test_an_unwritable_ledger_does_not_lose_the_selection(self, store, tmp_path):
@@ -181,7 +184,7 @@ class TestTheLedger:
         full disk look like a rejected posture."""
         blocked = tmp_path / "afile" / "policy.jsonl"
         blocked.parent.write_text("not a directory")
-        pick(store, blocked, "cursor", "force", ttl_hours=1)
+        pick(store, blocked, "cursor", "force", ttl_hours=24)
         assert lp.effective("cursor", store=store, now=NOW)[PERMISSION_POSTURE] == "force"
 
 

@@ -295,14 +295,30 @@ Cursor's format and each is carried explicitly rather than inferred away:
   only one, which is what lets a session predating the hooks be dated and placed
   at all.
 
+**Cursor distills itself, by waiting rather than by trusting.** `distill.sh` is a
+second `sessionEnd` entry beside `session-end.sh`, and it polls the transcript's size
+and mtime until they hold still for three seconds (capped at two minutes) before
+running `thalamus extract --harness cursor --session <id>`. That converts "Cursor is
+not documented to flush before firing the hook" into "we watched until it had", which
+survives a vendor build changing its buffering. Measured on 2026.08.11-e8db854, a
+one-turn transcript was already byte-identical at hook time to its settled state, so
+the wait usually costs one poll — but a single small transcript is not evidence that a
+long final turn never lags, and the wait is what makes that irrelevant.
+
+Two entries rather than a branch inside one: logging the pointer is free and must
+always happen, while distilling costs a model call per session, so auto-distill is
+disarmed by removing one line from the registry and the ledger row survives it. The
+sweep stays, because backfill still covers sessions that predate the hook and any whose
+hook never fired.
+
 **Discovery reads three surfaces, because each knows what the others cannot.** The
-sessionEnd log carries the scope as it stood at the end — and *only* that plus the
-end time, for an interactive session: Cursor sends `transcript_path: null` to the
-sessionEnd hook of one (measured against 2026.08.11-e8db854, where the same payload
-populates `workspace_roots`, so this is the field's absence and not the hook's).
-The row is kept and the filesystem supplies the path on merge; dropping it for a
-missing field the other surface owns is what left every interactive Cursor session
-unroutable. A sweep of
+sessionEnd log carries the scope as it stood at the end, the end time, and — for any
+session that completed a turn — the transcript path. Cursor sends
+`transcript_path: null` when the session produced no transcript at all (measured
+against 2026.08.11-e8db854: three sessions that ended without a completed turn carried
+null and had no `agent-transcripts` directory; one with a single turn carried the real
+path). Such a row is kept rather than dropped, since it still holds the scope and end
+time, and the filesystem supplies the path on merge if one ever appears. A sweep of
 `~/.cursor/projects/<sanitized-cwd>/agent-transcripts/<id>/<id>.jsonl` is the only
 surface that sees a session which ran before the hooks existed, which on a machine
 Thalamus reaches late is every session on it. The pin ledger holds the scope the

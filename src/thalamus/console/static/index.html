@@ -53,14 +53,27 @@
       <button type="button" class="admin-act" id="admin-roster">roster sync</button>
     </div>
   </section>
+  <!-- Cursor cannot distill itself: its sessionEnd hook only logs a pointer, because
+       Cursor is not documented to flush the transcript before firing it. So the sweep
+       is a deliberate action, and this is the one-tap version of running it. -->
+  <section class="admin-sec" id="admin-sweep-sec" hidden>
+    <h3>Cursor distillation</h3>
+    <p class="admin-note">Cursor sessions don't distill themselves — a swept session
+      becomes memory, an unswept one never existed. Writes to the graph and costs a
+      model call per session; already-extracted ones are skipped.</p>
+    <div class="admin-list" id="admin-sweep"></div>
+    <div class="admin-actions">
+      <button type="button" class="admin-act primary" id="admin-sweep-go">sweep now</button>
+    </div>
+  </section>
   <!-- Hidden without the expert layer: the postures are read from the launch registry,
        and a picker whose effect the console cannot name is worse than no picker. -->
   <section class="admin-sec" id="admin-policy-sec" hidden>
     <h3>Launch posture</h3>
     <p class="admin-note">What a <em>newly launched</em> session starts with. Flags ride
       the argv, so this cannot reach a running window — restart one to adopt it.
-      A posture looser than the default has to be given a lifetime and reverts on its
-      own.</p>
+      A posture looser than the default can be given a lifetime, and reverts on its
+      own if you give it one.</p>
     <div class="admin-list" id="admin-policy"></div>
   </section>
   <!-- Hidden unless `thalamus console --service <unit>` named units to manage. -->
