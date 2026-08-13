@@ -152,13 +152,30 @@ class Probe:
         return {k: v for k, v in self.after.items() if k not in self.before}
 
 
+_CACHE: list[Probe | str] = []
+
+
 def observe(timeout: float = 300.0) -> Probe | str:
     """Run the round trip, or return a string describing why it could not be run.
 
     A string return is a broken probe, never a finding: the caller turns it into a
     COLLAPSED_SENTINEL finding naming this file, because "the installer wrote nothing
     objectionable" and "the installer never ran" are the same silence otherwise.
+
+    Memoized for the process, which is what makes this module shared rather than merely
+    common. The observation is a pure read of one deterministic round trip, `Probe` is
+    frozen, and both callers only read it — so the second case gets the first case's
+    snapshots instead of a second install. A failure is cached too: two cases reporting
+    the same broken probe should report the same reason, not race to produce two.
     """
+    if _CACHE:
+        return _CACHE[0]
+    result = _run(timeout)
+    _CACHE.append(result)
+    return result
+
+
+def _run(timeout: float) -> Probe | str:
     with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as proj:
         shim_dir = Path(proj) / "bin"
         shim_dir.mkdir()
