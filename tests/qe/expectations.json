@@ -55,10 +55,6 @@
       "note": "No -L/-S anywhere in src/. tmux ignores HOME, so no environment redirection isolates it, and the arm-runner image has no tmux at all. Pinned on the count so scoping any subset drifts this entry rather than silently shrinking it."
     },
     {
-      "case": "ranker-fingerprint-names-dials-in-force",
-      "failure_class": "doc-code-drift",
-      "witness_contains": "_select_details(cap=_DETAIL_CAP)",
-      "triaged_at_rev": "b88cf9d",
       "case": "every-room-member-is-addressable",
       "failure_class": "invariant-falsified",
       "witness_contains": "--to main returns 0 target(s)",
