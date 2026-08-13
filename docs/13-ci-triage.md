@@ -4,7 +4,8 @@
 protecting the oracle the loop writes to, under *The oracle's own protection*. The
 boundary this rests on was settled by the `architect` round `073d451b006e4a81`, which
 narrowed the allow-list ruling of 2026-08-11 (`1ed468b61248497e`) rather than
-overturning it.
+overturning it. The hop's justification was rewritten by `8a84bef10fcc486f`, a
+ticket-back that cost this doc its information argument and inverted its build order.
 
 ## The problem, measured
 
@@ -23,19 +24,43 @@ green a decision someone made on purpose.
 
 ## Why an expert hop at all
 
-The honest justification is narrow, and stating it narrowly is what keeps the hop from
-being decorative. Under a fixed reasoning-token budget with good context utilization,
-single-agent systems match or outperform multi-agent ones across three model families
-(`scope:literature:claim:414011b1207b38ef`), on an information-theoretic argument via the
-Data Processing Inequality (`scope:literature:claim:be24e99a17184318`); multi-agent
-becomes competitive only where single-agent context utilization degrades
-(`scope:literature:claim:24bd7f990bd37f8a`).
+The hop is **not** justified by a second opinion being smarter, and it is not justified by
+`qe` remembering more. It is justified by **authority**: the oracle is not edited by the
+party it indicts. That is already the standing reason in `config/experts/qe.yaml`'s
+`write_boundary` — "qe holds the oracle, not the fix" — and this design is that boundary
+applied in the other direction.
 
-So the hop is **not** justified by a second opinion being smarter. It is justified by the
-partition: `qe` holds the accumulated triage corpus — every prior expectation, its
-witness, and why it was pinned where it was — and `main` holds the implementation. The
-hop earns its cost only while that corpus is larger than one context can carry. If it
-ever isn't, the correct response is to delete the hop, not to defend it.
+**The information argument does not reach this configuration, and an earlier version of
+this doc claimed it did.** The Data Processing Inequality bounds `I(E;A) ≤ I(E;R)` only
+where `E → R → A` is a Markov chain — where the actor sees the evidence *through* the
+report. The rule below denies that premise by construction: `main`'s action is a function
+of the ledger, and the report enters only as a **search order**, which is compute rather
+than information about the answer (`scope:literature:claim:be24e99a17184318`,
+`414011b1207b38ef`, `24bd7f990bd37f8a`). This is not a relay, so the relay result does not
+price it.
+
+Two costs survive anyway, and they are the real constraints on the design:
+
+1. **The derivation happens twice.** The token-budget result's antecedent is a *fixed*
+   budget, and requiring `main` to re-derive spends it twice over. The repair is a
+   requirement on the report's format that nothing else in this doc states: the report
+   must make the second derivation **O(check), not O(triage)** — it must name the case,
+   the witness, and the exact assertion to confirm, so `main` verifies a claim rather than
+   re-running the classification.
+2. **The report is entirely conjecture, and that is what it is for.** `run.py` already
+   emits the verdict from a closed taxonomy, so every mechanical row of the report is
+   also in the ledger. What remains is the part `main` may not rely on — which is the
+   whole of it.
+
+**Delete condition.** The hop is deleted when a triage cycle no longer needs to write on
+both sides of the boundary. That is checkable; the previous formulation — delete it when
+the corpus fits one context — committed the design to a condition nobody here can
+measure, and a commitment that cannot be evaluated is worse than none.
+
+**Standing hazard.** Authority justifies the second *actor*; it says nothing about the
+message, and the message is what the objection attacked. It is also, today, one-way:
+`qe`'s `*/src/*` deny is live, while nothing stops `main` writing `tests/qe/`. Until the
+ownership primitive exists, the hop's justification names a mechanism that is not built.
 
 ## What the suite already decides
 
@@ -163,7 +188,7 @@ failing: MAST names "Disobey Role Specification" as a distinct failure mode
 studied was structural authority, +9.4% task success
 (`scope:literature:claim:db0928fe2cfd3616`).
 
-## The handoff is a pointer, never a warrant
+## The ledger is the pointer; the report is conjecture
 
 `main` holds `src/` write authority. The Linear report supplies the designation of what
 to change. Anyone who can write a Linear issue can therefore supply that designation —
@@ -174,11 +199,18 @@ model, with a vendor's name on it.
 
 The remedy is a constraint on `main`, not on the tracker:
 
-> **Every action `main` takes must be derivable from the ledger alone.** The report says
-> where to look. It never says what is true.
+> **Every action `main` takes must be derivable from the ledger alone.** The report
+> proposes; the ledger decides.
 
 If `main` can act on something present only in the Linear text, the separation is
-decorative. This follows FIDES's treatment of integrity labels — content that leaves the
+decorative.
+
+Calling the report "a pointer" was the wrong word and it hid the design's own shape. The
+**ledger** is the pointer — it names the case, the witness and the verdict, mechanically.
+What the report adds is a *conjecture* about what the failure means and what to do about
+it, and the rule above says that conjecture is never a warrant. So the report is not a
+weaker kind of evidence; it is not evidence at all, and the design is better for saying so
+plainly. This follows FIDES's treatment of integrity labels — content that leaves the
 system and returns must not come back carrying higher integrity than untrusted external
 input (`scope:literature:claim:708f50d08755c509`,
 `scope:literature:claim:ff7360fe27df20c6`).
@@ -276,6 +308,25 @@ flaky, arXiv 2605.05564) and by the precision-over-recall asymmetry Herzig & Nag
 measured at industrial scale (ICSE 2015). The approval boundary is drawn at *any action
 that can make CI quieter on an agent's own judgment*, which is addition, not only
 widening.
+
+## Build order
+
+The ownership primitive is a **prerequisite, not a consequence**. The hop's justification
+is authority, and authority that runs one way is not a partition — so `PATH_OWNERSHIP`
+lands ahead of the loop rather than after it. Nothing in the loop should be built while
+`main` can still write `tests/qe/`.
+
+Two pieces of owed work, both `qe`'s because both are permanent checked properties:
+
+- **A falsifier for the ledger rule.** Plant a classification the ledger does not support
+  and require `main` to reject it. This is needed because a disagreement *rate* cannot
+  distinguish "the report was always right" from "the verifier is blind at a shared base
+  model" — the second is the failure mode this design is most exposed to. It mirrors the
+  positive control already in `tests/qe/cases/expectation_additions.py`. Any *threshold*
+  on the result belongs to `eval-methodology`, not here.
+- **Branch protection with required review on master.** Without it the oracle's invariant
+  is detection only: an addition lands and reports itself afterwards. That is repo
+  settings rather than code, and it is not set.
 
 ## Not built, and deliberately so
 
