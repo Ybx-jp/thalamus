@@ -290,6 +290,13 @@ def main():
     )
     arch_rules_parser.add_argument("--repo", default=".", help="Repo to scan")
 
+    arch_growth_parser = arch_sub.add_parser(
+        "growth",
+        help="What this system accumulates, and what nothing refers to (read-only)",
+    )
+    arch_growth_parser.add_argument("--repo", default=".", help="Repo the worktrees belong to")
+    arch_growth_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
     # Chunk backfill — co-indexing for documents ingested before chunks existed.
     # Model-free by construction: chunking reads the retained bytes, so this costs
     # compute and nothing else, and it is safe to re-run (lab/052).
@@ -2531,7 +2538,7 @@ def _report_roster_boundaries():
 def _cmd_arch(args, arch_parser):
     """The architect's instrument. Reads code; writes a model file and findings."""
     command = getattr(args, "arch_command", None)
-    if command not in {"scan", "show", "diff", "rules"}:
+    if command not in {"scan", "show", "diff", "rules", "growth"}:
         arch_parser.print_help()
         sys.exit(1)
 
@@ -2553,6 +2560,10 @@ def _cmd_arch(args, arch_parser):
 
     if command == "show":
         _arch_show(repo, model)
+        return
+
+    if command == "growth":
+        _arch_growth(args, repo)
         return
 
     graph = scan_repo(repo, policy)
@@ -2602,6 +2613,24 @@ def _cmd_arch(args, arch_parser):
     print(f"  findings    {len(found)}")
     for finding in found:
         print(f"                {finding.description}")
+
+    # The growth headline rides along because the series costs nothing to read — every
+    # vertex already carries `ingested_at`. Best-effort: a scan is a local operation and
+    # must not start failing because the graph server is down.
+    try:
+        from thalamus.arch import growth as arch_growth
+        from thalamus.substrate.writer import close_connection, connect
+
+        graph_connection = connect(args.url)
+        try:
+            rate = arch_growth.headline(graph_connection)
+        finally:
+            close_connection(graph_connection)
+        if rate is not None:
+            for line in rate.lines():
+                print(f"  {line}")
+    except Exception:
+        print("  growth      graph unreachable — run `thalamus arch growth` for the series")
 
     if dirty:
         # The walk read the working tree; the scan id names HEAD. With a dirty tree
@@ -2659,6 +2688,41 @@ def _cmd_arch(args, arch_parser):
         _persist(graph_connection)
     finally:
         close_connection(graph_connection)
+
+
+def _arch_growth(args, repo) -> None:
+    """Stock first, then rate. Reads only — nothing here writes to the graph.
+
+    The order is the finding: a trend statistic scores a flat 894MB as the healthiest
+    surface on the box, so what nothing refers to is reported before how fast anything
+    is growing.
+    """
+    from thalamus.arch import growth as arch_growth
+    from thalamus.substrate.writer import close_connection, connect
+
+    graph = connect(args.url)
+    try:
+        audit = arch_growth.stock_audit(graph, repo)
+        print(f"Unreferenced stock — {arch_growth.human_bytes(audit.total_bytes)} total")
+        if not audit.orphans:
+            print("  nothing on disk is unreferenced")
+        for orphan in audit.ranked():
+            print(f"  {arch_growth.human_bytes(orphan.bytes):>8}  [{orphan.kind}] {orphan.path}")
+            print(f"            {orphan.note}")
+
+        print()
+        found = arch_growth.headline(graph)
+        if found is None:
+            print("growth      no series yet — the graph holds fewer than two dated days")
+            return
+        for line in found.lines():
+            print(line)
+        print(
+            "            rates are Sen's slope (median of pairwise slopes); whether the "
+            "difference is real is eval-methodology's question, not this one"
+        )
+    finally:
+        close_connection(graph)
 
 
 def _arch_show(repo, model) -> None:

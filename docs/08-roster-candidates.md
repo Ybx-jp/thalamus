@@ -440,7 +440,7 @@ sessions actually did, which is a materially weaker guarantee than the guard. Na
 here rather than papered over: it makes `architect` the roster's test of whether a
 when-you-pin boundary holds as well as a what-you-may-write one.
 
-**Its instrument.** `thalamus arch` (`scan`, `show`, `diff`, `rules`) walks the
+**Its instrument.** `thalamus arch` (`scan`, `show`, `diff`, `rules`, `growth`) walks the
 repo's Python imports under a **declared** extractor policy and lands the result two
 places: `arch/model.yaml` in git, and one tier-1 `Source` per scan in the graph. The
 policy is declared because it is load-bearing — propagation cost over `src/thalamus/`
@@ -457,10 +457,37 @@ artifact. Only **findings** reach the graph — a cycle, a violated rule, an unp
 module — never metrics: those are recomputable from the retained model file, and a
 scanner writing a claim per measurement would make its own scope unrecallable.
 
-Half the charter has no instrument. Performance and reliability — profiling, hot
-paths, before-and-after numbers — is served by nothing here, and the scope holds no
-profiling literature either (its SRE material is risk-tolerance and SLO-setting,
-which is a different question). Recorded as a known gap rather than an assumed win.
+**The performance half is a stock audit, and deliberately not a profiler.**
+`thalamus arch growth` reports two things, in this order: what sits on disk that
+nothing refers to, and how fast the graph is accumulating. Reads only — a daily
+reading would mint a Source per day onto a base of a few hundred, and the series is
+already reconstructible without one, because every vertex carries `ingested_at`.
+That is 57 days of history nobody had to start recording. Rates are Sen's slope
+(Garg, van Moorsel, Vaidyanathan & Trivedi, ISSRE 1998), the one method in this
+canon native to n=1 single-machine measurement; whether a difference between two
+rates is *real* is eval-methodology's question and this instrument does not answer it.
+
+The order — stock before rate — is the finding that shaped the design. Asked whether
+a growth detector would have caught the largest consumer on the box, the architect
+answered against itself: 894MB of eval worktrees git no longer tracks have been flat
+since the day they were made, so every trend statistic scores them perfectly healthy
+(Mann-Kendall Z of zero, time-to-exhaustion infinite). What is *unreferenced* is a
+different question from what is *increasing*, and only the first one finds them.
+
+CPU profiling is not built, on evidence rather than for want of time. `contract
+check` spends its time serialising 86k edges out of the graph, where counting them
+takes 70ms — the hot path is transport, not logic; and the same command measured
+9.4s and 30.9s on one machine forty minutes apart, a spread nothing can be gated on.
+Causal profiling (Coz) argues the hottest code is rarely the code worth optimising,
+and argues it harder in an I/O-bound system than in the CPU-bound ones it was
+measured on. Token cost is not built here either: `thalamus eval cost` already
+attributes it, and belongs to eval-methodology. The split that survived is
+flow versus stock — `eval cost` measures spend that stops when you stop running,
+this measures what remains on disk when you do.
+
+The scope now holds the canon it lacked (feed `perf-canon`: Coz, Dapper, Mytkowicz,
+Garg/Trivedi, Kapoor). What is still unbuilt and named as such: retry and timeout
+behavior, which is qe's invariant question rather than this one's.
 
 **Boundaries against the neighbours.** A structural property that should hold
 permanently and be checked is an invariant, and belongs to `qe` — which is where the
