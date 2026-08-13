@@ -108,7 +108,11 @@ the entrypoint, as dedup work nobody asked for.
 What to do instead:
 
   - A durable record for a future session — file it in the tracker, where the
-    operator can see and order it. See the \`track-open-work\` skill.
+    operator can see and order it. The procedure, including the Linear mechanics
+    that silently mangle an issue body, is in
+    src/thalamus/harness/skills/track-open-work/SKILL.md — Read it. The skill sets
+    \`disable-model-invocation\`, so it is the operator's \`/track-open-work\` to
+    invoke and yours to read.
   - Something this session learned — say it plainly in your final message. The
     SessionEnd distillation reads the transcript and writes it properly, once.
   - Closing a thread — that IS an in-session verb: \`thalamus thread propose\`, then

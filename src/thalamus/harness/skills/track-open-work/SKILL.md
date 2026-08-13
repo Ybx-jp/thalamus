@@ -1,6 +1,8 @@
 ---
 name: track-open-work
-description: Where unfinished work goes — the Linear tracker, not a Thread written mid-session. Use BEFORE recording anything a future session should pick up (a known gap, a deferred decision, a defect you are not fixing now), when you are about to reach for `thalamus write`, and when reporting a finding the operator will want to act on later. Covers the boundary a session may not cross, what belongs in the tracker versus the graph, and the Linear mechanics that silently mangle an issue body.
+description: File unfinished work to the Linear tracker instead of writing a Thread mid-session — the boundary a session may not cross, what belongs in the tracker versus the graph, and the Linear mechanics that silently mangle an issue body.
+disable-model-invocation: true
+argument-hint: "What should be tracked?"
 ---
 
 # Track Open Work — the tracker is the entrypoint, not the graph

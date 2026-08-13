@@ -1952,7 +1952,7 @@ def _cmd_derive_artifact_paths(args):
     The counts are the point of the dry run: how many artifacts the registry can anchor,
     how many belong to no repo at all, and how many spellings collapse onto one file.
     """
-    from thalamus.substrate.artifact_paths import apply, plan
+    from thalamus.substrate.artifact_paths import plan, write_projection
 
     graph = connect(args.url)
     try:
@@ -1981,7 +1981,7 @@ def _cmd_derive_artifact_paths(args):
         if not args.write:
             print("\nDry run. Re-run with --write to apply.")
             return
-        resolved = apply(graph, projection_plan)
+        resolved = write_projection(graph, projection_plan)
         print(f"\nWrote {len(projection_plan.projections)} artifacts, {resolved} anchored.")
     finally:
         close_connection(graph)
@@ -1994,7 +1994,7 @@ def _cmd_repair_projects(args):
     alone are the ones whose value it could not disprove, and a migration that reports
     only its changes cannot be checked for having been too eager.
     """
-    from thalamus.substrate.project_repair import apply, plan
+    from thalamus.substrate.project_repair import plan, write_repairs
 
     graph = connect(args.url)
     try:
@@ -2026,7 +2026,7 @@ def _cmd_repair_projects(args):
         if not args.write:
             print("\nDry run. Re-run with --write to apply.")
             return
-        moved = apply(graph, repair)
+        moved = write_repairs(graph, repair)
         print(f"\nWrote {moved} vertices, stamped {len(repair.stamps)}.")
     finally:
         close_connection(graph)

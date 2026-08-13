@@ -192,7 +192,7 @@ def plan(g: GraphTraversalSource) -> ProjectionPlan:
     return result
 
 
-def apply(g: GraphTraversalSource, projection_plan: ProjectionPlan) -> int:
+def write_projection(g: GraphTraversalSource, projection_plan: ProjectionPlan) -> int:
     """Write `repo` and `path` beside each identifier. Returns how many resolved.
 
     Every artifact is written, including the unresolved ones: an explicitly empty `repo`

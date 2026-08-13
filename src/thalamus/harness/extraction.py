@@ -279,8 +279,25 @@ worth recording.
 3. **problems** — what blocked progress, confused, or required debugging.
 4. **solutions** — how problems were resolved; link via problem_ref (0-indexed into \
 problems).
-5. **threads** — work left open, next steps, follow-ups. Use stable lowercase-hyphenated \
-ids. Threads are the primary entrypoint for future agents.
+5. **threads** — a continuation point a *different* session could pick up **cold**. \
+Use stable lowercase-hyphenated ids. Threads are served into the next session's \
+entrypoint and into consultation briefs, so each one spends context in sessions that \
+did not ask for it — the bar is what someone would act on, not what was left over.
+
+   The test: could a session with no access to this transcript act on it? If reading \
+it requires knowing what happened here, it is not a thread — put it in the summary. \
+These specifically do NOT earn one: something this session finished; an observation \
+about current state ("the store has zero open threads" was minted from a probe's \
+return value, was wrong, and rode 43 consultation briefs); a defect or gap the \
+*operator* should queue rather than an agent resume, which belongs in the tracker; a \
+restatement of a decision, which is already a decision.
+
+   Measured on this graph: 542 threads from 192 sessions, and **93% of the 359 open \
+ones were touched by exactly one session and never revisited**. They are not \
+duplicates — the highest pairwise similarity any two reach is 0.39 — so the cost is \
+not repetition but volume: distinct work nobody returns to, served forever. Most \
+sessions justify 0-2. If you are writing a fourth, you are recording rather than \
+continuing.
 6. **thread_refs** — if this session continued or resolved one of the EXISTING OPEN \
 THREADS listed below, reference it by its exact id with the new status. Prefer \
 resolving an existing thread over spawning a duplicate. `open` is a status you may \

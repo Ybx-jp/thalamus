@@ -374,7 +374,7 @@ def _plan_artifacts(g, disproved: set[str], result: RepairPlan) -> None:
             )
 
 
-def apply(g: GraphTraversalSource, repair: RepairPlan) -> int:
+def write_repairs(g: GraphTraversalSource, repair: RepairPlan) -> int:
     """Write the planned changes. Returns how many vertices moved.
 
     `project_evidence` rides along on Sessions only. A Session is where the question is
