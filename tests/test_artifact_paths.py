@@ -85,8 +85,8 @@ def test_a_path_in_no_known_checkout_belongs_to_no_repo():
     registry = ["/home/u/repo"]
 
     for identifier in (
-        "/tmp/claude-1000/-home-ybx/abc/scratchpad/cyc2",
-        "/home/ybx/.claude/skills/personalized-resume/references/experience-library.md",
+        "/tmp/claude-1000/-home-u/abc/scratchpad/cyc2",
+        "/home/u/.claude/skills/some-skill/references/notes.md",
         "/usr/local/bin/install-media-sort.sh",
     ):
         assert artifact_paths.relativize(identifier, registry) == ("", "")

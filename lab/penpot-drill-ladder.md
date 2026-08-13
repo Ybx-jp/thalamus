@@ -109,7 +109,7 @@ Established by source survey and by live probes against the running stack.
   file — the same file opens correctly from the dashboard, or from:
 
   ```
-  https://penpot.tail92a020.ts.net/#/workspace?team-id=<team>&file-id=<file>&page-id=<page>
+  https://penpot.<tailnet>.ts.net/#/workspace?team-id=<team>&file-id=<file>&page-id=<page>
   ```
 
   Worth knowing because the failure names fonts, not the URL, and it looks identical
