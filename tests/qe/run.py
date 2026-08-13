@@ -58,6 +58,7 @@ CASE_MODULES = (
     "qe.cases.tool_write_freedom",
     "qe.cases.emptiness_predicate",
     "qe.cases.arch_extractor",
+    "qe.cases.expectation_additions",
 )
 
 

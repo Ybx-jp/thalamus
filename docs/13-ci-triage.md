@@ -1,9 +1,10 @@
 # CI Failure Triage — the loop, the boundary, and what is allowed to go quiet
 
-**Status:** design; nothing built. The boundary this rests on was settled by the
-`architect` round `073d451b006e4a81`, which narrowed the allow-list ruling of
-2026-08-11 (`1ed468b61248497e`) rather than overturning it. Two defects gate the
-build and are named under *What gates this*.
+**Status:** design; the loop is not built. The one part that is built is the invariant
+protecting the oracle the loop writes to, under *The oracle's own protection*. The
+boundary this rests on was settled by the `architect` round `073d451b006e4a81`, which
+narrowed the allow-list ruling of 2026-08-11 (`1ed468b61248497e`) rather than
+overturning it.
 
 ## The problem, measured
 
@@ -192,23 +193,50 @@ self-preference in LLM evaluators, where self-preference tracked self-recognitio
 fine-tuning on superficial features did not reproduce the effect
 (`scope:literature:source:68fd9012…`, arXiv 2404.13076).
 
-## What gates this
+## The oracle's own protection
 
-Two defects, both found while verifying the boundary ruling, both in the file this design
-makes load-bearing.
+The rule above is enforced as a content invariant over `expectations.json` **and its diff
+against a base**, not as a hook. A hook binds a tool call, so `Bash`, Cursor and a human
+editor all route around it, and in CI there is no scope for one to consult; the file alone
+cannot tell an addition from a repair, which is why the diff is part of the subject. The
+invariant is the FAST case `expectation-additions-are-never-silent`
+(`tests/qe/cases/expectation_additions.py`), hermetic apart from `git`.
 
-1. **`guards-fail-closed-on-unparseable-input` cannot observe its own repair.** The pin
-   `witness_contains: "malformed-stdin rc=5"` is a substring test over a joined list of
-   seven leaks across three scripts, and it is not script-qualified. Fixing `role-guard.sh`
-   alone — precisely the change this design authorizes — leaves `gremlin-guard.sh
-   malformed-stdin rc=5` in the witness, so the substring still matches, the verdict stays
-   `known-red`, the run stays exit 0, and **the fix is invisible**. The entry's own note
-   claims the opposite. Re-pinning it is a `qe` action and, under the rule above, gated.
-2. **The suppression policy has no invariant over it.** The mechanism that actually
-   protects the oracle is a content check over `expectations.json` and its diff, because
-   that survives `Bash`, Cursor, and a human editor, and runs in CI where no scope exists
-   to guard. A hook binds tool calls; it does not bind the file. That invariant is a
-   permanent checked property and belongs to `qe`.
+It asserts that the entry set has not **grown** and that no surviving pin has been
+**widened** — a `witness_contains` that is a substring of the base's matches everything
+the base's matched and more, and an emptied pin matches every witness. Deletions and
+narrowings pass, because both can only make the suite louder. A re-pin onto text that
+neither contains nor is contained by the old pin is deliberately not flagged: re-pinning is
+how a drift gets triaged at all, and a permanent red nobody can clear is the trust erosion
+this design starts from.
+
+**It verifies no approval, and offers no field by which an addition could declare itself
+approved.** That absence is the design. This repo holds no authorization artifact a
+hermetic check could verify — the close ledger disclaims operator authentication in its own
+docstring (`harness/closes.py`) and lives under `$HOME`, so CI reads it empty for the same
+reason `ceremony ack`'s store would be; Linear is the untrusted bus named above; and an
+agent editing the file runs at the operator's uid with `git` and `gh` in PATH, so any token
+it could be asked to produce it could also mint. An `approved: true` key would be a rubber
+stamp with a schema.
+
+What an adding agent cannot mint is the **base**: the prior server-side tip of the pushed
+ref, which the forge writes into the event payload after the push has landed. So the
+guarantee is a detection boundary, and stating it exactly is what keeps it from being
+overread:
+
+> An addition costs the adding agent a red CI run on the commit that introduces it, naming
+> the entry, and no edit to `expectations.json` can buy that run's silence.
+
+The prevention boundary — that a human must have read that run before the tree can go quiet
+— needs branch protection with required review on the default branch. That is repo
+settings rather than `tests/qe/`, and it is not configured.
+
+Three conditions take MALFORMED (exit 3), the one verdict `reconcile()` lets no expectation
+absorb: an entry naming this case, which would let an addition acknowledge itself; no
+determinable base; and a duplicate JSON key or duplicate case name on either side, which
+`json.loads` and `load()` respectively resolve by last-wins and would make the set
+difference unsound. Adding an entry for this case therefore converts its exit 1 into an
+exit 3, which is louder — that is what closes the self-mute loop.
 
 ## Prior work
 

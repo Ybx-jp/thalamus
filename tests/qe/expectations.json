@@ -22,9 +22,9 @@
     {
       "case": "guards-fail-closed-on-unparseable-input",
       "failure_class": "failed-open",
-      "witness_contains": "malformed-stdin rc=5",
+      "witness_contains": "gremlin-guard.sh no-jq rc=127 on input that blocks with jq | gremlin-guard.sh malformed-stdin rc=5 | gremlin-guard.sh empty-stdin rc=0 | role-guard.sh malformed-stdin rc=5 | role-guard.sh empty-stdin rc=0 | room-guard.sh malformed-stdin rc=5 | room-guard.sh empty-stdin rc=0",
       "triaged_at_rev": "61213e4",
-      "note": "Shared jq prologue under set -e. Three distinct exit signatures (5 malformed / 0 empty / 127 no-jq); the pin is on 5 so that closing only one of the three drifts this entry rather than silencing it."
+      "note": "Shared jq prologue under set -e, leaking in seven places across three scripts with three exit signatures (5 malformed / 0 empty / 127 no-jq). The pin is the entire leak list, because `witness_contains` is a substring test over one joined string and any shorter pin is satisfied by leaks in scripts it does not name — a pin on `malformed-stdin rc=5` alone stays matched by gremlin-guard.sh after role-guard.sh is repaired, so the repair would leave the verdict known-red and the run exit 0. Closing any single leak removes its segment from the join, so the pin misses and the entry drifts. Repairing one script is the change this expects next; it will report."
     },
     {
       "case": "ingest-allowlist-gates-fetch",

@@ -36,6 +36,16 @@ a plain quarantine opens. Change the defect and the entry drifts, and drift is r
 
 Delete an entry in the same change that fixes its defect. A stale entry exits 2.
 
+**The list may shrink freely and may not grow unheard.** Adding an entry is what turns a
+`NEW_FAILURE` into a `KNOWN_RED` and exit 1 into exit 0, so addition — not widening — is
+the mute primitive, and widening a pin is a smaller helping of the same act. The case
+`expectation-additions-are-never-silent` diffs this file against a base revision and goes
+red on either, naming the entry. It verifies no approval and has no field that could
+declare one: nothing this repo holds could attest an operator's approval to a hermetic
+check, and a field an agent fills in for itself is a rubber stamp. What it buys is that an
+addition costs a red run on the commit that introduces it. See docs/13, *The oracle's own
+protection*, for what that does and does not cover.
+
 ## Adding a case
 
 A case returns `None` to pass or a `Finding` to fail, and must not raise — a raised
