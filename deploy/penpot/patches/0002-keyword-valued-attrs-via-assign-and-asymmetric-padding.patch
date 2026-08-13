@@ -1,0 +1,297 @@
+Keyword-valued shape attributes are written with `:assign`, not `:set`.
+
+Penpot's JSON middleware keywordises change-operation *keys* and leaves
+*values* alone, and `:set` types its `val` as `::sm/any`, so nothing coerces
+`"flex"` into `:flex`. `validate-shape` then rejects the literal string
+against `[::sm/one-of #{:grid :flex}]` and update-file 500s. That took out
+every enum-valued attribute — all of auto-layout, blend modes, constraints,
+grow type — and `set_stroke` outright, since `build_stroke` always emits
+`stroke-style` and `stroke-alignment`.
+
+`:assign` is the operation that decodes: its handler runs
+`(sm/decoder cts/schema:shape-attrs sm/json-transformer)` over the value map
+with the shape's own type in hand — the same coercion `add-obj` gets, which
+is why creating a shape with a stroke style always worked and setting one
+never did. Invalid enum members are still rejected; this adds coercion, not
+a bypass.
+
+Also: `set_layout`'s `padding` was one scalar written to all four sides.
+Per-side overrides plus `layout-padding-type` make asymmetric padding
+expressible; the scalar call shape is unchanged.
+
+THE OBJECTION AGAINST THIS PATCH, which is real and unresolved.
+
+Penpot's own `changes_builder.cljc` emits `:set` everywhere and never emits
+`:assign`. The handler is schema-supported, implemented, and measured
+working here — but this server is very likely its primary user, so it is far
+less exercised than `:set`, and a reviewer would be right to say the case
+for it rests on grepping `common/` and `backend/` and inferring about a
+60k-line frontend that was not read.
+
+One concrete cost is already known and was found by reading rather than by
+testing: `components-changed` and `frames-changed` both match
+`(= (:type operation) :set)`, so an `:assign` op on an attribute in
+`sync-attrs` is invisible to them — no component synchronisation, no
+frame-thumbnail invalidation. What else pattern-matches `:set` in the
+frontend (undo/redo construction, the shape-modifier pipeline, the websocket
+broadcast to other connected editors) is not known.
+
+That is why this is a SPLIT and not a swap. Every attribute routed to
+`:assign` is one that cannot be written at all under `:set`, so nothing that
+works today changes operation, and the exposure is confined to attributes
+whose current behaviour is a hard 500. The failure mode of a missed
+pattern-match is a silently skipped side-effect, not corruption: invalid
+data is still rejected and failed writes roll back without consuming a
+revision.
+
+The revisit trigger is specific: the first time a component copy needs to
+inherit an enum-valued attribute from its main.
+
+diff --git a/src/penpot_mcp/server.py b/src/penpot_mcp/server.py
+index 3c2119c..4884687 100644
+--- a/src/penpot_mcp/server.py
++++ b/src/penpot_mcp/server.py
+@@ -1298,6 +1298,10 @@ async def set_layout(
+     align_items: str | None = None,
+     justify_content: str | None = None,
+     wrap: str = "nowrap",
++    padding_top: float | None = None,
++    padding_right: float | None = None,
++    padding_bottom: float | None = None,
++    padding_left: float | None = None,
+ ) -> str:
+     """Set flex/grid layout on a frame (auto-layout container).
+ 
+@@ -1308,10 +1312,16 @@ async def set_layout(
+         layout_type: "flex" or "grid" (default "flex").
+         direction: "row"/"column"/"row-reverse"/"column-reverse" (default "row").
+         gap: Gap between children pixels (default 0).
+-        padding: Padding on all sides pixels (default 0).
++        padding: Padding on all sides pixels (default 0). Overridable per side.
+         align_items: Cross-axis — "start"/"center"/"end"/"stretch".
+         justify_content: Main-axis — "start"/"center"/"end"/"space-between"/"space-around"/"space-evenly".
+         wrap: "nowrap" or "wrap" (default "nowrap").
++        padding_top: Top padding pixels, overriding `padding`.
++        padding_right: Right padding pixels, overriding `padding`.
++        padding_bottom: Bottom padding pixels, overriding `padding`.
++        padding_left: Left padding pixels, overriding `padding`.
++
++    16 horizontal / 8 vertical: padding_left=16, padding_right=16, padding_top=8, padding_bottom=8.
+     """
+     from penpot_mcp.tools.modify import set_layout as _set_layout
+ 
+@@ -1319,13 +1329,17 @@ async def set_layout(
+         file_id,
+         page_id,
+         frame_id,
+-        layout_type,
+-        direction,
+-        gap,
+-        padding,
+-        align_items,
+-        justify_content,
+-        wrap,
++        layout_type=layout_type,
++        direction=direction,
++        gap=gap,
++        padding=padding,
++        align_items=align_items,
++        justify_content=justify_content,
++        wrap=wrap,
++        padding_top=padding_top,
++        padding_right=padding_right,
++        padding_bottom=padding_bottom,
++        padding_left=padding_left,
+     )
+     return json.dumps(result, indent=2, default=str)
+ 
+diff --git a/src/penpot_mcp/services/changes.py b/src/penpot_mcp/services/changes.py
+index f04f9ac..b94c541 100644
+--- a/src/penpot_mcp/services/changes.py
++++ b/src/penpot_mcp/services/changes.py
+@@ -176,7 +176,9 @@ def change_mod_obj(
+ ) -> dict:
+     """Build a mod-obj change operation.
+ 
+-    Each operation: {"type": "set", "attr": "attr-name", "val": value}
++    Each operation is built by `set_op`, which emits either
++    {"type": "set", "attr": "attr-name", "val": value} or
++    {"type": "assign", "value": {"attr-name": value}}.
+     """
+     return {
+         "type": "mod-obj",
+@@ -239,8 +241,112 @@ def change_mod_page(page_id: str, name: str) -> dict:
+     }
+ 
+ 
++# ── Keyword-valued attributes ────────────────────────────────────────────
++#
++# Penpot's JSON request middleware keywordises operation *keys* and leaves
++# *values* untouched (`app.http.middleware/wrap-parse-request` →
++# `json/read-kebab-key`), and a `:set` operation types its `val` as
++# `::sm/any` (`app.common.files.changes/schema:operation`). No coercion
++# walks into it, so the literal string `"flex"` lands in the shape and
++# `validate-shape` rejects it against `[::sm/one-of #{:grid :flex}]` — a
++# 500 that rolls back and consumes no revision.
++#
++# The `:assign` operation is the coercion path. Its handler runs
++# `(sm/decoder cts/schema:shape-attrs sm/json-transformer)` over the whole
++# value map with the shape's own `:type` in hand — the same decode `add-obj`
++# gets, which is why creating a shape with a stroke style works and setting
++# one did not. Validation is not weakened: an invalid enum member is still
++# rejected.
++#
++# This is a SPLIT, not a swap. `:set` keeps every attribute that already
++# works, because `components-changed` and `frames-changed` both match
++# `(= (:type operation) :set)` — an `:assign` op on an attribute in
++# `sync-attrs` is invisible to them, so no component synchronisation and no
++# frame-thumbnail invalidation. Every attribute routed below is one that
++# cannot be written at all under `:set`, so routing it regresses nothing.
++#
++# An attribute missing from these sets fails exactly the way it fails
++# today: a loud 500 that rolls back. Add it here when that happens.
++
++#: Attributes whose value always contains a keyword — the schema requires
++#: the keyword-typed field, so `:set` can never carry them.
++KEYWORD_ATTRS = frozenset({
++    # cts/schema:shape-generic-attrs
++    "blend-mode",
++    "constraints-h",
++    "constraints-v",
++    "grow-type",
++    "shadow",           # entries require :style
++    "blur",             # requires :type
++    "background-blur",  # requires :type
++    "grids",            # :multi dispatching on :type
++    "exports",          # entries require :type
++    "interactions",     # entries dispatch on :event-type / :action-type
++    "bool-type",
++    # ctsl/schema:layout-attrs
++    "layout",
++    "layout-flex-dir",
++    "layout-gap-type",
++    "layout-wrap-type",
++    "layout-padding-type",
++    "layout-justify-content",
++    "layout-justify-items",
++    "layout-align-content",
++    "layout-align-items",
++    "layout-grid-dir",
++    "layout-grid-rows",     # tracks require :type
++    "layout-grid-columns",
++    "layout-grid-cells",
++    # ctsl/schema:layout-child-attrs
++    "layout-item-margin-type",
++    "layout-item-h-sizing",
++    "layout-item-v-sizing",
++    "layout-item-align-self",
++})
++
++#: Attributes whose keyword-typed fields are *optional*: the value carries a
++#: keyword only sometimes. Each maps to the nested keys that imply one. A
++#: plain fill (`fill-color`/`fill-opacity`) has no keyword anywhere and stays
++#: on `:set`, keeping component sync for the most-used styling operation; a
++#: gradient fill carries `{"type": "linear"|"radial"}` and needs the decoder.
++CONDITIONAL_KEYWORD_ATTRS: dict[str, tuple[str, ...]] = {
++    "fills": ("fill-color-gradient",),
++    "strokes": (
++        "stroke-style",
++        "stroke-alignment",
++        "stroke-cap-start",
++        "stroke-cap-end",
++    ),
++}
++
++#: Attributes deliberately absent, so nobody adds them by pattern-matching:
++#: `content` is a text tree whose node `:type` is a *string* ("root",
++#: "paragraph-set", "paragraph") in `ctsx/schema:content`, and it is in
++#: `sync-attrs`. Text authoring works under `:set` and must stay there.
++
++
++def needs_keyword_coercion(attr: str, val: Any) -> bool:
++    """Whether this attribute's value has to go through `:assign`."""
++    if attr in KEYWORD_ATTRS:
++        return True
++    triggers = CONDITIONAL_KEYWORD_ATTRS.get(attr)
++    if not triggers:
++        return False
++    entries = val if isinstance(val, list) else [val]
++    return any(
++        isinstance(entry, dict) and any(key in entry for key in triggers)
++        for entry in entries
++    )
++
++
+ def set_op(attr: str, val: Any) -> dict:
+-    """Build a set operation for mod-obj."""
++    """Build a mod-obj operation setting one attribute.
++
++    Emits `:assign` for attributes whose value needs string→keyword
++    coercion and `:set` for everything else.
++    """
++    if needs_keyword_coercion(attr, val):
++        return {"type": "assign", "value": {attr: val}}
+     return {"type": "set", "attr": attr, "val": val}
+ 
+ 
+diff --git a/src/penpot_mcp/tools/modify.py b/src/penpot_mcp/tools/modify.py
+index ef3775a..aeeec5c 100644
+--- a/src/penpot_mcp/tools/modify.py
++++ b/src/penpot_mcp/tools/modify.py
+@@ -198,6 +198,10 @@ async def set_layout(
+     align_items: str | None = None,
+     justify_content: str | None = None,
+     wrap: str = "nowrap",
++    padding_top: float | None = None,
++    padding_right: float | None = None,
++    padding_bottom: float | None = None,
++    padding_left: float | None = None,
+ ) -> dict:
+     """Set flex layout on a frame, turning it into an auto-layout container.
+ 
+@@ -208,18 +212,33 @@ async def set_layout(
+         layout_type: Layout type — "flex" or "grid" (default "flex").
+         direction: Flex direction — "row", "column", "row-reverse", "column-reverse" (default "row").
+         gap: Gap between children in pixels (default 0).
+-        padding: Padding on all sides in pixels (default 0).
++        padding: Padding on all sides in pixels (default 0). Each side can be overridden individually.
+         align_items: Cross-axis alignment — "start", "center", "end", "stretch" (optional).
+         justify_content: Main-axis alignment — "start", "center", "end", "space-between", "space-around", "space-evenly" (optional).
+         wrap: Wrap behavior — "nowrap" or "wrap" (default "nowrap").
++        padding_top: Top padding in pixels, overriding `padding` (optional).
++        padding_right: Right padding in pixels, overriding `padding` (optional).
++        padding_bottom: Bottom padding in pixels, overriding `padding` (optional).
++        padding_left: Left padding in pixels, overriding `padding` (optional).
++
++    For 16 horizontal / 8 vertical: padding_left=16, padding_right=16, padding_top=8, padding_bottom=8.
+     """
++    # Penpot orders padding clockwise from the top, CSS-style.
++    p1 = padding if padding_top is None else padding_top
++    p2 = padding if padding_right is None else padding_right
++    p3 = padding if padding_bottom is None else padding_bottom
++    p4 = padding if padding_left is None else padding_left
++    # `layout-padding-type` decides how Penpot reads the map: `simple` uses p1
++    # for all four sides, `multiple` honours each. The editor's padding control
++    # follows it too, so a uniform box keeps its single input.
++    padding_type = "simple" if p1 == p2 == p3 == p4 else "multiple"
++
+     ops = [
+         set_op("layout", layout_type),
+         set_op("layout-flex-dir", direction),
+         set_op("layout-gap", {"row-gap": gap, "column-gap": gap}),
+-        set_op("layout-padding", {
+-            "p1": padding, "p2": padding, "p3": padding, "p4": padding
+-        }),
++        set_op("layout-padding", {"p1": p1, "p2": p2, "p3": p3, "p4": p4}),
++        set_op("layout-padding-type", padding_type),
+         set_op("layout-wrap-type", wrap),
+     ]
+     if align_items:
+@@ -234,6 +253,7 @@ async def set_layout(
+         "layout": layout_type,
+         "direction": direction,
+         "gap": gap,
++        "padding": {"top": p1, "right": p2, "bottom": p3, "left": p4},
+     }
+ 
+ 

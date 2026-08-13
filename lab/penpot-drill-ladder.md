@@ -69,35 +69,31 @@ Established by source survey and by live probes against the running stack.
   `height` without refreshing `selrect` and `points`. The five text-mutation tools
   (`set_font`, `set_font_size`, `set_text_align`, `set_text_style`, `set_text_content`)
   rebuild content from the first paragraph only and reset every property not passed.
-  **`set_stroke` fails every call** — it always emits `stroke-style` and
-  `stroke-alignment` as strings, which P3 makes unwritable, so even
-  `set_stroke(color, width)` with no style argument returns 500. Strokes must be set
-  through `create_*`, which is why D0 and D1 never hit it and why **D2's uniform 2px
-  stroke has to come from `create_path` and can never be adjusted afterwards.**
+  `set_stroke` is exempt: it works, and a stroke can be adjusted after creation.
 
   Creation itself is exact. Measured off a rendered export (lab/064): every shape
   created with explicit `x`/`y`/`width`/`height` and a `parent_id` landed on its
   specified pixel, across a 53-shape board. The hazard is in the mutators, not in
   `create_*`.
-- **`modify_shape(attrs)` is the escape hatch, and it reaches only number- and
-  map-valued attributes.** It emits raw set-ops for any kebab-case Penpot attribute,
-  which is the route to shadows and blur (maps), per-corner radii and rotation
-  (numbers), and gradient fills. **Every enum-valued attribute is unreachable and
-  returns a bare 500** — `blend-mode`, `constraints-h`/`-v`, `layout`,
-  `layout-flex-dir`, stroke alignment, stroke cap, grow type. Measured 6/6 on the
-  split (lab/064).
-
-  The cause is the transport, not the argument. The RPC body is plain JSON; a
-  `mod-obj` operation types its `val` as `any`, so no string→keyword coercion runs,
-  and the shape then fails validation against a schema that types these attributes as
-  keywords. The transit spelling `"~:flex"` fails identically — a JSON body cannot
-  express a keyword at all. `create_*` is unaffected because `add-obj` decodes a whole
-  shape against the shape schema, where the coercion exists.
-- **`set_layout` is inoperative.** Two of its five ops (`layout`, `layout-flex-dir`)
-  are enum-valued and 500 by the rule above, so the call fails as a whole. Behind that
-  sits a second limit that would survive the fix: `padding` is one scalar written to
-  all four sides, so asymmetric padding is not expressible. Compose with absolute
-  coordinates at creation time.
+- **`modify_shape(attrs)` is the escape hatch, and it reaches enum-valued attributes
+  too.** It emits raw operations for any kebab-case Penpot attribute: shadows and blur
+  (maps), per-corner radii and rotation (numbers), gradient fills, and `blend-mode`,
+  `constraints-h`/`-v`, `layout`, `layout-flex-dir`, stroke alignment, stroke cap and
+  grow type. A misspelt enum member still returns a bare 500, and that 500 is the
+  right answer — read it in the backend log rather than guessing which of several
+  attributes in the batch was refused.
+- **`set_layout` works, and padding is per-side.** `padding` sets all four sides;
+  `padding_top`/`padding_right`/`padding_bottom`/`padding_left` override individually,
+  and the tool emits `layout-padding-type` to match. 16 horizontal / 8 vertical is
+  `padding_left=16, padding_right=16, padding_top=8, padding_bottom=8`.
+- **Auto-layout is configuration, not reflow. Children do not move.** Setting `layout`
+  stores the configuration and leaves every child at its authored coordinates. Reflow
+  is an editor action in Penpot — it recomputes child geometry and *persists* it — and
+  the exporter's render page runs no layout pipeline, so a headless PNG shows the
+  frame exactly as composed. Controlled: a frame with layout baked in at `add-obj`
+  renders identically un-reflowed, so this is authoring-without-an-editor, not a
+  property of how the attribute was written. **Keep composing with absolute
+  coordinates**; auto-layout is metadata for whoever opens the file next.
 - **A revision is a successful write, and only that.** A 53-shape board reconciled
   exactly to its revision number; failed writes consume none. Expensive in undo steps
   and a real race if the file is open elsewhere — but cheap in wall clock, because the
@@ -128,9 +124,8 @@ Suspected broken, not yet proven:
   the assets panel.
 - `create_group` hardcodes a 0,0,100x100 bounding box regardless of children.
 
-Two defects found by the D0 survey are fixed, and the fixes ship as
-`deploy/penpot/patches/` applied at image build — the README carries the mechanism
-and the reasoning:
+Three defects are fixed, and the fixes ship as `deploy/penpot/patches/` applied at
+image build — the README carries the mechanism and the reasoning:
 
 - **`create_path` speaks the v2 path format.** It sends `move-to`/`line-to`/
   `curve-to`/`close-path`, the names `path.impl/from-plain` dispatches on, and
@@ -141,15 +136,26 @@ and the reasoning:
   else, and no route exchanges an access token for a session, so `PENPOT_EMAIL` and
   `PENPOT_PASSWORD` in `deploy/penpot/.env` name the account the renderer signs in
   as. Point them at a read-only viewer account, not your own.
+- **A mod-obj operation can carry a keyword.** `set_op` emits Penpot's `:assign`
+  operation for attributes whose value needs string→keyword coercion — its handler
+  runs the same `json-transformer` decode `add-obj` gets — and keeps `:set` for
+  everything that already worked. Enum-valued attributes, `set_stroke` and
+  `set_layout` are all live. Validation is unchanged: a bogus member reaches the
+  schema *as a keyword* and is still refused.
 
 Vector work is therefore live: D2, D3 and D5 have a path primitive, and the
 render-and-look loop closes.
 
-Absent entirely: boolean path ops, path editing, align and distribute, grid track
-authoring, per-item layout properties, constraint setting, component instances and
-variants, shared-library publish, color and typography assets, design tokens,
-multi-line text, rich text runs, image placement on canvas, prototyping of any kind,
-and PDF export (implemented in `tools/export.py`, never registered as a tool).
+Absent entirely: boolean path ops, path editing, align and distribute, component
+instances and variants, shared-library publish, color and typography assets, design
+tokens, multi-line text, rich text runs, image placement on canvas, prototyping of
+any kind, and PDF export (implemented in `tools/export.py`, never registered as a
+tool).
+
+No dedicated tool, but reachable through `modify_shape`: constraints
+(`constraints-h`/`-v`, measured), per-item layout properties (`layout-item-h-sizing`,
+`layout-item-align-self`, …) and grid track authoring (`layout-grid-rows`/`-columns`).
+Only constraints have been probed; the rest are routed and untested.
 
 ## The ladder
 
@@ -173,9 +179,8 @@ hover, disabled), nine cells on an 8px grid, with padding redlines called out.
 The brief leaves nothing to interpret, so this grades execution alone.
 
 Run 2026-08-12 — file `D1 button matrix`, 53 shapes, awaiting assessment. Surfaced
-P3 (enum-valued attributes unreachable, which takes `set_layout` with it), exact
-creation geometry, the revision/wall-clock split, and the free render-and-look loop.
-Written up in lab/064.
+P3, since fixed, along with exact creation geometry, the revision/wall-clock split,
+and the free render-and-look loop. Written up in lab/064.
 
 ### D2 — Iconography, mechanics ceiling
 
@@ -251,20 +256,18 @@ drill that produces a deliverable and no change has not been assessed.
    designer.yaml` is ruled out by `pin.py:558` (the manifest is harness-agnostic
    because Cursor reads it, and `--mcp-config` is Claude Code's schema).
 
-2. **P3 — a `mod-obj` set-op cannot carry a keyword, so `set_layout` and `set_stroke`
-   are dead.** Changes post as plain JSON, where a `mod-obj` op's `val` is typed
-   `::sm/any` and receives no string→keyword coercion; the shape then fails
-   `validate-shape` and the RPC answers a bare 500. Confirmed from the backend log and
-   Penpot 2.17.0 source. Costs blend modes, constraints, stroke alignment/cap/style,
-   grow type, and all of auto-layout.
+2. **A component copy does not inherit an enum-valued attribute from its main.**
+   Penpot's `components-changed` and `frames-changed` match
+   `(= (:type operation) :set)`, and the attributes that need `:assign` are all in
+   `sync-attrs` — so writing one on a main component synchronises nothing to its
+   copies, and does not invalidate the frame thumbnail. Nothing that worked before is
+   affected; the exposure is confined to attributes that used to be a hard 500. Owner
+   is `architect`. The revisit trigger is a drill that actually needs the inheritance.
 
-   **The remedy is not a transport change.** Penpot ships an `:assign` operation whose
-   handler runs the same `json-transformer` decoding `add-obj` gets, over the same JSON
-   body — architect measured the failing enums applying 200 through it, with validation
-   still rejecting bogus values, and `layout-padding-type: "multiple"` unlocking
-   asymmetric padding at the same time. The repair is a **split** — `:set` keeps what
-   already works, `:assign` carries values needing coercion — because
-   `components-changed` and `frames-changed` match `(= (:type operation) :set)` and
-   would silently skip `:assign` ops on attributes that are in `sync-attrs`. Owner is
-   `architect`; `designer`'s `write_boundary` denies `*.py`. Ticket
-   `8979621a9c4247c6`; reproduction and diagnosis in lab/064.
+3. **Whether opening a headlessly-configured auto-layout frame in the editor makes it
+   reflow is unmeasured.** Reflow persists child geometry when the editor performs it,
+   but nothing here established whether merely *opening* the file triggers it or
+   whether the layout has to be touched in the UI first. One probe settles it: author a
+   frame with `set_layout` and two children, open the file in the editor without
+   touching anything, close it, and re-export. Owner is `designer` — it needs a
+   browser, which this ladder's sessions otherwise never use.

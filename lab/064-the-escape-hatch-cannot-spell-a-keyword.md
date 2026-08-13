@@ -212,3 +212,37 @@ overflow error is the mechanism, not an obstacle.
 
 `lab/penpot-drill-ladder.md`: instrument facts corrected on all three points above,
 and P3 filed under open findings.
+
+## The fix shipped — 2026-08-13
+
+`deploy/penpot/patches/0002-keyword-valued-attrs-via-assign-and-asymmetric-padding.patch`,
+built into the running `penpot-mcp-1` image and verified against it. `set_op` emits
+`:assign` for attributes whose value needs coercion and keeps `:set` for the rest;
+`set_layout` gained per-side padding and emits `layout-padding-type`.
+
+Before and after on one throwaway file, same shapes, same session:
+
+| probe | `:set` (before) | shipped (after) |
+|---|---|---|
+| `layout` `"flex"` | 500 | 200 |
+| `layout-flex-dir` `"row"` | 500 | 200 |
+| `blend-mode` `"multiply"` | 500 | 200 |
+| `constraints-h` `"left"` | 500 | 200 |
+| `strokes` with `stroke-style` | 500 | 200 |
+| `layout-gap`, `layout-padding`, `r1`–`r4`, `rotation`, `name` | 200 | 200 (still `:set`) |
+| bogus enum members | 500 | 500 |
+
+The backend log is the proof that validation was not weakened rather than bypassed:
+before, it rejected `:value "flex"` — a string. After, it rejects `:value :diagonal` —
+a keyword. The decoder ran and the enum check still refused it.
+
+**Two things this entry said that are no longer true.** `set_stroke` works, so D2's
+uniform 2px stroke can be adjusted after creation and does not have to come from
+`create_path`. And `set_layout` expresses 16/8 asymmetric padding directly.
+
+**One thing measured only after the fix, which no one had asked:** auto-layout does not
+reflow. A frame with `layout: flex` renders with its children exactly where they were
+authored, because Penpot computes reflow in the editor and persists the result, and the
+exporter's render page runs no layout pipeline. Controlled against `add-obj` with layout
+baked in — identical, so it is authoring-without-an-editor and not an artefact of
+`:assign`. Compose with absolute coordinates and treat auto-layout as metadata.

@@ -143,12 +143,29 @@ the intended failure, and the signal to re-cut the patch against the new commit:
 
 ```bash
 cd ~/code/thalamus/deploy/penpot
-git -C penpot-mcp-server apply patches/0001-*.patch   # edit, test
-git -C penpot-mcp-server diff > patches/0001-<name>.patch
+# …edit the clone, test…
+git -C penpot-mcp-server diff > patches/000N-<name>.patch
 git -C penpot-mcp-server checkout -- .                # leave the clone pristine
 ```
 
-What the current patch changes, all of it in `src/penpot_mcp/`:
+Every patch is cut against **the pin**, never against the previous patch. Two of
+them may touch the same file — they are applied in filename order and `patch`
+absorbs the line-number shift — but their hunks must not overlap. Rehearse the
+build's own sequence before trusting a new one:
+
+```bash
+rm -rf /tmp/pt && mkdir /tmp/pt && cp -r penpot-mcp-server/src /tmp/pt/src
+cd /tmp/pt && for p in ~/code/thalamus/deploy/penpot/patches/*.patch; do
+  patch -p1 -F0 --no-backup-if-mismatch < "$p"; done
+```
+
+The container mounts nothing: `COPY src/` bakes the patched source into the
+image, so **an edit in the checkout changes nothing that is running**. After
+changing a patch, `docker --context default compose -f compose.yml up -d --build
+mcp`, then confirm the running image carries it before believing any green
+result — `docker --context default exec penpot-mcp-1 grep … /app/src/…`.
+
+What the patches change, all of it in `src/penpot_mcp/`:
 
 - **`create_path` speaks Penpot's path format.** Upstream lowercased the SVG
   command letter and shipped `{"command": "m"}`; `app.common.types.path.impl/
@@ -172,6 +189,62 @@ What the current patch changes, all of it in `src/penpot_mcp/`:
   tell a render from a sketch. Both export tools now return an error when the
   exporter does not render, and the local approximation is not offered as a
   substitute for one.
+- **Keyword-valued attributes are writable.** Penpot's JSON middleware
+  keywordises change-operation *keys* and leaves *values* alone, and a `:set`
+  operation types its `val` as `::sm/any`, so nothing coerced `"flex"` into
+  `:flex`; `validate-shape` then rejected the literal string against
+  `[::sm/one-of #{:grid :flex}]` and `update-file` returned 500. That took out
+  every enum-valued attribute — all of auto-layout, blend modes, constraints,
+  grow type — and `set_stroke` outright, since `build_stroke` always emits
+  `stroke-style` and `stroke-alignment`. `set_op` now emits Penpot's `:assign`
+  operation for those attributes, whose handler runs
+  `(sm/decoder cts/schema:shape-attrs sm/json-transformer)` over the value with
+  the shape's type in hand — the same coercion `add-obj` gets, which is why
+  creating a shape with a stroke style always worked and setting one never did.
+  Invalid members are still rejected: the backend log shows a rejected probe
+  arriving as `:value :diagonal`, a keyword, so the decoder ran and the enum
+  check still refused it.
+- **`set_layout` can express asymmetric padding.** `padding` was one scalar
+  written to all four sides. `padding_top`/`padding_right`/`padding_bottom`/
+  `padding_left` override it individually and `layout-padding-type` is emitted
+  alongside — `simple` when the four agree, `multiple` otherwise, which is the
+  attribute Penpot reads to decide whether to honour per-side values. The scalar
+  call shape is unchanged.
+
+### The `:set`/`:assign` split, and what it costs
+
+`:assign` is used **only** for attributes that cannot be written under `:set` at
+all. Everything that already worked still emits `:set`, and that is deliberate:
+Penpot's `components-changed` and `frames-changed` both match
+`(= (:type operation) :set)`, so an `:assign` op on an attribute in `sync-attrs`
+is invisible to them — no component synchronisation, no frame-thumbnail
+invalidation. Confining `:assign` to attributes whose current behaviour is a hard
+500 means nothing that works today changes operation.
+
+The routing lives in two greppable sets in `services/changes.py`. An attribute
+missing from them fails exactly as it failed before: a loud 500 that rolls back
+and consumes no revision. Values whose keyword-typed fields are *optional* are
+routed on inspection rather than by name — a plain `fill-color` fill stays on
+`:set` and keeps its sync, a gradient fill does not.
+
+The honest objection, which the patch header carries in full: Penpot's own
+`changes_builder.cljc` emits `:set` everywhere and never emits `:assign`, so this
+server is very likely that handler's primary user. The revisit trigger is
+specific — the first time a component copy needs to inherit an enum-valued
+attribute from its main.
+
+### Auto-layout is configuration, not reflow
+
+Setting `layout` on a frame stores the layout configuration. It does **not** move
+that frame's children. Reflow in Penpot is an editor action —
+`shape_layout.cljs` computes it with `reflow-modifiers` and *persists* the
+resulting child geometry — and the exporter's render page applies only viewport
+move-modifiers, so a headless PNG of a headlessly-configured frame draws children
+at their authored coordinates. Measured, with the control: a frame with layout
+baked in at `add-obj` renders identically un-reflowed, so this is a property of
+authoring without an editor and not of how the attributes are written. Author
+child positions explicitly; treat auto-layout as metadata for whoever opens the
+file next.
 
 ### Why rendering needs a password
 
