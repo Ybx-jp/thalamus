@@ -364,7 +364,8 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
     monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
-    monkeypatch.setattr("thalamus.harness.pin.ensure_room", lambda room, host=None: None)
+    monkeypatch.setattr("thalamus.harness.pin.ensure_room",
+                        lambda room, host=None, harness="claude": None)
     _argv_only(monkeypatch)
     monkeypatch.setenv("THALAMUS_ROOM", "alpha")
 

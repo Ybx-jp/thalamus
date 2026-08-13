@@ -127,9 +127,11 @@ _WIRED = Evidence(
     reask="free",
 )
 
-# One live session, one build, one mode. Everything the Cursor rows rest on was taken
-# under `agent -p --trust`; interactive Cursor remains unobserved, and a probe is
-# sound as a falsifier and unsound as a generalizer (probes.py).
+# One build, and not one mode any more: the write and capability rows were taken under
+# `agent -p --trust`, while the room row rests on a real interactive session driven in
+# tmux. The conditions tuple on each row is what says which, and it matters because a
+# probe is sound as a falsifier and unsound as a generalizer (probes.py) — a headless
+# run cannot observe a modal, which is the whole subject of the room row.
 _CURSOR_LIVE = "cursor/2026.08.11-e8db854"
 _CURSOR_COND = (Condition.PARSE, Condition.PRINT)
 
@@ -213,16 +215,23 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "room_boundary.message", "cursor", Provision.ABSENT,
         Evidence(
             kind="live-session",
-            at="2026-08-10",
-            where="docs/12: Cursor writes no `sessions/` directory, so there is no "
-                  "peer discovery to partition, and a Cursor member writes no "
-                  "`tmux_pane` and is undispatchable (lab/054)",
-            verified_against="cursor/2026.08.04-aaa8809",
-            conditions=(Condition.PARSE, Condition.PRINT),
+            at="2026-08-13",
+            where="a Cursor member of room `probe` was launched, addressed and "
+                  "delivered to over `tmux send-keys`, and replied (lab/065) — so a "
+                  "peer channel exists and no guard sits on it. There is no "
+                  "`SendMessage` tool to match: peer traffic is `thalamus dispatch` "
+                  "over Bash, which `beforeShellExecution` can reach and nothing does",
+            verified_against="cursor/2026.08.11-e8db854",
+            conditions=(Condition.PARSE, Condition.PRINT, Condition.INTERACTIVE),
             reask="live-session",
         ),
-        "No addressable peer, so no message to guard. Isolation without addressing "
-        "is the solo arm with extra directories.",
+        "ABSENT for a different reason than it used to be, and a worse one: the "
+        "member is addressable now, so this is an open channel rather than a missing "
+        "one. `room-guard.sh` has no Cursor twin, and the tool-name matcher it is "
+        "built on has nothing to match — the Cursor analogue would guard a *command* "
+        "at `beforeShellExecution`, which is a different matcher and a different "
+        "false-positive surface. Until that exists, a Cursor room's isolation is its "
+        "config root and not its messaging.",
     ),
 )
 

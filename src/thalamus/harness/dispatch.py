@@ -19,9 +19,17 @@ knows nothing about** — and the first message to a freshly spawned member is t
 likely to hit one. The console's `/api/send` is exactly that blind path; nothing here
 routes through it.
 
-> **Dispatch reads `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` per target, delivers on
-> `idle` and `busy`, and refuses on `waiting`, naming the target.** Never a bare Enter
-> into a `waiting` window.
+> **Dispatch establishes readiness per target before writing to any of them, delivers
+> only on a state measured to accept a send, and refuses the rest naming them.** Never
+> a bare Enter into a window holding a dialog.
+
+The table was measured again on Cursor (lab/065) and every row held, including the
+third: a message sent into a pane showing `Run this command?` never reached the model
+and the Enter ran the command. So the hazard is the harness-independent one, and the
+refusal is too — but the *evidence* for it is not. Claude Code publishes a `status`
+the session writes about itself; Cursor publishes nothing, and its readiness is read
+off the visible screen by `harness/panes.py`. Both answer the same question with
+different authority, which is why `Target.harness` is on the row.
 
 ## Pre-flight is over the whole fan-out, not per target
 
@@ -47,6 +55,15 @@ is the one handle unique per window and stable across the respawn a console recy
 performs. Where the descriptor roster and the live pane list disagree, dispatch refuses
 rather than guesses.
 
+A Cursor member has neither: the harness registers no session anywhere, and its
+`sessionStart` hook deliberately writes no pane (claiming one unconditionally would
+hand the console's read view to a headless probe). So its roster is the control plane
+itself — `panes.room_panes` recovers room, scope and address from the window's own
+start command, which `pin._with_room` put there and which survives `respawn-window`.
+There is no second roster to cross-check against, because the pane *is* the roster
+entry and the address at once; what takes the cross-check's place is that an
+unreadable screen is refused, on the same principle.
+
 Confirmation is `updatedAt` advancing on the descriptor. Never `capture-pane`, which
 truncates to the visible height and would report a long reply as no reply.
 
@@ -69,6 +86,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from thalamus.harness import panes as panes_mod
 from thalamus.harness import pin, quick
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
@@ -149,6 +167,11 @@ class Target:
     status: str
     updated_at: int
     refusal: str = ""
+    # Which roster answered for this member. Recorded because the two are not equally
+    # strong: a Claude Code target's status is the session's own report, a Cursor
+    # target's is a reading of its screen, and a row that pooled them would let the
+    # weaker evidence be quoted with the stronger one's authority.
+    harness: str = "claude"
 
     @property
     def deliverable(self) -> bool:
@@ -167,12 +190,123 @@ def preflight(
     config_dir: Path | None = None,
     pins_file: Path | None = None,
     panes: set[str] | None = None,
+    room_panes: list | None = None,
+    status_fn=None,
 ) -> list[Target]:
     """Every addressable member of `room`, each with its verdict already decided.
 
     Reads before it writes anything, which is the property the whole verb rests on:
     the status that must not be written to is knowable without writing to it.
+
+    Two rosters are consulted and their results merged, because a room may hold
+    members of both harnesses and a dispatch that saw only one would announce to half
+    a room while reporting a full fan-out — the precise failure `--partial` exists to
+    make legible. Which roster answered is carried on the target rather than resolved
+    away.
     """
+    return sorted(
+        [
+            *_claude_targets(room, scopes, config_dir=config_dir,
+                             pins_file=pins_file, panes=panes),
+            *_cursor_targets(room, scopes, pins_file=pins_file,
+                             room_panes=room_panes, status_fn=status_fn),
+        ],
+        key=lambda target: (target.scope or target.session_id, target.harness),
+    )
+
+
+def _ledger_session(room: str, scope: str, pins_file: Path | None = None) -> str:
+    """The newest session id the pin ledger has for one member of a room.
+
+    Best-effort, and only ever cosmetic: a Cursor session id is minted by the harness
+    and reaches us through its own `sessionStart` hook, so it is knowable *after* the
+    member starts but is not what the member is addressed by. The address is the pane.
+    Two same-scope members in one room share a lookup key and the newer wins, which is
+    why nothing downstream may key on this.
+    """
+    path = pins_file or PINS_FILE
+    if not path.is_file():
+        return ""
+    found = ""
+    with path.open(errors="ignore") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict) or row.get("event"):
+                continue
+            if row.get("room") == room and row.get("scope") == scope:
+                found = str(row.get("session_id") or "") or found
+    return found
+
+
+def _cursor_targets(
+    room: str,
+    scopes: list[str] | None = None,
+    *,
+    pins_file: Path | None = None,
+    room_panes: list | None = None,
+    status_fn=None,
+) -> list[Target]:
+    """Room members on a harness that registers nothing — addressed by their panes.
+
+    There is no descriptor to disagree with the pane list here, so the cross-check the
+    Claude Code roster performs has nothing to perform: the pane *is* both the roster
+    entry and the address. What replaces it is the readiness read, which is the part
+    that can be wrong — so an unreadable screen is refused exactly like a pane the two
+    Claude Code rosters disagree about.
+    """
+    status_of = status_fn or panes_mod.pane_status
+    found = room_panes if room_panes is not None else panes_mod.room_panes(room)
+    wanted = set(scopes) if scopes else None
+
+    targets = []
+    for pane in found:
+        if pane.harness != "cursor":
+            continue
+        if wanted is not None and pane.scope not in wanted:
+            continue
+        status = status_of(pane.pane_id)
+        refusal = ""
+        if status == panes_mod.WAITING:
+            refusal = (
+                "is holding an approval dialog — a send would be discarded and the "
+                "Enter would actuate the highlighted default, approving a tool call "
+                "this dispatch cannot see (measured, lab/065)"
+            )
+        elif status != panes_mod.DELIVERABLE:
+            refusal = (
+                "shows a screen this pre-flight cannot read as ready; refusing rather "
+                "than assuming a pane it does not recognize is safe to type into"
+            )
+        targets.append(
+            Target(
+                scope=pane.scope,
+                session_id=_ledger_session(room, pane.scope, pins_file),
+                name=pin.room_member_name(room, pane.scope),
+                pane=pane.pane_id,
+                status=status,
+                updated_at=0,
+                refusal=refusal,
+                harness="cursor",
+            )
+        )
+    return targets
+
+
+def _claude_targets(
+    room: str,
+    scopes: list[str] | None = None,
+    *,
+    config_dir: Path | None = None,
+    pins_file: Path | None = None,
+    panes: set[str] | None = None,
+) -> list[Target]:
+    """Room members the harness registered, cross-checked against the pin ledger."""
     root = config_dir or pin.room_config_dir(room)
     sessions = quick.live_sessions(root)
     if scopes:
@@ -325,6 +459,7 @@ def _row(
         "dispatch_id": handle,
         "fanout": fanout,
         "via": VIA_TMUX,
+        "harness": delivery.target.harness,
         "sender": sender,
         "preflight_status": delivery.target.status,
         "performed": delivery.performed,
@@ -401,6 +536,8 @@ def dispatch(
     pins_file: Path | None = None,
     guards_dir: Path | None = None,
     panes: set[str] | None = None,
+    room_panes: list | None = None,
+    status_fn=None,
     sender_fn=None,
 ) -> DispatchResult:
     """Pre-flight every member, then deliver — or refuse the whole fan-out.
@@ -412,7 +549,8 @@ def dispatch(
         raise DispatchRefused("nothing to dispatch — an empty message still costs "
                               "every recipient a turn")
     targets = preflight(
-        room, scopes, config_dir=config_dir, pins_file=pins_file, panes=panes
+        room, scopes, config_dir=config_dir, pins_file=pins_file, panes=panes,
+        room_panes=room_panes, status_fn=status_fn,
     )
     if not targets:
         raise DispatchRefused(
@@ -446,9 +584,14 @@ def dispatch(
             continue
         error = send(target.pane, text, submit)
         delta = 0
-        if not error:
+        if not error and target.harness == "claude":
             # Re-read the descriptor rather than the pane: `capture-pane` truncates to
             # the visible height, so a long reply would read as no reply at all.
+            #
+            # Claude Code only, because only it publishes the descriptor. A Cursor
+            # target's row carries a zero delta, which the field already documents as
+            # "not proof of failure" — the honest reading for a member whose harness
+            # offers nothing to confirm against.
             for session in quick.live_sessions(config_dir or pin.room_config_dir(room)):
                 if session.session_id == target.session_id:
                     delta = max(0, session.updated_at - target.updated_at)
