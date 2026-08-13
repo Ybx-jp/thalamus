@@ -64,6 +64,7 @@ CASE_MODULES = (
     "qe.cases.suite_containment",
     "qe.cases.template_placeholders",
     "qe.cases.oracle_parses_whole",
+    "qe.cases.skill_arming",
 )
 
 
