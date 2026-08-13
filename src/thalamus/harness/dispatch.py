@@ -111,6 +111,61 @@ class DispatchRefused(RuntimeError):
     """The dispatch declined before sending anything. The message is the reason."""
 
 
+# Who established the sender on a row, which is the difference between a boundary
+# decision and a self-report. `process` means the sending session's own environment
+# named it and a mismatch was refused; `operator` means a roomless caller asserted it.
+SENDER_PROCESS = "process"
+SENDER_OPERATOR = "operator"
+
+
+def authenticate(room: str, sender: str = "", *, operator: bool = False,
+                 caller_room: str | None = None,
+                 caller_scope: str | None = None) -> tuple[str, str]:
+    """Establish who is dispatching, from the process rather than the argument.
+
+    Without this the sender is a claim by the caller: `--sender` is a free string, and
+    nothing else in this module asserts the calling process is in the room it is
+    addressing. Both halves of that matter and they fail differently.
+
+    **A member could dispatch into any room whose name it knew.** The config root
+    partitions what a member can *read* — `chats/`, `projects/`, the discovery roster —
+    and a shell command reaches any room by name, so the room was isolated in the
+    direction nobody was walking and open in the direction the collaboration lives.
+
+    **And an unauthenticated sender cannot carry evidence.** `eval/rooms.py` already
+    refuses a peer that parses but is not in the roster, on the grounds that the prefix
+    alone is not membership; a sender nobody established is weaker provenance than the
+    peer it already declines. So the row records *how* the sender was established, and
+    a reader that ever counts these rows has the field it would need to be honest.
+
+    A roomless caller is the operator — the console server is long-lived and in no
+    room, and that is the broadcast path. A caller inside the room it names speaks for
+    itself and may not claim another scope. A caller inside a *different* room is
+    refused, unless it says explicitly that it is acting as the operator.
+    """
+    caller_room = pin.resolve_room() if caller_room is None else caller_room
+    caller_scope = pin.resolve_pin() if caller_scope is None else caller_scope
+
+    if caller_room and caller_room != room and not operator:
+        raise DispatchRefused(
+            f"this session is in room `{caller_room}` and cannot dispatch into room "
+            f"`{room}` — a room's peer channel is the one direction its config root "
+            "does not bound, so it is bounded here. Reach outside the room the way "
+            "every cross-scope exchange is reached: mint a consultation ticket. If "
+            "you are the operator driving this by hand, pass --operator."
+        )
+    if caller_room == room and caller_room:
+        if sender and sender != caller_scope:
+            raise DispatchRefused(
+                f"refusing to dispatch as `{sender}` from a session pinned to "
+                f"`{caller_scope}` — inside a room the sender is established by the "
+                "process, not asserted by the caller, because a row nobody established "
+                "cannot be told apart from one that was"
+            )
+        return caller_scope, SENDER_PROCESS
+    return sender or caller_scope, SENDER_OPERATOR
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -444,6 +499,7 @@ def _row(
     fanout: int,
     delivery: Delivery,
     undelivered: list[str],
+    authority: str = SENDER_OPERATOR,
 ) -> dict:
     return {
         "ts": _now(),
@@ -460,6 +516,10 @@ def _row(
         "fanout": fanout,
         "via": VIA_TMUX,
         "harness": delivery.target.harness,
+        # How the sender was established, never whether it is plausible. A reader that
+        # pools these rows with `room-boundary` ones needs this to stay honest, and a
+        # reader that does not still learns which broadcasts were the operator's.
+        "sender_authority": authority,
         "sender": sender,
         "preflight_status": delivery.target.status,
         "performed": delivery.performed,
@@ -528,6 +588,7 @@ def dispatch(
     text: str,
     *,
     sender: str = "",
+    operator: bool = False,
     scopes: list[str] | None = None,
     partial: bool = False,
     dry_run: bool = False,
@@ -548,6 +609,9 @@ def dispatch(
     if not text.strip():
         raise DispatchRefused("nothing to dispatch — an empty message still costs "
                               "every recipient a turn")
+    # Before the roster is even read: who is asking is a precondition for the fan-out
+    # meaning anything, and it is cheaper to refuse than to pre-flight.
+    sender, authority = authenticate(room, sender, operator=operator)
     targets = preflight(
         room, scopes, config_dir=config_dir, pins_file=pins_file, panes=panes,
         room_panes=room_panes, status_fn=status_fn,
@@ -610,7 +674,8 @@ def dispatch(
     if not dry_run:
         _append_rows(
             [
-                _row(room, sender, handle, len(targets), delivery, undelivered)
+                _row(room, sender, handle, len(targets), delivery, undelivered,
+                     authority)
                 for delivery in deliveries
             ],
             guards_dir,

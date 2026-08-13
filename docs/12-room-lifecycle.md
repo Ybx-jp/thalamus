@@ -875,22 +875,40 @@ sections above, and the rule is not "never capture a pane" but **never confirm a
 from one**: it truncates to the visible height, so a long answer reads as no answer,
 while a modal is drawn *in* the visible height.
 
-**What is not built: the peer guard.** `room-guard.sh` matches the `SendMessage` tool
-name, and Cursor has no such tool — peer traffic is `thalamus dispatch` over Bash. That
-is reachable at `beforeShellExecution`, which was measured to fire **before** the
-approval modal, so a command-level guard is buildable; it is a different matcher and a
-different false-positive surface, and it does not exist. Until it does, a Cursor room's
-isolation is its config root and not its messaging
-([boundaries.py](../src/thalamus/contract/boundaries.py) records the row as ABSENT for
-this reason rather than the old one).
+**The peer channel is guarded on the command, because that is where it lives now.**
+`room-guard.sh` matches the `SendMessage` tool name; Cursor has no such tool, and on
+both harnesses the peer channel outgrew a tool matcher anyway — `tmux send-keys`
+reaches any pane on the box and `thalamus dispatch` addresses a room by name, and both
+are Bash. `room-command-guard.sh` binds on `PreToolUse:Bash` and, through an adapter,
+on Cursor's `beforeShellExecution`, which was measured to fire **before** the approval
+modal so a denial lands ahead of the prompt rather than racing it.
 
-**A dispatch row is a self-report, and must not become a room edge.** `--sender` is a
-free string and nothing asserts the caller is in the room, so where a `room-boundary`
-row records a boundary decision that was *enforced*, a `dispatch` row records only what
-the sender said about itself. On Cursor collaboration necessarily flows through
-dispatch, which makes this tempting and no less wrong: counting it would let a room
-pass its own manipulation check on the strength of an unauthenticated field. The
-exclusion in `eval/rooms.py` stays.
+Two rules, and they are not equally strong. Addressing a room by name is checked
+against *this session's own room*, fail-closed: a command naming no room it is allowed
+to name is refused rather than parsed, because the room positional cannot be reliably
+extracted from a shell string. The raw transport is blocked outright — there is no
+"to my own room" form of `send-keys` worth allowing, since the sanctioned channel
+pre-flights and writes a row and a raw send does neither. That rule matches the
+**verb** rather than the binary's spelling, because unlike the addressing rules it has
+no second line behind it: a raw send never reaches `dispatch`, so nothing else can
+refuse it.
+
+**The boundary is the verb; the guard is defence-in-depth.** `dispatch.authenticate`
+establishes the sender from the calling process — a member may not name another scope,
+and a member dispatching into a room it is not in is refused unless the caller says
+explicitly that it is the operator. That check reads data the caller cannot author,
+which a command-string matcher never can: a determined member can evade a grep with a
+variable. Both exist because they fail differently, and the guard's value is that the
+ordinary reach-out fails loudly, in the ledger, at the moment it is attempted.
+
+**A dispatch row is still not a room edge.** Authentication makes the sender
+establishable, and the row now records *how* it was established (`sender_authority`:
+`process` or `operator`) — but a dispatch remains a different construct from a peer
+message. It is a broadcast with no single target, and on Cursor it is the entire
+collaboration vocabulary rather than an escalation from a cheaper channel, so one edge
+would mean different things on the two harnesses and the number would not say so.
+`eval/rooms.py` keeps counting only `branch: roommate` passes; the guard's own
+`peer-command` passes are deliberately not edges either, for the same reason.
 
 **The resumption channel ports, and means something different.** Cursor has
 `--resume [chatId]` and `create-chat`, but `--resume` continues the parent chat

@@ -147,21 +147,70 @@ to — `probe-qe` is holding an approval dialog — a send would be discarded an
 Enter would actuate the highlighted default …
 ```
 
-## What is not built
+## 6. The peer channel, and the hole that was not on the list
 
-`room-guard.sh` matches the `SendMessage` tool name and Cursor has no such tool: peer
-traffic is `thalamus dispatch` over Bash. §5 says a command-level guard at
-`beforeShellExecution` is reachable; it does not exist, so a Cursor room's isolation is
-its config root and not its messaging. `contract/boundaries.py` records
-`room_boundary.message` on cursor as ABSENT for that reason rather than the old one —
-the member is addressable now, which makes this an *open* channel rather than a missing
-one, and a worse state than the row used to describe.
+The architect's answer named the sharpest residual and it was not the guard: **nothing
+asserted that a dispatching caller was in the room it addressed.** `--sender` is a free
+string, `dispatch.py` never read `resolve_room()`, so a member could dispatch into any
+room whose name it knew and the ledger would record it as a member of that room. The
+config root partitions what a member can *read*; a shell command reaches any room by
+name. **The room was isolated in the direction nobody was walking and open in the
+direction the collaboration lives.**
 
-Related: `--sender` is a free string and nothing asserts the caller is in the room, so
-a `dispatch` row is a self-report where a `room-boundary` row is an enforced decision.
-On Cursor collaboration necessarily flows through dispatch, which makes counting those
-rows as realized edges tempting and no less wrong — it would let a room pass its own
-manipulation check on an unauthenticated field. `eval/rooms.py`'s exclusion stays.
+`dispatch.authenticate` closes it from the process's own environment, which the caller
+cannot author: a roomless caller is the operator (the console server is long-lived and
+in no room, so the broadcast path stays open), a caller inside the room speaks only for
+its own scope, and a caller inside a different room is refused unless it passes
+`--operator`. The row records `sender_authority` — `process` or `operator` — so a later
+reader has the field it would need to be honest about what a row is.
+
+`room-command-guard.sh` is the second line, on `PreToolUse:Bash` and, through an
+adapter, Cursor's `beforeShellExecution` (§5 measured that it precedes the modal, so a
+denial lands ahead of the prompt). Two rules of unequal strength:
+
+- **Addressing a room by name** is checked against the session's own room, fail-closed.
+  The room positional cannot be reliably extracted from a shell string — `thalamus
+  dispatch --to qe alpha "msg"` puts it after a flag that consumes the next token — so
+  the rule is *does this command name the room it is allowed to name*, and one that
+  does not is refused rather than parsed.
+- **The raw transport** is blocked outright. There is no "to my own room" form of
+  `send-keys` worth allowing: the sanctioned channel pre-flights and writes a row and a
+  raw send does neither. This one matches the **verb**, not the binary's spelling,
+  because it is the only rule with no second line behind it — a raw send never reaches
+  `dispatch`, so `/usr/bin/tmux` or `$TMUX_BIN` would otherwise walk through it.
+
+Live, in a real Cursor room member asked to run `tmux send-keys -t %0 hello`: the
+command did not run, the guard's prose reached the model verbatim, and the member
+reported *"nothing was sent to tmux pane %0; the hook intercepted the shell invocation
+in this Cursor session (room probe)."* The row:
+
+```json
+{"ts":"2026-08-13T11:30:51Z","scope":"qe","room":"probe","guard":"room-boundary",
+ "verdict":"block","branch":"raw-transport","target":"tmux send-keys"}
+```
+
+`contract/boundaries.py` moves `room_boundary.message` on cursor from ABSENT to
+PROVIDED, and the Claude Code row's note now names both matchers — the peer channel
+outgrew a tool name on that harness too.
+
+**A dispatch row is still not a room edge.** Authentication makes the sender
+establishable, not the construct comparable: a dispatch is a broadcast with no single
+target, and on Cursor it is the entire collaboration vocabulary rather than an
+escalation from a cheaper channel, so one edge would mean different things on the two
+harnesses and the number would not say so. `eval/rooms.py`'s exclusion stays, and the
+guard's own `peer-command` passes are deliberately not edges either.
+
+## What is still not built
+
+**Option C, the first-party readiness descriptor.** The architect refuses
+`capture-pane` as a readiness signal on an argument the shipped code does not answer:
+it is a **one-directional falsifier** — seeing a modal proves `waiting`, not seeing one
+proves nothing, since the same truncation that makes `capture-pane` wrong for
+confirming a reply can hide a dialog below the fold. §5 measured the probe that decides
+whether the alternative exists, and it stands: bracketing `beforeShellExecution` and
+`afterShellExecution` with our own descriptor would replace a vendor's rendering with
+an artifact we author. Not built, so the readiness read remains the weakest joint in
+the room.
 
 ## Incidental defect found
 

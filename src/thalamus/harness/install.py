@@ -87,6 +87,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PreToolUse", "Bash", "gremlin-guard.sh"),
     ("PreToolUse", "Bash", "write-guard.sh"),
     ("PreToolUse", "SendMessage", "room-guard.sh"),
+    ("PreToolUse", "Bash", "room-command-guard.sh"),
     ("PreToolUse", "Edit|Write|NotebookEdit|Skill|Artifact", "role-guard.sh"),
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
@@ -158,6 +159,10 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     # PreToolUse-on-Bash guards, and the boundary this one enforces is a decision about
     # the graph, which does not care which harness ran the command.
     ("beforeShellExecution", "write-guard.sh"),
+    # The room boundary's only possible shape on this harness: `room-guard.sh` matches
+    # the `SendMessage` tool name and Cursor has no such tool, so peer traffic is a
+    # shell command or it is nothing.
+    ("beforeShellExecution", "room-command-guard.sh"),
     ("afterShellExecution", "gremlin-tap.sh"),
     ("afterMCPExecution", "mcp-tap.sh"),
     ("postToolUse", "inject.sh"),
@@ -217,9 +222,9 @@ class HookParity:
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    claude_scripts=12,
-    cursor_scripts=11,
-    shared=8,
+    claude_scripts=13,
+    cursor_scripts=12,
+    shared=9,
     claude_only=("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh", "room-guard.sh"),
     cursor_only=("distill.sh", "inject.sh", "mcp-tap.sh"),
     renames=(("post-tool-use.sh", "mcp-tap.sh"),),

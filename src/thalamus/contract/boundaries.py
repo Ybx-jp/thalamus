@@ -155,9 +155,13 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
     ),
     BoundaryRow(
         "room_boundary.message", "claude", Provision.PROVIDED, _WIRED,
-        "room-guard.sh on `SendMessage`. It was once declared here and never armed, "
-        "so every room reported a treatment that had not occurred (lab/056) — which "
-        "is why this row is recomputed rather than believed.",
+        "Two channels, two matchers: `room-guard.sh` on `SendMessage`, and "
+        "`room-command-guard.sh` on `Bash` for the peer traffic a tool name cannot "
+        "see — `tmux send-keys` reaches any pane on the box, and `thalamus dispatch` "
+        "addresses a room by name from a shell. The free re-ask below checks the "
+        "first; it was once declared here and never armed, so every room reported a "
+        "treatment that had not occurred (lab/056), which is why this row is "
+        "recomputed rather than believed.",
     ),
     BoundaryRow(
         "write_boundary.path", "cursor", Provision.NATIVE,
@@ -212,26 +216,28 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "standing trade is that a false positive teaches route-around.",
     ),
     BoundaryRow(
-        "room_boundary.message", "cursor", Provision.ABSENT,
+        "room_boundary.message", "cursor", Provision.PROVIDED,
         Evidence(
             kind="live-session",
             at="2026-08-13",
-            where="a Cursor member of room `probe` was launched, addressed and "
-                  "delivered to over `tmux send-keys`, and replied (lab/065) — so a "
-                  "peer channel exists and no guard sits on it. There is no "
-                  "`SendMessage` tool to match: peer traffic is `thalamus dispatch` "
-                  "over Bash, which `beforeShellExecution` can reach and nothing does",
+            where="a `qe`-pinned Cursor member of room `probe` was asked to run "
+                  "`tmux send-keys -t %0 hello`; the command did not run, the guard's "
+                  "own prose reached the model verbatim, and a `room-boundary` block "
+                  "row with `branch: raw-transport` landed in `~/.thalamus/guards/` "
+                  "(lab/065)",
             verified_against="cursor/2026.08.11-e8db854",
             conditions=(Condition.PARSE, Condition.PRINT, Condition.INTERACTIVE),
             reask="live-session",
         ),
-        "ABSENT for a different reason than it used to be, and a worse one: the "
-        "member is addressable now, so this is an open channel rather than a missing "
-        "one. `room-guard.sh` has no Cursor twin, and the tool-name matcher it is "
-        "built on has nothing to match — the Cursor analogue would guard a *command* "
-        "at `beforeShellExecution`, which is a different matcher and a different "
-        "false-positive surface. Until that exists, a Cursor room's isolation is its "
-        "config root and not its messaging.",
+        "Through `room-command-guard.sh` on `beforeShellExecution`, not a port of "
+        "`room-guard.sh`: that one matches the `SendMessage` tool name and Cursor has "
+        "no such tool, so peer traffic here is a shell command or it is nothing. The "
+        "guard is defence-in-depth over `dispatch.authenticate`, which establishes "
+        "the sender from the calling process — a command-string matcher can be evaded "
+        "by a determined member, and the check inside the verb reads data the caller "
+        "cannot author. The one rule with no second line behind it is the raw "
+        "transport: `send-keys` never reaches the verb, so the guard is the whole "
+        "boundary there and matches the verb rather than the binary's spelling.",
     ),
 )
 

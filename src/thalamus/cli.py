@@ -1140,7 +1140,15 @@ def main():
     )
     dispatch_parser.add_argument(
         "--sender", default="",
-        help="Who is dispatching (default: this process's scope)",
+        help="Who is dispatching (default: this process's scope). Inside a room this "
+             "may only name the session's own scope — the sender is established by "
+             "the process there, not asserted",
+    )
+    dispatch_parser.add_argument(
+        "--operator", action="store_true",
+        help="Dispatch into a room this session is not in. Refused by default: a "
+             "member reaching another room is the one direction a room's config root "
+             "does not bound",
     )
     dispatch_parser.add_argument(
         "--partial", action="store_true",
@@ -3683,12 +3691,18 @@ def _cmd_ceremony(args, parser):
 
 def _cmd_dispatch(args):
     from thalamus.harness import dispatch as dispatch_mod
-    from thalamus.harness.pin import resolve_pin
 
-    sender = args.sender or resolve_pin()
+    # Deliberately NOT defaulted to `resolve_pin()` here. `dispatch.authenticate`
+    # establishes the sender from the calling process and refuses a member that names
+    # another scope — and it can only tell an assertion from a default if the empty
+    # case reaches it. Resolving a default at this layer made every caller look like
+    # one that had asserted.
     slots = (args.task, args.eligibility, args.bid, args.expires)
+    sender = args.sender
 
     try:
+        sender, _ = dispatch_mod.authenticate(args.room, sender,
+                                              operator=args.operator)
         if any(slots):
             if args.message:
                 print(
@@ -3706,6 +3720,7 @@ def _cmd_dispatch(args):
             args.room,
             text,
             sender=sender,
+            operator=args.operator,
             scopes=args.scopes,
             partial=args.partial,
             dry_run=args.dry_run,
