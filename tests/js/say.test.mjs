@@ -26,7 +26,7 @@ const source = [
   extractFunction("speakFrom", src),
 ].join("\n");
 
-function load(activeIdx = 3) {
+function load(activeIdx = 3, voiceAvailable = true) {
   const events = [];
   const classes = new Set();
   const sayAudio = {
@@ -51,7 +51,7 @@ function load(activeIdx = 3) {
   const api = evaluate(
     source + "\nfunction _saying(){ return saying; }",
     ["sayUrl", "setSayState", "stopSaying", "startSaying", "speakActiveWindow", "speakFrom", "_saying"],
-    { els, sayAudio, activeIdx, encodeURIComponent, saying: false },
+    { els, sayAudio, activeIdx, encodeURIComponent, saying: false, voiceAvailable },
   );
   return { api, events, els, classes };
 }
@@ -150,6 +150,21 @@ suite("say: tapping a new block while speaking replaces the utterance");
   const plays = events.filter((e) => e.type === "play");
   check("two utterances started", plays.length === 2);
   contains("the second starts where the second tap pointed", plays[1].src, "from=9");
+}
+
+suite("say: a console with no voice service speaks through neither entry point");
+{
+  // The control is hidden when `/api/voice` reports nothing configured, but hiding
+  // is not the whole guard: tapping a block in the read view calls speakFrom
+  // directly and never touches the button. Both paths have to be shut, or the
+  // feature is only invisible rather than off.
+  const { api, events } = load(2, false);
+  api.speakActiveWindow();
+  check("the button path requests no audio", events.length === 0,
+    `got: ${events.map((e) => e.type).join(",")}`);
+  api.speakFrom(2, 7);
+  check("and neither does tapping a block", events.length === 0,
+    `got: ${events.map((e) => e.type).join(",")}`);
 }
 
 done();

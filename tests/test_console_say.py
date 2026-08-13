@@ -13,6 +13,11 @@ import json
 
 from thalamus.console import server, transcript as tr
 
+# A configured console's voice service. Never contacted — every test that reaches
+# the transport monkeypatches it — but passed explicitly, because the URL being an
+# argument rather than a module global is what makes the feature switchable off.
+VOICE = "http://127.0.0.1:8380"
+
 
 def write_jsonl(path, records):
     with path.open("w", encoding="utf-8") as fh:
@@ -220,10 +225,10 @@ class TestSynthesisGate:
                                     protected=(lost,), missing=(lost,))
 
         monkeypatch.setattr(server, "speech_module", lambda: Broken)
-        monkeypatch.setattr(server, "_post_to_voice", lambda text, timeout: (
+        monkeypatch.setattr(server, "_post_to_voice", lambda text, url, timeout: (
             spoken.update(text=text) or (b"RIFF", None)))
 
-        audio, err = server.synthesise_update("There are 17 citations.")
+        audio, err = server.synthesise_update("There are 17 citations.", VOICE)
         assert err is None
         assert audio == b"RIFF"
         assert spoken["text"] == server.WITHHELD_NOTICE
@@ -231,11 +236,11 @@ class TestSynthesisGate:
 
     def test_a_faithful_update_is_spoken_as_transformed(self, monkeypatch):
         spoken = {}
-        monkeypatch.setattr(server, "_post_to_voice", lambda text, timeout: (
+        monkeypatch.setattr(server, "_post_to_voice", lambda text, url, timeout: (
             spoken.update(text=text) or (b"RIFF", None)))
 
         audio, err = server.synthesise_update(
-            "Fixed `src/thalamus/console/server.py` — 17 citations, commit e08a09a.")
+            "Fixed `src/thalamus/console/server.py` — 17 citations, commit e08a09a.", VOICE)
         assert err is None and audio == b"RIFF"
         assert "console server" in spoken["text"]
         assert "17" in spoken["text"]
@@ -243,12 +248,45 @@ class TestSynthesisGate:
 
     def test_no_speech_module_is_reported_not_raised(self, monkeypatch):
         monkeypatch.setattr(server, "speech_module", lambda: None)
-        audio, err = server.synthesise_update("anything")
+        audio, err = server.synthesise_update("anything", VOICE)
         assert audio is None
         assert "unavailable" in err
 
     def test_an_unreachable_voice_service_is_an_error_not_a_crash(self, monkeypatch):
-        monkeypatch.setattr(server, "VOICE_URL", "http://127.0.0.1:9")
-        audio, err = server.synthesise_update("Say something.", timeout=1.0)
+        audio, err = server.synthesise_update(
+            "Say something.", "http://127.0.0.1:9", timeout=1.0)
         assert audio is None
         assert err
+
+
+# ---- the feature is off until a service is named ----
+
+class TestVoiceIsOptIn:
+    """`say` is opt-in for a harder reason than frame themes are.
+
+    A frame theme that is not configured costs an operator nothing. A `say`
+    control that is not backed costs them a visible button whose only behaviour
+    is to fail — and the reason lands in the server's stderr, where the person
+    holding the phone cannot read it. So the absence of `--voice` has to remove
+    the control, not merely break it.
+    """
+
+    def test_a_console_has_no_voice_service_by_default(self, tmp_path):
+        cfg = server.Config(project_root=tmp_path)
+        assert cfg.voice_url is None
+        assert server.voice_available(cfg) is False
+
+    def test_naming_a_service_is_what_turns_the_control_on(self, tmp_path):
+        cfg = server.Config(project_root=tmp_path, voice_url=VOICE)
+        assert server.voice_available(cfg) is True
+
+    def test_the_env_var_alone_does_not_arm_it(self, tmp_path, monkeypatch):
+        """The env var supplies the CLI flag's default, not the feature.
+
+        It is read once, in `cli.py`, where an operator already running the unit
+        keeps their setting. A `Config` built without a URL stays off no matter
+        what the environment says — otherwise every test process and every
+        embedding of this server would inherit a voice it never asked for.
+        """
+        monkeypatch.setenv("THALAMUS_VOICE_URL", "http://127.0.0.1:8380")
+        assert server.voice_available(server.Config(project_root=tmp_path)) is False

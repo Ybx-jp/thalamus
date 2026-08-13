@@ -130,6 +130,15 @@ itself. Tap again to stop. The control sits in the always-visible key row rather
 than inside the read view, because the read view is opt-in per device — a control
 behind a toggle a device never enabled is a control that device does not have.
 
+**It appears only on a console started with `--voice URL`.** The service is a
+separate unit with a model download behind it (below), so a console that assumed
+one would hand every operator a button whose only behaviour is to fail — and the
+reason lands in the server's stderr, which is not where the person holding the
+phone is looking. The client asks `/api/voice` before it draws anything; without a
+service both `/api/say` and `/api/say/ack` are 404 and the button is absent rather
+than dead. `$THALAMUS_VOICE_URL` supplies the flag's default, so a box already
+running the unit keeps its setting.
+
 Each session keeps a listening position:
 
 - **Tap** speaks what you have not heard yet. The first tap on a session falls
@@ -164,8 +173,9 @@ sentence at roughly ninety seconds and say so, rather than reading for five
 minutes. The transform is `console/speech.py`; the budget is
 `DEFAULT_BUDGET_CHARS`.
 
-Speech needs `thalamus-voice.service` (below). Without it the control turns red
-and the console is otherwise unaffected.
+Speech needs `thalamus-voice.service` (below), named with `--voice`. A console
+started without it simply has no `say` control; one whose service dies turns the
+control red and is otherwise unaffected.
 
 **`read` switches to the transcript view.** The pane view mirrors a *rendering* of
 the session: an 80-column repaint, colours stripped by tmux, reflowing under you
@@ -355,8 +365,9 @@ unauthenticated loopback API, and nothing reachable there should be able to ask
 for unbounded work.
 
 With `--frames`, the desktop surface can also render the pane inside a panel drawn
-in a background image — `frame` toggles (F12), `▸` cycles (F9). Off by default and
-no artwork ships with it; see [frame-themes.md](frame-themes.md).
+in a background image — `frame` toggles (F12), `▸` cycles (F9). Off by default, and
+when it is off neither the controls nor the key bindings exist; no artwork ships
+with it. See [frame-themes.md](frame-themes.md).
 
 ### Install it to your home screen
 
@@ -440,7 +451,13 @@ fetched separately from the model on first use, so a pipeline that has only been
 constructed still owes a network round trip, and a box that is offline when the
 first tap arrives would fail outright.
 
-The console reaches it at `THALAMUS_VOICE_URL` (default `http://127.0.0.1:8380`).
+The console reaches it at the URL passed to `--voice` (or `$THALAMUS_VOICE_URL`,
+which supplies that flag's default) — conventionally `http://127.0.0.1:8380`. Its
+dependencies are the `voice` extra: `kokoro`, `torch` and `numpy`, with a
+Kokoro-82M download from HuggingFace on first synthesis, so a first run needs
+network. Warming is wrapped: a venv missing one of them logs and starts anyway,
+leaving the first request to report the real error rather than killing the unit.
+
 It is never exposed through `tailscale serve` — audio reaches the phone through
 the console's own `/api/say`, which the service worker leaves uncached along with
 every other `/api/` path.
@@ -517,6 +534,7 @@ nothing about one operator's setup is baked into the code.
 | `--scan ROOT` | the project root's parent | Offer every git repo one level under ROOT (repeatable) |
 | `--service UNIT` | none | A systemd `--user` unit the admin sheet may restart (repeatable) |
 | `--frames PATH` | none | Frame-theme definitions for the desktop client ([frame-themes.md](frame-themes.md)) |
+| `--voice URL` | `$THALAMUS_VOICE_URL`, else none | Speech service behind `say`. Without it the control is not shown |
 
 The spawn picker's directory list is also the **whitelist**: a spawn request is
 checked against the same computation that built the list, so the client can only

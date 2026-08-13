@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import secrets
 import socket
 import sys
@@ -1245,6 +1246,14 @@ def main():
         "--frames", type=Path, default=None, metavar="PATH",
         help="Frame-theme definitions for the desktop client, e.g. "
              "$WEZTERM_CONFIG_DIR/frames.lua (default: none — no frame themes)"
+    )
+    # THALAMUS_VOICE_URL supplies the default rather than the feature: an operator
+    # already running the unit keeps their setting, and a box without one gets no
+    # `say` control instead of a button that fails on first tap.
+    console_parser.add_argument(
+        "--voice", default=os.environ.get("THALAMUS_VOICE_URL") or None, metavar="URL",
+        help="Speech service backing the `say` control, e.g. http://127.0.0.1:8380 "
+             "(default: $THALAMUS_VOICE_URL, else none — the control is hidden)"
     )
 
     # Pulse command — the live telemetry dashboard (docs/03)
@@ -3582,7 +3591,6 @@ def _cmd_thread(args, parser):
 def _agent_closes(graph) -> list[dict]:
     """Every `Agent -[RESOLVES]-> Thread` edge, as flat rows."""
     from gremlin_python.process.graph_traversal import __
-    from gremlin_python.process.traversal import T
 
     return [
         {
@@ -3857,6 +3865,7 @@ def _cmd_console(args):
         scan_roots=args.scan,
         services=args.service,
         frames_file=args.frames,
+        voice_url=args.voice,
     )
     if subprocess.run(["tmux", "has-session", "-t", cfg.session],
                       capture_output=True).returncode != 0:

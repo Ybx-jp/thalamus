@@ -52,6 +52,19 @@ frames = [
     "numpy>=2.1",
     "scipy>=1.14",
 ]
+# The console's `say` control (thalamus/voice/daemon.py), reached only when the
+# console is started with `--voice URL`. Optional because it is the heaviest thing
+# in the repo by an order of magnitude — torch, plus a Kokoro-82M download from
+# HuggingFace on first synthesis, so a first run needs network. The daemon is also
+# normally its own venv and its own systemd unit, on a different lifecycle from the
+# console process; this extra exists so the dependency is *declared* rather than
+# discovered from an ImportError. Kokoro-82M is Apache-2.0; its espeak-ng G2P
+# backend is GPL and is not installed by this extra.
+voice = [
+    "kokoro>=0.9",
+    "torch>=2.5",
+    "numpy>=2.1",
+]
 
 [project.scripts]
 thalamus = "thalamus.cli:main"

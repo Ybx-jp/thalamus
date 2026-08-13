@@ -142,8 +142,9 @@ def speech_module():
 
 
 # The voice service is a separate unit on loopback: it holds a GPU-resident model
-# and this process restarts itself on edit, which are incompatible lifecycles.
-VOICE_URL = os.environ.get("THALAMUS_VOICE_URL", "http://127.0.0.1:8380")
+# and this process restarts itself on edit, which are incompatible lifecycles. Its
+# URL lives on `Config` rather than here, because naming a service on this machine
+# is exactly what makes the feature opt-in — see `Config.voice_url`.
 
 # Spoken when the transform drops something it promised to keep. A listener who
 # hears nothing knows to go and look; a listener fed a fluent sentence with the
@@ -154,7 +155,17 @@ WITHHELD_NOTICE = (
 )
 
 
-def synthesise_update(source: str, timeout: float = 60.0):
+def voice_available(cfg: Config) -> bool:
+    """Whether this console has a `say` control at all.
+
+    The counterpart to `frames()`: one predicate the handlers and the client's
+    availability probe both read, so "is the feature on" is answered in exactly
+    one place rather than re-derived at each endpoint.
+    """
+    return bool(cfg.voice_url)
+
+
+def synthesise_update(source: str, voice_url: str, timeout: float = 60.0):
     """Raw turn text to wav bytes, via the transform and the voice service.
 
     Returns `(audio, error)`. The protected-token contract is enforced here
@@ -175,16 +186,16 @@ def synthesise_update(source: str, timeout: float = 60.0):
         spoken = update.text
     if not spoken.strip():
         return None, "nothing to say"
-    return _post_to_voice(spoken, timeout)
+    return _post_to_voice(spoken, voice_url, timeout)
 
 
-def _post_to_voice(text: str, timeout: float):
+def _post_to_voice(text: str, voice_url: str, timeout: float):
     """The transport half, separate so the gate above can be tested without one."""
     import urllib.error
     import urllib.parse
     import urllib.request
 
-    url = f"{VOICE_URL}/say?" + urllib.parse.urlencode({"text": text})
+    url = f"{voice_url}/say?" + urllib.parse.urlencode({"text": text})
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return response.read(), None
@@ -194,7 +205,7 @@ def _post_to_voice(text: str, timeout: float):
         print(f"say: voice service refused: {exc}", file=sys.stderr, flush=True)
         return None, f"voice service refused: {exc.code}"
     except urllib.error.URLError as exc:
-        print(f"say: voice service unreachable at {VOICE_URL}: {exc}",
+        print(f"say: voice service unreachable at {voice_url}: {exc}",
               file=sys.stderr, flush=True)
         return None, "voice service unreachable"
     except Exception as exc:  # noqa: BLE001 — the console must survive this
@@ -403,6 +414,12 @@ class Config:
     # Frame-theme definitions (see `frames`). None — the default — means no frame
     # themes: the feature is opt-in because it names image paths on this machine.
     frames_file: Path | None = None
+    # Speech service backing the `say` control. None — the default — means the
+    # control is not offered at all: no button, no endpoints. Opt-in for the same
+    # reason `frames_file` is, and for a sharper one — the service is a separate
+    # unit with an undeclarable model download behind it, so a console that
+    # assumed one would hand every operator a button that fails on the first tap.
+    voice_url: str | None = None
 
     def __post_init__(self) -> None:
         pin = pin_module()
@@ -477,10 +494,19 @@ def frames(cfg: Config) -> list[dict]:
                 continue
             if not os.path.isfile(image):
                 continue
+            # `[-\d.]+` matches things float() will not take — `1.2.3`, a bare `-`,
+            # `..` — so a typo'd fraction would raise out of here, out of do_GET
+            # (which has no blanket handler) and 500 the endpoint. That is exactly
+            # the "never an exception" this function's docstring promises, so a
+            # malformed entry is dropped like a missing image is.
+            try:
+                panel = {k: float(m.group(k)) for k in ("left", "right", "top", "bottom")}
+            except ValueError:
+                continue
             out.append({
                 "name": m.group("name"),
                 "path": image,
-                "panel": {k: float(m.group(k)) for k in ("left", "right", "top", "bottom")},
+                "panel": panel,
             })
         _FRAMES_CACHE["key"] = key
         _FRAMES_CACHE["frames"] = out
@@ -1081,11 +1107,18 @@ class Handler(BaseHTTPRequestHandler):
             if body is None:
                 return self._send(404, {"error": "no such item"})
             return self._send(200, {"body": body})
+        if path == "/api/voice":
+            # What the client asks before deciding whether to show the control at
+            # all — the same shape as `/api/frames`, and for the same reason: the
+            # server owns what this machine has, the client owns what it draws.
+            return self._send(200, {"available": voice_available(self.cfg)})
         if path == "/api/say":
             # Tap-to-listen: this window's latest turn, rewritten for the ear and
             # synthesised by the voice service. Audio is returned inline so the
             # client can set an <audio> src and play it in the same click — a
             # phone will not autoplay anything that arrives after an await.
+            if not voice_available(self.cfg):
+                return self._send(404, {"error": "no voice service configured"})
             q = parse_qs(query)
             raw = q.get("index", [""])[0]
             if not raw.lstrip("-").isdigit():
@@ -1110,7 +1143,7 @@ class Handler(BaseHTTPRequestHandler):
                 # say so — the control flashes and stays quiet.
                 return self._send(204, b"", "application/json")
             say_pending(feed.session_id, high)
-            audio, err = synthesise_update(source)
+            audio, err = synthesise_update(source, self.cfg.voice_url)
             if err:
                 return self._send(502, {"error": err})
             return self._send(200, audio, "audio/wav", cache="no-store")
@@ -1344,6 +1377,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/say/ack":
             # Playback finished. Only now does the listening position move — the
             # request that produced the audio cannot know whether it was heard.
+            if not voice_available(self.cfg):
+                return self._send(404, {"error": "no voice service configured"})
             idx = data.get("index")
             if not isinstance(idx, int):
                 return self._send(400, {"error": "index required"})
