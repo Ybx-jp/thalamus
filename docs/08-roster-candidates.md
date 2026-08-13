@@ -77,12 +77,35 @@ a better prompt** (`scope:literature:claim:db0928fe2cfd3616`).
 The consequence for this roster: a scope boundary that exists only as a paragraph in
 `domain` is the configuration that was measured failing. Where a scope is defined by
 what it must *not* produce, the manifest declares that boundary and the `role-guard`
-PreToolUse hook enforces it. There are two, and their defaults deliberately run
-opposite ways.
+PreToolUse hook enforces it. There are three. The two declared per scope have defaults
+that deliberately run opposite ways; the third is not declared per scope at all.
 
 **`write_boundary` bounds paths** (`contract/manifest.WriteBoundary`) and defaults
 open: a scope that declares nothing is unbounded, which is the honest default for a
 scope whose charter *is* to write code, and such a scope says so.
+
+**`PATH_OWNERSHIP` bounds a path to one owner** (`contract/ownership.py`) and is the
+inverse question — not "which paths may this scope not write" but "who owns this
+path". The inverse is not expressible in a manifest, because the scope it most needs
+to bind is `main`, and `main` has none; writing the owned glob into the other six
+manifests would store one fact six times. So the table lives once, beside the roster,
+the way `ROSTER_CAPABILITY_DEFAULT` does for capability.
+
+It is the only boundary here that binds `main`, and the guard therefore tests it
+**ahead of** the `main` short-circuit. That ordering is what forced the table to be
+plain tuples with no pydantic: measured on this box, importing `contract.manifest`
+costs 151 ms against 15 ms for a bare interpreter — and the 151 ms is the pydantic
+import, not the YAML read, which adds only 24 ms on top. A typed table would have made
+the cheap test more expensive than the expensive one it is ordered in front of.
+
+It is also the only one that **fails closed**. When the structured read fails, the raw
+payload is searched for the owned markers and the write is refused — `write-guard.sh`'s
+posture rather than this guard's. The others can afford to fail open because their
+failure is a bad edit; this one's failure is a scope editing the oracle that indicts
+it. A path allow-list was refused in general on 2026-08-11 and that refusal stands: the
+discriminator settled in `073d451b006e4a81` is whether a rule changes the default over
+its own complement, and an ownership row does not — it is a deny with an owner
+exception whose own failure mode is *permit*.
 
 **`capability_boundary` bounds tools and named skills**
 (`contract/manifest.CapabilityBoundary`) and defaults *closed*: a scope that declares
