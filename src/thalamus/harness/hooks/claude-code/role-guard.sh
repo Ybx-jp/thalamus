@@ -180,8 +180,8 @@ Blocked: scope \`${scope}\` ${verb} \`${target}\` (matched \`${pattern}\`).
 ${reason}
 
 This boundary is declared tier-0 in ${declared}, and is not something this session
-can widen. If the work genuinely belongs to another scope, hand it over: open a
-thread describing it, or mint a consultation ticket to the scope that owns it. If
+can widen. If the work genuinely belongs to another scope, hand it over: mint a
+consultation ticket to the scope that owns it, or report it to the operator. If
 the boundary itself is wrong, that is an operator decision and an edit to the
 manifest — say so rather than routing around it.
 EOF
