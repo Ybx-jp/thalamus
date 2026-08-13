@@ -129,14 +129,46 @@ def test_a_layer_with_no_rule_permits_everything(tmp_path):
     assert model.violations(graph) == []
 
 
-def test_stale_authored_paths_reports_a_layer_matching_nothing():
+def test_stale_authored_paths_reports_a_layer_matching_nothing(tmp_path):
+    repo = _repo(tmp_path)
+    graph = scan_repo(repo, ExtractorPolicy(roots=("src",)))
     model = arch_model.ArchModel(
         layers=[arch_model.Layer(name="ghost", includes=("src/gone/**",))],
-        derived={"edges": ["src/app/core.py -> src/app/util.py [import,module]"]},
     )
-    stale = model.stale_authored_paths()
+    stale = model.stale_authored_paths(graph)
     assert len(stale) == 1
     assert "matches no module" in stale[0]
+
+
+def test_stale_authored_paths_sees_a_module_that_appears_in_no_edge(tmp_path):
+    """The rot detector's universe is the module list, not the edge endpoints.
+
+    `src/app/__init__.py` imports nothing and nothing imports it, so it appears in no
+    edge while still being a scanned module the partition must place. Deriving the
+    universe from edges made this declaration read as rot — an error that only ever
+    accuses correct declarations, and clears when the architect deletes one.
+    """
+    repo = _repo(tmp_path)
+    graph = scan_repo(repo, ExtractorPolicy(roots=("src",)))
+    assert "src/app/__init__.py" in graph.modules
+    assert all("__init__.py" not in edge.from_path for edge in graph.edges)
+
+    model = arch_model.ArchModel(
+        layers=[arch_model.Layer(name="init", includes=("src/app/__init__.py",))],
+    )
+    assert model.stale_authored_paths(graph) == []
+
+
+def test_stale_authored_paths_reports_a_seam_on_a_deleted_file(tmp_path):
+    repo = _repo(tmp_path)
+    graph = scan_repo(repo, ExtractorPolicy(roots=("src",)))
+    model = arch_model.ArchModel(
+        layers=[arch_model.Layer(name="app", includes=("src/app/**",))],
+        seams=[{"name": "gone", "at": "src/app/removed.py"}],
+    )
+    stale = model.stale_authored_paths(graph)
+    assert len(stale) == 1
+    assert "was not scanned" in stale[0]
 
 
 def test_findings_name_no_scan_id(tmp_path):

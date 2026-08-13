@@ -145,20 +145,22 @@ class ArchModel:
             found.append(Violation(edge.from_path, edge.to_path, from_layer, to_layer))
         return found
 
-    def stale_authored_paths(self) -> list[str]:
-        """Authored path patterns that no longer match anything measured.
+    def stale_authored_paths(self, graph: DependencyGraph) -> list[str]:
+        """Authored path patterns that no longer match anything scanned.
 
         The authored half rots silently while the derived half looks maintained. A layer
         whose `includes` matches nothing, or a seam pointing at a deleted file, is the
         cheapest detectable form of that rot.
+
+        The universe is the scanned module list, the same one `unplaced` partitions —
+        not the endpoints of the edge list. A module that neither imports nor is
+        imported appears in no edge, so an edge-derived universe cannot see it and
+        reports the declaration that correctly places it as rot. That error only ever
+        runs one way: it accuses correct declarations, and an architect who trusts it
+        deletes them to clear the finding. A rot detector that induces rot is worse
+        than none.
         """
-        edges = self.derived.get("edges") or []
-        measured = {row.split(" -> ")[0] for row in edges if isinstance(row, str)}
-        measured |= {
-            row.split(" -> ")[1].split(" [")[0]
-            for row in edges
-            if isinstance(row, str) and " -> " in row
-        }
+        measured = set(graph.modules)
         stale: list[str] = []
         for layer in self.layers:
             for pattern in layer.includes:

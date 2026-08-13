@@ -121,7 +121,7 @@ def findings(graph: DependencyGraph, metrics: Metrics, model: ArchModel) -> list
             )
         )
 
-    for note in model.stale_authored_paths():
+    for note in model.stale_authored_paths(graph):
         found.append(
             Problem(
                 description=f"Authored model has rotted: {note}.",
