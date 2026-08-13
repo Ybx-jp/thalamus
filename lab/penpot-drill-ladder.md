@@ -86,14 +86,35 @@ Established by source survey and by live probes against the running stack.
   `padding_top`/`padding_right`/`padding_bottom`/`padding_left` override individually,
   and the tool emits `layout-padding-type` to match. 16 horizontal / 8 vertical is
   `padding_left=16, padding_right=16, padding_top=8, padding_bottom=8`.
-- **Auto-layout is configuration, not reflow. Children do not move.** Setting `layout`
-  stores the configuration and leaves every child at its authored coordinates. Reflow
-  is an editor action in Penpot — it recomputes child geometry and *persists* it — and
-  the exporter's render page runs no layout pipeline, so a headless PNG shows the
-  frame exactly as composed. Controlled: a frame with layout baked in at `add-obj`
-  renders identically un-reflowed, so this is authoring-without-an-editor, not a
-  property of how the attribute was written. **Keep composing with absolute
-  coordinates**; auto-layout is metadata for whoever opens the file next.
+- **Auto-layout is configuration, not reflow. Children do not move — including in the
+  editor.** Setting `layout` stores the configuration and leaves every child at its
+  authored coordinates, and the exporter's render page runs no layout pipeline, so a
+  headless PNG shows the frame exactly as composed. Controlled: a frame with layout
+  baked in at `add-obj` renders identically un-reflowed, so this is
+  authoring-without-an-editor, not a property of how the attribute was written.
+
+  Measured in the browser, closing the open question: a frame written headlessly with
+  `layout: flex`, `row`, gap 16, padding 16, `align-items: start`, and two children
+  parked overlapping at the bottom-right — where flex would never leave them — opened
+  in the editor and **did not reflow**. Children read back at their authored
+  coordinates after the open, and again after selecting the frame. All seven layout
+  attributes store and read back intact. **Assessment does not mutate the design**, and
+  composing with absolute coordinates is safe; auto-layout is inert-but-recognised
+  metadata for whoever edits the file next.
+- **A workspace deep link needs `team-id`, and without it the editor dies on a
+  wholly unrelated error.** `#/workspace?file-id=…&page-id=…` loads far enough to look
+  like a real failure and then throws a full-page *Internal Error*, because
+  `get-font-variants` is called with `{}` and the backend refuses
+  `[::sm/contains-any #{:team-id :file-id :project-id}]`. Nothing is wrong with the
+  file — the same file opens correctly from the dashboard, or from:
+
+  ```
+  https://penpot.tail92a020.ts.net/#/workspace?team-id=<team>&file-id=<file>&page-id=<page>
+  ```
+
+  Worth knowing because the failure names fonts, not the URL, and it looks identical
+  to a corrupted file. The backend log stays silent; the evidence is in the browser
+  console.
 - **A revision is a successful write, and only that.** A 53-shape board reconciled
   exactly to its revision number; failed writes consume none. Expensive in undo steps
   and a real race if the file is open elsewhere — but cheap in wall clock, because the
@@ -264,10 +285,8 @@ drill that produces a deliverable and no change has not been assessed.
    affected; the exposure is confined to attributes that used to be a hard 500. Owner
    is `architect`. The revisit trigger is a drill that actually needs the inheritance.
 
-3. **Whether opening a headlessly-configured auto-layout frame in the editor makes it
-   reflow is unmeasured.** Reflow persists child geometry when the editor performs it,
-   but nothing here established whether merely *opening* the file triggers it or
-   whether the layout has to be touched in the UI first. One probe settles it: author a
-   frame with `set_layout` and two children, open the file in the editor without
-   touching anything, close it, and re-export. Owner is `designer` — it needs a
-   browser, which this ladder's sessions otherwise never use.
+3. **Whether an editor open reflows a headlessly-configured frame — closed 2026-08-13,
+   negative.** It does not, and neither does selecting the frame. See the auto-layout
+   instrument fact above for the measurement. Nothing is left open here: the layout
+   has to be touched in the UI before Penpot recomputes anything, so the assessment
+   surface is read-only with respect to child geometry.
