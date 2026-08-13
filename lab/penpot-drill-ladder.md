@@ -55,9 +55,41 @@ Established by source survey and by live probes against the running stack.
   `height` without refreshing `selrect` and `points`. The five text-mutation tools
   (`set_font`, `set_font_size`, `set_text_align`, `set_text_style`, `set_text_content`)
   rebuild content from the first paragraph only and reset every property not passed.
-- **`modify_shape(attrs)` is the escape hatch** — it emits raw set-ops for any
-  kebab-case Penpot attribute, which is the only route to shadows, blur, blend modes,
-  per-corner radii, rotation, constraints, and gradient fills.
+
+  Creation itself is exact. Measured off a rendered export (lab/064): every shape
+  created with explicit `x`/`y`/`width`/`height` and a `parent_id` landed on its
+  specified pixel, across a 53-shape board. The hazard is in the mutators, not in
+  `create_*`.
+- **`modify_shape(attrs)` is the escape hatch, and it reaches only number- and
+  map-valued attributes.** It emits raw set-ops for any kebab-case Penpot attribute,
+  which is the route to shadows and blur (maps), per-corner radii and rotation
+  (numbers), and gradient fills. **Every enum-valued attribute is unreachable and
+  returns a bare 500** — `blend-mode`, `constraints-h`/`-v`, `layout`,
+  `layout-flex-dir`, stroke alignment, stroke cap, grow type. Measured 6/6 on the
+  split (lab/064).
+
+  The cause is the transport, not the argument. The RPC body is plain JSON; a
+  `mod-obj` operation types its `val` as `any`, so no string→keyword coercion runs,
+  and the shape then fails validation against a schema that types these attributes as
+  keywords. The transit spelling `"~:flex"` fails identically — a JSON body cannot
+  express a keyword at all. `create_*` is unaffected because `add-obj` decodes a whole
+  shape against the shape schema, where the coercion exists.
+- **`set_layout` is inoperative.** Two of its five ops (`layout`, `layout-flex-dir`)
+  are enum-valued and 500 by the rule above, so the call fails as a whole. Behind that
+  sits a second limit that would survive the fix: `padding` is one scalar written to
+  all four sides, so asymmetric padding is not expressible. Compose with absolute
+  coordinates at creation time.
+- **A revision is a successful write, and only that.** A 53-shape board reconciled
+  exactly to its revision number; failed writes consume none. Expensive in undo steps
+  and a real race if the file is open elsewhere — but cheap in wall clock, because the
+  calls parallelise. 54 creates went out in 6 batched messages (lab/064). Avoid the
+  call-per-message loop, not the model.
+- **The PNG never needs to enter context.** `export_frame_png` overflows the
+  tool-result ceiling and the harness spills it to a file under the session's
+  `tool-results/`. The payload is JSON-in-JSON with the image under `content_base64`;
+  decode straight off that file and `Read` the result. No base64 crosses into the
+  conversation, so looking at a 2x export is nearly free. The overflow error is the
+  mechanism, not an obstacle.
 - **Every tool call is its own file revision.** A 40-shape screen is 40 round trips, 40
   undo steps, and a real race if the file is open elsewhere. No transaction tool.
 
@@ -119,9 +151,12 @@ to surface: which font actually renders, and whether geometry survives.
 A button matrix: three variants (primary, secondary, ghost) by three states (default,
 hover, disabled), nine cells on an 8px grid, with padding redlines called out.
 
-The brief leaves nothing to interpret, so this grades execution alone. Expected to
-surface: whether `set_layout` flex is usable for real composition, the cost of the
-one-call-one-revision model at ~40 shapes, and whether text survives being built.
+The brief leaves nothing to interpret, so this grades execution alone.
+
+Run 2026-08-12 — file `D1 button matrix`, 53 shapes, awaiting assessment. Surfaced
+P3 (enum-valued attributes unreachable, which takes `set_layout` with it), exact
+creation geometry, the revision/wall-clock split, and the free render-and-look loop.
+Written up in lab/064.
 
 ### D2 — Iconography, mechanics ceiling
 
@@ -196,3 +231,13 @@ drill that produces a deliverable and no change has not been assessed.
    `write_boundary` denies `*.py`, and moving the config into `config/experts/
    designer.yaml` is ruled out by `pin.py:558` (the manifest is harness-agnostic
    because Cursor reads it, and `--mcp-config` is Claude Code's schema).
+
+2. **P3 — no enum-valued attribute can be written, so `set_layout` is dead.**
+   `modify_shape` and `set_layout` post their changes as plain JSON, where a `mod-obj`
+   op's `val` is typed `any` and receives no string→keyword coercion; the shape then
+   fails schema validation and the RPC answers a bare 500. Measured 6/6 on the
+   number/map-vs-enum split, and `"~:flex"` fails too, so no argument spelling repairs
+   it — the fix is a transit-encoded request body in `api.command`, which is a
+   transport change affecting every write tool. Costs blend modes, constraints, stroke
+   alignment and cap, grow type, and all of auto-layout. Owner is `architect`;
+   `designer`'s `write_boundary` denies `*.py`. Reproduction and diagnosis in lab/064.
