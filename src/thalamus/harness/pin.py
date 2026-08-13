@@ -668,8 +668,9 @@ def launch_flags(room: str, scope: str, harness: str = "claude") -> list[str]:
     `--name` there would address nothing (`contract/boundaries.py`).
 
     The permission mode moved to `harness/launcher.py`, because the two harnesses do
-    not merely spell it differently — Cursor has no mode that keeps `auto`'s defining
-    property of never stopping at a prompt.
+    not merely spell it differently — Cursor's non-stalling flag is `auto` minus the
+    safety classifier, so which one a pinned window gets is a decision about that
+    control and not a translation.
     """
     if room and harness == "claude":
         return ["--name", room_member_name(room, scope)]

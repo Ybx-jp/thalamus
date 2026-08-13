@@ -77,13 +77,30 @@ shows it.
 
 Claude Code launches every pinned window with `--permission-mode auto`, chosen so a
 member never sits at a prompt (a prompting member reports `waiting`, which dispatch
-refuses to send into). Cursor has **no equivalent that keeps that property**:
-`--auto-review` is the nearest architecture — a server classifier auto-runs safe calls
-— and it *prompts on the remainder*, so it stalls exactly where `auto` does not. The
-only non-stalling option is `--force`/`--yolo` ("Run Everything"), which is strictly
-more permissive than `auto` rather than equivalent to it.
+refuses to send into). Cursor **has a non-stalling flag but no equivalent one**, and
+the difference is one specific control rather than a spelling:
 
-So no permission flag is passed, and a Cursor window obeys the operator's own
+- `--auto-review` is the nearest architecture — a server classifier auto-runs safe
+  calls — and it *prompts on the remainder*, so it stalls exactly where `auto` does
+  not.
+- `--force`/`--yolo` ("Run Everything") does not stall. Measured 2026-08-12 on
+  2026.08.11-e8db854: a shell command absent from `permissions.allow` ran with no
+  prompt, and so did an MCP tool call absent from it, where an unflagged session
+  launched beside it stopped on both.
+- What `--force` keeps: the explicit `permissions.deny` list, and the
+  `beforeShellExecution` hooks — measured in the same run, where `write-guard.sh`
+  denied `thalamus write` inside a `--force` session, the hook's own prose reaching
+  the model verbatim. So the role boundary does **not** rest on the permission mode,
+  which is what "Run Everything" reads as promising.
+- What it drops is the safety classifier `auto` routes the remainder through. That
+  is the whole of the gap, and it is the control FIDES measures as load-bearing
+  against prompt injection (`scope:literature:claim:073ccf38c98a731a`) — the same
+  reason `auto` is chosen over `bypassPermissions` above.
+
+So `--force` is `auto` minus the classifier, not `auto`, and adopting it is an
+operator decision about that one control rather than a spelling fix.
+
+No permission flag is passed today, and a Cursor window obeys the operator's own
 `~/.cursor/cli-config.json`. The cost is real and belongs here rather than in a
 comment: a Cursor window can stop at a prompt, and nothing dispatches into it — which
 is tolerable only because rooms have no Cursor referent anyway (`contract/boundaries`

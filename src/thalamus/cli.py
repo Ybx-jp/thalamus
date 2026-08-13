@@ -818,7 +818,7 @@ def main():
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
     pin_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     pin_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). `cursor` carries the scope as an argv prefix and passes no permission mode — it has none that keeps `auto`'s property of never stopping at a prompt, so the session obeys your own ~/.cursor/cli-config.json. No persona: Cursor has no `--agent` (see contract/pinning.py for what `pinned` covers there)."
+        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). `cursor` carries the scope as an argv prefix and passes no permission mode, so the session obeys your own ~/.cursor/cli-config.json and can stop at a prompt. `--force`/`--yolo` would not stop, but it is `auto` minus the safety classifier rather than an equivalent (see harness/launcher.py). No persona: Cursor has no `--agent` (see contract/pinning.py for what `pinned` covers there)."
     )
 
     spawn_parser = subparsers.add_parser(
@@ -834,7 +834,7 @@ def main():
     )
     spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     spawn_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). `cursor` carries the scope as an argv prefix and passes no permission mode — it has none that keeps `auto`'s property of never stopping at a prompt, so the session obeys your own ~/.cursor/cli-config.json. No persona: Cursor has no `--agent` (see contract/pinning.py for what `pinned` covers there)."
+        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). `cursor` carries the scope as an argv prefix and passes no permission mode, so the session obeys your own ~/.cursor/cli-config.json and can stop at a prompt. `--force`/`--yolo` would not stop, but it is `auto` minus the safety classifier rather than an equivalent (see harness/launcher.py). No persona: Cursor has no `--agent` (see contract/pinning.py for what `pinned` covers there)."
     )
 
     roster_parser = subparsers.add_parser(
