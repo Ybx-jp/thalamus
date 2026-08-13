@@ -599,18 +599,45 @@ rejected key comes back to the phone as the vendor's own sentence, naming the va
 it read the key from. A death *after* the deadline is caught by nothing and shows up
 only as a window missing from the roster.
 
-**No permission mode is passed, and that is a decision.** Claude Code launches under
-`--permission-mode auto`, chosen so a member never sits at a prompt. Cursor has no mode
-that keeps that property: `--auto-review` prompts on whatever its classifier will not
-auto-run, and `--force`/`--yolo` ("Run Everything") is strictly more permissive than
-`auto` rather than equivalent. A Cursor window therefore obeys the operator's own
-`~/.cursor/cli-config.json` and can stop at a prompt — tolerable only because rooms
-have no Cursor referent, so nothing dispatches into it. `--trust` *is* passed: without
-it a fresh workspace parks on a hotkey-driven modal where a stray literal `q` was
-measured killing the process. The config file is not used as the mechanism, and not
-because it is global — because a session can rewrite it mid-run (`/config`,
-`/run-everything`, `/sandbox` are live slash commands), so policy expressed there is a
-preference rather than a constraint.
+**The permission posture is the operator's, chosen from a closed list.** Claude Code's
+default stays `--permission-mode auto`, chosen so a member never sits at a prompt;
+Cursor's stays no flag at all, so a window obeys its own configured posture and can
+stop at a prompt — tolerable only because rooms have no Cursor referent, so nothing
+dispatches into it. Both are now *defaults* rather than constants: `launcher.py`
+declares a **capability** per harness with ordered options, and `launch_policy.py`
+stores which one the operator picked ([console](console.md), gear sheet).
+
+A capability rather than a flag, because the harnesses do not divide the space the same
+way — Claude Code says in one `--permission-mode` what Cursor spreads across
+`--force`/`--yolo`, `--auto-review`, `--sandbox` and `--mode`. Keying the choice to the
+flag would make the panel un-renderable for Cursor and would misdescribe what is being
+picked, which is a posture. Claude Code's ladder deliberately stops below
+`bypassPermissions`: that mode removes the policy checks measured to stop prompt
+injection, so it is a decision-log change and not a tap, and the surface must not be
+able to express a posture the contract argues against.
+
+`--trust` *is* passed unconditionally and is not on the ladder: without it a fresh
+workspace parks on a hotkey-driven modal where a stray literal `q` was measured killing
+the process. It is a precondition, not policy, and the two are kept in separate fields
+so the panel cannot offer it as a choice.
+
+**Cursor's `--force` was measured rather than assumed** (2026-08-12, build
+2026.08.11-e8db854): a shell command and an MCP tool call, both absent from
+`permissions.allow`, ran with no prompt where an unflagged session beside them stopped
+on each. What it *keeps* is the part worth having measured — `permissions.deny` and the
+`beforeShellExecution` hooks both still enforce, so the role boundary does not rest on
+the permission mode. What it drops is the safety classifier `auto` routes the remainder
+through. `--auto-review` prompts on whatever its classifier will not auto-run, so it
+stalls where `auto` does not.
+
+**The posture reaches a session on the argv and nowhere else.** The harness's own config
+file is not the mechanism, and not because it is global — because a session can rewrite
+it mid-run (`/config`, `/run-everything`, `/sandbox` are live slash commands), so one
+window toggling its own posture would rewrite every other window's. A per-window
+property stored where any window can rewrite it is not a boundary; it is a shared
+mutable variable with a nice name. Argv is also the only carrier that survives
+`respawn-window` — which is why a posture change cannot reach a *running* window at all,
+and why the console badges the ones still on an older argv.
 
 **A Cursor window does not claim its pane.** The pane claim is what joins a window to
 its transcript for the console's read view, and on Claude Code it is gated on

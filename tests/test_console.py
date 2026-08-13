@@ -563,6 +563,118 @@ class _FakeTmux:
         return subprocess.CompletedProcess(args=list(args), returncode=0, stdout=out, stderr="")
 
 
+# ---- launch posture ----
+
+# A Cursor pin as `pin` really builds it: the room `env -u` prefix wraps a second `env`
+# carrying the scope, so the binary is the third `env`-ish token in. Copied from a live
+# roster rather than composed here, since the nesting is the part that breaks parsers.
+CURSOR_START = ("1\thomelab\t0\tagent\t60\t50\t0\t/home/op/code/thalamus\t"
+                "env -u THALAMUS_ROOM -u CLAUDE_CONFIG_DIR env THALAMUS_SCOPE=homelab "
+                "agent --trust\t%84\t990")
+CLAUDE_START = ("0\tmain\t1\tclaude\t60\t50\t0\t/home/op/code/thalamus\t"
+                "env -u THALAMUS_ROOM -u CLAUDE_CONFIG_DIR claude --agent thalamus-qe "
+                "--permission-mode auto\t%0\t991")
+
+
+@pytest.mark.parametrize("start, harness", [
+    ("claude", "claude"),
+    ("env -u THALAMUS_ROOM -u CLAUDE_CONFIG_DIR claude --permission-mode auto", "claude"),
+    ("env -u THALAMUS_ROOM env THALAMUS_SCOPE=homelab agent --trust", "cursor"),
+    ("/usr/local/bin/claude --agent x", "claude"),
+    ("bash", ""),
+    ("", ""),
+])
+def test_the_harness_is_read_from_the_start_command(start, harness):
+    """`pane_current_command` shows whatever is in the foreground, so a window shelling
+    out reads as `bash`. The creation command is the one field that cannot disagree
+    with what was launched — and its `env` prefix nests, which is what a one-`env`
+    parser gets wrong on every room-launched Cursor window."""
+    assert server.window_harness(start) == harness
+
+
+def test_a_window_launched_under_an_older_posture_is_marked():
+    """A flag rides the argv and the argv is fixed at window creation, so a posture
+    change cannot reach a running session. Unmarked, that divergence is silent."""
+    windows = parse_windows(CLAUDE_START, {"claude": ("--permission-mode", "auto")})
+    assert windows[0]["harness"] == "claude" and windows[0]["policy_stale"] is False
+
+    windows = parse_windows(CLAUDE_START, {"claude": ("--permission-mode", "acceptEdits")})
+    assert windows[0]["policy_stale"] is True
+
+
+def test_a_flag_and_a_value_must_appear_together_to_count():
+    """Checking that every token is present somewhere would pass a window carrying the
+    flag with a *different* value, which is exactly the drift worth catching."""
+    scrambled = CLAUDE_START.replace("--permission-mode auto", "auto --permission-mode")
+    assert parse_windows(scrambled, {"claude": ("--permission-mode", "auto")})[0][
+        "policy_stale"] is True
+
+
+def test_a_window_running_no_known_harness_is_never_stale():
+    """A shell in a pane has no posture to be out of date with, and guessing one would
+    badge it against some other harness's flags."""
+    plain = "2\tshell\t0\tbash\t60\t50\t0\t/home/op\tbash\t%2\t992"
+    assert parse_windows(plain, {"claude": ("--permission-mode", "auto")})[0][
+        "policy_stale"] is False
+
+
+def test_the_start_command_never_reaches_the_client():
+    """It carries the launch environment. The projection ships the two facts derived
+    from it and not the string itself."""
+    window = parse_windows(CURSOR_START, {"cursor": ()})[0]
+    assert window["harness"] == "cursor"
+    assert "start" not in window and "THALAMUS_SCOPE" not in json.dumps(window)
+
+
+def _own_store(tmp_path, monkeypatch):
+    """Point the posture store at tmp_path.
+
+    These cases all refuse, so none of them writes today — but the endpoint reaches
+    the module defaults, and a test that starts passing is a test that starts editing
+    the operator's real launch posture.
+    """
+    from thalamus.harness import launch_policy
+    monkeypatch.setattr(launch_policy, "STORE", tmp_path / "policy.json")
+    monkeypatch.setattr(launch_policy, "LEDGER", tmp_path / "policy.jsonl")
+
+
+def test_the_posture_panel_serves_options_with_their_costs(tmp_path):
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        body = post.get("/api/launch-policy")
+
+    harnesses = {h["harness"]: h for h in body["harnesses"]}
+    assert set(harnesses) == {"claude", "cursor"}
+    cursor = harnesses["cursor"]["capabilities"][0]
+    assert cursor["value"] == cursor["default"] == "manual"
+    loose = [o for o in cursor["options"] if o["above_default"]]
+    assert loose and all(o["drops"] for o in loose)
+
+
+def test_a_refused_posture_reaches_the_phone_as_its_reason(tmp_path, monkeypatch):
+    """The refusal prose is written for the person mid-decision and is the whole
+    argument for the rule, so it is not flattened into a status code."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    _own_store(tmp_path, monkeypatch)
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/launch-policy",
+                            {"harness": "cursor", "capability": "permission_posture",
+                             "value": "force"})
+
+    assert status == 409 and "lifetime" in body["error"]
+
+
+def test_an_unknown_posture_is_a_refusal_not_a_crash(tmp_path, monkeypatch):
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    _own_store(tmp_path, monkeypatch)
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/launch-policy",
+                            {"harness": "cursor", "capability": "permission_posture",
+                             "value": "sudo-everything"})
+
+    assert status == 409 and "not a posture" in body["error"]
+
+
 class _serving:
     """A live console on an ephemeral port, with tmux stubbed out.
 

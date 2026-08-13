@@ -310,6 +310,24 @@ you are watching, where answering a permission prompt yourself is the point.
 - **close** ends a session the same graceful way and removes its window. The
   anchor (the lowest-indexed window) can't be closed: it's the console's reference
   directory and the last thing keeping the roster non-empty.
+- **Launch posture** sets what a *newly launched* session starts with, per harness,
+  from the ordered options that harness declares (`harness/launcher.py`). Each option
+  shows what it gives up, because a posture can only be weighed against its cost if
+  the cost is on screen. There are no free-text fields anywhere in this section: a
+  value nothing can check is a policy the panel cannot promise to honour.
+
+  A posture looser than the harness's default takes two taps — the rung, then a
+  lifetime from a closed list — and **reverts on its own** when that lifetime runs
+  out. What makes a permissive posture dangerous is not choosing it, it's choosing it
+  once for a reason and then forgetting; there is deliberately no "until I change it".
+  Tightening is one tap and never expires. Every change lands a row in
+  `~/.thalamus/launch/policy.jsonl` with its direction, so "when did this box become
+  permissive" has an answer.
+
+  Flags ride the argv and the argv is fixed when a window is created — a recycle
+  re-runs the *creation* command — so a posture change cannot reach a running session.
+  Windows still on an older argv are badged **old posture**, and the restart button on
+  the same row is the fix.
 - **roster sync** re-runs `thalamus roster`, which is idempotent — it recreates
   the anchor if it exited and leaves everything else alone.
 - **Services** is hidden unless you named units with `--service` (below).

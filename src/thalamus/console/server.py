@@ -551,7 +551,7 @@ def window_path(cfg: Config, idx: int | None = None) -> str:
     return paths.get(idx) or paths[min(paths)]
 
 
-def parse_windows(raw: str) -> list[dict]:
+def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) -> list[dict]:
     """The tab-separated `list-windows` output, as the JSON the client consumes.
 
     Split out from the tmux call so the projection the frontend trusts blind is
@@ -576,6 +576,8 @@ def parse_windows(raw: str) -> list[dict]:
         except ValueError:
             continue
         room = re.search(r"THALAMUS_ROOM=(\S+)", start)
+        harness = window_harness(start)
+        want = (expected or {}).get(harness)
         out.append({
             "index": index, "name": name,
             # The read view's join key. A window *index* renumbers when a window
@@ -601,6 +603,17 @@ def parse_windows(raw: str) -> list[dict]:
             # start command the one field that cannot disagree with the process —
             # the window *name* stays the bare scope.
             "room": room.group(1) if room else "",
+            # Which harness this window runs, from the same start command and for the
+            # same reason: `pane_current_command` shows whatever is in the foreground,
+            # so a window shelling out reads as `bash` for as long as that lasts.
+            "harness": harness,
+            # A launch flag rides the argv, and the argv is fixed when the window is
+            # created — `respawn-window` re-executes the *creation* command. So a posture
+            # change cannot reach a running session, and without this the divergence is
+            # silent. The restart button already beside it is the fix.
+            "policy_stale": bool(
+                harness and want is not None and not _contains_run(start.split(), want)
+            ),
         })
     anchor_idx = min((w["index"] for w in out), default=None)
     for w in out:
@@ -613,7 +626,7 @@ def list_windows(cfg: Config) -> list[dict]:
              "#{window_index}\t#{window_name}\t#{window_active}\t#{pane_current_command}"
              "\t#{window_width}\t#{window_height}\t#{pane_dead}\t#{pane_current_path}"
              "\t#{pane_start_command}\t#{pane_id}\t#{pane_pid}")
-    return parse_windows(r.stdout) if r.returncode == 0 else []
+    return parse_windows(r.stdout, policy_expected()) if r.returncode == 0 else []
 
 
 def read_skill_meta(skill_dir: str) -> tuple[str, str] | None:
@@ -851,6 +864,83 @@ def spawn_harnesses() -> list[dict]:
             for s in LAUNCH_SHAPES.values()]
 
 
+def launch_policy_view() -> list[dict]:
+    """Every harness's postures and current selection, for the gear panel.
+
+    Empty without the package, like every other expert-layer option: a panel that
+    cannot read the registry must offer nothing rather than a control whose effect it
+    cannot name.
+    """
+    if not has_experts():
+        return []
+    from thalamus.harness.launch_policy import describe
+    from thalamus.harness.launcher import LAUNCH_SHAPES
+    return [
+        {"harness": harness, "capabilities": describe(harness)}
+        for harness in LAUNCH_SHAPES
+        # A harness with nothing configurable is omitted rather than rendered as an
+        # empty card, which would read as "no posture" instead of "no choice here".
+        if describe(harness)
+    ]
+
+
+def policy_expected() -> dict[str, tuple[str, ...]]:
+    """What the *current* policy would contribute to a launch, per harness.
+
+    Asked of the launcher rather than re-derived here, so the staleness badge and the
+    next launch cannot disagree about what the posture is.
+    """
+    if not has_experts():
+        return {}
+    from thalamus.harness.launch_policy import effective
+    from thalamus.harness.launcher import LAUNCH_SHAPES, capability_argv
+    return {h: tuple(capability_argv(h, effective(h))) for h in LAUNCH_SHAPES}
+
+
+# Which harness a window is running, read from the command it was created with. The
+# binary is the only honest signal: `pane_current_command` shows whatever is in the
+# foreground, so a window shelling out reads as `bash` for as long as that lasts.
+HARNESS_BINARIES = {"claude": "claude", "agent": "cursor"}
+
+
+def window_harness(start_command: str) -> str:
+    """The harness a start command launches, or "" if it names none we know.
+
+    Reads the first token that is not part of an `env` prefix. The prefix nests in
+    practice — `pin` wraps a room launch in `env -u …` and the Cursor pin carrier adds
+    its own `env THALAMUS_SCOPE=…` inside that — so this loops rather than stripping one
+    `env`. Anything unrecognized is "" rather than a guess: a wrong harness here would
+    mark a window stale against some other harness's flags.
+    """
+    tokens = start_command.split()
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "env":
+            index += 1
+        elif token == "-u":
+            # `-u NAME` unsets, so the name after it is a bare token, not a NAME=VALUE.
+            index += 2
+        elif "=" in token:
+            index += 1
+        else:
+            return HARNESS_BINARIES.get(os.path.basename(token), "")
+    return ""
+
+
+def _contains_run(tokens: list[str], want: tuple[str, ...]) -> bool:
+    """Does `want` appear as a contiguous run in `tokens`?
+
+    Contiguous rather than "every token present": `--permission-mode` and `auto` both
+    appearing somewhere does not mean they appear together, and a flag paired with the
+    wrong value is exactly the drift worth catching.
+    """
+    if not want:
+        return True
+    span = len(want)
+    return any(tuple(tokens[i:i + span]) == want for i in range(len(tokens) - span + 1))
+
+
 def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
     """The directory picker: favorites first, then git repos one level under each
     scan root. Deduped by resolved path; the label defaults to the basename.
@@ -1029,6 +1119,8 @@ class Handler(BaseHTTPRequestHandler):
                 recycling = sorted(RECYCLING)
             return self._send(200, {"services": service_status(self.cfg),
                                     "recycling": recycling})
+        if path == "/api/launch-policy":
+            return self._send(200, {"harnesses": launch_policy_view()})
         if path == "/api/spawn-options":
             pin = pin_module()
             dirs, _ = spawn_dirs(self.cfg)
@@ -1168,6 +1260,28 @@ class Handler(BaseHTTPRequestHandler):
                 "undelivered": list(result.undelivered),
                 "note": result.note(),
             })
+
+        if path == "/api/launch-policy":
+            if not has_experts():
+                return self._send(503, {"error": "the expert layer is not importable"})
+            from thalamus.harness.launch_policy import PolicyRefused, select
+            try:
+                ttl = data.get("ttl_hours")
+                row = select(
+                    str(data.get("harness", "")),
+                    str(data.get("capability", "")),
+                    str(data.get("value", "")),
+                    ttl_hours=int(ttl) if ttl is not None else None,
+                    actor="console",
+                )
+            except (TypeError, ValueError) as exc:
+                # `PolicyRefused` subclasses ValueError, and its message is written for
+                # the person who is mid-decision — it is the reason for the rule, so it
+                # goes to the panel verbatim rather than becoming a bare 400.
+                code = 409 if isinstance(exc, PolicyRefused) else 400
+                return self._send(code, {"error": str(exc)})
+            return self._send(200, {"ok": True, "change": row,
+                                    "harnesses": launch_policy_view()})
 
         windows = list_windows(self.cfg)
         idx = data.get("index")

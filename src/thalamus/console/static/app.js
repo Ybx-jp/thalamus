@@ -71,6 +71,7 @@ const els = {
   admin: document.getElementById("admin"),
   adminWindows: document.getElementById("admin-windows"),
   adminServices: document.getElementById("admin-services"),
+  adminPolicy: document.getElementById("admin-policy"),
   adminLog: document.getElementById("admin-log"),
   recycleNote: document.getElementById("recycle-note"),
   spawn: document.getElementById("spawn"),
@@ -1204,6 +1205,11 @@ function renderAdminWindows() {
       (w.room ? `<span class="admin-room">◈ ${escapeHtml(w.room)}</span>` : "") +
       (w.cwd_label ? `<span class="admin-cwd" title="${escapeHtml(w.cwd_short || "")}">${escapeHtml(w.cwd_label)}</span>` : "") +
       `</span>` +
+      // Launched before the current posture and still running under the old argv.
+      // The restart button on this same row is the fix, which is why the badge lives
+      // here rather than in the posture section.
+      (w.policy_stale ? `<span class="admin-stale" title="Launched under an older ` +
+        `posture — restart to adopt the current one">old posture</span>` : "") +
       (w.anchor ? `<span class="admin-viewing anchor">anchor</span>` : "") +
       (w.index === activeIdx ? `<span class="admin-viewing">viewing</span>` : "") +
       `<span class="admin-state${w.dead ? " bad" : ""}">${escapeHtml(state)}</span>`;
@@ -1499,6 +1505,146 @@ async function doSpawn() {
     els.spawnGo.disabled = false;
   }
 }
+// ---- Launch posture ----
+// Which capability is mid-choice, as "<harness>/<key>", while its lifetime chips are
+// showing. A loose posture needs two taps — the rung, then how long — and the second
+// row only exists during that pause. Kept out of the DOM so a poll-driven re-render
+// cannot resurrect a pending choice the operator walked away from.
+let policyPending = null;
+let policyState = [];
+
+// How long a loose posture lasts, in words. The server ships the hours and owns the
+// list; this only spells them, so adding a lifetime server-side needs no client change.
+function ttlLabel(hours) {
+  if (hours === 1) return "1 hour";
+  if (hours % 24 === 0) return `${hours / 24} day${hours === 24 ? "" : "s"}`;
+  return `${hours} hours`;
+}
+
+// What the countdown says with `expires_at` this far off. Minutes below an hour,
+// because "0h left" on a posture that is still live reads as expired.
+function expiryLabel(expiresAt, now) {
+  if (!expiresAt) return "";
+  const left = new Date(expiresAt).getTime() - now;
+  if (!(left > 0)) return "lapsed";
+  const mins = Math.round(left / 60000);
+  return mins < 60 ? `reverts in ${mins}m` : `reverts in ${Math.round(mins / 60)}h`;
+}
+
+// Is picking `option` a step up from what is in force? The server already decided and
+// sent `widening`; this is only the read, so the two cannot disagree about the rule.
+function needsLifetime(option) {
+  return !!(option && option.widening && option.above_default);
+}
+
+function renderLaunchPolicy() {
+  const sec = document.getElementById("admin-policy-sec");
+  sec.hidden = policyState.length === 0;
+  els.adminPolicy.innerHTML = "";
+  const now = Date.now();
+  for (const h of policyState) {
+    for (const cap of h.capabilities) {
+      const box = document.createElement("div");
+      box.className = "pol-cap";
+      const pendKey = `${h.harness}/${cap.key}`;
+      const head = document.createElement("div");
+      head.className = "pol-head";
+      head.innerHTML =
+        `<span class="pol-harness">${escapeHtml(h.harness)}</span>` +
+        `<span class="pol-title">${escapeHtml(cap.title)}</span>`;
+      const expiry = expiryLabel(cap.expires_at, now);
+      if (expiry) {
+        head.innerHTML += `<span class="pol-expiry">${escapeHtml(expiry)}</span>`;
+      }
+      box.appendChild(head);
+
+      const chips = document.createElement("div");
+      chips.className = "chips";
+      for (const opt of cap.options) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip" + (opt.value === cap.value ? " on" : "") +
+          (opt.above_default ? " loose" : "");
+        chip.textContent = opt.label;
+        chip.addEventListener("click", () => {
+          if (opt.value === cap.value) return;
+          if (needsLifetime(opt)) {
+            // Don't commit yet: a loose posture is chosen together with its lifetime,
+            // so the second row is the confirmation rather than a modal on top of it.
+            policyPending = { key: pendKey, value: opt.value, cap, harness: h.harness };
+            renderLaunchPolicy();
+            return;
+          }
+          setPolicy(h.harness, cap.key, opt.value, null);
+        });
+        chips.appendChild(chip);
+      }
+      box.appendChild(chips);
+
+      const pending = policyPending && policyPending.key === pendKey ? policyPending : null;
+      const drops = document.createElement("div");
+      drops.className = "pol-drops";
+      const shown = cap.options.find(o => o.value === (pending ? pending.value : cap.value));
+      drops.textContent = shown && shown.drops ? `Drops: ${shown.drops}` : "";
+      box.appendChild(drops);
+
+      if (pending) {
+        const ttl = document.createElement("div");
+        ttl.className = "chips";
+        for (const hours of cap.ttl_choices) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "chip loose";
+          chip.textContent = `for ${ttlLabel(hours)}`;
+          chip.addEventListener("click", () =>
+            setPolicy(h.harness, cap.key, pending.value, hours));
+          ttl.appendChild(chip);
+        }
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "chip";
+        cancel.textContent = "cancel";
+        cancel.addEventListener("click", () => { policyPending = null; renderLaunchPolicy(); });
+        ttl.appendChild(cancel);
+        box.appendChild(ttl);
+      }
+      els.adminPolicy.appendChild(box);
+    }
+  }
+}
+
+async function loadLaunchPolicy() {
+  try {
+    const r = await req("api/launch-policy", { cache: "no-store" });
+    const data = await r.json();
+    policyState = data.harnesses || [];
+  } catch (e) {
+    policyState = [];
+  }
+  renderLaunchPolicy();
+}
+
+async function setPolicy(harness, capability, value, ttlHours) {
+  policyPending = null;
+  const { ok, data } = await postJson("api/launch-policy",
+    { harness, capability, value, ttl_hours: ttlHours });
+  if (ok && data.ok) {
+    policyState = data.harnesses || policyState;
+    const c = data.change || {};
+    adminLog(`${harness} ${capability}: ${c.from} → ${c.to} (${c.direction}` +
+      (c.ttl_hours ? `, ${ttlLabel(c.ttl_hours)}` : "") + ")");
+    renderLaunchPolicy();
+    // Windows already running keep the argv they were created with, so the badges
+    // beside them are the thing that just changed.
+    poll();
+  } else {
+    // The server's refusal is written for the person mid-decision — show it, don't
+    // translate it into a status code.
+    adminLog(data.error || "posture change refused");
+    renderLaunchPolicy();
+  }
+}
+
 // The Services section manages systemd --user units named with
 // `thalamus console --service <unit>`. Nothing named → no section at all, rather
 // than an empty box implying the console lost track of something.
@@ -1540,7 +1686,12 @@ async function loadServices() {
 }
 document.getElementById("admin-btn").addEventListener("click", () => {
   els.admin.hidden = !els.admin.hidden;
-  if (!els.admin.hidden) { els.spawn.hidden = true; renderAdminWindows(); loadServices(); }
+  if (!els.admin.hidden) {
+    els.spawn.hidden = true;
+    renderAdminWindows();
+    loadServices();
+    loadLaunchPolicy();
+  }
 });
 document.getElementById("admin-x").addEventListener("click", () => { els.admin.hidden = true; });
 document.getElementById("spawn-btn").addEventListener("click", () => {

@@ -877,6 +877,32 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .admin-act.primary:disabled { opacity: .4; }
 .admin-act.danger-lite { color: var(--danger); border-color: #4a2a29; }
 
+/* ---- Launch posture ---- */
+.pol-cap { display: flex; flex-direction: column; gap: .3rem; padding: .1rem 0 .45rem; }
+.pol-head { display: flex; align-items: baseline; gap: .4rem; }
+.pol-harness { font-family: var(--mono); font-size: .7rem; color: var(--ink); }
+.pol-title { font-size: .66rem; color: var(--muted); }
+/* The countdown is the visible half of the promise that a loose posture reverts. */
+.pol-expiry { margin-left: auto; font-size: .62rem; color: var(--danger); }
+/* The cost line. Reserved even when empty so choosing a rung does not reflow the panel
+   under the thumb that is still on it. */
+.pol-drops {
+  font-size: .63rem;
+  line-height: 1.4;
+  color: var(--muted);
+  min-height: 1.4em;
+}
+.chip.loose { border-color: #4a2a29; color: var(--danger); }
+.chip.loose.on { color: #0b0e12; background: var(--danger); border-color: var(--danger); }
+.admin-stale {
+  font-size: .58rem;
+  letter-spacing: .04em;
+  color: var(--danger);
+  border: 1px solid #4a2a29;
+  border-radius: 5px;
+  padding: 0 .25rem;
+}
+
 /* spawn sheet: scope + directory pickers as tappable chips */
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0 .2rem; }
 .chip {

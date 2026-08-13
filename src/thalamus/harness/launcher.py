@@ -116,6 +116,7 @@ a preference, not a constraint.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from thalamus.harness.agents import HARNESSES
@@ -143,6 +144,128 @@ PERMISSION_MODE = "auto"
 
 
 @dataclass(frozen=True)
+class PolicyOption:
+    """One selectable value of a capability, on one harness."""
+
+    # Stable id. Persisted and sent over the wire, so it is never the label: renaming
+    # what the panel says must not silently reinterpret a stored selection.
+    value: str
+    label: str
+    # What choosing it contributes to the launch argv. Empty is a real answer — on both
+    # harnesses the strictest rung is "pass no flag".
+    argv: tuple[str, ...]
+    # What this rung gives up, in the operator's terms, shown under the option at the
+    # moment of choosing. Empty where it gives up nothing. This is the field the panel
+    # exists for: an operator can only weigh a permission posture against its cost if
+    # the cost is on screen, and "unsafe defaults exploited" is the named failure mode
+    # for a capability declaration that shows only what a setting enables (MCP threat
+    # survey, arXiv 2503.23278 §5.1.3).
+    drops: str = ""
+
+
+@dataclass(frozen=True)
+class Capability:
+    """One thing an operator may choose, and the values this harness offers for it.
+
+    A *capability*, not a flag, because the two harnesses do not divide the space the
+    same way: Claude Code says in one `--permission-mode` what Cursor spreads across
+    `--force`/`--yolo`, `--auto-review`, `--sandbox` and `--mode`. Keying the choice to
+    the flag would make the panel un-renderable for Cursor and would misdescribe what
+    the operator is picking, which is a posture. Same capability, different value sets
+    per side — LSP's shape for a capability whose values differ per implementation
+    (`scope:architect:claim:276e8d32d044a92c`).
+
+    **`options` is ordered least- to most-permissive, and that ordering is load-bearing.**
+    It is what classifies a change as narrowing or widening, which is the asymmetry the
+    whole surface turns on: Progent classifies every privilege-policy update the same
+    way and refuses to let a widening one pass silently, using an SMT solver because its
+    policies are an open-ended DSL over tool names and arguments (arXiv 2504.11703).
+    Ours is a short closed list per harness, so the ordering *is* the classification and
+    no solver is needed — an instantiation of Progent's rule at a granularity that makes
+    it a comparison.
+    """
+
+    key: str
+    title: str
+    options: tuple[PolicyOption, ...]
+    # The value an operator who has chosen nothing gets. Not merely the first option:
+    # today's shipped behaviour is `auto` on Claude Code and no flag at all on Cursor,
+    # and a settings surface that changed what a launch does the moment it existed would
+    # be a migration wearing a panel's clothes.
+    default: str
+
+    def option(self, value: str) -> PolicyOption | None:
+        return next((o for o in self.options if o.value == value), None)
+
+    def rank(self, value: str) -> int:
+        """Position on the ladder, or the default's if the value is not on it.
+
+        An unknown value cannot be ranked, and ranking it 0 would read as "the
+        strictest rung" — the one answer that could let a stale or hand-edited store
+        silently *widen* a posture while looking like a narrowing.
+        """
+        for index, option in enumerate(self.options):
+            if option.value == value:
+                return index
+        return self.default_rank
+
+    @property
+    def default_rank(self) -> int:
+        return next((i for i, o in enumerate(self.options) if o.value == self.default), 0)
+
+
+# The permission posture on each harness. Claude Code's ladder deliberately stops below
+# `bypassPermissions`: that mode removes the policy checks measured to stop prompt
+# injection outright, so it is a decision-log change and not a rung on a panel — the
+# surface must not be able to express a posture the contract argues against. Cursor's
+# top rung is `--force`, and what it keeps was measured rather than assumed (2026-08-12,
+# build 2026.08.11-e8db854): `permissions.deny` and the `beforeShellExecution` hooks
+# both still enforce, so the role boundary does not rest on the permission mode.
+PERMISSION_POSTURE = "permission_posture"
+
+CLAUDE_PERMISSION = Capability(
+    key=PERMISSION_POSTURE,
+    title="Permission posture",
+    options=(
+        PolicyOption("manual", "Ask every time", ()),
+        PolicyOption(
+            "acceptEdits", "Accept edits",
+            ("--permission-mode", "acceptEdits"),
+            drops="Confirmation on file edits. Commands still prompt.",
+        ),
+        PolicyOption(
+            "auto", "Auto",
+            ("--permission-mode", PERMISSION_MODE),
+            drops="Per-call confirmation. Allow/deny rules, PreToolUse hooks and the "
+                  "safety classifier all still run.",
+        ),
+    ),
+    default=PERMISSION_MODE,
+)
+
+CURSOR_PERMISSION = Capability(
+    key=PERMISSION_POSTURE,
+    title="Permission posture",
+    options=(
+        PolicyOption("manual", "Ask every time", ()),
+        PolicyOption(
+            "auto-review", "Auto-review",
+            ("--auto-review",),
+            drops="Confirmation on calls a server classifier rates safe. It still "
+                  "stops on the rest.",
+        ),
+        PolicyOption(
+            "force", "Run everything",
+            ("--force",),
+            drops="The safety classifier. permissions.deny and beforeShellExecution "
+                  "hooks still enforce (measured 2026-08-12).",
+        ),
+    ),
+    default="manual",
+)
+
+
+@dataclass(frozen=True)
 class LaunchShape:
     """One harness's answer to "how is an interactive session started and pinned"."""
 
@@ -152,8 +275,14 @@ class LaunchShape:
     # the harness has no such flag — not that we chose not to use one.
     persona_flag: str | None
     # Flags every launch carries. Preconditions, not policy: without `--trust` a fresh
-    # Cursor workspace parks on a modal.
+    # Cursor workspace parks on a modal. Deliberately kept distinct from `capabilities`
+    # — a precondition is not a thing to offer an operator, and putting the two in one
+    # tuple is what would make the panel offer `--trust` as a choice.
     always: tuple[str, ...]
+    # What an operator may choose for this harness. A capability absent here is one this
+    # harness does not express, and the panel renders nothing for it rather than a
+    # control that would claim the harness has a setting it does not.
+    capabilities: tuple[Capability, ...]
     # How the scope reaches the session. `argv` survives `respawn-window`; `env` alone
     # does not, which is the recycle trap in the module docstring.
     pin_carrier: str
@@ -175,7 +304,8 @@ LAUNCH_SHAPES: dict[str, LaunchShape] = {
         harness="claude",
         binary="claude",
         persona_flag="--agent",
-        always=("--permission-mode", PERMISSION_MODE),
+        always=(),
+        capabilities=(CLAUDE_PERMISSION,),
         pin_carrier="argv",
         settle_s=1.2,
     ),
@@ -184,6 +314,7 @@ LAUNCH_SHAPES: dict[str, LaunchShape] = {
         binary="agent",
         persona_flag=None,
         always=("--trust",),
+        capabilities=(CURSOR_PERMISSION,),
         pin_carrier="argv",
         settle_s=4.0,
     ),
@@ -207,7 +338,34 @@ def settle_s(harness: str) -> float:
     return max(s.settle_s for s in LAUNCH_SHAPES.values())
 
 
-def launch_argv(harness: str, scope: str, *, persona: str | None = None) -> list[str]:
+def capability_argv(harness: str, selections: Mapping[str, str] | None = None) -> list[str]:
+    """What the operator's chosen posture contributes to a launch.
+
+    An unknown capability key or an unknown value falls back to the capability's own
+    default rather than raising: the store is a file on disk that a future release may
+    have written differently, and the failure mode for a stale entry has to be "launch
+    at the default" and not "the roster will not start".
+    """
+    shape = LAUNCH_SHAPES.get(harness)
+    if shape is None:
+        return []
+    chosen = selections or {}
+    argv: list[str] = []
+    for capability in shape.capabilities:
+        value = chosen.get(capability.key, capability.default)
+        option = capability.option(value) or capability.option(capability.default)
+        if option is not None:
+            argv += list(option.argv)
+    return argv
+
+
+def launch_argv(
+    harness: str,
+    scope: str,
+    *,
+    persona: str | None = None,
+    selections: Mapping[str, str] | None = None,
+) -> list[str]:
     """The argv for one pinned interactive session, pin included.
 
     `persona` is the derived agent name for harnesses that have a selector, and is
@@ -218,6 +376,19 @@ def launch_argv(harness: str, scope: str, *, persona: str | None = None) -> list
     The scope is prefixed with `env` rather than left to the window's environment on
     every harness whose pin does not otherwise ride the argv. It costs one process and
     closes the recycle trap.
+
+    **`selections` defaults to the stored launch policy, read here rather than passed
+    in.** Threading it through every caller instead would put it on the two launch
+    paths that remembered and leave it off the ones that did not — the divergence
+    `pin.launch_flags` already names, where a flag added to one path and not the other
+    is a difference nothing reports. Passing it explicitly is for tests and for a
+    caller that genuinely means "ignore what is stored".
+
+    The posture reaches the session on the argv and nowhere else. It is deliberately
+    never written to the harness's own config file: that file is state the sessions
+    themselves rewrite mid-run, so a launcher expressing policy there would be
+    expressing a preference rather than a constraint (see the module docstring), and
+    argv is also the only carrier that survives `respawn-window`.
     """
     shape = LAUNCH_SHAPES.get(harness)
     if shape is None:
@@ -226,10 +397,15 @@ def launch_argv(harness: str, scope: str, *, persona: str | None = None) -> list
             f"(harness/agents.py) but not pinned"
         )
 
+    if selections is None:
+        from thalamus.harness.launch_policy import effective
+        selections = effective(harness)
+
     argv = [shape.binary]
     if shape.persona_flag and persona:
         argv += [shape.persona_flag, persona]
     argv += list(shape.always)
+    argv += capability_argv(harness, selections)
 
     if shape.persona_flag is None:
         # Nothing on this argv names the scope, so a `respawn-window` would re-exec it
