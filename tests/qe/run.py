@@ -59,6 +59,9 @@ CASE_MODULES = (
     "qe.cases.emptiness_predicate",
     "qe.cases.arch_extractor",
     "qe.cases.expectation_additions",
+    "qe.cases.install_consent",
+    "qe.cases.uninstall_roundtrip",
+    "qe.cases.suite_containment",
 )
 
 

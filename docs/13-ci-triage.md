@@ -14,8 +14,15 @@ ticket-back that cost this doc its information argument and inverted its build o
 `qe-fast` was red on fifteen consecutive pushes to master and **none of them carried a
 new regression**. The suite's exit codes were doing exactly what they were designed to
 do and nothing consumed them: two triaged entries had drifted (`13/13 unscoped` against
-a real `16/17`; `2 site(s)` against a real `3 site(s) across 4 file(s)`) and one triaged
+a real `17/17`; `2 site(s)` against a real `3 site(s) across 4 file(s)`) and one triaged
 defect had been fixed without its expectation being deleted.
+
+Triaging those three is also where the loop's own hazard showed itself. The tmux entry
+did not read `17/17` when it was picked up; it read `16/17`, because the case searched
+for `-L`/`-S` anywhere in an argv and `capture-pane -p -J -S -` is not a socket flag. A
+drifted witness is the one moment a case's detector is guaranteed to be re-read, and the
+number it offers for re-pinning is the number to distrust — this one credited the code
+with an isolation it does not have.
 
 That is the trust-erosion mechanism the flakiness literature measures directly —
 developers "may lose trust in their test suites and stop considering failures even if
