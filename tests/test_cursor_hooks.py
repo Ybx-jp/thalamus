@@ -422,3 +422,43 @@ def test_every_cursor_script_is_wired_by_the_installer():
     shipped = {p.name for p in HOOKS.glob("*.sh")} - {"resolve-scope.sh", "spool.sh"}
     assert shipped == {c.rsplit("/", 1)[1] for c in commands}
     assert all(c.startswith(str(CURSOR_HOOK_DIR)) for c in commands)
+
+
+class TestWriteGuard:
+    def test_denies_a_self_write_with_cursor_permission_json(self, tmp_path):
+        """
+        Scenario: the self-write command, arriving in Cursor's beforeShellExecution
+        shape ({command}, not {tool_input}).
+
+        Verifications:
+        - the Claude Code guard's exit-2 protocol maps to permission=deny
+        - the reason rides *both* message channels, for the reason gremlin-guard's
+          adapter measured: the denial's tool result carries `user_message` and no
+          occurrence of `agent_message`, so a guard explaining itself only through the
+          documented agent channel blocks in silence, and a block with no reason is a
+          stall (lab/061)
+
+        The boundary is a decision about the graph (2026-08-03), and the graph does not
+        care which harness ran the command — which is why this is wired rather than
+        left as a Claude-only gap.
+        """
+        result = run_hook(
+            "write-guard.sh",
+            {"command": "uv run thalamus " + "write /tmp/session.yaml",
+             "cwd": "/w", "conversation_id": "c1"},
+            tmp_path,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["permission"] == "deny"
+        assert "writes memory from inside a session" in out["agent_message"]
+        assert "writes memory from inside a session" in out["user_message"]
+
+    def test_allows_graph_maintenance_that_merely_shares_the_flag(self, tmp_path):
+        for command in ("uv run thalamus repair-projects --write", "ls -la"):
+            result = run_hook(
+                "write-guard.sh",
+                {"command": command, "cwd": "/w", "conversation_id": "c1"},
+                tmp_path,
+            )
+            assert json.loads(result.stdout) == {"permission": "allow"}, command

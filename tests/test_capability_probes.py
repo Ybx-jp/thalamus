@@ -156,12 +156,20 @@ class TestDerivedRows:
         # The message must name the newcomer: "a count changed" sends the reader
         # back to diff two tables by hand, which is the work the checker exists to do.
         assert "newly-added.sh" in result.detail
-        assert "declared 11, computed 12" in result.detail
+        # Derived from the declaration rather than written as a literal: this asserts
+        # that the count moved by exactly the one script the test added, which is the
+        # property. A hardcoded pair asserts today's wiring instead, and goes red on
+        # every legitimate hook — twice already.
+        declared = install.DECLARED_HOOK_PARITY.claude_scripts
+        assert f"declared {declared}, computed {declared + 1}" in result.detail
 
     def test_only_declared_fields_are_compared(self):
         # A partial declaration is checked on what it names and stays silent on the
         # rest, rather than being forced to invent values it has no opinion about.
-        probe = probes.DerivedProbe(derivation="hook_parity", declared={"shared": 7})
+        from thalamus.harness import install
+
+        shared = install.DECLARED_HOOK_PARITY.shared
+        probe = probes.DerivedProbe(derivation="hook_parity", declared={"shared": shared})
         assert probes.probe_derived(probe).outcome is Outcome.CONFIRMED
 
     def test_an_unknown_derivation_is_malformed_not_skipped(self):

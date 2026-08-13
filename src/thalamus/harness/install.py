@@ -85,6 +85,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("UserPromptSubmit", None, "conditioning.sh"),
     ("UserPromptSubmit", None, "pin-engaged.sh"),
     ("PreToolUse", "Bash", "gremlin-guard.sh"),
+    ("PreToolUse", "Bash", "write-guard.sh"),
     ("PreToolUse", "SendMessage", "room-guard.sh"),
     ("PreToolUse", "Edit|Write|NotebookEdit|Skill|Artifact", "role-guard.sh"),
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
@@ -148,6 +149,10 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("beforeSubmitPrompt", "timestamp.sh"),
     ("beforeSubmitPrompt", "conditioning.sh"),
     ("beforeShellExecution", "gremlin-guard.sh"),
+    # Wired here as well as in the Claude table, following `gremlin-guard.sh`: both are
+    # PreToolUse-on-Bash guards, and the boundary this one enforces is a decision about
+    # the graph, which does not care which harness ran the command.
+    ("beforeShellExecution", "write-guard.sh"),
     ("afterShellExecution", "gremlin-tap.sh"),
     ("afterMCPExecution", "mcp-tap.sh"),
     ("postToolUse", "inject.sh"),
@@ -207,9 +212,9 @@ class HookParity:
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    claude_scripts=11,
-    cursor_scripts=9,
-    shared=7,
+    claude_scripts=12,
+    cursor_scripts=10,
+    shared=8,
     claude_only=("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh", "room-guard.sh"),
     cursor_only=("inject.sh", "mcp-tap.sh"),
     renames=(("post-tool-use.sh", "mcp-tap.sh"),),
