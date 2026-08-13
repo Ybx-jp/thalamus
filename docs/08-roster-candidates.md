@@ -440,8 +440,32 @@ sessions actually did, which is a materially weaker guarantee than the guard. Na
 here rather than papered over: it makes `architect` the roster's test of whether a
 when-you-pin boundary holds as well as a what-you-may-write one.
 
+**Its instrument.** `thalamus arch` (`scan`, `show`, `diff`, `rules`) walks the
+repo's Python imports under a **declared** extractor policy and lands the result two
+places: `arch/model.yaml` in git, and one tier-1 `Source` per scan in the graph. The
+policy is declared because it is load-bearing — propagation cost over `src/thalamus/`
+reads 7.53% counting every import and 5.75% counting only module-level ones, so a
+number without its rules attached is not a measurement. The policy digest therefore
+rides in the scan id (`arch:scan:<repo>:<sha7>:<policy-digest7>`), and supersession
+runs per `(repo, policy)`: two scans under different rules are incomparable, not two
+readings of one lineage.
+
+The model file has an authored half (layer partition, permitted-dependency rules,
+seams, rejected refactors pointing at the graph node holding the rationale) and a
+derived half regenerated per scan. Both are committed, because the diff is the
+artifact. Only **findings** reach the graph — a cycle, a violated rule, an unplaced
+module — never metrics: those are recomputable from the retained model file, and a
+scanner writing a claim per measurement would make its own scope unrecallable.
+
+Half the charter has no instrument. Performance and reliability — profiling, hot
+paths, before-and-after numbers — is served by nothing here, and the scope holds no
+profiling literature either (its SRE material is risk-tolerance and SLO-setting,
+which is a different question). Recorded as a known gap rather than an assumed win.
+
 **Boundaries against the neighbours.** A structural property that should hold
-permanently and be checked is an invariant, and belongs to `qe`. A performance claim
+permanently and be checked is an invariant, and belongs to `qe` — which is where the
+extractor's own acceptance test lives, as a hand-counted edge list over a five-module
+fixture (`tests/qe/cases/arch_extractor.py`). A performance claim
 that needs a control or a statistic to mean anything belongs to eval-methodology.
 What is left — the judgement about whether a shape is right, and the memory of every
 shape this codebase has been — is this scope.

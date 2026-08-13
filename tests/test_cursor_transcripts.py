@@ -302,10 +302,31 @@ class TestDiscovery:
         )
         assert [s.scope for s in cursor_transcripts.discover(log, tmp_path / "none")] == ["homelab"]
 
-    def test_rows_without_a_transcript_pointer_are_ignored(self, tmp_path):
+    def test_a_row_without_a_transcript_pointer_keeps_its_scope(self, tmp_path):
+        """Cursor sends `transcript_path: null` to an interactive session's
+        sessionEnd hook. Dropping the row discarded the scope and the end time —
+        the two things only this surface knows — over a field the filesystem owns,
+        which left every interactive Cursor session unroutable. The row is kept
+        with no path, so callers filtering on `exists` still skip it."""
         log = tmp_path / "log.jsonl"
         log.write_text(json.dumps({"session_id": "a", "scope": "main"}) + "\n")
-        assert cursor_transcripts.discover(log, tmp_path / "none") == []
+        found = cursor_transcripts.discover(log, tmp_path / "none")
+        assert [(s.scope, s.transcript_path, s.exists) for s in found] == [("main", None, False)]
+
+    def test_the_filesystem_supplies_a_path_the_hook_row_lacks(self, tmp_path, monkeypatch):
+        """The end of the same story: with both surfaces present the session is
+        routable *and* readable — hook scope, filesystem path."""
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", "/home/u/work")])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        log = tmp_path / "log.jsonl"
+        log.write_text(json.dumps({
+            "session_id": "sess-a", "scope": "homelab", "ts": "2026-08-13T03:37:53Z",
+        }) + "\n")
+        found = cursor_transcripts.discover(log, projects)
+        assert len(found) == 1
+        assert found[0].scope == "homelab"
+        assert found[0].exists
+        assert found[0].transcript_path.name == "sess-a.jsonl"
 
     def test_a_missing_log_is_empty_not_an_error(self, tmp_path):
         assert cursor_transcripts.discover(tmp_path / "nope.jsonl", tmp_path / "none") == []

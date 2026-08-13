@@ -140,6 +140,12 @@ class Artifact(BaseModel):
 class SourceKind(str, Enum):
     TRANSCRIPT = "transcript"
     ARTICLE = "article"
+    # A mechanical measurement of the operator's own code: the `arch/model.yaml` a
+    # scan produced, retained under its hash. Tier 1 like a transcript — first-party
+    # observation, not third-party content — and a Source rather than a bare property
+    # bag because a structural finding has to terminate in evidence someone can re-read
+    # at the commit it names.
+    SCAN = "scan"
 
 
 class Source(BaseModel):

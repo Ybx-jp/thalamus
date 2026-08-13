@@ -673,11 +673,12 @@ def recycle_window(cfg: Config, idx: int) -> None:
     """Restart the pinned claude process in a window — the MCP/hook re-arm.
 
     The MCP server and hooks arm per *process* (docs/07, lab/001), so wiring
-    changes need a fresh claude. Graceful path: `remain-on-exit on` (the window
+    changes need a fresh agent. Graceful path: `remain-on-exit on` (the window
     survives the exit), Escape + C-u (dismiss any dialog, clear the composer),
-    `/exit` (fires SessionEnd → distillation), wait for pane death, then
-    `tmux respawn-window` — which re-runs the window's CREATION command
-    (`claude --agent thalamus-<scope>`).
+    `/exit` (fires SessionEnd — a command on both harnesses), wait for pane death,
+    then `tmux respawn-window` — which re-runs the window's CREATION command
+    (`claude --agent thalamus-<scope>`, or `env THALAMUS_SCOPE=<scope> agent` for a
+    Cursor window; either way the pin rides that argv).
 
     What survives that is the ARGV, not the environment. `-e` on `new-window` sets
     only the initial process env and is never stored in the session env, so a
@@ -718,10 +719,18 @@ def recycle_window(cfg: Config, idx: int) -> None:
 
 
 def close_window(cfg: Config, idx: int) -> None:
-    """Graceful close: /exit fires SessionEnd → distillation, then claude exits and
-    tmux removes the window on its own (no remain-on-exit, unlike recycle). Force
-    `kill-window` only if it outlives the grace budget — that path skips
-    distillation, the same tradeoff as a recycle timeout."""
+    """Graceful close: `/exit` fires SessionEnd, then the agent exits and tmux
+    removes the window on its own (no remain-on-exit, unlike recycle). Force
+    `kill-window` only if it outlives the grace budget — that path skips SessionEnd,
+    the same tradeoff as a recycle timeout.
+
+    `/exit` is a command on both harnesses (measured on Cursor 2026.08.11-e8db854),
+    so this path is harness-neutral — but what SessionEnd *does* is not. Claude Code
+    distills there; Cursor's hook only logs a pointer, because Cursor is not
+    documented to flush its transcript first, and the sweep distills later
+    (`harness/cursor_transcripts.py`). So a forced close costs a Claude Code session
+    its distillation and costs a Cursor session only its ledger row, which the pin
+    ledger then covers for scope."""
     target = f"{cfg.session}:{idx}"
     try:
         tmux("send-keys", "-t", target, "Escape")

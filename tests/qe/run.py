@@ -57,6 +57,7 @@ CASE_MODULES = (
     "qe.cases.dispatch_addressability",
     "qe.cases.tool_write_freedom",
     "qe.cases.emptiness_predicate",
+    "qe.cases.arch_extractor",
 )
 
 

@@ -247,6 +247,49 @@ def main():
         "no graph: the manifests and the roster default are the whole answer.",
     )
 
+    # The architect's instrument (docs/02). Reads code, writes a git-tracked model and
+    # findings — never metrics — into the `architect` scope.
+    arch_parser = subparsers.add_parser(
+        "arch", help="The architect's structural instrument over a repo's imports"
+    )
+    arch_sub = arch_parser.add_subparsers(dest="arch_command")
+
+    arch_scan_parser = arch_sub.add_parser(
+        "scan",
+        help="Measure the import graph, regenerate arch/model.yaml, and land the scan "
+        "(dry-run unless --write)",
+    )
+    arch_scan_parser.add_argument("--repo", default=".", help="Repo to scan")
+    arch_scan_parser.add_argument(
+        "--import-depth", choices=["all", "module-level"], default="",
+        help="Override the model file's declared policy. Changes the policy digest, so "
+        "the scan lands in a different lineage — which is the point.",
+    )
+    arch_scan_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    arch_scan_parser.add_argument(
+        "--write", action="store_true",
+        help="Write the model file and land the scan in the graph. Without it, the scan "
+        "runs and is reported but nothing is persisted.",
+    )
+
+    arch_show_parser = arch_sub.add_parser(
+        "show", help="Print the current model: declared policy, layers, rules, last scan"
+    )
+    arch_show_parser.add_argument("--repo", default=".", help="Repo to read")
+
+    arch_diff_parser = arch_sub.add_parser(
+        "diff",
+        help="Compare the working tree's structure against another commit — recompute "
+        "both sides rather than trusting a stored number",
+    )
+    arch_diff_parser.add_argument("against", help="Commit-ish to compare against")
+    arch_diff_parser.add_argument("--repo", default=".", help="Repo to scan")
+
+    arch_rules_parser = arch_sub.add_parser(
+        "rules", help="Check the measured edge list against the declared design rules"
+    )
+    arch_rules_parser.add_argument("--repo", default=".", help="Repo to scan")
+
     # Chunk backfill — co-indexing for documents ingested before chunks existed.
     # Model-free by construction: chunking reads the retained bytes, so this costs
     # compute and nothing else, and it is safe to re-run (lab/052).
@@ -1260,6 +1303,8 @@ def main():
         _cmd_console(args)
     elif args.command == "pulse":
         _cmd_pulse(args)
+    elif args.command == "arch":
+        _cmd_arch(args, arch_parser)
     else:
         parser.print_help()
         sys.exit(1)
@@ -2481,6 +2526,202 @@ def _report_roster_boundaries():
           "SKILL.md are named misses (role-guard.sh). Which of these binds on which "
           "harness is a separate question with a separate record: "
           "`thalamus contract check --capabilities`.")
+
+
+def _cmd_arch(args, arch_parser):
+    """The architect's instrument. Reads code; writes a model file and findings."""
+    command = getattr(args, "arch_command", None)
+    if command not in {"scan", "show", "diff", "rules"}:
+        arch_parser.print_help()
+        sys.exit(1)
+
+    import dataclasses
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    from thalamus.arch import graph as arch_graph
+    from thalamus.arch import model as arch_model
+    from thalamus.arch.extractor import scan_repo
+    from thalamus.arch.metrics import measure
+
+    repo = Path(args.repo).resolve()
+    model = arch_model.load(repo / arch_model.MODEL_PATH)
+    policy = model.policy
+    if getattr(args, "import_depth", ""):
+        policy = dataclasses.replace(policy, import_depth=args.import_depth)
+
+    if command == "show":
+        _arch_show(repo, model)
+        return
+
+    graph = scan_repo(repo, policy)
+    metrics = measure(graph)
+
+    if command == "rules":
+        _arch_rules(model, graph)
+        return
+
+    if command == "diff":
+        with tempfile.TemporaryDirectory(prefix="thalamus-arch-") as tmp:
+            checkout = Path(tmp) / "tree"
+            result = subprocess.run(
+                ["git", "-C", str(repo), "worktree", "add", "--detach", str(checkout), args.against],
+                capture_output=True, text=True, check=False,
+            )
+            if result.returncode != 0:
+                print(f"Cannot check out {args.against}: {result.stderr.strip()}", file=sys.stderr)
+                sys.exit(1)
+            try:
+                # Both sides are recomputed under one policy. Reading the stored number
+                # off the other commit's model file would compare a measurement against
+                # a report, which is the mistake `diff` exists to prevent.
+                other = measure(scan_repo(checkout, policy))
+            finally:
+                subprocess.run(
+                    ["git", "-C", str(repo), "worktree", "remove", "--force", str(checkout)],
+                    capture_output=True, text=True, check=False,
+                )
+        _arch_diff(args.against, other, metrics)
+        return
+
+    # scan
+    text, derived, metrics = arch_model.build(repo, graph, model)
+    dirty = arch_model.dirty_paths(repo, policy)
+    found = arch_graph.findings(graph, metrics, model)
+
+    print(f"Scan {derived['scan']}")
+    print(f"  policy      import_depth={policy.import_depth} resolve={policy.resolve} "
+          f"digest={policy.digest()[:7]}")
+    print(f"  modules     {metrics.modules}")
+    print(f"  edges       {metrics.dependencies} counted of {len(graph.edges)} recorded")
+    print(f"  propagation {metrics.propagation_cost * 100:.2f}%")
+    print(f"  cycles      {len(metrics.cycles)} ({metrics.modules_in_cycles} modules)")
+    for cycle in metrics.cycles:
+        print(f"                {' <-> '.join(cycle)}")
+    print(f"  findings    {len(found)}")
+    for finding in found:
+        print(f"                {finding.description}")
+
+    if dirty:
+        # The walk read the working tree; the scan id names HEAD. With a dirty tree
+        # those are different codebases and the Source would assert a measurement of a
+        # commit that never contained it.
+        print(f"\n{len(dirty)} uncommitted file(s) under the scanned roots:")
+        for path in dirty[:10]:
+            print(f"  {path}")
+        if len(dirty) > 10:
+            print(f"  … and {len(dirty) - 10} more")
+
+    if not args.write:
+        print("\nDry run. Re-run with --write to regenerate the model file and land the scan.")
+        return
+
+    if dirty:
+        print(
+            "\nRefusing to write: the scan id names a commit the working tree does not "
+            "match. Commit or stash the files above, then re-run.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    model_path = repo / arch_model.MODEL_PATH
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    model_path.write_text(text, encoding="utf-8")
+    print(f"\nWrote {model_path.relative_to(repo)}")
+
+    from thalamus.archive import archive_bytes, scan_for_secrets
+    from thalamus.substrate.writer import close_connection, connect, write_scan
+
+    payload_bytes = text.encode("utf-8")
+    # The archive's secret scan is a warning surface, and a warning nobody prints warns
+    # nobody. A model file is structure rather than transcript, so a hit here is
+    # unlikely — which is exactly when an unread scan goes unnoticed.
+    for pattern, hits in sorted(scan_for_secrets(payload_bytes).items()):
+        print(f"  warning: retained bytes match {pattern} ({hits} hit(s))", file=sys.stderr)
+    entry = archive_bytes(payload_bytes, suffix=".yaml")
+    graph_connection = connect(args.url)
+    try:
+        new_findings = arch_graph.unseen(graph_connection, arch_graph.ARCH_SCOPE, found)
+        payload = arch_graph.payload(
+            repo=model.repo or repo.name,
+            origin=derived["scan"],
+            lineage=f"arch:scan:{model.repo or repo.name}:{policy.digest()[:7]}",
+            commit=derived["commit"],
+            content_hash=entry.content_hash,
+            uri=entry.uri,
+            byte_size=entry.byte_size,
+            found=found,
+        )
+        source_vid = write_scan(graph_connection, payload)
+        print(f"Landed {source_vid}")
+        print(f"  {len(new_findings)} new finding(s), {len(found) - len(new_findings)} recurring")
+        _persist(graph_connection)
+    finally:
+        close_connection(graph_connection)
+
+
+def _arch_show(repo, model) -> None:
+    """Print the authored half and what the last scan measured."""
+    print(f"repo         {model.repo or '(unset)'}")
+    print(f"root_commit  {model.root_commit or '(unset)'}")
+    print(f"policy       import_depth={model.policy.import_depth} "
+          f"resolve={model.policy.resolve} roots={list(model.policy.roots)} "
+          f"digest={model.policy.digest()[:7]}")
+    print(f"layers       {len(model.layers)}")
+    for layer in model.layers:
+        print(f"               {layer.name}: {', '.join(layer.includes) or '(nothing)'}")
+    print(f"rules        {len(model.rules)}")
+    for rule in model.rules:
+        print(f"               {rule.layer} -> {', '.join(rule.may_depend_on) or '(nothing)'}")
+    print(f"seams        {len(model.seams)}")
+    print(f"rejected     {len(model.rejected_refactors)} recorded refactor(s)")
+    if model.derived:
+        metrics = model.derived.get("metrics", {})
+        print(f"last scan    {model.derived.get('scan', '(none)')}")
+        print(f"               {metrics.get('modules', '?')} modules, "
+              f"{metrics.get('dependencies', '?')} dependencies, "
+              f"propagation {metrics.get('propagation_cost', '?')}%")
+    else:
+        print("last scan    (never scanned)")
+
+
+def _arch_rules(model, graph) -> None:
+    """Check the measured edges against the declared rules."""
+    if not model.layers:
+        print(
+            f"No layers declared, so the partition places none of {len(graph.modules)} "
+            "scanned modules. Declaring them is the architect's work — an empty "
+            "partition reports nothing rather than passing."
+        )
+        return
+    unplaced = model.unplaced(graph)
+    violations = model.violations(graph)
+    print(f"{len(graph.modules)} modules, {len(unplaced)} unplaced by the declared partition")
+    for module in unplaced[:20]:
+        print(f"  unplaced  {module}")
+    print(f"{len(violations)} rule violation(s)")
+    for violation in violations:
+        print(f"  violation {violation.describe()}")
+    if not unplaced and not violations:
+        print("The declared model and the measured graph agree.")
+
+
+def _arch_diff(against: str, other, current) -> None:
+    """Report both sides recomputed, never a stored number against a fresh one."""
+    print(f"{'':13} {against[:12]:>12}  {'working tree':>12}")
+    print(f"{'modules':13} {other.modules:>12}  {current.modules:>12}")
+    print(f"{'dependencies':13} {other.dependencies:>12}  {current.dependencies:>12}")
+    print(f"{'propagation':13} {other.propagation_cost * 100:>11.2f}%  "
+          f"{current.propagation_cost * 100:>11.2f}%")
+    print(f"{'cycles':13} {len(other.cycles):>12}  {len(current.cycles):>12}")
+
+    gone = set(other.cycles) - set(current.cycles)
+    fresh = set(current.cycles) - set(other.cycles)
+    for cycle in sorted(fresh):
+        print(f"  new cycle      {' <-> '.join(cycle)}")
+    for cycle in sorted(gone):
+        print(f"  cycle resolved {' <-> '.join(cycle)}")
 
 
 def _cmd_contract(args, contract_parser):

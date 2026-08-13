@@ -15,7 +15,15 @@ from gremlin_python.process.traversal import Direction, Merge, P, T
 
 from thalamus.contract.ontology import vid
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
-from thalamus.substrate.schema import Claim, Provenance, SessionGraph, ThreadClose, Tier
+from thalamus.substrate.schema import (
+    ArtifactType,
+    Claim,
+    Provenance,
+    SessionGraph,
+    SourceKind,
+    ThreadClose,
+    Tier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -710,6 +718,117 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         len(batch.chunks),
     )
     return source_vid
+
+
+def write_scan(g: GraphTraversalSource, scan) -> str:
+    """Write one architecture scan: its Source, and the findings derived from it.
+
+    The Source is the retained `arch/model.yaml`, content-addressed like any other
+    evidence, carrying the scan id (`arch:scan:<repo>:<sha7>:<policy-digest7>`) as its
+    `origin`. Findings land as Claims DERIVED_FROM it and TOUCHES-ing the modules they
+    are about; metrics do not land at all. A scanner that wrote a claim per measurement
+    would make its own scope unrecallable (lab/006-007), and the numbers are recomputable
+    from the retained model file, which is what a Source is for.
+
+    Supersession runs per `(repo, policy digest)` rather than per repo. Two scans taken
+    under different extractor policies are not two readings of one lineage — they are
+    incomparable measurements, and threading them onto one chain would let a policy
+    change look like a structural change.
+
+    Duck-typed like `write_knowledge`: the caller assembles the payload, so the
+    substrate does not import the instrument.
+    """
+    source_vid = vid("Source", scan.content_hash, scan.scope)
+    provenance = scan.provenance
+
+    properties = {
+        "content_hash": scan.content_hash,
+        "kind": SourceKind.SCAN.value,
+        "title": scan.title,
+        "uri": scan.uri,
+        "origin": scan.origin,
+        "byte_size": scan.byte_size,
+        "scope": scan.scope,
+        # The lineage key is a property rather than a prefix of `origin`, because the
+        # policy digest sits at the *end* of a scan id: `arch:scan:repo:sha:digest`.
+        # Matching a lineage by string prefix would thread every policy onto one chain.
+        "lineage": scan.lineage,
+        **_provenance_properties(provenance),
+    }
+    graph_traversal = (
+        g.merge_v({T.id: source_vid, T.label: "Source"})
+        .option(Merge.on_create, {T.id: source_vid, **properties})
+        .option(Merge.on_match, _source_on_match(g, source_vid, properties))
+    )
+    _iterate(graph_traversal, "upsert scan Source", source_vid)
+
+    for head_vid in _scan_heads(g, scan.scope, scan.lineage):
+        if head_vid != source_vid:
+            _ensure_edge(g, source_vid, head_vid, "SUPERSEDES")
+
+    written = 0
+    for finding in scan.findings:
+        claim_vid = vid("Claim", finding.content_id(), scan.scope)
+        claim_properties = {
+            "kind": finding.kind,
+            "description": finding.description,
+            "scope": scan.scope,
+            **_claim_properties(finding),
+            **_provenance_properties(provenance),
+        }
+        graph_traversal = (
+            g.merge_v({T.id: claim_vid, T.label: "Claim"})
+            .option(Merge.on_create, {T.id: claim_vid, **claim_properties})
+            .option(Merge.on_match, claim_properties)
+        )
+        _iterate(graph_traversal, "upsert scan Claim", claim_vid)
+        _ensure_edge(g, claim_vid, source_vid, "DERIVED_FROM")
+
+        for identifier in finding.artifacts:
+            artifact_vid = vid("Artifact", identifier)
+            artifact_properties = {
+                "type": ArtifactType.MODULE.value,
+                "project": scan.repo,
+                "repo": scan.repo,
+                "path": identifier,
+                **_provenance_properties(provenance),
+            }
+            graph_traversal = (
+                g.merge_v({"identifier": identifier, T.label: "Artifact"})
+                .option(
+                    Merge.on_create,
+                    {T.id: artifact_vid, "identifier": identifier, **artifact_properties},
+                )
+                .option(Merge.on_match, artifact_properties)
+            )
+            _iterate(graph_traversal, "upsert Artifact", artifact_vid)
+            _ensure_edge(g, claim_vid, artifact_vid, "TOUCHES")
+        written += 1
+
+    logger.info("Wrote scan %s: %d finding(s)", scan.origin, written)
+    return source_vid
+
+
+def _scan_heads(g: GraphTraversalSource, scope: str, lineage: str) -> list[str]:
+    """Head Sources of one scan lineage — the same repo under the same policy."""
+    if not lineage:
+        return []
+    try:
+        return [
+            str(head)
+            for head in (
+                g.V()
+                .has_label("Source")
+                .has("scope", scope)
+                .has("kind", SourceKind.SCAN.value)
+                .has("lineage", lineage)
+                .not_(__.in_e("SUPERSEDES"))
+                .id_()
+                .to_list()
+            )
+        ]
+    except Exception:
+        return []
 
 
 def _article_heads(g: GraphTraversalSource, scope: str, origin: str) -> list[str]:

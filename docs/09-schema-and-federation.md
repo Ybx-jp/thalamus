@@ -105,11 +105,41 @@ alongside `t_valid`/`t_invalid`, TOKI keeps `system_time_*` separate from
 this reasoning recorded rather than assumed — see the decision log
 ([index](index.md)) for the dated refusal and what would reverse it.
 
-Effective trust = `min(tier)` over the transitive `DERIVED_FROM` closure. That is
+Effective trust = `max(tier)` over the transitive `DERIVED_FROM` closure — the
+*least* trusted link, since `Tier` is ordered with 0 = operator and 3 = wild. That is
 [05](05-trust-model.md)'s "distillation does not launder" rule made computable —
 and it's a graph traversal, which is the entire reason the substrate is a graph
 and not a vector store. (The read path does not yet compute the floor over the
 chain — a named open item in [05](05-trust-model.md)'s open questions.)
+
+## Sources, and the three kinds of evidence
+
+`Source` is where a belief chain terminates: retained bytes, content-addressed, with
+the node holding a pointer rather than the blob. Three kinds, differing only by tier
+and locator — a transcript (`transcript`, tier 1), a retained document (`article`,
+tier 2), and a **measurement of the operator's own code** (`scan`, tier 1).
+
+A scan Source is what `thalamus arch` lands: the `arch/model.yaml` it produced,
+archived under its sha256, with the scan id as `origin`
+(`arch:scan:<repo>:<sha7>:<policy-digest7>`). It carries one property the other kinds
+do not:
+
+```
+lineage:  arch:scan:<repo>:<policy-digest7>   — the supersession chain this belongs to
+```
+
+`lineage` is a property rather than a prefix of `origin` because the policy digest sits
+at the *end* of a scan id, and matching a lineage by string prefix would thread every
+extractor policy onto one chain. Two scans of one repo under different policies are
+incomparable measurements, so they must not supersede each other — which is the same
+reason the digest is in the id at all.
+
+Findings from a scan land as ordinary `Claim`s `DERIVED_FROM` that Source. Metrics do
+not land at all: they are recomputable from the retained file, and a claim per
+measurement would bury the scope's real assertions under a per-run metric dump. A
+finding that persists across scans keeps one claim identity and accumulates a
+`DERIVED_FROM` edge per scan, so "this keeps coming up" is a graph fact rather than
+near-duplicate sentences.
 
 ## Scope
 

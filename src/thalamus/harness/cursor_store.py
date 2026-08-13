@@ -37,6 +37,16 @@ unconditional behaviour does — so the unknown is never worse than the status q
 lift is claimed only where the store was recognized whole. The known-tool set below is
 *measured, not enumerated from a vendor list*; Cursor has tools no session on the
 measuring box invoked.
+
+**Recognition is of the tool that ran, not of the name the store recorded.** Cursor
+routes every MCP call through one wrapper, so the recorded name says only "an MCP tool
+ran" — the same string for a first-party memory read and for a fetch through some
+third-party server. Matching the wrapper name would therefore have been *worse* than
+refusing it: it would vouch for a call whose reach nothing here had established. So the
+wrapper is resolved through its arguments to `server/toolName` and that is what the
+known-set is consulted for, which keeps the rule ("floor what we cannot identify")
+while ending the case where every Thalamus-pinned session floored itself, scope priming
+being an MCP call that every one of them makes.
 """
 
 from __future__ import annotations
@@ -57,7 +67,39 @@ CURSOR_CHATS = Path.home() / ".cursor" / "chats"
 # Tool names this reader has actually seen in a store, beyond the ingress pair. Not a
 # vendor list — see the module docstring. A name outside this set plus
 # EXTERNAL_INGRESS_TOOLS makes the reading UNRECOGNIZED.
-KNOWN_LOCAL_TOOLS = frozenset({"Glob", "Grep", "Read", "Shell", "LS", "Edit", "Write"})
+KNOWN_LOCAL_TOOLS = frozenset({
+    "Glob", "Grep", "Read", "Shell", "LS", "Edit", "Write", "StrReplace",
+})
+
+# `Task` is measured, and is deliberately NOT above. It spawns a subagent with its own
+# tools, so its result can carry a page the subagent fetched, summarized and handed
+# back — external content arriving under a local-looking name, with no call of our own
+# to bind it to. Adding it would lift the floor on exactly the sessions that most need
+# it, so it stays unknown and floors. Named here because it looks like an oversight.
+
+# Cursor routes every MCP call through one of these, so the recorded `toolName` names
+# the *mechanism* and not the tool: a first-party memory read and a web fetch through
+# some MCP server arrive as the same string. Left unresolved, the wrapper is an unknown
+# name and floors the session — which is how a Thalamus-pinned Cursor session floored
+# itself, since scope priming instructs a `memory_open_threads` call and every pinned
+# session therefore makes one. Recognition looks through the wrapper instead, to the
+# `server`/`toolName` in its arguments.
+MCP_WRAPPER_TOOLS = frozenset({"CallMcpTool", "GetMcpTools"})
+
+# MCP servers whose tools are first-party reads of this machine, named `server/tool`
+# after the wrapper is resolved. Only servers *we* author qualify, and the reason is
+# the one that puts `Read` and `Shell` in KNOWN_LOCAL_TOOLS rather than in the ingress
+# set: their results are observations of the operator's own machine, not content
+# fetched from an origin nobody curated (the docs/index Artifact argument). Thalamus's
+# tools read the operator's own graph.
+#
+# Server-level rather than per-tool, because the unit we can actually vouch for is the
+# server: we ship its whole tool surface, and a per-tool list would floor every session
+# that used a tool added since this line was written — failing closed on our own
+# release cadence rather than on anything about Cursor. A *third-party* server is a
+# different matter and stays unknown: it can fetch whatever it likes, and we cannot see
+# that it did not.
+KNOWN_LOCAL_MCP_SERVERS = frozenset({"thalamus"})
 
 # A successful ingress result is framed, and the frame binds to the call that produced
 # it. Refusals ("Web fetch rejected: User Rejected") carry no frame.
@@ -151,6 +193,36 @@ def read(session_id: str, chats_dir: Path | None = None) -> StoreReading:
     return read_path(path)
 
 
+def _effective_tool(name: str, args: dict) -> str:
+    """The tool that actually ran, looked up through Cursor's MCP wrapper.
+
+    Returns `server/toolName` for a resolvable wrapper call and the name unchanged
+    for everything else. A wrapper whose arguments do not carry both fields is left
+    as the bare wrapper name, which `_recognized` refuses — an MCP call we cannot
+    identify is exactly the case that must floor, since it could be a fetch.
+    """
+    if name not in MCP_WRAPPER_TOOLS:
+        return name
+    server, tool = args.get("server"), args.get("toolName")
+    if not isinstance(server, str) or not server:
+        return name
+    if not isinstance(tool, str) or not tool:
+        return name
+    return f"{server}/{tool}"
+
+
+def _recognized(name: str) -> bool:
+    """Is this effective tool name one the reader can vouch for?
+
+    Kept separate from the ingress question: `EXTERNAL_INGRESS_TOOLS` decides what
+    gets *collected*, this decides whether the store may be read at all.
+    """
+    if name in EXTERNAL_INGRESS_TOOLS or name in KNOWN_LOCAL_TOOLS:
+        return True
+    server, sep, tool = name.partition("/")
+    return bool(sep and tool) and server in KNOWN_LOCAL_MCP_SERVERS
+
+
 def read_path(path: Path) -> StoreReading:
     try:
         blobs, meta = _load(path)
@@ -199,8 +271,6 @@ def read_path(path: Path) -> StoreReading:
                     path=path,
                     reason=f"{kind} with no toolName",
                 )
-            if name not in EXTERNAL_INGRESS_TOOLS and name not in KNOWN_LOCAL_TOOLS:
-                unknown.add(name)
             call_id = block.get("toolCallId")
             if not isinstance(call_id, str) or not call_id:
                 return StoreReading(
@@ -210,9 +280,20 @@ def read_path(path: Path) -> StoreReading:
                 )
             if kind == "tool-call":
                 args = block.get("args")
-                calls[call_id] = (name, args if isinstance(args, dict) else {})
+                args = args if isinstance(args, dict) else {}
+                name = _effective_tool(name, args)
+                calls[call_id] = (name, args)
             else:
+                # A result carries the wrapper name and no arguments, so on its own it
+                # cannot say which MCP tool produced it. Its identity is its call's,
+                # joined by id; a result whose call is missing stays the bare wrapper
+                # name, which is unrecognized and floors — the reconciliation check
+                # below would fail on it anyway.
+                held = calls.get(call_id)
+                name = held[0] if held else _effective_tool(name, {})
                 results[call_id] = (name, str(block.get("result", "")), blob_id)
+            if not _recognized(name):
+                unknown.add(name)
 
     if unknown:
         # Fail closed. An unrecognized tool may be an ingress tool, and its absence

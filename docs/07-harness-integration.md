@@ -263,6 +263,21 @@ Cursor's format and each is carried explicitly rather than inferred away:
   unrecognized, and `ingress_verdict` says which. Cursor's ingress tools carry the
   same names as Claude Code's — `WebFetch` and `WebSearch` — so
   `EXTERNAL_INGRESS_TOOLS` transfers unchanged (lab/060).
+
+  Recognition is of the tool that **ran**, not of the name the store recorded.
+  Cursor routes every MCP call through one wrapper, so the recorded name says only
+  "an MCP tool ran" — the same string for a first-party memory read and for a fetch
+  through a third-party server. The wrapper is resolved through its arguments to
+  `server/toolName`, and only servers *we* author are known-local, on the same
+  grounds that put `Read` and `Shell` there: their results are observations of the
+  operator's own machine. A third-party server stays unknown and floors, because it
+  can fetch whatever it likes and we cannot see that it did not. `Task` is
+  deliberately unknown for the same reason — it spawns a subagent whose result can
+  carry a page it fetched, under a local-looking name.
+
+  Matching only the wrapper name floored **every Thalamus-pinned Cursor session**,
+  scope priming being an MCP call each one makes: the integration defeating its own
+  evidence floor.
 - **No message ids**, so Touch anchors are positional (`cursor:msg:<row>`),
   namespaced so a synthesized anchor cannot pass for a real UUID. Which input
   names a touched file is keyed by tool, not by key name: Cursor spells it `path`
@@ -281,7 +296,13 @@ Cursor's format and each is carried explicitly rather than inferred away:
   at all.
 
 **Discovery reads three surfaces, because each knows what the others cannot.** The
-sessionEnd log carries the scope as it stood at the end. A sweep of
+sessionEnd log carries the scope as it stood at the end — and *only* that plus the
+end time, for an interactive session: Cursor sends `transcript_path: null` to the
+sessionEnd hook of one (measured against 2026.08.11-e8db854, where the same payload
+populates `workspace_roots`, so this is the field's absence and not the hook's).
+The row is kept and the filesystem supplies the path on merge; dropping it for a
+missing field the other surface owns is what left every interactive Cursor session
+unroutable. A sweep of
 `~/.cursor/projects/<sanitized-cwd>/agent-transcripts/<id>/<id>.jsonl` is the only
 surface that sees a session which ran before the hooks existed, which on a machine
 Thalamus reaches late is every session on it. The pin ledger holds the scope the

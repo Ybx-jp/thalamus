@@ -201,7 +201,11 @@ class EndedSession:
 
     session_id: str
     scope: str
-    transcript_path: Path
+    # `None` where no surface supplied one — a sessionEnd row for an interactive
+    # session carries `transcript_path: null`, and until the filesystem merge fills
+    # it there is no path. Not `Path("")`, which normalizes to `Path(".")` and is
+    # truthy, so absence would read as a real path in every gap-filling `or`.
+    transcript_path: Path | None
     ended_at: datetime | None
     distilled: bool = False
     found_by: frozenset[str] = frozenset({DISCOVERED_BY_HOOK})
@@ -274,6 +278,10 @@ def discover(
             # outranks Cursor's, and neither is inference from a path.
             cwd=attested.cwd or found.cwd,
             ended_at=attested.ended_at or found.ended_at,
+            # The filesystem owns this one outright — it found the file by globbing
+            # for it, where the hook row carries whatever Cursor chose to send, which
+            # for an interactive session is nothing.
+            transcript_path=attested.transcript_path or found.transcript_path,
         )
 
     scopes = _ledger_scopes(ledger_path or PIN_LEDGER)
@@ -324,17 +332,26 @@ def _hook_sessions(path: Path) -> dict[str, EndedSession]:
     a hand-edited or concatenated log silently elected a different winner, and
     with a second surface merging into the same map the tie-break would have
     become iteration order.
+
+    **A row with no `transcript_path` is kept, not dropped.** Cursor sends
+    `transcript_path: null` to the sessionEnd hook of an interactive session
+    (measured against 2026.08.11-e8db854; `workspace_roots` is populated in the
+    same payload, so this is the field's absence and not the hook's). Dropping
+    the row discarded the two things only this surface knows — the scope and the
+    end time — over a field the filesystem surface owns and supplies on merge.
+    That is the same per-record handling of a per-field gap the scope rule exists
+    to prevent, and it made every interactive Cursor session unroutable.
     """
     latest: dict[str, EndedSession] = {}
     for record in _records(path):
         session_id = str(record.get("session_id") or "")
         transcript = str(record.get("transcript_path") or "")
-        if not session_id or not transcript:
+        if not session_id:
             continue
         candidate = EndedSession(
             session_id=session_id,
             scope=str(record.get("scope") or MAIN_SCOPE),
-            transcript_path=Path(transcript),
+            transcript_path=Path(transcript) if transcript else None,
             ended_at=_timestamp(record.get("ts")),
             distilled=bool(record.get("distilled")),
             found_by=frozenset({DISCOVERED_BY_HOOK}),

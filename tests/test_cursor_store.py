@@ -143,6 +143,57 @@ def test_a_call_with_no_result_does_not_verify(tmp_path):
     assert reading.verifiable is False
 
 
+def _mcp_pair(call_id, server, tool, text="{}"):
+    """An MCP call as Cursor records it: the wrapper name, the real one in `args`."""
+    return [
+        _call(call_id, "CallMcpTool", {"server": server, "toolName": tool, "arguments": {}}),
+        _result(call_id, "CallMcpTool", text),
+    ]
+
+
+def test_a_first_party_mcp_call_does_not_floor_the_session(tmp_path):
+    """Scope priming instructs a `memory_open_threads` call, so every pinned Cursor
+    session makes one. Matching only the wrapper name meant every one of them
+    floored itself — the integration defeating its own evidence floor."""
+    messages = [{"role": "system", "content": "hi"}]
+    messages += _mcp_pair("t1", "thalamus", "memory_open_threads")
+    messages += _fetch_pair("t2", "https://a.example", "alpha body")
+
+    reading = cursor_store.read_path(_store(tmp_path, messages))
+
+    assert reading.verdict is StoreVerdict.VERIFIED
+    assert reading.verifiable is True
+    # The MCP result is not ingress, so it is not collected — only the fetch is.
+    assert len(reading.external_texts) == 1
+    assert "alpha body" in reading.external_texts[0]
+
+
+def test_a_third_party_mcp_call_still_floors_the_session(tmp_path):
+    """The wrapper says only "an MCP tool ran". A server we did not author can fetch
+    whatever it likes and we cannot see that it did not, so it stays unknown —
+    vouching for it on the strength of the wrapper name would be worse than the
+    refusal it replaced."""
+    reading = cursor_store.read_path(
+        _store(tmp_path, _mcp_pair("t1", "some-vendor", "fetch_page"))
+    )
+
+    assert reading.verdict is StoreVerdict.UNRECOGNIZED
+    assert "some-vendor/fetch_page" in reading.reason
+    assert reading.verifiable is False
+
+
+def test_an_unidentifiable_mcp_call_floors_the_session(tmp_path):
+    """A wrapper whose args name no server is a call we cannot identify at all,
+    which is exactly the case that must floor."""
+    messages = [_call("t1", "CallMcpTool", {}), _result("t1", "CallMcpTool", "...")]
+
+    reading = cursor_store.read_path(_store(tmp_path, messages))
+
+    assert reading.verdict is StoreVerdict.UNRECOGNIZED
+    assert "CallMcpTool" in reading.reason
+    assert reading.verifiable is False
+
+
 def test_an_unknown_tool_name_floors_the_session(tmp_path):
     """Fail closed: an unrecognized tool might be an ingress tool.
 
