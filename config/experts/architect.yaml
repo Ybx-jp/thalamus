@@ -54,6 +54,14 @@ allowlist:
   - gerritcodereview.com
   - docs.datomic.com
   - docs.temporal.io
+  # Performance-measurement canon, procured against the growth instrument. Both hosts
+  # carry a specific paper the allowlisted ones do not: Dapper (the span record, and
+  # the sampling argument that decides what a trace may cost) lives only in Google's
+  # own archive, and Garg/Trivedi's software-aging methodology — the one method in
+  # this literature native to n=1, single-machine measurement, which is exactly this
+  # system's shape — is free full text only in NC State's repository.
+  - research.google.com
+  - repository.lib.ncsu.edu
 
 # No write_boundary, deliberately. This scope's charter is to perform the
 # reorganizations and fixes it identifies; a path deny would block the work rather
