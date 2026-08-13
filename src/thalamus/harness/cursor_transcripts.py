@@ -48,11 +48,16 @@ Three consequences, each handled explicitly rather than papered over:
    be mistaken for a real UUID, and still resolvable, because the archived
    transcript is the retained bytes and the row index addresses it.
 
-3. **Time and place come from our own ledgers.** No row carries a timestamp field
-   and no row carries a cwd, so the session's sessionStart record in
-   `~/.thalamus/pins/pins.jsonl` holds both and its sessionEnd record in
-   `~/.thalamus/logs/cursor-session-end.jsonl` holds the end. Those hooks have
-   been writing since the port shipped, which is what makes backfill possible.
+3. **Time, place and routing come from our own ledgers.** No row carries a
+   timestamp, a cwd or a scope, so the session's sessionStart record in
+   `~/.thalamus/pins/pins.jsonl` holds all three and its sessionEnd record in
+   `~/.thalamus/logs/cursor-session-end.jsonl` holds the end and the scope as it
+   stood there. Those hooks have been writing since the port shipped, which is
+   what makes backfill possible. The two scope records are not redundant: a
+   session whose sessionEnd hook never fired — a crash, a `kill-window`, a console
+   close that outlived its grace budget — has a launch scope and no end scope, and
+   reading only the latter refused it as unroutable while the answer sat in the
+   pin ledger.
 
    The ledgers are not the *only* source, which matters for anything they never
    saw. Cursor writes a `<timestamp>` element into the user query text itself, and
@@ -60,7 +65,8 @@ Three consequences, each handled explicitly rather than papered over:
    and `updatedAtMs` (lab/054). So a session that ran before the hooks were
    installed — every Cursor session on a machine Thalamus reaches late — is
    reached by `discover()`'s filesystem surface and dated from Cursor's own
-   record, with its scope left `UNRESOLVED_SCOPE` for an operator to assign.
+   record. Cursor keeps no scope anywhere, so one of those is left
+   `UNRESOLVED_SCOPE` for an operator to assign.
 
 **Distillation is deliberately not run at sessionEnd.** Cursor is not documented
 to flush the transcript before firing the hook — an open request asks it to
@@ -125,7 +131,6 @@ from thalamus.harness.agents import is_sandbox_cwd
 from thalamus.harness.transcripts import (
     EXTERNAL_INGRESS_TOOLS,
     TranscriptFacts,
-    _PATH_INPUTS,
     is_sandbox_project,
     resolve_repo_root,
     to_session_graph as _to_session_graph,
@@ -146,6 +151,26 @@ CURSOR_CHATS = Path.home() / ".cursor" / "chats"
 # that our hook observed the session end; it does not vouch for the transcript.
 DISCOVERED_BY_HOOK = "hook"
 DISCOVERED_BY_FILESYSTEM = "filesystem"
+DISCOVERED_BY_LEDGER = "pin-ledger"
+
+# Which tool inputs name a file the session *touched*, keyed by tool name because
+# Cursor overloads one key where Claude Code does not. `path` carries a file on Read,
+# Write and StrReplace and a *search root* on Grep, so the flat key list that serves
+# `transcripts.parse` — where every file tool spells it `file_path` — would here record
+# every directory ever grepped as a touched file. Glob's `target_directory` is the same
+# search-root case, excluded for the same reason. That is precisely the line the Claude
+# Code reader already draws by omitting Grep's `path`, so the two readers agree on what
+# a touch *is* and differ only in how their harness spells it.
+#
+# Measured from the Cursor transcripts on this box, not enumerated from a vendor list —
+# the same standing `cursor_store.KNOWN_LOCAL_TOOLS` has, and the same safe failure: a
+# tool missing here contributes no anchor rather than a wrong one, so provenance stays
+# incomplete instead of becoming false.
+_CURSOR_PATH_INPUTS: dict[str, tuple[str, ...]] = {
+    "Read": ("path",),
+    "Write": ("path",),
+    "StrReplace": ("path",),
+}
 
 # A scope that no hook ever resolved. Not `main`: defaulting an unattested
 # session into the operator's own subgraph is a routing decision nobody made,
@@ -198,21 +223,34 @@ class EndedSession:
 
 
 def discover(
-    log_path: Path | None = None, projects_dir: Path | None = None
+    log_path: Path | None = None,
+    projects_dir: Path | None = None,
+    ledger_path: Path | None = None,
 ) -> list[EndedSession]:
-    """Every Cursor session either surface can see, merged.
+    """Every Cursor session any surface can see, merged.
 
-    Two surfaces, because each sees what the other cannot. The **hook log** is
-    the only place a session's *resolved scope* appears at all — no filesystem
-    read can recover a routing decision that a hook made. The **filesystem** is
-    the only surface that sees a session which ran before the hooks existed,
-    which on a machine Thalamus reaches late is every session on it (lab/054).
-    Reading only the log made those unrecoverable by policy rather than by
-    format, since their transcripts were on disk the whole time.
+    Three surfaces, because each knows something the others cannot. The
+    **sessionEnd log** is where a scope resolved *at the end* appears. The
+    **filesystem** is the only surface that sees a session which ran before the
+    hooks existed, which on a machine Thalamus reaches late is every session on it
+    (lab/054). Reading only the log made those unrecoverable by policy rather than
+    by format, since their transcripts were on disk the whole time. The **pin
+    ledger** holds the scope our sessionStart hook recorded at launch, which is
+    the only record of it for a session whose sessionEnd hook never fired — a
+    crash, a `kill-window`, a console close that outlived its grace budget. Before
+    it was read here, such a session was refused as unroutable while the answer
+    sat in our own tier-0 ledger.
 
-    **Merging is per-field, not per-record.** Where both surfaces see a session,
-    the hook row supplies `scope` — a fixed rule tied to which surface can know
-    the field, which is TOKI's `PerRule` policy and specifically *not*
+    **The pin ledger supplies a field; it never discovers a session.** Its rows
+    carry no harness, so a Cursor session and a Claude Code session are
+    indistinguishable in it, and treating it as a discovery surface would sweep
+    every Claude session on the box into the Cursor extractor. It is consulted
+    only for sessions the other two surfaces already found.
+
+    **Merging is per-field, not per-record.** Where surfaces overlap, the field
+    goes to the one that can know it — the sessionEnd row's `scope` outranks the
+    ledger's, since a session can be rescoped after launch, and both outrank
+    absence. That is TOKI's `PerRule` policy and specifically *not*
     last-writer-wins (arXiv 2606.06240); LWW here would let a filesystem row's
     absent scope overwrite a resolved one. Provenance semirings are deliberately
     not the frame: Green et al.'s construction is conditional on the operations
@@ -237,7 +275,45 @@ def discover(
             cwd=attested.cwd or found.cwd,
             ended_at=attested.ended_at or found.ended_at,
         )
+
+    scopes = _ledger_scopes(ledger_path or PIN_LEDGER)
+    for session_id, session in list(merged.items()):
+        scope = scopes.get(session_id)
+        if not scope:
+            continue
+        merged[session_id] = replace(
+            session,
+            scope=session.scope if session.scope_resolved else scope,
+            found_by=session.found_by | {DISCOVERED_BY_LEDGER},
+        )
     return list(merged.values())
+
+
+def _ledger_scopes(path: Path) -> dict[str, str]:
+    """session_id → the scope our sessionStart hook recorded, earliest row winning.
+
+    Earliest rather than newest, because this answers "what was this session
+    launched as". The ledger also carries later `engaged` rows for the same
+    session, and a scope is fixed at launch — `pin` puts it in the process
+    environment — so a later row restates it rather than revising it. Undated rows
+    lose to dated ones for the same reason `_not_older` gives: they carry no
+    ordering evidence, and preferring them would let file order decide.
+    """
+    scopes: dict[str, str] = {}
+    stamps: dict[str, datetime] = {}
+    for record in _records(path):
+        session_id = str(record.get("session_id") or "")
+        scope = str(record.get("scope") or "")
+        if not session_id or not scope:
+            continue
+        stamp = _timestamp(record.get("ts"))
+        held = stamps.get(session_id)
+        if session_id in scopes and not (stamp and (held is None or stamp < held)):
+            continue
+        scopes[session_id] = scope
+        if stamp:
+            stamps[session_id] = stamp
+    return scopes
 
 
 def _hook_sessions(path: Path) -> dict[str, EndedSession]:
@@ -505,7 +581,7 @@ def parse(
             tool_input = block.get("input")
             if not isinstance(tool_input, dict):
                 continue
-            for key in _PATH_INPUTS:
+            for key in _CURSOR_PATH_INPUTS.get(name, ()):
                 identifier = tool_input.get(key)
                 if not identifier:
                     continue

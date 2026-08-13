@@ -1973,16 +1973,22 @@ first-party: `SUPERSEDES` has existed since M1 and carries **5 edges**, which is
 standing demonstration that an edge type does not populate itself. The test for any new
 edge type is therefore to name the default-path writer that emits it.
 
-### 8e. Merging two discovery surfaces — the policy has a name, and it is not LWW
+### 8e. Merging discovery surfaces — the policy has a name, and it is not LWW
 
-When the same session is seen by two sources that disagree, TOKI names the four
+When the same session is seen by sources that disagree, TOKI names the four
 strategies production memories actually use — last-writer-wins, evidence-weighted
 merge, await-confirmation, and per-rule policy — and its argument is that deployed
 systems pick one without declaring which (arXiv 2606.06240). Cursor discovery is
-**per-rule**: the sessionEnd hook row supplies `scope` because it is the only surface
-that can know it, and the filesystem supplies existence and `cwd`. Naming that
+**per-rule** across three surfaces: the filesystem supplies existence and `cwd`,
+while `scope` is ranked — the sessionEnd hook row over the pin ledger's launch row,
+since a session can be rescoped after it starts, and both over absence. Naming that
 matters because the obvious implementation is LWW, and LWW here lets an unresolved
 scope overwrite a resolved one.
+
+The ranking also decides what a surface is *allowed to do*. The pin ledger supplies
+a field but never discovers a session, because its rows do not record a harness: a
+surface that cannot identify what it is describing can still be trusted for a field
+on a record identified elsewhere.
 
 **Provenance semirings were considered and are the wrong tool for the field-level
 half.** Green, Karvounarakis & Tannen's construction (PODS 2007) is conditional on

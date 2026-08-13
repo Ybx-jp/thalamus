@@ -11,9 +11,11 @@ what we believe Cursor emits and will need revisiting if that belief is wrong.
 The rest pin how the adapter behaves when the format disappoints it — unknown
 blocks, missing fields, malformed lines — and those hold regardless, because a
 parser meeting an unfamiliar input must degrade to an absent field rather than a
-wrong one. The on-disk layout the discovery tests build is the exception: it was
-read off a live Cursor install (lab/054), so those fixtures are copied from
-observation rather than from documentation.
+wrong one. Two things are the exception, copied from observation rather than from
+documentation: the on-disk layout the discovery tests build, read off a live
+Cursor install (lab/054), and the tool names and input keys — `Read`/`Write`/
+`StrReplace` naming a file in `path`, `Grep`/`Glob` naming a search root — read
+off the Cursor transcript corpus on the same box.
 
 The load-bearing test in this file is the ingress one: Cursor transcripts carry
 no tool results for any tool, so an empty `external_texts` means "we cannot
@@ -54,14 +56,24 @@ def tool_use(name, **inputs):
     return {"type": "tool_use", "name": name, "input": inputs}
 
 
+@pytest.fixture(autouse=True)
+def _no_real_pin_ledger(tmp_path, monkeypatch):
+    """Discovery consults the pin ledger for scope, so no test may fall through to
+    the machine's own. Tests that exercise it pass their ledger explicitly."""
+    monkeypatch.setattr(cursor_transcripts, "PIN_LEDGER", tmp_path / "absent-pins.jsonl")
+
+
 @pytest.fixture
 def transcript(tmp_path):
     return write_transcript(
         tmp_path / "conv-1.jsonl",
         [
             user("port the harness to cursor"),
-            assistant(text("Reading the adapter."), tool_use("Read", file_path="/w/hooks.py")),
-            assistant(tool_use("Edit", file_path="/w/hooks.py"), text("Done.")),
+            assistant(text("Reading the adapter."), tool_use("Read", path="/w/hooks.py")),
+            assistant(
+                tool_use("StrReplace", path="/w/hooks.py", old_string="a", new_string="b"),
+                text("Done."),
+            ),
             user("now run the tests"),
         ],
     )
@@ -81,6 +93,27 @@ class TestParse:
         facts = cursor_transcripts.parse(transcript, session_id="conv-1")
         assert set(facts.touched) == {"/w/hooks.py"}
         assert len(facts.touched["/w/hooks.py"]) == 2
+
+    def test_a_search_root_is_not_a_touched_file(self, tmp_path):
+        """Cursor spells a file `path` on Read/Write/StrReplace and a *search
+        root* `path` on Grep, overloading one key where Claude Code's `file_path`
+        never is. Reading the key without its tool would file every grepped
+        directory as a touched file — a wrong anchor, which provenance cannot
+        recover from as it can from a missing one."""
+        path = write_transcript(
+            tmp_path / "conv-2.jsonl",
+            [
+                user("find it"),
+                assistant(
+                    tool_use("Grep", pattern="scope", path="/w/src"),
+                    tool_use("Glob", glob_pattern="*.py", target_directory="/w/src"),
+                    tool_use("Read", path="/w/src/pin.py"),
+                ),
+            ],
+        )
+        facts = cursor_transcripts.parse(path, session_id="conv-2")
+        assert facts.tool_calls == 3
+        assert set(facts.touched) == {"/w/src/pin.py"}
 
     def test_anchors_cannot_be_mistaken_for_message_ids(self, transcript):
         """Cursor writes no message ids, so anchors are positional. They are
@@ -392,9 +425,11 @@ class TestSurfaceMerge:
     """Per-field merge: each surface supplies what only it can know.
 
     Hook rows carry a resolved scope no filesystem read can recover; the
-    filesystem sees sessions the log never recorded. Last-writer-wins across the
-    whole record would let a filesystem row's unresolved scope overwrite a
-    resolved one, which is why the rule is per-field (TOKI, arXiv 2606.06240).
+    filesystem sees sessions the log never recorded; the pin ledger holds the
+    launch scope of a session whose sessionEnd hook never fired.
+    Last-writer-wins across the whole record would let a filesystem row's
+    unresolved scope overwrite a resolved one, which is why the rule is per-field
+    (TOKI, arXiv 2606.06240).
     """
 
     def test_the_hook_row_supplies_the_scope_and_both_surfaces_are_recorded(
@@ -426,6 +461,67 @@ class TestSurfaceMerge:
                 projects / "home-u-work" / "agent-transcripts" / "sess-a" / "sess-a.jsonl"),
         }) + "\n")
         assert cursor_transcripts.discover(log, projects)[0].cwd == "/home/u/actual"
+
+    def test_the_pin_ledger_supplies_a_scope_no_session_end_row_recorded(
+        self, tmp_path, monkeypatch
+    ):
+        """A session whose sessionEnd hook never fired — a crash, a `kill-window`,
+        a console close past its grace budget — is found only by the filesystem,
+        which knows no scope. Its launch scope is in our own tier-0 ledger, so
+        refusing it as unroutable discarded an answer we already held."""
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", "/home/u/work")])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        ledger = tmp_path / "pins.jsonl"
+        ledger.write_text(json.dumps({
+            "session_id": "sess-a", "scope": "homelab", "cwd": "/home/u/work",
+            "ts": "2026-08-10T09:00:00Z",
+        }) + "\n")
+        found = cursor_transcripts.discover(tmp_path / "nolog.jsonl", projects, ledger)
+        assert len(found) == 1
+        assert found[0].scope == "homelab" and found[0].scope_resolved
+        assert cursor_transcripts.DISCOVERED_BY_LEDGER in found[0].found_by
+        assert cursor_transcripts.claim_unresolved(found)[1] == []
+
+    def test_a_session_end_scope_outranks_the_launch_scope(self, tmp_path, monkeypatch):
+        """PerRule, not last-writer-wins by file: a session can be rescoped after
+        launch, so the row written at the end is the one that knows."""
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", "/home/u/work")])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        log = tmp_path / "log.jsonl"
+        log.write_text(json.dumps({
+            "session_id": "sess-a", "scope": "qe", "ts": "2026-08-10T10:00:00Z",
+            "transcript_path": str(
+                projects / "home-u-work" / "agent-transcripts" / "sess-a" / "sess-a.jsonl"),
+        }) + "\n")
+        ledger = tmp_path / "pins.jsonl"
+        ledger.write_text(json.dumps({
+            "session_id": "sess-a", "scope": "homelab", "ts": "2026-08-10T09:00:00Z",
+        }) + "\n")
+        assert cursor_transcripts.discover(log, projects, ledger)[0].scope == "qe"
+
+    def test_the_pin_ledger_supplies_a_field_and_never_discovers_a_session(self, tmp_path):
+        """The ledger records Claude Code and Cursor sessions in the same rows with
+        nothing to tell them apart, so discovering from it would sweep every Claude
+        session on the box into the Cursor extractor."""
+        ledger = tmp_path / "pins.jsonl"
+        ledger.write_text(json.dumps({
+            "session_id": "a-claude-session", "scope": "main", "ts": "2026-08-10T09:00:00Z",
+        }) + "\n")
+        assert cursor_transcripts.discover(tmp_path / "nolog.jsonl", tmp_path / "nope", ledger) == []
+
+    def test_the_earliest_ledger_row_gives_the_launch_scope(self, tmp_path, monkeypatch):
+        """Later `engaged` rows restate the scope rather than revising it, and the
+        ledger is not guaranteed append-ordered, so the earliest dated row wins."""
+        projects, chats = _cursor_tree(tmp_path, [("home-u-work", "sess-a", "/home/u/work")])
+        monkeypatch.setattr(cursor_transcripts, "CURSOR_CHATS", chats)
+        ledger = tmp_path / "pins.jsonl"
+        ledger.write_text("\n".join(json.dumps(r) for r in [
+            {"session_id": "sess-a", "scope": "engaged-later", "event": "engaged",
+             "ts": "2026-08-10T11:00:00Z"},
+            {"session_id": "sess-a", "scope": "homelab", "ts": "2026-08-10T09:00:00Z"},
+        ]) + "\n")
+        assert cursor_transcripts.discover(
+            tmp_path / "nolog.jsonl", projects, ledger)[0].scope == "homelab"
 
     def test_the_newest_hook_row_wins_by_timestamp_not_by_file_order(self, tmp_path):
         """An out-of-order log must not elect the wrong scope. Position was the

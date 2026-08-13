@@ -264,7 +264,14 @@ Cursor's format and each is carried explicitly rather than inferred away:
   same names as Claude Code's — `WebFetch` and `WebSearch` — so
   `EXTERNAL_INGRESS_TOOLS` transfers unchanged (lab/060).
 - **No message ids**, so Touch anchors are positional (`cursor:msg:<row>`),
-  namespaced so a synthesized anchor cannot pass for a real UUID.
+  namespaced so a synthesized anchor cannot pass for a real UUID. Which input
+  names a touched file is keyed by tool, not by key name: Cursor spells it `path`
+  on `Read`/`Write`/`StrReplace` and reuses the same key for a *search root* on
+  `Grep`, where Claude Code's `file_path` appears on file tools only. Reading the
+  key without its tool would file every grepped directory as a touched file, and a
+  wrong anchor is worse than a missing one — provenance cannot recover from it.
+  `Glob`'s `target_directory` is excluded for the same reason, which is the line
+  the Claude Code reader already draws by omitting `Grep`'s `path`.
 - **No per-row timestamps and no cwd on any row**, but neither is lost. Cursor
   writes `<timestamp>` into the user query text itself, so wall-clock is
   recoverable from the transcript, and `~/.cursor/chats/<hash>/<id>/meta.json`
@@ -273,15 +280,25 @@ Cursor's format and each is carried explicitly rather than inferred away:
   only one, which is what lets a session predating the hooks be dated and placed
   at all.
 
-**Discovery reads two surfaces, because each sees what the other cannot.** The
-sessionEnd log is the only place a *resolved scope* appears — no filesystem read
-recovers a routing decision a hook made. A sweep of
+**Discovery reads three surfaces, because each knows what the others cannot.** The
+sessionEnd log carries the scope as it stood at the end. A sweep of
 `~/.cursor/projects/<sanitized-cwd>/agent-transcripts/<id>/<id>.jsonl` is the only
 surface that sees a session which ran before the hooks existed, which on a machine
-Thalamus reaches late is every session on it. Where both see a session the hook row
-supplies the scope — a fixed per-field rule (TOKI's `PerRule`, arXiv 2606.06240),
-not last-writer-wins, which would let an unresolved scope overwrite a resolved one.
-`found_by` records which surfaces saw it, as a set, since the two are not exclusive.
+Thalamus reaches late is every session on it. The pin ledger holds the scope the
+sessionStart hook recorded at launch — the only record of it for a session whose
+sessionEnd hook never fired, which is any crash, `kill-window`, or console close
+that outlives its grace budget; without it such a session was refused as unroutable
+while the answer sat in our own tier-0 ledger.
+
+The ledger **supplies a field and never discovers a session**: its rows carry no
+harness, so a Cursor session and a Claude Code session are indistinguishable in it,
+and discovering from it would sweep every Claude session on the box into the Cursor
+extractor. Where surfaces overlap, the field goes to the one that can know it — a
+sessionEnd scope outranks a launch scope, since a session can be rescoped after it
+starts, and both outrank absence. That is a fixed per-field rule (TOKI's `PerRule`,
+arXiv 2606.06240), not last-writer-wins, which would let an unresolved scope
+overwrite a resolved one. `found_by` records which surfaces saw it, as a set, since
+they are not exclusive.
 
 Neither surface un-sanitizes a project directory name back into a path: the
 flattening is not known to be injective, and a wrong answer from it would arrive
