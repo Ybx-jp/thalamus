@@ -98,11 +98,74 @@ carries a whole shape object decoded against the shape schema, where `"frame"` �
 Sending the transit spelling `"~:flex"` was tried and **also 500s** — there is no
 transit decoding on a JSON body, so it arrives as the literal seven-character string.
 That rules out the obvious client-side fix: no argument value expressible in a JSON
-body can produce a keyword. The repair belongs in the transport
-(`application/transit+json`), not in `set_layout`'s parameter handling.
+body can produce a keyword.
 
-Filed as **P3** in the drill ladder's open findings. Owner is architect; `designer`'s
-`write_boundary` denies `*.py`.
+Filed as **P3** in the drill ladder's open findings, and consulted to architect under
+ticket `8979621a9c4247c6`. Owner is architect; `designer`'s `write_boundary` denies
+`*.py`.
+
+## The evidence this entry said it could not reach
+
+This entry was first written claiming the backend log "needs sudo" and that the Penpot
+stack "runs outside my docker context". **Both were wrong, and the second caused the
+first.** `docker ps` was answering from the `desktop-linux` context; the stack is on
+`default`, and this box's operator is in the `docker` group:
+
+```
+docker --context default logs penpot-backend-1 --since 24h
+```
+
+No sudo, and the log holds the literal answer — `:code :data-validation`,
+`validate-shape` at `changes.cljc:475`, `{:in [:layout], :schema [::sm/one-of
+#{:grid :flex}], :value "flex"}` — including `:value "~:flex"` from the transit probe,
+confirming that leg from the server's side. The rejecting schemas are all keyword sets:
+`#{:grid :flex}`, `#{:column :row-reverse :column-reverse :row}`, `#{:wrap :nowrap}`,
+`#{:start :center :end :stretch}`, `#{:solid :mixed :dashed :dotted}`,
+`#{:center :inner :outer}`.
+
+The lesson is not "read the log". It is that **a tool answering confidently from the
+wrong context is indistinguishable from the thing being absent**, and the cost was the
+whole diagnosis being inferred when it could have been read. A defect report that says
+"I could not check X" should say which command was run to reach X.
+
+## What the architect found (ticket `8979621a9c4247c6`)
+
+**The cause was right; the remedy was wrong.** Confirmed from Penpot 2.17.0 source:
+`[:val ::sm/any]` in the `:set` op schema, `::one-of` carrying `:decode/json keyword`,
+and `wrap-parse-request` keywordising *keys* but never *values* — which is exactly why
+maps-of-numbers pass and enums fail.
+
+But the transport does not need to change. Penpot ships an **`:assign`
+change-operation** whose handler runs `(sm/decoder cts/schema:shape-attrs
+sm/json-transformer)` — the same coercion `add-obj` gets — over a plain JSON body.
+Architect measured the four failing enums applying `200` via `:assign`, a bogus enum
+still `500`ing (so validation is not weakened), and asymmetric padding applying via
+`layout-padding-type: "multiple"`.
+
+Three consequences:
+
+1. **The second limit dies in the same ten lines.** This entry asserted that
+   `set_layout`'s scalar `padding` would survive any transport fix. It does not —
+   `layout-padding-type: "multiple"` expresses asymmetric padding, so the 16/8 this
+   button spec needs is reachable.
+2. **The defect is wider than filed.** It is not "enum-valued attributes" but *any*
+   `mod-obj` set-op whose value contains a keyword anywhere in its tree. **`set_stroke`
+   is broken today** and no drill caught it, because D0 and D1 both set strokes at
+   creation time. Reproduced independently here: a plain `set_stroke(color, width=2)`
+   on a fresh rect returns 500, and the log shows the `#{:solid :mixed :dashed :dotted}`
+   and `#{:center :inner :outer}` schemas rejecting `"solid"` and the alignment.
+   **This binds D2**, whose six icons are specified at uniform 2px stroke: stroke must
+   be set through `create_path`, never adjusted afterwards.
+3. **The repair is a split, not a swap.** `components-changed` and `frames-changed`
+   both match `(= (:type operation) :set)` and would silently skip `:assign` ops, and
+   every affected attribute is in `sync-attrs` — so `:set` stays where it already
+   works and `:assign` carries only the values that need coercion.
+
+Not independently reproduced here: the `:assign` measurements themselves, which
+architect ran as raw RPC from inside `penpot-mcp-1`. Everything else above was
+re-checked directly. Architect's own objection to its recommendation is that Penpot's
+`changes_builder.cljc` never emits `:assign`, so this server would be its primary
+user — a real risk, and it belongs in the patch header.
 
 ## Corrections to the ladder's instrument facts
 

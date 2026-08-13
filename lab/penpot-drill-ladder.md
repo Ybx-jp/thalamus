@@ -26,6 +26,20 @@ tool used to be indistinguishable from one with a tool that happened to be idle.
 
 Established by source survey and by live probes against the running stack.
 
+- **A 500 is readable, and reading it beats inferring it.** The stack runs on docker's
+  `default` context, not `desktop-linux`, and this box's operator is in the `docker`
+  group — so no sudo is involved:
+
+  ```
+  docker --context default logs penpot-backend-1 --since 24h
+  ```
+
+  Validation failures arrive with the offending value, the schema that rejected it and
+  a source line (`:code :data-validation`, `{:in [:layout], :schema [::sm/one-of
+  #{:grid :flex}], :value "flex"}`). A bare `docker ps` answering from the wrong
+  context looks exactly like the stack being unreachable; check `docker context ls`
+  before concluding a diagnosis cannot be confirmed (lab/064).
+
 - **68 tools. 25 author. 66 are headless.** Only `get_active_selection` and
   `execute_plugin_script` need the browser bridge on `:4402`.
 - **The visual loop closes without a browser.** `export_frame_png` renders through the
@@ -55,6 +69,11 @@ Established by source survey and by live probes against the running stack.
   `height` without refreshing `selrect` and `points`. The five text-mutation tools
   (`set_font`, `set_font_size`, `set_text_align`, `set_text_style`, `set_text_content`)
   rebuild content from the first paragraph only and reset every property not passed.
+  **`set_stroke` fails every call** — it always emits `stroke-style` and
+  `stroke-alignment` as strings, which P3 makes unwritable, so even
+  `set_stroke(color, width)` with no style argument returns 500. Strokes must be set
+  through `create_*`, which is why D0 and D1 never hit it and why **D2's uniform 2px
+  stroke has to come from `create_path` and can never be adjusted afterwards.**
 
   Creation itself is exact. Measured off a rendered export (lab/064): every shape
   created with explicit `x`/`y`/`width`/`height` and a `parent_id` landed on its
@@ -232,12 +251,20 @@ drill that produces a deliverable and no change has not been assessed.
    designer.yaml` is ruled out by `pin.py:558` (the manifest is harness-agnostic
    because Cursor reads it, and `--mcp-config` is Claude Code's schema).
 
-2. **P3 — no enum-valued attribute can be written, so `set_layout` is dead.**
-   `modify_shape` and `set_layout` post their changes as plain JSON, where a `mod-obj`
-   op's `val` is typed `any` and receives no string→keyword coercion; the shape then
-   fails schema validation and the RPC answers a bare 500. Measured 6/6 on the
-   number/map-vs-enum split, and `"~:flex"` fails too, so no argument spelling repairs
-   it — the fix is a transit-encoded request body in `api.command`, which is a
-   transport change affecting every write tool. Costs blend modes, constraints, stroke
-   alignment and cap, grow type, and all of auto-layout. Owner is `architect`;
-   `designer`'s `write_boundary` denies `*.py`. Reproduction and diagnosis in lab/064.
+2. **P3 — a `mod-obj` set-op cannot carry a keyword, so `set_layout` and `set_stroke`
+   are dead.** Changes post as plain JSON, where a `mod-obj` op's `val` is typed
+   `::sm/any` and receives no string→keyword coercion; the shape then fails
+   `validate-shape` and the RPC answers a bare 500. Confirmed from the backend log and
+   Penpot 2.17.0 source. Costs blend modes, constraints, stroke alignment/cap/style,
+   grow type, and all of auto-layout.
+
+   **The remedy is not a transport change.** Penpot ships an `:assign` operation whose
+   handler runs the same `json-transformer` decoding `add-obj` gets, over the same JSON
+   body — architect measured the failing enums applying 200 through it, with validation
+   still rejecting bogus values, and `layout-padding-type: "multiple"` unlocking
+   asymmetric padding at the same time. The repair is a **split** — `:set` keeps what
+   already works, `:assign` carries values needing coercion — because
+   `components-changed` and `frames-changed` match `(= (:type operation) :set)` and
+   would silently skip `:assign` ops on attributes that are in `sync-attrs`. Owner is
+   `architect`; `designer`'s `write_boundary` denies `*.py`. Ticket
+   `8979621a9c4247c6`; reproduction and diagnosis in lab/064.
