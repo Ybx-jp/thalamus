@@ -75,6 +75,11 @@ save it.
 That also means comments cannot be used to test how a description will render — the
 two go through different pipelines.
 
+Descriptions are also normalized in smaller ways: a bold run abutting a code span is
+re-bracketed *around* it, so `**Do NOT re-key `identifier`.**` comes back with the
+emphasis split either side of the code. Meaning survives, the visual span does not.
+Not worth fighting — just do not read it back as corruption.
+
 ### What a good issue carries
 
 Write it for someone starting a session cold, with no context from yours:
