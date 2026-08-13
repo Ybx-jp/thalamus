@@ -93,7 +93,7 @@ PIN_ROWS: tuple[PinRow, ...] = (
 
     PinRow("pin.launcher", "cursor", Provision.PROVIDED,
            _cursor("`thalamus pin --harness cursor` opens a tmux window running "
-                   "`env THALAMUS_SCOPE=<scope> -- agent --trust`; an interactive "
+                   "`env THALAMUS_SCOPE=<scope> agent --trust`; an interactive "
                    "session launched this way fired `sessionStart` with the scope in "
                    "the hook's environment (lab/061)"),
            "New. Before it, every enforcement claim about Cursor rested on a "

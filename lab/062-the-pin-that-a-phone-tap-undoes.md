@@ -23,7 +23,7 @@ Measured, both arms, in a throwaway session whose session env holds
 
 | launch argv | before recycle | after recycle |
 |---|---|---|
-| `env THALAMUS_SCOPE=qe -- agent --trust` | `qe` | **`qe`** |
+| `env THALAMUS_SCOPE=qe agent --trust` | `qe` | **`qe`** |
 | `agent --trust` (window `-e` only) | `qe` | **`main`** |
 
 `role-guard.sh` tests the scope and exits before it loads any manifest when the answer

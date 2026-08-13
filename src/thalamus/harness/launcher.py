@@ -44,8 +44,10 @@ env's `THALAMUS_SCOPE=main` — and `role-guard.sh` short-circuits on `main` bef
 loads any manifest. A bounded window becomes an unbounded one, from a phone tap, with
 no row anywhere saying so.
 
-Hence `env THALAMUS_SCOPE=<scope> --` in front of the binary: the same shape rooms
-already use, for the same reason.
+Hence `env THALAMUS_SCOPE=<scope>` in front of the binary: the same shape rooms
+already use, for the same reason. No `--` separator — `env` stops scanning for
+options at the first `NAME=VALUE`, so a later `--` is taken as the command name and
+the launch exits 127.
 
 ## How long a launch takes to prove itself
 
