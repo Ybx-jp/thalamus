@@ -352,6 +352,35 @@ Grades whether the right questions get asked before pixels move, and exercises t
 charter's critique-as-finding boundary. Expected to surface: how much of a design
 decision survives contact with an already-shipped surface.
 
+Run 2026-08-14 — file `D4 console roster`, critique in `lab/d4-roster-critique.md`,
+board PNG at `lab/assets/d4-console-roster.png`, awaiting assessment. The expectation
+was met in the sharpest possible way: **the literature consultation overturned three of
+the eight findings the measurement produced**, and the redesign follows the corrected
+version rather than the intuitive one.
+
+- **Measure the built surface through a scriptable viewport, not a screenshot.**
+  `resize_window` returns success and does nothing when the Chrome window is maximised;
+  the working method is a **same-origin iframe** sized to the phone, which resolves media
+  queries for real and stays scriptable so geometry can be read back. Two of the drill's
+  findings (the identical `title` attributes, the 799 px overflow at full roster) are
+  invisible in an image and exist only because the frame could be queried.
+- **The unit conversion decides the answer, and the wrong anchor gives the reassuring
+  one.** On a mobile viewport 1 CSS px = 1 dp = 1 iOS pt, *not* 1/96 inch. At 96 dpi the
+  shipped 34.4 px target reads 9.10 mm — within 1% of Parhi's recommendation. Correctly,
+  it is **5.46 mm**, about half. Fix the unit before any perceptual argument.
+- **A design measurement can be right and its interpretation still wrong.** Isoluminance
+  was measured correctly and diagnosed backwards: Healey (1996) got seven searchable
+  categories *from a deliberately isoluminant slice*. The real defect is mark **size** —
+  the 8 px dot subtends 0.243°, below the smallest size at which colour difference has
+  been measured at all (Stone & Szafir 2014). "Conditions not met", not "demonstrated
+  defect", and the distinction changed the fix.
+- **The folklore that supported the biggest structural decision does not hold.** There is
+  no controlled experiment measuring whether users know content exists off-screen
+  horizontally, and mobile data contradicts the assumption (72% of visitors advanced a
+  carousel, 7.5 M events). The defensible objection is **depth, not invisibility** — and
+  it condemns this strip anyway, because a roster has no long tail where the first few
+  items dominate. Right conclusion, wrong reason, and the reason mattered.
+
 ### D5 — Capstone
 
 *All three axes at maximum, in one piece.*
@@ -451,3 +480,41 @@ drill that produces a deliverable and no change has not been assessed.
    text-mutation reset hazard was already recorded above; this is the measured case, and
    the reason every font change on this board went through `modify_shape` with the whole
    content map restated instead.
+
+9. **`create_text(text_align=...)` is inert — alignment never renders. Open, owner
+   `architect`.** The third instance of the same defect shape as 4 and 7: the value is
+   written to a node the renderer does not read it from. `text-align` is a **paragraph**
+   property in Penpot's content model, and `build_text_content` writes it onto the
+   text-run leaf instead, so every `right`/`center` string is stored, returned intact by
+   `get_shape_details`, and ignored at render. Measured both directions on one shape:
+   left-aligned before, correctly right-aligned after, nothing else changed.
+
+   The fix from the tool surface is `modify_shape` with the whole content map restated
+   and `text-align` set on the `paragraph` node (keeping it on the leaf too is harmless):
+
+   ```
+   {"content": {"type": "root", "children": [{"type": "paragraph-set", "children":
+     [{"type": "paragraph", "text-align": "right", "children": [{...leaf...}]}]}]}}
+   ```
+
+   Worth fixing at the tool because alignment is not cosmetic in a spec board — a
+   right-aligned status column is how a table reads as a table, and the silent failure
+   costs a full render-and-look cycle to notice.
+
+10. **`modify_shape` cannot write `selrect` or `points`, so a frame's geometry is
+    immutable after creation. Open, owner `architect`.** Both are transit-tagged records
+    (`~#rect`, `~#point`); the tool sends plain JSON maps and the backend refuses them:
+
+    ```
+    :code :data-validation, :hint "invalid shape found '<uuid>'"
+    :in [:selrect], :schema [:fn app.common.geom.rect$rect_QMARK_]
+    :value {:x 0, :y 0, :width 2260, :height 1158, ...}
+    ```
+
+    This is the escape hatch's one hard edge, and it has a consequence bigger than the
+    resize: it means the **`move_shape`/`resize_shape` selrect-staleness recorded above
+    cannot be repaired from the tool surface either** — the stale field is exactly the one
+    that cannot be written. Compose at creation time is therefore not a style preference
+    but the only correct method, and a frame sized wrong must be recreated. `set_op`
+    would need the same string→record coercion for these two attributes that
+    `patches/0005` gave keywords.
