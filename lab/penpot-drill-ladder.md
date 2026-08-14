@@ -49,22 +49,30 @@ Established by source survey and by live probes against the running stack.
 - **Export takes an `object_id`.** Shapes parented to the page root are inside no frame
   and cannot be exported. Author into an explicit `create_frame` or there is nothing to
   look at.
-- **`font_family` is stored and then ignored. Every text renders in the default.**
-  Measured: `create_text(font_family="worksans")` stores `font-family: worksans` —
-  `get_shape_details` reads it back verbatim — and the exporter emits
-  `font-family: sourcesanspro` with only that `@font-face` declared. Penpot's renderer
-  keys font loading off `font-id`/`font-variant-id`, which no tool writes, so the
-  family string is inert. `sourcesanspro`, `worksans`, `robotomono` and `vazirmatn` are
-  all bundled locally and all unreachable; the 1,910 catalogued Google families need
-  outbound internet *as well as* the missing id. `list_fonts` reads custom team uploads
-  only and returns `[]`.
+- **A font renders only when `font-id` is written. Name the family as Penpot spells
+  it.** Penpot's renderer keys font loading off `font-id`/`font-variant-id`, so a text
+  node carrying `font-family` alone renders in the default — which is why the family
+  string used to be inert. `set_font` and `create_text` now write all three.
 
-  Typography is therefore **not currently a variable this scope controls**, which makes
-  D3's type pairing undeliverable as written and any font choice elsewhere decorative.
-  Do not read a rendered PNG and conclude the font resolved — that inference was made
-  once here and was wrong; the family name renders in a lookalike humanist sans and
-  eyeballing cannot separate them. The check is `export_frame_svg` and reading
-  `font-family` off the text element.
+  Spell the family the way the catalogue does: `set_font(font_family="Work Sans")`,
+  not `"worksans"`. The id is derived as `gfont-` + the family lowercased with spaces
+  hyphenated (`Work Sans` → `gfont-work-sans`), a rule validated against 1719 of the
+  1958 catalogue entries in the shipped frontend bundle with zero mismatches. Pass
+  `font_id` explicitly to override it. `sourcesanspro` is the built-in default and is
+  not a `gfont-` id. Variants are `regular`, `500`, `italic`, `700italic` and so on,
+  via `font_variant_id`.
+
+  The catalogue is served from `fonts.gstatic.com` and the renderer reaches it: the
+  exporter container fetches a Work Sans TTF at HTTP 200, 188KB, in 0.15s. Outbound
+  internet is not the constraint.
+
+  **Nothing can refuse a wrong family.** The catalogue lives in the frontend bundle
+  and no backend or DB surface carries it, so a well-formed id for a family Penpot
+  does not have renders the default with no error. Do not read a rendered PNG and
+  conclude the font resolved — that inference was made once here and was wrong; the
+  family renders in a lookalike humanist sans and eyeballing cannot separate them. The
+  check is `export_frame_svg` and reading `font-family` off the text element.
+  `list_fonts` reads custom team uploads only and returns `[]`; it is not a catalogue.
 - **Set style at creation time.** `move_shape` and `resize_shape` write `x`/`y`/`width`/
   `height` without refreshing `selrect` and `points`. The five text-mutation tools
   (`set_font`, `set_font_size`, `set_text_align`, `set_text_style`, `set_text_content`)
@@ -352,7 +360,17 @@ drill that produces a deliverable and no change has not been assessed.
    now takes `dash` and `gap`. See the dash instrument fact above for how to author and
    what is still unreachable.
 
-4. **Whether an editor open reflows a headlessly-configured frame — closed 2026-08-13,
+4. **Typography was unwritable, blocking D3 — closed 2026-08-13, fixed in
+   `patches/0004`.** `build_text_content` emitted `font-family` and never `font-id`, so
+   every text rendered in the default. `text-font-attrs` always carried both; nothing
+   wrote them. `set_font` and `create_text` now do, and D3's type pairing is deliverable.
+   Owner was `architect`. See the font instrument fact above.
+
+   This one sat because it was filed as an instrument fact with no owner and no revisit
+   trigger, so nothing tracked it — a defect that blocks a drill belongs here, where it
+   has both, not only in the prose above.
+
+5. **Whether an editor open reflows a headlessly-configured frame — closed 2026-08-13,
    negative.** It does not, and neither does selecting the frame. See the auto-layout
    instrument fact above for the measurement. Nothing is left open here: the layout
    has to be touched in the UI before Penpot recomputes anything, so the assessment
