@@ -321,6 +321,25 @@ Expected to surface: that a "system" cannot live in Penpot as assets here, becau
 tool writes shared colours or typographies, so the system has to be expressed as
 drawn artefact plus written spec.
 
+Run 2026-08-14 — file `D3 identity board`, spec in `lab/d3-identity-spec.md`, awaiting
+assessment. The prediction held exactly: every colour and typography tool on this MCP
+is a getter, so the system ships as board plus document with nothing but discipline
+linking them.
+
+The point of view came from measurement rather than taste, which is the part worth
+carrying forward. Thalamus already had three identities — the console's chosen palette,
+the viewer's Tailwind defaults, the diagrams' GitHub greys — so the argument became
+*keep what was chosen, retire what was defaulted, invent nothing*. Two findings fell
+out of measuring the shipped console with `thalamus.eval.legibility`:
+
+- **Status is encoded in hue alone.** The console's signal colours sit within 1.13:1 of
+  each other in luminance; `danger` and `muted` are 1.09:1 apart and collapse to the
+  same grey desaturated. The shipped ramp is not even monotonic — `warn` desaturates
+  brighter than `ok`. Corrected to 1.41:1 minimum pairwise, hues preserved. This is a
+  live WCAG 1.4.1 exposure on a shipped surface, and the natural hand-off to `qe`.
+- **`--faint` (`#4d5661`) measures 2.54:1**, below the 3:1 non-text floor. Legal as a
+  hairline, illegal as anything meaning-carrying.
+
 ### D4 — Product UI against a built surface, high ambiguity
 
 *Ambiguity leads. Critique is part of the deliverable.*
@@ -414,3 +433,21 @@ drill that produces a deliverable and no change has not been assessed.
    step outside the tool surface — which is the kind of dependency the ladder exists to
    find. Worth architect deciding whether the MCP can write `position-data` itself, or
    whether the export tools should say this instead of returning a naked 500.
+
+7. **`create_text(font_weight=...)` is inert — the weight never renders. Open, owner
+   `architect`.** Exactly the shape of the defect `patches/0004` just fixed, one field
+   over: Penpot selects a face by `font-variant-id`, and `create_text` writes
+   `font-weight` while leaving the variant at `regular`. A board authored at 500 and 600
+   exported with every weight at 400 and only two `@font-face` blocks. Writing
+   `font-variant-id` through `modify_shape` fixes it and the export then carries four
+   faces — Mono 400/500, Sans 400/600. The tool should derive the variant from
+   `font_weight`, or say it cannot.
+
+8. **`set_font` silently resets font size, fill colour and letter-spacing to defaults.
+   Open, owner `architect`.** Measured on the wordmark: 56px → 16px, `#CDD8E4` →
+   `#000000`, letter-spacing -1 → 0, from a call that named only the family and variant.
+   Black text at 16px on a `#0e1116` board is invisible, so the failure is silent in the
+   worst way — the tool returns success and the artefact looks deleted. The general
+   text-mutation reset hazard was already recorded above; this is the measured case, and
+   the reason every font change on this board went through `modify_shape` with the whole
+   content map restated instead.
