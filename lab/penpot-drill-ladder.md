@@ -62,17 +62,41 @@ Established by source survey and by live probes against the running stack.
   not a `gfont-` id. Variants are `regular`, `500`, `italic`, `700italic` and so on,
   via `font_variant_id`.
 
-  The catalogue is served from `fonts.gstatic.com` and the renderer reaches it: the
-  exporter container fetches a Work Sans TTF at HTTP 200, 188KB, in 0.15s. Outbound
-  internet is not the constraint.
+  The renderer does not fetch Google's domain directly. The `@font-face` block in an
+  exported SVG sources `http://penpot-frontend:8080/internal/gfonts/font/worksans/v24/
+  ....woff2` — the frontend proxies the catalogue, so the outbound hop is the
+  frontend's and not the exporter's. Outbound internet is not the constraint.
 
   **Nothing can refuse a wrong family.** The catalogue lives in the frontend bundle
   and no backend or DB surface carries it, so a well-formed id for a family Penpot
   does not have renders the default with no error. Do not read a rendered PNG and
   conclude the font resolved — that inference was made once here and was wrong; the
   family renders in a lookalike humanist sans and eyeballing cannot separate them. The
-  check is `export_frame_svg` and reading `font-family` off the text element.
+  check is `export_frame_svg` and reading `font-family` off the text element — which
+  requires the workspace open below. A resolved family exports as
+  `font-family: "Work Sans"` beside an `@font-face` for it; an unresolved one exports
+  as `sourcesanspro` with no `@font-face`, and that is the difference to read.
   `list_fonts` reads custom team uploads only and returns `[]`; it is not a catalogue.
+- **A text created through the MCP cannot be exported until the file has been opened
+  once in the Penpot workspace.** `export_frame_svg` and `export_frame_png` return a
+  bare 500 for any frame containing a text shape written by these tools. The exporter
+  log gives the mechanism: `app.renderer.svg fn=:process-text-nodes`, then
+  `locator.screenshot: Timeout 30000ms exceeded — waiting for locator('#screenshot-
+  text-<uuid> foreignObject')`. Text laid out by the frontend carries `position-data`
+  and renders as `<text textLength=...>` (51ms through the same step); text that has
+  never been through the frontend has none, so the exporter falls to the foreignObject
+  branch and waits for an element that never appears.
+
+  Loading the file once at the workspace URL fixes it permanently, for that shape and
+  every text already in the file. Measured both directions on one unmodified frame:
+  500 before the open, full SVG after, nothing else changed. The frame renders fine
+  the moment its text is deleted, so a 500 on a mixed frame is a text symptom and not
+  a broken file.
+
+  This binds the whole ladder, not just type work: any drill whose artifact carries a
+  label must open the file in the workspace before its render check, or the check
+  cannot run. It also means a PNG or SVG is not obtainable at all for unopened text —
+  there is no degraded output to misread, which is the one mercy in it.
 - **Set style at creation time.** `move_shape` and `resize_shape` write `x`/`y`/`width`/
   `height` without refreshing `selrect` and `points`. The five text-mutation tools
   (`set_font`, `set_font_size`, `set_text_align`, `set_text_style`, `set_text_content`)
@@ -366,6 +390,11 @@ drill that produces a deliverable and no change has not been assessed.
    wrote them. `set_font` and `create_text` now do, and D3's type pairing is deliverable.
    Owner was `architect`. See the font instrument fact above.
 
+   Verified at the render 2026-08-14, not just at the read-back: a Work Sans text
+   exports as `font-family: "Work Sans"` with a matching `@font-face`. The verification
+   is what surfaced defect 6 below, which had to be cleared first to obtain any render
+   of a new text at all.
+
    This one sat because it was filed as an instrument fact with no owner and no revisit
    trigger, so nothing tracked it — a defect that blocks a drill belongs here, where it
    has both, not only in the prose above.
@@ -375,3 +404,13 @@ drill that produces a deliverable and no change has not been assessed.
    instrument fact above for the measurement. Nothing is left open here: the layout
    has to be touched in the UI before Penpot recomputes anything, so the assessment
    surface is read-only with respect to child geometry.
+
+6. **A frame containing MCP-written text exports as a bare 500 until the file is opened
+   once in the workspace — open, owner `architect`.** The exporter times out waiting for
+   a `foreignObject` that only appears for text the frontend has laid out; see the
+   instrument fact above for the log line and the two-directional measurement. The
+   workaround is one browser load per file and it holds afterwards, so this blocks
+   nothing today, but every render check on a labelled artifact now depends on a manual
+   step outside the tool surface — which is the kind of dependency the ladder exists to
+   find. Worth architect deciding whether the MCP can write `position-data` itself, or
+   whether the export tools should say this instead of returning a naked 500.
