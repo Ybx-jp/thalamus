@@ -20,8 +20,10 @@ Not pytest, and not shipped in the wheel. Both on purpose.
 **Not pytest**, because this suite carries
 entries that are *supposed* to be red. `pyproject.toml` sets `testpaths = ["tests"]`,
 so containment rests on filenames: **nothing in this tree may be named `test_*.py` or
-`*_test.py`**, or dev's in-loop suite inherits an intentionally red corpus. Verify with
-`uv run pytest --collect-only -q | grep -c tests/qe` — the answer must be 0.
+`*_test.py`**, or dev's in-loop suite inherits an intentionally red corpus. The case
+`in-loop-suite-collects-nothing-from-this-tree` runs the collector and asserts it reaches
+no node here, so the rule is checked on every push rather than by a reader who would have
+to already know it exists.
 
 **Not shipped**, because a released package carrying known-red entries would hand every
 installer a working oracle for the defects in the release they just installed.
@@ -73,3 +75,10 @@ dev's suite already covers. Most cases here are drawn from its escaped and parti
 and those name their record in the docstring so a case and the defect it descends from
 can be read together. The rest were found live, against the running system, and cite
 what they were found by instead.
+
+A case may also guard a surface that has not failed yet, and the install/uninstall pair
+is why the distinction is worth stating: `9bcd7c7` gave the release a way back out of an
+installer that writes to six places in `$HOME`, which is the sharpest edge a first-time
+cloner meets and had no end-to-end check. Those cases descend from no record. They are
+green, they were driven red against poisoned fixtures before being trusted, and their
+docstrings say which mutation to repeat.

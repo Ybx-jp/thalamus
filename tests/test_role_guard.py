@@ -202,9 +202,15 @@ class TestRoleGuardHook:
         )
         assert result.returncode == 0
 
-    def test_main_never_pays_for_the_guard(self, tmp_path):
-        """`main` has no manifest by design and is the common case; the hook returns
-        before it can cost a Python start-up on every edit."""
+    def test_main_reaches_no_manifest_on_an_unowned_path(self, tmp_path):
+        """`main` has no manifest by design, so the short-circuit still returns before
+        anything loads one — the 151ms import this exemption exists to avoid.
+
+        It is no longer the *first* thing the guard does. An owned path is tested
+        ahead of it, because ownership is the one rule that must bind `main` too, and
+        that test is deliberately cheap enough to sit on the hot path
+        (`contract/ownership.py`). This asserts what survives: an unowned target in a
+        `main` session still reaches no manifest."""
         result = run_guard(write_payload(f"{REPO}/src/thalamus/cli.py"), tmp_path)
         assert result.returncode == 0
 

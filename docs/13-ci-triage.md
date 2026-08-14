@@ -1,7 +1,9 @@
 # CI Failure Triage — the loop, the boundary, and what is allowed to go quiet
 
-**Status:** design; the loop is not built. The one part that is built is the invariant
-protecting the oracle the loop writes to, under *The oracle's own protection*. The
+**Status:** design; the loop is not built. Two parts of it are: the invariant protecting
+the oracle the loop writes to (*The oracle's own protection*), and the ownership boundary
+under it (`contract/ownership.py`, enforced by `role-guard.sh`), which was the
+prerequisite rather than the consequence. The partition now runs both ways. The
 boundary this rests on was settled by the `architect` round `073d451b006e4a81`, which
 narrowed the allow-list ruling of 2026-08-11 (`1ed468b61248497e`) rather than
 overturning it. The hop's justification was rewritten by `8a84bef10fcc486f`, a
@@ -12,8 +14,15 @@ ticket-back that cost this doc its information argument and inverted its build o
 `qe-fast` was red on fifteen consecutive pushes to master and **none of them carried a
 new regression**. The suite's exit codes were doing exactly what they were designed to
 do and nothing consumed them: two triaged entries had drifted (`13/13 unscoped` against
-a real `16/17`; `2 site(s)` against a real `3 site(s) across 4 file(s)`) and one triaged
+a real `17/17`; `2 site(s)` against a real `3 site(s) across 4 file(s)`) and one triaged
 defect had been fixed without its expectation being deleted.
+
+Triaging those three is also where the loop's own hazard showed itself. The tmux entry
+did not read `17/17` when it was picked up; it read `16/17`, because the case searched
+for `-L`/`-S` anywhere in an argv and `capture-pane -p -J -S -` is not a socket flag. A
+drifted witness is the one moment a case's detector is guaranteed to be re-read, and the
+number it offers for re-pinning is the number to distrust — this one credited the code
+with an isolation it does not have.
 
 That is the trust-erosion mechanism the flakiness literature measures directly —
 developers "may lose trust in their test suites and stop considering failures even if
@@ -58,9 +67,9 @@ the corpus fits one context — committed the design to a condition nobody here 
 measure, and a commitment that cannot be evaluated is worse than none.
 
 **Standing hazard.** Authority justifies the second *actor*; it says nothing about the
-message, and the message is what the objection attacked. It is also, today, one-way:
-`qe`'s `*/src/*` deny is live, while nothing stops `main` writing `tests/qe/`. Until the
-ownership primitive exists, the hop's justification names a mechanism that is not built.
+message, and the message is what the objection attacked. The partition itself now runs
+both ways — `qe`'s `*/src/*` deny and `main`'s `*/tests/qe/*` deny are both enforced — so
+what remains open is the message, not the mechanism.
 
 ## What the suite already decides
 
@@ -311,10 +320,12 @@ widening.
 
 ## Build order
 
-The ownership primitive is a **prerequisite, not a consequence**. The hop's justification
-is authority, and authority that runs one way is not a partition — so `PATH_OWNERSHIP`
-lands ahead of the loop rather than after it. Nothing in the loop should be built while
-`main` can still write `tests/qe/`.
+The ownership primitive was a **prerequisite, not a consequence** — the hop's
+justification is authority, and authority that runs one way is not a partition. It is
+built: `contract/ownership.py` holds the table, `role-guard.sh` tests it ahead of the
+`main` short-circuit, and `main` can no longer write `tests/qe/`. Details and the two
+properties that forced its shape — no pydantic on the hot path, fail closed on the rule —
+are in [08](08-roster-candidates.md).
 
 Two pieces of owed work, both `qe`'s because both are permanent checked properties:
 
