@@ -93,11 +93,20 @@ class TestCursorWiring:
     def test_taps_stay_on_the_specialized_events(self):
         """Cursor's generic postToolUse also fires for MCP and shell calls. Until
         a live Cursor settles whether both fire, only the specialized events may
-        tap — two writers would double-count every retrieval in `eval sync`."""
+        tap — two writers would double-count every retrieval in `eval sync`.
+
+        The subject is which events carry a *tap*, not how many hooks an event holds:
+        `readiness-ready.sh` shares both after-events and writes no trace, so a check
+        that counted entries would refuse it for a reason that does not apply to it.
+        """
         block = install.build_cursor_hook_block()
-        assert [e["command"].rsplit("/", 1)[1] for e in block["afterMCPExecution"]] == ["mcp-tap.sh"]
-        assert [e["command"].rsplit("/", 1)[1]
-                for e in block["afterShellExecution"]] == ["gremlin-tap.sh"]
+        taps_on = {
+            event: {e["command"].rsplit("/", 1)[1] for e in entries
+                    if "tap" in e["command"]}
+            for event, entries in block.items()
+        }
+        assert taps_on["afterMCPExecution"] == {"mcp-tap.sh"}
+        assert taps_on["afterShellExecution"] == {"gremlin-tap.sh"}
         assert "tap" not in str(block["postToolUse"])
 
     def test_guard_declares_its_fail_open_posture(self):

@@ -166,6 +166,18 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("afterShellExecution", "gremlin-tap.sh"),
     ("afterMCPExecution", "mcp-tap.sh"),
     ("postToolUse", "inject.sh"),
+    # The readiness bracket (harness/readiness.py). Five entries for two scripts,
+    # because the interval a modal can occupy is delimited by pairs: the shell pair and
+    # the MCP pair open it, and `sessionStart` establishes the resting state so a
+    # member is addressable before it has run anything. The events are the specialized
+    # ones for the same reason the taps use them — `preToolUse`/`postToolUse` also fire
+    # on a shell call, so bracketing there as well would open a second bracket inside
+    # the first and close it early.
+    ("sessionStart", "readiness-ready.sh"),
+    ("beforeShellExecution", "readiness-pending.sh"),
+    ("afterShellExecution", "readiness-ready.sh"),
+    ("beforeMCPExecution", "readiness-pending.sh"),
+    ("afterMCPExecution", "readiness-ready.sh"),
 ]
 
 
@@ -223,10 +235,17 @@ class HookParity:
 
 DECLARED_HOOK_PARITY = HookParity(
     claude_scripts=13,
-    cursor_scripts=12,
+    cursor_scripts=14,
     shared=9,
     claude_only=("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh", "room-guard.sh"),
-    cursor_only=("distill.sh", "inject.sh", "mcp-tap.sh"),
+    cursor_only=(
+        "distill.sh", "inject.sh", "mcp-tap.sh",
+        # Cursor-only because Claude Code needs no bracket: its harness writes `status`
+        # into the session descriptor from inside its own event loop, so readiness there
+        # is a first-party signal already. These two exist to give Cursor the same
+        # answer, not a better one.
+        "readiness-pending.sh", "readiness-ready.sh",
+    ),
     renames=(("post-tool-use.sh", "mcp-tap.sh"),),
     native=("role-guard.sh",),
 )

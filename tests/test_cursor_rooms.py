@@ -207,7 +207,7 @@ class TestDispatchAddressesACursorMember:
                 config_dir=tmp_path, pins_file=tmp_path / "pins.jsonl",
                 guards_dir=tmp_path / "guards",
                 room_panes=[self._pane()],
-                status_fn=lambda pane_id: panes_mod.WAITING,
+                status_fn=lambda pane: panes_mod.WAITING,
                 sender_fn=lambda *a: sent.append(a) or "",
             )
         assert sent == []
@@ -217,9 +217,9 @@ class TestDispatchAddressesACursorMember:
         Verification: the send happens, and the row records which roster answered.
 
         The two rosters are not equally strong — a Claude Code target's status is the
-        session's own report, a Cursor target's is a reading of its screen — so a row
-        that pooled them would let the weaker evidence be quoted with the stronger
-        one's authority.
+        session's own report, a Cursor target's is a bracket our hooks wrote around the
+        interval a modal can occupy — so a row that pooled them would let the weaker
+        evidence be quoted with the stronger one's authority.
         """
         sent = []
         result = dispatch.dispatch(
@@ -227,7 +227,7 @@ class TestDispatchAddressesACursorMember:
             config_dir=tmp_path, pins_file=tmp_path / "pins.jsonl",
             guards_dir=tmp_path / "guards",
             room_panes=[self._pane()],
-            status_fn=lambda pane_id: panes_mod.DELIVERABLE,
+            status_fn=lambda pane: panes_mod.DELIVERABLE,
             sender_fn=lambda pane, text, submit: sent.append((pane, text)) or "",
         )
         assert sent == [("%100", "hello")]
@@ -239,15 +239,15 @@ class TestDispatchAddressesACursorMember:
 
     def test_an_unreadable_screen_is_refused_like_an_unmeasured_status(self, tmp_path):
         """The rule Claude Code applies to a status outside its measured set, applied
-        to a screen outside the measured one: refuse rather than assume it is safe to
-        type into."""
-        with pytest.raises(dispatch.DispatchRefused, match="cannot read as ready"):
+        to a member whose readiness is unestablished: refuse rather than assume it is
+        safe to type into."""
+        with pytest.raises(dispatch.DispatchRefused, match="no readiness"):
             dispatch.dispatch(
                 "alpha", "hello",
                 config_dir=tmp_path, pins_file=tmp_path / "pins.jsonl",
                 guards_dir=tmp_path / "guards",
                 room_panes=[self._pane()],
-                status_fn=lambda pane_id: panes_mod.UNREADABLE,
+                status_fn=lambda pane: panes_mod.UNREADABLE,
                 sender_fn=lambda *a: "",
             )
 
@@ -258,7 +258,7 @@ class TestDispatchAddressesACursorMember:
             config_dir=tmp_path, pins_file=tmp_path / "pins.jsonl",
             guards_dir=tmp_path / "guards",
             room_panes=[self._pane("qe"), self._pane("designer")],
-            status_fn=lambda pane_id: panes_mod.DELIVERABLE,
+            status_fn=lambda pane: panes_mod.DELIVERABLE,
             sender_fn=lambda pane, text, submit: sent.append(text) or "",
         )
         assert len(sent) == 1

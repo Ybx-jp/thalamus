@@ -27,9 +27,11 @@ The table was measured again on Cursor (lab/065) and every row held, including t
 third: a message sent into a pane showing `Run this command?` never reached the model
 and the Enter ran the command. So the hazard is the harness-independent one, and the
 refusal is too — but the *evidence* for it is not. Claude Code publishes a `status`
-the session writes about itself; Cursor publishes nothing, and its readiness is read
-off the visible screen by `harness/panes.py`. Both answer the same question with
-different authority, which is why `Target.harness` is on the row.
+the session writes about itself; Cursor publishes nothing, so the evidence there is a
+descriptor our own hooks bracket around the interval a modal can occupy
+(`harness/readiness.py`), with the visible screen kept only as a positive-only
+falsifier over the calls that bracket does not cover. Both answer the same question
+with different authority, which is why `Target.harness` is on the row.
 
 ## Pre-flight is over the whole fan-out, not per target
 
@@ -61,8 +63,8 @@ hand the console's read view to a headless probe). So its roster is the control 
 itself — `panes.room_panes` recovers room, scope and address from the window's own
 start command, which `pin._with_room` put there and which survives `respawn-window`.
 There is no second roster to cross-check against, because the pane *is* the roster
-entry and the address at once; what takes the cross-check's place is that an
-unreadable screen is refused, on the same principle.
+entry and the address at once; what takes the cross-check's place is that a member
+publishing no readiness we authored is refused, on the same principle.
 
 Confirmation is `updatedAt` advancing on the descriptor. Never `capture-pane`, which
 truncates to the visible height and would report a long reply as no reply.
@@ -87,7 +89,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from thalamus.harness import panes as panes_mod
-from thalamus.harness import pin, quick
+from thalamus.harness import pin, quick, readiness
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
@@ -315,7 +317,7 @@ def _cursor_targets(
     that can be wrong — so an unreadable screen is refused exactly like a pane the two
     Claude Code rosters disagree about.
     """
-    status_of = status_fn or panes_mod.pane_status
+    status_of = status_fn or readiness.pane_status
     found = room_panes if room_panes is not None else panes_mod.room_panes(room)
     wanted = set(scopes) if scopes else None
 
@@ -325,7 +327,7 @@ def _cursor_targets(
             continue
         if wanted is not None and pane.scope not in wanted:
             continue
-        status = status_of(pane.pane_id)
+        status = status_of(pane)
         refusal = ""
         if status == panes_mod.WAITING:
             refusal = (
@@ -335,8 +337,10 @@ def _cursor_targets(
             )
         elif status != panes_mod.DELIVERABLE:
             refusal = (
-                "shows a screen this pre-flight cannot read as ready; refusing rather "
-                "than assuming a pane it does not recognize is safe to type into"
+                "published no readiness this pre-flight can act on — `room.peer_readiness` "
+                "is unestablished for it, which is what an unarmed hook suite or a "
+                "screen we cannot read looks like from here; refusing rather than "
+                "assuming a member nothing reports modals for is safe to type into"
             )
         targets.append(
             Target(

@@ -597,9 +597,12 @@ The third row is why dispatch pre-flights. A permission prompt or trust dialog t
 blind send into an approval of a tool call the sender knows nothing about, and the first
 message to a freshly spawned member is the most likely to hit it.
 
-> **Dispatch reads `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` per target, delivers on
-> `idle` and `busy`, and refuses on `waiting`, naming the target.** Never a bare Enter
-> into a `waiting` window.
+> **Dispatch establishes readiness per target, delivers on `idle` and `busy`, and
+> refuses on `waiting`, naming the target.** Never a bare Enter into a `waiting` window.
+
+The source of that readiness is per harness: `$CLAUDE_CONFIG_DIR/sessions/<pid>.json`
+on Claude Code, where the session publishes its own `status`, and the hook-bracketed
+descriptor of §Rooms on Cursor where it publishes nothing.
 
 **Built** — `harness/dispatch.py`, `thalamus dispatch <room> [message]` with `--to`,
 `--partial`, `--dry-run` and the four announcement slots. A status outside the measured
@@ -860,20 +863,48 @@ prompt. The third row was measured by doing it — a message sent into a pane sh
 `Run this command?` never reached the model, and the Enter actuated `→ Run (once)` and
 ran the command. The hazard is harness-independent; the *evidence* for it is not.
 Claude Code publishes a `status` the session writes about itself; Cursor publishes
-nothing, so readiness is read from the visible screen, and `Target.harness` carries
-which roster answered so the weaker reading is never quoted with the stronger one's
+nothing, so the evidence there is one we author, and `Target.harness` carries which
+roster answered so the weaker reading is never quoted with the stronger one's
 authority.
 
-**The readiness read is the weak joint, and it is deliberately fail-closed.** The
-discriminator is the *dialog*, not the ready state: Cursor's footer carries the
-selected model's name (`Composer 2.5`, `Auto`, …), so a check for readiness would
-change meaning when an operator switches models, while an approval dialog is
-structural — a highlighted `→` option carrying a keyboard hotkey, which no ready
-screen draws. An unrecognized screen is refused, the same rule Claude Code applies to
-a status outside its measured set. `capture-pane` is read here and forbidden two
-sections above, and the rule is not "never capture a pane" but **never confirm a reply
-from one**: it truncates to the visible height, so a long answer reads as no answer,
-while a modal is drawn *in* the visible height.
+**Readiness on Cursor is a bracket between two of our own hook events.**
+`beforeShellExecution` writes `pending` into a descriptor and `afterShellExecution`
+writes `ready`, with the MCP pair doing the same for tool calls; the interval between
+them is the interval in which an approval modal can be up. It is a bracket only because
+the opening event *precedes* the modal, which is measured rather than inferred — a
+probe hook logged at 11:01:15 with the modal still unanswered at 11:01:20. A member's
+descriptor is keyed by `(room, scope)`, which is what the writer has from its own
+environment and what the pane roster recovers from the window's start command, so
+neither half has to guess the other's pane.
+
+**Absence refuses, and the coverage gap is stated rather than discovered.** A member
+publishing no descriptor is unaddressable — that is precisely the member whose modals
+nothing would report, and reading a missing record as "probably idle" would invert the
+one guarantee the mechanism provides. The bracket covers shell and MCP calls only; a
+workspace-trust dialog, a model picker or a file-write approval falls outside it, and
+`room.peer_readiness` on cursor says so in the row rather than leaving a reader to find
+out. Partial coverage on a safety gate is the shape that hid an earlier failure, so it
+is enumerated.
+
+**The screen read is retained in the one direction it is sound.** A `ready` descriptor
+is confirmed against the pane before a send, so an unbracketed modal that happens to be
+visible still refuses; a clean screen can never clear a `pending` or supply a missing
+descriptor. That asymmetry is what makes `capture-pane` admissible here at all — it is
+a one-directional falsifier, since seeing a modal proves `waiting` while not seeing one
+proves nothing, and the same truncation that makes it wrong for confirming a reply can
+hide a dialog below the fold. Its discriminator is the *dialog* rather than the ready
+state: Cursor's footer carries the selected model's name (`Composer 2.5`, `Auto`, …),
+so anchoring on the ready state would change meaning when an operator switches models,
+while an approval dialog is structural — a highlighted `→` option carrying a keyboard
+hotkey, which no ready screen draws.
+
+**The delivery gate is readiness, not the roster.** `room.peer_delivery` may be
+PROVIDED only where `room.peer_readiness` is (`contract/rooms.py`), and the three
+capabilities Claude Code ships fused in `sessions/<pid>.json` — identity, liveness,
+readiness — are three rows because they are separable and one of them can die alone. A
+gate on the *roster* would pass the moment tmux supplied one while the hazard it was
+protecting against stood untouched, and dispatch's refusal names the row so an operator
+is not told to relaunch members that are running fine.
 
 **The peer channel is guarded on the command, because that is where it lives now.**
 `room-guard.sh` matches the `SendMessage` tool name; Cursor has no such tool, and on

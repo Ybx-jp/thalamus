@@ -2562,6 +2562,7 @@ def _report_capabilities():
     from thalamus.contract.boundaries import check_boundaries
     from thalamus.contract.pinning import check_pinning
     from thalamus.contract.probes import check_capabilities
+    from thalamus.contract.rooms import check_rooms
 
     # Two kinds of declaration, one report. A flag row says what a CLI accepts; a
     # boundary row says what actually binds on a harness — and the second is the one
@@ -2572,6 +2573,11 @@ def _report_capabilities():
              for row, outcome, detail in check_boundaries()]
     rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
              for row, outcome, detail in check_pinning()]
+    # A third subject: what a dispatcher can establish about a member before writing to
+    # it. Kept out of the pinning rows because a pinned session and an addressable room
+    # member are different claims, and the record that carried both reported one wrongly.
+    rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
+             for row, outcome, detail in check_rooms()]
 
     drift = [r for r in rows if r[1] == "drift"]
     malformed = [r for r in rows if r[1] == "malformed"]
