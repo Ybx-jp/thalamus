@@ -137,6 +137,30 @@ Established by source survey and by live probes against the running stack.
   points push outside its endpoints: apex predicted analytically at y=30
   ((60+3·20+3·20+60)/8), read back `y: 30, height: 30`, where an endpoints-only selrect
   would report height 0. Compute a path's expected extent and assert it (lab/065).
+- **Dash geometry is a stroke-width derivative unless you override it. Pass `dash`
+  and `gap`.** `stroke-style: "dashed"` on its own does not dash at a size — Penpot's
+  `calculate-dasharray` returns `(or dash w+10),(or gap w+10)`, so the pattern is
+  computed from *stroke width* and never from the shape. A 2px stroke dashes at 12,12
+  whatever it is drawn around: on a 16×16 boundary (perimeter ~64) that is 2.7 dashes,
+  which lands as four corner brackets and reads as a crop frame. At 24px icon scale
+  pass `dash=2, gap=2`.
+
+  Requires Penpot ≥ 2.17.0, which added `:stroke-dash`/`:stroke-gap` to
+  `schema:stroke-attrs`; this box runs 2.17.0 exactly. The schema is `:closed true` and
+  types both as numbers, so the fields are omitted when unset rather than sent as null.
+
+  Still unreachable, in every version: **dash offset** (no field anywhere, always 0),
+  **`dotted` and `mixed` geometry** (dash/gap are read only on the `dashed` branch, so
+  those two keep width-derived patterns), and **arbitrary multi-segment dasharrays**
+  (`mixed` is the only multi-segment pattern and its four numbers are fixed by width).
+  Penpot's *plugin* API exposes no dash accessor at all, so `execute_plugin_script` is
+  not a route to this — only the RPC/changes path the MCP already uses.
+
+  Dashing is also the only affordable enclosure at icon scale, which is why this
+  mattered beyond style: against lab/065's ~100px² ink budget a solid 20×16 container
+  plus a node ring costs 173.7px² (1.74× over), while the same boundary dashed at 2,2
+  costs 105.7px² and at 2,3 costs 92.1px² — inside budget. A dashed boundary is roughly
+  half the ink of a solid one.
 - **Round caps are authorable through `modify_shape`, and they survive a read-back.**
   `set_stroke` exposes no cap parameter, but writing the whole `strokes` array reaches
   `stroke-cap-start` / `stroke-cap-end`. Confirmed both in the rendered SVG
@@ -322,14 +346,11 @@ drill that produces a deliverable and no change has not been assessed.
    affected; the exposure is confined to attributes that used to be a hard 500. Owner
    is `architect`. The revisit trigger is a drill that actually needs the inheritance.
 
-3. **Dash geometry is not authorable, so dashed strokes are unusable below ~100px.**
-   `stroke-style: "dashed"` renders as a hardcoded `stroke-dasharray: 12, 12` whatever
-   the shape's size. On a 16×16 boundary (perimeter ~64) that is 2.7 dashes, so the
-   form lands as four corner brackets and reads as a crop/scan frame. No dash-length,
-   dash-gap or dash-offset parameter exists on the tool surface, and Penpot's data
-   model carries only the `solid`/`dotted`/`dashed`/`mixed` keyword — so this may need
-   a model change, not just a tool argument. An icon-scale dash wants roughly `2, 2`.
-   Owner is `architect`. Found in D2, where it killed a chosen design (lab/065).
+3. **Dash geometry at icon scale — closed 2026-08-13, fixed in `patches/0003`.** It
+   needed a tool argument, not a model change: Penpot 2.17.0 added `:stroke-dash` and
+   `:stroke-gap` to `schema:stroke-attrs`, and this box runs exactly 2.17.0. `set_stroke`
+   now takes `dash` and `gap`. See the dash instrument fact above for how to author and
+   what is still unreachable.
 
 4. **Whether an editor open reflows a headlessly-configured frame — closed 2026-08-13,
    negative.** It does not, and neither does selecting the frame. See the auto-layout
