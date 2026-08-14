@@ -71,9 +71,6 @@ input=$(cat)
 tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty')
 
 scope="$(thalamus_scope_from_payload "$input")"
-# `main` has no manifest by design, and is the overwhelmingly common case. Test it
-# before spending a Python start-up on every call in every unpinned session.
-[ "$scope" != "main" ] || exit 0
 
 # Two boundaries, one guard, because they are one role decision resolved from one
 # manifest. `kind` selects which of them the Python below consults.
@@ -92,11 +89,131 @@ case "$tool_name" in
     target="$tool_name" ;;
   *) exit 0 ;;
 esac
-[ -n "$target" ] || exit 0
-
 repo_root="$(thalamus_repo_root)"
 py="$repo_root/.venv/bin/python"
 [ -x "$py" ] || py="python3"
+
+guard_label="role-boundary"
+
+log_event() {
+  local guard_dir="$HOME/.thalamus/guards"
+  mkdir -p "$guard_dir"
+  printf '%s' "$input" | jq -c \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg scope "$scope" \
+    --arg verdict "$1" \
+    --arg pattern "$2" \
+    --arg kind "$kind" \
+    --arg path "$target" \
+    --arg guard "$guard_label" \
+    '{ts: $ts,
+      session_id: (.session_id // ""),
+      agent_type: (.agent_type // ""),
+      scope: $scope,
+      cwd: (.cwd // ""),
+      guard: $guard,
+      guard_version: 3,
+      verdict: $verdict,
+      tool: (.tool_name // ""),
+      kind: $kind,
+      pattern: $pattern,
+      path: $path}' >> "$guard_dir/$(date -u +%Y-%m).jsonl" || true
+}
+
+# ---- Path ownership, ordered AHEAD of the `main` exemption ----
+#
+# `contract/ownership.PATH_OWNERSHIP` says who owns a path. Unlike `write_boundary`
+# it must bind `main`, which has no manifest to declare a deny in — so the test runs
+# before the short-circuit below rather than after it. The ordering is what keeps the
+# fast path: an unowned target exits here, and the `main` exemption is still consulted
+# before anything loads a manifest.
+#
+# The cost is measured, and it is why `ownership.py` imports no pydantic: bare
+# interpreter 15ms, that module ~15ms, `contract.manifest` 151ms. Importing the typed
+# contract here would make the cheap test more expensive than the expensive one.
+#
+# This rule fails CLOSED, which the guard around it does not. That is the
+# `write-guard.sh` posture applied to one rule: when the structured read fails, the
+# RAW payload is searched instead. The other boundaries can afford failing open
+# because their failure is a bad edit; this one's failure is a scope editing the
+# oracle that indicts it, and `guards-fail-closed-on-unparseable-input` is an open qe
+# finding that the shared jq prologue permits exactly when something unusual is
+# happening.
+if [ "$kind" = "path" ]; then
+  ownership=""
+  if [ -n "$target" ]; then
+    ownership=$("$py" - "$scope" "$target" <<'PY' 2>/dev/null || true
+import sys
+try:
+    from thalamus.contract.ownership import denies
+except Exception:
+    sys.exit(3)
+row = denies(sys.argv[1], sys.argv[2])
+if row:
+    print("DENY"); print(row[0]); print(row[1]); print(row[2])
+else:
+    print("PASS")
+PY
+)
+  fi
+
+  case "$(printf '%s' "$ownership" | head -n1)" in
+    PASS) : ;;
+    DENY)
+      glob=$(printf '%s' "$ownership" | sed -n '2p')
+      owner=$(printf '%s' "$ownership" | sed -n '3p')
+      reason=$(printf '%s' "$ownership" | sed -n '4,$p')
+      guard_label="path-ownership"
+      log_event block "$glob"
+      cat >&2 <<EOF
+Blocked: \`${target}\` is owned by scope \`${owner}\`, and this session is \`${scope}\`
+(matched \`${glob}\`).
+
+${reason}
+
+This is an ownership row in \`contract/ownership.PATH_OWNERSHIP\`, declared tier-0 and
+not something this session can widen. Hand the change to \`${owner}\` — mint a
+consultation ticket, or report it to the operator. If the boundary itself is wrong,
+that is an operator decision and an edit to the table, not a route around it.
+EOF
+      exit 2 ;;
+    *)
+      # Degraded: no target parsed, or the ownership module would not load. Markers
+      # are inlined from `ownership.fallback_markers()` because the interpreter that
+      # could compute them is the thing that just failed; `test_ownership.py` asserts
+      # the two lists agree, so the duplication is checked rather than denied.
+      for pair in "/tests/qe/:qe"; do
+        marker="${pair%%:*}"
+        owner="${pair##*:}"
+        [ "$scope" != "$owner" ] || continue
+        case "$input" in
+          *"$marker"*)
+            guard_label="path-ownership"
+            log_event block-degraded "$marker"
+            cat >&2 <<EOF
+Blocked: this payload names \`${marker}\`, which scope \`${owner}\` owns, and this
+session is \`${scope}\`.
+
+The structured ownership check could not run — no target could be parsed out of the
+hook payload, or \`thalamus.contract.ownership\` would not import — so the raw payload
+was searched instead. This rule fails closed: it refuses rather than guessing, because
+its failure mode is the scope under test editing the oracle that tests it.
+
+If this is a false match, say so rather than working around it; the degraded path is
+deliberately cruder than the real one.
+EOF
+            exit 2 ;;
+        esac
+      done ;;
+  esac
+fi
+
+# `main` has no manifest by design, and is the overwhelmingly common case. Test it
+# before spending a Python start-up on every call in every unpinned session. Ordered
+# after the ownership gate above, which is the one rule that must bind `main` too.
+[ "$scope" != "main" ] || exit 0
+
+[ -n "$target" ] || exit 0
 
 # Resolve the manifest's boundary in-process. Prints the matched glob and the
 # operator's reason on a block, nothing at all on a pass. A scope whose manifest
@@ -125,30 +242,6 @@ except Exception:
     pass
 PY
 )
-
-log_event() {
-  local guard_dir="$HOME/.thalamus/guards"
-  mkdir -p "$guard_dir"
-  printf '%s' "$input" | jq -c \
-    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg scope "$scope" \
-    --arg verdict "$1" \
-    --arg pattern "$2" \
-    --arg kind "$kind" \
-    --arg path "$target" \
-    '{ts: $ts,
-      session_id: (.session_id // ""),
-      agent_type: (.agent_type // ""),
-      scope: $scope,
-      cwd: (.cwd // ""),
-      guard: "role-boundary",
-      guard_version: 2,
-      verdict: $verdict,
-      tool: (.tool_name // ""),
-      kind: $kind,
-      pattern: $pattern,
-      path: $path}' >> "$guard_dir/$(date -u +%Y-%m).jsonl" || true
-}
 
 if [ -z "$verdict" ]; then
   # Passes are logged too. The roster's granularity audit asks whether a scope
@@ -180,8 +273,8 @@ Blocked: scope \`${scope}\` ${verb} \`${target}\` (matched \`${pattern}\`).
 ${reason}
 
 This boundary is declared tier-0 in ${declared}, and is not something this session
-can widen. If the work genuinely belongs to another scope, hand it over: open a
-thread describing it, or mint a consultation ticket to the scope that owns it. If
+can widen. If the work genuinely belongs to another scope, hand it over: mint a
+consultation ticket to the scope that owns it, or report it to the operator. If
 the boundary itself is wrong, that is an operator decision and an edit to the
 manifest — say so rather than routing around it.
 EOF

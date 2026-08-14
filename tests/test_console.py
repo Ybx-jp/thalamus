@@ -448,6 +448,25 @@ def test_a_frame_whose_image_is_missing_is_dropped_not_offered(tmp_path):
     assert [f["name"] for f in server.frames(cfg)] == ["real.png"]
 
 
+def test_a_malformed_panel_fraction_is_dropped_not_raised(tmp_path):
+    """The regex is looser than `float()`, and this function promises never to raise.
+
+    `[-\\d.]+` happily matches `1.2.3` and a bare `-`. Converting one of those
+    would raise out of `frames()`, out of `do_GET` — which has no blanket handler
+    — and 500 the endpoint, taking down the surface an operator reaches for when
+    something else is already wrong. A typo'd fraction is a dropped frame, exactly
+    like a missing image is.
+    """
+    art = tmp_path / "real.png"
+    art.write_bytes(b"\x89PNG\r\n\x1a\n")
+    bad = (f'{{ name = "bad.png", path = "{art}", '
+           'panel = { left = 1.2.3, right = 0.2, top = 0.05, bottom = 0.3 } },')
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
+                 frames_file=_frames_file(tmp_path, bad + _frame_entry("real.png", art)))
+
+    assert [f["name"] for f in server.frames(cfg)] == ["real.png"]
+
+
 def test_a_frame_is_addressed_by_name_and_never_by_path(tmp_path):
     """
     Scenario: a client asks for a frame, and then asks for a file it names itself

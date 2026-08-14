@@ -38,7 +38,39 @@ _SRC = Path(__file__).resolve().parents[3] / "src" / "thalamus"
 # The argv-construction sites: a list literal or call whose first element is the tmux
 # binary. Matches `["tmux", ...]`, `("tmux", ...)` and `"tmux", "..."` inside a call.
 _INVOCATION = re.compile(r"""["']tmux["']\s*,\s*(?P<rest>[^\]\)]{0,200})""")
-_SOCKET_FLAG = re.compile(r"""["']-[LS]["']""")
+
+# Quoted argv elements, in order. Needed because a socket flag is only a socket flag in
+# one position, and an unordered search cannot tell that position from any other.
+_TOKEN = re.compile(r"""["']([^"']*)["']""")
+
+
+def _socket_scoped(rest: str) -> bool:
+    """Does this invocation name a socket — in the only place tmux would read one?
+
+    `tmux [-L name | -S path] <command> [args]`: the socket flag is a *server* option and
+    must precede the command word. A search for `-L`/`-S` anywhere in the argv is not the
+    same question, and the difference is not hypothetical — `pin.py:807` builds
+    `tmux capture-pane -p -J -S - -t <window>`, where `-S` is capture-pane's start-line
+    flag asking for scrollback history. An unordered search read that as a scoped call and
+    reported `16/17 unscoped` against a true 17/17, which is a false negative in the
+    direction that matters: it credits the code with an isolation it does not have, on the
+    one surface `HOME` cannot redirect.
+
+    So tokens are walked from the front and the walk stops at the command word. A flag's
+    value is consumed with it, so `-L` in `tmux kill-session -t -L` (a session literally
+    named `-L`) is not mistaken for scoping either.
+    """
+    tokens = _TOKEN.findall(rest)
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in ("-L", "-S"):
+            return True
+        if token.startswith("-"):
+            index += 2          # a server option and its value
+            continue
+        return False            # the command word — server options are over
+    return False
 
 
 def run() -> Finding | None:
@@ -57,7 +89,7 @@ def run() -> Finding | None:
         text = path.read_text(encoding="utf-8", errors="ignore")
         for match in _INVOCATION.finditer(text):
             total += 1
-            if _SOCKET_FLAG.search(match.group("rest")):
+            if _socket_scoped(match.group("rest")):
                 continue
             line = text[: match.start()].count("\n") + 1
             verb = match.group("rest").strip().split(",")[0][:40]

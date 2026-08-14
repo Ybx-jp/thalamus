@@ -558,6 +558,26 @@ def register_mcp(dry_run: bool = False) -> str:
     return "registered `thalamus` MCP server at user scope (via `claude mcp add`)"
 
 
+def deregister_mcp(dry_run: bool = False) -> str:
+    """Remove the user-scope server, through the CLI for the same reason `register_mcp` adds through it.
+
+    A named function rather than an inline `subprocess.run`, because this reaches
+    a real file on a real machine and every caller that must *not* — the test
+    suite above all — needs one seam to stub. `~/.claude.json` is not reliably
+    contained by overriding `HOME` for the child process, so a test that lets
+    this run deregisters the server of whoever ran the test.
+    """
+    cli = shutil.which("claude")
+    if cli is None:
+        return "SKIPPED MCP deregistration: `claude` not on PATH"
+    if dry_run:
+        return "would deregister `thalamus` MCP server (claude mcp remove --scope user)"
+    proc = subprocess.run([cli, "mcp", "remove", "--scope", "user", "thalamus"],
+                          capture_output=True, text=True, timeout=60)
+    return ("deregistered `thalamus` MCP server at user scope" if proc.returncode == 0
+            else "`thalamus` MCP server was not registered at user scope")
+
+
 def shipped_skills() -> list[Path]:
     """The invocable skills that travel with the package.
 
@@ -1036,9 +1056,125 @@ def install(dry_run: bool = False,
     return actions, verify(harnesses) + relaunch_checks(env_drift)
 
 
+def _confirm() -> bool:
+    """Name the blast radius, then ask. Declining is the default on anything odd.
+
+    This writes outside the checkout — into files two editors read in *every*
+    directory on the box, not just this one — and the hooks it registers run on
+    every session from then on. That is a reasonable thing to want and an
+    unreasonable thing to discover afterwards, so it is stated before it happens
+    rather than described in a README the installer never opened.
+
+    A non-interactive stdin answers no: a script that meant to install can pass
+    `--yes`, and one that did not mean to should not be silently taken as
+    consenting. `--dry-run` shows the same actions without reaching this at all.
+    """
+    print("`thalamus init` writes outside this checkout:")
+    for line in (
+        f"{USER_SETTINGS} — registers {len(HOOK_WIRING)} hook entries",
+        f"{USER_CURSOR_HOOKS} and {USER_CURSOR_MCP} — the same for Cursor",
+        "~/.claude.json — registers the `thalamus` MCP server (via `claude mcp add`)",
+        f"{USER_SKILLS_DIR} — symlinks the shipped skills",
+        f"{USER_AGENTS_DIR} — writes one derived agent per expert",
+    ):
+        print(f"  - {line}")
+    print("\nThose hooks then run in every session on this box, in every directory,\n"
+          "until you remove them with `thalamus init --uninstall`.\n"
+          "Your graph and transcript archive are not touched by either.\n")
+    try:
+        if not sys.stdin.isatty():
+            print("stdin is not a terminal — re-run with --yes to install non-interactively.")
+            return False
+        return input("Proceed? [y/N] ").strip().lower() in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+
+def uninstall(dry_run: bool = False) -> list[str]:
+    """Take back everything `install` wrote outside the checkout.
+
+    The mirror of `install`, and it removes only what we can prove is ours: hook
+    entries are dropped by the same `_strip_*` helpers the install uses to avoid
+    duplicating itself, a skill link is removed only when it is a symlink
+    resolving into this package's skill dir, and the MCP server goes out through
+    `claude mcp remove` for the same reason it went in that way — `~/.claude.json`
+    belongs to the CLI.
+
+    What it deliberately does not touch: the graph, `~/.thalamus/` and the
+    transcript archive. Uninstalling the harness is a statement about wiring, not
+    a request to delete an operator's memory — and a command that quietly took
+    the archive with it could not be undone.
+    """
+    actions: list[str] = []
+
+    for path, strip, label in (
+        (USER_SETTINGS, _strip_thalamus_hooks, "Claude Code user hooks"),
+        (USER_CURSOR_HOOKS, _strip_cursor_hooks, "Cursor user hooks"),
+    ):
+        current = _load_json(path)
+        stripped = strip(json.loads(json.dumps(current)))
+        if stripped == current:
+            actions.append(f"no {label} to remove ({path})")
+            continue
+        actions.append(f"{'would remove' if dry_run else 'removed'} {label} ({path})")
+        if not dry_run:
+            _write_json(path, stripped)
+
+    actions.append(deregister_mcp(dry_run=dry_run))
+
+    cursor_mcp = _load_json(USER_CURSOR_MCP)
+    if "thalamus" in cursor_mcp.get("mcpServers", {}):
+        actions.append(f"{'would remove' if dry_run else 'removed'} `thalamus` from "
+                       f"cursor MCP servers ({USER_CURSOR_MCP})")
+        if not dry_run:
+            cursor_mcp["mcpServers"].pop("thalamus")
+            _write_json(USER_CURSOR_MCP, cursor_mcp)
+    else:
+        actions.append(f"no cursor MCP server to remove ({USER_CURSOR_MCP})")
+
+    # Only our own symlinks: the same identity test link_skills uses to decide it
+    # may write. A hand-written skill that happens to share a name is left alone.
+    ours = {s.resolve() for s in shipped_skills()}
+    removed = []
+    for dest in sorted(USER_SKILLS_DIR.glob("*")) if USER_SKILLS_DIR.is_dir() else []:
+        if dest.is_symlink() and dest.resolve() in ours:
+            removed.append(dest.name)
+            if not dry_run:
+                dest.unlink()
+    actions.append(f"{'would unlink' if dry_run else 'unlinked'} {len(removed)} skill(s) from "
+                   f"{USER_SKILLS_DIR}: {', '.join(removed)}" if removed
+                   else f"no skill links of ours in {USER_SKILLS_DIR}")
+
+    agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []
+    if agents:
+        actions.append(f"{'would remove' if dry_run else 'removed'} {len(agents)} derived "
+                       f"agent(s) from {USER_AGENTS_DIR}")
+        if not dry_run:
+            for a in agents:
+                a.unlink()
+    else:
+        actions.append(f"no derived agents in {USER_AGENTS_DIR}")
+
+    return actions
+
+
 def run(dry_run: bool = False, check_only: bool = False,
-        harness: str = "both") -> int:
+        harness: str = "both", uninstall_mode: bool = False,
+        assume_yes: bool = False) -> int:
     """CLI entry. Non-zero exit iff a check failed — install failures must be loud."""
+    if uninstall_mode:
+        for a in uninstall(dry_run=dry_run):
+            print(f"  - {a}")
+        print("\nDRY RUN — nothing removed." if dry_run else
+              "\nRemoved. Your graph, ~/.thalamus/ and the transcript archive are untouched.\n"
+              "Sessions already open keep the old wiring until the editor is relaunched.")
+        return 0
+
+    if not (dry_run or check_only or assume_yes) and not _confirm():
+        print("Nothing written.")
+        return 1
+
     harnesses = HARNESSES if harness == "both" else (harness,)
     if check_only:
         actions, checks = [], verify(harnesses)

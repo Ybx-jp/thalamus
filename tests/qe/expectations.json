@@ -22,9 +22,9 @@
     {
       "case": "guards-fail-closed-on-unparseable-input",
       "failure_class": "failed-open",
-      "witness_contains": "malformed-stdin rc=5",
+      "witness_contains": "gremlin-guard.sh no-jq rc=127 on input that blocks with jq | gremlin-guard.sh malformed-stdin rc=5 | gremlin-guard.sh empty-stdin rc=0 | role-guard.sh malformed-stdin rc=5 | role-guard.sh empty-stdin rc=0 | room-guard.sh malformed-stdin rc=5 | room-guard.sh empty-stdin rc=0",
       "triaged_at_rev": "61213e4",
-      "note": "Shared jq prologue under set -e. Three distinct exit signatures (5 malformed / 0 empty / 127 no-jq); the pin is on 5 so that closing only one of the three drifts this entry rather than silencing it."
+      "note": "Shared jq prologue under set -e, leaking in seven places across three scripts with three exit signatures (5 malformed / 0 empty / 127 no-jq). The pin is the entire leak list, because `witness_contains` is a substring test over one joined string and any shorter pin is satisfied by leaks in scripts it does not name — a pin on `malformed-stdin rc=5` alone stays matched by gremlin-guard.sh after role-guard.sh is repaired, so the repair would leave the verdict known-red and the run exit 0. Closing any single leak removes its segment from the join, so the pin misses and the entry drifts. Repairing one script is the change this expects next; it will report."
     },
     {
       "case": "ingest-allowlist-gates-fetch",
@@ -50,15 +50,11 @@
     {
       "case": "tmux-invocations-name-their-socket",
       "failure_class": "boundary-leak",
-      "witness_contains": "13/13 unscoped",
-      "triaged_at_rev": "ce7f7f6",
-      "note": "No -L/-S anywhere in src/. tmux ignores HOME, so no environment redirection isolates it, and the arm-runner image has no tmux at all. Pinned on the count so scoping any subset drifts this entry rather than silently shrinking it."
+      "witness_contains": "17/17 unscoped",
+      "triaged_at_rev": "2bc3a3d",
+      "note": "No -L/-S anywhere in src/. tmux ignores HOME, so no environment redirection isolates it, and the arm-runner image has no tmux at all. Pinned on the count so scoping any subset drifts this entry rather than silently shrinking it. Re-pinned from '13/13': four invocations were added by 222bad6 (display-message, capture-pane, set remain-on-exit, kill-window in pin.py), and the case's own detector was repaired in the same change — it searched for -L/-S anywhere in the argv, so `capture-pane -p -J -S -` read as socket-scoped and the suite reported 16/17 against a true 17/17. The defect is unchanged in substance; the count moved because the code grew and the instrument was wrong."
     },
     {
-      "case": "ranker-fingerprint-names-dials-in-force",
-      "failure_class": "doc-code-drift",
-      "witness_contains": "_select_details(cap=_DETAIL_CAP)",
-      "triaged_at_rev": "b88cf9d",
       "case": "every-room-member-is-addressable",
       "failure_class": "invariant-falsified",
       "witness_contains": "--to main returns 0 target(s)",
@@ -66,18 +62,11 @@
       "note": "The room's main is visible to an unfiltered preflight and invisible the moment it is named, because the scope filter reads a scope derived from the launch agent and main has no manifest to be launched with. Pinned on the named-call returning zero rather than on the member id, so a fix that lets main through drifts this entry while a fix that merely renames the fixture's session does not. The unfiltered call is the case's own control: if it stopped seeing the membership, the finding would be a fixture artifact and reports as malformed instead."
     },
     {
-      "case": "probe-vocabulary-has-no-dead-members",
-      "failure_class": "doc-code-drift",
-      "witness_contains": "Condition unproduced: ['INTERACTIVE', 'PRINT']",
-      "triaged_at_rev": "9f23f8b",
-      "note": "Two of three Condition members are emitted by nothing, so no probe result can carry them. Not a claim that the members are wrong to want — the module's reasoning about print-vs-interactive observation is sound, and lab/054 is the evidence for it. The claim is that the vocabulary records a distinction nothing observes. Either fix discharges it: produce them from real probes, or mark them declared-ahead-of-use where contract/ontology.py already does that in a comment next to its unwritten edges. Pinned on the exact unproduced set so producing one drifts this entry."
-    },
-    {
       "case": "retained-bytes-secret-scan-is-heard",
       "failure_class": "unenforced-signal",
-      "witness_contains": "2 site(s)",
-      "triaged_at_rev": "caaaeb8",
-      "note": "Two halves of one property, and the pin is the count so closing either half drifts this entry rather than shrinking it quietly. Session-end extract computes scan_for_secrets and binds it to `_`; ingest archives fetched bytes without scanning at all. Not a claim that the scanner is wrong (it flags the canary) or that redaction is owed — docs/10 chose report-never-redact on purpose. The claim is that the report has no reader on either path that runs."
+      "witness_contains": "3 site(s)",
+      "triaged_at_rev": "2bc3a3d",
+      "note": "The pin is the count so closing any part of the property drifts this entry rather than shrinking it quietly. Session-end extract computes scan_for_secrets and binds it to `_`; ingest archives fetched bytes without scanning at all; retain_ingress_receipt archives a Cursor session's ingress evidence and never scans it. Not a claim that the scanner is wrong (it flags the canary) or that redaction is owed — docs/10 chose report-never-redact on purpose. The claim is that the report has no reader on any path that runs. Re-pinned from '2 site(s)': the defect widened rather than closed. 7c1107e added retain_ingress_receipt and 13f4530 its call site, opening a third unscanned archive path. A second consumer of the findings existed for one day (ccff774 printed them in `_cmd_arch`, 0fef9b6 removed that block); the only surviving consumer is bootstrap.py:150, which is the same one that existed at the original triage."
     },
     {
       "case": "ranker-fingerprint-names-dials-in-force",

@@ -1,10 +1,33 @@
 [project]
 name = "thalamus"
-version = "0.1.0"
+# Single-sourced from the package, so a tag can never disagree with what an
+# installed `thalamus.__version__` reports.
+dynamic = ["version"]
 description = "Federated graph memory for coding agents — with a trust model and a measured utility loop"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Jackson Porter" }]
+keywords = ["agents", "memory", "knowledge-graph", "gremlin", "llm", "evaluation"]
+classifiers = [
+    # Not published to any index: the package runs from its checkout — `pin.py` and
+    # `contract/manifest.py` anchor on the repo root and the expert manifests live
+    # in `config/` outside the package, so an installed wheel resolves paths that
+    # only exist in a clone. This classifier makes that a mechanical guarantee
+    # rather than an intention; PyPI refuses an upload carrying it. The name is
+    # taken on PyPI regardless — `thalamus` there is GNU Health's federation server.
+    "Private :: Do Not Upload",
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
 dependencies = [
     "gremlinpython>=3.7,<3.8",
     "pyyaml>=6.0",
@@ -13,6 +36,11 @@ dependencies = [
     "fastapi>=0.139.0",
     "uvicorn[standard]>=0.51.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Ybx-jp/thalamus"
+Repository = "https://github.com/Ybx-jp/thalamus"
+Issues = "https://github.com/Ybx-jp/thalamus/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -52,6 +80,19 @@ frames = [
     "numpy>=2.1",
     "scipy>=1.14",
 ]
+# The console's `say` control (thalamus/voice/daemon.py), reached only when the
+# console is started with `--voice URL`. Optional because it is the heaviest thing
+# in the repo by an order of magnitude — torch, plus a Kokoro-82M download from
+# HuggingFace on first synthesis, so a first run needs network. The daemon is also
+# normally its own venv and its own systemd unit, on a different lifecycle from the
+# console process; this extra exists so the dependency is *declared* rather than
+# discovered from an ImportError. Kokoro-82M is Apache-2.0; its espeak-ng G2P
+# backend is GPL and is not installed by this extra.
+voice = [
+    "kokoro>=0.9",
+    "torch>=2.5",
+    "numpy>=2.1",
+]
 
 [project.scripts]
 thalamus = "thalamus.cli:main"
@@ -60,6 +101,9 @@ thalamus-mcp = "thalamus.harness.mcp_server:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/thalamus/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/thalamus"]
@@ -71,8 +115,3 @@ target-version = "py311"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-
-[dependency-groups]
-dev = [
-    "httpx>=0.28.1",
-]

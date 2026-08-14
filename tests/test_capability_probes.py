@@ -241,9 +241,15 @@ class TestBoundaryRows:
     def test_the_claude_rows_are_recomputed_against_the_wiring(self):
         from thalamus.contract.boundaries import check_boundaries
 
+        from thalamus.contract.boundaries import BOUNDARY_ROWS
+
         claude = [(row, outcome) for row, outcome, _ in check_boundaries()
                   if row.harness == "claude"]
-        assert len(claude) == 4
+        # Derived rather than stated. The risk this guards is `check_boundaries()`
+        # silently dropping a row it cannot recompute, which a literal count would
+        # also catch — and then go on catching every time a boundary is legitimately
+        # added, which is how a literal becomes something people edit without reading.
+        assert len(claude) == sum(1 for row in BOUNDARY_ROWS if row.harness == "claude")
         assert all(outcome == "confirmed" for _, outcome in claude)
 
     def test_a_boundary_declared_but_never_armed_is_drift(self, monkeypatch):

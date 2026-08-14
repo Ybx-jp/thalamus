@@ -3,6 +3,16 @@
 This is a filtered subset of the [Apache TinkerPop Gremlin Reference Documentation](https://tinkerpop.apache.org/docs/current/reference/),
 focused on Gremlin Server implementations and the Python driver.
 
+> **Third-party documentation.** Copyright © the Apache Software Foundation,
+> licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+> Apache TinkerPop, TinkerPop, Apache and the Apache feather logo are trademarks
+> of the Apache Software Foundation. These files are **modified**: the reference
+> is filtered to the pages above, split and renumbered, and cross-links are
+> rewritten to resolve inside this directory. Nothing here is authoritative —
+> read [the upstream reference](https://tinkerpop.apache.org/docs/current/reference/)
+> for the current text. The rest of Thalamus is MIT (see [LICENSE](../../LICENSE));
+> this directory is not.
+
 ## Agent routing — read the one file your problem lives in
 
 The working rules (terminal steps, dialect split, renamed steps, house

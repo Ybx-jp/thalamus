@@ -630,6 +630,7 @@ body.passthrough .composer .input-line:focus-within { opacity: 1; }
   cursor: pointer;
 }
 .keycap:active, .fontcap:active { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.keycap[hidden], .fontcap[hidden] { display: none; }
 .keycap.danger { color: var(--danger); border-color: #4a2a29; }
 .keyrow .spacer { flex: 1 1 auto; }
 .input-line { display: flex; gap: .5rem; align-items: flex-end; }

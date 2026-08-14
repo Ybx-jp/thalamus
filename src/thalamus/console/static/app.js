@@ -640,6 +640,22 @@ const sayAudio = new Audio();
 let saying = false;
 let sayIdx = null;      // window the current utterance belongs to
 
+// Whether this console has a voice service behind it at all. The server owns the
+// answer (`--voice`); the client's only job is to not draw a control that nothing
+// backs. The button ships hidden and is revealed only on a positive answer, so the
+// failure mode of an unreachable check is a missing control rather than a dead one.
+let voiceAvailable = false;
+
+async function loadVoice() {
+  try {
+    const r = await fetch("api/voice");
+    voiceAvailable = r.ok && (await r.json()).available === true;
+  } catch {
+    voiceAvailable = false;
+  }
+  els.sayToggle.hidden = !voiceAvailable;
+}
+
 function sayUrl(idx, restart, from) {
   let url = "api/say?index=" + encodeURIComponent(idx);
   if (restart) url += "&restart=1";
@@ -673,6 +689,7 @@ function startSaying(idx, restart, from) {
 }
 
 function speakActiveWindow(restart) {
+  if (!voiceAvailable) return;
   if (saying) { stopSaying(); return; }
   if (activeIdx === null) return;
   startSaying(activeIdx, restart, undefined);
@@ -680,6 +697,9 @@ function speakActiveWindow(restart) {
 
 /** Speak from a block the reader tapped, treating everything above it as heard. */
 function speakFrom(idx, seq) {
+  // Guarded here as well as at the button: tapping a block reaches this directly,
+  // so hiding the control alone would leave the whole read view silently speaking.
+  if (!voiceAvailable) return;
   if (saying) sayAudio.pause();
   startSaying(idx, false, seq);
 }
@@ -1923,8 +1943,20 @@ function renderFrameLabel() {
   const el = document.getElementById("frame-label");
   if (!el) return;
   const f = currentFrame();
-  el.textContent = !frames.length ? "no frames"
-    : frameOn && f ? f.name.replace(/\.(png|gif|jpe?g|webp)$/i, "") : "theme off";
+  // No frame file, or one that yielded nothing: the controls go away rather than
+  // sitting there inert. A `frame` button and a `▸` that visibly do nothing, beside
+  // a label reading "no frames", tell an operator there is something broken to fix
+  // — when the truth is that `--frames` was simply never passed.
+  const have = frames.length > 0;
+  for (const id of ["frame-toggle", "frame-next"]) {
+    const b = document.getElementById(id);
+    if (b) b.hidden = !have;
+  }
+  const toggle = document.getElementById("frame-toggle");
+  if (toggle) toggle.setAttribute("aria-pressed", String(have && frameOn));
+  el.hidden = !have;
+  if (!have) { el.textContent = ""; return; }
+  el.textContent = frameOn && f ? f.name.replace(/\.(png|gif|jpe?g|webp)$/i, "") : "theme off";
 }
 
 // ---- Desktop keystroke passthrough ----
@@ -2016,11 +2048,14 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault(); toggleFullscreen(); return;
   }
   // F9/F12 mirror the emulator's own frame bindings, so the same keys do the same
-  // thing whether the pane is in a terminal or in this page.
-  if (isDesktop && !typingInField() && e.key === "F9") {
+  // thing whether the pane is in a terminal or in this page. Claimed only when a
+  // frame file actually yielded frames: F12 is Chrome's DevTools key, and taking
+  // it from every console on every box to toggle a feature that is off is a bad
+  // trade — `frames.length` is the same test the deskbar controls use.
+  if (isDesktop && frames.length && !typingInField() && e.key === "F9") {
     e.preventDefault(); nextFrame(); return;
   }
-  if (isDesktop && !typingInField() && e.key === "F12") {
+  if (isDesktop && frames.length && !typingInField() && e.key === "F12") {
     e.preventDefault(); toggleFrame(); return;
   }
   if (!isDesktop || !passthrough || typingInField()) return;
@@ -2079,9 +2114,9 @@ function buildDesktopBar() {
   bar.className = "deskbar";
   bar.id = "deskbar";
   bar.innerHTML =
-    '<button type="button" id="frame-toggle" title="Frame theme on/off (F12)">frame</button>' +
-    '<button type="button" id="frame-next" title="Next frame (F9)">▸</button>' +
-    '<span class="frame-label" id="frame-label"></span>' +
+    '<button type="button" id="frame-toggle" title="Frame theme on/off (F12)" aria-pressed="false" hidden>frame</button>' +
+    '<button type="button" id="frame-next" title="Next frame (F9)" hidden>▸</button>' +
+    '<span class="frame-label" id="frame-label" hidden></span>' +
     '<button type="button" id="pass-toggle" title="Send keystrokes straight to the pane" aria-pressed="true">keys: direct</button>' +
     '<button type="button" id="full-toggle" title="Fullscreen (F11)">full</button>';
   document.querySelector("header").appendChild(bar);
@@ -2202,6 +2237,8 @@ setConn("connecting");
 buildDesktopBar();
 setPassthrough(passthrough);
 loadFrames();
+// Unconditional, unlike loadFrames: `say` is the phone-first control of the two.
+loadVoice();
 
 // Adaptive poll. Was `setInterval(poll, POLL_MS)`, which could stack overlapping
 // requests whenever a poll outran its own interval; a self-scheduling chain can't.

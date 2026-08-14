@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import secrets
 import socket
 import sys
@@ -348,6 +349,17 @@ def main():
     derive_paths_parser.add_argument(
         "--write", action="store_true",
         help="Apply the plan. Without this, nothing is written.",
+    )
+
+    retire_scans_parser = subparsers.add_parser(
+        "retire-scans",
+        help="Remove the graph records of architecture scans, which are no longer "
+        "written (dry-run unless --write)",
+    )
+    retire_scans_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    retire_scans_parser.add_argument(
+        "--write", action="store_true",
+        help="Apply the plan. Without this, nothing is removed.",
     )
 
     # Snapshot command — durability on demand (docs/09)
@@ -792,6 +804,15 @@ def main():
     init_parser.add_argument(
         "--harness", choices=("claude", "cursor", "both"), default="both",
         help="Which editor to wire (default: both)"
+    )
+    init_parser.add_argument(
+        "--uninstall", action="store_true",
+        help="Remove the hooks, MCP registration, skill links and derived agents "
+             "this wrote. Leaves the graph and the transcript archive alone"
+    )
+    init_parser.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Skip the confirmation — for non-interactive installs"
     )
 
     rescope_parser = subparsers.add_parser(
@@ -1243,6 +1264,14 @@ def main():
         help="Frame-theme definitions for the desktop client, e.g. "
              "$WEZTERM_CONFIG_DIR/frames.lua (default: none — no frame themes)"
     )
+    # THALAMUS_VOICE_URL supplies the default rather than the feature: an operator
+    # already running the unit keeps their setting, and a box without one gets no
+    # `say` control instead of a button that fails on first tap.
+    console_parser.add_argument(
+        "--voice", default=os.environ.get("THALAMUS_VOICE_URL") or None, metavar="URL",
+        help="Speech service backing the `say` control, e.g. http://127.0.0.1:8380 "
+             "(default: $THALAMUS_VOICE_URL, else none — the control is hidden)"
+    )
 
     # Pulse command — the live telemetry dashboard (docs/03)
     pulse_parser = subparsers.add_parser(
@@ -1288,6 +1317,8 @@ def main():
         _cmd_repair_projects(args)
     elif args.command == "derive-artifact-paths":
         _cmd_derive_artifact_paths(args)
+    elif args.command == "retire-scans":
+        _cmd_retire_scans(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -2043,6 +2074,59 @@ def _cmd_derive_artifact_paths(args):
             return
         resolved = write_projection(graph, projection_plan)
         print(f"\nWrote {len(projection_plan.projections)} artifacts, {resolved} anchored.")
+    finally:
+        close_connection(graph)
+
+
+def _cmd_retire_scans(args):
+    """Remove the Sources and Claims that architecture scans used to land.
+
+    Dry-run by default, and it prints what it keeps as well as what it takes: the
+    Artifacts a scan touched are usually the same vertices sessions touched, so the
+    kept list is the check that this did not reach past its own records.
+    """
+    from thalamus.substrate.scan_retirement import plan, retire
+
+    graph = connect(args.url)
+    try:
+        retirement = plan(graph)
+
+        if not retirement.total():
+            print("Nothing to retire — no scan Source or scanner Claim in the graph.")
+            return
+
+        print(f"{len(retirement.sources)} scan Source(s):")
+        for doomed in retirement.sources:
+            print(f"  {doomed.detail}")
+        print(f"\n{len(retirement.claims)} scanner Claim(s):")
+        for doomed in retirement.claims:
+            print(f"  {doomed.detail}")
+
+        if retirement.artifacts:
+            print(f"\n{len(retirement.artifacts)} Artifact(s) left with no other edge:")
+            for doomed in retirement.artifacts:
+                print(f"  {doomed.detail}")
+        if retirement.kept_artifacts:
+            print(f"\n{len(retirement.kept_artifacts)} Artifact(s) kept — still referenced:")
+            for identifier, survivors in retirement.kept_artifacts[:12]:
+                print(f"  {survivors:3d} other edge(s)  {identifier}")
+            if len(retirement.kept_artifacts) > 12:
+                print(f"  … and {len(retirement.kept_artifacts) - 12} more")
+
+        if retirement.uncited_blobs:
+            print(
+                f"\n{len(retirement.uncited_blobs)} archived blob(s) become uncited. "
+                "Bytes are kept; `thalamus arch growth` ranks unreferenced stock."
+            )
+
+        if not args.write:
+            print(f"\nDry run. Re-run with --write to remove {retirement.total()} vertices.")
+            return
+
+        removed = retire(graph, retirement)
+        print(f"\nRemoved {removed} vertices.")
+        _persist(graph)
+        print("Run `thalamus contract check` to confirm the graph is still whole.")
     finally:
         close_connection(graph)
 
@@ -3207,7 +3291,8 @@ def _cmd_init(args):
     from thalamus.harness.install import run
 
     try:
-        sys.exit(run(dry_run=args.dry_run, check_only=args.check, harness=args.harness))
+        sys.exit(run(dry_run=args.dry_run, check_only=args.check, harness=args.harness,
+                     uninstall_mode=args.uninstall, assume_yes=args.yes))
     except RuntimeError as e:
         print(f"Init failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -3524,7 +3609,6 @@ def _cmd_thread(args, parser):
 def _agent_closes(graph) -> list[dict]:
     """Every `Agent -[RESOLVES]-> Thread` edge, as flat rows."""
     from gremlin_python.process.graph_traversal import __
-    from gremlin_python.process.traversal import T
 
     return [
         {
@@ -3806,6 +3890,7 @@ def _cmd_console(args):
         scan_roots=args.scan,
         services=args.service,
         frames_file=args.frames,
+        voice_url=args.voice,
     )
     if subprocess.run(["tmux", "has-session", "-t", cfg.session],
                       capture_output=True).returncode != 0:

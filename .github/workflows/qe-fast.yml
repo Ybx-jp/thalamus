@@ -26,6 +26,10 @@ jobs:
         with:
           # The suite stamps the revision into every ledger row and reads it via
           # `git rev-parse`, which needs real history rather than a shallow clone.
+          # `expectation-additions-are-never-silent` needs more than that: it diffs
+          # expectations.json against the pushed ref's prior tip (or the PR base), and a
+          # base it cannot resolve is MALFORMED — exit 3, never a silent pass. Shallow
+          # this and the oracle's own guard goes red, correctly.
           fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v5

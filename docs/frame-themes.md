@@ -8,9 +8,9 @@ This page documents it as a **primitive**: a small contract you can target from
 anything. A generator ships in `tools/`, but it is only one way to produce the
 contract, and nothing here depends on using it.
 
-Entirely optional, and off by default. Without `--frames` the deskbar reads
-`no frames`, the theme controls stay inert, and the rest of the console is
-unaffected. Thalamus ships no artwork.
+Entirely optional, and off by default. Without `--frames` — or with a file that
+yields no usable frames — the theme controls are not drawn at all and the rest of
+the console is unaffected. Thalamus ships no artwork.
 
 ## Why data and not an emulator
 
@@ -165,6 +165,9 @@ stays legible at any window size.
 
 Desktop only, gated on `matchMedia("(pointer: fine) and (min-width: 900px)")` — the
 mobile surface never loads frame art. `F12` toggles, `F9` cycles, `F11` fullscreen.
+`F12` and `F9` are claimed only once a frame file has yielded frames: `F12` is
+Chrome's DevTools key, and taking it on every console to toggle a feature that is
+off is a worse trade than losing the binding on the boxes that never opted in.
 
 ## The wider theming surface
 

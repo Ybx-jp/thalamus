@@ -57,20 +57,59 @@ class Expectation:
     note: str = ""
 
 
+class MalformedExpectations(Exception):
+    """The oracle cannot be read. Never a verdict about the code — always exit 3."""
+
+
+def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Refuse what `json.loads` would resolve by last-wins.
+
+    `174b44c` is why this is not defensive: a missing `},{` merged one entry's keys into
+    the object above it, and the file read as eleven expectations and parsed as ten. In a
+    file whose entire purpose is acknowledging known-red defects, an entry that silently
+    does not parse makes *absent* and *acknowledged* one state — the collapsed sentinel
+    this suite is named for, committed inside the suite's own oracle. It was found by an
+    architect reading a boundary ticket, not by the runner, because the runner could not
+    see it.
+    """
+    seen: dict[str, object] = {}
+    for key, value in pairs:
+        if key in seen:
+            raise MalformedExpectations(
+                f"duplicate key {key!r} in one object — json.loads would keep the last "
+                f"silently, so an entry is being merged into its neighbour")
+        seen[key] = value
+    return seen
+
+
 def load() -> tuple[dict[str, Expectation], str]:
     """Return the expectations and the sha of the file they came from.
 
     The sha is returned rather than computed by callers so that the value stamped into
     the ledger is provably the bytes that were reconciled against, not a recomputation
     that could drift between read and stamp.
+
+    Raises `MalformedExpectations` rather than returning a short list. Every other
+    failure mode in this suite is a verdict about the code; this one is the oracle being
+    unreadable, and a shorter list of acknowledgements is indistinguishable from a
+    correct one at every later step.
     """
     if not EXPECTATIONS_PATH.is_file():
         return {}, "absent"
     raw = EXPECTATIONS_PATH.read_bytes()
     sha = hashlib.sha256(raw).hexdigest()[:12]
-    data = json.loads(raw.decode("utf-8"))
+    try:
+        data = json.loads(raw.decode("utf-8"), object_pairs_hook=_no_duplicate_keys)
+    except json.JSONDecodeError as exc:
+        raise MalformedExpectations(f"{EXPECTATIONS_PATH.name} is not valid JSON: {exc}") from exc
     out = {}
     for row in data.get("expectations", []):
+        if row["case"] in out:
+            # The same collapse one level up: two entries naming one case leave the last
+            # standing and shrink the acknowledged set with no diagnostic.
+            raise MalformedExpectations(
+                f"two expectations name the case {row['case']!r} — the second would "
+                f"silently replace the first")
         exp = Expectation(
             case=row["case"],
             failure_class=row["failure_class"],

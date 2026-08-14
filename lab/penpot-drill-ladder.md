@@ -109,7 +109,7 @@ Established by source survey and by live probes against the running stack.
   file — the same file opens correctly from the dashboard, or from:
 
   ```
-  https://penpot.tail92a020.ts.net/#/workspace?team-id=<team>&file-id=<file>&page-id=<page>
+  https://penpot.<tailnet>.ts.net/#/workspace?team-id=<team>&file-id=<file>&page-id=<page>
   ```
 
   Worth knowing because the failure names fonts, not the URL, and it looks identical
@@ -129,10 +129,49 @@ Established by source survey and by live probes against the running stack.
 - **Every tool call is its own file revision.** A 40-shape screen is 40 round trips, 40
   undo steps, and a real race if the file is open elsewhere. No transaction tool.
 
-- **A path cannot be read back.** `get_shape_details` returns `content: null` and
-  `selrect: None` for any path, because the DB reader never decodes the binary v2
-  `PathData` blob. `x`/`y`/`width`/`height` still come back, so a path can be located
-  but not introspected — the shape you wrote is the only record of what it is.
+- **A path cannot be read back — but its bounding box can, and that is the only
+  machine-checkable assertion vector work has.** `get_shape_details` returns
+  `content: null` and `selrect: None` for any path, because the DB reader never decodes
+  the binary v2 `PathData` blob. `x`/`y`/`width`/`height` still come back, and they are
+  the **true cubic extent**, not the endpoint box. Proved with an arc whose control
+  points push outside its endpoints: apex predicted analytically at y=30
+  ((60+3·20+3·20+60)/8), read back `y: 30, height: 30`, where an endpoints-only selrect
+  would report height 0. Compute a path's expected extent and assert it (lab/065).
+- **Dash geometry is a stroke-width derivative unless you override it. Pass `dash`
+  and `gap`.** `stroke-style: "dashed"` on its own does not dash at a size — Penpot's
+  `calculate-dasharray` returns `(or dash w+10),(or gap w+10)`, so the pattern is
+  computed from *stroke width* and never from the shape. A 2px stroke dashes at 12,12
+  whatever it is drawn around: on a 16×16 boundary (perimeter ~64) that is 2.7 dashes,
+  which lands as four corner brackets and reads as a crop frame. At 24px icon scale
+  pass `dash=2, gap=2`.
+
+  Requires Penpot ≥ 2.17.0, which added `:stroke-dash`/`:stroke-gap` to
+  `schema:stroke-attrs`; this box runs 2.17.0 exactly. The schema is `:closed true` and
+  types both as numbers, so the fields are omitted when unset rather than sent as null.
+
+  Still unreachable, in every version: **dash offset** (no field anywhere, always 0),
+  **`dotted` and `mixed` geometry** (dash/gap are read only on the `dashed` branch, so
+  those two keep width-derived patterns), and **arbitrary multi-segment dasharrays**
+  (`mixed` is the only multi-segment pattern and its four numbers are fixed by width).
+  Penpot's *plugin* API exposes no dash accessor at all, so `execute_plugin_script` is
+  not a route to this — only the RPC/changes path the MCP already uses.
+
+  Dashing is also the only affordable enclosure at icon scale, which is why this
+  mattered beyond style: against lab/065's ~100px² ink budget a solid 20×16 container
+  plus a node ring costs 173.7px² (1.74× over), while the same boundary dashed at 2,2
+  costs 105.7px² and at 2,3 costs 92.1px² — inside budget. A dashed boundary is roughly
+  half the ink of a solid one.
+- **Round caps are authorable through `modify_shape`, and they survive a read-back.**
+  `set_stroke` exposes no cap parameter, but writing the whole `strokes` array reaches
+  `stroke-cap-start` / `stroke-cap-end`. Confirmed both in the rendered SVG
+  (`stroke-linecap: round`) and through `get_shape_details` — unlike path content, caps
+  round-trip. This is what makes a consistent terminal style possible across a set.
+- **Writing the `strokes` array wholesale drops every field you omit.** Setting caps
+  without restating `stroke-opacity` loses it. Write the full stroke map every time —
+  the text-mutation reset hazard applies to `modify_shape`'s array writes too.
+- **Paths take absolute canvas coordinates.** Frames are placed in the same space, so
+  writing a frame-relative coordinate as an absolute silently puts the shape elsewhere
+  and still returns 200.
 - **`get_shape_svg` still dresses an approximation as a result.** It renders through
   `transformers/svg.py` — first fill, first stroke, no gradients, shadows, blur or
   clipping — and presents that as "SVG representation of a shape" with no caveat. It
@@ -199,7 +238,11 @@ hover, disabled), nine cells on an 8px grid, with padding redlines called out.
 
 The brief leaves nothing to interpret, so this grades execution alone.
 
-Run 2026-08-12 — file `D1 button matrix`, 53 shapes, awaiting assessment. Surfaced
+Run 2026-08-12 — file `D1 button matrix`, 53 shapes. **Assessed 2026-08-13: passed.**
+The operator read the board as pixel-accurate and found nothing to criticise, while
+noting they had no way to *measure* it on the canvas — the redlines assert a number
+the assessment surface cannot check. Execution is therefore confirmed only to the
+resolution of the eye, which is the ceiling for every drill graded this way. Surfaced
 P3, since fixed, along with exact creation geometry, the revision/wall-clock split,
 and the free render-and-look loop. Written up in lab/064.
 
@@ -215,6 +258,24 @@ consistency *across* a set — the thing no single icon reveals. Expected to sur
 absence of boolean ops and of align/distribute, whether optical correction survives
 being computed rather than eyeballed, and how much a path costs to iterate on when it
 cannot be read back.
+
+Run 2026-08-13 — file `D2 icon set`, 27 shapes, awaiting assessment. Optical correction
+computed rather than eyeballed did survive: the centroid-not-bounding-box rule
+generalises to measuring the **ink centroid** off the render and moving the composition
+until it lands on (12,12), which five of six icons hit within 1.1px. Two findings
+outrank the deliverable, both in lab/065:
+
+- **The ink budget is arithmetic, and it constrains every drill at icon scale.** A 24px
+  icon at 2px stroke affords roughly 100px² of ink out of 576. A ⌀8 node ring costs
+  37.7; a closed 20×16 container costs **136 before any content**. A solid enclosure is
+  therefore unaffordable, and so is three nodes with two edges (~147). The set only
+  converged once every icon was built to about two rings plus a connector: spread fell
+  from 2.31× to 1.25×.
+- **Internal consistency buys nothing against the world's existing icon sets.** Five
+  first-pass icons had to be redrawn for collisions — camera (twice, from unrelated
+  starts), logout, RSS/wifi, and the Mars symbol. At 24px an enclosure containing a
+  centred circle *is* a camera. The move is not to escape collision but to pick one
+  whose misreading is semantically adjacent.
 
 ### D3 — Brand and identity, directional brief
 
@@ -285,7 +346,13 @@ drill that produces a deliverable and no change has not been assessed.
    affected; the exposure is confined to attributes that used to be a hard 500. Owner
    is `architect`. The revisit trigger is a drill that actually needs the inheritance.
 
-3. **Whether an editor open reflows a headlessly-configured frame — closed 2026-08-13,
+3. **Dash geometry at icon scale — closed 2026-08-13, fixed in `patches/0003`.** It
+   needed a tool argument, not a model change: Penpot 2.17.0 added `:stroke-dash` and
+   `:stroke-gap` to `schema:stroke-attrs`, and this box runs exactly 2.17.0. `set_stroke`
+   now takes `dash` and `gap`. See the dash instrument fact above for how to author and
+   what is still unreachable.
+
+4. **Whether an editor open reflows a headlessly-configured frame — closed 2026-08-13,
    negative.** It does not, and neither does selecting the frame. See the auto-layout
    instrument fact above for the measurement. Nothing is left open here: the layout
    has to be touched in the UI before Penpot recomputes anything, so the assessment

@@ -65,7 +65,7 @@ write_boundary:
     - "*/src/*"
   reason: >-
     qe holds the oracle, not the fix. A failing adversarial case is a finding to
-    report — open a problem or a thread, or hand it to the implementing scope.
+    report — file it on the tracker, or hand it to the implementing scope.
     Repairing the implementation from inside the scope that asserts against it
     collapses the independence the assertion is worth anything for. Writing tests,
     harnesses and corpora (tests/, lab/) is unrestricted.

@@ -113,6 +113,7 @@ class BoundaryRow:
 # the re-ask — our own tables, checked against our own claim.
 WIRING_REQUIREMENT: dict[str, tuple[str, str]] = {
     "write_boundary.path": ("role-guard.sh", "Write"),
+    "path_ownership.path": ("role-guard.sh", "Write"),
     "capability_boundary.tool": ("role-guard.sh", "Artifact"),
     "capability_boundary.skill": ("role-guard.sh", "Skill"),
     "room_boundary.message": ("room-guard.sh", "SendMessage"),
@@ -141,6 +142,17 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "role-guard.sh resolves the pin, then fnmatches the path against the "
         "manifest's deny_globs. Bash and a repo that keeps implementation outside "
         "`src/` are named misses, not gaps in the wiring.",
+    ),
+    BoundaryRow(
+        "path_ownership.path", "claude", Provision.PROVIDED, _WIRED,
+        "The inverse of write_boundary.path, and the only boundary here that binds "
+        "`main`: ownership is resolved from `contract/ownership.PATH_OWNERSHIP` "
+        "rather than from a manifest, because the scope it most needs to bind has no "
+        "manifest to declare a deny in. Ordered ahead of the `main` short-circuit, "
+        "which is why the table imports no pydantic — 151ms there would cost more "
+        "than the manifest load the short-circuit exists to avoid. Alone among these "
+        "rows the rule fails CLOSED: an unparseable payload is searched raw and "
+        "refused, the `write-guard.sh` posture rather than this guard's.",
     ),
     BoundaryRow(
         "capability_boundary.tool", "claude", Provision.PROVIDED, _WIRED,

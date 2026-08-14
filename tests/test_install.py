@@ -51,6 +51,11 @@ def sandbox(tmp_path, monkeypatch):
     calls: list = []
     monkeypatch.setattr(install, "register_mcp",
                         lambda dry_run=False: calls.append(dry_run) or "mcp: stubbed")
+    # And never the real `claude mcp remove`, for a sharper version of the same
+    # reason: overriding HOME for the child does not reliably contain it, so an
+    # unstubbed uninstall test deregisters the server of whoever ran the suite.
+    monkeypatch.setattr(install, "deregister_mcp",
+                        lambda dry_run=False: "mcp: deregistration stubbed")
     return {"user": user_settings, "project": project_settings,
             "project_mcp": project_mcp, "mcp_calls": calls, "skills": skills,
             "cursor_user": cursor_user_hooks, "cursor_user_mcp": cursor_user_mcp,
@@ -620,3 +625,65 @@ def test_armed_hooks_reads_the_script_out_of_a_full_command_line():
         {"matcher": None, "hooks": [{"command": "/home/u/repo/hooks/session-end.sh"}]}
     ]}}
     assert install.armed_hooks(settings) == {("SessionEnd", None, "session-end.sh")}
+
+
+class TestUninstall:
+    """Taking it back out.
+
+    An installer that writes into two editors' user-scope config, symlinks into
+    a skills directory and registers an MCP server needs a way back out, or the
+    only honest thing to tell someone trying it is "don't". The removal has the
+    harder half of the problem though: it runs against a machine it did not
+    install, so every step has to prove a thing is ours before deleting it.
+    """
+
+    def test_it_removes_the_hooks_it_wrote_and_leaves_the_operators_alone(
+            self, sandbox, monkeypatch):
+        mine = install.build_hook_block()
+        theirs = {"matcher": None,
+                  "hooks": [{"type": "command", "command": "/home/u/bin/my-own-hook.sh"}]}
+        merged = {"hooks": {k: list(v) for k, v in mine.items()}}
+        merged["hooks"].setdefault("SessionEnd", []).append(theirs)
+        install._write_json(sandbox["user"], merged)
+
+        install.uninstall()
+
+        left = install._load_json(sandbox["user"])
+        assert theirs in left["hooks"]["SessionEnd"]
+        # `armed_hooks` reports every hook present, so the operator's own is
+        # expected in the result — what must be empty is the intersection with
+        # our own declared wiring.
+        declared = {(e, m, s) for e, m, s in install.HOOK_WIRING}
+        assert install.armed_hooks(left) & declared == set(), "a Thalamus hook survived"
+        assert install.armed_hooks(left) == {("SessionEnd", None, "my-own-hook.sh")}
+
+    def test_a_skill_link_is_removed_only_when_it_is_ours(self, sandbox):
+        skills = sandbox["skills"]
+        skills.mkdir(parents=True)
+        shipped = install.shipped_skills()
+        assert shipped, "fixture needs at least one shipped skill"
+        (skills / shipped[0].name).symlink_to(shipped[0])
+        handwritten = skills / "my-own-skill"
+        handwritten.mkdir()
+        (handwritten / "SKILL.md").write_text("---\nname: mine\n---\n")
+        impostor = skills / "elsewhere"
+        impostor.symlink_to(sandbox["user"].parent)
+
+        install.uninstall()
+
+        assert not (skills / shipped[0].name).exists()
+        assert handwritten.is_dir(), "a hand-written skill was deleted"
+        assert impostor.is_symlink(), "a symlink pointing outside the package was deleted"
+
+    def test_a_dry_run_removes_nothing(self, sandbox):
+        install._write_json(sandbox["user"], {"hooks": install.build_hook_block()})
+        before = sandbox["user"].read_text()
+
+        actions = install.uninstall(dry_run=True)
+
+        assert sandbox["user"].read_text() == before
+        assert any("would remove" in a for a in actions)
+
+    def test_uninstalling_a_machine_that_never_installed_is_not_an_error(self, sandbox):
+        actions = install.uninstall()
+        assert actions and not any("FAILED" in a for a in actions)

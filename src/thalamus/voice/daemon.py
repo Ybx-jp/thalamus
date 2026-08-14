@@ -67,10 +67,17 @@ class Synthesiser:
         so a pipeline that has only been constructed still owes a network round
         trip — and would fail outright on a box that is offline when the first
         tap arrives.
+
+        Constructing the pipeline is inside the guard, not outside it: `kokoro` and
+        `torch` are installed by hand into a venv this package does not describe, so
+        a missing one is an ordinary deployment state rather than a bug. Warming is
+        an optimisation, and an optimisation that refuses to start the service it is
+        meant to speed up has the failure backwards — the daemon comes up, /health
+        answers, and the first request pays the cost or reports the real error.
         """
         with self._lock:
-            pipeline = self._ensure_pipeline()
             try:
+                pipeline = self._ensure_pipeline()
                 for _ in pipeline("ready", voice=self.voice):
                     break
             except Exception:

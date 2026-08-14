@@ -58,6 +58,13 @@ CASE_MODULES = (
     "qe.cases.tool_write_freedom",
     "qe.cases.emptiness_predicate",
     "qe.cases.arch_extractor",
+    "qe.cases.expectation_additions",
+    "qe.cases.install_consent",
+    "qe.cases.uninstall_roundtrip",
+    "qe.cases.suite_containment",
+    "qe.cases.template_placeholders",
+    "qe.cases.oracle_parses_whole",
+    "qe.cases.skill_arming",
 )
 
 
@@ -137,7 +144,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         selected = [c for c in cases if c.tier.value == args.tier]
 
-    expectations, exp_sha = exp_mod.load()
+    try:
+        expectations, exp_sha = exp_mod.load()
+    except exp_mod.MalformedExpectations as exc:
+        # Exit 3, the code for a broken check. An unreadable oracle is not a verdict
+        # about the code, and continuing on a silently shortened acknowledgement list is
+        # the failure this whole file exists to prevent.
+        print(f"  ! <expectations> [{exp_mod.MALFORMED}]\n      {exc}")
+        return 3
     header = ledger_mod.new_header(
         tier="all" if args.all_tiers else args.tier,
         rev=ledger_mod.repo_rev(REPO_ROOT),
