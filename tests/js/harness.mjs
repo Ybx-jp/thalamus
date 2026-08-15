@@ -111,6 +111,49 @@ export function lacks(name, haystack, needle) {
   check(name, !haystack.includes(needle), haystack.includes(needle) ? `got: ${haystack}` : "");
 }
 
+/**
+ * Assert no part of `haystack` matches `re`, naming the offending line when one does.
+ *
+ * For guards that bind to a shape rather than a word: the whole text is tested, so a
+ * pattern may span lines, and the report gives the line number and the matched text
+ * instead of dumping the source. Pass a regex without `g` — `lastIndex` on a shared
+ * literal would make the second call lie.
+ */
+export function lacksMatch(name, haystack, re) {
+  const m = re.exec(haystack);
+  if (!m) return check(name, true);
+  const line = haystack.slice(0, m.index).split("\n").length;
+  check(name, false, `line ${line}: ${m[0].trim()}`);
+}
+
+/**
+ * Blank out whole-line comments, keeping line numbers intact.
+ *
+ * A guard on what the code *does* must not fire on a comment that quotes the very
+ * shape it forbids in order to explain the ban. Only comments occupying a whole line
+ * are removed: deciding whether a trailing `//` sits inside a string needs a real JS
+ * parser, and guessing wrong there would blind a guard rather than merely tighten it.
+ * Trailing comments stay in the scanned text — the failure names the line, so a
+ * comment that trips one is obvious and one edit away.
+ */
+export function stripComments(src) {
+  const out = [];
+  let inBlock = false;
+  for (const line of src.split("\n")) {
+    const t = line.trim();
+    if (inBlock) {
+      out.push("");
+      if (t.includes("*/")) inBlock = false;
+    } else if (t.startsWith("/*")) {
+      out.push("");
+      if (!t.includes("*/")) inBlock = true;
+    } else {
+      out.push(t.startsWith("//") ? "" : line);
+    }
+  }
+  return out.join("\n");
+}
+
 export function done() {
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length) {
