@@ -19,9 +19,19 @@ knows nothing about** — and the first message to a freshly spawned member is t
 likely to hit one. The console's `/api/send` is exactly that blind path; nothing here
 routes through it.
 
-> **Dispatch reads `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` per target, delivers on
-> `idle` and `busy`, and refuses on `waiting`, naming the target.** Never a bare Enter
-> into a `waiting` window.
+> **Dispatch establishes readiness per target before writing to any of them, delivers
+> only on a state measured to accept a send, and refuses the rest naming them.** Never
+> a bare Enter into a window holding a dialog.
+
+The table was measured again on Cursor (lab/065) and every row held, including the
+third: a message sent into a pane showing `Run this command?` never reached the model
+and the Enter ran the command. So the hazard is the harness-independent one, and the
+refusal is too — but the *evidence* for it is not. Claude Code publishes a `status`
+the session writes about itself; Cursor publishes nothing, so the evidence there is a
+descriptor our own hooks bracket around the interval a modal can occupy
+(`harness/readiness.py`), with the visible screen kept only as a positive-only
+falsifier over the calls that bracket does not cover. Both answer the same question
+with different authority, which is why `Target.harness` is on the row.
 
 ## Pre-flight is over the whole fan-out, not per target
 
@@ -47,6 +57,15 @@ is the one handle unique per window and stable across the respawn a console recy
 performs. Where the descriptor roster and the live pane list disagree, dispatch refuses
 rather than guesses.
 
+A Cursor member has neither: the harness registers no session anywhere, and its
+`sessionStart` hook deliberately writes no pane (claiming one unconditionally would
+hand the console's read view to a headless probe). So its roster is the control plane
+itself — `panes.room_panes` recovers room, scope and address from the window's own
+start command, which `pin._with_room` put there and which survives `respawn-window`.
+There is no second roster to cross-check against, because the pane *is* the roster
+entry and the address at once; what takes the cross-check's place is that a member
+publishing no readiness we authored is refused, on the same principle.
+
 Confirmation is `updatedAt` advancing on the descriptor. Never `capture-pane`, which
 truncates to the visible height and would report a long reply as no reply.
 
@@ -69,7 +88,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from thalamus.harness import pin, quick
+from thalamus.harness import panes as panes_mod
+from thalamus.harness import pin, quick, readiness
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
@@ -91,6 +111,61 @@ WAITING_STATUS = "waiting"
 
 class DispatchRefused(RuntimeError):
     """The dispatch declined before sending anything. The message is the reason."""
+
+
+# Who established the sender on a row, which is the difference between a boundary
+# decision and a self-report. `process` means the sending session's own environment
+# named it and a mismatch was refused; `operator` means a roomless caller asserted it.
+SENDER_PROCESS = "process"
+SENDER_OPERATOR = "operator"
+
+
+def authenticate(room: str, sender: str = "", *, operator: bool = False,
+                 caller_room: str | None = None,
+                 caller_scope: str | None = None) -> tuple[str, str]:
+    """Establish who is dispatching, from the process rather than the argument.
+
+    Without this the sender is a claim by the caller: `--sender` is a free string, and
+    nothing else in this module asserts the calling process is in the room it is
+    addressing. Both halves of that matter and they fail differently.
+
+    **A member could dispatch into any room whose name it knew.** The config root
+    partitions what a member can *read* — `chats/`, `projects/`, the discovery roster —
+    and a shell command reaches any room by name, so the room was isolated in the
+    direction nobody was walking and open in the direction the collaboration lives.
+
+    **And an unauthenticated sender cannot carry evidence.** `eval/rooms.py` already
+    refuses a peer that parses but is not in the roster, on the grounds that the prefix
+    alone is not membership; a sender nobody established is weaker provenance than the
+    peer it already declines. So the row records *how* the sender was established, and
+    a reader that ever counts these rows has the field it would need to be honest.
+
+    A roomless caller is the operator — the console server is long-lived and in no
+    room, and that is the broadcast path. A caller inside the room it names speaks for
+    itself and may not claim another scope. A caller inside a *different* room is
+    refused, unless it says explicitly that it is acting as the operator.
+    """
+    caller_room = pin.resolve_room() if caller_room is None else caller_room
+    caller_scope = pin.resolve_pin() if caller_scope is None else caller_scope
+
+    if caller_room and caller_room != room and not operator:
+        raise DispatchRefused(
+            f"this session is in room `{caller_room}` and cannot dispatch into room "
+            f"`{room}` — a room's peer channel is the one direction its config root "
+            "does not bound, so it is bounded here. Reach outside the room the way "
+            "every cross-scope exchange is reached: mint a consultation ticket. If "
+            "you are the operator driving this by hand, pass --operator."
+        )
+    if caller_room == room and caller_room:
+        if sender and sender != caller_scope:
+            raise DispatchRefused(
+                f"refusing to dispatch as `{sender}` from a session pinned to "
+                f"`{caller_scope}` — inside a room the sender is established by the "
+                "process, not asserted by the caller, because a row nobody established "
+                "cannot be told apart from one that was"
+            )
+        return caller_scope, SENDER_PROCESS
+    return sender or caller_scope, SENDER_OPERATOR
 
 
 def _now() -> str:
@@ -149,6 +224,11 @@ class Target:
     status: str
     updated_at: int
     refusal: str = ""
+    # Which roster answered for this member. Recorded because the two are not equally
+    # strong: a Claude Code target's status is the session's own report, a Cursor
+    # target's is a reading of its screen, and a row that pooled them would let the
+    # weaker evidence be quoted with the stronger one's authority.
+    harness: str = "claude"
 
     @property
     def deliverable(self) -> bool:
@@ -167,12 +247,125 @@ def preflight(
     config_dir: Path | None = None,
     pins_file: Path | None = None,
     panes: set[str] | None = None,
+    room_panes: list | None = None,
+    status_fn=None,
 ) -> list[Target]:
     """Every addressable member of `room`, each with its verdict already decided.
 
     Reads before it writes anything, which is the property the whole verb rests on:
     the status that must not be written to is knowable without writing to it.
+
+    Two rosters are consulted and their results merged, because a room may hold
+    members of both harnesses and a dispatch that saw only one would announce to half
+    a room while reporting a full fan-out — the precise failure `--partial` exists to
+    make legible. Which roster answered is carried on the target rather than resolved
+    away.
     """
+    return sorted(
+        [
+            *_claude_targets(room, scopes, config_dir=config_dir,
+                             pins_file=pins_file, panes=panes),
+            *_cursor_targets(room, scopes, pins_file=pins_file,
+                             room_panes=room_panes, status_fn=status_fn),
+        ],
+        key=lambda target: (target.scope or target.session_id, target.harness),
+    )
+
+
+def _ledger_session(room: str, scope: str, pins_file: Path | None = None) -> str:
+    """The newest session id the pin ledger has for one member of a room.
+
+    Best-effort, and only ever cosmetic: a Cursor session id is minted by the harness
+    and reaches us through its own `sessionStart` hook, so it is knowable *after* the
+    member starts but is not what the member is addressed by. The address is the pane.
+    Two same-scope members in one room share a lookup key and the newer wins, which is
+    why nothing downstream may key on this.
+    """
+    path = pins_file or PINS_FILE
+    if not path.is_file():
+        return ""
+    found = ""
+    with path.open(errors="ignore") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict) or row.get("event"):
+                continue
+            if row.get("room") == room and row.get("scope") == scope:
+                found = str(row.get("session_id") or "") or found
+    return found
+
+
+def _cursor_targets(
+    room: str,
+    scopes: list[str] | None = None,
+    *,
+    pins_file: Path | None = None,
+    room_panes: list | None = None,
+    status_fn=None,
+) -> list[Target]:
+    """Room members on a harness that registers nothing — addressed by their panes.
+
+    There is no descriptor to disagree with the pane list here, so the cross-check the
+    Claude Code roster performs has nothing to perform: the pane *is* both the roster
+    entry and the address. What replaces it is the readiness read, which is the part
+    that can be wrong — so an unreadable screen is refused exactly like a pane the two
+    Claude Code rosters disagree about.
+    """
+    status_of = status_fn or readiness.pane_status
+    found = room_panes if room_panes is not None else panes_mod.room_panes(room)
+    wanted = set(scopes) if scopes else None
+
+    targets = []
+    for pane in found:
+        if pane.harness != "cursor":
+            continue
+        if wanted is not None and pane.scope not in wanted:
+            continue
+        status = status_of(pane)
+        refusal = ""
+        if status == panes_mod.WAITING:
+            refusal = (
+                "is holding an approval dialog — a send would be discarded and the "
+                "Enter would actuate the highlighted default, approving a tool call "
+                "this dispatch cannot see (measured, lab/065)"
+            )
+        elif status != panes_mod.DELIVERABLE:
+            refusal = (
+                "published no readiness this pre-flight can act on — `room.peer_readiness` "
+                "is unestablished for it, which is what an unarmed hook suite or a "
+                "screen we cannot read looks like from here; refusing rather than "
+                "assuming a member nothing reports modals for is safe to type into"
+            )
+        targets.append(
+            Target(
+                scope=pane.scope,
+                session_id=_ledger_session(room, pane.scope, pins_file),
+                name=pin.room_member_name(room, pane.scope),
+                pane=pane.pane_id,
+                status=status,
+                updated_at=0,
+                refusal=refusal,
+                harness="cursor",
+            )
+        )
+    return targets
+
+
+def _claude_targets(
+    room: str,
+    scopes: list[str] | None = None,
+    *,
+    config_dir: Path | None = None,
+    pins_file: Path | None = None,
+    panes: set[str] | None = None,
+) -> list[Target]:
+    """Room members the harness registered, cross-checked against the pin ledger."""
     root = config_dir or pin.room_config_dir(room)
     sessions = quick.live_sessions(root)
     if scopes:
@@ -310,6 +503,7 @@ def _row(
     fanout: int,
     delivery: Delivery,
     undelivered: list[str],
+    authority: str = SENDER_OPERATOR,
 ) -> dict:
     return {
         "ts": _now(),
@@ -325,6 +519,11 @@ def _row(
         "dispatch_id": handle,
         "fanout": fanout,
         "via": VIA_TMUX,
+        "harness": delivery.target.harness,
+        # How the sender was established, never whether it is plausible. A reader that
+        # pools these rows with `room-boundary` ones needs this to stay honest, and a
+        # reader that does not still learns which broadcasts were the operator's.
+        "sender_authority": authority,
         "sender": sender,
         "preflight_status": delivery.target.status,
         "performed": delivery.performed,
@@ -393,6 +592,7 @@ def dispatch(
     text: str,
     *,
     sender: str = "",
+    operator: bool = False,
     scopes: list[str] | None = None,
     partial: bool = False,
     dry_run: bool = False,
@@ -401,6 +601,8 @@ def dispatch(
     pins_file: Path | None = None,
     guards_dir: Path | None = None,
     panes: set[str] | None = None,
+    room_panes: list | None = None,
+    status_fn=None,
     sender_fn=None,
 ) -> DispatchResult:
     """Pre-flight every member, then deliver — or refuse the whole fan-out.
@@ -411,8 +613,12 @@ def dispatch(
     if not text.strip():
         raise DispatchRefused("nothing to dispatch — an empty message still costs "
                               "every recipient a turn")
+    # Before the roster is even read: who is asking is a precondition for the fan-out
+    # meaning anything, and it is cheaper to refuse than to pre-flight.
+    sender, authority = authenticate(room, sender, operator=operator)
     targets = preflight(
-        room, scopes, config_dir=config_dir, pins_file=pins_file, panes=panes
+        room, scopes, config_dir=config_dir, pins_file=pins_file, panes=panes,
+        room_panes=room_panes, status_fn=status_fn,
     )
     if not targets:
         raise DispatchRefused(
@@ -446,9 +652,14 @@ def dispatch(
             continue
         error = send(target.pane, text, submit)
         delta = 0
-        if not error:
+        if not error and target.harness == "claude":
             # Re-read the descriptor rather than the pane: `capture-pane` truncates to
             # the visible height, so a long reply would read as no reply at all.
+            #
+            # Claude Code only, because only it publishes the descriptor. A Cursor
+            # target's row carries a zero delta, which the field already documents as
+            # "not proof of failure" — the honest reading for a member whose harness
+            # offers nothing to confirm against.
             for session in quick.live_sessions(config_dir or pin.room_config_dir(room)):
                 if session.session_id == target.session_id:
                     delta = max(0, session.updated_at - target.updated_at)
@@ -467,7 +678,8 @@ def dispatch(
     if not dry_run:
         _append_rows(
             [
-                _row(room, sender, handle, len(targets), delivery, undelivered)
+                _row(room, sender, handle, len(targets), delivery, undelivered,
+                     authority)
                 for delivery in deliveries
             ],
             guards_dir,

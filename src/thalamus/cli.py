@@ -194,6 +194,14 @@ def main():
         help="Re-extract sessions that already have claims in the graph",
     )
     extract_parser.add_argument(
+        "--reuse-raw",
+        action="store_true",
+        help="Replay each session's retained model response (~/.thalamus/extractions/) "
+        "instead of calling the model. Recovers a run that was paid for and then lost "
+        "to a parse or validation refusal. Sessions with no retained response are "
+        "skipped, never paid for.",
+    )
+    extract_parser.add_argument(
         "--write",
         action="store_true",
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
@@ -1161,7 +1169,15 @@ def main():
     )
     dispatch_parser.add_argument(
         "--sender", default="",
-        help="Who is dispatching (default: this process's scope)",
+        help="Who is dispatching (default: this process's scope). Inside a room this "
+             "may only name the session's own scope — the sender is established by "
+             "the process there, not asserted",
+    )
+    dispatch_parser.add_argument(
+        "--operator", action="store_true",
+        help="Dispatch into a room this session is not in. Refused by default: a "
+             "member reaching another room is the one direction a room's config root "
+             "does not bound",
     )
     dispatch_parser.add_argument(
         "--partial", action="store_true",
@@ -1549,16 +1565,20 @@ def _cmd_bootstrap(args):
         print("\nDRY RUN — nothing written to the graph. Re-run with --write to persist.")
 
 
+def _retained_raw_path(session_id: str, scope: str) -> Path:
+    return Path.home() / ".thalamus" / "extractions" / f"{scope}-{session_id}.txt"
+
+
 def _retain_raw_extraction(session_id: str, scope: str, text: str) -> Path:
     """Write a model's extraction response to disk before anything validates it.
 
     The response is the expensive artifact — the digest pass is where the money went.
     Retaining it first makes every downstream refusal recoverable by re-parsing rather
-    than re-paying, which is the difference between a bug and an outage.
+    than re-paying, which is the difference between a bug and an outage. `--reuse-raw`
+    is the path that spends the retention: it replays this file instead of the model.
     """
-    out_dir = Path.home() / ".thalamus" / "extractions"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{scope}-{session_id}.txt"
+    path = _retained_raw_path(session_id, scope)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
     return path
 
@@ -1626,7 +1646,7 @@ def _cmd_extract(args):
 
     extracted = skipped = failed = 0
     total_cost = 0.0
-    unpriced = 0
+    unpriced = replayed = 0
 
     # Session selection runs before the graph connection: a run that selects nothing
     # has no reason to open one, and the refusal below stays reachable on a machine
@@ -1697,6 +1717,34 @@ def _cmd_extract(args):
         parsed = [
             f for f in parsed if any(f.session_id.startswith(s) for s in args.session)
         ]
+        # Then the archive, for the named sessions ~/.claude no longer holds. The
+        # harness rotates its own transcripts, which is why they are retained at all
+        # (docs/10) — a recovery that could read only the live dir would still lose a
+        # session to the rotation retention was built to survive. Only for a *named*
+        # session: a sweep of the archive would re-offer the whole distilled corpus,
+        # and only for Claude Code, whose transcript is retained whole where Cursor's
+        # evidence deliberately is not.
+        if not cursor:
+            unmatched = [
+                requested for requested in args.session
+                if not any(f.session_id.startswith(requested) for f in parsed)
+            ]
+            archived = transcripts.archived_transcripts() if unmatched else {}
+            for session_id, path in sorted(archived.items()):
+                if not any(session_id.startswith(r) for r in unmatched):
+                    continue
+                facts = transcripts.parse(path, session_id=session_id)
+                if not facts.has_substance:
+                    insubstantial.append(facts.session_id)
+                    continue
+                if agents.is_sandbox_cwd(facts.cwd):
+                    continue
+                print(
+                    f"  ↺ {session_id[:8]}  recovered from the archive — "
+                    "no longer under ~/.claude/projects"
+                )
+                parsed.append(facts)
+            parsed.sort(key=lambda f: (f.started_at is None, f.started_at))
         # An explicit --session that matches nothing is a failure, not a no-op.
         # This is the SessionEnd hook's own invocation shape, and it runs
         # detached into a log nobody reads: "0 sessions to extract" is
@@ -1722,7 +1770,10 @@ def _cmd_extract(args):
                     "(slash commands only, no tool use) — nothing to distill."
                 )
                 sys.exit(0)
-            where = "the Cursor sessionEnd log" if cursor else ", ".join(args.projects)
+            where = (
+                "the Cursor sessionEnd log" if cursor
+                else f"{', '.join(args.projects)} or the archive"
+            )
             print(
                 f"No session matching {requested} under {where} — nothing distilled.",
                 file=sys.stderr,
@@ -1757,6 +1808,15 @@ def _cmd_extract(args):
                 print(f"  · {name}  already extracted — skipping (--force to redo)")
                 continue
 
+            # A replay is refused before the archive is touched: the flag exists to
+            # recover a run already paid for, so a session with nothing retained is
+            # reported and passed over rather than quietly turned into a live call.
+            retained = _retained_raw_path(facts.session_id, scope) if args.reuse_raw else None
+            if retained is not None and not retained.exists():
+                skipped += 1
+                print(f"  · {name}  no retained response at {retained} — skipping")
+                continue
+
             launched = pin.ledger_facts(facts.session_id)
             room = args.room if args.room is not None else (
                 launched.get("room") or env_room
@@ -1779,24 +1839,34 @@ def _cmd_extract(args):
                 forked_from=forked_from,
             )
 
-            payload = read_archived(entry.content_hash, suffix=".jsonl")
-            digest = extraction.render_digest(payload)
-            prompt = extraction.build_prompt(
-                digest,
-                project=facts.project,
-                title=facts.title or name,
-                open_threads=_open_threads(graph, args.scope, facts.project),
-                known_claims=_known_claims(graph, args.scope, facts.project),
-            )
+            if retained is None:
+                payload = read_archived(entry.content_hash, suffix=".jsonl")
+                digest = extraction.render_digest(payload)
+                prompt = extraction.build_prompt(
+                    digest,
+                    project=facts.project,
+                    title=facts.title or name,
+                    open_threads=_open_threads(graph, args.scope, facts.project),
+                    known_claims=_known_claims(graph, args.scope, facts.project),
+                )
 
             try:
-                run = extraction.run_extraction(
-                    prompt, model=args.model, harness=args.harness
-                )
-                # The paid output lands on disk before anything can reject it. Every
-                # failure below is then re-parseable without re-invoking a model —
-                # the run is spent once, whatever happens to it afterwards.
-                raw_path = _retain_raw_extraction(facts.session_id, scope, run.text)
+                if retained is None:
+                    run = extraction.run_extraction(
+                        prompt, model=args.model, harness=args.harness
+                    )
+                    # The paid output lands on disk before anything can reject it. Every
+                    # failure below is then re-parseable without re-invoking a model —
+                    # the run is spent once, whatever happens to it afterwards.
+                    raw_path = _retain_raw_extraction(facts.session_id, scope, run.text)
+                else:
+                    # $0.00 here is the literal price of this run, not a free model
+                    # call: the money was spent by the run that wrote the file, and a
+                    # replay re-reads it. Everything downstream is unchanged, which is
+                    # the point — a fixed parser or validator gets a second look at the
+                    # same bytes rather than at a differently-worded second answer.
+                    run = extraction.ExtractionRun(text=retained.read_text(), cost_usd=0.0)
+                    raw_path = retained
                 data = extraction.parse_extraction(run.text)
                 # Partial acceptance: one malformed item costs that item, not the
                 # session. Nothing is invented to satisfy a required field.
@@ -1847,7 +1917,11 @@ def _cmd_extract(args):
                     print(f"  ✗ {name}  write failed: {str(e)[:160]}")
                     continue
             extracted += 1
-            priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "  $ ?"
+            if retained is not None:
+                replayed += 1
+                priced = "replay"
+            else:
+                priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "  $ ?"
             print(f"  + {name}  {counts}  {priced}  {session.summary[:48]}")
 
     finally:
@@ -1858,9 +1932,15 @@ def _cmd_extract(args):
     # "$0.00 across N sessions" would read as free rather than as unmeasured, so
     # unpriced runs are counted separately — Cursor's CLI reports no cost fields.
     unpriced_note = f" ({unpriced} unpriced — the CLI reports no cost)" if unpriced else ""
+    # A replay is reported apart from the price for the same reason: its $0.00 is a
+    # bill already paid, not a session that cost nothing to distill.
+    replay_note = (
+        f" ({replayed} replayed from retained responses — paid for on an earlier run)"
+        if replayed else ""
+    )
     print(
         f"\n{extracted} extracted, {skipped} skipped, {failed} failed; "
-        f"model cost ${total_cost:.2f}{unpriced_note}"
+        f"model cost ${total_cost:.2f}{unpriced_note}{replay_note}"
     )
     if not args.write:
         print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")
@@ -2554,6 +2634,7 @@ def _report_capabilities():
     from thalamus.contract.boundaries import check_boundaries
     from thalamus.contract.pinning import check_pinning
     from thalamus.contract.probes import check_capabilities
+    from thalamus.contract.rooms import check_rooms
 
     # Two kinds of declaration, one report. A flag row says what a CLI accepts; a
     # boundary row says what actually binds on a harness — and the second is the one
@@ -2564,6 +2645,11 @@ def _report_capabilities():
              for row, outcome, detail in check_boundaries()]
     rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
              for row, outcome, detail in check_pinning()]
+    # A third subject: what a dispatcher can establish about a member before writing to
+    # it. Kept out of the pinning rows because a pinned session and an addressable room
+    # member are different claims, and the record that carried both reported one wrongly.
+    rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
+             for row, outcome, detail in check_rooms()]
 
     drift = [r for r in rows if r[1] == "drift"]
     malformed = [r for r in rows if r[1] == "malformed"]
@@ -3767,12 +3853,18 @@ def _cmd_ceremony(args, parser):
 
 def _cmd_dispatch(args):
     from thalamus.harness import dispatch as dispatch_mod
-    from thalamus.harness.pin import resolve_pin
 
-    sender = args.sender or resolve_pin()
+    # Deliberately NOT defaulted to `resolve_pin()` here. `dispatch.authenticate`
+    # establishes the sender from the calling process and refuses a member that names
+    # another scope — and it can only tell an assertion from a default if the empty
+    # case reaches it. Resolving a default at this layer made every caller look like
+    # one that had asserted.
     slots = (args.task, args.eligibility, args.bid, args.expires)
+    sender = args.sender
 
     try:
+        sender, _ = dispatch_mod.authenticate(args.room, sender,
+                                              operator=args.operator)
         if any(slots):
             if args.message:
                 print(
@@ -3790,6 +3882,7 @@ def _cmd_dispatch(args):
             args.room,
             text,
             sender=sender,
+            operator=args.operator,
             scopes=args.scopes,
             partial=args.partial,
             dry_run=args.dry_run,

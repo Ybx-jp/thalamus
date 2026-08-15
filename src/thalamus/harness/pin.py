@@ -54,13 +54,37 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 # same way, so an on-demand session in another repo can still consult siblings.
 USER_AGENTS_DIR = Path.home() / ".claude" / "agents"
 
-# Room config dirs. A room's boundary IS its `CLAUDE_CONFIG_DIR`: peer discovery
-# enumerates `$CLAUDE_CONFIG_DIR/sessions/*.json` and name resolution answers from
-# that roster, so members of one room see only each other (lab/045). The location is
-# chosen against the rest of the box — `$HOME` must not move (the pin ledger, archive
-# and logs are anchored there), `~/code` is scanned by the console's spawn
-# picker, and `~/.claude` is swept by the harness's own cleanup.
+# Room config dirs. A room's boundary IS its harness's config root: on Claude Code
+# peer discovery enumerates `$CLAUDE_CONFIG_DIR/sessions/*.json` and name resolution
+# answers from that roster, so members of one room see only each other (lab/045). The
+# location is chosen against the rest of the box — `$HOME` must not move (the pin
+# ledger, archive and logs are anchored there), `~/code` is scanned by the console's
+# spawn picker, and `~/.claude` is swept by the harness's own cleanup.
 ROOMS_DIR = Path.home() / ".thalamus" / "rooms"
+
+# The variable each harness reads its config root from. Declared per harness rather
+# than spelled as one harness's name, because the two do not partition the same set:
+# `CLAUDE_CONFIG_DIR` moves the discovery roster, the transcripts, the settings and
+# the credentials together, while `CURSOR_CONFIG_DIR` moves the config root and the
+# `chats/` transcript store and leaves credentials and hook wiring where they were.
+#
+# Measured 2026-08-13 against cursor/2026.08.11-e8db854 (lab/065): the vendor bundle
+# resolves `CURSOR_CONFIG_DIR` *ahead* of `XDG_CONFIG_HOME`, and `auth.json` is
+# resolved by a different function rooted at `$XDG_CONFIG_HOME/cursor` — so a session
+# under a relocated config root stays logged in, which is why the Cursor arm of
+# `ensure_room` has no credential to provision. `hooks.json` and `mcp.json` resolve
+# from a hardcoded `homedir()/.cursor`, so a Cursor member arms the operator's hooks
+# and MCP servers with nothing linked into the room at all.
+ROOM_CONFIG_VAR: dict[str, str] = {
+    "claude": "CLAUDE_CONFIG_DIR",
+    "cursor": "CURSOR_CONFIG_DIR",
+}
+
+# Where each harness's room root sits under the room's own directory. Claude Code's
+# is the room directory itself — the shape live rooms already have on disk, so adding
+# a second harness moves nothing that exists. A harness whose root is a subdirectory
+# is inert to the other: neither CLI enumerates entries it does not know.
+ROOM_HARNESS_SUBDIR: dict[str, str] = {"claude": "", "cursor": "cursor"}
 
 # The pin ledger the session-start hooks append to — one row per (session, launch),
 # and the only record of a launch decision that outlives the process that made it.
@@ -127,8 +151,15 @@ ROOM_ALLOWLIST = (
 ROOM_COPIED = ".claude.json"
 
 
-def room_config_dir(room: str) -> Path:
-    return ROOMS_DIR / room
+def room_config_dir(room: str, harness: str = "claude") -> Path:
+    """The config root a member of `room` on `harness` runs against.
+
+    Defaulting to Claude Code keeps every existing call site correct and keeps the
+    directory live rooms already occupy exactly where it is.
+    """
+    subdir = ROOM_HARNESS_SUBDIR.get(harness, harness)
+    root = ROOMS_DIR / room
+    return root / subdir if subdir else root
 
 
 def valid_room(room: str) -> bool:
@@ -179,21 +210,22 @@ def host_claude_json(config_dir: Path | None = None) -> Path:
     return config_dir / ROOM_COPIED
 
 
-def ensure_room(room: str, host: Path | None = None) -> Path:
+def ensure_room(room: str, host: Path | None = None, harness: str = "claude") -> Path:
     """Build (or repair) a room's config dir. Idempotent — safe on every launch.
 
     Called from the launchers rather than left to an explicit create step, because
-    the failure it prevents is silent: `CLAUDE_CONFIG_DIR` pointed at a directory
-    that does not exist is not an error the harness reports, it is a member that
-    starts, authenticates as nobody, arms no hooks and distills nowhere. The room
-    is only ever as real as its directory, so the directory is made where the room
-    is entered.
+    the failure it prevents is silent: a config root pointed at a directory that does
+    not exist is not an error the harness reports, it is a member that starts,
+    authenticates as nobody, arms no hooks and distills nowhere. The room is only ever
+    as real as its directory, so the directory is made where the room is entered.
     """
     if not valid_room(room):
         raise ValueError(
             f"invalid room name {room!r}: lowercase letters, digits and hyphens, "
             "starting with a letter or digit"
         )
+    if harness == "cursor":
+        return _ensure_cursor_room(room)
     host = host or host_config_dir()
     creds = host / ".credentials.json"
     if not creds.exists():
@@ -235,6 +267,40 @@ def ensure_room(room: str, host: Path | None = None) -> Path:
 
     _seed_room_settings(config)
     _sync_mcp_servers(config / ROOM_COPIED, host_claude_json(host))
+    return config
+
+
+def _ensure_cursor_room(room: str) -> Path:
+    """A Cursor room is a directory and nothing else — measured, not minimised.
+
+    Every entry Claude Code's arm has to provision is absent here for a reason that
+    was checked live against cursor/2026.08.11-e8db854 (lab/065), and the absences
+    are the interesting part:
+
+    - **No credentials.** `auth.json` is resolved from `$XDG_CONFIG_HOME/cursor`, by a
+      different function than the one `CURSOR_CONFIG_DIR` overrides, so a member under
+      a relocated config root is already logged in. `ensure_room`'s Claude Code arm
+      refuses a launch when `.credentials.json` is missing; there is nothing here to
+      refuse for.
+    - **No hooks, no MCP.** `hooks.json` and `mcp.json` resolve from a hardcoded
+      `homedir()/.cursor`, so a member arms the operator's hooks and servers without
+      a link. The failure `ROOM_LINKED` exists to prevent — a room that arms zero
+      hooks and distills nothing — cannot occur on this harness. Verified rather than
+      reasoned: a session launched under a relocated root wrote its own pin-ledger row,
+      which only the `sessionStart` hook writes.
+    - **No permission seed.** The posture rides the argv (`harness/launcher.py`), which
+      is deliberate: `cli-config.json` is state a session rewrites mid-run through
+      `/config` and `/run-everything`, so a room expressing policy there would be
+      expressing a preference rather than a constraint. A member that stalls at a
+      prompt is caught at dispatch pre-flight instead of pre-empted here.
+
+    What the directory does buy is the one thing that was never in doubt: `chats/`
+    follows the config root, and `chats/` is what `--resume` reads. That is the same
+    cross-read channel `ROOM_OWNED`'s `projects/` exists for, so the boundary is
+    load-bearing even though almost nothing has to be built behind it.
+    """
+    config = room_config_dir(room, "cursor")
+    config.mkdir(parents=True, exist_ok=True)
     return config
 
 
@@ -298,14 +364,30 @@ def rooms() -> list[str]:
     )
 
 
-def _room_env(room: str) -> list[tuple[str, str]]:
-    """The launch variables that put a process in a room, or nothing at all."""
+def _room_env(room: str, harness: str = "claude") -> list[tuple[str, str]]:
+    """The launch variables that put a process in a room, or nothing at all.
+
+    `THALAMUS_ROOM` is ours and reads the same everywhere; the config-root variable
+    is the harness's, and naming the wrong one is silent — a Cursor member handed
+    `CLAUDE_CONFIG_DIR` reads its own default root, joins no room, and looks exactly
+    like a member from every surface that reports one.
+    """
     if not room:
         return []
-    return [("THALAMUS_ROOM", room), ("CLAUDE_CONFIG_DIR", str(room_config_dir(room)))]
+    variable = ROOM_CONFIG_VAR.get(harness)
+    if variable is None:
+        raise ValueError(
+            f"harness `{harness}` declares no config-root variable, so a room cannot "
+            "be spelled for it — add one to ROOM_CONFIG_VAR rather than launching a "
+            "member whose boundary is nothing"
+        )
+    return [
+        ("THALAMUS_ROOM", room),
+        (variable, str(room_config_dir(room, harness))),
+    ]
 
 
-def _room_clear() -> list[str]:
+def _room_clear(harness: str = "claude") -> list[str]:
     """The `env` prefix that states "this window is in no room", explicitly.
 
     Silence is not the same as "no room", because `new-session -e` — unlike
@@ -322,14 +404,20 @@ def _room_clear() -> list[str]:
     `$CLAUDE_CONFIG_DIR/.claude.json`, and `~/.claude/.claude.json` is an empty
     file, so "helpfully" spelling out the default gives the session zero MCP
     servers. An operator's own deliberate override is passed through untouched.
+
+    The variable cleared is the launched harness's own: unsetting Claude Code's in
+    front of a Cursor binary clears nothing that binary reads, and would leave a
+    roomless Cursor window inheriting a room's `CURSOR_CONFIG_DIR` from the session
+    environment — the leak this function exists to stop, one harness over.
     """
-    override = os.environ.get("CLAUDE_CONFIG_DIR", "")
+    variable = ROOM_CONFIG_VAR.get(harness, ROOM_CONFIG_VAR["claude"])
+    override = os.environ.get(variable, "")
     deliberate = override and ROOMS_DIR not in Path(override).expanduser().parents
-    config = ["CLAUDE_CONFIG_DIR=" + override] if deliberate else ["-u", "CLAUDE_CONFIG_DIR"]
+    config = [f"{variable}={override}"] if deliberate else ["-u", variable]
     return ["env", "-u", "THALAMUS_ROOM", *config]
 
 
-def _with_room(argv: list[str], room: str) -> list[str]:
+def _with_room(argv: list[str], room: str, harness: str = "claude") -> list[str]:
     """Carry the room in the window's own argv, not only in its tmux env.
 
     tmux `-e` on `new-window` sets the initial process environment and is *not*
@@ -343,9 +431,9 @@ def _with_room(argv: list[str], room: str) -> list[str]:
     member. `set-environment -g` is not the alternative: it reaches every window
     created without `-e`, which is the shape that has already misfired here once.
     """
-    pairs = _room_env(room)
+    pairs = _room_env(room, harness)
     if not pairs:
-        return [*_room_clear(), *argv]
+        return [*_room_clear(harness), *argv]
     return ["env", *(f"{k}={v}" for k, v in pairs), *argv]
 
 
@@ -574,7 +662,8 @@ def resolve(scope: str, base: Path | None = None) -> ExpertManifest | None:
     return load_manifest(scope, base)  # raises with the available-scopes message
 
 
-def _unleak_session_env(target: str | None, room: str) -> None:
+def _unleak_session_env(target: str | None, room: str,
+                        harness: str = "claude") -> None:
     """Take the room back out of the tmux *session* environment after creating it.
 
     `new-session -e` applies the variables to the first window's process AND stores
@@ -587,7 +676,7 @@ def _unleak_session_env(target: str | None, room: str) -> None:
     """
     if not (target and room):
         return
-    for key, _ in _room_env(room):
+    for key, _ in _room_env(room, harness):
         subprocess.run(["tmux", "set-environment", "-t", target, "-u", key],
                        capture_output=True)
 
@@ -663,9 +752,11 @@ def launch_flags(room: str, scope: str, harness: str = "claude") -> list[str]:
     actually get made from a phone, so a flag missing there is missing where it counts.
 
     `--name` is the address `SendMessage` routes on and the prefix `room-guard.sh`
-    matches, so a solo session has nothing to answer to. It is Claude-Code-only because
-    a room is: Cursor has no peer discovery to partition and no message to guard, so a
-    `--name` there would address nothing (`contract/boundaries.py`).
+    matches, so a solo session has nothing to answer to. It is Claude-Code-only
+    because the *address* is, not because the room is: a Cursor member is addressed
+    by the tmux pane this launcher creates for it, which `window_room` recovers from
+    the window's own start command, so there is no name for a flag to carry
+    (`harness/panes.py`, `contract/boundaries.py`).
 
     The permission mode moved to `harness/launcher.py`, because the two harnesses do
     not merely spell it differently — Cursor's non-stalling flag is `auto` minus the
@@ -734,7 +825,8 @@ def _tmux_windows(target: str | None) -> set[tuple[str, str]]:
 
 
 def _open_window(scope: str, argv: list[str], project_root: Path, target: str | None,
-                 detached: bool = False, room: str = "") -> str:
+                 detached: bool = False, room: str = "",
+                 harness: str = "claude") -> str:
     # detached (-d): don't switch the session's active window. Roster additions run
     # underneath attached clients (/tty, PC attaches), which must not be yanked to
     # the new window; an interactive `thalamus pin` keeps the switch — the operator
@@ -748,11 +840,11 @@ def _open_window(scope: str, argv: list[str], project_root: Path, target: str | 
     # against that id rather than diffing the window list: the id names one window
     # for as long as it exists, while a diff can only ask whether *some* new window
     # is alive — which is the wrong question the moment two things create windows.
-    room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
+    room_flags = [f for k, v in _room_env(room, harness) for f in ("-e", f"{k}={v}")]
     cmd = ["tmux", "new-window", *(["-d"] if detached else []),
            "-P", "-F", "#{window_id}", "-n", scope,
            "-c", str(project_root), "-e", f"THALAMUS_SCOPE={scope}", *room_flags,
-           "--", *_with_room(argv, room)]
+           "--", *_with_room(argv, room, harness)]
     if target:
         cmd[2:2] = ["-t", target]
     # stdout only: tmux's own errors keep going to this process's stderr, where the
@@ -874,7 +966,7 @@ def _pin_window_sizes(target: str | None) -> None:
         subprocess.run(["tmux", "set", "-w", "-t", window_id, "window-size", "manual"])
 
 
-def _entered_room(room: str | None) -> str:
+def _entered_room(room: str | None, harness: str = "claude") -> str:
     """The room this launch enters, provisioned and ready — flag first, env second.
 
     The flag wins because it is the launch decision being made right now, while the
@@ -888,7 +980,7 @@ def _entered_room(room: str | None) -> str:
     """
     room = resolve_room() if room is None else room
     if room:
-        ensure_room(room)
+        ensure_room(room, harness=harness)
     return room
 
 
@@ -928,10 +1020,11 @@ def launch(scope: str, project_root: Path, base: Path | None = None,
     to `env` and `env` to the agent — one extra process, and the price of a pin that
     survives a window recycle.
     """
-    room = _entered_room(room)
+    room = _entered_room(room, harness)
     argv = _session_argv(scope, project_root, base, room, harness)
     if os.environ.get("TMUX"):
-        window_id = _open_window(scope, argv, project_root, target=None, room=room)
+        window_id = _open_window(scope, argv, project_root, target=None, room=room,
+                                 harness=harness)
         confirm_started(window_id, harness)
         _pin_window_sizes(target=None)
         print(f"Pinned window `{scope}`{_in_room(room)} opened: {' '.join(argv)}")
@@ -940,7 +1033,7 @@ def launch(scope: str, project_root: Path, base: Path | None = None,
     # a wrapper process between the terminal and claude would be one more thing the
     # operator can't see from inside the harness.
     os.environ["THALAMUS_SCOPE"] = scope
-    for key, value in _room_env(room):
+    for key, value in _room_env(room, harness):
         os.environ[key] = value
     os.chdir(project_root)
     os.execvp(argv[0], argv)
@@ -966,7 +1059,7 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
 
     from thalamus.harness.launcher import launch_argv
 
-    room = _entered_room(room)
+    room = _entered_room(room, harness)
     manifest = resolve(scope, base)  # validates scope; raises with available-scopes
     persona = None
     if manifest is not None:
@@ -982,19 +1075,19 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
     # is its reference for roster sync. A placeholder there outranks every real
     # session for the life of the tmux server, and `restart` on it types `/exit`
     # into a shell instead of a claude, so the recycle hangs out its whole grace.
-    room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
+    room_flags = [f for k, v in _room_env(room, harness) for f in ("-e", f"{k}={v}")]
     if subprocess.run(["tmux", "has-session", "-t", session],
                       capture_output=True).returncode != 0:
         window_id = subprocess.run(
             ["tmux", "new-session", "-d", "-s", session,
              "-P", "-F", "#{window_id}", "-n", scope,
              "-c", str(cwd), "-e", f"THALAMUS_SCOPE={scope}", *room_flags,
-             "--", *_with_room(argv, room)],
+             "--", *_with_room(argv, room, harness)],
             check=True, stdout=subprocess.PIPE, text=True).stdout.strip()
-        _unleak_session_env(session, room)
+        _unleak_session_env(session, room, harness)
     else:
         window_id = _open_window(scope, argv, cwd, target=session, detached=True,
-                                 room=room)
+                                 room=room, harness=harness)
     # A clean return from tmux is not evidence that anything is running: `new-window`
     # reports success once it has forked, before the command it was given has execed
     # or reached whatever it authenticates against. Confirmed here rather than in any

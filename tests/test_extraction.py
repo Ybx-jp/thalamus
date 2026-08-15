@@ -322,6 +322,28 @@ def test_parse_extraction_repairs_scalars_opening_on_a_reserved_indicator():
     assert claims[3]["description"] == "100% of the budget was spent"
 
 
+def test_parse_extraction_closes_a_quoted_scalar_left_open():
+    # The failure shape from the designer session of 2026-08-14: a long thread
+    # description lost its closing quote, so the scalar ran on and the scanner
+    # failed three lines later at `status:` — the whole extraction was dropped.
+    raw = (
+        "threads:\n"
+        '  - id: "d4v2-lifecycle-ingest-incomplete"\n'
+        '    description: "7 papers were converted but the ingest run was interrupted.\n'
+        '    status: "open"\n'
+        '  - id: "intact"\n'
+        '    description: "a value that closes itself, with an escaped \\" inside"\n'
+        '    status: "open"\n'
+    )
+    threads = extraction.parse_extraction(raw)["threads"]
+    assert threads[0]["description"] == (
+        "7 papers were converted but the ingest run was interrupted."
+    )
+    assert threads[0]["status"] == "open"
+    # An escaped quote is not a terminator and must not make the count come out odd.
+    assert threads[1]["description"] == 'a value that closes itself, with an escaped " inside'
+
+
 def _stage1_graph() -> SessionGraph:
     return SessionGraph(
         session_id="abc-123",

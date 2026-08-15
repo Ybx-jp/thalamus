@@ -85,6 +85,10 @@ instead to **read the node** behind any header that looks adjacent to what you a
 asking — the header is for recognition, the body is the answer, and a header that goes
 unread is how one design came to be derived twice (lab/055).
 
+Name the tool when you tell it, because the obvious one is refused: `memory_query` is
+master-plane and main-pin-only, and the subagent is pinned to the expert. The node comes
+back through `memory_exchanges(read_ticket="<id>")`.
+
 **`memory_consultations` is not that surface, and no round may be built on it.** It
 takes no ticket and confines on `expert == <the calling process's scope>`; a subagent
 voicing an expert shares the *caller's* MCP process, armed `main`, and no Exchange

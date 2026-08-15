@@ -49,22 +49,57 @@ Established by source survey and by live probes against the running stack.
 - **Export takes an `object_id`.** Shapes parented to the page root are inside no frame
   and cannot be exported. Author into an explicit `create_frame` or there is nothing to
   look at.
-- **`font_family` is stored and then ignored. Every text renders in the default.**
-  Measured: `create_text(font_family="worksans")` stores `font-family: worksans` —
-  `get_shape_details` reads it back verbatim — and the exporter emits
-  `font-family: sourcesanspro` with only that `@font-face` declared. Penpot's renderer
-  keys font loading off `font-id`/`font-variant-id`, which no tool writes, so the
-  family string is inert. `sourcesanspro`, `worksans`, `robotomono` and `vazirmatn` are
-  all bundled locally and all unreachable; the 1,910 catalogued Google families need
-  outbound internet *as well as* the missing id. `list_fonts` reads custom team uploads
-  only and returns `[]`.
+- **A font renders only when `font-id` is written. Name the family as Penpot spells
+  it.** Penpot's renderer keys font loading off `font-id`/`font-variant-id`, so a text
+  node carrying `font-family` alone renders in the default — which is why the family
+  string used to be inert. `set_font` and `create_text` now write all three.
 
-  Typography is therefore **not currently a variable this scope controls**, which makes
-  D3's type pairing undeliverable as written and any font choice elsewhere decorative.
-  Do not read a rendered PNG and conclude the font resolved — that inference was made
-  once here and was wrong; the family name renders in a lookalike humanist sans and
-  eyeballing cannot separate them. The check is `export_frame_svg` and reading
-  `font-family` off the text element.
+  Spell the family the way the catalogue does: `set_font(font_family="Work Sans")`,
+  not `"worksans"`. The id is derived as `gfont-` + the family lowercased with spaces
+  hyphenated (`Work Sans` → `gfont-work-sans`), a rule validated against 1719 of the
+  1958 catalogue entries in the shipped frontend bundle with zero mismatches. Pass
+  `font_id` explicitly to override it. `sourcesanspro` is the built-in default and is
+  not a `gfont-` id. Variants are `regular`, `500`, `italic`, `700italic` and so on,
+  via `font_variant_id`.
+
+  The renderer does not fetch Google's domain directly. The `@font-face` block in an
+  exported SVG sources `http://penpot-frontend:8080/internal/gfonts/font/worksans/v24/
+  ....woff2` — the frontend proxies the catalogue, so the outbound hop is the
+  frontend's and not the exporter's. Outbound internet is not the constraint.
+
+  **Nothing can refuse a wrong family.** The catalogue lives in the frontend bundle
+  and no backend or DB surface carries it, so a well-formed id for a family Penpot
+  does not have renders the default with no error. Do not read a rendered PNG and
+  conclude the font resolved — that inference was made once here and was wrong; the
+  family renders in a lookalike humanist sans and eyeballing cannot separate them. The
+  check is `export_frame_svg` and reading `font-family` off the text element — which
+  requires the workspace open below. A resolved family exports as
+  `font-family: "Work Sans"` beside an `@font-face` for it; an unresolved one exports
+  as `sourcesanspro` with no `@font-face`, and that is the difference to read.
+  `list_fonts` reads custom team uploads only and returns `[]`; it is not a catalogue.
+- **A text created through the MCP cannot be exported until the file has been opened
+  once in the Penpot workspace.** `export_frame_svg` and `export_frame_png` return a
+  bare 500 for any frame containing a text shape written by these tools. The exporter
+  log gives the mechanism: `app.renderer.svg fn=:process-text-nodes`, then
+  `locator.screenshot: Timeout 30000ms exceeded — waiting for locator('#screenshot-
+  text-<uuid> foreignObject')`. Text laid out by the frontend carries `position-data`
+  and renders as `<text textLength=...>` (51ms through the same step); text that has
+  never been through the frontend has none, so the exporter falls to the foreignObject
+  branch and waits for an element that never appears.
+
+  **One workspace load fixes the file, not the shape.** Loading it once at the workspace
+  URL fixes it permanently — for the text present at the time *and for every text created
+  afterwards*. Measured both directions on one unmodified frame: 500 before the open,
+  full SVG after, nothing else changed; then measured forward in D5, where the file was
+  opened holding a single probe text and ~30 texts written later all exported without a
+  further open. The frame renders fine the moment its text is deleted, so a 500 on a
+  mixed frame is a text symptom and not a broken file.
+
+  This binds the whole ladder, not just type work: any drill whose artifact carries a
+  label must open the file in the workspace **once, at any point before its first render
+  check** — open early and the rest of the session is free. It also means a PNG or SVG is
+  not obtainable at all for unopened text — there is no degraded output to misread, which
+  is the one mercy in it.
 - **Set style at creation time.** `move_shape` and `resize_shape` write `x`/`y`/`width`/
   `height` without refreshing `selrect` and `points`. The five text-mutation tools
   (`set_font`, `set_font_size`, `set_text_align`, `set_text_style`, `set_text_content`)
@@ -137,6 +172,30 @@ Established by source survey and by live probes against the running stack.
   points push outside its endpoints: apex predicted analytically at y=30
   ((60+3·20+3·20+60)/8), read back `y: 30, height: 30`, where an endpoints-only selrect
   would report height 0. Compute a path's expected extent and assert it (lab/065).
+- **Dash geometry is a stroke-width derivative unless you override it. Pass `dash`
+  and `gap`.** `stroke-style: "dashed"` on its own does not dash at a size — Penpot's
+  `calculate-dasharray` returns `(or dash w+10),(or gap w+10)`, so the pattern is
+  computed from *stroke width* and never from the shape. A 2px stroke dashes at 12,12
+  whatever it is drawn around: on a 16×16 boundary (perimeter ~64) that is 2.7 dashes,
+  which lands as four corner brackets and reads as a crop frame. At 24px icon scale
+  pass `dash=2, gap=2`.
+
+  Requires Penpot ≥ 2.17.0, which added `:stroke-dash`/`:stroke-gap` to
+  `schema:stroke-attrs`; this box runs 2.17.0 exactly. The schema is `:closed true` and
+  types both as numbers, so the fields are omitted when unset rather than sent as null.
+
+  Still unreachable, in every version: **dash offset** (no field anywhere, always 0),
+  **`dotted` and `mixed` geometry** (dash/gap are read only on the `dashed` branch, so
+  those two keep width-derived patterns), and **arbitrary multi-segment dasharrays**
+  (`mixed` is the only multi-segment pattern and its four numbers are fixed by width).
+  Penpot's *plugin* API exposes no dash accessor at all, so `execute_plugin_script` is
+  not a route to this — only the RPC/changes path the MCP already uses.
+
+  Dashing is also the only affordable enclosure at icon scale, which is why this
+  mattered beyond style: against lab/065's ~100px² ink budget a solid 20×16 container
+  plus a node ring costs 173.7px² (1.74× over), while the same boundary dashed at 2,2
+  costs 105.7px² and at 2,3 costs 92.1px² — inside budget. A dashed boundary is roughly
+  half the ink of a solid one.
 - **Round caps are authorable through `modify_shape`, and they survive a read-back.**
   `set_stroke` exposes no cap parameter, but writing the whole `strokes` array reaches
   `stroke-cap-start` / `stroke-cap-end`. Confirmed both in the rendered SVG
@@ -265,6 +324,25 @@ Expected to surface: that a "system" cannot live in Penpot as assets here, becau
 tool writes shared colours or typographies, so the system has to be expressed as
 drawn artefact plus written spec.
 
+Run 2026-08-14 — file `D3 identity board`, spec in `lab/d3-identity-spec.md`, awaiting
+assessment. The prediction held exactly: every colour and typography tool on this MCP
+is a getter, so the system ships as board plus document with nothing but discipline
+linking them.
+
+The point of view came from measurement rather than taste, which is the part worth
+carrying forward. Thalamus already had three identities — the console's chosen palette,
+the viewer's Tailwind defaults, the diagrams' GitHub greys — so the argument became
+*keep what was chosen, retire what was defaulted, invent nothing*. Two findings fell
+out of measuring the shipped console with `thalamus.eval.legibility`:
+
+- **Status is encoded in hue alone.** The console's signal colours sit within 1.13:1 of
+  each other in luminance; `danger` and `muted` are 1.09:1 apart and collapse to the
+  same grey desaturated. The shipped ramp is not even monotonic — `warn` desaturates
+  brighter than `ok`. Corrected to 1.41:1 minimum pairwise, hues preserved. This is a
+  live WCAG 1.4.1 exposure on a shipped surface, and the natural hand-off to `qe`.
+- **`--faint` (`#4d5661`) measures 2.54:1**, below the 3:1 non-text floor. Legal as a
+  hairline, illegal as anything meaning-carrying.
+
 ### D4 — Product UI against a built surface, high ambiguity
 
 *Ambiguity leads. Critique is part of the deliverable.*
@@ -277,6 +355,51 @@ Grades whether the right questions get asked before pixels move, and exercises t
 charter's critique-as-finding boundary. Expected to surface: how much of a design
 decision survives contact with an already-shipped surface.
 
+Run 2026-08-14 — file `D4 console roster`, critique in `lab/d4-roster-critique.md`,
+board PNG at `lab/assets/d4-console-roster.png`, awaiting assessment. The expectation
+was met in the sharpest possible way: **the literature consultation overturned three of
+the eight findings the measurement produced**, and the redesign follows the corrected
+version rather than the intuitive one.
+
+- **Measure the built surface through a scriptable viewport, not a screenshot.**
+  `resize_window` returns success and does nothing when the Chrome window is maximised;
+  the working method is a **same-origin iframe** sized to the phone, which resolves media
+  queries for real and stays scriptable so geometry can be read back. Two of the drill's
+  findings (the identical `title` attributes, the 799 px overflow at full roster) are
+  invisible in an image and exist only because the frame could be queried.
+- **The unit conversion decides the answer, and the wrong anchor gives the reassuring
+  one.** On a mobile viewport 1 CSS px = 1 dp = 1 iOS pt, *not* 1/96 inch. At 96 dpi the
+  shipped 34.4 px target reads 9.10 mm — within 1% of Parhi's recommendation. Correctly,
+  it is **5.46 mm**, about half. Fix the unit before any perceptual argument.
+- **A design measurement can be right and its interpretation still wrong.** Isoluminance
+  was measured correctly and diagnosed backwards: Healey (1996) got seven searchable
+  categories *from a deliberately isoluminant slice*. The real defect is mark **size** —
+  the 8 px dot subtends 0.243°, below the smallest size at which colour difference has
+  been measured at all (Stone & Szafir 2014). "Conditions not met", not "demonstrated
+  defect", and the distinction changed the fix.
+- **The folklore that supported the biggest structural decision does not hold.** There is
+  no controlled experiment measuring whether users know content exists off-screen
+  horizontally, and mobile data contradicts the assumption (72% of visitors advanced a
+  carousel, 7.5 M events). The defensible objection is **depth, not invisibility** — and
+  it condemns this strip anyway, because a roster has no long tail where the first few
+  items dominate. Right conclusion, wrong reason, and the reason mattered.
+
+**Revised as D4v2 2026-08-15 — file `D4v2 console lifecycle`, critique in
+`lab/d4v2-console-lifecycle.md`. Assessed: passed, "a major improvement on D4."** The
+operator's review of D4 named four gaps, and working them exposed a larger one that is
+the finding worth carrying: **D4 redesigned one surface of a console whose session
+information is spread across four, and proposed a vertical session list without noticing
+that a vertical session list already ships, twice.** The correct move was subtraction —
+one row per session carrying its whole life — not a fourth list. The general lesson is
+the A0 step of `ground-in-literature` applied to design: check what the system already
+draws before drawing it again.
+
+Left open by D4v2 and deliberately not carried into D5: the literature expert closed
+ticket `2afeb814ce5f4a49` and *then* reported that three claims in its own closed answer
+are falsified and a fourth overstated. An agent cannot reopen a closed exchange, so the
+graph holds a partly-wrong answer whose corrections live only in the lab file. The expert
+itself recommended a round 3; the operator deferred it to its own session (2026-08-15).
+
 ### D5 — Capstone
 
 *All three axes at maximum, in one piece.*
@@ -286,6 +409,50 @@ the architecture. Near-zero specification.
 
 Grades everything at once and is the only drill where a wrong-but-pretty answer and a
 right-but-ugly answer are both failures.
+
+Run 2026-08-15 — file `D5 memory graph`, spec in `lab/d5-hero-spec.md`, board PNG at
+`lab/assets/d5-memory-graph.png`, awaiting assessment. The picture makes one claim, the
+docs' own: **the boundary is one edge, not a partition between scopes.** Every `Claim` is
+drawn as the same mark, and only the presence of a `CONTAINS` tether separates private
+from shared; `CONTAINS` is the sole saturated colour in the frame. Four findings:
+
+- **The image contains no container, and that is now measured as well as semantic.** The
+  correction being made is a real one — a previous designer session drew this system as
+  seven sealed compartments and was formally overturned
+  (`scope:designer:claim:698ae5fd66f05e8e`). The independent support arrived afterwards:
+  containment-style set drawing measures **65% against ~92%** element-task accuracy and
+  **50% against 85%** on set tasks, on **static images with no interaction** (Wallinger
+  et al., arXiv:2101.08155, n=116). Drawing membership as an enclosing region is the
+  worse encoding, not merely the wrong one here.
+- **The literature refuted the aesthetic the drill is named for, and licensed the
+  routing.** Purchase GD'97 (n=55): crossings dominate (RT F(1,54)=87.98), while
+  **orthogonality is null on both measures** (F=0.00 / 1.44) and **symmetry is not
+  significant for errors** (F=0.09). Symmetry — the thing that makes a graph drawing look
+  beautiful — buys no accuracy, and the orthogonal routing that is every architecture
+  diagram's house style buys nothing either. The board takes both licences: no forced
+  symmetry, curved consultation arcs, and **zero edge crossings by construction**
+  (monotonic nearest-x assignment for the roots, arcs routed above while every tether
+  routes below).
+- **The strongest objection landed against the central device.** The thesis is an
+  *absence* — shared claims are shared because a tether is not there — and the nearest
+  measured evidence says an absence rendered as blank space is under-noticed and readers
+  generalise over it (six studies surveyed in arXiv:2410.03712). Domain is missing values
+  in quantitative charts, so transfer is inference; the response was to state the absence
+  positively in type rather than let the blank speak. Untested, and recorded as a live
+  exposure rather than resolved.
+- **"Survives greyscale" was tested rather than asserted.** The two edge families measure
+  **1.31:1** apart in luminance — *under D3's own declared 1.41:1 floor* — so hue is
+  doing real work. It is not doing it alone: stroke width (2.0 vs 1.2) and disjoint bands
+  carry the distinction, and the degraded render was produced and read. This is the check
+  `p6-degraded-rendering-arm` exists to automate, run once by hand.
+
+Named change: **`docs/visual/related-work.md` gains §6, graph drawing and structural
+diagrams** — the canon this scope needed and did not hold. The designer↔literature
+signature (this scope consults out for its own field, and the expert must go to primary
+sources because neither corpus holds the material) had appeared twice before; §6 exists
+so the fourth such question is a recall rather than a ticket. Also corrected the
+workspace-open instrument fact above: the fix is per **file** and covers text created
+after the open, not only text present at the time.
 
 ## Protocol
 
@@ -322,17 +489,95 @@ drill that produces a deliverable and no change has not been assessed.
    affected; the exposure is confined to attributes that used to be a hard 500. Owner
    is `architect`. The revisit trigger is a drill that actually needs the inheritance.
 
-3. **Dash geometry is not authorable, so dashed strokes are unusable below ~100px.**
-   `stroke-style: "dashed"` renders as a hardcoded `stroke-dasharray: 12, 12` whatever
-   the shape's size. On a 16×16 boundary (perimeter ~64) that is 2.7 dashes, so the
-   form lands as four corner brackets and reads as a crop/scan frame. No dash-length,
-   dash-gap or dash-offset parameter exists on the tool surface, and Penpot's data
-   model carries only the `solid`/`dotted`/`dashed`/`mixed` keyword — so this may need
-   a model change, not just a tool argument. An icon-scale dash wants roughly `2, 2`.
-   Owner is `architect`. Found in D2, where it killed a chosen design (lab/065).
+3. **Dash geometry at icon scale — closed 2026-08-13, fixed in `patches/0003`.** It
+   needed a tool argument, not a model change: Penpot 2.17.0 added `:stroke-dash` and
+   `:stroke-gap` to `schema:stroke-attrs`, and this box runs exactly 2.17.0. `set_stroke`
+   now takes `dash` and `gap`. See the dash instrument fact above for how to author and
+   what is still unreachable.
 
-4. **Whether an editor open reflows a headlessly-configured frame — closed 2026-08-13,
+4. **Typography was unwritable, blocking D3 — closed 2026-08-13, fixed in
+   `patches/0004`.** `build_text_content` emitted `font-family` and never `font-id`, so
+   every text rendered in the default. `text-font-attrs` always carried both; nothing
+   wrote them. `set_font` and `create_text` now do, and D3's type pairing is deliverable.
+   Owner was `architect`. See the font instrument fact above.
+
+   Verified at the render 2026-08-14, not just at the read-back: a Work Sans text
+   exports as `font-family: "Work Sans"` with a matching `@font-face`. The verification
+   is what surfaced defect 6 below, which had to be cleared first to obtain any render
+   of a new text at all.
+
+   This one sat because it was filed as an instrument fact with no owner and no revisit
+   trigger, so nothing tracked it — a defect that blocks a drill belongs here, where it
+   has both, not only in the prose above.
+
+5. **Whether an editor open reflows a headlessly-configured frame — closed 2026-08-13,
    negative.** It does not, and neither does selecting the frame. See the auto-layout
    instrument fact above for the measurement. Nothing is left open here: the layout
    has to be touched in the UI before Penpot recomputes anything, so the assessment
    surface is read-only with respect to child geometry.
+
+6. **A frame containing MCP-written text exports as a bare 500 until the file is opened
+   once in the workspace — open, owner `architect`.** The exporter times out waiting for
+   a `foreignObject` that only appears for text the frontend has laid out; see the
+   instrument fact above for the log line and the two-directional measurement. The
+   workaround is one browser load per file and it holds afterwards, so this blocks
+   nothing today, but every render check on a labelled artifact now depends on a manual
+   step outside the tool surface — which is the kind of dependency the ladder exists to
+   find. Worth architect deciding whether the MCP can write `position-data` itself, or
+   whether the export tools should say this instead of returning a naked 500.
+
+7. **`create_text(font_weight=...)` is inert — the weight never renders. Open, owner
+   `architect`.** Exactly the shape of the defect `patches/0004` just fixed, one field
+   over: Penpot selects a face by `font-variant-id`, and `create_text` writes
+   `font-weight` while leaving the variant at `regular`. A board authored at 500 and 600
+   exported with every weight at 400 and only two `@font-face` blocks. Writing
+   `font-variant-id` through `modify_shape` fixes it and the export then carries four
+   faces — Mono 400/500, Sans 400/600. The tool should derive the variant from
+   `font_weight`, or say it cannot.
+
+8. **`set_font` silently resets font size, fill colour and letter-spacing to defaults.
+   Open, owner `architect`.** Measured on the wordmark: 56px → 16px, `#CDD8E4` →
+   `#000000`, letter-spacing -1 → 0, from a call that named only the family and variant.
+   Black text at 16px on a `#0e1116` board is invisible, so the failure is silent in the
+   worst way — the tool returns success and the artefact looks deleted. The general
+   text-mutation reset hazard was already recorded above; this is the measured case, and
+   the reason every font change on this board went through `modify_shape` with the whole
+   content map restated instead.
+
+9. **`create_text(text_align=...)` is inert — alignment never renders. Open, owner
+   `architect`.** The third instance of the same defect shape as 4 and 7: the value is
+   written to a node the renderer does not read it from. `text-align` is a **paragraph**
+   property in Penpot's content model, and `build_text_content` writes it onto the
+   text-run leaf instead, so every `right`/`center` string is stored, returned intact by
+   `get_shape_details`, and ignored at render. Measured both directions on one shape:
+   left-aligned before, correctly right-aligned after, nothing else changed.
+
+   The fix from the tool surface is `modify_shape` with the whole content map restated
+   and `text-align` set on the `paragraph` node (keeping it on the leaf too is harmless):
+
+   ```
+   {"content": {"type": "root", "children": [{"type": "paragraph-set", "children":
+     [{"type": "paragraph", "text-align": "right", "children": [{...leaf...}]}]}]}}
+   ```
+
+   Worth fixing at the tool because alignment is not cosmetic in a spec board — a
+   right-aligned status column is how a table reads as a table, and the silent failure
+   costs a full render-and-look cycle to notice.
+
+10. **`modify_shape` cannot write `selrect` or `points`, so a frame's geometry is
+    immutable after creation. Open, owner `architect`.** Both are transit-tagged records
+    (`~#rect`, `~#point`); the tool sends plain JSON maps and the backend refuses them:
+
+    ```
+    :code :data-validation, :hint "invalid shape found '<uuid>'"
+    :in [:selrect], :schema [:fn app.common.geom.rect$rect_QMARK_]
+    :value {:x 0, :y 0, :width 2260, :height 1158, ...}
+    ```
+
+    This is the escape hatch's one hard edge, and it has a consequence bigger than the
+    resize: it means the **`move_shape`/`resize_shape` selrect-staleness recorded above
+    cannot be repaired from the tool surface either** — the stale field is exactly the one
+    that cannot be written. Compose at creation time is therefore not a style preference
+    but the only correct method, and a frame sized wrong must be recreated. `set_op`
+    would need the same string→record coercion for these two attributes that
+    `patches/0005` gave keywords.

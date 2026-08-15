@@ -42,6 +42,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote
 
+# Imported at module scope, unlike this module's other Thalamus imports: these two
+# names are re-exported below, and `panes` reaches nothing but the standard library.
+from thalamus.harness import panes
+
 STATIC_DIR = Path(__file__).with_name("static")
 DEFAULT_PORT = 8378
 
@@ -923,35 +927,12 @@ def policy_expected() -> dict[str, tuple[str, ...]]:
     return {h: tuple(capability_argv(h, effective(h))) for h in LAUNCH_SHAPES}
 
 
-# Which harness a window is running, read from the command it was created with. The
-# binary is the only honest signal: `pane_current_command` shows whatever is in the
-# foreground, so a window shelling out reads as `bash` for as long as that lasts.
-HARNESS_BINARIES = {"claude": "claude", "agent": "cursor"}
-
-
-def window_harness(start_command: str) -> str:
-    """The harness a start command launches, or "" if it names none we know.
-
-    Reads the first token that is not part of an `env` prefix. The prefix nests in
-    practice — `pin` wraps a room launch in `env -u …` and the Cursor pin carrier adds
-    its own `env THALAMUS_SCOPE=…` inside that — so this loops rather than stripping one
-    `env`. Anything unrecognized is "" rather than a guess: a wrong harness here would
-    mark a window stale against some other harness's flags.
-    """
-    tokens = start_command.split()
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "env":
-            index += 1
-        elif token == "-u":
-            # `-u NAME` unsets, so the name after it is a bare token, not a NAME=VALUE.
-            index += 2
-        elif "=" in token:
-            index += 1
-        else:
-            return HARNESS_BINARIES.get(os.path.basename(token), "")
-    return ""
+# Reading a harness off a start command is the control plane's own question, and it is
+# now dispatch's too — a Cursor room member is addressed by the pane its start command
+# created. It lives with the rest of that reading in `harness/panes.py`; re-exported
+# here because this module's callers and its tests know it by this name.
+HARNESS_BINARIES = panes.HARNESS_BINARIES
+window_harness = panes.harness_of
 
 
 def _contains_run(tokens: list[str], want: tuple[str, ...]) -> bool:

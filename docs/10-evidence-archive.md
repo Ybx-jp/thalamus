@@ -34,7 +34,11 @@ Reversibility binds the model pass too, on the same argument. The extraction
 response is written to `~/.thalamus/extractions/<scope>-<session>.txt` **before**
 anything validates it, so every downstream refusal is recoverable by re-parsing
 rather than by re-invoking a model — the run is paid for once regardless of what
-rejects it. And a response is accepted *partially*: items are validated one at a
+rejects it. `thalamus extract --reuse-raw` is the path that spends that retention:
+it replays the retained response through the current parser and validators, and
+skips any session that has none rather than falling back to a live call. A replay
+is reported as a replay, never as a model call that happened to cost nothing.
+And a response is accepted *partially*: items are validated one at a
 time and only the malformed ones are dropped, by name, with the reason logged. One
 missing required field used to discard an entire successful extraction. Nothing is
 ever invented to satisfy a required field — a validator is ground truth about
@@ -117,7 +121,11 @@ verified against the hash.
 
 - **Thalamus owns the bytes.** Claude Code rotates and compacts its own transcripts;
   `~/.claude/projects/` is not durable storage, and evidence that can vanish is not
-  evidence.
+  evidence. `extract` selects on that: a named `--session` that the live dir no longer
+  holds is looked up in the archive and distilled from the retained copy, under its own
+  session id rather than the content hash it is filed by. The fallback is for a *named*
+  session only — a sweep of the archive would re-offer the whole distilled corpus — and
+  for Claude Code only, whose transcript is retained whole where Cursor's is not.
 - **Outside the repository, not merely gitignored.** Thalamus is going public, and a
   `.gitignore` is one `git add -f` from a bad day.
 

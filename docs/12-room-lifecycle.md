@@ -597,9 +597,12 @@ The third row is why dispatch pre-flights. A permission prompt or trust dialog t
 blind send into an approval of a tool call the sender knows nothing about, and the first
 message to a freshly spawned member is the most likely to hit it.
 
-> **Dispatch reads `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` per target, delivers on
-> `idle` and `busy`, and refuses on `waiting`, naming the target.** Never a bare Enter
-> into a `waiting` window.
+> **Dispatch establishes readiness per target, delivers on `idle` and `busy`, and
+> refuses on `waiting`, naming the target.** Never a bare Enter into a `waiting` window.
+
+The source of that readiness is per harness: `$CLAUDE_CONFIG_DIR/sessions/<pid>.json`
+on Claude Code, where the session publishes its own `status`, and the hook-bracketed
+descriptor of §Rooms on Cursor where it publishes nothing.
 
 **Built** — `harness/dispatch.py`, `thalamus dispatch <room> [message]` with `--to`,
 `--partial`, `--dry-run` and the four announcement slots. A status outside the measured
@@ -817,52 +820,131 @@ against free-form chat, since the staged systems benchmark only against each oth
 pathology for a self-fork participating in a group it dispatched to; and any measurement of
 read-snapshot isolation helping or hurting agent *collaboration*.
 
-## What a room would need on Cursor
+## Rooms on Cursor
 
-Measured 2026-08-10 against a live Cursor CLI (`2026.08.04-aaa8809`, lab/054), while
-none of this design is built. Recorded as findings; the build-or-not decision is
-open, and none of the three channels below has been designed for.
+Built, and measured end to end on 2026-08-13 against `cursor/2026.08.11-e8db854`
+(lab/065): a member was launched into a room, addressed, delivered to, and refused
+when it was not safe to write to. What follows is what each channel turned out to be,
+because three of the four are not what the earlier reading of this harness expected.
 
-**The boundary channel ports.** `XDG_CONFIG_HOME` moves Cursor's config root to
-`$XDG_CONFIG_HOME/cursor/` without moving `$HOME`, and `HOME` moves it too. Both
-then report `Not logged in`, so credentials follow the root and a room would have to
-provision them — the same obligation `ensure_room` already carries for
-`.credentials.json` on Claude Code.
+**The boundary is `CURSOR_CONFIG_DIR`, and it partitions the thing that matters.**
+The vendor bundle resolves it *ahead* of `XDG_CONFIG_HOME`, so it is a first-class
+config root and not a side effect of moving a generic one. Verified live: setting it
+relocates `cli-config.json` and the **`chats/` transcript store**, which is what
+`--resume` reads — the same cross-read channel `ROOM_OWNED`'s `projects/` exists to
+close on Claude Code. So the boundary is load-bearing here for exactly the reason it
+is there.
 
-**The discovery channel has nothing behind it.** A room partitions the roster because
-peer discovery enumerates `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` and reads each
-descriptor's `messagingSocketPath`. **Cursor writes no `sessions/` directory at
-all**, and `~/.cursor/agent-cli-state.json` is two fields of global state. So moving
-the config root partitions a roster that does not exist: the structural boundary
-doing the real work on Claude Code has no Cursor referent, rather than a weaker one.
+**A Cursor room provisions almost nothing, and each absence was checked.**
+`auth.json` is resolved by a different function rooted at `$XDG_CONFIG_HOME/cursor`,
+so a member under a relocated root is still logged in — there is no credential to
+provision and nothing to refuse a launch over. `hooks.json` and `mcp.json` resolve
+from a hardcoded `homedir()/.cursor`, so a member arms the operator's hooks and MCP
+servers with nothing linked; verified by a session under a relocated root writing its
+own pin-ledger row, which only the `sessionStart` hook writes. The failure
+`ROOM_LINKED` exists to prevent — a room that arms zero hooks and distills nothing —
+cannot occur on this harness.
 
-**The delivery channel does not port.** There is no `--name` and no peer-messaging
-surface, so members cannot be addressed. The room guard's roommate pattern matches a
-name the launcher gives; without names it has no allow-path.
+**Discovery is the control plane, not the harness.** Cursor registers no session
+anywhere, so there is no `sessions/` roster to partition. What replaces it is that
+every pinned window carries its room and scope in its **own start command**, which
+`#{pane_start_command}` renders back and which survives the `respawn-window` a console
+recycle runs. `harness/panes.py` reads membership, scope, harness and address off that.
+The substitute is weaker in one way and stronger in another, and both are worth
+holding: a descriptor is written by the *session* and proves one exists, while a start
+command is written by the *launcher* and proves only that a window was made to hold one
+— so liveness is asked of the pane rather than inferred. Against that, it needs no
+cooperation from the harness at all, which is why it answers for `main`, the member the
+descriptor roster has never been able to address.
+
+**Delivery is `tmux send-keys`, and the three-row table above holds unchanged.**
+Measured on a live TUI: `send-keys -l` followed by `Enter` composed and submitted a
+prompt. The third row was measured by doing it — a message sent into a pane showing
+`Run this command?` never reached the model, and the Enter actuated `→ Run (once)` and
+ran the command. The hazard is harness-independent; the *evidence* for it is not.
+Claude Code publishes a `status` the session writes about itself; Cursor publishes
+nothing, so the evidence there is one we author, and `Target.harness` carries which
+roster answered so the weaker reading is never quoted with the stronger one's
+authority.
+
+**Readiness on Cursor is a bracket between two of our own hook events.**
+`beforeShellExecution` writes `pending` into a descriptor and `afterShellExecution`
+writes `ready`, with the MCP pair doing the same for tool calls; the interval between
+them is the interval in which an approval modal can be up. It is a bracket only because
+the opening event *precedes* the modal, which is measured rather than inferred — a
+probe hook logged at 11:01:15 with the modal still unanswered at 11:01:20. A member's
+descriptor is keyed by `(room, scope)`, which is what the writer has from its own
+environment and what the pane roster recovers from the window's start command, so
+neither half has to guess the other's pane.
+
+**Absence refuses, and the coverage gap is stated rather than discovered.** A member
+publishing no descriptor is unaddressable — that is precisely the member whose modals
+nothing would report, and reading a missing record as "probably idle" would invert the
+one guarantee the mechanism provides. The bracket covers shell and MCP calls only; a
+workspace-trust dialog, a model picker or a file-write approval falls outside it, and
+`room.peer_readiness` on cursor says so in the row rather than leaving a reader to find
+out. Partial coverage on a safety gate is the shape that hid an earlier failure, so it
+is enumerated.
+
+**The screen read is retained in the one direction it is sound.** A `ready` descriptor
+is confirmed against the pane before a send, so an unbracketed modal that happens to be
+visible still refuses; a clean screen can never clear a `pending` or supply a missing
+descriptor. That asymmetry is what makes `capture-pane` admissible here at all — it is
+a one-directional falsifier, since seeing a modal proves `waiting` while not seeing one
+proves nothing, and the same truncation that makes it wrong for confirming a reply can
+hide a dialog below the fold. Its discriminator is the *dialog* rather than the ready
+state: Cursor's footer carries the selected model's name (`Composer 2.5`, `Auto`, …),
+so anchoring on the ready state would change meaning when an operator switches models,
+while an approval dialog is structural — a highlighted `→` option carrying a keyboard
+hotkey, which no ready screen draws.
+
+**The delivery gate is readiness, not the roster.** `room.peer_delivery` may be
+PROVIDED only where `room.peer_readiness` is (`contract/rooms.py`), and the three
+capabilities Claude Code ships fused in `sessions/<pid>.json` — identity, liveness,
+readiness — are three rows because they are separable and one of them can die alone. A
+gate on the *roster* would pass the moment tmux supplied one while the hazard it was
+protecting against stood untouched, and dispatch's refusal names the row so an operator
+is not told to relaunch members that are running fine.
+
+**The peer channel is guarded on the command, because that is where it lives now.**
+`room-guard.sh` matches the `SendMessage` tool name; Cursor has no such tool, and on
+both harnesses the peer channel outgrew a tool matcher anyway — `tmux send-keys`
+reaches any pane on the box and `thalamus dispatch` addresses a room by name, and both
+are Bash. `room-command-guard.sh` binds on `PreToolUse:Bash` and, through an adapter,
+on Cursor's `beforeShellExecution`, which was measured to fire **before** the approval
+modal so a denial lands ahead of the prompt rather than racing it.
+
+Two rules, and they are not equally strong. Addressing a room by name is checked
+against *this session's own room*, fail-closed: a command naming no room it is allowed
+to name is refused rather than parsed, because the room positional cannot be reliably
+extracted from a shell string. The raw transport is blocked outright — there is no
+"to my own room" form of `send-keys` worth allowing, since the sanctioned channel
+pre-flights and writes a row and a raw send does neither. That rule matches the
+**verb** rather than the binary's spelling, because unlike the addressing rules it has
+no second line behind it: a raw send never reaches `dispatch`, so nothing else can
+refuse it.
+
+**The boundary is the verb; the guard is defence-in-depth.** `dispatch.authenticate`
+establishes the sender from the calling process — a member may not name another scope,
+and a member dispatching into a room it is not in is refused unless the caller says
+explicitly that it is the operator. That check reads data the caller cannot author,
+which a command-string matcher never can: a determined member can evade a grep with a
+variable. Both exist because they fail differently, and the guard's value is that the
+ordinary reach-out fails loudly, in the ledger, at the moment it is attempted.
+
+**A dispatch row is still not a room edge.** Authentication makes the sender
+establishable, and the row now records *how* it was established (`sender_authority`:
+`process` or `operator`) — but a dispatch remains a different construct from a peer
+message. It is a broadcast with no single target, and on Cursor it is the entire
+collaboration vocabulary rather than an escalation from a cheaper channel, so one edge
+would mean different things on the two harnesses and the number would not say so.
+`eval/rooms.py` keeps counting only `branch: roommate` passes; the guard's own
+`peer-command` passes are deliberately not edges either, for the same reason.
 
 **The resumption channel ports, and means something different.** Cursor has
 `--resume [chatId]` and `create-chat`, but `--resume` continues the parent chat
 rather than forking it, so the quick protocol's delta-only distillation — an exact
 set difference over message UUIDs — has no Cursor analogue in this shape.
-
-The live-measured consequence for what a Cursor room could be: **isolation without
-addressing.** The lab/048 hazard that shape invites is the *inverse* of the obvious
-one, and the difference decides what to build. A Cursor room does not produce a
-falsely-labelled treatment: `hooks/cursor/session-start.sh` writes
-`{session_id, scope, cwd, ts}` and **no `room`** (against
-`hooks/claude-code/session-start.sh`, which resolves one), so a Cursor member stamps no
-room provenance; and ceremony rows come from an explicit `thalamus ceremony` verb, not
-from a member's lifecycle, so they exist only where someone writes them. A Cursor room
-is therefore **invisible rather than mislabelled** — it cannot be counted as a room arm,
-which also means it cannot be excluded as a failed one. That argues for more capture,
-not for refusing to launch one. `thalamus dispatch` is the same story from the other
-end: it resolves panes through the pin ledger's `tmux_pane`, which the Cursor
-session-start hook does not write, so a Cursor member is undispatchable by the same
-absence that makes it uncountable.
-
-Independently of that decision, `pin.py:246` returns a hardcoded
-`("CLAUDE_CONFIG_DIR", …)` pair, so the room's boundary is spelled as one harness's
-variable rather than declared as a capability.
 
 ## Open questions
 

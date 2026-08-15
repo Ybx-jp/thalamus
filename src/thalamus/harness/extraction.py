@@ -569,6 +569,34 @@ def _requote_scalars(raw: str) -> str:
     return "\n".join(lines)
 
 
+def _close_unterminated_quotes(raw: str) -> str:
+    """Close a double-quoted scalar the model left open at end of line.
+
+    A long value emitted without its closing quote does not fail on its own line —
+    the scalar runs on and swallows following lines until the next `"`, so the
+    scanner reports a block-mapping error several lines down and the whole document
+    is lost. Every quoted value in the extraction schema is single-line, so a keyed
+    line that opens a quote and ends with an odd number of unescaped ones is missing
+    exactly one, and appending it recovers the value the model meant to write.
+    """
+    lines = []
+    for line in raw.splitlines():
+        match = _KEYED_LINE_RE.match(line)
+        if match and match.group(2).startswith('"'):
+            value, escaped, quotes = match.group(2), False, 0
+            for ch in value:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    quotes += 1
+            if quotes % 2:
+                line = match.group(1) + value + '"'
+        lines.append(line)
+    return "\n".join(lines)
+
+
 _VALID_ESCAPES = set('"\\/bfnrtu0abevNLP_ \t\n\rx')
 
 
@@ -608,7 +636,9 @@ def parse_extraction(text: str) -> dict:
     raw = match.group(1) if match else text
     data = None
     for repair in (lambda s: s, _requote_scalars, _repair_escapes,
-                   lambda s: _repair_escapes(_requote_scalars(s))):
+                   lambda s: _repair_escapes(_requote_scalars(s)),
+                   _close_unterminated_quotes,
+                   lambda s: _repair_escapes(_requote_scalars(_close_unterminated_quotes(s)))):
         try:
             data = yaml.safe_load(repair(raw))
             break

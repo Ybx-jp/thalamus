@@ -41,8 +41,20 @@ services:
   # with `upstream penpot-backend` / `penpot-exporter` hardcoded. Without the
   # aliases nginx dies at startup with "host not found in upstream" and the
   # frontend restart-loops while every other container looks healthy.
+  #
+  # The three penpot images are pinned, not floating, because the patches encode
+  # assumptions about Penpot's schema and `:latest` moves that schema with no local
+  # change. `patches/0003` needs >= 2.17.0 — the release that added `:stroke-dash`
+  # and `:stroke-gap` to `schema:stroke-attrs`. Below that floor the map is
+  # `:closed true` without those keys and a dashed stroke carrying dash geometry is
+  # refused by validate-shape.
+  #
+  # Upgrading is deliberate: bump all three together, then re-run the patch build,
+  # which fails loudly on any hunk that no longer matches. Verify a running
+  # container with:
+  #   docker --context default exec penpot-frontend-1 cat /var/www/app/version.txt
   frontend:
-    image: penpotapp/frontend:latest
+    image: penpotapp/frontend:2.17.0
     restart: unless-stopped
     mem_limit: 256m
     depends_on:
@@ -57,7 +69,7 @@ services:
       PENPOT_FLAGS: "$PENPOT_FLAGS"
 
   backend:
-    image: penpotapp/backend:latest
+    image: penpotapp/backend:2.17.0
     restart: unless-stopped
     # The JVM. Measured Penpot guidance puts steady state well under this; the
     # limit exists so a runaway cannot reach the host, not as a tuning target.
@@ -88,7 +100,7 @@ services:
       PENPOT_TELEMETRY_ENABLED: "false"
 
   exporter:
-    image: penpotapp/exporter:latest
+    image: penpotapp/exporter:2.17.0
     restart: unless-stopped
     # Headless Chromium. This is the container homelab named as the one that
     # spikes during large exports, and the reason every service here is capped.
@@ -149,7 +161,10 @@ services:
       # byte-identical to the pinned commit, so the README's `git clone && git
       # checkout <pin>` remains the whole install and a re-clone destroys nothing.
       # `patch -F0` refuses any fuzz, so if the pin ever moves and a hunk no longer
-      # matches, the build fails loudly instead of producing a half-fixed image.
+      # matches, that patch fails. `set -e` on the loop is what turns that into a
+      # failed build: a `for` loop's status is its LAST iteration's, so without it a
+      # broken 0001 followed by a clean 0002 exits 0 and ships a half-patched image
+      # with a silent `.rej` on disk. Both are load-bearing; -F0 alone does not catch it.
       additional_contexts:
         patches: ./patches
       # Upstream's own Dockerfile, plus one constraint, inline so it survives a
@@ -169,7 +184,7 @@ services:
             && uv sync --no-dev --no-install-project
         COPY src/ src/
         COPY --from=patches . /patches/
-        RUN for p in /patches/*.patch; do patch -p1 -F0 --no-backup-if-mismatch < "$$p"; done
+        RUN set -e; for p in /patches/*.patch; do patch -p1 -F0 --no-backup-if-mismatch < "$$p"; done
         RUN uv sync --no-dev
         EXPOSE 8787
         # The venv entrypoint, not `uv run`: `uv run` re-syncs at every container

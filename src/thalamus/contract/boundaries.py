@@ -128,9 +128,11 @@ _WIRED = Evidence(
     reask="free",
 )
 
-# One live session, one build, one mode. Everything the Cursor rows rest on was taken
-# under `agent -p --trust`; interactive Cursor remains unobserved, and a probe is
-# sound as a falsifier and unsound as a generalizer (probes.py).
+# One build, and not one mode any more: the write and capability rows were taken under
+# `agent -p --trust`, while the room row rests on a real interactive session driven in
+# tmux. The conditions tuple on each row is what says which, and it matters because a
+# probe is sound as a falsifier and unsound as a generalizer (probes.py) — a headless
+# run cannot observe a modal, which is the whole subject of the room row.
 _CURSOR_LIVE = "cursor/2026.08.11-e8db854"
 _CURSOR_COND = (Condition.PARSE, Condition.PRINT)
 
@@ -165,9 +167,13 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
     ),
     BoundaryRow(
         "room_boundary.message", "claude", Provision.PROVIDED, _WIRED,
-        "room-guard.sh on `SendMessage`. It was once declared here and never armed, "
-        "so every room reported a treatment that had not occurred (lab/056) — which "
-        "is why this row is recomputed rather than believed.",
+        "Two channels, two matchers: `room-guard.sh` on `SendMessage`, and "
+        "`room-command-guard.sh` on `Bash` for the peer traffic a tool name cannot "
+        "see — `tmux send-keys` reaches any pane on the box, and `thalamus dispatch` "
+        "addresses a room by name from a shell. The free re-ask below checks the "
+        "first; it was once declared here and never armed, so every room reported a "
+        "treatment that had not occurred (lab/056), which is why this row is "
+        "recomputed rather than believed.",
     ),
     BoundaryRow(
         "write_boundary.path", "cursor", Provision.NATIVE,
@@ -222,19 +228,28 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "standing trade is that a false positive teaches route-around.",
     ),
     BoundaryRow(
-        "room_boundary.message", "cursor", Provision.ABSENT,
+        "room_boundary.message", "cursor", Provision.PROVIDED,
         Evidence(
             kind="live-session",
-            at="2026-08-10",
-            where="docs/12: Cursor writes no `sessions/` directory, so there is no "
-                  "peer discovery to partition, and a Cursor member writes no "
-                  "`tmux_pane` and is undispatchable (lab/054)",
-            verified_against="cursor/2026.08.04-aaa8809",
-            conditions=(Condition.PARSE, Condition.PRINT),
+            at="2026-08-13",
+            where="a `qe`-pinned Cursor member of room `probe` was asked to run "
+                  "`tmux send-keys -t %0 hello`; the command did not run, the guard's "
+                  "own prose reached the model verbatim, and a `room-boundary` block "
+                  "row with `branch: raw-transport` landed in `~/.thalamus/guards/` "
+                  "(lab/065)",
+            verified_against="cursor/2026.08.11-e8db854",
+            conditions=(Condition.PARSE, Condition.PRINT, Condition.INTERACTIVE),
             reask="live-session",
         ),
-        "No addressable peer, so no message to guard. Isolation without addressing "
-        "is the solo arm with extra directories.",
+        "Through `room-command-guard.sh` on `beforeShellExecution`, not a port of "
+        "`room-guard.sh`: that one matches the `SendMessage` tool name and Cursor has "
+        "no such tool, so peer traffic here is a shell command or it is nothing. The "
+        "guard is defence-in-depth over `dispatch.authenticate`, which establishes "
+        "the sender from the calling process — a command-string matcher can be evaded "
+        "by a determined member, and the check inside the verb reads data the caller "
+        "cannot author. The one rule with no second line behind it is the raw "
+        "transport: `send-keys` never reaches the verb, so the guard is the whole "
+        "boundary there and matches the verb rather than the binary's spelling.",
     ),
 )
 
