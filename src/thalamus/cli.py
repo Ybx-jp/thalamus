@@ -194,6 +194,14 @@ def main():
         help="Re-extract sessions that already have claims in the graph",
     )
     extract_parser.add_argument(
+        "--reuse-raw",
+        action="store_true",
+        help="Replay each session's retained model response (~/.thalamus/extractions/) "
+        "instead of calling the model. Recovers a run that was paid for and then lost "
+        "to a parse or validation refusal. Sessions with no retained response are "
+        "skipped, never paid for.",
+    )
+    extract_parser.add_argument(
         "--write",
         action="store_true",
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
@@ -1557,16 +1565,20 @@ def _cmd_bootstrap(args):
         print("\nDRY RUN — nothing written to the graph. Re-run with --write to persist.")
 
 
+def _retained_raw_path(session_id: str, scope: str) -> Path:
+    return Path.home() / ".thalamus" / "extractions" / f"{scope}-{session_id}.txt"
+
+
 def _retain_raw_extraction(session_id: str, scope: str, text: str) -> Path:
     """Write a model's extraction response to disk before anything validates it.
 
     The response is the expensive artifact — the digest pass is where the money went.
     Retaining it first makes every downstream refusal recoverable by re-parsing rather
-    than re-paying, which is the difference between a bug and an outage.
+    than re-paying, which is the difference between a bug and an outage. `--reuse-raw`
+    is the path that spends the retention: it replays this file instead of the model.
     """
-    out_dir = Path.home() / ".thalamus" / "extractions"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{scope}-{session_id}.txt"
+    path = _retained_raw_path(session_id, scope)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
     return path
 
@@ -1634,7 +1646,7 @@ def _cmd_extract(args):
 
     extracted = skipped = failed = 0
     total_cost = 0.0
-    unpriced = 0
+    unpriced = replayed = 0
 
     # Session selection runs before the graph connection: a run that selects nothing
     # has no reason to open one, and the refusal below stays reachable on a machine
@@ -1765,6 +1777,15 @@ def _cmd_extract(args):
                 print(f"  · {name}  already extracted — skipping (--force to redo)")
                 continue
 
+            # A replay is refused before the archive is touched: the flag exists to
+            # recover a run already paid for, so a session with nothing retained is
+            # reported and passed over rather than quietly turned into a live call.
+            retained = _retained_raw_path(facts.session_id, scope) if args.reuse_raw else None
+            if retained is not None and not retained.exists():
+                skipped += 1
+                print(f"  · {name}  no retained response at {retained} — skipping")
+                continue
+
             launched = pin.ledger_facts(facts.session_id)
             room = args.room if args.room is not None else (
                 launched.get("room") or env_room
@@ -1787,24 +1808,34 @@ def _cmd_extract(args):
                 forked_from=forked_from,
             )
 
-            payload = read_archived(entry.content_hash, suffix=".jsonl")
-            digest = extraction.render_digest(payload)
-            prompt = extraction.build_prompt(
-                digest,
-                project=facts.project,
-                title=facts.title or name,
-                open_threads=_open_threads(graph, args.scope, facts.project),
-                known_claims=_known_claims(graph, args.scope, facts.project),
-            )
+            if retained is None:
+                payload = read_archived(entry.content_hash, suffix=".jsonl")
+                digest = extraction.render_digest(payload)
+                prompt = extraction.build_prompt(
+                    digest,
+                    project=facts.project,
+                    title=facts.title or name,
+                    open_threads=_open_threads(graph, args.scope, facts.project),
+                    known_claims=_known_claims(graph, args.scope, facts.project),
+                )
 
             try:
-                run = extraction.run_extraction(
-                    prompt, model=args.model, harness=args.harness
-                )
-                # The paid output lands on disk before anything can reject it. Every
-                # failure below is then re-parseable without re-invoking a model —
-                # the run is spent once, whatever happens to it afterwards.
-                raw_path = _retain_raw_extraction(facts.session_id, scope, run.text)
+                if retained is None:
+                    run = extraction.run_extraction(
+                        prompt, model=args.model, harness=args.harness
+                    )
+                    # The paid output lands on disk before anything can reject it. Every
+                    # failure below is then re-parseable without re-invoking a model —
+                    # the run is spent once, whatever happens to it afterwards.
+                    raw_path = _retain_raw_extraction(facts.session_id, scope, run.text)
+                else:
+                    # $0.00 here is the literal price of this run, not a free model
+                    # call: the money was spent by the run that wrote the file, and a
+                    # replay re-reads it. Everything downstream is unchanged, which is
+                    # the point — a fixed parser or validator gets a second look at the
+                    # same bytes rather than at a differently-worded second answer.
+                    run = extraction.ExtractionRun(text=retained.read_text(), cost_usd=0.0)
+                    raw_path = retained
                 data = extraction.parse_extraction(run.text)
                 # Partial acceptance: one malformed item costs that item, not the
                 # session. Nothing is invented to satisfy a required field.
@@ -1855,7 +1886,11 @@ def _cmd_extract(args):
                     print(f"  ✗ {name}  write failed: {str(e)[:160]}")
                     continue
             extracted += 1
-            priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "  $ ?"
+            if retained is not None:
+                replayed += 1
+                priced = "replay"
+            else:
+                priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "  $ ?"
             print(f"  + {name}  {counts}  {priced}  {session.summary[:48]}")
 
     finally:
@@ -1866,9 +1901,15 @@ def _cmd_extract(args):
     # "$0.00 across N sessions" would read as free rather than as unmeasured, so
     # unpriced runs are counted separately — Cursor's CLI reports no cost fields.
     unpriced_note = f" ({unpriced} unpriced — the CLI reports no cost)" if unpriced else ""
+    # A replay is reported apart from the price for the same reason: its $0.00 is a
+    # bill already paid, not a session that cost nothing to distill.
+    replay_note = (
+        f" ({replayed} replayed from retained responses — paid for on an earlier run)"
+        if replayed else ""
+    )
     print(
         f"\n{extracted} extracted, {skipped} skipped, {failed} failed; "
-        f"model cost ${total_cost:.2f}{unpriced_note}"
+        f"model cost ${total_cost:.2f}{unpriced_note}{replay_note}"
     )
     if not args.write:
         print("DRY RUN — nothing written to the graph. Re-run with --write to persist.")

@@ -246,3 +246,142 @@ def test_extract_reports_a_withheld_session_as_skipped_not_missing(monkeypatch, 
     assert "no substantive exchange" in captured.out
     assert "cccc3333" in captured.out
     assert "No session matching" not in captured.err
+
+
+def _extract_fakes(monkeypatch, tmp_path, session_ids):
+    """Stand up `thalamus extract`'s surroundings: transcripts, archive, graph."""
+    from datetime import datetime
+    from pathlib import Path
+
+    from thalamus.harness import pin, transcripts
+    from thalamus.substrate.schema import (
+        Artifact, ArtifactType, SessionGraph, Source, Tool, Touch,
+    )
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(
+        transcripts, "discover",
+        lambda *a, **k: {"-proj": [Path(f"/nope/{sid}.jsonl") for sid in session_ids]},
+    )
+    monkeypatch.setattr(
+        transcripts, "parse",
+        lambda path: SimpleNamespace(
+            session_id=path.stem,
+            user_turns=4,
+            has_substance=True,
+            cwd="/home/someone/code/chartgen",
+            started_at=f"2026-08-14T0{session_ids.index(path.stem)}:00:00",
+            path=path,
+            project="chartgen",
+            title="Fix the governor",
+            external_texts=[],
+            ingress_verifiable=True,
+        ),
+    )
+    monkeypatch.setattr(
+        transcripts, "retain",
+        lambda path: (
+            SimpleNamespace(
+                content_hash="f" * 64, uri="archive://" + "f" * 64, byte_size=1234
+            ),
+            None,
+        ),
+    )
+    monkeypatch.setattr(transcripts, "retain_ingress_receipt", lambda facts: None)
+    monkeypatch.setattr(
+        transcripts, "to_session_graph",
+        lambda facts, **kw: SessionGraph(
+            session_id=facts.session_id,
+            timestamp=datetime(2026, 8, 14, 10, 0),
+            tool=Tool.CLAUDE_CODE,
+            scope=kw["scope"],
+            project=facts.project,
+            summary="Fix the governor",
+            sources=[
+                Source(
+                    content_hash="f" * 64,
+                    title="Fix the governor",
+                    uri="archive://" + "f" * 64,
+                )
+            ],
+            artifacts=[Artifact(identifier="src/governor.py", type=ArtifactType.FILE)],
+            touched=[Touch(identifier="src/governor.py", anchors=["a1"])],
+        ),
+    )
+    monkeypatch.setattr(pin, "ledger_facts", lambda sid: {})
+    monkeypatch.setattr(cli, "connect", lambda url: SimpleNamespace(name="graph"))
+    monkeypatch.setattr(cli, "close_connection", lambda graph: None)
+    monkeypatch.setattr(cli, "_session_has_claims", lambda graph, vid: False)
+
+    def unexpected_model_call(*a, **k):
+        raise AssertionError("--reuse-raw must not invoke the model")
+
+    monkeypatch.setattr(cli.extraction, "run_extraction", unexpected_model_call)
+
+    return SimpleNamespace(
+        harness="claude",
+        projects=["-proj"],
+        projects_dir=None,
+        session=[],
+        scope="main",
+        model=None,
+        limit=0,
+        force=False,
+        write=False,
+        reuse_raw=True,
+        room=None,
+        forked_from=None,
+        url="ws://unused/gremlin",
+    )
+
+
+def test_extract_reuse_raw_replays_a_retained_response_and_never_pays_again(
+    monkeypatch, tmp_path, capsys
+):
+    """
+    Scenario: an extraction was paid for and then lost to a parse refusal; the
+    parser is fixed and the operator recovers the session
+
+    Requires:
+    - monkeypatched transcripts / graph connection (no ~/.claude, no graph server)
+    - a retained response under $HOME/.thalamus/extractions/
+
+    Observable via:
+    - stdout
+    - an AssertionError if the model is invoked
+
+    Verifications:
+    - the retained response is distilled without calling the model
+    - the run is reported as a replay, not as a model call that cost $0.00
+    - a session with nothing retained is skipped rather than quietly paid for
+
+    Retention exists so a refusal costs a re-parse rather than a second digest pass.
+    Without this the retained file is written on every run and read on none of them,
+    and every recovery pays for the same session twice.
+    """
+    args = _extract_fakes(monkeypatch, tmp_path, ["aaaa1111", "bbbb2222"])
+
+    retained = tmp_path / ".thalamus" / "extractions" / "main-aaaa1111.txt"
+    retained.parent.mkdir(parents=True)
+    retained.write_text(
+        "```yaml\n"
+        'summary: "Raised the clamp threshold after tests showed early clamping."\n'
+        "decisions:\n"
+        '  - description: "Raise the clamp threshold"\n'
+        '    rationale: "Clamping fired before fatigue accumulated"\n'
+        '    artifacts: ["src/governor.py"]\n'
+        "```\n"
+    )
+
+    cli._cmd_extract(args)
+
+    out = capsys.readouterr().out
+    assert "+ aaaa1111" in out
+    assert "replay" in out
+    # The bill was paid by the run that wrote the file; a replay must not read as a
+    # session that cost nothing to distill.
+    assert "1 replayed from retained responses" in out
+    # Nothing retained for bbbb2222, so it is passed over rather than turned into a
+    # live call by the flag that exists to avoid one.
+    assert "· bbbb2222  no retained response" in out
+    assert "1 extracted, 1 skipped, 0 failed" in out
