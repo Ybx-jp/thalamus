@@ -94,6 +94,7 @@ const els = {
   dialogueX: document.getElementById("dialogue-x"),
   distillSec: document.getElementById("distill-sec"),
   distillList: document.getElementById("distill-list"),
+  roster: document.getElementById("roster"),
   read: document.getElementById("read"),
   readWait: document.getElementById("read-wait"),
   viewToggle: document.getElementById("view-toggle"),
@@ -102,6 +103,7 @@ const els = {
 
 let windows = [];          // last known window list
 let activeIdx = null;      // selected window index
+let rosterSig = "";        // last drawn roster, so a 1.2s poll does not rebuild it
 let lastText = {};         // idx -> last captured screen (for change detection)
 let lastOk = 0;            // ms of last good poll
 let lastFitCols = 0;       // column count the current fit was computed for
@@ -1022,6 +1024,9 @@ async function poll() {
     if (changed) { renderWsBar(); renderRail(); }
     syncActiveChrome();
     renderDistill(data.distill || []);
+    // `grace_s` is served rather than hardcoded, so the deadline the row draws is
+    // the one the server actually enforces.
+    renderRoster(next, data.distill || [], Date.now() / 1000, data.grace_s);
 
     updateDots(next);
     const cur = windows.find((w) => w.index === activeIdx);
@@ -1289,7 +1294,17 @@ function rowState(w, d, now, graceS) {
   if (d && d.state === "stalled") return slot(`distilling ${fmtDur(d.age)} · stalled`);
 
   if (!w) return slot("");
-  if (w.dead) return slot("dead", { tone: "bad" });
+
+  // Ranked above every liveness word, because the console *knows* why it cannot read
+  // a descriptor here. Drawing `not in reach` over a window that has ended would
+  // claim a blindness it does not have, and a stale `waiting` would be worse still —
+  // asking the operator to answer a prompt that no longer exists.
+  //
+  // `ended`, not the field's own word: a session that exited is not a failure and
+  // must not read as one. It gets no band either — the band is for work lost or
+  // possibly lost, and a window being gone does not mean anything was. When work
+  // *was* lost, the distill record says so and bands this same row above.
+  if (w.dead) return slot("ended");
 
   // The state with no cost ceiling. The duration is the finding, not the pill:
   // a row that needs a human is otherwise indistinguishable from ones that do not.
@@ -1396,6 +1411,168 @@ function annotateCollisions(rows, groupRoot) {
     delete r._k;
   }
   return rows;
+}
+
+/**
+ * Draw the roster: one row per session, grouped.
+ *
+ * Rebuilt only when the rendered content actually changes. At a 1.2 s poll a blind
+ * rebuild would restart every animation and drop any open row on the floor; the
+ * signature below is the same guard the distillation list already uses, widened to
+ * the fields a row draws.
+ */
+function renderRoster(windows, distill, now, graceS) {
+  const groups = groupSessions(windows, distill);
+  const sig = JSON.stringify(groups.map((g) => [g.key, g.rows.map((r) => {
+    const s = rowState(r.w, r.d, now, graceS);
+    return [r.w && r.w.index, s.text, s.band, s.pill, r.showIndex, r.showCwd];
+  })]));
+  if (sig === rosterSig) return;
+  rosterSig = sig;
+
+  els.roster.innerHTML = "";
+  if (!groups.length) {
+    const empty = document.createElement("p");
+    empty.className = "roster-empty";
+    empty.textContent = "no sessions";
+    els.roster.appendChild(empty);
+    return;
+  }
+  for (const g of groups) {
+    els.roster.appendChild(groupHeader(g));
+    for (const r of g.rows) els.roster.appendChild(sessionRow(r, now, graceS));
+  }
+}
+
+function groupHeader(g) {
+  const head = document.createElement("div");
+  head.className = "grp" + (g.known ? "" : " unknown");
+  const name = document.createElement("span");
+  name.className = "grp-name";
+  // "we were not told" is not a project name and must not sit in the same voice as
+  // one, so it takes the non-observation treatment the row uses for the same reason.
+  name.textContent = g.known ? g.label : "no project recorded";
+  head.appendChild(name);
+  const n = document.createElement("span");
+  n.className = "grp-n";
+  n.textContent = String(g.rows.length);
+  head.appendChild(n);
+  if (!g.known) {
+    const why = document.createElement("span");
+    why.className = "grp-why";
+    why.textContent = "these sessions started before the ledger carried one";
+    head.appendChild(why);
+  }
+  return head;
+}
+
+function sessionRow(r, now, graceS) {
+  const w = r.w, d = r.d;
+  const src = w || d || {};
+  const st = rowState(w, d, now, graceS);
+
+  const row = document.createElement("div");
+  row.className = "srow" + (st.band ? " terminal" : "");
+  row.style.setProperty("--tab", w ? hueOf(w) : "var(--faint)");
+  if (w) {
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.addEventListener("click", () => openSession(w.index));
+  }
+
+  const line1 = document.createElement("div");
+  line1.className = "srow-1";
+  const nm = document.createElement("span");
+  nm.className = "srow-name";
+  nm.textContent = src.name || src.scope || "?";
+  line1.appendChild(nm);
+
+  if (st.pill) {
+    const pill = document.createElement("span");
+    pill.className = "srow-pill";
+    pill.textContent = st.pill;
+    line1.appendChild(pill);
+  }
+  if (!st.band) {
+    const slot = document.createElement("span");
+    // The typeface is the claim: a state that was read is monospace, and the console
+    // saying it cannot see is not. The distinction survives greyscale.
+    slot.className = "srow-slot" + (st.mono ? "" : " unseen");
+    slot.textContent = st.text;
+    line1.appendChild(slot);
+  }
+  row.appendChild(line1);
+
+  const line2 = document.createElement("div");
+  line2.className = "srow-2";
+  // Everything true of a row that is not its state.
+  const bits = [];
+  // Only a window knows when it opened. A record's `updated` is when its
+  // distillation last moved, which is not the same fact and must not borrow the
+  // same word — the row would be asserting a start time nobody recorded. A record
+  // that outlived its window identifies itself by directory instead, and its timing
+  // is already in the slot or the band.
+  if (w && w.started) bits.push(`opened ${fmtOpened(w.started)}`);
+  else if (d && d.dir) bits.push(d.dir);
+  if (r.showIndex) bits.push(`#${w.index}`);
+  if (r.showCwd && src.cwd_label) bits.push(src.cwd_label);
+  if (w && w.index === activeIdx) bits.push("viewing");
+  if (w && w.anchor) bits.push("anchor");
+  if (w && w.policy_stale) bits.push("old posture");
+  if (w && w.room) bits.push(`◈ ${w.room}`);
+  line2.textContent = bits.join(" · ");
+  row.appendChild(line2);
+
+  if (st.band) row.appendChild(terminalBand(r, st));
+  return row;
+}
+
+/**
+ * The full-width band a terminal row gains in place of its state slot.
+ *
+ * Height is the salience channel — detectable without reading, and it survives
+ * greyscale and colour blindness where a red word does not. No motion: it is the
+ * channel that habituates fastest and nothing measured recommends it here.
+ */
+function terminalBand(r, st) {
+  const band = document.createElement("div");
+  band.className = "srow-band";
+  const what = document.createElement("span");
+  what.className = "band-what";
+  what.textContent = st.band + (st.elapsed ? ` · ${st.elapsed}` : "");
+  band.appendChild(what);
+
+  if (st.detail) {
+    // Straight from the extract log, so it is set as text and never as markup.
+    const detail = document.createElement("span");
+    detail.className = "band-detail";
+    detail.textContent = st.detail + (st.truncated ? " […]" : "");
+    band.appendChild(detail);
+  }
+  // It will not leave on its own. If a killed-window row vanished on the next poll
+  // the failure would evaporate and we would be back to two silences with extra
+  // steps; it has to still be here hours later, when someone next looks.
+  if (r.d) {
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "band-x";
+    x.textContent = "dismiss";
+    x.setAttribute("aria-label", `Dismiss ${r.d.session}`);
+    x.addEventListener("click", (e) => { e.stopPropagation(); dismissDistill(r.d.session); });
+    band.appendChild(x);
+  }
+  return band;
+}
+
+/** Roster → one session's mirror. The rail keeps switching between them from there. */
+function openSession(idx) {
+  selectWindow(idx);
+  setView("session");
+}
+
+function setView(v) {
+  document.body.dataset.view = v;
+  if (v === "session") scheduleFit();
 }
 
 function renderAdminWindows() {
@@ -1986,6 +2163,7 @@ document.getElementById("spawn-btn").addEventListener("click", () => {
   if (els.spawn.hidden) openSpawn(); else els.spawn.hidden = true;
 });
 document.getElementById("spawn-x").addEventListener("click", () => { els.spawn.hidden = true; });
+document.getElementById("roster-btn").addEventListener("click", () => setView("roster"));
 els.spawnGo.addEventListener("click", doSpawn);
 document.getElementById("admin-restart-all").addEventListener("click", async () => {
   if (!windows.length) return;

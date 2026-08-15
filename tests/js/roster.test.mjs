@@ -109,6 +109,26 @@ suite("the slot: an operation in flight outranks the state it is resolving");
     both.blocked === true);
 }
 
+suite("the slot: a window that ended outranks every liveness word");
+{
+  // The console knows why it cannot read a descriptor here, so `not in reach` would
+  // claim a blindness it does not have — and a stale `waiting` would ask the operator
+  // to answer a prompt that no longer exists.
+  const gone = { dead: true, observed: false, blocked: null, activity: "" };
+  check("says the window ended", state(gone).text === "ended", state(gone).text);
+  check("not that we cannot see it", state(gone).text !== "not in reach");
+  check("and in the voice of something read", state(gone).mono === true);
+
+  const stale = { dead: true, observed: true, blocked: true, blocked_since: NOW - 90 };
+  check("a corpse never asks for a human", !state(stale).pill);
+
+  // Ending is not failing, so it takes no band. When work actually was lost, the
+  // distill record says so and bands this same row above.
+  check("and it is not terminal geometry", state(gone).band === "");
+  const lost = state({ dead: true }, { state: "unknown", op: "close" });
+  check("but a record of lost work still bands it", lost.band !== "");
+}
+
 suite("the band: terminal states take the geometry, not a colour");
 {
   const failed = state(null, { state: "error", detail: "unparseable YAML",

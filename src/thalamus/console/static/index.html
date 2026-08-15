@@ -26,9 +26,15 @@
 <link rel="stylesheet" href="style.css">
 <title>Thalamus Console</title>
 </head>
-<body>
+<!-- The roster is the landing view. The alternative was the last window you looked
+     at, which is not a fact about what needs you: it charges an exploratory tap
+     (land somewhere arbitrary, read it, reach for the rail) where this charges an
+     informed one. `needs you` is on screen before the first touch. -->
+<body data-view="roster">
 
 <header>
+  <button type="button" class="admin-btn back-btn" id="roster-btn"
+    aria-label="Back to the roster" title="Back to the roster">‹</button>
   <span class="brand">THALA<b>MUS</b></span>
   <span class="tagline">console</span>
   <span class="conn" id="conn"><span class="beacon"></span><span id="conn-label">connecting</span></span>
@@ -146,6 +152,10 @@
   <button type="button" class="install-do" id="install-do">Install</button>
   <button type="button" class="install-x" id="install-x" aria-label="Dismiss">✕</button>
 </div>
+
+<!-- One row per session, carrying its whole life. Rows are built in JS because a
+     row's shape depends on which of its states is true. -->
+<main class="roster" id="roster" aria-label="Sessions"></main>
 
 <!-- Workspace (cwd) filter. Hidden whenever every session shares one directory, so
      it costs no vertical space until a second context actually exists. -->
