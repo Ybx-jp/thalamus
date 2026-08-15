@@ -97,11 +97,49 @@ def test_a_window_that_dies_after_the_old_settle_window_is_reported_failed(
 
     assert ok is False
     assert elapsed > RETIRED_GLOBAL_SETTLE_S
-    assert "exit 1" in output
+    # The epitaph, not the exit status. `_pane_state` documents two spellings of
+    # death and says which one appears depends on timing: `remain-on-exit` leaves a
+    # corpse carrying `pane_dead_status`, and a pane reaped before that option took
+    # effect leaves no window to describe, so the status comes back empty and
+    # `status_part` renders nothing. Measured 2026-08-15: this asserted `"exit 1"`
+    # and failed 2 times in 18 on a loaded box — it was pinning the fast path's
+    # spelling of a fact the code deliberately reports either way. What the operator
+    # needs is which variable was read, and that survives both paths.
+    assert "exited" in output
     assert "CURSOR_API_KEY" in output
     # The corpse is cleared, not left for the console's close and recycle paths to
     # read as a window still there.
     assert _windows("settle-late") == []
+
+
+def test_the_exit_status_is_rendered_when_tmux_still_has_it(monkeypatch, tmp_path):
+    """The half of the death message the timing-dependent test above cannot assert.
+
+    Whether tmux still has an exit status is a race with the reaper, so the live test
+    asserts only what survives both outcomes. That leaves the status rendering
+    untested — and it is the more useful half when it is there, since `exit 1` and
+    `exit 127` are different diagnoses. Driven here through `_pane_state` instead of
+    through a real death, which makes both branches deterministic and asserts the
+    thing the race obscures rather than a rewording of the other test.
+    """
+    monkeypatch.setattr(pin, "_pane_epitaph", lambda window_id: "Not logged in.")
+    monkeypatch.setattr(pin, "_set_remain_on_exit", lambda window_id, mode: None)
+    monkeypatch.setattr(pin.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+
+    monkeypatch.setattr(pin, "_pane_state", lambda window_id: (True, "1"))
+    with pytest.raises(pin.WindowDied) as carried:
+        pin.confirm_started("@1", "cursor")
+    assert "(exit 1)" in str(carried.value)
+    assert "Not logged in." in str(carried.value)
+
+    # And a corpse tmux can no longer describe says the same thing without inventing
+    # a status. `exit 0` would be the dangerous invention: it reads as a clean exit.
+    monkeypatch.setattr(pin, "_pane_state", lambda window_id: (True, ""))
+    with pytest.raises(pin.WindowDied) as reaped:
+        pin.confirm_started("@1", "cursor")
+    assert "exit" not in str(reaped.value).split(" — ")[0].replace("exited", "")
+    assert "Not logged in." in str(reaped.value)
 
 
 def test_a_window_that_cannot_exec_at_all_is_reported_failed(private_tmux, tmp_path,
