@@ -37,7 +37,8 @@ client renders what it is handed.
 | `screen_rev` | str\|int | **opaque** change token for this window's screen — any value that differs when the pane text has changed | the rail's changed-pulse, by comparing it to the previous poll's |
 | `policy_stale` | bool | `server.py:644-646` | `old posture` |
 | `anchor` | bool | the window the console must never close | `anchor` qualifier |
-| `harness`, `room`, `dead` | — | existing | as today |
+| `dead` | bool | the window's session is gone; the pane is a corpse | `ended`, and `revive` replaces `restart` (§4.1a) |
+| `harness`, `room` | — | existing | as today |
 
 **Payload-level, beside `windows`:**
 
@@ -135,11 +136,44 @@ Phone-first, 430 × 932. 1 CSS px = 1 dp.
 Every state is a **word** first. Colour and bar are reinforcement; a row read in
 greyscale loses nothing but emphasis.
 
-**Typeface is the claim.** Every real state is IBM Plex Mono. A non-observation — the
-console saying it cannot see, rather than reporting what it saw — is *never* monospace:
-Plex Sans, italic, dimmed. A reader cannot mistake one for the other, because they do
-not look like the same kind of thing, and the distinction costs no colour and survives
-greyscale. This carries §4.5 and §5.2.
+**The typeface split is the claim; the face is not.** Every real state is monospace. A
+non-observation — the console saying it cannot see, rather than reporting what it saw — is
+*never* monospace: proportional, italic, dimmed. A reader cannot mistake one for the other,
+because they do not look like the same kind of thing, and the distinction costs no colour
+and survives greyscale. This carries §4.5 and §5.2.
+
+The requirement is that split, satisfied by the console's existing `--mono` and `--ui`
+system stacks. **No webfont ships for this.** A face would cost files in `static/`, a
+loading path, and a flash of the wrong one, on the same surface where §1 just cut 80% of
+the poll to save bandwidth — and it would buy no perceptual property the stacks do not
+already carry. The board draws IBM Plex because Penpot has to render *some* face; a
+specimen is not a specification.
+
+### 2.1 Where the list lives
+
+**The roster is the landing view. The mirror is one tap from any row.** Nine rows plus
+headers is ~600 px of 932, so the roster and the terminal mirror cannot both be resident;
+this is the one decision in the design that changes what the console *is* when it opens.
+
+§7's test is that learning whether `designer` is alive costs the operator nothing, and a
+surface reached by choosing a tab has a base rate of zero in exactly the case the design
+exists for — the operator who does not yet suspect anything. A tab is only ever selected by
+someone who already went looking, which is the state they would have investigated from
+anyway.
+
+**This charges no tap on the time-critical path, which is the objection it has to answer.**
+Answering a permission prompt is a primary use and a blocked session burns wall-clock while
+it waits (§4.1: 6 h 47 m, measured). But today's landing view is *the last window you
+looked at*, which is not a fact about what needs you: the operator lands somewhere
+arbitrary, reads it, and taps the rail to reach the row that mattered. Landing on the
+roster replaces an exploratory tap with an informed one — `needs you` is on screen before
+the first touch, and the tap goes straight to the session that has it. The mirror stops
+being the thing you arrive in and becomes the thing you arrive *at*.
+
+A resident collapsed strip is the third option and it loses to §4.6: a strip showing 2 of 9
+rows must draw its own truncation, and a roster the operator has to infer the rest of
+reintroduces the silence that means nothing. It also spends mirror height permanently to
+half-answer a question the landing view answers completely.
 
 ## 3. Row anatomy
 
@@ -253,7 +287,7 @@ beside it rather than instead of it — both are real, one is temporary.
 
 | state | renders | source |
 |---|---|---|
-| starting | `starting 0:03` | existing |
+| ended | `ended` | `dead` — the window's session is gone (§4.1a) |
 | not blocked | `idle`, or `busy 6:28` | `activity`, `activity_since` (§4.5) |
 | blocked | `needs you` pill + `stopped 6h47m ago` | `blocked=true`, `blocked_since` |
 | unobservable | *not in reach* — sans italic, dimmed | `blocked=null` (§4.5) |
@@ -268,19 +302,22 @@ beside it rather than instead of it — both are real, one is temporary.
 complete; the action is wait-or-intervene, not rerun. Only *terminal* states break the
 geometry — that is what keeps the loud channel rare.
 
-**Precedence, because several of these are true at once routinely.** The slot answers one
+### 4.1a Precedence — the slot holds one word
+
+**Several of these are true at once, routinely.** The slot answers one
 question — *what does this row need from me, and if nothing, what is it doing?* — so the
 order is actionability first, then recency. Highest wins; the rest are not drawn.
 
 | | when | draws |
 |---|---|---|
 | — | terminal (§4.3) | **not in this chain.** The band takes the row's geometry and the slot ceases to exist |
-| 1 | `recycling`, `closing`, starting | `restarting 0:42` / `closing 0:12` / `starting 0:03` |
+| 1 | `recycling`, `closing` | `restarting 0:42` / `closing 0:12` |
 | 2 | distill `active` or `stalled` | `distilling 2:14`, `· stalled` |
-| 3 | `blocked === true` | `needs you` + `stopped 6h47m ago` |
-| 4 | `observed === false` | *not in reach* |
-| 5 | `activity` non-empty | `idle`, `busy 6:28` |
-| 6 | otherwise | nothing |
+| 3 | `dead` | `ended` |
+| 4 | `blocked === true` | `needs you` + `stopped 6h47m ago` |
+| 5 | `observed === false` | *not in reach* |
+| 6 | `activity` non-empty | `idle`, `busy 6:28` |
+| 7 | otherwise | nothing |
 
 **A blocked row that is mid-restart shows the restart, and that is deliberate.** The
 restart *is* the resolution of blocked, and the operator started it — drawing `needs you`
@@ -294,9 +331,37 @@ in-flight rows would be the client reducing two fields into a policy claim, whic
 exactly what §8 forbids. So the pill can leave the slot while the row is still counted:
 precedence reallocates a slot, it never retracts a finding.
 
-Ranks 4 and 5 cannot actually collide — `activity` is `""` whenever `observed` is false
+Ranks 5 and 6 cannot actually collide — `activity` is `""` whenever `observed` is false
 (§4.5) — and they are ordered anyway, because a rule that depends on two fields never
 disagreeing is one server change away from being wrong.
+
+**`dead` outranks every liveness word, because the console knows why it cannot read one.**
+A dead window has no live session, so its descriptor is gone or stale — and a row that drew
+*not in reach* there would claim the console could not see, when in fact it saw a corpse.
+That is G2's error arriving through the other door: §4.5's non-observation is honest only
+where nothing is known, and here something is. A stale `waiting` on a dead session would be
+worse still, asking the operator to answer a prompt that no longer exists.
+
+It draws a **word, not a band.** §4.3's geometry is for work that is lost or may be lost,
+and a window being gone does not by itself mean anything was: the record that says work was
+lost is distill `unknown` — *never distilled, SessionEnd never ran* — and that already bands
+at rank 0, on the same row, when it is true. Giving `dead` a band too would put the loud
+channel on every ended session and spend what §4.3a says the channel is worth.
+
+Three words, one condition, and they are deliberately not the same word: the field is
+`dead`, the state reads `ended`, the control says `revive`. `ended` because a session that
+exited is not a failure and must not read as one; `revive` because that is what the button
+does. Do not reconcile them — the field name is for the wire, the word is for the operator,
+the verb is for the act.
+
+### 4.1b What the slot never holds
+
+**`starting` is not a state, and the row does not draw one.** There is no served fact that
+distinguishes a session still coming up from one sitting idle, and the only candidate —
+elapsed time since `started` — would be the client deriving a state from a clock, which §1
+forbids in its first line. A launching session is honestly either `idle` or *not in reach*
+(no descriptor written yet), and both of those are already drawn. A third word for a
+condition nothing observes would be a guess in the one slot that must not hold one.
 
 **`VIEWING` is not in the slot at all.** It is a fact about the *reader* rather than the
 session — the only such fact on the row, and the one the operator cannot fail to
@@ -473,7 +538,7 @@ answers *which binary is in front*, which no operator asks of this surface; it w
 because it was already being served.
 
 **A constant word here does not contradict §4.2.** The state slot is not an event
-channel — it holds exactly one word at all times (`starting 0:03`, `restarting 0:42`,
+channel — it holds exactly one word at all times (`distilling 2:14`, `restarting 0:42`,
 `needs you`, *not in reach*). §4.2's silence is the distillation channel, a different
 position answering a different question. `idle` adds no channel and moves no base rate:
 it replaces a word that was already drawn and said less.
@@ -492,7 +557,7 @@ transition stamp and not a heartbeat — the property `blocked_since` already de
 holding for the same field on the other branch. The row would have drawn `busy 6:28`.
 
 **Emphasis stays flat.** Both words render in the slot's ordinary mono weight, same as
-`starting`. `busy` is not a warning and must not compete with the `needs you` pill —
+`restarting`. `busy` is not a warning and must not compete with the `needs you` pill —
 the loud channel is terminal states (§4.3) and it is worth only what its base rate is.
 Should either word ever need differential emphasis, it arrives as a server-supplied
 boolean, never as a client comparison against the word (§8, Guard A).
