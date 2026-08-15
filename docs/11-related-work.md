@@ -1319,6 +1319,96 @@ not a scan.
      fatigue, not an agent result. Cheap to close in-house: the guard ledger already
      records every block with its message version.
 
+**Icon-set optical correction as computable rules — the grid is published, the
+corrections mostly are not.** Consulted 2026-08-13 for the D2 icon-set drill
+(exchange `scope:main:exchange:535764648f984e82`), which requires every optical
+correction to be a stated numeric rule because the icons are emitted by code rather
+than nudged in an editor. What *is* published and citable: Material Design's system
+icon grid — 24dp box, 20×20dp live area, 2dp padding per side, 2dp stroke, 2dp
+corner radius with square interior corners — and its four keyline shapes at exact
+dimensions (square 18×18dp, circle ⌀20dp, vertical rectangle 16×20dp, horizontal
+rectangle 20×16dp, [m2.material.io](https://m2.material.io/design/iconography/system-icons.html)).
+The circle-exceeds-square ratio the set needs is therefore *already published* as
+20/18 ≈ 1.111 (and as 176/152 ≈ 1.158 on Material's 192dp product-icon grid), while
+Bjango's optical-adjustment article publishes the equal-area *formula* — scale the
+circle to **112.84%**, exactly 2/√π, since a circle of diameter d covers (π/4)d²
+against the square's d² — and generalises it to concave forms by matching **convex
+hull** areas ([bjango.com](https://bjango.com/articles/opticaladjustments/)). **The
+proximity of 1.111 and 1.128 is not a convergence on a perceptual truth, and must not
+be written as one.** The psychophysics argues equal-area is the wrong target: Krider,
+Raghubir & Krishna, "Pizzas: π or Square?" (*Marketing Science* 20(4), 2001) model
+area judgement as comparison of a *single salient linear dimension* with
+under-adjustment, and reported Stevens-law exponents for area run 0.70–0.86
+(Teghtsoonian 1965; Ekman 1958, as collected there) — sub-linear, so observers do not
+compare areas. Linear matching would give 1.000 and equal-area 1.128; shipped systems
+sit between, nearer the linear end. Adopt Material's 1.111 because a design system
+publishes it, not because geometry derives it. Bjango also gives the
+asymmetric-centering rule as **centroid of area, not bounding-box centre** — the
+fitted bounding box is what design tools align to and what makes a triangle in a
+circle look wrong. For a triangle the two differ by exactly h/6. Type design supplies
+the same illusion at glyph scale: Karow's *Digital Formats for Typefaces* gives
+overshoot at 3% (O) and 5% (A), and Briem's notes (hosted by FontLab) give Times
+Roman's o as 4% higher than its x, Courier and Helvetica's at 7%. Three absences are
+recorded as provisional:
+
+   - **A numeric compensation for *diagonal* stroke weight — not found in the 2026
+     scan**, and the premise it would serve is refuted. The *orthogonal* case is
+     measured: de Waard, Van der Burg & Olivers, "A Thickness Illusion" (*Vision*
+     3(1), 2019) find a vertical line must be **5.4% thicker** than a horizontal to
+     read as equally thick — but that study explicitly does not test oblique
+     orientations. Type-design sources run the *opposite* way from the intuition
+     that diagonals read lighter: a diagonal at the same width reads slightly
+     *heavier*, so designers thin it ("the diagonal strokes of triangular characters
+     should be a little thinner than the primary stem size of the letter H",
+     TypeType UniversiTTy lesson 7) — and none of them state a percentage. The
+     1/cos(θ) family is a *geometric* fact about offsetting an outline axis-aligned,
+     not a perceptual correction, and it does not arise in SVG at all:
+     `stroke-width` is defined perpendicular to the subpath
+     ([SVG 2 §stroke shape](https://www.w3.org/TR/SVG2/painting.html)), so a rotated
+     stroke already keeps its width; it bites only when strokes are emitted as
+     filled outlines. Anything in the √2 family offered as *optics* is folklore.
+     Bjango, which publishes formulas for the other corrections, gives none for this
+     one.
+   - **A set-consistency *tolerance* — not found in the 2026 scan.** The levers are
+     published qualitatively (IBM: "All icons of the same size should have a
+     consistent visual weight; no icon should appear heavier or lighter than
+     another", plus shared 2px stroke, 2px radius, square caps, 15° angle
+     increments), but no system publishes an ink-coverage, filled-area or
+     visual-weight variance number. What exists instead is a *measurement*
+     literature with no threshold attached: Forsythe, Sheehy & Sawey, "Measuring
+     icon complexity" (*BRMIC* 35(2), 2003) validate automated measures against
+     human complexity ratings, with structural variability at r_s = .65 and edge
+     information at r_s = .64 the strongest correlates; Donderi (*Perception* 35(6),
+     2006) uses compressed file size as an objective complexity measure. A learned
+     set-level metric also exists — a Siamese network on visually coherent icon
+     collections returns a representative-appearance set 75.25% of the time (arXiv
+     1902.05378, ingested). Any tolerance we adopt is therefore **ours**, declared,
+     and carries no external warrant.
+   - **Apple publishes no icon keyline table — not found in the 2026 scan.** The HIG
+     ships downloadable SF Symbols templates instead of stated grid numbers, so
+     there is nothing to adopt or cite from that system. Material and IBM Carbon
+     (32px artboard, 2px padding, 2px stroke, 2px corner radius, four keyshapes
+     without published dimensions) are the two that publish numbers, and Material is
+     the only one whose grid size *and* stroke weight both match a 24px/2px brief.
+
+   The parametric-authoring ancestry is real and citable rather than novel: Knuth,
+   "The Concept of a Meta-Font" (*Visible Language* XVI(1), 1982) is the origin of
+   generating a whole family of letterforms from a parameter set, a line still live
+   in current work (arXiv 2502.07386, ingested) and descending directly into variable
+   fonts. Learned icon-family generation is also prior art (IconShop, arXiv
+   2304.14400; DeepSVG, arXiv 2007.11301) — though neither publishes a consistency
+   *metric* one could apply to a hand-specified set. On the grade axis: the strong
+   claim is peer-reviewed and holds for **text**, from Google's own font team —
+   "while making text bold increases the character width, grade achieves boldness
+   without increasing character width or causing text reflow" (Palmén, Gilbert &
+   Crossland, CHI '23, doi:10.1145/3544548.3581552). It is weakened for **icons** by
+   Google's own Material Symbols documentation, which says grade adjustments "have a
+   small impact on the size of the symbol" (GRAD −50…200, alongside wght 100…700,
+   opsz 20…48dp, FILL 0…1, ROND 0…100; the page states opsz's default as both 48 and
+   24 in different paragraphs). And `GRAD` is **not a registered OpenType axis** —
+   the registry holds only `ital`, `opsz`, `slnt`, `wdth`, `wght`, so grade's
+   footprint semantics are a foundry convention with no normative spec behind them.
+
 ## 5. Open challenges this literature puts to the design
 
 - **Verbatim text is not reachable from retrieval, and the measured penalty for that
