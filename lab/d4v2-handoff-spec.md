@@ -57,7 +57,7 @@ client renders what it is handed.
 | `project` | str | group key — same field, same pin row as the window's | group header |
 | `repo_root` | str | as above | grouping key |
 | `dir` | str | **cwd basename — a display string only** | identity line, never grouping |
-| `state` | enum | `active`\|`stalled`\|`error`\|`unknown` — the four that reach the wire | §4.1, §4.3 |
+| `state` | enum | `active`\|`stalled`\|`abandoned`\|`error`\|`unknown` — the five that reach the wire | §4.1, §4.3 |
 | `op` | enum | `close`\|`recycle` — which path killed it | band wording, `unknown` only |
 | `detail` | str | verbatim, single line, capped at 200 chars | opened row only |
 | `detail_truncated` | bool | true when the cap bit | truncation marker (§4.6) |
@@ -66,7 +66,7 @@ client renders what it is handed.
 
 **That enum is the wire, not the classifier.** `console/distill.py` also produces a `done`
 state and never sends it — a successfully distilled session is dropped from `distill[]`
-altogether. So four values arrive, success is not among them, and `op` rides only
+altogether. So five values arrive, success is not among them, and `op` rides only
 `unknown`. The client cannot receive a success value even in principle, which is what makes
 §4.2's silence structural instead of a convention the client has to remember.
 
@@ -200,6 +200,12 @@ Elapsed renders **relative** (`restarting 0:42`) in the state slot, and only for
 three things where elapsed *is* the meaning: recycling, closing, distilling. Never for
 `started`.
 
+**Precision drops as the number grows**, because a digit nobody can act on is noise
+competing with the digits they can: `M:SS` under an hour, `6h47m` under a day, `6d 2h`
+beyond. `distilling 146h26m` is the same fact as `6d 2h` with four figures of false
+precision — nobody distinguishes a six-day stall from a six-day-and-26-minute one, and the
+seconds were never accurate to begin with.
+
 ### 3.2 Identity and collisions
 
 `repo_root` fixes grouping. It does not fix the row: three live windows are scope
@@ -294,13 +300,35 @@ beside it rather than instead of it — both are real, one is temporary.
 | restarting | `restarting 0:42` | `recycling` |
 | closing | `closing 0:12` | `closing` |
 | distilling | `distilling 2:14` | distill `state=active` |
-| stalled | `distilling 21:04 · stalled` | distill `state=stalled` |
+| stalled | `distilling 21:04 · stalled` | distill `state=stalled`, up to 3× the stall clock |
 | distilled ok | **nothing** | **no record at all** (§4.2) |
 | observed, no word | **nothing** | `activity=""` with `observed=true` (§4.5) |
 
-`stalled` keeps steady geometry. It is past 1200 s but has not failed and may still
-complete; the action is wait-or-intervene, not rerun. Only *terminal* states break the
-geometry — that is what keeps the loud channel rare.
+`stalled` keeps steady geometry **while wait-or-intervene is a real choice** — past the
+1200 s stall clock but not yet past 3× it. There the row has not failed, may still
+complete, and the action is to wait or to look; only *terminal* states break the geometry,
+and that is what keeps the loud channel rare.
+
+**Past 3× the stall clock it is not stalled, it is abandoned, and it takes the band.**
+Measured live 2026-08-15: a `literature` distillation that stopped on 2026-08-09 was still
+rendering `distilling 146h26m · stalled` — a steady state, six days after the last thing
+that will ever happen to it. "May still complete" is true at 25 minutes and false at six
+days, and a state word that says *in progress* over work that is over is a G2 silence
+wearing a state: the surface built to end silent distillation failures would have been
+narrating one.
+
+The server classifies it, not the client (§1) — a fifth wire state, `abandoned`, on the
+same threshold multiple so it tracks `STALL_AFTER_S` rather than a number typed twice. The
+band reads `distillation abandoned — nothing has moved in 6d 2h`, which is `error`'s
+channel and deliberately not its wording: a failed extraction has a traceback to show, an
+abandoned one has nothing, and the remedies differ.
+
+**On the base rate**, which is the argument against: 3× is chosen because extraction is
+minutes of work and the first threshold is already generous — a process writing nothing for
+an hour and then resuming is not a case worth encoding for. And if abandoned rows ever do
+flood the band, the flood is *accurate*, and the fix is upstream in the extract path rather
+than in how the row draws it. A channel that stays quiet by declining to report real losses
+is not a rare channel, it is a broken one.
 
 ### 4.1a Precedence — the slot holds one word
 
@@ -404,6 +432,7 @@ happen without the operator.
 |---|---|---|
 | `state=unknown` | `never distilled — window was killed, SessionEnd never ran` | — |
 | `state=error` | `distillation failed` | `detail`, verbatim |
+| `state=abandoned` | `distillation abandoned — nothing has moved in 6d 2h` | the stall elapsed (§4.1) |
 | `recycling`/`closing` > `grace_s` | `restart exceeded 240s grace — the window may be gone` | elapsed |
 
 A terminal row is **structurally different**, not a red word in the same slot:
@@ -498,6 +527,13 @@ persist until dismissed, per the operator's rule", with `dismiss()` (`:168-183`)
 `POST /api/distill-dismiss` (`server.py:1201-1212`) — "not a window operation — the
 window whose session this was is long gone." `unknown` rows flow through the same path.
 The row is derived from that file; there is no per-row `acknowledged` field.
+
+**A record-only row draws no `opened` clock.** Nothing recorded when it started — the
+record carries `updated`, which is when distillation last *moved*, and rendering that as
+`opened HH:MM` asserts a start time no one wrote down. It is §3.1's two clocks collapsing
+into one slot, in the one place where the row has only the second of them. So a record-only
+row identifies by `scope` and `dir` and lets the slot or the band carry the timing, which
+is the clock that means something there anyway.
 
 **Dismissal is per-occurrence, not "never show me this again."** A dismissed row
 returns if the same session fails again — for `unknown`, keyed on the kill stamp, so a
@@ -809,7 +845,7 @@ once, to `api/dispatch` — and this is a cheap belt on that.
 | `w.observed ? … : notInReach()` | §1 says branch on this first |
 | `w.blocked ? pill : slot` | `blocked` **is** the reduction — branching on it is how it gets rendered |
 | `slot.textContent = w.activity` | the server composed the word; printing it is the whole job (§4.5) |
-| `d.state === "stalled"`, and all of §4.1 | different field, still one owner: the distill enum (`active\|stalled\|error\|unknown`) is authored by `console/distill.py` for display, has no second reader, and §4.1 *requires* the client to branch on it. Guard A's vocabulary is the harness session status only |
+| `d.state === "stalled"`, and all of §4.1 | different field, still one owner: the distill enum (`active\|stalled\|abandoned\|error\|unknown`) is authored by `console/distill.py` for display, has no second reader, and §4.1 *requires* the client to branch on it. Guard A's vocabulary is the harness session status only |
 
 `inFlight` is the better name and stays — as accuracy, not as compliance.
 
