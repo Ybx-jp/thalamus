@@ -175,6 +175,28 @@ identify, and not the terminal band's tint, where §4.3 makes the height change 
 channel. For the tint the assertion inverts: hold it **≤1.5:1**, so it can never quietly
 become load-bearing.
 
+**Identity hues are semantically empty. Status hues are not. The two sets are disjoint.**
+An identity colour is assigned by hashing a scope name, so it must mean nothing: a row is
+teal because of what it is called, never because it is well. A status colour means exactly
+one thing. Sharing a value lets the meaning leak onto an arbitrary row — and because the two
+live in different registries, a change to either silently desynchronises the other, which is
+a second owner for one fact. Today `#4db6a6` is both the identity palette's teal and the
+live beacon, the ok dot and the done dot; `#e0a45c` is both amber and both *pending* and
+*waiting*. Disjointness is the assertion, and it is the same closure shape as the literal
+registry rather than a new kind of check.
+
+**Every colour declares which of three roles it holds**, because the floor follows from the
+role: it *carries* the signal (floor 4.5:1 text, 3:1 non-text), it *reinforces* a signal
+carried elsewhere (a ceiling instead — hold it low enough that it cannot quietly become the
+carrier), or it carries *nothing* (no assertion). Only the third needs its reason written
+down, because it is the one that can stop being true without anything changing colour.
+
+**A declaration that outlives its subject reads as coverage while measuring nothing.** So
+every registry is asserted in both directions: nothing undeclared in the surface, and
+nothing declared that the surface no longer contains. This spec is subject to the same rule
+— a measurement quoted here is a fixture someone will point a test at, and stale figures
+have already sent one reader after a colour the console did not have.
+
 **Luminance separation never buys itself below the floor.** Where a ramp needs its steps
 told apart — danger from warning from ok — the separation is found above 4.5:1 or in a
 channel that is not colour at all: the word, the weight, the geometry. A ramp that
