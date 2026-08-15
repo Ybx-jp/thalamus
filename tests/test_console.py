@@ -85,6 +85,181 @@ def test_an_unparseable_line_is_dropped_not_guessed():
     assert [w["index"] for w in parse_windows(raw)] == [0]
 
 
+def test_a_lifecycle_flag_is_a_start_stamp_not_a_bare_yes():
+    """The two operations that can lose work are the two the operator cannot time.
+
+    `RECYCLE_GRACE_S` lives inside the worker thread, so a bare boolean renders a
+    word with no duration while the worker silently races a clock. The stamp is also
+    what makes a leaked flag self-reporting: the entry is dropped in the worker's
+    `finally`, so a worker that dies leaves the row saying "restarting…" forever with
+    nothing to contradict it — unless the row can say *how long* forever has been.
+    """
+    server.RECYCLING.clear()
+    server.CLOSING.clear()
+    try:
+        server.RECYCLING[4] = 1_000_000.0
+        server.CLOSING[7] = 2_000_000.0
+        raw = "\n".join([
+            "4\tmain\t0\tclaude\t60\t50\t0\t/home/op",
+            "7\tqe\t0\tclaude\t60\t50\t0\t/home/op",
+            "9\tdesigner\t0\tclaude\t60\t50\t0\t/home/op",
+        ])
+
+        by_index = {w["index"]: w for w in parse_windows(raw)}
+
+        assert by_index[4]["recycling"] == 1_000_000.0
+        assert by_index[7]["closing"] == 2_000_000.0
+        # Absent, not False-with-a-zero: a zero stamp would render as 1970 and a
+        # reader asking only "is this in flight" must still get a falsy answer.
+        assert by_index[9]["recycling"] is None
+        assert by_index[4]["closing"] is None
+    finally:
+        server.RECYCLING.clear()
+        server.CLOSING.clear()
+
+
+def test_a_second_restart_request_does_not_reset_the_clock():
+    """`already` suppresses the duplicate worker; it must suppress the stamp too.
+
+    Otherwise a phone and a desktop polling the same row, or an impatient double
+    tap, silently restart the elapsed time the operator is using to decide whether
+    the window has hung — the one number the stamp exists to provide.
+    """
+    server.RECYCLING.clear()
+    try:
+        server.RECYCLING.setdefault(3, 111.0)
+        server.RECYCLING.setdefault(3, 999.0)
+
+        assert server.RECYCLING[3] == 111.0
+    finally:
+        server.RECYCLING.clear()
+
+
+def test_an_unobservable_session_is_not_reported_as_unblocked(monkeypatch):
+    """The distinction the whole row exists to draw, on the row's own indicator.
+
+    Session descriptors are partitioned by config dir (lab/045), so a console can be
+    structurally unable to see a window's descriptor. Calling that window "not
+    stuck" states a fact on evidence that says nothing — so `observed` is False and
+    `blocked` is None, and neither is the same pixel as a session that was read and
+    found healthy.
+    """
+    class _Session:
+        def __init__(self, session_id, status, stamp):
+            self.session_id, self.status, self.status_updated_at = (
+                session_id, status, stamp)
+
+    class _Dispatch:
+        WAITING_STATUS = "waiting"
+        BUSY_STATUS = "busy"
+        DELIVERABLE_STATUSES = ("idle", "busy")
+
+        class quick:
+            @staticmethod
+            def live_sessions():
+                return [_Session("seen-blocked", "waiting", 1_700_000_000_000),
+                        _Session("seen-fine", "idle", 1_700_000_000_000)]
+
+    monkeypatch.setattr(server, "dispatch_module", lambda: _Dispatch)
+    windows = [{"session_id": "seen-blocked"}, {"session_id": "seen-fine"},
+               {"session_id": "in-another-config-dir"}, {"session_id": ""}]
+
+    server.attach_blocked(windows)
+
+    assert (windows[0]["observed"], windows[0]["blocked"]) == (True, True)
+    assert windows[0]["blocked_since"] == 1_700_000_000.0
+    assert (windows[1]["observed"], windows[1]["blocked"]) == (True, False)
+    assert windows[1]["blocked_since"] is None
+    # The two that could not be read. Not False — None. And no state word either:
+    # without a descriptor `idle` and `busy` are equally unknown, so observability
+    # stays one fact about the row instead of an absence spelled per field.
+    for row in (windows[2], windows[3]):
+        assert row["observed"] is False
+        assert row["blocked"] is None
+        assert row["blocked_since"] is None
+        assert row["activity"] == ""
+        assert row["activity_since"] is None
+
+
+def test_the_row_says_nothing_about_liveness_when_the_harness_is_absent(monkeypatch):
+    """A console running without the harness package must disclaim, not reassure."""
+    monkeypatch.setattr(server, "dispatch_module", lambda: None)
+    windows = [{"session_id": "anything"}]
+
+    server.attach_blocked(windows)
+
+    assert windows[0]["observed"] is False
+    assert windows[0]["blocked"] is None
+    assert windows[0]["activity"] == ""
+    assert windows[0]["activity_since"] is None
+
+
+def test_the_state_word_is_composed_here_and_only_busy_earns_a_clock(monkeypatch):
+    """The word the state slot draws, and the stamp that decides whether it ticks.
+
+    The client prints `activity` and draws an elapsed exactly when `activity_since`
+    is non-null. Both decisions therefore live here: a client that re-derived either
+    from a status value would be a second reader of the field this reduction exists
+    to consume, and two readers drift.
+
+    `busy` earns a clock because `busy 14:32` on a session thought finished is a
+    finding. `idle` does not — an elapsed on every idle row is motion on most rows at
+    once, which spends the attention the terminal states need.
+    """
+    class _Session:
+        def __init__(self, session_id, status, stamp):
+            self.session_id, self.status, self.status_updated_at = (
+                session_id, status, stamp)
+
+    class _Dispatch:
+        WAITING_STATUS = "waiting"
+        BUSY_STATUS = "busy"
+        DELIVERABLE_STATUSES = ("idle", "busy")
+
+        class quick:
+            @staticmethod
+            def live_sessions():
+                return [_Session("busy-one", "busy", 1_700_000_000_000),
+                        _Session("idle-one", "idle", 1_700_000_000_000),
+                        _Session("blocked-one", "waiting", 1_700_000_000_000),
+                        _Session("odd-one", "compacting", 1_700_000_000_000)]
+
+    monkeypatch.setattr(server, "dispatch_module", lambda: _Dispatch)
+    windows = [{"session_id": s} for s in
+               ("busy-one", "idle-one", "blocked-one", "odd-one")]
+
+    server.attach_blocked(windows)
+
+    busy, idle, blocked, odd = windows
+    assert (busy["activity"], busy["activity_since"]) == ("busy", 1_700_000_000.0)
+    assert (idle["activity"], idle["activity_since"]) == ("idle", None)
+
+    # A blocked row's word is the pill, so the slot holds no activity word to compete
+    # with it. `blocked` and `activity` are set from one branch and cannot both speak.
+    assert (blocked["blocked"], blocked["activity"]) == (True, "")
+
+    # A status the vocabulary does not cover draws nothing rather than the likelier
+    # word. The row was read — `observed` is True and `blocked` is a real False — so
+    # an empty slot here means "read, not stopped, and no word for it", which is not
+    # the same pixel as the unobserved row's *not in reach*.
+    assert (odd["observed"], odd["blocked"]) == (True, False)
+    assert (odd["activity"], odd["activity_since"]) == ("", None)
+
+
+def test_an_unparseable_start_stamp_is_absent_rather_than_now():
+    """A fabricated start time is indistinguishable on the wire from a recorded one.
+
+    The row renders identity partly from `started`, so inventing one would make two
+    sessions look equally well-known when only one is.
+    """
+    # Parsed as UTC, not as local time: the ledger writes `date -u` and a naive
+    # parse would skew every stamp by the box's offset.
+    assert server._ledger_epoch("2026-08-15T16:17:41Z") == 1786810661.0
+    assert server._ledger_epoch("") is None
+    assert server._ledger_epoch("not a timestamp") is None
+    assert server._ledger_epoch("2026-08-15 16:17:41") is None
+
+
 def test_pane_state_flags_survive_the_projection():
     dead = "4\tmain\t0\tbash\t80\t24\t1\t/home/op"
     (window,) = parse_windows(dead)

@@ -105,7 +105,9 @@ VIA_TMUX = "tmux-send-keys"
 
 # Statuses the measurement covers. `waiting` is absent deliberately: it is not a status
 # dispatch handles cautiously, it is one it refuses.
-DELIVERABLE_STATUSES = ("idle", "busy")
+IDLE_STATUS = "idle"
+BUSY_STATUS = "busy"
+DELIVERABLE_STATUSES = (IDLE_STATUS, BUSY_STATUS)
 WAITING_STATUS = "waiting"
 
 
