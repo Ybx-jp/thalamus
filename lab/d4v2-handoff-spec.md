@@ -154,18 +154,33 @@ because they do not look like the same kind of thing, and the distinction costs 
 and survives greyscale. This carries §4.5 and §5.2.
 
 **Dimmed has a floor: 4.5:1.** *Dimmed* names a role, not a lightness, and the role is
-subordinate — never illegible. Every text token on the row meets WCAG AA against its own
-composited background (4.5:1 normal, 3:1 at ≥24 px or ≥18.66 px bold), and non-text
-carriers — the identity bar, a band edge, a control outline — meet 3:1. Measured on the
-built roster 2026-08-15, the dim token `#4d5661` on `#0e1116` is **2.54:1**, and it carries
-*not in reach*, the whole line-2 qualifier lane, the group header with its count, and the
-`⋯` affordance. On `#0e1116` the floor is reached around `#727d8b`.
+subordinate — never illegible. Every text token meets WCAG AA against its own composited
+background (4.5:1 normal, 3:1 at ≥24 px or ≥18.66 px bold). Dimming that goes below the
+floor costs the design nothing to fix, because the dim was never the carrier: the
+mono/proportional-italic split separates a state from a non-observation, and it survives
+both greyscale and a legible grey. A token that had to stay dark to keep the distinction
+would mean contrast was carrying it, which this section has already ruled out.
 
-Raising it costs the design nothing, which is the point: the dim was never the carrier. The
-mono/proportional-italic split is what separates a state from a non-observation, and it
-survives both greyscale and a legible grey. A token that has to stay dark to keep the
-distinction would mean the distinction was being carried by contrast, which §2 has already
-ruled out.
+**A token is conformant only on the grounds it is declared for**, so the pairing is the unit
+of conformance, not the colour. `--faint` measures 4.95 on `--bg` and 4.53 on `--panel` —
+and 4.15 on `--panel-hi`, which is why the token declares the two grounds it may paint on.
+Two consequences: a new rule that paints `--faint` on `--panel-hi` fails silently, and the
+0.03 of headroom on `--panel` means the ground tokens cannot drift darker either. Enforcing
+that closure is qe's, and the assertion is over declared pairs plus a check that the CSS
+produces no undeclared one.
+
+**Non-text carriers meet 3:1 only where colour is the signal** — the connection beacon, the
+read-state dots, the admin dot. Not `--hair`, a separator beside controls their own labels
+identify, and not the terminal band's tint, where §4.3 makes the height change the salience
+channel. For the tint the assertion inverts: hold it **≤1.5:1**, so it can never quietly
+become load-bearing.
+
+**Luminance separation never buys itself below the floor.** Where a ramp needs its steps
+told apart — danger from warning from ok — the separation is found above 4.5:1 or in a
+channel that is not colour at all: the word, the weight, the geometry. A ramp that
+distinguishes its steps by dropping one of them under AA has traded a reader who cannot
+act for a reader who cannot see, and this design has the non-colour channels precisely so
+that trade is never necessary.
 
 The requirement is that split, satisfied by the console's existing `--mono` and `--ui`
 system stacks. **No webfont ships for this.** A face would cost files in `static/`, a
