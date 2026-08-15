@@ -1213,6 +1213,191 @@ async function postJson(path, body) {
   try { data = await r.json(); } catch (e) { /* log shows what we know */ }
   return { ok: r.ok, data };
 }
+// ---- the session row -------------------------------------------------------
+//
+// One row per session carrying its whole life, replacing three lists that showed
+// the same sessions and disagreed. Everything below decides *what the row says*;
+// none of it decides liveness. `observed`, `blocked`, `activity` and the distill
+// state all arrive already reduced, and the row prints them.
+
+/** Seconds → `0:42` under an hour, `6h47m` at or over one. */
+function fmtDur(s) {
+  s = Math.max(0, Math.floor(s || 0));
+  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+}
+
+/** Epoch seconds → `18:38`. The identity line's clock is absolute on purpose: it
+ *  is stable across polls, so rows do not reflow every second, and it is how a
+ *  person recalls a session ("the one from this morning"). */
+function fmtOpened(epoch) {
+  if (!epoch) return "";
+  const d = new Date(epoch * 1000);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * What the row's state slot says, or the band that replaces it.
+ *
+ * Returns `{ text, pill, mono, band, detail, truncated, elapsed }`. `band` is set
+ * only for the three terminal states — work lost or possibly lost, nothing further
+ * happening without the operator — and a banded row loses the slot entirely rather
+ * than colouring a word in it. That structural difference is the whole reason the
+ * loud channel stays rare enough to be worth reading.
+ *
+ * `mono: false` marks a non-observation — the console saying it cannot see, rather
+ * than reporting what it saw. It renders sans italic and dimmed so it cannot be
+ * mistaken for a state that was actually read.
+ *
+ * Order matters and is the design's, not this function's convenience: terminal, then
+ * an operator-initiated operation in flight, then distillation, then the one state
+ * that cannot resolve without a human, then the admission that we cannot see, and
+ * only then the ordinary word.
+ */
+function rowState(w, d, now, graceS) {
+  const band = (text, rec) => ({
+    text: "", band: text, mono: true,
+    detail: (rec && rec.detail) || "", truncated: !!(rec && rec.detail_truncated),
+  });
+  const slot = (text, opts) => Object.assign(
+    { text, band: "", mono: true, detail: "", truncated: false }, opts || {});
+
+  // Terminal. A record outliving its window is the steady state, not an edge case,
+  // so these are reachable with no `w` at all.
+  if (d && d.state === "unknown") {
+    const how = d.op === "recycle" ? "restarted" : d.op === "close" ? "closed" : "killed";
+    return band(`never distilled — window was ${how}, SessionEnd never ran`, d);
+  }
+  if (d && d.state === "error") return band("distillation failed", d);
+
+  // A worker that leaks its flag crosses the deadline on its own and says so,
+  // instead of reading `restarting` forever. No new detection needed: a served
+  // grace and a start stamp are sufficient.
+  const op = w && w.recycling ? "recycling" : w && w.closing ? "closing" : "";
+  if (op && graceS && now - w[op] > graceS) {
+    return Object.assign(
+      band(`restart exceeded ${graceS}s grace — the window may be gone`, null),
+      { elapsed: fmtDur(now - w[op]) });
+  }
+
+  if (op === "recycling") return slot(`restarting ${fmtDur(now - w.recycling)}`);
+  if (op === "closing") return slot(`closing ${fmtDur(now - w.closing)}`);
+
+  // `age` is precomputed server-side; stalled keeps steady geometry because it is
+  // past the stall clock but has not failed and may still complete.
+  if (d && d.state === "active") return slot(`distilling ${fmtDur(d.age)}`);
+  if (d && d.state === "stalled") return slot(`distilling ${fmtDur(d.age)} · stalled`);
+
+  if (!w) return slot("");
+  if (w.dead) return slot("dead", { tone: "bad" });
+
+  // The state with no cost ceiling. The duration is the finding, not the pill:
+  // a row that needs a human is otherwise indistinguishable from ones that do not.
+  if (w.blocked) {
+    return slot(w.blocked_since ? `stopped ${fmtDur(now - w.blocked_since)} ago` : "",
+                { pill: "needs you", tone: "blocked" });
+  }
+  // Branch on `observed` first: `blocked === null` is "we cannot know", which is not
+  // the same claim as "not stuck" and must not render as one.
+  if (!w.observed) return slot("not in reach", { mono: false });
+
+  // The server composed the word and decided which states carry a clock. The elapsed
+  // is drawn iff the stamp is present — never by reading the word back.
+  if (w.activity) {
+    return slot(w.activity + (w.activity_since ? ` ${fmtDur(now - w.activity_since)}` : ""));
+  }
+  return slot("");
+}
+
+/** `~/code/thalamus` → `thalamus`. */
+function baseName(path) {
+  const parts = String(path || "").replace(/\/+$/, "").split("/");
+  return parts[parts.length - 1] || "";
+}
+
+/**
+ * Sessions grouped for display, newest-active first within each group.
+ *
+ * Grouping is a render choice, not a schema commitment — the row carries both keys,
+ * so undoing this costs a rerender rather than a migration. The key is `project`,
+ * else `repo_root`, else the trailing no-project group: name first because it is the
+ * only field that can unite a worktree with its checkout, and the fallback order is
+ * chosen for its failure direction. Splitting one project across two headers is a
+ * missing relation that shows itself; merging two projects asserts a relation that
+ * does not hold and looks exactly like a correct one.
+ *
+ * A cwd is never a grouping key. Deriving a project from a directory string would
+ * group `~/code/thalamus` and `~/code/thalamus/lab` as two, and a guessed hierarchy
+ * is worse than none because it is indistinguishable from a real one.
+ */
+function groupSessions(windows, distill) {
+  const byId = new Map();
+  for (const d of distill || []) byId.set(d.session, d);
+
+  const rows = [];
+  for (const w of windows || []) {
+    const key8 = (w.session_id || "").slice(0, 8);
+    const d = (key8 && byId.get(key8)) || null;
+    if (d) byId.delete(key8);
+    rows.push({ w, d });
+  }
+  // Whatever is left belongs to a window that is already gone. It renders from the
+  // record alone, which is why the record carries its own identity.
+  for (const d of byId.values()) rows.push({ w: null, d });
+
+  const groups = new Map();
+  for (const r of rows) {
+    const src = r.w || r.d || {};
+    const project = src.project || "";
+    const repoRoot = src.repo_root || "";
+    const key = project || repoRoot || "";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key, rows: [], repoRoot,
+        label: project || baseName(repoRoot),
+        known: !!key,
+      });
+    }
+    groups.get(key).rows.push(r);
+  }
+
+  const out = Array.from(groups.values());
+  for (const g of out) annotateCollisions(g.rows, g.repoRoot);
+  // The no-project group trails, and is self-liquidating: every restarted session
+  // leaves it, and when it empties it disappears.
+  out.sort((a, b) =>
+    a.known !== b.known ? (a.known ? -1 : 1) : a.label.localeCompare(b.label));
+  return out;
+}
+
+/**
+ * Mark the rows a group cannot tell apart, and the ones whose copy differs.
+ *
+ * Grouping fixes the header, not the row: several windows can be the same scope in
+ * the same checkout and stay byte-identical under it. `name` plus the absolute open
+ * time separates most of them; ledger stamps are 1-second resolution and roster sync
+ * spawns in a burst, so when even that collides — and only then — the rows show
+ * `#index`. `session_id[:8]` is the join key and never a label; it identifies
+ * nothing to a human.
+ */
+function annotateCollisions(rows, groupRoot) {
+  const seen = new Map();
+  for (const r of rows) {
+    const src = r.w || r.d || {};
+    const k = `${src.scope || src.name || ""}|${fmtOpened(src.started || src.updated)}`;
+    seen.set(k, (seen.get(k) || 0) + 1);
+    r._k = k;
+  }
+  for (const r of rows) {
+    const src = r.w || r.d || {};
+    r.showIndex = seen.get(r._k) > 1 && r.w && typeof r.w.index === "number";
+    // The group answers which project; the row answers which copy.
+    r.showCwd = !!(src.repo_root && groupRoot && src.repo_root !== groupRoot);
+    delete r._k;
+  }
+  return rows;
+}
+
 function renderAdminWindows() {
   els.adminWindows.innerHTML = "";
   for (const w of windows) {
@@ -1234,12 +1419,14 @@ function renderAdminWindows() {
       (w.anchor ? `<span class="admin-viewing anchor">anchor</span>` : "") +
       (w.index === activeIdx ? `<span class="admin-viewing">viewing</span>` : "") +
       `<span class="admin-state${w.dead ? " bad" : ""}">${escapeHtml(state)}</span>`;
-    const busy = !!w.recycling || !!w.closing;
+    // An operation is in flight on this window — not a claim about the session's
+    // own state, which the client is not told and does not compute.
+    const inFlight = !!w.recycling || !!w.closing;
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "admin-act";
     btn.textContent = w.recycling ? "…" : w.dead ? "revive" : "restart";
-    btn.disabled = busy;
+    btn.disabled = inFlight;
     btn.addEventListener("click", () => recycle(w));
     row.appendChild(btn);
     // The main anchor stays put (the console's reference cwd); everything else can be
@@ -1249,7 +1436,7 @@ function renderAdminWindows() {
       cbtn.type = "button";
       cbtn.className = "admin-act danger-lite";
       cbtn.textContent = w.closing ? "…" : "close";
-      cbtn.disabled = busy;
+      cbtn.disabled = inFlight;
       cbtn.addEventListener("click", () => closeWin(w));
       row.appendChild(cbtn);
     }

@@ -208,11 +208,15 @@ suite("dialogue: the client holds no view of who is reachable");
 
 suite("rows: the client renders liveness, it does not decide it");
 {
-  // The same rule over the renderers that draw a session row, because that is where
-  // a blocked-session indicator gets drawn. Keep this list pointed at whatever
-  // renders the roster: a renderer that leaves it is unguarded, and a renamed one
-  // fails extraction loudly rather than passing vacuously.
+  // The same rule over everything that decides what a session row says, because that
+  // is where a blocked-session indicator gets drawn. Keep this list pointed at
+  // whatever draws the row: a renderer that leaves it is unguarded, and a renamed one
+  // fails extraction loudly rather than passing vacuously. Extraction failing is the
+  // harness working; the list quietly stopping short of the code is the hazard.
   const rowSource = [
+    extractFunction("rowState", src),
+    extractFunction("groupSessions", src),
+    extractFunction("annotateCollisions", src),
     extractFunction("renderRail", src),
     extractFunction("renderAdminWindows", src),
     extractFunction("renderDistill", src),
