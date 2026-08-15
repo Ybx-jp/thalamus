@@ -286,7 +286,15 @@ def test_the_tiers_stay_distinguishable():
 # which is the moment somebody measures it, and the moment that was missing.
 OPACITIES = {
     ".25": "the pending dot's pulse trough — animation on a non-text carrier",
-    ".4": "disabled controls, which WCAG exempts as inactive",
+    # Exempt under 1.4.3 as an inactive control — but the exemption is *earned*, not
+    # claimed. A disabled `.srow-act` is also how an opened row shows an operation in
+    # flight, and a control that carries state is not merely inactive. What keeps the
+    # exemption honest is that the state is carried in text as well: `rowState` draws
+    # `restarting 0:42` into `.srow-pill` at --danger, 5.19:1 on --panel. The dimming
+    # reinforces; it does not carry. `test_the_disabled_exemption_is_still_earned`
+    # below is what stops that from quietly ceasing to be true.
+    ".4": "disabled controls — exempt as inactive, and the in-flight state they also "
+          "signal is carried in text by the pill beside them",
     ".7": "the passthrough composer: dimming a redirected control is the signal, "
           "and --ink at .7 measures 6.46:1 on --panel",
 }
@@ -309,6 +317,32 @@ def test_every_opacity_is_declared():
         f"undeclared opacity value(s) in style.css: {sorted(undeclared)}. Declare the "
         f"role, or express the recession as a colour — `opacity` composites to a value "
         f"nothing here can see, and it multiplies with any opacity above it.")
+
+
+def test_the_disabled_exemption_is_still_earned():
+    """The one role in the registry that can stop being true with nothing changing.
+
+    `opacity: .4` on a disabled control is exempt under 1.4.3 — but only while the
+    control is genuinely inactive rather than carrying meaning. On an opened row a
+    disabled action is *also* how an operation in flight is shown, and at .4 it
+    measures 1.99:1 for `--muted`, so if the dimming were ever the only channel
+    saying "restarting" the exemption would be doing work it cannot do.
+
+    It is not the only channel: `rowState` renders the op as text. This asserts that
+    directly, so removing the word — or moving it into the disabled state alone —
+    fails here rather than silently converting a reinforcement into a carrier.
+
+    A colour check cannot see this, which is the point. The exemption's premise is a
+    redundancy claim, and a redundancy claim is assertable even when the thing it
+    licenses is not.
+    """
+    app = APP.read_text()
+    for word in ("restarting", "closing"):
+        assert re.search(rf'`{word} \$\{{|"{word}"|`{word} ', app), (
+            f"`{word}` is no longer rendered as text by the client, so the disabled "
+            f"control's dimming may now be the only thing saying an operation is in "
+            f"flight — at which point opacity .4 is a carrier, not reinforcement, and "
+            f"the 1.4.3 exemption in OPACITIES no longer applies.")
 
 
 def test_the_opacity_registry_describes_declarations_that_are_still_there():
