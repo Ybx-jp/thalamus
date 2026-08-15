@@ -22,8 +22,8 @@ client renders what it is handed.
 |---|---|---|---|
 | `name` | str | scope/expert name | identity line, primary |
 | `session_id` | str | join key; `[:8]` joins the distill collection | never a label (§3.2) |
-| `project` | str | group key; **empty when the ledger has none** (§3.4) | group header |
-| `repo_root` | str | from `session-start.sh:69` via the pin ledger | group header, and the grouping key |
+| `project` | str | the grouping key when non-empty; **empty when the ledger has none** (§3.4) | group header |
+| `repo_root` | str | from `session-start.sh:69` via the pin ledger | the grouping key when `project` is empty, labelled by basename (§3.3) |
 | `cwd_label` | str | existing | identity line, only when it differs from the group |
 | `started` | float | epoch seconds, converted from ledger `ts` | `opened 09:14`, identity line |
 | `index` | int | tmux window index | collision tiebreaker only (§3.2) |
