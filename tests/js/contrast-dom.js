@@ -64,6 +64,38 @@ function parse(css) {
 
 const over = (fg, bg, alpha) => fg.map((c, i) => c * alpha + bg[i] * (1 - alpha));
 
+/** The 8 corners a float channel triple can land on once quantized to 8 bits. */
+function corners(rgb) {
+  const out = [];
+  for (let i = 0; i < 8; i++) {
+    out.push(rgb.map((v, k) => (i >> k & 1) ? Math.ceil(v) : Math.floor(v)));
+  }
+  return out;
+}
+
+/**
+ * The worst ratio the screen could plausibly paint, rather than the prettiest.
+ *
+ * A composite lands between two 8-bit values and the rounding model decides which.
+ * Measured on `#4db6a6` at .5 over `--panel`, three defensible implementations give
+ * 2.714, 2.733 and 2.751 — and across an alpha sweep the spread reaches **0.0344**,
+ * which is wider than the headroom on the two tightest pairs this surface has
+ * (`--faint` on `--panel` at 4.53, the composer at 4.51 before it was lifted).
+ *
+ * So near the floor the checker's arithmetic decides the verdict instead of the
+ * design. A legibility floor exists to protect a reader, so the tie goes to the
+ * reader: take the minimum over both operands' quantizations. Being wrong here in
+ * the optimistic direction means passing something the screen fails, which is the
+ * one error a checker must not make.
+ */
+function paintedRatio(fgFloat, bgFloat) {
+  let worst = Infinity;
+  for (const f of corners(fgFloat)) {
+    for (const b of corners(bgFloat)) worst = Math.min(worst, ratio(f, b));
+  }
+  return worst;
+}
+
 /**
  * The opaque colour actually painted behind `el`.
  *
@@ -144,7 +176,7 @@ function report(root = document.body) {
     const alpha = inkAlpha(el);
     const bg = ground(el);
     const painted = over(colour.slice(0, 3), bg, Math.min(1, alpha));
-    const r = ratio(painted, bg);
+    const r = paintedRatio(painted, bg);
     const floor = floorFor(el);
     if (r < floor) {
       out.push({
@@ -191,9 +223,20 @@ function selfCheck() {
     }
     // A transparent background must not be read as opaque, which is the alpha trap:
     // reading it as the element's own colour yields exactly 1.0:1.
-    const r = ratio(over(parse(getComputedStyle(leaf).color).slice(0, 3),
-                         ground(leaf), alpha), ground(leaf));
+    const g = ground(leaf);
+    const r = paintedRatio(over(parse(getComputedStyle(leaf).color).slice(0, 3), g, alpha), g);
     if (near(r, 1.0, 0.05)) fail.push("alpha trap: comparing a colour to itself");
+
+    // Round against yourself. The optimistic model is what a checker reaches for
+    // and it is the one error that matters: passing what the screen fails.
+    const fg = [77, 182, 166], panel = [22, 27, 34];   // #4db6a6 over --panel
+    const half = over(fg, panel, 0.5);
+    if (!(paintedRatio(half, panel) <= ratio(half, panel))) {
+      fail.push("quantization is optimistic: the float value is being reported");
+    }
+    if (!near(paintedRatio(half, panel), 2.714, 0.005)) {
+      fail.push(`worst-corner ratio drifted: ${paintedRatio(half, panel).toFixed(3)}`);
+    }
   } finally {
     probe.remove();
   }
