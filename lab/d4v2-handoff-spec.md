@@ -298,13 +298,13 @@ Ranks 4 and 5 cannot actually collide — `activity` is `""` whenever `observed`
 (§4.5) — and they are ordered anyway, because a rule that depends on two fields never
 disagreeing is one server change away from being wrong.
 
-**`VIEWING` is not in the slot at all.** It is the only entry that was a fact about the
-*reader* rather than the session, and it is the one fact the operator cannot fail to
+**`VIEWING` is not in the slot at all.** It is a fact about the *reader* rather than the
+session — the only such fact on the row, and the one the operator cannot fail to
 know — they are looking at that window. Ranked anywhere above the bottom it hides a real
 state behind a redundant one, and on the anchor row (viewed, and unreadable from a
 room-launched console — a live collision, the first row in the list) it would replace the
-row's only honest claim with a word that says nothing. It becomes a line-2 qualifier, first
-in that lane, beside `anchor` and `old posture` (§3) — the lane that already holds what is
+row's only honest claim with a word that says nothing. It is a line-2 qualifier, first in
+that lane, beside `anchor` and `old posture` (§3) — the lane that already holds what is
 true of a row without being its state.
 
 **The blocked clock is the state that most needs its duration, measured on this box on
