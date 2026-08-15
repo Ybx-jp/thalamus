@@ -408,7 +408,10 @@ header {
   cursor: pointer;
   padding: .12rem 0;
 }
-.rd-name { color: var(--chan); flex: 0 0 auto; opacity: .85; }
+/* No `opacity`: this nests inside `.rd-thinking` and `.rd-side`, and opacity on a
+   container multiplies with opacity on its descendants. A subagent thinking block
+   compounded .72 x .7 x .85 and painted the word `thinking` at 2.15:1. */
+.rd-name { color: var(--chan); flex: 0 0 auto; }
 .rd-sum {
   color: var(--muted);
   flex: 1 1 auto;
@@ -477,9 +480,18 @@ header {
   letter-spacing: .01em;
 }
 .rd-ask:not(.waiting) .rd-q { font-weight: 500; color: var(--muted); }
-.rd-thinking .rd-head { font-style: italic; opacity: .7; }
+/* The italic is what marks a thinking block, and it survives a legible colour —
+   the same reason the roster's non-observation voice does not need to be dim. */
+.rd-thinking .rd-head { font-style: italic; }
 /* Subagent work, one step back from the session's own voice. */
-.rd-side { margin-left: .9rem; opacity: .72; }
+/* A subagent's output is set apart by where it sits, not by how faint it is: the
+   indent and rule say `nested` without touching any colour, and so cannot compound
+   with the recessions inside it. */
+.rd-side {
+  margin-left: .5rem;
+  padding-left: .55rem;
+  border-left: 2px solid var(--hair);
+}
 .viewcap.on { color: var(--chan); border-color: var(--chan); }
 /* A failed utterance has to be visible: the whole point of the control is that
    you are not looking at the screen, so silence alone is ambiguous. */
@@ -573,7 +585,10 @@ header {
 /* Keystrokes go straight to the pane, so the composer is no longer the input path —
    dim it to say so, without removing it (it still takes multi-line paste and the
    slash-command hints). */
-body.passthrough .composer .input-line { opacity: .55; }
+/* Still a dim, because dimming a redirected control is the signal — but measured.
+   At .55 this sat at 4.51:1, clearing the floor by a hundredth and only because
+   --ink is bright; nothing below it may darken without taking it under. */
+body.passthrough .composer .input-line { opacity: .7; }
 body.passthrough .composer .input-line:focus-within { opacity: 1; }
 
 /* ---- Composer ---- */

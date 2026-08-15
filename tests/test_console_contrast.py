@@ -273,3 +273,49 @@ def test_the_tiers_stay_distinguishable():
     assert on_bg["muted"] - on_bg["faint"] >= 0.5, (
         f"faint and muted are {on_bg['faint']:.2f} and {on_bg['muted']:.2f} — "
         "too close to read as separate tiers")
+
+
+# Every `opacity` below 1, with why it is allowed. An opacity is not a contrast bug
+# by itself — it is the mechanism that makes contrast bugs *unmeasurable*, because it
+# paints a colour appearing nowhere in the file. Worse, it compounds: opacity on a
+# container multiplies with opacity on its descendants, so a subagent thinking block
+# once painted its own label at .72 × .7 × .85 = 0.4284, and 2.15:1, through three
+# rules none of which looked wrong alone.
+#
+# So each one is declared with its role, and a new one fails the closure test below —
+# which is the moment somebody measures it, and the moment that was missing.
+OPACITIES = {
+    ".25": "the pending dot's pulse trough — animation on a non-text carrier",
+    ".4": "disabled controls, which WCAG exempts as inactive",
+    ".7": "the passthrough composer: dimming a redirected control is the signal, "
+          "and --ink at .7 measures 6.46:1 on --panel",
+}
+
+
+def test_every_opacity_is_declared():
+    """Closure over the one mechanism every static contrast check is blind to.
+
+    Measured 2026-08-15: four undeclared opacities on text produced five AA failures,
+    the worst at 2.15:1 — below anything the token or literal checks had found, and
+    invisible to both, because the colour that reaches the surface is in no file.
+
+    A declaration cannot prove the composited value is legible; only a rendered-DOM
+    check can. What it does is stop one appearing *silently*, which is how all four
+    of these arrived.
+    """
+    found = set(re.findall(r"opacity:\s*([0-9.]+)", CSS.read_text()))
+    undeclared = {o for o in found if float(o) < 1} - set(OPACITIES)
+    assert not undeclared, (
+        f"undeclared opacity value(s) in style.css: {sorted(undeclared)}. Declare the "
+        f"role, or express the recession as a colour — `opacity` composites to a value "
+        f"nothing here can see, and it multiplies with any opacity above it.")
+
+
+def test_the_opacity_registry_describes_declarations_that_are_still_there():
+    """A registry rots in both directions; a row for a rule nobody has reads as
+    coverage of a thing that no longer exists."""
+    found = {o for o in re.findall(r"opacity:\s*([0-9.]+)", CSS.read_text())
+             if float(o) < 1}
+    stale = set(OPACITIES) - found
+    assert not stale, (
+        f"OPACITIES names value(s) style.css no longer declares: {sorted(stale)}")
