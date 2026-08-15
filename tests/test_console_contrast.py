@@ -81,6 +81,108 @@ def test_text_tokens_clear_aa_on_every_ground_they_sit_on(token: str, ground: st
     )
 
 
+# Every colour the stylesheet spells out instead of naming. A literal is not a
+# contrast bug by itself — it is the condition that makes contrast bugs invisible,
+# because `_tokens()` reads `:root` and a literal is nowhere in it. So each one is
+# declared here with the ground it is painted against and the floor that applies,
+# and an undeclared literal fails the closure test below rather than being measured
+# by nobody. `role` is what the colour means; if it cannot be stated, the colour is
+# probably decoration that should have been a token.
+LITERALS = {
+    "#0b0e12": ("text on a filled control — chips, keycaps, primary actions", "chan", 4.5),
+    "#4a2a29": ("the loose-chip and error border, a non-text carrier", "panel", 0.0),
+    "#4db6a6": ("the live beacon and the done dot — colour is the whole encoding", "panel", 3.0),
+    "#e0a45c": ("the pending dot and the wait note", "panel", 3.0),
+    "#100f1b": ("the base layer under the terminal art", "bg", 0.0),
+}
+
+
+def _literals() -> set[str]:
+    """Hex colours the stylesheet spells out, minus the `:root` declarations."""
+    text = CSS.read_text()
+    root = re.search(r":root\s*\{(.*?)\}", text, re.S)
+    assert root
+    declared = set(re.findall(r"#[0-9a-fA-F]{6}", root.group(1)))
+    return {c.lower() for c in re.findall(r"#[0-9a-fA-F]{6}", text)} - {
+        c.lower() for c in declared}
+
+
+def test_every_colour_the_stylesheet_spells_out_is_declared():
+    """Closure over the colour vocabulary, which is what makes the other checks mean
+    something.
+
+    A token-level check can only measure what `:root` names. Measured 2026-08-15 the
+    stylesheet also carries 5 bare literals across 27 occurrences, and every one of
+    them was outside the *range* of the shipped checker — not a missing row in a
+    table, a colour the parser structurally cannot see. Two of the surface's real
+    contrast defects live on colours in this set.
+
+    So the assertion is not "no literals". It is that a literal is *declared*: named,
+    with the ground it sits on and the floor that applies to it. A new one fails here
+    and has to be either promoted to a token or given a role — which is the moment
+    somebody thinks about its contrast, and the moment that was missing.
+    """
+    undeclared = _literals() - set(LITERALS)
+    assert not undeclared, (
+        f"undeclared colour literal(s) in style.css: {sorted(undeclared)}. Promote to "
+        f"a `:root` token, or add to LITERALS with the ground it is painted on and "
+        f"the floor that applies — a colour nothing can name is a colour nothing can "
+        f"measure.")
+
+
+def test_the_literal_registry_describes_colours_that_are_still_there():
+    """The registry is a declaration, and a declaration rots in the other direction.
+
+    A row for a colour the stylesheet no longer uses is a measurement of nothing that
+    still reads as coverage — the same way the brief's own Part A table went on naming
+    `#4d5661` and `#7d8794` after the palette had moved past them. Stale entries are
+    removed, not kept "in case".
+    """
+    stale = set(LITERALS) - _literals()
+    assert not stale, (
+        f"LITERALS names colour(s) the stylesheet no longer contains: {sorted(stale)}")
+
+
+@pytest.mark.parametrize("literal", sorted(LITERALS))
+def test_each_declared_literal_clears_the_floor_its_role_implies(literal: str):
+    """A floor of 0.0 is an explicit "this carries nothing", not an oversight."""
+    role, ground, floor = LITERALS[literal]
+    if floor == 0.0:
+        return
+    t = _tokens()
+    assert ground in t, f"{literal} declares ground --{ground}, which is not a token"
+    ratio = contrast(literal, t[ground])
+    assert ratio >= floor, (
+        f"{literal} ({role}) is {ratio:.2f}:1 on --{ground}, below its {floor} floor")
+
+
+def test_faint_is_conformant_only_on_the_grounds_it_is_declared_for():
+    """The pairing is the unit of conformance, so a narrow declaration is load-bearing.
+
+    `--faint` measures 4.95 on `--bg` and 4.53 on `--panel` — and **4.15 on
+    `--panel-hi`**, which is why `GROUNDS` lists only the first two and style.css:12
+    says so in prose. That exclusion is not documentation, it is the thing keeping a
+    failing pair off the surface: one new rule painting faint inside an opened row's
+    chip ground fails silently at 4.15, and no token-level check would see it.
+
+    Asserting the *excluded* pair genuinely fails keeps the exclusion honest in both
+    directions. If someone lightens `--faint` until panel-hi clears, this test says so
+    and the declaration may widen deliberately. Until then, widening it is a change
+    somebody has to argue for rather than one that slips through.
+    """
+    t = _tokens()
+    assert "panel-hi" not in GROUNDS["faint"], (
+        "GROUNDS now lets --faint paint on --panel-hi; if that is intended, this test "
+        "is the one that has to change, and the ratio below is why")
+    assert contrast(t["faint"], t["panel-hi"]) < AA, (
+        "--faint now clears AA on --panel-hi, so the exclusion in GROUNDS has stopped "
+        "being load-bearing — widen it deliberately rather than leaving a rule whose "
+        "reason has expired")
+    # And the ground it *is* declared for has almost no room left: `--panel` may not
+    # drift darker, nor `--faint` dimmer, without taking the pair under the floor.
+    assert contrast(t["faint"], t["panel"]) >= AA
+
+
 def test_the_tiers_stay_distinguishable():
     """Legible is the floor, not the goal: three tiers that converge are one tier.
 
