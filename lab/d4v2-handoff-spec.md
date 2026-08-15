@@ -425,7 +425,7 @@ row and manufacture the constant channel that measured .33 detection.
 
 ### 4.3 Terminal states — the band
 
-Three states are terminal: work is lost or may be lost, and nothing further will
+Four states are terminal: work is lost or may be lost, and nothing further will
 happen without the operator.
 
 | state | band reads | carries |
