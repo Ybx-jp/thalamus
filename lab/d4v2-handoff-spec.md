@@ -32,7 +32,8 @@ client renders what it is handed.
 | `blocked_since` | float\|null | epoch, from the descriptor's `statusUpdatedAt`; a true transition stamp, not a heartbeat | `stopped 6h47m ago` |
 | `recycling` | float\|null | epoch start stamp | `restarting M:SS` |
 | `closing` | float\|null | epoch start stamp | `closing M:SS` |
-| `command` | str | foreground process name | the not-blocked slot, pending ruling (§4.5) |
+| `activity` | str | `idle`\|`busy`\|`""` — the word the not-blocked slot draws, composed server-side from the descriptor status. Never carried as `status` (§8) | the `blocked=false` state slot (§4.5) |
+| `activity_since` | float\|null | epoch of the status transition — the same `statusUpdatedAt` `blocked_since` reads. Null when the state draws no clock | `busy 14:32` |
 | `policy_stale` | bool | `server.py:644-646` | `old posture` |
 | `anchor` | bool | the window the console must never close | `anchor` qualifier |
 | `harness`, `room`, `dead` | — | existing | as today |
@@ -193,7 +194,7 @@ beside it rather than instead of it — both are real, one is temporary.
 | state | renders | source |
 |---|---|---|
 | starting | `starting 0:03` | existing |
-| not blocked | today's word (`w.command`) — see below | `blocked=false`, `observed=true` |
+| not blocked | `idle`, or `busy 14:32` | `activity`, `activity_since` (§4.5) |
 | viewing | `VIEWING` | client, the row you are on |
 | blocked | `needs you` pill + `stopped 6h47m ago` | `blocked=true`, `blocked_since` |
 | unobservable | *not in reach* — sans italic, dimmed | `blocked=null` (§4.5) |
@@ -364,21 +365,48 @@ The server carries `observed: bool` alongside, and `blocked` is null exactly whe
 `observed` is false — one lookup written from a single branch, so the two cannot
 disagree. **Branch on `observed` first.**
 
-**`idle` / `busy` in the `blocked=false` slot is NOT specified here and must not be
-built.** Ruling 1 authorised serving the blocked flag; putting the whole status
-vocabulary on the wire is a wider change to the same boundary and needs its own ruling.
-Until then the slot keeps what it renders today — `w.command`, the foreground process
-name (`app.js:1221-1222`). Noted for whoever asks: the widened forbidden-words scan is
-over client *source*, and `el.textContent = w.status` spells none of the five words, so
-the question is about the boundary and not about a technical obstacle.
+**The `blocked=false` slot draws `idle` or `busy`** (operator ruling, 2026-08-15). The
+word arrives as `activity`, composed server-side from the descriptor status, and the row
+prints it. It is not carried as `status`: what the row needs is a word to draw, and what
+the server owns is the field that decides which word — §8's guard is that boundary, not
+an obstacle to be routed around. `w.command` leaves the slot. A foreground process name
+answers *which binary is in front*, which no operator asks of this surface; it was there
+because it was already being served.
+
+**A constant word here does not contradict §4.2.** The state slot is not an event
+channel — it holds exactly one word at all times (`starting 0:03`, `restarting 0:42`,
+`needs you`, *not in reach*). §4.2's silence is the distillation channel, a different
+position answering a different question. `idle` adds no channel and moves no base rate:
+it replaces a word that was already drawn and said less.
+
+**Which states get a clock is the server's call.** `activity_since` is the descriptor's
+`statusUpdatedAt` — the same transition stamp `blocked_since` reads — and it is null
+unless the state earns a clock. `busy` earns one: `busy 14:32` on a session you thought
+had finished is a finding. `idle` does not, because a running clock on every idle row is
+motion on most rows at once (§4.3a). The client draws the elapsed exactly when the stamp
+is non-null, as it already does for `blocked_since`, so the decision stays where the
+reduction is.
+
+**Emphasis stays flat.** Both words render in the slot's ordinary mono weight, same as
+`starting`. `busy` is not a warning and must not compete with the `needs you` pill —
+the loud channel is terminal states (§4.3) and it is worth only what its base rate is.
+Should either word ever need differential emphasis, it arrives as a server-supplied
+boolean, never as a client comparison against the word (§8, Guard A).
+
+**Unknown is empty, never guessed.** `activity` is `""` when the status is neither
+deliverable value, and the slot then draws nothing rather than picking the likelier word.
+The two silences cannot be confused: an unobserved row draws *not in reach*, so an empty
+slot on an observed row means read, not stopped, and no word for it.
 
 `null` disclaims the **whole state slot**, not one pill inside it: without a descriptor,
 `idle` and `busy` are equally unknown. What survives is everything the pin ledger knows
 — name, project, `started`, `index`, posture — so a `null` row is a *partially known*
-row and reads as one: identity confident, liveness explicitly unclaimed. Observability
-travels as one fact about the row, never as a null on each of three fields; if `status`
-and `blocked` could disagree about whether the session was visible, the client would
-have to reconcile them, and a client reconciling state is a client computing state.
+row and reads as one: identity confident, liveness explicitly unclaimed. `activity` is
+therefore `""` on every unobserved row, and the slot's one word is *not in reach*.
+Observability travels as one fact about the row, never as a null on each of three fields;
+if `activity` and `blocked` could disagree about whether the session was visible, the
+client would have to reconcile them, and a client reconciling state is a client
+computing state.
 
 A tap explains why, in the server's own words, verbatim: *"The console cannot read a
 session descriptor for this window. Descriptors are partitioned by configuration
@@ -557,10 +585,10 @@ dialogue trio, plus `renderRail` / `renderAdminWindows` / `renderDistill`):
 **B. No status field on a row at all** — `lacks(".status")`, `lacks('["status"]')`. §1
 serves no status string on a window, so any occurrence is off-contract by construction.
 This is the check that closes the verbatim-render hole, and it closes it by *contract*
-rather than by vocabulary: there is nothing there to render verbatim. It does not
-prejudge the open ruling on the not-blocked slot (§4.1, §4.5) — if idle/busy vocabulary
-is authorized, it arrives as a display string the server composes under its own field
-name, which the row prints. Guard B bans reading the policy field, not showing a word.
+rather than by vocabulary: there is nothing there to render verbatim. Guard B bans
+reading the policy field, not showing a word — which is why it costs the not-blocked slot
+nothing. `idle` / `busy` are authorized there (§4.5) and arrive as `activity`, a display
+string the server composes; the row prints it, and no client source names either word.
 
 **C. Mechanism names stay banned as literals** — `pane`, `send-keys`. A different
 failure (the client re-implementing tmux delivery, not misreading a status) and so a
@@ -574,6 +602,7 @@ different rule. Its real guard is behavioral — the dialogue posts exactly once
 | `const inFlight = !!w.recycling \|\| !!w.closing` | server-supplied stamps; a local's *name* is not policy |
 | `w.observed ? … : notInReach()` | §1 says branch on this first |
 | `w.blocked ? pill : slot` | `blocked` **is** the reduction — branching on it is how it gets rendered |
+| `slot.textContent = w.activity` | the server composed the word; printing it is the whole job (§4.5) |
 | `d.state === "stalled"`, and all of §4.1 | different field, still one owner: the distill enum (`ok\|running\|stalled\|failed\|unknown`) is authored by `console/distill.py` for display, has no second reader, and §4.1 *requires* the client to branch on it. Guard A's vocabulary is the harness session status only |
 
 `inFlight` is the better name and stays — as accuracy, not as compliance.
