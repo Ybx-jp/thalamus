@@ -192,15 +192,92 @@ def test_the_reduction_reads_only_fields_the_real_descriptor_has():
 
     So this binds the reduction to the real type. It fails on a rename in either
     file rather than at runtime on the phone.
+
+    The names are *derived from the reduction's own source*, not listed here. A list
+    is a second owner: it is maintained by hand alongside the code it describes, so
+    the day the reduction reads a fourth attribute the fake grows it, the list never
+    hears about it, and the binding is decorative again — the original defect with
+    one more name in front of it. Reading them out of the source means a new read is
+    covered the moment it is written.
     """
     import dataclasses
+    import re
 
     from thalamus.harness.quick import LiveSession
 
+    reads = _attribute_reads(server.attach_blocked, "session")
+    assert "status_updated_at" in reads, (
+        "the source scan found no `session.status_updated_at` — either the reduction "
+        "stopped reading it or this scan has stopped seeing reads, and the second "
+        "would make every assertion below vacuous")
+
     carried = {f.name for f in dataclasses.fields(LiveSession)}
-    for field in ("session_id", "status", "status_updated_at"):
+    for field in sorted(reads):
         assert field in carried, (
-            f"attach_blocked reads .{field}; the descriptor no longer carries it")
+            f"attach_blocked reads session.{field}; the descriptor no longer carries "
+            f"it. LiveSession has: {sorted(carried)}")
+
+
+def _attribute_reads(fn, receiver: str) -> set[str]:
+    """Every `<receiver>.<name>` read in a function's own source.
+
+    Deliberately syntactic. The alternative — call the reduction and see what it
+    touches — is what the fake already does, and what cannot see an attribute the
+    code never reaches on the one input the test happened to construct.
+    """
+    import inspect
+    import re
+    import textwrap
+
+    source = textwrap.dedent(inspect.getsource(fn))
+    return set(re.findall(rf"\b{re.escape(receiver)}\.([A-Za-z_][A-Za-z0-9_]*)", source))
+
+
+def test_the_reduction_reads_only_module_constants_the_real_module_has():
+    """The same binding for the *module* the reduction reads, not just the session.
+
+    `attach_blocked` reads three constants off `harness.dispatch`, and the liveness
+    tests hand it a hand-written `_Dispatch` class that re-declares all three. That
+    class is a fake in exactly the sense the descriptor was: it grows whatever the
+    code asks it for, so a rename in `dispatch.py` leaves the suite green and takes
+    out `/api/panes` on the first busy session.
+
+    Measured 2026-08-15: `DELIVERABLE_STATUSES` and `WAITING_STATUS` are pinned to
+    the real module by `test_console_js.py`, and `BUSY_STATUS` is pinned nowhere but
+    inside the fake. One identifier over from the defect that shipped.
+
+    Derived from source for the same reason as above — a fourth constant is covered
+    the day it is read, not the day someone remembers to add it here.
+    """
+    from thalamus.harness import dispatch as dispatch_mod
+
+    reads = _attribute_reads(server.attach_blocked, "dispatch")
+    # `dispatch.quick` is the module's own import, reached for `live_sessions()`.
+    assert "BUSY_STATUS" in reads, (
+        "the source scan found no `dispatch.BUSY_STATUS` — see the vacuity note above")
+
+    for name in sorted(reads):
+        assert hasattr(dispatch_mod, name), (
+            f"attach_blocked reads dispatch.{name}, which the real module does not "
+            f"have. The `_Dispatch` fake in the liveness tests would still supply it.")
+
+
+def test_the_source_scan_can_actually_fail():
+    """The two guards above rest entirely on the scan seeing what a reduction reads.
+
+    A scan that silently returns nothing turns both of them into assertions about an
+    empty set, which pass forever. So the scan is pointed at a known shape and must
+    find exactly the reads in it — and must not invent one that is not there.
+    """
+    def sample(session, dispatch):
+        if session.status == dispatch.WAITING_STATUS:
+            return session.session_id
+        return session.status_updated_at, dispatch.BUSY_STATUS
+
+    assert _attribute_reads(sample, "session") == {
+        "status", "session_id", "status_updated_at"}
+    assert _attribute_reads(sample, "dispatch") == {"WAITING_STATUS", "BUSY_STATUS"}
+    assert _attribute_reads(sample, "nobody") == set()
 
 
 def test_the_row_says_nothing_about_liveness_when_the_harness_is_absent(monkeypatch):
@@ -989,6 +1066,104 @@ def test_a_room_refusal_is_409_and_carries_the_reason(tmp_path, monkeypatch):
         status, body = post("/api/dispatch", {"room": "alpha", "message": "hello"})
         assert status == 409
         assert "no live members" in body["error"]
+
+
+ROOMLESS_CONSOLE = pytest.mark.xfail(
+    strict=True,
+    reason="OPEN FINDING (qe, 2026-08-15): /api/dispatch does not pass caller_room, "
+           "and harness.dispatch.dispatch offers no parameter to pass it with — the "
+           "seam exists on authenticate() and was never plumbed through. A console "
+           "server started from a member's shell refuses every dispatch to every "
+           "other room. Owned by homelab (src/ is outside qe's write boundary). "
+           "strict=True: this flips to a hard failure the moment it is fixed, so the "
+           "marker is removed rather than left to rot.",
+)
+
+
+@ROOMLESS_CONSOLE
+def test_the_dispatch_endpoint_never_inherits_the_room_it_was_started_in(tmp_path,
+                                                                        monkeypatch):
+    """
+    Scenario: the console server's own process is in a room — it was started from a
+    member's shell, or a unit inherited the variable — and the operator dispatches
+    from the phone to a *different* room.
+
+    Verification: the refusal names the room's own state ("no live members"), never
+    the caller's. `authenticate` refuses a caller that is in a different room than
+    the one it addresses, and it reads that caller's room from `THALAMUS_ROOM` when
+    nobody tells it otherwise. The console is the operator's broadcast path — the
+    one caller that is definitionally roomless — so it has to say so.
+
+    This is the sibling of the spawn endpoint's `..._never_inherits_one`, and the
+    same argument: a long-lived server that leaves a room to the environment adopts
+    whatever room it happened to be launched in and holds it for its whole life.
+    Here the consequence is worse than a mis-parented window — *every* dispatch to
+    every other room is refused, and the reason names a room the operator is not in
+    and cannot see.
+    """
+    monkeypatch.setenv("THALAMUS_ROOM", "beta")
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg) as post:
+        status, body = post("/api/dispatch", {"room": "alpha", "message": "hello"})
+
+    assert status == 409
+    assert "cannot dispatch into room" not in body["error"], (
+        "the console authenticated as a member of the room its own process was "
+        "launched in — it is the operator's roomless broadcast path and must pass "
+        "caller_room explicitly, the way /api/spawn passes room"
+    )
+    assert "no live members" in body["error"]
+
+
+@ROOMLESS_CONSOLE
+def test_the_dispatch_endpoint_declares_its_roomlessness_to_the_real_signature():
+    """
+    Scenario: the guard above, pinned at the seam instead of through a refusal.
+
+    Verification: `harness.dispatch.dispatch` really accepts `caller_room`, and the
+    console really passes `""` for it.
+
+    Bound against the *real* function via `inspect.signature`, not a spy. The test
+    that should have caught this passes `fake_dispatch(room, message, **kwargs)`,
+    and `**kwargs` accepts every argument including the ones the real function does
+    not have — so it cannot see the console omit a parameter, nor see the parameter
+    be absent from the callee. A fake grows whatever the caller hands it, which is
+    the same reason a hand-written descriptor could not see a field go missing.
+
+    `""` and `None` are different claims here: `None` means "read my environment",
+    which is right for the CLI, where the invocation is the session.
+    """
+    import inspect
+
+    from thalamus.harness import dispatch as dispatch_mod
+
+    parameters = inspect.signature(dispatch_mod.dispatch).parameters
+    assert "caller_room" in parameters, (
+        "dispatch() offers no way for a caller to state the room it is in, so every "
+        "caller is at the mercy of THALAMUS_ROOM. authenticate() has the seam; it "
+        "was never plumbed through the public entry point."
+    )
+
+    seen: dict = {}
+
+    def spy(room, text, **kwargs):
+        # Bind against the real signature so this stand-in cannot silently accept an
+        # argument the real function would reject, nor hide one it requires.
+        inspect.signature(dispatch_mod.dispatch).bind(room, text, **kwargs)
+        seen.update(kwargs)
+        raise dispatch_mod.DispatchRefused("stop here — the call is the assertion")
+
+    cfg = Config(project_root=Path("/nonexistent"), scan_roots=[])
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(dispatch_mod, "dispatch", spy)
+        with _serving(cfg) as post:
+            post("/api/dispatch", {"room": "alpha", "message": "hello"})
+
+    assert seen.get("caller_room") == "", (
+        f"console passed caller_room={seen.get('caller_room')!r}; it must pass '' — "
+        "None means 'read my environment', which for a long-lived server is whatever "
+        "room it was started in"
+    )
 
 
 def test_the_dialogue_delegates_rather_than_reimplementing_the_preflight(tmp_path,
