@@ -101,6 +101,13 @@ class TestSessionStart:
                 "scope": "main",
                 "cwd": str(checkout),
                 "room": "",
+                # The grouping keys. `cwd` cannot group: a checkout and a directory
+                # inside it are one project and sort as two, and several sessions in
+                # one checkout share the string exactly and sort as one pile. Both
+                # are resolved for the priming text above, so recording them costs a
+                # jq argument, and the console has no other route to either.
+                "repo_root": str(checkout),
+                "project": "myproject",
                 "ts": pins[0]["ts"],
             }
         ]

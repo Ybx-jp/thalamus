@@ -77,8 +77,11 @@ if [ -n "$session_id" ]; then
   mkdir -p "$pin_dir"
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$workspace_root" \
     --arg room "${THALAMUS_ROOM:-}" \
+    --arg repo_root "$repo_root" \
+    --arg project "$project" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{session_id: $sid, scope: $scope, cwd: $cwd, room: $room, ts: $ts}' \
+    '{session_id: $sid, scope: $scope, cwd: $cwd, room: $room,
+      repo_root: $repo_root, project: $project, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi
 
