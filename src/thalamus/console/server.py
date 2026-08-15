@@ -1468,6 +1468,14 @@ class Handler(BaseHTTPRequestHandler):
                     room,
                     message,
                     sender=str(data.get("sender") or "console"),
+                    # `""`, never omitted: the server is long-lived and belongs to no
+                    # room, and the room is named per request. Omitting this reads the
+                    # *server process's* environment, so a console started from inside
+                    # a member's shell would authenticate as that member for its whole
+                    # life and refuse every other room — naming, in the refusal, a room
+                    # the operator is not in and cannot see. The same reasoning already
+                    # makes `do_spawn` and `roster_sync` pass `room=""` explicitly.
+                    caller_room="",
                     scopes=scopes or None,
                     partial=bool(data.get("partial")),
                     dry_run=bool(data.get("dryRun")),

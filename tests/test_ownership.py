@@ -45,6 +45,28 @@ def run_guard(payload, home, env=None):
     )
 
 
+def _evidence(what: str, result) -> str:
+    """Everything the next investigator needs, at the moment it still exists.
+
+    A bare `assert result.returncode == 2` discards the distinction between the two
+    diagnoses it can fail with. The guard refuses with 2; a guard that *crashed* —
+    an interpreter it could not start, a `jq` it could not fork, anything under
+    `set -euo pipefail` — exits 1, and both read as "not 2". Those have opposite
+    causes and opposite fixes.
+
+    Recorded 2026-08-15 because that is exactly what happened: one observed failure
+    of `test_the_partition_runs_both_ways`, and the run that would have separated
+    the two was made after it had gone green again. Nothing survived, and 20 clean
+    re-runs could not recover it. Load-dependence is the standing hypothesis, which
+    is precisely the kind that will not reproduce on demand — so the next occurrence
+    has to diagnose itself on its first and possibly only appearance.
+    """
+    return (f"{what}: expected refusal (2), got {result.returncode}. "
+            f"2 is the guard refusing; 1 is the guard failing to run, which is a "
+            f"different defect wearing the same number here.\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}")
+
+
 def write_payload(file_path):
     return {
         "tool_name": "Write",
@@ -188,8 +210,9 @@ class TestTheGuardEnforcesIt:
             {"CLAUDE_CODE_AGENT": "thalamus-qe"},
         )
         main_into_qe = run_guard(write_payload(OWNED), tmp_path)
-        assert qe_into_src.returncode == 2
-        assert main_into_qe.returncode == 2
+        assert qe_into_src.returncode == 2, _evidence("qe into src/", qe_into_src)
+        assert main_into_qe.returncode == 2, _evidence("main into tests/qe/",
+                                                       main_into_qe)
 
     def test_a_block_lands_a_ledger_row_naming_the_rule(self, tmp_path):
         run_guard(write_payload(OWNED), tmp_path)

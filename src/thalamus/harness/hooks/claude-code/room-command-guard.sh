@@ -101,7 +101,32 @@ fi
 # 2. Addressing a room by name. `dispatch` refuses a room mismatch itself; this
 #    catches it one layer earlier, where the operator sees it, and covers `spawn`/`pin`
 #    placing a *new* session in a room this one is not in.
-if printf '%s' "$command" | grep -qE '(^|[^A-Za-z0-9_-])thalamus([^;&|]*)(dispatch|spawn|pin|roster)'; then
+#    `thalamus` must be *invoked*, not merely named: the verb follows the binary with
+#    only flags between, which is the shape of a command and not the shape of a path.
+#    `src/thalamus/harness/dispatch.py` names both words and invokes nothing.
+#
+#    Measured across three sessions on 2026-08-15, the previous form — `thalamus`,
+#    then any text without a shell separator, then a verb — produced 8 false positives
+#    and 0 true ones. Every one was a path or a search pattern, and every one was
+#    worked around with a glob or a here-doc within seconds. That rate is not a
+#    conservative guard: a member who has learned to rewrite the command is a member
+#    who has the rewrite ready for the case this exists to stop, so precision is a
+#    security property here and not an ergonomic one.
+#
+#    What *follows* `thalamus` is the discriminator, never what precedes it. A path
+#    invocation — `.venv/bin/thalamus dispatch alpha` — is a real reach and still
+#    matches, so the leading boundary stays wide.
+INVOKES_ROOM_VERB='(^|[^A-Za-z0-9_-])thalamus[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(dispatch|spawn|pin|roster)([^A-Za-z0-9_-]|$)'
+#    Asking what a verb does reaches no room: argparse prints and exits before an
+#    argument is read. Matched as the *shape* of a help invocation rather than as the
+#    presence of the flag, so a `--help` inside a quoted message buys no exemption.
+HELP_SHAPE='thalamus[[:space:]]+(dispatch|spawn|pin|roster)[[:space:]]+(--help|-h)([^A-Za-z0-9_-]|$)'
+
+if printf '%s' "$command" | grep -qE "$INVOKES_ROOM_VERB"; then
+  if printf '%s' "$command" | grep -qE "$HELP_SHAPE"; then
+    log_event pass help "$room"
+    exit 0
+  fi
   if names_own_room; then
     log_event pass peer-command "$room"
     exit 0

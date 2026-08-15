@@ -214,3 +214,60 @@ class TestTheSenderIsEstablishedNotAsserted:
         sender, authority = dispatch.authenticate(
             "alpha", "main", caller_room="", caller_scope="main")
         assert (sender, authority) == ("main", dispatch.SENDER_OPERATOR)
+
+
+class TestPrecision:
+    """The guard's false-positive rate is a security property, not an ergonomic one.
+
+    Measured across three sessions on 2026-08-15: 8 false positives, 0 true ones. Every
+    one was a path or a search pattern that happened to contain both `thalamus` and a
+    verb, and every one was worked around within seconds with a glob or a here-doc. A
+    member who has learned the rewrite has it ready for the case the guard exists to
+    stop, so a guard that cries wolf is weaker than a quiet one, not safer.
+
+    These are the eight, as issued.
+    """
+
+    @pytest.mark.parametrize("command", [
+        # A path names both words and invokes nothing.
+        "git add src/thalamus/console/static/app.js tests/js/roster.test.mjs",
+        "sed -n '100,120p' src/thalamus/harness/dispatch.py",
+        "grep -n 'caller_room' src/thalamus/harness/dispatch.py",
+        "rg -n 'def dispatch\\(' -A 25 src/thalamus/harness/dispatch.py",
+        "git diff -- src/thalamus/harness/dispatch.py",
+        "git add src/thalamus/console/server.py docs/console.md",
+        # Prose that mentions the tool and a verb, in a quoted argument.
+        'gh pr create --body "thalamus console: roster sync stays idempotent"',
+        # Asking what a verb does reaches no room — argparse exits before any argument.
+        "thalamus dispatch --help",
+        "uv run thalamus spawn -h",
+    ])
+    def test_naming_the_tool_is_not_invoking_it(self, command, tmp_path):
+        assert run_guard(command, tmp_path, room="d4v2").returncode == 0, (
+            f"false positive: {command!r} reaches no room")
+
+    @pytest.mark.parametrize("command", [
+        # The discriminator is what *follows* `thalamus`, so a path invocation is
+        # still a real reach and must still be caught.
+        '/home/op/.venv/bin/thalamus dispatch alpha "hello"',
+        './.venv/bin/thalamus dispatch alpha "hello"',
+        'uv run thalamus dispatch alpha "hello"',
+        'THALAMUS_ROOM= thalamus dispatch alpha "hello"',
+        "thalamus spawn qe --room alpha",
+        # A flag taking a value must not let the room hide behind it.
+        'thalamus dispatch --to qe alpha "hello"',
+    ])
+    def test_the_tightening_lets_no_real_reach_through(self, command, tmp_path):
+        assert run_guard(command, tmp_path, room="d4v2").returncode == 2, (
+            f"false negative: {command!r} addresses a room this session is not in")
+
+    def test_a_help_flag_inside_a_message_buys_no_exemption(self, tmp_path):
+        """The exemption is the shape of a help invocation, not the presence of a flag.
+
+        `--help` inside a quoted positional is a word in a message: the shell passes it
+        as part of one argv element and argparse never sees a flag, so a guard reading
+        the raw string must not treat it as one.
+        """
+        result = run_guard('thalamus dispatch alpha "how do I use --help here"',
+                           tmp_path, room="d4v2")
+        assert result.returncode == 2

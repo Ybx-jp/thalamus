@@ -8,9 +8,23 @@
   --panel-hi: #1c232c;
   --hair: #2a323d;
   --ink: #cdd8e4;
-  --muted: #7d8794;
-  --faint: #4d5661;
+  /* Both carry text, so both clear WCAG AA 4.5:1 on every ground they sit on:
+     --faint on the page and on the panel an opened or terminal row paints, --muted
+     on the chip and band grounds too. The dim was never what separates a reading
+     from a non-observation — the mono vs proportional-italic split is, and it
+     survives a legible grey. If the distinction needed the darkness, contrast would
+     be carrying it, which is the thing the typeface rule exists to avoid. */
+  --muted: #8b95a3;
+  --faint: #768494;
   --danger: #e0685c;
+  /* Status hues, and deliberately not identity hues. An identity colour is assigned
+     by hashing a scope name, so it must mean *nothing* — a row is teal because of
+     what it is called, never because it is well. These mean exactly one thing each.
+     Sharing a value made two registries own one hex: moving the identity palette
+     would have silently moved the status signal, or failed to. Both clear the 3:1
+     non-text floor and the 4.5:1 text floor on every ground they paint on. */
+  --ok: #45c08d;
+  --pending: #e8b44a;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   /* per-channel hues, overridden per-tab in JS */
@@ -72,7 +86,7 @@ header {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--faint);
 }
-.conn.live .beacon { background: #4db6a6; box-shadow: 0 0 6px #4db6a6; }
+.conn.live .beacon { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .conn.stale .beacon { background: var(--danger); }
 
 /* ---- Install bar ---- */
@@ -196,11 +210,10 @@ header {
      rather than stretching the tab. The full path is in the tab's title. */
   max-width: 20ch; overflow: hidden; text-overflow: ellipsis;
 }
-.chan-tab[aria-selected="true"] .cwd { color: var(--tab); opacity: .85; }
-.chan-tab .cmd {
-  font-size: .54rem; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--faint);
-}
+/* No `opacity`: at .85 the palette's rose composited to 4.43:1 on this ground and
+   violet — which is `main`, so the most common tab — to 4.51:1, a hundredth of
+   headroom. Full strength puts the worst hue at 5.61:1. */
+.chan-tab[aria-selected="true"] .cwd { color: var(--tab); }
 .chan-tab[aria-selected="true"] {
   color: var(--ink);
   background: var(--panel-hi);
@@ -395,7 +408,10 @@ header {
   cursor: pointer;
   padding: .12rem 0;
 }
-.rd-name { color: var(--chan); flex: 0 0 auto; opacity: .85; }
+/* No `opacity`: this nests inside `.rd-thinking` and `.rd-side`, and opacity on a
+   container multiplies with opacity on its descendants. A subagent thinking block
+   compounded .72 x .7 x .85 and painted the word `thinking` at 2.15:1. */
+.rd-name { color: var(--chan); flex: 0 0 auto; }
 .rd-sum {
   color: var(--muted);
   flex: 1 1 auto;
@@ -410,9 +426,13 @@ header {
   border-radius: 50%;
   background: var(--faint);
 }
-.rd-dot.done { background: #4db6a6; opacity: .5; }
+/* Receded, but stated rather than composited: `opacity` paints a colour that appears
+   nowhere in the file, so nothing can measure it — this dot was reaching the surface
+   at 2.72:1 against a 3:1 floor while the declared teal measured 7.05:1. Colour is
+   the whole encoding on a read-state dot, which has no word beside it. */
+.rd-dot.done { background: #327e62; }
 .rd-dot.error { background: var(--danger); }
-.rd-dot.pending { background: #e0a45c; animation: rd-pulse 1.4s ease-in-out infinite; }
+.rd-dot.pending { background: var(--pending); animation: rd-pulse 1.4s ease-in-out infinite; }
 @keyframes rd-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
 .rd-body {
   font-family: var(--mono);
@@ -460,9 +480,18 @@ header {
   letter-spacing: .01em;
 }
 .rd-ask:not(.waiting) .rd-q { font-weight: 500; color: var(--muted); }
-.rd-thinking .rd-head { font-style: italic; opacity: .7; }
+/* The italic is what marks a thinking block, and it survives a legible colour —
+   the same reason the roster's non-observation voice does not need to be dim. */
+.rd-thinking .rd-head { font-style: italic; }
 /* Subagent work, one step back from the session's own voice. */
-.rd-side { margin-left: .9rem; opacity: .72; }
+/* A subagent's output is set apart by where it sits, not by how faint it is: the
+   indent and rule say `nested` without touching any colour, and so cannot compound
+   with the recessions inside it. */
+.rd-side {
+  margin-left: .5rem;
+  padding-left: .55rem;
+  border-left: 2px solid var(--hair);
+}
 .viewcap.on { color: var(--chan); border-color: var(--chan); }
 /* A failed utterance has to be visible: the whole point of the control is that
    you are not looking at the screen, so silence alone is ambiguous. */
@@ -479,7 +508,7 @@ header {
   margin-left: -.55rem;
   padding-left: .45rem;
 }
-.wait-note { color: #e0a45c; }
+.wait-note { color: var(--pending); }
 
 /* ---- Frame theme (desktop only) ----
    The same art and the same panel geometry the terminal emulator paints on its GPU
@@ -556,7 +585,10 @@ header {
 /* Keystrokes go straight to the pane, so the composer is no longer the input path —
    dim it to say so, without removing it (it still takes multi-line paste and the
    slash-command hints). */
-body.passthrough .composer .input-line { opacity: .55; }
+/* Still a dim, because dimming a redirected control is the signal — but measured.
+   At .55 this sat at 4.51:1, clearing the floor by a hundredth and only because
+   --ink is bright; nothing below it may darken without taking it under. */
+body.passthrough .composer .input-line { opacity: .7; }
 body.passthrough .composer .input-line:focus-within { opacity: 1; }
 
 /* ---- Composer ---- */
@@ -732,7 +764,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
   flex: 0 0 auto;
   background: var(--tab, var(--faint));
 }
-.admin-dot.ok { background: #4db6a6; box-shadow: 0 0 5px #4db6a6; }
+.admin-dot.ok { background: var(--ok); box-shadow: 0 0 5px var(--ok); }
 .admin-dot.bad { background: var(--danger); }
 .admin-name { font-family: var(--mono); font-size: .74rem; color: var(--ink); display: flex; flex-direction: column; gap: .08rem; min-width: 0; }
 .admin-state {

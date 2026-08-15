@@ -87,7 +87,7 @@ matching record has nothing to say about distillation, which is the success sile
 §4.2. A record whose session has no row still renders — that is the whole point of
 §4.4, since the window is gone.
 
-Four rules bind the whole table:
+Five rules bind the whole table:
 
 **`""` is not `manual`.** `permission_mode` is empty when no `type:"permission-mode"`
 record exists, and the parse covers the whole transcript, so empty means *no such
@@ -113,6 +113,17 @@ promised. A hash, a byte count, a monotonic counter are all equally valid, and s
 for another must not be a client change. Comparing two opaque tokens for equality is not
 computing state — it is the same shape as the distill lookup in this section, and the one
 fact the rail's pulse actually needs.
+
+**The contract is tested against the real types, never a fake.** `server.py` read
+`session.status_updated_at` — the stamp behind both `blocked_since` and `activity_since` —
+off a descriptor that did not carry that field, raising on every poll that could read a
+descriptor at all. The suite stayed green throughout, because the liveness tests hand the
+reduction a hand-written session, and **a fake grows whatever attribute the code asks it
+for**: the one shape that cannot fail was the shape under test. Anything that reduces a
+descriptor into this table binds to the real dataclass, and the binding is only worth
+something if removing the field makes the test fail — which is checked, not assumed. This
+is §8's rule one layer down: a test that builds its own copy of the thing it is testing
+cannot see that thing drift.
 
 **The row is handed data, never a URL.** Rendering a session takes only the fields above
 and the distill join; a row renderer that fetches anything is fetching a fact this table
@@ -141,6 +152,57 @@ non-observation — the console saying it cannot see, rather than reporting what
 *never* monospace: proportional, italic, dimmed. A reader cannot mistake one for the other,
 because they do not look like the same kind of thing, and the distinction costs no colour
 and survives greyscale. This carries §4.5 and §5.2.
+
+**Dimmed has a floor: 4.5:1.** *Dimmed* names a role, not a lightness, and the role is
+subordinate — never illegible. Every text token meets WCAG AA against its own composited
+background (4.5:1 normal, 3:1 at ≥24 px or ≥18.66 px bold). Dimming that goes below the
+floor costs the design nothing to fix, because the dim was never the carrier: the
+mono/proportional-italic split separates a state from a non-observation, and it survives
+both greyscale and a legible grey. A token that had to stay dark to keep the distinction
+would mean contrast was carrying it, which this section has already ruled out.
+
+**A token is conformant only on the grounds it is declared for**, so the pairing is the unit
+of conformance, not the colour. `--faint` measures 4.95 on `--bg` and 4.53 on `--panel` —
+and 4.15 on `--panel-hi`, which is why the token declares the two grounds it may paint on.
+Two consequences: a new rule that paints `--faint` on `--panel-hi` fails silently, and the
+0.03 of headroom on `--panel` means the ground tokens cannot drift darker either. Enforcing
+that closure is qe's, and the assertion is over declared pairs plus a check that the CSS
+produces no undeclared one.
+
+**Non-text carriers meet 3:1 only where colour is the signal** — the connection beacon, the
+read-state dots, the admin dot. Not `--hair`, a separator beside controls their own labels
+identify, and not the terminal band's tint, where §4.3 makes the height change the salience
+channel. For the tint the assertion inverts: hold it **≤1.5:1**, so it can never quietly
+become load-bearing.
+
+**Identity hues are semantically empty. Status hues are not. The two sets are disjoint.**
+An identity colour is assigned by hashing a scope name, so it must mean nothing: a row is
+teal because of what it is called, never because it is well. A status colour means exactly
+one thing. Sharing a value lets the meaning leak onto an arbitrary row — and because the two
+live in different registries, a change to either silently desynchronises the other, which is
+a second owner for one fact. Today `#4db6a6` is both the identity palette's teal and the
+live beacon, the ok dot and the done dot; `#e0a45c` is both amber and both *pending* and
+*waiting*. Disjointness is the assertion, and it is the same closure shape as the literal
+registry rather than a new kind of check.
+
+**Every colour declares which of three roles it holds**, because the floor follows from the
+role: it *carries* the signal (floor 4.5:1 text, 3:1 non-text), it *reinforces* a signal
+carried elsewhere (a ceiling instead — hold it low enough that it cannot quietly become the
+carrier), or it carries *nothing* (no assertion). Only the third needs its reason written
+down, because it is the one that can stop being true without anything changing colour.
+
+**A declaration that outlives its subject reads as coverage while measuring nothing.** So
+every registry is asserted in both directions: nothing undeclared in the surface, and
+nothing declared that the surface no longer contains. This spec is subject to the same rule
+— a measurement quoted here is a fixture someone will point a test at, and stale figures
+have already sent one reader after a colour the console did not have.
+
+**Luminance separation never buys itself below the floor.** Where a ramp needs its steps
+told apart — danger from warning from ok — the separation is found above 4.5:1 or in a
+channel that is not colour at all: the word, the weight, the geometry. A ramp that
+distinguishes its steps by dropping one of them under AA has traded a reader who cannot
+act for a reader who cannot see, and this design has the non-colour channels precisely so
+that trade is never necessary.
 
 The requirement is that split, satisfied by the console's existing `--mono` and `--ui`
 system stacks. **No webfont ships for this.** A face would cost files in `static/`, a
