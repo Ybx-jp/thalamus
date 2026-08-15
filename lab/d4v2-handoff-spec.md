@@ -34,6 +34,7 @@ client renders what it is handed.
 | `closing` | float\|null | epoch start stamp | `closing M:SS` |
 | `activity` | str | `idle`\|`busy`\|`""` — the word the not-blocked slot draws, composed server-side from the descriptor status. Never carried as `status` (§8) | the `blocked=false` state slot (§4.5) |
 | `activity_since` | float\|null | epoch of the status transition — the same `statusUpdatedAt` `blocked_since` reads. Null when the state draws no clock | `busy 6:28` |
+| `screen_rev` | str\|int | **opaque** change token for this window's screen — any value that differs when the pane text has changed | the rail's changed-pulse, by comparing it to the previous poll's |
 | `policy_stale` | bool | `server.py:644-646` | `old posture` |
 | `anchor` | bool | the window the console must never close | `anchor` qualifier |
 | `harness`, `room`, `dead` | — | existing | as today |
@@ -79,7 +80,7 @@ matching record has nothing to say about distillation, which is the `ok` silence
 §4.2. A record whose session has no row still renders — that is the whole point of
 §4.4, since the window is gone.
 
-Three rules bind the whole table:
+Four rules bind the whole table:
 
 **`""` is not `manual`.** `permission_mode` is empty when no `type:"permission-mode"`
 record exists, and the parse covers the whole transcript, so empty means *no such
@@ -90,6 +91,21 @@ and absence must never be read as any particular mode.
 `closing` / a distill record's own clock are when a *process* began. A row legitimately reads
 `opened 09:14` and `restarting 0:42` at the same time. They occupy different positions
 and different idioms (§3.1).
+
+**The poll carries no screens.** Measured on the live roster 2026-08-15: `/api/panes`
+returned 76.5 KiB for 9 windows, of which 61.2 KiB — **80%** — was `lines`, the full pane
+text of all nine, including the eight nobody was looking at. At §4's 1.2 s cadence that is
+~50 KB/s sustained to a phone, to draw a roster that needs none of it: `lines` is not in
+this table, and the row has never had a use for another window's screen. So the pane mirror
+travels on the focused-window request — the same split §5.1 already makes for
+`permission_mode` — and the roster poll carries `screen_rev` instead.
+
+`screen_rev` is **opaque by contract**. The client compares this poll's value to the last
+one and pulses the rail on difference; it never parses it, and nothing about its format is
+promised. A hash, a byte count, a monotonic counter are all equally valid, and swapping one
+for another must not be a client change. Comparing two opaque tokens for equality is not
+computing state — it is the same shape as the distill lookup in this section, and the one
+fact the rail's pulse actually needs.
 
 **The row is handed data, never a URL.** Rendering a session takes only the fields above
 and the distill join; a row renderer that fetches anything is fetching a fact this table
@@ -162,6 +178,18 @@ render choice, not a schema commitment. This is deliberate: project-as-group-hea
 no measurement behind it (the faceting question was never answered), so it is built to
 cost a rerender to undo rather than a migration.
 
+**Which field is the key.** `project` when non-empty, else `repo_root`, else the trailing
+no-project group (§3.4). Header label is `project`, or `basename(repo_root)` when only the
+path is known. Name before path because `project` carries the `THALAMUS_PROJECT` override
+and is the only field that can unite a worktree with its checkout: `~/code/thalamus` and
+`.claude/worktrees/d4v2` are two repo roots and one project, and an operator holding the
+phone is looking for the project.
+
+Name-first is safe here only because the row can disambiguate inside the group. Two
+unrelated checkouts that happen to share a basename would land in one group, so a row
+whose `repo_root` differs from its group's shows `cwd_label` — the mechanism §1 already
+gives it. The group answers *which project*; the row answers *which copy*.
+
 ### 3.4 The group with no project
 
 `project` and `repo_root` are empty for any session started before the hook wrote them,
@@ -188,6 +216,23 @@ appears on this group only.
 It is self-liquidating: every restarted session leaves it, and when it empties it
 disappears. That is the honest shape for a transitional state — it shrinks visibly as
 the migration completes, and nothing has to be cleaned up afterwards.
+
+**`repo_root` may be backfilled. `project` may not.** The ledger records `cwd`, and
+`repo_root` is a pure function of it — `git -C "$cwd" rev-parse --show-toplevel`, the same
+resolver `session-start.sh:69` already runs. Re-running it over an existing row *derives*
+the value that row should have carried, which is not the error this section forbids: the
+forbidden thing is inventing a name out of a display string. A row whose `cwd` no longer
+resolves stays absent. `project` is never backfilled — it carries the `THALAMUS_PROJECT`
+override, and an override the ledger did not record cannot be recovered from anything on
+disk. A basename substituted for it would be a guess wearing the group header, which is
+the one place a guess is indistinguishable from a fact.
+
+So backfilled rows group by path and label by basename, and join their override-named
+siblings only as those recycle. **The failure direction is fixed: under-group, never
+over-group.** A roster that splits one project across two groups is missing a relation and
+shows it — two headers where the operator expected one. A roster that merges two projects
+asserts a relation that does not hold and looks exactly like a correct one. Every fallback
+in §3.3 is ordered to fail the first way.
 
 **A board caveat that follows from this:** frame B2 draws three populated groups, which
 is true after the roster turns over and not before. The transitional state is drawn
@@ -418,6 +463,16 @@ Observability travels as one fact about the row, never as a null on each of thre
 if `activity` and `blocked` could disagree about whether the session was visible, the
 client would have to reconcile them, and a client reconciling state is a client
 computing state.
+
+**Only the state slot dims, and this is a majority-case rule, not a detail.** Which subset
+of the roster is unreadable depends on the vantage the console was launched from, and both
+sides have been measured: 7 of 9 unreadable from the host config dir, the complementary 2
+of 9 from inside a collaboration. So *not in reach* is not a rare row — on some vantage it
+is most of the list, and the encoding cannot be designed as an exception. A row that dimmed
+whole would make a mostly-unobserved roster read as a failed load, which is a false claim
+about the console rather than an honest one about the session. The identity half stays at
+full strength: name, group, `opened HH:MM`, `#index`, posture. Exactly one slot goes sans
+italic and dimmed, and the row still looks like a session that is there.
 
 A tap explains why, in the server's own words, verbatim: *"The console cannot read a
 session descriptor for this window. Descriptors are partitioned by configuration
