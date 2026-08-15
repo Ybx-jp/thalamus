@@ -65,6 +65,8 @@ CASE_MODULES = (
     "qe.cases.template_placeholders",
     "qe.cases.oracle_parses_whole",
     "qe.cases.skill_arming",
+    "qe.cases.reduction_binds_real_type",
+    "qe.cases.longlived_caller_names_its_room",
 )
 
 
