@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from thalamus.eval import legibility
+
 CSS = Path(__file__).parent.parent / "src" / "thalamus" / "console" / "static" / "style.css"
 AA = 4.5
 
@@ -31,23 +33,20 @@ def _tokens() -> dict[str, str]:
     return dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\s*;", root.group(1)))
 
 
-def _luminance(hex_colour: str) -> float:
-    h = hex_colour.lstrip("#")
-    out = 0.0
-    for channel, weight in zip((h[0:2], h[2:4], h[4:6]), (0.2126, 0.7152, 0.0722)):
-        c = int(channel, 16) / 255
-        out += weight * (c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
-    return out
-
-
-def contrast(fg: str, bg: str) -> float:
-    a, b = _luminance(fg), _luminance(bg)
-    hi, lo = max(a, b), min(a, b)
-    return (hi + 0.05) / (lo + 0.05)
+# The WCAG arithmetic has one owner. `eval/legibility.py` already carried it before
+# this file existed, and it was hand-rolled three more times in one day — here, and
+# twice in ad-hoc scripts — which is the same second-owner problem the rest of this
+# suite is about, wearing a different hat.
+contrast = legibility.contrast_ratio
 
 
 def test_the_ratio_maths_is_right():
-    """A checker that computes the wrong number passes everything forever."""
+    """A checker that computes the wrong number passes everything forever.
+
+    Kept after moving to the shared implementation, because "we import it" is not the
+    same claim as "it is correct", and this file's assertions are only worth what the
+    ratio is.
+    """
     assert contrast("#ffffff", "#000000") == pytest.approx(21.0, abs=0.01)
     assert contrast("#000000", "#000000") == pytest.approx(1.0, abs=0.01)
     # Order must not matter: the pair has one ratio, not two.
@@ -91,7 +90,12 @@ def test_text_tokens_clear_aa_on_every_ground_they_sit_on(token: str, ground: st
 LITERALS = {
     "#0b0e12": ("text on a filled control — chips, keycaps, primary actions", "chan", 4.5),
     "#4a2a29": ("the loose-chip and error border, a non-text carrier", "panel", 0.0),
-    "#4db6a6": ("the live beacon and the done dot — colour is the whole encoding", "panel", 3.0),
+    "#4db6a6": ("the live beacon — colour is the whole encoding", "panel", 3.0),
+    # Stated rather than composited. It was `#4db6a6` at `opacity: .5`, which paints
+    # a colour appearing nowhere in the file: the declared teal measured 7.05:1 while
+    # the surface received 2.72:1, under a 3:1 floor. An `opacity` is invisible to
+    # every check here, so the receded value is written out where it can be measured.
+    "#3a8078": ("the done dot, receded — colour is the whole encoding", "panel", 3.0),
     "#e0a45c": ("the pending dot and the wait note", "panel", 3.0),
     "#100f1b": ("the base layer under the terminal art", "bg", 0.0),
 }
@@ -105,6 +109,77 @@ def _literals() -> set[str]:
     declared = set(re.findall(r"#[0-9a-fA-F]{6}", root.group(1)))
     return {c.lower() for c in re.findall(r"#[0-9a-fA-F]{6}", text)} - {
         c.lower() for c in declared}
+
+
+APP = CSS.parent / "app.js"
+
+
+def _palette() -> dict[str, str]:
+    """The identity hues, read from the client that owns them.
+
+    `--chan` and `--tab` are assigned from JS, so the ground under a filled tab is
+    not in the stylesheet at all and no amount of CSS parsing reaches it. The set is
+    closed — `hueOf` draws from exactly this list — which is what makes it assertable
+    without a browser.
+    """
+    source = APP.read_text()
+    main = re.search(r'MAIN_HUE\s*=\s*"(#[0-9a-fA-F]{6})"', source)
+    block = re.search(r"PALETTE\s*=\s*\[(.*?)\]", source, re.S)
+    assert main and block, "MAIN_HUE / PALETTE not found in app.js"
+    hues = {"main": main.group(1).lower()}
+    for i, hue in enumerate(re.findall(r"#[0-9a-fA-F]{6}", block.group(1))):
+        hues[f"palette[{i}]"] = hue.lower()
+    return hues
+
+
+def test_the_identity_palette_is_legible_in_both_roles():
+    """A hue is a ground under `#0b0e12` on a filled tab and a foreground on a panel,
+    so it carries an obligation in both directions and neither is in the stylesheet.
+
+    Asserted against the palette constant rather than a rendered page: the set is
+    closed, so this is complete without a browser, and it fails the day someone
+    widens the palette — which is a live prospect, since the roster has seven expert
+    scopes and the luminance budget fits six.
+    """
+    tokens = _tokens()
+    for name, hue in sorted(_palette().items()):
+        on_hue = contrast("#0b0e12", hue)
+        assert on_hue >= AA, (
+            f"{name} {hue} is {on_hue:.2f}:1 under #0b0e12 text on a filled control")
+        as_ink = contrast(hue, tokens["panel-hi"])
+        assert as_ink >= AA, (
+            f"{name} {hue} is {as_ink:.2f}:1 as text on --panel-hi")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="OPEN FINDING (designer + qe, 2026-08-15): #4db6a6 is both the identity "
+           "palette's teal and the live beacon / ok dot; #e0a45c is both amber and "
+           "the pending dot. Found by reconciling two literal counts that disagreed "
+           "— 27 in the stylesheet's domain, 29 including app.js. The fix is a new "
+           "value for the status carriers (style.css / app.js), which is outside "
+           "qe's write boundary. strict=True: fails the moment it is fixed, so the "
+           "marker is removed rather than left to rot.",
+)
+def test_identity_colour_and_status_colour_share_no_value():
+    """Two registries, two meanings, and a shared hex is a second owner for one fact.
+
+    An identity hue is assigned by hashing a scope name, so it must mean *nothing* —
+    a row is teal because of what it is called, never because it is well. A status
+    colour means exactly one thing. Measured 2026-08-15: `#4db6a6` was both the
+    palette's teal and the live beacon / ok dot, and `#e0a45c` both amber and the
+    pending dot, so the status vocabulary was leaking onto rows at random and the
+    palette could not be retuned without silently moving the status colours with it.
+
+    Only signal-carrying literals are in scope. A border or an art base layer may
+    coincide with a hue without asserting anything, because it does not mean anything.
+    """
+    carriers = {c for c, (_, _, floor) in LITERALS.items() if floor > 0}
+    collisions = carriers & set(_palette().values())
+    assert not collisions, (
+        f"{sorted(collisions)} serve as both an identity hue and a status colour. "
+        f"Identity is assigned by hashing a name and must stay meaningless; a status "
+        f"colour means one thing. Give the status carrier its own value.")
 
 
 def test_every_colour_the_stylesheet_spells_out_is_declared():
