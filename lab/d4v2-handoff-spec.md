@@ -56,12 +56,18 @@ client renders what it is handed.
 | `project` | str | group key — same field, same pin row as the window's | group header |
 | `repo_root` | str | as above | grouping key |
 | `dir` | str | **cwd basename — a display string only** | identity line, never grouping |
-| `state` | enum | `ok`\|`running`\|`stalled`\|`failed`\|`unknown` | §4.1, §4.3 |
+| `state` | enum | `active`\|`stalled`\|`error`\|`unknown` — the four that reach the wire | §4.1, §4.3 |
 | `op` | enum | `close`\|`recycle` — which path killed it | band wording, `unknown` only |
 | `detail` | str | verbatim, single line, capped at 200 chars | opened row only |
 | `detail_truncated` | bool | true when the cap bit | truncation marker (§4.6) |
 | `updated` | float | epoch seconds — same idiom as `started`, `blocked_since` | — |
 | `age` | int | seconds, precomputed | elapsed, where a clock is drawn |
+
+**That enum is the wire, not the classifier.** `console/distill.py` also produces a `done`
+state and never sends it — a successfully distilled session is dropped from `distill[]`
+altogether. So four values arrive, success is not among them, and `op` rides only
+`unknown`. The client cannot receive a success value even in principle, which is what makes
+§4.2's silence structural instead of a convention the client has to remember.
 
 **`dir` is never a grouping key.** It is a cwd basename, so grouping on it would file a
 session in `~/code/thalamus/lab` under `lab` and one in the checkout root under
@@ -76,7 +82,7 @@ are empty, on nothing (§3.4).
 
 **The distill join is the one place the client assembles anything**, and it is a lookup,
 not a derivation: match `session_id[:8]`, render the record's own `state`. A row with no
-matching record has nothing to say about distillation, which is the `ok` silence of
+matching record has nothing to say about distillation, which is the success silence of
 §4.2. A record whose session has no row still renders — that is the whole point of
 §4.4, since the window is gone.
 
@@ -143,9 +149,12 @@ greyscale. This carries §4.5 and §5.2.
 ```
 
 Line 1: identity bar, name, state slot (right).
-Line 2: `opened HH:MM`, then any standing qualifiers — `old posture`, `anchor`,
-`cwd_label` when it differs from the group's `repo_root`, and `#index` on collision
-only. **Mode is not among them** (§5.1).
+Line 2: `opened HH:MM`, then any standing qualifiers — `viewing` first when this is the
+row you are on, then `old posture`, `anchor`, `cwd_label` when it differs from the group's
+`repo_root`, and `#index` on collision only. **Mode is not among them** (§5.1).
+
+This lane is everything true of a row that is not its state, which is why `viewing` lives
+here and not in the slot (§4.1).
 
 ### 3.1 The two clocks
 
@@ -246,18 +255,57 @@ beside it rather than instead of it — both are real, one is temporary.
 |---|---|---|
 | starting | `starting 0:03` | existing |
 | not blocked | `idle`, or `busy 6:28` | `activity`, `activity_since` (§4.5) |
-| viewing | `VIEWING` | client, the row you are on |
 | blocked | `needs you` pill + `stopped 6h47m ago` | `blocked=true`, `blocked_since` |
 | unobservable | *not in reach* — sans italic, dimmed | `blocked=null` (§4.5) |
 | restarting | `restarting 0:42` | `recycling` |
 | closing | `closing 0:12` | `closing` |
-| distilling | `distilling 2:14` | distill `state=running` |
+| distilling | `distilling 2:14` | distill `state=active` |
 | stalled | `distilling 21:04 · stalled` | distill `state=stalled` |
-| distilled ok | **nothing** | distill `state=ok` |
+| distilled ok | **nothing** | **no record at all** (§4.2) |
+| observed, no word | **nothing** | `activity=""` with `observed=true` (§4.5) |
 
 `stalled` keeps steady geometry. It is past 1200 s but has not failed and may still
 complete; the action is wait-or-intervene, not rerun. Only *terminal* states break the
 geometry — that is what keeps the loud channel rare.
+
+**Precedence, because several of these are true at once routinely.** The slot answers one
+question — *what does this row need from me, and if nothing, what is it doing?* — so the
+order is actionability first, then recency. Highest wins; the rest are not drawn.
+
+| | when | draws |
+|---|---|---|
+| — | terminal (§4.3) | **not in this chain.** The band takes the row's geometry and the slot ceases to exist |
+| 1 | `recycling`, `closing`, starting | `restarting 0:42` / `closing 0:12` / `starting 0:03` |
+| 2 | distill `active` or `stalled` | `distilling 2:14`, `· stalled` |
+| 3 | `blocked === true` | `needs you` + `stopped 6h47m ago` |
+| 4 | `observed === false` | *not in reach* |
+| 5 | `activity` non-empty | `idle`, `busy 6:28` |
+| 6 | otherwise | nothing |
+
+**A blocked row that is mid-restart shows the restart, and that is deliberate.** The
+restart *is* the resolution of blocked, and the operator started it — drawing `needs you`
+over it asks for an action already taken. If the restart fails, grace expiry promotes the
+row to the terminal band (§4.3), which is a louder channel than the pill, so the failure
+path is covered by more than the word that got displaced.
+
+**What is not displaced is the count.** The resting bar counts `blocked === true`, one
+served field, with no exception for an operation in flight — a count that excluded
+in-flight rows would be the client reducing two fields into a policy claim, which is
+exactly what §8 forbids. So the pill can leave the slot while the row is still counted:
+precedence reallocates a slot, it never retracts a finding.
+
+Ranks 4 and 5 cannot actually collide — `activity` is `""` whenever `observed` is false
+(§4.5) — and they are ordered anyway, because a rule that depends on two fields never
+disagreeing is one server change away from being wrong.
+
+**`VIEWING` is not in the slot at all.** It is the only entry that was a fact about the
+*reader* rather than the session, and it is the one fact the operator cannot fail to
+know — they are looking at that window. Ranked anywhere above the bottom it hides a real
+state behind a redundant one, and on the anchor row (viewed, and unreadable from a
+room-launched console — a live collision, the first row in the list) it would replace the
+row's only honest claim with a word that says nothing. It becomes a line-2 qualifier, first
+in that lane, beside `anchor` and `old posture` (§3) — the lane that already holds what is
+true of a row without being its state.
 
 **The blocked clock is the state that most needs its duration, measured on this box on
 2026-08-15:** window 0 — **the anchor**, the console's own reference window, the one it
@@ -271,7 +319,7 @@ needed a human was indistinguishable from the three that did not.** `needs you` 
 state; `needs you, since 6 h 47 m` is the finding. (Its 6 h 47 m is unrelated to its
 88.3 h `started` — two clocks. Alive 3.7 days, stuck for the last 6.8 hours.)
 
-### 4.2 Why `ok` stays silent
+### 4.2 Why success stays silent
 
 Success is drawn as nothing, exactly as it ships today. This looks like conceding G2
 and is the opposite.
@@ -290,7 +338,7 @@ happen without the operator.
 | state | band reads | carries |
 |---|---|---|
 | `state=unknown` | `never distilled — window was killed, SessionEnd never ran` | — |
-| `state=failed` | `distillation failed` | `detail`, verbatim |
+| `state=error` | `distillation failed` | `detail`, verbatim |
 | `recycling`/`closing` > `grace_s` | `restart exceeded 240s grace — the window may be gone` | elapsed |
 
 A terminal row is **structurally different**, not a red word in the same slot:
@@ -345,7 +393,7 @@ Which is a reason to keep PPV high by construction rather than to argue about th
 
 Design consequence, and it is the one already built: the loud geometry stays reserved
 for terminal states, `stalled` keeps steady geometry because it may still complete, and
-`ok` stays silent. Every one of those keeps the rare channel rare and its precision
+success stays silent. Every one of those keeps the rare channel rare and its precision
 high.
 
 ### 4.4 Dismissal, and the row with no window
@@ -696,7 +744,7 @@ once, to `api/dispatch` — and this is a cheap belt on that.
 | `w.observed ? … : notInReach()` | §1 says branch on this first |
 | `w.blocked ? pill : slot` | `blocked` **is** the reduction — branching on it is how it gets rendered |
 | `slot.textContent = w.activity` | the server composed the word; printing it is the whole job (§4.5) |
-| `d.state === "stalled"`, and all of §4.1 | different field, still one owner: the distill enum (`ok\|running\|stalled\|failed\|unknown`) is authored by `console/distill.py` for display, has no second reader, and §4.1 *requires* the client to branch on it. Guard A's vocabulary is the harness session status only |
+| `d.state === "stalled"`, and all of §4.1 | different field, still one owner: the distill enum (`active\|stalled\|error\|unknown`) is authored by `console/distill.py` for display, has no second reader, and §4.1 *requires* the client to branch on it. Guard A's vocabulary is the harness session status only |
 
 `inFlight` is the better name and stays — as accuracy, not as compliance.
 
