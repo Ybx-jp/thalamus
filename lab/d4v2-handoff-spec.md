@@ -79,7 +79,7 @@ matching record has nothing to say about distillation, which is the `ok` silence
 §4.2. A record whose session has no row still renders — that is the whole point of
 §4.4, since the window is gone.
 
-Two rules bind the whole table:
+Three rules bind the whole table:
 
 **`""` is not `manual`.** `permission_mode` is empty when no `type:"permission-mode"`
 record exists, and the parse covers the whole transcript, so empty means *no such
@@ -90,6 +90,12 @@ and absence must never be read as any particular mode.
 `closing` / a distill record's own clock are when a *process* began. A row legitimately reads
 `opened 09:14` and `restarting 0:42` at the same time. They occupy different positions
 and different idioms (§3.1).
+
+**The row is handed data, never a URL.** Rendering a session takes only the fields above
+and the distill join; a row renderer that fetches anything is fetching a fact this table
+should have carried, and it takes the §8 guard down with it — `.status` is a legitimate
+name on an HTTP response, so a renderer that can hold a response is a renderer the guard
+can no longer read. Polling belongs where it is.
 
 ## 2. Geometry
 
@@ -562,25 +568,44 @@ renders.** The harness session status is read for policy in `harness/dispatch.py
 about the same fact, and two policies drift — which is exactly why the row is handed
 `observed` / `blocked` / `blocked_since` and no status string (§1).
 
-The scan spells that invariant as five forbidden words, and a word list is a proxy for
-it. It false-positived on a local named `busy` holding `!!w.recycling || !!w.closing`
-— an in-flight operation, nothing to do with session status — and it false-negatives on
-`el.textContent = w.status`, which reaches past the reduction while spelling none of the
-five. **Bind the enforcement to the shape, not the spelling** (operator ruling,
-2026-08-15; thread `dialogue-test-word-list-proxy-weakness`).
+**The enforcement is bound to shape, not spelling** (operator ruling, 2026-08-15). A word
+list is a proxy for the invariant and fails in both directions: it false-positives on a
+local named `busy` holding `!!w.recycling || !!w.closing` — an in-flight operation,
+nothing to do with session status — and it false-negatives on `el.textContent = w.status`,
+which reaches past the reduction while spelling none of the words. Anyone re-tightening
+these checks should re-read that sentence first; a rule that matches bare identifiers is
+the one that was already tried.
 
 The rule stated once: **forbidden is a second reader of a field the server has already
-reduced for policy.** Three checks, over the sources the scan already extracts (the
-dialogue trio, plus `renderRail` / `renderAdminWindows` / `renderDistill`):
+reduced for policy.** Three checks, over extracted client source — the dialogue trio, plus
+the renderers that draw a session.
+
+**Keep the extraction list pointed at whatever draws the row.** Renaming a renderer fails
+extraction loudly, which is the harness working as designed; a list that simply stops
+covering the drawing narrows the guard *silently*, and a guard that passes over a file no
+longer containing the guarded code is worse than no guard. §7 deletes the sheets that own
+two of today's three renderers, so repointing the list is part of implementing §3 — not a
+follow-up to it.
 
 **A. No branching on a status value.** Match predicate shapes, never bare identifiers:
 
 - `===` `!==` `==` `!=` adjacent to a status literal, in either order;
 - `case "<status>"`, and `switch` over any expression whose text contains `status`;
-- `.includes(` `.startsWith(` `.endsWith(` `.indexOf(` `.match(` `.test(` taking a
-  status literal — substring sniffing is branching with the `if` hidden;
+- `.includes(` `.startsWith(` `.endsWith(` `.indexOf(` `.search(` `.match(` `.test(`
+  taking a status literal — substring sniffing is branching with the `if` hidden. A
+  regex over the vocabulary counts as a literal, in either position: `/waiting/.test(x)`
+  is the same reading as `x === "waiting"` with the comparison spelled differently;
 - an object literal keyed by status literals — a lookup table is an opinion with the
-  `if` factored out.
+  `if` factored out. **Anchored to key position** (`{`, `,` or line start before the
+  literal): unanchored, `LIT\s*:` also matches the ternary `cond ? "idle" : "busy"`,
+  which branches on `cond` and not on a status value, and the ruling in §4.5 needs that
+  shape to stay legal.
+
+Comments are exempt, full-line only — deciding whether a trailing `//` sits inside a
+string literal needs a real parser, and guessing blinds the guard rather than tightening
+it. The exemption is load-bearing: §8's own rule cannot be stated in a file forbidden to
+write `.status`, and source that may not name its invariant grows contorted comments
+gesturing at it.
 
 **B. No status field on a row at all** — `lacks(".status")`, `lacks('["status"]')`. §1
 serves no status string on a window, so any occurrence is off-contract by construction.
@@ -590,10 +615,18 @@ reading the policy field, not showing a word — which is why it costs the not-b
 nothing. `idle` / `busy` are authorized there (§4.5) and arrive as `activity`, a display
 string the server composes; the row prints it, and no client source names either word.
 
-**C. Mechanism names stay banned as literals** — `pane`, `send-keys`. A different
+**B is scoped to the row renderers and cannot widen past them.** `.status` is already a
+legitimate name elsewhere in `app.js` for two unrelated fields — a tool call's own
+`it.status` and an HTTP response's `r.status`. Applied to anything that fetches, B is an
+instant false positive, which is the other half of why §1's last rule holds: **the row is
+handed data, never a URL.** A row renderer that grew its own fetch would break this guard,
+and that is the guard reporting a design violation, not a bug in the guard.
+
+**C. Mechanism names stay banned as literals** — `\bpanes?\b`, `send-keys`. A different
 failure (the client re-implementing tmux delivery, not misreading a status) and so a
-different rule. Its real guard is behavioral — the dialogue posts exactly once, to
-`api/dispatch` — and this is a cheap belt on that.
+different rule. Word-bounded, so `panel` is fine and `api/panes` is not — no renderer
+should be naming an endpoint. Its real guard is behavioral — the dialogue posts exactly
+once, to `api/dispatch` — and this is a cheap belt on that.
 
 **Explicitly legal. The rebound guard must not break any of these:**
 
@@ -607,12 +640,23 @@ different rule. Its real guard is behavioral — the dialogue posts exactly once
 
 `inFlight` is the better name and stays — as accuracy, not as compliance.
 
+**§4.5's clock rule needs no machinery of its own.** Guard A's vocabulary is the words,
+not the field carrying them, so `w.activity === "busy"` — the wrong clock condition — is
+equality against a status literal and fails the guard, while `w.activity_since ? …`
+passes. Drawing the elapsed off the stamp is the only shape the guard leaves open.
+
 **The vocabulary is not folklore.** It is `DELIVERABLE_STATUSES + (WAITING_STATUS,)` —
-`idle`, `busy`, `waiting` — at `harness/dispatch.py:108-109`. The `.mjs` must hardcode
-it, since node cannot import Python, so pin it from the Python side:
-`tests/test_console_js.py` already shells out to node and can assert the list in the
-`.mjs` equals that tuple. A status added in Python then fails the test that names it
-instead of quietly widening the hole.
+`idle`, `busy`, `waiting` — at `harness/dispatch.py:108-109`, hardcoded in
+`tests/js/statuses.mjs` because node cannot import Python, and pinned to that tuple from
+the Python side by `tests/test_console_js.py`. A status added in Python fails the test
+that names it instead of quietly widening the hole.
+
+**What the guard does not catch, accepted knowingly.** Bare-identifier object keys
+(`{ idle: … }`) and destructuring (`const {status} = w`). Matching either safely runs
+into the same ternary collision that anchored A's fourth check, and quoted keys are the
+ordinary form — so both stay uncaught rather than bought with false positives on legal
+code. A guard that cries wolf gets widened until it means nothing, which is the failure
+mode the word list was already an instance of.
 
 ## 9. Not designed here
 
