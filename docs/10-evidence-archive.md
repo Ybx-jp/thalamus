@@ -121,7 +121,11 @@ verified against the hash.
 
 - **Thalamus owns the bytes.** Claude Code rotates and compacts its own transcripts;
   `~/.claude/projects/` is not durable storage, and evidence that can vanish is not
-  evidence.
+  evidence. `extract` selects on that: a named `--session` that the live dir no longer
+  holds is looked up in the archive and distilled from the retained copy, under its own
+  session id rather than the content hash it is filed by. The fallback is for a *named*
+  session only — a sweep of the archive would re-offer the whole distilled corpus — and
+  for Claude Code only, whose transcript is retained whole where Cursor's is not.
 - **Outside the repository, not merely gitignored.** Thalamus is going public, and a
   `.gitignore` is one `git add -f` from a bad day.
 

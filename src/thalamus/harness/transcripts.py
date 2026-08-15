@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from thalamus.archive import archive_bytes, scan_for_secrets
+from thalamus.archive import archive_bytes, archive_dir, scan_for_secrets
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.harness.agents import SANDBOX_TMP_PREFIX
 from thalamus.substrate.schema import (
@@ -236,6 +236,48 @@ def discover(projects_dir: Path | None = None) -> dict[str, list[Path]]:
     return found
 
 
+# How far into a transcript to look for the session's own id. It rides on nearly
+# every record, so a session that carries none in its opening stretch carries none
+# at all — and reading further is a full scan of every archived file.
+_ID_SCAN_RECORDS = 40
+
+
+def _archived_session_id(path: Path) -> str:
+    for index, record in enumerate(_records(path)):
+        if index >= _ID_SCAN_RECORDS:
+            break
+        session_id = record.get("sessionId")
+        if session_id:
+            return str(session_id)
+    return ""
+
+
+def archived_transcripts(archive_base: Path | None = None) -> dict[str, Path]:
+    """Map session id -> its retained transcript, for the sessions ~/.claude has lost.
+
+    `retain()` copies transcripts here precisely because Claude Code rotates its own,
+    so a recovery that could only read `~/.claude/projects` would still lose a session
+    the day the harness rotated it — the failure retention exists to prevent.
+
+    The id has to come from the records: an archived transcript is named for its
+    content hash, and a file named for its bytes cannot be found by session. The same
+    session is re-retained under a new hash as its transcript grows, so several files
+    can carry one id; the largest is the most complete and wins.
+    """
+    root = archive_base or archive_dir()
+    if not root.is_dir():
+        return {}
+    found: dict[str, Path] = {}
+    for path in sorted(root.glob("*/*.jsonl")):
+        session_id = _archived_session_id(path)
+        if not session_id:
+            continue
+        held = found.get(session_id)
+        if held is None or path.stat().st_size > held.stat().st_size:
+            found[session_id] = path
+    return found
+
+
 def tool_result_text(block: dict) -> str:
     """The text of a tool_result content block, whichever shape the harness wrote."""
     content = block.get("content")
@@ -249,9 +291,14 @@ def tool_result_text(block: dict) -> str:
     return ""
 
 
-def parse(path: Path) -> TranscriptFacts:
-    """Read a transcript and recover every fact that needs no inference."""
-    facts = TranscriptFacts(session_id=path.stem, path=path)
+def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
+    """Read a transcript and recover every fact that needs no inference.
+
+    A live transcript is named for its session, so the filename is the identity. An
+    archived one is named for its content hash, and the caller that found it by id
+    passes that id back in rather than letting the hash become the session's name.
+    """
+    facts = TranscriptFacts(session_id=session_id or path.stem, path=path)
     external_tool_uses: set[str] = set()
 
     for record in _records(path):

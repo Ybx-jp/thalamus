@@ -111,7 +111,9 @@ def test_visualize_without_file_connects_to_the_persisted_memory_graph(monkeypat
     assert "Thalamus viewer: http://127.0.0.1:43123" in capsys.readouterr().out
 
 
-def test_extract_refuses_an_explicit_session_that_matches_nothing(monkeypatch, capsys):
+def test_extract_refuses_an_explicit_session_that_matches_nothing(
+    monkeypatch, tmp_path, capsys
+):
     """
     Scenario: the SessionEnd hook names a session that isn't in the given project dir
 
@@ -155,6 +157,8 @@ def test_extract_refuses_an_explicit_session_that_matches_nothing(monkeypatch, c
         raise AssertionError("must not open a graph connection when nothing is selected")
 
     monkeypatch.setattr(cli, "connect", unexpected_connect)
+    # Keep the archive fallback off the operator's real archive.
+    monkeypatch.setenv("THALAMUS_ARCHIVE_DIR", str(tmp_path / "archive"))
 
     args = SimpleNamespace(
         harness="claude",
@@ -178,7 +182,9 @@ def test_extract_refuses_an_explicit_session_that_matches_nothing(monkeypatch, c
     assert "-proj" in err
 
 
-def test_extract_reports_a_withheld_session_as_skipped_not_missing(monkeypatch, capsys):
+def test_extract_reports_a_withheld_session_as_skipped_not_missing(
+    monkeypatch, tmp_path, capsys
+):
     """
     Scenario: the SessionEnd hook names a session the substance gate withheld —
     the operator opened a shell, hit /clear, and closed it
@@ -224,6 +230,8 @@ def test_extract_reports_a_withheld_session_as_skipped_not_missing(monkeypatch, 
         raise AssertionError("must not open a graph connection when nothing is selected")
 
     monkeypatch.setattr(cli, "connect", unexpected_connect)
+    # Keep the archive fallback off the operator's real archive.
+    monkeypatch.setenv("THALAMUS_ARCHIVE_DIR", str(tmp_path / "archive"))
 
     args = SimpleNamespace(
         harness="claude",
@@ -248,7 +256,7 @@ def test_extract_reports_a_withheld_session_as_skipped_not_missing(monkeypatch, 
     assert "No session matching" not in captured.err
 
 
-def _extract_fakes(monkeypatch, tmp_path, session_ids):
+def _extract_fakes(monkeypatch, tmp_path, session_ids, *, fake_parse=True):
     """Stand up `thalamus extract`'s surroundings: transcripts, archive, graph."""
     from datetime import datetime
     from pathlib import Path
@@ -259,25 +267,29 @@ def _extract_fakes(monkeypatch, tmp_path, session_ids):
     )
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    # The archive fallback reads this; without it a unit test sweeps the operator's
+    # real ~/.thalamus/archive and its result depends on which box it runs on.
+    monkeypatch.setenv("THALAMUS_ARCHIVE_DIR", str(tmp_path / ".thalamus" / "archive"))
     monkeypatch.setattr(
         transcripts, "discover",
         lambda *a, **k: {"-proj": [Path(f"/nope/{sid}.jsonl") for sid in session_ids]},
     )
-    monkeypatch.setattr(
-        transcripts, "parse",
-        lambda path: SimpleNamespace(
-            session_id=path.stem,
-            user_turns=4,
-            has_substance=True,
-            cwd="/home/someone/code/chartgen",
-            started_at=f"2026-08-14T0{session_ids.index(path.stem)}:00:00",
-            path=path,
-            project="chartgen",
-            title="Fix the governor",
-            external_texts=[],
-            ingress_verifiable=True,
-        ),
-    )
+    if fake_parse:
+        monkeypatch.setattr(
+            transcripts, "parse",
+            lambda path, **kw: SimpleNamespace(
+                session_id=path.stem,
+                user_turns=4,
+                has_substance=True,
+                cwd="/home/someone/code/chartgen",
+                started_at=f"2026-08-14T0{session_ids.index(path.stem)}:00:00",
+                path=path,
+                project="chartgen",
+                title="Fix the governor",
+                external_texts=[],
+                ingress_verifiable=True,
+            ),
+        )
     monkeypatch.setattr(
         transcripts, "retain",
         lambda path: (
@@ -385,3 +397,89 @@ def test_extract_reuse_raw_replays_a_retained_response_and_never_pays_again(
     # live call by the flag that exists to avoid one.
     assert "· bbbb2222  no retained response" in out
     assert "1 extracted, 1 skipped, 0 failed" in out
+
+
+def test_extract_falls_back_to_the_archive_when_the_harness_rotated_the_transcript(
+    monkeypatch, tmp_path, capsys
+):
+    """
+    Scenario: a named session's transcript is gone from ~/.claude/projects, but the
+    copy retained at extraction time is still in the archive
+
+    Requires:
+    - monkeypatched discovery / graph connection, THALAMUS_ARCHIVE_DIR at tmp_path
+    - an archived transcript named for its content hash, as the archive stores it
+
+    Observable via:
+    - stdout
+
+    Verifications:
+    - a named session with no live transcript is recovered from the archive
+    - it is distilled under its own session id, not under the hash it is filed by
+    - a named session in neither place still fails loudly, and says both were checked
+
+    Transcripts are retained because Claude Code rotates its own (docs/10). Discovery
+    that reads only the live dir loses a session to exactly the rotation retention
+    exists to survive, and the evidence sits on disk the whole time.
+    """
+    import json
+
+    args = _extract_fakes(monkeypatch, tmp_path, [], fake_parse=False)
+    args.session = ["5b260dd3", "deadbeef"]
+
+    session_id = "5b260dd3-7442-4de2-8f85-eb6a23931389"
+    shard = tmp_path / ".thalamus" / "archive" / "3f"
+    shard.mkdir(parents=True)
+    # Named for its content hash, the way the archive files everything.
+    (shard / f"{'3f' + 'a' * 62}.jsonl").write_text(
+        "\n".join(
+            json.dumps(record)
+            for record in [
+                {"type": "mode", "mode": "normal", "sessionId": session_id},
+                {
+                    "type": "user",
+                    "cwd": "/home/someone/code/chartgen",
+                    "timestamp": "2026-08-01T10:00:00Z",
+                    "message": {"role": "user", "content": "raise the clamp threshold"},
+                },
+            ]
+        )
+    )
+
+    retained = tmp_path / ".thalamus" / "extractions" / f"main-{session_id}.txt"
+    retained.parent.mkdir(parents=True)
+    retained.write_text(
+        'summary: "Raised the clamp threshold after tests showed early clamping."\n'
+    )
+
+    cli._cmd_extract(args)
+
+    out = capsys.readouterr().out
+    assert "↺ 5b260dd3  recovered from the archive" in out
+    # Filed under its content hash, distilled under its session id.
+    assert "+ 5b260dd3" in out
+    assert "3faaaaaa" not in out
+    assert "1 extracted" in out
+
+
+def test_extract_refuses_a_session_in_neither_the_project_dir_nor_the_archive(
+    monkeypatch, tmp_path, capsys
+):
+    """
+    Scenario: the archive fallback is reached and comes up empty too
+
+    Verifications:
+    - the run still exits non-zero rather than reporting "0 sessions"
+    - the diagnostic names both places that were searched, so the reader knows the
+      fallback ran and found nothing rather than never having been tried
+    """
+    args = _extract_fakes(monkeypatch, tmp_path, [], fake_parse=False)
+    args.session = ["deadbeef"]
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli._cmd_extract(args)
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "deadbeef" in err
+    assert "-proj or the archive" in err

@@ -1717,6 +1717,34 @@ def _cmd_extract(args):
         parsed = [
             f for f in parsed if any(f.session_id.startswith(s) for s in args.session)
         ]
+        # Then the archive, for the named sessions ~/.claude no longer holds. The
+        # harness rotates its own transcripts, which is why they are retained at all
+        # (docs/10) — a recovery that could read only the live dir would still lose a
+        # session to the rotation retention was built to survive. Only for a *named*
+        # session: a sweep of the archive would re-offer the whole distilled corpus,
+        # and only for Claude Code, whose transcript is retained whole where Cursor's
+        # evidence deliberately is not.
+        if not cursor:
+            unmatched = [
+                requested for requested in args.session
+                if not any(f.session_id.startswith(requested) for f in parsed)
+            ]
+            archived = transcripts.archived_transcripts() if unmatched else {}
+            for session_id, path in sorted(archived.items()):
+                if not any(session_id.startswith(r) for r in unmatched):
+                    continue
+                facts = transcripts.parse(path, session_id=session_id)
+                if not facts.has_substance:
+                    insubstantial.append(facts.session_id)
+                    continue
+                if agents.is_sandbox_cwd(facts.cwd):
+                    continue
+                print(
+                    f"  ↺ {session_id[:8]}  recovered from the archive — "
+                    "no longer under ~/.claude/projects"
+                )
+                parsed.append(facts)
+            parsed.sort(key=lambda f: (f.started_at is None, f.started_at))
         # An explicit --session that matches nothing is a failure, not a no-op.
         # This is the SessionEnd hook's own invocation shape, and it runs
         # detached into a log nobody reads: "0 sessions to extract" is
@@ -1742,7 +1770,10 @@ def _cmd_extract(args):
                     "(slash commands only, no tool use) — nothing to distill."
                 )
                 sys.exit(0)
-            where = "the Cursor sessionEnd log" if cursor else ", ".join(args.projects)
+            where = (
+                "the Cursor sessionEnd log" if cursor
+                else f"{', '.join(args.projects)} or the archive"
+            )
             print(
                 f"No session matching {requested} under {where} — nothing distilled.",
                 file=sys.stderr,
