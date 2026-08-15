@@ -860,7 +860,16 @@ boundary is the mechanism: **one OS process = one immutable pin**.
    session was pinned. The record also carries `tmux_pane`, the pane the session
    was launched into, which is what lets a surface map a roster window back to the
    session running in it — the console's read view
-   ([console.md](console.md)) is the first consumer. Nothing else in the
+   ([console.md](console.md)) is the first consumer. It carries `repo_root` and
+   `project` for the same class of reason: both are resolved anyway to prime the
+   session, and they are the only route by which a surface can group sessions by the
+   thing an operator thinks in. `cwd` cannot stand in for either, in both directions
+   at once — a checkout and a directory inside it are one project that sorts as two,
+   while several sessions in one checkout share the string exactly and sort as one
+   indistinguishable pile. `project` carries the `THALAMUS_PROJECT` override and is
+   the grouping key; `repo_root` is the unambiguous path under it. Both are empty
+   outside a repository rather than falling back to the directory name, because a
+   guess on the wire is indistinguishable from a resolved value. Nothing else in the
    system identifies a window durably: an index renumbers when a window closes,
    and name, scope and cwd are all routinely shared by two live windows at once,
    while a pane id is unique, stable for the window's life, and preserved across

@@ -181,6 +181,28 @@ def test_an_unobservable_session_is_not_reported_as_unblocked(monkeypatch):
         assert row["activity_since"] is None
 
 
+def test_the_reduction_reads_only_fields_the_real_descriptor_has():
+    """The liveness tests hand `attach_blocked` a fake session, which is the right
+    shape for testing its logic and the wrong shape for catching a rename.
+
+    A fake grows whatever attribute the code asks for, so the suite stayed green
+    while `server.py` read `status_updated_at` from a descriptor that did not carry
+    it — an AttributeError on every poll that could read a descriptor at all, which
+    is the common case in production and the impossible case under a fake.
+
+    So this binds the reduction to the real type. It fails on a rename in either
+    file rather than at runtime on the phone.
+    """
+    import dataclasses
+
+    from thalamus.harness.quick import LiveSession
+
+    carried = {f.name for f in dataclasses.fields(LiveSession)}
+    for field in ("session_id", "status", "status_updated_at"):
+        assert field in carried, (
+            f"attach_blocked reads .{field}; the descriptor no longer carries it")
+
+
 def test_the_row_says_nothing_about_liveness_when_the_harness_is_absent(monkeypatch):
     """A console running without the harness package must disclaim, not reassure."""
     monkeypatch.setattr(server, "dispatch_module", lambda: None)
