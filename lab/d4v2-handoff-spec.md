@@ -153,6 +153,20 @@ non-observation — the console saying it cannot see, rather than reporting what
 because they do not look like the same kind of thing, and the distinction costs no colour
 and survives greyscale. This carries §4.5 and §5.2.
 
+**Dimmed has a floor: 4.5:1.** *Dimmed* names a role, not a lightness, and the role is
+subordinate — never illegible. Every text token on the row meets WCAG AA against its own
+composited background (4.5:1 normal, 3:1 at ≥24 px or ≥18.66 px bold), and non-text
+carriers — the identity bar, a band edge, a control outline — meet 3:1. Measured on the
+built roster 2026-08-15, the dim token `#4d5661` on `#0e1116` is **2.54:1**, and it carries
+*not in reach*, the whole line-2 qualifier lane, the group header with its count, and the
+`⋯` affordance. On `#0e1116` the floor is reached around `#727d8b`.
+
+Raising it costs the design nothing, which is the point: the dim was never the carrier. The
+mono/proportional-italic split is what separates a state from a non-observation, and it
+survives both greyscale and a legible grey. A token that has to stay dark to keep the
+distinction would mean the distinction was being carried by contrast, which §2 has already
+ruled out.
+
 The requirement is that split, satisfied by the console's existing `--mono` and `--ui`
 system stacks. **No webfont ships for this.** A face would cost files in `static/`, a
 loading path, and a flash of the wrong one, on the same surface where §1 just cut 80% of
