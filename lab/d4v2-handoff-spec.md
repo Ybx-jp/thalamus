@@ -87,7 +87,7 @@ matching record has nothing to say about distillation, which is the success sile
 §4.2. A record whose session has no row still renders — that is the whole point of
 §4.4, since the window is gone.
 
-Four rules bind the whole table:
+Five rules bind the whole table:
 
 **`""` is not `manual`.** `permission_mode` is empty when no `type:"permission-mode"`
 record exists, and the parse covers the whole transcript, so empty means *no such
@@ -113,6 +113,17 @@ promised. A hash, a byte count, a monotonic counter are all equally valid, and s
 for another must not be a client change. Comparing two opaque tokens for equality is not
 computing state — it is the same shape as the distill lookup in this section, and the one
 fact the rail's pulse actually needs.
+
+**The contract is tested against the real types, never a fake.** `server.py` read
+`session.status_updated_at` — the stamp behind both `blocked_since` and `activity_since` —
+off a descriptor that did not carry that field, raising on every poll that could read a
+descriptor at all. The suite stayed green throughout, because the liveness tests hand the
+reduction a hand-written session, and **a fake grows whatever attribute the code asks it
+for**: the one shape that cannot fail was the shape under test. Anything that reduces a
+descriptor into this table binds to the real dataclass, and the binding is only worth
+something if removing the field makes the test fail — which is checked, not assumed. This
+is §8's rule one layer down: a test that builds its own copy of the thing it is testing
+cannot see that thing drift.
 
 **The row is handed data, never a URL.** Rendering a session takes only the fields above
 and the distill join; a row renderer that fetches anything is fetching a fact this table
