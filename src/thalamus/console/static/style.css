@@ -735,15 +735,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .admin-dot.ok { background: #4db6a6; box-shadow: 0 0 5px #4db6a6; }
 .admin-dot.bad { background: var(--danger); }
 .admin-name { font-family: var(--mono); font-size: .74rem; color: var(--ink); display: flex; flex-direction: column; gap: .08rem; min-width: 0; }
-.admin-cwd { font-size: .55rem; letter-spacing: .06em; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.admin-viewing {
-  font-family: var(--mono);
-  font-size: .55rem;
-  color: var(--faint);
-  border: 1px solid var(--faint);
-  border-radius: 3px;
-  padding: 0 .3rem;
-}
 .admin-state {
   margin-left: auto;
   font-family: var(--mono);
@@ -751,57 +742,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
   color: var(--faint);
 }
 .admin-state.bad { color: var(--danger); }
-
-/* ---- Distillation widget (spawn sheet) ----
-   A session keeps distilling after its window is gone, so this is the only place
-   that work is visible. Rows are transient by design: a clean finish removes the
-   row, and only a failure stays put until it is dismissed. */
-.distill-row .admin-dot.work {
-  background: var(--chan);
-  animation: distill-pulse 1.6s ease-in-out infinite;
-}
-@keyframes distill-pulse {
-  0%, 100% { opacity: .28; box-shadow: none; }
-  50% { opacity: 1; box-shadow: 0 0 6px var(--chan); }
-}
-.distill-detail {
-  font-size: .55rem;
-  letter-spacing: .04em;
-  color: var(--danger);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.distill-x {
-  appearance: none;
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--hair);
-  border-radius: 5px;
-  color: var(--muted);
-  font-size: .6rem;
-  line-height: 1;
-  padding: .25rem .4rem;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-.distill-x:active { color: var(--danger); border-color: var(--danger); }
-/* The ＋ button is the only always-visible surface, so it carries the news that
-   there is something inside the sheet worth opening. */
-.admin-btn { position: relative; }
-.spawn-pip {
-  position: absolute;
-  top: .1rem; right: -.05rem;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--chan);
-}
-.spawn-pip[hidden] { display: none; }
-.spawn-pip.work { animation: distill-pulse 1.6s ease-in-out infinite; }
-.spawn-pip.bad { background: var(--danger); }
-@media (prefers-reduced-motion: reduce) {
-  .distill-row .admin-dot.work, .spawn-pip.work { animation: none; opacity: 1; }
-}
 .admin-act {
   appearance: none;
   flex: 0 0 auto;
@@ -870,9 +810,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 }
 .screen a:active { background: var(--chan); color: #0b0e12; }
 
-/* anchor badge on the un-closable main window */
-.admin-viewing.anchor { color: var(--chan); border-color: var(--chan); }
-
 /* variant admin buttons: primary = spawn CTA, danger-lite = close a session */
 .admin-act.primary { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
 .admin-act.primary:disabled { opacity: .4; }
@@ -895,14 +832,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 }
 .chip.loose { border-color: #4a2a29; color: var(--danger); }
 .chip.loose.on { color: #0b0e12; background: var(--danger); border-color: var(--danger); }
-.admin-stale {
-  font-size: .58rem;
-  letter-spacing: .04em;
-  color: var(--danger);
-  border: 1px solid #4a2a29;
-  border-radius: 5px;
-  padding: 0 .25rem;
-}
 
 /* spawn sheet: scope + directory pickers as tappable chips */
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0 .2rem; }
@@ -939,17 +868,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .ws.room-ws.on {
   background: var(--chan-room, var(--chan));
   border-color: var(--chan-room, var(--chan));
-}
-.admin-room {
-  display: inline-block;
-  margin-left: .4rem;
-  padding: 0 .3rem;
-  border: 1px solid var(--hair);
-  border-radius: 3px;
-  color: var(--muted);
-  font-size: .55rem;
-  letter-spacing: .04em;
-  vertical-align: middle;
 }
 
 /* The room dialogue. A composer that addresses a room rather than a window — so
@@ -1142,3 +1060,55 @@ body[data-view="session"] .roster { display: none; }
   color: var(--faint);
 }
 .back-btn { font-size: 1.2rem; line-height: 1; }
+
+/* Opening a row is the operator expressing intent about that session, and that
+   discontinuity is what guards the controls inside it. */
+.srow-more {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--faint);
+  font-size: .8rem;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -.4rem -.5rem -.4rem 0;
+  cursor: pointer;
+}
+.srow.open { background: var(--panel); }
+.srow-acts {
+  display: flex;
+  /* 4 mm. Yamanaka & Usuba took unintended taps from 5.2% to 0% across 0–4 mm at
+     no cost in time, which is the whole reason this gap is a number and not a look. */
+  gap: 25px;
+  margin-top: .45rem;
+}
+/* Equal size — shipping the more final action as the smaller target is how this
+   surface used to be. They differ by outline, never by silhouette. */
+.srow-act {
+  appearance: none;
+  flex: 1 1 0;
+  min-height: 60px;
+  background: var(--panel-hi);
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: .7rem;
+  cursor: pointer;
+}
+.srow-act:disabled { opacity: .4; cursor: default; }
+.srow-act.final {
+  border-color: #4a2a29;
+  border-style: dashed;
+  color: var(--danger);
+}
+/* Not a per-session act, so it appears on no row and does not share their shape. */
+.danger-sec { border-top: 1px solid var(--hair); padding-top: .7rem; }
+.danger-wide {
+  width: 100%;
+  min-height: 60px;
+  border-color: #4a2a29;
+  border-style: dashed;
+  color: var(--danger);
+}

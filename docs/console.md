@@ -252,25 +252,32 @@ charter, which is a different object from a Claude Code pin ([07](07-harness-int
 and is invisible once the window exists. A request that names no harness gets Claude
 Code — the endpoint is driven by hand over the tailnet too.
 
-The same sheet reports **distillation**, because ending a session and distilling it
-are not the same event. `/exit` fires SessionEnd, which launches `thalamus extract`
-*detached* and lets the window go; the memory is written minutes later by a process
-with no window, no tab and no other place to report itself. A row appears per
-session still distilling and per session that finished badly:
+**Distillation is a state of a session, not a list of its own**, and it is drawn on
+that session's roster row. Ending a session and distilling it are not the same
+event: `/exit` fires SessionEnd, which launches `thalamus extract` *detached* and
+lets the window go, so the memory is written minutes later by a process with no
+window and no other place to report itself. The record routinely outlives its
+window, and a row then renders from the record alone.
 
-- **distilling** — a pulsing dot and the elapsed time. Typical is two to four
+- **distilling** — the elapsed time in the state slot. Typical is two to four
   minutes.
-- **an error** — red, with the reason from the extract log, and it stays until you
-  tap ✕. This is the case worth having: a failed extraction exits *zero*, so
-  nothing else on the box would ever mention that a conversation was not recorded.
-  A distillation that stops being written to for twenty minutes counts as failed —
-  the process died rather than ran long.
+- **stalled** — past twenty minutes with nothing written. It keeps the ordinary row
+  geometry because the process may still finish.
+- **abandoned** — past an hour, three times the stall clock. It cannot still be
+  running, so the row takes the terminal band.
+- **failed** — the band, with the reason from the extract log verbatim. This is the
+  case worth having: a failed extraction exits *zero*, so nothing else on the box
+  would ever mention that a conversation was not recorded.
+- **never distilled** — the band, for a window killed before SessionEnd could run.
 
-A clean finish removes its own row, so **an empty section means nothing is owed**,
-and the ＋ carries a dot when the sheet has something in it. Only sessions in the
-pin ledger are counted: subagents fire SessionEnd too and always fail (they have no
-transcript of their own), but they never write a ledger entry, which is what
-separates them from real sessions. Dismissals live in
+A clean finish is served as no record at all, so **success is drawn as nothing** and
+the absence is unambiguous once every other outcome draws something. A banded row
+stays until dismissed: if it vanished on the next poll the failure would evaporate,
+and it has to still be there hours later when someone next looks.
+
+Only sessions in the pin ledger are counted: subagents fire SessionEnd too and
+always fail (they have no transcript of their own), but they never write a ledger
+entry, which is what separates them from real sessions. Dismissals live in
 `~/.thalamus/console/distill-dismissed.json`, counted in distillation runs rather
 than stamped in time, so a session that distills again later and fails again comes
 back — while the `thalamus eval sync` output the hook appends a few seconds behind
@@ -309,17 +316,31 @@ nothing.
 The ordinary pane composer keeps no such check, deliberately — it types into the window
 you are watching, where answering a permission prompt yourself is the point.
 
-**⚙ is the admin sheet**:
+**Per-session controls live on the session's own row**, revealed by opening it —
+opening a row is the operator expressing intent about that session, and that
+discontinuity is what guards the controls rather than putting them out of reach.
+The two are the same size and differ by outline, because shipping the more final
+action as the smaller target is how a mis-tap happens.
 
 - **restart** replaces a window's claude process. MCP servers and hooks arm *per
   process* (lab/001), so this is how a wiring change actually takes effect. It
   sends `/exit` — which fires SessionEnd, so the session distills to memory
   normally — waits up to 4 minutes for it, then respawns the window with its
   original command and `THALAMUS_SCOPE` intact. Only a session that hangs past the
-  budget gets force-killed, and that one skips distillation.
+  budget gets force-killed, and that one skips distillation. A window that has
+  ended offers **revive** in the same place.
 - **close** ends a session the same graceful way and removes its window. The
   anchor (the lowest-indexed window) can't be closed: it's the console's reference
   directory and the last thing keeping the roster non-empty.
+
+**⚙ is the admin sheet**, and it holds what is not a per-session act:
+
+- **roster sync** is idempotent backfill — it adds windows the pin ledger expects
+  and touches nothing already running.
+- **restart all** recycles every window in sequence, which is N irreversible losses
+  behind one confirm. It sits in its own section with its own shape rather than
+  beside `roster sync`, and its confirm enumerates the count and the groups it will
+  hit, read from the same grouping the roster renders.
 - **Launch posture** sets what a *newly launched* session starts with, per harness,
   from the ordered options that harness declares (`harness/launcher.py`). Each option
   shows what it gives up, because a posture can only be weighed against its cost if

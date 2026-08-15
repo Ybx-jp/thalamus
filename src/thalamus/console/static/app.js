@@ -69,7 +69,6 @@ const els = {
   conn: document.getElementById("conn"),
   connLabel: document.getElementById("conn-label"),
   admin: document.getElementById("admin"),
-  adminWindows: document.getElementById("admin-windows"),
   adminServices: document.getElementById("admin-services"),
   adminPolicy: document.getElementById("admin-policy"),
   adminSweep: document.getElementById("admin-sweep"),
@@ -83,7 +82,6 @@ const els = {
   spawnDirs: document.getElementById("spawn-dirs"),
   spawnGo: document.getElementById("spawn-go"),
   spawnLog: document.getElementById("spawn-log"),
-  spawnPip: document.getElementById("spawn-pip"),
   dialogue: document.getElementById("dialogue"),
   dialogueRoom: document.getElementById("dialogue-room"),
   dialogueText: document.getElementById("dialogue-text"),
@@ -92,8 +90,6 @@ const els = {
   dialogueCheck: document.getElementById("dialogue-check"),
   dialogueLog: document.getElementById("dialogue-log"),
   dialogueX: document.getElementById("dialogue-x"),
-  distillSec: document.getElementById("distill-sec"),
-  distillList: document.getElementById("distill-list"),
   roster: document.getElementById("roster"),
   read: document.getElementById("read"),
   readWait: document.getElementById("read-wait"),
@@ -104,6 +100,9 @@ const els = {
 let windows = [];          // last known window list
 let activeIdx = null;      // selected window index
 let rosterSig = "";        // last drawn roster, so a 1.2s poll does not rebuild it
+let openRow = null;        // the one row showing its controls, by window index
+let lastDistill = [];      // last served records, for a redraw between polls
+let lastGrace = 0;
 let lastText = {};         // idx -> last captured screen (for change detection)
 let lastOk = 0;            // ms of last good poll
 let lastFitCols = 0;       // column count the current fit was computed for
@@ -1023,7 +1022,6 @@ async function poll() {
     }
     if (changed) { renderWsBar(); renderRail(); }
     syncActiveChrome();
-    renderDistill(data.distill || []);
     // `grace_s` is served rather than hardcoded, so the deadline the row draws is
     // the one the server actually enforces.
     renderRoster(next, data.distill || [], Date.now() / 1000, data.grace_s);
@@ -1054,7 +1052,6 @@ async function poll() {
     } else {
       els.recycleNote.hidden = true;
     }
-    if (!els.admin.hidden) renderAdminWindows();
     if (activeCols() !== lastFitCols) computeFit(); // e.g. an attached terminal resized it
     for (const w of next) lastText[w.index] = w.lines;
 
@@ -1439,6 +1436,8 @@ function annotateCollisions(rows, groupRoot) {
  * the fields a row draws.
  */
 function renderRoster(windows, distill, now, graceS) {
+  lastDistill = distill;
+  lastGrace = graceS;
   const groups = groupSessions(windows, distill);
   const sig = JSON.stringify(groups.map((g) => [g.key, g.rows.map((r) => {
     const s = rowState(r.w, r.d, now, graceS);
@@ -1489,7 +1488,8 @@ function sessionRow(r, now, graceS) {
   const st = rowState(w, d, now, graceS);
 
   const row = document.createElement("div");
-  row.className = "srow" + (st.band ? " terminal" : "");
+  const open = !!w && w.index === openRow;
+  row.className = "srow" + (st.band ? " terminal" : "") + (open ? " open" : "");
   row.style.setProperty("--tab", w ? hueOf(w) : "var(--faint)");
   if (w) {
     row.tabIndex = 0;
@@ -1541,7 +1541,61 @@ function sessionRow(r, now, graceS) {
   row.appendChild(line2);
 
   if (st.band) row.appendChild(terminalBand(r, st));
+  if (w) {
+    // Opening the row is the operator expressing intent about this session, and that
+    // discontinuity is what guards the controls — not distance from the thumb, which
+    // was never the measured rule (Parhi is significant for size, not for location).
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "srow-more";
+    more.textContent = open ? "▾" : "⋯";
+    more.setAttribute("aria-expanded", String(open));
+    more.setAttribute("aria-label", `Controls for ${w.name}`);
+    more.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openRow = open ? null : w.index;
+      rosterSig = "";               // the open row is not in the payload; force a redraw
+      renderRoster(windows, lastDistill, Date.now() / 1000, lastGrace);
+    });
+    line1.appendChild(more);
+    if (open) row.appendChild(rowControls(w));
+  }
   return row;
+}
+
+/**
+ * The destructive controls, revealed only on an opened row.
+ *
+ * Equal size, and differentiated by outline rather than by silhouette: shipping the
+ * more final action as the smaller target is how this surface used to be, and a
+ * control that looks like the safe one beside it is the one that gets hit by
+ * accident. The separation is the measured fix — 4 mm took unintended taps from
+ * 5.2% to 0% at no cost in time.
+ */
+function rowControls(w) {
+  const strip = document.createElement("div");
+  strip.className = "srow-acts";
+  const inFlight = !!w.recycling || !!w.closing;
+
+  const restart = document.createElement("button");
+  restart.type = "button";
+  restart.className = "srow-act";
+  restart.textContent = w.dead ? "revive" : "restart";
+  restart.disabled = inFlight;
+  restart.addEventListener("click", (e) => { e.stopPropagation(); recycle(w); });
+  strip.appendChild(restart);
+
+  // The anchor is the console's own reference window and the one it must never close.
+  if (!w.anchor) {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "srow-act final";
+    close.textContent = "close";
+    close.disabled = inFlight;
+    close.addEventListener("click", (e) => { e.stopPropagation(); closeWin(w); });
+    strip.appendChild(close);
+  }
+  return strip;
 }
 
 /**
@@ -1598,51 +1652,6 @@ function setView(v) {
   if (v === "session") scheduleFit();
 }
 
-function renderAdminWindows() {
-  els.adminWindows.innerHTML = "";
-  for (const w of windows) {
-    const row = document.createElement("div");
-    row.className = "admin-row";
-    const state = w.closing ? "distilling…" : w.recycling ? "restarting…"
-      : w.dead ? "dead" : (w.command || "");
-    row.innerHTML =
-      `<span class="admin-dot" style="--tab:${hueOf(w)}"></span>` +
-      `<span class="admin-name">${escapeHtml(w.name)}` +
-      (w.room ? `<span class="admin-room">◈ ${escapeHtml(w.room)}</span>` : "") +
-      (w.cwd_label ? `<span class="admin-cwd" title="${escapeHtml(w.cwd_short || "")}">${escapeHtml(w.cwd_label)}</span>` : "") +
-      `</span>` +
-      // Launched before the current posture and still running under the old argv.
-      // The restart button on this same row is the fix, which is why the badge lives
-      // here rather than in the posture section.
-      (w.policy_stale ? `<span class="admin-stale" title="Launched under an older ` +
-        `posture — restart to adopt the current one">old posture</span>` : "") +
-      (w.anchor ? `<span class="admin-viewing anchor">anchor</span>` : "") +
-      (w.index === activeIdx ? `<span class="admin-viewing">viewing</span>` : "") +
-      `<span class="admin-state${w.dead ? " bad" : ""}">${escapeHtml(state)}</span>`;
-    // An operation is in flight on this window — not a claim about the session's
-    // own state, which the client is not told and does not compute.
-    const inFlight = !!w.recycling || !!w.closing;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "admin-act";
-    btn.textContent = w.recycling ? "…" : w.dead ? "revive" : "restart";
-    btn.disabled = inFlight;
-    btn.addEventListener("click", () => recycle(w));
-    row.appendChild(btn);
-    // The main anchor stays put (the console's reference cwd); everything else can be
-    // closed — /exit distills it to memory, then the window is removed.
-    if (!w.anchor) {
-      const cbtn = document.createElement("button");
-      cbtn.type = "button";
-      cbtn.className = "admin-act danger-lite";
-      cbtn.textContent = w.closing ? "…" : "close";
-      cbtn.disabled = inFlight;
-      cbtn.addEventListener("click", () => closeWin(w));
-      row.appendChild(cbtn);
-    }
-    els.adminWindows.appendChild(row);
-  }
-}
 // Destructive-action prompts must name the directory too — "Restart homelab?" is
 // ambiguous the moment the same expert runs in two projects, and the wrong answer
 // ends a conversation.
@@ -1683,8 +1692,6 @@ async function closeWin(w) {
 // session still distilling or finished badly. A clean finish is deliberately
 // silent — the row simply stops appearing — so an empty list means "nothing owed",
 // which is the state this is really here to let you confirm at a glance.
-let distillSig = "";
-const distillAges = new Map();     // session → the element showing its elapsed time
 
 function shortAge(s) {
   if (s < 60) return `${s}s`;
@@ -1693,75 +1700,9 @@ function shortAge(s) {
   return `${h}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-function renderDistill(rows) {
-  const bad = rows.some((r) => r.state === "error");
-  const work = rows.some((r) => r.state === "active");
-  els.spawnPip.hidden = !(bad || work);
-  els.spawnPip.className = "spawn-pip" + (bad ? " bad" : work ? " work" : "");
-
-  // Rebuilt only when the set of rows changes: at a 1.2s poll, replacing the nodes
-  // every tick would restart the pulse animation each time. The elapsed time moves
-  // on every tick and is therefore written in place rather than counted as a change.
-  const sig = rows.map((r) => `${r.session}:${r.state}:${r.detail}`).join("|");
-  if (sig === distillSig) {
-    for (const r of rows) {
-      const el = distillAges.get(r.session);
-      if (el) el.textContent = `${r.session} · ${shortAge(r.age)}`;
-    }
-    return;
-  }
-  distillSig = sig;
-
-  els.distillSec.hidden = rows.length === 0;
-  els.distillList.innerHTML = "";
-  distillAges.clear();
-  for (const r of rows) {
-    const row = document.createElement("div");
-    row.className = "admin-row distill-row";
-
-    const dot = document.createElement("span");
-    dot.className = "admin-dot " + (r.state === "active" ? "work" : "bad");
-    row.appendChild(dot);
-
-    const name = document.createElement("span");
-    name.className = "admin-name";
-    const top = document.createElement("span");
-    top.textContent = r.dir ? `${r.scope} · ${r.dir}` : r.scope;
-    name.appendChild(top);
-    const sub = document.createElement("span");
-    if (r.state === "active") {
-      sub.className = "admin-cwd";
-      sub.textContent = `${r.session} · ${shortAge(r.age)}`;
-      distillAges.set(r.session, sub);
-    } else {
-      // Straight from the extract log, so it is set as text, never as markup.
-      sub.className = "distill-detail";
-      sub.textContent = r.detail || "distillation failed";
-    }
-    name.appendChild(sub);
-    row.appendChild(name);
-
-    if (r.state === "active") {
-      const state = document.createElement("span");
-      state.className = "admin-state";
-      state.textContent = "distilling";
-      row.appendChild(state);
-    } else {
-      const x = document.createElement("button");
-      x.type = "button";
-      x.className = "distill-x";
-      x.textContent = "✕";
-      x.setAttribute("aria-label", `Dismiss ${r.session}`);
-      x.addEventListener("click", () => dismissDistill(r.session));
-      row.appendChild(x);
-    }
-    els.distillList.appendChild(row);
-  }
-}
-
 async function dismissDistill(session) {
   await postJson("api/distill-dismiss", { session });
-  distillSig = "";        // force a rebuild off the next poll's fresh list
+  rosterSig = "";         // force a rebuild off the next poll's fresh list
   poll();
 }
 
@@ -2175,7 +2116,6 @@ document.getElementById("admin-btn").addEventListener("click", () => {
   els.admin.hidden = !els.admin.hidden;
   if (!els.admin.hidden) {
     els.spawn.hidden = true;
-    renderAdminWindows();
     loadServices();
     loadLaunchPolicy();
     loadSweep();
@@ -2190,11 +2130,29 @@ document.getElementById("roster-btn").addEventListener("click", () => setView("r
 els.spawnGo.addEventListener("click", doSpawn);
 document.getElementById("admin-restart-all").addEventListener("click", async () => {
   if (!windows.length) return;
-  const viewing = windows.find((w) => w.index === activeIdx);
-  if (!confirm(`Restart all ${windows.length} pinned sessions? Each /exits, distills, and respawns.` +
-    (viewing ? ` ⚠ Includes ${wlabel(viewing)} — the session you're viewing; its conversation ends.` : ""))) return;
+  if (!confirm(restartAllPrompt(windows, lastDistill, activeIdx))) return;
   for (const w of windows) await recycle(w, true);
 });
+
+/**
+ * The confirm for the one control that is not a per-session act.
+ *
+ * It enumerates rather than counts. A single confirm standing in for N irreversible
+ * losses has to say what those N are, and it names the projects from the same
+ * grouping the roster renders, so the sentence and the list cannot disagree about
+ * what is about to be restarted.
+ */
+function restartAllPrompt(wins, distill, viewingIdx) {
+  const groups = groupSessions(wins, distill).filter((g) => g.rows.some((r) => r.w));
+  const where = groups
+    .map((g) => `${g.known ? g.label : "no project recorded"} (${g.rows.filter((r) => r.w).length})`)
+    .join(", ");
+  const viewing = wins.find((w) => w.index === viewingIdx);
+  return `Restart all ${wins.length} sessions across ${groups.length} ` +
+    `${groups.length === 1 ? "group" : "groups"}: ${where}.\n\n` +
+    "Each /exits, distills, and respawns. Every conversation in flight ends." +
+    (viewing ? `\n\n⚠ Includes ${wlabel(viewing)} — the session you are viewing.` : "");
+}
 document.getElementById("admin-roster").addEventListener("click", async () => {
   adminLog("roster sync…");
   const { data } = await postJson("api/roster", {});

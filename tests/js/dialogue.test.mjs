@@ -217,9 +217,10 @@ suite("rows: the client renders liveness, it does not decide it");
     extractFunction("rowState", src),
     extractFunction("groupSessions", src),
     extractFunction("annotateCollisions", src),
+    extractFunction("sessionRow", src),
+    extractFunction("rowControls", src),
+    extractFunction("terminalBand", src),
     extractFunction("renderRail", src),
-    extractFunction("renderAdminWindows", src),
-    extractFunction("renderDistill", src),
   ].join("\n");
   const rowCode = guard("a row renderer", rowSource);
 

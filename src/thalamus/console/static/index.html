@@ -38,7 +38,7 @@
   <span class="brand">THALA<b>MUS</b></span>
   <span class="tagline">console</span>
   <span class="conn" id="conn"><span class="beacon"></span><span id="conn-label">connecting</span></span>
-  <button type="button" class="admin-btn" id="spawn-btn" aria-label="Spawn a session" title="Spawn a session">＋<span class="spawn-pip" id="spawn-pip" hidden></span></button>
+  <button type="button" class="admin-btn" id="spawn-btn" aria-label="Spawn a session" title="Spawn a session">＋</button>
   <button type="button" class="admin-btn" id="admin-btn" aria-label="Infra admin" title="Infra admin">⚙</button>
 </header>
 
@@ -48,14 +48,11 @@
     <button type="button" class="install-x" id="admin-x" aria-label="Close">✕</button>
   </div>
   <section class="admin-sec">
-    <h3>Pinned sessions</h3>
-    <p class="admin-note">Restart replaces a window's claude process — the only way
-      wiring changes (MCP servers, per-process hooks) take effect. Graceful:
-      <code>/exit</code> fires SessionEnd → distillation, then the window respawns
-      its original command. Force-kills only after 4 min.</p>
-    <div class="admin-list" id="admin-windows"></div>
+    <h3>Roster</h3>
+    <p class="admin-note">Per-session restart and close live on the session's own row.
+      Roster sync is idempotent backfill: it adds windows the pin ledger expects and
+      touches nothing that is already running.</p>
     <div class="admin-actions">
-      <button type="button" class="admin-act" id="admin-restart-all">restart all</button>
       <button type="button" class="admin-act" id="admin-roster">roster sync</button>
     </div>
   </section>
@@ -87,6 +84,17 @@
     <h3>Services</h3>
     <div class="admin-list" id="admin-services"></div>
   </section>
+  <!-- `restart all` shipped beside `roster sync`: same width, height, class and row.
+       One is idempotent backfill; the other recycles every window sequentially, N
+       irreversible losses of in-flight work behind a single confirm. It is not a
+       per-session act and appears on no row, so it is guarded by discontinuity —
+       its own section, its own shape, and a confirm that enumerates what it hits. -->
+  <section class="admin-sec danger-sec">
+    <h3>Restart every session</h3>
+    <p class="admin-note">Recycles every window in sequence. Each one <code>/exit</code>s
+      and distills first, but every conversation in flight ends.</p>
+    <button type="button" class="admin-act danger-wide" id="admin-restart-all">restart all</button>
+  </section>
   <pre class="admin-log" id="admin-log"></pre>
 </div>
 
@@ -95,14 +103,10 @@
     <span class="admin-title">SPAWN SESSION</span>
     <button type="button" class="install-x" id="spawn-x" aria-label="Close">✕</button>
   </div>
-  <section class="admin-sec" id="distill-sec" hidden>
-    <h3>Distillation</h3>
-    <div class="admin-list" id="distill-list"></div>
-  </section>
   <section class="admin-sec">
     <p class="admin-note">Open a pinned expert session on demand, in the project you
       pick. Its work and its distilled memory scope to that expert; the directory sets
-      what it's about. Close its tab (INFRA → close) to end &amp; distill it.</p>
+      what it's about. Close it from its own row to end &amp; distill it.</p>
     <h3>Expert</h3>
     <div class="chips" id="spawn-scopes"></div>
     <h3>Harness</h3>
