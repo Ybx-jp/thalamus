@@ -63,6 +63,10 @@ GROUNDS = {
     "ink": ("bg", "panel", "panel-hi"),
     "muted": ("bg", "panel", "panel-hi"),
     "faint": ("bg", "panel"),
+    # Status hues carry a signal wherever they are painted, and `--pending` carries
+    # text on the wait note, so both are held to the text floor on all three.
+    "ok": ("bg", "panel", "panel-hi"),
+    "pending": ("bg", "panel", "panel-hi"),
 }
 
 
@@ -90,13 +94,14 @@ def test_text_tokens_clear_aa_on_every_ground_they_sit_on(token: str, ground: st
 LITERALS = {
     "#0b0e12": ("text on a filled control — chips, keycaps, primary actions", "chan", 4.5),
     "#4a2a29": ("the loose-chip and error border, a non-text carrier", "panel", 0.0),
-    "#4db6a6": ("the live beacon — colour is the whole encoding", "panel", 3.0),
+
     # Stated rather than composited. It was `#4db6a6` at `opacity: .5`, which paints
     # a colour appearing nowhere in the file: the declared teal measured 7.05:1 while
     # the surface received 2.72:1, under a 3:1 floor. An `opacity` is invisible to
     # every check here, so the receded value is written out where it can be measured.
-    "#3a8078": ("the done dot, receded — colour is the whole encoding", "panel", 3.0),
-    "#e0a45c": ("the pending dot and the wait note", "panel", 3.0),
+    "#327e62": ("the done dot, receded from --ok — colour is the whole encoding",
+                "panel", 3.0),
+
     "#100f1b": ("the base layer under the terminal art", "bg", 0.0),
 }
 
@@ -151,16 +156,6 @@ def test_the_identity_palette_is_legible_in_both_roles():
             f"{name} {hue} is {as_ink:.2f}:1 as text on --panel-hi")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="OPEN FINDING (designer + qe, 2026-08-15): #4db6a6 is both the identity "
-           "palette's teal and the live beacon / ok dot; #e0a45c is both amber and "
-           "the pending dot. Found by reconciling two literal counts that disagreed "
-           "— 27 in the stylesheet's domain, 29 including app.js. The fix is a new "
-           "value for the status carriers (style.css / app.js), which is outside "
-           "qe's write boundary. strict=True: fails the moment it is fixed, so the "
-           "marker is removed rather than left to rot.",
-)
 def test_identity_colour_and_status_colour_share_no_value():
     """Two registries, two meanings, and a shared hex is a second owner for one fact.
 
@@ -174,8 +169,15 @@ def test_identity_colour_and_status_colour_share_no_value():
     Only signal-carrying literals are in scope. A border or an art base layer may
     coincide with a hue without asserting anything, because it does not mean anything.
     """
+    # Both the literals that carry a signal and the status *tokens*. The fix for this
+    # finding promoted two carriers from literals to tokens, which would have moved
+    # them out of a literals-only scan — the guard would have gone green by losing
+    # sight of its subject rather than by the collision being resolved.
     carriers = {c for c, (_, _, floor) in LITERALS.items() if floor > 0}
-    collisions = carriers & set(_palette().values())
+    t = _tokens()
+    carriers |= {t[name] for name in ("ok", "pending") if name in t}
+    collisions = {c.lower() for c in carriers} & {
+        v.lower() for v in _palette().values()}
     assert not collisions, (
         f"{sorted(collisions)} serve as both an identity hue and a status colour. "
         f"Identity is assigned by hashing a name and must stay meaningless; a status "

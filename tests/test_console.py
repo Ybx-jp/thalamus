@@ -1068,19 +1068,6 @@ def test_a_room_refusal_is_409_and_carries_the_reason(tmp_path, monkeypatch):
         assert "no live members" in body["error"]
 
 
-ROOMLESS_CONSOLE = pytest.mark.xfail(
-    strict=True,
-    reason="OPEN FINDING (qe, 2026-08-15): /api/dispatch does not pass caller_room, "
-           "and harness.dispatch.dispatch offers no parameter to pass it with — the "
-           "seam exists on authenticate() and was never plumbed through. A console "
-           "server started from a member's shell refuses every dispatch to every "
-           "other room. Owned by homelab (src/ is outside qe's write boundary). "
-           "strict=True: this flips to a hard failure the moment it is fixed, so the "
-           "marker is removed rather than left to rot.",
-)
-
-
-@ROOMLESS_CONSOLE
 def test_the_dispatch_endpoint_never_inherits_the_room_it_was_started_in(tmp_path,
                                                                         monkeypatch):
     """
@@ -1115,7 +1102,6 @@ def test_the_dispatch_endpoint_never_inherits_the_room_it_was_started_in(tmp_pat
     assert "no live members" in body["error"]
 
 
-@ROOMLESS_CONSOLE
 def test_the_dispatch_endpoint_declares_its_roomlessness_to_the_real_signature():
     """
     Scenario: the guard above, pinned at the seam instead of through a refusal.

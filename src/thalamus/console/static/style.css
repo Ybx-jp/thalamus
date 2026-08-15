@@ -17,6 +17,14 @@
   --muted: #8b95a3;
   --faint: #768494;
   --danger: #e0685c;
+  /* Status hues, and deliberately not identity hues. An identity colour is assigned
+     by hashing a scope name, so it must mean *nothing* — a row is teal because of
+     what it is called, never because it is well. These mean exactly one thing each.
+     Sharing a value made two registries own one hex: moving the identity palette
+     would have silently moved the status signal, or failed to. Both clear the 3:1
+     non-text floor and the 4.5:1 text floor on every ground they paint on. */
+  --ok: #45c08d;
+  --pending: #e8b44a;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   /* per-channel hues, overridden per-tab in JS */
@@ -78,7 +86,7 @@ header {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--faint);
 }
-.conn.live .beacon { background: #4db6a6; box-shadow: 0 0 6px #4db6a6; }
+.conn.live .beacon { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .conn.stale .beacon { background: var(--danger); }
 
 /* ---- Install bar ---- */
@@ -202,7 +210,10 @@ header {
      rather than stretching the tab. The full path is in the tab's title. */
   max-width: 20ch; overflow: hidden; text-overflow: ellipsis;
 }
-.chan-tab[aria-selected="true"] .cwd { color: var(--tab); opacity: .85; }
+/* No `opacity`: at .85 the palette's rose composited to 4.43:1 on this ground and
+   violet — which is `main`, so the most common tab — to 4.51:1, a hundredth of
+   headroom. Full strength puts the worst hue at 5.61:1. */
+.chan-tab[aria-selected="true"] .cwd { color: var(--tab); }
 .chan-tab[aria-selected="true"] {
   color: var(--ink);
   background: var(--panel-hi);
@@ -412,9 +423,13 @@ header {
   border-radius: 50%;
   background: var(--faint);
 }
-.rd-dot.done { background: #4db6a6; opacity: .5; }
+/* Receded, but stated rather than composited: `opacity` paints a colour that appears
+   nowhere in the file, so nothing can measure it — this dot was reaching the surface
+   at 2.72:1 against a 3:1 floor while the declared teal measured 7.05:1. Colour is
+   the whole encoding on a read-state dot, which has no word beside it. */
+.rd-dot.done { background: #327e62; }
 .rd-dot.error { background: var(--danger); }
-.rd-dot.pending { background: #e0a45c; animation: rd-pulse 1.4s ease-in-out infinite; }
+.rd-dot.pending { background: var(--pending); animation: rd-pulse 1.4s ease-in-out infinite; }
 @keyframes rd-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
 .rd-body {
   font-family: var(--mono);
@@ -481,7 +496,7 @@ header {
   margin-left: -.55rem;
   padding-left: .45rem;
 }
-.wait-note { color: #e0a45c; }
+.wait-note { color: var(--pending); }
 
 /* ---- Frame theme (desktop only) ----
    The same art and the same panel geometry the terminal emulator paints on its GPU
@@ -734,7 +749,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
   flex: 0 0 auto;
   background: var(--tab, var(--faint));
 }
-.admin-dot.ok { background: #4db6a6; box-shadow: 0 0 5px #4db6a6; }
+.admin-dot.ok { background: var(--ok); box-shadow: 0 0 5px var(--ok); }
 .admin-dot.bad { background: var(--danger); }
 .admin-name { font-family: var(--mono); font-size: .74rem; color: var(--ink); display: flex; flex-direction: column; gap: .08rem; min-width: 0; }
 .admin-state {

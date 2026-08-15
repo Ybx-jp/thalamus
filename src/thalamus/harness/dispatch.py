@@ -595,6 +595,7 @@ def dispatch(
     *,
     sender: str = "",
     operator: bool = False,
+    caller_room: str | None = None,
     scopes: list[str] | None = None,
     partial: bool = False,
     dry_run: bool = False,
@@ -611,13 +612,22 @@ def dispatch(
 
     `dry_run` runs the pre-flight and writes no rows, which is the mode to answer
     *would this land?* without the send that answers it destructively.
+
+    `caller_room` is who is asking, and it must be passed by any caller that is not
+    itself the session doing the asking. `None` reads the calling process's own room,
+    which is right for the CLI — there the invocation *is* the session. It is wrong
+    for a long-lived server, which would otherwise authenticate for its whole life as
+    whatever room its shell happened to be in, and refuse every other room with a
+    message naming a room the operator is not in. Such a caller passes `""`, which
+    says roomless deliberately rather than by omission.
     """
     if not text.strip():
         raise DispatchRefused("nothing to dispatch — an empty message still costs "
                               "every recipient a turn")
     # Before the roster is even read: who is asking is a precondition for the fan-out
     # meaning anything, and it is cheaper to refuse than to pre-flight.
-    sender, authority = authenticate(room, sender, operator=operator)
+    sender, authority = authenticate(room, sender, operator=operator,
+                                     caller_room=caller_room)
     targets = preflight(
         room, scopes, config_dir=config_dir, pins_file=pins_file, panes=panes,
         room_panes=room_panes, status_fn=status_fn,
