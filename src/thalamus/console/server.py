@@ -38,6 +38,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote
@@ -261,6 +262,180 @@ def say_mark(session_id: str, seq: int) -> None:
 READ_LOCK = threading.Lock()
 _LEDGER = None
 _FEEDS = None
+
+
+def _ledger_epoch(ts: str) -> float | None:
+    """The ledger's `ts` — ISO-8601 UTC, second resolution — as epoch seconds.
+
+    The ledger keeps the ISO string: sixteen readers parse that file and changing
+    its format on them buys nothing. The wire speaks one time idiom, so the
+    conversion happens at the boundary. An unparseable stamp is None, not now():
+    a fabricated start time reads as a fact and would be one more absence drawn as
+    a value.
+    """
+    if not ts:
+        return None
+    try:
+        parsed = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=timezone.utc).timestamp()
+
+
+def attach_ledger_facts(windows: list[dict]) -> None:
+    """Join each window to its pin-ledger row, in place.
+
+    tmux knows a pane's cwd and nothing else about the agent inside it — not the
+    repository that cwd sits in, not the project name that repository answers to,
+    not when the session started. All three are launch facts, and the pin ledger is
+    the only place they are recorded, which is why a console that reads tmux alone
+    renders three windows named `main` in one checkout byte-identically.
+
+    Absent is served as absent. A window whose row predates these fields gets `""`
+    and None rather than a value inferred from the cwd — inferring from the cwd is
+    exactly what these fields exist to stop doing, and a guess here would be
+    indistinguishable on the wire from a recorded fact.
+    """
+    tr = transcript_module()
+    if tr is None:
+        for w in windows:
+            w.update(session_id="", project="", repo_root="", started=None)
+        return
+    global _LEDGER, _FEEDS
+    with READ_LOCK:
+        if _LEDGER is None:
+            _LEDGER, _FEEDS = tr.LedgerIndex(), tr.FeedStore()
+        _LEDGER.refresh()
+        for w in windows:
+            row = _LEDGER.by_pane(w.get("pane_id", ""))
+            if row is None and w.get("pane_pid"):
+                # Same fallback the read view uses, and it refuses rather than
+                # guesses when two windows share a scope and a directory.
+                row = _LEDGER.legacy_match(w.get("name", ""), w.get("cwd", ""),
+                                           tr.pane_started_at(w["pane_pid"]))
+            row = row or {}
+            w["session_id"] = row.get("session_id") or ""
+            w["project"] = row.get("project") or ""
+            w["repo_root"] = row.get("repo_root") or ""
+            w["started"] = _ledger_epoch(row.get("ts") or "")
+
+
+def _pinned_session(cfg: Config, idx: int) -> dict:
+    """The identity of the session in a window, from the pin ledger.
+
+    Read *before* the destructive act, while the window is still alive: afterwards
+    the pane is gone and there is nothing left to join against. Everything a
+    killed-window record needs to name itself, because that record outlives its
+    window by construction — it is written as the window is destroyed.
+    """
+    window = next((w for w in list_windows(cfg) if w["index"] == idx), None)
+    if window is None:
+        return {}
+    rows = [dict(window)]
+    attach_ledger_facts(rows)
+    return {"session": rows[0]["session_id"], "scope": window.get("name", ""),
+            "cwd": window.get("cwd", ""), "project": rows[0]["project"],
+            "repo_root": rows[0]["repo_root"]}
+
+
+def _record_forced_kill(who: dict, op: str) -> None:
+    """Say that this window died without distilling, because nothing else can.
+
+    SessionEnd is what launches `thalamus extract`, and both force paths skip it —
+    so no log is created, and the log scan that reports distillation state has
+    nothing to find. The console is the only witness to a distillation that never
+    started, and it is the only witness because it is the thing that prevented it.
+    """
+    watch = distill_watch()
+    if watch is None or not who:
+        return
+    try:
+        from .distill import record_kill
+        record_kill(who["session"], who["scope"], who["cwd"], op,
+                    path=watch.kills, project=who["project"],
+                    repo_root=who["repo_root"])
+    except Exception:  # noqa: BLE001 — never let bookkeeping break a teardown
+        pass
+
+
+def attach_blocked(windows: list[dict]) -> None:
+    """Mark the windows whose session is stopped waiting on a human, in place.
+
+    A session sitting at a permission prompt is the one state the system cannot
+    leave without the operator, and it is the state with no cost ceiling: two
+    literature threads record windows dispatched 2026-08-01 that stopped at a prompt
+    and were still stopped thirteen days later. Measured on this box 2026-08-15, a
+    live session had been blocked for 6 h 38 m with nothing on any console surface
+    saying so.
+
+    The status is *read*, never derived here. `dispatch` owns what the words mean —
+    the constants are imported rather than spelled — and the harness's own session
+    descriptor owns the value. This function joins the two to a window and reduces
+    them to a tri-state, two stamps and one display word, which is deliberately all
+    that reaches the wire: the client is told *that* a session needs a human, and
+    handed the word to draw for one that does not, never the status field it would
+    need in order to decide either for itself. One owner computes, the client renders.
+
+    `activity` is that word — `idle`, `busy`, or empty when the status is neither. It
+    travels under a display name rather than as `status` because the row's whole job
+    is to print it: a field named for the policy value invites a second reading of
+    the thing this function exists to reduce. `activity_since` carries the transition
+    stamp only where a clock earns its place, so *which* states are worth timing is
+    decided here and the client draws the elapsed exactly when the stamp is present.
+
+    Whether the session could be observed at all is **one fact per row**, `observed`,
+    and it is the field a reader keys on. Session descriptors are partitioned by
+    config dir: a session launched into a collaboration writes its descriptor under
+    that collaboration's dir, and `quick.config_dir` reads only the one this process
+    is in, because discovery is that boundary (lab/045). So a console outside a
+    collaboration cannot see the descriptors of sessions inside one — measured on
+    this box 2026-08-15, the same roster at the same instant resolved 7 of 9 windows
+    from the host config dir and the complementary 2 of 9 from inside the
+    collaboration.
+
+    Reporting an unobserved window as "not stuck" would state a fact on exactly the
+    evidence that says nothing at all — the failure this row exists to remove,
+    reintroduced by the indicator meant to remove it. So `observed=False` disclaims
+    the whole liveness half of the row rather than one pill inside it: nothing here
+    knows anything about that session's state, and the row's confident half is what
+    the pin ledger supplies (name, project, `started`).
+
+    `blocked` is None exactly when `observed` is False, and `activity` is empty on
+    every unobserved row. Observability travels as one fact about the row rather than
+    as an absence repeated across each field: they are one lookup written from a
+    single branch and cannot disagree, so `observed` is the one to branch on. A
+    client that had to reconcile them would be a client computing state.
+    """
+    for w in windows:
+        w["observed"] = False
+        w["blocked"] = None
+        w["blocked_since"] = None
+        w["activity"] = ""
+        w["activity_since"] = None
+    dispatch = dispatch_module()
+    if dispatch is None:
+        return
+    try:
+        live = {s.session_id: s for s in dispatch.quick.live_sessions()}
+    except Exception:  # noqa: BLE001 — an unreadable sessions dir is "we cannot know"
+        return
+    for w in windows:
+        session = live.get(w.get("session_id") or "")
+        if session is None:
+            continue  # no descriptor in reach: the row stays unobserved
+        w["observed"] = True
+        w["blocked"] = session.status == dispatch.WAITING_STATUS
+        if w["blocked"]:
+            # Milliseconds on the descriptor, epoch seconds on the wire — the same
+            # idiom `started` and the lifecycle stamps already speak.
+            w["blocked_since"] = (session.status_updated_at / 1000) or None
+        elif session.status in dispatch.DELIVERABLE_STATUSES:
+            w["activity"] = session.status
+            if session.status == dispatch.BUSY_STATUS:
+                # Only `busy` is worth a clock. `busy 14:32` on a session you thought
+                # had finished is a finding; an elapsed on every idle row is motion on
+                # most rows at once, which costs the loud channel what it is worth.
+                w["activity_since"] = (session.status_updated_at / 1000) or None
 
 
 def read_feed(cfg: Config, idx: int):
@@ -541,11 +716,22 @@ def frame_bytes(cfg: Config, name: str) -> tuple[bytes | None, str | None]:
 
 
 # Window indexes with a restart in flight, and windows being closed (graceful
-# /exit → distill → window removed). Exposed in /api/panes so the client can show
-# "restarting…" / "distilling…" before the tab changes under the operator.
-RECYCLING: set[int] = set()
+# /exit → distill → window removed), each mapped to the epoch second the operation
+# started. Exposed in /api/panes so the client can show "restarting…" /
+# "distilling…" before the tab changes under the operator.
+#
+# The stamp rather than bare membership, for two reasons. The RECYCLE_GRACE_S
+# deadline lives inside the worker thread, so without it the client renders a word
+# with no duration while the worker silently races a clock the operator cannot see.
+# And the entry is dropped in the worker's `finally`, so a worker that dies takes
+# the row's exit with it: bare membership leaves "restarting…" on screen forever
+# with nothing to contradict it, while a stamp makes a leaked flag self-reporting.
+#
+# A float is truthy for every value time.time() returns, so a reader that only asks
+# whether an operation is in flight keeps working unchanged.
+RECYCLING: dict[int, float] = {}
 RECYCLING_LOCK = threading.Lock()
-CLOSING: set[int] = set()
+CLOSING: dict[int, float] = {}
 CLOSING_LOCK = threading.Lock()
 
 
@@ -594,9 +780,9 @@ def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) 
     happens to share the anchor's name, since new windows take higher indexes.
     """
     with RECYCLING_LOCK:
-        recycling = set(RECYCLING)
+        recycling = dict(RECYCLING)
     with CLOSING_LOCK:
-        closing = set(CLOSING)
+        closing = dict(CLOSING)
     out = []
     for line in raw.splitlines():
         parts = (line.split("\t") + [""] * 11)[:11]
@@ -621,7 +807,12 @@ def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) 
             "active": active == "1", "command": cmd,
             "width": int(width or 0), "height": int(height or 0),
             "dead": dead == "1",
-            "recycling": index in recycling, "closing": index in closing,
+            # The epoch second the operation started, or None. Truthy exactly when
+            # the operation is in flight, so a reader asking only that is unaffected;
+            # a reader that wants the duration subtracts. Nothing here computes an
+            # elapsed number or a fraction: the deadline is knowable but the finish
+            # is not, and a progress figure nobody can compute must not be drawn.
+            "recycling": recycling.get(index), "closing": closing.get(index),
             # Scope alone doesn't identify a session: the same expert can be
             # spawned in several directories. cwd is what tells `homelab in
             # thalamus` from `homelab in some-other-repo`.
@@ -737,6 +928,9 @@ def recycle_window(cfg: Config, idx: int) -> None:
     `respawn-window -k`, which skips distillation. Runs in a background thread.
     """
     target = f"{cfg.session}:{idx}"
+    # Identify the session while it is still alive; after the respawn the pane holds
+    # a different one and there is nothing left to name.
+    who = _pinned_session(cfg, idx)
     try:
         tmux("set", "-w", "-t", target, "remain-on-exit", "on")
         tmux("send-keys", "-t", target, "Escape")
@@ -754,11 +948,15 @@ def recycle_window(cfg: Config, idx: int) -> None:
                 dead = True
                 break
             time.sleep(1)
+        if not dead:
+            # Forced: SessionEnd never ran, so this session's distillation never
+            # started and the window is about to come back looking healthy.
+            _record_forced_kill(who, "recycle")
         tmux("respawn-window", *([] if dead else ["-k"]), "-t", target)
         tmux("set", "-w", "-u", "-t", target, "remain-on-exit")
     finally:
         with RECYCLING_LOCK:
-            RECYCLING.discard(idx)
+            RECYCLING.pop(idx, None)
 
 
 def close_window(cfg: Config, idx: int) -> None:
@@ -775,6 +973,7 @@ def close_window(cfg: Config, idx: int) -> None:
     its distillation and costs a Cursor session only its ledger row, which the pin
     ledger then covers for scope."""
     target = f"{cfg.session}:{idx}"
+    who = _pinned_session(cfg, idx)
     try:
         tmux("send-keys", "-t", target, "Escape")
         time.sleep(0.3)
@@ -787,10 +986,14 @@ def close_window(cfg: Config, idx: int) -> None:
             if r.returncode != 0:
                 return  # window already gone: claude exited and tmux closed it
             time.sleep(1)
-        tmux("kill-window", "-t", target)  # hung past the grace budget
+        # Hung past the grace budget. The kill skips SessionEnd, so nothing will
+        # ever write a distillation log for this session — and a scan over logs
+        # cannot report a log that was never created.
+        _record_forced_kill(who, "close")
+        tmux("kill-window", "-t", target)
     finally:
         with CLOSING_LOCK:
-            CLOSING.discard(idx)
+            CLOSING.pop(idx, None)
 
 
 def _run_capturing(fn, *args, **kwargs) -> tuple[bool, str, Exception | None]:
@@ -1035,10 +1238,23 @@ class Handler(BaseHTTPRequestHandler):
             windows = list_windows(self.cfg)
             for w in windows:
                 w["lines"] = capture(self.cfg, w["index"])
+            # The launch facts tmux cannot know: which project and repository this
+            # session belongs to, and when it started. Without them the roster is a
+            # list that cannot group and cannot tell its own rows apart.
+            attach_ledger_facts(windows)
+            # Depends on the join above: the descriptor is keyed by session id, and
+            # the session id is a ledger fact.
+            attach_blocked(windows)
             # Distillation outlives the window that triggered it, so it rides the
             # poll the client already runs rather than getting a loop of its own.
+            #
+            # `grace_s` is the deadline the recycle and close workers race. It rides
+            # the same payload because the client renders elapsed time against it,
+            # and a client holding its own copy would be a second statement of a
+            # policy the server owns — wrong the first time this is tuned.
             return self._send(200, {"session": self.cfg.session, "windows": windows,
-                                    "distill": distill_rows()})
+                                    "distill": distill_rows(),
+                                    "grace_s": RECYCLE_GRACE_S})
         if path == "/api/read":
             # The read view: this window's session as prose and collapsed tool
             # calls, read from the transcript rather than the pane. `since` is the
@@ -1320,7 +1536,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/recycle":
             with RECYCLING_LOCK:
                 already = idx in RECYCLING
-                RECYCLING.add(idx)
+                # setdefault, not assignment: a second request for a restart already
+                # in flight must not reset the clock the operator is reading.
+                RECYCLING.setdefault(idx, time.time())
             if not already:
                 threading.Thread(target=recycle_window, args=(self.cfg, idx),
                                  daemon=True).start()
@@ -1332,7 +1550,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "the anchor window can't be closed"})
             with CLOSING_LOCK:
                 already = idx in CLOSING
-                CLOSING.add(idx)
+                CLOSING.setdefault(idx, time.time())
             if not already:
                 threading.Thread(target=close_window, args=(self.cfg, idx),
                                  daemon=True).start()

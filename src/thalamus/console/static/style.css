@@ -735,15 +735,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .admin-dot.ok { background: #4db6a6; box-shadow: 0 0 5px #4db6a6; }
 .admin-dot.bad { background: var(--danger); }
 .admin-name { font-family: var(--mono); font-size: .74rem; color: var(--ink); display: flex; flex-direction: column; gap: .08rem; min-width: 0; }
-.admin-cwd { font-size: .55rem; letter-spacing: .06em; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.admin-viewing {
-  font-family: var(--mono);
-  font-size: .55rem;
-  color: var(--faint);
-  border: 1px solid var(--faint);
-  border-radius: 3px;
-  padding: 0 .3rem;
-}
 .admin-state {
   margin-left: auto;
   font-family: var(--mono);
@@ -751,57 +742,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
   color: var(--faint);
 }
 .admin-state.bad { color: var(--danger); }
-
-/* ---- Distillation widget (spawn sheet) ----
-   A session keeps distilling after its window is gone, so this is the only place
-   that work is visible. Rows are transient by design: a clean finish removes the
-   row, and only a failure stays put until it is dismissed. */
-.distill-row .admin-dot.work {
-  background: var(--chan);
-  animation: distill-pulse 1.6s ease-in-out infinite;
-}
-@keyframes distill-pulse {
-  0%, 100% { opacity: .28; box-shadow: none; }
-  50% { opacity: 1; box-shadow: 0 0 6px var(--chan); }
-}
-.distill-detail {
-  font-size: .55rem;
-  letter-spacing: .04em;
-  color: var(--danger);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.distill-x {
-  appearance: none;
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--hair);
-  border-radius: 5px;
-  color: var(--muted);
-  font-size: .6rem;
-  line-height: 1;
-  padding: .25rem .4rem;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-.distill-x:active { color: var(--danger); border-color: var(--danger); }
-/* The ＋ button is the only always-visible surface, so it carries the news that
-   there is something inside the sheet worth opening. */
-.admin-btn { position: relative; }
-.spawn-pip {
-  position: absolute;
-  top: .1rem; right: -.05rem;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--chan);
-}
-.spawn-pip[hidden] { display: none; }
-.spawn-pip.work { animation: distill-pulse 1.6s ease-in-out infinite; }
-.spawn-pip.bad { background: var(--danger); }
-@media (prefers-reduced-motion: reduce) {
-  .distill-row .admin-dot.work, .spawn-pip.work { animation: none; opacity: 1; }
-}
 .admin-act {
   appearance: none;
   flex: 0 0 auto;
@@ -870,9 +810,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 }
 .screen a:active { background: var(--chan); color: #0b0e12; }
 
-/* anchor badge on the un-closable main window */
-.admin-viewing.anchor { color: var(--chan); border-color: var(--chan); }
-
 /* variant admin buttons: primary = spawn CTA, danger-lite = close a session */
 .admin-act.primary { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
 .admin-act.primary:disabled { opacity: .4; }
@@ -895,14 +832,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 }
 .chip.loose { border-color: #4a2a29; color: var(--danger); }
 .chip.loose.on { color: #0b0e12; background: var(--danger); border-color: var(--danger); }
-.admin-stale {
-  font-size: .58rem;
-  letter-spacing: .04em;
-  color: var(--danger);
-  border: 1px solid #4a2a29;
-  border-radius: 5px;
-  padding: 0 .25rem;
-}
 
 /* spawn sheet: scope + directory pickers as tappable chips */
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0 .2rem; }
@@ -940,17 +869,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
   background: var(--chan-room, var(--chan));
   border-color: var(--chan-room, var(--chan));
 }
-.admin-room {
-  display: inline-block;
-  margin-left: .4rem;
-  padding: 0 .3rem;
-  border: 1px solid var(--hair);
-  border-radius: 3px;
-  color: var(--muted);
-  font-size: .55rem;
-  letter-spacing: .04em;
-  vertical-align: middle;
-}
 
 /* The room dialogue. A composer that addresses a room rather than a window — so
    unlike the pane composer it has no live view of what it is typing into, which is
@@ -978,3 +896,219 @@ textarea:focus { outline: none; border-color: var(--chan); }
   line-height: 1.45;
 }
 .dialogue-opt .admin-note { display: inline; margin: 0; }
+
+/* ---- the session row ----------------------------------------------------
+   One row per session, carrying its whole life. Every state is a word first:
+   colour and the identity bar are reinforcement, and a row read in greyscale
+   loses emphasis but no meaning. */
+
+.roster {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: .2rem 0 calc(.8rem + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+body[data-view="roster"] #wsbar,
+body[data-view="roster"] #rail,
+body[data-view="roster"] #screen-wrap,
+body[data-view="roster"] #composer,
+body[data-view="roster"] .back-btn { display: none; }
+body[data-view="session"] .roster { display: none; }
+
+/* 44 px, and a label rather than a target. */
+.grp {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  height: 44px;
+  padding: 0 .9rem;
+  font-family: var(--mono);
+  font-size: .62rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.grp-n { color: var(--faint); }
+/* "We were not told" is not a project name, so it does not speak in one's voice. */
+.grp.unknown { height: auto; padding: .5rem .9rem .35rem; flex-wrap: wrap; }
+.grp.unknown .grp-name {
+  font-family: var(--ui);
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--faint);
+}
+.grp-why {
+  flex: 1 0 100%;
+  font-family: var(--ui);
+  font-style: italic;
+  font-size: .6rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+
+.srow {
+  position: relative;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: .18rem;
+  padding: .4rem .9rem .4rem 1.1rem;
+  border-bottom: 1px solid var(--hair);
+  cursor: pointer;
+}
+.srow:focus-visible { outline: 2px solid var(--tab); outline-offset: -2px; }
+/* Redundant reinforcement, never the sole carrier of anything. */
+.srow::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--tab, var(--faint));
+}
+.srow-1 { display: flex; align-items: center; gap: .5rem; }
+.srow-name {
+  font-family: var(--mono);
+  font-size: .82rem;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.srow-slot {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: .68rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* A non-observation is never monospace. The console saying it cannot see must not
+   look like a state it read, and the difference costs no colour. */
+.srow-slot.unseen {
+  font-family: var(--ui);
+  font-style: italic;
+  color: var(--faint);
+}
+.srow-2 {
+  font-family: var(--mono);
+  font-size: .58rem;
+  letter-spacing: .04em;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A state, not a warning: it does not compete with the terminal band. */
+.srow-pill {
+  font-family: var(--mono);
+  font-size: .58rem;
+  letter-spacing: .06em;
+  color: var(--danger);
+  border: 1px solid #4a2a29;
+  border-radius: 5px;
+  padding: .05rem .35rem;
+  white-space: nowrap;
+}
+
+/* Terminal: the height change is the salience channel — peripherally detectable
+   without reading, and it survives greyscale and colour blindness. No motion. */
+.srow.terminal { background: var(--panel); }
+.srow.terminal::before { background: var(--danger); }
+.srow-band {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  margin-top: .3rem;
+  padding: .45rem .55rem;
+  border: 1px solid #4a2a29;
+  border-radius: 7px;
+  background: rgba(224, 104, 92, .06);
+}
+.band-top { display: flex; align-items: center; gap: .6rem; }
+.band-what {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: .63rem;
+  color: var(--danger);
+}
+.band-detail {
+  font-family: var(--mono);
+  font-size: .58rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+/* ≥60 px and separated: it is the one control here that cannot be undone. */
+.band-x {
+  margin-left: auto;
+  min-width: 60px;
+  min-height: 44px;
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--hair);
+  border-radius: 7px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: .6rem;
+  cursor: pointer;
+}
+.roster-empty {
+  margin: 1.4rem .9rem;
+  font-family: var(--ui);
+  font-style: italic;
+  color: var(--faint);
+}
+.back-btn { font-size: 1.2rem; line-height: 1; }
+
+/* Opening a row is the operator expressing intent about that session, and that
+   discontinuity is what guards the controls inside it. */
+.srow-more {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--faint);
+  font-size: .8rem;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -.4rem -.5rem -.4rem 0;
+  cursor: pointer;
+}
+.srow.open { background: var(--panel); }
+.srow-acts {
+  display: flex;
+  /* 4 mm. Yamanaka & Usuba took unintended taps from 5.2% to 0% across 0–4 mm at
+     no cost in time, which is the whole reason this gap is a number and not a look. */
+  gap: 25px;
+  margin-top: .45rem;
+}
+/* Equal size — shipping the more final action as the smaller target is how this
+   surface used to be. They differ by outline, never by silhouette. */
+.srow-act {
+  appearance: none;
+  flex: 1 1 0;
+  min-height: 60px;
+  background: var(--panel-hi);
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: .7rem;
+  cursor: pointer;
+}
+.srow-act:disabled { opacity: .4; cursor: default; }
+.srow-act.final {
+  border-color: #4a2a29;
+  border-style: dashed;
+  color: var(--danger);
+}
+/* Not a per-session act, so it appears on no row and does not share their shape. */
+.danger-sec { border-top: 1px solid var(--hair); padding-top: .7rem; }
+.danger-wide {
+  width: 100%;
+  min-height: 60px;
+  border-color: #4a2a29;
+  border-style: dashed;
+  color: var(--danger);
+}

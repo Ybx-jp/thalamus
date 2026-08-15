@@ -131,16 +131,27 @@ if [ -n "$session_id" ]; then
   case "$entrypoint" in
     cli|"") pane="${TMUX_PANE:-}" ;;
   esac
+  # `repo_root` and `project` are what group a roster row by the thing the operator
+  # thinks in. `cwd` cannot: two sessions in ~/code/thalamus and ~/code/thalamus/lab
+  # are one project and sort as two, while three sessions in one checkout share a cwd
+  # string exactly and sort as one indistinguishable pile. Both are already resolved
+  # above for the priming text — recording them costs a jq argument and is the only
+  # route by which the console can learn either, since it sees tmux and this ledger
+  # and nothing else. `project` carries the THALAMUS_PROJECT override and is therefore
+  # the grouping key; `repo_root` is the unambiguous path under it, and a consumer
+  # that wants to key on identity rather than on a name uses that one.
   jq -cn --arg sid "$session_id" --arg scope "$scope" --arg cwd "$cwd" \
     --arg agent "${CLAUDE_CODE_AGENT:-}" \
     --arg room "$(thalamus_resolve_room)" \
     --arg forked_from "$(thalamus_resolve_forked_from)" \
     --arg entrypoint "$entrypoint" \
     --arg tmux_pane "$pane" \
+    --arg repo_root "$repo_root" \
+    --arg project "$project" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{session_id: $sid, scope: $scope, agent: $agent, room: $room,
       forked_from: $forked_from, cwd: $cwd, entrypoint: $entrypoint,
-      tmux_pane: $tmux_pane, ts: $ts}' \
+      tmux_pane: $tmux_pane, repo_root: $repo_root, project: $project, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi
 

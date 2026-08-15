@@ -252,25 +252,32 @@ charter, which is a different object from a Claude Code pin ([07](07-harness-int
 and is invisible once the window exists. A request that names no harness gets Claude
 Code — the endpoint is driven by hand over the tailnet too.
 
-The same sheet reports **distillation**, because ending a session and distilling it
-are not the same event. `/exit` fires SessionEnd, which launches `thalamus extract`
-*detached* and lets the window go; the memory is written minutes later by a process
-with no window, no tab and no other place to report itself. A row appears per
-session still distilling and per session that finished badly:
+**Distillation is a state of a session, not a list of its own**, and it is drawn on
+that session's roster row. Ending a session and distilling it are not the same
+event: `/exit` fires SessionEnd, which launches `thalamus extract` *detached* and
+lets the window go, so the memory is written minutes later by a process with no
+window and no other place to report itself. The record routinely outlives its
+window, and a row then renders from the record alone.
 
-- **distilling** — a pulsing dot and the elapsed time. Typical is two to four
+- **distilling** — the elapsed time in the state slot. Typical is two to four
   minutes.
-- **an error** — red, with the reason from the extract log, and it stays until you
-  tap ✕. This is the case worth having: a failed extraction exits *zero*, so
-  nothing else on the box would ever mention that a conversation was not recorded.
-  A distillation that stops being written to for twenty minutes counts as failed —
-  the process died rather than ran long.
+- **stalled** — past twenty minutes with nothing written. It keeps the ordinary row
+  geometry because the process may still finish.
+- **abandoned** — past an hour, three times the stall clock. It cannot still be
+  running, so the row takes the terminal band.
+- **failed** — the band, with the reason from the extract log verbatim. This is the
+  case worth having: a failed extraction exits *zero*, so nothing else on the box
+  would ever mention that a conversation was not recorded.
+- **never distilled** — the band, for a window killed before SessionEnd could run.
 
-A clean finish removes its own row, so **an empty section means nothing is owed**,
-and the ＋ carries a dot when the sheet has something in it. Only sessions in the
-pin ledger are counted: subagents fire SessionEnd too and always fail (they have no
-transcript of their own), but they never write a ledger entry, which is what
-separates them from real sessions. Dismissals live in
+A clean finish is served as no record at all, so **success is drawn as nothing** and
+the absence is unambiguous once every other outcome draws something. A banded row
+stays until dismissed: if it vanished on the next poll the failure would evaporate,
+and it has to still be there hours later when someone next looks.
+
+Only sessions in the pin ledger are counted: subagents fire SessionEnd too and
+always fail (they have no transcript of their own), but they never write a ledger
+entry, which is what separates them from real sessions. Dismissals live in
 `~/.thalamus/console/distill-dismissed.json`, counted in distillation runs rather
 than stamped in time, so a session that distills again later and fails again comes
 back — while the `thalamus eval sync` output the hook appends a few seconds behind
@@ -309,17 +316,31 @@ nothing.
 The ordinary pane composer keeps no such check, deliberately — it types into the window
 you are watching, where answering a permission prompt yourself is the point.
 
-**⚙ is the admin sheet**:
+**Per-session controls live on the session's own row**, revealed by opening it —
+opening a row is the operator expressing intent about that session, and that
+discontinuity is what guards the controls rather than putting them out of reach.
+The two are the same size and differ by outline, because shipping the more final
+action as the smaller target is how a mis-tap happens.
 
 - **restart** replaces a window's claude process. MCP servers and hooks arm *per
   process* (lab/001), so this is how a wiring change actually takes effect. It
   sends `/exit` — which fires SessionEnd, so the session distills to memory
   normally — waits up to 4 minutes for it, then respawns the window with its
   original command and `THALAMUS_SCOPE` intact. Only a session that hangs past the
-  budget gets force-killed, and that one skips distillation.
+  budget gets force-killed, and that one skips distillation. A window that has
+  ended offers **revive** in the same place.
 - **close** ends a session the same graceful way and removes its window. The
   anchor (the lowest-indexed window) can't be closed: it's the console's reference
   directory and the last thing keeping the roster non-empty.
+
+**⚙ is the admin sheet**, and it holds what is not a per-session act:
+
+- **roster sync** is idempotent backfill — it adds windows the pin ledger expects
+  and touches nothing already running.
+- **restart all** recycles every window in sequence, which is N irreversible losses
+  behind one confirm. It sits in its own section with its own shape rather than
+  beside `roster sync`, and its confirm enumerates the count and the groups it will
+  hit, read from the same grouping the roster renders.
 - **Launch posture** sets what a *newly launched* session starts with, per harness,
   from the ordered options that harness declares (`harness/launcher.py`). Each option
   shows what it gives up, because a posture can only be weighed against its cost if
@@ -587,12 +608,63 @@ keeps that true.
   inherits its `TMUX_PANE`, so a `claude -p` run from a Bash tool is a full
   session holding a live window's join key, and last-row-wins would hand it the
   read view.
-- **Distillation state is derived, not tracked.** The SessionEnd hook forks and
-  exits, so there is no lockfile, pid file or status record to read — the whole
-  state machine is `~/.thalamus/logs/session-end-<sid8>.log`, joined against the
+- **Distillation state is derived from the log, except the one state no log can
+  hold.** The SessionEnd hook forks and exits, so there is no lockfile or pid file —
+  the state machine is `~/.thalamus/logs/session-end-<sid8>.log`, joined against the
   pin ledger to drop subagent residue (two thirds of the logs on a working box).
   It rides the poll the client already runs rather than getting a loop of its own,
-  and is cached against (mtime, size) so a steady-state poll opens no file.
+  and is cached against (mtime, size) so a steady-state poll opens no file. States
+  are `active`, `stalled`, `error` and `unknown`; a clean `done` deletes its row,
+  because success is silent.
+  **`extract` has two clean endings and both must be recognised.** The summary line
+  (`N extracted, M skipped, K failed`) is one; the other is a session with no
+  substantive exchange, which is named, found, deliberately not distilled, and exits
+  0 having printed no summary at all. Any future exit path that finishes without a
+  summary line will be read as a stall — measured, that miss put two false rows on a
+  four-row list. A `✗` failure marker is decided on its own for the same reason: a
+  job that records a failure and then dies has failed, not hung.
+  **A forced close or recycle kills the window before SessionEnd runs**, so
+  `thalamus extract` never starts and no log is ever created — and a state machine
+  whose only input is the artifact cannot report the artifact's absence. The console
+  is the sole witness, because it is the thing that did it, so it appends a row to
+  `~/.thalamus/console/distill-killed.jsonl` at the moment it forces. That row is
+  what makes `unknown` distinguishable from success: without it a distillation that
+  succeeded and one that never ran are the same pixels. A log that later appears for
+  the same session overrules the row — the kill is an expectation, a log is evidence.
+- **Errors and killed windows persist until dismissed**, tracked in
+  `~/.thalamus/console/distill-dismissed.json`. Dismissal is per occurrence, never
+  per class: an error row returns when the session distills again, and a killed
+  window returns on the next kill, keyed on that kill's stamp.
+- **A row carries what tmux cannot know, joined from the pin ledger by pane id**:
+  `project` and `repo_root` (so rows group by the repository rather than by a cwd
+  string — a checkout and a directory inside it are one project) and `started` (the
+  session's own start, epoch seconds, converted at the boundary from the ledger's
+  ISO stamp). Absent where the ledger has no value, never inferred from the cwd.
+- **Whether a session is stopped waiting on a human is served, not computed by the
+  client.** `harness/dispatch.py` owns what the state means and the harness's
+  session descriptor owns the value; the console joins them to a window and reduces
+  them to `observed`, `blocked`, `blocked_since`, `activity` and `activity_since`.
+  **`observed` is the field to branch on.** Session descriptors are partitioned by
+  config directory, so a console can be structurally unable to see a window's
+  descriptor — measured on one box, the same roster resolved 7 of 9 windows from the
+  host config directory and the complementary 2 of 9 from inside a collaboration. An
+  unobserved window is `observed: false` with `blocked: null`, never `false`:
+  reporting "not stuck" on evidence that says nothing is the failure the indicator
+  exists to remove.
+- **The state word is composed by the server, not chosen by the client.** `activity`
+  is `idle`, `busy`, or empty when the status is neither — a display word the row
+  prints, deliberately not carried as `status`, because a field named for the policy
+  value invites a second reading of what the reduction exists to consume. Which
+  states are worth a clock is decided in the same place: `activity_since` carries the
+  transition stamp for `busy` and is null for `idle`, and the client draws an elapsed
+  exactly when the stamp is present. Both are empty on an unobserved row — without a
+  descriptor the words are equally unknown, so observability travels as one fact
+  about the row rather than as an absence repeated across each field.
+- **The lifecycle flags are start stamps, not booleans.** A restart or close in
+  flight records the epoch second it began, and `grace_s` rides the same payload, so
+  elapsed time is renderable and a flag leaked by a dead worker reports its own age
+  instead of saying "restarting…" forever. Nothing computes a percentage: the
+  deadline is knowable, the finish is not.
 - **Every tmux call is an argv list, never a shell string.** Pane text and typed
   input are data. Nothing captured from a pane and nothing typed into the composer
   can become a command.

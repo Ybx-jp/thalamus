@@ -83,6 +83,17 @@ class LiveSession:
     status: str
     updated_at: int
     descriptor: Path
+    # When `status` last *changed*, as opposed to when the descriptor was last
+    # touched. The harness writes both and they coincide today, but they answer
+    # different questions, and only this one survives the harness deciding to
+    # refresh a descriptor for any other reason. Milliseconds, as written.
+    #
+    # Measured 2026-08-15: the descriptor is not a heartbeat. Live sessions on this
+    # box carried stamps between 6.6 hours and 6.6 days old, each matching its
+    # file's mtime to the second, so the file is written on transition and not
+    # otherwise — which is what makes "blocked since" a real duration rather than
+    # a poll artifact.
+    status_updated_at: int = 0
 
     @property
     def scope(self) -> str:
@@ -178,6 +189,11 @@ def live_sessions(config_dir_override: Path | None = None) -> list[LiveSession]:
                 name=str(data.get("name") or ""),
                 status=str(data.get("status") or ""),
                 updated_at=int(data.get("updatedAt") or 0),
+                # Falls back to updatedAt rather than to 0: a descriptor written by
+                # a harness that does not carry the field still has a real, if
+                # coarser, transition moment, and 0 would render as 1970.
+                status_updated_at=int(data.get("statusUpdatedAt")
+                                      or data.get("updatedAt") or 0),
                 descriptor=descriptor,
             )
         )

@@ -244,6 +244,49 @@ class TestForeignCwdPinResolution:
             (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
         assert row["agent"] == "" and row["scope"] == "main"
 
+    def test_ledger_records_the_repo_and_project_a_session_started_in(self, tmp_path):
+        """The console's only route to either.
+
+        A roster row groups by project and disambiguates by repository, and tmux
+        knows neither — it knows a pane's cwd. `cwd` cannot stand in for them in
+        both directions at once: a checkout and a subdirectory of it are one project
+        that sorts as two, while several sessions in one checkout share the string
+        exactly and sort as one indistinguishable pile. Both values are resolved
+        anyway for the priming text, so the alternative to recording them is
+        computing them and dropping them.
+        """
+        checkout = tmp_path / "myproject"
+        checkout.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=checkout, check=True,
+                       capture_output=True)
+        # Started in a subdirectory, to pin the part `cwd` gets wrong: the row must
+        # name the checkout, not the directory the session happened to open in.
+        deeper = checkout / "lab"
+        deeper.mkdir()
+
+        run_hook(session_start_payload(cwd=str(deeper)), tmp_path)
+
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["cwd"] == str(deeper)
+        assert row["repo_root"] == str(checkout)
+        assert row["project"] == "myproject"
+
+    def test_the_repo_fields_are_empty_outside_a_checkout_rather_than_guessed(
+            self, tmp_path):
+        """Absent is recorded as absent.
+
+        A session outside any repository has no project, and the row says so with an
+        empty string. Falling back to the directory's name would put a value on the
+        wire that a reader cannot tell from a resolved one — the console would group
+        by a guess and never be able to report that it guessed.
+        """
+        run_hook(session_start_payload(cwd=str(tmp_path)), tmp_path)
+        row = json.loads(
+            (tmp_path / ".thalamus" / "pins" / "pins.jsonl").read_text().splitlines()[0])
+        assert row["repo_root"] == ""
+        assert row["project"] == ""
+
     def test_ledger_records_the_pin_from_a_foreign_cwd(self, tmp_path):
         """End-to-end: the ledger session-end reads must carry the real pin."""
         run_hook(
