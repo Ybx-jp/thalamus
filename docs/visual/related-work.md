@@ -313,7 +313,90 @@ finding. **SC 2.2.2 Pause, Stop, Hide** binds harder and is easier to miss: it c
 **auto-updating content with no five-second exemption at all**, which puts any polling
 roster inside it.
 
-## 6. What this canon keeps teaching
+## 6. Graph drawing and structural diagrams
+
+**measured, and it settles which aesthetic is worth paying for.** Purchase, *Which
+aesthetic has the greatest effect on human understanding?*, Graph Drawing '97, n = 55
+second-year CS students at the University of Queensland. Per-metric results:
+
+| aesthetic | errors | reaction time |
+|---|---|---|
+| **crosses** | F(1,54) = 24.25, α=.01 | **F(1,54) = 87.98, α=.01** |
+| **bends** | F(1,54) = 14.49, α=.01 | F = 5.84, approaches only |
+| minimum angle | F = 0.09, **NS** | F = 3.05, **NS** |
+| orthogonality | F = 0.00, **NS** | F = 1.44, **NS** |
+| **symmetry** | F = 0.09, **NS** | F = 7.57, α=.01 |
+
+Two consequences that invert common practice. **Orthogonality is null on both measures** —
+the right-angled routing that is the house style of nearly every architecture diagram has
+no measured comprehension benefit. And **symmetry, the aesthetic most associated with a
+beautiful graph drawing, is not significant for errors**; it moves reaction time only. So
+symmetry is close to free beauty, and crossings are where the accuracy lives.
+
+Two provenance caveats, both of which matter when quoting these numbers: the paper reports
+**α levels, not p-values**, so do not restate as p < .01; and the open-access PDF is an
+**OCR'd scan** (`248_1.tif`), so the figures are read through visible OCR damage. The
+often-quoted stimulus size ("16 vertices, 18–28 edges") is **not in the paper** — it comes
+from Kobourov, Pupyrev & Saket 2014 characterising Purchase's stimuli.
+
+**measured.** Huang, Hong & Eades, [arXiv:0810.4431](https://arxiv.org/abs/0810.4431),
+n = 16, eye tracking. Crossing *angle* is separable from crossing *existence* but additive
+on top of it: path-task p < 0.001 with every pairwise comparison significant, ordered
+no-crossing < 90° < acute. A right-angled crossing beats an acute one and is still worse
+than none — "make the crossings orthogonal" does not substitute for removing them.
+
+**measured.** Okoe, Jianu & Kobourov,
+[arXiv:1709.00293](https://arxiv.org/abs/1709.00293), n = 557, on graphs of **258 nodes /
+1090 edges**: node-link won path tasks and memorability at that size. Ghoniem, Fekete &
+Castagliola's matrix-vs-node-link crossover was run at 20/50/100 nodes × density
+0.2/0.4/0.6 (secondhand, via Okoe). **not found:** any measured node count above which a
+node-link drawing becomes decorative rather than readable. The threshold everyone cites
+does not exist in this form.
+
+**measured, and the closest condition this canon has to a static aid.** Wallinger,
+Jacobsen, Kobourov & Nöllenburg,
+[arXiv:2101.08155](https://arxiv.org/abs/2101.08155), n = 116, **static images, no
+interaction**. Containment-style set drawing (EulerView) scored **65% against ~92%**
+element-task accuracy and **50% against 85%** on set tasks, dropping to roughly **15% —
+chance** — on some large-set tasks. Drawing membership as an enclosing region is the
+measurably worse encoding, which is worth knowing before reaching for the default bubble.
+
+**measured, domain transfer is inference.** An **absence rendered as blank space is
+under-noticed, and readers generalise over it**; an absence given a positive mark is seen
+and raises decision confidence. Six converging studies — Eaton, Plaisant & Drizd 2005;
+Andreasson & Riveiro 2014; Song & Szafir 2019; Song et al. 2021; Bäuerle et al. 2022;
+Fernstad & Westberg 2022 — surveyed in
+[arXiv:2410.03712](https://arxiv.org/abs/2410.03712). The domain is **missing values in
+quantitative charts, not graph topology**, so carrying it to "an edge that is not there"
+is inference. It is nonetheless the only measured evidence on encoding an absence, and it
+says blank space is the weak choice.
+
+**convention — confirmed.** Tufte's data-ink ratio. Wilbanks et al.,
+[arXiv:2109.10132](https://arxiv.org/abs/2109.10132), state that Tufte proclaimed the
+direction without proof. **not found:** any test of data-ink against Bateman.
+
+**measured, and it does not replicate cleanly.** Syeda et al. 2023
+([osf.io/dferj](https://osf.io/dferj)) ran a four-way replication of Bateman et al.'s
+*Useful Junk?* (CHI 2010): Study 1 (n = 19) found **no significant recall differences**,
+Study 2 reproduced the original. Neither "embellishment aids recall" nor its denial is
+safe to lean on.
+
+**conditions not met.** Mayer's coherence and signalling principles are frequently
+recruited to justify omitting detail from a diagram. Mautone & Mayer 2001, *J Ed Psych*
+93(2):377, is multimedia learning; Butcher 2006, 98(1):182, is text-plus-diagram learning;
+Larkin & Simon 1987 is a computational analysis with **no human participants**. None
+measures a static structural diagram, so an omission argued from them is an argument, not
+a citation.
+
+**not found, and it bounds this whole section.** No study here measures **reading a
+diagram without a task**. Every result is find-the-path, identify-the-set, recall-the-chart.
+A figure that is looked at rather than queried — a hero image, a README banner, a
+title-slide schematic — is outside the measured range entirely. Also not found: any
+comparison of curved against straight edge routing, and any measurement of *global*
+crossing-count minimisation as distinct from path-local crossings (Ware, Purchase, Colpoys
+& McGill measured only edges crossing **the traced path**).
+
+## 7. What this canon keeps teaching
 
 Three patterns recur across every section above, and they are the reason this document
 is organised by evidence rather than by topic:
@@ -335,12 +418,16 @@ is organised by evidence rather than by topic:
 ## Provenance of this document
 
 Assembled from consultation tickets `cfd9f409951e48c0` (D3 — polarity, contrast,
-typography) and `33e3e972ff6c4d99` (D4 — targets, categorical colour, overflow, reach,
-motion), both answered by the `literature` scope going to primary sources because
-neither its corpus nor this one held the material. The sources behind §1, §2, §4 and §5
-are now ingested under `--scope designer` and recallable here; the D3 material
-(Buchner 2009, Dobres 2016/2017, Henderson & Cote 1998) is **not yet ingested** and
-remains a gap.
+typography), `33e3e972ff6c4d99` (D4 — targets, categorical colour, overflow, reach,
+motion) and `013c2ad2016c426a` (D5 — §6, graph drawing and structural diagrams), all
+answered by the `literature` scope going to primary sources because neither its corpus
+nor this one held the material. The sources behind §1, §2, §4 and §5 are now ingested
+under `--scope designer` and recallable here; the D3 material (Buchner 2009, Dobres
+2016/2017, Henderson & Cote 1998) and the §6 material are **not yet ingested** and remain
+a gap.
+
+That signature has now appeared three times on visual topics. §6 exists so the fourth
+question about graph drawing is a recall rather than a ticket.
 
 Two caveats the record itself demands:
 

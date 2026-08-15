@@ -87,16 +87,19 @@ Established by source survey and by live probes against the running stack.
   never been through the frontend has none, so the exporter falls to the foreignObject
   branch and waits for an element that never appears.
 
-  Loading the file once at the workspace URL fixes it permanently, for that shape and
-  every text already in the file. Measured both directions on one unmodified frame:
-  500 before the open, full SVG after, nothing else changed. The frame renders fine
-  the moment its text is deleted, so a 500 on a mixed frame is a text symptom and not
-  a broken file.
+  **One workspace load fixes the file, not the shape.** Loading it once at the workspace
+  URL fixes it permanently — for the text present at the time *and for every text created
+  afterwards*. Measured both directions on one unmodified frame: 500 before the open,
+  full SVG after, nothing else changed; then measured forward in D5, where the file was
+  opened holding a single probe text and ~30 texts written later all exported without a
+  further open. The frame renders fine the moment its text is deleted, so a 500 on a
+  mixed frame is a text symptom and not a broken file.
 
   This binds the whole ladder, not just type work: any drill whose artifact carries a
-  label must open the file in the workspace before its render check, or the check
-  cannot run. It also means a PNG or SVG is not obtainable at all for unopened text —
-  there is no degraded output to misread, which is the one mercy in it.
+  label must open the file in the workspace **once, at any point before its first render
+  check** — open early and the rest of the session is free. It also means a PNG or SVG is
+  not obtainable at all for unopened text — there is no degraded output to misread, which
+  is the one mercy in it.
 - **Set style at creation time.** `move_shape` and `resize_shape` write `x`/`y`/`width`/
   `height` without refreshing `selrect` and `points`. The five text-mutation tools
   (`set_font`, `set_font_size`, `set_text_align`, `set_text_style`, `set_text_content`)
@@ -381,6 +384,22 @@ version rather than the intuitive one.
   it condemns this strip anyway, because a roster has no long tail where the first few
   items dominate. Right conclusion, wrong reason, and the reason mattered.
 
+**Revised as D4v2 2026-08-15 — file `D4v2 console lifecycle`, critique in
+`lab/d4v2-console-lifecycle.md`. Assessed: passed, "a major improvement on D4."** The
+operator's review of D4 named four gaps, and working them exposed a larger one that is
+the finding worth carrying: **D4 redesigned one surface of a console whose session
+information is spread across four, and proposed a vertical session list without noticing
+that a vertical session list already ships, twice.** The correct move was subtraction —
+one row per session carrying its whole life — not a fourth list. The general lesson is
+the A0 step of `ground-in-literature` applied to design: check what the system already
+draws before drawing it again.
+
+Left open by D4v2 and deliberately not carried into D5: the literature expert closed
+ticket `2afeb814ce5f4a49` and *then* reported that three claims in its own closed answer
+are falsified and a fourth overstated. An agent cannot reopen a closed exchange, so the
+graph holds a partly-wrong answer whose corrections live only in the lab file. The expert
+itself recommended a round 3; the operator deferred it to its own session (2026-08-15).
+
 ### D5 — Capstone
 
 *All three axes at maximum, in one piece.*
@@ -390,6 +409,50 @@ the architecture. Near-zero specification.
 
 Grades everything at once and is the only drill where a wrong-but-pretty answer and a
 right-but-ugly answer are both failures.
+
+Run 2026-08-15 — file `D5 memory graph`, spec in `lab/d5-hero-spec.md`, board PNG at
+`lab/assets/d5-memory-graph.png`, awaiting assessment. The picture makes one claim, the
+docs' own: **the boundary is one edge, not a partition between scopes.** Every `Claim` is
+drawn as the same mark, and only the presence of a `CONTAINS` tether separates private
+from shared; `CONTAINS` is the sole saturated colour in the frame. Four findings:
+
+- **The image contains no container, and that is now measured as well as semantic.** The
+  correction being made is a real one — a previous designer session drew this system as
+  seven sealed compartments and was formally overturned
+  (`scope:designer:claim:698ae5fd66f05e8e`). The independent support arrived afterwards:
+  containment-style set drawing measures **65% against ~92%** element-task accuracy and
+  **50% against 85%** on set tasks, on **static images with no interaction** (Wallinger
+  et al., arXiv:2101.08155, n=116). Drawing membership as an enclosing region is the
+  worse encoding, not merely the wrong one here.
+- **The literature refuted the aesthetic the drill is named for, and licensed the
+  routing.** Purchase GD'97 (n=55): crossings dominate (RT F(1,54)=87.98), while
+  **orthogonality is null on both measures** (F=0.00 / 1.44) and **symmetry is not
+  significant for errors** (F=0.09). Symmetry — the thing that makes a graph drawing look
+  beautiful — buys no accuracy, and the orthogonal routing that is every architecture
+  diagram's house style buys nothing either. The board takes both licences: no forced
+  symmetry, curved consultation arcs, and **zero edge crossings by construction**
+  (monotonic nearest-x assignment for the roots, arcs routed above while every tether
+  routes below).
+- **The strongest objection landed against the central device.** The thesis is an
+  *absence* — shared claims are shared because a tether is not there — and the nearest
+  measured evidence says an absence rendered as blank space is under-noticed and readers
+  generalise over it (six studies surveyed in arXiv:2410.03712). Domain is missing values
+  in quantitative charts, so transfer is inference; the response was to state the absence
+  positively in type rather than let the blank speak. Untested, and recorded as a live
+  exposure rather than resolved.
+- **"Survives greyscale" was tested rather than asserted.** The two edge families measure
+  **1.31:1** apart in luminance — *under D3's own declared 1.41:1 floor* — so hue is
+  doing real work. It is not doing it alone: stroke width (2.0 vs 1.2) and disjoint bands
+  carry the distinction, and the degraded render was produced and read. This is the check
+  `p6-degraded-rendering-arm` exists to automate, run once by hand.
+
+Named change: **`docs/visual/related-work.md` gains §6, graph drawing and structural
+diagrams** — the canon this scope needed and did not hold. The designer↔literature
+signature (this scope consults out for its own field, and the expert must go to primary
+sources because neither corpus holds the material) had appeared twice before; §6 exists
+so the fourth such question is a recall rather than a ticket. Also corrected the
+workspace-open instrument fact above: the fix is per **file** and covers text created
+after the open, not only text present at the time.
 
 ## Protocol
 
