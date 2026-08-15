@@ -173,10 +173,24 @@ See `/tmp/qe-brief-homelab-half.md` for the long form; the substance is here.
 - **`THALAMUS_ROOM` leaks into pytest.** 16 failures from inside a room session, fully
   green under `env -u THALAMUS_ROOM`. Anyone verifying in-room reads a red suite and
   discounts the work.
-- **`tests/test_ownership.py::test_the_partition_runs_both_ways` is order-dependent.**
-  Fails on some random seeds, passes on others, passes in isolation. A latent false
-  green in both directions.
+- **`tests/test_ownership.py::test_the_partition_runs_both_ways` failed once and has
+  not been reproduced.** Observed exactly once, in a full-suite run on 2026-08-15
+  around 14:10 PDT; it passed in isolation immediately after and in every run since.
+  **The mechanism is unknown.** An earlier version of this brief called it
+  "order-dependent, fails on some random seeds" — that was homelab's inference and it
+  was wrong: `pytest-randomly` is not installed, collection order is deterministic and
+  was verified identical across runs, so `-p no:randomly` (which two of us passed for
+  days) was a no-op against a plugin that was never there. The assertion output was
+  never captured, so it is not even known which of the two assertions failed, or
+  whether the guard returned 0 (allowed) or 1 (crashed under `set -euo pipefail`) —
+  which have opposite diagnoses. Ruled out since: env leak into the subprocess (the
+  helper builds a clean env), cross-test pollution of the manifest dir, pairing with
+  the seven files sharing guard machinery, and mid-write manifests (every
+  `config/experts/*.yaml` and `contract/ownership.py` is stamped at worktree creation
+  and untouched since). `thalamus_repo_root` is pure path arithmetic with no `git`
+  call, so index contention is not a channel either.
 
 **Homelab's call on order: the env leak first.** It is mechanical, and it unblocks
-trustworthy verification for everyone in the room. The ordering flake needs someone to
-chase state pollution, which is real work and better done against a suite you can trust.
+trustworthy verification for everyone in the room. The ownership failure needs a second
+observation before anything can be chased: the mechanism is unknown, and a guard against
+a mechanism nobody has identified is decoration.
