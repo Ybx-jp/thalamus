@@ -33,7 +33,7 @@ client renders what it is handed.
 | `recycling` | float\|null | epoch start stamp | `restarting M:SS` |
 | `closing` | float\|null | epoch start stamp | `closing M:SS` |
 | `activity` | str | `idle`\|`busy`\|`""` — the word the not-blocked slot draws, composed server-side from the descriptor status. Never carried as `status` (§8) | the `blocked=false` state slot (§4.5) |
-| `activity_since` | float\|null | epoch of the status transition — the same `statusUpdatedAt` `blocked_since` reads. Null when the state draws no clock | `busy 14:32` |
+| `activity_since` | float\|null | epoch of the status transition — the same `statusUpdatedAt` `blocked_since` reads. Null when the state draws no clock | `busy 6:28` |
 | `policy_stale` | bool | `server.py:644-646` | `old posture` |
 | `anchor` | bool | the window the console must never close | `anchor` qualifier |
 | `harness`, `room`, `dead` | — | existing | as today |
@@ -200,7 +200,7 @@ beside it rather than instead of it — both are real, one is temporary.
 | state | renders | source |
 |---|---|---|
 | starting | `starting 0:03` | existing |
-| not blocked | `idle`, or `busy 14:32` | `activity`, `activity_since` (§4.5) |
+| not blocked | `idle`, or `busy 6:28` | `activity`, `activity_since` (§4.5) |
 | viewing | `VIEWING` | client, the row you are on |
 | blocked | `needs you` pill + `stopped 6h47m ago` | `blocked=true`, `blocked_since` |
 | unobservable | *not in reach* — sans italic, dimmed | `blocked=null` (§4.5) |
@@ -387,11 +387,16 @@ it replaces a word that was already drawn and said less.
 
 **Which states get a clock is the server's call.** `activity_since` is the descriptor's
 `statusUpdatedAt` — the same transition stamp `blocked_since` reads — and it is null
-unless the state earns a clock. `busy` earns one: `busy 14:32` on a session you thought
-had finished is a finding. `idle` does not, because a running clock on every idle row is
-motion on most rows at once (§4.3a). The client draws the elapsed exactly when the stamp
-is non-null, as it already does for `blocked_since`, so the decision stays where the
-reduction is.
+unless the state earns a clock. `busy` earns one — a turn still running when you thought
+it had finished is a finding, and the number is the whole of it. `idle` does not, because
+a running clock on every idle row is motion on most rows at once (§4.3a). The client draws
+the elapsed exactly when the stamp is non-null, as it already does for `blocked_since`, so
+the decision stays where the reduction is.
+
+**The stamp is verified, not assumed.** Read live off a roster descriptor on 2026-08-15:
+a `busy` row's stamp resolved to the second the operator prompted that session, so it is a
+transition stamp and not a heartbeat — the property `blocked_since` already depends on,
+holding for the same field on the other branch. The row would have drawn `busy 6:28`.
 
 **Emphasis stays flat.** Both words render in the slot's ordinary mono weight, same as
 `starting`. `busy` is not a warning and must not compete with the `needs you` pill —
