@@ -1554,10 +1554,16 @@ function sessionRow(r, now, graceS) {
 function terminalBand(r, st) {
   const band = document.createElement("div");
   band.className = "srow-band";
+  // The sentence and its control share a line; the detail, which can run long, gets
+  // the full width beneath. Otherwise the control wraps alone and the band grows
+  // tall on empty space, spending the height that is supposed to be the signal.
+  const top = document.createElement("div");
+  top.className = "band-top";
   const what = document.createElement("span");
   what.className = "band-what";
   what.textContent = st.band + (st.elapsed ? ` · ${st.elapsed}` : "");
-  band.appendChild(what);
+  top.appendChild(what);
+  band.appendChild(top);
 
   if (st.detail) {
     // Straight from the extract log, so it is set as text and never as markup.
@@ -1576,7 +1582,7 @@ function terminalBand(r, st) {
     x.textContent = "dismiss";
     x.setAttribute("aria-label", `Dismiss ${r.d.session}`);
     x.addEventListener("click", (e) => { e.stopPropagation(); dismissDistill(r.d.session); });
-    band.appendChild(x);
+    top.appendChild(x);
   }
   return band;
 }

@@ -1100,22 +1100,22 @@ body[data-view="session"] .roster { display: none; }
 .srow.terminal::before { background: var(--danger); }
 .srow-band {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: .4rem .6rem;
+  flex-direction: column;
+  gap: .35rem;
   margin-top: .3rem;
   padding: .45rem .55rem;
   border: 1px solid #4a2a29;
   border-radius: 7px;
   background: rgba(224, 104, 92, .06);
 }
+.band-top { display: flex; align-items: center; gap: .6rem; }
 .band-what {
+  flex: 1 1 auto;
   font-family: var(--mono);
   font-size: .63rem;
   color: var(--danger);
 }
 .band-detail {
-  flex: 1 0 100%;
   font-family: var(--mono);
   font-size: .58rem;
   color: var(--muted);
