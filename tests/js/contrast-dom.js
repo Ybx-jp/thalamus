@@ -100,17 +100,27 @@ function paintedRatio(fgFloat, bgFloat) {
 // whoever next wants to relax this.
 //
 // Being pessimistic means a composited pair can fail while the screen would have
-// passed it. Swept over this palette against `--bg`, `--panel` and `--panel-hi`, the
-// penalty **near the floor** — the only place it can turn a pass into a failure —
-// reaches **0.056**: rose at alpha .79 measures 4.566 and is reported 4.510. So a
-// composited pair wants roughly 4.56 to be safe from a false failure.
+// passed it. Swept over 13 hues against `--bg`, `--panel` and `--panel-hi`, alpha
+// .05–.99, the penalty **near the floor** — the only place it can turn a pass into a
+// failure — reaches **0.056**. So a composited pair wants about **4.556** measured to
+// be safe from a false failure.
+//
+// No attaining example is given, deliberately. The maximum sits on a flat ridge: the
+// top six points are six different hue/ground/alpha combinations spanning 0.0026, so
+// naming one hue invites the next reader to check that hue, find a smaller penalty,
+// and conclude the header is wrong — when they have only found a different point on
+// the same ridge. Two independent sweeps put the maximum at different hues and agreed
+// on its value to 0.0014.
 //
 // Two numbers that are *not* that one, because both mislead:
-//   • 0.090 is the global maximum penalty, and it occurs at ratios near 8:1 where a
-//     large absolute movement cannot cross any threshold. Quoting it overstates.
-//   • 0.047 is the penalty over a single hue and ground. Quoting it understates.
-// The figure that bounds false failures is the maximum penalty *among pairs already
-// near the floor*, and it is the only one worth carrying.
+//   • ~0.09 is the global maximum penalty, and it occurs at ratios near 8:1 where a
+//     large absolute movement cannot cross any threshold. Quoting it overstates, and
+//     it is the number someone would reach for in good faith to argue this check is
+//     too strict.
+//   • ~0.05 measured over a single hue and ground understates, by sampling a
+//     population of one.
+// The figure that bounds false failures is the maximum *among pairs already near the
+// floor*. Both of the others are true numbers about the wrong population.
 //
 // The trade is asymmetric and that is what justifies it: the remedy for a false
 // failure is about one percent more contrast, which this design has twice concluded
