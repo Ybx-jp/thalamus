@@ -36,6 +36,10 @@ suite("clocks: elapsed is relative, opened is absolute");
   check("minutes past ten", fmtDur(388) === "6:28", fmtDur(388));
   check("minutes do not roll into hours early", fmtDur(1264) === "21:04", fmtDur(1264));
   check("an hour switches form", fmtDur(24_420) === "6h47m", fmtDur(24_420));
+  // The digits stop being read at this scale: `146h26m` is four significant figures
+  // nobody consumes that way, and it crowds out the magnitude that does matter.
+  check("a day switches again", fmtDur(527_206) === "6d 2h", fmtDur(527_206));
+  check("just under a day keeps hours", fmtDur(86_399) === "23h59m", fmtDur(86_399));
   check("zero is a clock, not blank", fmtDur(0) === "0:00", fmtDur(0));
   // A stamp from the future would otherwise render a negative clock.
   check("never counts backwards", fmtDur(-30) === "0:00", fmtDur(-30));
@@ -159,13 +163,25 @@ suite("the band: terminal states take the geometry, not a colour");
     inGrace.text === "restarting 1:40" && inGrace.band === "");
 }
 
-suite("the band: stalled is not terminal");
+suite("the band: stalled is not terminal, but abandoned is");
 {
   const stalled = state(null, { state: "stalled", age: 1264 });
   check("keeps the slot — it may still complete",
     stalled.band === "" && stalled.text === "distilling 21:04 · stalled", stalled.text);
   const active = state(null, { state: "active", age: 134 });
   check("as does a live distillation", active.text === "distilling 2:14", active.text);
+
+  // "May still complete" is true at half an hour and false at six days, where the
+  // calm row reports work in progress that will never move again — the meaningless
+  // silence this design exists to remove, wearing a state word.
+  const gone = state(null, { state: "abandoned", age: 527_206 });
+  check("past the threshold it takes the band", gone.band !== "" && gone.text === "");
+  check("and says how long nothing has moved",
+    gone.band === "distillation abandoned — nothing has moved in 6d 2h", gone.band);
+  // A failed extraction has a traceback to act on; this has nothing, so the two do
+  // not share a sentence even though they share the channel.
+  check("in its own words, not a failure's", !gone.band.includes("failed"));
+  check("and with no detail line to repeat itself", gone.detail === "");
 }
 
 suite("rows: a record outliving its window is the steady state");

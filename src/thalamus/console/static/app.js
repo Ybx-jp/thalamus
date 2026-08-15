@@ -1225,11 +1225,20 @@ async function postJson(path, body) {
 // none of it decides liveness. `observed`, `blocked`, `activity` and the distill
 // state all arrive already reduced, and the row prints them.
 
-/** Seconds → `0:42` under an hour, `6h47m` at or over one. */
+/**
+ * Seconds → `0:42`, `6h47m`, `6d 2h`.
+ *
+ * The precision tapers because the digits stop being read. Four significant figures
+ * on a six-day stall is false precision on a number nobody consumes that way, and it
+ * crowds out the magnitude, which is the part that matters at that scale.
+ */
 function fmtDur(s) {
   s = Math.max(0, Math.floor(s || 0));
   if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+  if (s < 86400) {
+    return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+  }
+  return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
 }
 
 /** Epoch seconds → `18:38`. The identity line's clock is absolute on purpose: it
@@ -1274,6 +1283,14 @@ function rowState(w, d, now, graceS) {
     return band(`never distilled — window was ${how}, SessionEnd never ran`, d);
   }
   if (d && d.state === "error") return band("distillation failed", d);
+  // Same channel as a failure, deliberately not the same sentence: a failed
+  // extraction has a traceback to act on and an abandoned one has nothing, so the
+  // remedies differ and the wording should not pretend otherwise.
+  // No detail line: the reason is structural and identical every time, so it would
+  // be the same sentence on every such row, and the band already carries it.
+  if (d && d.state === "abandoned") {
+    return band(`distillation abandoned — nothing has moved in ${fmtDur(d.age)}`, null);
+  }
 
   // A worker that leaks its flag crosses the deadline on its own and says so,
   // instead of reading `restarting` forever. No new detection needed: a served
