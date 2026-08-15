@@ -8,8 +8,14 @@
   --panel-hi: #1c232c;
   --hair: #2a323d;
   --ink: #cdd8e4;
-  --muted: #7d8794;
-  --faint: #4d5661;
+  /* Both carry text, so both clear WCAG AA 4.5:1 on every ground they sit on:
+     --faint on the page and on the panel an opened or terminal row paints, --muted
+     on the chip and band grounds too. The dim was never what separates a reading
+     from a non-observation — the mono vs proportional-italic split is, and it
+     survives a legible grey. If the distinction needed the darkness, contrast would
+     be carrying it, which is the thing the typeface rule exists to avoid. */
+  --muted: #8b95a3;
+  --faint: #768494;
   --danger: #e0685c;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
@@ -197,10 +203,6 @@ header {
   max-width: 20ch; overflow: hidden; text-overflow: ellipsis;
 }
 .chan-tab[aria-selected="true"] .cwd { color: var(--tab); opacity: .85; }
-.chan-tab .cmd {
-  font-size: .54rem; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--faint);
-}
 .chan-tab[aria-selected="true"] {
   color: var(--ink);
   background: var(--panel-hi);
