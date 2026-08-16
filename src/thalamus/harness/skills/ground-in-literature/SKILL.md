@@ -61,7 +61,7 @@ audio/music ML), that is not permission to proceed — it is a **coverage gap to
 close first**:
 
 ```bash
-thalamus ingest <arxiv-url|aclanthology-url|local.pdf-path> --write
+thalamus ingest <arxiv-url|aclanthology-url|local.pdf-path> --scope literature --write
 ```
 
 Ingestion is allowlist-gated (`config/experts/literature.yaml`), evidence-first,

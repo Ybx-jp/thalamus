@@ -1,6 +1,6 @@
 # Ingestion — Feeds for Expert Subgraphs
 
-**Status:** v0 shipped — `thalamus ingest <url|file>`,
+**Status:** v0 shipped — `thalamus ingest <url|file> --scope <expert>`,
 allowlist-gated by the expert manifest, evidence-first (archive before extraction),
 model-extracted claims/entities, contract-gated writes. PDFs refused, not half-parsed.
 Deliberately the **smallest** component in the system.
@@ -23,7 +23,8 @@ The first feed populates the technical-literature expert:
   a short, operator-maintained list of publishers/feeds relevant to active projects
   and learning efforts (agent-memory literature, RAG evaluation, harness
   engineering, audio ML, …).
-- **Manual ingestion is a first-class path, not a stopgap:** `thalamus ingest <url>`
+- **Manual ingestion is a first-class path, not a stopgap:** `thalamus ingest <url>
+  --scope <expert>`
   — the operator finds something worth remembering and feeds it in. Weeks of
   real usage can run on this alone, and probably should: manual curation *is*
   tier-2 trust in practice.
@@ -39,7 +40,8 @@ literature expert.
 
 1. **One consultant, per-project feeds.** Papers serving another project go into
    the existing literature expert under a project-named feed
-   (`thalamus ingest <url> --feed stepmania-chart-generator`), never into a new
+   (`thalamus ingest <url> --scope literature --feed stepmania-chart-generator`), never
+   into a new
    scope — docs/08: technical-literature is a consultant serving everything, and
    splitting happens top-down only when retrievals measurably bifurcate. Feed
    identity persists on the Source vertex, so "what was procured for project X"

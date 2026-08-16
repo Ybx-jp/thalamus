@@ -341,7 +341,7 @@ thalamus extract                   # bootstrap stage 2: Claims + Threads via a m
 thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log via `agent -p`
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus contract check            # audit the live graph against the contract
-thalamus ingest <url|file>         # feed one document to an expert (dry-run; --write to persist)
+thalamus ingest <url> --scope <expert>  # feed one document to an expert (dry-run; --write to persist)
 thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
 thalamus pin <scope>               # launch a claude session pinned to an expert
 thalamus roster                    # bring up the tmux roster (--all for every expert)
