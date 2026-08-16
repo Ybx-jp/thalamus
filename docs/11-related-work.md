@@ -953,6 +953,49 @@ it. The gap was invisible in exactly the way [06 §4](06-ingestion.md) describes
 graph held GraphRAG cited to `arxiv.org/abs/2404.16130`, title resolved, claim count
 normal.
 
+### 3g. How a consulted expert should research before answering
+
+Grounded via consultations `scope:main:exchange:a12621a46784423b` (literature, 68
+validated citations) and `scope:main:exchange:0ae516858adb4b31` (eval-methodology, 39).
+The question: the *asking* side of a consultation had a documented methodology while
+the answering subagent had three sentences of mechanics, so the research procedure
+shipped in the ticket is the missing half (`02 §The ticket protocol`).
+
+**What is measured.** MAST (arXiv 2503.13657) ran the head-to-head between the two
+available shapes: a verification *section in the prompt* significantly beat baseline
+on GSM-Plus, while a Solver/Coder/Verifier *topology* did not (Wilcoxon p=0.4) — so
+text in the ticket is the grounded medium, not a fallback. MAST also splits failure
+fatality: not knowing when to stop appears almost exclusively in failed runs, while
+missing or incorrect verification occurs frequently in successful ones too, which is
+what puts the stopping rule ahead of the self-check. Decomposed verification beats a
+single holistic pass (arXiv 2601.15808, ingested for this consultation), and that
+paper's own scaling curve peaks early in the feedback rounds — a bounded loop, not an
+open one.
+
+**What the design gives up on evidence.** A sufficiency gate was rejected, not
+omitted: an LLM evidence-sufficiency check on a memory-retrieval pipeline cost ~19pp
+of answerable accuracy to reach ~59% refusal, and answer-then-verify added nothing
+over a plain similarity threshold. The protocol therefore directs *retrieval* rather
+than doubt — models update once counter-evidence is in context (agreement 57–59% →
+28–32% when refuting evidence is present), so the failure lab/025 recorded was
+retrieval direction, not credulous reading, and "be skeptical" would not have found
+the objecting paper that sat in the scope the whole time.
+
+**Two corrections this grounding forced on existing text.** Self-RAG (arXiv
+2310.11511) is a *trained* mechanism — reflection tokens in a fine-tuned LM — and was
+carrying the conditioning tier's prompt-level adaptivity argument across several
+surfaces; §3c already named arXiv 2607.08716 as the closer citation, and the hook
+comments now say so too. Separately, the consultation-scoped recall miss rate is
+mostly a **coverage** signal rather than a formulation one — a comparable probe found
+69% of diagnosable failures were write-time losses — so the protocol's reformulation
+step addresses the minority, and the honest instruction is to say which of the two the
+expert concluded.
+
+**Convergence, not novelty.** Prompt-level research procedure for a retrieval agent is
+ordinary practice; what is ours is where it lives — in the ticket, so the procedure and
+the exchange record are minted by the same act, and the `answered_from` stamp records
+which context worked from it.
+
 ## 4. What the scan did *not* find claimed elsewhere
 
 Stated narrowly and provisionally — absence in one scan is weak evidence, and this

@@ -162,6 +162,20 @@ Mechanics, in the order a consultation runs:
    exchange record server-side**. An invented or burned ticket grants nothing and
    fails closed. Grants are per-exchange and non-transitive (depth 1, as designed).
 
+   The ticket carries the **research protocol** the subagent works from
+   (`_RESEARCH_PROTOCOL`), below the rule and alongside the brief: recall more than
+   once and reformulate on a miss, run the query that would refute the asker, treat an
+   elision notice as an unread result, stop on a dry round, and check the draft in
+   parts. It is text in the ticket rather than a verifier stage because that is the
+   comparison that has been run — a verification section in the prompt beat baseline
+   where a Solver/Coder/Verifier topology did not (MAST, arXiv 2503.13657). The
+   ordering carries a finding too: the stopping rule precedes the self-check because
+   not knowing when to stop appears almost exclusively in *failed* runs, while missing
+   verification is common in successful ones. There is deliberately **no sufficiency
+   gate** — "decide whether you have enough before answering" was measured at ~19pp of
+   answerable accuracy for ~59% refusal, so the expert answers with what it has and
+   marks what is thin.
+
    **A ticket is a swap, not an additional door.** `_granted_scope` returns
    `(granted, [])` (`mcp_server.py:109`): under a ticket the ambient knowledge commons
    is *dropped*, and recall returns the consulted scope alone — its episodic memory

@@ -633,3 +633,33 @@ def test_the_brief_ranks_open_threads_against_the_question(monkeypatch):
     # Verifies: the question reaches the ranker, not just the other sections
     assert seen["topic"] == "how should a thread close?"
     assert seen["scope"] == "literature"
+
+
+def test_the_ticket_carries_the_research_protocol_the_subagent_works_from(monkeypatch):
+    """
+    Scenario: a minted ticket, read as the answering subagent receives it
+
+    The answering side had three sentences of mechanics and no method, while the
+    asking side had a documented one. Verifications:
+    - the procedure ships in the ticket, which is what the subagent is handed
+    - the stopping rule is present and precedes the self-check. MAST splits failure
+      fatality: not knowing when to stop appears almost exclusively in failed runs,
+      where missing verification occurs in successful ones too, so the order is the
+      finding rather than a preference (arXiv 2503.13657).
+    - no sufficiency gate. "Decide whether you have enough before answering" was
+      measured at ~19pp of answerable accuracy for ~59% refusal, so its absence is
+      deliberate and a later edit must not quietly add it back.
+    """
+    _stub_manifests(monkeypatch)
+    _stub_brief(monkeypatch)
+    graph = FakeGraph()
+
+    result = consult_request(graph, "literature", "How is provenance floored?", "main")
+
+    assert "## How to research this" in result
+    stop = result.index("Stop on a dry round")
+    check = result.index("Check the answer in parts")
+    assert stop < check, "the stopping rule must precede the self-check"
+    assert "reformulate on a miss" in result
+    assert "refute the asker" in result
+    assert "Do not gate the answer on feeling sufficiently informed" in result
