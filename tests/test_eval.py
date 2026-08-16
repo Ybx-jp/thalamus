@@ -1336,3 +1336,100 @@ def test_calibration_prepares_terms_with_the_judge_it_was_built_for():
 
     assert "parser;" in shipped and "parser" not in shipped
     assert "parser" in aligned and "parser;" not in aligned
+
+
+# --------------------------------------------------------------------------------------
+# The consultation close — who assembled the answer, not what it retrieved.
+# --------------------------------------------------------------------------------------
+
+
+def test_sync_reads_the_consultation_close_and_not_only_retrievals(tmp_path, monkeypatch):
+    """
+    Scenario: sync runs; we capture the tool set it asks the tap for
+
+    `answered_from` is stamped by a branch guarded on `tool == "consult_answer"`, and
+    sync loaded the tap with the retrieval-only default — which does not contain that
+    name. The guard could therefore never pass: the classifier was unit-tested, the
+    stamp was reachable from nothing, and 147 Exchanges carried no answering context
+    for 19 days. Landing traces is "exercised live", but this is the one property no
+    other write path produces, so live exercise never covered it.
+    """
+    from thalamus.eval import sync as sync_mod
+
+    seen: dict[str, object] = {}
+
+    def fake_load_events(base, tools=None):
+        seen["tools"] = tools
+        return []
+
+    monkeypatch.setattr(sync_mod, "load_events", fake_load_events)
+    sync_mod.sync(None, traces_base=tmp_path, rankers_base=tmp_path, policy_base=tmp_path)
+
+    assert "consult_answer" in seen["tools"]
+    # Still a superset of retrieval — the close is added to layer 1's subject, not
+    # substituted for it.
+    assert {"memory_recall", "memory_query"} <= seen["tools"]
+
+
+def test_a_consultation_close_stamps_its_answering_context_and_mints_no_trace(monkeypatch):
+    """
+    Scenario: a `consult_answer` event whose ticket names a real Exchange
+
+    Verifications:
+    - the Exchange is stamped `voiced`, which is the fact the close alone carries
+    - no Trace is written. The close's response names the Exchange it just closed, in
+      backticks, so the retrieval path would read that ID as a returned node, hang a
+      RETURNS edge on it and put a used/ignored verdict on the exchange the answer was
+      written into — pricing a write as a read.
+    """
+    from thalamus.eval import sync as sync_mod
+    from thalamus.eval.sync import SyncOutcome, _land_event
+
+    closed: list[tuple[str, dict]] = []
+    traces: list[str] = []
+
+    monkeypatch.setattr(sync_mod, "_vertex_exists", lambda g, v: True)
+    monkeypatch.setattr(sync_mod, "load_exchange", lambda g, v: {"expert": "literature"})
+    monkeypatch.setattr(
+        sync_mod, "close_exchange",
+        lambda g, v, props, **kw: closed.append((v, props)),
+    )
+    monkeypatch.setattr(sync_mod, "_ensure_edge", lambda *a, **k: None)
+    monkeypatch.setattr(sync_mod, "write_trace", lambda *a, **k: traces.append(a[1]))
+
+    event = load_events_one(
+        tool_name="mcp__thalamus__consult_answer",
+        tool_input={"ticket": "a12621a46784423b", "answer": "..."},
+        tool_response=(
+            '{"result":"Exchange `scope:main:exchange:a12621a46784423b` closed: '
+            'answer recorded with 68 validated citation(s). The ticket is burned."}'
+        ),
+        agent_type="thalamus-literature",
+    )
+    outcome = SyncOutcome()
+    _land_event(
+        None, event, "scope:main:session:s1", "main", None, True, outcome,
+        RankerLedgerStub(),
+    )
+
+    assert traces == []
+    assert outcome.written == 0 and outcome.closes == 1
+    assert closed[0][1]["answered_from"] == "voiced"
+    assert closed[0][1]["answered_by_agent_type"] == "thalamus-literature"
+
+
+class RankerLedgerStub:
+    def at(self, ts):
+        return "unused"
+
+
+def load_events_one(**overrides) -> TraceEvent:
+    """One typed event straight from a tap line, so the parser is in the loop."""
+    import tempfile
+    from pathlib import Path as _Path
+
+    directory = _Path(tempfile.mkdtemp())
+    (directory / "2026-08.jsonl").write_text(_tap_line(**overrides) + "\n")
+    events = load_events(directory, tools=None)
+    assert len(events) == 1
+    return events[0]
