@@ -439,13 +439,26 @@ def attach_blocked(windows: list[dict]) -> None:
                 w["activity_since"] = (session.status_updated_at / 1000) or None
 
 
+# The vocabulary of `permission_mode_read`, the read-status field `/api/read`
+# stamps on every response. `ok` means the console read this session; the other
+# three name which read failed, and are exactly the failures `read_feed` reports.
+#
+# It is a separate field from `permission_mode` because "this session has written
+# no permission-mode record" and "we could not read this session" are different
+# facts. `permission_mode` is `""` for the first and absent for the second, and a
+# client with only that field would have to read absence as a mode to tell them
+# apart — the one thing it must never do.
+PERMISSION_MODE_READ = ("ok", "unresolved", "pending", "no-package")
+
+
 def read_feed(cfg: Config, idx: int):
     """(window, feed, reason) for a roster window.
 
     `reason` is None when a feed came back, and otherwise names which failure it
-    was: `unresolved` (cannot tell which session is here) or `pending` (we know
-    exactly which session, it has not written its first turn). They read very
-    differently to whoever is holding the phone.
+    was: `unresolved` (cannot tell which session is here), `pending` (we know
+    exactly which session, it has not written its first turn), or `no-package`
+    (this console has no transcript parser at all). They read very differently to
+    whoever is holding the phone, and each is a value of `PERMISSION_MODE_READ`.
     """
     tr = transcript_module()
     window = next((w for w in list_windows(cfg) if w["index"] == idx), None)
@@ -1286,9 +1299,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "index required"})
             since = q.get("since", ["0"])[0]
             since = int(since) if since.isdigit() else 0
+            # `permission_mode_read` rides every response this endpoint can serve,
+            # including the ones that already carry `reason`. The client should
+            # never have to combine `available` and `reason` to learn whether the
+            # instrument worked — one field, always present, four values.
             tr = transcript_module()
             if tr is None:
-                return self._send(200, {"available": False, "reason": "no-package"})
+                return self._send(200, {"available": False, "reason": "no-package",
+                                        "permission_mode_read": "no-package"})
             window, feed, reason = read_feed(self.cfg, int(raw))
             if window is None:
                 return self._send(404, {"error": "no such window"})
@@ -1298,7 +1316,12 @@ class Handler(BaseHTTPRequestHandler):
                 # and it fixes itself on recycle. `pending` is not a failure at
                 # all — the session is identified and has not written its first
                 # turn, which is where every freshly spawned window starts.
-                return self._send(200, {"available": False, "reason": reason})
+                #
+                # No `permission_mode` here, deliberately. An empty one would say
+                # "no record exists", which is a claim about the session; what we
+                # have is a failure to read it, and that is what the field says.
+                return self._send(200, {"available": False, "reason": reason,
+                                        "permission_mode_read": reason})
             with READ_LOCK:
                 return self._send(200, {
                     "available": True,
@@ -1306,7 +1329,12 @@ class Handler(BaseHTTPRequestHandler):
                     "seq": feed.seq,
                     "items": tr.wire(feed.since(since, tr.COLD_OPEN_ITEMS if not since else 0)),
                     "mode": feed.mode,
+                    # `""` means the transcript carries no permission-mode record,
+                    # and the parse covers the whole file — absence of a record,
+                    # not absence of a read. `permission_mode_read` is what
+                    # separates the two, so it is stamped even on success.
                     "permission_mode": feed.permission_mode,
+                    "permission_mode_read": "ok",
                     "agent": feed.agent,
                 })
         if path == "/api/read/body":

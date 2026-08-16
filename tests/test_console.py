@@ -14,6 +14,7 @@ only be tested by the tmux it bridges to.
 """
 
 import json
+import shutil
 import subprocess
 import threading
 from http.client import HTTPConnection
@@ -1374,3 +1375,159 @@ def test_send_keeps_no_waiting_preflight_because_the_operator_can_see_it(tmp_pat
         assert status == 200 and body["ok"] is True
     sent = [args for args in post.fake.calls if "send-keys" in args]
     assert any("1" in args for args in sent)
+
+
+# ---- the read view's read-status field ----
+
+
+def _read_window(pane="%7", pid="4242", cwd="/home/op/code/thalamus"):
+    """One roster window line for `/api/read?index=3`, with a pane id to join on."""
+    return f"3\tqe\t1\tclaude\t60\t50\t0\t{cwd}\tclaude\t{pane}\t{pid}"
+
+
+def _read_fixture(tmp_path, monkeypatch, *, ledger=True, transcript=None,
+                  pane="%7", cwd="/home/op/code/thalamus"):
+    """Stage the ledger and transcript a `/api/read` call resolves through.
+
+    `ledger=False` leaves the pane unknown to the ledger; `transcript=None` leaves
+    the session identified with no JSONL yet. Those are the `unresolved` and
+    `pending` branches, and they are staged by absence rather than by patching the
+    resolver, so the test exercises the same code the phone does.
+    """
+    from thalamus.console import transcript as tr
+
+    # Rebuilt, not reused: a transcript left behind by an earlier stage would make
+    # the `pending` branch resolve, and the sweep below stages several in a row.
+    projects = tmp_path / "projects"
+    shutil.rmtree(projects, ignore_errors=True)
+    projects.mkdir()
+    monkeypatch.setattr(tr, "CLAUDE_PROJECTS", projects)
+
+    pins = tmp_path / "pins.jsonl"
+    rows = []
+    if ledger:
+        rows.append(json.dumps({
+            "session_id": "sess-read", "scope": "qe", "tmux_pane": pane,
+            "cwd": cwd, "project": "thalamus", "repo_root": cwd,
+            "ts": "2026-08-15T10:00:00Z",
+        }))
+    pins.write_text("".join(r + "\n" for r in rows))
+    monkeypatch.setattr(tr, "PINS", pins)
+
+    if transcript is not None:
+        proj = projects / tr.project_slug(cwd)
+        proj.mkdir(parents=True, exist_ok=True)
+        (proj / "sess-read.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in transcript))
+
+    # Module globals cached across polls; a stale index from another test would
+    # answer this one.
+    monkeypatch.setattr(server, "_LEDGER", None)
+    monkeypatch.setattr(server, "_FEEDS", None)
+
+
+def test_the_read_status_field_names_exactly_four_values():
+    """The contracted vocabulary, written out, so a fifth value fails here.
+
+    A server-side addition that widens the set has to change this line, which is
+    the point: the client renders against these four and nothing else, and a value
+    it has never heard of is indistinguishable from a bug on its own side.
+    """
+    assert server.PERMISSION_MODE_READ == ("ok", "unresolved", "pending", "no-package")
+
+
+def test_a_read_session_reports_its_mode_and_that_the_mode_was_read(tmp_path,
+                                                                    monkeypatch):
+    """The success branch: a mode off the record, and `ok` beside it."""
+    _read_fixture(tmp_path, monkeypatch, transcript=[
+        {"type": "permission-mode", "permissionMode": "acceptEdits"},
+        {"type": "user", "message": {"content": "hello"}},
+    ])
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg, windows=_read_window()) as post:
+        body = post.get("/api/read?index=3")
+
+    assert body["available"] is True
+    assert body["permission_mode"] == "acceptEdits"
+    assert body["permission_mode_read"] == "ok"
+
+
+def test_a_session_with_no_mode_record_is_read_successfully_as_empty(tmp_path,
+                                                                     monkeypatch):
+    """The distinction the field exists for.
+
+    This session was read end to end and never wrote a `permission-mode` record,
+    so the mode is `""` and the read is `ok`. The client renders that as "no mode
+    to show" — never as `manual`, and never as an instrument failure. A client
+    holding only `permission_mode` could not tell this response from the `pending`
+    one below.
+    """
+    _read_fixture(tmp_path, monkeypatch,
+                  transcript=[{"type": "user", "message": {"content": "hello"}}])
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg, windows=_read_window()) as post:
+        body = post.get("/api/read?index=3")
+
+    assert body["available"] is True
+    assert body["permission_mode"] == ""
+    assert body["permission_mode_read"] == "ok"
+
+
+def test_an_unreadable_session_carries_the_failure_and_claims_no_mode(tmp_path,
+                                                                      monkeypatch):
+    """A freshly spawned window: identified, no transcript, nothing read.
+
+    `permission_mode` is absent rather than `""` — an empty one would be a claim
+    about the session's records, and none were read. The read-status field carries
+    the whole story.
+    """
+    _read_fixture(tmp_path, monkeypatch, transcript=None)
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg, windows=_read_window()) as post:
+        body = post.get("/api/read?index=3")
+
+    assert body["available"] is False
+    assert body["permission_mode_read"] == "pending"
+    assert "permission_mode" not in body
+
+
+def test_every_read_branch_stamps_a_contracted_read_status(tmp_path, monkeypatch):
+    """
+    Scenario: all four responses `/api/read` can serve, driven over real HTTP.
+
+    Verifications:
+    - each carries `permission_mode_read`
+    - the four values observed are exactly the contracted set, named here in full
+    - the client never has to combine `available` and `reason` to learn the status
+
+    The branches are staged by taking things away — the ledger row, the JSONL, the
+    transcript module — so this fails if any one of them ever answers with a value
+    outside the vocabulary, including a `None` from a resolver that grew a fourth
+    failure without naming it.
+    """
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    seen = {}
+
+    _read_fixture(tmp_path, monkeypatch, transcript=[
+        {"type": "permission-mode", "permissionMode": "auto"}])
+    with _serving(cfg, windows=_read_window()) as post:
+        seen["ok"] = post.get("/api/read?index=3")
+
+    _read_fixture(tmp_path, monkeypatch, transcript=None)
+    with _serving(cfg, windows=_read_window()) as post:
+        seen["pending"] = post.get("/api/read?index=3")
+
+    # No ledger row for this pane, and pane_pid 0 leaves the legacy fallback no
+    # start time to match on either: genuinely unidentifiable.
+    _read_fixture(tmp_path, monkeypatch, ledger=False)
+    with _serving(cfg, windows=_read_window(pid="0")) as post:
+        seen["unresolved"] = post.get("/api/read?index=3")
+
+    monkeypatch.setattr(server, "transcript_module", lambda: None)
+    with _serving(cfg, windows=_read_window()) as post:
+        seen["no-package"] = post.get("/api/read?index=3")
+
+    for expected, body in seen.items():
+        assert body["permission_mode_read"] == expected, expected
+    assert {v["permission_mode_read"] for v in seen.values()} == {
+        "ok", "unresolved", "pending", "no-package"}

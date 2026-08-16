@@ -134,10 +134,11 @@ one `capture-pane` subprocess per window per poll.
 
 ### 2.2 All of §5, permission mode
 
-No `permission_mode` consumer exists in the client. `permission_mode_read` appears
-nowhere in `src/` or `tests/`, so §5.2's third outcome — *"cannot read this session's
-mode"* — is unreachable by construction. The server does serve `permission_mode` on
-`/api/read` as §5.1 requires.
+No `permission_mode` consumer exists in the client. The server serves both fields
+§5.1 requires on `/api/read`: `permission_mode`, and `permission_mode_read`
+(`server.PERMISSION_MODE_READ`) on every response the endpoint can return, so §5.2's
+third outcome — *"cannot read this session's mode"* — is expressible and nothing
+draws it yet.
 
 What ships instead is the raw `mode` keycap (`index.html:184`) sending `shift-tab`.
 There is no segmented picker, no `cycle mode` degradation, no `awaiting readback`
