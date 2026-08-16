@@ -115,9 +115,10 @@ buys. See [Command reference](#command-reference) for everything else.
   held in an immutable content-addressed archive outside the repo. The graph is a
   materialized view over that log — re-extract, never migrate
   ([docs/10](docs/10-evidence-archive.md)).
-- **Seven experts**: technical-literature, evaluation-methodology, homelab, teacher,
-  qe, designer, and architect — each declared by an operator-owned manifest in
-  `config/experts/` and nothing else — the zero-glue contract test
+- **The expert roster**, each scope declared by an operator-owned manifest in
+  `config/experts/` and nothing else — the zero-glue contract test. That directory
+  is the roster; [docs/02](docs/02-expert-subgraphs.md) records what each scope is
+  for
   ([docs/01](docs/01-federation-contract.md), [docs/02](docs/02-expert-subgraphs.md),
   [docs/08](docs/08-roster-candidates.md)). Knowledge is fed by `thalamus ingest`
   (allowlist-gated, evidence-first), co-indexed as `Chunk` vertices beside the claims

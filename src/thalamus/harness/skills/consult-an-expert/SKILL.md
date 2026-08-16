@@ -1,6 +1,6 @@
 ---
 name: consult-an-expert
-description: How to run a consultation with a Thalamus roster expert so it produces both a good answer and a smarter expert — the operator-interview gate that precedes the first mint, round structure, demand-driven feeding, verifying what the expert tells you, and what to do when the operator overrules it. Use BEFORE minting a `consult_request` for any scope (architect, qe, eval-methodology, homelab, designer, teacher, literature), when a first consultation comes back thin or generic, and when a consultation is substantial enough that one round will not settle it.
+description: How to run a consultation with a Thalamus roster expert so it produces both a good answer and a smarter expert — the operator-interview gate that precedes the first mint, round structure, demand-driven feeding, verifying what the expert tells you, and what to do when the operator overrules it. Use BEFORE minting a `consult_request` for any scope declared in `config/experts/`, when a first consultation comes back thin or generic, and when a consultation is substantial enough that one round will not settle it.
 ---
 
 # Consult an Expert

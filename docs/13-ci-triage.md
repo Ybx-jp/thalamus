@@ -176,9 +176,10 @@ scope.
 Three consequences for the build:
 
 - **The table lives beside `ROSTER_CAPABILITY_DEFAULT` in `contract/manifest.py`**, not
-  in the per-scope manifests. `config/experts/` holds seven manifests and no `main.yaml`;
-  a per-manifest deny cannot express this rule because the scope it most needs to bind
-  has nowhere to declare it. Writing the owned glob into the other six is the same
+  in the per-scope manifests. `config/experts/` holds a manifest per expert and no
+  `main.yaml`; a per-manifest deny cannot express this rule because the scope it most
+  needs to bind has nowhere to declare it. Writing the owned glob into every other
+  manifest is the same
   normalization error the 2026-08-11 decision already rejected, and still would not cover
   `main`.
 - **Fail closed on the rule, not on the guard.** This is a house pattern rather than a
