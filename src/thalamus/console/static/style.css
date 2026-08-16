@@ -947,7 +947,10 @@ body[data-view="roster"] #composer,
 body[data-view="roster"] .back-btn { display: none; }
 body[data-view="session"] .roster { display: none; }
 
-/* 44 px, and a label rather than a target. */
+/* 44 px, and a label rather than a target — carried by height, size and colour,
+   never by case. The header prints `project`, or the basename of `repo_root`; both
+   are names with a case of their own, and uppercasing them shows the operator a
+   string that is not the one on disk. The wide tracking went with the caps. */
 .grp {
   display: flex;
   align-items: baseline;
@@ -956,8 +959,7 @@ body[data-view="session"] .roster { display: none; }
   padding: 0 .9rem;
   font-family: var(--mono);
   font-size: .62rem;
-  letter-spacing: .1em;
-  text-transform: uppercase;
+  letter-spacing: .04em;
   color: var(--muted);
 }
 .grp-n { color: var(--faint); }
@@ -966,7 +968,6 @@ body[data-view="session"] .roster { display: none; }
 .grp.unknown .grp-name {
   font-family: var(--ui);
   font-style: italic;
-  text-transform: none;
   letter-spacing: 0;
   color: var(--faint);
 }
@@ -1000,7 +1001,7 @@ body[data-view="session"] .roster { display: none; }
   width: 4px;
   background: var(--tab, var(--faint));
 }
-.srow-1 { display: flex; align-items: center; gap: .5rem; }
+.srow-1 { display: flex; align-items: center; gap: .5rem; --more-w: 44px; }
 .srow-name {
   font-family: var(--mono);
   font-size: .82rem;
@@ -1016,6 +1017,12 @@ body[data-view="session"] .roster { display: none; }
   color: var(--muted);
   white-space: nowrap;
 }
+/* §3 puts the state slot at the right, and the operator reads it by scanning that
+   column. Only a row with a window carries the expander, so a row that outlived its
+   window (§4.4) would end its slot 44 px further right than every row above it and
+   put a step in the column. The lane is reserved rather than the control moved: the
+   expander inboard of the slot is a 44 px target adrift in the middle of the row. */
+.srow-slot:last-child { margin-right: var(--more-w); }
 /* A non-observation is never monospace. The console saying it cannot see must not
    look like a state it read, and the difference costs no colour. */
 .srow-slot.unseen {
@@ -1047,7 +1054,12 @@ body[data-view="session"] .roster { display: none; }
 /* Terminal: the height change is the salience channel — peripherally detectable
    without reading, and it survives greyscale and colour blindness. No motion. */
 .srow.terminal { background: var(--panel); }
-.srow.terminal::before { background: var(--danger); }
+/* §4.3: the bar becomes a solid full-height block, not a 4 px rule — the third of
+   the five channels that make a terminal row detectable without reading it. 12 px
+   sits inside the row's 1.1rem left padding, so the block widens without moving a
+   word. It is still reinforcement and still never the sole carrier: the band text,
+   the lost slot and the height change each say the same thing. */
+.srow.terminal::before { background: var(--danger); width: 12px; }
 .srow-band {
   display: flex;
   flex-direction: column;
@@ -1071,11 +1083,13 @@ body[data-view="session"] .roster { display: none; }
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-/* ≥60 px and separated: it is the one control here that cannot be undone. */
+/* ≥60 px in both axes and separated: it is the one control here that cannot be
+   undone. 44 px is the floor for a control you can take back; this one you cannot,
+   and a floor met on one axis is a target that is still 44 px tall under the thumb. */
 .band-x {
   margin-left: auto;
   min-width: 60px;
-  min-height: 44px;
+  min-height: 60px;
   appearance: none;
   background: transparent;
   border: 1px solid var(--hair);
@@ -1102,12 +1116,64 @@ body[data-view="session"] .roster { display: none; }
   color: var(--faint);
   font-size: .8rem;
   line-height: 1;
-  min-width: 44px;
+  min-width: var(--more-w);
   min-height: 44px;
   margin: -.4rem -.5rem -.4rem 0;
   cursor: pointer;
 }
 .srow.open { background: var(--panel); }
+/* §5: the mode a session is running under, drawn only on an opened row. A standing
+   setting, so it is quiet — it sits above the action strip and takes none of the
+   strip's weight, because looking at it is the primary use and changing it is not. */
+.srow-mode {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-top: .5rem;
+}
+.mode-label {
+  font-family: var(--mono);
+  font-size: .68rem;
+  color: var(--muted);
+}
+/* The state slot's rule, for the same reason: a value that was read is monospace, and
+   the console saying it has nothing to read is not. Absence must not look like a
+   reading — it is the one thing §1 forbids this control to imply. */
+.mode-label.unseen {
+  font-family: var(--ui);
+  font-style: italic;
+  color: var(--faint);
+}
+.mode-cycle {
+  appearance: none;
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 .8rem;
+  background: var(--panel-hi);
+  border: 1px solid var(--hair);
+  border-radius: 7px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: .66rem;
+  cursor: pointer;
+}
+/* §5.2: while the readback is outstanding the target is "outlined, not filled". The
+   press is not the act — the key cycles blind, and this says so until the session
+   writes a mode we can read back. */
+.mode-cycle.awaiting {
+  background: transparent;
+  border-color: var(--pending);
+  color: var(--pending);
+  cursor: default;
+}
+.mode-note {
+  flex: 1 1 100%;
+  font-family: var(--ui);
+  font-style: italic;
+  font-size: .62rem;
+  color: var(--muted);
+}
 .srow-acts {
   display: flex;
   /* 4 mm. Yamanaka & Usuba took unintended taps from 5.2% to 0% across 0–4 mm at

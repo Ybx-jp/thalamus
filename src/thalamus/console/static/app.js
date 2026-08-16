@@ -1575,12 +1575,192 @@ function sessionRow(r, now, graceS) {
       e.stopPropagation();
       openRow = open ? null : w.index;
       rosterSig = "";               // the open row is not in the payload; force a redraw
+      // Opening the row is the demand §5.1 sizes the design around: mode rides on
+      // `/api/read`, which resolves one window, and never on the poll. The fetch is
+      // fired here rather than inside the renderer on purpose — §8 makes a row
+      // renderer that grew its own fetch a design violation, and the renderer stays
+      // handed data.
+      if (openRow !== null) fetchMode(openRow);
       renderRoster(windows, lastDistill, Date.now() / 1000, lastGrace);
     });
     line1.appendChild(more);
-    if (open) row.appendChild(rowControls(w));
+    if (open) {
+      row.appendChild(modeControl(w));
+      row.appendChild(rowControls(w));
+    }
   }
   return row;
+}
+
+// ---- §5. Permission mode, in the opened row --------------------------------
+//
+// Mode is a standing setting, so §5.1 keeps it off the poll — carrying it would cost
+// +63% steady state across nine windows on a phone — and makes it something you look
+// at when you open the row. Only the opened row draws it: `pending` is ordinary right
+// after a spawn, and drawing it on every fresh row would build exactly the constant
+// channel §4.2 exists to avoid.
+//
+// **The segmented picker §5.2 specifies is not built, and the reason is a measurement
+// rather than a shortcut.** The picker walks to a chosen mode by pressing `BTab` k
+// times, which needs the ladder's membership and its order. Both are contradicted by
+// the transcripts on this box: the spec's ladder is `manual｜acceptEdits｜auto`, and
+// across 3,563 permission-mode records `manual` occurs zero times while `default`
+// occurs 2,255, `dontAsk` 194 and `plan` once. A `manual` segment could never confirm,
+// and two real modes have no segment at all. The order is not recoverable either —
+// `default` is followed by both `auto` and `plan`, `auto` by both `acceptEdits` and
+// `default`, because most records are launch-time sets rather than keypresses. So k is
+// not computable from anything we hold. This is open question §1.4 for the designer.
+//
+// What ships is §5.2's own degraded branch, which is honest under that uncertainty: a
+// single control that advances one step, "which is exactly what the hardware does".
+const MODE_POLLS = 5;      // readback attempts before we admit we cannot confirm
+const MODE_POLL_MS = 700;  // ~3.5s total — a keypress reaches tmux far inside that
+// Past any real `seq`, so `/api/read` returns its envelope without the 60-item cold
+// open. The mode is a field on that response; the transcript is not what we asked for.
+const MODE_SINCE = Number.MAX_SAFE_INTEGER;
+
+// idx -> { read, mode, phase, before, polls, sid }
+// phase: "loading" | "idle" | "awaiting" | "unconfirmed"
+const modeState = new Map();
+
+function modeStateFor(idx) {
+  let st = modeState.get(idx);
+  if (!st) {
+    st = { read: "", mode: "", phase: "loading", before: "", polls: 0, sid: null };
+    modeState.set(idx, st);
+  }
+  return st;
+}
+
+/**
+ * Forget what we knew about a window whose session was replaced.
+ *
+ * A recycle or a `/clear` mints a new session in the same window, and mode is a
+ * property of the session rather than of the pane. Keeping the old value would draw a
+ * confident reading of a process that no longer exists — the same reason `pollRead`
+ * drops its whole feed on a session-id change, one field smaller.
+ */
+function forgetModeIfReplaced(idx, sid) {
+  const st = modeState.get(idx);
+  if (st && st.sid && sid && st.sid !== sid) modeState.delete(idx);
+}
+
+async function fetchMode(idx) {
+  const w = windows.find((x) => x.index === idx);
+  if (w) forgetModeIfReplaced(idx, w.session_id);
+  const st = modeStateFor(idx);
+  if (w) st.sid = w.session_id || st.sid;
+  try {
+    const r = await req(`api/read?index=${idx}&since=${MODE_SINCE}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    // One contracted field (§1), with the older shape behind it: before
+    // `permission_mode_read` existed the same four facts were carried by
+    // `available` plus `reason`, so a server that predates the field still answers
+    // rather than reporting every session unreadable.
+    st.read = d.permission_mode_read || (d.available ? "ok" : (d.reason || "unresolved"));
+    st.mode = d.available ? (d.permission_mode || "") : "";
+  } catch (e) {
+    st.read = "unresolved";
+    st.mode = "";
+  }
+  if (st.phase === "loading") st.phase = "idle";
+  repaintRoster();
+}
+
+function repaintRoster() {
+  rosterSig = "";   // mode is not in the poll payload, so the signature cannot see it
+  renderRoster(windows, lastDistill, Date.now() / 1000, lastGrace);
+}
+
+/**
+ * Advance one step and then watch for the readback.
+ *
+ * The act is not finished when the key is sent (§5.2). `BTab` cycles the mode in the
+ * terminal, and the only evidence it landed is the session writing a permission-mode
+ * record we can read back. Until that arrives the control says so rather than
+ * claiming the change.
+ */
+async function cycleMode(idx) {
+  const st = modeStateFor(idx);
+  if (st.phase === "awaiting") return;
+  st.before = st.mode;
+  st.phase = "awaiting";
+  st.polls = 0;
+  repaintRoster();
+  await post("api/key", { index: idx, key: "shift-tab", count: 1 });
+  const tick = async () => {
+    // Bail if this state object is no longer the window's — a recycle drops it, and a
+    // loop still writing into the orphan would resolve a readback for a session that
+    // has been replaced.
+    if (modeState.get(idx) !== st) return;
+    if (st.phase !== "awaiting") return;      // the row closed, or a newer press won
+    st.polls++;
+    await fetchMode(idx);
+    if (st.phase !== "awaiting") return;
+    if (st.read !== "ok") { st.phase = "idle"; repaintRoster(); return; }
+    // A readback that moved is a confirmation, wherever it landed. The step is the
+    // hardware's to choose; ours was only to ask for one.
+    if (st.mode && st.mode !== st.before) { st.phase = "idle"; repaintRoster(); return; }
+    if (st.polls >= MODE_POLLS) { st.phase = "unconfirmed"; repaintRoster(); return; }
+    setTimeout(tick, MODE_POLL_MS);
+  };
+  setTimeout(tick, MODE_POLL_MS);
+}
+
+/**
+ * What the opened row says about this session's permission mode.
+ *
+ * Three things it must never do. It must not render a mode it was not given — `""`
+ * means no such record exists and is never `manual` (§1), so absence is drawn as an
+ * absence in the voice §3.4 uses for one. It must not confuse "no record exists" with
+ * "we could not read this session", which is the whole reason `permission_mode_read`
+ * is a separate field. And it must not report the press as done before the readback,
+ * because the key cycles blind and a control that lies about that is the problem §5.2
+ * was written to solve.
+ */
+function modeControl(w) {
+  const st = modeStateFor(w.index);
+  const box = document.createElement("div");
+  box.className = "srow-mode";
+
+  const label = document.createElement("span");
+  label.className = "mode-label";
+  box.appendChild(label);
+
+  if (st.phase === "loading") {
+    label.textContent = "reading mode…";
+    label.classList.add("unseen");
+    return box;
+  }
+  if (st.read !== "ok") {
+    // Only ever here, never on the collapsed row: the instrument's confidence in a
+    // state is not itself a state (§5.2).
+    label.textContent = `cannot read this session's mode (${st.read})`;
+    label.classList.add("unseen");
+    return box;
+  }
+
+  // The typeface carries the same split the state slot uses: a value that was read is
+  // monospace, and the console saying there is nothing to read is not.
+  if (st.mode) label.textContent = `mode ${st.mode}`;
+  else { label.textContent = "no mode recorded"; label.classList.add("unseen"); }
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "mode-cycle" + (st.phase === "awaiting" ? " awaiting" : "");
+  btn.textContent = st.phase === "awaiting" ? "awaiting readback" : "cycle mode";
+  btn.disabled = st.phase === "awaiting";
+  btn.addEventListener("click", (e) => { e.stopPropagation(); cycleMode(w.index); });
+  box.appendChild(btn);
+
+  if (st.phase === "unconfirmed") {
+    const note = document.createElement("span");
+    note.className = "mode-note";
+    note.textContent = "could not confirm — mode unchanged on screen?";
+    box.appendChild(note);
+  }
+  return box;
 }
 
 /**
