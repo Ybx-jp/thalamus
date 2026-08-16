@@ -96,14 +96,26 @@ that passes as declared can fail as painted.
 - **Perceptual distance is the right unit for "are these two marks distinguishable",
   and literal hex disjointness is not.** Two registries can be provably disjoint by
   value and still be indistinguishable on screen.
-- **The relative-luminance threshold constant is 0.04045 in the current definition.**
-  An older published value of 0.03928 is still in circulation; the two produce
-  slightly different ratios near a boundary. Pick one and use it in every instrument
-  in the repo, or two tools will disagree about the same pair.
+- **The relative-luminance threshold constant is 0.04045**, and an instrument still
+  using 0.03928 is not producing wrong verdicts. WCAG 2.2 carries both: the value was
+  0.03928 before May 2021, taken from an older sRGB version, and the specification
+  states the update "has no practical effect on the calculations in the context of
+  these guidelines". So a repo whose two instruments disagree here has a consistency
+  problem and not a correctness one — pin one constant so two tools cannot report
+  different numbers for the same pair, and do not treat a measurement as suspect
+  merely for having used the older one.
 - Contrast floors: **4.5:1** for normal text, **3:1** at ≥24 px or ≥18.66 px bold,
   **3:1** for non-text where colour is the signal. Where a colour only *reinforces* a
   signal carried elsewhere, assert a **ceiling** instead, so it cannot quietly become
   the carrier.
+- **Target size: 24 × 24 CSS px** is the normative floor (WCAG 2.2 SC 2.5.8, AA).
+  Undersized targets are allowed when a 24 px diameter circle centred on each does
+  not intersect another target's circle — so **spacing can substitute for size**, and
+  that is often the cheaper fix in a dense row. Where two targets overlap, the
+  overlapping area is excluded from the measurement unless both perform the same
+  action. A design spec asking for more than 24 px is asking for more than
+  conformance; **picking a value that satisfies a stated floor is closed at the
+  keyboard**, so satisfy the higher of the two and do not send it back.
 
 `tests/js/contrast-dom.js` measures composited pairs. It handles `opacity` and
 background alpha; it does not model `backdrop-filter`, so a rule using one is outside
