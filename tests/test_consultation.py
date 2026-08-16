@@ -28,6 +28,7 @@ from thalamus.harness.consultation import (
     consult_request,
     exchange_vid,
     extract_citations,
+    open_exchange,
     ticket_scope,
 )
 # --------------------------------------------------------------------------------------
@@ -272,21 +273,81 @@ def test_refusal_distinguishes_no_match_from_empty_scope(monkeypatch):
     assert graph.merged_vertices == []
 
 
-def test_self_consultation_unknown_experts_and_empty_questions_are_refused(monkeypatch):
+def test_unknown_experts_and_empty_questions_are_refused(monkeypatch):
     """
-    Scenario: The model asks for its own scope, a scope with no manifest, and
-    nothing at all
+    Scenario: The model asks for a scope with no manifest, and for nothing at all
 
-    The manifest set is the roster (docs/01): no manifest, no expert. Consulting
-    yourself is just recall wearing a costume.
+    The manifest set is the roster (docs/01): no manifest, no expert.
     """
     _stub_manifests(monkeypatch)
     graph = FakeGraph()
 
-    assert "refused" in consult_request(graph, "main", "q", "main").lower()
     assert "refused" in consult_request(graph, "phantom", "q", "main").lower()
     assert "refused" in consult_request(graph, "literature", "  ", "main").lower()
     assert graph.merged_vertices == []
+
+
+def test_a_self_consultation_is_allowed_and_must_actually_retrieve(monkeypatch):
+    """
+    Scenario: the literature scope tickets itself, then tries to close it — once
+    having recalled under the ticket, once not
+
+    A self-ticket buys an independent pass: fresh context, a brief built against the
+    question, a forced cited close, a recorded exchange. It buys no retrieval reach,
+    and its answer corroborates nothing — one memory agreeing with itself is not a
+    second source.
+
+    The operator's constraint is that it must never become a way of *not* retrieving,
+    and that is enforced at the close against reads the server actually served, not
+    against the question's wording. A lexical gate was tried and removed: it rested on
+    the false premise that the server cannot tell whether the asker retrieved (lab/001
+    says it cannot see the caller's *session id* — ticketed reads pass through
+    `_granted_scope` in the same process and were always countable), and it would have
+    refused honest lookups while admitting anything containing the word "schema".
+    """
+    _stub_manifests(monkeypatch)
+    _stub_brief(monkeypatch)
+    graph = FakeGraph()
+
+    minted = consult_request(graph, "literature", "what is the tier of X?", "literature")
+    assert minted.startswith("## Consultation ticket")  # minted, not refused
+    assert "This is a self-consultation." in minted
+    # The reads are required, so the instruction must not be the optional phrasing.
+    assert "MUST recall with" in minted
+
+    ticket = minted.split("`")[1]
+    graph.vertices[exchange_vid(ticket)] = {
+        "label": "Exchange",
+        "expert": "literature",
+        "from_scope": "literature",
+        "status": "open",
+    }
+    cited = "scope:literature:claim:abc123"
+    graph.vertices[cited] = {"label": "Claim", "description": "a claim"}
+
+    unretrieved = consult_answer(
+        graph, ticket, f"The answer, per `{cited}`.", ticketed_recalls=0
+    )
+    assert "Rejected" in unretrieved
+    assert "served no recall under it" in unretrieved
+    assert graph.vertices[exchange_vid(ticket)]["status"] == "open"
+
+    retrieved = consult_answer(
+        graph, ticket, f"The answer, per `{cited}`.", ticketed_recalls=3
+    )
+    assert "Rejected" not in retrieved
+
+
+def test_a_cross_expert_close_is_not_gated_on_ticketed_recalls(monkeypatch):
+    """A voiced subagent is pinned to the consulted scope and reads its episodic
+    memory ambiently, so the ticket adds reach only for a reader that is not the
+    expert. Gating those closes would reject correct answers."""
+    _stub_manifests(monkeypatch)
+    graph, cited = _open_exchange_graph()
+
+    result = consult_answer(graph, "t1", f"Per `{cited}`.", ticketed_recalls=0)
+
+    assert "Rejected" not in result
 
 
 # --------------------------------------------------------------------------------------
@@ -633,3 +694,93 @@ def test_the_brief_ranks_open_threads_against_the_question(monkeypatch):
     # Verifies: the question reaches the ranker, not just the other sections
     assert seen["topic"] == "how should a thread close?"
     assert seen["scope"] == "literature"
+
+
+def test_the_ticket_carries_the_research_protocol_the_subagent_works_from(monkeypatch):
+    """
+    Scenario: a minted ticket, read as the answering subagent receives it
+
+    The answering side had three sentences of mechanics and no method, while the
+    asking side had a documented one. Verifications:
+    - the procedure ships in the ticket, which is what the subagent is handed
+    - the stopping rule is present and precedes the self-check. MAST splits failure
+      fatality: not knowing when to stop appears almost exclusively in failed runs,
+      where missing verification occurs in successful ones too, so the order is the
+      finding rather than a preference (arXiv 2503.13657).
+    - a reading step. Five of six steps directed retrieval, and the corpus they run
+      over holds a counterexample to the premise: 1-hop expansion lifted recall
+      25.8% -> 71.8% with no gain in answer accuracy
+      (`scope:literature:claim:a299603ef8a0345f`). Recall is not the endpoint.
+
+    Three things must NOT come back without new evidence, so they are pinned as
+    absences rather than left to a future reader's judgement:
+    - a sufficiency gate ("decide whether you have enough before answering"), measured
+      at ~19pp of answerable accuracy for ~59% refusal;
+    - the expert ruling on whether a miss was coverage or phrasing — self-report about
+      retrieval state is measurably worse than the state itself, and the verbatim
+      query log replaced it;
+    - a dry-round stopping test, which fails exactly when stopping matters: yield
+      decays rather than plateaus, and a round of novel-but-irrelevant material is
+      not dry.
+    """
+    _stub_manifests(monkeypatch)
+    _stub_brief(monkeypatch)
+    graph = FakeGraph()
+
+    result = consult_request(graph, "literature", "How is provenance floored?", "main")
+
+    assert "## How to research this" in result
+    stop = result.index("Stop when the rounds stop paying")
+    check = result.index("Check against the running system")
+    assert stop < check, "the stopping rule must precede the self-check"
+    assert "Split the question, then query per part" in result
+    assert "refute the asker" in result
+    assert "Read what you retrieved" in result
+    assert "do not rule on whether the gap was the corpus" in result
+    # The decomposition step's measured strength came from worked exemplars, so a bare
+    # imperative is the shape that failed. One example is load-bearing, not decoration.
+    assert "becomes one query for" in result
+    # Restores the operative half of the re-read check: an unquotable citation is a
+    # memory of the node, not the node.
+    assert "quote the clause" in result
+
+    assert "dry round" not in result
+    assert "sufficiently informed" not in result
+    assert "coverage gap" not in result
+    assert "skimmed" not in result  # volume is not the harm; near-miss is
+
+
+def test_the_exchange_records_which_research_procedure_it_served(monkeypatch):
+    """
+    Scenario: a full ticket and a quick one, minted against the same scope
+
+    The prompt shipped in the ticket will be edited. Without a version on the row,
+    the first edit pools two treatments into one population — which is exactly why
+    the pre-existing Exchange corpus is unusable as a control: the *asking*
+    methodology was revised continuously and nothing recorded which version produced
+    which answer. The quick tier serves no procedure and records none, so the field
+    separates "answered under procedure X" from "answered under no procedure".
+    """
+    _stub_manifests(monkeypatch)
+    _stub_brief(monkeypatch)
+    graph = FakeGraph()
+
+    consult_request(graph, "literature", "How is provenance floored?", "main")
+    stamped = graph.merged_vertices[0]["on_create"]["research_protocol"]
+
+    assert len(stamped) == 12
+    # The fingerprint tracks the text, so an edit to the procedure moves it.
+    import thalamus.harness.consultation as mod
+
+    monkeypatch.setattr(mod, "_RESEARCH_PROTOCOL", mod._RESEARCH_PROTOCOL + "\n6. New step.")
+    graph2 = FakeGraph()
+    consult_request(graph2, "literature", "How is provenance floored?", "main")
+
+    assert graph2.merged_vertices[0]["on_create"]["research_protocol"] != stamped
+
+    # The quick tier (harness/quick.py) serves no brief and no procedure, so it
+    # records none — an empty stamp is "answered under no procedure", not "unknown".
+    quick_graph = FakeGraph()
+    open_exchange(quick_graph, "literature", "q", "main", protocol="quick")
+
+    assert quick_graph.merged_vertices[0]["on_create"]["research_protocol"] == ""

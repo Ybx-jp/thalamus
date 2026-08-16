@@ -10,10 +10,11 @@
 # 2303.11366).
 #
 # Design constraints, grounded:
-# - CONDITIONAL, never every-prompt. Adaptive beats indiscriminate retrieval
-#   (Self-RAG, arXiv 2310.11511); locally, lab/006 measured ~50% of
-#   indiscriminately injected tokens ignored — and every injected token rides
-#   every later call (docs/04 layer 1b).
+# - CONDITIONAL, never every-prompt. Selective reminder injection beats always-on
+#   (arXiv 2607.08716, the direct agent-side ablation; margins are small and no
+#   token comparison is reported, so the cost half of this argument is uncited —
+#   docs/11 §3c). Locally the ignored share is real at experiments/002's
+#   magnitude, and every injected token rides every later call (docs/04 layer 1b).
 # - THROTTLED: each trigger class fires at most once per session.
 # - MEASURED: every firing is one JSONL event in ~/.thalamus/conditioning/.
 #   Effectiveness is the per-firing behavioral join (`thalamus eval
@@ -61,6 +62,12 @@ session=$(printf '%s' "$input" | jq -r '.session_id // empty')
 log_dir="$HOME/.thalamus/conditioning"
 log_file="$log_dir/$(date -u +%Y-%m).jsonl"
 
+# The pin, resolved once: it is both a logged field and — for the design class — part
+# of what gets injected. A reminder that tells every session to consult the same three
+# experts is wrong twice over on an expert session: it names a subset of the roster,
+# and it can name the reader's own scope, advising a `dl` session to go ask `dl`.
+scope="$(thalamus_scope_from_payload "$input")"
+
 # The throttle key is (session, agent, class), not (session, class). Subagents share
 # their parent's session_id, so keying on the session alone silently exempts every
 # subagent from every class — and a subagent is exactly where `falsify` has to land:
@@ -81,7 +88,7 @@ emit() {  # $1 = class, $2 = message
   jq -cn \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg session_id "$session" \
-    --arg scope "$(thalamus_scope_from_payload "$input")" \
+    --arg scope "$scope" \
     --arg event "$event" \
     --arg harness "${THALAMUS_HARNESS:-claude-code}" \
     --arg agent "$agent" \
@@ -101,7 +108,13 @@ case "$event" in
     if printf '%s' "$prompt" | grep -qiE \
       "\b(design|architect|propose|new (feature|component|skill|hook|expert|metric|schema)|should we (build|add|write|create)|let'?s (build|add|write|create|implement|enhance))\b" \
       && ! fired_already design; then
-      emit design "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt reads as design work. Before designing: (1) does the graph already answer it — ground-in-literature step A0, because a design can be perfectly cited and still already built (lab/025); (2) ground-in-literature proper (binding, CLAUDE.md); (3) consult_request to a roster expert — literature, eval-methodology, homelab (docs/02). If you consult, you are pre-authorized to spawn the subagent that voices the expert and expected to — never answer your own ticket; self-answering measured 8 citations against a voiced 25 and missed the objection that killed the design (lab/025). Effectiveness of this reminder is measured per firing."
+      others="$(thalamus_roster "$scope")"
+      if [ "$scope" = "main" ]; then
+        routing="consult_request to whichever roster expert owns this domain — $others (docs/02)"
+      else
+        routing="you are pinned to \`$scope\`, so design inside that domain is yours to do; consult_request where it crosses out of it — $others (docs/02)"
+      fi
+      emit design "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt reads as design work. Before designing: (1) does the graph already answer it — ground-in-literature step A0, because a design can be perfectly cited and still already built (lab/025); (2) ground-in-literature proper (binding, CLAUDE.md); (3) $routing. If you consult, you are pre-authorized to spawn the subagent that voices the expert and expected to — never answer your own ticket; self-answering measured 8 citations against a voiced 25 and missed the objection that killed the design (lab/025). Effectiveness of this reminder is measured per firing."
       exit 0
     fi
 

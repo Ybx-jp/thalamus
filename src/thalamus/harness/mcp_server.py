@@ -77,7 +77,15 @@ SCOPE = resolve_pin()
 # parameter. This ambient surface covers *knowledge* claims only; an expert's
 # episodic memory is reachable solely through a consultation ticket, which grants
 # the consulted scope per-exchange (docs/02).
-KNOWLEDGE_SCOPES = [s for s in available_scopes() if s != SCOPE]
+#
+# Read per call, not once at import. SCOPE can be resolved at startup because a
+# process's pin cannot change under it, but the roster can: manifests are added to
+# config/experts/ while servers are running, and a server that cached this list
+# serves every session it owns a roster frozen at its own launch date — silently,
+# since a missing scope reads as an expert that simply knows nothing. `available_scopes`
+# globs the manifest directory on each call, so freshness costs one directory listing.
+def knowledge_scopes() -> list[str]:
+    return [s for s in available_scopes() if s != SCOPE]
 
 # The ranking dials this process will retrieve under, recorded at startup so the eval
 # loop can tell which ranker produced a trace. It has to be stamped here rather than at
@@ -87,6 +95,19 @@ KNOWLEDGE_SCOPES = [s for s in available_scopes() if s != SCOPE]
 record_ranker(ranker_fingerprint())
 
 mcp = FastMCP("thalamus")
+
+
+# Ticketed recalls this process has actually served, per ticket. Counted where the
+# grant is resolved, which is the only place a ticketed read can pass through, so it
+# records what happened rather than what an answer claims — the principle
+# `quick.count_fresh_recalls` already states for the other tier ("cannot be satisfied
+# by claiming to have recalled").
+#
+# Process-local on purpose. The alternative is a graph write per recall, which prices
+# a counter like evidence; and the failure mode of losing it is bounded — a server
+# restart mid-consultation makes a self-consultation's close ask for one more recall,
+# which is recoverable and says so.
+_TICKETED_RECALLS: dict[str, int] = {}
 
 
 def _granted_scope(g, ticket: str) -> tuple[str, list[str]] | str:
@@ -99,13 +120,23 @@ def _granted_scope(g, ticket: str) -> tuple[str, list[str]] | str:
     the pinned scope would let a stale ticket masquerade as a successful consultation.
     """
     if not ticket:
-        return SCOPE, KNOWLEDGE_SCOPES
-    granted = consultation.ticket_scope(g, ticket)
-    if granted is None:
+        return SCOPE, knowledge_scopes()
+    grant = consultation.ticket_grant(g, ticket)
+    if grant is None:
         return (
             f"Ticket `{ticket}` grants nothing: it was never minted or is already "
             "burned. Mint a consultation with consult_request."
         )
+    granted, asked_by = grant
+    _TICKETED_RECALLS[ticket] = _TICKETED_RECALLS.get(ticket, 0) + 1
+    if granted == asked_by:
+        # A self-consultation. The trade a ticket normally makes — breadth for depth —
+        # has nothing to trade here: the granted scope is the asker's own, which it
+        # already reads ambiently, so dropping the commons would leave a ticketed
+        # recall strictly poorer than an unticketed one and make the ticket a reason
+        # to read less. The commons is kept, which is what lets the close require
+        # that retrieval actually happened under the ticket (consult_answer).
+        return granted, knowledge_scopes()
     return granted, []
 
 
@@ -339,7 +370,9 @@ def consult_answer(ticket: str, answer: str) -> str:
     if isinstance(g, str):
         return g
     try:
-        return consultation.consult_answer(g, ticket, answer)
+        return consultation.consult_answer(
+            g, ticket, answer, ticketed_recalls=_TICKETED_RECALLS.get(ticket, 0)
+        )
     finally:
         _close(g)
 

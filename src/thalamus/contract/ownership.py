@@ -2,9 +2,10 @@
 
 `WriteBoundary` (contract/manifest.py) answers "which paths may scope X not write",
 declared per scope. This module answers the inverse — "who owns path P" — and the
-inverse is not expressible there. `config/experts/` holds seven manifests and no
+inverse is not expressible there. `config/experts/` holds a manifest per expert and no
 `main.yaml`, so the scope a directory boundary most needs to bind has nowhere to
-declare it, and writing the owned glob into the other six stores one fact six times.
+declare it, and writing the owned glob into every other manifest stores one fact
+once per scope.
 The rule therefore lives once, here, beside the roster rather than inside it, the
 way `ROSTER_CAPABILITY_DEFAULT` does for capability.
 

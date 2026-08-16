@@ -61,7 +61,7 @@ audio/music ML), that is not permission to proceed — it is a **coverage gap to
 close first**:
 
 ```bash
-thalamus ingest <arxiv-url|aclanthology-url|local.pdf-path> --write
+thalamus ingest <arxiv-url|aclanthology-url|local.pdf-path> --scope literature --write
 ```
 
 Ingestion is allowlist-gated (`config/experts/literature.yaml`), evidence-first,
@@ -128,12 +128,12 @@ traversal or the pointer, not a design.
    pulled by need ([docs/06](../../../../../docs/06-ingestion.md)).
 
    **`--scope` is not optional judgement, and the default is wrong more often than it
-   is right.** `literature` holds the memory, retrieval and evaluation canon. A
-   *domain's* literature belongs to the domain: perception and interaction measurement
-   to `designer`, test and conformance methodology to `qe`, deployment and
-   self-hosting to `homelab`. Every roster manifest already declares `tier`,
-   `claim_kinds` and an `allowlist` for exactly this, and local files bypass the
-   allowlist because hand-feeding *is* the curation decision.
+   is right.** `literature` holds the memory, retrieval and evaluation canon; a
+   *domain's* literature belongs to the domain. Read the `domain` and `allowlist`
+   fields of `config/experts/*.yaml` to find out whose it is — every roster manifest
+   declares `tier`, `claim_kinds` and an `allowlist` for exactly this question, and
+   a list of scopes written down anywhere else is a stale copy of them. Local files
+   bypass the allowlist because hand-feeding *is* the curation decision.
 
    The tell that this went wrong: **a scope consults out for its own field, and the
    expert it consults has to go to primary sources too, because neither corpus holds

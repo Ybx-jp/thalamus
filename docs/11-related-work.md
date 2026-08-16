@@ -580,8 +580,15 @@ roster (docs/08), via literature consultation `scope:main:exchange:7f953992f0c34
   (`scope:literature:claim:11750ab72cf137b8`), later extended to 1,642 traces across
   7 frameworks (`scope:literature:claim:81cbcfe73a0f48a5`). **FM 1.2 "Disobey Role
   Specification"** is a mode in its own right, and the repair that worked in the
-  studied system was structural authority — the CEO given final say, +9.4% task
-  success — not a better prompt (`scope:literature:claim:db0928fe2cfd3616`).
+  studied system gave the CEO final say, +9.4% task success
+  (`scope:literature:claim:db0928fe2cfd3616`). **That repair was implemented as a
+  role specification**, not against one: Appendix H describes it as "refining
+  role-specific prompts to enforce hierarchy and role adherence," and reports the
+  same +9.4% for improving agent role specifications alone, with the same user
+  prompt and LLM (`scope:literature:claim:88a0a8431c91e57e`). The two claims record
+  one result read two ways. What the paper measured is that a better-specified role
+  works — which is evidence for stating a role well, and none either way about
+  whether a hook should enforce it.
 - **The objection that governs the design.** At equal reasoning-token budget,
   single-agent systems match or outperform multi-agent across three model families
   (`scope:literature:claim:414011b1207b38ef`), with a Data Processing Inequality
@@ -945,6 +952,88 @@ excerpt, because the whole-document pass that would have captured it could not r
 it. The gap was invisible in exactly the way [06 §4](06-ingestion.md) describes: the
 graph held GraphRAG cited to `arxiv.org/abs/2404.16130`, title resolved, claim count
 normal.
+
+### 3g. How a consulted expert should research before answering
+
+Grounded via consultations `scope:main:exchange:a12621a46784423b` (literature round 1,
+68 validated citations), `scope:main:exchange:048ebe2bb6284f71` (literature round 2, a
+critique of the drafted artifact, 48) and `scope:main:exchange:0ae516858adb4b31`
+(eval-methodology, 39). The question: the *asking* side of a consultation had a
+documented methodology while the answering subagent had three sentences of mechanics,
+so the research procedure shipped in the ticket is the missing half
+(`02 §The ticket protocol`).
+
+**Retrieval is necessary and not sufficient.** The first draft was five steps of
+retrieval instruction. Two results bound it from opposite sides: correct retrieval is
+required for a correct answer in ~90% of LongMemEval instances
+(`scope:literature:claim:04e87d5036bc2956`), while 1-hop graph expansion raised recall
+from 25.8% to 71.8% on LoCoMo10 with no gain in answer accuracy
+(`scope:literature:claim:a299603ef8a0345f`) — because the retrieved unit was lossy.
+They reconcile as necessary-but-not-sufficient, and the discriminator is whether what
+came back is faithful evidence, which is a reading question rather than a ranking one.
+Hence a reading step, and a check against the running system: memory records what was
+true when written, and across three rounds of this consultation the round that checked
+a claim against the code was worth more than the round that recalled harder.
+
+Three drafted steps were cut as unsupported rather than trimmed for length: an agent's
+self-report of "not in the corpus" vs "I asked wrong" (verbalized self-report about
+retrieval state measures worse than the state itself, and the ~69% write-time-loss base
+rate makes the coverage answer right often enough to look calibrated while carrying no
+information); a dry-round stopping test (yield decays rather than plateaus, so the curve
+never flattens); and a confidence-triggered retrieval rule ported from FLARE (arXiv
+2305.06983). The last is worth recording because the paper measured its own prose port
+failing: `FLARE_instruct` is why the authors built the confidence-based variant, its
+queries are reported as possibly unreliable, and a token's logit had to be raised by 2.0
+to make it fire. A written "retrieve when unsure" is that variant without the boost.
+What transfers is its next-sentence framing — write the query from the sentence you are
+about to defend, not from what you have already read.
+
+**Query decomposition, not reactive reformulation.** Self-Ask (arXiv 2210.03350) is the
+strongest baseline in FLARE's own comparison table — an adversarial source for it — and
+decomposes in a single forward pass, so it does not conflict with a round cap, though it
+moves the cap's unit from the question to the sub-question. Its measured strength is
+attributed to manually annotated exemplars, so the step carries a worked example: a bare
+imperative to decompose is the shape that failed rather than the shape that worked.
+
+**What is measured.** MAST (arXiv 2503.13657) ran the head-to-head between the two
+available shapes: a verification *section in the prompt* significantly beat baseline
+on GSM-Plus, while a Solver/Coder/Verifier *topology* did not (Wilcoxon p=0.4) — so
+text in the ticket is the grounded medium, not a fallback. MAST also splits failure
+fatality: not knowing when to stop appears almost exclusively in failed runs, while
+missing or incorrect verification occurs frequently in successful ones too, which is
+what puts the stopping rule ahead of the self-check. Decomposed verification beats a
+single holistic pass (arXiv 2601.15808, ingested for this consultation) — and the
+load-bearing part is its ablation rather than its headline: removing decomposition made
+the judge re-solve whole tasks and repeat the original agent's reasoning errors, which
+is precisely the failure a self-check is meant to catch. Its test-time result is stated
+on closed backbones used as-is, so it is a prompt-level finding; the fine-tuned
+DeepVerifier-8B exists to bring open models to the same place, and is downstream of the
+result rather than its basis. That paper's scaling curve also decays fast across
+feedback rounds, which is what bounds the loop.
+
+**What the design gives up on evidence.** A sufficiency gate was rejected, not
+omitted: an LLM evidence-sufficiency check on a memory-retrieval pipeline cost ~19pp
+of answerable accuracy to reach ~59% refusal, and answer-then-verify added nothing
+over a plain similarity threshold. The protocol therefore directs *retrieval* rather
+than doubt — models update once counter-evidence is in context (agreement 57–59% →
+28–32% when refuting evidence is present), so the failure lab/025 recorded was
+retrieval direction, not credulous reading, and "be skeptical" would not have found
+the objecting paper that sat in the scope the whole time.
+
+**Two corrections this grounding forced on existing text.** Self-RAG (arXiv
+2310.11511) is a *trained* mechanism — reflection tokens in a fine-tuned LM — and was
+carrying the conditioning tier's prompt-level adaptivity argument across several
+surfaces; §3c already named arXiv 2607.08716 as the closer citation, and the hook
+comments now say so too. Separately, the consultation-scoped recall miss rate is
+mostly a **coverage** signal rather than a formulation one — a comparable probe found
+69% of diagnosable failures were write-time losses — so the protocol's reformulation
+step addresses the minority, and the honest instruction is to say which of the two the
+expert concluded.
+
+**Convergence, not novelty.** Prompt-level research procedure for a retrieval agent is
+ordinary practice; what is ours is where it lives — in the ticket, so the procedure and
+the exchange record are minted by the same act, and the `answered_from` stamp records
+which context worked from it.
 
 ## 4. What the scan did *not* find claimed elsewhere
 

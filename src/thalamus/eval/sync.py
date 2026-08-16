@@ -26,7 +26,7 @@ from thalamus.eval.attribution import (
     outputs_after,
 )
 from thalamus.eval.rankers import RankerLedger
-from thalamus.eval.traces import TraceEvent, load_events
+from thalamus.eval.traces import RETRIEVAL_TOOLS, TraceEvent, load_events
 from thalamus.harness.consultation import exchange_vid as _consultation_exchange_vid
 from thalamus.substrate.reader import load_exchange
 from thalamus.substrate.schema import Provenance, Tier
@@ -48,6 +48,7 @@ class SyncOutcome:
     rejected: int = 0
     legacy: int = 0
     dangling: int = 0
+    closes: int = 0
     pending: dict[str, int] = field(default_factory=dict)  # session_id -> trace count
 
     def summary(self) -> str:
@@ -63,6 +64,8 @@ class SyncOutcome:
                 f"{self.empty_window} returned nodes unjudged — no agent output after "
                 "the retrieval (not counted as ignored)"
             )
+        if self.closes:
+            lines.append(f"{self.closes} consultation closes stamped with their answering context")
         if self.legacy:
             lines.append(f"{self.legacy} legacy traces skipped (pre-node-level rendering)")
         if self.pending:
@@ -97,7 +100,7 @@ def sync(
     withheld = policy_mod.load(policy_base)
 
     by_session: dict[str, list[TraceEvent]] = {}
-    for event in load_events(traces_base):
+    for event in load_events(traces_base, tools=_SYNC_TOOLS):
         by_session.setdefault(event.session_id, []).append(event)
 
     for session_id, events in sorted(by_session.items()):
@@ -118,6 +121,38 @@ def sync(
     return outcome
 
 
+# What sync reads out of the tap. Retrieval is layer 1's subject; `consult_answer`
+# joins it for the one fact it alone carries — which context assembled the answer —
+# and is landed by `_land_close`, never as a Trace. Leaving it out of the loaded set
+# is what made `_stamp_answering_context` unreachable: it guards on this tool name,
+# and no event bearing it ever arrived, so 147 Exchanges carried no `answered_from`.
+_SYNC_TOOLS = RETRIEVAL_TOOLS | frozenset({"consult_answer"})
+
+
+def _land_close(
+    g: GraphTraversalSource,
+    event: TraceEvent,
+    session_vid: str,
+    write: bool,
+    outcome: SyncOutcome,
+) -> None:
+    """A consultation's closing call — the only record of who assembled the answer.
+
+    Deliberately not a Trace, and landed before the legacy check rather than after.
+    `consult_answer` returns a confirmation that names the Exchange it just closed, in
+    backticks, so the generic path reads that ID as a *retrieved* node: it would mint a
+    RETURNS edge and put a used/ignored verdict on the exchange the answer was written
+    into, pricing a write as a read.
+    """
+    exchange_vid = _exchange_vid(g, event)
+    if exchange_vid is None:
+        return
+    if write:
+        _ensure_edge(g, session_vid, exchange_vid, "CONSULTS")
+        _stamp_answering_context(g, exchange_vid, event)
+    outcome.closes += 1
+
+
 def _land_event(
     g: GraphTraversalSource,
     event: TraceEvent,
@@ -130,6 +165,10 @@ def _land_event(
     withheld: dict[str, "policy_mod.WithholdRecord"] | None = None,
     snapshot_hash: str = "",
 ) -> None:
+    if event.tool == "consult_answer":
+        _land_close(g, event, session_vid, write, outcome)
+        return
+
     if event.is_legacy():
         outcome.legacy += 1
         return

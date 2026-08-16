@@ -93,6 +93,23 @@ thalamus_resolve_scope() {
   printf '%s' "${THALAMUS_SCOPE:-main}"
 }
 
+# Every expert scope with a manifest on disk, space-separated, sorted. The bash
+# mirror of contract/manifest.available_scopes, and read on each call for the same
+# reason: the roster grows, and a surface that names a fixed subset of it goes stale
+# the day an expert is added — silently, since a list of experts looks equally
+# plausible whether or not it is complete. $1 (optional) excludes one scope.
+thalamus_roster() {
+  local config exclude="${1:-}" path scope out=""
+  config="${THALAMUS_CONFIG_DIR:-$(thalamus_repo_root)/config}"
+  for path in "$config"/experts/*.yaml; do
+    [ -f "$path" ] || continue          # no glob match: the literal pattern
+    scope="$(basename "$path" .yaml)"
+    [ "$scope" != "$exclude" ] || continue
+    out="$out $scope"
+  done
+  printf '%s' "${out# }"
+}
+
 # What every tool hook actually wants: resolve against the payload it already read.
 # $1 is the raw payload. Session-lifecycle hooks have no payload field to pass and
 # call thalamus_resolve_scope directly.

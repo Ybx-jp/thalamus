@@ -82,12 +82,66 @@ so the doc and the memory stay in step.
   `thalamus thread approve <id>` asks for a decision on an unreadable subject. The id
   alone is not the report; it is only the command's argument.
 
+## Commit messages, PRs, and anything else published
+
+**Describe the change and its impact. Do not editorialize, and never grade the
+operator's decisions in a public space.** A commit message and a PR body are
+technical records with an audience that did not sit through the session: what
+changed, what it affects, what a reader has to do differently, what is still
+unbuilt. They are not a narrative of how the work went, who was persuaded, which
+argument won, or what the evidence "does not support." Verdict framing — *the case
+was unbeaten*, *this cuts against the proposal*, *one killed a scope*, *ships
+flagged*, *reads backwards* — is the tell. Cut it.
+
+This does **not** license omission, which would be the opposite failure. Constraints,
+counter-evidence, refused alternatives and known gaps stay in, stated as facts with
+their numbers — "the write-back is not built; AWM's result is conditional on it"
+carries the same information as a paragraph about whose objection it was, and is the
+version that belongs in a PR. Report a finding, not a judgement about whose finding
+it was, and never one about whether the operator should have decided differently.
+
+The same applies to any surface outside this session — issue and Linear text, review
+comments, published artifacts, anything addressed past the operator. Analysis,
+recommendations, and disagreement belong in the conversation, where they were asked
+for.
+
+## Reporting density
+
+**Report the conclusion and what it changes. The work that produced it is not the
+report.** A consultation returning 78 citations, a subagent's 30-tool sweep, and a
+five-round forensic pass are *inputs*. What reaches the operator is what he would act
+on differently for knowing it: what shipped, what changed from what he asked for and
+why, what is still unbuilt, and any decision now waiting on him. Length is set by the
+size of the decision, not by the size of the effort.
+
+**One report, at the end.** Subagents finishing is not an event worth a message. A
+running commentary — one update per agent as each returns — turns a two-file change
+into four dense messages and buries the one line that mattered. Hold findings until
+the work is done, then synthesize once. The exception is a finding that changes what
+the operator should do *right now*, which goes up immediately and alone.
+
+**An expert's answer is not a deliverable.** Take it, verify its checkable claims, act
+on it, and report what you did. Relaying the answer is passing the operator the cost
+the consultation was supposed to spend on his behalf. Findings that are real but
+tangential — a corrected citation, a retracted measurement — get one line and a
+pointer, and live in the doc or the ledger where someone can find them again.
+
+**Density is not thoroughness.** Compressing four findings into one paragraph of
+jargon is the same failure as four paragraphs; both make the operator do the
+extraction. Say the thing in ordinary words, and cut what he did not ask about.
+
 ## Repo hygiene
 
-- **Commit by path, never `git add -A`.** Sessions run concurrently in this checkout
-  (roster pins, worktrees, a second terminal), so `-A` sweeps another session's
-  in-progress work into your commit. Check `git status` before staging and name the
-  files you changed.
+- **Work you intend to commit goes in your own worktree.** Sessions run concurrently
+  here — roster pins, a second terminal, the console's spawns — and a shared checkout
+  gives them one index, one HEAD, and one working tree between them: your `git add`
+  stages their half-finished file, their commit moves HEAD out from under your rebase.
+  A worktree is one call (`EnterWorktree`), and the session still distills under
+  `thalamus`: attribution takes the *first* cwd a transcript records, not the last
+  (`harness/transcripts.py`). Merge back when the work is done.
+- **Commit by path, never `git add -A`.** In the shared checkout `-A` sweeps another
+  session's in-progress work into your commit. Check `git status` before staging and
+  name the files you changed.
 - `.claude/skills/*` are **symlinks** into `src/thalamus/harness/skills/` — the skills
   ship with the package. Editing through the symlink works; `git add` on that path
   fails ("beyond a symbolic link"). Stage the real path under `src/`.

@@ -213,7 +213,12 @@ def main():
     )
     ingest_parser.add_argument("location", help="URL (allowlist-gated) or local file path")
     ingest_parser.add_argument(
-        "--scope", default="literature", help="Expert scope; needs a manifest in config/experts/"
+        # Required, not defaulted. Every scope on the roster procures documents, and a
+        # default sends a document nobody named to `literature` — where it is not wrong
+        # enough to notice, since the literature consultant serves every scope anyway.
+        # A named-but-unknown scope still fails at `load_manifest`, which lists the roster.
+        "--scope", required=True,
+        help="Expert scope; needs a manifest in config/experts/",
     )
     ingest_parser.add_argument("--feed", default="manual", help="Feed identity (default: manual)")
     ingest_parser.add_argument(

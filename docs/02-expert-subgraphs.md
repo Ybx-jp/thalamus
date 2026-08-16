@@ -37,7 +37,8 @@ regions, not between the experts:
   (`reader.py:634, 649`).
 - **Knowledge is an ambient commons.** Every session reads the knowledge claims *and
   chunks* of every other expert scope, with no ticket, no record, and no deliberate act
-  — `KNOWLEDGE_SCOPES` is assembled at process start (`mcp_server.py:80`) and
+  — `knowledge_scopes()` is read from the manifest directory per call
+  (`mcp_server.py`), so a server picks up a roster addition without a restart, and
   `claim_scopes = [scope, *knowledge_scopes]` is applied to both populations
   (`reader.py:621, 665-673, 687-691`). Chunks carry no `CONTAINS` filter at all, and
   they are the larger population.
@@ -160,6 +161,61 @@ Mechanics, in the order a consultation runs:
    the recall tools accept the ticket and resolve the granted scope **from the
    exchange record server-side**. An invented or burned ticket grants nothing and
    fails closed. Grants are per-exchange and non-transitive (depth 1, as designed).
+
+   The ticket carries the **research protocol** the subagent works from
+   (`_RESEARCH_PROTOCOL`), below the rule and alongside the brief: split the question
+   and query per part, run the query that would refute the asker, stop when the rounds
+   stop paying, read what was retrieved, and check against the running system before
+   checking the draft in parts. It is
+   text in the ticket rather than a verifier stage because that is the comparison that
+   has been run — a verification section in the prompt beat baseline where a
+   Solver/Coder/Verifier topology did not (MAST, arXiv 2503.13657). The ordering
+   carries a finding too: the stopping rule precedes the self-check because not
+   knowing when to stop appears almost exclusively in *failed* runs, while missing
+   verification is common in successful ones.
+
+   **Retrieval is not the endpoint, which is why there is a reading step.** In this
+   scope's own corpus, 1-hop expansion lifted retrieval recall from 25.8% to 71.8%
+   and gained nothing in answer accuracy
+   (`scope:literature:claim:a299603ef8a0345f`) — so a procedure made entirely of
+   retrieval instructions optimises the half that was not the bottleneck. Three things
+   are deliberately absent and should not return without new evidence: a **sufficiency
+   gate** (~19pp of answerable accuracy for ~59% refusal), the expert **ruling on
+   whether a miss was coverage or phrasing** (self-report about retrieval state is
+   measurably worse than the state itself, so it reports the queries it tried
+   verbatim and the operator rules), and a **dry-round stopping test** (yield decays
+   rather than plateaus, and a round of novel-but-irrelevant material is not dry
+   exactly when stopping matters).
+
+   **A scope may ticket itself, and must retrieve to close.** A self-consultation buys
+   an independent pass — a subagent with a fresh context, a brief assembled against the
+   question, a forced cited close, a recorded exchange — and buys no reach the asker
+   did not already have. It must never become a way of *not* retrieving, and that is
+   enforced at the close: `consult_answer` rejects a self-consultation the server
+   served no ticketed read for. The check reads what was served rather than what the
+   answer asserts, so it cannot be satisfied by rewording — the same principle
+   `quick.count_fresh_recalls` states for the other tier.
+
+   That gate is what makes the grant asymmetric. A ticket normally trades breadth for
+   depth, dropping the knowledge commons so a grant is not transitive; on a self-ticket
+   the granted scope is the asker's own, so there is no breadth to trade and dropping
+   the commons would make a ticketed read strictly poorer than an ambient one — a
+   reason to read less. `_granted_scope` therefore keeps the commons when the reader
+   *is* the granted scope, and the self-consultation protocol requires the ticketed
+   recall rather than merely permitting it. Note this also means a properly voiced
+   cross-expert subagent gains episodic reach from its ticket only because it is
+   pinned elsewhere; the depth-for-breadth trade is real for a `main`-pinned reader.
+
+   An answer from one's own scope **corroborates nothing**: one memory agreeing with
+   itself is not a second source, the same reason a fork's agreement with its parent
+   carries no weight.
+
+   The Exchange records `research_protocol`, a content hash of the procedure that
+   ticket actually served (empty on the quick tier, which serves none). A prompt that
+   will be edited needs its version on the row: the *asking* methodology was revised
+   continuously with nothing recording which version produced which answer, which is
+   why the pre-existing Exchange population cannot serve as a control arm — the
+   treatment moved under it and left no record.
 
    **A ticket is a swap, not an additional door.** `_granted_scope` returns
    `(granted, [])` (`mcp_server.py:109`): under a ticket the ambient knowledge commons
@@ -530,11 +586,18 @@ directions.
 
 ## Roster discipline
 
-- The roster ([08](08-roster-candidates.md) records each selection) is seven scopes:
+- The roster ([08](08-roster-candidates.md) records each selection) is nine scopes:
   **technical-literature**, **evaluation-methodology**, **homelab**, **teacher**,
-  **qe**, **designer**, **architect**. The second expert was the point: it proved
-  the contract. Two proves N — the manifest was the whole rollout, and it has stayed
-  that way for every expert since.
+  **qe**, **designer**, **architect**, **frontend**, **dl**. The second expert was
+  the point: it proved the contract. Two proves N — the manifest was the whole
+  rollout, and it has stayed that way for every expert since.
+- **A scope may be defined by a grant rather than a deny, and the contract cannot
+  express one.** `write_boundary`, `capability_boundary` and `PATH_OWNERSHIP` all
+  deny; there is no field meaning *this scope decides*. `frontend` is defined by
+  standing to close specification gaps without escalating, so that property lives in
+  its `domain` and nothing enforces it. This is the position MAST actually supports:
+  the ChatDev repair worth +9.4% was a refined role specification
+  (`scope:literature:claim:88a0a8431c91e57e`), not a constraint imposed over one.
 - New experts must justify themselves against the null hypothesis of "just put it in
   an existing expert." The eval loop arbitrates: if a candidate domain's retrievals
   don't cluster, it isn't an expert.

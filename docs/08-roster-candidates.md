@@ -70,15 +70,29 @@ fixed pipeline, not about how to cut a memory roster.
 MAST, the empirically grounded taxonomy of multi-agent failures (14 modes over 150
 traces, κ = 0.88, `scope:literature:claim:11750ab72cf137b8`), names **FM 1.2
 "Disobey Role Specification"** as a mode in its own right. The instance it records
-is exact: ChatDev's CPO terminated without CEO consensus, and the repair that worked
-was **structural authority — giving the CEO final say, worth 9.4% task success — not
-a better prompt** (`scope:literature:claim:db0928fe2cfd3616`).
+is exact: ChatDev's CPO terminated without CEO consensus, and giving the CEO final
+say was worth 9.4% task success (`scope:literature:claim:db0928fe2cfd3616`).
 
-The consequence for this roster: a scope boundary that exists only as a paragraph in
-`domain` is the configuration that was measured failing. Where a scope is defined by
-what it must *not* produce, the manifest declares that boundary and the `role-guard`
-PreToolUse hook enforces it. There are three. The two declared per scope have defaults
-that deliberately run opposite ways; the third is not declared per scope at all.
+**That repair was a role specification, and this doc read it backwards until
+2026-08-15.** Appendix H implements it by "refining role-specific prompts to enforce
+hierarchy and role adherence," and reports the same +9.4% for improving agent role
+specifications *alone*, with the same user prompt and LLM
+(`scope:literature:claim:88a0a8431c91e57e`). The two claims are one result read two
+ways. So MAST does not license "prose fails, structure works" — what it measured is
+that a **well-stated role works**, which is a reason to write `domain` carefully. FM
+1.2 is also the rarest mode in its category at 1.5%, against 11.8% for disobeying the
+*task* specification and 15.7% for step repetition
+(`scope:literature:claim:d675b5b74b2cdd34`).
+
+The warrant for enforcing a boundary is therefore first-party and narrower: a `domain`
+paragraph is advisory to the session it binds, and the scope most likely to read past
+it is the one whose charter it contradicts. Where a scope is defined by what it must
+*not* produce, the manifest declares that boundary and the `role-guard` PreToolUse
+hook enforces it as defence in depth over the prose, never instead of it. There are
+three. The two declared per scope have defaults that deliberately run opposite ways;
+the third is not declared per scope at all. A scope defined instead by what it is
+licensed to **decide** has no field here — a grant is not expressible in a contract
+whose every device denies — and states it in `domain` (`frontend`, below).
 
 **`write_boundary` bounds paths** (`contract/manifest.WriteBoundary`) and defaults
 open: a scope that declares nothing is unbounded, which is the honest default for a
@@ -167,7 +181,8 @@ partition is actually for.
 | Quality engineer | the regression corpus of every bug that shipped | all projects | **Live** (`config/experts/qe.yaml`) — see below. Holds the oracle; carries a `write_boundary`. |
 | Visual designer | the design system, tokens, and prior comps | all projects | **Live** (`config/experts/designer.yaml`) — see below. Shipped with an empty scope and no tooling, both deliberately. The only scope that opts out of the roster capability deny. |
 | Code advisor | the structural map — seams, leaked abstractions, rejected refactors | all projects | **Live** (`config/experts/architect.yaml`) — see below. The one live expert with no `write_boundary`, by charter; it carries the inherited `capability_boundary` like every other scope. |
-| DL / training | training-run history | StepMania | PyTorch, autoregressive decoding, KV-cache, CFG, sampling. Compounds via "what training run did what." |
+| Frontend developer | the record of closed spec gaps — what the spec left silent, what was chosen, what became house style | all projects with a UI | **Live** (`config/experts/frontend.yaml`) — see below. The only scope whose defining property is a *grant*, and therefore the only one carrying nothing structural to express it. |
+| Deep learning practitioner | the run record — 57 runs, what each changed and what it scored | StepMania | **Live** (`config/experts/dl.yaml`) — see below. Modelling, training and inference through serving: PyTorch, loss and head design, autoregressive decoding and sampling, CFG, quantization, KV-cache, throughput. The first scope to ship against a corpus counted before the manifest was written. |
 | Agent-systems | harness decisions and their outcomes | Thalamus, Nodeglass | Harness design, MCP, tool-use, context mgmt, subagent orchestration. |
 | Structural-safety / trust | attack surface and what was tried against it | Nodeglass, Thalamus | Provenance, gating, poisoning, policy engines, red-teaming. Second pillar. Overlaps `qe` and eval's canary work — check both before minting. |
 | Retrieval / memory-architecture | retrieval-design tradeoffs and their measurements | Thalamus | Vector vs. graph memory, chunking, reranking, RAG eval. Self-referential dogfooding; where the "graphrag expert" instinct actually belongs. |
@@ -497,13 +512,15 @@ since the day they were made, so every trend statistic scores them perfectly hea
 (Mann-Kendall Z of zero, time-to-exhaustion infinite). What is *unreferenced* is a
 different question from what is *increasing*, and only the first one finds them.
 
-CPU profiling is not built, on evidence rather than for want of time. `contract
-check` spends its time serialising 86k edges out of the graph, where counting them
-takes 70ms — the hot path is transport, not logic; and the same command measured
-9.4s and 30.9s on one machine forty minutes apart, a spread nothing can be gated on.
-Causal profiling (Coz) argues the hottest code is rarely the code worth optimising,
-and argues it harder in an I/O-bound system than in the CPU-bound ones it was
-measured on. Token cost is not built here either: `thalamus eval cost` already
+CPU profiling is not built, and the grounds are Thalamus-specific rather than general.
+`contract check` spends its time serialising 86k edges out of the graph, where counting
+them takes 70ms — the hot path is transport, not logic. The command's timing is in fact
+stable: measured 10.29 / 10.35 / 10.36s plain against 37.69 / 38.02s under cProfile, so
+its real run-to-run reproducibility is 1.01× and the 3.67× spread this doc previously
+attributed to ambient load was the profiler's own overhead. Causal profiling (Coz)
+argues the *opposite* of a reason not to profile — its result is that the technique
+works, and it is the most transferable item in this canon. What is missing here is a
+question worth profiling, not a method. Token cost is not built here either: `thalamus eval cost` already
 attributes it, and belongs to eval-methodology. The split that survived is
 flow versus stock — `eval cost` measures spend that stops when you stop running,
 this measures what remains on disk when you do.
@@ -515,10 +532,12 @@ behavior, which is qe's invariant question rather than this one's.
 **Boundaries against the neighbours.** A structural property that should hold
 permanently and be checked is an invariant, and belongs to `qe` — which is where the
 extractor's own acceptance test lives, as a hand-counted edge list over a five-module
-fixture (`tests/qe/cases/arch_extractor.py`). A performance claim
-that needs a control or a statistic to mean anything belongs to eval-methodology.
-What is left — the judgement about whether a shape is right, and the memory of every
-shape this codebase has been — is this scope.
+fixture (`tests/qe/cases/arch_extractor.py`). A model's own training, decode and
+serving path belongs to `dl`, which also holds the experimental design of that work;
+what stays here on a shared box is contention and the host — the resource a number
+was taken under rather than the model that produced it. What is left — the judgement
+about whether a shape is right, and the memory of every shape this codebase has
+been — is this scope.
 
 **Null hypothesis** ("`/code-review` and `/simplify` already do this; `main` can
 refactor") fails on the 50-session test more clearly than any other candidate here:
@@ -528,6 +547,170 @@ per-diff procedure cannot accumulate. Conway's law also cuts here, and against u
 a codebase grows seams matching the organization that builds it, so a roster with an
 architect scope should expect its own structure to start showing up in the tree
 whether or not that was intended.
+
+## Experts eight and nine: frontend, dl
+
+Shipped as `config/experts/{frontend,dl}.yaml`. Zero-glue held a seventh and eighth
+time — two manifests and nothing else. Both were consulted into shape before either
+existed: `literature` (`780b0e34262c4572`), `architect` (`589548965ece4c07`) and
+`designer` (`8ba49ad61e5e4bdb`). The findings each returned are recorded with the
+scope they bear on.
+
+### `frontend` — frontend developer
+
+**Charter.** Implementation of user interfaces from design specifications. It
+translates; it does not originate visual design, and it does not negotiate. A
+coherent but imperfect spec is normal input, and where the spec is silent the choice
+belongs to this scope — decided at the keyboard, recorded, built. The designer
+reviews the built surface afterwards and files drift as a finding, which is
+`designer`'s existing charter unchanged.
+
+**The defining property is a grant, and nothing in the contract can express one.**
+`write_boundary` denies paths, `capability_boundary` denies tools and skills,
+`PATH_OWNERSHIP` denies a path to non-owners. There is no field that says *this scope
+decides*. The grant therefore lives in `domain` and is enforced by nothing — which is
+where the corrected MAST reading (above) says it belongs, since a refined role
+specification is the intervention that measured +9.4%. This scope is the roster's
+test of whether a stated authority holds as well as a hooked deny.
+
+**Four classes return to the designer instead of being closed.** Named under
+`8ba49ad61e5e4bdb` and adopted verbatim, because the expert that would lose the
+authority is the one that drew them: (1) a choice that changes **which question the
+surface answers** — a precedence chain among states, where any total order compiles
+and the order *is* the design; (2) a choice that **assigns meaning to a channel**,
+such as whether a hue carries identity or status; (3) **the word itself**, where a
+term is a claim about the world rather than a label; (4) a silence that is
+**structural rather than omitted** — the spec does not cover the case because the
+design has not decided it. Everything else is closed here, explicitly including
+picking a value that satisfies a stated floor.
+
+**The write-back is a precondition, not a refinement.** The claimed corpus is the
+record of closed gaps, and the one measured precedent for that shape is Agent
+Workflow Memory — reusable routines induced from past trajectories, +51.1% relative
+on WebArena, beating human-expert-written workflows. AWM filters candidates through
+an evaluator before writing them back, and the literature consultation named that
+precondition as missing from this design. `designer`'s post-build critique is the
+evaluator; its verdict writes back onto the gap record. Without that, the scope
+reduces to unevaluated rationale capture, whose failure record is the strongest
+single objection on file.
+
+**The evidence that prompted it does not support it, and that is recorded rather than
+smoothed.** The d4v2 console effort ran ~500k tokens with zero code reverts, no
+regression in client size, and no commit reading as a misread design. Of the 20
+commits on that branch 11 were the *designer* amending its own spec — but sorted by
+cause, only about three are artifact defects (all internal self-contradictions, the
+class this design already returns), two are operator rulings arriving from above the
+implementer, four are the running system supplying facts no static artifact held, one
+is a real omission, two are new scope. Neither authority nor a better spec removes
+the middle four. The sharpest objection is methodological and stands: **"zero reverts"
+is the outcome of continuous negotiation, not a baseline** — the misread rate was low
+*because* the round trips happened, so it cannot evidence what happens once they are
+removed. There is no counterfactual arm.
+
+**Null hypothesis** ("`main` implements from the spec; the fix is a better handoff
+artifact, not a scope") was argued at full strength by `literature` and was not
+defeated. In MAST's one head-to-head the better artifact beat the extra role
+(p = 0.4 for the three-role topology under GPT-4), and the largest intervention gain
+(+15.6%) came from adding a **verification step**. KnowU-Bench is more directly
+adverse: 93.8% of one frontier model's personalized-task errors are
+clarification/partial-preference failures, and 80.0% of proactive failures are
+intervene-or-hold — under-clarification dominates, and a never-escalate rule pins
+that mode open by construction. The scope ships anyway, on the operator's call, made
+with the objection in view. Four measured findings are held against its corpus rather
+than answered: distilled artifacts lose 15.9–22.0pp against verbatim retrieval;
+recognising a memory as stale does not imply applying the update (best model 55.2%);
+precedent can override stronger current evidence; and violations rise with memory
+length at a measured detection rate of **zero**.
+
+**Pre-registered audit**, in the form the qe/designer/architect batch established:
+
+> This scope has failed its partition if, after fifty sessions, its episodic subgraph
+> holds no closed-gap record that changed a later implementation — no house style
+> anyone can point to, no gap closed twice the same way because the first was
+> remembered. A gap record that `designer`'s critique never wrote back onto is the
+> specific failure AWM predicts, and is checkable directly. The four returned classes
+> firing **never** would be evidence the exception list was theatre; firing on most
+> gaps would be evidence the grant was not real.
+
+**Skill-vs-expert** passes where the `frontend-design` and `dataviz` skills stop —
+and this scope inherits the roster deny on both, which reads backwards for its name
+and is not. Those skills originate aesthetic direction, which is what this scope
+consumes rather than produces. Closing a spec gap is a micro-decision inside someone
+else's design, not a design pass of one's own.
+
+**The designer seam, reversed.** The build-cost read on a comp flows the other way —
+what a surface costs and which constraint drives the cost — as advice that does not
+gate. `designer` accepted it and bounded it: cost and constraint, never a substitute
+design, since the intent claim is the designer's. It refused a cost read arriving
+*before* the comp or as a standing budget; that is a design constraint and comes from
+the operator.
+
+### `dl` — deep learning practitioner
+
+**Charter.** Deep learning modelling, training and inference, principally the
+StepMania chart generator: a staged autoregressive pipeline with a difficulty
+classifier, a learned taste critic, groove-radar and CFG conditioning, and a
+decode-time biomechanical governor. It runs the lifecycle for its own models —
+loss and head design, the data layer, decoding and sampling, then quantization,
+KV-cache behaviour, batching, throughput and serving-stack choices — and owns the
+experimental design of that work: ablations, controls, calibration, and whether a
+difference between two runs is real. The standing corpus is the run record, and its
+value is longitudinal by construction: a run is only interpretable against the runs
+it followed.
+
+**A count of past runs sizes a corpus; it does not bound a role.** The serving half
+is largely planned rather than done — one fp32 KV-cache A/B, no quantized
+configuration in the repo today — and is in scope regardless. The distinction is the
+one this doc's own litmus turns on: the partition question is whether real sessions
+have this as their dominant domain, and a quantization session is one whether or not
+it has happened yet.
+
+**It is the first scope to ship against a corpus counted before the manifest was
+written.** In `~/code/stepmania-chart-generator`: 57 training runs with retained
+artifacts (61 named checkpoint directories, 56 holding `.pt` weights, plus one loose
+run under `checkpoints/archive/`); 117 notes of which roughly 60 are per-arc
+`*_findings.md`; a 521-line `notes/INDEX.md` carrying explicit supersession markers
+and recorded refutations; a 6-variant ordinal ablation table; 39 probe-result CSVs;
+and a 2,606-line playtest log that is the project's arbiter for decode changes. The
+MLflow tracker holding 17 rows was abandoned in favour of that markdown workflow,
+which is itself the finding: the accumulated knowledge outgrew the tracker and went
+where it could carry supersession.
+
+**Null hypothesis** ("a `--feed` into literature; training sessions keep distilling to
+`main`") fails on both halves, the teacher pattern. A consultant is never pinned, so
+the run record — the whole value — could never land anywhere. And `literature` holds
+nothing on this: asked for the inference-serving material, it reported a total gap and
+declined to stretch adjacent citations, with a first-party datum against itself — the
+one time a serving question arose on this box, `literature` answered it wrongly (a
+vLLM throughput ratio that does not apply to a prefill-dominated workload) and
+`homelab` corrected it with card-specific numbers.
+
+**Boundaries against the neighbours.** The experimental design of this scope's own
+work — ablations, controls, calibration, whether a difference between two runs is
+real — is held here rather than at `eval-methodology`, whose subject is the
+evaluation of AI agents and harnesses. The structural and performance health of
+Thalamus itself — repo layout, hot paths, unbounded growth, retry and timeout
+behaviour — is `architect`'s, and the line runs by system rather than by technique:
+this scope's serving path is its own, and `architect` does not reach into it. The
+pedagogy of learning this material belongs to `teacher`, which models the learner
+rather than the model. Subjective chart quality is judged by ear against the playtest
+log, and that judgement is evidence here rather than decoration.
+
+**No `write_boundary`**, on the `architect` precedent: the charter is to write the
+training code, data layer, decode path and serving path, so a path deny would block
+the work rather than bound the role. The boundary is a pin trigger — modelling,
+training-run and serving sessions in the generator repository — enforced by operator
+intent at launch and audited afterwards by what its pinned sessions did, which is the
+weaker guarantee `architect` already names.
+
+**Prior work.** The role set remains an instantiation rather than a novelty: MetaGPT
+assigns five specialist roles in a sequential workflow
+(`scope:literature:claim:6fde48b087433b6c`), and neither an implementer nor an ML
+specialist is new as a role. What is done with them here is the same two axes as the
+earlier batch — the roles are retrieval scopes with their own episodic memory rather
+than prompt personas in one pipeline, and `frontend`'s corpus claim rests on AWM's
+induced-routine result rather than on role specialization, which docs/08's governing
+objection (above) explicitly does not accept as a partition warrant.
 
 ## Parked: project attribution as leaf, compression as the connective core
 

@@ -53,7 +53,8 @@ _CHUNK_OVERLAP = 400
 # Retrieval chunk geometry, and deliberately NOT the extraction geometry above. Those
 # 9,600 chars are sized to bound claim volume and model cost per pass; these are sized
 # to be injected into a recall result, where the binding constraints are the injection
-# budget (lab/006: 33.8% of injected retrieval tokens go unused) and precision. Reusing
+# budget (experiments/002: 33.8% of injected retrieval tokens go unused, 95% CI
+# [27.2, 40.5]; lab/034) and precision. Reusing
 # the extraction size here would put a 9,600-char passage in a result window. Nearest
 # measurement: enlarging a verbatim window from 512 to 768 chars lifted accuracy
 # 43.1%->47.2%, with 512 called conservative for the verbatim side
