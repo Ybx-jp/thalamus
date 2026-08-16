@@ -15,9 +15,10 @@
 #
 # Cadence: the spool holds at most one turn's worth, so this injects roughly
 # once per prompt rather than once per tool call. Indiscriminate per-call
-# injection is what the conditioning tier is grounded against (Self-RAG,
-# arXiv 2310.11511; lab/006's ~50%-ignored share), and every injected token
-# rides every later call (docs/04 layer 1b).
+# injection is what the conditioning tier is grounded against (selective beats
+# always-on injection — arXiv 2607.08716; the local ignored share is real at
+# experiments/002's magnitude), and every injected token rides every later call
+# (docs/04 layer 1b).
 #
 # The clock is rendered HERE, from the shared Claude Code script, not at spool
 # time: delivery is when the agent reads it, and a timestamp computed a tool

@@ -10,10 +10,11 @@
 # 2303.11366).
 #
 # Design constraints, grounded:
-# - CONDITIONAL, never every-prompt. Adaptive beats indiscriminate retrieval
-#   (Self-RAG, arXiv 2310.11511); locally, lab/006 measured ~50% of
-#   indiscriminately injected tokens ignored — and every injected token rides
-#   every later call (docs/04 layer 1b).
+# - CONDITIONAL, never every-prompt. Selective reminder injection beats always-on
+#   (arXiv 2607.08716, the direct agent-side ablation; margins are small and no
+#   token comparison is reported, so the cost half of this argument is uncited —
+#   docs/11 §3c). Locally the ignored share is real at experiments/002's
+#   magnitude, and every injected token rides every later call (docs/04 layer 1b).
 # - THROTTLED: each trigger class fires at most once per session.
 # - MEASURED: every firing is one JSONL event in ~/.thalamus/conditioning/.
 #   Effectiveness is the per-firing behavioral join (`thalamus eval

@@ -99,7 +99,8 @@ _THREAD_RANK_WINDOW = 400
 # hit: a chunk is ~1,500 chars against a claim's ~210, so equal scoring would let a
 # passage outrank a claim by sheer surface area rather than by relevance. The cap is
 # the stopping rule the design owes — chunks are the largest thing this reader can
-# inject, and lab/006 measured 33.8% of injected retrieval tokens going unused, so an
+# inject, and experiments/002 measured 33.8% of injected retrieval tokens going unused
+# (95% CI [27.2, 40.5]; lab/034 supersedes lab/006's magnitudes), so an
 # uncapped chunk tier is a token-waste regression wearing a fidelity story.
 _CHUNK_HIT_SCORE = 1.0
 _CHUNK_WINDOW_CAP = 2
@@ -704,8 +705,9 @@ def recall(
     knowledge_ranked = _ranked(matched_knowledge_vids, knowledge_hits, floor, query)
 
     # Chunks are held to the same floor and then capped: they are the largest thing
-    # the reader can inject, and lab/006 already measured 33.8% of injected retrieval
-    # tokens going unused. The cap is the stopping rule the design owes.
+    # the reader can inject, and experiments/002 measured 33.8% of injected retrieval
+    # tokens going unused (95% CI [27.2, 40.5]; lab/034). The cap is the stopping rule
+    # the design owes.
     chunks_ranked = _ranked(matched_chunk_vids, chunk_hits, floor, query)[
         :_CHUNK_WINDOW_CAP
     ]
