@@ -93,22 +93,21 @@ recorded` group is the precedent for answering it honestly rather than by infere
 
 ## 2. Specified and never built
 
-### 2.1 `screen_rev`, and the poll it was supposed to shrink
+### 2.1 The poll still carries every screen
 
 §1 specifies a per-window opaque change token, with the pane mirror moving to the
-focused-window request: *"The poll carries no screens."* Neither the token nor the
-split exists. The client detects change by string-comparing full pane text
-(`app.js:978`, stored per window at `app.js:1056`, and again for the workspace chip at
-`app.js:967`).
+focused-window request: *"The poll carries no screens."* The token exists —
+`/api/panes` serves `screen_rev` per window (`server.py:screen_rev`) and the client
+compares it for equality and never parses it (`app.js:revOf`, read at `app.js:977`
+and `app.js:988`, stored at `app.js:1066`). The split does not. The focused window's
+mirror is still fed from the poll payload (`app.js:290`, `app.js:1054`), so `lines`
+must keep carrying **every** window's text — including the windows nobody is looking
+at — until an endpoint serves a single window's screen.
 
-Measured on this box, 2026-08-16, three windows: `/api/panes` returns **19,143 bytes,
-of which 14,174 is `lines`** — the screen text of every window, including the ones
-nobody is looking at — **uncompressed at every layer**, at a 1.2 s poll. About
-57 MB/hour to a phone. At nine windows the payload is one `capture-pane` subprocess
-per window per poll.
-
-This also puts the client on the wrong side of §1's first line: comparing pane text to
-decide "changed" is the client deriving a state the server owns.
+Measured on this box, 2026-08-16, three windows: `/api/panes` returns **25,019 bytes,
+of which 23,058 is `lines`**, **uncompressed at every layer**, at a 1.2 s poll.
+Dropping `lines` once nothing reads it leaves 2,061. At nine windows the payload is
+one `capture-pane` subprocess per window per poll.
 
 ### 2.2 All of §5, permission mode
 

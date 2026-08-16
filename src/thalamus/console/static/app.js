@@ -103,7 +103,7 @@ let rosterSig = "";        // last drawn roster, so a 1.2s poll does not rebuild
 let openRow = null;        // the one row showing its controls, by window index
 let lastDistill = [];      // last served records, for a redraw between polls
 let lastGrace = 0;
-let lastText = {};         // idx -> last captured screen (for change detection)
+let lastRev = {};          // idx -> last screen_rev (for change detection)
 let lastOk = 0;            // ms of last good poll
 let lastFitCols = 0;       // column count the current fit was computed for
 let fitPx = 13;            // auto-fit size so a full pane line fits the viewport
@@ -955,6 +955,16 @@ async function pollRead(idx) {
   renderRead(idx);
 }
 
+// The change token for one window, compared for equality and never parsed — its
+// format is the server's business (server.py:screen_rev). A server that does not
+// serve it yet falls back to the full pane text, which is what the rail compared
+// before the token existed: an old server degrades to the old behaviour instead
+// of to a pulse that never fires. Read and store go through here together, so the
+// two sides of a comparison can never come from different fields.
+function revOf(w) {
+  return w.screen_rev !== undefined ? w.screen_rev : w.lines;
+}
+
 // A session filtered out of the rail still needs to be able to announce itself —
 // otherwise picking a workspace makes you blind to the others. Its workspace chip
 // carries the signal that its hidden tab's dot would have.
@@ -964,7 +974,7 @@ function updateWsSignal(next) {
     const p = chip.dataset.path;
     const hidden = p && activeWs !== null && p !== activeWs;
     chip.classList.toggle("live", !!hidden && next.some((w) =>
-      w.cwd === p && lastText[w.index] !== undefined && lastText[w.index] !== w.lines));
+      w.cwd === p && lastRev[w.index] !== undefined && lastRev[w.index] !== revOf(w)));
   }
 }
 
@@ -975,7 +985,7 @@ function updateDots(next) {
     const w = next.find((x) => x.index === idx);
     if (!w) continue;
     tab.classList.toggle("recycling", !!w.recycling);
-    const changed = lastText[idx] !== undefined && lastText[idx] !== w.lines;
+    const changed = lastRev[idx] !== undefined && lastRev[idx] !== revOf(w);
     tab.classList.toggle("active-live", changed);
     if (changed) {
       tab.classList.remove("pulse");
@@ -1053,7 +1063,7 @@ async function poll() {
       els.recycleNote.hidden = true;
     }
     if (activeCols() !== lastFitCols) computeFit(); // e.g. an attached terminal resized it
-    for (const w of next) lastText[w.index] = w.lines;
+    for (const w of next) lastRev[w.index] = revOf(w);
 
     setConn("live");
     // keep selection styling in sync
