@@ -103,7 +103,7 @@ let rosterSig = "";        // last drawn roster, so a 1.2s poll does not rebuild
 let openRow = null;        // the one row showing its controls, by window index
 let lastDistill = [];      // last served records, for a redraw between polls
 let lastGrace = 0;
-let lastText = {};         // idx -> last captured screen (for change detection)
+let lastRev = {};          // idx -> last screen_rev (for change detection)
 let lastOk = 0;            // ms of last good poll
 let lastFitCols = 0;       // column count the current fit was computed for
 let fitPx = 13;            // auto-fit size so a full pane line fits the viewport
@@ -955,6 +955,16 @@ async function pollRead(idx) {
   renderRead(idx);
 }
 
+// The change token for one window, compared for equality and never parsed — its
+// format is the server's business (server.py:screen_rev). A server that does not
+// serve it yet falls back to the full pane text, which is what the rail compared
+// before the token existed: an old server degrades to the old behaviour instead
+// of to a pulse that never fires. Read and store go through here together, so the
+// two sides of a comparison can never come from different fields.
+function revOf(w) {
+  return w.screen_rev !== undefined ? w.screen_rev : w.lines;
+}
+
 // A session filtered out of the rail still needs to be able to announce itself —
 // otherwise picking a workspace makes you blind to the others. Its workspace chip
 // carries the signal that its hidden tab's dot would have.
@@ -964,7 +974,7 @@ function updateWsSignal(next) {
     const p = chip.dataset.path;
     const hidden = p && activeWs !== null && p !== activeWs;
     chip.classList.toggle("live", !!hidden && next.some((w) =>
-      w.cwd === p && lastText[w.index] !== undefined && lastText[w.index] !== w.lines));
+      w.cwd === p && lastRev[w.index] !== undefined && lastRev[w.index] !== revOf(w)));
   }
 }
 
@@ -975,7 +985,7 @@ function updateDots(next) {
     const w = next.find((x) => x.index === idx);
     if (!w) continue;
     tab.classList.toggle("recycling", !!w.recycling);
-    const changed = lastText[idx] !== undefined && lastText[idx] !== w.lines;
+    const changed = lastRev[idx] !== undefined && lastRev[idx] !== revOf(w);
     tab.classList.toggle("active-live", changed);
     if (changed) {
       tab.classList.remove("pulse");
@@ -1053,7 +1063,7 @@ async function poll() {
       els.recycleNote.hidden = true;
     }
     if (activeCols() !== lastFitCols) computeFit(); // e.g. an attached terminal resized it
-    for (const w of next) lastText[w.index] = w.lines;
+    for (const w of next) lastRev[w.index] = revOf(w);
 
     setConn("live");
     // keep selection styling in sync
@@ -1529,13 +1539,23 @@ function sessionRow(r, now, graceS) {
   // same word — the row would be asserting a start time nobody recorded. A record
   // that outlived its window identifies itself by directory instead, and its timing
   // is already in the slot or the band.
+  // Qualifier order is the spec's, not this file's convenience: `viewing` first
+  // (§4.1b — "a line-2 qualifier, first in that lane"), then `old posture`,
+  // `anchor`, `cwd_label`, and `#index` last since it appears on collision only
+  // (§3). The lane reads most-about-you to least, so the fact the operator is
+  // standing in comes before the facts about the window's configuration.
+  //
+  // `◈ room` is not in §3's enumeration — the spec predates the room badge on the
+  // row. Placed after the enumerated set rather than inside it, so the spec's own
+  // order stays readable against this code and a later ruling can slot it without
+  // disturbing anything above.
   if (w && w.started) bits.push(`opened ${fmtOpened(w.started)}`);
   else if (d && d.dir) bits.push(d.dir);
-  if (r.showIndex) bits.push(`#${w.index}`);
-  if (r.showCwd && src.cwd_label) bits.push(src.cwd_label);
   if (w && w.index === activeIdx) bits.push("viewing");
-  if (w && w.anchor) bits.push("anchor");
   if (w && w.policy_stale) bits.push("old posture");
+  if (w && w.anchor) bits.push("anchor");
+  if (r.showCwd && src.cwd_label) bits.push(src.cwd_label);
+  if (r.showIndex) bits.push(`#${w.index}`);
   if (w && w.room) bits.push(`◈ ${w.room}`);
   line2.textContent = bits.join(" · ");
   row.appendChild(line2);
@@ -2590,7 +2610,7 @@ loadVoice();
 // requests whenever a poll outran its own interval; a self-scheduling chain can't.
 // The next tick is armed from a single completion callback once the data has landed
 // — never by chaining the promise back into poll() itself, which is the shape that
-// starved the event loop in 8b483c0. The floor is 100ms of real network work, so
+// starved the event loop. The floor is 100ms of real network work, so
 // there is no microtask-starvation path here.
 let pollTimer = null;
 let pollInFlight = false;
