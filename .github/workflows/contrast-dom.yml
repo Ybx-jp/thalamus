@@ -1,0 +1,86 @@
+# Composited contrast over the rendered console, in a real browser.
+#
+# `workflow_dispatch` only, and deliberately not on push. It needs Chromium and a tmux
+# roster, which is a cost and a substrate the other suites do not carry — running it on
+# every push would make a browser a prerequisite of the repo rather than a tool the
+# operator reaches for.
+#
+# It exists because every static check in this repo is blind to the value that actually
+# reaches the screen. Three defect classes were found on this surface in one day, each
+# invisible to the checker that caught the previous one: a flat token below the floor
+# (a token scan finds it), a single `opacity` composite (invisible to that — the
+# declared colour measured 7.05:1 while the surface received 2.72:1), and `opacity`
+# compounding down an ancestor chain (invisible to both — three rules, none wrong
+# alone, multiplying to 0.4284 and painting 2.15:1). The third is why this needs a
+# browser: it is a colour that exists in no file.
+#
+# THE DENOMINATOR IS THE POINT. A report of zero failures over zero elements is
+# byte-identical to a clean surface, and that is not a hypothetical here — the first
+# manual run of this walker returned a clean 61 elements while covering none of the
+# read view, which is exactly where the compounding defect lived. So this workflow
+# fails on a low element count as readily as on a low contrast ratio, and prints the
+# count for every view whether it passes or not. A view that renders nothing is a
+# broken run, never a green one.
+#
+# Exit is 1 on any of: a failed self-check, a view below its minimum element count, or
+# any element below its WCAG floor.
+name: contrast-dom
+
+on:
+  workflow_dispatch:
+    inputs:
+      strict_views:
+        description: "Fail if a view renders fewer elements than expected"
+        type: boolean
+        default: true
+
+jobs:
+  composited-contrast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install
+        run: uv sync --extra dev
+
+      # tmux is substrate, not scenery. The console renders a roster read from a live
+      # tmux server, so without one the page is chrome with no rows — which would
+      # produce a clean report over almost nothing, the exact failure this run is
+      # built to refuse.
+      - name: Build a roster to render
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y tmux
+          tmux new-session -d -s thalamus -n main
+          for scope in qe homelab designer architect; do
+            tmux new-window -t thalamus -n "$scope" 'sleep 3600'
+          done
+          tmux list-windows -t thalamus
+
+      - name: Serve the console
+        run: |
+          uv run thalamus console --port 8378 --session thalamus &
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8378/ >/dev/null && break || sleep 0.5
+          done
+          curl -sf http://127.0.0.1:8378/api/panes >/dev/null \
+            || { echo "console did not come up"; exit 1; }
+
+      - name: Install Chromium
+        run: |
+          npm i -D playwright@1.49.0
+          npx playwright install --with-deps chromium
+
+      - name: Measure
+        env:
+          STRICT_VIEWS: ${{ inputs.strict_views }}
+        run: node .github/workflows/contrast-dom-driver.mjs
+
+      - name: Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contrast-views
+          path: /tmp/contrast-*.png
+          if-no-files-found: ignore

@@ -285,6 +285,10 @@ function selfCheck() {
 
 // Browser console: `selfCheck()` first, then `report()`.
 if (typeof window !== "undefined") {
+  // `contrastMeasured` is the denominator, and it is exported because a verdict
+  // without one is not a verdict: zero failures over zero elements is byte-identical
+  // to a clean surface. Any caller quoting a clean `report()` states this alongside it.
   Object.assign(window, { contrastReport: report, contrastSelfCheck: selfCheck,
-                          contrastRatio: ratio, contrastGround: ground });
+                          contrastRatio: ratio, contrastGround: ground,
+                          contrastMeasured: (root) => textBearing(root).length });
 }
