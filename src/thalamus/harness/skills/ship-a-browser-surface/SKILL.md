@@ -186,6 +186,14 @@ with a confusing "not defined".
   `AbortController` timeout, plus a backstop that force-releases the latch. It
   presents as "the session paused" with **no error anywhere**, and the connection
   indicator keeps saying "live" for several seconds after the last good poll.
+  **A signal is single-use: once aborted, every later fetch given the same signal
+  rejects immediately.** Construct a fresh controller per request — hoisting one to
+  module scope to "avoid the allocation" wedges the client permanently after the
+  first timeout. `abort()` rejects the fetch promise with `AbortError`; if the request
+  had already fulfilled, reading the body rejects instead. `AbortSignal.timeout()`
+  is the built-in for the timeout case and rejects with `TimeoutError`, which is
+  distinguishable from a user abort — worth preferring when the two need telling
+  apart.
 - **Do not remove the hidden-element check in the selection guard.** Repaints are
   deferred while a text selection is live so the 1.2 s repaint cannot wipe it; when a
   view is hidden with a selection still anchored inside, the browser does not
