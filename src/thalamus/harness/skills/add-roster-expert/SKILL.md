@@ -23,10 +23,43 @@ driven over HTTP — and are written up separately in
 
 ## Procedure
 
+0. **Ask the operator what work is PLANNED in this scope, before consulting anyone.**
+   Binding, and it comes first. Every expert can only see what has already happened;
+   asked a question whose answer lies in the future, it will answer about the past
+   and sound decisive doing it. **A count of past work sizes a corpus and never
+   bounds a role** — the litmus below asks whether real sessions would be pinned
+   here, and a session that is planned but not yet run counts. An `ml-systems` scope
+   was cut on a measured 0-of-~10 corpus count that was really a measure of work not
+   yet started; the operator's plans reversed it the same day.
 1. **Roster decision first, not procurement drift.** Clear docs/08's discipline
-   (granularity litmus, null hypothesis, skill-vs-expert test) and run
-   `ground-in-literature` (+ `thalamus-design-readiness` alongside). Record the
-   decision in docs/08 in the same change.
+   (granularity litmus, null hypothesis, skill-vs-expert test). Record the decision
+   in docs/08 in the same change, and run `thalamus-design-readiness` after it is
+   settled.
+
+   **Consult the scopes that LOSE something, not every plausible neighbour.** The
+   test is whether a scope gives up territory or authority if this one ships. Those
+   scopes know where the real line runs and are the ones with standing to draw it —
+   and **the losing scope writes the exception list, adopted verbatim** (`frontend`'s
+   four returned classes came from `designer`, which was giving up the authority).
+   A scope with no stake returns a well-argued record that changes nothing; that is
+   a round spent, not a decision made.
+
+   **Do not ask an expert to argue the null hypothesis at full strength once the
+   operator has decided with the objection in view.** Ask instead: *what would
+   falsify this scope's partition in fifty sessions?* Same expert, one question, and
+   the answer is the pre-registered audit docs/08 wants anyway.
+
+   **The literature step is one recall and at most one narrow ticket** — *is there
+   prior work on this corpus shape, and does it have a known failure record?* A
+   roster act is an organizational decision, not a component design; the full
+   `ground-in-literature` pass stays for features, components, schema changes and
+   eval metrics.
+
+   **If a live scope was present for the history you are about to reconstruct, ask it
+   before doing forensics.** Reconstructing an effort from git or transcripts costs
+   more than a recall and is wrong more often — a 73k-token reconstruction of a
+   design handoff got the spec's origin backwards, and the `designer` scope that was
+   in the room corrected it from episodic memory it held the whole time.
 2. **The manifest is the whole rollout** (zero-glue, docs/01/02):
    `config/experts/<scope>.yaml` and nothing else. Declare only `claim_kinds` a
    real writer produces (the ingest extractor writes

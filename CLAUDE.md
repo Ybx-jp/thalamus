@@ -105,6 +105,31 @@ comments, published artifacts, anything addressed past the operator. Analysis,
 recommendations, and disagreement belong in the conversation, where they were asked
 for.
 
+## Reporting density
+
+**Report the conclusion and what it changes. The work that produced it is not the
+report.** A consultation returning 78 citations, a subagent's 30-tool sweep, and a
+five-round forensic pass are *inputs*. What reaches the operator is what he would act
+on differently for knowing it: what shipped, what changed from what he asked for and
+why, what is still unbuilt, and any decision now waiting on him. Length is set by the
+size of the decision, not by the size of the effort.
+
+**One report, at the end.** Subagents finishing is not an event worth a message. A
+running commentary — one update per agent as each returns — turns a two-file change
+into four dense messages and buries the one line that mattered. Hold findings until
+the work is done, then synthesize once. The exception is a finding that changes what
+the operator should do *right now*, which goes up immediately and alone.
+
+**An expert's answer is not a deliverable.** Take it, verify its checkable claims, act
+on it, and report what you did. Relaying the answer is passing the operator the cost
+the consultation was supposed to spend on his behalf. Findings that are real but
+tangential — a corrected citation, a retracted measurement — get one line and a
+pointer, and live in the doc or the ledger where someone can find them again.
+
+**Density is not thoroughness.** Compressing four findings into one paragraph of
+jargon is the same failure as four paragraphs; both make the operator do the
+extraction. Say the thing in ordinary words, and cut what he did not ask about.
+
 ## Repo hygiene
 
 - **Commit by path, never `git add -A`.** Sessions run concurrently in this checkout
