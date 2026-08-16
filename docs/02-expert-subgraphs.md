@@ -37,7 +37,8 @@ regions, not between the experts:
   (`reader.py:634, 649`).
 - **Knowledge is an ambient commons.** Every session reads the knowledge claims *and
   chunks* of every other expert scope, with no ticket, no record, and no deliberate act
-  — `KNOWLEDGE_SCOPES` is assembled at process start (`mcp_server.py:80`) and
+  — `knowledge_scopes()` is read from the manifest directory per call
+  (`mcp_server.py`), so a server picks up a roster addition without a restart, and
   `claim_scopes = [scope, *knowledge_scopes]` is applied to both populations
   (`reader.py:621, 665-673, 687-691`). Chunks carry no `CONTAINS` filter at all, and
   they are the larger population.

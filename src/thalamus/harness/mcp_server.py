@@ -77,7 +77,15 @@ SCOPE = resolve_pin()
 # parameter. This ambient surface covers *knowledge* claims only; an expert's
 # episodic memory is reachable solely through a consultation ticket, which grants
 # the consulted scope per-exchange (docs/02).
-KNOWLEDGE_SCOPES = [s for s in available_scopes() if s != SCOPE]
+#
+# Read per call, not once at import. SCOPE can be resolved at startup because a
+# process's pin cannot change under it, but the roster can: manifests are added to
+# config/experts/ while servers are running, and a server that cached this list
+# serves every session it owns a roster frozen at its own launch date — silently,
+# since a missing scope reads as an expert that simply knows nothing. `available_scopes`
+# globs the manifest directory on each call, so freshness costs one directory listing.
+def knowledge_scopes() -> list[str]:
+    return [s for s in available_scopes() if s != SCOPE]
 
 # The ranking dials this process will retrieve under, recorded at startup so the eval
 # loop can tell which ranker produced a trace. It has to be stamped here rather than at
@@ -99,7 +107,7 @@ def _granted_scope(g, ticket: str) -> tuple[str, list[str]] | str:
     the pinned scope would let a stale ticket masquerade as a successful consultation.
     """
     if not ticket:
-        return SCOPE, KNOWLEDGE_SCOPES
+        return SCOPE, knowledge_scopes()
     granted = consultation.ticket_scope(g, ticket)
     if granted is None:
         return (
