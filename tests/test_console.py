@@ -352,9 +352,50 @@ def test_the_poll_composes_the_ledger_join_and_the_descriptor_read(tmp_path,
     assert rows[4]["observed"] is False
     assert rows[4]["blocked"] is None
 
-    # The payload the client is promised, and the 80% finding: no pane text rides
-    # the poll. `lines` is the pane capture, which the fake tmux answers empty.
+    # The rest of what the payload promises the client, beside the rows.
     assert "grace_s" in body and "distill" in body
+
+
+def test_screen_rev_moves_with_the_pane_text_and_only_with_it(tmp_path, monkeypatch):
+    """The token the rail pulses on, over two polls of the real handler.
+
+    Both halves are the contract, and each fails differently. A token that misses a
+    change makes the pulse lie — the window worked and the rail said nothing. A token
+    that moves on its own (a capture timestamp, a counter bumped per poll) makes every
+    window pulse forever, which is the same as no pulse at all.
+
+    It is not asserted to be a hash of anything. The client compares it to the previous
+    poll's for equality and never parses it, so the format is free to change without
+    the client changing with it.
+    """
+    from thalamus.console import transcript as tr
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setattr(tr, "PINS", tmp_path / "pins.jsonl")
+    monkeypatch.setattr(server, "_LEDGER", None)
+    monkeypatch.setattr(server, "_FEEDS", None)
+
+    busy = ("3\tqe\t1\tclaude\t60\t50\t0\t/home/op/code/thalamus\tclaude\t%7\t4242")
+    quiet = ("4\tmain\t0\tclaude\t60\t50\t0\t/home/op/code/other\tclaude\t%9\t4243")
+
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    screens = {3: "$ pytest\n", 4: "$ pytest\n"}
+    with _serving(cfg, windows="\n".join([busy, quiet]), screens=screens) as post:
+        first = {w["index"]: w for w in post.get("/api/panes")["windows"]}
+        # Only window 3 moves. Window 4 is captured again and holds its text, which
+        # is the case a timestamp or a per-poll counter would get wrong.
+        post.fake.screens[3] = "$ pytest\n2 passed\n"
+        second = {w["index"]: w for w in post.get("/api/panes")["windows"]}
+
+    assert first[3]["screen_rev"] != second[3]["screen_rev"]
+    assert first[4]["screen_rev"] == second[4]["screen_rev"]
+
+    # Every row carries one, in a type the client can compare. Nothing further is
+    # asserted about the value: two windows showing the same screen are free to
+    # hold equal tokens or not, since a per-window counter is as valid an answer
+    # as a digest and a test that pinned either would forbid the other.
+    for row in list(first.values()) + list(second.values()):
+        assert isinstance(row["screen_rev"], (str, int))
 
 
 def test_the_poll_join_is_by_pane_and_a_mismatch_does_not_borrow_a_row(tmp_path,
@@ -961,13 +1002,21 @@ class _FakeTmux:
     would drive the operator's real roster.
     """
 
-    def __init__(self, windows: str = ""):
+    def __init__(self, windows: str = "", screens: dict[int, str] | None = None):
         self.windows = windows
+        # `capture-pane` answers from here, keyed by window index. Mutable, so a
+        # test can move one window's screen between two polls.
+        self.screens = screens if screens is not None else {}
         self.calls: list[tuple[str, ...]] = []
 
     def __call__(self, *args: str) -> subprocess.CompletedProcess:
         self.calls.append(args)
-        out = self.windows if args and args[0] == "list-windows" else ""
+        out = ""
+        if args and args[0] == "list-windows":
+            out = self.windows
+        elif args and args[0] == "capture-pane":
+            target = args[-1].rpartition(":")[2]
+            out = self.screens.get(int(target), "") if target.isdigit() else ""
         return subprocess.CompletedProcess(args=list(args), returncode=0, stdout=out, stderr="")
 
 
@@ -1092,9 +1141,9 @@ class _serving:
     so they are exercised over real HTTP.
     """
 
-    def __init__(self, cfg: Config, windows: str = ""):
+    def __init__(self, cfg: Config, windows: str = "", screens: dict[int, str] | None = None):
         self.cfg = cfg
-        self.fake = _FakeTmux(windows)
+        self.fake = _FakeTmux(windows, screens)
 
     def __enter__(self):
         self._real_tmux = server.tmux

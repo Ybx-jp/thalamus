@@ -29,6 +29,7 @@ the expert controls report themselves unavailable instead of failing to import.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -900,6 +901,23 @@ def capture(cfg: Config, idx: int) -> str:
     return r.stdout if r.returncode == 0 else ""
 
 
+def screen_rev(text: str) -> str:
+    """An opaque change token for one window's screen.
+
+    The only promise is the one the rail's pulse needs: the value differs when
+    the pane text differs, and holds when it holds. Nothing about its format is
+    promised, so the client compares it to the previous poll's for equality and
+    never parses it — a hash, a byte count and a counter are all valid answers,
+    and swapping one for another must not be a client change.
+
+    Derived from the capture the poll already holds, so it costs a digest over
+    text that has been read anyway, not a second trip to tmux. A failed capture
+    is the empty string, which is a stable token: no text is not a change.
+    """
+    return hashlib.blake2b(text.encode("utf-8", "surrogatepass"),
+                           digest_size=8).hexdigest()
+
+
 # ---- Admin actions ----
 
 
@@ -1237,7 +1255,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/panes":
             windows = list_windows(self.cfg)
             for w in windows:
-                w["lines"] = capture(self.cfg, w["index"])
+                text = capture(self.cfg, w["index"])
+                w["lines"] = text
+                w["screen_rev"] = screen_rev(text)
             # The launch facts tmux cannot know: which project and repository this
             # session belongs to, and when it started. Without them the roster is a
             # list that cannot group and cannot tell its own rows apart.
