@@ -15,8 +15,8 @@ Measurements are from this box and are dated where a later change could move the
 
 ## 1. Open questions for the designer
 
-Two things here are not the implementer's to close. Both change what a row *means*
-rather than how it is drawn.
+Three things here are not the implementer's to close. Each changes what the surface
+*means* rather than how it is drawn.
 
 ### 1.1 The identity palette does not identify
 
@@ -89,6 +89,29 @@ than none, because it looks identical to a real one" — and the failure directi
 a row *is*: a window, a session, or a session-in-a-window. §3.4's `no project
 recorded` group is the precedent for answering it honestly rather than by inference.
 
+### 1.3 What the workspace filter is allowed to scope
+
+The rail filters through `visibleWindows()` (`app.js:138-140`), which narrows on the
+selected workspace and room. `renderRoster` (`app.js:1037`) is handed every window.
+Pick a project, return to the roster, and the filter is not there.
+
+The spec cannot settle this: neither `workspace` nor `filter` occurs anywhere in its
+943 lines. §2.1 decides only *which surface is resident when the console opens* — it
+never contemplates a standing choice that scopes the list.
+
+**Why it is not closed at the keyboard:** §2.1's argument for landing on the roster is
+that `needs you` is on screen before the first touch, so the operator's first tap is
+informed rather than exploratory. A filtered roster answers *what needs me in this
+project*; an unfiltered one answers *what needs me*. Both are defensible and they are
+different surfaces — a blocked session in another project is either on screen or it is
+not. That is the design deciding what the landing view is for, not the implementer
+deciding how to draw it.
+
+The shipped split is not a third option, though. It is the rail and the roster
+disagreeing about the same sessions, which is the defect the spec opens by naming:
+three lists that disagree, replaced by one row per session. Whichever way this is
+ruled, both surfaces take the same answer.
+
 ---
 
 ## 2. Specified and never built
@@ -126,21 +149,11 @@ need without knowing where you are.
 
 ## 3. Drift from a decided spec
 
-Each of these has a settled answer in the spec and a different one in the code.
-
-| what | spec | shipped | costs |
-|---|---|---|---|
-| terminal row's identity bar | §4.3: becomes "a solid full-height block, not a 4 px rule" | `style.css:1050` changes only the colour; the `width: 4px` at `style.css:1000` is never overridden | one of the five structural channels that make a terminal row detectable without reading. The other four hold |
-| band dismiss control | §2: destructive control ≥ 60 × 60 px | `style.css:1075-1078` is 60 × 44, under a comment asserting "≥60 px" — true of the width only | the one control in the band that cannot be undone |
-| roster and the workspace filter | the roster is the landing view (§2.1); the filter is a standing choice | `renderRoster` (`app.js:1027`) is handed every window while the rail filters through `visibleWindows()` (`app.js:1019`) | filter to one project, return to the roster, see everything |
-| group header label | §3.3: `project`, or `basename(repo_root)` | `style.css:960` uppercases it | a path basename is shown in a case it does not have |
-| state slot position | §3: line 1 is identity bar, name, state slot (right) | the `⋯` expander (`app.js:1558-1570`) is appended after the slot, so `margin-left: auto` no longer puts it rightmost | the slot is no longer the row's right edge |
-| §8 extraction list | §8: "keep the extraction list pointed at whatever draws the row" | `tests/js/dialogue.test.mjs:216-224` names seven renderers; `renderRoster` and `groupHeader` also draw roster content and are absent | nothing today — neither reads a reduced field — but the guard has stopped short of the code |
-
-One more, and it is the spec's defect rather than the client's: §4.3's table gives one
+One item, and it is the spec's defect rather than the client's: §4.3's table gives one
 sentence, `restart exceeded {n}s grace`, for a row covering **both** `recycling` and
 `closing`. `app.js:1296-1300` emits it faithfully for both, so a close that overruns
-its grace reports itself as a restart.
+its grace reports itself as a restart. The client is not free to invent the missing
+sentence — what a terminal row says is the spec's to write.
 
 ---
 
@@ -157,7 +170,12 @@ are now the frontend scope's to keep or replace.
   floor of WCAG 2.2 SC 2.5.8 — far under this design's own 60 px for anything
   consequential. SC 2.5.8's spacing exception applies and is not currently met either.
 - **The `⋯` expander.** §6.1 requires some opened-row mechanism, so the control is
-  warranted; its position is not specified.
+  warranted; its position is not specified. It sits outboard of the state slot, and
+  the slot's lane is reserved on rows that carry no expander (`style.css`,
+  `.srow-slot:last-child`) so the state column stays straight across a row that
+  outlived its window. §3's "state slot (right)" is about the slot being the
+  right-aligned element of line 1, which holds; putting a 44 px target inboard of it
+  to make the slot the literal last child would be a worse row for a stricter reading.
 - **`◈ room` on line 2.** The spec predates the room badge; §3's qualifier
   enumeration does not include it.
 
@@ -179,9 +197,16 @@ success, the tri-state `observed`/`blocked`/`activity`, the monospace-versus-
 proportional-italic split for non-observations, the truncation marker, the no-project
 group and its second line, `revive` on a dead window, the anchor's absent close
 control, `restart all` separated from `roster sync` by section and shape, the 60 px
-row, the 44 px group header, the 4 px identity bar, the 25 px control separation, and
-the 60 px per-session controls. §7 is complete — neither `#admin-windows` nor
-`#distill-list` survives.
+row, the 44 px group header, the 4 px identity bar on a collapsed row and the 12 px
+block on a terminal one, the 25 px control separation, and the 60 × 60 px destructive
+controls — the per-session pair and the band's dismiss. §7 is complete — neither
+`#admin-windows` nor `#distill-list` survives.
+
+Every figure above was measured in a rendered browser against a console on a spare
+port, the way `tests/js/contrast-dom.js` is driven. `tests/test_console_geometry.py`
+is the CI half and reads declarations only — the weaker claim, and the one that would
+have caught all four of the drifts that were found here, each of which was written
+into the sheet rather than composited on the way to the screen.
 
 Literal identity/status hue disjointness holds and is tested. §1.1 above is about
 perceptual distance, which is a different measurement and is not asserted anywhere.
