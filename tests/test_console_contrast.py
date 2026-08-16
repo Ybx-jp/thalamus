@@ -143,8 +143,11 @@ def test_the_identity_palette_is_legible_in_both_roles():
 
     Asserted against the palette constant rather than a rendered page: the set is
     closed, so this is complete without a browser, and it fails the day someone
-    widens the palette — which is a live prospect, since the roster has seven expert
-    scopes and the luminance budget fits six.
+    widens the palette — which is a live prospect, since the roster has nine expert
+    scopes, the palette holds six hues, and the luminance budget fits six.
+
+    Legibility is all this asserts. It says nothing about whether two scopes get the
+    same hue, and today five of the nine do.
     """
     tokens = _tokens()
     for name, hue in sorted(_palette().items()):

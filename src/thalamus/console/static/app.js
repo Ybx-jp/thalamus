@@ -1529,13 +1529,23 @@ function sessionRow(r, now, graceS) {
   // same word — the row would be asserting a start time nobody recorded. A record
   // that outlived its window identifies itself by directory instead, and its timing
   // is already in the slot or the band.
+  // Qualifier order is the spec's, not this file's convenience: `viewing` first
+  // (§4.1b — "a line-2 qualifier, first in that lane"), then `old posture`,
+  // `anchor`, `cwd_label`, and `#index` last since it appears on collision only
+  // (§3). The lane reads most-about-you to least, so the fact the operator is
+  // standing in comes before the facts about the window's configuration.
+  //
+  // `◈ room` is not in §3's enumeration — the spec predates the room badge on the
+  // row. Placed after the enumerated set rather than inside it, so the spec's own
+  // order stays readable against this code and a later ruling can slot it without
+  // disturbing anything above.
   if (w && w.started) bits.push(`opened ${fmtOpened(w.started)}`);
   else if (d && d.dir) bits.push(d.dir);
-  if (r.showIndex) bits.push(`#${w.index}`);
-  if (r.showCwd && src.cwd_label) bits.push(src.cwd_label);
   if (w && w.index === activeIdx) bits.push("viewing");
-  if (w && w.anchor) bits.push("anchor");
   if (w && w.policy_stale) bits.push("old posture");
+  if (w && w.anchor) bits.push("anchor");
+  if (r.showCwd && src.cwd_label) bits.push(src.cwd_label);
+  if (r.showIndex) bits.push(`#${w.index}`);
   if (w && w.room) bits.push(`◈ ${w.room}`);
   line2.textContent = bits.join(" · ");
   row.appendChild(line2);
@@ -2590,7 +2600,7 @@ loadVoice();
 // requests whenever a poll outran its own interval; a self-scheduling chain can't.
 // The next tick is armed from a single completion callback once the data has landed
 // — never by chaining the promise back into poll() itself, which is the shape that
-// starved the event loop in 8b483c0. The floor is 100ms of real network work, so
+// starved the event loop. The floor is 100ms of real network work, so
 // there is no microtask-starvation path here.
 let pollTimer = null;
 let pollInFlight = false;
