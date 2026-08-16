@@ -532,10 +532,12 @@ behavior, which is qe's invariant question rather than this one's.
 **Boundaries against the neighbours.** A structural property that should hold
 permanently and be checked is an invariant, and belongs to `qe` — which is where the
 extractor's own acceptance test lives, as a hand-counted edge list over a five-module
-fixture (`tests/qe/cases/arch_extractor.py`). A performance claim
-that needs a control or a statistic to mean anything belongs to eval-methodology.
-What is left — the judgement about whether a shape is right, and the memory of every
-shape this codebase has been — is this scope.
+fixture (`tests/qe/cases/arch_extractor.py`). A model's own training, decode and
+serving path belongs to `dl`, which also holds the experimental design of that work;
+what stays here on a shared box is contention and the host — the resource a number
+was taken under rather than the model that produced it. What is left — the judgement
+about whether a shape is right, and the memory of every shape this codebase has
+been — is this scope.
 
 **Null hypothesis** ("`/code-review` and `/simplify` already do this; `main` can
 refactor") fails on the 50-session test more clearly than any other candidate here:

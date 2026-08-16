@@ -22,9 +22,11 @@ domain: >-
   improvement. Judgement is portable across projects; structural depth is per-repo.
   Writes its own changes in pinned campaign sessions, and is consulted from feature
   sessions rather than pinned for them. Where a structural property should hold
-  permanently and be checked, that is an invariant and belongs to qe; where a
-  performance claim needs a control or a statistic to mean anything, that belongs
-  to eval-methodology.
+  permanently and be checked, that is an invariant and belongs to qe. A model's own
+  training, decode and serving path — its quantization, KV-cache, batching and
+  throughput — belongs to dl, and this scope does not reach into it; what remains
+  here on a shared box is contention and the host, which is the resource a number
+  was taken under rather than the model that produced it.
 
 # Origin tier for INGESTED content (docs/05). Architecture literature is tier 2
 # forever. Distillation from pinned campaign sessions writes tier-1 episodic.

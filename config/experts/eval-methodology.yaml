@@ -9,10 +9,12 @@ contract: v0
 scope: eval-methodology
 name: Evaluation methodology
 domain: >-
-  Evaluation of ML and agent systems: metrics design, LLM-as-judge and its
+  Evaluation of agent and LLM systems: metrics design, LLM-as-judge and its
   meta-evaluation, ablation and counterfactual design, calibration and
   measurement reliability — the through-line across the operator's projects,
-  and the eval loop's own methodology consultant.
+  and the eval loop's own methodology consultant. The experimental design of a
+  model's own training and serving work — its ablations, controls and run-to-run
+  significance — is held by dl alongside the runs it interprets.
 
 # Origin tier of everything this expert's feeds write (docs/05). Methodology
 # papers are tier 2 forever, same as any literature.
