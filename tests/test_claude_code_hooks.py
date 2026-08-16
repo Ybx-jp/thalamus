@@ -559,13 +559,13 @@ class TestTranscriptlessSessionsAreNotDistilled:
         assert "thalamus extract" in argv_log.read_text()
 
 
-def _run_conditioning(payload, home):
+def _run_conditioning(payload, home, **env):
     return subprocess.run(
         [str(HOOKS / "conditioning.sh")],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
-        env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin"},
+        env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin", **env},
         timeout=30,
     )
 
@@ -625,6 +625,69 @@ def test_falsify_ignores_tools_that_are_not_the_ad_hoc_surface(tmp_path):
         payload["tool_name"] = tool
         assert _run_conditioning(payload, tmp_path).stdout.strip() == ""
     assert _firings(tmp_path, "falsify") == []
+
+
+def _roster(tmp_path, *scopes):
+    """A manifest directory this test owns, returned as a THALAMUS_CONFIG_DIR value."""
+    experts = tmp_path / "config" / "experts"
+    experts.mkdir(parents=True, exist_ok=True)
+    for scope in scopes:
+        (experts / f"{scope}.yaml").write_text(f"scope: {scope}\n")
+    return str(tmp_path / "config")
+
+
+def _design_prompt(session_id):
+    return {
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": session_id,
+        "prompt": "let's build a repair loop for extraction failures",
+    }
+
+
+def test_design_class_names_the_roster_it_finds_on_disk(tmp_path):
+    """
+    Scenario: A `main` session asks a design-shaped question with four experts
+    on the roster.
+
+    Verifications:
+    - every scope with a manifest is offered, so adding an expert does not
+      require editing this hook — the enumerated subset it replaced named three
+      of nine and fired on every design-shaped prompt in every session
+    """
+    config = _roster(tmp_path, "architect", "dl", "literature", "qe")
+
+    out = _run_conditioning(
+        _design_prompt("s-design"), tmp_path, THALAMUS_CONFIG_DIR=config
+    ).stdout
+    context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+    assert "architect dl literature qe" in context
+    assert _firings(tmp_path, "design")[0]["scope"] == "main"
+
+
+def test_design_class_does_not_send_an_expert_session_to_consult_itself(tmp_path):
+    """
+    Scenario: The `dl` expert's own session asks a design-shaped question.
+
+    Verifications:
+    - the reminder names the pin and leaves the design inside it to the session
+    - `dl` is absent from the consult list; a fixed roster string advised every
+      expert to open a ticket against its own scope, which consultation.py
+      rejects outright
+    """
+    config = _roster(tmp_path, "architect", "dl", "qe")
+
+    out = _run_conditioning(
+        _design_prompt("s-design-dl"),
+        tmp_path,
+        THALAMUS_CONFIG_DIR=config,
+        CLAUDE_CODE_AGENT="thalamus-dl",
+    ).stdout
+    context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+    assert "pinned to `dl`" in context
+    assert "architect qe" in context
+    assert _firings(tmp_path, "design")[0]["scope"] == "dl"
 
 
 def test_milestone_class_survives_the_new_branch(tmp_path):
