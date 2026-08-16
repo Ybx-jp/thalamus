@@ -132,10 +132,16 @@ extraction. Say the thing in ordinary words, and cut what he did not ask about.
 
 ## Repo hygiene
 
-- **Commit by path, never `git add -A`.** Sessions run concurrently in this checkout
-  (roster pins, worktrees, a second terminal), so `-A` sweeps another session's
-  in-progress work into your commit. Check `git status` before staging and name the
-  files you changed.
+- **Work you intend to commit goes in your own worktree.** Sessions run concurrently
+  here — roster pins, a second terminal, the console's spawns — and a shared checkout
+  gives them one index, one HEAD, and one working tree between them: your `git add`
+  stages their half-finished file, their commit moves HEAD out from under your rebase.
+  A worktree is one call (`EnterWorktree`), and the session still distills under
+  `thalamus`: attribution takes the *first* cwd a transcript records, not the last
+  (`harness/transcripts.py`). Merge back when the work is done.
+- **Commit by path, never `git add -A`.** In the shared checkout `-A` sweeps another
+  session's in-progress work into your commit. Check `git status` before staging and
+  name the files you changed.
 - `.claude/skills/*` are **symlinks** into `src/thalamus/harness/skills/` — the skills
   ship with the package. Editing through the symlink works; `git add` on that path
   fails ("beyond a symbolic link"). Stage the real path under `src/`.
