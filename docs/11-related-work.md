@@ -955,11 +955,24 @@ normal.
 
 ### 3g. How a consulted expert should research before answering
 
-Grounded via consultations `scope:main:exchange:a12621a46784423b` (literature, 68
-validated citations) and `scope:main:exchange:0ae516858adb4b31` (eval-methodology, 39).
-The question: the *asking* side of a consultation had a documented methodology while
-the answering subagent had three sentences of mechanics, so the research procedure
-shipped in the ticket is the missing half (`02 §The ticket protocol`).
+Grounded via consultations `scope:main:exchange:a12621a46784423b` (literature round 1,
+68 validated citations), `scope:main:exchange:048ebe2bb6284f71` (literature round 2, a
+critique of the drafted artifact, 48) and `scope:main:exchange:0ae516858adb4b31`
+(eval-methodology, 39). The question: the *asking* side of a consultation had a
+documented methodology while the answering subagent had three sentences of mechanics,
+so the research procedure shipped in the ticket is the missing half
+(`02 §The ticket protocol`).
+
+**Retrieval is not the endpoint.** The first draft was five steps of retrieval
+instruction, and this scope holds a direct counterexample to that premise: 1-hop graph
+expansion raised retrieval recall from 25.8% to 71.8% on LoCoMo10 with no corresponding
+gain in final answer accuracy (`scope:literature:claim:a299603ef8a0345f`). A reading
+step was added on that basis. Two drafted steps were cut as unsupported rather than
+trimmed for length — an agent's self-report of "not in the corpus" vs "I asked wrong"
+(verbalized self-report about retrieval state measures worse than the state itself, and
+the ~69% write-time-loss base rate makes the coverage answer right often enough to look
+calibrated while carrying no information), and a dry-round stopping test (yield decays
+rather than plateaus, so the curve never flattens).
 
 **What is measured.** MAST (arXiv 2503.13657) ran the head-to-head between the two
 available shapes: a verification *section in the prompt* significantly beat baseline
@@ -968,9 +981,14 @@ text in the ticket is the grounded medium, not a fallback. MAST also splits fail
 fatality: not knowing when to stop appears almost exclusively in failed runs, while
 missing or incorrect verification occurs frequently in successful ones too, which is
 what puts the stopping rule ahead of the self-check. Decomposed verification beats a
-single holistic pass (arXiv 2601.15808, ingested for this consultation), and that
-paper's own scaling curve peaks early in the feedback rounds — a bounded loop, not an
-open one.
+single holistic pass (arXiv 2601.15808, ingested for this consultation) — and the
+load-bearing part is its ablation rather than its headline: removing decomposition made
+the judge re-solve whole tasks and repeat the original agent's reasoning errors, which
+is precisely the failure a self-check is meant to catch. Its test-time result is stated
+on closed backbones used as-is, so it is a prompt-level finding; the fine-tuned
+DeepVerifier-8B exists to bring open models to the same place, and is downstream of the
+result rather than its basis. That paper's scaling curve also decays fast across
+feedback rounds, which is what bounds the loop.
 
 **What the design gives up on evidence.** A sufficiency gate was rejected, not
 omitted: an LLM evidence-sufficiency check on a memory-retrieval pipeline cost ~19pp

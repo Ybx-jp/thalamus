@@ -79,38 +79,57 @@ _BRIEF_EXCHANGES = 8
 # design was retrieval direction, not credulous reading. "Be skeptical" would not have
 # found BudgetMem; one opposing query would have.
 #
+# Step 4 exists because retrieval instructions were nearly the whole procedure and
+# there is a counterexample to their premise in the corpus they run over: 1-hop
+# expansion lifted recall 25.8% -> 71.8% with no gain in answer accuracy
+# (`scope:literature:claim:a299603ef8a0345f`). Recall is not the endpoint; reading is.
+#
+# Two things were tried and cut, and should not come back without new evidence. Asking
+# the expert to rule "coverage gap" vs "I asked wrong" (step 1): verbalized self-report
+# about retrieval state is measurably worse than the state itself, the default on an
+# empty result is to over-declare absence, and a ~69% write-time-loss base rate makes
+# "coverage gap" right often enough to look calibrated while carrying no information —
+# hence the verbatim query log instead. And a dry-round stopping test: yield decays
+# rather than plateaus, so the curve never goes flat, and a round returning
+# novel-but-irrelevant material is not dry precisely when stopping matters most.
+#
 # Length is a real cost — every token here rides every later call in the answering
 # context — so this stays a procedure and never becomes an essay.
 _RESEARCH_PROTOCOL = """\
 ## How to research this
 
-You are answering out of a corpus whose shape you cannot see. Spend the effort on
-finding, not on doubting.
+You are answering out of a corpus whose shape you cannot see. Retrieving more of it is
+not the same as answering better: one measured pipeline lifted retrieval recall from
+25.8% to 71.8% and gained nothing in answer accuracy. Retrieve deliberately, then read
+what came back.
 
 1. **Recall more than once, and reformulate on a miss.** Your first query is written
    in the asker's vocabulary, not your corpus's. When a recall returns nothing, ask
-   again in the terms your own claims use before concluding anything — then say which
-   you concluded. "My scope holds nothing on this" is a coverage gap the operator can
-   close by ingesting; "I asked wrong" is not, and the two are not distinguishable
-   from the outside.
+   again in the terms your own claims use. Report the queries you tried, verbatim —
+   do not rule on whether the gap was the corpus or your phrasing. That judgement is
+   unreliable from the inside, and the query log lets the operator make it instead.
 2. **Run the query that would refute the asker.** Not "stay open to objections" —
    issue the opposing query by name. The framing you were handed primes the terms you
    would search anyway; deliberately pick the ones that would surface the paper that
    kills it. An objection sitting unretrieved in your own scope is the measured way
    these go wrong (lab/025).
-3. **An elision notice is an unread result.** "N more claims did not match" is a
-   thread to pull, not a footnote.
-4. **Stop on a dry round, not on a full context.** Keep recalling until a round
-   surfaces nothing you have not already seen, then stop and name what you would
-   still want. Do not gate the answer on feeling sufficiently informed — answer with
-   what you have and mark what is thin.
-5. **Check the answer in parts, not as a whole.** Decomposed verification beats one
-   holistic pass (arXiv 2601.15808). Three checks, each against the draft:
-   - Does every load-bearing sentence cite a node you actually retrieved?
+3. **Stop after a few rounds, not when you feel informed.** Novelty per round decays
+   fast while the cost of dragging in near-miss material does not — and near-miss
+   material is the kind that hurts an answer. Two to four rounds, then stop and name
+   what you would still want.
+4. **Read what you retrieved.** A ranked list is not evidence until it is opened: the
+   brief serves exchange *headers*, and recall elides ("N more claims did not
+   match"). Before a node carries a sentence in your answer, open it and read the
+   body. Fewer nodes read properly beat more nodes skimmed.
+5. **Check the answer in parts.** Decomposition is what stops a checker from re-running
+   the reasoning that produced the answer — removing it made one judge re-solve whole
+   tasks and repeat the original agent's errors (arXiv 2601.15808). Three checks, each
+   a re-read of the cited node, not an introspection:
+   - Open each load-bearing citation again: does it say what your sentence says?
    - Does any citation carry more weight than its source states?
-   - Is anything written as measured that was only argued? Say which of the three a
-     claim is: what a source measured, what follows from its argument but was never
-     measured, or what you infer from this system's own situation.
+   - Is anything written as measured that was only argued? Say which a claim is: what
+     a source measured, what follows from its argument but was never measured, or what
+     you infer from this system's own situation.
 
 Answer as this expert, from this scope's memory. Where you do not hold the evidence,
 name the paper or system and the question it would settle — that list is what makes

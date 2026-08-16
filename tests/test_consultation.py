@@ -647,9 +647,21 @@ def test_the_ticket_carries_the_research_protocol_the_subagent_works_from(monkey
       fatality: not knowing when to stop appears almost exclusively in failed runs,
       where missing verification occurs in successful ones too, so the order is the
       finding rather than a preference (arXiv 2503.13657).
-    - no sufficiency gate. "Decide whether you have enough before answering" was
-      measured at ~19pp of answerable accuracy for ~59% refusal, so its absence is
-      deliberate and a later edit must not quietly add it back.
+    - a reading step. Five of six steps directed retrieval, and the corpus they run
+      over holds a counterexample to the premise: 1-hop expansion lifted recall
+      25.8% -> 71.8% with no gain in answer accuracy
+      (`scope:literature:claim:a299603ef8a0345f`). Recall is not the endpoint.
+
+    Three things must NOT come back without new evidence, so they are pinned as
+    absences rather than left to a future reader's judgement:
+    - a sufficiency gate ("decide whether you have enough before answering"), measured
+      at ~19pp of answerable accuracy for ~59% refusal;
+    - the expert ruling on whether a miss was coverage or phrasing — self-report about
+      retrieval state is measurably worse than the state itself, and the verbatim
+      query log replaced it;
+    - a dry-round stopping test, which fails exactly when stopping matters: yield
+      decays rather than plateaus, and a round of novel-but-irrelevant material is
+      not dry.
     """
     _stub_manifests(monkeypatch)
     _stub_brief(monkeypatch)
@@ -658,12 +670,17 @@ def test_the_ticket_carries_the_research_protocol_the_subagent_works_from(monkey
     result = consult_request(graph, "literature", "How is provenance floored?", "main")
 
     assert "## How to research this" in result
-    stop = result.index("Stop on a dry round")
+    stop = result.index("Stop after a few rounds")
     check = result.index("Check the answer in parts")
     assert stop < check, "the stopping rule must precede the self-check"
     assert "reformulate on a miss" in result
     assert "refute the asker" in result
-    assert "Do not gate the answer on feeling sufficiently informed" in result
+    assert "Read what you retrieved" in result
+    assert "Report the queries you tried, verbatim" in result
+
+    assert "dry round" not in result
+    assert "sufficiently informed" not in result
+    assert "coverage gap" not in result
 
 
 def test_the_exchange_records_which_research_procedure_it_served(monkeypatch):

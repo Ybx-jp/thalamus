@@ -164,17 +164,27 @@ Mechanics, in the order a consultation runs:
 
    The ticket carries the **research protocol** the subagent works from
    (`_RESEARCH_PROTOCOL`), below the rule and alongside the brief: recall more than
-   once and reformulate on a miss, run the query that would refute the asker, treat an
-   elision notice as an unread result, stop on a dry round, and check the draft in
-   parts. It is text in the ticket rather than a verifier stage because that is the
-   comparison that has been run — a verification section in the prompt beat baseline
-   where a Solver/Coder/Verifier topology did not (MAST, arXiv 2503.13657). The
-   ordering carries a finding too: the stopping rule precedes the self-check because
-   not knowing when to stop appears almost exclusively in *failed* runs, while missing
-   verification is common in successful ones. There is deliberately **no sufficiency
-   gate** — "decide whether you have enough before answering" was measured at ~19pp of
-   answerable accuracy for ~59% refusal, so the expert answers with what it has and
-   marks what is thin.
+   once and reformulate on a miss, run the query that would refute the asker, stop
+   after a few rounds, read what was retrieved, and check the draft in parts. It is
+   text in the ticket rather than a verifier stage because that is the comparison that
+   has been run — a verification section in the prompt beat baseline where a
+   Solver/Coder/Verifier topology did not (MAST, arXiv 2503.13657). The ordering
+   carries a finding too: the stopping rule precedes the self-check because not
+   knowing when to stop appears almost exclusively in *failed* runs, while missing
+   verification is common in successful ones.
+
+   **Retrieval is not the endpoint, which is why there is a reading step.** In this
+   scope's own corpus, 1-hop expansion lifted retrieval recall from 25.8% to 71.8%
+   and gained nothing in answer accuracy
+   (`scope:literature:claim:a299603ef8a0345f`) — so a procedure made entirely of
+   retrieval instructions optimises the half that was not the bottleneck. Three things
+   are deliberately absent and should not return without new evidence: a **sufficiency
+   gate** (~19pp of answerable accuracy for ~59% refusal), the expert **ruling on
+   whether a miss was coverage or phrasing** (self-report about retrieval state is
+   measurably worse than the state itself, so it reports the queries it tried
+   verbatim and the operator rules), and a **dry-round stopping test** (yield decays
+   rather than plateaus, and a round of novel-but-irrelevant material is not dry
+   exactly when stopping matters).
 
    The Exchange records `research_protocol`, a content hash of the procedure that
    ticket actually served (empty on the quick tier, which serves none). A prompt that
