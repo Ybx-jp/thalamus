@@ -434,6 +434,32 @@ loginctl enable-linger $USER     # so it survives logout / starts at boot
 `inactive` while the console is plainly serving, and `restart` hangs asking for a
 root password it will never get.
 
+### Merging is not deploying
+
+The unit runs `.venv/bin/thalamus` out of `%h/code/thalamus`, and that venv is an
+editable install: the console serves `src/thalamus/console/` **from the shared
+checkout's working tree**, whatever branch it happens to be sitting on. Merging a PR
+to `master` on GitHub changes nothing the phone can see. Two steps put merged work
+on the surface:
+
+```bash
+git -C ~/code/thalamus checkout master && git -C ~/code/thalamus pull
+systemctl --user restart thalamus-console
+```
+
+Both are needed and they cover different halves. The checkout is what updates
+`static/` — `app.js`, `style.css`, `index.html` are read from disk per request, so
+the client half goes live the moment the files change. The restart is what updates
+`server.py`: the Python is loaded once at process start, so a merged API change is
+invisible until the unit recycles no matter how current the tree is. A client built
+against a server field the running process does not return renders as *nothing
+happened*.
+
+Check both before diagnosing anything else — `git -C ~/code/thalamus log --oneline -1`
+against `origin/master`, and the unit's `Active:` timestamp against the merge time.
+The service worker is not a suspect: the shell is fetched network-first, so a
+reload always takes the newest files the server hands out.
+
 ### The voice unit
 
 `say` needs a second unit. It holds a neural TTS model resident and answers on
