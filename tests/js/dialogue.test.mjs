@@ -223,6 +223,7 @@ suite("rows: the client renders liveness, it does not decide it");
     extractFunction("renderRail", src),
     extractFunction("renderRoster", src),
     extractFunction("groupHeader", src),
+    extractFunction("modeControl", src),
   ].join("\n");
   const rowCode = guard("a row renderer", rowSource);
 

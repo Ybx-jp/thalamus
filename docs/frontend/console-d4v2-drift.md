@@ -15,7 +15,7 @@ Measurements are from this box and are dated where a later change could move the
 
 ## 1. Open questions for the designer
 
-Three things here are not the implementer's to close. Each changes what the surface
+Four things here are not the implementer's to close. Each changes what the surface
 *means* rather than how it is drawn.
 
 ### 1.1 The identity palette does not identify
@@ -112,6 +112,41 @@ disagreeing about the same sessions, which is the defect the spec opens by namin
 three lists that disagree, replaced by one row per session. Whichever way this is
 ruled, both surfaces take the same answer.
 
+### 1.4 The permission-mode ladder does not match the modes that exist
+
+§5.2 specifies a segmented picker over `manual｜acceptEdits｜auto`, where selecting a
+segment presses `BTab` k times to walk there. Both halves are contradicted by the
+data. Counted over every permission-mode record in `~/.claude/projects` on this box,
+2026-08-16:
+
+| value | records | on §5.2's ladder |
+|---|---|---|
+| `auto` | 3649 | yes |
+| `default` | 2255 | **no** |
+| `dontAsk` | 194 | **no** |
+| `bypassPermissions` | 98 | excluded by decision-log |
+| `acceptEdits` | 4 | yes |
+| `plan` | 1 | **no** |
+| `manual` | **0** | yes |
+
+`manual` is not a value this system produces. A segment labelled `manual` could never
+match a readback, so its confirmed outcome is unreachable and it would sit in
+`could not confirm` forever. `default` is presumably the mode it means, but that
+substitution is a claim about what the word denotes, not a rename.
+
+The order is not recoverable either. Across the explicit change records `default` is
+followed by both `auto` and `plan`, and `auto` by both `acceptEdits` and `default` —
+because most records are launch-time sets rather than keypresses. So the cycle's
+length and sequence are unknown, and k is not computable from anything we hold.
+
+**Why it is not closed at the keyboard:** which modes are on the ladder decides what
+the control can express, and one of them is `bypassPermissions`, which §5.2 excludes
+by name — a cycle-only mechanism can still walk a session into it, and the readback
+then reports it rather than preventing it. Picking the membership, and picking a word
+for the mode the transcripts call `default`, are both claims about what the surface
+means. The same question decides whether the session view's raw `mode` keycap should
+survive alongside a mode control, or whether one affordance replaces the other.
+
 ---
 
 ## 2. Specified and never built
@@ -132,19 +167,31 @@ of which 23,058 is `lines`**, **uncompressed at every layer**, at a 1.2 s poll.
 Dropping `lines` once nothing reads it leaves 2,061. At nine windows the payload is
 one `capture-pane` subprocess per window per poll.
 
-### 2.2 All of §5, permission mode
+### 2.2 §5.2's segmented picker
 
-No `permission_mode` consumer exists in the client. The server serves both fields
-§5.1 requires on `/api/read`: `permission_mode`, and `permission_mode_read`
-(`server.PERMISSION_MODE_READ`) on every response the endpoint can return, so §5.2's
-third outcome — *"cannot read this session's mode"* — is expressible and nothing
-draws it yet.
+The rest of §5 is built. The opened row draws the session's mode
+(`app.js:modeControl`), fed by an on-demand `/api/read` fired when the row opens and
+never by the poll, as §5.1 requires. The server serves both fields on every response
+the endpoint can return (`server.PERMISSION_MODE_READ`), so all three of §5.2's
+outcomes are drawn: `awaiting readback` outlined while a press is outstanding,
+`could not confirm — mode unchanged on screen?` after five readbacks, and `cannot read
+this session's mode (<reason>)` when the read status is not `ok`.
 
-What ships instead is the raw `mode` keycap (`index.html:184`) sending `shift-tab`.
-There is no segmented picker, no `cycle mode` degradation, no `awaiting readback`
-state, and no readback loop — so the control fires blind, which is the problem §5.2
-was written to solve: the keycap **cycles**, and you cannot know how many presses you
-need without knowing where you are.
+The **picker** is not built, and the reason is a measurement — see open question §1.4.
+What ships is §5.2's own degraded branch, the single control that advances one step,
+"which is exactly what the hardware does".
+
+The `mode` keycap (`index.html:184`) still sends raw `shift-tab` in the session view.
+It is left alone: that bar is a terminal keyboard, the key does what the key does, and
+the readback loop has no meaning for a raw keystroke. Whether one mode affordance
+should exist rather than two is part of §1.4.
+
+**On-demand does not mean cheap, and the request is shaped for it.** `/api/read`
+serves 60 transcript items on a cold open. The mode fetch passes a `since` past any
+real `seq` so the envelope comes back without them: measured on this box,
+2026-08-16, **34,229 bytes against 210** on the longest-running window. Reading one
+standing string should not cost a transcript, which is the same argument §5.1 makes
+against putting mode on the poll.
 
 ---
 
