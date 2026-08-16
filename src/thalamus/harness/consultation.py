@@ -23,6 +23,7 @@ is a memory write channel, and the contract gates it where it writes.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from datetime import datetime, timezone
@@ -114,6 +115,17 @@ finding, not on doubting.
 Answer as this expert, from this scope's memory. Where you do not hold the evidence,
 name the paper or system and the question it would settle — that list is what makes
 the next round worth running."""
+
+
+def _protocol_fingerprint(protocol: str) -> str:
+    """Short content hash of the research procedure a ticket served, or empty.
+
+    Hashed rather than versioned by hand: a version number is a second thing to
+    remember to change, and the one that gets forgotten is the edit that mattered.
+    """
+    if protocol != "ticket":
+        return ""
+    return hashlib.sha256(_RESEARCH_PROTOCOL.encode()).hexdigest()[:12]
 
 
 def mint_ticket() -> str:
@@ -234,6 +246,17 @@ def open_exchange(
             # *question*: a quick exchange can still settle a design, and the
             # readiness check must still fire when it does.
             "protocol": protocol,
+            # Which research procedure the answering subagent was working from, as a
+            # content hash of the text actually served (empty on the quick tier, which
+            # serves no brief and no procedure).
+            #
+            # Recorded at mint because the alternative is what already happened once:
+            # the *asking* methodology has been revised continuously and nothing
+            # stamped which version produced which answer, so the entire pre-existing
+            # Exchange population is unusable as a control arm — the treatment moved
+            # under it and left no record. A prompt that will be edited needs its
+            # version on the row, or the first edit silently pools two treatments.
+            "research_protocol": _protocol_fingerprint(protocol),
             "scope": MAIN_SCOPE,
             "ts": now.isoformat(),
             "tier": int(provenance.tier),

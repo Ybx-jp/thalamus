@@ -176,6 +176,13 @@ Mechanics, in the order a consultation runs:
    answerable accuracy for ~59% refusal, so the expert answers with what it has and
    marks what is thin.
 
+   The Exchange records `research_protocol`, a content hash of the procedure that
+   ticket actually served (empty on the quick tier, which serves none). A prompt that
+   will be edited needs its version on the row: the *asking* methodology was revised
+   continuously with nothing recording which version produced which answer, which is
+   why the pre-existing Exchange population cannot serve as a control arm — the
+   treatment moved under it and left no record.
+
    **A ticket is a swap, not an additional door.** `_granted_scope` returns
    `(granted, [])` (`mcp_server.py:109`): under a ticket the ambient knowledge commons
    is *dropped*, and recall returns the consulted scope alone — its episodic memory

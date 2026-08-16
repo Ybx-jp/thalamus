@@ -28,6 +28,7 @@ from thalamus.harness.consultation import (
     consult_request,
     exchange_vid,
     extract_citations,
+    open_exchange,
     ticket_scope,
 )
 # --------------------------------------------------------------------------------------
@@ -663,3 +664,39 @@ def test_the_ticket_carries_the_research_protocol_the_subagent_works_from(monkey
     assert "reformulate on a miss" in result
     assert "refute the asker" in result
     assert "Do not gate the answer on feeling sufficiently informed" in result
+
+
+def test_the_exchange_records_which_research_procedure_it_served(monkeypatch):
+    """
+    Scenario: a full ticket and a quick one, minted against the same scope
+
+    The prompt shipped in the ticket will be edited. Without a version on the row,
+    the first edit pools two treatments into one population — which is exactly why
+    the pre-existing Exchange corpus is unusable as a control: the *asking*
+    methodology was revised continuously and nothing recorded which version produced
+    which answer. The quick tier serves no procedure and records none, so the field
+    separates "answered under procedure X" from "answered under no procedure".
+    """
+    _stub_manifests(monkeypatch)
+    _stub_brief(monkeypatch)
+    graph = FakeGraph()
+
+    consult_request(graph, "literature", "How is provenance floored?", "main")
+    stamped = graph.merged_vertices[0]["on_create"]["research_protocol"]
+
+    assert len(stamped) == 12
+    # The fingerprint tracks the text, so an edit to the procedure moves it.
+    import thalamus.harness.consultation as mod
+
+    monkeypatch.setattr(mod, "_RESEARCH_PROTOCOL", mod._RESEARCH_PROTOCOL + "\n6. New step.")
+    graph2 = FakeGraph()
+    consult_request(graph2, "literature", "How is provenance floored?", "main")
+
+    assert graph2.merged_vertices[0]["on_create"]["research_protocol"] != stamped
+
+    # The quick tier (harness/quick.py) serves no brief and no procedure, so it
+    # records none — an empty stamp is "answered under no procedure", not "unknown".
+    quick_graph = FakeGraph()
+    open_exchange(quick_graph, "literature", "q", "main", protocol="quick")
+
+    assert quick_graph.merged_vertices[0]["on_create"]["research_protocol"] == ""
