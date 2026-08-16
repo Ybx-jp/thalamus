@@ -580,8 +580,15 @@ roster (docs/08), via literature consultation `scope:main:exchange:7f953992f0c34
   (`scope:literature:claim:11750ab72cf137b8`), later extended to 1,642 traces across
   7 frameworks (`scope:literature:claim:81cbcfe73a0f48a5`). **FM 1.2 "Disobey Role
   Specification"** is a mode in its own right, and the repair that worked in the
-  studied system was structural authority — the CEO given final say, +9.4% task
-  success — not a better prompt (`scope:literature:claim:db0928fe2cfd3616`).
+  studied system gave the CEO final say, +9.4% task success
+  (`scope:literature:claim:db0928fe2cfd3616`). **That repair was implemented as a
+  role specification**, not against one: Appendix H describes it as "refining
+  role-specific prompts to enforce hierarchy and role adherence," and reports the
+  same +9.4% for improving agent role specifications alone, with the same user
+  prompt and LLM (`scope:literature:claim:88a0a8431c91e57e`). The two claims record
+  one result read two ways. What the paper measured is that a better-specified role
+  works — which is evidence for stating a role well, and none either way about
+  whether a hook should enforce it.
 - **The objection that governs the design.** At equal reasoning-token budget,
   single-agent systems match or outperform multi-agent across three model families
   (`scope:literature:claim:414011b1207b38ef`), with a Data Processing Inequality

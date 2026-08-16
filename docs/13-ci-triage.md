@@ -191,11 +191,15 @@ Three consequences for the build:
   bare python 15 ms, jq 3 ms. Testing the target *path* before resolving any scope keeps
   the entire fast path — the common case exits before the exemption is consulted.
 
-Enforcement is structural rather than prose because prose is the configuration measured
-failing: MAST names "Disobey Role Specification" as a distinct failure mode
-(`scope:literature:claim:d675b5b74b2cdd34`), and the repair that worked in the system it
-studied was structural authority, +9.4% task success
-(`scope:literature:claim:db0928fe2cfd3616`).
+Enforcement is structural rather than prose because a role stated only in prose can be
+read past by the session it binds, and this one guards a write path. MAST names "Disobey
+Role Specification" as a distinct failure mode, though at 1.5% prevalence against 11.8%
+for disobeying the *task* specification (`scope:literature:claim:d675b5b74b2cdd34`). Its
+ChatDev repair is not a warrant for choosing a hook over prose: the +9.4% it bought
+(`scope:literature:claim:db0928fe2cfd3616`) was obtained by refining role-specific
+prompts (`scope:literature:claim:88a0a8431c91e57e`) — a better specification, which is
+the option this paragraph is declining. The reason to enforce here is local: the guard
+is cheap, the write is not reversible by the party it binds, and a miss is silent.
 
 ## The ledger is the pointer; the report is conjecture
 

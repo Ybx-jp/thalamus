@@ -55,6 +55,20 @@ driven over HTTP — and are written up separately in
    inherits the deny instead of clearing it. Run `thalamus contract check --roster`
    after the manifest lands and read the row for your scope, because an inherited
    policy appears nowhere in the file you just wrote.
+2d. **If the scope is defined by what it is licensed to DECIDE, nothing in the
+   contract expresses that** — `write_boundary`, `capability_boundary` and
+   `PATH_OWNERSHIP` all deny, and there is no field meaning *this scope decides*.
+   Put the grant in `domain`, state it as a rule the session can apply (what is
+   closed here, what is returned, and to whom), and expect no enforcement. Do not
+   reach for a hook to simulate one: the MAST result often cited for "prose fails"
+   measured the opposite — its +9.4% came from refining role specifications
+   (`scope:literature:claim:88a0a8431c91e57e`). Where a grant has an exception list,
+   get it from the scope that LOSES the authority, not from the one gaining it, and
+   adopt it verbatim; `frontend`'s four returned classes came from `designer` under
+   ticket `8ba49ad61e5e4bdb`. A grant whose corpus is the record of what it decided
+   needs a write-back path — the reviewing scope's verdict lands on the record —
+   because the one measured precedent for that corpus shape (AWM) filters candidates
+   through an evaluator before writing them (`scope:frontend:source:4eaa3dcf1f7be0f7db3e4a7c7c7bdce52329ef8577ce44564acc610b97c357d9`).
 3. **Anchor the scope if it must be consultable now** — a scope with nothing to
    cite refuses the consultation mint (docs/02). Procure anchors *into the new
    scope* (docs/06 rule 1's scope note), `--feed` named for the demand, and

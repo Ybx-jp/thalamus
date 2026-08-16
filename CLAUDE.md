@@ -82,6 +82,29 @@ so the doc and the memory stay in step.
   `thalamus thread approve <id>` asks for a decision on an unreadable subject. The id
   alone is not the report; it is only the command's argument.
 
+## Commit messages, PRs, and anything else published
+
+**Describe the change and its impact. Do not editorialize, and never grade the
+operator's decisions in a public space.** A commit message and a PR body are
+technical records with an audience that did not sit through the session: what
+changed, what it affects, what a reader has to do differently, what is still
+unbuilt. They are not a narrative of how the work went, who was persuaded, which
+argument won, or what the evidence "does not support." Verdict framing — *the case
+was unbeaten*, *this cuts against the proposal*, *one killed a scope*, *ships
+flagged*, *reads backwards* — is the tell. Cut it.
+
+This does **not** license omission, which would be the opposite failure. Constraints,
+counter-evidence, refused alternatives and known gaps stay in, stated as facts with
+their numbers — "the write-back is not built; AWM's result is conditional on it"
+carries the same information as a paragraph about whose objection it was, and is the
+version that belongs in a PR. Report a finding, not a judgement about whose finding
+it was, and never one about whether the operator should have decided differently.
+
+The same applies to any surface outside this session — issue and Linear text, review
+comments, published artifacts, anything addressed past the operator. Analysis,
+recommendations, and disagreement belong in the conversation, where they were asked
+for.
+
 ## Repo hygiene
 
 - **Commit by path, never `git add -A`.** Sessions run concurrently in this checkout

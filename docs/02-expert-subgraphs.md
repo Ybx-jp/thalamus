@@ -530,11 +530,18 @@ directions.
 
 ## Roster discipline
 
-- The roster ([08](08-roster-candidates.md) records each selection) is seven scopes:
+- The roster ([08](08-roster-candidates.md) records each selection) is nine scopes:
   **technical-literature**, **evaluation-methodology**, **homelab**, **teacher**,
-  **qe**, **designer**, **architect**. The second expert was the point: it proved
-  the contract. Two proves N — the manifest was the whole rollout, and it has stayed
-  that way for every expert since.
+  **qe**, **designer**, **architect**, **frontend**, **dl**. The second expert was
+  the point: it proved the contract. Two proves N — the manifest was the whole
+  rollout, and it has stayed that way for every expert since.
+- **A scope may be defined by a grant rather than a deny, and the contract cannot
+  express one.** `write_boundary`, `capability_boundary` and `PATH_OWNERSHIP` all
+  deny; there is no field meaning *this scope decides*. `frontend` is defined by
+  standing to close specification gaps without escalating, so that property lives in
+  its `domain` and nothing enforces it. This is the position MAST actually supports:
+  the ChatDev repair worth +9.4% was a refined role specification
+  (`scope:literature:claim:88a0a8431c91e57e`), not a constraint imposed over one.
 - New experts must justify themselves against the null hypothesis of "just put it in
   an existing expert." The eval loop arbitrates: if a candidate domain's retrievals
   don't cluster, it isn't an expert.

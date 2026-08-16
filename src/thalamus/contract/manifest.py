@@ -28,12 +28,25 @@ _DEFAULT_CONFIG = Path(__file__).resolve().parents[3] / "config"
 class WriteBoundary(BaseModel):
     """Paths a scope's own sessions may not edit — the role boundary made structural.
 
-    A role boundary stated only in `domain` prose is the configuration that was
-    measured failing: MAST names "Disobey Role Specification" as a distinct failure
-    mode, and the repair that worked in the studied system was structural authority
-    rather than a better prompt (`scope:literature:claim:db0928fe2cfd3616`). This
-    field is the structure — declared tier-0 beside the rest of the contract,
-    enforced by the `role-guard` PreToolUse hook.
+    MAST names "Disobey Role Specification" as a distinct failure mode, at 1.5%
+    prevalence against 11.8% for disobeying the *task* specification
+    (`scope:literature:claim:d675b5b74b2cdd34`). Its ChatDev repair is **not** a
+    warrant for preferring a hook to prose, and was read that way here until
+    2026-08-15: the +9.4% (`scope:literature:claim:db0928fe2cfd3616`) came from
+    "refining role-specific prompts to enforce hierarchy and role adherence," and the
+    paper reports the same figure for improving role specifications alone, with the
+    same user prompt and model (`scope:literature:claim:88a0a8431c91e57e`). A
+    well-stated role is what that study measured working.
+
+    The warrant for this field is first-party instead, and narrower: a `domain`
+    paragraph is advisory to the session it binds, and the scope most likely to read
+    past it is the one whose charter the boundary contradicts. Measured over 1,132
+    subagent tool calls, environment-only scope resolution named the right scope 6.4%
+    of the time — a boundary nobody can resolve is not a boundary. This field is
+    declared tier-0 beside the rest of the contract and enforced by the `role-guard`
+    PreToolUse hook, as defence in depth over the `domain` statement, never instead
+    of it. A scope whose defining property is a *grant* rather than a deny has no
+    field here at all and states it in `domain` (`frontend`).
 
     Patterns match the **absolute** POSIX path of the file being written, via
     `fnmatch`, so `*` crosses `/`: `*.py` denies every Python file anywhere, and
@@ -70,9 +83,9 @@ class WriteBoundary(BaseModel):
 class CapabilityBoundary(BaseModel):
     """Tools and named skills a scope's sessions may not invoke.
 
-    The same structural answer as `WriteBoundary` to the same measured failure
-    (`scope:literature:claim:db0928fe2cfd3616`), applied to capability rather than
-    to path. It instantiates what the Agentverse gap analysis names as two High
+    The same structural answer as `WriteBoundary`, on the same warrant recorded
+    there, applied to capability rather than to path. It instantiates what the
+    Agentverse gap analysis names as two High
     gaps in agent platforms — no capability permissions (cloud analogue: IAM
     least-privilege) and no policy engine (cloud analogue: org SCPs), arXiv
     2606.20570 — for one roster rather than for a platform.
