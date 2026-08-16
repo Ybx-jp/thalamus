@@ -213,10 +213,30 @@ def refuse_reason(expert: str, question: str, from_scope: str) -> str | None:
     """
     if not question.strip():
         return "Consultation refused: the question is empty."
-    if expert == from_scope:
+    if expert == from_scope and question_kind(question) != "design":
+        # Self-consultation is allowed, but not as a way of looking something up.
+        #
+        # What a self-ticket buys is an independent pass — a subagent with a fresh
+        # context, a brief assembled against the question, a forced cited close, and a
+        # recorded exchange. What it emphatically does NOT buy is retrieval reach: the
+        # granted scope is the one the asker already reads ambiently, and a ticket
+        # *drops* the knowledge commons (`mcp_server._granted_scope` returns
+        # `(granted, [])`), so it can only narrow. For a lookup, the ticket is pure
+        # cost and plain recall strictly dominates it — "recall wearing a costume" is
+        # exactly right for that half, which is why that half stays refused.
+        #
+        # The gate is `question_kind`, a keyword regex, so an expert that writes
+        # "design" into a lookup gets through. That is accepted on the standing trade
+        # (lab/008): this stops the reflexive case — self-ticketing every question by
+        # habit — and a wall that provoked route-arounds would cost more than the gap.
+        # A server-side check of whether the asker had already retrieved is not
+        # available: the MCP server cannot see its caller's session (lab/001).
         return (
-            f"Consultation refused: `{expert}` is this session's own pinned scope — "
-            "consult a *different* expert, or just recall."
+            f"Consultation refused: `{expert}` is this session's own scope, and this "
+            "question does not read as design work. A self-consultation buys an "
+            "independent pass over your own memory, not reach into it — the ticket "
+            "grants the scope you already read and drops the knowledge commons, so "
+            "for a lookup it is strictly worse than recalling. Just recall."
         )
     if expert not in available_scopes():
         known = ", ".join(s for s in available_scopes() if s != from_scope) or "(none)"
@@ -325,18 +345,43 @@ def consult_request(
     )
 
     brief = "\n\n".join(brief_sections)
+    # On a self-consultation the ticket is not a retrieval handle and passing it to a
+    # recall tool actively costs: the grant is the scope the subagent already reads,
+    # and a ticketed read drops the knowledge commons alongside it
+    # (`mcp_server._granted_scope`). So the retrieval line is inverted rather than
+    # repeated — the same sentence would send the subagent to narrow itself.
+    retrieval_step = (
+        "2. The subagent should recall **without** the ticket. This is your own "
+        "scope: you already read it ambiently, and passing a ticket would grant "
+        "that same scope while dropping every other expert's knowledge — strictly "
+        "less than you have now. The ticket is for the close, not for reading."
+        if expert == from_scope
+        else "2. The subagent may retrieve more of the expert's memory by passing "
+        f'`ticket="{ticket}"` to the memory_recall* tools.'
+    )
     return "\n".join(
         [
             f"## Consultation ticket `{ticket}` (exchange `{vertex_id}`)",
             f"**Expert:** {manifest.name} (scope `{expert}`) — {manifest.domain.strip()}",
             f"**Question:** {question}",
             "",
+            *(
+                [
+                    "**This is a self-consultation.** What it buys is an independent "
+                    "pass: a subagent with a fresh context, a brief assembled against "
+                    "the question, a forced cited close, and a recorded exchange. It "
+                    "buys no reach you do not already have, and its answer corroborates "
+                    "nothing — one memory agreeing with itself is not a second source.",
+                    "",
+                ]
+                if expert == from_scope
+                else []
+            ),
             "The exchange record is open in the graph. Protocol:",
             "1. Spawn a subagent that answers *as this expert*, giving it everything "
             "below the line — the research protocol and the brief — plus the question "
             "and the ticket.",
-            "2. The subagent may retrieve more of the expert's memory by passing "
-            f'`ticket="{ticket}"` to the memory_recall* tools.',
+            retrieval_step,
             "3. The subagent MUST close the exchange with "
             f'`consult_answer(ticket="{ticket}", answer=...)`, citing the graph nodes '
             "its answer rests on as backticked vertex IDs. Uncited answers are "

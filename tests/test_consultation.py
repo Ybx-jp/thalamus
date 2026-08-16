@@ -273,21 +273,56 @@ def test_refusal_distinguishes_no_match_from_empty_scope(monkeypatch):
     assert graph.merged_vertices == []
 
 
-def test_self_consultation_unknown_experts_and_empty_questions_are_refused(monkeypatch):
+def test_unknown_experts_and_empty_questions_are_refused(monkeypatch):
     """
-    Scenario: The model asks for its own scope, a scope with no manifest, and
-    nothing at all
+    Scenario: The model asks for a scope with no manifest, and for nothing at all
 
-    The manifest set is the roster (docs/01): no manifest, no expert. Consulting
-    yourself is just recall wearing a costume.
+    The manifest set is the roster (docs/01): no manifest, no expert.
     """
     _stub_manifests(monkeypatch)
     graph = FakeGraph()
 
-    assert "refused" in consult_request(graph, "main", "q", "main").lower()
     assert "refused" in consult_request(graph, "phantom", "q", "main").lower()
     assert "refused" in consult_request(graph, "literature", "  ", "main").lower()
     assert graph.merged_vertices == []
+
+
+def test_a_self_consultation_is_refused_for_a_lookup_and_allowed_for_design(monkeypatch):
+    """
+    Scenario: the literature scope tickets itself, once with a lookup and once with
+    a design question
+
+    A self-ticket buys an independent pass — fresh context, a brief built against the
+    question, a forced cited close, a recorded exchange — and buys no retrieval reach
+    whatever: the grant is the scope the asker already reads, and a ticketed read
+    *drops* the knowledge commons (`mcp_server._granted_scope` returns `(granted,
+    [])`). So for a lookup, plain recall strictly dominates it and the refusal stands;
+    for design work, the independence is the point.
+
+    The gate is `question_kind`, a keyword regex, so writing "design" into a lookup
+    gets through. It stops the reflexive case, not a determined one — the standing
+    lab/008 trade, and the server cannot check whether the asker already retrieved
+    because it cannot see its caller's session (lab/001).
+    """
+    _stub_manifests(monkeypatch)
+    _stub_brief(monkeypatch)
+    graph = FakeGraph()
+
+    lookup = consult_request(graph, "literature", "what is the tier of X?", "literature")
+    assert "refused" in lookup.lower()
+    assert "just recall" in lookup.lower()
+    assert graph.merged_vertices == []
+
+    designed = consult_request(
+        graph, "literature", "design a chunking schema for this scope", "literature"
+    )
+    assert "refused" not in designed.lower()
+    assert "This is a self-consultation." in designed
+    # The retrieval line must be inverted, not repeated: telling a self-consulting
+    # subagent to pass the ticket to recall would send it to narrow itself.
+    assert "recall **without** the ticket" in designed
+    assert "corroborates\nnothing" in designed or "corroborates nothing" in designed
+    assert len(graph.merged_vertices) == 1
 
 
 # --------------------------------------------------------------------------------------

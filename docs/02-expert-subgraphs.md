@@ -186,6 +186,23 @@ Mechanics, in the order a consultation runs:
    rather than plateaus, and a round of novel-but-irrelevant material is not dry
    exactly when stopping matters).
 
+   **A scope may ticket itself, for design work only.** A self-consultation buys an
+   independent pass — a subagent with a fresh context, a brief assembled against the
+   question, a forced cited close, a recorded exchange — and buys **no retrieval reach
+   at all**: the grant is the scope the asker already reads ambiently, and a ticketed
+   read *drops* the knowledge commons alongside it (`_granted_scope` returns
+   `(granted, [])`). So a self-ticket can only narrow what the subagent sees, which is
+   why its protocol line is inverted — the subagent is told to recall **without** the
+   ticket, and the ticket is for the close alone. For a lookup, plain recall strictly
+   dominates it and the mint is refused; a self-ticket must not become a way of
+   retrieving. The gate is `question_kind`, the same keyword classifier used for the
+   readiness signal, so it stops the reflexive case rather than a determined one — a
+   server-side check of whether the asker had already retrieved is not available,
+   since the MCP server cannot see its caller's session (lab/001). An answer from
+   one's own scope also **corroborates nothing**: one memory agreeing with itself is
+   not a second source, the same reason a fork's agreement with its parent carries no
+   weight.
+
    The Exchange records `research_protocol`, a content hash of the procedure that
    ticket actually served (empty on the quick tier, which serves none). A prompt that
    will be edited needs its version on the row: the *asking* methodology was revised
