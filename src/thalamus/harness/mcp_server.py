@@ -97,6 +97,19 @@ record_ranker(ranker_fingerprint())
 mcp = FastMCP("thalamus")
 
 
+# Ticketed recalls this process has actually served, per ticket. Counted where the
+# grant is resolved, which is the only place a ticketed read can pass through, so it
+# records what happened rather than what an answer claims — the principle
+# `quick.count_fresh_recalls` already states for the other tier ("cannot be satisfied
+# by claiming to have recalled").
+#
+# Process-local on purpose. The alternative is a graph write per recall, which prices
+# a counter like evidence; and the failure mode of losing it is bounded — a server
+# restart mid-consultation makes a self-consultation's close ask for one more recall,
+# which is recoverable and says so.
+_TICKETED_RECALLS: dict[str, int] = {}
+
+
 def _granted_scope(g, ticket: str) -> tuple[str, list[str]] | str:
     """Resolve which scope a call may read: the pin, or an open ticket's grant.
 
@@ -108,12 +121,22 @@ def _granted_scope(g, ticket: str) -> tuple[str, list[str]] | str:
     """
     if not ticket:
         return SCOPE, knowledge_scopes()
-    granted = consultation.ticket_scope(g, ticket)
-    if granted is None:
+    grant = consultation.ticket_grant(g, ticket)
+    if grant is None:
         return (
             f"Ticket `{ticket}` grants nothing: it was never minted or is already "
             "burned. Mint a consultation with consult_request."
         )
+    granted, asked_by = grant
+    _TICKETED_RECALLS[ticket] = _TICKETED_RECALLS.get(ticket, 0) + 1
+    if granted == asked_by:
+        # A self-consultation. The trade a ticket normally makes — breadth for depth —
+        # has nothing to trade here: the granted scope is the asker's own, which it
+        # already reads ambiently, so dropping the commons would leave a ticketed
+        # recall strictly poorer than an unticketed one and make the ticket a reason
+        # to read less. The commons is kept, which is what lets the close require
+        # that retrieval actually happened under the ticket (consult_answer).
+        return granted, knowledge_scopes()
     return granted, []
 
 
@@ -347,7 +370,9 @@ def consult_answer(ticket: str, answer: str) -> str:
     if isinstance(g, str):
         return g
     try:
-        return consultation.consult_answer(g, ticket, answer)
+        return consultation.consult_answer(
+            g, ticket, answer, ticketed_recalls=_TICKETED_RECALLS.get(ticket, 0)
+        )
     finally:
         _close(g)
 

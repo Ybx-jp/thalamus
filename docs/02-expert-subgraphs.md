@@ -163,9 +163,10 @@ Mechanics, in the order a consultation runs:
    fails closed. Grants are per-exchange and non-transitive (depth 1, as designed).
 
    The ticket carries the **research protocol** the subagent works from
-   (`_RESEARCH_PROTOCOL`), below the rule and alongside the brief: recall more than
-   once and reformulate on a miss, run the query that would refute the asker, stop
-   after a few rounds, read what was retrieved, and check the draft in parts. It is
+   (`_RESEARCH_PROTOCOL`), below the rule and alongside the brief: split the question
+   and query per part, run the query that would refute the asker, stop when the rounds
+   stop paying, read what was retrieved, and check against the running system before
+   checking the draft in parts. It is
    text in the ticket rather than a verifier stage because that is the comparison that
    has been run — a verification section in the prompt beat baseline where a
    Solver/Coder/Verifier topology did not (MAST, arXiv 2503.13657). The ordering
@@ -186,22 +187,28 @@ Mechanics, in the order a consultation runs:
    rather than plateaus, and a round of novel-but-irrelevant material is not dry
    exactly when stopping matters).
 
-   **A scope may ticket itself, for design work only.** A self-consultation buys an
-   independent pass — a subagent with a fresh context, a brief assembled against the
-   question, a forced cited close, a recorded exchange — and buys **no retrieval reach
-   at all**: the grant is the scope the asker already reads ambiently, and a ticketed
-   read *drops* the knowledge commons alongside it (`_granted_scope` returns
-   `(granted, [])`). So a self-ticket can only narrow what the subagent sees, which is
-   why its protocol line is inverted — the subagent is told to recall **without** the
-   ticket, and the ticket is for the close alone. For a lookup, plain recall strictly
-   dominates it and the mint is refused; a self-ticket must not become a way of
-   retrieving. The gate is `question_kind`, the same keyword classifier used for the
-   readiness signal, so it stops the reflexive case rather than a determined one — a
-   server-side check of whether the asker had already retrieved is not available,
-   since the MCP server cannot see its caller's session (lab/001). An answer from
-   one's own scope also **corroborates nothing**: one memory agreeing with itself is
-   not a second source, the same reason a fork's agreement with its parent carries no
-   weight.
+   **A scope may ticket itself, and must retrieve to close.** A self-consultation buys
+   an independent pass — a subagent with a fresh context, a brief assembled against the
+   question, a forced cited close, a recorded exchange — and buys no reach the asker
+   did not already have. It must never become a way of *not* retrieving, and that is
+   enforced at the close: `consult_answer` rejects a self-consultation the server
+   served no ticketed read for. The check reads what was served rather than what the
+   answer asserts, so it cannot be satisfied by rewording — the same principle
+   `quick.count_fresh_recalls` states for the other tier.
+
+   That gate is what makes the grant asymmetric. A ticket normally trades breadth for
+   depth, dropping the knowledge commons so a grant is not transitive; on a self-ticket
+   the granted scope is the asker's own, so there is no breadth to trade and dropping
+   the commons would make a ticketed read strictly poorer than an ambient one — a
+   reason to read less. `_granted_scope` therefore keeps the commons when the reader
+   *is* the granted scope, and the self-consultation protocol requires the ticketed
+   recall rather than merely permitting it. Note this also means a properly voiced
+   cross-expert subagent gains episodic reach from its ticket only because it is
+   pinned elsewhere; the depth-for-breadth trade is real for a `main`-pinned reader.
+
+   An answer from one's own scope **corroborates nothing**: one memory agreeing with
+   itself is not a second source, the same reason a fork's agreement with its parent
+   carries no weight.
 
    The Exchange records `research_protocol`, a content hash of the procedure that
    ticket actually served (empty on the quick tier, which serves none). A prompt that

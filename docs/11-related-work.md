@@ -963,16 +963,37 @@ documented methodology while the answering subagent had three sentences of mecha
 so the research procedure shipped in the ticket is the missing half
 (`02 §The ticket protocol`).
 
-**Retrieval is not the endpoint.** The first draft was five steps of retrieval
-instruction, and this scope holds a direct counterexample to that premise: 1-hop graph
-expansion raised retrieval recall from 25.8% to 71.8% on LoCoMo10 with no corresponding
-gain in final answer accuracy (`scope:literature:claim:a299603ef8a0345f`). A reading
-step was added on that basis. Two drafted steps were cut as unsupported rather than
-trimmed for length — an agent's self-report of "not in the corpus" vs "I asked wrong"
-(verbalized self-report about retrieval state measures worse than the state itself, and
-the ~69% write-time-loss base rate makes the coverage answer right often enough to look
-calibrated while carrying no information), and a dry-round stopping test (yield decays
-rather than plateaus, so the curve never flattens).
+**Retrieval is necessary and not sufficient.** The first draft was five steps of
+retrieval instruction. Two results bound it from opposite sides: correct retrieval is
+required for a correct answer in ~90% of LongMemEval instances
+(`scope:literature:claim:04e87d5036bc2956`), while 1-hop graph expansion raised recall
+from 25.8% to 71.8% on LoCoMo10 with no gain in answer accuracy
+(`scope:literature:claim:a299603ef8a0345f`) — because the retrieved unit was lossy.
+They reconcile as necessary-but-not-sufficient, and the discriminator is whether what
+came back is faithful evidence, which is a reading question rather than a ranking one.
+Hence a reading step, and a check against the running system: memory records what was
+true when written, and across three rounds of this consultation the round that checked
+a claim against the code was worth more than the round that recalled harder.
+
+Three drafted steps were cut as unsupported rather than trimmed for length: an agent's
+self-report of "not in the corpus" vs "I asked wrong" (verbalized self-report about
+retrieval state measures worse than the state itself, and the ~69% write-time-loss base
+rate makes the coverage answer right often enough to look calibrated while carrying no
+information); a dry-round stopping test (yield decays rather than plateaus, so the curve
+never flattens); and a confidence-triggered retrieval rule ported from FLARE (arXiv
+2305.06983). The last is worth recording because the paper measured its own prose port
+failing: `FLARE_instruct` is why the authors built the confidence-based variant, its
+queries are reported as possibly unreliable, and a token's logit had to be raised by 2.0
+to make it fire. A written "retrieve when unsure" is that variant without the boost.
+What transfers is its next-sentence framing — write the query from the sentence you are
+about to defend, not from what you have already read.
+
+**Query decomposition, not reactive reformulation.** Self-Ask (arXiv 2210.03350) is the
+strongest baseline in FLARE's own comparison table — an adversarial source for it — and
+decomposes in a single forward pass, so it does not conflict with a round cap, though it
+moves the cap's unit from the question to the sub-question. Its measured strength is
+attributed to manually annotated exemplars, so the step carries a worked example: a bare
+imperative to decompose is the shape that failed rather than the shape that worked.
 
 **What is measured.** MAST (arXiv 2503.13657) ran the head-to-head between the two
 available shapes: a verification *section in the prompt* significantly beat baseline

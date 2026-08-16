@@ -287,42 +287,67 @@ def test_unknown_experts_and_empty_questions_are_refused(monkeypatch):
     assert graph.merged_vertices == []
 
 
-def test_a_self_consultation_is_refused_for_a_lookup_and_allowed_for_design(monkeypatch):
+def test_a_self_consultation_is_allowed_and_must_actually_retrieve(monkeypatch):
     """
-    Scenario: the literature scope tickets itself, once with a lookup and once with
-    a design question
+    Scenario: the literature scope tickets itself, then tries to close it — once
+    having recalled under the ticket, once not
 
-    A self-ticket buys an independent pass — fresh context, a brief built against the
-    question, a forced cited close, a recorded exchange — and buys no retrieval reach
-    whatever: the grant is the scope the asker already reads, and a ticketed read
-    *drops* the knowledge commons (`mcp_server._granted_scope` returns `(granted,
-    [])`). So for a lookup, plain recall strictly dominates it and the refusal stands;
-    for design work, the independence is the point.
+    A self-ticket buys an independent pass: fresh context, a brief built against the
+    question, a forced cited close, a recorded exchange. It buys no retrieval reach,
+    and its answer corroborates nothing — one memory agreeing with itself is not a
+    second source.
 
-    The gate is `question_kind`, a keyword regex, so writing "design" into a lookup
-    gets through. It stops the reflexive case, not a determined one — the standing
-    lab/008 trade, and the server cannot check whether the asker already retrieved
-    because it cannot see its caller's session (lab/001).
+    The operator's constraint is that it must never become a way of *not* retrieving,
+    and that is enforced at the close against reads the server actually served, not
+    against the question's wording. A lexical gate was tried and removed: it rested on
+    the false premise that the server cannot tell whether the asker retrieved (lab/001
+    says it cannot see the caller's *session id* — ticketed reads pass through
+    `_granted_scope` in the same process and were always countable), and it would have
+    refused honest lookups while admitting anything containing the word "schema".
     """
     _stub_manifests(monkeypatch)
     _stub_brief(monkeypatch)
     graph = FakeGraph()
 
-    lookup = consult_request(graph, "literature", "what is the tier of X?", "literature")
-    assert "refused" in lookup.lower()
-    assert "just recall" in lookup.lower()
-    assert graph.merged_vertices == []
+    minted = consult_request(graph, "literature", "what is the tier of X?", "literature")
+    assert minted.startswith("## Consultation ticket")  # minted, not refused
+    assert "This is a self-consultation." in minted
+    # The reads are required, so the instruction must not be the optional phrasing.
+    assert "MUST recall with" in minted
 
-    designed = consult_request(
-        graph, "literature", "design a chunking schema for this scope", "literature"
+    ticket = minted.split("`")[1]
+    graph.vertices[exchange_vid(ticket)] = {
+        "label": "Exchange",
+        "expert": "literature",
+        "from_scope": "literature",
+        "status": "open",
+    }
+    cited = "scope:literature:claim:abc123"
+    graph.vertices[cited] = {"label": "Claim", "description": "a claim"}
+
+    unretrieved = consult_answer(
+        graph, ticket, f"The answer, per `{cited}`.", ticketed_recalls=0
     )
-    assert "refused" not in designed.lower()
-    assert "This is a self-consultation." in designed
-    # The retrieval line must be inverted, not repeated: telling a self-consulting
-    # subagent to pass the ticket to recall would send it to narrow itself.
-    assert "recall **without** the ticket" in designed
-    assert "corroborates\nnothing" in designed or "corroborates nothing" in designed
-    assert len(graph.merged_vertices) == 1
+    assert "Rejected" in unretrieved
+    assert "served no recall under it" in unretrieved
+    assert graph.vertices[exchange_vid(ticket)]["status"] == "open"
+
+    retrieved = consult_answer(
+        graph, ticket, f"The answer, per `{cited}`.", ticketed_recalls=3
+    )
+    assert "Rejected" not in retrieved
+
+
+def test_a_cross_expert_close_is_not_gated_on_ticketed_recalls(monkeypatch):
+    """A voiced subagent is pinned to the consulted scope and reads its episodic
+    memory ambiently, so the ticket adds reach only for a reader that is not the
+    expert. Gating those closes would reject correct answers."""
+    _stub_manifests(monkeypatch)
+    graph, cited = _open_exchange_graph()
+
+    result = consult_answer(graph, "t1", f"Per `{cited}`.", ticketed_recalls=0)
+
+    assert "Rejected" not in result
 
 
 # --------------------------------------------------------------------------------------
@@ -705,17 +730,24 @@ def test_the_ticket_carries_the_research_protocol_the_subagent_works_from(monkey
     result = consult_request(graph, "literature", "How is provenance floored?", "main")
 
     assert "## How to research this" in result
-    stop = result.index("Stop after a few rounds")
-    check = result.index("Check the answer in parts")
+    stop = result.index("Stop when the rounds stop paying")
+    check = result.index("Check against the running system")
     assert stop < check, "the stopping rule must precede the self-check"
-    assert "reformulate on a miss" in result
+    assert "Split the question, then query per part" in result
     assert "refute the asker" in result
     assert "Read what you retrieved" in result
-    assert "Report the queries you tried, verbatim" in result
+    assert "do not rule on whether the gap was the corpus" in result
+    # The decomposition step's measured strength came from worked exemplars, so a bare
+    # imperative is the shape that failed. One example is load-bearing, not decoration.
+    assert "becomes one query for" in result
+    # Restores the operative half of the re-read check: an unquotable citation is a
+    # memory of the node, not the node.
+    assert "quote the clause" in result
 
     assert "dry round" not in result
     assert "sufficiently informed" not in result
     assert "coverage gap" not in result
+    assert "skimmed" not in result  # volume is not the harm; near-miss is
 
 
 def test_the_exchange_records_which_research_procedure_it_served(monkeypatch):

@@ -79,53 +79,71 @@ _BRIEF_EXCHANGES = 8
 # design was retrieval direction, not credulous reading. "Be skeptical" would not have
 # found BudgetMem; one opposing query would have.
 #
-# Step 4 exists because retrieval instructions were nearly the whole procedure and
-# there is a counterexample to their premise in the corpus they run over: 1-hop
-# expansion lifted recall 25.8% -> 71.8% with no gain in answer accuracy
-# (`scope:literature:claim:a299603ef8a0345f`). Recall is not the endpoint; reading is.
+# Steps 4 and 5 exist because retrieval instructions were nearly the whole procedure.
+# Recall is necessary — required for a correct answer in ~90% of cases — and not
+# sufficient: 1-hop expansion lifted recall 25.8% -> 71.8% with no accuracy gain
+# (`scope:literature:claim:a299603ef8a0345f`), because the retrieved unit was lossy.
+# The two reconcile as necessary-but-not-sufficient, and the discriminator is whether
+# what came back is faithful evidence — which is a reading question, not a ranking one.
+# Step 5 leads with the running system because memory records what was true when
+# written, and every round of this consultation that checked a claim against the code
+# beat the round that recalled harder.
 #
-# Two things were tried and cut, and should not come back without new evidence. Asking
-# the expert to rule "coverage gap" vs "I asked wrong" (step 1): verbalized self-report
-# about retrieval state is measurably worse than the state itself, the default on an
-# empty result is to over-declare absence, and a ~69% write-time-loss base rate makes
-# "coverage gap" right often enough to look calibrated while carrying no information —
-# hence the verbatim query log instead. And a dry-round stopping test: yield decays
-# rather than plateaus, so the curve never goes flat, and a round returning
-# novel-but-irrelevant material is not dry precisely when stopping matters most.
+# Step 1 plans queries per sub-question rather than reformulating reactively:
+# question decomposition is the strongest baseline in the comparison that beat it,
+# and its measured strength came from worked exemplars, so the step carries one — a
+# bare imperative to decompose is the shape that failed, not the shape that worked.
+#
+# Cut, and not to be restored without new evidence:
+#   - The expert ruling "coverage gap" vs "I asked wrong". Verbalized self-report about
+#     retrieval state measures worse than the state itself, the default on an empty
+#     result is to over-declare absence, and a ~69% write-time-loss base rate makes the
+#     coverage answer right often enough to look calibrated while carrying nothing.
+#   - A dry-round stopping test. Yield decays rather than plateaus, so the curve never
+#     goes flat, and a round of novel-but-irrelevant material is not dry precisely when
+#     stopping matters most.
+#   - A confidence-triggered retrieval rule ported from FLARE. Its own prompt-level
+#     variant is why the authors built the confidence-based one: they report its queries
+#     may be unreliable and had to raise a token's logit by 2.0 to make it fire at all.
+#     A written "retrieve when unsure" is that variant without the logit boost. What
+#     survives the port is the next-sentence framing now in step 1.
 #
 # Length is a real cost — every token here rides every later call in the answering
 # context — so this stays a procedure and never becomes an essay.
 _RESEARCH_PROTOCOL = """\
 ## How to research this
 
-You are answering out of a corpus whose shape you cannot see. Retrieving more of it is
-not the same as answering better: one measured pipeline lifted retrieval recall from
-25.8% to 71.8% and gained nothing in answer accuracy. Retrieve deliberately, then read
-what came back.
+You are answering out of a corpus whose shape you cannot see. Retrieval is necessary
+and not sufficient — required for a correct answer in ~90% of cases, yet one pipeline
+lifted recall 25.8%→71.8% and gained no accuracy, because what it pulled was lossy.
+Retrieve deliberately, then read what came back.
 
-1. **Recall more than once, and reformulate on a miss.** Your first query is written
-   in the asker's vocabulary, not your corpus's. When a recall returns nothing, ask
-   again in the terms your own claims use. Report the queries you tried, verbatim —
-   do not rule on whether the gap was the corpus or your phrasing. That judgement is
-   unreliable from the inside, and the query log lets the operator make it instead.
+1. **Split the question, then query per part.** Decomposition before answering is the
+   strongest retrieval strategy measured; models hold the parts and fail to compose
+   them. "Does X hold under Y, and what did we measure?" becomes one query for X's
+   mechanism, one for Y's conditions, one for the measurement. Write each query from
+   the sentence you are about to have to defend, not from the question as handed to
+   you, and keep it short — both are measured, and both cut the other way from
+   instinct. Reformulate a miss in the terms your own claims use, and report the
+   queries you tried verbatim; do not rule on whether the gap was the corpus or your
+   phrasing, because that judgement is unreliable from the inside.
 2. **Run the query that would refute the asker.** Not "stay open to objections" —
    issue the opposing query by name. The framing you were handed primes the terms you
-   would search anyway; deliberately pick the ones that would surface the paper that
-   kills it. An objection sitting unretrieved in your own scope is the measured way
-   these go wrong (lab/025).
-3. **Stop after a few rounds, not when you feel informed.** Novelty per round decays
-   fast while the cost of dragging in near-miss material does not — and near-miss
-   material is the kind that hurts an answer. Two to four rounds, then stop and name
-   what you would still want.
+   would search anyway; pick the ones that would surface the paper that kills it. An
+   objection sitting unretrieved in your own scope is the measured failure (lab/025).
+3. **Stop when the rounds stop paying.** Novelty per round decays fast while the risk
+   of dragging in near-miss material does not, and near-miss is what hurts. Budget a
+   few rounds per sub-question, then stop and name what you would still want.
 4. **Read what you retrieved.** A ranked list is not evidence until it is opened: the
-   brief serves exchange *headers*, and recall elides ("N more claims did not
-   match"). Before a node carries a sentence in your answer, open it and read the
-   body. Fewer nodes read properly beat more nodes skimmed.
-5. **Check the answer in parts.** Decomposition is what stops a checker from re-running
-   the reasoning that produced the answer — removing it made one judge re-solve whole
-   tasks and repeat the original agent's errors (arXiv 2601.15808). Three checks, each
-   a re-read of the cited node, not an introspection:
-   - Open each load-bearing citation again: does it say what your sentence says?
+   brief serves exchange *headers*, and recall elides ("N more claims did not match").
+   An unopened node is where a near-miss gets mistaken for support.
+5. **Check against the running system, then check the answer in parts.** Memory records
+   what was true when written; the code, the graph and the tests say what is true now,
+   so check any claim about this system against them. Then verify in pieces rather than
+   in one pass — collapsing the check let one judge re-solve whole tasks and repeat the
+   original agent's errors (arXiv 2601.15808). Each is a re-read, not an introspection:
+   - Open each load-bearing citation and **quote the clause** you rest on. If you
+     cannot quote it, you are citing a memory of the node, not the node.
    - Does any citation carry more weight than its source states?
    - Is anything written as measured that was only argued? Say which a claim is: what
      a source measured, what follows from its argument but was never measured, or what
@@ -188,10 +206,24 @@ def ticket_scope(g: GraphTraversalSource, ticket: str) -> str | None:
     A burned ticket grants nothing — single-use means one answer closes both the
     exchange and the retrieval grant that came with it.
     """
+    granted = ticket_grant(g, ticket)
+    return granted[0] if granted else None
+
+
+def ticket_grant(g: GraphTraversalSource, ticket: str) -> tuple[str, str] | None:
+    """`(consulted scope, asking scope)` for an open ticket, or None.
+
+    The asking half is what separates a self-consultation from a cross-expert one,
+    and the two must not read alike: a ticket normally trades breadth for depth (the
+    knowledge commons is dropped so a grant is not transitive), but on a self-ticket
+    the granted scope is the asker's own, so there is no breadth to trade — dropping
+    the commons would leave the reader with strictly less than an unticketed recall.
+    """
     exchange = load_exchange(g, exchange_vid(ticket))
     if exchange is None or exchange.get("status") != "open":
         return None
-    return exchange.get("expert") or None
+    expert = exchange.get("expert") or ""
+    return (expert, exchange.get("from_scope") or "") if expert else None
 
 
 def extract_citations(answer: str) -> list[str]:
@@ -213,31 +245,18 @@ def refuse_reason(expert: str, question: str, from_scope: str) -> str | None:
     """
     if not question.strip():
         return "Consultation refused: the question is empty."
-    if expert == from_scope and question_kind(question) != "design":
-        # Self-consultation is allowed, but not as a way of looking something up.
-        #
-        # What a self-ticket buys is an independent pass — a subagent with a fresh
-        # context, a brief assembled against the question, a forced cited close, and a
-        # recorded exchange. What it emphatically does NOT buy is retrieval reach: the
-        # granted scope is the one the asker already reads ambiently, and a ticket
-        # *drops* the knowledge commons (`mcp_server._granted_scope` returns
-        # `(granted, [])`), so it can only narrow. For a lookup, the ticket is pure
-        # cost and plain recall strictly dominates it — "recall wearing a costume" is
-        # exactly right for that half, which is why that half stays refused.
-        #
-        # The gate is `question_kind`, a keyword regex, so an expert that writes
-        # "design" into a lookup gets through. That is accepted on the standing trade
-        # (lab/008): this stops the reflexive case — self-ticketing every question by
-        # habit — and a wall that provoked route-arounds would cost more than the gap.
-        # A server-side check of whether the asker had already retrieved is not
-        # available: the MCP server cannot see its caller's session (lab/001).
-        return (
-            f"Consultation refused: `{expert}` is this session's own scope, and this "
-            "question does not read as design work. A self-consultation buys an "
-            "independent pass over your own memory, not reach into it — the ticket "
-            "grants the scope you already read and drops the knowledge commons, so "
-            "for a lookup it is strictly worse than recalling. Just recall."
-        )
+    # Self-consultation is allowed on any question. The constraint it has to satisfy —
+    # that it never becomes a way of *not* retrieving — is enforced at the close
+    # (`consult_answer`), against the count of reads the server actually served under
+    # the ticket. That is the constraint as a mechanism: it lands where the cost is
+    # incurred, reads records rather than assertions, and cannot be reworded around.
+    #
+    # A lexical gate on the question was tried here first and removed. It rested on a
+    # false premise — that the server cannot tell whether the asker retrieved. lab/001
+    # says the server cannot see its caller's *session id*; ticketed reads pass through
+    # `_granted_scope` in this same process and were always countable. Gating on
+    # `question_kind` instead would have refused honest lookups and admitted any
+    # question containing the word "schema".
     if expert not in available_scopes():
         known = ", ".join(s for s in available_scopes() if s != from_scope) or "(none)"
         return f"Consultation refused: no expert manifest for `{expert}`. Available: {known}"
@@ -345,16 +364,15 @@ def consult_request(
     )
 
     brief = "\n\n".join(brief_sections)
-    # On a self-consultation the ticket is not a retrieval handle and passing it to a
-    # recall tool actively costs: the grant is the scope the subagent already reads,
-    # and a ticketed read drops the knowledge commons alongside it
-    # (`mcp_server._granted_scope`). So the retrieval line is inverted rather than
-    # repeated — the same sentence would send the subagent to narrow itself.
+    # A self-consultation's reads are required, not optional: the close refuses an
+    # answer the server served no ticketed recall for. `_granted_scope` keeps the
+    # knowledge commons on a self-ticket precisely so this costs nothing — otherwise
+    # the instruction would be telling the subagent to narrow itself.
     retrieval_step = (
-        "2. The subagent should recall **without** the ticket. This is your own "
-        "scope: you already read it ambiently, and passing a ticket would grant "
-        "that same scope while dropping every other expert's knowledge — strictly "
-        "less than you have now. The ticket is for the close, not for reading."
+        f'2. The subagent MUST recall with `ticket="{ticket}"` before answering — the '
+        "close is refused if the server served no read under it. On a self-ticket "
+        "this costs nothing: the grant keeps the knowledge commons rather than "
+        "trading it away, so a ticketed read is never poorer than an ambient one."
         if expert == from_scope
         else "2. The subagent may retrieve more of the expert's memory by passing "
         f'`ticket="{ticket}"` to the memory_recall* tools.'
@@ -371,7 +389,9 @@ def consult_request(
                     "pass: a subagent with a fresh context, a brief assembled against "
                     "the question, a forced cited close, and a recorded exchange. It "
                     "buys no reach you do not already have, and its answer corroborates "
-                    "nothing — one memory agreeing with itself is not a second source.",
+                    "nothing — one memory agreeing with itself is not a second source. "
+                    "It is also not a way of skipping the retrieval: the close checks "
+                    "that reads happened under this ticket.",
                     "",
                 ]
                 if expert == from_scope
@@ -400,13 +420,24 @@ def consult_request(
     )
 
 
-def consult_answer(g: GraphTraversalSource, ticket: str, answer: str) -> str:
+def consult_answer(
+    g: GraphTraversalSource,
+    ticket: str,
+    answer: str,
+    *,
+    ticketed_recalls: int | None = None,
+) -> str:
     """Validate and record the expert's answer — the only way an exchange closes.
 
     Citation validation is the docs/05 poisoning defense made mechanical: every cited
     vertex must exist inside the consulted scope, so advice that cannot be traced to
     the expert's own memory never becomes part of the record. Rejection leaves the
     ticket open for a corrected answer; success burns it.
+
+    `ticketed_recalls` is how many reads the server actually served under this ticket
+    (`mcp_server._TICKETED_RECALLS`); `None` means the caller does not track it, and
+    the check is skipped rather than failed. It gates self-consultations only — see
+    below.
     """
     exchange = load_exchange(g, exchange_vid(ticket))
     if exchange is None:
@@ -419,6 +450,30 @@ def consult_answer(g: GraphTraversalSource, ticket: str, answer: str) -> str:
         )
     if not answer.strip():
         return "Rejected: the answer is empty. The ticket stays open."
+
+    # A self-consultation must not become a way of *not* retrieving. Checked here, at
+    # the moment the cost is incurred, and against what the server served rather than
+    # what the answer asserts — so it cannot be satisfied by rewording, which is the
+    # whole failure of gating on the question's text instead.
+    #
+    # Self-consultations only. A cross-expert consultation legitimately closes without
+    # ticketed reads: the voiced subagent is pinned to the consulted scope and already
+    # reads its episodic memory ambiently, so the ticket adds reach only for a reader
+    # that is *not* the expert. Gating those would reject correct answers.
+    if (
+        ticketed_recalls == 0
+        and (exchange.get("expert") or "") == (exchange.get("from_scope") or "")
+    ):
+        return (
+            f"Rejected: ticket `{ticket}` is a self-consultation and the server "
+            "served no recall under it, so this answer was assembled without "
+            "revisiting the scope it claims to speak for. A self-consultation buys "
+            "an independent pass over your own memory — without the retrieval it is "
+            "the asking context answering itself with a citation gate attached. "
+            "Recall with this ticket, then answer. The ticket stays open.\n\n"
+            "(If a server restart lost the count, one fresh ticketed recall clears "
+            "this.)"
+        )
 
     expert = exchange.get("expert") or ""
     cited = extract_citations(answer)
