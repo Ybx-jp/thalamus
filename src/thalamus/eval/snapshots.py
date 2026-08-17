@@ -294,8 +294,29 @@ def restore(name: str, *, safety_pin: bool = True, url: str | None = None) -> Sn
     return row
 
 
+DOCKER_ABSENT = (
+    "`docker` is not on PATH. Snapshots are files inside the graph container and "
+    "every operation here goes through it — install Docker and bring the graph up "
+    "with `docker compose up -d`, then retry."
+)
+
+
+def _docker(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """`subprocess.run` for a docker command, with the absent client named.
+
+    Every call in this module drives the graph container, so `docker` missing is one
+    condition with one answer rather than nine bare tracebacks at nine call sites.
+    Same shape `eval/arms.py` uses for the confinement image: the refusal says what
+    is missing and what to run.
+    """
+    try:
+        return subprocess.run(command, **kwargs)
+    except FileNotFoundError as exc:
+        raise SnapshotError(DOCKER_ABSENT) from exc
+
+
 def _run_or_raise(command: list[str], message: str) -> None:
-    proc = subprocess.run(command, capture_output=True, text=True)
+    proc = _docker(command, capture_output=True, text=True)
     if proc.returncode != 0:
         raise SnapshotError(f"{message}: {proc.stderr.strip()[:200]}")
 
@@ -309,8 +330,8 @@ def _serve_path(name: str, path: str, digest: str, *, port: int = 8183, timeout:
     # name is not enough: the port, not the name, is what collides.
     _reap_snapshot_containers(port)
     container = f"thalamus-snapshot-{name}-{port}"
-    subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
-    proc = subprocess.run(
+    _docker(["docker", "rm", "-f", container], capture_output=True, check=False)
+    proc = _docker(
         [
             "docker", "run", "--rm", "-d", "--name", container,
             "-p", f"127.0.0.1:{port}:8182",
@@ -339,14 +360,14 @@ def _reap_snapshot_containers(port: int) -> None:
     is ours to clean up, while anything else on that port is someone else's process
     and the failure to bind is the correct outcome.
     """
-    listing = subprocess.run(
+    listing = _docker(
         ["docker", "ps", "--filter", "name=thalamus-snapshot-", "--format", "{{.Names}}\t{{.Ports}}"],
         capture_output=True, text=True,
     ).stdout
     for line in listing.splitlines():
         parts = line.split("\t")
         if len(parts) == 2 and f":{port}->" in parts[1]:
-            subprocess.run(["docker", "rm", "-f", parts[0]], capture_output=True, check=False)
+            _docker(["docker", "rm", "-f", parts[0]], capture_output=True, check=False)
 
 
 def _write_snapshot_conf(name: str, graph_location: str) -> Path:
@@ -418,20 +439,20 @@ def _wait_ready(url: str, container: str, timeout: int) -> None:
         last = (proc.stderr.strip().splitlines() or ["no output"])[-1][:200]
         time.sleep(2)
 
-    logs = subprocess.run(
+    logs = _docker(
         ["docker", "logs", "--tail", "20", container], capture_output=True, text=True
     ).stdout
     raise SnapshotError(f"snapshot server not ready in {timeout}s: {last}\n{logs}")
 
 
 def _file_exists(path: str) -> bool:
-    return subprocess.run(
+    return _docker(
         ["docker", "exec", CONTAINER, "test", "-f", path], capture_output=True
     ).returncode == 0
 
 
 def _sha256_and_size(path: str) -> tuple[str, int]:
-    proc = subprocess.run(
+    proc = _docker(
         ["docker", "exec", CONTAINER, "sh", "-c", f"sha256sum {path} && stat -c %s {path}"],
         capture_output=True, text=True,
     )

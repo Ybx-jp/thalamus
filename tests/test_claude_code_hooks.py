@@ -15,6 +15,8 @@ mirror of these checks lives in test_cursor_hooks.py.
 """
 
 import json
+import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -584,6 +586,108 @@ class TestTranscriptlessSessionsAreNotDistilled:
             time.sleep(0.2)
         assert argv_log.exists(), "a room session was skipped as transcriptless"
         assert "thalamus extract" in argv_log.read_text()
+
+
+class TestABinaryThatDisappearedAfterInstall:
+    """`thalamus init` verifies jq and uv once and nothing checks again.
+
+    Every hook parses its stdin with jq under `set -euo pipefail` and SessionEnd
+    shells out through uv, so a binary removed, moved off PATH or shadowed later
+    kills the hook on its first command — non-zero, with nothing on a surface the
+    operator reads. Distillation stops and memory quietly stops accumulating, which
+    is the same latent failure the installer exists to prevent, one step downstream.
+    """
+
+    FAILURE_LOG = Path(".thalamus") / "logs" / "hook-failures.log"
+
+    def _path_without(self, tmp_path, *keep):
+        """A PATH holding only `keep` — everything else is genuinely absent.
+
+        Not a stub that exits non-zero: the fault under test is `command -v` finding
+        nothing, and a shadowing stub would take a different branch of the shell.
+        """
+        bin_dir = tmp_path / "sparse-bin"
+        bin_dir.mkdir()
+        for name in keep:
+            (bin_dir / name).symlink_to(shutil.which(name))
+        return bin_dir
+
+    def _end_session(self, tmp_path, bin_dir):
+        return subprocess.run(
+            [str(HOOKS / "session-end.sh")],
+            input=json.dumps({"session_id": "starved-1", "cwd": str(tmp_path),
+                              "hook_event_name": "SessionEnd", "reason": "exit"}),
+            capture_output=True, text=True, timeout=30,
+            env={"HOME": str(tmp_path), "PATH": str(bin_dir), "THALAMUS_SCOPE": "main"},
+        )
+
+    def test_a_missing_jq_leaves_a_record_instead_of_dying_silently(self, tmp_path):
+        # `dirname` is used to source resolve-scope.sh and `mkdir` to make the log
+        # directory; both run before the check and are what it needs to report at all.
+        bin_dir = self._path_without(tmp_path, "dirname", "mkdir")
+        _transcript(tmp_path, tmp_path, "starved-1")
+
+        self._end_session(tmp_path, bin_dir)
+
+        record = tmp_path / self.FAILURE_LOG
+        assert record.exists(), "a session was lost with nothing written down"
+        line = record.read_text().strip()
+        assert "jq" in line and "uv" in line, line
+        assert "session-end.sh" in line, "the record must name the hook that died"
+        assert "not distilled" in line
+
+    def test_it_names_only_the_binary_that_is_actually_gone(self, tmp_path):
+        bin_dir = self._path_without(tmp_path, "dirname", "mkdir", "jq")
+
+        self._end_session(tmp_path, bin_dir)
+
+        line = (tmp_path / self.FAILURE_LOG).read_text()
+        assert "uv" in line and " jq" not in line, line
+
+    def test_the_record_is_dated_so_a_stall_can_be_placed_in_time(self, tmp_path):
+        """"Eleven sessions ended undistilled" is only actionable with when."""
+        bin_dir = self._path_without(tmp_path, "dirname", "mkdir")
+
+        self._end_session(tmp_path, bin_dir)
+
+        line = (tmp_path / self.FAILURE_LOG).read_text()
+        assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z ", line), line
+
+    def test_the_hook_still_exits_clean(self, tmp_path):
+        """A SessionEnd hook has no reader for its exit code, and a session that is
+        already over must not be handed an error it cannot act on."""
+        bin_dir = self._path_without(tmp_path, "dirname", "mkdir")
+
+        assert self._end_session(tmp_path, bin_dir).returncode == 0
+
+    def test_one_line_per_lost_session_so_the_count_is_the_count(self, tmp_path):
+        bin_dir = self._path_without(tmp_path, "dirname", "mkdir")
+
+        self._end_session(tmp_path, bin_dir)
+        self._end_session(tmp_path, bin_dir)
+
+        assert len((tmp_path / self.FAILURE_LOG).read_text().strip().splitlines()) == 2
+
+    def test_a_healthy_session_records_nothing(self, tmp_path):
+        """The check runs on every session end; it may cost nothing when all is well."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        stub = bin_dir / "uv"
+        stub.write_text("#!/bin/bash\ntrue\n")
+        stub.chmod(0o755)
+        _transcript(tmp_path, tmp_path, "healthy-1")
+
+        subprocess.run(
+            [str(HOOKS / "session-end.sh")],
+            input=json.dumps({"session_id": "healthy-1", "cwd": str(tmp_path),
+                              "hook_event_name": "SessionEnd", "reason": "exit"}),
+            capture_output=True, text=True, timeout=30,
+            env={"HOME": str(tmp_path),
+                 "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin",
+                 "THALAMUS_SCOPE": "main"},
+        )
+
+        assert not (tmp_path / self.FAILURE_LOG).exists()
 
 
 def _run_conditioning(payload, home, **env):

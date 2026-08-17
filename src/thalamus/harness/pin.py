@@ -1118,6 +1118,14 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
     The console server passes it: it drives a session by name and must not
     behave differently depending on whether the server process happens to have
     been started from inside a tmux of its own.
+
+    Every window this opens is held to its settle deadline, and a death raises
+    `WindowDied` naming the scopes that died and quoting what their panes printed.
+    One death does not abort the rest: with `full=True` the roster is one independent
+    window per manifest, and refusing to open the rest because an early one could not
+    start would turn a single broken scope into a roster that is not up. So all of
+    them are opened, all of them are confirmed, and the raise at the end carries
+    every failure — the survivors stay running and the exit code is still non-zero.
     """
     inside = bool(os.environ.get("TMUX")) and session is None
     if not (inside or shutil.which("tmux")):
@@ -1130,17 +1138,29 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
     room = _entered_room(room)
     room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
 
+    # (scope, window id) for every window this call created, in creation order.
+    # Confirmation is deferred to a second pass so the settle deadlines overlap:
+    # confirming inline would make an `--all` bring-up wait one settle per window,
+    # end to end, for a roster whose windows all came up at once.
+    created: list[tuple[str, str]] = []
+
     if target and subprocess.run(
         ["tmux", "has-session", "-t", target], capture_output=True
     ).returncode != 0:
         first = scopes.pop(0)
-        subprocess.run(
+        window_id = subprocess.run(
             ["tmux", "new-session", "-d", "-s", target,
-             "-n", first,
+             "-P", "-F", "#{window_id}", "-n", first,
              "-c", str(project_root), "-e", f"THALAMUS_SCOPE={first}", *room_flags,
              "--", *_with_room(_session_argv(first, project_root, base, room), room)],
-            check=True,
-        )
+            check=True, stdout=subprocess.PIPE, text=True,
+        ).stdout.strip()
+        # Held open from the moment the window exists rather than when its turn to be
+        # confirmed comes round: the deaths worth reading are exec failures at tens of
+        # milliseconds, and a pane reaped before the option is set leaves no corpse and
+        # so no epitaph — which is the whole thing the operator needs.
+        _set_remain_on_exit(window_id, "on")
+        created.append((first, window_id))
         _unleak_session_env(target, room)
 
     existing = _tmux_windows(target)
@@ -1148,11 +1168,35 @@ def roster(project_root: Path, base: Path | None = None, full: bool = False,
         if (scope, room) in existing:
             print(f"`{scope}`{_in_room(room)} already has a window — skipped")
             continue
-        _open_window(scope, _session_argv(scope, project_root, base, room), project_root,
-                     target, detached=True, room=room)
-        print(f"Pinned window `{scope}`{_in_room(room)} opened")
+        window_id = _open_window(scope, _session_argv(scope, project_root, base, room),
+                                 project_root, target, detached=True, room=room)
+        _set_remain_on_exit(window_id, "on")
+        created.append((scope, window_id))
 
     _pin_window_sizes(target)
 
-    if target:
+    # A clean return from tmux is not evidence that anything is running — `new-window`
+    # reports success once it has forked. Nothing said "opened" until the window has
+    # survived its harness's settle deadline.
+    died: list[str] = []
+    for scope, window_id in created:
+        try:
+            confirm_started(window_id)
+        except WindowDied as death:
+            died.append(f"`{scope}`{_in_room(room)}: {death}")
+        else:
+            print(f"Pinned window `{scope}`{_in_room(room)} opened")
+
+    # Asked of tmux rather than inferred: a dead window is killed on the way out, and
+    # killing the only window in a session ends the session. Claiming a roster to
+    # attach to when there is none is the failure this whole path is closing.
+    if target and subprocess.run(
+        ["tmux", "has-session", "-t", target], capture_output=True
+    ).returncode == 0:
         print(f"Roster running in tmux session `{target}` — attach with: tmux attach -t {target}")
+
+    if died:
+        raise WindowDied(
+            f"{len(died)} of {len(created)} roster window(s) did not start:\n  "
+            + "\n  ".join(died)
+        )

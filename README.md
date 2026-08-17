@@ -117,10 +117,13 @@ Two features are **experimental and off by default**, each behind a flag on
   held in an immutable content-addressed store outside the repo. The graph is a
   materialized view over that log: re-extract, never migrate.
 - **The expert roster** — each scope declared by a manifest in `config/experts/` and
-  nothing else. Four ship as examples; write a YAML file and you have a fifth.
+  nothing else. Five ship as examples; write a YAML file and you have a sixth.
 - **Structural role boundaries** — where a scope is defined by what it must *not*
   produce, its manifest declares a `write_boundary` and a PreToolUse hook enforces it
-  against the file-editing tools.
+  against the file-editing tools. The shipped `qe` manifest is the worked example: it
+  holds the adversarial suite and is denied `src/`, so the scope that asserts against
+  an implementation cannot quietly repair it. The reverse denial is in the ownership
+  table, so no other scope can soften what it asserts either.
 - **Session pinning** — one OS process, one immutable pin. The MCP server reads the
   scope from its environment at startup and no tool accepts a scope argument, so a
   model cannot widen its own view by asking.

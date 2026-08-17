@@ -33,6 +33,14 @@ import yaml
 from thalamus.arch.extractor import DependencyGraph, ExtractorPolicy
 from thalamus.arch.metrics import Metrics, measure
 
+# `src/thalamus/arch/model.py` -> parents[3] is the checkout root, the same anchor
+# every other repo-anchored module in the tree resolves from. `arch` measures the
+# repository, not whatever directory the operator happens to be standing in, so this
+# is what `--repo` defaults to and what `--repo` overrides.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Relative on purpose: callers join it to the repo under measurement, which `--repo`
+# can point at any checkout — a `diff` scans a temporary worktree of an older commit.
 MODEL_PATH = Path("arch") / "model.yaml"
 
 DERIVED_MARKER = (

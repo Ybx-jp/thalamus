@@ -23,6 +23,12 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
 thalamus_sandbox_guard
 
+# Distillation's two binaries, checked before anything uses them. Without this the
+# script dies on the first `jq` under `set -euo pipefail` and the session is lost in
+# silence; with it, the loss is a dated line in ~/.thalamus/logs/hook-failures.log
+# that `thalamus init --check` reads back.
+thalamus_require_binaries jq uv || exit 0
+
 input=$(cat)
 
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')

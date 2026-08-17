@@ -197,6 +197,51 @@ def test_a_window_that_survives_its_settle_is_reported_started(private_tmux, tmp
     assert shown.stdout.split() == ["remain-on-exit", "off"]
 
 
+def test_a_roster_window_that_cannot_exec_is_not_reported_as_a_roster(
+        private_tmux, tmp_path, monkeypatch):
+    """
+    Scenario: `thalamus roster` on a box with no `claude` — the reported bug
+
+    Verifications:
+    - the bring-up is a failure, and points at PATH
+    - the dead window is cleared, so nothing claims a roster is attachable
+    - no "Roster running in tmux session" line is printed
+
+    Driven through `roster_sync` because that is the surface the bug is worst on:
+    the console answered `{"ok": true}`, then drew its no-session screen telling
+    the operator to run the sync it had just told them worked.
+    """
+    monkeypatch.setenv("PATH", os.pathsep.join([str(private_tmux), "/usr/bin", "/bin"]))
+    cfg = Config(project_root=tmp_path, session="settle-roster")
+
+    ok, output = server.roster_sync(cfg)
+
+    assert ok is False
+    assert "PATH" in output
+    assert "Roster running" not in output
+    assert _windows("settle-roster") == []
+
+
+def test_a_roster_window_that_survives_its_settle_is_reported_started(private_tmux,
+                                                                     tmp_path):
+    """The other half: a roster whose anchor comes up reports success, keeps the
+    window, and turns `remain-on-exit` back off — the option is held only for the
+    settle, and a window that kept it would leave a corpse the console's close and
+    recycle paths read as a window still there."""
+    _fake_harness(private_tmux, "claude", "sleep 60")
+    cfg = Config(project_root=tmp_path, session="roster-live")
+
+    ok, output = server.roster_sync(cfg)
+
+    assert ok is True
+    assert "Roster running in tmux session `roster-live`" in output
+    live = [w for w in _windows("roster-live") if w.endswith(" 0")]
+    assert len(live) == 1
+    shown = subprocess.run(["tmux", "show-options", "-w", "-t", live[0].split()[0],
+                            "remain-on-exit"], capture_output=True, text=True)
+    assert shown.stdout.split() == ["remain-on-exit", "off"]
+
+
 def test_the_settle_window_is_per_harness_and_no_harness_gets_less():
     """
     Scenario: the settle policy read straight off the launch shapes
@@ -226,4 +271,5 @@ def test_pin_owns_the_confirmation_so_every_surface_gets_the_same_verdict():
     """
     assert "confirm_started" in pin.spawn.__code__.co_names
     assert "confirm_started" in pin.launch.__code__.co_names
+    assert "confirm_started" in pin.roster.__code__.co_names
     assert not hasattr(server, "SPAWN_SETTLE_S")

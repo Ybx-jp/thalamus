@@ -29,6 +29,7 @@ the expert controls report themselves unavailable instead of failing to import.
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import io
 import json
@@ -57,6 +58,15 @@ DEFAULT_PORT = 8378
 # is loaded once and tracks it only as far as this timestamp. `build_info` below
 # reads both so the surface can say which one is behind.
 STARTED_AT = time.time()
+
+
+class PortInUse(RuntimeError):
+    """The console's port is held by something else.
+
+    Its own class so the CLI can print the sentence and exit rather than showing a
+    traceback for the one environment difference that is not a defect: an operator
+    who already has a console running, which on this port is the usual reason.
+    """
 
 # Defaults for a console running without the rest of Thalamus importable. `pin` owns
 # the real ones; these only have to be sane enough to bridge a tmux session.
@@ -1073,12 +1083,19 @@ def roster_sync(cfg: Config) -> tuple[bool, str]:
     Explicitly roomless: the anchor is the roster's own window, and leaving the room
     to the environment would put it in whatever room this long-lived server process
     was started in — where it would stop being the roster's anchor at all.
+
+    `pin.roster` holds each window it opens to its settle deadline, so a window that
+    was created and died reports here as a failure rather than as a sync that worked
+    and produced nothing — the state in which the client draws its no-session screen
+    and tells the operator to run the sync they just ran.
     """
     pin = pin_module()
     if pin is None:
         return False, EXPERTS_UNAVAILABLE
-    ok, output, _ = _run_capturing(pin.roster, cfg.project_root,
-                                   session=cfg.session, room="")
+    ok, output, error = _run_capturing(pin.roster, cfg.project_root,
+                                       session=cfg.session, room="")
+    if isinstance(error, pin.WindowDied):
+        return False, "\n\n".join(x for x in (output, SPAWN_FAILED_HINT) if x)
     return ok, output
 
 
@@ -1236,21 +1253,42 @@ def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
     return dirs, seen
 
 
+# What the Services section reports on a host that has no systemd. Reachable only
+# with `--service`, since nothing named means no section at all, and the client
+# renders any state that is not `active` as a bad row — so this reads as a status
+# rather than as the section having failed to load.
+NO_SYSTEMD = "no systemd"
+
+NO_SYSTEMD_DETAIL = (
+    "this host has no `systemd-run`, so the console cannot restart units. "
+    "Start `--service` units by whatever supervises them here."
+)
+
+
 def service_status(cfg: Config) -> list[dict]:
     out = []
     for unit in cfg.services:
-        r = subprocess.run(["systemctl", "--user", "is-active", unit],
-                           capture_output=True, text=True)
+        try:
+            r = subprocess.run(["systemctl", "--user", "is-active", unit],
+                               capture_output=True, text=True)
+        except FileNotFoundError:
+            out.append({"unit": unit, "state": NO_SYSTEMD})
+            continue
         out.append({"unit": unit, "state": (r.stdout.strip() or "unknown")})
     return out
 
 
-def service_restart(unit: str) -> None:
+def service_restart(unit: str) -> str | None:
+    """Restart a managed unit. Returns an error sentence, or None on success."""
     # systemd-run: the transient unit escapes this service's cgroup, so the restart
     # survives even when the unit being restarted is the one serving this request.
-    subprocess.run(["systemd-run", "--user", "--collect", "--",
-                    "systemctl", "--user", "restart", unit],
-                   capture_output=True, text=True)
+    try:
+        subprocess.run(["systemd-run", "--user", "--collect", "--",
+                        "systemctl", "--user", "restart", unit],
+                       capture_output=True, text=True)
+    except FileNotFoundError:
+        return NO_SYSTEMD_DETAIL
+    return None
 
 
 CGROUP_PATH = Path("/proc/self/cgroup")
@@ -1499,6 +1537,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _send(self, code, body, ctype="application/json", cache=None):
+        self._responded = True
         if isinstance(body, (dict, list)):
             body = json.dumps(body).encode()
         elif isinstance(body, str):
@@ -1516,6 +1555,25 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(n) or "{}") if n else {}
 
     def do_GET(self):
+        """Route a GET, and answer with a 500 rather than a dropped connection.
+
+        Every reader below shells out to something — tmux, git, systemd — and the
+        environment differences that make one of them absent are not defects in the
+        console. Unwrapped, the exception kills the handler thread and the browser
+        sees a connection that closed, which is the least diagnosable failure the
+        surface has. The message goes to stderr as well: `log_message` is silenced,
+        so without it a journal would hold nothing at all.
+        """
+        self._responded = False
+        try:
+            self._route_get()
+        except Exception as exc:  # noqa: BLE001 — the message is the product here
+            print(f"! GET {self.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            if not self._responded:
+                with contextlib.suppress(Exception):
+                    self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
+
+    def _route_get(self):
         path, _, query = self.path.partition("?")
         if path == "/api/commands":
             # ?index=N scopes project skills to that window's cwd; absent → anchor.
@@ -1706,7 +1764,9 @@ class Handler(BaseHTTPRequestHandler):
             unit = data.get("unit")
             if unit not in self.cfg.services:
                 return self._send(400, {"error": "unknown unit"})
-            service_restart(unit)
+            error = service_restart(unit)
+            if error:
+                return self._send(200, {"ok": False, "error": error})
             return self._send(200, {"ok": True})
 
         if path == "/api/deploy":
@@ -1944,7 +2004,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(cfg: Config, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> None:
-    httpd = ThreadingHTTPServer((host, port), Handler)
+    try:
+        httpd = ThreadingHTTPServer((host, port), Handler)
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+        raise PortInUse(
+            f"port {port} is already in use on {host} — most often a `thalamus console` "
+            f"that is still running. Stop that one, or serve this one somewhere else "
+            f"with `thalamus console --port <n>`."
+        ) from exc
     httpd.config = cfg  # type: ignore[attr-defined]
     if cfg.fetch_interval_s > 0:
         threading.Thread(target=_fetch_loop, args=(cfg.fetch_interval_s,),
@@ -1956,6 +2025,7 @@ def serve(cfg: Config, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> Non
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("  ! bound off-loopback and this server has NO authentication — "
               "anything that can reach it can drive your sessions.")
+    print("Press Ctrl+C to stop.")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

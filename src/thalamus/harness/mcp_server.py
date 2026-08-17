@@ -58,7 +58,7 @@ from thalamus.contract.conformance import validate_connectivity
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.viewer.mermaid import session_to_mermaid
-from thalamus.substrate.writer import close_connection, connect
+from thalamus.substrate.writer import GraphUnavailable, close_connection, connect
 
 logger = logging.getLogger(__name__)
 
@@ -437,8 +437,18 @@ def memory_visualize(session_yaml: str) -> str:
 
 
 def _connect():
+    """A traversal source, or the readable reason there is none.
+
+    The `isinstance(g, str)` guard at the head of every tool returns that reason to
+    the caller. It is reachable because `connect` probes the port rather than
+    handing back a lazy source that fails on first traversal — without that, a
+    down graph never came through here at all and the model relayed the driver's
+    transport error instead.
+    """
     try:
         return connect(GRAPH_URL)
+    except GraphUnavailable as e:
+        return str(e)
     except Exception as e:
         return f"Failed to connect to graph at {GRAPH_URL}: {e}"
 

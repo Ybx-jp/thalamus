@@ -49,7 +49,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -58,6 +57,7 @@ from pathlib import Path
 from thalamus.harness import agents
 from thalamus.harness.agents import HARNESSES as AGENT_HARNESSES
 from thalamus.harness.pin import PROJECT_ROOT, USER_AGENTS_DIR, write_all_agents
+from thalamus.substrate.writer import graph_down_detail, probe_socket, split_ws
 
 USER_SETTINGS = Path.home() / ".claude" / "settings.json"
 PROJECT_SETTINGS = PROJECT_ROOT / ".claude" / "settings.json"
@@ -66,6 +66,11 @@ PROJECT_MCP = PROJECT_ROOT / ".mcp.json"
 HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "claude-code"
 SKILL_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "skills"
 USER_SKILLS_DIR = Path.home() / ".claude" / "skills"
+
+# Where a hook records that it could not run at all. Written by
+# `thalamus_require_binaries` (hooks/claude-code/resolve-scope.sh), read by
+# `recorded_hook_failures`.
+HOOK_FAILURE_LOG = Path.home() / ".thalamus" / "logs" / "hook-failures.log"
 
 CURSOR_HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "cursor"
 USER_CURSOR_HOOKS = Path.home() / ".cursor" / "hooks.json"
@@ -274,14 +279,33 @@ class Check:
     it reports those with the command that fixes them and leaves the exit code
     alone. Failing on them would make `thalamus init` refuse to wire a machine
     for the entirely ordinary reason that its containers are not up yet.
+
+    `pending` marks the third state, and it exists because the other two could not
+    say it: **not installed yet**. `--check` and `--dry-run` are the two commands a
+    cautious operator runs *before* installing, and every absent thing they find is
+    the expected shape of an uninstalled box — an agents directory with nothing in
+    it, a `~/.cursor/hooks.json` that was never written. Reporting those as `✗`
+    tells someone whose machine is fine that their install is broken, and exiting 1
+    on them means the safe way to look is also the way that reports failure. A
+    pending finding names the command that installs it and leaves the exit code
+    alone; anything present and *wrong* stays a hard failure, which is the
+    distinction the check is actually for.
     """
     name: str
     ok: bool
     detail: str
     advisory: bool = False
+    pending: bool = False
 
     def render(self) -> str:
-        mark = "✓" if self.ok else ("!" if self.advisory else "✗")
+        if self.ok:
+            mark = "✓"
+        elif self.pending:
+            mark = "○"
+        elif self.advisory:
+            mark = "!"
+        else:
+            mark = "✗"
         return f"  {mark} {self.name}: {self.detail}"
 
 
@@ -680,10 +704,7 @@ def verify_runtime(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
 
     reachable, detail = _probe_graph(url)
     if not reachable:
-        detail = (
-            f"{detail} — start it with `docker compose up -d` in {PROJECT_ROOT}, "
-            "then re-run `thalamus init --check`"
-        )
+        detail = graph_down_detail(detail)
     checks.append(Check("graph reachable", reachable, detail, advisory=True))
 
     # One CLI per harness being installed. `agent` missing on a box without
@@ -703,7 +724,38 @@ def verify_runtime(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
             advisory=True,
         ))
 
+    checks.append(recorded_hook_failures())
+
     return checks
+
+
+def recorded_hook_failures() -> Check:
+    """Sessions that ended without distilling because a binary a hook needs was gone.
+
+    The other direction of the same problem the two PATH checks above cover, and the
+    half they cannot answer. `jq on PATH` reports the state of this machine at the
+    moment `--check` runs; if jq was missing over the weekend and is back now, it
+    passes, and the sessions lost in between are invisible — distillation is
+    detached, so nothing announced them. The hooks record the loss themselves
+    (`thalamus_require_binaries`, hooks/claude-code/resolve-scope.sh), and this reads
+    the record back on the surface an operator already runs when memory looks stale.
+
+    Advisory: the file is a history of the environment, not a fault in the wiring.
+    """
+    try:
+        lines = [ln for ln in HOOK_FAILURE_LOG.read_text(errors="replace").splitlines()
+                 if ln.strip()]
+    except OSError:
+        lines = []
+    if not lines:
+        return Check("sessions lost to a missing binary", True,
+                     f"none recorded in {HOOK_FAILURE_LOG}", advisory=True)
+    return Check(
+        "sessions lost to a missing binary", False,
+        f"{len(lines)} ended undistilled — most recently: {lines[-1]} "
+        f"(the record is {HOOK_FAILURE_LOG}; delete it to clear this)",
+        advisory=True,
+    )
 
 
 def _probe_graph(url: str) -> tuple[bool, str]:
@@ -719,14 +771,10 @@ def _probe_graph(url: str) -> tuple[bool, str]:
     private to its operator and is never shipped, so an empty one is the normal
     starting state rather than a fault.
     """
-    host, port = _split_ws(url)
-    if host is None:
-        return False, f"could not parse a host:port out of {url}"
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.settimeout(2.0)
-        if probe.connect_ex((host, port)) != 0:
-            return False, f"nothing listening on {host}:{port}"
+    down = probe_socket(url)
+    if down is not None:
+        return False, down
+    host, port = split_ws(url)
 
     script = (
         "import sys;"
@@ -752,18 +800,6 @@ def _probe_graph(url: str) -> tuple[bool, str]:
     return True, f"{count} vertices at {url}{fresh}"
 
 
-def _split_ws(url: str) -> tuple[str | None, int]:
-    """host/port out of ws://host:port/path, without importing a URL parser."""
-    rest = url.split("://", 1)[-1].split("/", 1)[0]
-    host, _, port = rest.partition(":")
-    if not host:
-        return None, 0
-    try:
-        return host, int(port or 8182)
-    except ValueError:
-        return None, 0
-
-
 def verify_cursor() -> list[Check]:
     """Exercise the Cursor leg the way the Claude Code leg is exercised.
 
@@ -784,17 +820,31 @@ def verify_cursor() -> list[Check]:
     checks.append(Check("cursor hook scripts executable", not unexec,
                         "all executable" if not unexec else f"not executable: {unexec}"))
 
+    # A hooks file with none of our scripts in it is an uninstalled Cursor, not a
+    # broken one; one holding *some* of them has drifted and is a real failure.
     wired = _load_json(USER_CURSOR_HOOKS)
     commands = {e.get("command") for entries in wired.get("hooks", {}).values() for e in entries}
     unwired = [s for s in scripts if str(CURSOR_HOOK_DIR / s) not in commands]
-    checks.append(Check("cursor hooks wired at user scope", not unwired and wired.get("version") == 1,
-                        f"{len(scripts)} scripts in {USER_CURSOR_HOOKS}" if not unwired
-                        else f"not wired: {unwired}"))
+    checks.append(Check(
+        "cursor hooks wired at user scope",
+        not unwired and wired.get("version") == 1,
+        f"{len(scripts)} scripts in {USER_CURSOR_HOOKS}" if not unwired
+        else f"not written yet ({USER_CURSOR_HOOKS}) — `thalamus init` writes it"
+        if len(unwired) == len(scripts)
+        else f"not wired: {unwired}",
+        pending=len(unwired) == len(scripts),
+    ))
 
     served = _load_json(USER_CURSOR_MCP).get("mcpServers", {}).get("thalamus")
-    checks.append(Check("cursor MCP server registered", served == build_mcp_entry(),
-                        f"`thalamus` in {USER_CURSOR_MCP}" if served
-                        else f"absent from {USER_CURSOR_MCP} — no retrieval on Cursor"))
+    checks.append(Check(
+        "cursor MCP server registered", served == build_mcp_entry(),
+        f"`thalamus` in {USER_CURSOR_MCP}" if served
+        else f"not registered yet in {USER_CURSOR_MCP} — `thalamus init` registers it"
+        if served is None
+        else f"registered in {USER_CURSOR_MCP} but not with the entry this checkout "
+             "builds — re-run `thalamus init`",
+        pending=served is None,
+    ))
 
     # The load-bearing Cursor check: spool a turn on beforeSubmitPrompt, then
     # drain it on postToolUse, in a throwaway HOME. This is the mechanism that
@@ -869,24 +919,39 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
 
     agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []
     checks.append(Check("derived agents installed", bool(agents),
-                        f"{len(agents)} in {USER_AGENTS_DIR}" if agents else "none written"))
+                        f"{len(agents)} in {USER_AGENTS_DIR}" if agents
+                        else f"none written yet to {USER_AGENTS_DIR} — `thalamus init` "
+                             "writes one per expert manifest",
+                        pending=not agents))
 
     # Read each skill *through* its user-scope path, the way a session outside
     # the checkout will. A symlink that exists can still dangle, and a dangling
     # one is invisible until a design goes ungrounded — so resolve it and read
     # the frontmatter rather than calling `.exists()` and believing it.
-    unreadable = []
+    #
+    # A name with nothing at it at all is the uninstalled case and is reported as
+    # such. A name that *exists* and cannot be read is the dangling link, and stays
+    # a hard failure: it passes `.exists()`, so nothing else catches it.
+    unlinked, unreadable = [], []
     for src in shipped_skills():
         dest = USER_SKILLS_DIR / src.name
         try:
             if "name:" not in (dest / "SKILL.md").read_text()[:400]:
                 unreadable.append(f"{src.name} (no frontmatter)")
         except OSError as exc:
-            unreadable.append(f"{src.name} ({exc.strerror or exc})")
-    checks.append(Check(
-        "skills load at user scope", not unreadable,
-        f"{len(shipped_skills())} readable via {USER_SKILLS_DIR}" if not unreadable
-        else f"unreadable: {unreadable}"))
+            if dest.exists() or dest.is_symlink():
+                unreadable.append(f"{src.name} ({exc.strerror or exc})")
+            else:
+                unlinked.append(src.name)
+    if unreadable:
+        detail = f"unreadable: {unreadable}"
+    elif unlinked:
+        detail = (f"{len(unlinked)} of {len(shipped_skills())} not linked yet into "
+                  f"{USER_SKILLS_DIR} — `thalamus init` links them")
+    else:
+        detail = f"{len(shipped_skills())} readable via {USER_SKILLS_DIR}"
+    checks.append(Check("skills load at user scope", not (unreadable or unlinked), detail,
+                        pending=bool(unlinked) and not unreadable))
 
     if "claude" in harnesses:
         checks.append(verify_armed())
@@ -938,12 +1003,24 @@ def verify_armed() -> Check:
     Reported rather than repaired, and advisory rather than fatal: `thalamus init`
     without `--check` writes the block that fixes it, so the finding names that
     command. A stale settings file is not a reason to refuse to verify the rest.
+
+    *None* of them armed is a different fact from *some* of them missing, and it is
+    the one a pre-install check finds: nothing has drifted, nothing has been written
+    yet. Listing every wiring at someone who has not installed is a wall of text
+    about a machine that is fine.
     """
     declared = {(event, matcher, script) for event, matcher, script in HOOK_WIRING}
     missing = sorted(declared - armed_hooks())
     if not missing:
         return Check("declared hooks armed",
                      True, f"all {len(declared)} wirings present in {USER_SETTINGS}")
+    if len(missing) == len(declared):
+        return Check(
+            "declared hooks armed", False,
+            f"none of the {len(declared)} wirings are in {USER_SETTINGS} yet — "
+            "`thalamus init` writes them",
+            pending=True,
+        )
     named = ", ".join(
         f"{script} on {event}" + (f"/{matcher}" if matcher else "")
         for event, matcher, script in missing
@@ -1181,7 +1258,14 @@ def uninstall(dry_run: bool = False) -> list[str]:
 def run(dry_run: bool = False, check_only: bool = False,
         harness: str = "both", uninstall_mode: bool = False,
         assume_yes: bool = False) -> int:
-    """CLI entry. Non-zero exit iff a check failed — install failures must be loud."""
+    """CLI entry. Non-zero exit iff a check failed — install failures must be loud.
+
+    "Failed" is narrower than "not ok". A pending finding is the uninstalled state
+    (`Check.pending`) and an advisory is the environment, and neither is the harness
+    arming wrongly; only a present-and-broken install exits 1. `--dry-run` prints its
+    closing line whatever the checks said, because the one thing it promises is that
+    nothing was written, and that is most worth saying on the run that found faults.
+    """
     if uninstall_mode:
         for a in uninstall(dry_run=dry_run):
             print(f"  - {a}")
@@ -1208,6 +1292,14 @@ def run(dry_run: bool = False, check_only: bool = False,
     for c in checks:
         print(c.render())
 
+    pending = [c for c in checks if c.pending and not c.ok]
+    if pending:
+        print(f"\n{len(pending)} item(s) are NOT INSTALLED YET. This is what an "
+              "uninstalled machine looks like, not a broken one:")
+        for c in pending:
+            print(f"  ○ {c.name}: {c.detail}")
+        print("Run `thalamus init` to install them.")
+
     advisories = [c for c in checks if c.advisory and not c.ok]
     if advisories:
         print(f"\n{len(advisories)} advisory finding(s) — the install is wired, "
@@ -1215,13 +1307,16 @@ def run(dry_run: bool = False, check_only: bool = False,
         for c in advisories:
             print(f"  ! {c.name}: {c.detail}")
 
-    failed = [c for c in checks if not c.ok and not c.advisory]
+    failed = [c for c in checks if not c.ok and not c.advisory and not c.pending]
     if failed:
         print(f"\n{len(failed)} check(s) FAILED — the harness will not arm correctly.")
-        return 1
+
     if dry_run:
         print("\nDRY RUN — nothing written. Re-run without --dry-run to install.")
-    elif not check_only:
+        return 1 if failed else 0
+    if failed:
+        return 1
+    if not check_only:
         editors = " and ".join("Claude Code" if h == "claude" else "Cursor" for h in harnesses)
         print(f"\nInstalled for {editors}. Hooks and the MCP server arm per *process*: "
               "every session already open keeps the old config until the editor is "

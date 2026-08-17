@@ -146,6 +146,33 @@ def test_find_names_what_is_registered_when_it_misses(registry, stub_server, mon
         snapshots.find("two")
 
 
+def test_a_missing_docker_is_a_sentence_not_a_traceback(registry, monkeypatch):
+    """
+    Scenario: any snapshot operation on a host with no `docker` on PATH
+
+    Verifications:
+    - the public entry point refuses with what is missing and what to run
+    - `_run_or_raise` — which checked only the exit status — refuses the same way
+
+    A snapshot is a file inside the graph container, so every call in the module
+    goes through the client. Absent, it is an ordinary environment difference, and
+    `eval/arms.py` already answers the same condition with an instruction rather
+    than a stack trace.
+    """
+    def no_docker(command, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "docker")
+
+    monkeypatch.setattr(snapshots.subprocess, "run", no_docker)
+
+    with pytest.raises(snapshots.SnapshotError) as absent:
+        snapshots.take("some-state")
+    assert "`docker` is not on PATH" in str(absent.value)
+    assert "docker compose up -d" in str(absent.value)
+
+    with pytest.raises(snapshots.SnapshotError, match="not on PATH"):
+        snapshots._run_or_raise(["docker", "start", "thalamus-graph"], "cannot start")
+
+
 @pytest.fixture
 def docker_log(monkeypatch):
     """Record the docker commands a restore issues, in order, without running them."""

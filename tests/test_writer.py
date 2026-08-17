@@ -1,9 +1,11 @@
 """
 Graph writer traversal construction and diagnostics tests.
 
-Interfaces: Gremlin merge_v option modulators, thalamus.substrate.writer._iterate
-Infrastructure: none; fake traversals only
-Scope: merge token encoding and contextual write failure reporting
+Interfaces: Gremlin merge_v option modulators, thalamus.substrate.writer._iterate,
+thalamus.substrate.writer.connect
+Infrastructure: fake traversals, plus one TCP connect to a port nothing listens on
+Scope: merge token encoding, contextual write failure reporting, and the refusal a
+caller gets when the graph is not running
 """
 
 from datetime import UTC, datetime
@@ -25,9 +27,14 @@ from thalamus.substrate.schema import (
     Tool,
 )
 from thalamus.substrate.writer import (
+    GraphUnavailable,
     GraphWriteError,
     _iterate,
     _upsert_session_vertex,
+    connect,
+    graph_down_detail,
+    probe_socket,
+    split_ws,
     write_session,
 )
 
@@ -689,3 +696,41 @@ def test_written_at_lands_on_every_node_whose_text_can_change():
     for label in ("Artifact", "Claim"):
         if by_label.get(label):
             assert all("written_at" not in props for props in by_label[label]), label
+
+
+class TestConnectRefusesADownGraph:
+    """`DriverRemoteConnection` opens no socket, so a down graph used to reach the
+    caller as an `aiohttp` transport error on the first traversal — past every guard
+    written around `connect()`, which could not fire because `connect()` never
+    raised. The probe moves the failure to where those guards already are.
+    """
+
+    DEAD = "ws://localhost:9/gremlin"           # discard: never listening
+
+    def test_it_raises_where_the_guards_are_rather_than_at_first_traversal(self):
+        with pytest.raises(GraphUnavailable):
+            connect(self.DEAD)
+
+    def test_the_refusal_carries_the_command_that_fixes_it(self):
+        """A first-time user's actual problem is that `docker compose up -d` has not
+        been run, and that sentence is what has to reach them."""
+        with pytest.raises(GraphUnavailable) as exc:
+            connect(self.DEAD)
+        assert "docker compose up -d" in str(exc.value)
+        assert "localhost:9" in str(exc.value)
+
+    def test_the_live_path_and_the_installer_give_one_diagnosis(self):
+        """`thalamus init --check` and a recall that failed describe the same down
+        container, so they must not describe it differently."""
+        from thalamus.harness import install
+
+        _, probed = install._probe_graph(self.DEAD)
+        with pytest.raises(GraphUnavailable) as exc:
+            connect(self.DEAD)
+        assert str(exc.value) == graph_down_detail(probed)
+
+    def test_a_malformed_url_is_reported_not_raised_as_a_parse_error(self):
+        assert split_ws("not-a-url") == ("not-a-url", 8182)
+        assert split_ws("ws://:8182/gremlin") == (None, 0)
+        assert split_ws("ws://host:notaport/g") == (None, 0)
+        assert "could not parse" in probe_socket("ws://:8182/gremlin")

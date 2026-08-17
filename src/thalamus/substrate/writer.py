@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import socket
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
@@ -32,7 +33,74 @@ class GraphWriteError(RuntimeError):
     """A graph write failure annotated with the operation and affected entity."""
 
 
+class GraphUnavailable(RuntimeError):
+    """The graph is not answering, said in words the operator can act on.
+
+    `DriverRemoteConnection.__init__` opens no socket, so a graph that is down does
+    not fail here — it fails at the first traversal, inside the driver, as an
+    `aiohttp` transport error. Whoever asked then reads
+    `Cannot connect to host localhost:8182 ssl:default [Connect call failed ...]`,
+    and every guard written around `connect()` is dead code for the case it was
+    written for. `connect` probes the port before handing back a source, so the
+    failure lands where those guards already are and carries the same diagnosis
+    `thalamus init --check` prints.
+    """
+
+
+def split_ws(url: str) -> tuple[str | None, int]:
+    """host/port out of ws://host:port/path, without importing a URL parser."""
+    rest = url.split("://", 1)[-1].split("/", 1)[0]
+    host, _, port = rest.partition(":")
+    if not host:
+        return None, 0
+    try:
+        return host, int(port or 8182)
+    except ValueError:
+        return None, 0
+
+
+def probe_socket(url: str, timeout: float = 2.0) -> str | None:
+    """`None` when something is listening; the reason when nothing is.
+
+    A bounded TCP connect, which is the stage that separates "the container is not
+    up" — the first-run case — from every other way a traversal can fail. It says
+    nothing about whether the peer speaks Gremlin: `install._probe_graph` runs a
+    real traversal for that, and only once this has passed.
+    """
+    host, port = split_ws(url)
+    if host is None:
+        return f"could not parse a host:port out of {url}"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(timeout)
+        if probe.connect_ex((host, port)) != 0:
+            return f"nothing listening on {host}:{port}"
+    return None
+
+
+def graph_down_detail(reason: str) -> str:
+    """A graph-down reason plus the command that fixes it — one text, every surface.
+
+    `thalamus init --check` reaches this from a deliberate probe and the recall
+    tools reach it from a read they wanted to do, and a first-time user should not
+    get two different accounts of the same container being down.
+    """
+    # Local import: the substrate does not otherwise depend on the harness, and this
+    # is only ever reached on a failure path.
+    from thalamus.harness.pin import PROJECT_ROOT
+
+    return (f"{reason} — start it with `docker compose up -d` in {PROJECT_ROOT}, "
+            "then re-run `thalamus init --check`")
+
+
 def connect(url: str = DEFAULT_URL) -> GraphTraversalSource:
+    """A traversal source, or a refusal that says why — never a source that cannot read.
+
+    The probe costs one localhost TCP connect and buys the difference between a
+    guard that fires and one that cannot (see `GraphUnavailable`).
+    """
+    down = probe_socket(url)
+    if down is not None:
+        raise GraphUnavailable(graph_down_detail(down))
     connection = DriverRemoteConnection(url, "g")
     g = traversal().with_remote(connection)
     # GraphTraversalSource has no public close() method in gremlinpython 3.x.

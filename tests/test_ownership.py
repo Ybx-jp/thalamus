@@ -132,6 +132,30 @@ class TestTheTable:
             assert glob and owner
             assert len(reason.strip()) > 40, f"{glob} has no usable denial message"
 
+    def test_every_owning_scope_ships_a_manifest_someone_can_be_pinned_to(self):
+        """
+        Scenario: a row reserves a tree for a scope the checkout cannot instantiate
+
+        A row denies every scope but its owner, so the owner is the only party who can
+        edit that tree. If no manifest declares the owner, nobody can be pinned to it —
+        `resolve-scope.sh` only honours an agent-derived pin when
+        `config/experts/<scope>.yaml` exists — and the tree becomes unwritable by
+        everyone rather than reserved for someone. The deny half of the partition
+        survives the manifest; the grant half does not, so removing a manifest is not
+        the local act it looks like.
+        """
+        from thalamus.contract.manifest import available_scopes
+
+        shipped = set(available_scopes())
+        assert shipped, "no manifests found — the check below would pass vacuously"
+
+        orphaned = sorted({owner for _, owner, _ in PATH_OWNERSHIP} - shipped)
+        assert not orphaned, (
+            f"ownership rows reserve a tree for {orphaned}, which no manifest in "
+            f"config/experts/ declares. Nobody can be pinned to those scopes, so the "
+            f"trees they own cannot be edited by anyone. Shipped: {sorted(shipped)}"
+        )
+
 
 class TestTheCostThatDecidedTheModule:
     def test_importing_ownership_does_not_import_pydantic(self):

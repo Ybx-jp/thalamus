@@ -37,12 +37,23 @@ from thalamus.harness import pin
 from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
 from thalamus.viewer.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
-from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect, write_session
+from thalamus.substrate.writer import (
+    DEFAULT_URL,
+    GraphUnavailable,
+    close_connection,
+    connect,
+    write_session,
+)
 
 ROOM_FLAG_HELP = (
     "Launch into this room — a private config dir (~/.thalamus/rooms/<room>/) that "
     "partitions peer discovery, so members see only each other. Created on first "
     "use. Default: $THALAMUS_ROOM, else no room."
+)
+
+ARCH_REPO_HELP = (
+    "Repo to measure. Defaults to the checkout this CLI is installed from, not the "
+    "current directory — `arch/model.yaml` belongs to a repository."
 )
 
 
@@ -58,6 +69,20 @@ def legibility_arms() -> tuple[str, ...]:
 
 
 def main():
+    """CLI entry point.
+
+    A graph that is not running is the ordinary first-run state of this machine, and
+    every command that reads memory hits it. It is reported as the one sentence that
+    fixes it rather than as a traceback ending in an `aiohttp` transport error.
+    """
+    try:
+        _main()
+    except GraphUnavailable as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+
+def _main():
     parser = argparse.ArgumentParser(description="Thalamus — federated graph memory for coding agents")
     parser.add_argument(
         "--debug",
@@ -273,7 +298,7 @@ def main():
         help="Measure the import graph, regenerate arch/model.yaml, and land the scan "
         "(dry-run unless --write)",
     )
-    arch_scan_parser.add_argument("--repo", default=".", help="Repo to scan")
+    arch_scan_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
     arch_scan_parser.add_argument(
         "--import-depth", choices=["all", "module-level"], default="",
         help="Override the model file's declared policy. Changes the policy digest, so "
@@ -289,7 +314,7 @@ def main():
     arch_show_parser = arch_sub.add_parser(
         "show", help="Print the current model: declared policy, layers, rules, last scan"
     )
-    arch_show_parser.add_argument("--repo", default=".", help="Repo to read")
+    arch_show_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
 
     arch_diff_parser = arch_sub.add_parser(
         "diff",
@@ -297,18 +322,18 @@ def main():
         "both sides rather than trusting a stored number",
     )
     arch_diff_parser.add_argument("against", help="Commit-ish to compare against")
-    arch_diff_parser.add_argument("--repo", default=".", help="Repo to scan")
+    arch_diff_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
 
     arch_rules_parser = arch_sub.add_parser(
         "rules", help="Check the measured edge list against the declared design rules"
     )
-    arch_rules_parser.add_argument("--repo", default=".", help="Repo to scan")
+    arch_rules_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
 
     arch_growth_parser = arch_sub.add_parser(
         "growth",
         help="What this system accumulates, and what nothing refers to (read-only)",
     )
-    arch_growth_parser.add_argument("--repo", default=".", help="Repo the worktrees belong to")
+    arch_growth_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
     arch_growth_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Chunk backfill — co-indexing for documents ingested before chunks existed.
@@ -2733,7 +2758,11 @@ def _cmd_arch(args, arch_parser):
     from thalamus.arch.extractor import scan_repo
     from thalamus.arch.metrics import measure
 
-    repo = Path(args.repo).resolve()
+    # The repository, not the cwd. `arch/model.yaml` is a file in a checkout, and
+    # resolving it against wherever the operator is standing made `thalamus arch` a
+    # command that reported an empty model — no layers, no rules, every module
+    # unplaced — from any directory but the repo root.
+    repo = Path(args.repo).resolve() if args.repo else arch_model.REPO_ROOT
     model = arch_model.load(repo / arch_model.MODEL_PATH)
     policy = model.policy
     if getattr(args, "import_depth", ""):
@@ -3420,12 +3449,18 @@ def _cmd_spawn(args):
 
 
 def _cmd_roster(args):
-    from thalamus.harness.pin import PROJECT_ROOT, roster
+    from thalamus.harness.pin import PROJECT_ROOT, WindowDied, roster
 
     try:
         roster(PROJECT_ROOT, full=getattr(args, "all", False), room=args.room)
     except (ValueError, RuntimeError) as e:
         print(f"Roster failed: {e}", file=sys.stderr)
+        # A window whose command never execs prints nothing, so there is no epitaph
+        # to quote and the cause is almost always the binary. The hint is all the
+        # operator gets in that case, and it is the case that brought them here.
+        if isinstance(e, WindowDied):
+            print("Check that the harness binary is on your PATH — `claude --version`.",
+                  file=sys.stderr)
         sys.exit(1)
 
 
@@ -3964,7 +3999,7 @@ def _cmd_console(args):
     import shutil
     import subprocess
 
-    from thalamus.console.server import Config, serve
+    from thalamus.console.server import Config, PortInUse, serve
     from thalamus.harness.pin import PROJECT_ROOT
 
     if not shutil.which("tmux"):
@@ -3988,8 +4023,11 @@ def _cmd_console(args):
         # button is a better answer than a refusal the operator reads on a phone.
         print(f"! no tmux session `{cfg.session}` yet — start one with `thalamus roster`, "
               "or use the console's ＋ button once it's up.")
-    print("Press Ctrl+C to stop.")
-    serve(cfg, host=args.host, port=args.port)
+    try:
+        serve(cfg, host=args.host, port=args.port)
+    except PortInUse as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
 
 
 def _available_port(host: str) -> int:
