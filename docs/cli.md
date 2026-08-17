@@ -34,8 +34,6 @@ thalamus backfill-chunks           # co-index already-ingested documents as Chun
 ```bash
 thalamus schema                    # the session graph JSON schema
 thalamus contract check            # audit the live graph against the federation contract
-thalamus visualize                 # open the interactive graph explorer
-thalamus visualize session.yaml    # preview a pending extraction, no graph needed
 thalamus pulse                     # live telemetry dashboard over the eval loop
 thalamus snapshot                  # flush the in-memory graph to disk now
 ```
@@ -166,7 +164,6 @@ box to one expert.
 | `memory_exchanges` | `query`, `limit`, `read_ticket` | Consultations this scope asked or answered, by topic |
 | `consult_request` | `expert`, `question` | Mint a consultation ticket — this *is* opening the exchange record |
 | `consult_answer` | `ticket`, `answer` | Close a consultation; citations validated, ticket burned |
-| `memory_visualize` | `session_yaml` | Mermaid render of a pending extraction (read-only) |
 
 Recall tools also accept a `ticket` argument: under a consultation ticket they search
 the consulted expert's memory instead of the session's own scope.

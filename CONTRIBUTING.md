@@ -24,8 +24,6 @@ editor at user scope; skip it if you only want to build and test.
 uv run pytest                 # the suite must stay green
 uv run ruff check src tests
 uv run thalamus contract check   # after any change to a live write path
-cd frontend && npm test
-cd frontend && npm run build     # -> src/thalamus/viewer/static
 ```
 
 The federation contract is enforced, not aspirational — `contract check` audits the
@@ -48,13 +46,13 @@ src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader.
                Below the contract: knows nodes and edges, not experts or tiers
   contract/    the federation boundary — ontology, expert manifests, conformance
-  viewer/      the graph viewer — FastAPI read layer + React/Cytoscape frontend
   console/     the browser control plane over the tmux roster
   archive/     immutable content-addressed store for retained evidence
   harness/     MCP server, hooks, skills, transcript bootstrap
-  eval/        trace tap, attribution, cost, counterfactual harness
+  eval/        trace tap, attribution, cost — the live-serving half of the eval loop.
+               The counterfactual harness (task battery, arms, oracle) is research
+               instrumentation; it lives in the private thalamus-eval companion repo
   pulse/       live telemetry dashboard
-frontend/      viewer source; builds into viewer/static
 config/        expert manifests
 tests/         pytest suite, plus tests/js and tests/qe
 ```

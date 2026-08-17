@@ -40,8 +40,8 @@ retained transcript into claims and open threads, and the next session opens alr
 knowing where you left off.
 
 **You can audit all of it.** The main scope is dense and connective, referencing
-expert nodes by ID and copying nothing. A browser-based viewer walks the graph; a
-live dashboard prices what retrieval actually cost.
+expert nodes by ID and copying nothing. A live dashboard prices what retrieval
+actually cost.
 
 ## Quick start
 
@@ -153,7 +153,7 @@ consultation protocol, rooms, and the eval loop's trace, attribution and cost la
 In progress: counterfactual measurement at a scale that can settle whether recalled
 memory changes task outcomes. What the instrument shows today is that memory gets
 *surfaced* — that it improves results is not yet demonstrated, and saying so is part
-of the design. Full trust-model enforcement and the audit-chain visualizer come after.
+of the design. Full trust-model enforcement and end-to-end audit chains come after.
 
 Roadmap and open work live in
 [GitHub issues and milestones](https://github.com/Ybx-jp/thalamus/issues).
@@ -173,13 +173,13 @@ Roadmap and open work live in
 src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader
   contract/    the federation boundary — ontology, expert manifests, conformance
-  viewer/      the graph viewer — FastAPI read layer + React/Cytoscape frontend
   console/     the browser/PWA control plane over the tmux roster
   archive/     immutable content-addressed store for retained evidence
   harness/     where it meets the agent — MCP server, hooks, skills, bootstrap
-  eval/        trace tap, attribution, cost, and the counterfactual harness
+  eval/        trace tap, attribution, cost — the live-serving half of the eval loop.
+               The counterfactual harness (task battery, arms, oracle) is research
+               instrumentation; it lives in the private thalamus-eval companion repo
   pulse/       live telemetry dashboard over the eval loop
-frontend/      viewer source; builds into viewer/static
 config/        expert manifests
 docs/          user documentation
 ```
