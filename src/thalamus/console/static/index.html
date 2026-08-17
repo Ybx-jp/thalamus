@@ -161,9 +161,9 @@
      row's shape depends on which of its states is true. -->
 <main class="roster" id="roster" aria-label="Sessions"></main>
 
-<!-- Workspace (cwd) filter. Hidden whenever every session shares one directory, so
-     it costs no vertical space until a second context actually exists. -->
-<nav class="wsbar" id="wsbar" aria-label="Workspaces" hidden></nav>
+<!-- Room filter, and the entry point to a room broadcast. Hidden until a room
+     actually exists, so it costs no vertical space in the ordinary case. -->
+<nav class="wsbar" id="wsbar" aria-label="Rooms" hidden></nav>
 
 <nav class="rail" id="rail" role="tablist" aria-label="Experts"></nav>
 
@@ -176,6 +176,22 @@
   <pre class="screen" id="screen"></pre>
   <div class="read" id="read" hidden></div>
 </div>
+
+<!-- The session marker. It carries the four facts the pane cannot: which session you
+     are in, which project it is rooted in, how many sessions exist across how many
+     projects, and whether any of them is blocked on you. It sits above the composer
+     rather than flush to the bottom edge — Kim & Ji (2018) and Xiong & Muraki (2016)
+     both put the lowermost strip outside the natural thumb zone, so the reachable
+     region is a band, not a half. The whole bar is the way back to the roster; the
+     chevron is the affordance saying so, not a second target. -->
+<button type="button" class="smark" id="smark" hidden>
+  <span class="smark-text">
+    <span class="smark-name" id="smark-name"></span>
+    <span class="smark-where" id="smark-where"></span>
+  </span>
+  <span class="smark-pill" id="smark-pill" hidden></span>
+  <span class="smark-back" aria-hidden="true">⌃</span>
+</button>
 
 <form class="composer" id="composer" autocomplete="off">
   <div class="hints" id="hints" hidden></div>

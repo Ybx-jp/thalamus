@@ -60,6 +60,10 @@ function hueOf(w) { return w.room ? hueForRoom(w.room) : hueFor(w.name, w.index)
 const els = {
   rail: document.getElementById("rail"),
   wsbar: document.getElementById("wsbar"),
+  smark: document.getElementById("smark"),
+  smarkName: document.getElementById("smark-name"),
+  smarkWhere: document.getElementById("smark-where"),
+  smarkPill: document.getElementById("smark-pill"),
   screen: document.getElementById("screen"),
   wrap: document.getElementById("screen-wrap"),
   msg: document.getElementById("msg"),
@@ -113,9 +117,18 @@ let fontDelta = +(localStorage.getItem("plane-font-delta2") || 0);
 
 // ---- Workspaces (cwd contexts) ----
 // A session is (expert, directory), not just expert — the same scope can be spawned
-// in several projects, and the rail used to render both as an identical "homelab".
-// `activeWs` is null for "all", else a cwd path the rail is filtered to.
-let activeWs = localStorage.getItem("plane-workspace") || null;
+// in several projects, and a tab that showed only the scope rendered both as an
+// identical "homelab".
+//
+// The project is a *group*, not a filter. B2 heads each group with its path and
+// lands on the unfiltered roster, because the question the landing view answers is
+// "what needs me", and a filtered one answers "what needs me in this project" —
+// a blocked session in another project is either on screen or it is not.
+//
+// A device that selected a project before the filter existed is holding a key that
+// nothing can now clear, and a filter with no control is a session list that is
+// silently short. Dropping the key is the migration.
+localStorage.removeItem("plane-workspace");
 
 function workspaces() {
   const seen = new Map(); // cwd -> label, in window order
@@ -134,45 +147,27 @@ let activeRoom = localStorage.getItem("plane-room") || null;
 function roomsPresent() {
   return [...new Set(windows.map((w) => w.room).filter(Boolean))];
 }
-// Tabs the rail shows: all of them, or just the selected workspace's and room's.
+// Tabs the rail shows: all of them, or just the selected room's. The project is no
+// longer a filter — it is the roster's group header.
 const visibleWindows = () =>
-  windows.filter((w) => (activeWs === null || w.cwd === activeWs) &&
-                        (activeRoom === null || (w.room || "") === activeRoom));
+  windows.filter((w) => activeRoom === null || (w.room || "") === activeRoom);
 
 function setChannelHue(hue) {
   document.documentElement.style.setProperty("--chan", hue);
 }
 
 function renderWsBar() {
-  const ws = workspaces();
   const rooms = roomsPresent();
-  // One directory and no rooms (the common case) → no bar at all, layout unchanged.
-  if (ws.length < 2 && rooms.length === 0) {
+  // No rooms (the common case) → no bar at all, and the pane heads straight into the
+  // mirror. The project chips that used to sit here are the roster's group headers
+  // now; a room is a different question and keeps its control.
+  if (rooms.length === 0) {
     els.wsbar.hidden = true;
     els.wsbar.innerHTML = "";
     return;
   }
   els.wsbar.hidden = false;
   els.wsbar.innerHTML = "";
-  const mk = (label, path, title) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "ws" + (activeWs === path ? " on" : "");
-    b.dataset.path = path === null ? "" : path;
-    b.textContent = label;
-    b.title = title || label;
-    b.addEventListener("click", () => selectWorkspace(path));
-    return b;
-  };
-  if (ws.length > 1) {
-    els.wsbar.appendChild(mk("⌂ all", null, "Show every session"));
-    for (const w of ws) {
-      const count = windows.filter((x) => x.cwd === w.path).length;
-      const full = (windows.find((x) => x.cwd === w.path) || {}).cwd_short || w.path;
-      els.wsbar.appendChild(mk(`${w.label} ${count}`, w.path, full));
-    }
-  }
-  if (!rooms.length) return;
   const mkRoom = (label, room, title, hue) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -220,24 +215,6 @@ function selectRoom(room) {
   }
 }
 
-// Set the filter without touching the rail — for callers already inside a render
-// pass (poll), which repaints once at the end.
-function selectWorkspaceQuiet(path) {
-  activeWs = path;
-  if (path === null) localStorage.removeItem("plane-workspace");
-  else localStorage.setItem("plane-workspace", path);
-}
-
-function selectWorkspace(path) {
-  selectWorkspaceQuiet(path);
-  renderWsBar();
-  renderRail();
-  // Filtering away the tab you were viewing would leave the screen showing a
-  // session no visible tab points at — follow the filter into its first session.
-  const vis = visibleWindows();
-  if (vis.length && !vis.some((w) => w.index === activeIdx)) selectWindow(vis[0].index);
-}
-
 function renderRail() {
   els.rail.innerHTML = "";
   const showCwd = multiWs();
@@ -275,6 +252,10 @@ function syncActiveChrome() {
   if (!w) return;
   setChannelHue(hueOf(w));
   document.title = w.cwd_label ? `${w.name} · ${w.cwd_label}` : `${w.name} · Thalamus`;
+  // B1 names the session in the composer. "the active expert" was a phrase that made
+  // sense while a rail above the pane decided which one was active; the marker under
+  // it now says which session you are in, and the placeholder agrees with it.
+  els.msg.placeholder = `Message ${w.name}…`;
   commands = null; // project skills are per-directory; refetch for this window
 }
 
@@ -965,21 +946,7 @@ function revOf(w) {
   return w.screen_rev !== undefined ? w.screen_rev : w.lines;
 }
 
-// A session filtered out of the rail still needs to be able to announce itself —
-// otherwise picking a workspace makes you blind to the others. Its workspace chip
-// carries the signal that its hidden tab's dot would have.
-function updateWsSignal(next) {
-  if (els.wsbar.hidden) return;
-  for (const chip of els.wsbar.children) {
-    const p = chip.dataset.path;
-    const hidden = p && activeWs !== null && p !== activeWs;
-    chip.classList.toggle("live", !!hidden && next.some((w) =>
-      w.cwd === p && lastRev[w.index] !== undefined && lastRev[w.index] !== revOf(w)));
-  }
-}
-
 function updateDots(next) {
-  updateWsSignal(next);
   for (const tab of els.rail.children) {
     const idx = +tab.dataset.idx;
     const w = next.find((x) => x.index === idx);
@@ -1014,15 +981,10 @@ async function poll() {
                           windows[i].name !== w.name || windows[i].cwd !== w.cwd);
 
     windows = next;
-    // A workspace that no longer has any session (its last tab was closed, or a
-    // stale filter came back from localStorage) would hide every tab — drop it.
-    if (activeWs !== null && !windows.some((w) => w.cwd === activeWs)) selectWorkspaceQuiet(null);
-    // A just-spawned window is the highest index — jump to it once it appears, and
-    // follow it into its workspace so the filter doesn't hide what we just opened.
+    // A just-spawned window is the highest index — jump to it once it appears.
     if (selectNewestOnNextPoll && windows.length) {
       const newest = windows.reduce((a, b) => (b.index > a.index ? b : a));
       selectNewestOnNextPoll = false;
-      if (activeWs !== null && newest.cwd !== activeWs) selectWorkspaceQuiet(newest.cwd);
       activeIdx = newest.index;
     }
     if (activeIdx === null || !windows.some((w) => w.index === activeIdx)) {
@@ -1035,6 +997,10 @@ async function poll() {
     // `grace_s` is served rather than hardcoded, so the deadline the row draws is
     // the one the server actually enforces.
     renderRoster(next, data.distill || [], Date.now() / 1000, data.grace_s);
+    // The marker summarises the roster, so it is redrawn from the same payload in
+    // the same tick. Reading it a beat later is how the bar comes to disagree with
+    // the list it is standing in for.
+    renderMarker();
 
     updateDots(next);
     const cur = windows.find((w) => w.index === activeIdx);
@@ -1952,7 +1918,7 @@ function terminalBand(r, st) {
   return band;
 }
 
-/** Roster → one session's mirror. The rail keeps switching between them from there. */
+/** Roster → one session's mirror. The marker under the pane is the way back. */
 function openSession(idx) {
   selectWindow(idx);
   setView("session");
@@ -1960,7 +1926,54 @@ function openSession(idx) {
 
 function setView(v) {
   document.body.dataset.view = v;
-  if (v === "session") scheduleFit();
+  els.smark.hidden = v !== "session";
+  if (v === "session") { scheduleFit(); renderMarker(); }
+}
+
+/**
+ * The four facts the pane cannot carry, in the bar above the composer.
+ *
+ * The count is what earns the bar its height: it is the one roster fact that stays
+ * true while you are reading something else, so it is the one worth the vertical
+ * space on a surface where everything else is the session you already chose.
+ *
+ * It is derived from the roster's own grouping and the same pill the rows draw —
+ * never counted separately here — so the marker and the list it summarises cannot
+ * disagree about how many sessions there are or how many want you.
+ */
+function renderMarker() {
+  const w = windows.find((x) => x.index === activeIdx);
+  if (!w) { els.smark.hidden = true; return; }
+  els.smark.hidden = document.body.dataset.view !== "session";
+  els.smark.style.setProperty("--tab", hueOf(w));
+
+  els.smarkName.textContent = w.name || "?";
+
+  const groups = groupSessions(windows, lastDistill);
+  const now = Date.now() / 1000;
+  let sessions = 0, needs = 0;
+  for (const g of groups) {
+    for (const r of g.rows) {
+      sessions++;
+      if (rowState(r.w, r.d, now, lastGrace).pill) needs++;
+    }
+  }
+  // The plural is the count's, not a fixed word: "1 sessions" reads as a bug in the
+  // console rather than as one session.
+  const bits = [];
+  if (w.cwd_short) bits.push(w.cwd_short);
+  bits.push(`${sessions} session${sessions === 1 ? "" : "s"}`);
+  if (groups.length > 1) bits.push(`${groups.length} projects`);
+  els.smarkWhere.textContent = bits.join(" · ");
+
+  // Nothing blocked is drawn as nothing. A zero here would be a standing reassurance
+  // that costs the same space as the demand it is standing in for.
+  els.smarkPill.hidden = !needs;
+  if (needs) els.smarkPill.textContent = `${needs} needs you`;
+
+  els.smark.setAttribute(
+    "aria-label",
+    `${w.name} — back to all ${sessions} sessions` + (needs ? `, ${needs} needing you` : ""));
 }
 
 // Destructive-action prompts must name the directory too — "Restart homelab?" is
@@ -2831,6 +2844,11 @@ function nudgeFont(d) {
 }
 document.getElementById("font-up").addEventListener("click", () => nudgeFont(1));
 document.getElementById("font-dn").addEventListener("click", () => nudgeFont(-1));
+
+// The whole marker is the target, not just the chevron: it is a 60 px bar the thumb
+// already rests near, and splitting it into a label and a small control beside the
+// label would put a 24 px target inboard of a 400 px inert one.
+els.smark.addEventListener("click", () => setView("roster"));
 
 let fitTimer = null;
 function scheduleFit() {

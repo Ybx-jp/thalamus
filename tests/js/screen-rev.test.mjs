@@ -60,12 +60,11 @@ const dots = (prev, next) => {
     };
   });
   const env = evaluate(
-    [revSrc, extractFunction("updateWsSignal", src), extractFunction("updateDots", src)].join("\n"),
+    [revSrc, extractFunction("updateDots", src)].join("\n"),
     ["updateDots"],
     {
-      els: { rail: { children: tabs }, wsbar: { hidden: true, children: [] } },
+      els: { rail: { children: tabs } },
       lastRev: prev,
-      activeWs: null,
     },
   );
   env.updateDots(next);
@@ -98,7 +97,7 @@ check("text moving under a held token does not pulse",
 
 suite("screen_rev — no text comparison survives");
 
-for (const name of ["updateDots", "updateWsSignal"]) {
+for (const name of ["updateDots"]) {
   lacksMatch(`${name} does not read the pane text`,
     stripComments(extractFunction(name, src)), /\.lines\b/);
 }

@@ -84,6 +84,25 @@ NON_TEXT = {
 }
 
 
+def test_dark_ink_on_the_accent_is_legible_and_does_not_ride_a_channel_hue():
+    """`#0b0e12` on `--accent` is one pair, and it has to stay one pair.
+
+    Every filled control here paints dark ink on a fill. While that fill was `--chan`
+    — reassigned by JS to the viewed session's identity hue — the pair was a different
+    pair on every screen, and SEND measured 4.22:1 on a channel hue against a 4.5
+    floor. Identity is assigned by hashing a name and must stay meaningless, so a
+    control can never wear one: the ratio would be a property of which session you
+    happened to be looking at.
+    """
+    t = _tokens()
+    assert "accent" in t, "--accent is gone; filled controls have no fixed ground"
+    ratio = contrast("#0b0e12", t["accent"])
+    assert ratio >= AA, f"#0b0e12 on --accent is {ratio:.2f}:1, below AA {AA}"
+    # The identity palette is a closed set, and none of it may be this token.
+    assert t["accent"].lower() not in {v.lower() for v in _palette().values()}, (
+        "--accent collides with an identity hue; a control would mean two things")
+
+
 @pytest.mark.parametrize(
     "token,ground",
     [(t, g) for t, grounds in NON_TEXT.items() for g in grounds])
@@ -349,8 +368,13 @@ OPACITIES = {
     # below is what stops that from quietly ceasing to be true.
     ".4": "disabled controls — exempt as inactive, and the in-flight state they also "
           "signal is carried in text by the pill beside them",
-    ".7": "the passthrough composer: dimming a redirected control is the signal, "
-          "and --ink at .7 measures 6.46:1 on --panel",
+    # Scoped to the textarea, and the scope is the load-bearing part. On the whole
+    # `.input-line` it also faded SEND, whose pair is dark ink on a light fill and so
+    # moves the other way under a dim: `#0b0e12` at .7 on `--accent` washes toward the
+    # fill and painted 3.74:1, while the declaration below — true of `--ink` — read as
+    # covering it. An opacity is declared for a pair, never for a box.
+    ".7": "the passthrough composer's textarea: dimming the redirected input is the "
+          "signal, and --ink at .7 measures 6.46:1 on --panel",
 }
 
 

@@ -34,12 +34,18 @@
      non-text floor and the 4.5:1 text floor on every ground they paint on. */
   --ok: #45c08d;
   --pending: #e8b44a;
-  /* The permission-mode control's own colour. Deliberately NOT `--chan`, which JS
-     reassigns to the current channel's identity hue: the selected segment is a
-     *setting*, and dressing it in the row's identity would make one hue mean "this
-     is the designer" on one row and "acceptEdits is on" on the next. Identity is
-     assigned by hashing a name and must stay meaningless; this means one thing. */
-  --mode: #9a8cff;
+  /* The console's own accent, and the ground under every dark-ink control. It is
+     deliberately NOT `--chan`, which JS reassigns to the viewed session's identity
+     hue: an identity colour is assigned by hashing a name and must stay meaningless,
+     so a control that borrows it means "this is the designer" on one screen and
+     "send" on the next, and its ink/ground pair changes legibility with it. SEND
+     measured 4.22:1 against a 4.5 floor while wearing a channel hue. Fixed here, the
+     pair is one pair and it is the same on every screen: 5.75:1.
+
+     A shade off the comp's violet on purpose. That value is already `main`'s identity
+     hue, and one hex owned by two registries means moving the palette silently moves
+     every filled control, or fails to. This one is in no palette. */
+  --accent: #8b7cf0;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   /* per-channel hues, overridden per-tab in JS */
@@ -118,7 +124,7 @@ header {
 .install-msg { flex: 1 1 auto; min-width: 0; font-size: .8rem; color: var(--ink); }
 .install-do {
   appearance: none; flex: 0 0 auto;
-  background: var(--chan); border: 0; border-radius: 7px;
+  background: var(--accent); border: 0; border-radius: 7px;
   color: #0b0e12; font-family: var(--mono); font-weight: 600;
   font-size: .72rem; letter-spacing: .06em; padding: .4rem .8rem; cursor: pointer;
 }
@@ -128,9 +134,9 @@ header {
   font-size: .9rem; cursor: pointer; padding: .2rem .3rem;
 }
 
-/* ---- Workspace bar (cwd contexts) ---- */
-/* Only rendered when sessions span more than one directory. Quieter than the rail
-   on purpose: the rail is who you're talking to, this is only where they're rooted. */
+/* ---- Room bar ---- */
+/* Only rendered when a room exists. Quieter than the rail on purpose: the rail is
+   who you're talking to, this is which collaboration they're inside. */
 .wsbar {
   flex: 0 0 auto;
   display: flex;
@@ -166,13 +172,6 @@ header {
   background: var(--chan);
   border-color: var(--chan);
   font-weight: 600;
-}
-/* A hidden workspace whose screen just moved. Quiet — a lit edge, not a pulse:
-   it's peripheral news about somewhere you're not looking. */
-.ws.live {
-  color: var(--ink);
-  border-color: var(--chan);
-  box-shadow: 0 0 6px -1px var(--chan);
 }
 
 /* ---- Channel rail (the signature) ---- */
@@ -600,11 +599,18 @@ header {
 /* Keystrokes go straight to the pane, so the composer is no longer the input path —
    dim it to say so, without removing it (it still takes multi-line paste and the
    slash-command hints). */
-/* Still a dim, because dimming a redirected control is the signal — but measured.
-   At .55 this sat at 4.51:1, clearing the floor by a hundredth and only because
-   --ink is bright; nothing below it may darken without taking it under. */
-body.passthrough .composer .input-line { opacity: .7; }
-body.passthrough .composer .input-line:focus-within { opacity: 1; }
+/* Still a dim, because dimming a redirected control is the signal — but measured,
+   and applied to the thing that was actually redirected. At .55 this sat at 4.51:1,
+   clearing the floor by a hundredth and only because --ink is bright; nothing below
+   it may darken without taking it under.
+
+   The dim is on the textarea, not on the row. On the row it also faded SEND, whose
+   pair is dark ink on a light fill and therefore moves the opposite way: light ink
+   at .7 on a dark panel stays legible, dark ink at .7 on --accent washes toward the
+   fill and measured 3.74:1. SEND is not redirected either — pressing it still sends
+   the composed text — so it was being dimmed for something that is not true of it. */
+body.passthrough .composer textarea { opacity: .7; }
+body.passthrough .composer textarea:focus { opacity: 1; }
 
 /* ---- Composer ---- */
 .composer {
@@ -676,7 +682,7 @@ body.passthrough .composer .input-line:focus-within { opacity: 1; }
   border-radius: 7px;
   cursor: pointer;
 }
-.keycap:active, .fontcap:active { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.keycap:active, .fontcap:active { background: var(--accent); color: #0b0e12; border-color: var(--accent); }
 .keycap[hidden], .fontcap[hidden] { display: none; }
 .keycap.danger { color: var(--danger-text); border-color: #4a2a29; }
 .keyrow .spacer { flex: 1 1 auto; }
@@ -700,7 +706,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .send {
   appearance: none;
   flex: 0 0 auto;
-  background: var(--chan);
+  background: var(--accent);
   border: 0;
   border-radius: 9px;
   color: #0b0e12;
@@ -802,7 +808,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
   border-radius: 7px;
   cursor: pointer;
 }
-.admin-act:active { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.admin-act:active { background: var(--accent); color: #0b0e12; border-color: var(--accent); }
 .admin-act:disabled { opacity: .4; }
 .admin-actions { display: flex; gap: .45rem; margin-top: .5rem; }
 .admin-log {
@@ -855,10 +861,10 @@ textarea:focus { outline: none; border-color: var(--chan); }
   text-underline-offset: 2px;
   word-break: break-all;   /* long URLs wrap rather than force horizontal scroll */
 }
-.screen a:active { background: var(--chan); color: #0b0e12; }
+.screen a:active { background: var(--accent); color: #0b0e12; }
 
 /* variant admin buttons: primary = spawn CTA, danger-lite = close a session */
-.admin-act.primary { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.admin-act.primary { background: var(--accent); color: #0b0e12; border-color: var(--accent); }
 .admin-act.primary:disabled { opacity: .4; }
 .admin-act.danger-lite { color: var(--danger-text); border-color: #4a2a29; }
 
@@ -958,6 +964,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
 body[data-view="roster"] #wsbar,
 body[data-view="roster"] #rail,
 body[data-view="roster"] #screen-wrap,
+body[data-view="roster"] #smark,
 body[data-view="roster"] #composer,
 body[data-view="roster"] .back-btn { display: none; }
 body[data-view="session"] .roster { display: none; }
@@ -966,6 +973,79 @@ body[data-view="session"] .roster { display: none; }
    never by case. The header prints `project`, or the basename of `repo_root`; both
    are names with a case of their own, and uppercasing them shows the operator a
    string that is not the one on disk. The wide tracking went with the caps. */
+/* ---- The session marker (B1) ---- */
+/* Above the composer, never flush to the bottom edge: the lowermost strip is outside
+   the natural thumb zone, so the reachable region is a band rather than a half. */
+.smark {
+  position: relative;
+  flex: 0 0 auto;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+  min-height: 60px;
+  padding: .4rem .9rem .4rem 1.1rem;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+}
+.smark[hidden] { display: none; }
+/* The row's own identity rule, so the bar reads as the row you came from. */
+.smark::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--tab, var(--faint));
+}
+.smark-text { display: flex; flex-direction: column; gap: .18rem; min-width: 0; }
+.smark-name {
+  font-family: var(--mono);
+  font-size: .875rem;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.smark-where {
+  font-family: var(--ui);
+  font-size: .69rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The same pill the roster row draws, for the same fact. One shape, one meaning. */
+.smark-pill {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: .69rem;
+  letter-spacing: .02em;
+  color: #0b0e12;
+  background: var(--danger);
+  border-radius: 12px;
+  min-height: 24px;
+  padding: .2rem .8rem;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.smark-pill[hidden] { display: none; }
+/* The affordance for the bar's own action, not a second target — the whole bar is
+   the control, so this carries no pointer events of its own. */
+.smark-back {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: .9rem;
+  color: var(--muted);
+  pointer-events: none;
+}
+.smark-pill:not([hidden]) ~ .smark-back { margin-left: .6rem; }
+
 /* B2's sheet header. The grabber is the sheet's affordance, not a control: it says
    the roster is a surface that came up over something, which is what makes the row's
    mirror feel reachable from it. It is 30 x 4 and takes no pointer events. */
@@ -1215,7 +1295,7 @@ body[data-view="session"] .roster { display: none; }
   font-family: var(--mono);
   font-size: .63rem;
   letter-spacing: .12em;
-  color: var(--mode);
+  color: var(--accent);
 }
 .mode-label {
   font-family: var(--mono);
@@ -1242,8 +1322,8 @@ body[data-view="session"] .roster { display: none; }
 /* Selection is the fill, the ink and `aria-pressed` — three channels, so it survives
    greyscale and does not rest on the hue alone. */
 .mode-chip.on {
-  background: var(--mode);
-  border-color: var(--mode);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #0b0e12;
   font-weight: 600;
 }
