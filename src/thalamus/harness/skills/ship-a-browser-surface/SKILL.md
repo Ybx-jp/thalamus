@@ -1,6 +1,6 @@
 ---
 name: ship-a-browser-surface
-description: How to take a change to one of this repo's browser surfaces — the console PWA, the graph viewer, pulse — from edit to believed-working, and how to verify an accessibility claim by measuring the rendered DOM rather than reading the stylesheet. Use BEFORE editing anything under src/thalamus/console/static/, src/thalamus/viewer/ or frontend/, BEFORE claiming a colour or target size conforms, when a change is correct on disk and wrong on the phone, and when adding a renderer that draws a session row.
+description: How to take a change to one of this repo's browser surfaces — the console PWA, the graph viewer, pulse — from edit to believed-working, and how to verify an accessibility claim by measuring the rendered DOM rather than reading the stylesheet. Use BEFORE editing anything under src/thalamus/console/static/, src/thalamus/viewer/, or the graph viewer's frontend/ source (private thalamus-notes companion repo), BEFORE claiming a colour or target size conforms, when a change is correct on disk and wrong on the phone, and when adding a renderer that draws a session row.
 ---
 
 # Ship a Browser Surface
@@ -14,7 +14,7 @@ and the operator's phone still shows something else.
 | surface | source | build | tests |
 |---|---|---|---|
 | console PWA | `src/thalamus/console/static/` | **none** — files served as written | `tests/js/*.test.mjs` under node, driven by `tests/test_console_js.py` |
-| graph viewer | `frontend/` (React 19, Vite, TS) | `npm run build` → `src/thalamus/viewer/static/` | `npm test` (vitest) |
+| graph viewer | `frontend/` (React 19, Vite, TS) — private thalamus-notes repo | `npm run build` → `src/thalamus/viewer/static/` | `npm test` (vitest) |
 | pulse | `src/thalamus/pulse/static/index.html` | none — one file | none |
 
 The console is dependency-free on purpose: one of the server's jobs is restarting
@@ -22,9 +22,11 @@ the systemd unit that hosts it, so the fewer moving parts between a tap and a tm
 call the better. Do not add a bundler, a framework, or a package to it. The viewer
 is the opposite and already carries its toolchain — use it there.
 
-**The viewer's build output is committed.** A source change in `frontend/` that is
-not rebuilt ships nothing; the served bundle is whatever was last written into
-`src/thalamus/viewer/static/assets/`.
+**The viewer's frontend source lives in thalamus-notes, not this checkout; its build
+output is committed here.** A source change in thalamus-notes' `frontend/` that is
+not rebuilt into this repo's `src/thalamus/viewer/static/assets/` ships nothing —
+build there, then copy or symlink the built `assets/` and `index.html` over before
+committing here.
 
 ## The ladder — run in this order
 

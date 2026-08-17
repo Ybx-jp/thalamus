@@ -173,13 +173,16 @@ Roadmap and open work live in
 src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader
   contract/    the federation boundary — ontology, expert manifests, conformance
-  viewer/      the graph viewer — FastAPI read layer + React/Cytoscape frontend
+  viewer/      the graph viewer — FastAPI read layer serving a committed React/
+               Cytoscape build (`viewer/static/`); the frontend source lives in the
+               private thalamus-notes companion repo, not this checkout
   console/     the browser/PWA control plane over the tmux roster
   archive/     immutable content-addressed store for retained evidence
   harness/     where it meets the agent — MCP server, hooks, skills, bootstrap
-  eval/        trace tap, attribution, cost, and the counterfactual harness
+  eval/        trace tap, attribution, cost — the live-serving half of the eval loop.
+               The counterfactual harness (task battery, arms, oracle) is research
+               instrumentation; it lives in the private thalamus-eval companion repo
   pulse/       live telemetry dashboard over the eval loop
-frontend/      viewer source; builds into viewer/static
 config/        expert manifests
 docs/          user documentation
 ```

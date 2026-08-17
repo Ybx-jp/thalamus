@@ -127,7 +127,9 @@ def create_app(
             <!doctype html>
             <html><body>
               <h1>Thalamus viewer frontend is not built</h1>
-              <p>Run <code>npm run build</code> in <code>frontend/</code>.</p>
+              <p>The built assets should be committed at <code>src/thalamus/viewer/static/</code>.
+              To rebuild them, run <code>npm run build</code> in <code>frontend/</code>
+              of the thalamus-notes companion repo and copy the output here.</p>
             </body></html>
             """,
             status_code=503,
