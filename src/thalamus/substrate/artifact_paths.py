@@ -1,15 +1,15 @@
 """Project an `Artifact`'s raw identifier onto `(repo, path)` — without re-keying it.
 
 `Artifact` is global so two experts touching one file land on one vertex; it is the join
-key between scopes (docs/index). Raw tool-call strings do not deliver that: the same
+key between scopes. Raw tool-call strings do not deliver that: the same
 file arrives absolute from one call, repo-relative from the next, and via a worktree
 from a third, and `artifact_audit.py` measures the damage.
 
 **The identifier is not re-keyed, and that is a constraint rather than a preference.**
 It drives `vid("Artifact", identifier)` in `writer._upsert_artifacts`, so changing it
 breaks every citation ever minted; it is a tier-1 observation — the raw string the tool
-call actually carried — and deriving over it turns an observation into an inference
-(docs/09); and it cannot be undone if the anchoring rule is wrong. So `repo` and `path`
+call actually carried — and deriving over it turns an observation into an inference;
+and it cannot be undone if the anchoring rule is wrong. So `repo` and `path`
 land beside the identifier as derived properties. The 620 duplicate spellings then group
 correctly and their stranded touch edges come back with no vertex ID moving, and
 `README.md` claimed by five projects becomes five `(repo, path)` groups — which is

@@ -6,7 +6,7 @@ readiness verdict that decides whether `harness/dispatch.py` may type into a mem
 
 Infrastructure: the screen fixtures below are **verbatim captures** from a live
 interactive Cursor session driven in tmux on 2026-08-13 against build
-2026.08.11-e8db854 (lab/065). They are quoted rather than invented because the branch
+2026.08.11-e8db854. They are quoted rather than invented because the branch
 they exercise is the one that decides whether a dispatch approves a tool call nobody
 saw: a hand-written approximation of a dialog would test the regex against itself.
 """
@@ -197,7 +197,7 @@ class TestDispatchAddressesACursorMember:
 
         This is the measured hazard, not a defensive guess: a message sent into a pane
         showing `Run this command?` was discarded, and the Enter selected `Run (once)`
-        and ran the command (lab/065). The sender learns nothing and approves
+        and ran the command. The sender learns nothing and approves
         something.
         """
         sent = []

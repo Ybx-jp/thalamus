@@ -1,7 +1,7 @@
 """Re-probing harness capability declarations against the CLIs that answer them.
 
 Every claim this repo makes about a harness has, until now, been prose that nothing
-could check. lab/054 is the bill: five declarations were wrong at once, one of them
+could check. The bill came due: five declarations were wrong at once, one of them
 ("Cursor distillation works") wrong in a way that broke the feature on every machine
 for its whole life, and the test suite was green throughout. The failure is not that
 someone wrote the wrong thing down — that is ordinary. It is that **nothing ever
@@ -15,7 +15,7 @@ never asked: *is this still true?*
 
 Asking a CLI whether it supports a flag looks like it needs a real invocation —
 which costs auth, network, a model call, and on Cursor a workspace-trust grant that
-the extraction sandbox can never satisfy (lab/054). It does not.
+the extraction sandbox can never satisfy. It does not.
 
 Both `claude` and `agent` are commander.js programs, and commander rejects an
 unknown option during argument parsing — **before** auth, network, workspace trust
@@ -47,7 +47,7 @@ A probe is **sound as a falsifier and unsound as a generalizer.** That `--trust`
 parses says the flag exists; it does not say what it does, nor that anything holds
 in a mode the probe never entered. This is not pedantry: a `<timestamp>` observed in
 print mode is one inference away from unwiring the clock tier for interactive sessions
-nobody has looked at (lab/054).
+nobody has looked at.
 
 So a probe carries the `condition` it was taken under, and the default is the narrowest
 one, because a wide default is exactly how one print-mode observation becomes a general
@@ -131,7 +131,7 @@ class FlagProbe:
 class DerivedProbe:
     """Recompute a claim the repo makes about *itself* from the data it is about.
 
-    The second failure mode in lab/054 is not a vendor changing something — it is a
+    The second failure mode is not a vendor changing something — it is a
     claim about our own tables going stale while the tables move underneath it.
     `install.py` asserted a hook-parity count that was wrong for three scripts, and
     no test could notice, because a prose count is compared to nothing.
@@ -239,7 +239,7 @@ CAPABILITY_ROWS: tuple[tuple[FlagProbe, bool, str], ...] = (
     # (probe, declared_present, why this row exists)
     (FlagProbe("agent", "--trust"), True,
      "agents.cursor.headless_preconditions — without it every sandbox extraction "
-     "exits 1 before doing any work (lab/054)"),
+     "exits 1 before doing any work"),
     (FlagProbe("agent", "--max-turns", ("5",)), False,
      "agents.cursor.arm_blockers — an arm cannot bound turns without it"),
     (FlagProbe("agent", "--output-format", ("json",)), True,
@@ -306,7 +306,7 @@ def _declared_parity_row() -> tuple[DerivedProbe, str]:
             },
         ),
         "install.DECLARED_HOOK_PARITY — the count that was wrong for three scripts while "
-        "the suite stayed green (lab/054)",
+        "the suite stayed green",
     )
 
 

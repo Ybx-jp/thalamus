@@ -1,5 +1,5 @@
 """
-`thalamus init` — user-scope harness installation (docs/07).
+`thalamus init` — user-scope harness installation.
 
 Interfaces: harness/install.py, driven in-process with every filesystem target
 monkeypatched into tmp_path. Nothing here may touch the operator's real
@@ -64,7 +64,7 @@ def sandbox(tmp_path, monkeypatch):
 
 
 class TestCursorWiring:
-    """Cursor parity (docs/07, lab/027). The contract that matters is that the
+    """Cursor parity. The contract that matters is that the
     written config still works when the session's workspace root is some other
     repo — the whole reason a work machine needs an installer at all."""
 
@@ -693,8 +693,8 @@ def test_a_changed_withholding_rate_raises_a_relaunch_advisory():
 
     This is the failure that costs data rather than time. A withholding rate that
     moves while sessions are open produces records at two rates with the operator
-    believing the campaign ran at one — and experiments/003 needs the rate to be a
-    property of the machine for the campaign's whole duration. Nothing about those
+    believing the campaign ran at one — and the pre-registered study needs the rate to
+    be a property of the machine for the campaign's whole duration. Nothing about those
     sessions looks wrong from the inside, so the install is the only place it can
     be caught.
     """

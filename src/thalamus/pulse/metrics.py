@@ -3,7 +3,7 @@
 Read-only by construction: every number here comes from the trace tap, the
 guard/conditioning/pin ledgers, the harness transcripts, or the landed Trace
 verdicts in the graph. No new telemetry, no writes, no panel-local metrics —
-one priced surface (docs/04, lab/008); the dashboard renders it, it never
+one priced surface; the dashboard renders it, it never
 mints its own.
 
 The honesty states the frontend renders are produced here, not styled there:
@@ -39,12 +39,12 @@ logger = logging.getLogger(__name__)
 MAIN_SCOPE = "main"
 _CHARS_PER_TOKEN = 4
 
-# lab/007's prediction: waste share should land at or below this, with used%
+# The prediction: waste share should land at or below this, with used%
 # not falling. Rendered as the target band on the waste trend — a dial on
 # display, disclosed as such, never a measured claim.
 WASTE_TARGET_PCT = 30.0
 
-# lab/007's fan-out guardrail: recalls returning more nodes than this measured
+# The fan-out guardrail: recalls returning more nodes than this measured
 # 28-40% use vs 66-80% for 3-5 node recalls.
 FANOUT_GUARDRAIL = 15
 
@@ -382,19 +382,19 @@ def _pending(read: _GraphRead, traces_base: Path | None) -> dict:
 def _disclosures() -> dict:
     """The calibration plate: dials and blind spots, rendered verbatim.
 
-    Dials are dials (docs/04) — display them as settings, never as metrics.
+    Dials are dials — display them as settings, never as metrics.
     """
     return {
-        "standing": "layer 1 — instrumented, measuring. No utility claims before layer-2 counterfactuals (docs/04).",
+        "standing": "layer 1 — instrumented, measuring. No utility claims before layer-2 counterfactuals.",
         "dials": [
-            "attribution: lexical, ≥2 terms and ≥30% overlap (crude by design; the grader is itself unvalidated — lab/002)",
+            "attribution: lexical, ≥2 terms and ≥30% overlap (crude by design; the grader is itself unvalidated)",
             "pricing: 4 chars/token; even per-node share of each trace's rendered response",
             "cost proxy: weighted tokens — input 1.0 / cache-create 1.25 / cache-read 0.1 / output 5.0",
-            f"waste target band: ≤{WASTE_TARGET_PCT:.0f}% is lab/007's prediction, not a measurement",
-            f"fan-out guardrail: {FANOUT_GUARDRAIL} nodes (lab/007)",
+            f"waste target band: ≤{WASTE_TARGET_PCT:.0f}% is a prediction, not a measurement",
+            f"fan-out guardrail: {FANOUT_GUARDRAIL} nodes",
             "pin signal floor: ≥10 attributed nodes per side",
         ],
-        "surfaces": "priced: recall tools, memory_query (incl. rejections), bash_gremlin via tap. Blind: gremlin in script files (lab/008).",
+        "surfaces": "priced: recall tools, memory_query (incl. rejections), bash_gremlin via tap. Blind: gremlin in script files.",
         "attribution_lag": "verdicts exist only after a session distills and sync runs; the NOW column is cost-only by design.",
     }
 

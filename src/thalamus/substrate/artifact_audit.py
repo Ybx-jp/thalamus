@@ -1,7 +1,7 @@
 """Measure how badly `Artifact` identity is fragmented, and why it cannot be repaired yet.
 
 `Artifact` is global so two experts touching one file land on one vertex — it is the
-join key between scopes (docs/index.md, 2026-07-14). The join is leaky, because raw
+join key between scopes. The join is leaky, because raw
 tool-call strings are not identity: the same file arrives absolute from one call,
 repo-relative from the next, and via a worktree from a third.
 

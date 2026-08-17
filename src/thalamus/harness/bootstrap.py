@@ -10,13 +10,12 @@ Two stages, and only one of them needs a model:
 Stage 1 is not a stopgap. Because the transcripts are retained, stage 2 can be re-run at
 any time — with a better skill, a better model, or a changed schema — and the graph
 rebuilt from evidence. That is the property the archive buys: the graph is a materialized
-view over an immutable log, not a lossy one-way distillation (docs/04).
+view over an immutable log, not a lossy one-way distillation.
 
-**Bootstrap is not an ingestion feed in the docs/06 sense.** docs/06 says feeds write only
-into an expert's *knowledge* subgraph, never into episodic memory — but that rule is about
-untrusted third-party content. This is tier-1: the agent's own history, which is episodic
-by definition. Bootstrap is the session-stop distillation of docs/07, applied retroactively
-in batch.
+**Bootstrap is not an ingestion feed.** Feeds write only into an expert's *knowledge*
+subgraph, never into episodic memory — but that rule is about untrusted third-party
+content. This is tier-1: the agent's own history, which is episodic by definition.
+Bootstrap is the session-stop distillation, applied retroactively in batch.
 
 **Both harnesses reach stage 1**, and the seam is narrow by construction. The two
 readers differ only in how facts are *obtained* — Claude Code reads cwd and times
@@ -150,7 +149,7 @@ def _bootstrap_one(
     entry, secrets = transcripts.retain(path, archive_base=archive_base)
     # The ingress evidence a Cursor session was judged against is not in `path`, so
     # retaining the transcript alone would leave the floor's verdict resting on bytes
-    # the archive never saw (docs/05).
+    # the archive never saw.
     transcripts.retain_ingress_receipt(facts, archive_base=archive_base)
     session = to_session_graph(
         facts,

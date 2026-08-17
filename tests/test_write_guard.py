@@ -1,5 +1,5 @@
 """
-Self-write guard decision tests (docs/index.md 2026-08-03).
+Self-write guard decision tests.
 
 Interfaces: src/thalamus/harness/hooks/claude-code/write-guard.sh, driven live
 (bash) with synthetic PreToolUse payloads.
@@ -12,7 +12,7 @@ session read "`thalamus write` keeps the hand-authored path" as a general
 permission and wrote itself a Thread mid-flight.
 
 The failure mode that matters is a false positive: it teaches agents to route
-around the guard, and route-around costs more than a gap (lab/008). So the
+around the guard, and route-around costs more than a gap. So the
 maintenance commands that also take `--write`, the ingest path, and the in-session
 close verb all have to pass, and so does prose that merely names the command.
 """
@@ -52,7 +52,7 @@ def test_a_session_may_not_write_its_own_memory(tmp_path):
 
     Both are the decision's subject, and both survive as operator actions from a
     plain terminal where no hook fires. The reason has to name what to do instead —
-    a block with no route forward is a stall (lab/061).
+    a block with no route forward is a stall.
     """
     for command in (
         "uv run thalamus write /tmp/session.yaml",
@@ -90,7 +90,7 @@ def test_prose_that_names_the_command_is_not_the_command(tmp_path):
     """
     Scenario: a commit message describing this very boundary
 
-    lab/008 already paid for this class on the gremlin guard, whose amendment
+    This project already paid for this class on the gremlin guard, whose amendment
     tripped on the commit message explaining the amendment. The residual — a real
     write chained after a `git commit` — is accepted knowingly on the same trade.
     """

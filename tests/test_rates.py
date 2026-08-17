@@ -7,7 +7,7 @@ Scope: a rate cannot be rendered — or even constructed — without a null and 
 interval, or stated reasons for their absence.
 
 Grounding: "50% wasted" left a report as a point estimate over n=5, travelled into
-docs/04 and a skill, and stayed for weeks before lab/034 withdrew it. The caveat
+a design doc and a skill, and stayed for weeks before it was withdrawn. The caveat
 line added afterwards fixed one call site and left every other rate as renderable
 as that one had been. `publish.py` established the shape this enforces: "n/a with a
 reason, never dropped".
@@ -35,7 +35,7 @@ def test_a_rate_with_no_null_and_no_reason_cannot_be_built():
         Rate(label="used", hits=5, total=10, interval=(0.2, 0.8))
 
     assert "no null" in str(exc.value)
-    assert "lab/034" in str(exc.value)
+    assert "travelled into docs and a skill" in str(exc.value)
 
 
 def test_a_rate_with_no_interval_and_no_reason_cannot_be_built():
@@ -48,7 +48,6 @@ def test_a_reason_is_a_first_class_answer_not_an_escape_hatch():
     """
     Scenario: A rate that genuinely has no null — attribution rate has none, and a
     miss rate's finding turned out to be the stratum rather than the system
-    (lab/030)
 
     Verifications:
     - the reason satisfies the constructor
@@ -79,8 +78,8 @@ def test_below_the_floor_the_counts_render_and_the_percentage_does_not():
 
     The cutoff is travel control, not statistics: a fraction resists being quoted out
     of context in a way "83%" does not, and every campaign this project runs is 6-10
-    arms. The corpus convention for that regime is the exact paired test (lab/024,
-    lab/036), which is exact where an interval is approximate.
+    arms. The corpus convention for that regime is the exact paired test, which is
+    exact where an interval is approximate.
     """
     rate = Rate(
         label="rung>=3", hits=5, total=6,

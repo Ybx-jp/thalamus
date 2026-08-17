@@ -3,7 +3,7 @@
 #
 # `room-guard.sh` bounds `SendMessage`, which is a tool name, and that was the whole
 # peer channel while peer messaging was a tool. It is not any more: `tmux send-keys`
-# is a measured delivery path into any pane on the box (lab/065), and `thalamus
+# is a measured delivery path into any pane on the box, and `thalamus
 # dispatch` addresses a room by name from a shell. Both are Bash. A boundary that
 # matches a tool name cannot see either, and on Cursor there is no `SendMessage` at
 # all, so this is the only shape the boundary can take there.
@@ -89,7 +89,7 @@ on this machine, including sessions outside the room.
 It is the transport \`thalamus dispatch\` delivers over, so this is not a different
 capability — it is the same one with the pre-flight and the ledger removed. A send
 into a session holding an approval dialog is discarded and its Enter actuates the
-highlighted default, approving a tool call the sender cannot see (measured, lab/065);
+highlighted default, approving a tool call the sender cannot see (measured);
 dispatch refuses that case and a raw send cannot.
 
 Use \`thalamus dispatch ${room} "<message>"\`, which pre-flights every target, refuses

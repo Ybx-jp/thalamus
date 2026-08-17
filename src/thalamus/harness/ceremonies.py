@@ -1,8 +1,7 @@
 """The ceremony ledger — what a room records while it can still be recorded.
 
-Capture is now-or-never and analysis never is ([lab/048](../../../lab/048-the-treatment-that-was-only-a-label.md)),
-so this module is the first thing built of [docs/12](../../../docs/12-room-lifecycle.md)'s
-lifecycle and deliberately not the most interesting one. It writes the four records
+Capture is now-or-never and analysis never is, so this module is the first thing built
+of the room lifecycle and deliberately not the most interesting one. It writes the four records
 that make later analysis *possible at all* — the ones no amount of care after the fact
 can reconstruct:
 
@@ -21,7 +20,7 @@ can reconstruct:
 
 **Nothing here is an outcome.** The ledger records that an occasion happened, to whom,
 under which arm — never whether it worked. Room-level inference is descriptive forever
-at this corpus size (docs/12 §How this is measured), and a capture layer that started
+at this corpus size, and a capture layer that started
 scoring things would be manufacturing the outcome it was built to make honest.
 
 ## One file, and an `event` on every row
@@ -33,7 +32,7 @@ two writers could tie on.
 
 Sharing a ledger is exactly what went wrong in the pin ledger, where `pin-engaged.sh`'s
 `{event: "engaged"}` rows carried none of the launch fields and last-row-wins read a
-correctly-launched fork as having met no obligation (docs/index, 2026-08-09). The fix
+correctly-launched fork as having met no obligation. The fix
 generalises rather than argues against sharing: **every row here carries `event` from
 row one**, and every reader filters on it before reading anything else. A row kind that
 cannot be told apart from another is the defect; two kinds in one file is not.
@@ -52,7 +51,8 @@ cannot be told apart from another is the defect; two kinds in one file is not.
 ## What this module does not do
 
 There is no dispatch, no ceremony *conduct*, and no promotion path. Those are the rest
-of docs/12 and they can be added later without losing anything; these cannot.
+of the room lifecycle and they can be added later without losing anything; these
+cannot.
 
 **Nothing here attributes cost.** Burn per occasion is a join between these rows'
 timestamps and the harness transcripts (`eval/cost.py`), because a room member is one
@@ -84,7 +84,7 @@ LEDGER_FILE = CEREMONIES_DIR / "ceremonies.jsonl"
 # drowning the next real one; it is not how a finding is disposed of.
 ACK_FILE = CEREMONIES_DIR / "acknowledged.jsonl"
 
-# The surviving ceremonies of docs/12's filter, and a closed set on purpose. The
+# The surviving ceremonies of the lifecycle's filter, and a closed set on purpose. The
 # lifecycle's whole discipline is that a ceremony must earn its place against a
 # constraint agent sessions actually have — three were cut — so a kind arriving by
 # typo is not a new ceremony, it is a silently forked occasion counter. `retrospective`
@@ -269,7 +269,7 @@ def record_assignment(
     which is the correct and uncomfortable reading — hence writing it late is a design
     error the audit reports rather than a bookkeeping slip.
 
-    The block is the room. docs/12 restricts permutation so a deliverable is never
+    The block is the room. The lifecycle restricts permutation so a deliverable is never
     swapped across rooms, and since a row assigns within one room, the restriction is
     structural here rather than a rule analysis has to remember to apply.
     """
@@ -475,7 +475,7 @@ def record_revision(
     The row is what carries identity across time. `artifact` is whatever names this
     revision concretely — a path, a commit, a vertex id — and is deliberately untyped
     here, because the fate of a commitment is resolved by tooling against git and the
-    graph (docs/12 item 6) and pinning the format now would decide that later question
+    graph and pinning the format now would decide that later question
     early.
     """
     return _append(
@@ -509,7 +509,7 @@ def commit(
     and the graph — says what actually was. The asymmetry is the point: **a forecaster
     cannot Goodhart a resolution it does not control**, which is why the deliverables
     report is a commitment list rather than a narrative, and why no LLM judge over the
-    room's own prose can stand in for it (docs/12 §How this is measured).
+    room's own prose can stand in for it.
 
     `predicted_artifact` and `resolve_by` are what make the forecast resolvable at all.
     A commitment with neither is a sentence about intent, so both are recorded even
@@ -558,7 +558,7 @@ def resolve(
             f"unknown outcome `{outcome}` — one of {RESOLUTION_OUTCOMES}"
         )
     if not resolver.strip():
-        raise ValueError("a resolution must name its resolver — see docs/12 item 6")
+        raise ValueError("a resolution must name its resolver")
     if not evidence.strip():
         raise ValueError(
             "a resolution must carry evidence — an unevidenced resolution is a "
@@ -625,7 +625,8 @@ def outstanding(rows: list[dict] | None = None,
     forecast whose horizon has not arrived — it stays resolvable for as long as the
     row exists, which is the whole design.
 
-    Resolution is matched on `deliverable_id`, following docs/12's commitment shape,
+    Resolution is matched on `deliverable_id`, following the lifecycle's commitment
+    shape,
     so one resolution settles every commitment made about that deliverable. Two
     forecasts about one deliverable that could come out differently need two
     deliverables, and minting is cheap for exactly that reason.

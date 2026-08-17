@@ -418,7 +418,7 @@ def test_extract_falls_back_to_the_archive_when_the_harness_rotated_the_transcri
     - it is distilled under its own session id, not under the hash it is filed by
     - a named session in neither place still fails loudly, and says both were checked
 
-    Transcripts are retained because Claude Code rotates its own (docs/10). Discovery
+    Transcripts are retained because Claude Code rotates its own. Discovery
     that reads only the live dir loses a session to exactly the rotation retention
     exists to survive, and the evidence sits on disk the whole time.
     """

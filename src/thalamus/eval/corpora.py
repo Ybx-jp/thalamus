@@ -15,7 +15,7 @@ re-scoring pass. Measured on the corpus as found (2026-08-01, 140 records):
 
 So this module does not backfill; it cannot. It seals the present under a name and
 makes every future revision recoverable. The 88 stay a hole, reported as one, on
-lab/037's rule that an absence *is* the measurement.
+the rule that an absence *is* the measurement.
 
 Three pieces, mirroring the snapshot registry so the two read the same way:
 
@@ -50,7 +50,7 @@ specification only, since its evidence is two small case studies (9 tasks/49 eve
 50 tasks/86 events) with no comparison against in-place update. Croissant Tasks
 (arXiv 2605.29786) supplies the pinning boundary this module draws in
 `derivation_fingerprint`, and its "checklists ... fail to scale" is why the pin is a
-command rather than a line in `experiments/README.md`. The registry is committed and
+command rather than a line in a README. The registry is committed and
 the sealed copies are not, on the same rule as `snapshots.py`: the graph and the run
 log are one operator's history and are never shipped.
 """
@@ -88,7 +88,7 @@ BIRTH_FIELDS = ("ts", "task", "arm", "scope", "ref", "model", "worktree", "order
 # revision does not change the digest of the body it is stamping.
 REVISION_FIELDS = ("run_id", "revision", "supersedes", "superseded_at", "scorer_config")
 
-# Legible rather than hashed, for the reason `judge_config` is (lab/037): a straddled
+# Legible rather than hashed, for the reason `judge_config` is: a straddled
 # window should say *which* dial moved. Bump when a detector's verdict can change.
 DETECTOR_CONFIG = "d1:escape-v1+history-reach-v1"
 
@@ -218,7 +218,7 @@ def derivation_fingerprint(
 ) -> dict:
     """What a contamination verdict was computed against, pinned onto the record.
 
-    lab/037 finding #5, closed. A campaign record stored `ref` and nothing else about
+    A campaign record stored `ref` and nothing else about
     its own oracle, so editing a task YAML afterwards silently re-scoped every prior
     contamination verdict, and the fix-touched path set was re-derived on read from a
     git diff over the operator's *live* repo.

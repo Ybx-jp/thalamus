@@ -1,4 +1,4 @@
-"""Gold label set tests (I2; lab/034).
+"""Gold label set tests.
 
 Interfaces: thalamus.eval.gold — the n derivation, stratified draw, workbook
             blinding, label round-trip, Cohen's kappa.

@@ -4,7 +4,7 @@ Stage 1 (transcripts.py) recovers everything a transcript records exactly — wh
 were touched, when, by which tool calls. This module handles the half that genuinely
 needs judgement: decisions, problems, solutions, and open threads.
 
-Three design commitments, all inherited from docs/10:
+Three design commitments:
 
 1. **Extraction reads the archive, not ~/.claude.** The digest is rendered from the
    retained, content-addressed bytes — the same Source vertex the session's DERIVED_FROM
@@ -123,7 +123,7 @@ def render_digest(payload: bytes, *, budget: int = _DIGEST_BUDGET) -> str:
                         text = _tool_result_text(block)
                         if text:
                             # External-ingress results are labelled so the extractor
-                            # can apply the external-origin rule (docs/05); the label
+                            # can apply the external-origin rule; the label
                             # is data about the segment, decided here, not by the model.
                             label = (
                                 "result [EXTERNAL CONTENT]"
@@ -390,7 +390,7 @@ def build_prompt(
         )
     else:
         rendered = "(none)"
-    # The convergence feed (docs/10): the same mechanism as open threads, pointed at
+    # The convergence feed: the same mechanism as open threads, pointed at
     # claims. The model can only converge on wording it can see.
     if known_claims:
         rendered_claims = "\n".join(
@@ -662,7 +662,7 @@ def apply_ingress_floor(
 ) -> SessionGraph:
     """Down-tier claims that rest on external content the transcript embedded.
 
-    The laundering defense's write-path half (docs/05): a session transcript is
+    The laundering defense's write-path half: a session transcript is
     tier-1 evidence, but the pages it fetched are not — a claim distilled from them
     must keep third-party trust or recall will later serve a stranger's assertion as
     the agent's own lived experience.
@@ -673,7 +673,7 @@ def apply_ingress_floor(
     - claims whose distinctive terms echo the external texts are forced external
       **regardless of the mark** — no instruction reaches this layer, and `_tokens`
       makes it read through a claim rewritten to spell the page's words differently.
-      Same dials as used-vs-ignored attribution: crude, cheap, honest (docs/04).
+      Same dials as used-vs-ignored attribution: crude, cheap, honest.
 
     It is lexical, so the residual is vocabulary: a claim that restates the page in
     words the page does not use is not caught. Paraphrase is the bar, not spelling.
@@ -738,7 +738,7 @@ def _tokens(text: str) -> set[str]:
     claim used; characters outside `_TOKEN_RE`'s class (`~`, `,`, `|`, U+200B) split
     on both sides and never survived a shared tokenizer anyway.
 
-    The cost is a coarser signal — `docs/05-trust-model.md` also contributes `docs`,
+    The cost is a coarser signal — `notes/trust-model.md` also contributes `notes`,
     `trust`, `model` — which lands as more first-party claims read as tier 2. That is
     the direction this whole layer is allowed to fail in.
     """
@@ -811,7 +811,7 @@ def partition_valid(data: dict) -> tuple[dict, list[str]]:
     validator is ground truth about conformance, never about content — a missing
     `approach` means the model recorded no approach, and inventing one would convert a
     loud failure into a fabricated memory, which is strictly worse for a store whose
-    whole value is that its claims are traceable (docs/05).
+    whole value is that its claims are traceable.
 
     Returns the surviving data and a human-readable list of what was dropped and why.
     Losing one claim is a cost; losing the session is an outage.

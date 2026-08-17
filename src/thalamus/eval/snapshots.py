@@ -16,7 +16,7 @@ that snapshot back and re-run the script. Three pieces:
 - `registry()` reads the committed ledger.
 
 The registry is committed; the `.kryo` files are not. The graph is one operator's
-session history and is never shipped (docs/index, 2026-07-29) — what travels is the
+session history and is never shipped — what travels is the
 *claim* that a number came from a named, hash-identified state, which is falsifiable
 by anyone holding the same snapshot and is honest about what they cannot check.
 

@@ -2,7 +2,7 @@
 
 These tests are mostly about failure. The reader's job is not to extract ingress texts
 (that part is three lines); it is to be unable to report success on a store it did not
-read whole. lab/060 measured the failure that motivates every case here: with two
+read whole. The measured failure that motivates every case here: with two
 ingress calls and one result blob removed, an "is `external_texts` non-empty" check
 still passes while a whole fetched page is missing from what the floor judges against.
 """
@@ -105,7 +105,7 @@ def test_a_missing_ingress_result_is_incomplete_not_merely_smaller(tmp_path):
     One of two ingress results is removed. `external_texts` would still be non-empty —
     825 chars of a real page, in the measured instance — so a reader that asks only
     "did I find any external text" reports success while the floor judges a corpus
-    missing an entire fetched page (lab/060).
+    missing an entire fetched page.
     """
     path = _two_fetch_store(tmp_path)
     con = sqlite3.connect(path)
@@ -275,7 +275,7 @@ def test_the_parser_raises_rather_than_returning_a_short_list(blob, expected):
 
     A scanner written for this store keyed on the *byte shape* of a field-1 entry and
     reported a reference that was a window straddling a field boundary — it found a
-    dangling ref that did not exist, and said nothing was wrong (lab/060). A reader
+    dangling ref that did not exist, and said nothing was wrong. A reader
     that skips what it does not understand has the same property in the other
     direction: it returns a short list that looks complete.
     """

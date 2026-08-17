@@ -16,7 +16,7 @@ Cursor session runs `hooks/claude-code/role-guard.sh` with nothing wired under
 `.cursor/`, and the write boundary has been enforced there since the day that
 release shipped. Measured, not inferred: a `qe`-pinned Cursor session's `Write` to
 `*/src/*` was blocked, the file was unchanged, and `~/.thalamus/guards/` took a
-`role-boundary` block row carrying a Cursor conversation id (lab/061).
+`role-boundary` block row carrying a Cursor conversation id.
 
 Both times the record was wrong the cause was the same — it measures the artifact
 instead of the obligation. Moving a claim from prose into a dataclass raised its
@@ -51,7 +51,7 @@ The Claude Code rows re-ask themselves for free: the wiring tables are ours, so
 `check_boundaries()` recomputes whether the guard is actually wired on a matcher that
 names the tool. That check is not ceremonial — a room boundary was once declared in
 `install.py` and never armed, and every room ran reporting a treatment that had not
-occurred (lab/056).
+occurred.
 
 The Cursor rows cannot. No sentinel probe and no derivation reaches a vendor's
 undocumented compatibility path; it takes a live session, a real model call and a
@@ -172,7 +172,7 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "see — `tmux send-keys` reaches any pane on the box, and `thalamus dispatch` "
         "addresses a room by name from a shell. The free re-ask below checks the "
         "first; it was once declared here and never armed, so every room reported a "
-        "treatment that had not occurred (lab/056), which is why this row is "
+        "treatment that had not occurred, which is why this row is "
         "recomputed rather than believed.",
     ),
     BoundaryRow(
@@ -183,7 +183,7 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
             where="`THALAMUS_SCOPE=qe agent -p --trust` in a directory with no "
                   "`.cursor/hooks.json`: the `Write` to `*/src/*` was blocked, the "
                   "file was unchanged, and a `role-boundary` block row landed in "
-                  "~/.thalamus/guards/ under a Cursor conversation id (lab/061)",
+                  "~/.thalamus/guards/ under a Cursor conversation id",
             verified_against=_CURSOR_LIVE,
             conditions=_CURSOR_COND,
             reask="live-session",
@@ -224,8 +224,8 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "UNKNOWN rather than ABSENT: skills exist and are used, and `beforeReadFile` "
         "is an interception point Claude Code has no equivalent of, so a read guard "
         "over `*/skills*/*/SKILL.md` is reachable and has never been asked for. Not "
-        "built: a guard on `Read` is a high-false-positive surface, and lab/008's "
-        "standing trade is that a false positive teaches route-around.",
+        "built: a guard on `Read` is a high-false-positive surface, and the standing "
+        "trade is that a false positive teaches route-around.",
     ),
     BoundaryRow(
         "room_boundary.message", "cursor", Provision.PROVIDED,
@@ -235,8 +235,7 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
             where="a `qe`-pinned Cursor member of room `probe` was asked to run "
                   "`tmux send-keys -t %0 hello`; the command did not run, the guard's "
                   "own prose reached the model verbatim, and a `room-boundary` block "
-                  "row with `branch: raw-transport` landed in `~/.thalamus/guards/` "
-                  "(lab/065)",
+                  "row with `branch: raw-transport` landed in `~/.thalamus/guards/`",
             verified_against="cursor/2026.08.11-e8db854",
             conditions=(Condition.PARSE, Condition.PRINT, Condition.INTERACTIVE),
             reask="live-session",

@@ -1,5 +1,5 @@
 """
-`thalamus rescope` — redirecting a session's distillation scope (docs/07).
+`thalamus rescope` — redirecting a session's distillation scope.
 
 Interfaces: harness/rescope.py, driven in-process against a pin ledger in
 tmp_path. `distilled_scopes` is stubbed rather than hitting a live graph;
@@ -110,7 +110,7 @@ class TestSessionResolution:
 
 
 class TestCurrentSession:
-    """Which session am I — the question lab/026 answered wrongly.
+    """Which session am I — the question a wrong-subject rescope answered wrongly.
 
     The harness exports the id; the fix is to read it, and to refuse rather than
     infer when it is absent.
@@ -149,7 +149,7 @@ class TestCurrentSession:
 class TestForeignSessionGuard:
     """Passing an id that is not this session's.
 
-    This is the lab/026 shape exactly: a plausible UUID from a path, a
+    This is that shape exactly: a plausible UUID from a path, a
     transcript, or a recall, passed with confidence. The guard is mechanical —
     the live id comes from the harness, so an agent wrong about its own identity
     cannot assert its way past it.
@@ -167,7 +167,7 @@ class TestForeignSessionGuard:
         R.run(SID, "main")
         out = capsys.readouterr().out
         assert SID[:8] in out and self.LIVE[:8] in out
-        assert "lab/026" in out, "the guard should say what inferring an id cost"
+        assert "same-scope session" in out, "the guard should say what inferring an id cost"
 
     def test_the_flag_permits_it_and_the_row_records_the_crossing(self, ledger, monkeypatch):
         monkeypatch.setenv(R.SESSION_ID_ENV, self.LIVE)

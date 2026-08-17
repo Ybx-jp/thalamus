@@ -50,7 +50,7 @@ class TestDiscrimination:
         assert result.outcome is Outcome.CONFIRMED
 
     def test_a_flag_declared_absent_but_present_is_drift(self, live):
-        """The lab/054 case, which is the whole reason this module exists.
+        """The measured case that is the whole reason this module exists.
 
         `arm_blockers` declared the permission flags absent from Cursor. `--force`,
         `--yolo`, `--sandbox` and `--auto-review` were all there, and the row survived
@@ -138,7 +138,7 @@ class TestDerivedRows:
         assert probes.probe_derived(probe).outcome is Outcome.CONFIRMED
 
     def test_a_script_joining_one_wiring_is_drift(self, monkeypatch):
-        """The lab/054 event: three scripts joined HOOK_WIRING and the count did not.
+        """The measured event: three scripts joined HOOK_WIRING and the count did not.
 
         Nothing failed at the time, because the count lived in a comment. Here the
         declaration is fixed data and the derivation reads the tables, so the two
@@ -212,7 +212,7 @@ class TestBoundaryRows:
 
     The wiring-parity record was clean and green while `role-guard.sh` was listed as
     a Cursor gap and was in fact binding there, because a derivation over our own
-    tables never asks a harness anything (lab/061). These rows are what carries the
+    tables never asks a harness anything. These rows are what carries the
     answer instead, so what must stay true of them is that they cannot quietly become
     a boolean again.
     """
@@ -253,7 +253,7 @@ class TestBoundaryRows:
         assert all(outcome == "confirmed" for _, outcome in claude)
 
     def test_a_boundary_declared_but_never_armed_is_drift(self, monkeypatch):
-        """lab/056: room-guard.sh was declared here and never wired, and every room
+        """Measured: room-guard.sh was declared here and never wired, and every room
         reported a treatment that had not occurred. A record that cannot catch that
         is decoration."""
         from thalamus.contract import boundaries

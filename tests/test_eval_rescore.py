@@ -1,5 +1,5 @@
 """
-Retroactive contamination stamping (src/thalamus/eval/rescore.py; lab/021-022).
+Retroactive contamination stamping (src/thalamus/eval/rescore.py).
 
 Interfaces: rescore_records / apply_outcomes / append_revisions / render_rescore.
 Infrastructure: a hermetic task battery in tmp_path (an `authored` task has no
@@ -175,8 +175,8 @@ class TestIdempotence:
 
 
 class TestUnitsAndGrouping:
-    """lab/022 reported "9 of 88" — 9 git-reach events against an 88-arm
-    denominator, spanning six campaigns. Both halves are fixed here."""
+    """An earlier scoring pass reported "9 of 88" — 9 git-reach events against an
+    88-arm denominator, spanning six campaigns. Both halves are fixed here."""
 
     def test_a_campaign_is_one_tasks_arms_not_one_days(self):
         same_day = [
@@ -219,7 +219,7 @@ class TestAppendRevisions:
     """The write-side half of the corpus pin: re-scoring appends, never overwrites.
 
     The corpus lost 88 pre-rescore judgements to in-place rewrites and kept nothing
-    but a `restamped_by` marker on 23 more (lab/038). These pin the property that
+    but a `restamped_by` marker on 23 more. These pin the property that
     would have prevented it.
     """
 
@@ -296,7 +296,7 @@ def test_an_injected_arm_with_no_transcript_is_refused_not_stamped(tmp_path, bat
     - the outcome is a refusal carrying the session id
     - nothing is stamped
 
-    This is the failure lab/022 caught in `transcript_text`: a default that returns a
+    This is the failure caught in `transcript_text`: a default that returns a
     plausible value instead of failing files a verdict nobody can check. Re-scoring is
     exactly where that would be invisible, since there is no live run to contradict it.
     """

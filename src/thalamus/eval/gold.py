@@ -10,7 +10,7 @@ is the apparatus for getting them and for scoring against them.
 judge–human agreement. For κ with observed agreement p_o ≈ 0.80 against chance
 p_e ≈ 0.50, SE(κ) ≈ √(p_o(1−p_o) / (n(1−p_e)²)) = √(0.64/n), so SE = 0.05 — a ±0.10
 interval, enough to separate "substantial" from "moderate" agreement — needs 256
-labelled node-verdicts. The 100 that lab/032 proposed gives SE = 0.08 and cannot make
+labelled node-verdicts. The 100 an earlier draft proposed gives SE = 0.08 and cannot make
 that separation.
 
 **The sample is stratified where the instrument is known to be non-uniform** — node

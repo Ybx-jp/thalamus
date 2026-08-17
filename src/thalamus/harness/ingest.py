@@ -1,4 +1,4 @@
-"""Curated ingestion v0 — manual-first, evidence-first (docs/06).
+"""Curated ingestion v0 — manual-first, evidence-first.
 
 The smallest thing that populates a knowledge subgraph: fetch (or read) one document,
 retain the bytes in the archive *before anything else*, extract a handful of typed
@@ -43,7 +43,7 @@ _DIGEST_BUDGET = 24_000  # chars of article text handed to the extraction model 
 # past the right edge of that curve. 9,600 chars is ~2,400 tokens: the largest size
 # with a measurement attached, chosen over the 600-token end to bound claim volume and
 # cost, not because it is the recall optimum — it is the measured *worse* of the two.
-# That trade is a judgement about graph volume, not a grounded optimum (docs/11 §3f).
+# That trade is a judgement about graph volume, not a grounded optimum.
 # The overlap keeps a claim spanning a boundary from being cut in half; its size is
 # proportional to GraphRAG's shipped 100/600 ratio and is otherwise ungrounded — no
 # work in the literature scope measures overlap or boundary policy.
@@ -53,14 +53,13 @@ _CHUNK_OVERLAP = 400
 # Retrieval chunk geometry, and deliberately NOT the extraction geometry above. Those
 # 9,600 chars are sized to bound claim volume and model cost per pass; these are sized
 # to be injected into a recall result, where the binding constraints are the injection
-# budget (experiments/002: 33.8% of injected retrieval tokens go unused, 95% CI
-# [27.2, 40.5]; lab/034) and precision. Reusing
-# the extraction size here would put a 9,600-char passage in a result window. Nearest
-# measurement: enlarging a verbatim window from 512 to 768 chars lifted accuracy
-# 43.1%->47.2%, with 512 called conservative for the verbatim side
-# (`scope:literature:claim:00aeb8542b0e3f30` neighbourhood, lab/052) — so bigger than
-# 512 is supported and 1,500 is past where anyone measured. Ungrounded, and the graph
-# is rebuildable from retained bytes, so this is a dial rather than a commitment.
+# budget (33.8% of injected retrieval tokens go unused, 95% CI [27.2, 40.5]) and
+# precision. Reusing the extraction size here would put a 9,600-char passage in a
+# result window. Nearest measurement: enlarging a verbatim window from 512 to 768
+# chars lifted accuracy 43.1%->47.2%, with 512 called conservative for the verbatim
+# side (`scope:literature:claim:00aeb8542b0e3f30` neighbourhood) — so bigger than 512
+# is supported and 1,500 is past where anyone measured. Ungrounded, and the graph is
+# rebuildable from retained bytes, so this is a dial rather than a commitment.
 _RETRIEVAL_CHUNK_SIZE = 1_500
 _RETRIEVAL_CHUNK_OVERLAP = 150
 
@@ -81,7 +80,7 @@ class DigestReport:
     The archive keeps every fetched byte, but only `_DIGEST_BUDGET` chars of extracted
     text are handed to the model, and the discard is silent at the model's end: claims
     come from the opening and the tail is invisible rather than thinly covered. The
-    operator's confirm step (docs/06 §5) can only weigh that if it is told, and raw
+    operator's confirm step can only weigh that if it is told, and raw
     payload bytes cannot tell it — markup-to-text ratio varies by an order of magnitude
     across sources, so bytes are not a proxy for what got read.
     """
@@ -132,16 +131,16 @@ def to_text(payload: bytes) -> str:
     """Crude document → text. HTML gets tags stripped; PDFs are refused, not parsed.
 
     Deliberately dumb: the archive holds the real bytes, so a better text extractor
-    is always a re-run away, and PDF plumbing is exactly the demoted cost docs/06
-    refuses to pay before measurement asks for it.
+    is always a re-run away, and PDF plumbing is exactly the demoted cost the
+    ingestion protocol refuses to pay before measurement asks for it.
     """
     if payload[:5] == b"%PDF-":
         raise IngestError(
-            "PDF parsing is deliberately unbuilt (docs/06) — feed an HTML rendering "
+            "PDF parsing is deliberately unbuilt — feed an HTML rendering "
             "(for arXiv, arxiv.org/html/<id>) or hand-feed the relevant sections as a "
             "local text file under ~/.thalamus/hand-fed/. Do NOT settle for the "
             "abstract page: /abs/ yields abstract-level claims only, and the failure "
-            "is silent (docs/06 §4). The archive will retain whatever you feed"
+            "is silent. The archive will retain whatever you feed"
         )
     text = payload.decode("utf-8", errors="ignore")
     if "<" in text and ">" in text:
@@ -202,7 +201,7 @@ def chunk_text(
     Deliberately dumb, like the rest of this module: fixed width, no structure
     detection. A section-aware splitter is a better instrument and the scope holds
     nothing measuring one against fixed width, so it stays unbuilt until something
-    asks (docs/06). Boundaries back off to the nearest space so a chunk never ends
+    asks. Boundaries back off to the nearest space so a chunk never ends
     mid-word — the model is being asked to quote verbatim citations, and a severed
     token is a citation it cannot anchor.
     """
@@ -291,8 +290,8 @@ def reconcile_entity_references(
     operations here are **narrowing**: an unresolvable reference is dropped from the
     claim that made it, and an entity no surviving claim reaches is dropped from the
     batch. Nothing is invented — no placeholder description, no synthesised entity —
-    which is what keeps this on the safe side of docs/05: the write path may discard
-    what it cannot verify, never manufacture what the model did not assert.
+    which is what keeps this on the safe side of the trust model: the write path may
+    discard what it cannot verify, never manufacture what the model did not assert.
 
     A claim stripped to no entities is kept. `about` is a retrieval affordance, not a
     claim's identity; its description, citation and provenance are intact, and dropping
@@ -409,8 +408,8 @@ def build_chunks(text: str, claims: list, entity_names: list[str]) -> list[Chunk
 
     Fixed width, reusing the extraction chunker so a chunk boundary is a boundary
     either way. Semantic segmentation is declined: an extra full-corpus LLM pass has a
-    measured record of not paying, and finer units at constant fidelity cost accuracy
-    (lab/052). Extraction is disposable, so a better segmenter is a re-run away.
+    measured record of not paying, and finer units at constant fidelity cost accuracy.
+    Extraction is disposable, so a better segmenter is a re-run away.
 
     `about` is filled by scanning for entity names the extraction already declared,
     rather than by asking a model — the entity vocabulary is the batch's own, no
@@ -600,7 +599,7 @@ def ingest(
     # indices cannot drift: build_batch drops malformed items, and an anchor computed
     # before that filtering would point at the wrong claim. Only `ingest` reaches here
     # — session transcripts distil through `extract` — so every ingested document is
-    # chunked in whatever scope it lands in, and no transcript ever is (lab/052).
+    # chunked in whatever scope it lands in, and no transcript ever is.
     source_chunks = build_chunks(text, batch.claims, [e.name for e in batch.entities])
     batch = batch.model_copy(
         update={

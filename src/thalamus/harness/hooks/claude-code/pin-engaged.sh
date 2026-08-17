@@ -11,7 +11,7 @@
 # (scope:main:exchange:63b647977a624b85): engagement-gating restores the
 # sampling frame to sessions with a measurement opportunity — same principle
 # as the report's SIGNAL_FLOOR gate. First-prompt-as-engagement is a dial,
-# not a truth (automated prompts count too); disclosed in docs/04.
+# not a truth (automated prompts count too), and is disclosed as one.
 #
 # Append-only, idempotent per session: one {"event":"engaged"} line per
 # session_id, alongside the spawn lines. load_pins skips event lines;

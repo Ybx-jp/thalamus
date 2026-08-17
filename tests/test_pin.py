@@ -4,8 +4,8 @@ Pinned-session launcher tests: the derived agent definition and scope validation
 Interfaces: thalamus.harness.pin
 Infrastructure: tmp_path manifests only — no tmux, no claude, no graph
 Scope: the pure half of the launcher. Actually launching a pinned process is
-verified live (docs/07, lab/003) — a launcher can only be tested by the process
-it launches, which is exactly the lab/001 boundary.
+verified live — a launcher can only be tested by the process
+it launches, which is exactly where the boundary falls.
 """
 
 import json
@@ -541,11 +541,11 @@ def test_ensure_room_builds_the_measured_layout(tmp_path, monkeypatch):
     - `.claude.json` is a copy, and carries the operator's mcpServers
     - `settings.local.json` is the room's OWN file, seeded with the allowlist
 
-    The own/borrow split is the whole design (lab/046): `projects/` shared is a
+    The own/borrow split is the whole design: `projects/` shared is a
     transcript channel out of the room, while `settings.json` NOT shared is a
     member with zero Thalamus hooks — each side of the split fails a different way.
 
-    `settings.local.json` sits on the owned side for a third reason (docs/12): a
+    `settings.local.json` sits on the owned side for a third reason: a
     room's permission surface has to be declared for the room, not inherited from
     whatever the operator's own session accumulated — and borrowing it would let the
     room's policy move underneath it whenever the operator accepted a prompt
@@ -648,7 +648,7 @@ def test_the_room_allowlist_reaches_neither_the_network_nor_history(tmp_path):
 
 def test_ensure_room_replaces_a_symlinked_projects_dir(tmp_path, monkeypatch):
     """
-    Scenario: a room dir built under the withdrawn lab/045 shape, where `projects/`
+    Scenario: a room dir built under the withdrawn earlier shape, where `projects/`
               was symlinked back to the real config dir
 
     Verifications:
@@ -658,7 +658,7 @@ def test_ensure_room_replaces_a_symlinked_projects_dir(tmp_path, monkeypatch):
     This is the repair that closes the third channel. `claude --resume` consults
     neither the discovery roster nor the send path — it reads transcripts off disk,
     so while that link stands, any non-member can fork a member's session and read
-    its context verbatim (measured in both directions, lab/046).
+    its context verbatim (measured in both directions).
     """
     monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
     host = _host(tmp_path)

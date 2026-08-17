@@ -191,7 +191,7 @@ def _land_event(
         outputs = outputs_after(transcript, event.ts)
         if not outputs.strip():
             # Nothing to judge against is not "ignored" — the two must never share a
-            # number (lab/002). The edge records why it carries no verdict.
+            # number. The edge records why it carries no verdict.
             outcome.empty_window += len(contents)
             for node_id in contents:
                 returns[node_id] = {"unjudged": "no agent output after this retrieval"}
@@ -207,7 +207,7 @@ def _land_event(
                     # upserted latest-wins and their text is overwritten in place —
                     # and `ingested_at` carries the writing session's timestamp, not
                     # the write time, so nothing records that it moved. 27% of
-                    # verdicts sit on that kind of text (experiments/001), which made
+                    # verdicts sit on that kind of text, which made
                     # every historical verdict a re-derivation rather than a record.
                     # Storing the term set makes it a record: the window comes from
                     # the immutable archive, so terms + window reproduce the verdict
@@ -236,13 +236,13 @@ def _land_event(
             "session_id": event.session_id,
             "scope": scope,
             "returned_count": len(returned_ids),
-            # The rendered response *is* this retrieval's context-injection cost
-            # (docs/04 layer 1b); recorded per trace so report can price verdicts.
+            # The rendered response *is* this retrieval's context-injection cost;
+            # recorded per trace so report can price verdicts.
             "injected_chars": len(event.tool_response),
             # Which ranking dials served this row. Traces older than the ledger read
             # `unknown` — the ranker of that era was never recorded, and borrowing the
             # oldest known fingerprint would invent the very attribution this exists
-            # to make honest (lab/029).
+            # to make honest.
             "ranker_config": ledger.at(event.ts),
             # The judging dials the verdicts on this trace's RETURNS edges were
             # reached under. `judged_terms` records the instrument's inputs; this
@@ -264,7 +264,7 @@ def _land_event(
         # tap stores that response verbatim, so content matches content and a
         # clock-skewed pairing is impossible. Without these the retrieval looks
         # deterministic to every later estimator, which is exactly the state
-        # docs/11 §4 records as blocking replay and doubly-robust estimation.
+        # that blocks replay and doubly-robust estimation.
         draw = (withheld or {}).get(policy_mod.response_key(event.tool_response))
         if draw:
             properties["withheld"] = " ".join(draw.withheld)
@@ -277,7 +277,7 @@ def _land_event(
         write_trace(g, vid("Trace", event.trace_id(), scope), properties, session_vid, returns)
         if exchange_vid:
             # The CONSULTS edge lands here, not at mint time: the MCP server cannot
-            # see its caller's session (lab/001), but the tap records the ticket, so
+            # see its caller's session, but the tap records the ticket, so
             # sync is where the consulting Session and its Exchange finally meet.
             _ensure_edge(g, session_vid, exchange_vid, "CONSULTS")
             _stamp_answering_context(g, exchange_vid, event)
@@ -292,7 +292,7 @@ def _land_event(
 def answering_context(agent_type: str | None, expert: str) -> str:
     """How independent the answer was from the session that asked for it.
 
-    The consultation protocol says to spawn a subagent voicing the expert (docs/02),
+    The consultation protocol says to spawn a subagent voicing the expert,
     and the citation gate enforces that the answer rests on the expert's own memory.
     What the gate cannot see is *who assembled it*: a session that answers its own
     ticket inline produces a byte-identical Exchange record to one a subagent voiced,
@@ -361,7 +361,7 @@ def _session_scope(
     """Which scope this session's Session vertex lives in, or None if not yet distilled.
 
     Precedence: the tap-recorded pin (the hook inherits THALAMUS_SCOPE from the same
-    process env the MCP server read — docs/07 "the process is the pin"), then the
+    process env the MCP server read — "the process is the pin"), then the
     scope the returned vertex IDs carry, then the distilled Session vertex. Every
     candidate is validated against an existing Session vertex, so a wrong or stale
     hint falls through instead of landing traces in a scope the session never joined.
@@ -397,7 +397,7 @@ def _retained_transcript(g: GraphTraversalSource, session_vid: str) -> bytes | N
 
 def _session_correlates(g: GraphTraversalSource, session_vid: str) -> tuple[str, str]:
     """This session's `(room, forked_from)` — the two axes that correlate it with
-    another session (docs/09 §Scope, `substrate/witnesses`).
+    another session (`substrate/witnesses`).
 
     Read off `Session` rather than `Trace` on purpose. The tap never recorded either
     field, so stamping them onto Trace would leave every trace written before the
@@ -425,8 +425,8 @@ def _retained_snapshot(
 ) -> tuple[bytes | None, str]:
     """The archived transcript, and the content hash it came from.
 
-    A session distilled while still open accumulates several Source snapshots (docs/10,
-    lab/002); the SUPERSEDES lineage marks the current head, and attribution against
+    A session distilled while still open accumulates several Source snapshots; the
+    SUPERSEDES lineage marks the current head, and attribution against
     anything else silently under-counts usage. The head is the snapshot with no
     incoming SUPERSEDES edge; ordering by ingested_at breaks ties on graphs written
     before the lineage existed, where every snapshot still looks like a head.

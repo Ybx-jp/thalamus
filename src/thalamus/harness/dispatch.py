@@ -1,10 +1,9 @@
 """Dispatch — delivering a message to live room members without approving anything.
 
-[docs/12](../../../docs/12-room-lifecycle.md) §Delivery mechanics. Delivery to a live
-pinned session is `tmux send-keys`, which is the only substrate available: the console
-is a stdlib HTTP server with no messaging socket, and a room member has no inbox. The
-measured behaviour against a real interactive session is what the whole module is built
-around:
+Delivery to a live pinned session is `tmux send-keys`, which is the only substrate
+available: the console is a stdlib HTTP server with no messaging socket, and a room
+member has no inbox. The measured behaviour against a real interactive session is what
+the whole module is built around:
 
 | target status | text | the following Enter |
 |---|---|---|
@@ -23,7 +22,7 @@ routes through it.
 > only on a state measured to accept a send, and refuses the rest naming them.** Never
 > a bare Enter into a window holding a dialog.
 
-The table was measured again on Cursor (lab/065) and every row held, including the
+The table was measured again on Cursor and every row held, including the
 third: a message sent into a pane showing `Run this command?` never reached the model
 and the Enter ran the command. So the hazard is the harness-independent one, and the
 refusal is too — but the *evidence* for it is not. Claude Code publishes a `status`
@@ -38,7 +37,7 @@ with different authority, which is why `Target.harness` is on the row.
 Delivering to the reachable members and skipping the rest looks like the tolerant
 choice and quietly corrupts the protocol. A Contract Net announcement admits three
 replies — a bid, a **decline**, and silence past expiration, which is a *timeout* and a
-third state distinct from both (docs/12 §1). A member that never received the
+third state distinct from both. A member that never received the
 announcement is silent, so a partial fan-out makes silence ambiguous: it can no longer
 separate *this expert judged itself ineligible* from *this expert was never asked*.
 
@@ -50,8 +49,8 @@ later reading of a silence honest rather than merely permitted.
 ## What is trusted, and what is cross-checked
 
 Two rosters have to agree. The **descriptor roster** is `sessions/*.json` in the room's
-own config dir, which is what makes enumerating it *be* enumerating live membership
-(lab/045); liveness is `pid` + `procStart` against `/proc`, already implemented in
+own config dir, which is what makes enumerating it *be* enumerating live membership;
+liveness is `pid` + `procStart` against `/proc`, already implemented in
 `quick.live_sessions`. The **pin ledger** supplies the tmux pane a session owns, which
 is the one handle unique per window and stable across the respawn a console recycle
 performs. Where the descriptor roster and the live pane list disagree, dispatch refuses
@@ -335,7 +334,7 @@ def _cursor_targets(
             refusal = (
                 "is holding an approval dialog — a send would be discarded and the "
                 "Enter would actuate the highlighted default, approving a tool call "
-                "this dispatch cannot see (measured, lab/065)"
+                "this dispatch cannot see (measured)"
             )
         elif status != panes_mod.DELIVERABLE:
             refusal = (

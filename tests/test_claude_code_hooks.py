@@ -1,5 +1,5 @@
 """
-Claude Code session-start hook tests (docs/07 harness integration; lab/012-013).
+Claude Code session-start hook tests (harness integration).
 
 Interfaces: src/thalamus/harness/hooks/claude-code/session-start.sh, driven
 live (bash) with synthetic stdin payloads shaped per Claude Code's hook
@@ -8,8 +8,8 @@ Infrastructure: tmp_path as $HOME so the pin ledger is sandboxed; no live
 graph, no MCP server.
 Scope: the *injected instruction* is the contract under test here — it is the
 only channel by which a session learns the memory surface exists, and two
-counterfactual campaigns were voided by it being wrong (lab/012: the project it
-names; lab/013: the calling convention it omitted). Pin-ledger writes are
+counterfactual campaigns were voided by it being wrong — once by the project it
+names, once by the calling convention it omitted. Pin-ledger writes are
 covered because session-end and eval both read them. The Cursor variant's
 mirror of these checks lives in test_cursor_hooks.py.
 """
@@ -61,7 +61,7 @@ class TestInjectedInstruction:
         Scenario: a normal session starts.
 
         Verification: the injected text tells the agent how to *reach* the
-        tools, not just to call them. lab/013 measured both memory-on arms of
+        tools, not just to call them. A measurement found both memory-on arms of
         a campaign making zero thalamus calls with the server reachable and
         all tools registered — the instruction named tools whose schemas were
         deferred, so it could not be followed as written. The ToolSearch step
@@ -94,7 +94,7 @@ class TestInjectedInstruction:
         """Empty, not the directory's name. The write path files these sessions with no
         project at all, so asking for one named after a scratch directory would recall a
         project nothing has ever been filed under — silently returning nothing, which is
-        the shape of the bug that made two campaigns' memory-on arms inert (lab/012)."""
+        the shape of the bug that made two campaigns' memory-on arms inert."""
         loose = tmp_path / "not-a-repo"
         loose.mkdir()
 
@@ -135,7 +135,7 @@ class TestInjectedInstruction:
         Verification: the injected project is the repo's real name, not the
         worktree's. basename(cwd) here is a string no session has ever
         distilled under, so recall scoped to it silently returns nothing —
-        the bug that made two campaigns' memory-on arms inert (lab/012).
+        the bug that made two campaigns' memory-on arms inert.
         """
         result = run_hook(
             session_start_payload(cwd="/tmp/wt/reader-recall--memory-on--20260726T000000Z"),
@@ -173,7 +173,7 @@ class TestInjectedInstruction:
         (`--resume <id> --fork-session`) arrives as `source=resume`, so gating the
         ledger on `startup` meant the launcher's `room` and `forked_from` were
         dropped for exactly the sessions those fields exist to describe — a fork's
-        agreement with its parent is inheritance, not corroboration (lab/043).
+        agreement with its parent is inheritance, not corroboration.
         session-end.sh resolves ledger-first precisely so a later re-extraction
         from a plain shell lands the same way, so an env var that happens to
         survive to session end does not make the row optional.
@@ -202,7 +202,7 @@ class TestInjectedInstruction:
 class TestSessionIdentityInjection:
     """A session must be told which session it is.
 
-    lab/026: nothing put the id in the model's context, so self-referential
+    Measured: nothing put the id in the model's context, so self-referential
     reasoning guessed its own subject and got a real, adjacent, same-scope
     session. The harness knew the answer the whole time.
     """
@@ -566,7 +566,7 @@ class TestTranscriptlessSessionsAreNotDistilled:
 
     def test_the_guard_looks_where_the_transcript_actually_landed(self, tmp_path):
         """A room runs under its own CLAUDE_CONFIG_DIR and files its transcript in
-        that dir's `projects/`, which ~/.claude/projects never sees (lab/046). The
+        that dir's `projects/`, which ~/.claude/projects never sees. The
         guard has to resolve against the root the transcript came from; anchored to
         the default root instead, every room session reads as transcriptless and is
         skipped — the guard would silently become the memory loss it prevents.
@@ -731,7 +731,7 @@ def test_falsify_fires_on_an_ad_hoc_traversal_and_throttles_per_agent(tmp_path):
     - the main session is reminded once, not twice
     - each subagent is reminded once: they share the parent's session_id, so a
       session-only throttle would exempt every one of them — and the subagent is
-      where lab/029's two correctly-cited, wrong-mechanism answers were written
+      where the two measured correctly-cited, wrong-mechanism answers were written
     """
     first = _run_conditioning(_query_call("s-falsify"), tmp_path)
     context = json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"]
@@ -1107,7 +1107,7 @@ class TestMisArmedPinDetection:
 
         The warning must name the scope, the servers, and a remedy that actually
         works. "Restart with --agent" is the only real one: MCP servers arm per
-        process (lab/001), so nothing repairs this from inside the session.
+        process, so nothing repairs this from inside the session.
         """
         project = self._project(tmp_path)
         ctx = context_of(run_hook(

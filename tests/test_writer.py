@@ -173,7 +173,7 @@ def test_every_written_node_carries_a_provenance_envelope():
     Verifications:
     - every vertex written carries tier, source, and ingested_at
 
-    docs/05 makes provenance an obligation on every node in the graph, enforced at write
+    The trust model makes provenance an obligation on every node in the graph, at write
     time. The extraction YAML never mentions it — the writer stamps it — so this test is
     what keeps "no provenance, no write" true rather than aspirational.
     """
@@ -359,7 +359,7 @@ def test_new_transcript_snapshot_supersedes_the_previous_heads():
       (plural heads heal graphs written before the lineage existed)
     - the DERIVED_FROM floor edge is still written
 
-    A session distilled while open accumulates snapshots (docs/10, lab/002); the
+    A session distilled while open accumulates snapshots; the
     lineage is what makes "the transcript of session X" a defined head instead of a
     byte-size guess that silently under-counts attribution.
     """
@@ -446,7 +446,7 @@ def test_reingest_under_friendlier_provenance_cannot_raise_a_sources_trust():
     """
     Scenario: bytes already held at tier 2 are re-written claiming tier 1
 
-    Effective trust is the floor of the derivation chain (docs/05), and every Claim
+    Effective trust is the floor of the derivation chain, and every Claim
     hangs its floor off the Source it was derived from. If a re-ingest could relabel
     that Source, the cheapest attack on the trust model is to re-submit the same bytes
     under a friendlier provenance — so the two readings combine to the least trusted.

@@ -1,4 +1,4 @@
-"""How many *independent* groundings a set of asserting sessions is — docs/09 §Scope.
+"""How many *independent* groundings a set of asserting sessions is.
 
 A claim asserted by N sessions is not evidence from N witnesses whenever those
 sessions were correlated, and the artifact is undetectable after the fact: nothing
@@ -6,7 +6,7 @@ in a finished graph separates three sessions that independently agreed from thre
 that were forked from one another. `room` and `forked_from` are stamped at write
 time precisely so this layer has something to read.
 
-The resolution docs/09 settles on is **two readings over one write path**, not a
+The resolution the schema settles on is **two readings over one write path**, not a
 second field — `N` ("how often was this said", the bag semiring) alongside
 `PosBool(X)` ("how many independent groundings", idempotent and absorptive). Both
 are reported; neither replaces the other.
@@ -62,7 +62,7 @@ class Corroboration:
         nothing to say.
 
         Empty in the ordinary case on purpose: recall output is charged against the
-        reader's context (lab/006-007), so an independence line that fires on every
+        reader's context, so an independence line that fires on every
         uncorrelated claim would cost every session to inform almost none.
         """
         if not self.correlated:

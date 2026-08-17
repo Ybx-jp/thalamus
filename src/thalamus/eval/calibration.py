@@ -1,9 +1,9 @@
-"""Calibrating the used-vs-ignored judge against its own null (docs/04 layer 1).
+"""Calibrating the used-vs-ignored judge against its own null.
 
-A used-rate on its own is not a result. lab/032 showed why: judging a retrieval's
-nodes against a *different* session's output window scores ~59% used against 62.9%
-for the real one, so the shipped rate is roughly 59 points of shared project
-vocabulary plus 4 points of retrieval utility, with nothing separating them. Any
+A used-rate on its own is not a result, and a rotation study showed why: judging a
+retrieval's nodes against a *different* session's output window scores ~59% used
+against 62.9% for the real one, so the shipped rate is roughly 59 points of shared
+project vocabulary plus 4 points of retrieval utility, with nothing separating them. Any
 number quoted without that floor beside it reads as five times more signal than it
 has — and the "used% above ~50" target the project once shipped sat *below* chance.
 
@@ -14,7 +14,7 @@ So this module makes the floor a standing instrument rather than a one-off scrip
 where κ = (p − p̄₀) / (1 − p̄₀) is the chance-corrected agreement — the share of the
 *available* headroom the judge actually captures.
 
-Two things lab/032's draft did not do, and this does:
+Two things the earlier draft did not do, and this does:
 
 - **The null carries its own interval.** Its cross-project 5.0% came from one
   rotation against one pool. One draw is not an estimate, and a null without an
@@ -55,7 +55,7 @@ from thalamus.contract.ontology import vid
 
 # Length strata for the rotation. Quartiles of the window's character length: a
 # rotation must swap in a window of comparable size, or the null measures the size
-# change. Four buckets is the coarsest split that separates lab/032's measured
+# change. Four buckets is the coarsest split that separates the measured
 # 20-100k / 100k+ break without leaving strata too thin to sample from.
 STRATA = 4
 
@@ -86,7 +86,7 @@ class Case:
     stored: dict[str, bool] = field(default_factory=dict)
     stratum: int = 0
     # The two axes that make another session's window a bad null partner, read off the
-    # asserting `Session` (docs/09 §Scope, `substrate/witnesses`). The rotation's whole
+    # asserting `Session` (`substrate/witnesses`). The rotation's whole
     # premise is that a *different* session supplies unrelated vocabulary; a room-mate
     # or a fork shares the conversation itself, so pairing against one measures topic
     # overlap and calls it chance.
@@ -166,7 +166,7 @@ def load_cases(
     `eval report` counts, so a rate computed here and a rate printed there share a
     denominator instead of differing by an unexplained filter.
 
-    Cross-scope returns are kept. A main-scope retrieval that returns a homelab
+    Cross-scope returns are kept. A main-scope retrieval that returns an architect
     Session is not a foreign trace — it is the consultation path working, and it is
     also where the topic detector is most exposed (63% within-project vs 5% across),
     so dropping it would remove exactly the cases the calibration exists to price.
@@ -282,7 +282,7 @@ def load_cases(
 def fidelity(cases: list[Case], result: JudgeResult) -> tuple[int, int]:
     """Does re-judging reproduce the verdicts `eval sync` stored? (matched, total)
 
-    The gate lab/032 set for itself, kept as a standing check: a calibration whose
+    The gate the rotation study set for itself, kept as a standing check: a calibration whose
     replay disagrees with the production path is measuring its own reconstruction,
     not the instrument. Only meaningful for the `shipped` judge — a variant is
     *supposed* to disagree.
@@ -396,7 +396,7 @@ def uncorrelated(case: Case, other: Case) -> bool:
     null is meant to price *shared project vocabulary*; two sessions that shared a
     room or a fork parent shared the conversation, so their windows overlap in topic
     by construction and swapping one in measures that overlap as if it were chance.
-    Both axes come from `Session` and mean different things (docs/09 §Scope): a room
+    Both axes come from `Session` and mean different things: a room
     makes the correlation plausible, a fork makes it certain. The null excludes both,
     because a null only has to be conservative about what it admits.
 
@@ -438,7 +438,7 @@ def rotate(
     rng = random.Random(seed)
     by_stratum: dict[int, list[Case]] = defaultdict(list)
     for case in cases:
-        # `stratified=False` reproduces the unstratified rotation lab/032 used, so the
+        # `stratified=False` reproduces the earlier unstratified rotation, so the
         # two null *designs* can be compared on one corpus. They are not
         # interchangeable: the design is worth more κ than the spread between judges.
         by_stratum[case.stratum if stratified else 0].append(case)
@@ -519,7 +519,7 @@ def cluster_bootstrap(
     Verdicts inside one session are not independent draws: they share an output
     window, a topic and an operator. The measured ICC on this corpus is 0.264 with
     a design effect near 4, so a verdict-level interval is roughly half as wide as
-    the truth (lab/034). Sessions are the primary sampling unit.
+    the truth. Sessions are the primary sampling unit.
     """
     rng = random.Random(seed)
     by_session: dict[str, list[tuple[int, int]]] = defaultdict(list)
@@ -612,7 +612,7 @@ def restrict(cases: list[Case], kinds: set[str]) -> list[Case]:
                 stored={k: v for k, v in case.stored.items() if k in nodes},
                 # Carried, not dropped. `auditable()` reports how many verdicts
                 # recorded the terms they were computed against, and this is the
-                # function experiments/001 narrows the corpus with before asking —
+                # function a pre-registered study narrows the corpus with before asking —
                 # so losing it here made the auditability of a restricted corpus
                 # read as zero, in the one place it is actually measured.
                 judged_terms={

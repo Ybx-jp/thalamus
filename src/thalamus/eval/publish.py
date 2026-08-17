@@ -1,6 +1,6 @@
 """Rendering an experiment into something a stranger can read and re-run.
 
-A `lab/` entry is a notebook: it records what happened, for us. An **experiment**
+A notebook entry is internal: it records what happened, for us. An **experiment**
 is a publication: it states what was pre-registered, what was measured, what the
 null was, and how to regenerate every number in it. The two are different genres
 and this module serves only the second.
@@ -14,7 +14,7 @@ found the corpus violating it:
 - **The reproducibility checklist is rendered, not implied.** Pineau et al. (JMLR
   22(164), 2021) — a checklist in prose lets a reader see what is present and never
   what is missing. Rendering absence as a visible state is the same discipline
-  docs/03 applies to provenance gaps.
+  this project applies to provenance gaps.
 - **The absent artifact is explained.** The graph is one operator's session history
   and is never shipped. An unexplained missing dataset reads as concealment; a
   named threat model reads as a boundary.

@@ -1,4 +1,4 @@
-"""Rake registry tests — Class A stage 0 (lab/024 §2.1).
+"""Rake registry tests — Class A stage 0.
 
 Interfaces: thalamus.eval.rakes
 Infrastructure: none — pure aggregation, no graph, no model
@@ -172,7 +172,7 @@ def test_convergence_on_correlated_witnesses_is_disclosed_on_the_same_line():
     `converged` is the headline this module exists to keep visible, and a fork
     agreeing with its parent is one grounding counted twice — recorded by the
     launcher, invisible in the finished graph, and exactly the kind of flattering
-    number the rest of this module refuses (docs/09 §Scope).
+    number the rest of this module refuses.
     """
     rakes = [
         Rake(vid="r1", description="p", artifacts=("a.py",), sessions=("s1", "s2")),
@@ -196,7 +196,7 @@ def test_convergence_on_correlated_witnesses_is_disclosed_on_the_same_line():
 def test_room_mates_are_flagged_without_reducing_the_converged_count():
     """A room is not an event — it hosts many turns — so room-mates are disclosed
     and left counted. Collapsing them would trade a false-count error for a
-    false-collapse one, which docs/09 closes against."""
+    false-collapse one, which the schema closes against."""
     rakes = [Rake(vid="r1", description="p", artifacts=("a.py",), sessions=("s1", "s2"))]
     sessions = {
         "s1": SessionRow(vid="s1", session_id="s1", project="thalamus",

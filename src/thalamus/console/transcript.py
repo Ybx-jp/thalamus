@@ -22,7 +22,7 @@ Two properties of that file make this practical, both measured on this box
     reflowing under the reader mid-sentence, which is the specific thing that
     makes the pane mirror hard to read on a phone while a session streams.
 
-What it deliberately cannot do — see `docs/console.md` — is replace the pane.
+What it deliberately cannot do is replace the pane.
 A pending permission prompt is never written to the transcript at all: nothing
 is recorded while the dialog is on screen, and a rejection surfaces only
 afterwards, as `tool_result` text. So a transcript reader sees a `tool_use` with

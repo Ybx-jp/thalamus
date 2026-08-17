@@ -12,7 +12,7 @@ commit that actually fixed it). Necessary but nowhere near sufficient — the
 saturated binary oracle passes the anchor pair too, and a test the status quo
 passes cannot justify replacing the status quo. Anchors also carry a second value:
 a rung that fires against the *negative* anchor is measuring the repo rather than
-the candidate, which mechanizes lab/011's competence-echo catch.
+the candidate, which mechanizes the competence-echo catch.
 
 **Mutants** establish discrimination in the interior, which is where every observed
 arm actually sits. Each is a degradation of the known-good fix with its rung
@@ -54,7 +54,7 @@ from thalamus.eval.arms import (
 )
 from thalamus.eval.tasks import LADDER_LEVELS, Task
 
-# docs/04: 4–6 per task. Selective-mutation practice is that a small, well-chosen
+# 4–6 per task. Selective-mutation practice is that a small, well-chosen
 # set beats exhaustive generation; the floor is here because a one-mutant "set"
 # measures a single point and calls it discrimination.
 MUTANT_SET_MIN = 4
@@ -185,8 +185,8 @@ def run_gate(
         count = len(task.mutants)
         if not MUTANT_SET_MIN <= count <= MUTANT_SET_MAX:
             issues.append(
-                f"{count} mutants — the design says {MUTANT_SET_MIN}–{MUTANT_SET_MAX} "
-                "(docs/04). Anchors alone cover the range endpoints; the interior, "
+                f"{count} mutants — the design says {MUTANT_SET_MIN}–{MUTANT_SET_MAX}. "
+                "Anchors alone cover the range endpoints; the interior, "
                 "where every observed arm sits, needs the mutant set"
             )
         candidates += mutant_candidates(task, task_dir)
@@ -195,13 +195,13 @@ def run_gate(
               for c in candidates]
 
     # A rung that the *negative* anchor reaches beyond the gate is measuring the
-    # repository rather than the candidate — lab/011's competence echo, mechanized.
+    # repository rather than the candidate — the competence echo, mechanized.
     negative = next((g for g in grades if g.candidate.kind == "anchor-negative"), None)
     if negative and negative.rung > 1:
         issues.append(
             f"negative anchor scored rung {negative.rung}: the bug is present by "
             "construction, so a rung above the no-regression gate is measuring the "
-            "repo, not the candidate (lab/011 competence echo)"
+            "repo, not the candidate (competence echo)"
         )
 
     return {

@@ -232,7 +232,7 @@ def _main():
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
     )
 
-    # Ingest command — curated feed v0, manual-first (docs/06)
+    # Ingest command — curated feed v0, manual-first
     ingest_parser = subparsers.add_parser(
         "ingest", help="Ingest one document into an expert's knowledge subgraph"
     )
@@ -264,7 +264,7 @@ def _main():
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
     )
 
-    # Contract command — the federation boundary, audited (docs/01, docs/09 M1)
+    # Contract command — the federation boundary, audited
     contract_parser = subparsers.add_parser(
         "contract", help="Federation-contract operations against the live graph"
     )
@@ -286,7 +286,7 @@ def _main():
         "no graph: the manifests and the roster default are the whole answer.",
     )
 
-    # The architect's instrument (docs/02). Reads code, writes a git-tracked model and
+    # The architect's instrument. Reads code, writes a git-tracked model and
     # findings — never metrics — into the `architect` scope.
     arch_parser = subparsers.add_parser(
         "arch", help="The architect's structural instrument over a repo's imports"
@@ -338,7 +338,7 @@ def _main():
 
     # Chunk backfill — co-indexing for documents ingested before chunks existed.
     # Model-free by construction: chunking reads the retained bytes, so this costs
-    # compute and nothing else, and it is safe to re-run (lab/052).
+    # compute and nothing else, and it is safe to re-run.
     backfill_parser = subparsers.add_parser(
         "backfill-chunks",
         help="Build co-indexed Chunk vertices for already-ingested documents",
@@ -400,7 +400,7 @@ def _main():
         help="Apply the plan. Without this, nothing is removed.",
     )
 
-    # Snapshot command — durability on demand (docs/09)
+    # Snapshot command — durability on demand
     snapshot_parser = subparsers.add_parser(
         "snapshot",
         help="Flush the in-memory graph to its persistent file on the server",
@@ -445,7 +445,7 @@ def _main():
         "being discarded is already known-bad.",
     )
 
-    # Eval command — layer 1 of the eval loop (docs/04)
+    # Eval command — layer 1 of the eval loop
     eval_parser = subparsers.add_parser(
         "eval", help="Eval loop v0: land retrieval traces in the graph and report used-vs-ignored"
     )
@@ -505,13 +505,13 @@ def _main():
     eval_cost_parser.add_argument(
         "--by-occasion", action="store_true", dest="by_occasion",
         help="Attribute room members' burn to the ceremony occasion it happened "
-             "inside (docs/12 item 8), with each room's out-of-occasion burn beside it",
+             "inside, with each room's out-of-occasion burn beside it",
     )
 
     eval_pins_parser = eval_sub.add_parser(
         "pins",
         help="Pin-quality routing signal: per-expert pinned vs consulted utility "
-        "from priced traces (docs/02: the pin or the expert — the data says which)",
+        "from priced traces (the pin or the expert — the data says which)",
     )
     eval_pins_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     eval_pins_parser.add_argument(
@@ -591,7 +591,7 @@ def _main():
     eval_rakes_parser = eval_sub.add_parser(
         "rakes",
         help="Rake registry and adjudication window: solved problems later sessions "
-        "could have stepped on again (lab/024 §2.1, Class A stage 0 — proximity, "
+        "could have stepped on again (Class A stage 0 — proximity, "
         "never a hit verdict)",
     )
     eval_rakes_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
@@ -675,7 +675,7 @@ def _main():
 
     eval_tasks_parser = eval_sub.add_parser(
         "tasks",
-        help="Validate and list the counterfactual task battery (config/tasks/)",
+        help="Validate and list the counterfactual task battery (<config>/tasks/)",
     )
     eval_tasks_parser.add_argument(
         "--config", type=Path, default=None,
@@ -718,8 +718,8 @@ def _main():
         "--memo-echo",
         action="store_true",
         help="Re-derive memo_echoed under the current judge instead of stamping "
-             "contamination. Four records carry the superseded key's output "
-             "(lab/037); the prior value is kept beside the fresh one.",
+             "contamination. Four records carry the superseded key's output; "
+             "the prior value is kept beside the fresh one.",
     )
     eval_rescore_parser.add_argument(
         "--repo", type=Path, default=None,
@@ -748,7 +748,7 @@ def _main():
         help="Validate the graded oracle itself: grade anchors and the mutant set "
         "against pre-registered rungs (no model in the loop)",
     )
-    eval_oracle_parser.add_argument("task_id", help="A task id from config/tasks/")
+    eval_oracle_parser.add_argument("task_id", help="A task id from the battery")
     eval_oracle_parser.add_argument(
         "--config", type=Path, default=None,
         help="Config root holding tasks/ (default: repo config/)",
@@ -770,7 +770,7 @@ def _main():
         "run",
         help="Run one battery task under counterfactual arms (worktree + headless session + oracles)",
     )
-    eval_run_parser.add_argument("task_id", help="A task id from config/tasks/")
+    eval_run_parser.add_argument("task_id", help="A task id from the battery")
     eval_run_parser.add_argument(
         "--arm", action="append", dest="arms", default=None,
         help="memory-on | memory-off | ceiling | scoping-degraded:<scope>; repeatable, "
@@ -827,7 +827,7 @@ def _main():
         "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
     )
 
-    # Pin / roster commands — docs/07 "the process is the pin"
+    # Pin / roster commands — "the process is the pin"
     init_parser = subparsers.add_parser(
         "init", help="Install the harness at user scope so it arms in any directory"
     )
@@ -860,7 +860,7 @@ def _main():
     rescope_parser.add_argument(
         "session", nargs="?", default=None,
         help="Session ID (prefix ok). Default: the current session, read from "
-             "$CLAUDE_CODE_SESSION_ID — never guess it (lab/026)"
+             "$CLAUDE_CODE_SESSION_ID — never guess it"
     )
     rescope_parser.add_argument("--reason", default="", help="Why, for the ledger record")
     rescope_parser.add_argument(
@@ -870,7 +870,7 @@ def _main():
         "--other-session", action="store_true",
         help="Acknowledge that the session argument names a DIFFERENT session than the "
              "one running. Required whenever they differ; the mismatch is detected from "
-             "$CLAUDE_CODE_SESSION_ID, not taken on trust (lab/026)"
+             "$CLAUDE_CODE_SESSION_ID, not taken on trust"
     )
     rescope_parser.add_argument(
         "--allow-distilled", action="store_true",
@@ -1029,9 +1029,9 @@ def _main():
     )
     thread_audit.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
-    # Ceremony ledger — docs/12's capture layer. Every verb here writes a row that
-    # cannot be reconstructed after the fact, which is why they exist before any of
-    # the lifecycle they record.
+    # Ceremony ledger — the room lifecycle's capture layer. Every verb here writes a
+    # row that cannot be reconstructed after the fact, which is why they exist
+    # before any of the lifecycle they record.
     ceremony_parser = subparsers.add_parser(
         "ceremony", help="The ceremony ledger: occasions, skips, deliverables, assignments"
     )
@@ -1183,7 +1183,7 @@ def _main():
         "--reason", required=True, help="Why this one is permanent and understood"
     )
 
-    # Dispatch — docs/12 §Delivery mechanics. A separate verb rather than a loop over
+    # Dispatch — delivery mechanics. A separate verb rather than a loop over
     # send-keys because `waiting` must be refused, not handled carefully.
     dispatch_parser = subparsers.add_parser(
         "dispatch", help="Deliver a message to live room members, refusing on `waiting`"
@@ -1268,8 +1268,7 @@ def _main():
     )
     console_parser.add_argument(
         "--host", default="127.0.0.1",
-        help="Bind address (default: localhost — the console has no auth of its own; "
-             "see docs/console.md)"
+        help="Bind address (default: localhost — the console has no auth of its own)"
     )
     console_parser.add_argument(
         "--port", type=int, default=CONSOLE_PORT, help=f"Port (default: {CONSOLE_PORT})"
@@ -1317,7 +1316,7 @@ def _main():
              "the last fetch somebody ran)"
     )
 
-    # Pulse command — the live telemetry dashboard (docs/03)
+    # Pulse command — the live telemetry dashboard
     pulse_parser = subparsers.add_parser(
         "pulse",
         help="Serve the live telemetry dashboard over the eval loop's measurements",
@@ -1695,7 +1694,7 @@ def _cmd_extract(args):
     if cursor:
         # Scope comes from the session's own sessionEnd record, not the flag:
         # ledger-first resolution is what keeps a pinned Cursor session out of
-        # the wrong subgraph (docs/07). A cursor session carries no timestamps
+        # the wrong subgraph. A cursor session carries no timestamps
         # or cwd of its own, so both come from the hooks' ledgers.
         scopes: dict[str, str] = {}
         for ended_session in ended:
@@ -1730,7 +1729,7 @@ def _cmd_extract(args):
             print(
                 f"  ! {unread} record(s) across {sum(1 for f in parsed if f.unrecognized)} "
                 "session(s) did not match the expected Cursor shape — the format may "
-                "have changed (see harness/cursor_transcripts.py, lab/028)",
+                "have changed (see harness/cursor_transcripts.py)",
                 file=sys.stderr,
             )
     else:
@@ -1755,7 +1754,7 @@ def _cmd_extract(args):
         ]
         # Then the archive, for the named sessions ~/.claude no longer holds. The
         # harness rotates its own transcripts, which is why they are retained at all
-        # (docs/10) — a recovery that could read only the live dir would still lose a
+        # — a recovery that could read only the live dir would still lose a
         # session to the rotation retention was built to survive. Only for a *named*
         # session: a sweep of the archive would re-offer the whole distilled corpus,
         # and only for Claude Code, whose transcript is retained whole where Cursor's
@@ -1863,7 +1862,7 @@ def _cmd_extract(args):
 
             entry, _ = transcripts.retain(facts.path)
             # A Cursor session's ingress evidence lives outside its transcript, so the
-            # transcript alone would not reach what the floor judged (docs/05).
+            # transcript alone would not reach what the floor judged.
             transcripts.retain_ingress_receipt(facts)
             base = reader.to_session_graph(
                 facts,
@@ -1912,7 +1911,7 @@ def _cmd_extract(args):
                 if dropped:
                     print(f"      raw response retained at {raw_path}")
                 session = extraction.merge_extraction(base, data)
-                # The laundering floor (docs/05): claims resting on the transcript's
+                # The laundering floor: claims resting on the transcript's
                 # external ingress keep third-party trust, marked or not. A format
                 # that cannot carry tool results (Cursor) floors the whole session
                 # instead — an empty list there is ignorance, not evidence.
@@ -2086,7 +2085,7 @@ def _cmd_ingest(args):
             f"tail is invisible,\n"
             f"    not thinly covered. If a specific mechanism has to be citable, feed "
             f"that section as\n"
-            f"    its own file (docs/06 §4).",
+            f"    its own file.",
             file=sys.stderr,
         )
     if digest.dropped_refs or digest.dropped_entities:
@@ -2333,8 +2332,8 @@ def _cmd_backfill_chunks(args):
 
     Needs no model: a chunk is a slice of retained bytes, and the entity vocabulary it
     tags itself with is already in the graph. So this is a rebuild, not a re-extraction
-    — which is the property that makes chunk geometry a dial rather than a commitment
-    (lab/052). Claims, entities and Sources are left exactly as they are.
+    — which is the property that makes chunk geometry a dial rather than a commitment.
+    Claims, entities and Sources are left exactly as they are.
     """
     from pathlib import Path
 
@@ -2675,7 +2674,7 @@ def _report_capabilities():
     # Two kinds of declaration, one report. A flag row says what a CLI accepts; a
     # boundary row says what actually binds on a harness — and the second is the one
     # that was wrong while the first was clean, because a derivation over our own
-    # tables never asks a harness anything (lab/061).
+    # tables never asks a harness anything.
     rows = [(r.label, r.outcome.value, r.detail) for r in check_capabilities()]
     rows += [(f"{row.label} [{row.state.value}]", outcome, detail)
              for row, outcome, detail in check_boundaries()]
@@ -3232,8 +3231,8 @@ def _cmd_eval(args, eval_parser):
 
         tasks, issues = load_battery(args.config)
         # Report at the inspection surface, refuse at the spend surface. `eval
-        # tasks` loads a faulty battery so the fault can be read and repaired
-        # (lab/035); this is the point where money starts, so it refuses — but
+        # tasks` loads a faulty battery so the fault can be read and repaired;
+        # this is the point where money starts, so it refuses — but
         # only as widely as the fault. A dead ref on another task says nothing
         # about this run, and a gate that blocks for a reason untrue of the run
         # it blocks is the kind that gets routed around.
@@ -3282,7 +3281,7 @@ def _cmd_eval(args, eval_parser):
                 )
             except arms_mod.SessionFault as exc:
                 # Every arm after a session death is void; continuing would only
-                # manufacture records that look like data (lab/012, lab/016).
+                # manufacture records that look like data.
                 print(f"\nCAMPAIGN STOPPED — {exc}", file=sys.stderr)
                 remaining = [a.spec for a in arm_list[index + 1:]]
                 if remaining:
@@ -3488,7 +3487,7 @@ def _cmd_quick(args, parser):
                 f"{status:9} {age:>7}  {session.cwd}"
             )
         # Warmth is a cache and it decays inside the nominal TTL — 44.8% of the
-        # parent's prefix survived at 38 minutes (lab/049). The ages above are the
+        # parent's prefix survived at 38 minutes. The ages above are the
         # cost estimate; there is no second number to consult.
         print("\nCost is bimodal on the parent's recency, not its size: a fork of a "
               "just-active parent reads its whole prompt-cache prefix (~$0.03-0.08), "
@@ -3559,7 +3558,7 @@ def _cmd_quick(args, parser):
         )
     # The tier's own invariant, counted from the fork's records rather than asserted:
     # without a fresh recall the answer is a decorated snapshot of context retrieved
-    # for a different question (docs/02).
+    # for a different question.
     if result.fresh_recalls == 0:
         print("— WARNING: the fork made no in-ticket recall. Warmth was not "
               "revalidated; treat this answer as a cached opinion.")

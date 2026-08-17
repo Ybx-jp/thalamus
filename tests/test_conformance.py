@@ -3,7 +3,7 @@ Federation-contract conformance tests.
 
 Interfaces: thalamus.contract.conformance.check_session
 Infrastructure: none
-Scope: obligations are enforced at write time, not filtered at read time (docs/01)
+Scope: obligations are enforced at write time, not filtered at read time
 """
 
 from datetime import datetime
@@ -72,7 +72,7 @@ def test_provenance_without_a_source_is_rejected():
     Scenario: A node supplies a provenance envelope with an empty source
 
     Verifications:
-    - the contract refuses it — "no provenance, no write" (docs/05, docs/06)
+    - the contract refuses it — "no provenance, no write"
     """
     session = _session(
         artifacts=[
@@ -93,8 +93,8 @@ def test_provenance_without_a_source_is_rejected():
 
 def test_a_pinned_sessions_graph_is_legal_in_an_expert_scope():
     """
-    Scenario: A whole session distilled into an expert scope (a pinned session,
-    docs/07 "the process is the pin")
+    Scenario: A whole session distilled into an expert scope (a pinned session —
+    "the process is the pin")
 
     This was always legal — Session is generically scoped — but pinning makes it
     load-bearing: the SessionEnd hook now passes --scope, so expert-scoped episodic

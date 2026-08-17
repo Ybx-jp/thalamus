@@ -1,9 +1,9 @@
-"""Pin-quality report — the routing signal (docs/02, docs/04).
+"""Pin-quality report — the routing signal.
 
 Pinning replaces a learned router with a tier-0 operator decision, and the eval loop
 grades that decision instead of trusting it: sustained low-utility retrieval under a
 pin means either the pin or the expert needs work, and this report is how the data
-says which (docs/02). For each expert scope it renders two utilities side by side:
+says which. For each expert scope it renders two utilities side by side:
 
 - **pinned** — verdicts on traces from sessions pinned to the expert (its own
   episodic service), broken out per session so one mis-pinned session stands out
@@ -14,19 +14,19 @@ says which (docs/02). For each expert scope it renders two utilities side by sid
 **The pair is rendered; it is not yet interpreted.** The intended reading — pinned
 low while consulted high means the pin was wrong — compares a within-scope rate to a
 cross-scope one, and the used-vs-ignored judge scores ~63% within a project against
-~5% across (lab/032). Cross-scope service is vocabulary-distant by construction, so
+~5% across. Cross-scope service is vocabulary-distant by construction, so
 that reading is the artifact the instrument produces for free. Until each side has
-its own permutation null (`eval/calibration.py`, experiments/001) the report prints
+its own permutation null (`eval/calibration.py`) the report prints
 the numbers and says so, which is the same floor-gate it already applies to thin
 samples. Both numbers are attribution, never utility claims — the counterfactual bar
-(docs/00 principle 4) still applies.
+ still applies.
 
 Prior work: cost-utility frontiers for agent memory are BudgetMem's frame (arXiv
 2602.06025) — but there the frontier is a *control input* to a trained budget-tier
 router, where this report deliberately stops at attribution, keeping routing an
-operator decision (the legibility trade docs/02 accepts). Per-session granularity
+operator decision (the legibility trade this project accepts). Per-session granularity
 is the AgentOps session-level metric layer (arXiv 2411.05285). Instantiation, not
-novelty (docs/11 §2b).
+novelty.
 """
 
 from __future__ import annotations
@@ -54,12 +54,12 @@ SIGNAL_FLOOR = 10  # attributed nodes required on each side before a signal rend
 # The rule this report implements — "pinned low while consulted high means the pin
 # was wrong" — reads a within-scope rate against a cross-scope one. Those sit on
 # opposite sides of the only axis the used-vs-ignored judge is known to be good at:
-# it scores ~63% within a project and ~5% across (lab/032), because it is largely a
+# it scores ~63% within a project and ~5% across, because it is largely a
 # topic detector. Cross-scope service is vocabulary-distant by construction, so the
 # instrument manufactures the "pinned low, consulted high" pattern for free.
 #
 # The old threshold made it worse: `LOW_USED_PCT = 50.0` sat *below* the permuted
-# null of ~57% (experiments/001), so the "low" branch was unreachable for any real
+# null of ~57%, so the "low" branch was unreachable for any real
 # scope and every "healthy" verdict this report ever emitted was unfalsifiable.
 #
 # What unsuspends it: two separate nulls, a within-scope permutation and a
@@ -140,7 +140,7 @@ class ExpertPins:
     # Spawn records alone conflate roster bring-up with routing decisions, so
     # ledger_only is gated on engagement — a session with no user prompt had no
     # measurement opportunity and carries no routing signal. Both counts stay
-    # attribution, never utility claims (docs/04).
+    # attribution, never utility claims.
     ledger_only: int = 0  # engaged in the ledger, no traces landed
     idle_spawns: int = 0  # spawned, never engaged — roster churn, disclosed not judged
 
@@ -153,9 +153,9 @@ class ExpertPins:
         if not CALIBRATED_NULLS_AVAILABLE:
             return (
                 "insufficient calibration — pinned is a within-scope rate and consulted a "
-                "cross-scope one, and the judge is ~63% within a project against ~5% across "
-                "(lab/032), so the pair cannot be compared until each side has its own "
-                "permutation null (experiments/001)"
+                "cross-scope one, and the judge is ~63% within a project against ~5% "
+                "across, so the pair cannot be compared until each side has its own "
+                "permutation null"
             )
         raise NotImplementedError(
             "the two-null comparison is not built; see CALIBRATED_NULLS_AVAILABLE"
@@ -168,9 +168,9 @@ class PinReport:
 
     def render(self) -> str:
         lines = [
-            "Pin-quality report — routing signal (attribution, not utility claims; docs/04)",
+            "Pin-quality report — routing signal (attribution, not utility claims)",
             f"  dials: signal floor {SIGNAL_FLOOR} attributed/side · verdicts suspended "
-            "pending per-side permutation nulls (experiments/001)",
+            "pending per-side permutation nulls",
         ]
         if not self.experts:
             lines.append("  no expert scopes found (manifests, ledger, and traces are all empty)")

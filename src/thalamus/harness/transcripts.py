@@ -10,8 +10,8 @@ inference could only add error. What genuinely needs a model (decisions, problem
 solutions, threads — the *claims*) is left to the extraction skill.
 
 The split matters beyond convenience. The deterministic layer gives every artifact a
-real, anchored edge back to the exact tool call that touched it — so `docs/03`'s
-provenance inspector works on bootstrapped data with no model in the loop, and the eval
+real, anchored edge back to the exact tool call that touched it — so the provenance
+inspector works on bootstrapped data with no model in the loop, and the eval
 loop gets a corpus it can trust to be free of extraction error.
 
 One constraint worth knowing: **assistant reasoning is not persisted in plaintext.** A
@@ -50,11 +50,11 @@ CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 _PATH_INPUTS = ("file_path", "notebook_path")
 
 # Tools whose results are external content crossing into the transcript — the ingress
-# half of the transcript-mediated laundering channel (docs/05). Deliberately short and
-# conservative: Read/Bash outputs are tier-1 observations of the operator's own machine
-# (the docs/index Artifact argument), while these fetch from origins nobody curated.
-# Bash *can* curl the web — that residual is documented in docs/05, not papered over
-# with shell parsing this layer exists to avoid.
+# half of the transcript-mediated laundering channel. Deliberately short and
+# conservative: Read/Bash outputs are tier-1 observations of the operator's own machine,
+# while these fetch from origins nobody curated. Bash *can* curl the web — that
+# residual is a known, documented gap in the trust model, not papered over with the
+# shell parsing this layer exists to avoid.
 EXTERNAL_INGRESS_TOOLS = frozenset({"WebFetch", "WebSearch"})
 
 
@@ -82,7 +82,7 @@ class TranscriptFacts:
     # artifact identifier -> message UUIDs of the tool calls that touched it
     touched: dict[str, list[str]] = field(default_factory=dict)
     # Verbatim texts of tool results from EXTERNAL_INGRESS_TOOLS — the third-party
-    # content embedded in this first-party transcript. The laundering floor (docs/05)
+    # content embedded in this first-party transcript. The laundering floor
     # judges extracted claims against these.
     external_texts: list[str] = field(default_factory=list)
 
@@ -101,11 +101,11 @@ class TranscriptFacts:
     # two-valued. Three decisions need to tell these apart that the bool cannot:
     # which sessions to re-run after a reader fix, what a format-drift monitor can
     # count — under a bool, a vendor format change arrives in the same channel as the
-    # benign "this session has no store" — and what docs/05 is entitled to claim.
+    # benign "this session has no store" — and what the trust model is entitled to claim.
     # Values are `harness.cursor_store.StoreVerdict`; Claude Code embeds its results
     # in the transcript, so it is `verified` by construction.
     ingress_verdict: str = "verified"
-    # The derived artifact retained in place of the vendor's store (docs/05, docs/10).
+    # The derived artifact retained in place of the vendor's store.
     # Empty for Claude Code, whose transcript *is* the retained evidence.
     ingress_receipt: dict = field(default_factory=dict)
     # Count of external-ingress tool *calls* seen. Present even when their results
@@ -388,7 +388,7 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
             # Tool results ride in user-type records. Results of external-ingress
             # tools are third-party content inside a first-party transcript —
             # collected verbatim so the laundering floor can judge claims against
-            # them (docs/05).
+            # them.
             for block in content if isinstance(content, list) else []:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue

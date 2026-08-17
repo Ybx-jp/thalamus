@@ -10,7 +10,7 @@ width it should be. The estimator here is a ratio of totals with sessions as PSU
 a delete-one-session jackknife.
 
 **And sampling error is the smaller problem.** The estimand is defined by a `used`
-flag whose chance level is ~57% (experiments/001). Correcting for that gives a very
+flag whose chance level is ~57%. Correcting for that gives a very
 different sentence: not "a third of injected tokens are wasted" but "at most about a
 tenth of injected tokens are *demonstrably earned*, and the rest is not distinguishable
 from topic overlap". Both are reported, because the uncorrected figure is the one the

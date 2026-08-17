@@ -58,13 +58,29 @@ A manifest can also declare:
 
 - **`write_boundary`** — where a scope is defined by what it must *not* produce. A
   PreToolUse hook enforces it against the file-editing tools, so the boundary is
-  structural rather than a paragraph the model is asked to respect.
+  structural rather than a paragraph the model is asked to respect. The shipped `qe`
+  manifest is the worked example: it holds the adversarial suite and is denied
+  `src/`, because a scope that can repair the implementation it asserts against is
+  not independent of it.
 - **`capability_boundary`** — which skills and tools the scope may reach.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
-  other scope has.
+  other scope has. `designer` is the worked example.
 
-Point `THALAMUS_CONFIG_DIR` at a different directory to use your own roster instead of
-the shipped examples.
+A boundary can also run the other way. `contract/ownership.PATH_OWNERSHIP` reserves a
+tree *for* one scope and denies every other, `main` included — which is the half a
+manifest cannot express, since `main` has no manifest to declare it in. `tests/qe/` is
+the one row: qe cannot repair what it indicts, and nobody else can soften what it
+asserts.
+
+The two halves are not symmetric in one respect worth knowing. The deny survives a
+manifest's removal and the grant does not, so deleting a manifest whose scope owns a
+tree leaves that tree unwritable by everyone rather than reserved for someone. A test
+asserts every owning scope still ships a manifest.
+
+Five manifests ship as examples: `architect`, `designer`, `eval-methodology`,
+`literature` and `qe`. Point `THALAMUS_CONFIG_DIR` at a directory holding your own
+`experts/` to use a different roster; the same variable supplies the eval task battery
+from `tasks/`.
 
 ## Pinning
 

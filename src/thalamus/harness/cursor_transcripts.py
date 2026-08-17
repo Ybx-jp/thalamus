@@ -1,7 +1,8 @@
 """Cursor transcript discovery and deterministic extraction — the second harness.
 
-Closes lab/010's wall 2: `thalamus extract` parses Claude Code JSONL only, so a
-Cursor session retrieved, traced and conditioned but left no episodic memory.
+Closes the second wall of the Cursor port: `thalamus extract` parses Claude Code
+JSONL only, so a Cursor session retrieved, traced and conditioned but left no
+episodic memory.
 This module produces the same `TranscriptFacts` the Claude Code reader produces,
 so extraction, merging, the ingress floor and provenance all stay unchanged
 downstream. One intermediate, two harness dialects — the same shape the hook
@@ -25,7 +26,7 @@ describe (forum thread 166592, confirmed by Cursor staff 2026; read 2026-07-29):
 Three consequences, each handled explicitly rather than papered over:
 
 1. **The ingress floor cannot be computed from a Cursor transcript alone.**
-   docs/05's mechanical floor — the layer no prompt content can lift — judges
+   The trust model's mechanical floor — the layer no prompt content can lift — judges
    extracted claims against the verbatim text of external-ingress tool *results*,
    and no transcript carries them. An empty `external_texts` therefore does not
    mean "nothing was fetched", it means "we cannot know", and the two must never
@@ -41,7 +42,7 @@ Three consequences, each handled explicitly rather than papered over:
    the session is floored exactly as it always was, so this can only move a session
    up. `ingress_verdict` records which of those it was.
 
-2. **Touch anchors are positional, not identifiers.** Anchors let docs/03's
+2. **Touch anchors are positional, not identifiers.** Anchors let the
    provenance walk land on the exact tool call instead of handing the operator
    the whole transcript. Cursor writes no message ids, so anchors are synthesized
    as `cursor:msg:<row>` — namespaced precisely so a synthesized anchor can never
@@ -62,7 +63,7 @@ Three consequences, each handled explicitly rather than papered over:
    The ledgers are not the *only* source, which matters for anything they never
    saw. Cursor writes a `<timestamp>` element into the user query text itself, and
    `~/.cursor/chats/<hash>/<session-id>/meta.json` carries `cwd`, `createdAtMs`
-   and `updatedAtMs` (lab/054). So a session that ran before the hooks were
+   and `updatedAtMs`. So a session that ran before the hooks were
    installed — every Cursor session on a machine Thalamus reaches late — is
    reached by `discover()`'s filesystem surface and dated from Cursor's own
    record. Cursor keeps no scope anywhere, so one of those is left
@@ -97,13 +98,13 @@ Protocol positions itself as an interlingua unifying thirteen agent datasets hel
 in incompatible formats (arXiv 2510.24702). This module is an *instantiation*:
 `TranscriptFacts` already existed and simply gains a second producing dialect,
 and the adapter boundary is an Anti-Corruption Layer (Evans, *Domain-Driven
-Design*, 2003) — the same framing docs/07 uses for the Cursor hook suite.
+Design*, 2003) — the same framing the Cursor hook suite uses.
 Targeting a published wire schema instead was considered and rejected on
 documented grounds rather than effort: OpenTelemetry's GenAI conventions are
 Development-status with no released schema URL to pin, carry no reasoning content
 part, and Claude Code's own OTel export redacts extended thinking and truncates
 tool content — so routing through it would *lower* the primary-evidence floor
-docs/10 exists to raise. W3C PROV, extended to agents by PROV-AGENT (arXiv
+this reader exists to raise. W3C PROV, extended to agents by PROV-AGENT (arXiv
 2508.02866), is the right shape at the wrong granularity: a provenance
 vocabulary, not a transcript format. For fields Cursor cannot supply, absence is
 recorded with a *reason* rather than a sentinel, borrowing codes from FHIR R4's
@@ -113,11 +114,11 @@ and the format cannot carry it. An unresolved scope is a different code in the
 same set, `not-asked` ("the workflow didn't lead to this value being known"),
 which is why it is refused rather than defaulted — see `UNRESOLVED_SCOPE`. Rubin's
 MCAR/MAR/MNAR is deliberately not the frame, since each of its categories
-presupposes a latent value that could have been observed. Backfilling sessions logged before this reader existed is
-replay over an immutable log, which is the position docs/10 already takes as
-"re-extract, not migrate".
+presupposes a latent value that could have been observed. Backfilling sessions
+logged before this reader existed is replay over an immutable log, which is the
+position this project already takes as "re-extract, not migrate".
 
-Not found in the 2026 scan (see docs/11 §4): a per-record manifest of what a
+Not found in the 2026 scan: a per-record manifest of what a
 source format could not carry, and any measurement of extraction quality as a
 function of *which trace fields* are present.
 """
@@ -240,8 +241,8 @@ def discover(
     Three surfaces, because each knows something the others cannot. The
     **sessionEnd log** is where a scope resolved *at the end* appears. The
     **filesystem** is the only surface that sees a session which ran before the
-    hooks existed, which on a machine Thalamus reaches late is every session on it
-    (lab/054). Reading only the log made those unrecoverable by policy rather than
+    hooks existed, which on a machine Thalamus reaches late is every session on it.
+    Reading only the log made those unrecoverable by policy rather than
     by format, since their transcripts were on disk the whole time. The **pin
     ledger** holds the scope our sessionStart hook recorded at launch, which is
     the only record of it for a session whose sessionEnd hook never fired — a
@@ -426,7 +427,7 @@ def _chat_meta(session_id: str) -> tuple[str, datetime | None, datetime | None]:
     Lives at `~/.cursor/chats/<hash>/<session-id>/meta.json`, where the hash is
     not the session and not derivable from it, so the session directory is
     globbed for rather than addressed. Cursor writes `cwd`, `createdAtMs` and
-    `updatedAtMs` there (lab/054) — evidence it recorded at the time, which is
+    `updatedAtMs` there — evidence it recorded at the time, which is
     what makes this a read rather than a guess.
     """
     for meta_path in sorted(CURSOR_CHATS.glob(f"*/{session_id}/meta.json")):
@@ -552,7 +553,7 @@ def parse(
         # Cursor closes each turn with a `{"type": "turn_ended", "status": ...}`
         # row carrying no `role`. It is structure, not a message, so it is neither
         # a turn to count nor a record we failed to read — recognised and skipped.
-        # Measured on the first live Cursor session (lab/054); before it was named
+        # Measured on the first live Cursor session; before it was named
         # here, every real session reported at least one unreadable record, which
         # is the signal that a format change would have to raise.
         if record.get("type") == "turn_ended":

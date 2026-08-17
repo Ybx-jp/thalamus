@@ -6,7 +6,7 @@ checkout. `.claude/settings.json` reaches its hook scripts through
 `uv run`. Both name the session's *working* project, which is a different repo
 whenever a session is opened elsewhere (`thalamus spawn --dir`) — so the hooks
 silently no-op and the MCP server never starts. Memory is supposed to span
-projects (docs/02); the install is what makes that true in practice.
+projects; the install is what makes that true in practice.
 
 **Prior work.** Configuration errors are a well-studied failure class, and the
 two properties that make this one expensive are both named in it. Xu et al.
@@ -103,7 +103,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 ]
 
 # The Cursor wiring, as (event, script). Event names and their I/O shapes were
-# re-verified against cursor.com/docs/hooks.md on 2026-07-29 (lab/027).
+# re-verified against cursor.com/docs/hooks.md on 2026-07-29.
 #
 # Parity between the two tables is declared in `DECLARED_HOOK_PARITY` below and re-derived
 # by `thalamus contract check --capabilities`, because stating it here in prose is
@@ -127,7 +127,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # inside the user query text, written before any Thalamus hook was installed, so
 # in `agent -p` the clock is Cursor's own and ours is a second one arriving a
 # tool call later in the tool-result slot — two disagreeing clocks in one prompt,
-# which is the drift this tier exists to prevent (lab/054). It stays wired
+# which is the drift this tier exists to prevent. It stays wired
 # because that was measured in **print mode only**, and unwiring it on one
 # observation would strip the clock from interactive sessions if Cursor injects
 # only in `-p` — and long-running interactive sessions are exactly what the tier
@@ -140,7 +140,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # The taps stay on the *specialized* events, and the reason is now measured rather
 # than cautious: a single `echo` fires `preToolUse` **and** `beforeShellExecution`,
 # and completes into `postToolUse` **and** `afterShellExecution`; one MCP call fires
-# both members of its pair too (lab/061). The generic events are not exclusive with
+# both members of its pair too. The generic events are not exclusive with
 # the specialized ones, so moving a tap to `postToolUse` while the specialized tap
 # stands would double-count every retrieval in `eval sync`. The cost stands with it:
 # tracing does not reach Cursor cloud agents, where only the generic event loads.
@@ -393,7 +393,7 @@ def build_mcp_entry() -> dict:
     terminal would randomize some sessions and not others with nothing recording
     which. The rate lives on the server registration so it is a property of the
     machine for the duration of the campaign — and the records carry it, so a run
-    that pooled two rates is detectable rather than invisible (experiments/003).
+    that pooled two rates is detectable rather than invisible.
     """
     env = {
         "THALAMUS_GRAPH_URL": os.environ.get(
@@ -454,7 +454,7 @@ def install_cursor(dry_run: bool = False) -> list[str]:
     precedence the Claude Code docs leave open — Enterprise > Team > Project >
     User — so a surviving project block would silently outrank the user-scope
     one we just wrote. Removing it leaves exactly one definition. It also
-    retires a consent problem lab/010 flagged: a committed `.cursor/hooks.json`
+    retires a consent problem: a committed `.cursor/hooks.json`
     runs for anyone who opens this repo in Cursor.
     """
     actions: list[str] = []
@@ -1043,8 +1043,9 @@ def relaunch_checks(env_drift: list[str]) -> list[Check]:
     changing while sessions are open. Those sessions keep the old config for their
     whole lifetime, and nothing about their behaviour looks wrong: a withholding rate
     that moved mid-campaign produces records at two rates with the operator believing
-    it ran at one (experiments/003 needs the rate to be a property of the machine for
-    the campaign's duration, which is exactly what a stale process breaks).
+    it ran at one (the withholding study needs the rate to be a property of the
+    machine for the campaign's duration, which is exactly what a stale process
+    breaks).
 
     Advisory, not a failure: the install *is* wired correctly. What is not yet true
     is that anything is running it, which is the shape `advisory` already carries.
@@ -1324,5 +1325,5 @@ def run(dry_run: bool = False, check_only: bool = False,
         if "cursor" in harnesses:
             print("Cursor: discovery reads the sessionEnd hook log, not the filesystem "
                   "(cursor_transcripts.discover), so sessions that ran on this box before "
-                  "now will never be distilled — only ones ending from here on (lab/054).")
+                  "now will never be distilled — only ones ending from here on.")
     return 0

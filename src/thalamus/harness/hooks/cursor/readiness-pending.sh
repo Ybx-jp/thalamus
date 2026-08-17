@@ -5,7 +5,7 @@
 # member is about to make a call that may raise an approval modal, so it stops being
 # addressable until the paired after-event closes the bracket.
 #
-# Measured 2026-08-13 (lab/065 §5): `beforeShellExecution` fires *before* Cursor's own
+# Measured 2026-08-13: `beforeShellExecution` fires *before* Cursor's own
 # approval modal — a probe hook logged at 11:01:15 with the modal still unanswered at
 # 11:01:20. That ordering is the whole mechanism. If this event fired after the modal,
 # `pending` would be written only once the operator had already been asked, and a

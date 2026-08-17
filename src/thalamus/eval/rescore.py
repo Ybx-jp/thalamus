@@ -1,16 +1,17 @@
 """Retroactive contamination stamping for campaigns that ran before the detectors.
 
-`detect_worktree_escape` and `detect_history_reach` were added after lab/020, so
-they stamp **going forward** only. Every campaign already on disk carries a
-now-known leak channel that nobody has re-derived: lab/021 corrected lab/020's
-rate to 3-of-24 by hand, and lab/022 measured 9-of-88 history reaches by hand,
-but neither number is in the records themselves. A rate derived by hand in a lab
-entry is not queryable and does not survive the next analysis.
+`detect_worktree_escape` and `detect_history_reach` were added after the campaigns
+they would have caught, so they stamp **going forward** only. Every campaign
+already on disk carries a now-known leak channel that nobody has re-derived: an
+escape rate was corrected to 3-of-24 by hand, and 9-of-88 history reaches were
+measured by hand, but neither number is in the records themselves. A rate derived
+by hand in a notebook entry is not queryable and does not survive the next
+analysis.
 
 This module applies the existing detectors backwards over `runs.jsonl`. It
 introduces no metric: the classes (`answer_key` / `operator_repo` /
 `history_reach`), the flag-never-exclude stance (arXiv 2111.03382, 2605.05564)
-and the `contaminated` exclusion key are lab/021's, unchanged. Only the stamps'
+and the `contaminated` exclusion key are unchanged. Only the stamps'
 provenance differs, which is why a re-scored record is marked `rescored_at` —
 a stamp derived retroactively from a retained transcript is not the same
 evidence as one taken at run time, and a later reader must be able to tell.
@@ -18,7 +19,7 @@ evidence as one taken at run time, and a later reader must be able to tell.
 **A record is stamped only when its evidence is complete.** An unreadable
 transcript, an unknown task, or a ref that no longer resolves yields a refusal
 with a reason, never a clean stamp. The failure this guards against is the one
-lab/022 caught in `transcript_text`: a default that returns a plausible value
+caught in `transcript_text`: a default that returns a plausible value
 instead of failing, which files an arm that reached for the answer key as one
 that never tried. Re-scoring is the exact operation where that failure would be
 invisible, since there is no live run to contradict it.
@@ -228,11 +229,10 @@ def memo_echo_outcomes(
     substring-on-id path matched against any arm that said the word — so the verdict
     could come back "cited by vertex ID" on prose that cited nothing. The key is now
     `__injected_memo__`, named so it cannot occur in prose. Four records on disk still
-    carry the old key's output, and nothing in them says which judge produced it
-    (lab/037).
+    carry the old key's output, and nothing in them says which judge produced it.
 
     The ratios are unaffected — `matched / len(terms)` is computed the same way under
-    both keys — so this is not a correction of lab/036's reading, which rests on
+    both keys — so this is not a correction of the earlier reading, which rests on
     ratios. What it corrects is the evidence string and the `used` flag beside it.
 
     Same evidence discipline as contamination re-scoring: an arm whose transcript is
@@ -343,7 +343,7 @@ def apply_outcomes(records: list[dict], outcomes: list[Outcome]) -> list[dict]:
         if outcome.memo_echoed is not None:
             # The prior value is kept in the body as well as recoverable from the
             # superseded revision — this is the one place the corpus already did it
-            # right (lab/037), and narrowing it now would be a regression.
+            # right, and narrowing it now would be a regression.
             revised.setdefault("memo_echoed_prior", prior.get("memo_echoed"))
             revised["memo_echoed"] = outcome.memo_echoed
             revised["memo_echo_rescored_at"] = stamped_at
@@ -382,7 +382,7 @@ def append_revisions(revisions: list[dict], path: Path | None = None) -> Path:
 def render_rescore(outcomes: list[Outcome], wrote: bool) -> str:
     """Per-campaign rates, in arms, with refusals named rather than folded in.
 
-    Every rate is `arms / arms`. lab/022's "9 of 88" mixed units — 9 was git
+    Every rate is `arms / arms`. An earlier "9 of 88" mixed units — 9 was git
     reach *events*, 88 was arms — and an arm that reached twice is still one
     contaminated arm, so events are reported alongside, never as the numerator.
     """
@@ -447,7 +447,7 @@ def render_rescore(outcomes: list[Outcome], wrote: bool) -> str:
     lines.append(
         "\nThe detector reads absolute paths and git subcommands out of transcripts."
         "\nA symlink, a `cd` then a relative path, or a shell variable slips past it,"
-        "\nso every rate here is a LOWER BOUND (lab/022)."
+        "\nso every rate here is a LOWER BOUND."
     )
     if not wrote:
         lines.append("\nDRY RUN — no record modified. Re-run with --write to stamp.")

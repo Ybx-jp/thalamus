@@ -1,4 +1,4 @@
-"""Named-snapshot registry tests (R1, the reproducibility floor; lab/034).
+"""Named-snapshot registry tests (R1, the reproducibility floor).
 
 Interfaces: thalamus.eval.snapshots — name validation, immutability, the registry
             ledger, hash verification.
@@ -68,7 +68,7 @@ def test_a_pinned_snapshot_records_what_it_pinned(registry, stub_server, monkeyp
     are looking at came from this state.
     """
     _fake_graph(monkeypatch, stub_server, vertices=5591, edges=13849)
-    row = snapshots.take("post-purge-baseline", note="after the lab/033 purge")
+    row = snapshots.take("post-purge-baseline", note="after the graph purge")
 
     assert row.vertices == 5591 and row.edges == 13849
     assert row.sha256 == "a" * 64 and row.git_ref == "deadbee"
@@ -76,7 +76,7 @@ def test_a_pinned_snapshot_records_what_it_pinned(registry, stub_server, monkeyp
 
     stored = json.loads(registry.read_text().strip())
     assert stored["name"] == "post-purge-baseline"
-    assert stored["note"] == "after the lab/033 purge"
+    assert stored["note"] == "after the graph purge"
 
 
 def test_a_name_that_has_been_cited_cannot_be_repinned(registry, stub_server, monkeypatch):

@@ -6,7 +6,7 @@ block. Also `dispatch.authenticate`, which is the boundary the guard backs up.
 
 Why this exists beside `test_room_guard.py`: `room-guard.sh` matches `SendMessage`,
 which was the whole peer channel while peer messaging was a tool. `tmux send-keys` is
-a measured delivery path into any pane on the box (lab/065) and `thalamus dispatch`
+a measured delivery path into any pane on the box and `thalamus dispatch`
 addresses a room by name from a shell — both Bash, neither visible to a tool-name
 matcher, and on Cursor there is no `SendMessage` to match at all.
 """

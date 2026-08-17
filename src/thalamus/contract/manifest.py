@@ -1,7 +1,7 @@
-"""Expert manifests — the contract surface a federated subgraph publishes (docs/01).
+"""Expert manifests — the contract surface a federated subgraph publishes.
 
 A manifest declares what a scope is, what its feeds may write, and where its content
-may come from. The one-sentence test from docs/01: a new expert plugs in by conforming
+may come from. The one-sentence test: a new expert plugs in by conforming
 to the contract, with zero bespoke glue — concretely, expert #2 should be a new YAML
 file under config/experts/ and nothing else.
 
@@ -56,8 +56,8 @@ class WriteBoundary(BaseModel):
 
     The under-enforcement is named rather than closed: a repository that does not
     put implementation under `src/` escapes a `*/src/*` deny. The guard is
-    defence-in-depth over a boundary the operator also states in `domain`, and
-    lab/008's standing trade applies — a false positive teaches route-around, which
+    defence-in-depth over a boundary the operator also states in `domain`, and the
+    standing trade applies — a false positive teaches route-around, which
     costs more than a miss.
     """
 
@@ -172,16 +172,16 @@ class ExpertManifest(BaseModel):
     allowlist: list[str] = Field(
         default_factory=list,
         description="Host suffixes ingestion may fetch from. Local files bypass this — "
-        "an operator hand-feeding a file IS the curation decision (docs/06).",
+        "an operator hand-feeding a file IS the curation decision.",
     )
     write_boundary: WriteBoundary = Field(
         default_factory=WriteBoundary,
-        description="Paths this scope's sessions may not edit (docs/08). Absent means "
+        description="Paths this scope's sessions may not edit. Absent means "
         "unbounded — the honest default for a scope whose role is to write code.",
     )
     capability_boundary: CapabilityBoundary | None = Field(
         None,
-        description="Tools and skills this scope may not invoke (docs/08). Absent means "
+        description="Tools and skills this scope may not invoke. Absent means "
         "inherit ROSTER_CAPABILITY_DEFAULT — the opposite of write_boundary's default, "
         "because this decision was made once for the whole roster rather than per scope. "
         "An explicit empty block is the opt-out.",

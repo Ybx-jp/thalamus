@@ -203,7 +203,7 @@ def test_external_ingress_results_are_collected_verbatim(tmp_path):
     - the Bash result (first-party observation of the operator's machine) is not
     - pairing rides tool_use_id, never content heuristics
 
-    These texts are the evidence the laundering floor (docs/05) judges claims
+    These texts are the evidence the laundering floor judges claims
     against — deterministic collection, no model in the loop.
     """
     records = [
@@ -491,9 +491,9 @@ def test_a_room_members_transcripts_are_discoverable_under_its_own_config_dir(tm
     - the default root does not see them
     - the room's own root does, under the same project dir name
 
-    The room boundary is the config dir (lab/045), and a config dir owns
+    The room boundary is the config dir, and a config dir owns
     `projects/`. That is what keeps a non-member from resuming a member's session
-    (lab/046) — and it is also why a sweep anchored on the default root distills a
+    — and it is also why a sweep anchored on the default root distills a
     room member nowhere at all. Both roots must be reachable, and the same project
     dir name legitimately exists under each, so the root has to be passed rather
     than guessed from the name.

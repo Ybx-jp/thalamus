@@ -1,4 +1,4 @@
-"""Used-vs-ignored attribution — crude on purpose (docs/04).
+"""Used-vs-ignored attribution — crude on purpose.
 
 A retrieved node was *used* if its content is reflected in what the agent actually did
 after the retrieval: cited by ID, or lexically echoed in the assistant's text and tool
@@ -8,7 +8,7 @@ way lexical matching misleads is lab-notebook material for refining it. No model
 this loop: attribution must stay cheap enough to run after every session, or it will
 not be run.
 
-**How crude, measured (lab/032).** Judging a retrieval's nodes against a *different*
+**How crude, measured.** Judging a retrieval's nodes against a *different*
 same-project session's output scores 58-61% used, against 62.9% for the real output
 window — so within a project this instrument carries roughly **4 points of
 discrimination on a 59-point floor**. Across projects it is nearly perfect (63% vs
@@ -53,8 +53,8 @@ def judge_fingerprint(name: str = "shipped") -> str:
     threshold is a different verdict, and without this a dial change silently
     re-attributes every historical judgement to settings that never produced it.
 
-    The ranker solved this identical problem one property over (`Trace.ranker_config`,
-    lab/029) and the judge had no equivalent. Legible rather than hashed, for the same
+    The ranker solved this identical problem one property over (`Trace.ranker_config`)
+    and the judge had no equivalent. Legible rather than hashed, for the same
     reason: a window straddling `j1:t2-r0.3` and `j1:t3-r0.3` says *which* dial moved.
     """
     return f"j{JUDGE_VERSION}:{name}-t{MIN_MATCHED_TERMS}-r{MIN_MATCHED_RATIO}"
@@ -93,8 +93,8 @@ class OutputWindow:
 
     The flat string the shipped judge uses is `text()` with no bounds. Bounding it
     matters because the unbounded window re-measures session length: used% moves
-    51.7% → 69.7% between 20-100k-char and 100k+ windows on the same instrument
-    (lab/032), so the metric partly reports how long the session ran. Utility
+    51.7% → 69.7% between 20-100k-char and 100k+ windows on the same instrument,
+    so the metric partly reports how long the session ran. Utility
     should decay with distance from the retrieval; vocabulary overlap should not —
     a difference the unbounded window cannot see.
     """
@@ -184,7 +184,7 @@ def aligned_node_terms(content: str) -> list[str]:
     whether a node was used: measured on a 13-term sample, 4 terms cannot match even
     when the window is byte-identical to the node's own text — `"write-path".`, `(see`,
     `lab/029),`, `parser;`. Every stored `used%` is biased low by an unmeasured amount,
-    on top of the ~59-point topic-overlap floor lab/032 already reports.
+    on top of the ~59-point topic-overlap floor already measured.
 
     Only the tokenizer changes. The stopword list and length cut are `_extract_keywords`'
     own, and compound splitting is deliberately *not* borrowed from the ingress floor:

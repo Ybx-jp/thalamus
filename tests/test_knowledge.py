@@ -77,7 +77,7 @@ def test_a_well_formed_batch_passes_the_contract():
 
 def test_feeds_may_not_write_the_main_scope():
     """
-    docs/06: feeds write only into their designated expert's knowledge subgraph —
+    Feeds write only into their designated expert's knowledge subgraph —
     never episodic memory, never toward the master plane.
     """
     issues = check_knowledge(_batch(scope="main"))
@@ -117,7 +117,7 @@ def test_knowledge_claims_use_namespaced_kinds_and_cannot_mint_trust():
     Scenario: A batch smuggles an episodic kind, and a claim self-declares tier 1
 
     Core kinds belong to episodic claims; and a feed asserting first-party trust is
-    exactly the laundering docs/05 forbids.
+    exactly the laundering the trust model forbids.
     """
     from thalamus.substrate.schema import Provenance
 
@@ -211,9 +211,9 @@ def test_written_knowledge_is_scoped_tier_2_and_derived_from_its_source():
 
 def test_feed_identity_lands_on_the_source_and_only_the_source():
     """
-    Scenario: A per-project feed (docs/06 procurement) writes a batch
+    Scenario: A per-project feed writes a batch
 
-    docs/06's contract obligations require feed identity on every write. It lives on
+    The ingestion contract requires feed identity on every write. It lives on
     the Source vertex — the ingestion event — and nowhere else: claims and entities
     converge across feeds, so stamping them would let the latest feed overwrite the
     history of who brought what in.

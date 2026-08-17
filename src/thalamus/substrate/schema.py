@@ -5,12 +5,12 @@ Two things to know before reading:
 **The YAML surface and the graph shape are deliberately different.** The extraction
 skill emits three ergonomic lists — `decisions`, `problems`, `solutions` — because that
 is what a model fills in reliably. They are *subtypes of `Claim`* in the type system and
-*one `Claim` label discriminated by `kind`* in the graph (docs/09 G1). Consumers depend
+*one `Claim` label discriminated by `kind`* in the graph. Consumers depend
 on the `Claim` label only, so a future expert adding `kind: literature/finding` breaks
 nobody.
 
 **Provenance is stamped, not asked for.** Every node in the *graph* carries a trust
-tier, a source, and an ingestion timestamp — the contract obligation from docs/05,
+tier, a source, and an ingestion timestamp — the contract obligation,
 enforced at write time. But a session extraction does not have to *say* so: its
 provenance is derivable (tier-1, the agent's own lived experience, sourced to the
 session). Feeds writing curated third-party content supply it explicitly instead. The
@@ -35,7 +35,7 @@ class Tier(IntEnum):
 
     The ordering is meaningful: effective trust is the *floor* over a node's
     DERIVED_FROM closure, which is what makes "distillation does not launder"
-    computable rather than aspirational (docs/05).
+    computable rather than aspirational.
     """
 
     OPERATOR = 0  # the human, directly: pins, manual notes, curation decisions
@@ -150,7 +150,7 @@ class Source(BaseModel):
 
     Source is what gives the provenance chain a **floor**. Without it, a tier-1 claim's
     `source` points at a Session whose stored content is a *summary* — a distillation of
-    itself. docs/03's inspector ("pick any belief and walk to where it came from") has to
+    itself. The inspector ("pick any belief and walk to where it came from") has to
     terminate in evidence, not in another summary.
 
     The bytes live outside the graph, in a content-addressed archive; the node holds a
@@ -176,11 +176,11 @@ class Claim(BaseModel):
     A literature claim is an assertion with a citation, made by a source, inside an
     ingestion event. Same node, different provenance — which is what makes the trust
     model expressible, and what collapses contradiction detection into one mechanism
-    instead of two (docs/09 G1).
+    instead of two.
 
     `kind` is a string, not the enum: core kinds come from ClaimKind, and experts add
     namespaced extensions (`literature/finding`) without touching core — consumers
-    depend on the `Claim` label, never on the kind list (docs/01).
+    depend on the `Claim` label, never on the kind list.
     """
 
     kind: str
@@ -192,7 +192,7 @@ class Claim(BaseModel):
         description="The claim's substance rests on content the transcript fetched from "
         "outside (web pages, search results). Marked by the extractor and/or forced by "
         "the mechanical ingress floor; the write path answers it with tier-2 provenance "
-        "— transcript-mediated content keeps third-party trust (docs/05).",
+        "— transcript-mediated content keeps third-party trust.",
     )
 
     @field_validator("kind", mode="before")
@@ -208,12 +208,12 @@ class Claim(BaseModel):
         Replaces the old positional IDs (`decision:<session>:<index>`), under which a
         re-extraction with a reordered list silently overwrote *different* nodes, and no
         claim could ever be cited, superseded, or contradicted — fatal for a system whose
-        headline demo is "walk from a belief to its source" (docs/09 G6).
+        headline demo is "walk from a belief to its source".
 
         The identity deliberately excludes the secondary fields (rationale, outcome,
         approach, citation …). The first design hashed all of them — "substance is part
         of identity" — and the first full-corpus measurement returned the verdict:
-        convergence fired **zero** times across 1,089 claims (docs/10), because two
+        convergence fired **zero** times across 1,089 claims, because two
         sessions never reproduce a rationale byte-for-byte. An identity function that
         never converges has no identity function. So the assertion is the identity and
         the supporting fields are properties, latest-write-wins — re-asserting a claim
@@ -305,8 +305,8 @@ class Thread(BaseModel):
     """An open thread of work — a continuation point, next step, unfinished inquiry.
 
     Threads persist across sessions until resolved, and they are the primary entrypoint
-    into the graph. docs/01 generalizes exactly this: entrypoints are *how a graph makes
-    itself legible*.
+    into the graph. The federation contract generalizes exactly this: entrypoints are
+    *how a graph makes itself legible*.
     """
 
     id: str = Field(description="Stable slug identifier (e.g. 'build-linking-workflow')")
@@ -427,7 +427,7 @@ class SessionGraph(BaseModel):
         default=MAIN_SCOPE,
         description="Which expert this session was pinned to. 'main' is the connective "
         "plane — a real scope like any other, distinguished topologically rather than "
-        "structurally (docs/03).",
+        "structurally.",
     )
     project: Optional[str] = Field(
         None,
@@ -563,10 +563,10 @@ class SessionGraph(BaseModel):
 
 
 class Chunk(BaseModel):
-    """A verbatim slice of a retained Source, co-indexed into retrieval (lab/052).
+    """A verbatim slice of a retained Source, co-indexed into retrieval.
 
     Tier 2 always: this is third-party source text, never a belief the agent formed, so
-    it informs and never instructs (docs/05). It carries no judgement and no
+    it informs and never instructs. It carries no judgement and no
     interpretation — the whole point is that nothing was decided about it at write time,
     which is what an extracted claim cannot say. Where a claim is what the extractor
     chose to record, a chunk is what the document said.
@@ -598,7 +598,7 @@ class KnowledgeBatch(BaseModel):
     The episodic twin is SessionGraph; this is the knowledge half of G1. The shape is
     deliberately smaller — a Source (the retained article, tier 2), the claims it
     asserts, and the entities those claims are about. No threads, no touches: feeds
-    write knowledge, never episodic memory (docs/06).
+    write knowledge, never episodic memory.
     """
 
     scope: str = Field(description="The expert's scope. Feeds never write `main`.")
@@ -608,8 +608,8 @@ class KnowledgeBatch(BaseModel):
     entities: list[Entity] = Field(default_factory=list)
     chunks: list[Chunk] = Field(
         default_factory=list,
-        description="Verbatim slices of the Source, co-indexed beside the claims "
-        "(lab/052). Empty is legal and is what every pre-chunking batch has.",
+        description="Verbatim slices of the Source, co-indexed beside the claims. "
+        "Empty is legal and is what every pre-chunking batch has.",
     )
     anchors: dict[int, int] = Field(
         default_factory=dict,

@@ -51,7 +51,7 @@ RECALL_STRATEGY_PATH = (
 _MIN_FINGERPRINT_STEPS = 3
 
 # Mutating tokens a recipe must never contain — the smoke run refuses to execute
-# a stored recipe that drifted onto the write path (docs/05: ad-hoc is read-only).
+# a stored recipe that drifted onto the write path (ad-hoc traversals are read-only).
 # Checked on an underscore-folded compact view, so both dialects are caught
 # (add_v and addV inside a submitted string alike — the memory_query guard's
 # deny list, plus the writer's own entry points, which recipes can import).

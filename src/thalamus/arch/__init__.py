@@ -15,7 +15,7 @@ against a scan produced by a different extractor. `metrics.propagation_cost` the
 takes a `DependencyGraph` that already knows the policy that built it, and the scan id
 (`arch:scan:<repo>:<sha7>:<policy-digest7>`) names both the commit and the policy.
 
-Metrics are recomputed, never stored as truth (docs/09). The model file retains the
+Metrics are recomputed, never stored as truth. The model file retains the
 edge list — the observation — and the derived numbers beside it are a rendering of what
 the current code computes from those edges.
 """

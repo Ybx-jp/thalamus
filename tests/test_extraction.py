@@ -125,7 +125,7 @@ def test_digest_labels_external_ingress_results():
 
     The label is decided by the deterministic pairing (tool_use name -> tool_use_id),
     never by the model — the extractor's external-origin rule needs a signal that
-    poisoned page content cannot remove (docs/05).
+    poisoned page content cannot remove.
     """
     records = [
         {
@@ -465,7 +465,7 @@ def test_model_orphan_artifacts_are_prunable_without_losing_stage1_nodes():
 
 
 # ---------------------------------------------------------------------------
-# CLI selection — a session distills through its own harness's agent (docs/07)
+# CLI selection — a session distills through its own harness's agent
 # ---------------------------------------------------------------------------
 
 
@@ -479,7 +479,7 @@ def _fake_run(recorder, *, stdout, returncode=0, stderr=""):
 
 _OK = json.dumps({"type": "result", "is_error": False, "result": "yaml here",
                   "duration_ms": 12, "total_cost_usd": 0.25})
-# Cursor's envelope, copied field-for-field from a live run (lab/054): the same
+# Cursor's envelope, copied field-for-field from a live run: the same
 # result/is_error/duration_ms names, no dollar figure, and a `usage` block that
 # does count tokens. The fixture used to omit `usage` and assert in a comment that
 # there were "no cost fields at all" — which is how the reader came to throw the

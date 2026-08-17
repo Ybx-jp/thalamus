@@ -1,17 +1,17 @@
-"""Launch pinned expert sessions — docs/07 "the process is the pin".
+"""Launch pinned expert sessions — "the process is the pin".
 
 A pin is an OS process: the MCP server resolves its scope once at startup
 (resolve_pin below — the picked agent first, THALAMUS_SCOPE second), every hook
 applies the same precedence (hooks/claude-code/resolve-scope.sh), and the process
-cannot be re-scoped mid-flight (lab/001 measured that boundary; lab/003 measured
-the whole path). So the launcher's whole job is to make that process correctly:
+cannot be re-scoped mid-flight — measured at that boundary and along the whole
+path. So the launcher's whole job is to make that process correctly:
 validate the scope against the tier-0 manifests, regenerate the derived agent
 definition, and hand the terminal to `claude` with agent and env agreeing.
 
 Claude-Code-only by nature, and not for want of plumbing: pinning rides the
 agent picker (`--agent thalamus-<scope>`), which Cursor has no equivalent of
-— a Cursor session is pinned by `THALAMUS_SCOPE` in its environment instead
-(docs/07). This launcher is therefore not routed through harness/agents.py;
+— a Cursor session is pinned by `THALAMUS_SCOPE` in its environment instead.
+This launcher is therefore not routed through harness/agents.py;
 there is no second thing for it to launch.
 
 tmux is the control plane when present — one window per pinned expert, the window
@@ -56,7 +56,7 @@ USER_AGENTS_DIR = Path.home() / ".claude" / "agents"
 
 # Room config dirs. A room's boundary IS its harness's config root: on Claude Code
 # peer discovery enumerates `$CLAUDE_CONFIG_DIR/sessions/*.json` and name resolution
-# answers from that roster, so members of one room see only each other (lab/045). The
+# answers from that roster, so members of one room see only each other. The
 # location is chosen against the rest of the box — `$HOME` must not move (the pin
 # ledger, archive and logs are anchored there), `~/code` is scanned by the console's
 # spawn picker, and `~/.claude` is swept by the harness's own cleanup.
@@ -68,7 +68,7 @@ ROOMS_DIR = Path.home() / ".thalamus" / "rooms"
 # the credentials together, while `CURSOR_CONFIG_DIR` moves the config root and the
 # `chats/` transcript store and leaves credentials and hook wiring where they were.
 #
-# Measured 2026-08-13 against cursor/2026.08.11-e8db854 (lab/065): the vendor bundle
+# Measured 2026-08-13 against cursor/2026.08.11-e8db854: the vendor bundle
 # resolves `CURSOR_CONFIG_DIR` *ahead* of `XDG_CONFIG_HOME`, and `auth.json` is
 # resolved by a different function rooted at `$XDG_CONFIG_HOME/cursor` — so a session
 # under a relocated config root stays logged in, which is why the Cursor arm of
@@ -90,16 +90,16 @@ ROOM_HARNESS_SUBDIR: dict[str, str] = {"claude": "", "cursor": "cursor"}
 # and the only record of a launch decision that outlives the process that made it.
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 
-# What a room dir owns outright, and what it borrows. Measured in lab/046: every
-# entry here is load-bearing, and the split is the whole design.
+# What a room dir owns outright, and what it borrows. Measured: every entry here is
+# load-bearing, and the split is the whole design.
 #
 # OWNED are the trees that must NOT be shared, because sharing one is a channel.
 # `projects/` is the sharp one: `claude --resume` consults neither the discovery
 # roster nor the send path, it reads transcripts off disk, so a room that symlinks
 # `projects/` hands its members' context to any non-member who forks their session
 # — measured in both directions. It must also be on persistent disk, or a room
-# silently costs its members their distillation (that trade is what lab/045 got
-# wrong in the other direction, and it is why ROOMS_DIR is under $HOME).
+# silently costs its members their distillation (that trade has been got wrong in
+# the other direction once, and it is why ROOMS_DIR is under $HOME).
 ROOM_OWNED = ("sessions", "projects", "todos", "statsig")
 
 # LINKED are the trees where sharing IS the point — the member should track the
@@ -110,7 +110,7 @@ ROOM_OWNED = ("sessions", "projects", "todos", "statsig")
 # authenticate at all.
 #
 # `settings.local.json` is deliberately NOT here: the permission allowlist is
-# room-*owned* (docs/12), because a room's permission surface has to be declared for
+# room-*owned*, because a room's permission surface has to be declared for
 # the room rather than inherited from whatever the operator's own session happened to
 # accumulate. Borrowing it would also make the room's policy move under it whenever
 # the operator accepted a prompt elsewhere.
@@ -244,7 +244,7 @@ def ensure_room(room: str, host: Path | None = None, harness: str = "claude") ->
     for name in ROOM_OWNED:
         owned = config / name
         if owned.is_symlink():
-            # The withdrawn lab/045 shape, or a hand-made room. Unlinking removes
+            # A withdrawn earlier shape, or a hand-made room. Unlinking removes
             # the link and never the target, so repairing here cannot lose data —
             # and leaving it is the transcript channel standing open.
             owned.unlink()
@@ -274,7 +274,7 @@ def _ensure_cursor_room(room: str) -> Path:
     """A Cursor room is a directory and nothing else — measured, not minimised.
 
     Every entry Claude Code's arm has to provision is absent here for a reason that
-    was checked live against cursor/2026.08.11-e8db854 (lab/065), and the absences
+    was checked live against cursor/2026.08.11-e8db854, and the absences
     are the interesting part:
 
     - **No credentials.** `auth.json` is resolved from `$XDG_CONFIG_HOME/cursor`, by a
@@ -392,7 +392,7 @@ def _room_clear(harness: str = "claude") -> list[str]:
 
     Silence is not the same as "no room", because `new-session -e` — unlike
     `new-window -e` — *does* populate the tmux session environment, and every later
-    window in that session inherits it. Measured on tmux 3.4 (homelab consultation
+    window in that session inherits it. Measured on tmux 3.4 (consultation
     `81176421bb8e409a`): a session created for a room hands `THALAMUS_ROOM` and
     `CLAUDE_CONFIG_DIR` to the next roomless window, which then joins the room's
     roster and writes its transcripts into the room's `projects/` while every
@@ -607,7 +607,7 @@ def render_agent(manifest: ExpertManifest, servers: dict[str, dict] | None = Non
     and carries no hand-written persona. It tells the session what it is pinned to,
     how to reach anything else, and — via `servers` — what tooling the scope arms;
     it grants nothing beyond that surface, since scope enforcement is server-side
-    (docs/07) and this text could not widen it if it tried.
+    and this text could not widen it if it tried.
     """
     servers = servers or {}
     selfcheck = _mcp_selfcheck(manifest.scope, servers)
@@ -709,7 +709,7 @@ def scope_mcp_config(scope: str, base: Path | None = None) -> Path | None:
     its own.
 
     Kept beside the manifests but deliberately not *in* them: the contract is
-    harness-agnostic (Cursor reads the same manifests, docs/07) and this file's
+    harness-agnostic (Cursor reads the same manifests) and this file's
     schema belongs to Claude Code. Convention over declaration for the same reason
     the derived agent is generated rather than authored — one place to look, nothing
     to keep in step.
@@ -990,7 +990,7 @@ def window_room(target: str | None) -> dict[int, str]:
     Read from `#{pane_start_command}`, which renders the command the window was
     created with — and `_with_room` put the room in that command's `env` prefix, so
     it is exactly as durable as the room itself and survives the respawn that drops
-    `-e` (measured with the homelab consultation `81176421bb8e409a`, which found
+    `-e` (measured with the consultation `81176421bb8e409a`, which found
     this channel). The tmux *window name* stays the bare scope: it is the plane's
     established identity for a window, and a room is a second dimension over that
     set rather than a different naming of it.

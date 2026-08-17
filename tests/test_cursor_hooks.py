@@ -1,5 +1,5 @@
 """
-Cursor hook-suite tests (docs/07 harness integration; lab/010).
+Cursor hook-suite tests (harness integration).
 
 Interfaces: src/thalamus/harness/hooks/cursor/*.sh, driven live (bash) with
 synthetic stdin payloads shaped per Cursor's documented hook contract
@@ -68,7 +68,7 @@ class TestSessionStart:
         - it does *not* carry the Claude Code variant's deferred-tool
           (ToolSearch) step — that mechanism is Claude Code's, and naming a
           tool Cursor has no notion of would be an instruction the agent
-          cannot follow, the same class of defect lab/013 found in the other
+          cannot follow, the same class of defect found in the other
           direction
         - the pin ledger gets one line in the same record shape the Claude
           Code hook writes (session-end + eval read both harnesses' lines)
@@ -152,7 +152,7 @@ class TestGremlinGuard:
           `cursor/2026.08.11-e8db854`: the denial's tool result carries the
           `user_message` text and no occurrence of `agent_message`, so a guard
           that explains itself only through the documented agent channel blocks
-          in silence — and a block with no reason is a stall (lab/061).
+          in silence — and a block with no reason is a stall.
         - the shared guard event log gets the block verdict (one log, two
           harnesses)
         """
@@ -221,7 +221,7 @@ class TestGremlinTap:
         jq's `//` falls through on `null` and `false` only, so the obvious
         `(.cwd // .workspace_roots[0])` idiom wrote an empty cwd into the ledgers
         for every such payload. Measured, not hypothesised: the guard rows from a
-        live Cursor session all carry `cwd:""` (lab/061).
+        live Cursor session all carry `cwd:""`.
         """
         run_hook(
             "gremlin-tap.sh",
@@ -292,7 +292,7 @@ class TestSessionEnd:
 
         Verifications:
         - the end record trusts the ledger over env (same rule as Claude Code)
-        - distilled is explicitly false with the lab/010 wall named — the
+        - distilled is explicitly false with the reason named — the
           missing Cursor transcript adapter must be visible in the record,
           not silent
         - the transcript_path evidence pointer survives
@@ -324,7 +324,7 @@ class TestSessionEnd:
 
 class TestDeferredInjection:
     """The spool: Cursor splits reading the prompt from injecting context, so
-    beforeSubmitPrompt computes and postToolUse delivers (docs/07, lab/027).
+    beforeSubmitPrompt computes and postToolUse delivers.
     These are the tiers that had no Cursor carrier at all before."""
 
     def test_clock_is_delivered_on_the_next_tool_call(self, tmp_path):
@@ -421,7 +421,7 @@ def test_every_cursor_script_is_wired_by_the_installer():
     """The installer's wiring is the single definition — `thalamus init` writes
     it to ~/.cursor/hooks.json with absolute paths, because user-scope hooks run
     from ~/.cursor/ and the checkout's old relative paths only ever resolved for
-    a session whose workspace root was the checkout itself (lab/027)."""
+    a session whose workspace root was the checkout itself."""
     from thalamus.harness.install import CURSOR_HOOK_DIR, build_cursor_hook_block
 
     commands = {e["command"] for entries in build_cursor_hook_block().values() for e in entries}
@@ -442,7 +442,7 @@ class TestWriteGuard:
           adapter measured: the denial's tool result carries `user_message` and no
           occurrence of `agent_message`, so a guard explaining itself only through the
           documented agent channel blocks in silence, and a block with no reason is a
-          stall (lab/061)
+          stall
 
         The boundary is a decision about the graph (2026-08-03), and the graph does not
         care which harness ran the command — which is why this is wired rather than

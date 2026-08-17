@@ -1,5 +1,5 @@
 """
-Counterfactual task battery tests (docs/04 layer 2 — the pre-registered half).
+Counterfactual task battery tests — eval layer 2, the pre-registered half.
 
 Interfaces: thalamus.eval.tasks.load_battery/render_battery, Task.check
 Infrastructure: none; YAML fixtures written to tmp_path
@@ -10,8 +10,8 @@ not arm. The battery in config/tasks/ must itself validate.
 Grounding: consequence probes encode MQuAKE's dichotomy — recall of a stored
 fact and action on its entailed consequences are different measurements (arXiv
 2305.14795); zero-probe tasks would measure only surfacing. The overlap tag is
-the disclosed-stratification answer to the replay validity threat (docs/04,
-consultation scope:main:exchange:8644614d1b1242a4).
+the disclosed-stratification answer to the replay validity threat (consultation
+scope:main:exchange:8644614d1b1242a4).
 """
 
 from pathlib import Path
@@ -194,7 +194,7 @@ def test_the_shipped_battery_validates(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# The graded ladder (docs/04; eval-methodology exchange 06723ce1b78345a9)
+# The graded ladder (eval-methodology exchange 06723ce1b78345a9)
 # ---------------------------------------------------------------------------
 
 
@@ -252,7 +252,7 @@ class TestLadderValidation:
 
 
 class TestMutantValidation:
-    """The mutant set is the discrimination bar (docs/04): anchors establish the
+    """The mutant set is the discrimination bar: anchors establish the
     ladder's range, mutants establish its resolution in the interior where every
     observed arm sits. Structure is enforced here; the rung comparison is the
     gate's job (test_eval_oracle.py)."""
@@ -301,9 +301,9 @@ class TestMutantValidation:
 
 
 class TestUnderSpecification:
-    """The declared-gate half of a memory-gated task (docs/04; lab/018).
+    """The declared-gate half of a memory-gated task.
 
-    lab/018 held the arm harness completely fixed and varied only the prompt: a
+    A measured run held the arm harness completely fixed and varied only the prompt: a
     self-contained bug report produced zero thalamus calls, a past-work question
     produced three. So under-specification is the mechanism that makes a memory
     contrast possible at all — and an undeclared one is indistinguishable from a
@@ -336,9 +336,9 @@ class TestUnderSpecification:
     def test_gate_without_an_absence_check_is_refused(self):
         """The absence claim is the load-bearing one, so prose will not do.
 
-        Three candidate facts failed this check during lab/018's design pass —
-        the repo documents its own reasoning in lab/ and in code comments, so
-        most decisions are recoverable from the worktree and gate nothing."""
+        Three candidate facts failed this check during the battery's design pass
+        — the repo documents its own reasoning in code comments, so most
+        decisions are recoverable from the worktree and gate nothing."""
         assert any("prose is an assertion rather than evidence" in i
                    for i in self._spec(absence_check="  ").check())
 

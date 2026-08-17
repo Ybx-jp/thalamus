@@ -1,7 +1,7 @@
 """Did the room treatment actually occur? — the manipulation check for room arms.
 
-A room is a launch fact: `--room` puts sessions in one and the schema stamps it
-(docs/09 §Scope). Whether those sessions *collaborated* is a different question, and
+A room is a launch fact: `--room` puts sessions in one and the schema stamps it.
+Whether those sessions *collaborated* is a different question, and
 the difference is the entire treatment. A room whose members never messaged each
 other is a set of solo sessions wearing a room label, and an arm like that cannot
 separate "rooms do not help" from "the room did not happen".
@@ -24,7 +24,7 @@ Two topologies, from two ledgers, and the gap between them is the point:
 
 **A realized edge is a permitted send, not a delivery.** The room guard is
 outbound-only and fires *before* the send, so a pass means the boundary allowed the
-message — name resolution can still refuse it downstream (lab/045), and nothing here
+message — name resolution can still refuse it downstream, and nothing here
 observes the receiver. Overcounting in that direction is the safe one for a
 manipulation check: it can only make a room look more collaborative than it was, so a
 room that fails the check on permitted sends did not collaborate under any reading.
@@ -60,8 +60,8 @@ def peer_scope(target: str, room: str) -> str:
     """The scope a `SendMessage` target names, or "" if it does not name a member.
 
     Targets arrive as the launcher's window name, `<room>-<scope>`, and `SendMessage`
-    wants a disambiguating ` [ref]` suffix on first contact (lab/045 recorded a whole
-    arm lost to omitting it), so both forms have to normalize to the same peer.
+    wants a disambiguating ` [ref]` suffix on first contact (a whole arm has been lost
+    to omitting it), so both forms have to normalize to the same peer.
     """
     name = target.strip()
     if name.endswith("]") and "[" in name:
@@ -121,7 +121,7 @@ class RoomTopology:
         """Member pairs that sent *both* ways.
 
         A one-way pair is a broadcast; a reciprocated pair is the exchange the room's
-        fast tier was built for (docs/07), so the two are worth telling apart before
+        fast tier was built for, so the two are worth telling apart before
         any dose-response reading is attempted.
         """
         directed = {(sender, peer) for sender, peer, _count in self.edges}
@@ -133,8 +133,8 @@ class RoomTopology:
 
         Zero for a room of fewer than two members — a room of one has no pair to
         connect, so its manipulation check fails on the roster and never reaches the
-        guard ledger. lab/045 ran exactly that shape and recorded it as carrying no
-        in-room control of its own.
+        guard ledger. A run of exactly that shape was recorded as carrying no in-room
+        control of its own.
         """
         possible = list(combinations(sorted(self.members), 2))
         if not possible:
@@ -238,7 +238,7 @@ def room_topologies(
                 sender = str(record.get("scope") or "")
                 peer = peer_scope(str(record.get("target") or ""), room)
                 # Both ends must be known members. The prefix alone is not membership
-                # — `alpha-typo` parses as cleanly as `alpha-homelab` — and admitting
+                # — `alpha-typo` parses as cleanly as `alpha-architect` — and admitting
                 # an unrecognized peer would add a node the roster never had, inflating
                 # the edge set against a density denominator drawn from the members.
                 roster = members.get(room, set())

@@ -1,4 +1,4 @@
-"""The arm runner — layer 2's execution half (docs/04).
+"""The arm runner — layer 2's execution half.
 
 One run = one task from the pre-registered battery (eval/tasks.py), one arm, one
 disposable git worktree at the task's ref, one headless coding-agent session, then
@@ -8,14 +8,14 @@ against the captured transcript and diff. Every run appends one JSONL record to
 traces, guards, and conditioning.
 
 The arm is applied by editing the *worktree's* harness files, never the repo's:
-per-process arming (lab/001) works in the runner's favor — each headless run is a
+per-process arming works in the runner's favor — each headless run is a
 fresh process that arms from whatever its worktree declares. Before that, the
 worktree's copy of the hook *scripts themselves* (not `.claude/settings.json`,
 which stays pinned to the task's ref) is synced from the current repo
 (`sync_runner_hooks`) — runner-side fixes must reach every worktree regardless
-of which historical ref a task is pinned to (lab/012/013) — and the worktree's
+of which historical ref a task is pinned to — and the worktree's
 own venv is pre-synced with the `dev` extra (`sync_worktree_env`) so `pytest`
-exists in it before anyone runs `uv run pytest` (lab/013: it doesn't by
+exists in it before anyone runs `uv run pytest` (it doesn't by
 default, so that command silently ran the unrelated system pytest instead).
 
 Two hygiene rules, both measurement-motivated:
@@ -89,7 +89,7 @@ def agent_cli(harness: str):
     and cost, and a transcript the escape detectors and fault classifier can read.
     Swapping the binary alone would produce arms that run and report success while
     measuring nothing — records that look like data and are not, which is the
-    failure lab/016 and lab/022 are both about. So the gaps are enumerated on the
+    failure this project has already paid for twice. So the gaps are enumerated on the
     registry entry (harness/agents.py) and refused here by name.
     """
     try:
@@ -110,19 +110,18 @@ def agent_cli(harness: str):
 class SessionFault(ArmError):
     """The headless session died for a reason outside the experiment.
 
-    Credentials expiring (lab/012), a usage/session limit landing mid-campaign
-    (lab/016) — the cause differs, the consequence does not: this arm's result
+    Credentials expiring, a usage/session limit landing mid-campaign
+    — the cause differs, the consequence does not: this arm's result
     is not about the candidate, and every arm after it will hit the same wall.
     The campaign must halt rather than keep emitting records that read as data.
 
-    lab/016 is why this is not called AuthFault any more. The first version
-    matched exactly the one string lab/012 happened to observe
-    ("Failed to authenticate"), so `You've hit your session limit` walked
-    straight past it: 16 arms were recorded as $0.00 candidate *failures* and
-    two more, killed at turns 11 and 18 of 40, were stamped
-    `attributable: true, accepted: false` — a trustworthy-looking candidate
-    defect that was nothing of the kind. Match the failure class, never one
-    vendor's phrasing.
+    This is not called AuthFault any more. The first version matched exactly
+    the one string first observed ("Failed to authenticate"), so `You've hit
+    your session limit` walked straight past it: 16 arms were recorded as
+    $0.00 candidate *failures* and two more, killed at turns 11 and 18 of 40,
+    were stamped `attributable: true, accepted: false` — a
+    trustworthy-looking candidate defect that was nothing of the kind. Match
+    the failure class, never one vendor's phrasing.
     """
 
 
@@ -139,13 +138,13 @@ class SessionFault(ArmError):
 # after the run, so a rerun would not even be the same experiment. Second, both
 # *flag and attribute*; neither deletes the record. A flagged run stays in
 # runs.jsonl with its verdict intact and an `attributable: false` stamp beside
-# it, because the whole point of docs/04's discipline is that a measurement the
+# it, because the whole point of the discipline is that a measurement the
 # runner distrusts must be visible, not absent.
 #
 # Where this instantiation diverges, and why: both papers learn a classifier
 # (Fair's ML model, the study's PU learning) because at CI scale the symptoms
 # are ambiguous and the label set is huge. Here the fault signatures are few,
-# known, and deterministic — each was root-caused by hand in lab/012-013 — and
+# known, and deterministic — each was root-caused by hand — and
 # a campaign is n=4, so there is nothing to learn from and no rerun budget to
 # save. Deterministic symptom matching is the same idea at a different scale,
 # not a weaker version of it.
@@ -202,11 +201,11 @@ def classify_session_fault(agent: AgentRun) -> str | None:
 
     Both stop the campaign and neither is graded.
 
-    There is deliberately no `at_close` shape, tempting as it is: lab/012 did
-    establish that one arm's token died only after its fixtures were already
+    There is deliberately no `at_close` shape, tempting as it is: one campaign did
+    establish that an arm's token died only after its fixtures were already
     passing, so its oracles were trustworthy — but that was established by
     *reading the raw transcript*, and it was 33 turns into a 40-turn budget.
-    No cheap signal separates it from lab/016's fable arms, cut off at turns 11
+    No cheap signal separates it from the fable arms cut off at turns 11
     and 18 of the same budget. A runner that guessed would sometimes stamp a
     half-finished attempt as a trustworthy verdict, which is the exact failure
     this whole classifier exists to prevent. When an interrupted arm matters,
@@ -215,11 +214,11 @@ def classify_session_fault(agent: AgentRun) -> str | None:
     # `is_error` is NECESSARY but not sufficient, and the order matters. A run
     # that concluded normally is not a dead session no matter what its prose
     # says — and its prose is the model's own summary, which on a task *about*
-    # session limits necessarily contains these very markers. lab/020 lost a
-    # campaign to exactly that: a healthy 49-turn arm reported that it had
+    # session limits necessarily contains these very markers. A campaign was
+    # lost to exactly that: a healthy 49-turn arm reported that it had
     # broadened the marker list to cover session/usage/rate/quota, the runner
     # read its own vocabulary back out of that sentence, stamped the arm void
-    # and halted. The same error class as lab/016 — matching a string instead of
+    # and halted. The same error class as above — matching a string instead of
     # a failure — inverted: the right string, in the wrong place.
     #
     # Necessity is checked against the whole record: every genuine death in
@@ -237,9 +236,9 @@ def classify_session_fault(agent: AgentRun) -> str | None:
     # by any reading, but not the phrase `failed to authenticate` — so the
     # marker gate returned None and an untouched worktree was graded RUNG 1,
     # the exact verdict-from-thin-air this classifier exists to prevent
-    # (lab/016: matching a string instead of a failure).
+    # (matching a string instead of a failure).
     #
-    # This cannot resurrect lab/020's false positive. That arm ran 49 turns and
+    # This cannot resurrect that false positive. That arm ran 49 turns and
     # spent real money; the conjunction below is unreachable for any session
     # that did work, so the marker gate is still what guards the *interrupted*
     # shape, which is the only one a healthy arm's prose can be confused with.
@@ -306,7 +305,7 @@ def parse_arm(spec: str, scopes: list[str]) -> Arm:
         )
     if spec == "ceiling-problem":
         # The same ceiling, handed the same knowledge framed as a situation rather
-        # than as an answer. lab/036 measured the conclusion framing costing L2 and
+        # than as an answer. The conclusion framing was measured costing L2 and
         # L3 in four of four arms while memory-off cleared both; this arm is the
         # variable that finding names — framing — held against constant content.
         return Arm(
@@ -317,7 +316,7 @@ def parse_arm(spec: str, scopes: list[str]) -> Arm:
     if spec.split(":", 1)[0] in UNBUILT_ARMS:
         raise ArmError(
             f"arm `{spec}` is designed but not built — it needs graph-snapshot "
-            "pinning (docs/04 open questions); refusing beats approximating"
+            "pinning (an open question); refusing beats approximating"
         )
     raise ArmError(
         f"unknown arm `{spec}` (memory-on, memory-off, ceiling, ceiling-problem, "
@@ -396,7 +395,7 @@ def refuse_self_leaking_task(repo: Path, ref: str, task_id: str) -> None:
     Deleting the battery from the checkout was tried first and is wrong: the
     pinned suite carries `test_the_shipped_battery_validates`, which asserts the
     battery holds at least two tasks, so stripping it fails L1 for *every*
-    candidate. That is lab/019's ungradeable-design defect in a new place — the
+    candidate. That is the ungradeable-design defect in a new place — the
     no-regression gate is not a place to hide a harness edit.
 
     So the check is structural and refuses rather than patches, on the same
@@ -437,7 +436,7 @@ def sync_worktree_env(worktree: Path, timeout: int = 300) -> None:
     process can't see anything installed in the worktree's venv, so every
     acceptance run and every candidate-invoked `uv run pytest` fails with
     `ModuleNotFoundError: No module named 'thalamus'` — indistinguishable at a
-    glance from a genuine candidate regression (lab/013). The operator's own
+    glance from a genuine candidate regression. The operator's own
     checkout masks this because it was synced with `--extra dev` at some past
     setup step; a disposable worktree never is unless told to be.
     """
@@ -456,7 +455,7 @@ def sync_runner_hooks(repo: Path, worktree: Path) -> None:
     historical — that's what makes the candidate's fix meaningful to grade. But
     it also freezes the runner's own tooling (session-start.sh's project
     resolution, etc.) at whatever state existed when the task was authored,
-    silently reverting any later fix to the harness itself (lab/012/013: the
+    silently reverting any later fix to the harness itself (the
     THALAMUS_PROJECT fix landed in the repo but never reached a worktree pinned
     to a pre-fix ref). This is eval-runner infrastructure, not candidate code
     under test — `.claude/settings.json` (also worktree-pinned) still decides
@@ -551,11 +550,11 @@ def arm_home_for(worktree: Path) -> Path:
     never reached for it.
 
     Confinement exists for *gated* campaigns, where recall behaviour is the
-    primary outcome (lab/020's C2), so the drift would have zeroed exactly the
+    primary outcome, so the drift would have zeroed exactly the
     measurement the campaign was bought to make, in the arm where it matters most,
     while every other field in the record looked normal. Same class as the
-    `basename $cwd` scoping bug (lab/012) and the `turn_capped` comparison
-    (lab/015): a default that returns a plausible value instead of failing.
+    `basename $cwd` scoping bug and the `turn_capped` comparison:
+    a default that returns a plausible value instead of failing.
     """
     return worktree.parent / f"{worktree.name}--home"
 
@@ -589,8 +588,8 @@ def image_missing_hook_deps(image: str = ARM_IMAGE) -> tuple[str, ...]:
     would have got: a memory-on arm filed as evidence about memory when the
     memory surface had never been announced to it.
 
-    It also breaks an invariant the campaign design depends on — docs/index
-    2026-07-19 keeps the neutral discipline on in *every* arm precisely so it
+    It also breaks an invariant the campaign design depends on — the neutral
+    discipline stays on in *every* arm precisely so it
     cannot confound the contrast, and hooks that do not run are not on.
     """
     if image in _hook_dep_cache:
@@ -619,14 +618,14 @@ def sandbox_argv(
 
     What the confinement is *for*: the arm's checkout is mounted and the
     operator's repo is not, so `/home/<user>/code/thalamus` does not exist inside
-    the container and the absolute-path reads measured in lab/020 resolve to
+    the container and the measured absolute-path reads resolve to
     nothing. Combined with `prepare_worktree`'s one-commit repo, both measured
     leak channels are closed — filesystem and git object store.
 
     `network` is the one-flag difference between arms and carries a second
     result. `host` lets a memory-on arm reach the graph at
     `ws://localhost:8182/gremlin`, which is the treatment. `bridge` gives
-    memory-off the **store isolation** docs/04 has carried as an open question
+    memory-off the **store isolation** carried as an open question
     since the first campaign, where a memory-off session was measured querying
     the graph over ad-hoc gremlin: removing the surface never removed the store,
     and this does.
@@ -695,7 +694,7 @@ def run_agent(
     # session-start.sh resolves project from basename(cwd), which is the repo
     # root in a normal session but the disposable worktree dir here — never a
     # project any session has ever distilled under, so session-start recall
-    # silently found nothing in every arm run to date (lab/012). THALAMUS_PROJECT
+    # silently found nothing in every arm run to date. THALAMUS_PROJECT
     # overrides that resolution to the real repo's project.
     env["THALAMUS_PROJECT"] = project
     # The picked agent is the pin (decision log 2026-07-18); a leaked agent name
@@ -705,8 +704,8 @@ def run_agent(
     cli = agent_cli(harness)
     # Through `argv()` rather than rebuilt from `binary`: the preconditions a harness
     # needs before it will run headless at all live on the declaration, and a second
-    # hand-built invocation is how `--trust` came to reach extraction and nothing else
-    # (lab/054). Identical output on Claude Code, which declares none.
+    # hand-built invocation is how `--trust` came to reach extraction and nothing else.
+    # Identical output on Claude Code, which declares none.
     cmd = [*cli.argv(model), "--max-turns", str(max_turns)]
     cmd += (
         ["--dangerously-skip-permissions"] if full_auto
@@ -715,7 +714,7 @@ def run_agent(
     if sandbox:
         # Confinement is refused rather than approximated when the image is
         # absent: silently running unconfined would produce records that look
-        # like every other record and are not (the lab/016 lesson about guards
+        # like every other record and are not (the lesson about guards
         # that are correct about the case in front of them).
         if not docker_available():
             raise ArmError(
@@ -809,7 +808,7 @@ def count_recall_calls(transcript: str) -> dict:
 
     `thalamus` is every `mcp__thalamus__*` call — the thing memory-on is
     supposed to make possible. `tool_search` is the deferred-schema load that
-    must precede it in this harness (lab/013-014); recording it separately is
+    must precede it in this harness; recording it separately is
     what distinguishes "never tried" from "tried and could not".
     """
     counts = {"thalamus": 0, "tool_search": 0}
@@ -842,7 +841,7 @@ ANSWER_KEY_DIRS = ("config/tasks",)
 def fix_touched_paths(repo: Path, source_ref: str, fix_ref: str) -> frozenset[str]:
     """The files the historical fix changed — the answer key in code form.
 
-    Found by validating the escape detector against lab/020's own arms: the two
+    Found by validating the escape detector against a real campaign's arms: the two
     the write-up caught had read the task *file*, but a third had run the live
     `src/thalamus/eval/arms.py`, which at HEAD already carries the very fix the
     task asks the candidate to write. A directory list would have filed that as
@@ -869,7 +868,7 @@ def detect_worktree_escape(
     """Find reads of the operator's live checkout from inside an arm session.
 
     A campaign arm runs `--full-auto` (`--dangerously-skip-permissions`) and
-    nothing confines it to its worktree. lab/020 measured the consequence: two
+    nothing confines it to its worktree. The measured consequence: two
     memory-off arms ran `ls config/tasks/` and then read the task file by
     absolute path, outside the worktree entirely. That file states the withheld
     constraint in prose and lists every relation with its marker strings and
@@ -1037,17 +1036,17 @@ def pin_pre_existing_suite(repo: Path, worktree: Path, source_ref: str) -> None:
       mutant set exists to measure is destroyed before rung 2.
     - Worse, it rewards imitation. `test_keyword_matching_is_case_insensitive_and_regex_safe`
       imports `_keyword_predicate` by name, so a *correct* fix that structures the
-      predicate differently fails L1 on an ImportError. docs/04 requires the
+      predicate differently fails L1 on an ImportError. The design requires the
       opposite: relations are behavioral precisely so they "cannot reward
       imitating the historical fix's names", and a gate that does is not a gate
       on quality.
 
 
     Called from BOTH paths, and that is the point. It landed with the oracle gate
-    (lab/017) and for a while only the gate pinned, so `eval oracle` graded
+    and for a while only the gate pinned, so `eval oracle` graded
     anchors against the inherited suite while a real arm was graded against
     whatever tests the candidate happened to leave behind. Two ways that goes
-    wrong, one of them observed on the very first gated arm (lab/020): a
+    wrong, one of them observed on the very first gated arm: a
     candidate that writes an ambitious test its own fix does not satisfy fails L1
     for a defect the gate would never see, and a candidate that weakens or
     deletes a test passes L1 for the same reason. Neither is a no-regression
@@ -1104,7 +1103,7 @@ def evaluate_acceptance(task: Task, worktree: Path, timeout: int = 900) -> list[
 def ladder_score(acceptance: list[dict]) -> int:
     """The run's rung: highest level whose checks, and all lower ones, pass.
 
-    Ordinal and lexicographic (docs/04, eval-methodology exchange
+    Ordinal and lexicographic (eval-methodology exchange
     `scope:main:exchange:06723ce1b78345a9`). Two properties earn the shape:
     adding a cheap check to a rung cannot raise the score, so there is no
     cardinality bias to correct (arXiv 2601.03525); and there are no weights,
@@ -1149,7 +1148,7 @@ def evaluate_probes(
     """Probe verdicts, three-state: hit, miss, or inapplicable.
 
     Inapplicable is not a miss and not an omission. A miss puts a structural zero in
-    the same denominator as a real one — lab/030 measured what that costs, where a
+    the same denominator as a real one, and that cost has been measured: a
     miss rate turned out to be describing the stratum rather than the system. An
     omission repeats the `recall_calls: 0` failure instead: absent is
     indistinguishable from "offered the surface and declined it".
@@ -1360,10 +1359,10 @@ def run_arm(
             "result_tail": agent.result[-300:],
         }
         # Censoring, stamped not inferred: a capped session never concluded, so
-        # its iteration metrics are lower bounds (lab/011: the cap bound in 4/4
+        # its iteration metrics are lower bounds (the cap bound in 4/4
         # first-campaign runs).
         #
-        # `num_turns > max_turns` is NOT the test. lab/015 measured opus runs
+        # `num_turns > max_turns` is NOT the test. Opus runs were measured
         # reporting 46-53 turns against `--max-turns 40` while terminating
         # *normally* — `is_error=False`, a real closing summary in `result` —
         # so the reported turn count and the cap are not on the same scale and
@@ -1383,7 +1382,7 @@ def run_arm(
         if session_fault:
             # Nothing to grade, or an attempt of unknown completeness. Either
             # way a verdict here would describe the interruption and be read as
-            # a statement about the candidate (lab/016).
+            # a statement about the candidate.
             record["infra_fault"] = session_fault
             record["attributable"] = False
             record["void"] = True
@@ -1404,24 +1403,24 @@ def run_arm(
         )
         record["transcript_captured"] = bool(transcript)
         # Whether the arm actually reached for memory is the primary outcome of
-        # the memory-on/off contrast, and it lived only in the transcript until
-        # lab/015 had to re-derive it by hand for twelve arms across three
+        # the memory-on/off contrast, and it lived only in the transcript until it
+        # had to be re-derived by hand for twelve arms across three
         # models. Recording it makes a campaign self-describing.
         record["recall_calls"] = count_recall_calls(transcript)
         # A ceiling arm's whole treatment is the injected fact, so whether the
         # candidate visibly acted on it is not optional colour — "perfect memory,
         # ignored" and "perfect memory, useless" are different findings and a rung
-        # cannot separate them (experiments/004 pre-registration). Recorded at run
+        # cannot separate them (pre-registered). Recorded at run
         # time because the arm's transcript does not outlive its worktree.
         #
         # Judged with layer 1's own instrument, thresholds and all, so its known
         # weakness is inherited openly rather than a second judge being invented
         # here: this counts term overlap in what the candidate *did*, and term
-        # overlap is roughly 57 points floor and a little signal (experiments/001).
+        # overlap is roughly 57 points floor and a little signal.
         if arm.inject_fact and transcript:
             record["memo_echoed"] = memo_echo(task, transcript, arm.framing)
-        # Whether the candidate stayed inside its own experiment. lab/020 found
-        # two arms reading the task file out of the operator's checkout by
+        # Whether the candidate stayed inside its own experiment. Two arms were
+        # found reading the task file out of the operator's checkout by
         # absolute path; `contaminated` is the pre-registered exclusion key for
         # a per-protocol read, and the intention-to-treat comparison keeps every
         # arm regardless.
@@ -1434,7 +1433,7 @@ def run_arm(
         record["contaminated"] = any(
             e["kind"] == "answer_key" for e in record["escapes"]
         )
-        # What the verdict above was computed against (lab/037 #5). The path set
+        # What the verdict above was computed against. The path set
         # is derived from a git diff over the operator's *live* repo, so a record
         # that keeps only `ref` lets a later task-YAML edit or history rewrite
         # re-scope a contamination verdict already recorded.
@@ -1455,12 +1454,12 @@ def run_arm(
             a["passed"] for a in record["acceptance"]
         )
         # The graded endpoint. `accepted` stays as the binary it always was so
-        # lab/011-016 records remain comparable, but it is the saturated
+        # earlier records remain comparable, but it is the saturated
         # measure (18/18) the ladder exists to replace.
         record["rung"] = ladder_score(record["acceptance"])
         # Probes are the *manipulation check* — did the intervention reach the
         # arm — never part of the score. memo-surfaced fires iff the arm called
-        # a thalamus tool (lab/016, 0 mismatches at n=18), which makes it an
+        # a thalamus tool (0 mismatches at n=18), which makes it an
         # excellent delivery detector and a disqualifying one as an outcome: a
         # memory-off arm cannot emit a UUID it never saw, so scoring it would
         # make memory-on > memory-off true by construction.
@@ -1469,7 +1468,7 @@ def run_arm(
 
         # Flag, never exclude (arXiv 2111.03382, 2605.05564): the verdict above
         # stays exactly as measured; `attributable` says whether it can be read
-        # as a fact about the *candidate*. lab/013 lost a whole task-pair to a
+        # as a fact about the *candidate*. A whole task-pair was lost to a
         # `uv run pytest` failure that rendered identically to a real
         # regression, so this distinction has to live in the record itself.
         faults = sorted({
@@ -1534,7 +1533,7 @@ def render_campaign_faults(records: list[dict]) -> str:
     of that signal than CI has: two arms are two different candidate sessions
     writing different code against the same ref, so a failure that reproduces
     **identically in every arm** is very unlikely to be about the candidates.
-    lab/013's reader pair was exactly this — the same
+    One reader pair was exactly this — the same
     `ModuleNotFoundError: No module named 'gremlin_python'` in both arms — and
     it was written up as a candidate defect for a day before being caught by
     hand.
@@ -1602,7 +1601,7 @@ def render_run(record: dict) -> str:
     verdict = "ACCEPTED" if record.get("accepted") else "NOT ACCEPTED"
     if record.get("infra_faults"):
         # Loud on purpose: the failure mode this guards against is an infra
-        # fault read as a candidate defect (lab/013).
+        # fault read as a candidate defect.
         verdict += (
             f" — INFRA FAULT ({', '.join(record['infra_faults'])}), "
             "NOT attributable to the candidate"

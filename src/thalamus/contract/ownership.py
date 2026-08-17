@@ -10,7 +10,7 @@ The rule therefore lives once, here, beside the roster rather than inside it, th
 way `ROSTER_CAPABILITY_DEFAULT` does for capability.
 
 **Why this is admissible when a path allow-list was refused.** The 2026-08-11 ruling
-(`docs/index.md`, ticket `1ed468b61248497e`) held an allow-list incoherent inside a
+(ticket `1ed468b61248497e`) held an allow-list incoherent inside a
 guard that fails open, and that ruling stands for the global case. It does not reach
 this one, and the discriminator is *does the rule change the default over its own
 complement?* A global allow-list does: everything unenumerated becomes denied, over a

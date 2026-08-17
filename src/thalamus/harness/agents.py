@@ -6,7 +6,7 @@ reason is the one this repo keeps relearning: a hardcoded vendor binary is
 invisible until the machine that lacks it tries to use it, and then it fails as
 "distillation stopped happening" rather than as an error anyone reads. A Cursor
 session on a Cursor-only machine must not need Claude Code installed and
-authenticated to become memory (docs/07).
+authenticated to become memory.
 
 Deliberately a leaf module — it imports nothing from Thalamus, so both
 `harness/extraction.py` (which already depends on `eval/`) and `eval/arms.py`
@@ -20,7 +20,7 @@ rediscover that, each entry states what it can and cannot do, and callers refuse
 loudly on the gaps instead of substituting a binary and hoping. The alternative
 — swapping `claude` for `agent` everywhere and seeing what breaks — produces
 surfaces that run and report success while measuring nothing, which is the
-failure class lab/016 and lab/022 are both about.
+failure class this project has already paid for twice.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ CLAUDE_DEFAULT_MODEL = "sonnet"
 # way from interactive use. `composer-2.5-fast` is the variant being declined, and
 # it is a real identifier — the choice is between two things that both exist.
 #
-# Verified against a live `agent --list-models` (2026-08-10, CLI 2026.08.04, lab/054).
+# Verified against a live `agent --list-models` (2026-08-10, CLI 2026.08.04).
 # A wrong string fails at invocation rather than silently selecting another model,
 # and `MODEL_HINT` turns that failure into one command's worth of fixing.
 CURSOR_DEFAULT_MODEL = "composer-2.5"
@@ -87,7 +87,7 @@ class AgentCLI:
     default_model: str
     # Claude Code's JSON envelope prices the call (`total_cost_usd`); Cursor's
     # carries no dollar figure. It does carry a `usage` block — `inputTokens`,
-    # `outputTokens`, `cacheReadTokens`, `cacheWriteTokens` (lab/054) — so the gap
+    # `outputTokens`, `cacheReadTokens`, `cacheWriteTokens` — so the gap
     # is pricing, not instrumentation, and a future rate table could close it.
     # Kept as a capability rather than defaulted to 0.0, because a zero meaning
     # "not reported" is indistinguishable from one meaning "free" and would
@@ -105,7 +105,7 @@ class AgentCLI:
     # Flags this CLI needs before it will run non-interactively in a directory it
     # has never seen. Not a preference: Cursor refuses an untrusted workspace with
     # exit 1 and a human-readable prompt *instead of* the JSON envelope, so every
-    # sandbox extraction fails before doing any work (measured live, lab/054 — the
+    # sandbox extraction fails before doing any work (measured live — the
     # extraction sandbox is a fresh mkdtemp every run and is therefore never
     # trusted). Claude Code has no equivalent precondition and declares none.
     #
@@ -155,7 +155,7 @@ AGENT_CLIS: dict[str, AgentCLI] = {
         arm_blockers=(
             "credential staging copies ~/.claude.json and "
             "~/.claude/.credentials.json into the arm HOME; Cursor authenticates "
-            "from its own config root, which XDG_CONFIG_HOME moves (lab/054)",
+            "from its own config root, which XDG_CONFIG_HOME moves",
             "--max-turns has no Cursor equivalent, so an arm cannot bound turns",
             "the run envelope is read for num_turns, which Cursor does not report",
             "escape detection and session-fault classification read Claude Code's "

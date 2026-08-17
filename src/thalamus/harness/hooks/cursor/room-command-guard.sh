@@ -11,7 +11,7 @@
 # a shell command or it is nothing — which is why the row in contract/boundaries.py
 # read ABSENT while an addressable member existed.
 #
-# Measured 2026-08-13 (lab/065): `beforeShellExecution` fires *before* Cursor's own
+# Measured 2026-08-13: `beforeShellExecution` fires *before* Cursor's own
 # approval modal — a probe hook logged at 11:01:15 with the modal still unanswered at
 # 11:01:20. So a denial here lands before the operator is asked to approve anything,
 # rather than racing it.

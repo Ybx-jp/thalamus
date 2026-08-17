@@ -1,12 +1,12 @@
 """
-Ceremony ledger tests (harness/ceremonies.py) — docs/12 items 1–4.
+Ceremony ledger tests (harness/ceremonies.py) — the first four lifecycle records.
 
 Interfaces: thalamus.harness.ceremonies (start, end, skip, mint_deliverable,
 record_revision, record_assignment, draw, next_index, audit, render)
 Infrastructure: a tmp_path ledger; no graph, no network, no harness
 Scope: the four records that make later analysis possible at all. Each test below is
 anchored on what could NOT be reconstructed after the fact if the row were missing —
-that is the standard docs/12 puts these four ahead of the rest of the lifecycle on.
+that is the standard that puts these four ahead of the rest of the lifecycle.
 """
 
 import json
@@ -94,7 +94,7 @@ def test_every_row_carries_an_event_so_one_ledger_can_hold_four_records(ledger):
 
 def test_an_unknown_ceremony_kind_is_refused(ledger):
     """
-    Scenario: a caller opens a `standup`, which docs/12's filter cut.
+    Scenario: a caller opens a `standup`, which the lifecycle's filter cut.
 
     Verification: refused. A closed vocabulary is the point — an unrecognised kind is
     not a new ceremony, it is a silently forked occasion counter, and the lifecycle's
@@ -169,7 +169,8 @@ def test_a_closed_room_that_neither_held_nor_skipped_a_ceremony_is_named(ledger)
 
     Verification: the audit names `atlas:review` and is not clean. Every other finding
     reads rows that exist; the ledger had nothing to read here, so a room could hold
-    the one ceremony docs/12 calls measurable, log none of it, and still audit clean.
+    the one ceremony the lifecycle calls measurable, log none of it, and still audit
+    clean.
     """
     ceremonies.start("atlas", "open", path=ledger)
     ceremonies.start("atlas", "acceptance", path=ledger)
@@ -443,8 +444,8 @@ def test_a_commitment_is_resolvable_only_if_it_predicted_something(ledger):
     naming neither.
 
     Verification: both are recorded, and the fields that make a forecast resolvable
-    are present on the row either way. docs/12 makes the deliverables report a
-    forecast precisely so tooling can settle it later; a commitment carrying no
+    are present on the row either way. The deliverables report is a forecast
+    precisely so tooling can settle it later; a commitment carrying no
     prediction and no horizon is a sentence about intent, and the row has to show
     that rather than hide it behind a default.
     """

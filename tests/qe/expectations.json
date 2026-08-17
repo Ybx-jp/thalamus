@@ -50,9 +50,9 @@
     {
       "case": "tmux-invocations-name-their-socket",
       "failure_class": "boundary-leak",
-      "witness_contains": "17/17 unscoped",
-      "triaged_at_rev": "2bc3a3d",
-      "note": "No -L/-S anywhere in src/. tmux ignores HOME, so no environment redirection isolates it, and the arm-runner image has no tmux at all. Pinned on the count so scoping any subset drifts this entry rather than silently shrinking it. Re-pinned from '13/13': four invocations were added by 222bad6 (display-message, capture-pane, set remain-on-exit, kill-window in pin.py), and the case's own detector was repaired in the same change — it searched for -L/-S anywhere in the argv, so `capture-pane -p -J -S -` read as socket-scoped and the suite reported 16/17 against a true 17/17. The defect is unchanged in substance; the count moved because the code grew and the instrument was wrong."
+      "witness_contains": "19/19 unscoped",
+      "triaged_at_rev": "20f5c59",
+      "note": "No -L/-S anywhere in src/. tmux ignores HOME, so no environment redirection isolates it, and the arm-runner image has no tmux at all. Pinned on the count so scoping any subset drifts this entry rather than silently shrinking it. The count is the number of invocation sites, and it moves whenever the roster or console grows one — 15 of the 19 are in pin.py, the rest in cli.py, console/server.py, harness/dispatch.py and harness/panes.py. Not one has ever named a socket, which is the claim; a re-pin onto a larger count is the code growing, not the defect changing. The detector reads server options positionally and stops at the command word, because `capture-pane -p -J -S -` is a scrollback flag and an unordered search for -L/-S credits it with scoping it does not have."
     },
     {
       "case": "every-room-member-is-addressable",

@@ -1,5 +1,5 @@
 """
-Dispatch tests (harness/dispatch.py) — docs/12 §Delivery mechanics.
+Dispatch tests (harness/dispatch.py) — delivery mechanics.
 
 Interfaces: thalamus.harness.dispatch (preflight, announcement, dispatch, ledger_panes)
 Infrastructure: tmp_path config dir + pin ledger + guard dir; tmux is never invoked —
@@ -242,8 +242,8 @@ def test_a_pane_tmux_does_not_have_is_refused(room):
     """
     Scenario: the pin ledger claims a pane that is no longer live.
 
-    Verification: refused as a roster disagreement. docs/12 says dispatch refuses
-    rather than guesses where the window list and the descriptor roster disagree, and
+    Verification: refused as a roster disagreement. Dispatch refuses rather than
+    guesses where the window list and the descriptor roster disagree, and
     a recycled pane id belonging to something else is the case that makes it matter.
     """
     room["panes"] = {"%11"}

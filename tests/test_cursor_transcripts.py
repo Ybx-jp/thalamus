@@ -1,5 +1,5 @@
 """
-Cursor transcript adapter (docs/07, lab/010 wall 2, lab/028).
+Cursor transcript adapter.
 
 Interfaces: harness/cursor_transcripts.py, driven with synthetic transcripts in
 the shape Cursor staff and users describe (forum threads 157311/166592, read
@@ -13,14 +13,14 @@ blocks, missing fields, malformed lines — and those hold regardless, because a
 parser meeting an unfamiliar input must degrade to an absent field rather than a
 wrong one. Two things are the exception, copied from observation rather than from
 documentation: the on-disk layout the discovery tests build, read off a live
-Cursor install (lab/054), and the tool names and input keys — `Read`/`Write`/
+Cursor install, and the tool names and input keys — `Read`/`Write`/
 `StrReplace` naming a file in `path`, `Grep`/`Glob` naming a search root — read
 off the Cursor transcript corpus on the same box.
 
 The load-bearing test in this file is the ingress one: Cursor transcripts carry
 no tool results for any tool, so an empty `external_texts` means "we cannot
 know", and collapsing that into "nothing was fetched" would silently delete the
-half of docs/05's laundering floor that no prompt content can lift.
+half of the laundering floor that no prompt content can lift.
 """
 
 import json
@@ -243,7 +243,7 @@ class TestIngressFidelity:
     def test_unverifiable_ingress_floors_every_claim(self):
         """With no tool results to match against, the mechanical layer has nothing
         to run — and honoring only the extractor's self-marks would leave exactly
-        the liftable half of docs/05's defence standing."""
+        the liftable half of the laundering floor's defence standing."""
         graph = _graph_with_claims()
         floored = extraction.apply_ingress_floor(graph, [], ingress_verifiable=False)
         assert all(c.external for c in floored.claims())
@@ -350,7 +350,7 @@ class TestDiscovery:
 
 
 def _cursor_tree(root, sessions):
-    """Build Cursor's real on-disk layout (lab/054) for a list of sessions.
+    """Build Cursor's real on-disk layout for a list of sessions.
 
     Each entry is (project_dir_name, session_id, cwd_or_None). `cwd` None writes
     no meta.json at all, which is the shape of a session Cursor recorded before
@@ -380,8 +380,7 @@ class TestFilesystemDiscovery:
 
     Reading only the sessionEnd log made every session predating the hooks
     undiscoverable while its transcript sat on disk — lost by policy rather than
-    by format, which bites hardest on the machine Thalamus arrives at late
-    (lab/054).
+    by format, which bites hardest on the machine Thalamus arrives at late.
     """
 
     def test_a_session_no_hook_saw_is_found_with_its_scope_unresolved(self, tmp_path, monkeypatch):

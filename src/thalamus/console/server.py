@@ -1,6 +1,6 @@
 """The console — a tiny tmux bridge, so the roster is drivable from a phone.
 
-A pinned session is an OS process in a tmux window (docs/07, "the process is the
+A pinned session is an OS process in a tmux window ("the process is the
 pin"), which makes tmux the one place all of them are addressable. This server
 reads each window's live screen with `tmux capture-pane` and sends input with
 `tmux send-keys`, always targeting windows *by index* so the session's active
@@ -15,7 +15,7 @@ Two properties are load-bearing:
 - **It binds loopback by default.** There is no authentication here and none is
   pretended; reaching it from a phone is a job for whatever already authenticates
   your network (a VPN/overlay network, an authenticating reverse proxy, an SSH
-  tunnel). See docs/console.md.
+  tunnel).
 
 The bridge itself is stdlib-only, unlike the FastAPI surfaces in `pulse/` and
 `viewer/`: one of its jobs is restarting the systemd unit that hosts it, so the
@@ -405,7 +405,7 @@ def attach_blocked(windows: list[dict]) -> None:
     and it is the field a reader keys on. Session descriptors are partitioned by
     config dir: a session launched into a collaboration writes its descriptor under
     that collaboration's dir, and `quick.config_dir` reads only the one this process
-    is in, because discovery is that boundary (lab/045). So a console outside a
+    is in, because discovery is that boundary. So a console outside a
     collaboration cannot see the descriptors of sessions inside one — measured on
     this box 2026-08-15, the same roster at the same instant resolved 7 of 9 windows
     from the host config dir and the complementary 2 of 9 from inside the
@@ -860,8 +860,8 @@ def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) 
             # is not, and a progress figure nobody can compute must not be drawn.
             "recycling": recycling.get(index), "closing": closing.get(index),
             # Scope alone doesn't identify a session: the same expert can be
-            # spawned in several directories. cwd is what tells `homelab in
-            # thalamus` from `homelab in some-other-repo`.
+            # spawned in several directories. cwd is what tells `architect in
+            # thalamus` from `architect in some-other-repo`.
             "cwd": cwd, "cwd_label": os.path.basename(cwd.rstrip("/")) or cwd,
             "cwd_short": _tildify(cwd),
             # Which collaboration this window is in, read from the command it was
@@ -969,7 +969,7 @@ def screen_rev(text: str) -> str:
 def recycle_window(cfg: Config, idx: int) -> None:
     """Restart the pinned claude process in a window — the MCP/hook re-arm.
 
-    The MCP server and hooks arm per *process* (docs/07, lab/001), so wiring
+    The MCP server and hooks arm per *process*, so wiring
     changes need a fresh agent. Graceful path: `remain-on-exit on` (the window
     survives the exit), Escape + C-u (dismiss any dialog, clear the composer),
     `/exit` (fires SessionEnd — a command on both harnesses), wait for pane death,

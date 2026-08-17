@@ -3,7 +3,7 @@ Independent-grounding tests: which asserting sessions count as separate witnesse
 
 Interfaces: thalamus.substrate.witnesses
 Infrastructure: none — pure functions over recorded launcher facts
-Scope: the asymmetry docs/09 §Scope settles. A fork collapses because the
+Scope: the asymmetry the schema settles. A fork collapses because the
 dependence is recorded; a room does not, because a room is not an event. Both
 halves are tested as decisions, since either one implemented by symmetry with the
 other is a bug the graph cannot show you afterwards.
@@ -82,7 +82,7 @@ def test_a_room_is_flagged_and_never_collapsed():
     - the count is NOT reduced
     - the room is named so a reader can discount it
 
-    docs/09 closes this deliberately: a room hosts many turns, so it is not an event
+    The schema closes this deliberately: a room hosts many turns, so it is not an event
     identifier, and collapsing by it would trade a false-count error for a
     false-collapse error. Membership makes correlation plausible where a fork parent
     makes it certain — so the room is flagged and left counted.

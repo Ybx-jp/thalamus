@@ -139,7 +139,7 @@ def test_a_second_restart_request_does_not_reset_the_clock():
 def test_an_unobservable_session_is_not_reported_as_unblocked(monkeypatch):
     """The distinction the whole row exists to draw, on the row's own indicator.
 
-    Session descriptors are partitioned by config dir (lab/045), so a console can be
+    Session descriptors are partitioned by config dir, so a console can be
     structurally unable to see a window's descriptor. Calling that window "not
     stuck" states a fact on evidence that says nothing — so `observed` is False and
     `blocked` is None, and neither is the same pixel as a session that was read and

@@ -1,6 +1,6 @@
 """Confidence sequences — intervals that survive being looked at.
 
-This project has a first-party demonstration of why it needs these. lab/023's
+This project has a first-party demonstration of why it needs these. An earlier
 campaign was peeked at: P(on>off) read 0.789 with exact p = 0.0154 at 19 arms, decayed
 to 0.693 (p = 0.0589) by 23, and finished at 0.667 (p = 0.0849). Nothing went wrong
 with the data. The error was reading a fixed-n interval at a moment chosen *because*

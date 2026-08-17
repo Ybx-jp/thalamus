@@ -1,4 +1,4 @@
-"""Permutation-null calibration tests (I1; lab/034).
+"""Permutation-null calibration tests.
 
 Interfaces: thalamus.eval.calibration — kappa, strata, rotation constraints,
             cluster bootstrap, reconstruction fidelity.
@@ -91,7 +91,7 @@ def test_a_rotation_never_reuses_the_case_s_own_session():
 
 
 def test_rotation_produces_a_null_distribution_not_a_single_draw():
-    """lab/032's cross-project 5.0% came from one rotation against one pool. One
+    """An earlier cross-project 5.0% came from one rotation against one pool. One
     draw cannot say whether a 4-point gap is real."""
     topics = [
         "reader detail cap eight",
@@ -241,7 +241,7 @@ def test_restricting_a_corpus_keeps_the_terms_auditability_is_measured_from():
     - judged_terms survives the restriction, filtered to the surviving nodes
     - auditable() therefore still sees the verdicts that recorded their terms
 
-    `restrict` is the function experiments/001 narrows with *before* calling
+    `restrict` is the function a campaign narrows with *before* calling
     auditable(), so dropping judged_terms here made the auditability of a restricted
     corpus read as zero in the one place it is actually measured — a stored number
     that was a function of a field the same call had just discarded.
@@ -315,7 +315,7 @@ def test_a_fork_and_its_parent_are_not_null_partners():
     reaching its own conclusions.
 
     Verification: refused in both directions. Unlike a room, where the correlation is
-    plausible, a fork makes it certain (docs/09 §Scope).
+    plausible, a fork makes it certain.
     """
     parent = _correlated_case("t1", "s1")
     child = _correlated_case("t2", "s2", forked_from="s1")

@@ -1,12 +1,11 @@
 """
-Quick-protocol tests (docs/02 — the second consultation tier, docs/07 — its launch
-mechanics).
+Quick-protocol tests — the second consultation tier and its launch mechanics.
 
 Interfaces: thalamus.harness.quick, thalamus.harness.consultation.open_exchange/
 refuse_reason
 Infrastructure: none; a fake graph, fake session descriptors on tmp_path, and a fake
 subprocess runner. No `claude` is launched.
-Scope: the launcher's obligations, each of which lab/049 measured as failing
+Scope: the launcher's obligations, each of which was measured as failing
 silently — target resolution against the live roster (never the pin ledger), the
 parent's own `--agent`, `THALAMUS_FORKED_FROM`, both cache fields, the login notice
 that arrives as a well-formed answer with exit 0, and the delta that keeps a fork
@@ -210,7 +209,7 @@ def test_a_dead_session_is_not_a_target(tmp_path):
 
     The pin ledger has no exit event, which is why targets resolve here at all — but
     the descriptor directory is only *close* to the truth, so liveness is pid plus
-    procStart against /proc, which also defeats pid reuse (lab/049).
+    procStart against /proc, which also defeats pid reuse.
     """
     write_descriptor(
         tmp_path, pid=os.getpid(), session_id="dead", agent="thalamus-homelab",
@@ -410,7 +409,7 @@ def test_the_fork_carries_the_parents_agent_and_a_preassigned_id():
 
     Omitting `--agent` is the failure mode with no symptom: the fork still reads the
     *pinned* prefix and answers in the expert's voice, while its ledger row records
-    `scope=main, agent=""` (lab/049).
+    `scope=main, agent=""`.
     """
     argv = quick.fork_argv(_target(), "homelab", "fork-uuid")
 
@@ -428,10 +427,10 @@ def test_the_fork_carries_whatever_preconditions_the_harness_declares(monkeypatc
     - a declared precondition reaches the launch line
     - it precedes the flags it is a precondition of
 
-    This is the lab/054 seam, which is invisible while Claude Code declares none: a
-    launch line rebuilt from `binary` reads correct and silently drops the flag the
-    harness refuses to start without. Cursor's `--trust` reached extraction and no
-    other call site for exactly that reason.
+    This is the seam the Cursor port exposed, invisible while Claude Code declares
+    none: a launch line rebuilt from `binary` reads correct and silently drops the
+    flag the harness refuses to start without. Cursor's `--trust` reached
+    extraction and no other call site for exactly that reason.
     """
     from dataclasses import replace
 
@@ -511,7 +510,7 @@ def test_a_login_notice_is_not_an_answer():
     Verifications:
     - the well-formed envelope with exit 0 is refused, not recorded as an answer
 
-    Found by accident (lab/049): the result string needs checking, not just the exit
+    Found by accident: the result string needs checking, not just the exit
     code.
     """
     payload = envelope(result="Not logged in · Please run /login", num_turns=1)
@@ -839,8 +838,8 @@ def test_a_quick_exchange_records_the_briefs_absence_and_prices_itself(wired, mo
     - the answer closes through the unchanged citation gate
     - both cache fields and the wall clock land on the exchange
 
-    Silence and "no brief served" are the same bytes, and only one is auditable
-    (docs/02); the entire justification for the tier is a latency claim, so an
+    Silence and "no brief served" are the same bytes, and only one is auditable;
+    the entire justification for the tier is a latency claim, so an
     exchange that does not log its own cost makes that claim unfalsifiable.
     """
     graph = _cited_graph()

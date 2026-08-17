@@ -120,8 +120,14 @@ empty, so it will have nothing to tell you yet. That is the expected first run.
 
 ## 6. Bring up the roster
 
-An expert is a scope declared by a manifest in `config/experts/`. Four ship as
-examples: `architect`, `designer`, `eval-methodology`, `literature`.
+An expert is a scope declared by a manifest in `config/experts/`. Five ship as
+examples: `architect`, `designer`, `eval-methodology`, `literature` and `qe`. Two of
+them are worth reading before you write your own — `designer` shows how a scope is
+given its own MCP tools, and `qe` shows a scope defined by what it must *not* produce.
+
+To use your own roster instead, point `THALAMUS_CONFIG_DIR` at a directory holding an
+`experts/` subdirectory. The same variable supplies the eval task battery from
+`tasks/`.
 
 ```bash
 thalamus roster            # bring up the tmux roster

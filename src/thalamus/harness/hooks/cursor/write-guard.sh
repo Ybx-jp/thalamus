@@ -6,7 +6,7 @@
 # into the Claude Code PreToolUse shape, runs the real guard, and maps its exit-2 +
 # stderr protocol onto Cursor's permission JSON.
 #
-# The boundary is a decision about the graph (docs/index.md, 2026-08-03), and the graph
+# The boundary is a decision about the graph (decided 2026-08-03), and the graph
 # does not care which harness ran the command — so this is wired rather than left as a
 # Claude-only gap, following `gremlin-guard.sh`, the other PreToolUse-on-Bash guard.
 #

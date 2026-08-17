@@ -29,7 +29,7 @@ MAX_EXPANSION_EDGES = 200
 
 # Derived from the contract's ontology rather than restated here. Adding a node type
 # used to mean editing this file; now it means editing contract/ontology.py and nothing
-# else. (docs/09 G7)
+# else.
 _EXPANDABLE_KINDS = EXPANDABLE_LABELS
 _NODE_LABEL_PROPERTIES = LABEL_PROPERTIES
 

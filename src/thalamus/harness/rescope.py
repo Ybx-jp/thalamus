@@ -1,6 +1,6 @@
 """Redirect a session's distillation scope before it distills — `thalamus rescope`.
 
-The pin is an OS process (docs/07), so it cannot be changed mid-flight. But the
+The pin is an OS process, so it cannot be changed mid-flight. But the
 *routing decision* it encodes can be wrong for an ordinary reason: the operator
 opened a pinned window and then did main-plane work in it. Without a supported
 path, the only fix is hand-editing the tier-0 pin ledger, which is how this
@@ -51,8 +51,8 @@ PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 
 # The harness exports the live session id into every child process (measured
 # 2026-07-28 on the running session). It is the authoritative answer to "which
-# session am I", and the only one: a session cannot otherwise tell, and lab/026
-# is what a guess costs — an agent inferred its id from a subagent task path,
+# session am I", and the only one: a session cannot otherwise tell, and a guess
+# has a measured cost — an agent inferred its id from a subagent task path,
 # drew a well-formed UUID belonging to a *different, same-scope* session, and
 # reasoned confidently about the wrong subject.
 SESSION_ID_ENV = "CLAUDE_CODE_SESSION_ID"
@@ -63,7 +63,7 @@ def current_session_id(env: dict[str, str] | None = None) -> str | None:
 
     Deliberately NOT falling back to "the most recent ledger entry for this cwd":
     concurrent sessions share a working directory routinely (two ran in this
-    repo the night lab/026 was written), so that heuristic reintroduces exactly
+    repo the night this guard was written), so that heuristic reintroduces exactly
     the wrong-subject failure it would be papering over. No answer beats a
     plausible wrong one.
     """
@@ -183,9 +183,10 @@ def rescope(session_id: str, scope: str, reason: str = "", agent: str = "",
         "reason": reason or f"operator redirected distillation from `{current}` to `{scope}`",
     }
     # Who performed the correction, not just who it was performed on. The two
-    # spurious rows lab/026 left on another session's ledger were indistinguishable
-    # from operator intent precisely because nothing recorded their author; with
-    # this field that mistake reads as "session X edited session Y" at a glance.
+    # spurious rows a wrong-subject rescope left on another session's ledger were
+    # indistinguishable from operator intent precisely because nothing recorded
+    # their author; with this field that mistake reads as "session X edited
+    # session Y" at a glance.
     by = current_session_id()
     if by:
         row["by_session"] = by
@@ -207,13 +208,14 @@ def run(session: str | None, scope: str, reason: str = "", dry_run: bool = False
     try:
         if session:
             session_id = resolve_session(session)
-            # The guard that lab/026 needed. An explicitly-passed id that differs
-            # from the live one is the exact shape of that failure: an agent holding
-            # a plausible UUID from a file path, a transcript, or a recalled memory,
-            # acting on it with confidence. This is checked mechanically rather than
-            # asked of the caller — the harness knows which session is running, so
-            # the override is *detected*, not self-declared, and a caller who is
-            # wrong about its own identity cannot assert its way past it.
+            # The guard the wrong-subject failure needed. An explicitly-passed id
+            # that differs from the live one is the exact shape of that failure: an
+            # agent holding a plausible UUID from a file path, a transcript, or a
+            # recalled memory, acting on it with confidence. This is checked
+            # mechanically rather than asked of the caller — the harness knows which
+            # session is running, so the override is *detected*, not self-declared,
+            # and a caller who is wrong about its own identity cannot assert its way
+            # past it.
             live = current_session_id()
             if live and session_id != live and not other_session:
                 print(
@@ -224,8 +226,8 @@ def run(session: str | None, scope: str, reason: str = "", dry_run: bool = False
                     f"  If you really mean to rescope a DIFFERENT session, pass "
                     f"--other-session to say so deliberately.\n"
                     f"  Before you do: is {session_id[:8]} an id you were told, or one you "
-                    f"inferred from a path, a transcript, or a recalled memory? lab/026 is "
-                    f"what inferring it cost — a real, adjacent, same-scope session got two "
+                    f"inferred from a path, a transcript, or a recalled memory? Inferring it "
+                    f"has already cost a real, adjacent, same-scope session two "
                     f"rows it never earned."
                 )
                 return 1
@@ -237,7 +239,7 @@ def run(session: str | None, scope: str, reason: str = "", dry_run: bool = False
             if not session_id:
                 print(f"Refused: no session given and ${SESSION_ID_ENV} is not set, so the "
                       f"current session cannot be identified. Pass the id explicitly — but "
-                      f"do not guess it (lab/026).")
+                      f"do not guess it.")
                 return 1
             print(f"session: {session_id[:8]} (from ${SESSION_ID_ENV})")
         row = rescope(session_id, scope, reason=reason, dry_run=dry_run,

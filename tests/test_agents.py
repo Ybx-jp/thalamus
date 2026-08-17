@@ -41,8 +41,8 @@ class TestRegistryShape:
         Atomicity itself is a review-time property, not a lexical one — "copies
         ~/.claude.json and ~/.claude/.credentials.json" is one claim carrying a
         list, and a test reading that `and` as two claims fires on correct prose.
-        A guard with false positives gets routed around rather than obeyed
-        (lab/008), so this asserts only what a string can honestly answer: rows
+        A guard with false positives gets routed around rather than obeyed,
+        so this asserts only what a string can honestly answer: rows
         are distinct, and long enough to name a reason rather than a symptom.
         Whether a row states one thing stays with the reader who retires it.
         """

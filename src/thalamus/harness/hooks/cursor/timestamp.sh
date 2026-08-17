@@ -2,7 +2,7 @@
 # Thalamus beforeSubmitPrompt hook — wall-clock tier, prompt side (Cursor).
 #
 # Counterpart of ../claude-code/timestamp.sh, split across two events because
-# `beforeSubmitPrompt` cannot inject (lab/010 wall 1). This half only records
+# `beforeSubmitPrompt` cannot inject. This half only records
 # that a turn began; `inject.sh` renders the clock at delivery time on the next
 # postToolUse. The marker carries no timestamp deliberately — a clock rendered
 # here and delivered later is a stale clock, which is the drift this tier

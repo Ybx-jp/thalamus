@@ -5,7 +5,7 @@ Interfaces: harness.mcp_server.knowledge_scopes, harness.mcp_server._connect and
 tool guard that reads its result
 Infrastructure: a temporary config directory via THALAMUS_CONFIG_DIR, and one TCP
 connect to a port nothing listens on
-Scope: the ambient knowledge surface (docs/02). The pin is resolved once at process
+Scope: the ambient knowledge surface. The pin is resolved once at process
 start and cannot change under a running server, but the roster can — manifests are
 added to config/experts/ while servers are running. Plus what a tool returns when
 the graph is down, which is the first thing a new install hits.

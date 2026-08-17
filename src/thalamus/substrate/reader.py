@@ -1,12 +1,12 @@
 """Query and retrieve memory from the graph.
 
 Every read is **scoped**. A session is pinned to one scope, and the server — not the
-model — decides what that scope can see: docs/07 is explicit that "the model is never
-trusted to self-limit its own retrieval scope". The `scope` parameter threaded through
-this module is where that enforcement lives.
+model — decides what that scope can see. The model is never trusted to self-limit its
+own retrieval scope, and the `scope` parameter threaded through this module is where
+that enforcement lives.
 
 Results are rendered as **data with provenance**, never as text positioned to be read as
-instructions (docs/05, informs-never-instructs). Today everything in the graph is tier-1
+instructions (informs-never-instructs). Today everything in the graph is tier-1
 — the agent's own history — so the exposure is small. The moment a feed writes tier-2
 content, this formatter is the injection surface, which is why the tier travels with the
 content rather than being dropped on the floor at render time.
@@ -50,9 +50,9 @@ def _tier_label(tier: object) -> str:
 # Hoisted out of the code that uses them because the eval loop has to be able to
 # say *which ranker* produced a trace. Retrieval-utility numbers are only
 # comparable across a time window if the ranker was the same across it, and
-# lab/007's fan-out prediction went twenty-two entries unverified partly because
+# an earlier fan-out prediction went twenty-two entries unverified partly because
 # nothing recorded that. A window that straddles a dial change is not a
-# measurement of either setting (lab/029).
+# measurement of either setting.
 #
 # Changing any value here is a ranker change: bump RANKER_VERSION so the
 # fingerprint moves even if two dials cancel out numerically.
@@ -61,18 +61,17 @@ RANKER_VERSION = "3"
 # Score a matched session accumulates per distinct keyword: its own summary hitting,
 # and each contained claim that hits. The ranking unit is the *session* — a claim hit
 # raises its parent's score and never ranks on its own — so anything reasoning about
-# what a ranking change can reach has to start here, not at the claim (lab/029).
+# what a ranking change can reach has to start here, not at the claim.
 _SUMMARY_HIT_SCORE = 2.0
 _CLAIM_HIT_SCORE = 1.0
 # Knowledge claims — the `.not_(in_e("CONTAINS"))` branch — have no parent session and
 # do rank on their own merit.
 _KNOWLEDGE_HIT_SCORE = 2.0
-# The match floor: one generic term out of ten is noise, not relevance (lab/006-007).
+# The match floor: one generic term out of ten is noise, not relevance.
 _MATCH_FLOOR = 2
 # A recall result renders at most this many claim details. Priced traces showed the
 # unfiltered dump — every claim of every matched session — is where retrieval waste
-# lives: 267 of 295 ignored nodes were ride-along claims that never matched the query
-# (lab/006).
+# lives: 267 of 295 ignored nodes were ride-along claims that never matched the query.
 #
 # Tuned 2026-07-29 against 1,354 labelled detail renders, and the answer was to leave
 # it: used-rate is ~60% flat across every property measured — render position (58-65%,
@@ -82,8 +81,7 @@ _MATCH_FLOOR = 2
 # better claims. Lowering it to 5 would drop ~146 used claims to save ~88 ignored ones.
 # The one discriminator found is claim kind (decision 62% / solution 56% / problem
 # 53%) — marginal, and untried. Caveat that bounds all of it: only 1.4% of detail
-# verdicts come from the strong vertex-ID citation path, so this rests on lexical echo
-# (lab/031).
+# verdicts come from the strong vertex-ID citation path, so this rests on lexical echo.
 _DETAIL_CAP = 8
 # Knowledge holds up to 1/this of the result window when sessions also matched.
 _KNOWLEDGE_WINDOW_DIVISOR = 2
@@ -95,13 +93,13 @@ _EXCHANGE_RANK_WINDOW = 50
 # right window here: 325 main-scope threads at 2026-08-11, and the failure this ranking
 # exists to prevent was a relevant thread sitting outside a fifteen-row page.
 _THREAD_RANK_WINDOW = 400
-# Co-indexed verbatim chunks (lab/052). Scored BELOW a knowledge claim per keyword
+# Co-indexed verbatim chunks. Scored BELOW a knowledge claim per keyword
 # hit: a chunk is ~1,500 chars against a claim's ~210, so equal scoring would let a
 # passage outrank a claim by sheer surface area rather than by relevance. The cap is
 # the stopping rule the design owes — chunks are the largest thing this reader can
-# inject, and experiments/002 measured 33.8% of injected retrieval tokens going unused
-# (95% CI [27.2, 40.5]; lab/034 supersedes lab/006's magnitudes), so an
-# uncapped chunk tier is a token-waste regression wearing a fidelity story.
+# inject, and 33.8% of injected retrieval tokens were measured going unused
+# (95% CI [27.2, 40.5]), so an uncapped chunk tier is a token-waste regression
+# wearing a fidelity story.
 _CHUNK_HIT_SCORE = 1.0
 _CHUNK_WINDOW_CAP = 2
 
@@ -111,7 +109,7 @@ def _tie_break(query: str, node_id: str) -> str:
 
     Scores are integer multiples of the hit constants, so ties are not an edge case:
     measured over 1,047 real recorded queries, **657 have a tie spanning the cut**, with
-    a median tie-set of 9 and a maximum of 243 (lab/053). Until this existed the winner
+    a median tie-set of 9 and a maximum of 243. Until this existed the winner
     was decided by `sorted()` stability over graph iteration order — reproducible only
     by accident, and silently sensitive to write order.
 
@@ -120,7 +118,7 @@ def _tie_break(query: str, node_id: str) -> str:
     unavailable on a Claim or carried a ranking claim no measurement here supports: the
     detail-cap tuning found used-rate flat across claim length, and on this corpus
     "prefer full text" is "prefer recent", because the papers stuck at abstract depth
-    are the older, foundational end (lab/053). Ordering ties on any of them would have
+    are the older, foundational end. Ordering ties on any of them would have
     made a preference true by construction and destroyed the ability to measure whether
     it was ever real.
 
@@ -187,7 +185,7 @@ class MemoryResult:
 
         Vertex IDs are rendered inline, deliberately. The PostToolUse tap records this
         text verbatim, so the IDs are what turn a trace from "some prose came back" into
-        node-level retrieval events the eval loop can attribute (docs/04, docs/09 G5).
+        node-level retrieval events the eval loop can attribute.
         They double as handles the agent can quote when citing a memory.
         """
         lines = [
@@ -208,7 +206,7 @@ class MemoryResult:
                 node_id = detail.get("node_id", "")
                 handle = f" `{node_id}`" if node_id else ""
                 # Externally-derived content stays visibly external even when it
-                # surfaces inside an episodic result (docs/05).
+                # surfaces inside an episodic result.
                 tier = detail.get("tier", int(Tier.FIRST_PARTY))
                 external = f" _[{_tier_label(tier)}]_" if tier >= int(Tier.CURATED) else ""
                 lines.append(f"- **{kind}**{handle}: {desc}{external}")
@@ -217,7 +215,7 @@ class MemoryResult:
 
 @dataclass
 class ChunkResult:
-    """A verbatim passage from a retained Source, co-indexed beside claims (lab/052).
+    """A verbatim passage from a retained Source, co-indexed beside claims.
 
     Renders in the same informs-never-instructs register as KnowledgeResult and for a
     stronger reason: a claim is at least a *sentence someone wrote about* a document,
@@ -257,8 +255,8 @@ class ChunkResult:
 class KnowledgeResult:
     """A knowledge-subgraph claim — what a source asserts, quoted with its tier.
 
-    This formatter is the informs-never-instructs surface for tier-2 content
-    (docs/05): the claim is blockquoted as material from elsewhere, the citation
+    This formatter is the informs-never-instructs surface for tier-2 content:
+    the claim is blockquoted as material from elsewhere, the citation
     anchors it into its retained Source, and the framing line names it as data. A
     knowledge claim must never render shaped like the agent's own memory.
     """
@@ -369,8 +367,8 @@ class ExchangeResult:
 
     The Exchange lives in `main` (consultation routes through the main scope, never
     expert-to-expert), so the expert's episodic scope filter cannot reach it and the
-    ticket grant that could dies the moment the answer lands. docs/02 nonetheless
-    says the exchange is preserved as episodic memory *on both sides*; this is the
+    ticket grant that could dies the moment the answer lands. The design nonetheless
+    preserves the exchange as episodic memory *on both sides*; this is the
     consulted side of that promise, keyed on the `expert` property rather than on
     the vertex's scope segment.
 
@@ -428,7 +426,7 @@ class ExchangeResult:
         transcript. But the excerpt is dropped for a stronger reason than length: a
         header summarising an expert's own prior conclusion, injected into every
         later brief, is the self-anchoring case the 2026-08-09 decision-log entry
-        names, and tier-2 informs rather than instructs (docs/05). Round 3 of the
+        names, and tier-2 informs rather than instructs. Round 3 of the
         capability consultation overturned round 2 on measured facts, which is
         exactly the move a conclusion restated back at the expert makes less likely.
 
@@ -544,8 +542,8 @@ def recall_exchanges(
 
     Given a `query`, a wider window is read and ranked by keyword overlap against the
     question and answer text before being cut to `limit` — recency alone is not enough
-    for the case this serves. When a five-state capability contract was designed twice
-    (lab/055), the exchange holding the first design was the sixth most recent of
+    for the case this serves. When a five-state capability contract was designed twice,
+    the exchange holding the first design was the sixth most recent of
     seven, so any recency-capped list would have hidden the one that mattered. Ties
     keep recency order, because the sort is stable and the rows arrive in it.
 
@@ -557,11 +555,11 @@ def recall_exchanges(
     an Exchange vertex is always `scope:main:exchange:<ticket>`, and the consulted
     expert is recorded as a property. Filtering on it means a pinned session sees
     exactly the exchanges routed to it and no others — the scope is still decided by
-    the server, never by a tool parameter (docs/07).
+    the server, never by a tool parameter.
 
     Answered only. An open ticket is a question the expert is being asked *now*, and
     serving it back through recall would let a session discover work it was never
-    handed; the closed record is the part docs/02 calls episodic memory.
+    handed; the closed record is the part that counts as episodic memory.
     """
     rows = (
         g.V()
@@ -600,7 +598,7 @@ def recall(
 
     Uses text containment matching. Claims are searched by label, not by subtype: a
     single `hasLabel("Claim")` covers decisions, problems, solutions, and anything an
-    expert adds later, which is the point of the unified Claim (docs/09 G1).
+    expert adds later, which is the point of the unified Claim.
 
     A matched claim takes one of two shapes: contained by a Session, it scores that
     session (episodic memory recalls the episode); contained by nothing, it is a
@@ -610,8 +608,8 @@ def recall(
 
     Episodic matching is pinned to `scope`. Knowledge matching additionally covers
     `knowledge_scopes` — the expert subgraphs the *server* has decided this session
-    may consult (docs/07: never a tool parameter; docs/08: the literature consultant
-    serves everything). Without this, episodic scope `main` and knowledge scope
+    may consult (never a tool parameter; the literature consultant serves everything).
+    Without this, episodic scope `main` and knowledge scope
     `literature` can never meet in one recall and every expert's knowledge is
     unreachable from the harness.
     """
@@ -679,7 +677,7 @@ def recall(
             knowledge_hits.setdefault(key, set()).add(keyword)
 
         # Co-indexing: chunks are searched in the same pass, over the same scopes, and
-        # ranked against claims rather than appended after them (lab/052). A chunk is
+        # ranked against claims rather than appended after them. A chunk is
         # ~14x the text of a claim, so it is scored *below* one per keyword hit — a
         # long passage should not outrank a claim merely by containing more words.
         chunks = (
@@ -697,7 +695,7 @@ def recall(
 
     # The match floor: one generic term out of ten is noise, not relevance. Priced
     # traces showed single-keyword OR-matches pulling neighbor-project sessions that
-    # were then ignored at ~3K tokens a recall (lab/006, lab/007) — a multi-keyword
+    # were then ignored at ~3K tokens a recall — a multi-keyword
     # query must hit at least two distinct terms to rank. Single-keyword queries are
     # untouched: the floor is about queries whose breadth outruns their intent.
     floor = min(_MATCH_FLOOR, len(keywords))
@@ -705,9 +703,8 @@ def recall(
     knowledge_ranked = _ranked(matched_knowledge_vids, knowledge_hits, floor, query)
 
     # Chunks are held to the same floor and then capped: they are the largest thing
-    # the reader can inject, and experiments/002 measured 33.8% of injected retrieval
-    # tokens going unused (95% CI [27.2, 40.5]; lab/034). The cap is the stopping rule
-    # the design owes.
+    # the reader can inject, and 33.8% of injected retrieval tokens were measured
+    # going unused (95% CI [27.2, 40.5]). The cap is the stopping rule the design owes.
     chunks_ranked = _ranked(matched_chunk_vids, chunk_hits, floor, query)[
         :_CHUNK_WINDOW_CAP
     ]
@@ -851,7 +848,7 @@ def recall_open_threads(
     `open` one — and that is a sample, not a list. The graph holds 325 main-scope
     threads (2026-08-11); a default call returns ten of them, and a thread titled
     "Build the full five-state capability-negotiation contract" sat outside the page
-    while a session re-derived exactly that (lab/055).
+    while a session re-derived exactly that.
 
     The title and description carry the substance a distilled thread records, so
     ranking reads both. Ties keep the status ordering, because the sort is stable.
@@ -899,13 +896,13 @@ def recall_open_problems(
     was previously reachable only by hand-written Gremlin. A Problem is open when it
     has no outgoing `SOLVED_BY`: unlike a Thread it carries no status, because a
     problem is an assertion about the past rather than a workitem with a lifecycle
-    (docs/09) — "unsolved" is a fact about its edges, not a field it stores.
+    — "unsolved" is a fact about its edges, not a field it stores.
 
     Recency orders the list; recurrence only lifts the rare problem that several
     sessions independently re-asserted. **Recurrence is measured to fire almost never**
     — 77 of 82 open problems have been asserted exactly once (2026-08-07) — so ranking
     on it alone leaves the tail sorted by nothing, which is a dial with no signal on a
-    live retrieval surface (lab/031). It is kept because when it does fire it is worth
+    live retrieval surface. It is kept because when it does fire it is worth
     seeing, not because it orders the result.
 
     Claims with no containing session are excluded: unattributable to a project or a
@@ -975,7 +972,7 @@ def _problem_result(g: GraphTraversalSource, row: dict) -> ProblemResult:
 
 
 def load_exchange(g: GraphTraversalSource, exchange_vid: str) -> dict | None:
-    """Load one consultation exchange by its vertex ID (= the ticket, docs/02).
+    """Load one consultation exchange by its vertex ID (= the ticket).
 
     Returns the flat properties the ticket protocol decides on — expert, from_scope,
     status, kind — or None for a ticket that was never minted. The server resolves scope
@@ -1134,7 +1131,7 @@ def _select_details(details: list[dict], keywords: list[str], cap: int = _DETAIL
     # the query" count told the reader that capped-off *matching* claims were
     # irrelevant, which is the opposite of true, and it made the cap invisible in
     # the trace — you could not tell from a response whether the cap had bound, so
-    # the one number needed to tune it was the one number never recorded (lab/031).
+    # the one number needed to tune it was the one number never recorded.
     capped = len(matching) - len(selected)
     unmatched = len(details) - len(matching)
     if capped or unmatched:
@@ -1161,7 +1158,7 @@ def _load_session_result(
     scope: str,
     keywords: list[str] | None = None,
 ) -> MemoryResult:
-    """Load a session with the details the query earned (docs/04 layer 1b)."""
+    """Load a session with the details the query earned."""
     session_data = (
         g.V()
         .has_label("Session")
