@@ -1129,7 +1129,7 @@ def test_a_verdict_records_the_terms_it_was_computed_against(tmp_path, monkeypat
     re-derivation against whatever the text says today, not a record of what was
     judged. 27% of the corpus sits on that kind of text.
     """
-    from thalamus.eval.attribution import attribute, node_terms
+    from thalamus.eval.attribution import aligned_node_terms, attribute
 
     contents = {"scope:main:claim:aaa": "the reader caps rendered details at eight per node"}
     outputs = "I checked the reader and the detail cap is eight"
@@ -1138,12 +1138,12 @@ def test_a_verdict_records_the_terms_it_was_computed_against(tmp_path, monkeypat
     stored = {
         "used": verdict.used,
         "evidence": verdict.evidence,
-        "judged_terms": " ".join(node_terms(contents[verdict.node_id])),
+        "judged_terms": " ".join(aligned_node_terms(contents[verdict.node_id])),
     }
     assert stored["judged_terms"], "a judged verdict must record its terms"
     # The record is sufficient to re-judge without the node: terms plus the window
     # (which lives in the immutable archive) are the whole input.
-    assert set(stored["judged_terms"].split()) == set(node_terms(contents[verdict.node_id]))
+    assert set(stored["judged_terms"].split()) == set(aligned_node_terms(contents[verdict.node_id]))
 
 
 def test_auditability_is_reported_by_kind_not_assumed():
@@ -1288,17 +1288,18 @@ def test_every_retrieval_mcp_tool_is_traced_and_tapped():
     )
 
 
-def test_the_aligned_judge_recovers_terms_the_shipped_one_cannot_match():
+def test_the_shipped_judge_recovers_terms_the_split_reading_cannot_match():
     """
     Scenario: node text carrying ordinary prose punctuation, matched against an output
     window that is byte-identical to it
 
-    The shipped judge tokenises the node by splitting on whitespace and the window with
-    `_TOKEN_RE`, so a term keeps punctuation the window has already stripped. That is a
-    floor on false negatives with nothing to do with whether the node was used: it
-    fires even when the agent reproduced the text exactly. `aligned` is a variant
-    rather than a fix in place — swapping `node_terms` would redefine every verdict
-    already stored in the graph.
+    The pre-adoption (`split`) reading tokenises the node by splitting on whitespace and
+    the window with `_TOKEN_RE`, so a term keeps punctuation the window has already
+    stripped. That is a floor on false negatives with nothing to do with whether the
+    node was used: it fires even when the agent reproduced the text exactly. JUDGE_VERSION
+    2 adopted the corrected (`aligned`) reading as what `shipped` means; `split` survives
+    as a named variant for retrospective comparison against verdicts stored before the
+    switch.
     """
     from thalamus.eval.attribution import JUDGES, aligned_node_terms, node_terms, prepare
 
@@ -1308,34 +1309,35 @@ def test_the_aligned_judge_recovers_terms_the_shipped_one_cannot_match():
     )
     _lower, window_tokens = prepare(content)
 
-    shipped_unmatchable = [t for t in node_terms(content) if t not in window_tokens]
-    aligned_unmatchable = [t for t in aligned_node_terms(content) if t not in window_tokens]
+    split_unmatchable = [t for t in node_terms(content) if t not in window_tokens]
+    shipped_unmatchable = [t for t in aligned_node_terms(content) if t not in window_tokens]
 
-    assert shipped_unmatchable == ['"write-path".', '(see', 'lab/029),', 'parser;']
-    assert aligned_unmatchable == []
-    # Both judges exist side by side, and the shipped one is untouched.
-    assert JUDGES["shipped"].terms_from == "split"
-    assert JUDGES["aligned"].terms_from == "aligned"
+    assert split_unmatchable == ['"write-path".', '(see', 'lab/029),', 'parser;']
+    assert shipped_unmatchable == []
+    # Both readings exist side by side, and the pre-adoption one is untouched.
+    assert JUDGES["shipped"].terms_from == "aligned"
+    assert JUDGES["split"].terms_from == "split"
 
 
 def test_calibration_prepares_terms_with_the_judge_it_was_built_for():
     """
-    Scenario: the per-judge term cache, asked for the same node under both judges
+    Scenario: the per-judge term cache, asked for the same node under both readings
 
     `_Prepared` caches node terms per judge. It hardcoded `node_terms`, which would
-    have fed the shipped extraction to the very judge built to correct it — reporting a
-    delta of exactly zero, the one result that looks like a finding rather than a bug.
+    have fed the split extraction to a judge configured for the aligned one —
+    reporting a delta of exactly zero, the one result that looks like a finding rather
+    than a bug.
     """
     from thalamus.eval.attribution import JUDGES
     from thalamus.eval.calibration import _Prepared
 
     nodes = {"n1": "the parser; crashed on lab/029), see"}
 
+    split = _Prepared(JUDGES["split"]).terms(nodes)["n1"]
     shipped = _Prepared(JUDGES["shipped"]).terms(nodes)["n1"]
-    aligned = _Prepared(JUDGES["aligned"]).terms(nodes)["n1"]
 
-    assert "parser;" in shipped and "parser" not in shipped
-    assert "parser" in aligned and "parser;" not in aligned
+    assert "parser;" in split and "parser" not in split
+    assert "parser" in shipped and "parser;" not in shipped
 
 
 # --------------------------------------------------------------------------------------

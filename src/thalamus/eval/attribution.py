@@ -40,7 +40,13 @@ MIN_MATCHED_RATIO = 0.3
 
 # Bump when a dial above moves, or when the term extraction under it changes, so the
 # fingerprint moves even if two dials cancel out numerically.
-JUDGE_VERSION = "1"
+#
+# v2 adopted the `aligned` term extraction as what `shipped` means (see
+# thread attribution-aligned-judge-adoption-pending): kappa moved 0.2391 -> 0.3101
+# over 999 cases, 8,446 verdicts, 25 rotations. `split` — the v1 reading — survives
+# as a named variant for retrospective comparison against verdicts stored before
+# the switch.
+JUDGE_VERSION = "2"
 
 _TOKEN_RE = re.compile(r"[a-z0-9_./-]+")
 
@@ -165,32 +171,29 @@ def outputs_after(transcript: bytes, after: datetime) -> str:
 
 
 def node_terms(content: str) -> list[str]:
-    """The node's distinctive terms — what a lexical verdict matches on.
+    """The pre-adoption (`split`) reading: `_extract_keywords` splits on whitespace and
+    keeps punctuation attached, while the window it is matched against is tokenised by
+    `_TOKEN_RE`, which strips it. That mismatch is a floor on false negatives that has
+    nothing to do with whether a node was used — measured on a 13-term sample, 4 terms
+    could not match even when the window was byte-identical to the node's own text:
+    `"write-path".`, `(see`, `lab/029),`, `parser;`.
 
-    Kept exactly as the stored verdicts mean it, defect and all: `_extract_keywords`
-    splits on whitespace and keeps the punctuation attached, while the window it is
-    matched against is tokenised by `_TOKEN_RE`, which strips it. `aligned_node_terms`
-    is the corrected reading, and it is a *variant* rather than a replacement for the
-    same reason `outputs_after` is frozen — swapping this silently redefines every
-    verdict in the graph.
+    `aligned_node_terms` is what `shipped` means as of JUDGE_VERSION 2. This is kept as
+    the `split` variant so verdicts stored before the switch stay reproducible against
+    the reading that actually produced them.
     """
     return sorted(set(_extract_keywords(content)))
 
 
 def aligned_node_terms(content: str) -> list[str]:
-    """`node_terms` tokenised the way the output window is.
+    """The node's distinctive terms, tokenised the way the output window is.
 
-    The two sides disagreeing is a floor on false negatives that has nothing to do with
-    whether a node was used: measured on a 13-term sample, 4 terms cannot match even
-    when the window is byte-identical to the node's own text — `"write-path".`, `(see`,
-    `lab/029),`, `parser;`. Every stored `used%` is biased low by an unmeasured amount,
-    on top of the ~59-point topic-overlap floor already measured.
-
-    Only the tokenizer changes. The stopword list and length cut are `_extract_keywords`'
-    own, and compound splitting is deliberately *not* borrowed from the ingress floor:
-    that floor wants to over-catch because down-tiering is its safe direction, while a
-    judge that matches more terms reports more use, which is the direction this
-    instrument is least able to afford.
+    What `shipped` means as of JUDGE_VERSION 2 (see `node_terms` for the defect this
+    corrects). Only the tokenizer changes from the pre-adoption reading: the stopword
+    list and length cut are `_extract_keywords`' own, and compound splitting is
+    deliberately *not* borrowed from the ingress floor — that floor wants to over-catch
+    because down-tiering is its safe direction, while a judge that matches more terms
+    reports more use, which is the direction this instrument is least able to afford.
     """
     tokens = _TOKEN_RE.findall(content.lower())
     return sorted({t for t in tokens if len(t) > 2 and t not in STOPWORDS})
@@ -207,15 +210,15 @@ def prepare(outputs: str) -> tuple[str, set[str]]:
     return output_lower, set(_TOKEN_RE.findall(output_lower))
 
 
-# How a node's text becomes the terms a verdict matches on. `split` is what every
-# stored verdict means; `aligned` is the same extraction with the two sides tokenised
-# alike. Named rather than passed as a function so a judge stays a comparable
-# configuration and a fingerprint can say which reading produced a number.
+# How a node's text becomes the terms a verdict matches on. `aligned` is what every
+# stored verdict means as of JUDGE_VERSION 2; `split` is the pre-adoption reading, kept
+# for retrospective comparison. Named rather than passed as a function so a judge stays
+# a comparable configuration and a fingerprint can say which reading produced a number.
 TERM_EXTRACTORS = {"split": node_terms, "aligned": aligned_node_terms}
 
 
 def attribute(
-    returned: dict[str, str], outputs: str, *, terms_from: str = "split"
+    returned: dict[str, str], outputs: str, *, terms_from: str = "aligned"
 ) -> list[Verdict]:
     """Judge each returned node against the session's subsequent outputs.
 
@@ -232,7 +235,7 @@ def attribute_prepared(
     output_tokens: set[str],
     terms: dict[str, list[str]] | None = None,
     *,
-    terms_from: str = "split",
+    terms_from: str = "aligned",
 ) -> list[Verdict]:
     """`attribute` with the window — and optionally the nodes' terms — precomputed."""
     extract = TERM_EXTRACTORS[terms_from]
@@ -255,7 +258,7 @@ def _judge(
     output_lower: str,
     output_tokens: set[str],
     terms: list[str] | None = None,
-    extract=node_terms,
+    extract=aligned_node_terms,
 ) -> Verdict:
     # Strongest signal first: the agent quoted the node's identity itself. The reader
     # renders vertex IDs precisely so this becomes possible.
@@ -318,7 +321,12 @@ class Judge:
 JUDGES: dict[str, Judge] = {
     j.name: j
     for j in (
-        Judge("shipped", description="the flat, unbounded window the stored verdicts mean"),
+        Judge(
+            "shipped",
+            terms_from="aligned",
+            description="the flat, unbounded window the stored verdicts mean, as of "
+            "JUDGE_VERSION 2 — node terms tokenised the way the window is",
+        ),
         Judge(
             "prose",
             tools=False,
@@ -340,11 +348,12 @@ JUDGES: dict[str, Judge] = {
             description="both narrowings at once: near, and acted on",
         ),
         Judge(
-            "aligned",
-            terms_from="aligned",
-            description="the shipped window, with the node's terms tokenised the way "
-            "the window is — the only variant that corrects a defect rather than "
-            "choosing a narrowing, so its delta is measurement error, not utility",
+            "split",
+            terms_from="split",
+            description="the pre-adoption reading (JUDGE_VERSION 1) — node terms kept "
+            "whitespace-split with punctuation attached, mismatched against the "
+            "window's tokeniser. Kept for retrospective comparison against verdicts "
+            "stored before the switch, not because it is a defensible choice.",
         ),
         Judge(
             "aligned-tool-bounded-3",
