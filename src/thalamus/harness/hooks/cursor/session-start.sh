@@ -42,7 +42,20 @@ fi
 
 # The checkout's name, not the workspace dir's, and THALAMUS_PROJECT still overrides
 # — see ../claude-code/session-start.sh for why the two must match the write path.
-repo_root="$(git -C "$workspace_root" rev-parse --show-toplevel 2>/dev/null || true)"
+#
+# A worktree resolves to the repository it belongs to, by the same `--git-common-dir`
+# route and for the same reason: that path is identical for a checkout and for every
+# worktree of it, so its parent is the identity they share. Resolving a worktree to
+# itself asks recall for a project the write path files nothing under, which returns
+# empty rather than wrong — the quieter half of the same failure.
+common_dir="$(git -C "$workspace_root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+repo_root=""
+case "$common_dir" in
+  */.git) repo_root="${common_dir%/.git}" ;;
+esac
+if [ -z "$repo_root" ]; then
+  repo_root="$(git -C "$workspace_root" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
 repo_name=""
 if [ -n "$repo_root" ]; then repo_name="$(basename "$repo_root")"; fi
 project="${THALAMUS_PROJECT:-$repo_name}"
