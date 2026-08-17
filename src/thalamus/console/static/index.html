@@ -85,6 +85,18 @@
     <h3>Services</h3>
     <div class="admin-list" id="admin-services"></div>
   </section>
+  <!-- States the commit whether or not anything is wrong with it. A panel that only
+       appeared when something was stale would make "nothing here" and "not looked at
+       it" the same picture, and the commit is the first thing to check when the phone
+       disagrees with the server. Hidden only under a wheel install, where there is no
+       checkout to report on and nothing to fast-forward. -->
+  <section class="admin-sec" id="admin-build-sec" hidden>
+    <h3>Build</h3>
+    <div class="admin-list" id="admin-build"></div>
+    <div class="admin-actions">
+      <button type="button" class="admin-act primary" id="admin-deploy">deploy</button>
+    </div>
+  </section>
   <!-- `restart all` shipped beside `roster sync`: same width, height, class and row.
        One is idempotent backfill; the other recycles every window sequentially, N
        irreversible losses of in-flight work behind a single confirm. It is not a
@@ -156,6 +168,17 @@
   <span class="install-msg" id="install-msg"></span>
   <button type="button" class="install-do" id="install-do">Install</button>
   <button type="button" class="install-x" id="install-x" aria-label="Dismiss">✕</button>
+</div>
+
+<!-- Raised when the checkout is behind its upstream or the running process predates
+     the code on disk. A sibling of the roster rather than a child of it: renderRoster
+     clears `#roster` wholesale on every repaint, so a bar living inside it would be
+     destroyed 50 times a minute. `role="status"` and not `alert` — this reports a
+     condition to read, not one to interrupt for. -->
+<div class="build-bar" id="build-bar" role="status" hidden>
+  <span class="build-msg" id="build-msg"></span>
+  <button type="button" class="build-do" id="build-do">deploy</button>
+  <button type="button" class="install-x" id="build-x" aria-label="Dismiss">✕</button>
 </div>
 
 <!-- One row per session, carrying its whole life. Rows are built in JS because a

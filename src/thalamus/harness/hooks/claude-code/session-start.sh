@@ -60,13 +60,27 @@ fi
 # recall tools read as "no project filter" — the right answer for a session that
 # has no project.
 #
-# THALAMUS_PROJECT still overrides, and is still needed inside a disposable
-# worktree (thalamus.eval.arms): a worktree is its own checkout, so the resolved
-# name is a run timestamp no session has ever distilled under (lab/012).
+# A worktree resolves to the repository it belongs to. `--git-common-dir` answers the
+# same path for a checkout and for every worktree of it, so its parent is the identity
+# they share; `--show-toplevel` makes each worktree its own project and scatters one
+# repo's memory across as many buckets as it had concurrent sessions. The fallback
+# covers a bare repo, whose common dir is not named `.git` and which has no working
+# tree to attribute anyway.
+#
+# THALAMUS_PROJECT still overrides. An eval arm's disposable worktree
+# (thalamus.eval.arms) is cloned rather than added, so it is a checkout of its own and
+# still resolves to a run-timestamp name no session has distilled under (lab/012).
 # Written out rather than folded into the expansion: under `set -e` a `[ -n .. ] &&`
 # inside a command substitution exits non-zero when the test fails, which aborts the
 # hook for the ordinary case of a session outside a repo.
-repo_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+common_dir="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+repo_root=""
+case "$common_dir" in
+  */.git) repo_root="${common_dir%/.git}" ;;
+esac
+if [ -z "$repo_root" ]; then
+  repo_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
 repo_name=""
 if [ -n "$repo_root" ]; then repo_name="$(basename "$repo_root")"; fi
 project="${THALAMUS_PROJECT:-$repo_name}"

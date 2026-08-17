@@ -331,8 +331,12 @@ def test_dismissing_an_error_clears_it_and_the_dismissal_survives_a_restart(box,
     assert box.watch.dismiss("11111111") is True
     assert box.watch.rows() == []
 
+    # `kills` too, not just the other three: left to its default it reads the real
+    # killed-window ledger on whatever box runs the suite, and one genuine forced-kill
+    # record there fails this assertion with a row the test never wrote.
     fresh = DistillWatch(logs=box.logs, pins=tmp_path / "pins.jsonl",
-                         state=tmp_path / "dismissed.json")
+                         state=tmp_path / "dismissed.json",
+                         kills=tmp_path / "killed.jsonl")
     assert fresh.rows() == []
 
 

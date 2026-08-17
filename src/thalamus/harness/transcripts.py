@@ -181,10 +181,18 @@ def resolve_repo_root(cwd: str) -> str:
     all (`/tmp/claude-*/scratchpad`, `~/.claude/skills`). Recording the root when the
     session ends is the only version of this that is data.
 
-    Nested checkouts resolve to the **inner** root, which is what `--show-toplevel`
-    returns and the right answer for a session working in a vendored subrepo. A
-    worktree resolves to the worktree path, so worktree sessions carry their own repo
-    identity rather than the checkout's.
+    A **worktree resolves to the repository it belongs to**, not to itself. Worktrees
+    here are a concurrency device — sessions share one checkout and take a worktree so
+    their index and HEAD do not collide — and the work in one is work on the repo. Read
+    off `--show-toplevel` a worktree is its own toplevel, which spent that device's
+    cost twice: it minted a project per worktree (`frontend-orientation`,
+    `console-deploy-path`), so one repo's memory landed in as many project buckets as
+    it had concurrent sessions, and a recall naming the repo missed all of them.
+    `--git-common-dir` is the same for every worktree of a repo and for the checkout
+    itself, so its parent is the identity they share.
+
+    Nested checkouts still resolve to the **inner** repo: a vendored subrepo has its
+    own common dir, which is the right answer for a session working inside one.
 
     Every failure is `""`: no repo, no git, a cwd that no longer exists, a git that
     hangs. None of them are worth raising over — the caller's honest fallback for all
@@ -192,9 +200,22 @@ def resolve_repo_root(cwd: str) -> str:
     """
     if not cwd:
         return ""
+    common = _git_out(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common:
+        # `<repo>/.git` for a checkout and for every worktree of it. A bare repo has
+        # no working tree to attribute, and its common dir has no `.git` to strip, so
+        # it falls through to the toplevel probe and honestly resolves to nothing.
+        root = Path(common)
+        if root.name == ".git":
+            return str(root.parent)
+    return _git_out(cwd, "rev-parse", "--show-toplevel")
+
+
+def _git_out(cwd: str, *args: str) -> str:
+    """Stripped stdout of a successful `git <args>` in `cwd`, else `""`."""
     try:
         result = subprocess.run(
-            ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+            ["git", "-C", cwd, *args],
             capture_output=True, text=True, timeout=10, check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -311,16 +332,16 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
             continue
 
         # FIRST cwd wins, not the last. Claude Code files a transcript under the dir
-        # named for the cwd the session *started* in, and `project` is this cwd's
-        # basename — so taking the last one lets a session that moved (a git worktree,
-        # a `cd`) be filed under one project and attributed to another. Last-wins also
-        # makes the attribution depend on where the session happened to stop: the same
-        # work reads as `thalamus` or as the worktree's name depending on whether the
-        # operator stepped back out before exiting. Measured 2026-08-08 on a session
-        # that entered a worktree mid-run — 663 records at the worktree path against
-        # 345 at the checkout, and only the exit order decided it. The SessionEnd hook
-        # already resolves the project *dir* from the transcript's own location for
-        # exactly this reason; this is the same rule applied to the project *name*.
+        # named for the cwd the session *started* in, so taking the last one lets a
+        # session that moved be filed under one project and attributed to another, and
+        # makes the attribution depend on where the session happened to stop rather
+        # than on what it worked on. The SessionEnd hook already resolves the project
+        # *dir* from the transcript's own location for exactly this reason; this is the
+        # same rule applied to the project *name*.
+        #
+        # Moving between worktrees of one repo no longer changes the answer —
+        # `resolve_repo_root` maps every one of them to the repository — so what this
+        # rule now guards is the session that `cd`s into a *different* checkout.
         #
         # `git_branch` is deliberately still last-wins: cwd answers "which project is
         # this session's", which is fixed when the transcript is filed, while the

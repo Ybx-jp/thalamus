@@ -9,6 +9,7 @@ Scope: the half of extraction that needs no model, and the anchors it recovers
 
 import json
 import subprocess
+from pathlib import Path
 
 from thalamus.contract.conformance import check_session
 from thalamus.harness import cursor_transcripts, transcripts
@@ -154,10 +155,11 @@ def test_a_session_that_moved_is_attributed_to_where_it_started(tmp_path):
     the session's identity, so it is read once; the branch describes the work, so it
     tracks.
     """
-    # Two real checkouts, not one repo and a subdirectory of it: a worktree resolves to
-    # its own root under `--show-toplevel`, so if the exit cwd ever won, `project` would
-    # read `console-consolidation`. Nesting them would make both spellings resolve to the
-    # same root and the test would pass without discriminating.
+    # Two unrelated checkouts, deliberately not a repo and a worktree of it: worktrees
+    # resolve to the repository they belong to, so a real one would make both cwds
+    # resolve to the same root and the test would pass without discriminating between
+    # first-cwd and last-cwd at all. Separate repos are what keep the two answers
+    # distinguishable — here the exit cwd winning would read `console-consolidation`.
     checkout = _git_repo(tmp_path / "thalamus")
     worktree = _git_repo(tmp_path / "console-consolidation")
     records = [
@@ -601,3 +603,72 @@ def test_claude_bootstrap_also_refuses_a_sandbox_transcript(tmp_path):
     )
     assert results[0].session is None
     assert "sandbox" in results[0].skipped
+
+
+def _git_cmd(cwd, *args):
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+
+
+def _checkout(path):
+    """A checkout with one commit, so it has a HEAD to branch a worktree from."""
+    path.mkdir(parents=True, exist_ok=True)
+    _git_cmd(path, "init", "-q")
+    _git_cmd(path, "commit", "-q", "--allow-empty", "-m", "root")
+    return path
+
+
+def test_a_worktree_resolves_to_the_repository_it_belongs_to(tmp_path):
+    """The identity a worktree session files under is the repo's, not the worktree's.
+
+    Worktrees here are a concurrency device — concurrent sessions take one each so
+    their index and HEAD do not collide — and the work in one is work on the repo.
+    Resolved off `--show-toplevel` a worktree is its own toplevel, which minted a
+    project per worktree and scattered one repo's memory across as many buckets as it
+    had concurrent sessions, where a recall naming the repo found none of them.
+    """
+    repo = _checkout(tmp_path / "myproject")
+    _git_cmd(repo, "worktree", "add", "-q", str(tmp_path / "wt"), "-b", "side")
+
+    assert transcripts.resolve_repo_root(str(tmp_path / "wt")) == str(repo)
+
+
+def test_every_worktree_of_one_repo_agrees_on_the_project(tmp_path):
+    """Two concurrent sessions in two worktrees file under one project — which is the
+    whole point, and the assertion the per-worktree spelling failed."""
+    repo = _checkout(tmp_path / "myproject")
+    _git_cmd(repo, "worktree", "add", "-q", str(tmp_path / "a"), "-b", "a")
+    _git_cmd(repo, "worktree", "add", "-q", str(tmp_path / "b"), "-b", "b")
+
+    roots = {transcripts.resolve_repo_root(str(tmp_path / name))
+             for name in ("a", "b")} | {transcripts.resolve_repo_root(str(repo))}
+
+    assert roots == {str(repo)}
+    assert {Path(r).name for r in roots} == {"myproject"}
+
+
+def test_a_subdirectory_of_a_worktree_still_resolves_to_the_repository(tmp_path):
+    """Sessions are opened in subdirectories, not only at the worktree root."""
+    repo = _checkout(tmp_path / "myproject")
+    _git_cmd(repo, "worktree", "add", "-q", str(tmp_path / "wt"), "-b", "side")
+    nested = tmp_path / "wt" / "src" / "deep"
+    nested.mkdir(parents=True)
+
+    assert transcripts.resolve_repo_root(str(nested)) == str(repo)
+
+
+def test_a_vendored_subrepo_still_resolves_to_the_inner_repository(tmp_path):
+    """The nested case must not be swept up by the worktree fix: a repo checked out
+    inside another is its own project, and a session working in one belongs to it."""
+    outer = _checkout(tmp_path / "outer")
+    inner = _checkout(outer / "vendor" / "inner")
+
+    assert transcripts.resolve_repo_root(str(inner)) == str(inner)
+
+
+def test_a_path_outside_any_repository_still_resolves_to_nothing(tmp_path):
+    """Empty beats a guess — the property the whole `project` field rests on."""
+    loose = tmp_path / "loose"
+    loose.mkdir()
+
+    assert transcripts.resolve_repo_root(str(loose)) == ""
+    assert transcripts.resolve_repo_root("") == ""

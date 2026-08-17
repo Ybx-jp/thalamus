@@ -212,6 +212,24 @@ are now the frontend scope's to keep or replace.
   to make the slot the literal last child would be a worse row for a stricter reading.
 - **`◈ room` on line 2.** The spec predates the room badge; §3's qualifier
   enumeration does not include it.
+- **The build bar and the INFRA build panel.** The spec covers the roster and the
+  session, not the console's own currency; the behaviour is specified in
+  [docs/console.md](../console.md) instead. Three choices were closed at the keyboard
+  and are the designer's to overturn:
+  - *The bar sits above the roster and is hidden in the session view.* It answers a
+    question about the roster, and a deploy launched from inside a mirror blips the
+    connection that mirror reads through.
+  - *`--warn` is a 3 px left rule, not the text colour.* The sentence carries the
+    condition; the hue only reinforces it, so the bar survives greyscale and adds no
+    new (text, ground) pair. Measured on the rendered DOM: sentence 10.96:1, stripe
+    5.38:1 against the bar's ground, deploy label 5.75:1.
+  - *Both bar controls are 44 × 44 px*, above SC 2.5.8's 24 px floor and below the
+    ≥ 60 px §7 reserves for controls that can lose work — deploy refuses on a dirty
+    tree and tmux outlives the unit it restarts, so no conversation is at risk.
+
+  Precedence between "behind" and "process-stale" was **not** closed here: the server
+  composes one sentence and the client prints it, so the ordering stays one decision
+  in one place.
 
 ---
 

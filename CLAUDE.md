@@ -137,7 +137,8 @@ extraction. Say the thing in ordinary words, and cut what he did not ask about.
   gives them one index, one HEAD, and one working tree between them: your `git add`
   stages their half-finished file, their commit moves HEAD out from under your rebase.
   A worktree is one call (`EnterWorktree`), and the session still distills under
-  `thalamus`: attribution takes the *first* cwd a transcript records, not the last
+  `thalamus`: a worktree resolves to the repository it belongs to, so every worktree
+  of this repo files under one project no matter which one a session was launched in
   (`harness/transcripts.py`). Merge back when the work is done.
 - **Commit by path, never `git add -A`.** In the shared checkout `-A` sweeps another
   session's in-progress work into your commit. Check `git status` before staging and
