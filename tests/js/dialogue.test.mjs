@@ -220,10 +220,12 @@ suite("rows: the client renders liveness, it does not decide it");
     extractFunction("sessionRow", src),
     extractFunction("rowControls", src),
     extractFunction("terminalBand", src),
-    extractFunction("renderRail", src),
     extractFunction("renderRoster", src),
     extractFunction("groupHeader", src),
+    extractFunction("rosterSummary", src),
+    extractFunction("renderMarker", src),
     extractFunction("modeControl", src),
+    extractFunction("modeNote", src),
   ].join("\n");
   const rowCode = guard("a row renderer", rowSource);
 

@@ -5,7 +5,7 @@
 A pinned session is an OS process in a tmux window ([07](07-harness-integration.md),
 "the process is the pin"), which makes tmux the one place all of them are
 addressable at once. `thalamus console` puts a small HTTP server in front of that
-tmux session and serves a browser client over it: one tab per window, the live
+tmux session and serves a browser client over it: one row per session, the live
 pane, a composer, the terminal keys a phone keyboard doesn't have, and buttons for
 the two operations that otherwise need a laptop — spawning an expert session in a
 project, and restarting one so a wiring change arms.
@@ -107,15 +107,20 @@ warning when you use it.
 
 ## Using it
 
-**Tabs** are windows. The dot pulses when a session's screen changed since the
-last poll, so you can see which one is talking while you read another.
+**The roster is the landing view and the only way into a session.** One row per
+session; tapping a row opens its mirror. Rows are grouped under the project's path,
+and the group header is the only place the path appears — the row never repeats it.
 
-**The workspace bar** appears once your sessions span more than one directory, or
-any of them is in a room, and filters the tabs to one project (and/or one room). A
-filtered-away session that changes lights up its workspace chip, so filtering never
-makes you blind to the others.
+**The session marker** sits above the composer in the mirror. It carries the four
+facts the pane cannot: which session you are in, which project it is rooted in, how
+many sessions exist across how many projects, and whether any of them is blocked on
+you. The whole bar is the way back to the roster.
 
-**The composer** sends a line to the active session. `/` at the start opens the
+**The room bar** appears only when a session is in a room, and filters to one room.
+The project is a group on the roster, not a filter — the landing view answers "what
+needs me", and a filtered one would answer "what needs me in this project".
+
+**The composer** sends a line to the session you are in. `/` at the start opens the
 slash-command strip — the claude built-ins plus your user skills plus *that
 window's project* skills, since windows sit in different directories. The keycap
 row has what a phone keyboard lacks: `esc`, `mode` (Shift+Tab, the permission-mode
@@ -290,13 +295,11 @@ is a boundary in the harness itself rather than a convention
 to create it — the launcher provisions the room the first time a member enters, so
 there is no setup step that needs a keyboard.
 
-A room member's tab takes its colour from the **room** rather than its scope, so
+A room member's row takes its colour from the **room** rather than its scope, so
 co-membership is what reads at a glance: two `homelab` sessions in different rooms
 are different colours, and a room's `main` and `literature` are the same one. A ◈
-marks the tab, since six palette entries cannot promise two rooms different
-colours, and the workspace bar grows a room row — a second filter that composes
-with the directory one, because "what project" and "which collaboration" are
-different questions about the same window.
+marks the row, since six palette entries cannot promise two rooms different colours,
+and the room bar appears above the mirror so you can narrow to one collaboration.
 
 **Selecting one room adds a `✎ say` button**, which opens a composer addressed to the
 whole room rather than to a window. It appears only for a single named room — `any` and
@@ -434,12 +437,13 @@ loginctl enable-linger $USER     # so it survives logout / starts at boot
 `inactive` while the console is plainly serving, and `restart` hangs asking for a
 root password it will never get.
 
-### Deploying
+### Merging is not deploying
 
-The unit runs `.venv/bin/thalamus` out of a checkout, and that venv is an editable
-install: the console serves `src/thalamus/console/` from that checkout's working
-tree. Two things have to move for a merge to reach the phone, and they cover
-different halves. The checkout updates `static/` — `app.js`, `style.css` and
+The unit runs `.venv/bin/thalamus` out of `%h/code/thalamus`, and that venv is an
+editable install: the console serves `src/thalamus/console/` **from the shared
+checkout's working tree**, whatever branch it happens to be sitting on. Merging a PR
+to `master` on GitHub changes nothing the phone can see. Two things have to move for
+a merge to reach the phone, and they cover different halves. The checkout updates `static/` — `app.js`, `style.css` and
 `index.html` are read from disk per request, so the client half goes live the moment
 the files change. The restart updates `server.py`: the Python is loaded once at
 process start, so a merged API change stays invisible until the unit recycles no
@@ -753,7 +757,7 @@ renders open in `read`, marked waiting, and is answered in `term` with ↑ ↓ a
 `⏎`. If nothing at all repaints, the beacon reads "no signal" once a request has
 outlived its deadline; the next poll recovers on its own without a reload.
 
-**No tabs, or "No output captured".** There's no tmux session by that name yet, or
+**No sessions, or "No output captured".** There's no tmux session by that name yet, or
 it has no windows. `thalamus roster` creates it; the console prints a warning at
 startup when it can't find one, and serves anyway so the ＋ button still works.
 
@@ -761,7 +765,7 @@ startup when it can't find one, and serves anyway so the ＋ button still works.
 dismiss. It force-respawns after 4 minutes; that path skips distillation.
 
 **Slash commands are missing.** They're read per-window from `~/.claude/skills`
-and that window's `.claude/skills`, fresh on each tab switch.
+and that window's `.claude/skills`, refetched whenever you open a different session.
 
 ### When it lies to you
 

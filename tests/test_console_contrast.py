@@ -67,7 +67,65 @@ GROUNDS = {
     # text on the wait note, so both are held to the text floor on all three.
     "ok": ("bg", "panel", "panel-hi"),
     "pending": ("bg", "panel", "panel-hi"),
+    # Every red word takes `--danger-text`, never `--danger`. The ramp value is spaced
+    # for greyscale severity and lands at 4.11:1 on `--panel`, so a token doing both
+    # jobs would have put `.pol-expiry` — .62rem, the smallest text in the row — under
+    # the floor. `--danger` is asserted below as the non-text carrier it now is.
+    "danger-text": ("bg", "panel", "panel-hi"),
+    "warn": ("bg", "panel", "panel-hi"),
 }
+
+# Tokens that are a fill, a border or a block and never carry a word. 3:1 is the
+# non-text floor (SC 1.4.11), and it is asserted rather than assumed: a token that
+# stops being text must still clear something, or "it is not text any more" becomes a
+# way to exempt a colour from every check in this file.
+NON_TEXT = {
+    "danger": ("bg", "panel", "panel-hi"),
+}
+
+
+def test_dark_ink_on_the_accent_is_legible_and_does_not_ride_a_channel_hue():
+    """`#0b0e12` on `--accent` is one pair, and it has to stay one pair.
+
+    Every filled control here paints dark ink on a fill. While that fill was `--chan`
+    — reassigned by JS to the viewed session's identity hue — the pair was a different
+    pair on every screen, and SEND measured 4.22:1 on a channel hue against a 4.5
+    floor. Identity is assigned by hashing a name and must stay meaningless, so a
+    control can never wear one: the ratio would be a property of which session you
+    happened to be looking at.
+    """
+    t = _tokens()
+    assert "accent" in t, "--accent is gone; filled controls have no fixed ground"
+    ratio = contrast("#0b0e12", t["accent"])
+    assert ratio >= AA, f"#0b0e12 on --accent is {ratio:.2f}:1, below AA {AA}"
+    # The identity palette is a closed set, and none of it may be this token.
+    assert t["accent"].lower() not in {v.lower() for v in _palette().values()}, (
+        "--accent collides with an identity hue; a control would mean two things")
+
+
+@pytest.mark.parametrize(
+    "token,ground",
+    [(t, g) for t, grounds in NON_TEXT.items() for g in grounds])
+def test_non_text_tokens_clear_the_3_to_1_floor(token: str, ground: str):
+    t = _tokens()
+    ratio = contrast(t[token], t[ground])
+    assert ratio >= 3.0, f"--{token} on --{ground} is {ratio:.2f}:1, below the 3:1 non-text floor"
+
+
+def test_the_danger_split_is_a_split_and_not_a_rename():
+    """Two reds, and each has to be doing a job the other cannot.
+
+    A split that drifts back together is worse than no split: it reads as two
+    considered values while measuring one. `--danger` must stay under the text floor
+    somewhere (or it should just be the text token), and `--danger-text` must clear it
+    everywhere (or the split bought nothing).
+    """
+    t = _tokens()
+    grounds = ("bg", "panel", "panel-hi")
+    assert min(contrast(t["danger"], t[g]) for g in grounds) < AA, (
+        "--danger now clears the text floor everywhere; collapse the split rather "
+        "than carrying two tokens that mean the same thing")
+    assert min(contrast(t["danger-text"], t[g]) for g in grounds) >= AA
 
 
 @pytest.mark.parametrize(
@@ -103,7 +161,19 @@ LITERALS = {
                 "panel", 3.0),
 
     "#100f1b": ("the base layer under the terminal art", "bg", 0.0),
+
+    # G gives the terminal band one flat ground and its own lifted red. Both are
+    # stated rather than composited: the band was a translucent red over whatever the
+    # row painted, which is a colour appearing in no file and varying with the row
+    # beneath it. `#e79c92` on `#2c161a` measures 7.74:1.
+    "#2c161a": ("the terminal band's ground", "bg", 0.0),
+    "#e79c92": ("the terminal band's text, on its own darker ground", "band", 4.5),
 }
+
+# Grounds that are not `:root` tokens. The band paints its own, so text on it cannot
+# be measured against the page — and measuring it against `--panel` would report a
+# ratio no reader ever receives.
+EXTRA_GROUNDS = {"band": "#2c161a"}
 
 
 def _literals() -> set[str]:
@@ -229,7 +299,7 @@ def test_each_declared_literal_clears_the_floor_its_role_implies(literal: str):
     role, ground, floor = LITERALS[literal]
     if floor == 0.0:
         return
-    t = _tokens()
+    t = dict(_tokens(), **EXTRA_GROUNDS)
     assert ground in t, f"{literal} declares ground --{ground}, which is not a token"
     ratio = contrast(literal, t[ground])
     assert ratio >= floor, (
@@ -298,8 +368,13 @@ OPACITIES = {
     # below is what stops that from quietly ceasing to be true.
     ".4": "disabled controls — exempt as inactive, and the in-flight state they also "
           "signal is carried in text by the pill beside them",
-    ".7": "the passthrough composer: dimming a redirected control is the signal, "
-          "and --ink at .7 measures 6.46:1 on --panel",
+    # Scoped to the textarea, and the scope is the load-bearing part. On the whole
+    # `.input-line` it also faded SEND, whose pair is dark ink on a light fill and so
+    # moves the other way under a dim: `#0b0e12` at .7 on `--accent` washes toward the
+    # fill and painted 3.74:1, while the declaration below — true of `--ink` — read as
+    # covering it. An opacity is declared for a pair, never for a box.
+    ".7": "the passthrough composer's textarea: dimming the redirected input is the "
+          "signal, and --ink at .7 measures 6.46:1 on --panel",
 }
 
 
