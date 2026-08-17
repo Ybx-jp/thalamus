@@ -53,8 +53,8 @@ def test_edges_through_global_artifacts_do_not_count_as_scope_crossings():
 
     This is the load-bearing case. Artifacts are shared, so two experts that ever touched
     the same file are joined through one. If paths through globals counted as crossings,
-    the cross-scope density metric that grades roster granularity (docs/08 split/merge)
-    would measure "same repo" rather than "same domain" and be useless. See docs/09 G3.
+    the cross-scope density metric that grades roster granularity (the split/merge signal)
+    would measure "same repo" rather than "same domain" and be useless.
     """
     literature_claim = vid("Claim", "aaa", "literature")
     dl_claim = vid("Claim", "bbb", "dl")
@@ -97,7 +97,7 @@ def test_an_agent_closing_a_thread_in_any_scope_is_not_a_crossing():
     - `Agent -> Thread` is not a scope crossing, whatever scope the thread is in
 
     This is what makes the operator-approved close expressible without touching
-    `RESOLVES.may_cross_scope`. The incident that demands it (lab/009) is resolution
+    `RESOLVES.may_cross_scope`. The incident that demands it is resolution
     evidence for one scope's thread landing in another scope's session; a scoped
     closer would need an illegal edge, and the legal-looking alternatives are a bare
     status flip (nothing for an adjudication to walk) or a Session for a conversation

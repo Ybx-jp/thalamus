@@ -10,7 +10,7 @@ virtualenv. `thalamus <command> --help` gives the full flag list for any of them
 
 ```bash
 thalamus init                      # wire your editor at user scope
-thalamus init --check              # verify an existing install without writing
+thalamus init --check              # verify the install, or report what is not installed yet
 thalamus init --dry-run            # report what would be written
 thalamus init --uninstall          # remove what it can prove it installed
 thalamus rescope <scope>           # redirect this session's distillation, before it distills
@@ -134,6 +134,10 @@ thalamus arch diff                 # against a previous scan
 thalamus arch rules                # the rules a scan applies
 thalamus arch growth               # change over time
 ```
+
+All five measure this checkout by default, from any working directory — the model
+they read (`arch/model.yaml`) belongs to a repository, not to wherever you are
+standing. `--repo <path>` points them at another tree.
 
 ## Maintenance
 

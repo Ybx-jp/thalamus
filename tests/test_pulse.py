@@ -91,7 +91,7 @@ def test_live_snapshot_is_cost_only_and_flags_the_guardrail(tmp_path):
 
     Verifications:
     - the feed is newest-first and carries cost/fan-out, never a used%
-    - the over-guardrail event is flagged (lab/007's dial travels with the data)
+    - the over-guardrail event is flagged (the dial travels with the data)
     - the miss is an event class, not an error state
     - the pinned scope from the ledger reaches the feed rows
     """
@@ -140,8 +140,7 @@ def test_trend_and_sessions_price_verdicts_with_absolutes(tmp_path):
 
     Verifications:
     - per-day trend carries both the rate and the absolute earned/wasted tokens
-    - unattributed verdicts never count as ignored (lab/002's rule survives
-      the projection)
+    - unattributed verdicts never count as ignored (the rule survives the projection)
     - session rows aggregate the same verdicts
     """
     t1 = _TimedTrace(

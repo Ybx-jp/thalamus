@@ -1,8 +1,7 @@
 """The degraded-rendering arm — making a comprehension test sensitive to contrast.
 
-[lab/056](../../../lab/056-the-charter-was-wrong-about-our-own-walls.md) recorded the
-defect this exists for. Room `atlas` ran a cold-read instrument: rasterise an aid, hand
-the image to a fresh reader with no repo access, score against a pre-registered key.
+The defect this exists for: room `atlas` ran a cold-read instrument — rasterise an aid,
+hand the image to a fresh reader with no repo access, score against a pre-registered key.
 Every reader received a **full-fidelity** rendering, so every reader had perfect contrast
 sensitivity, and the instrument was blind to contrast failure *by construction*. Two
 dashed markers carrying meaning shipped at 2.07:1 and 2.97:1 — under WCAG 1.4.11's 3:1
@@ -184,7 +183,7 @@ def surface_of(source: str) -> str:
     """The opaque canvas the aid paints for itself, or "" if it paints none.
 
     An aid that ships in a repo cannot see the page theme, so it paints its own surface
-    and measures against that (lab/056). The convention is that the surface is the fill
+    and measures against that. The convention is that the surface is the fill
     of the first full-bleed rect, so that is what this reads — the first `fill` on a
     `<rect>` reaching the viewBox origin.
     """

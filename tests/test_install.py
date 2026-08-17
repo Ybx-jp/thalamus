@@ -1,5 +1,5 @@
 """
-`thalamus init` — user-scope harness installation (docs/07).
+`thalamus init` — user-scope harness installation.
 
 Interfaces: harness/install.py, driven in-process with every filesystem target
 monkeypatched into tmp_path. Nothing here may touch the operator's real
@@ -64,7 +64,7 @@ def sandbox(tmp_path, monkeypatch):
 
 
 class TestCursorWiring:
-    """Cursor parity (docs/07, lab/027). The contract that matters is that the
+    """Cursor parity. The contract that matters is that the
     written config still works when the session's workspace root is some other
     repo — the whole reason a work machine needs an installer at all."""
 
@@ -407,6 +407,8 @@ class TestVerify:
         link.symlink_to(sandbox["skills"] / "gone")
         check = {c.name: c for c in install.verify()}["skills load at user scope"]
         assert not check.ok and name in check.detail
+        # A link that exists and cannot be read is breakage, not an absent install.
+        assert not check.pending
 
     def test_passes_once_the_skills_are_installed(self, sandbox):
         install.install()
@@ -416,6 +418,147 @@ class TestVerify:
         monkeypatch.setattr(install, "verify",
                             lambda *a, **k: [install.Check("fake", False, "boom")])
         assert install.run(check_only=True) == 1
+
+
+class TestAnUninstalledMachineIsNotABrokenOne:
+    """`--check` and `--dry-run` are what a cautious operator runs *before*
+    installing, and everything they find absent is the expected shape of a machine
+    that has not installed yet. Reporting those as `✗` and exiting 1 tells someone
+    whose box is fine that it is broken, and makes looking before you leap the
+    option that reports failure.
+
+    The line held here is the other half: anything present and *wrong* — a dangling
+    skill link, a partially wired hooks file, an MCP entry that no longer matches
+    this checkout — stays a hard failure, because that is what the check is for.
+    """
+
+    NOT_INSTALLED = ("derived agents installed", "skills load at user scope",
+                     "declared hooks armed", "cursor hooks wired at user scope",
+                     "cursor MCP server registered")
+
+    def test_a_fresh_box_reports_pending_and_names_the_fix(self, sandbox):
+        checks = {c.name: c for c in install.verify()}
+        for name in self.NOT_INSTALLED:
+            check = checks[name]
+            assert check.pending, f"{name} reads as broken on an uninstalled box"
+            assert "thalamus init" in check.detail, name
+            assert check.render().startswith("  ○"), name
+
+    def test_a_fresh_box_does_not_exit_nonzero(self, sandbox):
+        assert install.run(check_only=True) == 0
+
+    def test_nothing_is_pending_once_it_is_installed(self, sandbox):
+        install.install()
+        # The fixture stubs agent generation out, so stand one in: the subject here
+        # is that a fully installed box has nothing left in the pending state.
+        (install.USER_AGENTS_DIR / "thalamus-main.md").write_text("---\nname: x\n---\n")
+        assert not [c.name for c in install.verify() if c.pending]
+
+    def test_a_partly_wired_cursor_is_a_failure_not_a_pending_item(self, sandbox):
+        """Some of our scripts present and some absent is drift — the file was
+        written and has since moved — and drift must stay loud."""
+        install.install()
+        wiring = json.loads(sandbox["cursor_user"].read_text())
+        first = next(iter(wiring["hooks"]))
+        wiring["hooks"][first] = []
+        sandbox["cursor_user"].write_text(json.dumps(wiring))
+
+        check = {c.name: c for c in install.verify()}["cursor hooks wired at user scope"]
+        assert not check.ok and not check.pending
+        assert install.run(check_only=True) == 1
+
+    def test_a_stale_cursor_mcp_entry_is_a_failure_not_a_pending_item(self, sandbox):
+        install.install()
+        registered = json.loads(sandbox["cursor_user_mcp"].read_text())
+        registered["mcpServers"]["thalamus"]["args"] = ["--from", "somewhere-else"]
+        sandbox["cursor_user_mcp"].write_text(json.dumps(registered))
+
+        check = {c.name: c for c in install.verify()}["cursor MCP server registered"]
+        assert not check.ok and not check.pending
+
+    def test_one_missing_wiring_is_still_named_and_loud(self, sandbox):
+        """Pending is *none* of them armed. One missing is `room-guard.sh` all over
+        again — a declared hook that fires for nothing — and it must still say which.
+        """
+        install.install()
+        settings = json.loads(sandbox["user"].read_text())
+        settings["hooks"].pop("SessionEnd")
+        sandbox["user"].write_text(json.dumps(settings))
+
+        check = install.verify_armed()
+        assert not check.ok and not check.pending
+        assert "session-end.sh" in check.detail
+
+
+class TestDryRunSaysItWroteNothing:
+    """The one thing `--dry-run` promises. It used to return on the failure branch
+    before reaching the line that says it, so the run that most needed the
+    reassurance — the one that found faults — was the one that withheld it."""
+
+    def test_it_prints_its_closing_line(self, sandbox, capsys):
+        install.run(dry_run=True)
+        assert "DRY RUN — nothing written" in capsys.readouterr().out
+
+    def test_it_prints_it_even_when_a_check_failed(self, sandbox, capsys, monkeypatch):
+        monkeypatch.setattr(install, "verify",
+                            lambda *a, **k: [install.Check("hooks present", False, "gone")])
+        code = install.run(dry_run=True)
+        out = capsys.readouterr().out
+        assert "FAILED" in out
+        assert "DRY RUN — nothing written" in out
+        assert code == 1, "a failing check must still exit 1 under --dry-run"
+
+    def test_it_does_not_claim_to_have_installed_anything(self, sandbox, capsys):
+        install.run(dry_run=True)
+        assert "Installed for" not in capsys.readouterr().out
+
+
+class TestADistillationLoopThatStalled:
+    """`jq on PATH` answers about this machine *now*. If jq went missing over a
+    weekend and is back by Monday it passes, and the sessions lost in between are
+    invisible — distillation runs detached, so nothing announced them. The hooks
+    write the loss down (`thalamus_require_binaries`); this reads it back on the
+    surface an operator already runs when memory looks stale.
+    """
+
+    def _record(self, tmp_path, monkeypatch, *lines):
+        log = tmp_path / "hook-failures.log"
+        if lines:
+            log.write_text("".join(f"{ln}\n" for ln in lines))
+        monkeypatch.setattr(install, "HOOK_FAILURE_LOG", log)
+        return log
+
+    def test_an_absent_record_is_a_pass(self, tmp_path, monkeypatch):
+        self._record(tmp_path, monkeypatch)
+        check = install.recorded_hook_failures()
+        assert check.ok and check.advisory
+
+    def test_it_counts_the_lost_sessions_and_quotes_the_last(self, tmp_path, monkeypatch):
+        self._record(tmp_path, monkeypatch,
+                     "2026-08-14T09:00:00Z session-end.sh: not on PATH: jq — old",
+                     "2026-08-15T09:00:00Z session-end.sh: not on PATH: jq — newest")
+        check = install.recorded_hook_failures()
+        assert not check.ok
+        assert "2 ended undistilled" in check.detail
+        assert "newest" in check.detail
+
+    def test_it_is_advisory_and_does_not_fail_the_run(self, tmp_path, monkeypatch, sandbox):
+        """A record of what the environment did is not the wiring being wrong, and
+        `--check` refusing over it would make the history impossible to look at."""
+        self._record(tmp_path, monkeypatch,
+                     "2026-08-15T09:00:00Z session-end.sh: not on PATH: uv")
+        monkeypatch.setattr(install, "verify", lambda *a, **k: [
+            install.Check("hook scripts present", True, "all found"),
+            install.recorded_hook_failures(),
+        ])
+        assert install.run(check_only=True) == 0
+
+    def test_the_runtime_block_carries_it(self, tmp_path, monkeypatch):
+        self._record(tmp_path, monkeypatch,
+                     "2026-08-15T09:00:00Z session-end.sh: not on PATH: uv")
+        monkeypatch.setattr(install, "_probe_graph", lambda url: (True, "ok"))
+        names = [c.name for c in install.verify_runtime(("claude",))]
+        assert "sessions lost to a missing binary" in names
 
 
 class TestRuntimeAdvisories:
@@ -462,10 +605,15 @@ class TestRuntimeAdvisories:
                             lambda *a, **k: [install.Check("hook scripts present", False, "gone")])
         assert install.run(check_only=True) == 1
 
-    def test_a_malformed_graph_url_is_reported_not_raised(self):
-        assert install._split_ws("not-a-url") == ("not-a-url", 8182)
-        assert install._split_ws("ws://:8182/gremlin") == (None, 0)
-        assert install._split_ws("ws://host:notaport/g") == (None, 0)
+    def test_the_graph_advisory_is_the_same_text_a_live_caller_gets(self):
+        """One diagnosis for a down container, whether it is found by a deliberate
+        probe here or by a recall that wanted to read (substrate/writer.connect)."""
+        from thalamus.substrate.writer import graph_down_detail
+
+        monkey_url = "ws://localhost:9/gremlin"
+        _, probed = install._probe_graph(monkey_url)
+        assert graph_down_detail(probed).endswith("re-run `thalamus init --check`")
+        assert "nothing listening on localhost:9" in graph_down_detail(probed)
 
 
 # --------------------------------------------------------------------------------------
@@ -545,8 +693,8 @@ def test_a_changed_withholding_rate_raises_a_relaunch_advisory():
 
     This is the failure that costs data rather than time. A withholding rate that
     moves while sessions are open produces records at two rates with the operator
-    believing the campaign ran at one — and experiments/003 needs the rate to be a
-    property of the machine for the campaign's whole duration. Nothing about those
+    believing the campaign ran at one — and the pre-registered study needs the rate to
+    be a property of the machine for the campaign's whole duration. Nothing about those
     sessions looks wrong from the inside, so the install is the only place it can
     be caught.
     """

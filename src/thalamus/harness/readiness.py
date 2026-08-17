@@ -1,10 +1,9 @@
 """Readiness a harness never published — a descriptor bracketed by our own hooks.
 
-[docs/12](../../../docs/12-room-lifecycle.md) §Delivery mechanics. Dispatch must
-refuse a member that is holding an approval modal, because a send into one is
-discarded and the Enter that follows it actuates the highlighted default — measured
-on Cursor, where a dispatched message never reached the model and the Enter approved
-a shell command the sender could not see (lab/065 §3).
+Dispatch must refuse a member that is holding an approval modal, because a send into
+one is discarded and the Enter that follows it actuates the highlighted default —
+measured on Cursor, where a dispatched message never reached the model and the Enter
+approved a shell command the sender could not see.
 
 Claude Code answers "is it safe to send" from `$CLAUDE_CONFIG_DIR/sessions/<pid>.json`,
 whose `status` the harness writes from inside its own event loop. Cursor publishes no
@@ -22,7 +21,7 @@ vendor's rendering of a dialog.
 
 **The bracket is only a bracket because the opening event precedes the modal**, and
 that is measured, not inferred: a probe hook logged at 11:01:15 with Cursor's approval
-modal still unanswered at 11:01:20 (lab/065 §5). Had it fired after, `pending` would be
+modal still unanswered at 11:01:20. Had it fired after, `pending` would be
 written only once the operator had already been asked, and this module would be a
 slower screen read.
 
@@ -38,9 +37,9 @@ correct outcome: it is exactly the member whose modals nothing would report.
 
 `pending` is written for **shell commands and MCP tool calls**. It is not written for a
 workspace-trust dialog, a model picker, a file-write approval, or any other modal Cursor
-draws outside those two events — a partial safety gate, which is the shape that hid
-lab/033's failure, and so the coverage is enumerated here rather than left to a reader
-to discover.
+draws outside those two events — a partial safety gate, which is the shape that hid an
+earlier failure, and so the coverage is enumerated here rather than left to a reader to
+discover.
 
 The screen read covers part of that remainder, and it is retained for exactly the half
 it is good for: `panes.classify` can only *add* `waiting`, never clear one. A descriptor

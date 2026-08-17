@@ -1,4 +1,4 @@
-"""The extraction sandbox leaves no memory (docs/07; lab/033).
+"""The extraction sandbox leaves no memory.
 
 Interfaces: thalamus.harness.agents.sandbox_env / is_sandbox_cwd,
             thalamus.harness.extraction.run_extraction,

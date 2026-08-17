@@ -171,8 +171,8 @@ def test_a_self_send_is_dropped_without_claiming_an_undercount(tmp_path):
 
 def test_a_room_of_one_is_not_a_room(tmp_path):
     """
-    Scenario: a single session launched into a room — lab/045 ran this shape and
-    recorded it as carrying no in-room control of its own.
+    Scenario: a single session launched into a room — a real run took this shape and
+    carried no in-room control of its own.
 
     Verification: reported as NOT A ROOM rather than as a room that failed to
     collaborate. No pair could have collaborated, so the failure is in the roster

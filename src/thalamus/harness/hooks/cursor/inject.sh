@@ -17,8 +17,7 @@
 # once per prompt rather than once per tool call. Indiscriminate per-call
 # injection is what the conditioning tier is grounded against (selective beats
 # always-on injection — arXiv 2607.08716; the local ignored share is real at
-# experiments/002's magnitude), and every injected token rides every later call
-# (docs/04 layer 1b).
+# the measured magnitude), and every injected token rides every later call.
 #
 # The clock is rendered HERE, from the shared Claude Code script, not at spool
 # time: delivery is when the agent reads it, and a timestamp computed a tool

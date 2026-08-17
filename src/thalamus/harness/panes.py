@@ -1,10 +1,10 @@
 """The roster a harness never wrote — room membership and readiness, read from tmux.
 
-[docs/12](../../../docs/12-room-lifecycle.md) §Delivery mechanics. On Claude Code a
-room's membership is enumerable because the harness registers each session in
-`$CLAUDE_CONFIG_DIR/sessions/<pid>.json`, and `harness/quick.py` reads liveness and a
-`status` straight off that descriptor. Cursor writes no such directory, which is the
-absence that made a Cursor member unaddressable and stalled the room decision.
+On Claude Code a room's membership is enumerable because the harness registers each
+session in `$CLAUDE_CONFIG_DIR/sessions/<pid>.json`, and `harness/quick.py` reads
+liveness and a `status` straight off that descriptor. Cursor writes no such
+directory, which is the absence that made a Cursor member unaddressable and stalled
+the room decision.
 
 The substitute is the control plane itself. Every pinned window is created by
 `pin._open_window` with the room and the scope in its **own start command**, and
@@ -25,7 +25,7 @@ command being readable.
 
 It is **stronger in one way**: it needs no cooperation from the harness at all, so it
 answers for `main` — which has no manifest, carries no `--agent`, and is therefore
-invisible to the descriptor roster's scope derivation (docs/12 §Open questions).
+invisible to the descriptor roster's scope derivation.
 
 ## Readiness, when there is no `status` field
 
@@ -33,7 +33,7 @@ The descriptor's `status` is what lets dispatch refuse a `waiting` target. Curso
 publishes no equivalent, so readiness is read from the one surface that always tells
 the truth about a TUI: the visible screen.
 
-Measured 2026-08-13 against cursor/2026.08.11-e8db854 (lab/065), driving a real
+Measured 2026-08-13 against cursor/2026.08.11-e8db854, driving a real
 interactive session in tmux:
 
 | state | what the pane shows | send-keys behaviour |

@@ -1,7 +1,7 @@
 """A rate you cannot render bare.
 
 The figure "50% wasted" left a report as a point estimate on n=5, travelled into
-docs/04 and a skill, and stayed there for weeks before lab/034 withdrew it. The
+a design doc and a skill, and stayed there for weeks before it was withdrawn. The
 caveat line added afterwards fixed one call site and left every other rate
 renderable exactly the way that one had been.
 
@@ -20,7 +20,7 @@ Two refusals are built in:
   of context in a way "50%" does not. Nothing measured says 20 is the right
   number; it is above every campaign size this project runs (6-10 arms), which
   is deliberate: campaign rates should be read as counts and tested with the
-  exact paired test the corpus already uses (lab/024, lab/036), not as
+  exact paired test the corpus already uses, not as
   percentages.
 - A zero denominator renders "n/a", never 0%.
 
@@ -79,7 +79,7 @@ class Rate:
     `interval` bounds sampling error. Either may be `None`, but only with a reason:
     the four rates this project reports are four different shapes and some have no
     meaningful null at all (attribution rate has none, and a miss rate's finding was
-    the stratum rather than the system — lab/030).
+    the stratum rather than the system).
     """
 
     label: str
@@ -99,7 +99,7 @@ class Rate:
             raise BareRateError(
                 f"rate `{self.label}` has no null and no reason for not having one. "
                 "Give a null model, or say in words why this rate has none — a bare "
-                "percentage is what travelled into docs and a skill (lab/034)."
+                "percentage is what travelled into docs and a skill."
             )
         if self.interval is None and not self.interval_reason.strip():
             raise BareRateError(

@@ -139,7 +139,7 @@ def test_a_second_restart_request_does_not_reset_the_clock():
 def test_an_unobservable_session_is_not_reported_as_unblocked(monkeypatch):
     """The distinction the whole row exists to draw, on the row's own indicator.
 
-    Session descriptors are partitioned by config dir (lab/045), so a console can be
+    Session descriptors are partitioned by config dir, so a console can be
     structurally unable to see a window's descriptor. Calling that window "not
     stuck" states a fact on evidence that says nothing — so `observed` is False and
     `blocked` is None, and neither is the same pixel as a session that was read and
@@ -882,10 +882,11 @@ def test_a_malformed_panel_fraction_is_dropped_not_raised(tmp_path):
     """The regex is looser than `float()`, and this function promises never to raise.
 
     `[-\\d.]+` happily matches `1.2.3` and a bare `-`. Converting one of those
-    would raise out of `frames()`, out of `do_GET` — which has no blanket handler
-    — and 500 the endpoint, taking down the surface an operator reaches for when
-    something else is already wrong. A typo'd fraction is a dropped frame, exactly
-    like a missing image is.
+    would raise out of `frames()` and 500 the endpoint — `do_GET`'s blanket handler
+    turns that into a readable error instead of a dropped connection, but it is
+    still the surface gone for an operator who reached for it because something
+    else was already wrong. A typo'd fraction is a dropped frame, exactly like a
+    missing image is.
     """
     art = tmp_path / "real.png"
     art.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -990,6 +991,106 @@ def test_only_configured_units_are_restartable(tmp_path):
         status, body = post("/api/service", {"unit": "sshd.service"})
 
     assert status == 400 and body["error"] == "unknown unit"
+
+
+# ---- environments this console does not have ----
+
+
+def _no_binary(monkeypatch, name: str):
+    """Make every shell-out from the console module fail the way an absent binary
+    does, which is `FileNotFoundError` and not a non-zero exit."""
+    def raiser(command, *a, **kw):
+        raise FileNotFoundError(2, "No such file or directory", name)
+
+    monkeypatch.setattr(server.subprocess, "run", raiser)
+
+
+def test_a_host_without_systemd_reports_it_instead_of_breaking_the_connection(
+        tmp_path, monkeypatch):
+    """
+    Scenario: `--service` naming a unit, on a box with no systemd
+
+    Verifications:
+    - the status read reports a state rather than raising
+    - the restart comes back as a refusal carrying the reason
+
+    Reachable only with `--service`, and the section is hidden when nothing is
+    named — but the client renders any state that is not `active` as a bad row, so
+    a word here is a status while an exception is a request that never answered.
+    """
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
+                 services=["thalamus-console.service"])
+    _no_binary(monkeypatch, "systemctl")
+
+    assert server.service_status(cfg) == [
+        {"unit": "thalamus-console.service", "state": server.NO_SYSTEMD}
+    ]
+    assert "systemd-run" in (server.service_restart("thalamus-console.service") or "")
+
+
+def test_a_restart_with_no_systemd_answers_the_phone_with_the_reason(tmp_path,
+                                                                     monkeypatch):
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
+                 services=["thalamus-console.service"])
+
+    with _serving(cfg) as post:
+        _no_binary(monkeypatch, "systemd-run")
+        status, body = post("/api/service", {"unit": "thalamus-console.service"})
+
+    assert status == 200
+    assert body["ok"] is False
+    assert "systemd-run" in body["error"]
+
+
+def test_an_endpoint_that_raises_answers_an_error_rather_than_dropping_the_socket(
+        tmp_path, monkeypatch):
+    """
+    Scenario: a GET reader raises — the shape of every absent-binary failure
+
+    Verifications:
+    - the client gets a 500 naming the exception, not a closed connection
+
+    Every reader behind `do_GET` shells out to something, and a browser shown a
+    connection that closed has nothing to report and nothing to act on. The
+    handler thread dying is also silent: `log_message` is off.
+    """
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"))
+
+    def boom():
+        raise FileNotFoundError(2, "No such file or directory", "git")
+
+    with _serving(cfg) as post:
+        monkeypatch.setattr(server, "build_info", boom)
+        status, body = post.get_status("/api/build")
+
+    assert status == 500
+    assert "FileNotFoundError" in body["error"]
+
+
+def test_the_port_being_taken_is_a_sentence_naming_it(tmp_path):
+    """
+    Scenario: `thalamus console` while something already holds the port
+
+    Verifications:
+    - the failure names the port and the flag that moves this console off it
+    - it is `PortInUse`, so the CLI prints one line instead of a traceback
+
+    Almost always a console the operator already has running, which is an ordinary
+    thing to have done and not a defect in the tool.
+    """
+    import socket
+
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"))
+    with socket.socket() as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        port = held.getsockname()[1]
+
+        with pytest.raises(server.PortInUse) as taken:
+            server.serve(cfg, host="127.0.0.1", port=port)
+
+    assert str(port) in str(taken.value)
+    assert "--port" in str(taken.value)
 
 
 # ---- harness ----
@@ -1171,7 +1272,16 @@ class _serving:
             conn.close()
             return body
 
+        def get_status(path: str) -> tuple[int, dict]:
+            conn = HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", path)
+            response = conn.getresponse()
+            body = json.loads(response.read() or "{}")
+            conn.close()
+            return response.status, body
+
         post.get = get
+        post.get_status = get_status
         # The recorded argv is the only place some behaviour is observable — a
         # counted key repeat has no response body that differs from a single press.
         post.fake = self.fake

@@ -173,7 +173,7 @@ def test_the_servers_result_envelope_is_unwrapped_so_misses_stay_misses(tmp_path
     Scenario: The tap recorded the MCP server's {"result": ...} envelope,
     JSON-encoded, around a miss message
 
-    Measured failure (lab/003): the first real miss in the tap was classified
+    Measured failure: the first real miss in the tap was classified
     legacy because the anchored miss pattern can't match inside an envelope.
     A miss is the signal that grades recall; it must never be dropped as legacy.
     """
@@ -191,7 +191,7 @@ def test_tap_records_the_pin_and_old_lines_still_parse(tmp_path):
     """
     Scenario: A pinned session's tap line carries scope; a pre-pinning line doesn't
 
-    The pin travels tap-first (docs/07 "the process is the pin"): the hook inherits
+    The pin travels tap-first ("the process is the pin"): the hook inherits
     THALAMUS_SCOPE from the same process env the MCP server read. Lines written
     before the hook carried scope must keep parsing, scope empty.
     """
@@ -302,7 +302,7 @@ def test_empty_attribution_windows_are_reported_apart_from_ignored():
     """
     Scenario: A sync where some returned nodes had no agent output to judge against
 
-    lab/002's refinement: "judged and ignored" and "nothing to judge against" must
+    The refinement: "judged and ignored" and "nothing to judge against" must
     never share a number — their conflation was the eval loop's first false negative.
     """
     from thalamus.eval.sync import SyncOutcome
@@ -332,7 +332,7 @@ def test_lexical_echo_marks_a_node_used_and_silence_marks_it_ignored():
     """
     Scenario: Two nodes retrieved; the session's later output echoes one of them
 
-    The attribution is crude lexical overlap by design (docs/04): a measured crude
+    The attribution is crude lexical overlap by design: a measured crude
     number over an asserted smart one.
     """
     outputs = "Refactored the gremlin writer to batch idempotent merges for tinkergraph."
@@ -757,7 +757,7 @@ def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
     Verifications:
     - injection cost renders in tokens with the earned/wasted split
     - the wasted *share* renders as a Rate, so it carries its null and states why
-      it has no interval — it cannot be printed bare (lab/034)
+      it has no interval — it cannot be printed bare
     - the used rate is below the render floor at n=6 and shows counts only
     - decay candidates carry both repeat count and wasted tokens
     - a zero-priced report (all traces pre-layer-1b) renders without the cost line
@@ -795,9 +795,9 @@ def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
 def test_pin_report_disambiguates_pin_quality_from_expert_quality():
     """
     Scenario: Two experts with identical low pinned utility but opposite consulted
-    utility — the docs/02 ambiguity ("the pin or the expert needs work") in data form
+    utility — the ambiguity ("the pin or the expert needs work") in data form
 
-    Verifications (post-experiments/001 — the verdict is suspended, not re-tuned):
+    Verifications (the verdict is suspended, not re-tuned):
     - pinned low + consulted high -> the pin-quality signal
     - pinned low + consulted low -> the expert-needs-work signal
     - consulted counts only the expert's nodes served into OTHER scopes' traces
@@ -849,7 +849,7 @@ def test_pin_report_disambiguates_pin_quality_from_expert_quality():
     # But the verdict that used to read this pair ("pinned low, consulted high ->
     # the pin was wrong") is suspended: pinned is a within-scope rate and consulted
     # a cross-scope one, and the judge scores ~63% within a project against ~5%
-    # across (lab/032), so that pattern is what the instrument produces for free.
+    # across, so that pattern is what the instrument produces for free.
     for expert in (lit, by_scope["eval-methodology"]):
         assert "insufficient calibration" in expert.signal()
         assert "pin quality" not in expert.signal()
@@ -862,7 +862,7 @@ def test_pin_report_refuses_a_verdict_below_the_sample_floor():
 
     Verifications:
     - the signal is "insufficient data", not a verdict — no unmeasured claims
-      (docs/00 principle 4) applies to the routing signal too
+      applies to the routing signal too
     """
     from thalamus.eval.pins import TraceRow, VerdictRow, build_pin_report
 
@@ -1127,7 +1127,7 @@ def test_a_verdict_records_the_terms_it_was_computed_against(tmp_path, monkeypat
     Thread and Session are upserted latest-wins and `ingested_at` carries the writing
     session's timestamp rather than the write time — so without this the verdict is a
     re-derivation against whatever the text says today, not a record of what was
-    judged. 27% of the corpus sits on that kind of text (experiments/001).
+    judged. 27% of the corpus sits on that kind of text.
     """
     from thalamus.eval.attribution import attribute, node_terms
 

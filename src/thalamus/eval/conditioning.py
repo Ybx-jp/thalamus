@@ -2,7 +2,7 @@
 
 The conditioning hook (harness/hooks/claude-code/conditioning.sh) injects
 throttled reminders to recall / consult / check recipes. A reminder's fire
-count is activity, not effectiveness (lab/008): the honest metric is whether
+count is activity, not effectiveness: the honest metric is whether
 the behavior followed, per firing — did the session make a thalamus call after
 the injection? This joins the conditioning event log against the trace tap,
 the same two-JSONL join the guard metrics use.
@@ -14,7 +14,7 @@ The classes carry different expected behaviors:
 - falsify     -> another traversal should follow: the class asks for the check
                  that would overturn the conclusion, and that check is itself a
                  query. A firing with no second traversal is the class failing
-                 in exactly the way it exists to prevent (lab/029).
+                 in exactly the way it exists to prevent.
 
 An injection with no thalamus call after it is a "wallpaper" firing — the
 reminder rode along in context and changed nothing. Rising wallpaper share is
@@ -79,7 +79,7 @@ class ConditioningReport:
             )
 
         # Split by harness whenever both are present. Cursor delivers a firing
-        # one tool call late (the spool — docs/07), so its rescue rate is not
+        # one tool call late (the spool), so its rescue rate is not
         # comparable to Claude Code's immediate injection and must not be
         # averaged in with it.
         by_harness: dict[str, list[Firing]] = {}

@@ -1,0 +1,78 @@
+# Expert manifest — quality engineer.
+#
+# The worked example of a **structural role boundary**: a scope defined as much by
+# what it must not produce as by what it knows. Read this one alongside
+# `designer.yaml`, which shows the other extension point — giving a scope its own
+# MCP tools.
+#
+# The boundary against `eval-methodology` is "experiment or invariant", with one
+# correction worth carrying: the oracle line is graded, not binary. Metamorphic
+# testing exists precisely to *alleviate* the oracle problem, and a whole family of
+# adequacy metrics scores how much oracle a suite has. The split that survived:
+# **qe owns the oracle; eval-methodology owns the oracle's warrant.** A qe finding
+# indicts the system under test; an eval finding indicts the instrument.
+#
+# The counterexample behind that correction is worth keeping in view — SWE-bench+
+# found that filtering leakage and weak tests dropped one agent from 12.47% to
+# 3.97%: a hard pass/fail oracle that was wrong, established by measurement rather
+# than by assertion.
+
+contract: v0
+scope: qe
+name: Quality engineer
+domain: >-
+  Adversarial quality of running applications, across every project. This scope
+  holds the oracle: it knows what is supposed to happen and asserts it. Hostile and
+  malformed inputs against real surfaces (CLI, MCP tool surface, hooks, ingest,
+  console HTTP and JS); invariant and metamorphic suites over write paths —
+  idempotency, contract conformance under stress, ordering independence,
+  partial-write and crash recovery; and a regression corpus in which every bug that
+  actually shipped becomes a permanent adversarial case. Unit tests are NOT in
+  scope: they belong to whoever writes the code, generally `main`. Measurement under
+  uncertainty is not in scope either — drift, output quality, attack-success rates
+  with a defense-off control, endpoint placement and pre-registration belong to
+  eval-methodology, which qe consults rather than reimplements.
+
+# Origin tier for INGESTED content. Testing literature is tier 2 forever.
+# Distillation from pinned sessions writes tier-1 episodic regardless.
+tier: 2
+
+# Kinds the ingest extractor actually writes — declare only what a real writer
+# produces, so an empty kind is a gap rather than a decoration.
+claim_kinds:
+  - literature/finding
+  - literature/technique
+
+# Host suffixes `thalamus ingest <url>` may fetch. The classical testing literature
+# this scope needs is largely pre-arXiv and behind ACM/IEEE, so the open-access
+# mirrors that actually carry it are listed explicitly. Local files bypass the list —
+# hand-feeding a PDF IS the curation decision.
+allowlist:
+  - arxiv.org
+  - aclanthology.org
+  - openreview.net
+  - github.com
+  - dl.acm.org
+  - jmlr.org
+
+# The structural role boundary. Prose alone is the configuration that was measured
+# failing — MAST names "disobey role specification" as a failure mode whose recorded
+# repair was structural authority rather than a better prompt — so this is enforced
+# by the role-guard PreToolUse hook rather than by the `domain` paragraph above.
+# Deliberately narrow: qe writes freely under tests/, because the path from an
+# exploratory campaign to a green suite requires it.
+#
+# Note the mirror. `contract/ownership.PATH_OWNERSHIP` reserves `*/tests/qe/*` for
+# this scope, denying every other scope including `main`. The two directions are one
+# partition: qe cannot repair what it indicts, and nobody else can quietly soften
+# what qe asserts. A manifest removed from this directory takes half of that with it,
+# and leaves a tree nobody can edit.
+write_boundary:
+  deny_globs:
+    - "*/src/*"
+  reason: >-
+    qe holds the oracle, not the fix. A failing adversarial case is a finding to
+    report — file it on the tracker, or hand it to the implementing scope.
+    Repairing the implementation from inside the scope that asserts against it
+    collapses the independence the assertion is worth anything for. Writing tests,
+    harnesses and corpora is unrestricted.

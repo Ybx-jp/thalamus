@@ -1,7 +1,7 @@
 #!/bin/bash
 # Thalamus SessionEnd hook — Claude Code.
 #
-# The distillation trigger from docs/07: when a session ends, its transcript is
+# The distillation trigger: when a session ends, its transcript is
 # retained in the archive and both bootstrap stages run over it — the deterministic
 # layer (Source, Session, Artifacts, anchored TOUCHES) and the model-extracted layer
 # (Claims, Threads). `thalamus extract` does both for a single session, so this path
@@ -22,6 +22,12 @@ set -euo pipefail
 
 . "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
 thalamus_sandbox_guard
+
+# Distillation's two binaries, checked before anything uses them. Without this the
+# script dies on the first `jq` under `set -euo pipefail` and the session is lost in
+# silence; with it, the loss is a dated line in ~/.thalamus/logs/hook-failures.log
+# that `thalamus init --check` reads back.
+thalamus_require_binaries jq uv || exit 0
 
 input=$(cat)
 
@@ -44,8 +50,8 @@ fi
 #
 # The transcript's location also names its *root*, which is what makes room members
 # distillable at all: a room runs under its own CLAUDE_CONFIG_DIR and writes to that
-# dir's `projects/`, where extract's default sweep of ~/.claude/projects never looks
-# (lab/046). Taking the root from the same path the project dir came from means this
+# dir's `projects/`, where extract's default sweep of ~/.claude/projects never looks.
+# Taking the root from the same path the project dir came from means this
 # needs no room registry and no env var, and it is exact rather than inferred — a
 # session distills where its transcript actually landed, in a room or out of one.
 if [ -n "$transcript_path" ]; then
@@ -91,8 +97,8 @@ fi
 
 mkdir -p "$log_dir"
 
-# The distillation scope: ledger first, env fallback (docs/07 "the process is the
-# pin"). Ledger-first keeps re-extraction deterministic — the same session recovered
+# The distillation scope: ledger first, env fallback ("the process is the pin").
+# Ledger-first keeps re-extraction deterministic — the same session recovered
 # later from an unpinned shell still lands in the scope it was pinned to, instead of
 # forking its Session vertex identity into a second scope. An env/ledger mismatch is
 # pin-quality data, not a failure: log it and trust the ledger.
@@ -165,7 +171,7 @@ repo_root="$(thalamus_repo_root)"
 
 # A fork distills its **delta**, not its transcript. A `--fork-session` JSONL is the
 # parent's whole conversation restamped with the fork's own sessionId, the parent's
-# message UUIDs preserved verbatim (562/562 measured, lab/049) — so distilling it as
+# message UUIDs preserved verbatim (562/562 measured) — so distilling it as
 # an ordinary session mints a second Session re-asserting the parent's episode and
 # archives a second near-identical Source that the archive cannot dedup, because
 # archive_bytes is content-addressed and every sessionId line differs.

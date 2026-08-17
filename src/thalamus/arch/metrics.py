@@ -6,7 +6,7 @@ other through any chain of dependencies. It answers "if I change a module, how m
 the system can feel it" with a number rather than an impression.
 
 Every function here recomputes from the edge list. Nothing is cached and nothing is
-stored as truth (docs/09): the edge list is the observation, and a metric is a reading
+stored as truth: the edge list is the observation, and a metric is a reading
 of it that must move when the code moves. A stored number would be a fact about a
 commit nobody is looking at.
 

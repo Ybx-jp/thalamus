@@ -4,10 +4,9 @@ The transcript Cursor writes carries tool call *inputs* and never their results
 (`cursor_transcripts`). The results are not lost, only elsewhere: every session has a
 `~/.cursor/chats/<hash>/<session-id>/store.db`, a content-addressed SQLite blob store
 holding the same conversation with results attached. This module reads it, and reading
-it is what lets a Cursor session earn tier 1 back instead of being floored whole
-(docs/05).
+it is what lets a Cursor session earn tier 1 back instead of being floored whole.
 
-**Shape, measured — Cursor publishes no schema for any of it (lab/060).**
+**Shape, measured — Cursor publishes no schema for any of it.**
 
 - `meta` holds one row whose value is **hex-encoded** JSON: `latestRootBlobId`,
   `agentId`, `createdAt`, and a `blobEncryptionKey` that encrypts nothing observed and
@@ -26,8 +25,8 @@ TR2011-709) is full recognition before processing: decide the whole input is val
 *before* acting on any of it. That is not stylistic here. A reader that emits as it
 walks produces a partial corpus on a partial store and cannot tell that it did — with
 two ingress calls and one result blob removed, an "is it non-empty" check still reports
-success while a whole fetched page is missing from what the floor judges against
-(lab/060). Non-empty is not complete. So `read()` recognizes everything and only then
+success while a whole fetched page is missing from what the floor judges against.
+Non-empty is not complete. So `read()` recognizes everything and only then
 emits, and every surprise raises rather than being skipped.
 
 **Why anything unknown is floored rather than tolerated.** A tool name this module does
@@ -90,8 +89,7 @@ MCP_WRAPPER_TOOLS = frozenset({"CallMcpTool", "GetMcpTools"})
 # after the wrapper is resolved. Only servers *we* author qualify, and the reason is
 # the one that puts `Read` and `Shell` in KNOWN_LOCAL_TOOLS rather than in the ingress
 # set: their results are observations of the operator's own machine, not content
-# fetched from an origin nobody curated (the docs/index Artifact argument). Thalamus's
-# tools read the operator's own graph.
+# fetched from an origin nobody curated. Thalamus's tools read the operator's own graph.
 #
 # Server-level rather than per-tool, because the unit we can actually vouch for is the
 # server: we ship its whole tool surface, and a per-tool list would floor every session
@@ -118,9 +116,9 @@ class StoreVerdict(str, Enum):
     The floor has two behaviours, so `ingress_verifiable` stays a bool. This is the
     *verdict* rather than the action, and it is four-valued because three separate
     decisions need to tell these apart: which sessions to re-run after a reader fix,
-    what a format-drift monitor can count, and what docs/05 is entitled to claim. Under
-    a bool alone, a Cursor version bump that breaks this reader arrives in the same
-    channel as the wholly benign case of a session that has no store.
+    what a format-drift monitor can count, and what the trust model is entitled to
+    claim. Under a bool alone, a Cursor version bump that breaks this reader arrives in
+    the same channel as the wholly benign case of a session that has no store.
     """
 
     VERIFIED = "verified"
@@ -470,7 +468,7 @@ def _field1_refs(buf: bytes) -> list[str]:
     length-delimited field-1 entry: that reader exists, it was written for this store,
     and it reported a reference that was really a window straddling a field boundary —
     four bytes early, swallowing the key of a neighbouring hash. It found a dangling
-    reference that was not there and said nothing was wrong (lab/060).
+    reference that was not there and said nothing was wrong.
 
     Every surprise raises. A field-1 entry of an unexpected length or an unhandled
     wiretype means the shape assumed here is wrong, and returning a short list that
@@ -528,7 +526,7 @@ def _root_revisions(blobs: dict[str, bytes], latest: list[str]) -> tuple[int, bo
 
     The store keeps every root it has ever written, one per append, and each
     revision's message list is a strict prefix of the next — measured 10/10 stores over
-    52 revisions (lab/060). That is RFC 6962's consistency-proof shape sitting in the
+    52 revisions. That is RFC 6962's consistency-proof shape sitting in the
     vendor's own data, so this reads it rather than building one.
 
     What it catches follows from the structure rather than from a measurement: an

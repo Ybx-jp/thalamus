@@ -1,5 +1,5 @@
 """
-Oracle-gate tests (docs/04 — validating the graded oracle before trusting it).
+Oracle-gate tests (validating the graded oracle before trusting it).
 
 Interfaces: thalamus.eval.oracle.anchor_candidates/mutant_candidates/run_gate/render_gate
 Infrastructure: none; grading is stubbed, since what is under test is the gate's
@@ -77,7 +77,7 @@ class TestAnchors:
 
     def test_negative_anchor_scoring_above_the_gate_is_an_issue(self, graded):
         """
-        lab/011's competence echo, mechanized: the bug is present by construction
+        The competence echo, mechanized: the bug is present by construction
         at `source.ref`, so a rung above the no-regression gate means the check is
         measuring the repository rather than the candidate.
         """
@@ -124,7 +124,7 @@ class TestGateNotKillRate:
 
 class TestSetSize:
     def test_a_thin_mutant_set_is_flagged(self, monkeypatch):
-        """docs/04 says 4–6. One mutant measures a single interior point and
+        """The gate design says 4–6. One mutant measures a single interior point and
         calls it discrimination."""
         thin = TASK.model_copy(update={"mutants": TASK.mutants[:1]})
         monkeypatch.setattr(

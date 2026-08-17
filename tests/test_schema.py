@@ -3,7 +3,7 @@ Schema tests: content-addressed claim identity and the provenance envelope.
 
 Interfaces: thalamus.substrate.schema.Claim.content_id, SessionGraph.default_provenance
 Infrastructure: none
-Scope: stable claim IDs (docs/09 G6) and tier-1-by-construction provenance (docs/05)
+Scope: stable claim IDs and tier-1-by-construction provenance
 """
 
 from datetime import datetime
@@ -83,7 +83,7 @@ def test_identity_is_the_assertion_not_its_supporting_fields():
     - whitespace and a trailing period do not fork identity
 
     This reverses the original "substance is part of identity" design, on evidence:
-    the first full-corpus run measured ZERO convergences across 1,089 claims (docs/10)
+    the first full-corpus run measured ZERO convergences across 1,089 claims
     because no two sessions reproduce a rationale byte-for-byte. The assertion is the
     identity; everything else is a property. Decision log 2026-07-15.
     """
@@ -110,7 +110,7 @@ def test_claim_subtypes_share_one_label_and_differ_by_kind():
         problems=[Problem(description="p", category=ProblemCategory.BUG)],
     )
 
-    # Verifies: consumers depend on Claim, not on its subtypes (docs/09 G1)
+    # Verifies: consumers depend on Claim, not on its subtypes
     assert [claim.kind for claim in session.claims()] == ["decision", "problem"]
 
 
@@ -123,7 +123,7 @@ def test_session_extractions_are_tier_one_by_construction():
 
     Provenance is stamped, not asked for: a session extraction IS the agent's own lived
     experience, so its origin is derivable. Feeds writing third-party content must supply
-    it explicitly instead (docs/05, docs/06).
+    it explicitly instead.
     """
     session = _session(session_id="abc")
     provenance = session.default_provenance()

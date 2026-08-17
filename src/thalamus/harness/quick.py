@@ -1,4 +1,4 @@
-"""The quick protocol — the second consultation tier (docs/02).
+"""The quick protocol — the second consultation tier.
 
 Inside a room, a caller blocked on a question answers it by **forking the expert's
 own live session** (`claude -p --resume <sid> --fork-session`) instead of spawning a
@@ -12,8 +12,7 @@ the brief, whose absence is recorded as a fact rather than left as silence. The 
 is not dropped but degenerate: a compact assertion that this fork inherits parent P's
 scope S as of fork point F.
 
-Everything the launcher is obliged to do here was measured, not reasoned
-(`lab/049-the-fork-is-the-whole-conversation.md`):
+Everything the launcher is obliged to do here was measured, not reasoned:
 
 - **`--agent thalamus-<scope>` is a launcher obligation.** `--resume` restores the
   conversation, not the launch flags, so a fork of a `homelab` parent arrives at
@@ -52,8 +51,8 @@ from thalamus.harness import agents, pin
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 
 # The fork answers from memory; it does not go inspect the box. Restricting the
-# toolset is the tier's own shape (docs/02) and it is also the cheaper arm: the
-# unrestricted cold comparator in lab/049 spent 21 of 31 tool calls on discovery.
+# toolset is the tier's own shape and it is also the cheaper arm: the
+# unrestricted cold comparator spent 21 of 31 tool calls on discovery.
 DEFAULT_ALLOWED_TOOLS = "mcp__thalamus"
 
 # Long enough for a real call (52–122 s warm, and the mandated fresh recall adds
@@ -61,7 +60,7 @@ DEFAULT_ALLOWED_TOOLS = "mcp__thalamus"
 DEFAULT_TIMEOUT = 600
 
 # A `claude -p` that cannot authenticate exits 0 with a well-formed envelope whose
-# `result` is the login notice. Found by accident (lab/049): the result string needs
+# `result` is the login notice. Found by accident: the result string needs
 # checking, not just the exit code.
 _NOT_AN_ANSWER = re.compile(r"\bnot logged in\b|/login\b", re.IGNORECASE)
 
@@ -107,7 +106,7 @@ class LiveSession:
         """Not mid-turn — the cheap moment to fork, and never a precondition for it.
 
         A mid-turn fork costs 13× the post-turn price, because a truncated
-        conversation lands on no cached block boundary (lab/049), and it also misses
+        conversation lands on no cached block boundary, and it also misses
         the message body the parent is still writing. Both are recorded on the
         exchange and neither gates the call: forking a *busy* expert without
         disturbing it is what this tier is for. The harness writes several resting
@@ -134,7 +133,7 @@ def config_dir(env: dict[str, str] | None = None) -> Path:
     Deliberately not `pin.host_config_dir()`, which refuses a room dir because it
     answers a different question (what a new room is provisioned *from*). Discovery
     is the room boundary: a caller inside a room must see its room-mates and nobody
-    else, which is exactly what reading its own `CLAUDE_CONFIG_DIR` gives (lab/045).
+    else, which is exactly what reading its own `CLAUDE_CONFIG_DIR` gives.
     """
     env = os.environ if env is None else env
     value = env.get("CLAUDE_CONFIG_DIR", "")
@@ -237,7 +236,7 @@ def await_target(
 
     **A busy parent is not refused.** Non-interruption is the reason this tier forks
     rather than messaging the live expert — an expert that has to be free before it can
-    be consulted is an expert you interrupted (docs/02). A mid-turn fork costs ~13× and
+    be consulted is an expert you interrupted. A mid-turn fork costs ~13× and
     misses the message body its parent is still writing, and both are recorded on the
     exchange; neither is a reason to send a blocked caller away.
 
@@ -281,7 +280,7 @@ def fork_prompt(
 
     A bare appended question is read by the fork inside its parent's frame — one
     measured fork treated it as a prompt injection and declined it, answering the
-    parent's open tasks instead (lab/049). The wrapper says plainly that a different
+    parent's open tasks instead. The wrapper says plainly that a different
     session is asking, and states the tier's obligations in the same breath.
 
     **The first line is deliberately not a tag.** `transcripts.parse` counts a
@@ -305,7 +304,7 @@ def fork_prompt(
             "your own prior task is not resumed by this message.",
             "",
             f"**Grant:** {grant}.",
-            "**No brief was served** — this is the quick tier (docs/02), so you are "
+            "**No brief was served** — this is the quick tier, so you are "
             "answering from your own context rather than from a server-assembled "
             "brief. That context is a cache, and a cache goes stale: it was retrieved "
             "to answer different questions.",
@@ -386,7 +385,8 @@ def fork_argv(
         "-p",
         # Declared preconditions, not a rebuilt invocation: this line cannot use
         # `argv()` because a fork inherits the parent's model rather than naming one,
-        # but dropping them silently is the lab/054 seam. Empty on Claude Code.
+        # but dropping them silently is the seam that left a precondition reaching
+        # extraction and nothing else. Empty on Claude Code.
         *cli.headless_preconditions,
         "--output-format", "json",
         "--resume", target.session_id,
@@ -792,7 +792,7 @@ def consult(
         protocol="quick",
         extra={
             # Silence and "no brief served" are the same bytes, and only one of them
-            # is auditable (docs/02). Dropping the brief is a lossy but well-defined
+            # is auditable. Dropping the brief is a lossy but well-defined
             # projection of the exchange record; it is legitimate only while the
             # record says which projection it is.
             "brief_served": False,

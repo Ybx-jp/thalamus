@@ -1,5 +1,5 @@
 """
-Conditioning effectiveness tests (docs/07 conditioning tier; docs/11 §3c).
+Conditioning effectiveness tests (the conditioning tier).
 
 Interfaces: thalamus.eval.conditioning (load_firings, conditioning_report)
 Infrastructure: tmp_path JSONL logs; no live graph

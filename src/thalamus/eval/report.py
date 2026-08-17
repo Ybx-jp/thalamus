@@ -1,12 +1,12 @@
 """Read the eval loop's layer-1 verdicts back out of the graph.
 
-Aggregates Trace nodes and RETURNS verdicts into the per-scope numbers docs/04 asks
+Aggregates Trace nodes and RETURNS verdicts into the per-scope numbers layer 1 asks
 for: how often retrieval fires, how often it comes back empty, and how much of what it
 returns the agent actually uses. The "most ignored" list is the seed of layer 3 —
 nodes repeatedly retrieved-but-ignored are the decay candidates — surfaced here as a
 report long before anything acts on it.
 
-Discipline (docs/04): these numbers say "instrumented, measuring". They do not say the
+Discipline: these numbers say "instrumented, measuring". They do not say the
 memory helps. That claim needs layer 2's counterfactual arms, which do not exist yet.
 """
 
@@ -26,7 +26,7 @@ from thalamus.eval.rates import Rate, widen, wilson_interval
 # Rendered chars per token — the same rough dial as eval/cost.py.
 _CHARS_PER_TOKEN = 4
 
-# The judge calls ~59% of *unrelated* tokens "used" (experiments/001), so a system
+# The judge calls ~59% of *unrelated* tokens "used", so a system
 # with no signal at all wastes the remaining ~41%. The wasted share is therefore
 # bounded below by chance rather than by zero, which is the correction the "50%
 # wasted" figure never carried.
@@ -78,7 +78,7 @@ class ScopeReport:
     until: datetime | None = None
     # Ranker fingerprints observed in the window, by trace count. A window spanning
     # more than one is not a measurement of either ranker — the report says so rather
-    # than averaging across a dial change (lab/029).
+    # than averaging across a dial change.
     by_ranker: Counter = field(default_factory=Counter)
     # Traces in scope that fell outside the window, and those with no usable ts.
     out_of_window: int = 0
@@ -90,7 +90,7 @@ class ScopeReport:
     returns: int = 0
     attributed: int = 0
     used: int = 0
-    # Injection pricing (docs/04 layer 1b). A returned node's share of its trace's
+    # Injection pricing. A returned node's share of its trace's
     # rendered response is injected_chars / returned_count — even, crude, honest.
     injected_chars: int = 0
     used_chars: int = 0
@@ -154,7 +154,7 @@ class ScopeReport:
                     null=None,
                     null_reason=(
                         "the permuted null is corpus-specific and is not recomputed "
-                        "here; experiments/001 measured 57% on this judge, which is "
+                        "here; a permutation null measured 57% on this judge, which is "
                         "close enough to the observed rate that the figure is not "
                         "self-evidently above chance"
                     ),
@@ -189,7 +189,7 @@ class ScopeReport:
             lines.append(line)
             if priced:
                 # This is the figure that became "50% wasted" and travelled into
-                # docs/04 and a skill on a point estimate over n=5 (lab/034). It is
+                # a design doc and a skill on a point estimate over n=5. It is
                 # token-weighted, so its denominator is characters while its
                 # *sampling* unit is the verdict — which is why no interval is
                 # rendered here rather than a convenient one.
@@ -202,13 +202,12 @@ class ScopeReport:
                     interval_reason=(
                         "token-weighted, so the character denominator is not the "
                         "sample size; the session-clustered interval is +/-7pp at "
-                        "this corpus size (experiments/002)"
+                        "this corpus size"
                     ),
                     null=_JUDGE_NULL,
                     note=(
                         "the null is the judge calling unrelated tokens used, so the "
-                        "wasted share is bounded below by chance, not by zero — "
-                        "experiments/002 has what the figure becomes once corrected"
+                        "wasted share is bounded below by chance, not by zero"
                     ),
                 ).render())
 
@@ -237,9 +236,9 @@ def scope_report(
     """Layer-1 numbers for one scope, optionally windowed by trace timestamp.
 
     The window exists so a dial change can be measured against its own before and
-    after. Without it every number is a lifetime aggregate, which is why lab/007's
+    after. Without it every number is a lifetime aggregate, which is why the
     fan-out prediction could not be checked after the fact even though every trace
-    it needed was already in the graph (lab/029). `until` is inclusive of the whole
+    it needed was already in the graph. `until` is inclusive of the whole
     day when given as a bare date.
 
     Windowing excludes traces with no parseable `ts` rather than assuming they fall

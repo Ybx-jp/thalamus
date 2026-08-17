@@ -11,7 +11,7 @@
 # enumerates `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` and reads each session's
 # `messagingSocketPath` from the descriptor. A per-room CLAUDE_CONFIG_DIR with a
 # private `sessions/` therefore partitions the roster; a per-room
-# XDG_RUNTIME_DIR only moves the socket and hides nothing (lab/045). Structure
+# XDG_RUNTIME_DIR only moves the socket and hides nothing. Structure
 # governs discovery — a non-member is never listed — and this guard governs
 # intent, catching a member that means to reach out however it learned the name.
 #
@@ -73,7 +73,7 @@ log_event() {
 
 # Satisfaction branches, and they are deliberately generous. SendMessage serves
 # in-process subagents as well as peer sessions — the consultation protocol runs
-# over it — so anything that is not unambiguously a peer session passes. lab/008's
+# over it — so anything that is not unambiguously a peer session passes. The
 # standing trade applies with full force: a false positive teaches route-around,
 # and route-around costs more than a miss. The gap is named rather than closed:
 # a room member messaging an outside session under a bare name it happens to
@@ -105,8 +105,8 @@ Blocked: this session is in room \`${room}\`, and \`${target}\` is not a member.
 
 A room's cheap quick protocol is only defensible because it cannot leave the
 room. Messaging outward would carry unprovenanced, uncited content into a scope
-that never agreed to it — the laundering channel docs/05 tracks, with the room's
-own bound removed.
+that never agreed to it — the laundering channel the trust model tracks, with the
+room's own bound removed.
 
 Reach outside the room the way every cross-scope exchange is reached: mint a
 consultation ticket (\`consult_request\`), which opens the exchange record and

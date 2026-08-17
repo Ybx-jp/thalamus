@@ -1,4 +1,4 @@
-"""Room-boundary guard tests (docs/05 laundering; lab/044 why it is policy not structure).
+"""Room-boundary guard tests — the laundering channel, bounded by policy not structure.
 
 Interfaces: src/thalamus/harness/hooks/claude-code/room-guard.sh, driven as the
 harness drives it — JSON on stdin, exit 2 to block.

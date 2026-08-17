@@ -7,7 +7,7 @@ become retrieval events: which session asked, what it asked, and which graph nod
 back.
 
 Node identity is recovered from the response text itself. The reader renders every
-result's vertex ID inline (docs/09 G5), so the verbatim `tool_response` in the trace
+result's vertex ID inline, so the verbatim `tool_response` in the trace
 *contains* the node-level answer — the tap needs no schema of its own and never lags
 the reader. A trace whose response carries no vertex IDs predates that rendering and is
 reported as legacy rather than silently miscounted as a retrieval miss.
@@ -79,8 +79,8 @@ _MISS_RE = re.compile(
 _REJECTED_RE = re.compile(r"^(Rejected:|Query (?:failed:|must be a traversal)|Query exceeds )")
 
 # The Bash tap records on marker presence alone (the tap stays dumb), but marker
-# traffic is dominated by non-queries — sed refactors, heredoc rewrites (lab/008:
-# 8/8 flagged archive commands were wrappers or text edits). Only commands that
+# traffic is dominated by non-queries — sed refactors, heredoc rewrites (8/8
+# flagged archive commands were wrappers or text edits). Only commands that
 # actually reach for a connection or a house retrieval wrapper are retrieval
 # events; the rest would pollute the priced surface and the reuse arms
 # (verification consultation 8f6ad2d6f4024b2c).
@@ -99,7 +99,7 @@ class TraceEvent:
     tool: str  # short name, e.g. "memory_recall"
     tool_input: dict = field(default_factory=dict)
     tool_response: str = ""
-    # The pin the tap recorded (docs/07 "the process is the pin"). Empty on lines
+    # The pin the tap recorded ("the process is the pin"). Empty on lines
     # written before the hook carried it; sync validates it like any other hint.
     scope: str = ""
     # Which agent context made the call. A subagent's calls carry the harness's
@@ -148,7 +148,7 @@ class TraceEvent:
         return bool(_REJECTED_RE.match(self.tool_response.strip()))
 
     def ticket(self) -> str:
-        """The consultation ticket this call carried, if it ran under one (docs/02).
+        """The consultation ticket this call carried, if it ran under one.
 
         This is how a consultation gets attributed to its session: the MCP server
         cannot see its caller, but the tap records the tool input verbatim, so the
@@ -252,7 +252,7 @@ def _parse_line(line: str) -> TraceEvent | None:
     # records that envelope (sometimes JSON-encoded into a string). Unwrap it so the
     # response the parser judges is the text the model actually saw — the anchored
     # miss patterns can never match inside an envelope. Measured, not hypothetical:
-    # the first real miss in the tap (a pinned session with no open threads, lab/003)
+    # the first real miss in the tap (a pinned session with no open threads)
     # was misclassified as a legacy trace because of exactly this.
     if isinstance(tool_response, str) and tool_response.lstrip().startswith("{"):
         try:

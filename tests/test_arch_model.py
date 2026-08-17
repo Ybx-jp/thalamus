@@ -78,6 +78,55 @@ def test_a_missing_model_file_is_an_empty_model_not_an_error(tmp_path):
     assert loaded.layers == []
 
 
+def test_the_model_is_anchored_to_the_repo_and_not_to_the_cwd(tmp_path, monkeypatch,
+                                                              capsys):
+    """
+    Scenario: `thalamus arch show` run from somewhere that is not the repo root
+
+    Verifications:
+    - the checkout's own model is read, layers and all
+    - `--repo` still points the instrument at another tree
+
+    Resolving `arch/model.yaml` against the working directory made `arch` a command
+    that only worked from one directory: anywhere else it loaded nothing, reported
+    no layers and no rules, and called every module unplaced.
+    """
+    from types import SimpleNamespace
+
+    from thalamus import cli
+
+    committed = arch_model.load(arch_model.REPO_ROOT / arch_model.MODEL_PATH)
+    assert committed.layers, "the checkout ships a model with layers declared"
+
+    monkeypatch.chdir(tmp_path)
+    cli._cmd_arch(SimpleNamespace(arch_command="show", repo=None), None)
+    anchored = capsys.readouterr().out
+
+    assert f"root_commit  {committed.root_commit}" in anchored
+    assert f"layers       {len(committed.layers)}" in anchored
+
+    cli._cmd_arch(SimpleNamespace(arch_command="show", repo=str(tmp_path)), None)
+    overridden = capsys.readouterr().out
+
+    assert "layers       0" in overridden, "--repo still points it elsewhere"
+
+
+def test_the_scan_key_still_matches_every_scan_already_taken():
+    """`scan_id` hashes the policy block, so the exclude tuple is part of a scan's
+    identity. Both the committed file and the code's default have to keep producing
+    the digest the model records, or today's scan lands in a different lineage from
+    the ones already published against it — and the fork is silent."""
+    import yaml
+
+    document = yaml.safe_load(
+        (arch_model.REPO_ROOT / arch_model.MODEL_PATH).read_text(encoding="utf-8")
+    )
+    recorded = document["extractor"]["digest"]
+
+    assert ExtractorPolicy.from_block(document["extractor"]).digest() == recorded
+    assert ExtractorPolicy().digest() == recorded
+
+
 def test_scan_id_names_both_the_commit_and_the_policy():
     policy = ExtractorPolicy()
     other = ExtractorPolicy(import_depth="module-level")

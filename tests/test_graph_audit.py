@@ -35,7 +35,7 @@ def test_provenance_holes_and_unknown_labels_are_reported():
     Scenario: A vertex written without its envelope, and one with a label the
     ontology never declared
 
-    docs/05 makes provenance an obligation on every node; a label outside the
+    The trust model makes provenance an obligation on every node; a label outside the
     ontology is a write that bypassed the contract entirely.
     """
     naked = AuditVertex(vid="scope:main:session:s2", label="Session",
@@ -81,7 +81,7 @@ def test_an_external_claim_carrying_first_party_trust_is_laundering():
     a correctly-floored twin at tier 2
 
     The mark and the tier are both written by apply_ingress_floor — a live vertex
-    where they disagree means something wrote around the floor (docs/05).
+    where they disagree means something wrote around the floor.
     """
     laundered = AuditVertex(
         vid="scope:main:claim:bad1", label="Claim",
@@ -106,7 +106,7 @@ def test_cross_scope_edges_are_legal_only_where_the_ontology_says_so():
     Scenario: A direct expert-to-expert CONTAINS edge, and a TOUCHES edge into the
     global Artifact vertex
 
-    The first is the boundary violation docs/02 forbids; the second is shared
+    The first is the scope-boundary violation the ontology forbids; the second is shared
     vocabulary, not a channel, and must not be flagged.
     """
     illegal = AuditEdge(label="CONTAINS",
@@ -125,7 +125,7 @@ def test_cross_scope_edges_are_legal_only_where_the_ontology_says_so():
 def test_returns_may_cross_scope_because_the_tap_records_what_the_reader_served():
     """
     Scenario: a main-scope retrieval trace RETURNS a knowledge claim from an
-    expert scope — an ordinary recall serving tier-2 knowledge (docs/05), or a
+    expert scope — an ordinary recall serving tier-2 knowledge, or a
     ticket-scoped consultation recall.
 
     The tap is observability, not authority: what the reader may return is the
@@ -153,7 +153,7 @@ def test_consults_is_a_sessions_edge_to_its_exchange_record():
     """
     Scenario: A CONSULTS edge written between the wrong node types
 
-    docs/02 makes the consultation a Session -> Exchange fact; anything else is a
+    The ontology makes the consultation a Session -> Exchange fact; anything else is a
     write that bypassed the ticket protocol.
     """
     wrong = AuditEdge(label="CONSULTS",
@@ -174,8 +174,8 @@ def test_an_answered_exchange_must_cite_and_statuses_are_closed_vocabulary():
     Scenario: Three Exchange vertices — answered with a citation edge, answered
     with none, and one carrying a status the protocol never mints
 
-    consult_answer is the only close path and it validates citations (docs/02, the
-    write-path stance of arXiv 2606.04329) — so an answered-but-uncited exchange in
+    consult_answer is the only close path and it validates citations (the write-path
+    stance of arXiv 2606.04329) — so an answered-but-uncited exchange in
     the live graph means something wrote around the protocol.
     """
     def _exchange(vid, status):
@@ -231,7 +231,7 @@ def test_an_open_quick_exchange_is_edgeless_by_construction():
     - the answered one still is
 
     The full ticket's Exchange is born connected, because the server's brief becomes
-    `role: brief` edges. The quick tier drops the brief on purpose (docs/02), so an
+    `role: brief` edges. The quick tier drops the brief on purpose, so an
     open quick exchange has nothing to point at until its citations land — honest
     data, with `brief_served: false` and `fork_error` saying what happened. Answering
     removes the exemption: an answered exchange must cite, like any other.

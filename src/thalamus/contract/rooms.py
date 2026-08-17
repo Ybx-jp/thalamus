@@ -83,7 +83,7 @@ _BRACKET = Evidence(
     kind="live-session",
     at="2026-08-13",
     where="`beforeShellExecution` fires before Cursor's own approval modal — probe hook "
-          "logged 11:01:15, modal still unanswered 11:01:20 (lab/065 §5) — so "
+          "logged 11:01:15, modal still unanswered 11:01:20 — so "
           "`hooks/cursor/readiness-*.sh` bracket the interval a modal can occupy and "
           "`harness/readiness.py` reads the descriptor they write",
     verified_against="cursor/2026.08.11-e8db854",

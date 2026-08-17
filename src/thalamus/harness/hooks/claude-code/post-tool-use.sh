@@ -1,7 +1,7 @@
 #!/bin/bash
 # Thalamus PostToolUse hook — retrieval traces (Claude Code).
 #
-# The eval loop's layer-1 feed (docs/04): every call to a thalamus memory tool is
+# The eval loop's layer-1 feed: every call to a thalamus memory tool is
 # recorded verbatim — what was asked, what came back, in which session. Used-vs-ignored
 # attribution later matches these retrievals against the session's outputs (the retained
 # transcript), so the trace must capture the full response, not a summary of it.

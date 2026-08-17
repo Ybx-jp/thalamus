@@ -7,13 +7,13 @@ storage and a pointer into it would rot.
 Why this exists at all, in one line each:
 
 - **It gives the provenance chain a floor.** A tier-1 claim's source is a Session, whose
-  stored content is a *summary* — a distillation of itself. docs/03's inspector has to
-  land on evidence, not on another summary.
-- **It makes extraction reversible.** docs/04 insists that forgetting be "archival, never
-  deletion — reversible and auditable", but *extraction* is today lossy and irreversible.
+  stored content is a *summary* — a distillation of itself. The provenance inspector has
+  to land on evidence, not on another summary.
+- **It makes extraction reversible.** Forgetting must be "archival, never deletion —
+  reversible and auditable", but *extraction* is today lossy and irreversible.
   With the archive, the graph becomes a materialized view over an immutable log: if the
   view is wrong — bad skill, better model, changed schema — rebuild it.
-- **The eval loop needs it.** docs/04 layer 1 defines used-vs-ignored as matching
+- **The eval loop needs it.** Layer 1 defines used-vs-ignored as matching
   retrieved content against *the session's outputs*. The session's outputs are the
   transcript. Without it, layer 1 cannot be computed at all.
 

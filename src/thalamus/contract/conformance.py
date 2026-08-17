@@ -1,6 +1,6 @@
 """Conformance checks a subgraph must pass before it may be written.
 
-The federation contract (docs/01) in its current form. Obligations are enforced **at
+The federation contract in its current form. Obligations are enforced **at
 write time, not filtered at read time** — that stance is inherited from the base memory
 system's orphan check and is the posture every obligation here adopts.
 
@@ -17,7 +17,7 @@ URI. The audit functions are pure over plain rows so they are testable without a
 
 Not yet enforced (they need a second scope to be meaningful):
   - manifest validation — declared node/edge types vs. what is actually written
-  - projection grants   — what the plane may read from a scope (docs/09 G4)
+  - projection grants   — what the plane may read from a scope
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def referenced_artifacts(session: SessionGraph) -> set[str]:
 
     Includes `touched` — a session that edited a file has a direct TOUCHES edge to it, so
     the artifact is reachable even before any claim is extracted. This is what lets the
-    deterministic bootstrap (docs/06) satisfy the connectivity invariant with no model in
+    deterministic bootstrap satisfy the connectivity invariant with no model in
     the loop.
     """
     return session.referenced_artifact_ids()
@@ -62,7 +62,7 @@ def validate_provenance(session: SessionGraph) -> list[str]:
 
     A session extraction gets one by default (tier-1, sourced to the session), so this
     only fires when a node supplies provenance explicitly and supplies it badly. It will
-    do real work the moment a feed writes tier-2 content (docs/06).
+    do real work the moment a feed writes tier-2 content.
     """
     issues: list[str] = []
     nodes = [
@@ -99,7 +99,7 @@ def validate_scope(session: SessionGraph) -> list[str]:
             issues.append(
                 f"Illegal cross-scope edge: {session_vid} -> {target}. Consultation must "
                 "route through a session in the main scope, not a direct expert-to-expert "
-                "edge (docs/02)."
+                "edge."
             )
     return issues
 
@@ -123,7 +123,7 @@ def prune_orphan_artifacts(session: SessionGraph) -> SessionGraph:
 
 
 def check_knowledge(batch) -> list[str]:
-    """What an ingestion event must satisfy before it may be written (docs/06).
+    """What an ingestion event must satisfy before it may be written.
 
     Feeds are contract clients like everything else, held to a *stricter* standard
     than sessions: a session's provenance is derivable, a feed's must be explicit.
@@ -137,14 +137,14 @@ def check_knowledge(batch) -> list[str]:
         )
 
     if not batch.source.origin:
-        issues.append("Source has no origin — no provenance, no write (docs/05)")
+        issues.append("Source has no origin — no provenance, no write")
     if not batch.source.content_hash:
         issues.append("Source has no content_hash — evidence must be retained first")
 
     if not batch.claims:
         issues.append(
             "Batch asserts nothing — an ingestion with no claims is archival, "
-            "and archival alone does not need Thalamus (docs/06)"
+            "and archival alone does not need Thalamus"
         )
 
     declared_entities = {entity.name for entity in batch.entities}
@@ -160,7 +160,7 @@ def check_knowledge(batch) -> list[str]:
     # Chunks are verbatim by definition, so the only thing to enforce is that they are
     # *reachable and located* — an anchor pointing at no chunk would strand the claim
     # it was meant to ground, which is the one failure that makes the edge worse than
-    # its absence (lab/052).
+    # its absence.
     ordinals = {chunk.ordinal for chunk in batch.chunks}
     if len(ordinals) != len(batch.chunks):
         issues.append("Chunk ordinals are not unique — chunk identity is (source, ordinal)")
@@ -234,10 +234,10 @@ def audit_vertices(vertices: list[AuditVertex]) -> list[str]:
         if missing:
             issues.append(
                 f"Provenance hole: `{vertex.vid}` lacks {', '.join(missing)} — "
-                "no provenance, no write (docs/05)"
+                "no provenance, no write"
             )
 
-        # The laundering floor, audit-time half (docs/05): a claim that admits its
+        # The laundering floor, audit-time half: a claim that admits its
         # substance came through the transcript's external ingress must not carry
         # first-party trust. The mark and the tier are both written by our own
         # pipeline, so a mismatch means something wrote around apply_ingress_floor.
@@ -247,7 +247,7 @@ def audit_vertices(vertices: list[AuditVertex]) -> list[str]:
                 issues.append(
                     f"Laundered ingress: `{vertex.vid}` is marked external but carries "
                     f"tier {tier} — transcript-mediated content keeps third-party "
-                    "trust (docs/05)"
+                    "trust"
                 )
 
         vid_scope = scope_of(vertex.vid)
@@ -285,7 +285,7 @@ def audit_edges(edges: list[AuditEdge]) -> list[str]:
             issues.append(
                 f"Illegal cross-scope edge: `{edge.from_vid}` -[{edge.label}]-> "
                 f"`{edge.to_vid}`. Consultation routes through a main-scope session, "
-                "never expert-to-expert (docs/02)"
+                "never expert-to-expert"
             )
 
         # An Agent-written close carries its evidence in properties rather than in the
@@ -330,7 +330,7 @@ def audit_edges(edges: list[AuditEdge]) -> list[str]:
             issues.append(
                 f"CONSULTS between wrong endpoints: `{edge.from_vid}` "
                 f"({edge.from_label}) -> `{edge.to_vid}` ({edge.to_label}) — "
-                "a consultation is a Session's edge to its Exchange record (docs/02)"
+                "a consultation is a Session's edge to its Exchange record"
             )
     return issues
 
@@ -339,7 +339,7 @@ _EXCHANGE_STATUSES = frozenset({"open", "answered"})
 
 
 def audit_exchanges(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list[str]:
-    """Exchange-record obligations — the ticket protocol's contract half (docs/02).
+    """Exchange-record obligations — the ticket protocol's contract half.
 
     An answered exchange must carry at least one `role: citation` REFERENCES edge:
     consult_answer only closes on validated citations, so an answered-but-uncited
@@ -374,7 +374,7 @@ def _edgeless_by_construction(vertex: AuditVertex) -> bool:
 
     A full ticket's Exchange is born connected: the server assembles a brief and each
     node it served becomes a `role: brief` REFERENCES edge. The quick tier drops the
-    brief on purpose (docs/02), so an open quick exchange has no edges until it is
+    brief on purpose, so an open quick exchange has no edges until it is
     answered and its citations land — which is the state a fork that never answered
     leaves behind. That is honest data, not an unreachable node: `brief_served: false`
     and `fork_error` say exactly what happened. An *answered* quick exchange is not
@@ -403,7 +403,7 @@ def audit_evidence(vertices: list[AuditVertex], archive_base: Path | None = None
 
     The provenance floor is only a floor if the bytes are actually there: a Source whose
     blob is gone is a belief chain terminating in a dangling pointer, which is precisely
-    the fog docs/03's inspector exists to prevent.
+    the fog the inspector exists to prevent.
     """
     from thalamus.archive import archive_dir
 

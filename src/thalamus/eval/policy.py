@@ -2,7 +2,7 @@
 
 Used-vs-ignored, as built, is post-hoc correlation on a set the ranker chose. No
 permutation control fixes that: a permutation tests the *judge*, never the
-*retrieval*. Experiments 001 and 002 measure how little the judge can carry; this is
+*retrieval*. The pre-registered studies measure how little the judge can carry; this is
 the other half — an intervention, inside the operator's real sessions, that produces
 a comparison the judge does not have to invent.
 
@@ -14,8 +14,8 @@ The mechanism is one thing serving two estimators, which is why it is worth its 
   a switchback, analysable by exact randomization inference.
 - **Logged propensities.** The same record makes the deployed ranker a *stochastic*
   logging policy, which is the standing precondition for replay and doubly-robust
-  estimation off the existing trace log — the thing docs/11 §4 records as absent
-  because "retrieval here is not stochastic".
+  estimation off the existing trace log — previously out of reach here because
+  "retrieval here is not stochastic".
 
 Three properties this design insists on:
 
@@ -115,7 +115,7 @@ def seed_for(identity: str, query: str, ts: datetime) -> str:
     Storing a derived seed rather than a captured RNG state is what lets an analysis
     re-derive the exact draw months later from the record alone, with no live state
     and no trust in the writer. `identity` is the scope rather than the session: the
-    MCP server cannot see its caller's session id (lab/001), and `eval sync` fills
+    MCP server cannot see its caller's session id, and `eval sync` fills
     the session in at join time from the trace the record matched.
     """
     material = f"{POLICY_VERSION}|{identity}|{query}|{ts.isoformat()}"

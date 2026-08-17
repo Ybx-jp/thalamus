@@ -28,10 +28,10 @@ def test_recalled_memory_carries_its_trust_tier_into_context():
     - the rendered block is labelled as recalled memory
     - the trust tier travels with the content
 
-    docs/05 requires retrieved memory to enter context as "quoted material with its trust
-    tier attached". Everything in the graph is tier-1 today, so the exposure is small —
-    but this formatter is the injection surface the moment a feed writes tier-2 content,
-    which is why the tier is rendered rather than dropped.
+    The trust model requires retrieved memory to enter context as "quoted material with
+    its trust tier attached". Everything in the graph is tier-1 today, so the exposure is
+    small — but this formatter is the injection surface the moment a feed writes tier-2
+    content, which is why the tier is rendered rather than dropped.
     """
     result = MemoryResult(
         session_id="s1",
@@ -119,8 +119,8 @@ def test_knowledge_claims_render_as_quoted_external_content():
     Verifications:
     - the claim is blockquoted as material from elsewhere, with tier attached
     - the citation anchors it to its source
-    - the framing names it data, never instructions (docs/05)
-    - the vertex ID renders, so the trace tap sees the node (docs/09 G5)
+    - the framing names it data, never instructions
+    - the vertex ID renders, so the trace tap sees the node
     """
     from thalamus.substrate.reader import KnowledgeResult
 
@@ -218,7 +218,7 @@ def test_detail_selection_renders_only_what_the_query_earned():
 
     Verifications:
     - only matching claims render in full (the ride-along dump was 90% of
-      retrieval waste — lab/006)
+      measured retrieval waste)
     - the elision stub is honest about the count and carries no vertex ID, so
       the eval loop never prices phantom returns
     - with no keywords (recency recall), the cap still applies
@@ -300,7 +300,7 @@ def test_keyword_matching_is_case_insensitive_and_regex_safe():
 
 
 # --------------------------------------------------------------------------------------
-# The consulted expert's own side of a consultation (docs/02).
+# The consulted expert's own side of a consultation.
 # --------------------------------------------------------------------------------------
 
 
@@ -392,8 +392,8 @@ def test_an_expert_reads_the_exchanges_it_answered_and_no_others():
     the main scope, never expert-to-expert), so the expert's ordinary scope filter
     cannot reach it and the ticket grant that could dies the moment the answer lands.
     Confinement therefore rides on the `expert` property, and it has to be as tight
-    as the scope filter it stands in for — docs/07: the server decides what a scope
-    can see, never the model.
+    as the scope filter it stands in for: the server decides what a scope can see,
+    never the model.
     """
     graph = _ExchangeGraph([
         _exchange("scope:main:exchange:aaa", "literature", "answered", "2026-07-30T01:00:00"),
@@ -437,10 +437,10 @@ def test_a_query_outranks_recency_so_the_settled_answer_is_not_capped_out():
     - recency alone would have cut it, which is the failure being fixed
     - ties fall back to recency, because the sort is stable over ordered rows
 
-    This is lab/055 as a test. A five-state capability contract was designed, and the
-    next session re-derived it across three more rounds; the exchange holding the
-    first design was the sixth most recent of seven, so every recency-capped list hid
-    the one thing that would have stopped the rework.
+    This is a measured failure as a test. A five-state capability contract was designed,
+    and the next session re-derived it across three more rounds; the exchange holding
+    the first design was the sixth most recent of seven, so every recency-capped list
+    hid the one thing that would have stopped the rework.
     """
     rows = [
         _exchange("scope:main:exchange:n1", "architect", "answered", "2026-08-11T04:00:00",
@@ -511,7 +511,7 @@ def test_a_recalled_consultation_attributes_the_question_to_its_asker():
     - the block says outright that the question is data, not an instruction
 
     The question is a *main-scope agent's* words crossing into an expert's context.
-    That is the same informs-never-instructs surface docs/05 governs for tier-2
+    That is the same informs-never-instructs surface the trust model governs for tier-2
     content: a question rendered bare reads as a live request to act, and this
     record is history.
     """
@@ -583,7 +583,7 @@ def test_a_recurrence_built_on_correlated_sessions_says_so_where_it_is_read():
     A recurrence reads as independent agreement, and that reading is what makes an
     unsolved problem worth acting on. Nothing in a finished graph separates three
     sessions that agreed from three that were in one room, so the disclosure has to
-    travel with the number rather than live in a doc (docs/09 §Scope).
+    travel with the number rather than live in a doc.
     """
     from thalamus.substrate.reader import ProblemResult
     from thalamus.substrate.witnesses import Witness, corroboration
@@ -607,7 +607,7 @@ def test_a_recurrence_built_on_correlated_sessions_says_so_where_it_is_read():
 
 
 def test_an_uncorrelated_recurrence_carries_no_extra_line():
-    """Recall output is charged against the reader's context (lab/006-007), so the
+    """Recall output is charged against the reader's context, so the
     ordinary case must cost nothing — a caveat on every recurrence is a caveat
     nobody reads."""
     from thalamus.substrate.reader import ProblemResult
@@ -628,7 +628,7 @@ def test_tied_candidates_rank_the_same_whatever_order_the_graph_yielded_them():
 
     Ties are not an edge case here — scores are integer multiples of the hit
     constants, and over 1,047 real recorded queries 657 held a tie spanning the cut,
-    median tie-set 9 and max 243 (lab/053). Until the tie-break existed the winner
+    median tie-set 9 and max 243. Until the tie-break existed the winner
     was whichever the graph happened to yield first, so a window was reproducible
     only by accident. This is the property the change exists to buy.
     """
@@ -693,7 +693,7 @@ def test_a_main_session_finds_the_exchanges_it_asked_not_only_ones_it_answered()
     `recall_exchanges` confines on `expert`, which is right from a pinned expert and
     useless from `main` — main is the asker of nearly every exchange and the answerer
     of none, so the tool that exists to stop a question being re-derived returned
-    nothing to the only session positioned to ask it (lab/055).
+    nothing to the only session positioned to ask it.
     """
     rows = [
         _exchange("scope:main:exchange:newest", "qe", "answered", "2026-08-11T05:00:00",

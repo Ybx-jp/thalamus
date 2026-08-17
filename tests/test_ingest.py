@@ -37,7 +37,7 @@ def test_allowlist_matches_hosts_and_subdomains_only():
 
 def test_local_files_bypass_the_allowlist():
     """
-    docs/06: manual curation IS tier-2 trust in practice — an operator hand-feeding
+    Manual curation IS tier-2 trust in practice — an operator hand-feeding
     a file is the curation decision, and the allowlist gates only what `ingest`
     fetches on its own.
     """
@@ -117,7 +117,7 @@ def test_pdfs_are_refused_not_half_parsed():
     with pytest.raises(IngestError, match="deliberately unbuilt") as caught:
         to_text(b"%PDF-1.7 ...")
 
-    # The refusal fires at exactly the moment docs/06 §4 warns about — no HTML
+    # The refusal fires at exactly the hazardous moment — no HTML
     # rendering available — so it must not send the operator to the landing page,
     # whose abstract-only extraction fails silently. Pinned because the original
     # message did precisely that for three weeks.
@@ -509,7 +509,7 @@ def test_chunks_carry_their_location_and_anchor_only_on_a_real_quote():
 
     The anchor edge's whole value is that it points at the passage the note actually
     came from, so a citation the model paraphrased must get NO anchor rather than a
-    guessed one (lab/052). Chunk `about` is filled by literal occurrence of names the
+    guessed one. Chunk `about` is filled by literal occurrence of names the
     batch already declared, which is why chunk-to-chunk "mentions" is a 2-hop walk
     through shared entities instead of a quadratic edge set.
     """

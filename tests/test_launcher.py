@@ -3,7 +3,7 @@
 `agents.py` is tested for headless invocation. This is the other surface, and the
 reason it is its own module is the failure below: a pin that lives only in the
 window's environment is undone by the console's restart button, silently, from a
-phone — measured on a throwaway session in both arms (lab/062).
+phone — measured on a throwaway session in both arms.
 """
 
 from __future__ import annotations

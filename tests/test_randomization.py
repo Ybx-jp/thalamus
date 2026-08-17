@@ -6,7 +6,7 @@ randomization_test, monitor, render)
 Infrastructure: none — pure arithmetic over cluster-level outcome vectors
 Scope: the test anchored as the few-treated-clusters fallback, and the design floor
 that decides whether a campaign can reject before it is run. The floor is two-sided
-because docs/04 requires a signed two-sided outcome.
+because a signed two-sided outcome is required.
 """
 
 import pytest
@@ -131,7 +131,7 @@ def test_outcomes_and_assignment_must_describe_the_same_clusters():
 def test_the_statistic_is_signed_so_harm_is_observable():
     """
     Verification: a treated arm *below* control yields a negative statistic and the
-    same p-value as the mirrored case. docs/04 requires this — a metric that counts
+    same p-value as the mirrored case. This is required — a metric that counts
     only wins cannot observe the harm a room might cause.
     """
     good = randomization_test([0.9, 0.9, 0.1, 0.1], [True, True, False, False])

@@ -1,11 +1,10 @@
 """Remove the graph records of architecture scans, which memory no longer keeps.
 
 `thalamus arch` measures structure into `arch/model.yaml` and writes nothing to the
-graph ([09](../../../docs/09-schema-and-federation.md)). Scans taken before that landed
-one Source per run and one Claim per finding, and those records outlive the commits they
-were true of — which is the reason the write path retired, and the reason leaving them
-is not neutral. A structural finding that survives its commit is a false memory served
-with a citation.
+graph. Scans taken before that landed one Source per run and one Claim per finding, and
+those records outlive the commits they were true of — which is the reason the write path
+retired, and the reason leaving them is not neutral. A structural finding that survives
+its commit is a false memory served with a citation.
 
 Two vocabulary strings appear here and nowhere else in the codebase: the Source kind
 `scan` and the provenance source `agent:arch-scanner`. They name values that are still

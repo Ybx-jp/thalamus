@@ -40,7 +40,7 @@ access auditing should record privilege escalations rather than leaving them to 
 reconstructed (MCP threat survey, arXiv 2503.23278). The rows are append-only and carry
 the direction, so "when did this box become permissive" is a question with an answer.
 
-Not found in the 2026 scan (see docs/11 §4): a permission surface that ties the
+Not found in the 2026 scan: a permission surface that ties the
 lifetime of a setting to whether it widened privilege.
 """
 

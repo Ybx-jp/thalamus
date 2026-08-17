@@ -53,7 +53,7 @@
 # for this guard: a second registration runs it twice on one call. The per-harness
 # states and their evidence live in `contract/boundaries.py`.
 #
-# All misses, and lab/008's standing trade says a miss is the cheaper error — a
+# All misses, and the project's standing trade says a miss is the cheaper error — a
 # false positive teaches route-around, and route-around costs more than a gap.
 #
 # Install (user or project settings.json):

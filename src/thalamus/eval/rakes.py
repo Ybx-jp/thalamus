@@ -1,8 +1,8 @@
-"""Rake registry and the adjudication window — Class A, stage 0 (lab/024 §2.1).
+"""Rake registry and the adjudication window — Class A, stage 0.
 
 A **rake** is a `problem` Claim carrying a `SOLVED_BY` edge: a mistake already made
 and already resolved, registered by ordinary distillation rather than by anyone
-authoring a fixture. lab/024 §2.1 proposes scoring whether later real sessions step
+authoring a fixture. The design proposes scoring whether later real sessions step
 on them again — an in-deployment measurement over the operator's own traffic, where
 the demand is real because work was happening, not because a task presented it.
 
@@ -36,16 +36,16 @@ failure properties and flag rather than exclude: Fair (arXiv 2111.03382) separat
 legitimate failures from false alerts without repeated reruns, and arXiv 2605.05564
 names repeated error messages as a discriminating feature for unrelated build failures
 — the same flag-never-exclude rule the infra classifier and the escape detector already
-follow (docs/11 §2a). Scoring an obligation discharged or violated rather than answer
+follow. Scoring an obligation discharged or violated rather than answer
 quality is AOEP-v0 (`scope:literature:claim:db78a71b570e17ce`). The measurement is
 observational: it can establish recurrence rates and their trend, never causation.
-Randomization is lab/024 §2.4 (arXiv 2009.00148 switchback, 2309.07353 anytime-valid);
+Randomization is switchback (arXiv 2009.00148, 2309.07353 anytime-valid);
 the quasi-experimental alternative is interrupted time series with a second control
 group (arXiv 2603.17281), and layer 2b has no control series at all, since every real
 session ran with memory on.
 
 Deciding "same failure, different text" is duplicate-bug-report retrieval and crash
-deduplication (docs/11 §2e). Both point stage 2's adjudicator at the simple end:
+deduplication. Both point stage 2's adjudicator at the simple end:
 aggregate similarity over the rake's whole group plus timestamps rather than a single
 nearest neighbour, with kNN competitive against the fuller method (arXiv 2205.00212),
 and a simpler technique beating sophisticated ones on a debiased benchmark (arXiv
@@ -67,7 +67,7 @@ from gremlin_python.process.traversal import T
 from thalamus.substrate.witnesses import Witness, corroboration
 
 # Dials — arbitrary, here to be pressure-tested (the same posture as the attribution
-# thresholds in docs/04 and the pin-report floors in eval/pins.py).
+# thresholds in the eval loop and the pin-report floors in eval/pins.py).
 #
 # An artifact touched by very many sessions is a weak key: "a later session opened
 # README.md" carries almost no evidence that it met a specific rake. Pairs keyed on
@@ -86,7 +86,7 @@ class SessionRow:
     ts: str = ""  # ISO-8601; lexical compare is chronological
     summary: str = ""  # what the session did — the audit worksheet's evidence
     artifacts: tuple[str, ...] = ()  # everything it touched, not just a rake's keys
-    # Why this session's agreement might not be its own (docs/09 §Scope).
+    # Why this session's agreement might not be its own.
     room: str = ""
     forked_from: str = ""
 
@@ -181,7 +181,7 @@ class RakeReport:
 
     def render(self) -> str:
         lines = [
-            "Rake registry — Class A stage 0 (lab/024 §2.1)",
+            "Rake registry — Class A stage 0",
             "  candidates are proximity, not encounters: no rake is scored hit or missed here",
             f"  dial: artifacts touched by >{HOT_ARTIFACT_SESSIONS} sessions are low-specificity keys",
             "",

@@ -75,7 +75,7 @@ class TestShippedManifests:
 
     def test_architect_carries_no_boundary_by_charter(self):
         """It writes the changes it proposes; a path deny would block the work rather
-        than bound a role. Its boundary is the pin trigger (docs/08), which is a
+        than bound a role. Its boundary is the pin trigger, which is a
         weaker guarantee and is named as one."""
         assert load_manifest("architect").write_boundary.deny_globs == []
 
@@ -133,7 +133,7 @@ class TestCapabilityBoundary:
 
     def test_it_leaves_the_working_skills_alone(self):
         """A capability boundary that caught the skills an expert needs to do its job
-        would teach route-around, which lab/008 prices above the gap it closes."""
+        would teach route-around, which this project prices above the gap it closes."""
         for skill in ("recall-strategy", "gremlin-python", "ground-in-literature",
                       "consult-an-expert", "add-roster-expert"):
             assert ROSTER_CAPABILITY_DEFAULT.denies_skill(skill) is None
@@ -314,8 +314,9 @@ class TestRoleGuardHook:
         assert result.returncode == 0
 
     def test_it_governs_the_edit_tools_and_nothing_else(self, tmp_path):
-        """Bash can still write, and that miss is deliberate (lab/008's trade). The
-        guard must not pretend otherwise by firing on tools it cannot bound."""
+        """Bash can still write, and that miss is deliberate — a miss is the cheaper
+        error than a false positive. The guard must not pretend otherwise by firing
+        on tools it cannot bound."""
         payload = write_payload(f"{REPO}/src/x.py", tool_name="Bash")
         result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-designer"})
         assert result.returncode == 0

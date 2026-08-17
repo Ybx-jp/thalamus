@@ -4,8 +4,8 @@ Pinned-session launcher tests: the derived agent definition and scope validation
 Interfaces: thalamus.harness.pin
 Infrastructure: tmp_path manifests only — no tmux, no claude, no graph
 Scope: the pure half of the launcher. Actually launching a pinned process is
-verified live (docs/07, lab/003) — a launcher can only be tested by the process
-it launches, which is exactly the lab/001 boundary.
+verified live — a launcher can only be tested by the process
+it launches, which is exactly where the boundary falls.
 """
 
 import json
@@ -127,6 +127,89 @@ def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monk
     # A second window beside the placeholder is exactly the bug — the create path
     # already opened the window, so nothing should call new-window.
     assert not [c for c in calls if "new-window" in c]
+
+
+def _fake_tmux(monkeypatch, ids):
+    """Answer every tmux call successfully, handing out `ids` to `new-window`.
+
+    Returns the call log. `has-session` succeeding means roster takes the
+    open-into-an-existing-session path, and an empty `list-windows` means it
+    considers no scope already covered.
+    """
+    calls: list[list[str]] = []
+    handout = iter(ids)
+
+    def fake_run(cmd, *a, **kw):
+        calls.append(cmd)
+        stdout = next(handout) if "new-window" in cmd else ""
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    monkeypatch.delenv("TMUX", raising=False)
+    monkeypatch.delenv("THALAMUS_ROOM", raising=False)
+    return calls
+
+
+def test_roster_confirms_every_window_it_opens(tmp_path, monkeypatch, capsys):
+    """
+    Scenario: bring up the full roster with a fake tmux that reports success
+
+    Verifications:
+    - every window the roster creates is held to its settle deadline
+    - the attach line is printed, because the session is still there
+
+    `tmux new-window` exits 0 once it has forked, which is before the command it was
+    given has execed. Without this, `thalamus roster` reported success and exit 0 for
+    a window that was already gone, and the console then drew its no-session screen
+    telling the operator to run the command they had just been told worked.
+    """
+    scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
+    _fake_tmux(monkeypatch, [f"@{n}" for n in range(1, len(scopes) + 1)])
+    confirmed: list[str] = []
+    monkeypatch.setattr("thalamus.harness.pin.confirm_started",
+                        lambda window_id, *a, **kw: confirmed.append(window_id))
+
+    pin.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+
+    assert confirmed == [f"@{n}" for n in range(1, len(scopes) + 1)]
+    assert "Roster running in tmux session `fake-roster`" in capsys.readouterr().out
+
+
+def test_one_dead_roster_window_does_not_abort_the_others(tmp_path, monkeypatch, capsys):
+    """
+    Scenario: the full roster comes up and the second window's command dies
+
+    Verifications:
+    - the remaining windows are still opened and still confirmed
+    - the failure raises, naming the scope that died and quoting its pane
+    - the scopes that came up are still reported opened
+
+    The roster is a set of independent windows, so refusing to open the eighth
+    because the seventh could not start would turn one broken scope into a roster
+    that is not up. The raise at the end is what keeps the exit code honest.
+    """
+    scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
+    _fake_tmux(monkeypatch, [f"@{n}" for n in range(1, len(scopes) + 1)])
+
+    def fake_confirm(window_id, *a, **kw):
+        if window_id == "@2":
+            raise pin.WindowDied("the window was created and its command exited "
+                                 "(exit 127) before it could be called started — "
+                                 "it printed: claude: not found")
+
+    monkeypatch.setattr("thalamus.harness.pin.confirm_started", fake_confirm)
+
+    with pytest.raises(pin.WindowDied) as death:
+        pin.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+
+    message = str(death.value)
+    assert f"1 of {len(scopes)}" in message
+    assert f"`{scopes[1]}`" in message
+    assert "claude: not found" in message, "the pane's own words are the diagnosis"
+    printed = capsys.readouterr().out
+    assert f"Pinned window `{scopes[2]}`" in printed, "the survivors still came up"
+    assert f"Pinned window `{scopes[1]}`" not in printed
 
 
 def test_main_is_pinnable_without_a_manifest_and_unknown_scopes_are_not():
@@ -458,11 +541,11 @@ def test_ensure_room_builds_the_measured_layout(tmp_path, monkeypatch):
     - `.claude.json` is a copy, and carries the operator's mcpServers
     - `settings.local.json` is the room's OWN file, seeded with the allowlist
 
-    The own/borrow split is the whole design (lab/046): `projects/` shared is a
+    The own/borrow split is the whole design: `projects/` shared is a
     transcript channel out of the room, while `settings.json` NOT shared is a
     member with zero Thalamus hooks — each side of the split fails a different way.
 
-    `settings.local.json` sits on the owned side for a third reason (docs/12): a
+    `settings.local.json` sits on the owned side for a third reason: a
     room's permission surface has to be declared for the room, not inherited from
     whatever the operator's own session accumulated — and borrowing it would let the
     room's policy move underneath it whenever the operator accepted a prompt
@@ -565,7 +648,7 @@ def test_the_room_allowlist_reaches_neither_the_network_nor_history(tmp_path):
 
 def test_ensure_room_replaces_a_symlinked_projects_dir(tmp_path, monkeypatch):
     """
-    Scenario: a room dir built under the withdrawn lab/045 shape, where `projects/`
+    Scenario: a room dir built under the withdrawn earlier shape, where `projects/`
               was symlinked back to the real config dir
 
     Verifications:
@@ -575,7 +658,7 @@ def test_ensure_room_replaces_a_symlinked_projects_dir(tmp_path, monkeypatch):
     This is the repair that closes the third channel. `claude --resume` consults
     neither the discovery roster nor the send path — it reads transcripts off disk,
     so while that link stands, any non-member can fork a member's session and read
-    its context verbatim (measured in both directions, lab/046).
+    its context verbatim (measured in both directions).
     """
     monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
     host = _host(tmp_path)

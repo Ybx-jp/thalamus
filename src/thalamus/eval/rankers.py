@@ -1,11 +1,11 @@
 """The ranker ledger: which ranking dials were in force when a trace was taken.
 
 Retrieval-utility numbers are only comparable across a window if the ranker was the
-same across it. lab/007 turned the match-floor dial, predicted a fan-out and
+same across it. An earlier study turned the match-floor dial, predicted a fan-out and
 wasted-share effect over "the next ten synced sessions", and the prediction went
-twenty-two lab entries unverified — partly because nothing recorded which traces ran
+unverified for months — partly because nothing recorded which traces ran
 under which ranker, so by the time anyone looked the window could not be cut. A window
-that straddles a dial change is not a measurement of either setting (lab/029).
+that straddles a dial change is not a measurement of either setting.
 
 **Why a ledger rather than a stamp at sync time.** `thalamus eval sync` can run days
 after the retrieval it lands, on a checkout whose ranker has since changed. Reading the

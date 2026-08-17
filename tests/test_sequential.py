@@ -1,9 +1,9 @@
-"""Confidence-sequence tests (I5; lab/034).
+"""Confidence-sequence tests.
 
 Interfaces: thalamus.eval.sequential — the mixture boundary, the stopping rule.
 Infrastructure: synthetic observation streams; no graph.
 Scope: the coverage property that makes a sequence worth having — that it may be
-       inspected at every t — and the lab/023 failure it exists to prevent.
+       inspected at every t — and the peeking failure it exists to prevent.
 """
 
 import random
@@ -23,7 +23,7 @@ def test_the_interval_narrows_and_stays_valid_at_every_t():
 
 def test_a_true_null_is_not_excluded_by_peeking_at_every_step():
     """
-    Scenario: lab/023's failure, simulated. A campaign with no effect is inspected
+    Scenario: the measured failure, simulated. A campaign with no effect is inspected
     after every single observation, and the analyst stops the first time the
     interval excludes the null.
 

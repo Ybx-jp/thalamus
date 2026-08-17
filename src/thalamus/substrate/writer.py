@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import socket
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
@@ -32,7 +33,74 @@ class GraphWriteError(RuntimeError):
     """A graph write failure annotated with the operation and affected entity."""
 
 
+class GraphUnavailable(RuntimeError):
+    """The graph is not answering, said in words the operator can act on.
+
+    `DriverRemoteConnection.__init__` opens no socket, so a graph that is down does
+    not fail here — it fails at the first traversal, inside the driver, as an
+    `aiohttp` transport error. Whoever asked then reads
+    `Cannot connect to host localhost:8182 ssl:default [Connect call failed ...]`,
+    and every guard written around `connect()` is dead code for the case it was
+    written for. `connect` probes the port before handing back a source, so the
+    failure lands where those guards already are and carries the same diagnosis
+    `thalamus init --check` prints.
+    """
+
+
+def split_ws(url: str) -> tuple[str | None, int]:
+    """host/port out of ws://host:port/path, without importing a URL parser."""
+    rest = url.split("://", 1)[-1].split("/", 1)[0]
+    host, _, port = rest.partition(":")
+    if not host:
+        return None, 0
+    try:
+        return host, int(port or 8182)
+    except ValueError:
+        return None, 0
+
+
+def probe_socket(url: str, timeout: float = 2.0) -> str | None:
+    """`None` when something is listening; the reason when nothing is.
+
+    A bounded TCP connect, which is the stage that separates "the container is not
+    up" — the first-run case — from every other way a traversal can fail. It says
+    nothing about whether the peer speaks Gremlin: `install._probe_graph` runs a
+    real traversal for that, and only once this has passed.
+    """
+    host, port = split_ws(url)
+    if host is None:
+        return f"could not parse a host:port out of {url}"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(timeout)
+        if probe.connect_ex((host, port)) != 0:
+            return f"nothing listening on {host}:{port}"
+    return None
+
+
+def graph_down_detail(reason: str) -> str:
+    """A graph-down reason plus the command that fixes it — one text, every surface.
+
+    `thalamus init --check` reaches this from a deliberate probe and the recall
+    tools reach it from a read they wanted to do, and a first-time user should not
+    get two different accounts of the same container being down.
+    """
+    # Local import: the substrate does not otherwise depend on the harness, and this
+    # is only ever reached on a failure path.
+    from thalamus.harness.pin import PROJECT_ROOT
+
+    return (f"{reason} — start it with `docker compose up -d` in {PROJECT_ROOT}, "
+            "then re-run `thalamus init --check`")
+
+
 def connect(url: str = DEFAULT_URL) -> GraphTraversalSource:
+    """A traversal source, or a refusal that says why — never a source that cannot read.
+
+    The probe costs one localhost TCP connect and buys the difference between a
+    guard that fires and one that cannot (see `GraphUnavailable`).
+    """
+    down = probe_socket(url)
+    if down is not None:
+        raise GraphUnavailable(graph_down_detail(down))
     connection = DriverRemoteConnection(url, "g")
     g = traversal().with_remote(connection)
     # GraphTraversalSource has no public close() method in gremlinpython 3.x.
@@ -82,9 +150,9 @@ def _text_stamp(g: GraphTraversalSource, vertex_id: str, text: str) -> dict[str,
     The two are different axes and the literature keeps them apart: Graphiti carries
     `t'_created`/`t'_expired` (ingestion order) separately from `t_valid`/`t_invalid`
     (when the fact held), and TOKI keeps `system_time_*` separate from `valid_*`
-    columns — collapsing them costs 12.2 accuracy points in TSM (docs/11 §5). This is
+    columns — collapsing them costs 12.2 accuracy points in TSM. This is
     the transaction-time axis only. Valid time — when a fact stopped being true — is a
-    second axis this does not attempt (docs/09, and the decision log's dated refusal).
+    second axis this does not attempt, and the decision log's dated refusal stands.
 
     A digest rather than the text itself: it is the comparison that matters, and
     storing the text twice would be one more copy to keep honest.
@@ -117,7 +185,7 @@ def _provenance_properties(provenance: Provenance) -> dict[str, object]:
 
     Every node in the graph carries these. `derived_from` is deliberately NOT among them
     — it becomes edges, not a property, because effective trust is a traversal over the
-    derivation closure (docs/05) and a property could not be walked.
+    derivation closure and a property could not be walked.
     """
     return {
         "tier": int(provenance.tier),
@@ -129,7 +197,7 @@ def _provenance_properties(provenance: Provenance) -> dict[str, object]:
 # Source properties a matching upsert may not silently rewrite.
 #
 # `tier` is where every DERIVED_FROM chain terminates — effective trust is the floor of
-# the derivation chain (docs/05) — so the same bytes arriving under a friendlier
+# the derivation chain — so the same bytes arriving under a friendlier
 # provenance must never *raise* trust. The two readings combine to the least trusted
 # instead, which can lower trust and never lift it.
 #
@@ -316,7 +384,7 @@ def _upsert_artifacts(g: GraphTraversalSource, session: SessionGraph) -> dict[st
     beside it and *is* the join key. The identifier itself is never re-keyed: it feeds
     `vid("Artifact", identifier)`, so moving it breaks every citation ever minted, and
     it is the string the tool call actually carried, where a derivation over it is an
-    inference (docs/09).
+    inference.
 
     Anchoring here uses the session's own `repo_root` alongside every root the graph
     already proves, so a file lands projected as it is written rather than waiting for
@@ -380,8 +448,8 @@ def _write_sources(g: GraphTraversalSource, session: SessionGraph, session_vid: 
     provenance *floor*. Without it the chain terminates at a summary of itself.
 
     A transcript snapshot also SUPERSEDES the session's previous snapshot heads: a
-    session distilled more than once while its transcript grew holds several snapshots
-    (docs/10, lab/002), and the lineage is what gives consumers a defined "current"
+    session distilled more than once while its transcript grew holds several snapshots,
+    and the lineage is what gives consumers a defined "current"
     one instead of a guess. Only transcript Sources supersede — two unrelated pieces
     of evidence on one session (a paper and a transcript, someday) are siblings, not
     revisions of each other.
@@ -590,7 +658,7 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
 
     Source (the retained article) -> Claims (DERIVED_FROM it) -> Entities (ABOUT).
     Re-ingesting a changed article creates a new Source that SUPERSEDES the previous
-    head for the same origin — versioning stays visible to the eval loop (docs/06).
+    head for the same origin — versioning stays visible to the eval loop.
     Returns the Source vertex ID.
     """
     provenance = batch.default_provenance()
@@ -609,8 +677,8 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         "scope": batch.scope,
         # Feed identity lives on the Source (the ingestion event), not on claims or
         # entities — those converge across feeds, and the feed that brought a document
-        # in is a fact about the document. docs/06 requires it on every write; claims
-        # reach it by walking DERIVED_FROM.
+        # in is a fact about the document. The ingestion protocol requires it on every
+        # write; claims reach it by walking DERIVED_FROM.
         "feed": batch.feed,
         **_provenance_properties(source.provenance or provenance),
     }
@@ -644,7 +712,7 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         _iterate(graph_traversal, "upsert Entity", entity_vid)
         entity_vids[entity.name] = entity_vid
 
-    # Chunks before claims, so the anchor edge has something to point at (lab/052).
+    # Chunks before claims, so the anchor edge has something to point at.
     chunk_vids: dict[int, str] = {}
     previous_vid = ""
     for chunk in batch.chunks:
@@ -666,7 +734,7 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         chunk_vids[chunk.ordinal] = chunk_vid
 
         # Same floor the claims get, and the reason reaching a chunk is
-        # provenance-mediated rather than provenance-free (docs/05).
+        # provenance-mediated rather than provenance-free.
         _ensure_edge(g, chunk_vid, source_vid, "DERIVED_FROM")
         if previous_vid:
             _ensure_edge(g, previous_vid, chunk_vid, "ADJACENT_IN_TEXT")
@@ -770,7 +838,7 @@ def write_exchange(
     properties: dict[str, object],
     brief_refs: list[str] | None = None,
 ) -> None:
-    """Open one consultation exchange record — the mint IS the write (docs/02).
+    """Open one consultation exchange record — the mint IS the write.
 
     The vertex is created at ticket-mint time, before any answer exists, so an
     unrecorded consultation is impossible by construction. `brief_refs` are the
@@ -877,7 +945,7 @@ def write_trace(
     session_vid: str,
     returns: dict[str, dict[str, object] | None],
 ) -> None:
-    """Upsert one retrieval-trace vertex with its edges (docs/04 layer 1).
+    """Upsert one retrieval-trace vertex with its edges.
 
     Session -[QUERIES]-> Trace -[RETURNS]-> result nodes. `returns` maps each returned
     vertex ID to the properties its RETURNS edge should carry — after attribution that

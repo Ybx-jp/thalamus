@@ -1,9 +1,11 @@
 """
 Graph writer traversal construction and diagnostics tests.
 
-Interfaces: Gremlin merge_v option modulators, thalamus.substrate.writer._iterate
-Infrastructure: none; fake traversals only
-Scope: merge token encoding and contextual write failure reporting
+Interfaces: Gremlin merge_v option modulators, thalamus.substrate.writer._iterate,
+thalamus.substrate.writer.connect
+Infrastructure: fake traversals, plus one TCP connect to a port nothing listens on
+Scope: merge token encoding, contextual write failure reporting, and the refusal a
+caller gets when the graph is not running
 """
 
 from datetime import UTC, datetime
@@ -25,9 +27,14 @@ from thalamus.substrate.schema import (
     Tool,
 )
 from thalamus.substrate.writer import (
+    GraphUnavailable,
     GraphWriteError,
     _iterate,
     _upsert_session_vertex,
+    connect,
+    graph_down_detail,
+    probe_socket,
+    split_ws,
     write_session,
 )
 
@@ -166,7 +173,7 @@ def test_every_written_node_carries_a_provenance_envelope():
     Verifications:
     - every vertex written carries tier, source, and ingested_at
 
-    docs/05 makes provenance an obligation on every node in the graph, enforced at write
+    The trust model makes provenance an obligation on every node in the graph, at write
     time. The extraction YAML never mentions it — the writer stamps it — so this test is
     what keeps "no provenance, no write" true rather than aspirational.
     """
@@ -352,7 +359,7 @@ def test_new_transcript_snapshot_supersedes_the_previous_heads():
       (plural heads heal graphs written before the lineage existed)
     - the DERIVED_FROM floor edge is still written
 
-    A session distilled while open accumulates snapshots (docs/10, lab/002); the
+    A session distilled while open accumulates snapshots; the
     lineage is what makes "the transcript of session X" a defined head instead of a
     byte-size guess that silently under-counts attribution.
     """
@@ -439,7 +446,7 @@ def test_reingest_under_friendlier_provenance_cannot_raise_a_sources_trust():
     """
     Scenario: bytes already held at tier 2 are re-written claiming tier 1
 
-    Effective trust is the floor of the derivation chain (docs/05), and every Claim
+    Effective trust is the floor of the derivation chain, and every Claim
     hangs its floor off the Source it was derived from. If a re-ingest could relabel
     that Source, the cheapest attack on the trust model is to re-submit the same bytes
     under a friendlier provenance — so the two readings combine to the least trusted.
@@ -689,3 +696,41 @@ def test_written_at_lands_on_every_node_whose_text_can_change():
     for label in ("Artifact", "Claim"):
         if by_label.get(label):
             assert all("written_at" not in props for props in by_label[label]), label
+
+
+class TestConnectRefusesADownGraph:
+    """`DriverRemoteConnection` opens no socket, so a down graph used to reach the
+    caller as an `aiohttp` transport error on the first traversal — past every guard
+    written around `connect()`, which could not fire because `connect()` never
+    raised. The probe moves the failure to where those guards already are.
+    """
+
+    DEAD = "ws://localhost:9/gremlin"           # discard: never listening
+
+    def test_it_raises_where_the_guards_are_rather_than_at_first_traversal(self):
+        with pytest.raises(GraphUnavailable):
+            connect(self.DEAD)
+
+    def test_the_refusal_carries_the_command_that_fixes_it(self):
+        """A first-time user's actual problem is that `docker compose up -d` has not
+        been run, and that sentence is what has to reach them."""
+        with pytest.raises(GraphUnavailable) as exc:
+            connect(self.DEAD)
+        assert "docker compose up -d" in str(exc.value)
+        assert "localhost:9" in str(exc.value)
+
+    def test_the_live_path_and_the_installer_give_one_diagnosis(self):
+        """`thalamus init --check` and a recall that failed describe the same down
+        container, so they must not describe it differently."""
+        from thalamus.harness import install
+
+        _, probed = install._probe_graph(self.DEAD)
+        with pytest.raises(GraphUnavailable) as exc:
+            connect(self.DEAD)
+        assert str(exc.value) == graph_down_detail(probed)
+
+    def test_a_malformed_url_is_reported_not_raised_as_a_parse_error(self):
+        assert split_ws("not-a-url") == ("not-a-url", 8182)
+        assert split_ws("ws://:8182/gremlin") == (None, 0)
+        assert split_ws("ws://host:notaport/g") == (None, 0)
+        assert "could not parse" in probe_socket("ws://:8182/gremlin")

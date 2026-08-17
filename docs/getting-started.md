@@ -15,7 +15,9 @@ attention.
 | **Claude Code** (`claude`) or **Cursor** (`agent`) | distillation shells out to it | `claude --version` |
 
 `jq` is not optional. The hook layer is shell scripts that parse their stdin with it,
-and without it they exit silently rather than loudly.
+and without it they exit silently rather than loudly. If it goes missing *after*
+install, the SessionEnd hook writes what happened to
+`~/.thalamus/logs/hook-failures.log` and `thalamus init --check` reads it back.
 
 ## 2. Clone and start the graph
 
@@ -83,25 +85,30 @@ reads each skill back through its user-scope path.
 Verification (exercised, not assumed):
   ✓ distillation entry point: `thalamus` resolves from a foreign cwd
   ✓ graph reachable: 0 vertices at ws://localhost:8182/gremlin (fresh — every install starts empty)
+  ○ derived agents installed: none written yet to ~/.claude/agents — `thalamus init` writes one per expert manifest
   ! cursor distillation CLI: `agent` not on PATH — cursor sessions will retrieve
     and trace but never distill (install it, or extract with `--harness claude`)
 ```
 
-Three markers:
+Four markers:
 
 - **`✓`** — verified by running it, not by checking that a file exists.
+- **`○`** — not installed yet, with the command that installs it. This is what a box
+  that has never run `thalamus init` looks like, and it never fails the run.
 - **`!`** — an advisory about your environment, with the command that fixes it. Install
   wires configuration; it does not start your containers or install other vendors'
   binaries. Advisories never fail the install.
-- **`✗`** — something the install needs is not in place.
+- **`✗`** — something the install needs is in place and wrong: a skill link that
+  dangles, a hooks file holding only some of the wirings, an MCP entry that no longer
+  matches this checkout. Only these fail the run.
 
 **A graph reporting 0 vertices is a pass.** That is exactly what a fresh install looks
 like.
 
-**Running `--check` or `--dry-run` before you have installed will report `✗` on the
-things that are not installed yet** — derived agents, user-scope skills, Cursor
-wiring. That is the check doing its job on an uninstalled box, not a broken machine.
-Run the real `thalamus init` first, then `--check`.
+**`--check` and `--dry-run` are safe to run before you have installed.** Everything
+not written yet — derived agents, user-scope skills, Cursor wiring — comes back `○`
+with the command that writes it, and the run exits 0. `--dry-run` always ends by
+saying it wrote nothing, including on a run that found faults.
 
 ## 5. Relaunch your editor
 
@@ -113,8 +120,14 @@ empty, so it will have nothing to tell you yet. That is the expected first run.
 
 ## 6. Bring up the roster
 
-An expert is a scope declared by a manifest in `config/experts/`. Four ship as
-examples: `architect`, `designer`, `eval-methodology`, `literature`.
+An expert is a scope declared by a manifest in `config/experts/`. Five ship as
+examples: `architect`, `designer`, `eval-methodology`, `literature` and `qe`. Two of
+them are worth reading before you write your own — `designer` shows how a scope is
+given its own MCP tools, and `qe` shows a scope defined by what it must *not* produce.
+
+To use your own roster instead, point `THALAMUS_CONFIG_DIR` at a directory holding an
+`experts/` subdirectory. The same variable supplies the eval task battery from
+`tasks/`.
 
 ```bash
 thalamus roster            # bring up the tmux roster
@@ -122,9 +135,11 @@ thalamus pin literature    # or launch one pinned session directly
 thalamus spawn architect   # one on-demand pinned window
 ```
 
-`thalamus roster` opens tmux windows, one per expert, each running your agent CLI
-pinned to that scope. It needs `claude` on your PATH — if the CLI is missing the
-window will not survive, so check `claude --version` first.
+`thalamus roster` opens the `main` anchor window in a tmux session; experts are
+spawned on demand from there or from the console, and `--all` opens one window per
+manifest. Each window runs your agent CLI pinned to that scope, so it needs `claude`
+on your PATH. A window whose command exits before it can be called started is
+reported as a failure with what the pane printed, and the command exits non-zero.
 
 ## 7. Open the console
 
@@ -217,14 +232,27 @@ last flush.
 **`thalamus: command not found`** — the CLI is in `.venv/bin`. Use `uv run thalamus`
 or activate the venv.
 
-**`Cannot connect to host localhost:8182`** — the graph container is not running.
-`docker compose up -d`.
+**`nothing listening on localhost:8182 — start it with docker compose up -d`** — the
+graph container is not running. Every surface says this the same way, whether you hit
+it from `thalamus init --check`, a CLI command, the viewer, or a recall tool inside a
+session.
 
 **A new session doesn't mention memory** — hooks arm per process. Fully quit and
 reopen your editor.
 
-**`thalamus roster` succeeds but the console shows no windows** — the roster window
-started and exited, usually because `claude` is not on PATH. Check `claude --version`.
+**Memory stopped accumulating and nothing said so** — a hook needs `jq`, and
+SessionEnd also needs `uv`. If either leaves your PATH after install, the hook cannot
+run at all; it records the loss in `~/.thalamus/logs/hook-failures.log` and
+`thalamus init --check` reports how many sessions ended undistilled and when the last
+one was. Restore the binary, then re-run the check. Sessions that ended in the gap
+can still be recovered with `thalamus bootstrap` and `thalamus extract`.
 
-**Port 8378 already in use** — something else has the console port. Stop it, or pass a
-different port.
+**`Roster failed: … did not start`** — a roster window was created and its command
+exited before it could be called started. The message quotes what the pane printed,
+which is the diagnosis when there is one; when the command could not be executed at
+all there is nothing to quote, and the cause is almost always that `claude` is not on
+PATH. Check `claude --version`. With `--all`, the scopes that did come up are left
+running — only the dead ones are named, and the exit code is non-zero either way.
+
+**`port 8378 is already in use`** — usually a `thalamus console` you still have
+running. Stop it, or serve this one elsewhere with `thalamus console --port <n>`.

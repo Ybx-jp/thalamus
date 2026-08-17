@@ -52,7 +52,7 @@ the launch exits 127.
 ## How long a launch takes to prove itself
 
 `tmux new-window` returns 0 once it has forked, so the only evidence a pinned window
-exists is that it is still alive some time later (docs/console-hazards §4). How much
+exists is that it is still alive some time later. How much
 later is a per-harness fact, because the two CLIs fail at different depths:
 
 | launch | outcome | measured |
@@ -133,7 +133,7 @@ from thalamus.harness.agents import HARNESSES
 # safety classifier; `bypassPermissions` removes the one control measured to fully stop
 # prompt injection — with policy checks enabled FIDES stops all attacks in AgentDojo,
 # without them every planner succumbs (`scope:literature:claim:073ccf38c98a731a`).
-# So the citation docs/12 rests on is what selects `auto`, not what argues against it.
+# So that citation is what selects `auto`, not what argues against it.
 #
 # In a room the mode is also load-bearing for delivery: a member stopped at a prompt
 # reports `waiting`, which is exactly the status `harness/dispatch.py` refuses to send

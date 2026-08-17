@@ -1,10 +1,10 @@
-"""Free-form read-only Gremlin — the master plane's query instrument (docs/03).
+"""Free-form read-only Gremlin — the master plane's query instrument.
 
 Lexical recall answers "what do I remember about X"; it cannot answer relational
 questions the schema was built to hold — provenance chains, exchange audits, the
 eval loop's own verdicts. Schema-aware LLM-written graph queries are established
 practice (Multi-Agent GraphRAG, arXiv 2511.08274 — iterative text-to-Cypher over
-labeled property graphs; docs/11 §3); this is the single-shot, in-harness
+labeled property graphs); this is the single-shot, in-harness
 instantiation: the schema travels in the tool description, the model writes the
 traversal, the server enforces the floor.
 
@@ -19,13 +19,13 @@ Security model, in layers:
    whitespace-stripped lowercase view (nested `__.addV(...)` included).
 3. **The pin gates the surface.** Free-form traversals can reach any scope, so
    the tool serves only main-pinned sessions — the master plane is where
-   cross-scope inspection lives (docs/03). An expert pin gets a refusal naming
+   cross-scope inspection lives. An expert pin gets a refusal naming
    the consultation protocol instead. Scope is still never a tool parameter.
 4. **Caps, not trust.** Server-side evaluation timeout, bounded result count,
-   bounded rendered size (cost-aware by construction — lab/006).
+   bounded rendered size (cost-aware by construction).
 
 Results render with vertex IDs backticked, so the PostToolUse tap prices this
-tool's returns exactly like every recall (docs/04): the query surface is born
+tool's returns exactly like every recall: the query surface is born
 eval-visible. Everything it returns is recalled data, never instructions.
 """
 

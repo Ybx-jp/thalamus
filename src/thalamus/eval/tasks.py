@@ -1,6 +1,9 @@
-"""The counterfactual task battery — layer 2's pre-registered half (docs/04).
+"""The counterfactual task battery — layer 2's pre-registered half.
 
-A task is a tier-0 operator artifact under config/tasks/: one YAML file holding
+A task is a tier-0 operator artifact under `<config>/tasks/` — the checkout's own
+`config/` unless `THALAMUS_CONFIG_DIR` names another. No battery ships: a task is
+graded against a specific graph and a specific repository, so it belongs to whoever
+wrote it. One YAML file holding
 the prompt, a mechanical acceptance check, 1–3 consequence probes, an optional
 judge rubric, and a disclosed memory-overlap tag. Pre-registration is enforced
 structurally, not by promise: the battery must validate before any arm runs, and
@@ -9,10 +12,10 @@ after a campaign is a visible diff, not a silent regrade.
 
 Like expert manifests, tasks are operator files rather than graph nodes: what
 counts as success is a curation decision, and tier-0 lives where no feed or model
-can write (docs/01). Consequence probes are the live analog of MQuAKE's multi-hop
-checks — recall of a stored fact and action on its implications are different
-measurements (arXiv 2305.14795) — and of Mem2ActBench's memory-grounded tool-call
-tasks (arXiv 2601.19935). Design: docs/04 layer 2; eval-methodology consultation
+can write. Consequence probes are the live analog of MQuAKE's multi-hop checks —
+recall of a stored fact and action on its implications are different measurements
+(arXiv 2305.14795) — and of Mem2ActBench's memory-grounded tool-call tasks (arXiv
+2601.19935). Design: layer 2 of the eval loop; eval-methodology consultation
 `scope:main:exchange:8644614d1b1242a4`.
 """
 
@@ -64,7 +67,7 @@ _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 class Acceptance(BaseModel):
     """One mechanical check on a rung of the ladder.
 
-    `level` is the ladder rung this check belongs to (docs/04): the run's score
+    `level` is the ladder rung this check belongs to: the run's score
     is the highest level whose checks — and every lower level's — all pass.
     Ordinal, not a weighted sum: there are no weights to fit, and adding a
     cheap check to a rung cannot buy a higher score, which is the cardinality
@@ -98,7 +101,7 @@ class Probe(BaseModel):
     arm with no memory surface — not because the arm failed, but because there was
     nothing for it to surface. Recorded as a miss, that structural zero reads as a
     measurement and lands in the same denominator as a real one, which is the
-    mistake lab/030 already paid for once.
+    mistake this project already paid for once.
     """
 
     id: str
@@ -182,7 +185,7 @@ class Mutant(BaseModel):
 class UnderSpecification(BaseModel):
     """Why this task's prompt withholds something, stated so it can be audited.
 
-    lab/018 measured that whether an arm reaches for memory is carried by the
+    Measurement showed that whether an arm reaches for memory is carried by the
     prompt and almost nothing else: a self-contained bug report produced zero
     thalamus calls, a past-work question produced three, with the harness held
     completely fixed. A task whose prompt hands over symptom, counterexample and
@@ -209,7 +212,7 @@ class UnderSpecification(BaseModel):
             "The same knowledge as `fact`, stated as the situation and the evidence "
             "with the prescription withheld. Exists so an experiment can vary how a "
             "memory is *framed* while holding what it *contains* fixed — the "
-            "conclusion framing cost every ceiling arm two rungs (lab/036). An "
+            "conclusion framing cost every ceiling arm two rungs. An "
             "authored stimulus, not a distillation of any session, and used only by "
             "the `ceiling-problem` arm."
         ),
@@ -316,7 +319,7 @@ class Task(BaseModel):
         if not self.acceptance:
             issues.append(
                 "no mechanical acceptance — success may not be decided after the "
-                "runs (pre-registration, docs/04 layer 2)"
+                "runs (pre-registration, layer 2)"
             )
         for i, acc in enumerate(self.acceptance):
             if not acc.run.strip():
@@ -629,12 +632,16 @@ def render_battery(tasks: list[Task], issues: list[str]) -> str:
     """The battery as the operator reads it before a campaign."""
     lines: list[str] = []
     if not tasks:
-        lines.append("Battery is empty — no tasks under config/tasks/.")
+        lines.append(
+            f"Battery is empty — no tasks under {tasks_dir()}. "
+            "No battery ships; point THALAMUS_CONFIG_DIR at a directory holding "
+            "tasks/, or add task YAML there."
+        )
     per_task, battery_wide = quarantine(tasks, issues)
     for task in tasks:
         rubric = "rubric" if task.rubric.strip() else "no rubric (mechanical only)"
         # An unvalidated ladder is worth naming: anchors cover the range, mutants
-        # cover the interior where the arms actually sit (docs/04).
+        # cover the interior where the arms actually sit.
         mutants = (
             f"{len(task.mutants)} mutant(s)" if task.mutants
             else "no mutant set (ladder unvalidated in the interior)"

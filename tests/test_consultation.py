@@ -1,5 +1,5 @@
 """
-Consultation-ticket protocol tests (docs/02 — "the mint is the write").
+Consultation-ticket protocol tests — "the mint is the write".
 
 Interfaces: thalamus.harness.consultation, thalamus.substrate.writer.write_exchange/
 close_exchange, thalamus.eval.traces.TraceEvent.ticket
@@ -200,7 +200,7 @@ def test_minting_a_ticket_writes_the_exchange_record(monkeypatch):
     - the returned text carries the ticket and the exchange vertex ID
 
     "The mint is the write": an unrecorded consultation is impossible by construction
-    because the ticket only exists as the exchange record's ID (docs/02) — the
+    because the ticket only exists as the exchange record's ID — the
     exchange is an execution-provenance record of the collaboration step (2606.04990).
     """
     _stub_manifests(monkeypatch)
@@ -216,7 +216,7 @@ def test_minting_a_ticket_writes_the_exchange_record(monkeypatch):
     assert written["status"] == "open"
     assert written["expert"] == "literature"
     assert written["from_scope"] == "main"
-    # Verifies: provenance is stamped, not asked for (docs/05)
+    # Verifies: provenance is stamped, not asked for
     assert written["tier"] == 1
     assert written["source"] == "consultation:main"
     assert written["ingested_at"]
@@ -277,7 +277,7 @@ def test_unknown_experts_and_empty_questions_are_refused(monkeypatch):
     """
     Scenario: The model asks for a scope with no manifest, and for nothing at all
 
-    The manifest set is the roster (docs/01): no manifest, no expert.
+    The manifest set is the roster: no manifest, no expert.
     """
     _stub_manifests(monkeypatch)
     graph = FakeGraph()
@@ -300,8 +300,8 @@ def test_a_self_consultation_is_allowed_and_must_actually_retrieve(monkeypatch):
     The operator's constraint is that it must never become a way of *not* retrieving,
     and that is enforced at the close against reads the server actually served, not
     against the question's wording. A lexical gate was tried and removed: it rested on
-    the false premise that the server cannot tell whether the asker retrieved (lab/001
-    says it cannot see the caller's *session id* — ticketed reads pass through
+    the false premise that the server cannot tell whether the asker retrieved (it
+    cannot see the caller's *session id* — but ticketed reads pass through
     `_granted_scope` in the same process and were always countable), and it would have
     refused honest lookups while admitting anything containing the word "schema".
     """
@@ -362,7 +362,7 @@ def test_an_uncited_answer_is_rejected_and_the_ticket_stays_open():
     Verifications:
     - the answer is rejected, the exchange stays open, nothing is written
 
-    This is the docs/05 poisoning defense made mechanical: advice that cannot be
+    This is the trust model's poisoning defense made mechanical: advice that cannot be
     traced to the consulted scope's own memory never becomes part of the record.
     The gate is on the write path — where 2606.04329 says memory defenses have to
     live — not on the reader.
@@ -463,7 +463,7 @@ def test_only_an_open_ticket_grants_its_expert_scope():
     never-minted one
 
     The grant is per-exchange and dies with the ticket — the server resolves it from
-    the exchange record, never from model input (docs/07).
+    the exchange record, never from model input.
     """
     open_graph, _ = _open_exchange_graph(ticket="t1", status="open")
     burned_graph, _ = _open_exchange_graph(ticket="t2", status="answered")
@@ -482,7 +482,7 @@ def test_a_trace_records_the_ticket_it_ran_under():
     """
     Scenario: A recall ran inside a consultation; its tap line carries the ticket
 
-    The MCP server cannot see its caller's session (lab/001), so the ticket recorded
+    The MCP server cannot see its caller's session, so the ticket recorded
     verbatim in the trace input is the only join between the consulting Session and
     the Exchange — it is how eval sync lands the CONSULTS edge and stamps
     exchange_id on the Trace node.

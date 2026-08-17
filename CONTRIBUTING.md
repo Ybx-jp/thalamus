@@ -64,6 +64,18 @@ nodes and edges. It does not know what an expert is, what a trust tier means, or
 scope may write what. If you find yourself importing `contract/` into `substrate/`,
 the change belongs somewhere else.
 
+### `tests/qe/` is owned by the `qe` scope
+
+If you run an agent in this repo with the harness installed, a PreToolUse guard will
+refuse its edits under `tests/qe/` unless the session is pinned to `qe`
+(`thalamus pin qe`, or a `thalamus-qe` subagent). That tree holds the adversarial
+suite, and `qe`'s own manifest denies it `src/` in return — a scope that can repair
+the implementation it asserts against is not independent of it, and one that can
+soften the assertion is not either.
+
+Editing it yourself, by hand, is not blocked; the guard binds agents' file-editing
+tools. If you are working with an agent, pin it rather than working around the guard.
+
 ### Skills
 
 `.claude/skills/` contains two kinds of entry, and the difference is load-bearing:

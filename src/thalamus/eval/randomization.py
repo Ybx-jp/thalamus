@@ -1,12 +1,11 @@
 """Randomization inference over clusters — the test that survives having few of them.
 
-The anchored problem ([docs/11](../../../docs/11-related-work.md), feed
-`cluster-inference`): with one or a few *treated clusters*, cluster-robust t- and Wald
-tests over-reject severely, cluster-robust standard errors are biased **downward**, and
-the wild cluster bootstrap — normally the fix — fails in the same corner. The held
-recommendation is randomization inference, which "can sometimes yield reliable results
-even when the number of clusters is small and/or the number of treated clusters is
-small" (`scope:eval-methodology:claim:f78faf28b3f82a65`).
+The anchored problem (feed `cluster-inference`): with one or a few *treated clusters*,
+cluster-robust t- and Wald tests over-reject severely, cluster-robust standard errors
+are biased **downward**, and the wild cluster bootstrap — normally the fix — fails in
+the same corner. The held recommendation is randomization inference, which "can
+sometimes yield reliable results even when the number of clusters is small and/or the
+number of treated clusters is small" (`scope:eval-methodology:claim:f78faf28b3f82a65`).
 
 RI tests the **sharp null of no treatment effect** — not "no effect on average", but
 "no effect on any unit". Under that null every cluster's outcome is the number it would
@@ -31,9 +30,9 @@ and it is a question to settle before spending anything, which is what `feasible
 for.
 
 **Scope of the guarantee.** An RI p-value is exact at *one* look. Recomputing it as
-each room lands is the peeking failure lab/023 demonstrated first-hand. Anytime-valid
-monitoring comes from `sequential.py`'s confidence sequence, and the two are reported
-side by side rather than merged: a sequential *randomization* test is a real
+each room lands is the peeking failure this project has demonstrated first-hand.
+Anytime-valid monitoring comes from `sequential.py`'s confidence sequence, and the two
+are reported side by side rather than merged: a sequential *randomization* test is a real
 construction this project does not hold the literature for, and combining them here
 would be inventing a guarantee rather than citing one.
 """
@@ -57,7 +56,7 @@ Statistic = Callable[[Sequence[float], Sequence[float]], float]
 def difference_in_means(treated: Sequence[float], control: Sequence[float]) -> float:
     """The default statistic. Signed, so the test is two-sided by default.
 
-    docs/04 requires a signed two-sided outcome: a metric that can only count wins
+    The eval design requires a signed two-sided outcome: a metric that can only count wins
     cannot observe harms, and correlated error inside a room is the most plausible way
     a room makes things worse.
     """

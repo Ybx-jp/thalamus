@@ -12,7 +12,7 @@
 # ledger (~/.thalamus/pins/pins.jsonl — session-end and eval read it), and prime
 # the session toward memory_open_threads. Scope resolution is env-only here
 # (resolve-scope.sh): Cursor has no agent picker, so THALAMUS_SCOPE or `main`.
-# Context stays advisory; scope enforcement is server-side (docs/07).
+# Context stays advisory; scope enforcement is server-side.
 #
 # Install (project <root>/.cursor/hooks.json, committed):
 #   {"version": 1, "hooks": {"sessionStart": [{"command":
@@ -57,8 +57,8 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id // .conversation_id // em
 # `room` is here because its absence had two surfaces and both looked like something
 # else. A room a Cursor session was launched into left no record at all, so the room
 # was not mislabelled in the analysis — it was *invisible*, which means it can neither
-# be counted as a room arm nor excluded as a failed one (the inverse of lab/048's
-# hazard). Env-only, matching `pin.resolve_room`: a room is a launch decision, and
+# be counted as a room arm nor excluded as a failed one. Env-only, matching
+# `pin.resolve_room`: a room is a launch decision, and
 # guessing one from co-timing manufactures the correlation the field exists to detect.
 #
 # `tmux_pane` is deliberately NOT written, and this is the interesting absence. The

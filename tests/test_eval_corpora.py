@@ -1,4 +1,4 @@
-"""Named corpus pins over the trajectory run log (src/thalamus/eval/corpora.py; lab/038).
+"""Named corpus pins over the trajectory run log (src/thalamus/eval/corpora.py).
 
 Interfaces: run_id / body_digest / head_revisions / manifest / supersede / seal /
             verify / diff / derivation_fingerprint.
@@ -223,7 +223,7 @@ class TestDiff:
 
 
 class TestDerivationFingerprint:
-    """lab/037 finding #5: a campaign record stored `ref` and nothing else about its
+    """A measured failure: a campaign record stored `ref` and nothing else about its
     own oracle, so a later task-YAML edit re-scoped verdicts already recorded."""
 
     def test_the_fingerprint_carries_what_the_verdict_was_computed_against(self, tmp_path):

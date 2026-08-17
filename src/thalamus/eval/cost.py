@@ -1,4 +1,4 @@
-"""Cost accounting — the denominator of the eval loop (docs/04).
+"""Cost accounting — the denominator of the eval loop.
 
 Layer 1 grades what retrieval returned and whether it was used; this module grades
 what the memory system *spends*. The field grades memory on accuracy–cost frontiers,
@@ -28,7 +28,7 @@ reported so thalamus's share has a denominator).
 The weighted-token proxy is a dial, not a truth: subscription limit weights are not
 public, so this uses API-price ratios (cache reads ~0.1x input, cache writes ~1.25x,
 output ~5x). Arbitrary dials, here to be pressure-tested — same discipline as the
-attribution thresholds in docs/04.
+attribution thresholds.
 """
 
 from __future__ import annotations

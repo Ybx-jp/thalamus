@@ -9,12 +9,12 @@
 # Duplicating the classifier here would fork the detection logic and silently
 # desynchronise the two harnesses' telemetry.
 #
-# The split: Cursor's `beforeSubmitPrompt` sees the prompt but cannot inject
-# (lab/010 wall 1), so the emitted context is spooled and `inject.sh` delivers
+# The split: Cursor's `beforeSubmitPrompt` sees the prompt but cannot inject,
+# so the emitted context is spooled and `inject.sh` delivers
 # it on the next postToolUse. The firing is logged at *classification* time,
 # which is what the rescue-rate join wants — it measures whether behavior
 # followed the reminder, and the reminder's own delivery lag is a property of
-# the harness, recorded in docs/07 rather than hidden by re-timing the log.
+# the harness, recorded as such rather than hidden by re-timing the log.
 #
 # TaskCreate (the milestone class) has no Cursor carrier: it is Claude Code
 # task-list UI, and Cursor's generic `Task` tool type is subagent spawning, a

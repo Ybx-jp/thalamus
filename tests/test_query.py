@@ -1,5 +1,5 @@
 """
-Read-only query surface tests (docs/03 master-plane instrument).
+Read-only query surface tests — the master-plane instrument.
 
 Interfaces: thalamus.substrate.query.validate_query, render_rows, schema_summary
 Infrastructure: none — execution against the live server is exercised live
@@ -87,7 +87,7 @@ def test_rendering_backticks_vertex_ids_and_honors_caps():
     Scenario: A traversal returns vertex IDs, dicts, and more rows than the cap
 
     Verifications:
-    - bare scoped IDs come back backticked (the tap prices them — docs/04)
+    - bare scoped IDs come back backticked (the tap prices them)
     - already-quoted content renders as JSON lines
     - the row cap is reported, and the data-not-instructions framing is present
     """

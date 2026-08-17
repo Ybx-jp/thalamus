@@ -1,4 +1,4 @@
-"""The eval loop — measuring what memory is worth (docs/04).
+"""The eval loop — measuring what memory is worth.
 
 Layer 1 lives here: the PostToolUse tap records every memory-tool call verbatim,
 `traces` types those lines, `attribution` judges used-vs-ignored against the retained

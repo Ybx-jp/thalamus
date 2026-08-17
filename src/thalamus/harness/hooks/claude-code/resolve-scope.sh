@@ -51,6 +51,45 @@ thalamus_sandbox_guard() {
   fi
 }
 
+# The binaries this hook cannot run without. Returns 1 when one is gone, after
+# leaving a record of which and when in ~/.thalamus/logs/hook-failures.log.
+#
+# `thalamus init` verifies jq and uv once and nothing checks again. Every hook parses
+# its stdin with jq under `set -euo pipefail`, and SessionEnd shells out through uv,
+# so a binary removed, moved off PATH or shadowed after install kills the hook on its
+# first command — non-zero, with no output on any surface the operator reads.
+# Distillation then stops and memory quietly stops accumulating, which is exactly the
+# latent failure the installer exists to prevent, left open one step downstream.
+#
+# The record is the whole point: `thalamus init --check` can say jq is missing *now*,
+# but only this can say that eleven sessions ended while it was. `command -v` is a
+# shell builtin, so a healthy hook pays one builtin per binary and spawns nothing;
+# everything below is on the failure path.
+#
+# $@: binary names. Call it before the first use of any of them.
+thalamus_require_binaries() {
+  local bin missing=""
+  for bin in "$@"; do
+    command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"
+  done
+  [ -n "$missing" ] || return 0
+
+  local log_dir="$HOME/.thalamus/logs"
+  mkdir -p "$log_dir" 2>/dev/null || return 1
+
+  # bash's own clock where it has one (4.2+), `date` where it does not. The whole
+  # point of the record is *when*, so it is worth one process on a path that only
+  # runs when something is already broken.
+  local now=""
+  printf -v now '%(%Y-%m-%dT%H:%M:%SZ)T' -1 2>/dev/null \
+    || now="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"
+  # ${BASH_SOURCE[1]##*/} rather than basename: naming the missing binary must not
+  # depend on another one being present.
+  printf '%s %s: not on PATH:%s — this session was not distilled. Restore it, then re-run `thalamus init --check`.\n' \
+    "$now" "${BASH_SOURCE[1]##*/}" "$missing" >>"$log_dir/hook-failures.log" 2>/dev/null || true
+  return 1
+}
+
 # The room this session belongs to — the collaboration it witnessed, empty when it
 # worked alone. Mirror of harness/pin.resolve_room. Env-only and deliberately without
 # the agent-picker fallback the pin has: a room is one launch decision covering a set

@@ -1,5 +1,5 @@
 """
-Arm-runner tests (docs/04 layer 2 — the execution half).
+Arm-runner tests (layer 2 — the execution half).
 
 Interfaces: thalamus.eval.arms — parse_arm, apply_arm, evaluate_acceptance,
 evaluate_probes, run_arm, render_run
@@ -220,9 +220,9 @@ def test_prepare_worktree_syncs_current_hooks_over_the_pinned_refs(tmp_path, mon
 
     The worktree checks out the task's historical ref, which freezes the
     *content* of every file at that ref — including the runner's own hook
-    scripts (lab/012's THALAMUS_PROJECT fix landed in the repo but a worktree
+    scripts (the THALAMUS_PROJECT fix landed in the repo but a worktree
     pinned to a pre-fix ref still ran the pre-fix session-start.sh, silently
-    reverting it — lab/013). sync_runner_hooks must overwrite the worktree's
+    reverting it). sync_runner_hooks must overwrite the worktree's
     hook scripts with the current repo's, regardless of the pinned ref.
     """
     monkeypatch.setattr(arms, "sync_worktree_env", lambda *a, **k: None)
@@ -255,7 +255,7 @@ def test_sync_worktree_env_installs_the_dev_extra(tmp_path, monkeypatch):
     """
     Scenario: pytest must exist in the worktree's own venv before anyone runs it
 
-    Root cause (lab/013): pytest lives under `[project.optional-dependencies]
+    Root cause: pytest lives under `[project.optional-dependencies]
     dev`, not the base dependency list, so a freshly-created worktree venv
     never has it — `uv run pytest` then silently falls through to PATH and
     runs the unrelated system pytest, which can't see anything the worktree
@@ -349,8 +349,8 @@ def test_run_arm_passes_repos_name_as_project(tmp_path, monkeypatch):
 
     session-start.sh resolves recall's project from basename(cwd), which
     inside a worktree is the disposable run directory, not the repo — the
-    session-start pull silently found nothing in every arm run to date
-    (lab/012). run_arm must pass the checkout's own name so run_agent can
+    session-start pull silently found nothing in every arm run to date.
+    run_arm must pass the checkout's own name so run_agent can
     override that resolution.
     """
     repo = _git_repo(tmp_path)
@@ -394,11 +394,11 @@ def test_run_agent_threads_scope_and_project_into_the_subprocess_env(tmp_path, m
 
 
 # ---------------------------------------------------------------------------
-# Infra-fault classification (lab/012-013; arXiv 2111.03382, 2605.05564)
+# Infra-fault classification (arXiv 2111.03382, 2605.05564)
 # ---------------------------------------------------------------------------
 #
 # The failure texts below are verbatim shapes from ~/.thalamus/counterfactuals/
-# runs.jsonl and the lab/013 write-up, not invented strings — a classifier
+# runs.jsonl and a real campaign's write-up, not invented strings — a classifier
 # tested only against strings its author imagined is green and ungrounded.
 
 AUTH_TAIL = "Failed to authenticate: OAuth session expired and could not be refreshed"
@@ -412,7 +412,7 @@ COLLECTION_TAIL = (
 
 class TestInfraFaultClassification:
     def test_missing_third_party_dependency_is_infra(self):
-        """The lab/013 fault: a dep the candidate's diff cannot have removed."""
+        """A measured fault: a dep the candidate's diff cannot have removed."""
         assert arms.classify_infra_fault(COLLECTION_TAIL, 2) == "missing_dependency"
 
     def test_missing_first_party_submodule_is_a_candidate_defect(self):
@@ -443,10 +443,10 @@ class TestInfraFaultClassification:
 
     def test_session_fault_shapes_are_distinguished(self):
         """
-        lab/012 had to separate these by hand from the raw transcripts.
+        These had to be separated by hand from the raw transcripts.
         A closing-turn death leaves a real worktree the oracles can grade; a
         pre-work death leaves nothing (1 turn, $0.00); an interruption
-        mid-attempt leaves a half-finished one (lab/016).
+        mid-attempt leaves a half-finished one.
         """
         void = AgentRun("s", AUTH_TAIL, 0.0, 130, 1, True)
         worked = AgentRun("s", AUTH_TAIL, 0.91, 197000, 33, True)
@@ -458,7 +458,7 @@ class TestInfraFaultClassification:
 
     def test_session_limit_is_caught_not_just_auth_expiry(self):
         """
-        lab/016: the guard matched only lab/012's observed auth string, so
+        The guard once matched only the one observed auth string, so
         `You've hit your session limit` walked past it and 16 arms were
         recorded as $0.00 candidate failures. Match the class, not the phrasing.
         """
@@ -473,7 +473,7 @@ class TestInfraFaultClassification:
         an auth failure by any reading, but not the phrase the marker list
         carried. The gate returned None and an untouched worktree was graded
         RUNG 1: a verdict manufactured out of thin air, which is the one thing
-        this classifier exists to prevent (lab/016).
+        this classifier exists to prevent.
 
         `void` is therefore decided on behavior, not vocabulary. No marker list
         can enumerate every way a session fails to start, but "errored, took no
@@ -487,7 +487,7 @@ class TestInfraFaultClassification:
 
     def test_behavioral_void_cannot_resurrect_the_healthy_arm_false_positive(self):
         """
-        lab/020 stamped a healthy 49-turn arm void because its own summary
+        A campaign stamped a healthy 49-turn arm void because its own summary
         used the marker vocabulary. The behavioral test must not reopen that:
         an arm that did work is never void, and a concluded arm is never a
         dead session at all.
@@ -551,7 +551,7 @@ class TestRunArmFaultStamping:
 
     def test_session_death_before_any_work_voids_the_record_and_stops(self, tmp_path, monkeypatch):
         """
-        lab/012's void arms: 1 turn, $0.00. The runner must refuse to grade an
+        The void arms: 1 turn, $0.00. The runner must refuse to grade an
         untouched worktree and must raise SessionFault so the campaign halts
         rather than launching the next arm against dead credentials.
         """
@@ -572,7 +572,7 @@ class TestRunArmFaultStamping:
 
     def test_session_death_after_real_work_is_void_and_ungraded(self, tmp_path, monkeypatch):
         """
-        lab/016's fable arms: killed at turns 11 and 18 of 40 by a session
+        The fable arms: killed at turns 11 and 18 of 40 by a session
         limit, and recorded as `attributable: true, accepted: false` — a
         trustworthy-looking candidate defect that was nothing of the kind.
         An attempt of unknown completeness must not be graded at all.
@@ -595,7 +595,7 @@ class TestRunArmFaultStamping:
 
 class TestTurnCapDetection:
     """
-    lab/015: `num_turns > max_turns` marked *completed* opus runs as censored.
+    `num_turns > max_turns` marked *completed* opus runs as censored.
     The shapes below are the measured ones from runs.jsonl, not invented.
     """
 
@@ -654,7 +654,7 @@ class TestRecallCallCounting:
 
 
 class TestWorktreeEscapeDetection:
-    """The lab/020 leak, mechanised.
+    """The measured leak, mechanised.
 
     Two memory-off arms read the operator's live task file by absolute path and
     scored at or above the gate's pre-registered memory-off ceiling. The shapes
@@ -732,7 +732,7 @@ class TestWorktreeEscapeDetection:
         assert self._detect("") == []
 
     def test_a_file_the_fix_touched_is_the_answer_key_in_code_form(self):
-        """The third lab/020 escape, which the write-up did not report: an arm
+        """The third escape, which the write-up did not report: an arm
         ran the live `arms.py`, which at HEAD already carries the fix."""
         transcript = self._transcript(
             ("Bash", {"command":
@@ -832,7 +832,7 @@ class TestSandboxConfinement:
         return arms.sandbox_argv(self.WT, self.HOME, **kw)
 
     def test_the_operators_checkout_is_never_mounted(self):
-        """The whole point: the paths lab/020's arms read must not exist."""
+        """The whole point: the paths those arms read must not exist."""
         mounts = [a for a in self._argv() if ":" in a and a.count("/") > 1]
         assert not any(str(self.REPO) in m for m in mounts)
 
@@ -965,7 +965,7 @@ class TestCrossArmFaultSignal:
 
     def test_identical_failure_across_arms_is_flagged(self):
         """
-        lab/013's reader pair: both arms failed identically and it read as a
+        The reader pair: both arms failed identically and it read as a
         candidate defect for a day. Two arms are two different candidates, so
         an identical failure is usually the harness (arXiv 2605.05564).
         """
@@ -1022,7 +1022,7 @@ def _bare_worktree(repo: Path, dest: Path) -> Path:
 class TestArmGradesAgainstTheInheritedSuite:
     """L1 grades the suite the candidate inherited, not the one it left behind.
 
-    The defect this pins down (lab/020): `pin_pre_existing_suite` landed with the
+    The defect this pins down: `pin_pre_existing_suite` landed with the
     oracle gate and for a while only the gate called it, so `eval oracle` graded
     anchors against the inherited suite while a real arm was graded against
     whatever tests the candidate wrote. The first gated arm scored rung 0 because
@@ -1075,11 +1075,11 @@ class TestArmGradesAgainstTheInheritedSuite:
 class TestConcludedRunIsNeverADeadSession:
     """A healthy arm's own prose must not be read as evidence it died.
 
-    lab/020 lost a campaign to this. The task under test is *about* session-death
+    A campaign was lost to this. The task under test is *about* session-death
     detection, so the candidate's closing summary said it had broadened the
     marker list to cover session/usage/rate/quota — and the runner matched its
     own vocabulary against that sentence, stamped a successful 49-turn $2.59 arm
-    void, and halted. lab/016's error class inverted: the right string, in the
+    void, and halted. The earlier error class inverted: the right string, in the
     wrong place.
     """
 
@@ -1104,14 +1104,14 @@ class TestConcludedRunIsNeverADeadSession:
 
 
 # ---------------------------------------------------------------------------
-# Harness selection — plumbing is shared, capability is declared (docs/07)
+# Harness selection — plumbing is shared, capability is declared
 # ---------------------------------------------------------------------------
 
 
 def test_arms_refuse_a_harness_they_cannot_honestly_drive():
     """Extraction is harness-agnostic; arms are not. Swapping the binary alone
     would emit records that read as measurements and are not — the failure
-    lab/016 and lab/022 are both about — so the gaps are refused by name."""
+    this project has already paid for twice — so the gaps are refused by name."""
     with pytest.raises(arms.ArmError) as exc:
         arms.agent_cli("cursor")
     message = str(exc.value)
@@ -1295,8 +1295,9 @@ def test_a_memory_surface_probe_is_inapplicable_to_an_arm_with_no_mcp(tmp_path):
     The probe matches a session UUID that exists only in the memory graph, so for an
     arm with no memory surface it asks whether a fact arrived through a channel that
     was deleted before the run. Recorded as a miss, that structural zero sits in the
-    same denominator as a real one — the mistake lab/030 already paid for, where a
-    miss rate turned out to be describing the stratum rather than the system.
+    same denominator as a real one — the mistake this project already paid for,
+    where a miss rate turned out to be describing the stratum rather than the
+    system.
     """
     task = _probe_task()
     ceiling = arms.parse_arm("ceiling", ["main"])

@@ -1,5 +1,5 @@
 """
-Terminal-step guard decision tests (docs/07 harness integration; lab/008).
+Terminal-step guard decision tests.
 
 Interfaces: src/thalamus/harness/hooks/claude-code/gremlin-guard.sh, driven
 live (bash) with synthetic PreToolUse payloads.
@@ -10,7 +10,7 @@ blocked a command that built no traversal at all. The guard's subject is a
 traversal that was built and never terminated; these tests pin both halves —
 that it still blocks a doomed traversal, and that it declines commands where
 there is no traversal to be lazy about. False positives are the failure mode
-that matters: they teach agents to route around the guard (lab/008).
+that matters: they teach agents to route around the guard.
 """
 
 import json
