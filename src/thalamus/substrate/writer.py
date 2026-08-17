@@ -16,7 +16,6 @@ from gremlin_python.process.traversal import Direction, Merge, P, T
 from thalamus.contract.ontology import vid
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
 from thalamus.substrate.schema import (
-    ArtifactType,
     Claim,
     Provenance,
     SessionGraph,
@@ -161,7 +160,6 @@ def _source_on_match(
     refreshable = {k: v for k, v in properties.items() if k not in _SOURCE_WRITE_ONCE}
     try:
         rows = g.V(source_vid).value_map(*_SOURCE_WRITE_ONCE).limit(1).to_list()
-        readable = True
     except Exception:
         # A read that *failed* is not a read that found nothing. `to_list()` on a
         # missing vertex returns [] without raising, so this branch is a real fault —
@@ -194,7 +192,7 @@ def _source_on_match(
         refreshable["tier"] = keep
         logger.warning(
             "Source %s holds tier %s and was re-written at tier %s; keeping %s — "
-            "effective trust is the floor of the derivation chain (docs/05)",
+            "effective trust is the floor of the derivation chain",
             source_vid,
             held_tier,
             incoming_tier,

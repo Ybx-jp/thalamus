@@ -17,7 +17,6 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest
 
 HOOKS = Path(__file__).resolve().parents[1] / "src" / "thalamus" / "harness" / "hooks" / "cursor"
 
