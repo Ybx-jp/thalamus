@@ -35,8 +35,8 @@ back **blockquoted, with a citation and a trust tier**, because tier-2 content
 - **MCP:** `memory_recall("<the design topic, in the field's vocabulary>")`.
   Returns matching sessions, episodic claims, **and** literature claims. The
   literature claims are the ones rendered `## Recalled external claim [tier 2 …]`.
-- **CLI equivalent** (outside a harness session): `thalamus visualize` to browse, or
-  read back what a query returns via the MCP tool.
+- **Outside a harness session:** `thalamus eval report` for retrieval-utility
+  numbers, or `thalamus contract check` to audit the live graph directly.
 
 **Never answer your own consultation ticket.** The protocol says spawn a subagent
 voicing the expert; that subagent is not a cost optimization, it *is* the

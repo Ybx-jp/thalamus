@@ -17,8 +17,8 @@ Two properties are load-bearing:
   your network (a VPN/overlay network, an authenticating reverse proxy, an SSH
   tunnel).
 
-The bridge itself is stdlib-only, unlike the FastAPI surfaces in `pulse/` and
-`viewer/`: one of its jobs is restarting the systemd unit that hosts it, so the
+The bridge itself is stdlib-only, unlike the FastAPI surface in `pulse/`: one of
+its jobs is restarting the systemd unit that hosts it, so the
 fewer moving parts between a tap and a tmux call, the better. The expert layer —
 the scope list, spawn, roster sync — is the one part that needs the rest of the
 package, so those imports are deferred to the call that uses them. Run this

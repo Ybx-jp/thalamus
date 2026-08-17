@@ -76,12 +76,12 @@ def test_edges_through_global_artifacts_do_not_count_as_scope_crossings():
 
 def test_label_properties_cover_every_core_node_type():
     """
-    Scenario: The viewer can label any core node without a hardcoded table
+    Scenario: A consumer can label any core node without a hardcoded table
 
     Verifications:
     - every core label declares which property renders as its display label
     """
-    # Verifies: the registry is complete, so view_query needs no literal of its own
+    # Verifies: the registry is complete, so a reader needs no literal of its own
     assert set(LABEL_PROPERTIES) == {
         "Session", "Thread", "Claim", "Source", "Artifact", "Trace", "Entity",
         "Exchange", "Chunk", "Agent",

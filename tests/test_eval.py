@@ -36,7 +36,7 @@ def test_tap_lines_become_typed_retrieval_events(tmp_path):
 
     Verifications:
     - retrieval calls come back typed, with the mcp prefix stripped
-    - non-retrieval thalamus tools (memorize, visualize) are excluded
+    - non-retrieval thalamus tools (memorize) are excluded
     - malformed lines are skipped, not fatal
 
     The tap is a dumb append-only file written by a shell hook; every robustness

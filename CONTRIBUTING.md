@@ -30,11 +30,6 @@ The federation contract is enforced, not aspirational — `contract check` audit
 live graph, and a change to a write path that has not been checked against it is not
 finished.
 
-The graph viewer's frontend source (React/Cytoscape) isn't in this checkout — only
-its committed build (`viewer/static/`) is, so `thalamus visualize` works without a
-Node toolchain. Editing the viewer itself happens against the private thalamus-notes
-companion repo, which is outside the scope of a public contribution.
-
 ### The console's JavaScript is tested
 
 `tests/js/*.test.mjs` run under node, driven by `tests/test_console_js.py` as part of
@@ -51,9 +46,6 @@ src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader.
                Below the contract: knows nodes and edges, not experts or tiers
   contract/    the federation boundary — ontology, expert manifests, conformance
-  viewer/      the graph viewer — FastAPI read layer serving a committed React/
-               Cytoscape build (`viewer/static/`); the frontend source lives in the
-               private thalamus-notes companion repo, not this checkout
   console/     the browser control plane over the tmux roster
   archive/     immutable content-addressed store for retained evidence
   harness/     MCP server, hooks, skills, transcript bootstrap

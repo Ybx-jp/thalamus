@@ -30,7 +30,6 @@ from __future__ import annotations
 import logging
 import os
 
-import yaml
 from fastmcp import FastMCP
 
 from thalamus.eval.rankers import record_ranker
@@ -52,11 +51,8 @@ from thalamus.substrate.reader import (
     search_exchanges,
 )
 from thalamus.substrate.query import run_query, schema_summary as query_schema_summary
-from thalamus.substrate.schema import SessionGraph
-from thalamus.contract.conformance import validate_connectivity
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.viewer.mermaid import session_to_mermaid
 from thalamus.substrate.writer import GraphUnavailable, close_connection, connect
 
 logger = logging.getLogger(__name__)
@@ -409,32 +405,6 @@ def memory_query(query: str) -> str:
     return run_query(GRAPH_URL, query)
 
 
-@mcp.tool
-def memory_visualize(session_yaml: str) -> str:
-    """Render a Mermaid diagram of a session extraction, for inspection before it is
-    written by `thalamus write`. Read-only — this does not store anything.
-    Orphan nodes (no edges) are automatically pruned. Connectivity issues are reported.
-    """
-    try:
-        data = yaml.safe_load(session_yaml)
-    except yaml.YAMLError as e:
-        return f"Invalid YAML: {e}"
-
-    try:
-        session = SessionGraph(**data)
-    except Exception as e:
-        return f"Schema validation failed: {e}"
-
-    issues = validate_connectivity(session)
-    mermaid = session_to_mermaid(session)
-
-    if issues:
-        warning = "CONNECTIVITY ISSUES (auto-pruned from diagram):\n"
-        warning += "\n".join(f"  - {issue}" for issue in issues)
-        warning += "\n\nFix these in the YAML before writing it with `thalamus write`.\n\n"
-        return warning + mermaid
-
-    return mermaid
 
 
 def _connect():

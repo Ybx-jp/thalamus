@@ -6,11 +6,8 @@ import argparse
 import json
 import logging
 import os
-import socket
 import sys
 import time
-import threading
-import webbrowser
 from pathlib import Path
 
 import uvicorn
@@ -33,7 +30,6 @@ from thalamus.harness.ceremonies import (
 )
 from thalamus.harness import pin
 from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
-from thalamus.viewer.web import create_app
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import (
     DEFAULT_URL,
@@ -955,24 +951,6 @@ def _main():
              "holds, which is what the ledger actually says",
     )
 
-    # Visualize command
-    visualize_parser = subparsers.add_parser(
-        "visualize", help="Open an interactive session graph in the local viewer"
-    )
-    visualize_parser.add_argument(
-        "file", type=Path, nargs="?", help="Optional path to session YAML/JSON file"
-    )
-    visualize_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
-    visualize_parser.add_argument(
-        "--host", default="127.0.0.1", help="Viewer bind address (default: localhost)"
-    )
-    visualize_parser.add_argument(
-        "--port", type=int, default=0, help="Viewer port; zero selects an available port"
-    )
-    visualize_parser.add_argument(
-        "--no-open", action="store_true", help="Start the viewer without opening a browser"
-    )
-
     # Console command — the operator surface onto the tmux roster, drivable from a phone
     console_parser = subparsers.add_parser(
         "console",
@@ -1098,8 +1076,6 @@ def _main():
         _cmd_ceremony(args, parser)
     elif args.command == "dispatch":
         _cmd_dispatch(args)
-    elif args.command == "visualize":
-        _cmd_visualize(args)
     elif args.command == "console":
         _cmd_console(args)
     elif args.command == "pulse":
@@ -3256,41 +3232,6 @@ def _cmd_dispatch(args):
         sys.exit(1)
 
 
-def _cmd_visualize(args):
-    session = None
-    graph = None
-    if args.file is not None:
-        data = _load_file(args.file)
-        try:
-            session = SessionGraph(**data)
-        except Exception as e:
-            print(f"Validation failed: {e}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        try:
-            graph = connect(getattr(args, "url", DEFAULT_URL))
-        except Exception as e:
-            print(f"Unable to connect to persisted memory graph: {e}", file=sys.stderr)
-            sys.exit(1)
-
-    port = args.port or _available_port(args.host)
-    viewer_url = f"http://{args.host}:{port}"
-    print(f"Thalamus viewer: {viewer_url}")
-    print("Press Ctrl+C to stop.")
-
-    if not args.no_open:
-        threading.Timer(0.4, webbrowser.open, args=(viewer_url,)).start()
-
-    try:
-        uvicorn.run(
-            create_app(session, graph),
-            host=args.host,
-            port=port,
-            log_level="warning",
-        )
-    finally:
-        if graph is not None:
-            close_connection(graph)
 
 
 def _cmd_pulse(args):
@@ -3341,10 +3282,6 @@ def _cmd_console(args):
         sys.exit(1)
 
 
-def _available_port(host: str) -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind((host, 0))
-        return int(sock.getsockname()[1])
 
 
 def _load_file(path: Path) -> dict:
