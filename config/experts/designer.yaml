@@ -1,29 +1,54 @@
-# Expert manifest — visual designer (docs/01 contract v0, docs/08 roster).
+# Expert manifest — visual designer.
 #
-# Expert #6. Roster decision recorded in docs/08.
+# This one doubles as the worked example of **attaching an external tool to an
+# expert scope**. Read it if you are wiring a scope to anything beyond the
+# built-in memory tools.
 #
-# The scope holds **no anchors of its own**, which is unusual and deliberate: the
-# literature consultation (ticket 7f953992f0c347e7) reported the `literature` scope
-# holds nothing whatever on visual or interaction design — two recalls returned only
-# token-level false positives — so every citable claim in this scope arrives by
-# procurement rather than by carry-over.
+# ── The pattern ───────────────────────────────────────────────────────────────
+# `config/mcp/<scope>.json` holds a standard `mcpServers` block. `pin.py` reads
+# it when it generates this scope's agent and writes the declaration into the
+# agent's frontmatter, so the tools arm for sessions pinned here and for
+# subagents voicing this expert — and for no other scope. There is no other
+# glue: the manifest plus that one JSON file is the whole wiring.
 #
-# The tool is **self-hosted Penpot**, not Figma, and the deciding fact is authoring:
-# Figma's REST API cannot create design content at all (its write endpoints are
-# comments, variables, webhooks, dev resources), so a scope on Figma could read,
-# export and critique but never produce the mockup its charter is named for. Penpot's
-# plugin/RPC surface creates shapes, frames, text and components. It also sits better
-# against the boundary below — an MCP that writes *into* a design tool is
-# boundary-compatible, while Figma's MCP is oriented toward emitting code, which the
-# deny list blocks. Deployment and operation are `deploy/penpot/`; the 68-tool MCP
-# server arms for this scope alone, declared in `config/mcp/designer.json` and carried
-# into the generated agent by `pin.py`.
+# What it buys is the difference between an expert that describes an artifact
+# and one that produces it. A design scope with an authoring API returns the
+# mockup; without one it returns a paragraph about the mockup, and someone else
+# guesses the rest.
 #
-# `claim_kinds` below are the ingest extractor's kinds, not this scope's deliverables.
-# They gate ingestion batches only (docs/06) and must name kinds a writer actually
-# produces. Design critique, defects and preferences are distilled, not ingested, and
-# land under the core kinds — a `design/*` kind would need an extractor that emits one
-# before the manifest could honestly declare it.
+# Reading is not enough, and that is the test to apply before you attach
+# anything: Figma's REST API cannot create design content at all (its write
+# endpoints are comments, variables, webhooks and dev resources), so a design
+# scope wired to Figma could read, export and critique but never produce the
+# mockup its charter is named for. Penpot's plugin/RPC surface creates shapes,
+# frames, text and components, which is why this example uses it. Check the
+# second thing too: what the tool emits must stay inside the scope's boundary.
+# An MCP that writes *into* a design tool is compatible with the write boundary
+# below; one oriented toward emitting code would hand this scope exactly the
+# output that boundary blocks.
+#
+# `config/mcp/designer.json` points at a **self-hosted Penpot** MCP server on
+# `http://127.0.0.1:8787/mcp`. Nothing here ships, installs or requires Penpot —
+# it is an illustration, and the declaration is inert until something answers on
+# that URL. Point it at whatever your scope's work actually needs.
+#
+# A declared tool that is absent is a **stop, not a silent degrade**: pin.py
+# writes an MCP self-check into the generated agent naming the concrete tool
+# prefix (`mcp__penpot__*`), and a session that cannot find those tools is told
+# to say so and stop rather than work around the absence. An expert that works
+# around the missing tool produces confident output about a design it never
+# opened, which is worse than no output.
+#
+# ── About this scope ──────────────────────────────────────────────────────────
+# It holds **no anchors of its own**, which is unusual and deliberate: the
+# `literature` scope holds nothing whatever on visual or interaction design, so
+# every citable claim here arrives by procurement rather than by carry-over.
+#
+# `claim_kinds` below are the ingest extractor's kinds, not this scope's
+# deliverables. They gate ingestion batches only and must name kinds a writer
+# actually produces. Design critique, defects and preferences are distilled, not
+# ingested, and land under the core kinds — a `design/*` kind would need an
+# extractor that emits one before the manifest could honestly declare it.
 
 contract: v0
 scope: designer
@@ -35,23 +60,28 @@ domain: >-
   empty states, redlines) that an implementer consumes to build the thing. Also
   visual critique of built surfaces against design intent — the console PWA, the
   graph viewer — reporting drift as a finding rather than fixing it. In-repo
-  diagrams for docs/ are its output too. Works in design tools; implementation
-  belongs to whoever writes the code. Accessibility conformance (WCAG) is the seam
-  where this scope's judgement becomes machine-checkable, and therefore the natural
-  hand-off to qe.
+  diagrams are its output too. Implementation belongs to whoever writes the code.
+  Accessibility conformance (WCAG) is the seam where this scope's judgement becomes
+  machine-checkable, and therefore the natural hand-off to whoever owns the tests.
+  This scope works in a real design tool rather than in prose: it declares its own
+  MCP server in `config/mcp/designer.json`, which `pin.py` arms for sessions pinned
+  here and for subagents voicing this expert, so a comp is authored and exported
+  rather than described. If those tools are not present in the session, the scope's
+  premise is false — say so and stop, rather than describing the artifact you cannot
+  produce.
 
-# Origin tier for INGESTED content (docs/05). Design literature is tier 2 forever.
+# Origin tier for INGESTED content. Design literature is tier 2 forever.
 tier: 2
 
 claim_kinds:
   - literature/finding
   - literature/technique
 
-# Host suffixes `thalamus ingest <url>` may fetch (docs/06). The design canon is
-# books and standards rather than papers, so the open-access publishers of the
-# specific anchors are listed rather than a broad academic suffix set. Local files
-# bypass the list — hand-feeding a PDF IS the curation decision, and the parts of
-# this canon that are books will arrive that way.
+# Host suffixes `thalamus ingest <url>` may fetch. The design canon is books and
+# standards rather than papers, so the open-access publishers of the specific
+# anchors are listed rather than a broad academic suffix set. Local files bypass
+# the list — hand-feeding a PDF IS the curation decision, and the parts of this
+# canon that are books will arrive that way.
 allowlist:
   - w3.org
   - nngroup.com
@@ -59,12 +89,10 @@ allowlist:
   - arxiv.org
   - github.com
 
-# Structural role boundary (docs/08). The operator's definition is explicit that
-# this agent "is not a front end developer in dressy language" — a boundary that
-# prose cannot hold, since the fastest path from a mockup to a demo is always to
-# write the component. MAST names role drift as a measured failure mode whose
-# working repair was structural, not textual
-# (`scope:literature:claim:db0928fe2cfd3616`).
+# Structural role boundary. This agent is not a front-end developer in dressy
+# language — a boundary prose cannot hold on its own, since the fastest path from a
+# mockup to a demo is always to write the component. MAST names role drift as a
+# measured failure mode whose working repair was structural, not textual.
 write_boundary:
   deny_globs:
     - "*.py"
@@ -84,11 +112,11 @@ write_boundary:
     what is blocked is shipping the implementation.
 
 # The capability opt-out, and the whole reason the roster default is stated once
-# rather than six times (contract/manifest.ROSTER_CAPABILITY_DEFAULT). Every other
-# pinned expert inherits a deny on the design skills and on artifact publishing;
-# this scope is the one whose charter those things ARE. An explicit empty block is
-# the opt-out — omitting the field would inherit the deny and silently disarm the
-# only scope meant to hold these.
+# rather than once per expert (contract/manifest.ROSTER_CAPABILITY_DEFAULT). Every
+# other pinned expert inherits a deny on the design skills and on artifact
+# publishing; this scope is the one whose charter those things ARE. An explicit
+# empty block is the opt-out — omitting the field would inherit the deny and
+# silently disarm the only scope meant to hold these.
 capability_boundary:
   deny_tools: []
   deny_skills: []

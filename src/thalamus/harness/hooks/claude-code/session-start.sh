@@ -114,8 +114,8 @@ if [ -n "$session_id" ]; then
   # `tmux_pane` is the console's join key. The console addresses roster windows by
   # index, but an index identifies nothing durable: it renumbers when a window
   # closes, and two windows routinely share a name, a scope, and a cwd at once
-  # (measured 2026-08-09 — the live roster held two `main` windows both pinned to
-  # scope main in /home/ybx/code/thalamus). Every other route to "which session is
+  # (measured — a live roster held two `main` windows both pinned to scope main in
+  # the same checkout). Every other route to "which session is
   # in this window" was tried and rejected: tmux environments are session-scoped,
   # not per-window; /proc/<pid>/environ carries THALAMUS_SCOPE but no session id;
   # newest-JSONL-in-the-project-dir returns one file for every window sharing a

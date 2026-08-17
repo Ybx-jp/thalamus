@@ -245,7 +245,7 @@ body.offline #offline { display: block; }
       <div class="tiles" id="headline"></div>
     </section>
     <section class="panel">
-      <h2>Waste trend <span class="stamp desktop-only" title="The band is lab/007's prediction (≤30% with used% not falling), not a measurement.">target = dial</span></h2>
+      <h2>Waste trend <span class="stamp desktop-only" title="The band is a prediction (≤30% with used% not falling), not a measurement.">target = dial</span></h2>
       <div id="trend"><div class="empty">no attributed days yet</div></div>
     </section>
     <section class="panel">
@@ -255,7 +255,7 @@ body.offline #offline { display: block; }
     <section class="panel desktop-only">
       <h2>Decay candidates
         <button class="toggle" id="rank-toggle" aria-pressed="false">rank by count</button>
-        <span class="stamp" title="Ranked by absolute wasted tokens — rates bury a 60x absolute difference (lab/006).">waste rank</span>
+        <span class="stamp" title="Ranked by absolute wasted tokens — rates bury a 60x absolute difference.">waste rank</span>
       </h2>
       <div class="rows" id="decay"><div class="empty">—</div></div>
     </section>
@@ -286,10 +286,10 @@ body.offline #offline { display: block; }
 /* Thalamus Pulse — renders the eval loop's measurements. No panel-local math
    beyond formatting: every number arrives shaped by pulse/metrics.py. */
 
-const SCOPE_SLOT = { main: "--s1", literature: "--s2", "eval-methodology": "--s5", homelab: "--s4" };
-const BUCKET_ORDER = ["interactive", "expert:literature", "extract", "expert:homelab", "expert:eval-methodology"];
+const SCOPE_SLOT = { main: "--s1", literature: "--s2", "eval-methodology": "--s5", architect: "--s4" };
+const BUCKET_ORDER = ["interactive", "expert:literature", "extract", "expert:architect", "expert:eval-methodology"];
 const BUCKET_SLOT = { interactive: "--s1", "expert:literature": "--s2", extract: "--s3",
-                      "expert:homelab": "--s4", "expert:eval-methodology": "--s5" };
+                      "expert:architect": "--s4", "expert:eval-methodology": "--s5" };
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const scopeColor = s => css(SCOPE_SLOT[s] || "--deemph");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
@@ -337,7 +337,7 @@ function renderLive(live) {
         <span class="t">${hhmm(e.ts)}</span>
         <span class="tool">${esc(e.tool)}</span>
         ${cls ? `<span class="cls">${cls}</span>` : `<span class="fan${e.over_guardrail ? " over" : ""}"
-          data-tip="${e.fanout} nodes returned${e.over_guardrail ? ` — over the ${live.fanout_guardrail}-node guardrail (lab/007)` : ""}">${e.fanout}n</span>`}
+          data-tip="${e.fanout} nodes returned${e.over_guardrail ? ` — over the ${live.fanout_guardrail}-node guardrail` : ""}">${e.fanout}n</span>`}
         <span class="tok">~${tok(e.tokens)}t</span>
       </li>`;
     }).join("");
@@ -400,7 +400,7 @@ function renderHeadline(rpt) {
     <div class="tile"><div class="lbl">retrievals</div><div class="val">${main.traces}</div><div class="sub">${main.sessions} sessions · ${main.misses} empty</div></div>`;
 }
 
-/* Waste trend: single series + the lab/007 prediction band. One axis, %. */
+/* Waste trend: single series + the prediction band. One axis, %. */
 function renderTrend(trend) {
   const el = document.getElementById("trend");
   const pts = (trend || []).filter(d => d.waste_pct !== null);
@@ -423,7 +423,7 @@ function renderTrend(trend) {
     <text class="axis" x="${W-R}" y="${H-6}" text-anchor="end">${last.day.slice(5)}</text>
     <text class="axis" x="${W-R}" y="${Math.max(y(last.waste_pct)-8, T+10)}" text-anchor="end">${Math.round(last.waste_pct)}% wasted</text>
   </svg>
-  <div class="chart-note">wasted share of priced tokens per day · green band = lab/007 target ≤30% — a prediction, valid only if used% holds</div>
+  <div class="chart-note">wasted share of priced tokens per day · green band = target ≤30% — a prediction, valid only if used% holds</div>
   <details><summary class="chart-note" style="cursor:pointer">data table</summary>
     <div class="rows">${pts.map(d => `<div class="row"><span class="txt mono">${d.day}</span>
       <span class="num" style="font-size:12px">${Math.round(d.waste_pct)}% wasted · ~${tok(d.wasted_tokens)}/${tok(d.earned_tokens)} tok · used% ${Math.round(d.used_pct)} · n=${d.attributed}</span></div>`).join("")}
@@ -537,7 +537,7 @@ function renderCost(cost) {
       <span class="num">${b.weighted.toLocaleString()} <span style="color:var(--muted);font-size:11px">· ${b.sessions} sess</span></span></div>`).join("")}
     </div>
     <div class="chart-note">memory ops (extract + experts) = ~${tok(memory)} weighted vs ~${tok(interactive)} interactive —
-      session length dominates burn; memory's marginal cost ≈ one extract per session (standing finding, docs/04)</div>`;
+      session length dominates burn; memory's marginal cost ≈ one extract per session (standing finding)</div>`;
 }
 
 /* Conditioning: followed vs wallpaper — effectiveness, never firing counts alone. */

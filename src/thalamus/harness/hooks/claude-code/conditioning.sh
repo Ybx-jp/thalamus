@@ -4,7 +4,7 @@
 # The failure this automates away is measured, not hypothetical: a session
 # answered a past-work question with an hour of transcript archaeology when the
 # graph held the answer one recall away, and design work proceeded until the
-# operator manually said "consult the expert" (lab/008 coda; 2026-07-18).
+# operator manually said "consult the expert".
 # Conditioning is context injection at harness events — the same channel
 # Reflexion shows changes later behavior without weight updates (arXiv
 # 2303.11366).
@@ -12,18 +12,18 @@
 # Design constraints, grounded:
 # - CONDITIONAL, never every-prompt. Selective reminder injection beats always-on
 #   (arXiv 2607.08716, the direct agent-side ablation; margins are small and no
-#   token comparison is reported, so the cost half of this argument is uncited —
-#   docs/11 §3c). Locally the ignored share is real at experiments/002's
-#   magnitude, and every injected token rides every later call (docs/04 layer 1b).
+#   token comparison is reported, so the cost half of this argument is uncited).
+#   Locally the ignored share of injected retrieval tokens is real at roughly a
+#   third, and every injected token rides every later call.
 # - THROTTLED: each trigger class fires at most once per session.
 # - MEASURED: every firing is one JSONL event in ~/.thalamus/conditioning/.
 #   Effectiveness is the per-firing behavioral join (`thalamus eval
 #   conditioning`): did a thalamus call follow the injection? Fire counts are
-#   activity, not effectiveness (lab/008 discipline).
+#   activity, not effectiveness.
 #   Each firing records `harness` (THALAMUS_HARNESS, default claude-code): the
 #   Cursor adapter reaches this script through a reshaped UserPromptSubmit
 #   payload, so `event` alone cannot tell the two apart, and injection there is
-#   delivered a tool call late (docs/07) — a lag the rescue-rate join must be
+#   delivered a tool call late — a lag the rescue-rate join must be
 #   able to separate out rather than average over.
 #
 # Tiers served by this one script (branch on hook_event_name):
@@ -40,7 +40,7 @@
 #   get turned into claims, where recall returns prose already labelled as data.
 #   It fires on the FIRST query rather than at write time: the reminder has to
 #   shape which queries get run, and nothing observable says "a conclusion is
-#   about to be committed". Measured need (lab/029): two consultation answers,
+#   about to be committed". Measured need: two consultation answers,
 #   both correctly cited, both with the mechanism wrong; each was overturned by
 #   one more traversal that could have been run first.
 #
@@ -65,15 +65,16 @@ log_file="$log_dir/$(date -u +%Y-%m).jsonl"
 # The pin, resolved once: it is both a logged field and — for the design class — part
 # of what gets injected. A reminder that tells every session to consult the same three
 # experts is wrong twice over on an expert session: it names a subset of the roster,
-# and it can name the reader's own scope, advising a `dl` session to go ask `dl`.
+# and it can name the reader's own scope, advising an `architect` session to go ask
+# `architect`.
 scope="$(thalamus_scope_from_payload "$input")"
 
 # The throttle key is (session, agent, class), not (session, class). Subagents share
 # their parent's session_id, so keying on the session alone silently exempts every
 # subagent from every class — and a subagent is exactly where `falsify` has to land:
-# both consultation experts in lab/029 filed a correctly-cited answer with the
-# mechanism wrong. Chained fixed-string greps, so one malformed line cannot disable
-# the throttle and spam the class.
+# both consultation experts in the case that established this filed a correctly-cited
+# answer with the mechanism wrong. Chained fixed-string greps, so one malformed line
+# cannot disable the throttle and spam the class.
 agent=$(printf '%s' "$input" | jq -r '.agent_id // ""')
 
 fired_already() {
@@ -110,18 +111,18 @@ case "$event" in
       && ! fired_already design; then
       others="$(thalamus_roster "$scope")"
       if [ "$scope" = "main" ]; then
-        routing="consult_request to whichever roster expert owns this domain — $others (docs/02)"
+        routing="consult_request to whichever roster expert owns this domain — $others"
       else
-        routing="you are pinned to \`$scope\`, so design inside that domain is yours to do; consult_request where it crosses out of it — $others (docs/02)"
+        routing="you are pinned to \`$scope\`, so design inside that domain is yours to do; consult_request where it crosses out of it — $others"
       fi
-      emit design "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt reads as design work. Before designing: (1) does the graph already answer it — ground-in-literature step A0, because a design can be perfectly cited and still already built (lab/025); (2) ground-in-literature proper (binding, CLAUDE.md); (3) $routing. If you consult, you are pre-authorized to spawn the subagent that voices the expert and expected to — never answer your own ticket; self-answering measured 8 citations against a voiced 25 and missed the objection that killed the design (lab/025). Effectiveness of this reminder is measured per firing."
+      emit design "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt reads as design work. Before designing: (1) does the graph already answer it — ground-in-literature step A0, because a design can be perfectly cited and still already built; (2) ground-in-literature proper (binding, CLAUDE.md); (3) $routing. If you consult, you are pre-authorized to spawn the subagent that voices the expert and expected to — never answer your own ticket; self-answering measured 8 citations against a voiced 25 and missed the objection that killed the design. Effectiveness of this reminder is measured per firing."
       exit 0
     fi
 
     if printf '%s' "$prompt" | grep -qiE \
       "\b(why did|what happened|(last|previous|prior|earlier) session|did (we|it|that) (already|ever|actually)|history of|how did .* (end|go|resolve))\b" \
       && ! fired_already retrospect; then
-      emit retrospect "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt asks about past work. memory_recall FIRST (recall-strategy L1) — the graph may already hold the answer; transcript/archive archaeology is the expensive second resort (measured: the orphan-cleanup story was one recall away while an hour was spent grepping transcripts, lab/008)."
+      emit retrospect "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt asks about past work. memory_recall FIRST (recall-strategy L1) — the graph may already hold the answer; transcript/archive archaeology is the expensive second resort (measured: the orphan-cleanup story was one recall away while an hour was spent grepping transcripts)."
       exit 0
     fi
     ;;
@@ -131,13 +132,13 @@ case "$event" in
     case "$tool" in
       TaskCreate)
         if ! fired_already milestone; then
-          emit milestone "Thalamus conditioning (tier-0 operator hook, fires once/session): multi-step work is starting. Check now: (1) does an open thread overlap this work? (2) which roster expert covers this domain — consult before designing, not after (docs/02); (3) any gremlin ahead: RECIPES.md before writing new queries."
+          emit milestone "Thalamus conditioning (tier-0 operator hook, fires once/session): multi-step work is starting. Check now: (1) does an open thread overlap this work? (2) which roster expert covers this domain — consult before designing, not after; (3) any gremlin ahead: RECIPES.md before writing new queries."
           exit 0
         fi
         ;;
       mcp__thalamus__memory_query)
         if ! fired_already falsify; then
-          emit falsify "Thalamus conditioning (tier-0 operator hook, fires once per agent): you are reasoning from an ad-hoc traversal. Before any number here becomes a claim in a doc, a lab entry, or a consult_answer: (1) name what would make the conclusion WRONG and run that query first — it is almost always one more traversal over data you already have; (2) suspect in order — your traversal, then the instrument (what \`used\` actually means; a node never returned has no RETURNS edge, so harm from not-retrieving is invisible here), then your model of the code that consumes the data, and only then the system; (3) a property's absence is not unreachability — establish the *unit* the code ranks before reasoning about what a change can reach. Measured (lab/029): \"claims carry no project property\" was true and the 13% ceiling filed from it was wrong by 6x, because the ranking unit is the parent session. Citation validation proves cited vertices resolve, never that the reasoning is sound. Full checklist: the recall-strategy skill."
+          emit falsify "Thalamus conditioning (tier-0 operator hook, fires once per agent): you are reasoning from an ad-hoc traversal. Before any number here becomes a claim in a doc, a written finding, or a consult_answer: (1) name what would make the conclusion WRONG and run that query first — it is almost always one more traversal over data you already have; (2) suspect in order — your traversal, then the instrument (what \`used\` actually means; a node never returned has no RETURNS edge, so harm from not-retrieving is invisible here), then your model of the code that consumes the data, and only then the system; (3) a property's absence is not unreachability — establish the *unit* the code ranks before reasoning about what a change can reach. Measured: \"claims carry no project property\" was true and the 13% ceiling filed from it was wrong by 6x, because the ranking unit is the parent session. Citation validation proves cited vertices resolve, never that the reasoning is sound. Full checklist: the recall-strategy skill."
           exit 0
         fi
         ;;

@@ -7,8 +7,7 @@ the last close.
 
 `snapshot()` closes that window by driving the io()-step against the same path,
 on demand. The write happens **on the server**, not locally — the path is a
-container path, and the client never sees the bytes (docs/gremlin-docs
-06-steps/start-steps.md).
+container path, and the client never sees the bytes.
 
 Callers on the write path invoke this after a successful write, so durability is
 the default rather than an operator chore.

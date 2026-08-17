@@ -176,15 +176,21 @@ def test_the_shipped_battery_validates(monkeypatch):
     """
     Scenario: The real config/tasks/ battery in this repo
 
-    The enforcement is only real if the shipped battery passes its own gate.
+    The enforcement is only real if whatever ships passes its own gate, so the
+    assertion is over the battery on disk rather than over a count. A task is a
+    tier-0 operator artifact naming commits in the repository it grades, so a
+    clone starts with none — and the empty case is the second half of this: it
+    renders as an empty battery rather than as a fault, and the moment a task
+    file lands the pre-registration obligations above bind it.
     """
     monkeypatch.delenv("THALAMUS_CONFIG_DIR", raising=False)
 
     tasks, issues = load_battery()
 
     assert issues == []
-    assert len(tasks) >= 2
     assert all(task.probes for task in tasks)
+    if not tasks:
+        assert "Battery is empty" in render_battery(tasks, issues)
 
 
 # ---------------------------------------------------------------------------

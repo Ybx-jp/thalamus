@@ -21,7 +21,7 @@
 # activity without measurement.
 #
 # Scope: fires only when the command text itself contains gremlin-python
-# connection markers. Running a script file (`python lab/x.py`) carries no
+# connection markers. Running a script file (`python query.py`) carries no
 # markers and is never touched — this guards the ad-hoc one-liner path where
 # the doomed queries were actually observed.
 #
@@ -89,7 +89,7 @@ log_event() {
 # DEFAULT_SNAPSHOT_PATH` + os.path calls, whose own logged fingerprint
 # (`exists,getsize,getmtime,…`) contains no graph step at all, and the session
 # routed around the guard rather than being rescued by it — the exact
-# route-around the v1 retrospective warned about (lab/008).
+# route-around the v1 retrospective warned about.
 if ! printf '%s' "$command" | grep -qE '\.(V|E|addV|addE|inject)\('; then
   log_event pass no-traversal
   exit 0
@@ -101,7 +101,7 @@ fi
 # internally; `textedit` is code manipulation that merely mentions marker
 # strings — it stays a distinct branch because a text command may legitimately
 # quote traversal syntax (`grep '\.V('`) and so survives the gate above. The
-# retrospective baseline (lab/008) found every archive hit outside `terminal`
+# retrospective baseline found every archive hit outside `terminal`
 # was a false positive, and false positives teach agents to route around the
 # guard.
 if printf '%s' "$command" | grep -qE \
@@ -119,8 +119,8 @@ fi
 # same "markers as data, not code" class as an editor invocation and was a
 # measured v5 false positive on this very amendment. The residual false
 # negative (a doomed traversal chained after a commit) is accepted knowingly:
-# lab/008's standing trade is that a false positive costs more than a miss,
-# because it teaches route-around.
+# the standing trade is that a false positive costs more than a miss, because it
+# teaches route-around.
 if printf '%s' "$command" | grep -qE 're\.sub\(|read_text\(|write_text\(|(^|[;&| ])sed |(^|[;&| ])grep |(^|[;&| ])rg |(^|[;&| ])git (commit|tag|notes) '; then
   log_event pass textedit
   exit 0

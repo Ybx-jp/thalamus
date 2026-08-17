@@ -1,8 +1,8 @@
-# Expert manifest — technical literature (docs/01 contract v0, docs/08 roster).
+# Expert manifest — technical literature.
 #
-# This file IS the federation surface: expert #2 should be another file here and
-# nothing else. It is tier-0 operator configuration — curation decisions live in
-# git, not in the graph.
+# This file IS the federation surface: a second expert is another file beside it
+# and nothing else. It is tier-0 operator configuration — curation decisions live
+# in git, not in the graph.
 
 contract: v0
 scope: literature
@@ -11,7 +11,7 @@ domain: >-
   Agent memory and evaluation, RAG and retrieval, harness engineering,
   audio/music ML — the literatures feeding active projects.
 
-# Origin tier of everything this expert's feeds write (docs/05). A brilliant
+# Origin tier of everything this expert's feeds write. A brilliant
 # paper is tier 2 forever.
 tier: 2
 
@@ -20,7 +20,7 @@ claim_kinds:
   - literature/technique # a method the source introduces or evaluates
 
 # Host suffixes `thalamus ingest <url>` may fetch. Operator-maintained; short on
-# purpose — manual curation is tier-2 trust in practice (docs/06). Local files
+# purpose — manual curation is tier-2 trust in practice. Local files
 # bypass this list: hand-feeding a file is itself the curation decision.
 allowlist:
   - arxiv.org

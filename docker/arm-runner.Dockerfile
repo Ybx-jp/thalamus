@@ -1,4 +1,4 @@
-# The confinement boundary for a counterfactual arm (docs/04 layer 2, lab/022).
+# The confinement boundary for a counterfactual arm.
 #
 # An arm runs `--dangerously-skip-permissions`, and measurement showed it using
 # that freedom: 3 of 24 arms read the operator's checkout by absolute path, and
@@ -7,9 +7,9 @@
 # image closes the first by giving it a filesystem the operator's checkout is not
 # in.
 #
-# bubblewrap would be lighter and does not work here: Ubuntu's
-# `kernel.apparmor_restrict_unprivileged_userns=1` denies the uid map, so bwrap
-# and plain `unshare` both fail on this box. Docker needs no kernel knob.
+# bubblewrap would be lighter and does not work on every host: where
+# `kernel.apparmor_restrict_unprivileged_userns=1` is set, the uid map is denied
+# and both bwrap and plain `unshare` fail. Docker needs no kernel knob.
 #
 # The toolchain is deliberately *mounted*, not installed: the `claude` binary and
 # `uv` come from the host at run time, so the arm runs the same versions the
@@ -22,9 +22,9 @@ FROM ubuntu:24.04
 # the session. The first confined arm ran that way: `session-start.sh` aborted,
 # the memory-priming context was never injected, and a memory-on arm that was
 # never told to recall recorded 0 recall calls — which reads exactly like a
-# candidate that chose not to. It also voids docs/index's "neutral discipline
-# stays on everywhere" invariant, since the hooks the runner deliberately keeps
-# in every arm were not running in the confined one.
+# candidate that chose not to. It also breaks the runner's neutral-discipline
+# invariant, since the hooks it deliberately keeps on in every arm were not
+# running in the confined one.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git ca-certificates curl ripgrep less jq \
     && rm -rf /var/lib/apt/lists/*

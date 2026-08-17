@@ -1,0 +1,39 @@
+name: Feature request
+description: A capability that does not exist yet
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and where the current design stops you.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed capability
+      description: >
+        What should exist. If you have a shape in mind — a CLI verb, a manifest
+        field, an MCP tool — say so.
+    validations:
+      required: true
+
+  - type: textarea
+    id: prior
+    attributes:
+      label: Prior work
+      description: >
+        This project does not design from scratch where established research or an
+        existing tool already covers the ground. If you know of either, cite it.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including doing nothing, and what that costs.
+    validations:
+      required: false

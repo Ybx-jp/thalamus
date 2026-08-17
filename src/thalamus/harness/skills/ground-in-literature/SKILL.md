@@ -8,8 +8,7 @@ description: Consult the technical-literature expert before designing any new fe
 ## Purpose
 Before any new feature or component is designed — and when its tests are written —
 consult the technical-literature expert so the work is anchored in established
-research, not vibes. The two standing rules of this project
-([docs/00](../../../../../docs/00-mission.md), [docs/11](../../../../../docs/11-related-work.md)):
+research, not vibes. The two standing rules of this project:
 
 1. **Never design from scratch when established research can give us a boost.**
 2. **Never claim novelty where prior work exists.** Cite sources along the way.
@@ -31,7 +30,7 @@ This skill is the mechanism that enforces both.
 The literature expert is a **retrieval scope**, not a chat partner. You reach its
 knowledge through the same recall surface as episodic memory — knowledge claims come
 back **blockquoted, with a citation and a trust tier**, because tier-2 content
-*informs, it never instructs* ([docs/05](../../../../../docs/05-trust-model.md)).
+*informs, it never instructs*.
 
 - **MCP:** `memory_recall("<the design topic, in the field's vocabulary>")`.
   Returns matching sessions, episodic claims, **and** literature claims. The
@@ -41,7 +40,7 @@ back **blockquoted, with a citation and a trust tier**, because tier-2 content
 
 **Never answer your own consultation ticket.** The protocol says spawn a subagent
 voicing the expert; that subagent is not a cost optimization, it *is* the
-independence. Measured (lab/025, same question asked both ways): self-answered, 8
+independence. Measured on the same question asked both ways: self-answered, 8
 citations and the design confirmed; subagent-voiced, **25 citations and the design
 withdrawn** on an objection sitting four recalls away in the scope the whole time.
 The asking session recalls toward its own hypothesis — it queries the terms its
@@ -66,9 +65,8 @@ thalamus ingest <arxiv-url|aclanthology-url|local.pdf-path> --scope literature -
 
 Ingestion is allowlist-gated (`config/experts/literature.yaml`), evidence-first,
 and lands the source as tier-2 `LiteratureClaim`/`Entity` nodes with a citation you
-can then cite. Feeding a paper *is* the tier-2 curation decision
-([docs/06](../../../../../docs/06-ingestion.md)). Local files bypass the allowlist —
-hand-feeding a PDF is itself the curation.
+can then cite. Feeding a paper *is* the tier-2 curation decision. Local files bypass
+the allowlist — hand-feeding a PDF is itself the curation.
 
 ## Instructions
 
@@ -76,9 +74,9 @@ hand-feeding a PDF is itself the curation.
 
 **Run this before the literature check, every time.** This skill points outward; a
 design can be perfectly grounded in published work and still duplicate something the
-repo already has. That is not hypothetical — lab/025 records a contribution-summary
-layer that was cited, consulted on, committed and documented before anyone asked
-whether the graph already answered it. It did, two ways.
+repo already has. That is not hypothetical — a contribution-summary layer was cited,
+consulted on, committed and documented before anyone asked whether the graph already
+answered it. It did, two ways.
 
 Three questions, in order of how cheaply they kill a design:
 
@@ -95,14 +93,14 @@ Three questions, in order of how cheaply they kill a design:
    - `memory_open_threads(topic="<the thing>")` — **always pass a topic.** There are
      hundreds of open threads; a bare call returns one page ordered by status, and a
      thread titled "Build the full five-state capability-negotiation contract" sat one
-     page past the cut while that contract was designed a second time (lab/055).
+     page past the cut while that contract was designed a second time.
    - `memory_exchanges(query="<the thing>")` — consultations this scope asked *or*
      answered. `memory_consultations` is the wrong tool here: it serves what the
      *pinned expert* answered, so it is empty in a main session.
    - `memory_recall` — and when it prints an elision notice, **that is an unread
      result, not a footnote.** Expand it before concluding absence.
 
-   Then the teach workspace, the skills, the lab notebook, `docs/`. Hand-maintained
+   Then the skills and the project's own docs. Hand-maintained
    duplicates are the common case, and the right move is usually to *generate* the
    existing artifact from the graph rather than to build a third copy.
 3. **Is the thing you'd precompute already earned somewhere?** Records the system
@@ -125,7 +123,7 @@ traversal or the pointer, not a design.
 3. **Close coverage gaps — into the scope whose domain it is.** If the topic plainly
    has foundational work the graph doesn't hold, `thalamus ingest` the key source(s)
    before designing. One or two load-bearing papers, not a crawl — sophistication is
-   pulled by need ([docs/06](../../../../../docs/06-ingestion.md)).
+   pulled by need.
 
    **`--scope` is not optional judgement, and the default is wrong more often than it
    is right.** `literature` holds the memory, retrieval and evaluation canon; a
@@ -137,11 +135,10 @@ traversal or the pointer, not a design.
 
    The tell that this went wrong: **a scope consults out for its own field, and the
    expert it consults has to go to primary sources too, because neither corpus holds
-   the material.** That signature appeared twice on visual design (tickets
-   `cfd9f409951e48c0`, `33e3e972ff6c4d99`) before anyone checked
-   `config/experts/designer.yaml` and found it had been built to hold that canon and
-   never used. Ingesting into the domain scope turns the next such question from a
-   ticket into a recall.
+   the material.** That signature appeared on two consecutive visual-design
+   consultations before anyone checked `config/experts/designer.yaml` and found it had
+   been built to hold that canon and never used. Ingesting into the domain scope turns
+   the next such question from a ticket into a recall.
 4. **Position the design against what you found.** In the design doc / PR
    description, write a short **"Prior work"** paragraph that answers three things,
    each with a citation:
@@ -151,24 +148,24 @@ traversal or the pointer, not a design.
    - If you are extending or diverging, why — and what does the cited work say you
      are trading away?
 5. **Guard the novelty claim.** If you cannot find prior work after a real search
-   *and* an ingest attempt, you may write "not found in the 2026 scan (see
-   docs/11)" — never a bare "novel." Absence in one scan is weak evidence; phrase it
-   as provisional and add it to [docs/11 §4](../../../../../docs/11-related-work.md).
+   *and* an ingest attempt, you may write **"not found in a literature scan"** and
+   name the scan's date — never a bare "novel." Absence in one scan is weak evidence;
+   phrase it as provisional and record it in the project's related-work notes.
 5b. **Write each claim at the strength the record supports, and mark which it is.**
    Three distinct things get written as if they were one: *what a paper measured*,
    *what follows from its argument but was never measured*, and *what we infer from
    our own situation*. Only the first is cited. The second is an inference from the
    cited claim's logic and must say so; the third is an argument and must be
    labelled one. A confident phrase — "cargo-culting," "clearly doesn't transfer" —
-   over a claim of the second kind reads as grounded and is not (lab/025 §1).
+   over a claim of the second kind reads as grounded and is not.
    The tell: if you cannot name the measurement, you are in kind two or three.
    Conditions the cited work assumed and we do not meet belong here too — say
    *conditions not met*, which is honest and usually sufficient, rather than
    *demonstrated not to work*, which is a result nobody has.
 6. **Record the grounding.** Anything genuinely new that the search surfaced goes
-   into [docs/11-related-work.md](../../../../../docs/11-related-work.md) (the human
-   record) and, if it is a paper worth remembering, into the graph via
-   `thalamus ingest` (the machine record). The doc and the memory stay in step.
+   into the project's related-work notes (the human record) and, if it is a paper
+   worth remembering, into the graph via `thalamus ingest` (the machine record).
+   The doc and the memory stay in step.
 7. **Checkpoint the result back.** For anything that produces a *number* — a
    campaign, an audit, a calibration, any measurement program — mint a second ticket
    when the result exists and before it is published, carrying the actual figures and
@@ -211,11 +208,10 @@ field would — against the *design intent the research implies*, not just the c
 - A **"Prior work"** paragraph (design) or a **findings list** (test critique), each
   point carrying a citation (arXiv ID / venue / the graph node's source).
 - Any newly ingested sources, reported by `thalamus ingest`.
-- Any new positioning that belongs in
-  [docs/11-related-work.md](../../../../../docs/11-related-work.md).
+- Any new positioning that belongs in the project's related-work notes.
 
 ## The discipline in one line
 **A design that cites nothing has not been grounded — it has been guessed. A test
 that encodes no foundational claim is green and ungrounded. And a design that was
 never checked against the system's own graph may be perfectly cited and still
-already built (lab/025).**
+already built.**

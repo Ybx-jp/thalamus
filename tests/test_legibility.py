@@ -1,10 +1,9 @@
 """The degraded-rendering arm.
 
 The instrument exists because a comprehension test run only at full fidelity is blind
-to contrast failure by construction (lab/056). These tests hold the two properties the
-arm rests on: the transform's threshold-amplifying behaviour is arithmetic and exact,
-and the audit separates the criterion the room checked (1.4.3, text) from the one it
-missed (1.4.11, meaningful non-text).
+to contrast failure by construction. These tests hold the two properties the arm rests
+on: the transform's threshold-amplifying behaviour is arithmetic and exact, and the
+audit separates the text criterion (1.4.3) from the meaningful-non-text one (1.4.11).
 """
 
 from pathlib import Path
@@ -13,7 +12,12 @@ import pytest
 
 from thalamus.eval import legibility as leg
 
-AIDS = Path(__file__).resolve().parent.parent / "docs" / "visual"
+# Fixtures with known contrast, held so the gate's own discrimination stays under test
+# whatever the repo happens to ship.
+AIDS = Path(__file__).resolve().parent / "fixtures" / "aids"
+
+# Diagrams that actually ship, wherever they live under docs/.
+SHIPPED = Path(__file__).resolve().parent.parent / "docs"
 
 # The two defects room `atlas` shipped, and the value they were corrected to.
 SHIPPED_DEFECT = 2.07
@@ -65,11 +69,15 @@ def test_the_shipped_aids_pass_their_own_gate():
     """
     Scenario: `thalamus eval legibility --strict` over what the repo ships
 
-    A gate that cannot pass is a gate nobody runs. These four are the artifacts the
-    fix landed on, so a failure here means either a regression in an aid or a defect
-    in the instrument, and both are worth stopping for.
+    A gate that cannot pass is a gate nobody runs. A failure here means either a
+    regression in an aid or a defect in the instrument, and both are worth stopping
+    for. Skips rather than passing vacuously when the repo ships no diagrams, so an
+    empty docs/ cannot read as a clean gate.
     """
-    for svg in sorted(AIDS.glob("*.svg")):
+    shipped = sorted(SHIPPED.rglob("*.svg")) if SHIPPED.is_dir() else []
+    if not shipped:
+        pytest.skip("no diagrams ship under docs/ — nothing for the gate to hold")
+    for svg in shipped:
         findings = leg.audit(leg.load(svg))
         assert findings, f"{svg.name}: no findings at all — surface detection failed"
         assert not [f for f in findings if f.fails], (

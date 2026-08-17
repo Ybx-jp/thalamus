@@ -35,8 +35,8 @@ from pathlib import Path
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
-# Mirrors experiments/assets/theme.css. Series colours are referenced through the
-# CSS variables so a chart re-themes with the page; these names are the contract.
+# Series colours are referenced through the CSS variables in templates/theme.css so
+# a chart re-themes with the page; these names are the contract.
 SERIES = [f"var(--series-{i})" for i in range(1, 7)]
 
 
@@ -271,7 +271,7 @@ def render(experiment: Experiment) -> str:
     )
     env.filters["pct"] = lambda v: f"{v * 100:.1f}%"
     template = env.get_template("experiment.html.j2")
-    theme = (Path(__file__).resolve().parents[3] / "experiments" / "assets" / "theme.css").read_text()
+    theme = (TEMPLATE_DIR / "theme.css").read_text()
     layout = (TEMPLATE_DIR / "experiment.css").read_text()
     return template.render(x=experiment, css=theme + "\n" + layout)
 

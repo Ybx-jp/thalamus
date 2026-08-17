@@ -63,7 +63,7 @@ experiments = [
     "statsmodels>=0.14",  # cluster-robust intervals, GLMs, proportion CIs
     "jinja2>=3.1",        # the experiment write-up template
 ]
-# The entailment judge (docs/04 layer 1's fast path). Split from `experiments`
+# The entailment judge — the eval loop's fast attribution path. Split from `experiments`
 # because it pulls a multi-gigabyte torch build: an experiment must be re-runnable
 # without it, and only the attribution instrument itself needs it.
 nli = [

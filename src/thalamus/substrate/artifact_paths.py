@@ -17,8 +17,8 @@ correct, and turns the audit's collision count into a queryable fact rather than
 defect. A hard merge stays available later, as a choice rather than a prerequisite.
 
 **Resolution is a registry, not a scalar.** Cutting a path against *one* project name is
-what splits identities: with `project="ybx"`, `/home/ybx/code/thalamus/docs/x.md` cuts
-at `/ybx/` while the same file's relative spelling cuts nowhere, yielding two identities
+what splits identities: with `project="op"`, `/home/op/code/thalamus/docs/x.md` cuts
+at `/op/` while the same file's relative spelling cuts nowhere, yielding two identities
 for one file. Longest-prefix match against every known checkout root is order-independent
 and gets the nesting right — a vendored subrepo wins over its parent because its root is
 longer.
