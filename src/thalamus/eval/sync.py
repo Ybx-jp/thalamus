@@ -20,9 +20,9 @@ from thalamus.archive import read_archived
 from thalamus.eval import policy as policy_mod
 from thalamus.contract.ontology import NODES_BY_LABEL, vid
 from thalamus.eval.attribution import (
+    aligned_node_terms,
     attribute,
     judge_fingerprint,
-    node_terms,
     outputs_after,
 )
 from thalamus.eval.rankers import RankerLedger
@@ -213,7 +213,7 @@ def _land_event(
                     # the immutable archive, so terms + window reproduce the verdict
                     # exactly, and a later replay can say "the text changed" instead
                     # of silently scoring different text.
-                    "judged_terms": " ".join(node_terms(contents[verdict.node_id])),
+                    "judged_terms": " ".join(aligned_node_terms(contents[verdict.node_id])),
                 }
                 outcome.attributed += 1
                 if verdict.used:

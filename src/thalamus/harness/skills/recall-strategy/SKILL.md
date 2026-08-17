@@ -60,6 +60,9 @@ threads.
 **L2 — drill-down** when you hold an ID: `memory_thread` for a thread,
 `memory_recall_by_artifact` for a file/module, `memory_recall_by_project` at
 project switches. These are targeted and cheap; prefer them over re-recalling.
+Pass the artifact path you actually hold — absolute is fine. The lookup resolves
+it to the file's derived `(repo, path)` and returns every spelling's sessions, so
+there is nothing to gain by re-asking with the path rewritten another way.
 
 **L3 — `memory_query`** (main pin only) for **relational questions lexical
 recall cannot answer**. One read-only Gremlin traversal; the canonical schema is

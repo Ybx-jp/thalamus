@@ -163,7 +163,9 @@ def memory_recall(query: str, limit: int = 5, ticket: str = "") -> str:
 @mcp.tool
 def memory_recall_by_artifact(identifier: str, limit: int = 5, ticket: str = "") -> str:
     """Find past sessions that touched a specific file, class, module, or dependency.
-    Use when you know the specific artifact you want context about.
+    Use when you know the specific artifact you want context about. An absolute path
+    works as well as a repo-relative one — the same file recorded under several
+    spellings answers as one file.
     """
     g = _connect()
     if isinstance(g, str):

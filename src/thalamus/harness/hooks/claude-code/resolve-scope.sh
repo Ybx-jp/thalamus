@@ -34,6 +34,12 @@ thalamus_repo_root() {
   (cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 }
 
+# The tier-0 config directory — the bash mirror of contract/manifest.config_root.
+thalamus_config_root() {
+  local config="${THALAMUS_CONFIG_DIR:-$(thalamus_repo_root)/config}"
+  printf '%s' "${config/#\~/$HOME}"
+}
+
 # Sandbox guard — call at the top of every hook, right after sourcing this file.
 #
 # Thalamus runs headless `claude -p` / `agent -p` subprocesses to distill sessions
@@ -119,7 +125,7 @@ thalamus_resolve_forked_from() {
 # fix" is a one-line route around every boundary in the roster.
 thalamus_resolve_scope() {
   local config scope candidate
-  config="${THALAMUS_CONFIG_DIR:-$(thalamus_repo_root)/config}"
+  config="$(thalamus_config_root)"
   for candidate in "${1:-}" "${CLAUDE_CODE_AGENT:-}"; do
     [ -n "$candidate" ] || continue
     [ "${candidate#thalamus-}" != "$candidate" ] || continue
@@ -139,7 +145,7 @@ thalamus_resolve_scope() {
 # plausible whether or not it is complete. $1 (optional) excludes one scope.
 thalamus_roster() {
   local config exclude="${1:-}" path scope out=""
-  config="${THALAMUS_CONFIG_DIR:-$(thalamus_repo_root)/config}"
+  config="$(thalamus_config_root)"
   for path in "$config"/experts/*.yaml; do
     [ -f "$path" ] || continue          # no glob match: the literal pattern
     scope="$(basename "$path" .yaml)"
@@ -193,7 +199,7 @@ thalamus_agent_file() {
 # stale and predates the scope's tooling.
 thalamus_mcp_arming_warning() {
   local scope="${1:-main}" config mcp_file agent_file frontmatter name missing=""
-  config="${THALAMUS_CONFIG_DIR:-$(thalamus_repo_root)/config}"
+  config="$(thalamus_config_root)"
   mcp_file="$config/mcp/$scope.json"
   [ -f "$mcp_file" ] || return 0
 

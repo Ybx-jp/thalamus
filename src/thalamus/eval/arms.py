@@ -1215,7 +1215,12 @@ def memo_echo(task, transcript: str, framing: str = "conclusion") -> dict:
     as a perfect echo and measure nothing. Only assistant prose and tool-call
     inputs count, which is the same window layer-1 attribution judges against.
     """
-    from thalamus.eval.attribution import attribute_prepared, node_terms, output_window, prepare
+    from thalamus.eval.attribution import (
+        aligned_node_terms,
+        attribute_prepared,
+        output_window,
+        prepare,
+    )
 
     fact = injected_memo(task, framing)
     if not fact.strip():
@@ -1223,7 +1228,7 @@ def memo_echo(task, transcript: str, framing: str = "conclusion") -> dict:
 
     window = output_window(transcript.encode(), datetime.min.replace(tzinfo=timezone.utc))
     lower, tokens = prepare(window.text())
-    terms = node_terms(fact)
+    terms = aligned_node_terms(fact)
     # The key doubles as a node id, and layer 1's strongest path is a substring
     # test on that id — so a key of "memo" scores every arm that says the word
     # "memo" as a citation. Named so it cannot occur in prose.

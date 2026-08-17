@@ -518,7 +518,7 @@ class Task(BaseModel):
 
 def tasks_dir(base: Path | None = None) -> Path:
     override = os.environ.get("THALAMUS_CONFIG_DIR")
-    root = base or (Path(override) if override else _DEFAULT_CONFIG)
+    root = base or (Path(override).expanduser() if override else _DEFAULT_CONFIG)
     return root / "tasks"
 
 

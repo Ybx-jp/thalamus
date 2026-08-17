@@ -2,9 +2,10 @@
 Retrieval-rendering tests.
 
 Interfaces: thalamus.substrate.reader.MemoryResult.format, ExchangeResult.format,
-recall_exchanges, _extract_keywords
+recall_exchanges, spellings_of, _extract_keywords
 Infrastructure: none
-Scope: recalled memory enters context as data with provenance, never as instructions
+Scope: recalled memory enters context as data with provenance, never as instructions;
+       and an artifact lookup answers for the file, not for one spelling of its name
 """
 
 from thalamus.substrate.reader import (
@@ -16,6 +17,7 @@ from thalamus.substrate.reader import (
     read_exchange,
     recall_exchanges,
     search_exchanges,
+    spellings_of,
 )
 from thalamus.substrate.schema import Tier
 
@@ -734,3 +736,141 @@ def test_reading_one_exchange_requires_having_been_party_to_it():
     assert read_exchange(_ExchangeGraph(rows), "scope:main:exchange:t1", "main")
     assert read_exchange(_ExchangeGraph(rows), "scope:main:exchange:t1", "architect")
     assert read_exchange(_ExchangeGraph(rows), "scope:main:exchange:t1", "qe") is None
+
+
+# --------------------------------------------------------------------------------------
+# The derived `(repo, path)` projection, read.
+# --------------------------------------------------------------------------------------
+
+
+class _ArtifactGraph:
+    """Artifact vertices with their derived projection, filtered the way `or_` filters.
+
+    Each `or_` branch is an anonymous traversal of `has` steps; a row satisfies a branch
+    when it satisfies all of them, and the `or_` when it satisfies any branch. That is
+    the semantics under test — a two-`has` branch must not match a row that carries only
+    one of the pair, or `README.md` in one repo answers for `README.md` in another.
+    """
+
+    def __init__(self, rows):
+        self._rows = rows
+        self._or = None
+        self._keys = None
+
+    def V(self):
+        return self
+
+    def has_label(self, _label):
+        return self
+
+    def or_(self, *traversals):
+        self._or = [
+            [(step[1], step[2]) for step in traversal.bytecode.step_instructions
+             if step[0] == "has"]
+            for traversal in traversals
+        ]
+        return self
+
+    def project(self, *keys):
+        self._keys = keys
+        return self
+
+    def by(self, *_args):
+        return self
+
+    def values(self, key):
+        self._keys = None
+        self._value = key
+        return self
+
+    @staticmethod
+    def _satisfies(row, key, value):
+        actual = str(row.get(key, ""))
+        if getattr(value, "operator", None) == "containing":
+            return value.value in actual
+        return actual == str(value)
+
+    def _matched(self):
+        return [
+            row for row in self._rows
+            if any(all(self._satisfies(row, key, value) for key, value in branch)
+                   for branch in self._or or [])
+        ]
+
+    def to_list(self):
+        if self._keys:
+            return [{key: row.get(key, "") for key in self._keys} for row in self._matched()]
+        return [row.get(self._value, "") for row in self._matched()]
+
+
+def _artifact(identifier, repo="", path=""):
+    return {"identifier": identifier, "repo": repo, "path": path}
+
+
+def test_an_absolute_query_reaches_the_relative_spelling_of_the_same_file():
+    """
+    Scenario: One file is in the graph twice — once as the absolute path a tool call
+    carried and once as the repo-relative path a claim named it by — and the caller
+    queries with the absolute one
+
+    Verifications:
+    - both spellings come back
+
+    This is the direction substring matching cannot do, and the common one: an agent
+    recalls with the path its own tool call carried, and an absolute identifier is not
+    a substring of its repo-relative twin. Before the projection was read, the caller
+    saw one vertex and the touches on the other were unreachable.
+    """
+    g = _ArtifactGraph([
+        _artifact("/home/u/code/thalamus/src/a.py", "thalamus", "src/a.py"),
+        _artifact("src/a.py", "thalamus", "src/a.py"),
+    ])
+
+    assert spellings_of(g, "/home/u/code/thalamus/src/a.py") == [
+        "/home/u/code/thalamus/src/a.py",
+        "src/a.py",
+    ]
+
+
+def test_one_relative_path_in_two_repos_stays_two_files():
+    """
+    Scenario: Two checkouts each hold a README.md, and the query names one of them
+
+    Verifications:
+    - only the queried repo's spellings come back
+
+    Repo furniture is why the join key is `(repo, path)` and not the path. A suffix
+    match fuses these two, which is worse than missing one: it invents a file that
+    never existed and reports another project's sessions as this one's.
+    """
+    g = _ArtifactGraph([
+        _artifact("/home/u/code/thalamus/README.md", "thalamus", "README.md"),
+        _artifact("/home/u/code/stepmania/README.md", "stepmania", "README.md"),
+        _artifact("README.md", "thalamus", "README.md"),
+    ])
+
+    assert spellings_of(g, "/home/u/code/thalamus/README.md") == [
+        "/home/u/code/thalamus/README.md",
+        "README.md",
+    ]
+
+
+def test_unanchored_artifacts_are_not_joined_to_each_other():
+    """
+    Scenario: A scratchpad file the registry cannot anchor, queried by name, alongside
+    another unanchored file
+
+    Verifications:
+    - only the file that was matched comes back
+
+    "Belongs to no repo" is an outcome, and every artifact in it carries the same empty
+    `(repo, path)`. Expanding on that key would merge every scratchpad, skill file and
+    system binary in the graph into one result — the false merge the projection exists
+    to avoid, arrived at from the read side.
+    """
+    g = _ArtifactGraph([
+        _artifact("/tmp/claude-1000/scratchpad/notes.md"),
+        _artifact("/usr/local/bin/install-media-sort.sh"),
+    ])
+
+    assert spellings_of(g, "notes.md") == ["/tmp/claude-1000/scratchpad/notes.md"]

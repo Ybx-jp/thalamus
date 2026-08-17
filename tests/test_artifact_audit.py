@@ -3,7 +3,9 @@ Artifact identity fragmentation audit.
 
 Interfaces: thalamus.substrate.artifact_audit.audit_artifact_identity
 Infrastructure: none — the graph read is stubbed, the arithmetic is the subject
-Scope: whether the audit finds duplicate spellings of one file without trusting `project`
+Scope: whether the audit finds duplicate spellings of one file without trusting
+       `project`, and separates the pairs the `(repo, path)` projection has since
+       joined from the residue it cannot reach
 """
 
 from thalamus.substrate import artifact_audit
@@ -37,11 +39,10 @@ def test_an_absolute_path_duplicating_a_relative_one_is_counted_with_its_touches
 
     # Verifies: the duplicate is found, and resolved onto the path it duplicates
     assert len(audit.split_pairs) == 1
-    _, resolved, touches = audit.split_pairs[0]
-    assert resolved == "src/thalamus/cli.py"
+    assert audit.split_pairs[0].relative == "src/thalamus/cli.py"
 
     # Verifies: only the stranded side is counted, not the surviving side
-    assert touches == 50
+    assert audit.split_pairs[0].touches == 50
     assert audit.stranded_touches == 50
 
 
@@ -66,7 +67,7 @@ def test_the_audit_does_not_depend_on_project_being_a_real_repo_name(monkeypatch
     audit = audit_artifact_identity(object())
 
     # Verifies: junk in `project` costs the audit nothing
-    assert [pair[1] for pair in audit.split_pairs] == ["docs/index.md"]
+    assert [pair.relative for pair in audit.split_pairs] == ["docs/index.md"]
 
 
 def test_a_suffix_that_is_not_a_path_boundary_is_not_a_match(monkeypatch):
@@ -118,3 +119,42 @@ def test_one_relative_path_owned_by_several_projects_is_reported(monkeypatch):
     assert audit.collisions == {
         "README.md": {"thalamus", "stepmania-chart-generator"}
     }
+
+
+def test_a_split_pair_the_projection_reaches_is_separated_from_the_residue(monkeypatch):
+    """
+    Scenario: Two split pairs — one whose spellings both anchor onto the same
+    `(repo, path)`, and one whose absolute spelling sits in no proven checkout
+
+    Verifications:
+    - the anchored pair is reported as joined, with its touches counted as rejoined
+    - the unanchored pair is the residue, and the historical totals are unchanged
+
+    Both vertices still exist in both cases; nothing is re-keyed. What separates them is
+    whether a reader can reach them together, which is the number the projection was
+    built to move. Quoting the whole historical count after the projection landed would
+    report work already done as work outstanding.
+    """
+    _rows(monkeypatch, [
+        {"identifier": "src/a.py", "project": "thalamus",
+         "repo": "thalamus", "path": "src/a.py", "touches": 9},
+        {"identifier": "/home/u/code/thalamus/src/a.py", "project": "thalamus",
+         "repo": "thalamus", "path": "src/a.py", "touches": 40},
+        {"identifier": "docs/b.md", "project": "thalamus",
+         "repo": "", "path": "", "touches": 3},
+        {"identifier": "/somewhere/unproven/docs/b.md", "project": "thalamus",
+         "repo": "", "path": "", "touches": 7},
+    ])
+
+    audit = audit_artifact_identity(object())
+
+    # Verifies: the historical measure is untouched — it is still the honest total
+    assert len(audit.split_pairs) == 2
+    assert audit.stranded_touches == 47
+
+    # Verifies: only the anchored pair counts as reached
+    assert [pair.relative for pair in audit.joined_pairs] == ["src/a.py"]
+    assert audit.rejoined_touches == 40
+
+    # Verifies: an unanchored pair shares `("", "")`, which is two unknowns not one file
+    assert [pair.relative for pair in audit.residue] == ["docs/b.md"]
