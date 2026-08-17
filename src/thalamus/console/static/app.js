@@ -1204,13 +1204,25 @@ function rowState(w, d, now, graceS) {
       { elapsed: fmtDur(now - w[op]) });
   }
 
-  if (op === "recycling") return slot(`restarting ${fmtDur(now - w.recycling)}`);
-  if (op === "closing") return slot(`closing ${fmtDur(now - w.closing)}`);
+  // The tone is reinforcement and never the carrier: every one of these is a word
+  // first, and the word alone is complete. It is set here beside the sentence that
+  // earns it rather than derived in the renderer, so a state cannot acquire a colour
+  // without someone writing down which state it is.
+  if (op === "recycling") {
+    return slot(`restarting ${fmtDur(now - w.recycling)}`, { tone: "warn" });
+  }
+  if (op === "closing") return slot(`closing ${fmtDur(now - w.closing)}`, { tone: "warn" });
 
   // `age` is precomputed server-side; stalled keeps steady geometry because it is
-  // past the stall clock but has not failed and may still complete.
-  if (d && d.state === "active") return slot(`distilling ${fmtDur(d.age)}`);
-  if (d && d.state === "stalled") return slot(`distilling ${fmtDur(d.age)} · stalled`);
+  // past the stall clock but has not failed and may still complete. The two are one
+  // sentence apart, so they are also one tone apart — the `· stalled` clause is what
+  // says it, and the colour only agrees with it.
+  if (d && d.state === "active") {
+    return slot(`distilling ${fmtDur(d.age)}`, { tone: "ok" });
+  }
+  if (d && d.state === "stalled") {
+    return slot(`distilling ${fmtDur(d.age)} · stalled`, { tone: "stalled" });
+  }
 
   if (!w) return slot("");
 
@@ -1467,8 +1479,11 @@ function sessionRow(r, now, graceS) {
   if (!st.band) {
     const slot = document.createElement("span");
     // The typeface is the claim: a state that was read is monospace, and the console
-    // saying it cannot see is not. The distinction survives greyscale.
-    slot.className = "srow-slot" + (st.mono ? "" : " unseen");
+    // saying it cannot see is not. The distinction survives greyscale. The tone is a
+    // second and weaker channel laid over it — the word is what carries the state,
+    // and every one of these reads complete with the colour removed.
+    slot.className = "srow-slot" + (st.mono ? "" : " unseen")
+      + (st.tone ? ` t-${st.tone}` : "");
     slot.textContent = st.text;
     line1.appendChild(slot);
   }

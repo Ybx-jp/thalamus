@@ -32,7 +32,8 @@
      Sharing a value made two registries own one hex: moving the identity palette
      would have silently moved the status signal, or failed to. Both clear the 3:1
      non-text floor and the 4.5:1 text floor on every ground they paint on. */
-  --ok: #45c08d;
+  /* The third rung of the signal ramp, and the tone the roster's `distilling` takes. */
+  --ok: #54c5b3;
   --pending: #e8b44a;
   /* The console's own accent, and the ground under every dark-ink control. It is
      deliberately NOT `--chan`, which JS reassigns to the viewed session's identity
@@ -1075,6 +1076,22 @@ body[data-view="session"] .roster { display: none; }
    put a step in the column. The lane is reserved rather than the control moved: the
    expander inboard of the slot is a 44 px target adrift in the middle of the row. */
 .srow-slot:last-child { margin-right: var(--more-w); }
+/* The state slot's tones. Reinforcement only — each state is a word first, and the
+   sentence is complete without the hue: `restarting 0:42`, `distilling 2:14`,
+   `distilling 21:04 · stalled`. Read in greyscale the row loses nothing.
+
+   `t-ok` and `t-stalled` are 1.104:1 apart in luminance and are one grey to a reader
+   who cannot separate them by hue. That is deliberate and not a defect to fix: no
+   amber separates from this teal on this palette — the comp's own stalled amber
+   measures 1.073, worse than this one — and the two states differ by the words
+   `· stalled`, which is the carrier. Moving either value to buy separation from the
+   other costs its separation from `t-warn`, the pair that appears on adjacent rows.
+
+   `t-blocked` has no rule: that state is drawn as the filled pill, and giving the
+   slot a colour for it too would be one state painted twice. */
+.srow-slot.t-warn { color: var(--warn); }
+.srow-slot.t-ok { color: var(--ok); }
+.srow-slot.t-stalled { color: var(--pending); }
 /* A non-observation is never monospace. The console saying it cannot see must not
    look like a state it read, and the difference costs no colour. */
 .srow-slot.unseen {
