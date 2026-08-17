@@ -48,7 +48,7 @@ from pathlib import Path
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import T
 
-from thalamus.harness.transcripts import is_sandbox_project
+from thalamus.harness.transcripts import is_sandbox_project, resolve_repo_root
 from thalamus.substrate.schema import ProjectEvidence
 
 PIN_LEDGER = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
@@ -99,20 +99,6 @@ class RepairPlan:
         for change in self.changes:
             counts[change.label] = counts.get(change.label, 0) + 1
         return counts
-
-
-def resolve_repo_root(path: str) -> str:
-    """The checkout containing `path`, or `""`. Never raises."""
-    if not path:
-        return ""
-    try:
-        result = subprocess.run(
-            ["git", "-C", path, "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=10, check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def _exists(path: str) -> bool:

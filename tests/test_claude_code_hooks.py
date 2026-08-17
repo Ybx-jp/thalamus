@@ -19,6 +19,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from thalamus.harness import transcripts
+
 HOOKS = Path(__file__).resolve().parents[1] / "src" / "thalamus" / "harness" / "hooks" / "claude-code"
 
 
@@ -97,6 +99,31 @@ class TestInjectedInstruction:
         ctx = context_of(run_hook(session_start_payload(cwd=str(loose)), tmp_path))
 
         assert 'project=""' in ctx
+
+    def test_a_worktree_session_recalls_and_files_under_the_repository(self, tmp_path):
+        """A session launched in a worktree belongs to the repo, on both surfaces.
+
+        Worktrees are how concurrent sessions here avoid sharing one index and HEAD,
+        so a project minted per worktree splits one repo's memory across as many
+        buckets as it had sessions running — and a recall naming the repo finds none
+        of them. The hook and `transcripts.resolve_repo_root` are asserted together
+        because they are two implementations of one fact, in two languages: this one
+        picks whose threads are recalled at session start and writes the pin-ledger
+        row the console groups the roster by, that one picks what the session
+        distills under. They cannot be allowed to drift.
+        """
+        checkout = tmp_path / "myproject"
+        checkout.mkdir()
+        for args in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "root"],
+                     ["worktree", "add", "-q", str(tmp_path / "wt"), "-b", "side"]):
+            subprocess.run(["git", "-C", str(checkout), *args],
+                           check=True, capture_output=True)
+
+        ctx = context_of(run_hook(session_start_payload(cwd=str(tmp_path / "wt")), tmp_path))
+
+        assert 'project="myproject"' in ctx
+        assert "wt" not in ctx.split('project="')[1].split('"')[0]
+        assert transcripts.resolve_repo_root(str(tmp_path / "wt")) == str(checkout)
 
     def test_thalamus_project_overrides_the_cwd_guess(self, tmp_path):
         """
