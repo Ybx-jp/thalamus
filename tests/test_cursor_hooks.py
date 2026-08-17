@@ -111,6 +111,43 @@ class TestSessionStart:
             }
         ]
 
+    def test_a_worktree_session_recalls_and_files_under_the_repository(self, tmp_path):
+        """
+        Scenario: a Cursor session opens a worktree of a repo as its workspace root.
+
+        Verifications:
+        - the primed project is the repository's name, not the worktree directory's
+        - the pin ledger row the console groups the roster by carries the same
+
+        Four implementations resolve this fact, in two languages, and they cannot
+        drift: `transcripts.resolve_repo_root` decides what a session distills under,
+        while this hook decides whose threads it recalls at start. Since the write
+        path files a worktree's work under the repository, a hook resolving the
+        worktree to itself asks for a project nothing is filed under — which returns
+        empty rather than wrong, and an empty recall reads as "no prior work here".
+        """
+        checkout = tmp_path / "myproject"
+        checkout.mkdir()
+        for args in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "root"],
+                     ["worktree", "add", "-q", str(tmp_path / "wt"), "-b", "side"]):
+            subprocess.run(["git", "-C", str(checkout), *args],
+                           check=True, capture_output=True)
+
+        result = run_hook(
+            "session-start.sh",
+            session_start_payload(workspace_roots=[str(tmp_path / "wt")]),
+            tmp_path,
+        )
+        assert result.returncode == 0
+        assert 'project="myproject"' in json.loads(result.stdout)["additional_context"]
+
+        pin = read_jsonl(tmp_path / ".thalamus" / "pins" / "pins.jsonl")[0]
+        # Verifies: the roster groups this session with the repo's other sessions
+        assert pin["project"] == "myproject"
+        assert pin["repo_root"] == str(checkout)
+        # Verifies: cwd still records where the session actually ran
+        assert pin["cwd"] == str(tmp_path / "wt")
+
     def test_env_pin_is_announced_and_recorded(self, tmp_path):
         """
         Scenario: the session was launched with THALAMUS_SCOPE=literature
