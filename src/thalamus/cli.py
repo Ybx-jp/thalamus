@@ -2290,7 +2290,8 @@ def _cmd_audit_artifacts(args):
     is the join key between scopes. Raw tool-call strings do not deliver that, and this
     says by how much, over the raw identifiers. Read-only, and measured there on
     purpose: the identifiers are never re-keyed, and the join is repaired beside them by
-    `thalamus derive-artifact-paths`. Run that to see how much of this is reached.
+    the `(repo, path)` projection. Each split pair is reported with whether that
+    projection reaches it, so the residue is separable from the historical total.
     """
     from thalamus.substrate.artifact_audit import audit_artifact_identity
 
@@ -2302,13 +2303,17 @@ def _cmd_audit_artifacts(args):
         print(f"  absolute paths duplicating a relative sibling: {len(audit.split_pairs)}")
         print(f"  touch edges stranded on those duplicates:      {audit.stranded_touches}")
         print(f"  relative paths claimed by >1 project:          {len(audit.collisions)}")
+        print(
+            f"\njoined by the (repo, path) projection: {len(audit.joined_pairs)} of "
+            f"{len(audit.split_pairs)} pairs, {audit.rejoined_touches} of "
+            f"{audit.stranded_touches} touches"
+        )
 
-        if audit.split_pairs:
-            print("\nmost-stranded duplicates:")
-            for _, relative, touches in sorted(
-                audit.split_pairs, key=lambda row: -row[2]
-            )[:10]:
-                print(f"  {touches:4d} touches  {relative}")
+        if audit.residue:
+            print(f"\nmost-stranded duplicates the projection cannot reach "
+                  f"({len(audit.residue)} remain):")
+            for pair in sorted(audit.residue, key=lambda pair: -pair.touches)[:10]:
+                print(f"  {pair.touches:4d} touches  {pair.relative}")
 
         if audit.collisions:
             print("\npaths claimed by more than one project:")
@@ -2319,9 +2324,9 @@ def _cmd_audit_artifacts(args):
         for project, count in audit.projects.items():
             print(f"  {count:5d}  {project}")
         print(
-            "\nRead-only. Repair is blocked on an anchor for making absolute paths "
-            "repo-relative;\n`project` cannot serve as one while values like these are "
-            "in it."
+            "\nRead-only, and measured over the raw identifiers, which are never "
+            "re-keyed.\nThe residue is what a fresh `thalamus derive-artifact-paths` "
+            "cannot anchor: one of\nits spellings sits in no proven checkout."
         )
     finally:
         close_connection(graph)

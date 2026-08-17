@@ -12,9 +12,11 @@ re-keyed. The join is repaired *beside* them by the `(repo, path)` projection
 sessions whose `project_evidence` proves it — so the numbers here are the fragmentation
 that projection has to reach, not a backlog waiting on a decision.
 
-Read the two together. A split pair that shares a `(repo, path)` is joined and its
-stranded touches are reachable; one that does not is a file the registry cannot anchor,
-and that is the residue worth looking at.
+Each split pair is reported with whether the projection has joined it: a pair whose two
+spellings share a `(repo, path)` is reachable together and its touches are no longer
+stranded, while one that does not is a file the registry cannot anchor. The residue is
+the number to act on — the whole historical count is what the projection was built
+against, not what is left.
 """
 
 from __future__ import annotations
@@ -28,6 +30,22 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 TOUCH_EDGE = "TOUCHES"
 
 
+@dataclass(frozen=True)
+class SplitPair:
+    """One file under two spellings, and whether the projection has since joined them.
+
+    `joined` is the difference between the historical number and the live one. Both
+    spellings still exist as separate vertices — nothing is re-keyed — but when they
+    carry the same `(repo, path)` a reader can reach them together, so the touches on
+    the losing side are no longer stranded.
+    """
+
+    absolute: str
+    relative: str
+    touches: int
+    joined: bool = False
+
+
 @dataclass
 class ArtifactAudit:
     """What the graph's artifact identity looks like, measured rather than asserted."""
@@ -35,7 +53,7 @@ class ArtifactAudit:
     total: int = 0
     # A file named by an absolute path that some other vertex already names relatively.
     # These are the unambiguous duplicates: same file, two vertices, no judgement call.
-    split_pairs: list[tuple[str, str, int]] = field(default_factory=list)
+    split_pairs: list[SplitPair] = field(default_factory=list)
     # Relative paths that more than one project claims. Repo furniture, mostly.
     collisions: dict[str, set[str]] = field(default_factory=dict)
     # Distinct project values, with how many artifacts carry each. Printed in full
@@ -45,19 +63,49 @@ class ArtifactAudit:
 
     @property
     def stranded_touches(self) -> int:
-        return sum(touches for _, _, touches in self.split_pairs)
+        return sum(pair.touches for pair in self.split_pairs)
+
+    @property
+    def joined_pairs(self) -> list[SplitPair]:
+        """Split pairs the `(repo, path)` projection has since brought back together."""
+        return [pair for pair in self.split_pairs if pair.joined]
+
+    @property
+    def residue(self) -> list[SplitPair]:
+        """Split pairs the projection cannot reach — the part still worth looking at.
+
+        A pair lands here when at least one of its spellings sits in no proven checkout,
+        so the registry has nothing to cut it against. That is the number this audit
+        exists to shrink; the whole historical count no longer is.
+        """
+        return [pair for pair in self.split_pairs if not pair.joined]
+
+    @property
+    def rejoined_touches(self) -> int:
+        return sum(pair.touches for pair in self.joined_pairs)
 
 
 def _artifact_rows(g: GraphTraversalSource) -> list[dict]:
     return (
         g.V()
         .has_label("Artifact")
-        .project("identifier", "project", "touches")
+        .project("identifier", "project", "repo", "path", "touches")
         .by("identifier")
         .by(__.coalesce(__.values("project"), __.constant("")))
+        .by(__.coalesce(__.values("repo"), __.constant("")))
+        .by(__.coalesce(__.values("path"), __.constant("")))
         .by(__.in_e(TOUCH_EDGE).count())
         .to_list()
     )
+
+
+def _projection_key(row: dict) -> tuple[str, str]:
+    """The `(repo, path)` a row projects onto, or `("", "")` for unanchored.
+
+    Defaulted rather than indexed: an artifact written before the projection existed
+    carries neither property, and an absent projection is unanchored, not an error.
+    """
+    return str(row.get("repo") or ""), str(row.get("path") or "")
 
 
 def audit_artifact_identity(g: GraphTraversalSource) -> ArtifactAudit:
@@ -97,7 +145,17 @@ def audit_artifact_identity(g: GraphTraversalSource) -> ArtifactAudit:
             default="",
         )
         if match:
-            audit.split_pairs.append((identifier, match, row["touches"]))
+            key = _projection_key(row)
+            audit.split_pairs.append(
+                SplitPair(
+                    absolute=identifier,
+                    relative=match,
+                    touches=row["touches"],
+                    # Both spellings anchored, onto the same file. An unanchored pair
+                    # shares `("", "")`, which is two unknowns rather than one answer.
+                    joined=bool(key[0]) and key == _projection_key(relative[match]),
+                )
+            )
             # Resolve the absolute spelling onto the relative path it duplicates before
             # counting owners — otherwise a file whose second repo only ever names it
             # absolutely looks uncontested.
