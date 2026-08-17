@@ -331,8 +331,11 @@ def test_dismissing_an_error_clears_it_and_the_dismissal_survives_a_restart(box,
     assert box.watch.dismiss("11111111") is True
     assert box.watch.rows() == []
 
+    # `kills` defaults to the operator's real ledger under ~/.thalamus, so a restart
+    # simulated without it reads live kill records and this assertion turns on whatever
+    # happened on the machine today.
     fresh = DistillWatch(logs=box.logs, pins=tmp_path / "pins.jsonl",
-                         state=tmp_path / "dismissed.json")
+                         state=tmp_path / "dismissed.json", kills=box.kills)
     assert fresh.rows() == []
 
 
@@ -379,7 +382,8 @@ def test_the_backlog_on_disk_at_first_run_is_a_clean_slate(tmp_path):
         (logs / f"session-end-old{n}0000.log").write_text(
             FAILED.format(sid=f"old{n}0000", scope="main"))
 
-    watch = DistillWatch(logs=logs, pins=pins, state=tmp_path / "dismissed.json")
+    watch = DistillWatch(logs=logs, pins=pins, state=tmp_path / "dismissed.json",
+                         kills=tmp_path / "killed.jsonl")
     assert watch.rows() == []
 
     # ...but a distillation that happens after the seed is not swallowed by it.

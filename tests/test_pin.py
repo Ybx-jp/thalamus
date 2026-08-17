@@ -92,7 +92,7 @@ def test_spawn_rejects_a_nonexistent_directory(tmp_path, monkeypatch):
     monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
 
     with pytest.raises(ValueError, match="not a directory"):
-        spawn("homelab", tmp_path / "does-not-exist", base=REPO_CONFIG)
+        spawn("literature", tmp_path / "does-not-exist", base=REPO_CONFIG)
 
 
 def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monkeypatch):
@@ -116,14 +116,14 @@ def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monk
     monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
     _argv_only(monkeypatch)
 
-    spawn("homelab", tmp_path, base=REPO_CONFIG)
+    spawn("literature", tmp_path, base=REPO_CONFIG)
 
     created = [c for c in calls if "new-session" in c]
     assert len(created) == 1, "the session should be created exactly once"
     argv = created[0]
-    assert argv[argv.index("-n") + 1] == "homelab", "first window must be the scope's"
+    assert argv[argv.index("-n") + 1] == "literature", "first window must be the scope's"
     assert "claude" in argv, "the first window must run claude, not a bare shell"
-    assert "THALAMUS_SCOPE=homelab" in argv, "the anchor must be armed for its scope"
+    assert "THALAMUS_SCOPE=literature" in argv, "the anchor must be armed for its scope"
     # A second window beside the placeholder is exactly the bug — the create path
     # already opened the window, so nothing should call new-window.
     assert not [c for c in calls if "new-window" in c]
@@ -306,15 +306,15 @@ def test_the_shipped_designer_scope_is_the_only_one_carrying_a_tool_surface():
 
 def test_resolve_pin_prefers_the_picked_agent_over_the_env_scope():
     """
-    Scenario: The agent picker launched `claude --agent thalamus-homelab` from a
+    Scenario: The agent picker launched `claude --agent thalamus-literature` from a
     shell whose env still said THALAMUS_SCOPE=main (measured 2026-07-18: all
     three roster expert sessions were mis-armed exactly this way)
 
     The picked agent is operator intent and must win; the env is residue.
     """
-    env = {"CLAUDE_CODE_AGENT": "thalamus-homelab", "THALAMUS_SCOPE": "main"}
+    env = {"CLAUDE_CODE_AGENT": "thalamus-literature", "THALAMUS_SCOPE": "main"}
 
-    assert resolve_pin(env, REPO_CONFIG) == "homelab"
+    assert resolve_pin(env, REPO_CONFIG) == "literature"
 
 
 def test_resolve_pin_falls_back_to_env_then_main():
@@ -369,7 +369,7 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     _argv_only(monkeypatch)
     monkeypatch.setenv("THALAMUS_ROOM", "alpha")
 
-    spawn("homelab", tmp_path, base=REPO_CONFIG)
+    spawn("literature", tmp_path, base=REPO_CONFIG)
 
     created = [c for c in calls if "new-session" in c][0]
     room_dir = str(pin.room_config_dir("alpha"))
@@ -385,7 +385,7 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     assert "THALAMUS_ROOM=alpha" in after[: after.index("claude")]
 
     # Verifies: the member carries the name the guard's roommate pattern admits
-    assert after[after.index("--name") + 1] == "alpha-homelab"
+    assert after[after.index("--name") + 1] == "alpha-literature"
 
     # Verifies: outside a room the argv says so, rather than saying nothing.
     # `new-session -e` stores its variables in the tmux SESSION environment (unlike
@@ -396,7 +396,7 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     calls.clear()
     monkeypatch.delenv("THALAMUS_ROOM")
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    spawn("homelab", tmp_path, base=REPO_CONFIG)
+    spawn("literature", tmp_path, base=REPO_CONFIG)
     plain = [c for c in calls if "new-session" in c][0]
     after = plain[plain.index("--") + 1:]
     assert after[: after.index("claude")] == ["env", "-u", "THALAMUS_ROOM",
@@ -427,7 +427,7 @@ def test_a_deliberate_config_dir_override_survives_a_roomless_launch(tmp_path, m
     monkeypatch.delenv("THALAMUS_ROOM", raising=False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/home/someone/.config/claude")
 
-    spawn("homelab", tmp_path, base=REPO_CONFIG)
+    spawn("literature", tmp_path, base=REPO_CONFIG)
 
     after = [c for c in calls if "new-session" in c][0]
     after = after[after.index("--") + 1:]

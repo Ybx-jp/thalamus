@@ -21,6 +21,7 @@ from thalamus.contract.manifest import (
     CapabilityBoundary,
     ExpertManifest,
     WriteBoundary,
+    available_scopes,
     load_manifest,
 )
 from thalamus.harness.install import HOOK_WIRING
@@ -54,6 +55,15 @@ class TestWriteBoundary:
         bound."""
         assert WriteBoundary(deny_globs=["*"]).denies("") is None
 
+    def test_a_tree_scoped_deny_leaves_its_neighbours_open(self):
+        """The narrow shape a role boundary usually takes. A scope that holds the
+        oracle but not the fix denies the implementation tree and keeps writing the
+        suite that asserts against it; a boundary that swept up its own working
+        directory would block the work rather than bound the role."""
+        boundary = WriteBoundary(deny_globs=["*/src/*"])
+        assert boundary.denies("/r/src/thalamus/eval/oracle.py") == "*/src/*"
+        assert boundary.denies("/r/tests/test_eval_oracle.py") is None
+
 
 class TestShippedManifests:
     def test_designer_is_bounded_off_software_but_not_off_design_artifacts(self):
@@ -63,27 +73,28 @@ class TestShippedManifests:
         for allowed in ("/r/mock.svg", "/r/spec.md", "/r/tokens.json", "/r/page.html"):
             assert boundary.denies(allowed) is None, f"{allowed} is a design artifact"
 
-    def test_qe_may_not_repair_what_it_asserts_against(self):
-        """qe holds the oracle, not the fix — but the campaign-to-green-suite
-        graduation path means tests/ and lab/ must stay unrestricted."""
-        boundary = load_manifest("qe").write_boundary
-        assert boundary.denies(f"{REPO}/src/thalamus/eval/oracle.py")
-        assert boundary.denies(f"{REPO}/tests/test_eval_oracle.py") is None
-        assert boundary.denies(f"{REPO}/lab/050-campaign.md") is None
-
     def test_architect_carries_no_boundary_by_charter(self):
         """It writes the changes it proposes; a path deny would block the work rather
         than bound a role. Its boundary is the pin trigger (docs/08), which is a
         weaker guarantee and is named as one."""
         assert load_manifest("architect").write_boundary.deny_globs == []
 
-    @pytest.mark.parametrize("scope", ["literature", "eval-methodology", "homelab", "teacher"])
+    @pytest.mark.parametrize("scope", ["literature", "eval-methodology"])
     def test_the_experts_that_predate_the_field_are_untouched(self, scope):
         assert load_manifest(scope).write_boundary.deny_globs == []
 
     def test_every_declared_boundary_explains_itself(self):
-        """A block that cannot say why teaches route-around."""
-        for scope in ("qe", "designer"):
+        """A block that cannot say why teaches route-around.
+
+        Over the whole roster rather than a named subset: the manifests are operator
+        files and the set of them changes, so a fixed list would stop covering the
+        expert added after it was written."""
+        declared = [
+            scope for scope in available_scopes()
+            if load_manifest(scope).write_boundary.deny_globs
+        ]
+        assert declared, "no shipped manifest declares a write boundary"
+        for scope in declared:
             manifest = load_manifest(scope)
             assert manifest.write_boundary.reason.strip(), f"{scope} blocks without a reason"
 
@@ -143,11 +154,14 @@ class TestShippedCapabilityBoundaries:
         assert boundary.denies_skill("author-repo-diagram") is None
 
     @pytest.mark.parametrize(
-        "scope", ["qe", "architect", "literature", "eval-methodology", "homelab", "teacher"]
+        "scope", [s for s in available_scopes() if s != "designer"]
     )
     def test_every_other_pinned_scope_inherits_the_deny(self, scope):
         """Declared once, inherited everywhere — the property that makes storing it
-        once safe rather than merely tidy."""
+        once safe rather than merely tidy.
+
+        Parametrized over the roster on disk rather than over a written list, so an
+        expert added tomorrow is covered without anyone remembering to add it here."""
         boundary = load_manifest(scope).effective_capability_boundary
         assert boundary.denies_skill("artifact-design")
         assert boundary.denies_tool("Artifact")
@@ -252,7 +266,7 @@ class TestRoleGuardHook:
             "tool_name": "Skill",
             "tool_input": {"skill": "artifact-design"},
         }
-        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-qe"})
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-literature"})
         assert result.returncode == 2
         assert "artifact-*" in result.stderr
 
@@ -273,7 +287,7 @@ class TestRoleGuardHook:
             "tool_name": "Skill",
             "tool_input": {"skill": "recall-strategy"},
         }
-        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-qe"})
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-literature"})
         assert result.returncode == 0
 
     def test_it_blocks_artifact_publishing_from_a_bounded_scope(self, tmp_path):
@@ -281,9 +295,9 @@ class TestRoleGuardHook:
             "session_id": "rg-1",
             "cwd": str(REPO),
             "tool_name": "Artifact",
-            "tool_input": {"file_path": f"{REPO}/qe-triage.html", "favicon": "🔬"},
+            "tool_input": {"file_path": f"{REPO}/findings.html", "favicon": "📚"},
         }
-        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-qe"})
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-literature"})
         assert result.returncode == 2
         assert "Artifact" in result.stderr
 
@@ -296,7 +310,7 @@ class TestRoleGuardHook:
             "tool_name": "Artifact",
             "tool_input": {"action": "list"},
         }
-        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-qe"})
+        result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-literature"})
         assert result.returncode == 0
 
     def test_it_governs_the_edit_tools_and_nothing_else(self, tmp_path):

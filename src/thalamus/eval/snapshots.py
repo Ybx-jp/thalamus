@@ -58,7 +58,9 @@ CONTAINER = "thalamus-graph-1"
 VOLUME = "thalamus_thalamus-graph-data"
 IMAGE = "tinkerpop/gremlin-server:3.7.3"
 
-REGISTRY = Path(__file__).resolve().parents[3] / "experiments" / "snapshots.jsonl"
+# Operator state, beside the graph's other ledgers — a pinned snapshot belongs to
+# whoever took it, not to the checkout it was taken from.
+REGISTRY = Path.home() / ".thalamus" / "snapshots.jsonl"
 
 # A snapshot name is part of a filename and of a published citation, so it is
 # restricted rather than sanitised — a name that needs escaping is a name that

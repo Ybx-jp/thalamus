@@ -80,8 +80,8 @@ def project_slug(cwd: str) -> str:
     """The `~/.claude/projects` directory name for a working directory.
 
     Claude Code flattens the absolute path, rewriting `/`, `.` and `_` each to a
-    single `-` and preserving case: `/home/ybx/.claude/plugins` becomes
-    `-home-ybx--claude-plugins`. Verified against real directories on this box.
+    single `-` and preserving case: `/home/op/.claude/plugins` becomes
+    `-home-op--claude-plugins`. Verified against real directories.
     """
     out = []
     for ch in cwd:

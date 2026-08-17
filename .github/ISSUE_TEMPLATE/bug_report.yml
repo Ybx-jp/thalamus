@@ -1,0 +1,66 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem and what it affects. Facts and numbers are welcome;
+        narrative about how it was found is not needed.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: The behaviour you observed, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The shortest path from a working install to the problem.
+      placeholder: |
+        1. thalamus ...
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: What it affects
+      description: >
+        Which surface, and who hits it — every install, or only a particular
+        configuration. If you know the file and line, name it.
+    validations:
+      required: false
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, agent CLI and version, and whether the graph container is running.
+      placeholder: |
+        OS:
+        Python:
+        Agent CLI:
+        Graph running: yes/no
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Error text or command output. Paste it as text rather than a screenshot.
+      render: shell
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        **Before you paste:** transcripts, graph dumps and hook output can contain
+        credentials that were on screen. Check what you are pasting.

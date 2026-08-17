@@ -223,7 +223,7 @@ returns nothing and reads as "never consulted".
 **Surface:** gremlin-python
 **Validated:** 2026-08-11 against the live graph (5 rows for `main` on "harness
 capability contract", including the two rounds that settled a design a later session
-then re-derived — lab/055)
+then re-derived)
 
 ```python
 from thalamus.substrate.writer import connect, close_connection
@@ -298,7 +298,7 @@ use-gate against those existing labels needs the (exchange, witnessed-claim) uni
 and its positive rate, before any experiment is built.
 **Surface:** gremlin-python
 **Validated:** 2026-08-08 against the live graph (48/55 answered exchanges non-empty;
-807 pairs, 89 positives, base rate 0.110) — lab/042
+807 pairs, 89 positives, base rate 0.110)
 
 ```python
 from gremlin_python.process.graph_traversal import __

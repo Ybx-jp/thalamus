@@ -132,11 +132,11 @@ class TranscriptFacts:
 
         Derived from `repo_root`, never from `cwd`. A cwd basename answers a
         different question — *what is this directory called* — and answering the
-        project question with it is what put `ybx`, `tmp`, `code`, a 64-char content
-        hash and `Avatar - The Last Airbender - Season 2` into the graph as project
+        project question with it is what put a home-directory basename, `tmp`, `code`,
+        a 64-char content hash and a media directory name into the graph as project
         names. The damage is not cosmetic: `project` is the anchor a repo-relative
         path is cut against, and a wrong anchor does not merely fail to merge, it
-        *splits* — `/home/ybx/code/thalamus/docs/x.md` cuts at `/ybx/` while the
+        *splits* — `/home/op/code/thalamus/docs/x.md` cuts at `/op/` while the
         relative spelling of the same file cuts nowhere, yielding two identities for
         one file (`substrate/artifact_audit.py`).
 

@@ -39,9 +39,10 @@ The first three are seconds and catch most of it.
 3. **`uv run pytest -q`** — full suite.
 4. **`uv run thalamus contract check`** — only if a live write path changed. A pure
    client change does not need it.
-5. **`curl -s 127.0.0.1:8378/api/panes | python3 -m json.tool | head -40`** against
-   the **live roster**. The tests use fixtures; every field-shape surprise in this
-   client was found this way and not by a test.
+5. **`curl -s "$CONSOLE/api/panes" | python3 -m json.tool | head -40`** against
+   the **live roster**, where `CONSOLE` is the console's bind address —
+   `127.0.0.1:8378` unless you changed it. The tests use fixtures; every
+   field-shape surprise in this client was found this way and not by a test.
 6. **The deploy check, then the phone.** See below.
 
 ## Server truth before client theory
@@ -49,8 +50,9 @@ The first three are seconds and catch most of it.
 **When the phone disagrees with the server, get server truth first, every time.**
 
 ```sh
-curl -s 127.0.0.1:8378/api/panes | head -c 400      # 1. the server
-curl -s https://<host>/console/api/panes | head -c 400   # 2. the proxy
+CONSOLE=127.0.0.1:8378                                    # the documented default bind
+curl -s "$CONSOLE/api/panes" | head -c 400                # 1. the server
+curl -s https://<host>/console/api/panes | head -c 400    # 2. the proxy
 # 3. only now, the phone
 ```
 
@@ -59,15 +61,18 @@ far, and skipping it has cost whole sessions.
 
 ### The deploy check, which outranks every hazard below
 
-The deployed console runs from the main checkout under systemd. A merge that never
-reached that checkout's disk is invisible to git, to the tests, and to the PR — and
-the phone serves a stale tree while every check you ran was green.
+The deployed console serves from whichever checkout its service was started in, which
+is not necessarily the one you edited — a worktree, a second clone, or a merge that
+never reached that checkout's disk is invisible to git, to the tests, and to the PR,
+and the phone serves a stale tree while every check you ran was green.
+
+Run all four from the checkout the service is running out of:
 
 ```sh
-git -C ~/code/thalamus rev-parse --short HEAD
-git -C ~/code/thalamus branch --show-current
-curl -s 127.0.0.1:8378/app.js | md5sum
-md5sum ~/code/thalamus/src/thalamus/console/static/app.js
+git rev-parse --short HEAD
+git branch --show-current
+md5sum src/thalamus/console/static/app.js
+curl -s "$CONSOLE/app.js" | md5sum
 ```
 
 The two md5s disagreeing is the whole diagnosis. Static files are read per-request,

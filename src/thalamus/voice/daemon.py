@@ -7,11 +7,11 @@ is almost entirely load, not synthesis — measured at roughly 1.5s of a 2s
 cold invocation — so the only architecture that pays for itself keeps one
 pipeline warm and answers requests against it.
 
-The GPU matters here less for speed than for contention. This box has four
-cores and already runs the roster, the console, pulse, ttyd and a media stack
-on them; a CUDA-resident pipeline does its work on none of them. torch is
-still pinned to a single thread, because it otherwise helps itself to all four
-during the parts that do run on CPU.
+The GPU matters here less for speed than for contention. A host running the
+roster, the console and pulse is already spending its cores on them; a
+CUDA-resident pipeline does its work on none of them. torch is still pinned to
+a single thread, because it otherwise helps itself to every core during the
+parts that do run on CPU. Pass `device="cpu"` on a machine without CUDA.
 
 This module is deliberately importable with nothing from `thalamus` on the
 path: it runs under its own venv outside the checkout, holding the heavy

@@ -71,7 +71,7 @@ g.V().has("identifier", TextP.containing("reader.py"))
 ## Rule 4 — ad-hoc queries are read-only
 
 The graph's write paths are distillation (`thalamus extract`), `thalamus ingest`
-and `thalamus write` only (docs/05) — all of them outside a live session. An
+and `thalamus write` only — all of them outside a live session. An
 ad-hoc query that mutates is a contract violation even though
 gremlin-python will happily do it — the `memory_query` guard's denied-step list
 (`substrate/query.py`) is the norm for ad-hoc python too: no `add_v`, `add_e`,
@@ -104,8 +104,8 @@ count.
 
 ## Deeper reference
 
-`docs/gremlin-docs/` is a local, gremlin-python-focused subset of the TinkerPop
-reference — routing table in [its index](../../../../../docs/gremlin-docs/index.md).
+`gremlin-docs/`, beside this skill, is a local gremlin-python-focused subset of the
+TinkerPop reference — routing table in [its index](gremlin-docs/index.md).
 Read the *specific file* for your problem, not the tree: steps are in
 `06-steps/` by category; the python driver (connection options, statics,
 lambdas, DSLs, event-loop limitations) is `12-gremlin-python.md`.
@@ -115,4 +115,4 @@ lambdas, DSLs, event-loop limitations) is `12-gremlin-python.md`.
 Schema-aware LLM-written graph queries: Multi-Agent GraphRAG (arXiv 2511.08274).
 Deterministic pre-execution feedback as the cheap half of execution-feedback
 self-correction: Self-Debugging (arXiv 2304.05128). Question+query example
-stores for generation: DAIL-SQL (arXiv 2308.15363). Positioning in docs/11 §3b.
+stores for generation: DAIL-SQL (arXiv 2308.15363).

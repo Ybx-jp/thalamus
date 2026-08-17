@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Getting started
+    url: https://github.com/Ybx-jp/thalamus/blob/master/docs/getting-started.md
+    about: Install, first run, and what each step should look like before you file anything.
+  - name: Concepts
+    url: https://github.com/Ybx-jp/thalamus/blob/master/docs/concepts.md
+    about: Scopes, experts, the federation contract, trust tiers, distillation.

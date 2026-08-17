@@ -287,7 +287,7 @@ def test_a_record_with_no_memo_is_not_rescored(tmp_path):
     assert all(o.memo_echoed is None for o in outcomes)
 
 
-def test_an_injected_arm_with_no_transcript_is_refused_not_stamped(tmp_path):
+def test_an_injected_arm_with_no_transcript_is_refused_not_stamped(tmp_path, battery):
     """
     Scenario: A ceiling arm whose transcript is gone — the confined arm wrote it into
     the container HOME beside the worktree, and both were deleted
@@ -303,13 +303,13 @@ def test_an_injected_arm_with_no_transcript_is_refused_not_stamped(tmp_path):
     from thalamus.eval.rescore import NO_TRANSCRIPT, memo_echo_outcomes
 
     outcomes = memo_echo_outcomes([{
-        "task": "arm-runner-session-death-classification",
+        "task": "sample-task",
         "arm": "ceiling",
         "ts": "2026-07-30T10:30:24",
         "worktree": str(tmp_path / "gone"),
         "agent": {"session_id": "abc-123"},
         "memo_echoed": {"used": True, "ratio": 0.486, "evidence": "cited by vertex ID"},
-    }])
+    }], tasks_base=battery, projects_base=tmp_path / "projects")
 
     assert outcomes[0].status == NO_TRANSCRIPT
     assert "abc-123" in outcomes[0].detail

@@ -1,6 +1,3 @@
-# Signed database licence files — NEVER commit.
-config/features.conf
-
 # The graph and the evidence archive are PRIVATE and are NEVER shipped. Every
 # install is fresh, for everyone: the graph is one operator's session history,
 # and the archive holds their retained transcripts verbatim. Both live outside
@@ -35,13 +32,5 @@ frontend/dist/
 # Derived pinned-agent definitions (thalamus pin) — the manifest is the source of truth
 .claude/agents/thalamus-*.md
 
-# Case studies — session-generated analysis, not shipped docs.
-/docs/studies/
-
 # qe findings — session-generated triage and corpus drafts, not the shipped suite.
 /tests/qe/findings/
-
-# Penpot deployment secrets (template is .env.example)
-deploy/penpot/.env
-# Third-party MCP server, built from the pinned commit in deploy/penpot/README.md
-deploy/penpot/penpot-mcp-server/

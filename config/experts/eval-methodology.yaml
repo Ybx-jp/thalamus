@@ -1,9 +1,9 @@
-# Expert manifest — evaluation methodology (docs/01 contract v0, docs/08 roster).
+# Expert manifest — evaluation methodology.
 #
-# Expert #2 (M3, "two proves N"): this file existing is the entire federation
-# surface for the expert — the zero-glue test from the 2026-07-15 decision.
-# Roster decision recorded in docs/08; this is a deliberate top-down roster act,
-# not procurement drift (docs/06 rule 1 governs the latter).
+# This file existing is the entire federation surface for the expert — the
+# zero-glue test. Adding a scope this way is a deliberate top-down roster act,
+# distinct from procurement drift, and the decision belongs in the project's
+# roster rationale.
 
 contract: v0
 scope: eval-methodology
@@ -12,11 +12,9 @@ domain: >-
   Evaluation of agent and LLM systems: metrics design, LLM-as-judge and its
   meta-evaluation, ablation and counterfactual design, calibration and
   measurement reliability — the through-line across the operator's projects,
-  and the eval loop's own methodology consultant. The experimental design of a
-  model's own training and serving work — its ablations, controls and run-to-run
-  significance — is held by dl alongside the runs it interprets.
+  and the eval loop's own methodology consultant.
 
-# Origin tier of everything this expert's feeds write (docs/05). Methodology
+# Origin tier of everything this expert's feeds write. Methodology
 # papers are tier 2 forever, same as any literature.
 tier: 2
 
@@ -27,7 +25,7 @@ claim_kinds:
   - literature/finding
   - literature/technique
 
-# Host suffixes `thalamus ingest <url>` may fetch (docs/06). Local files bypass the
+# Host suffixes `thalamus ingest <url>` may fetch. Local files bypass the
 # list as ever. The statistics anchors this scope needs are not on arXiv — the
 # methods literature it draws on predates it or never used it — so the open-access
 # publishers carrying them are listed explicitly rather than by a broad suffix:

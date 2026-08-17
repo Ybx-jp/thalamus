@@ -1191,7 +1191,7 @@ class TestCeilingArm:
 
 
 class TestProblemFramedCeiling:
-    """experiments/005 — the same knowledge, framed as a situation."""
+    """The same knowledge, framed as a situation rather than as a conclusion."""
 
     def test_the_two_framings_are_separate_arms_over_one_task(self):
         from thalamus.eval.arms import parse_arm
@@ -1207,27 +1207,44 @@ class TestProblemFramedCeiling:
 
     def test_the_problem_framing_keeps_the_evidence_and_drops_the_prescription(self):
         """
-        Scenario: the two memos are compared.
+        Scenario: a task declaring both framings; each arm asks for one.
 
-        Verification: the problem framing carries the same load-bearing facts — the
-        33-of-40 arm, the 11 and 18 cut-offs, the turn-count attempt — and none of
-        the conclusion's imperative or answer. Otherwise the experiment would vary
-        information content and framing at once, and could not attribute either.
+        Verification: the conclusion arm is handed `fact`, the problem arm is handed
+        `problem_framing`, and neither reaches the other's text. The two are authored
+        to carry the same evidence and to differ only in whether the prescription is
+        stated — an arm handed the wrong one would vary information content and
+        framing at once, and could attribute neither.
         """
-        from thalamus.eval.arms import injected_memo
-        from thalamus.eval.tasks import load_battery
+        from thalamus.eval.arms import ceiling_prompt, injected_memo
+        from thalamus.eval.tasks import Task, TaskSource, UnderSpecification
 
-        task = next(
-            t for t in load_battery()[0] if t.id == "arm-runner-session-death-classification"
+        task = Task(
+            id="t", title="t", overlap="memorization", prompt="Fix the classifier.",
+            source=TaskSource(kind="replayed", ref="abc", evidence="e", fix_ref="def"),
+            under_specification=UnderSpecification(
+                gated=True,
+                fact=(
+                    "33 of 40 sessions were cut off at turn 11 or 18, so a runner "
+                    "must not read a turn count as a clean exit."
+                ),
+                problem_framing=(
+                    "33 of 40 sessions ended at turn 11 or 18. The only thing the "
+                    "runner recorded about them was a turn count."
+                ),
+            ),
         )
+
         conclusion = injected_memo(task, "conclusion")
         problem = injected_memo(task, "problem")
 
         for evidence in ("33", "11", "18", "turn count"):
             assert evidence in problem, f"problem framing dropped `{evidence}`"
-        for prescription in ("must not", "ungraded", "surviving design"):
-            assert prescription in conclusion
-            assert prescription not in problem, f"problem framing kept `{prescription}`"
+        assert "must not" in conclusion
+        assert "must not" not in problem, "problem framing kept the prescription"
+        # Delivered as recalled memory, and only the framing that was asked for.
+        assert problem in ceiling_prompt(task, "problem")
+        assert conclusion not in ceiling_prompt(task, "problem")
+        assert conclusion in ceiling_prompt(task, "conclusion")
 
     def test_a_task_without_a_problem_framing_refuses_that_arm(self):
         import pytest

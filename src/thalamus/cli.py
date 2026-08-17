@@ -889,7 +889,7 @@ def main():
 
     quick_parser = subparsers.add_parser(
         "quick",
-        help="The quick protocol: consult a live expert by forking its own session (docs/02)",
+        help="The quick protocol: consult a live expert by forking its own session",
     )
     quick_sub = quick_parser.add_subparsers(dest="quick_command")
     quick_ask = quick_sub.add_parser(

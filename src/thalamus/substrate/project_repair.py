@@ -3,10 +3,10 @@
 `project` was the basename of a session's working directory
 (`harness/transcripts.py`, fixed forward 2026-08-12), so any session that ran from
 somewhere that was not a checkout filed its memory under that directory's name. The
-graph carries the result: `ybx`, `tmp`, `code`, a 64-char content hash, five
-`thalamus-extract-*` sandboxes, `Avatar - The Last Airbender - Season 2`,
-`test_settings_load`, and `resumes` — which is a *subdirectory* of the
-`resume-workbench` checkout and therefore wrong in the other direction.
+graph carries the result: a home-directory basename, `tmp`, `code`, a 64-char content
+hash, five `thalamus-extract-*` sandboxes, a media directory name, a temp-dir test
+fixture, and a value naming a *subdirectory* of a real checkout — wrong in the other
+direction.
 
 The forward fix does not touch any of them, and they matter because `project` is the
 anchor a repo-relative path is cut against: a wrong anchor does not fail to merge, it
@@ -14,9 +14,9 @@ splits one file into two identities (`artifact_audit.py`).
 
 **Nothing here is inferred from the value itself.** Each session's working directory is
 recovered as evidence — the pin ledger first, the archived transcript second — and only
-then resolved to a checkout. That ordering matters: `resumes` and `ybx` are equally
-directory-shaped, and only the recovered cwd says one belongs to a repo and the other
-does not.
+then resolved to a checkout. That ordering matters: a subdirectory name and a home
+directory name are equally directory-shaped, and only the recovered cwd says one
+belongs to a repo and the other does not.
 
 **The verdict is reached about a value, not about a vertex,** and only a disproved
 value is touched anywhere. A value is disproved when some session carrying it stood in
@@ -28,7 +28,7 @@ first, a value whose directories have all vanished reads as disproved, and
 `thalamus-plane` — a repo that was *moved* into `code/graveyard/`, not deleted — loses
 53 correct labels, because `git rev-parse` answers "no repo" identically for a path
 that is gone and one that never had a repo. Without the second, four sessions that ran
-from `$HOME` while labelled `thalamus` or `stepmania-chart-generator` would blank names
+from `$HOME` while labelled with a real repo name would blank names
 a hundred other sessions confirm; the pin ledger records no project, so a label
 `basename(cwd)` could not have produced is indistinguishable from a deliberate
 `THALAMUS_PROJECT` override.
@@ -178,9 +178,9 @@ def _attribute_by_touch(identifiers) -> str:
     paths are recorded tool-call inputs, written by the harness rather than judged.
 
     **Unanimity is required, and it is what keeps this from being a guess.** One session
-    here names 25 absolute paths across `resume-workbench`, `nodeglass` and
-    `stepmania-chart-generator`; a plurality rule would hand it to the first of those on
-    a 4-to-1-to-1 split, inventing a single owner for work that genuinely had three. A
+    here names 25 absolute paths across three different checkouts; a plurality rule
+    would hand it to the first of them on a 4-to-1-to-1 split, inventing a single owner
+    for work that genuinely had three. A
     session with no single answer keeps none.
 
     Measured over the 15 sessions the cwd could not attribute: this settles 1, refuses

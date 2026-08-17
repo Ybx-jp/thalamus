@@ -1,7 +1,7 @@
 #!/bin/bash
 # Thalamus PreToolUse hook — a session does not write its own memory (Claude Code).
 #
-# The 2026-08-03 decision (docs/index.md) removed the `memorize` MCP tool and reduced
+# The 2026-08-03 decision removed the `memorize` MCP tool and reduced
 # the runtime surface to reads plus the consultation exchange. Episodic writes happen
 # *after* a session ends, by `thalamus extract` over the retained transcript. The two
 # hand-authored commands survive as operator actions **from outside a session** —
@@ -23,7 +23,7 @@
 # WHAT IS DELIBERATELY NOT BLOCKED, because it is not this decision's subject:
 #
 #   - `thalamus ingest` — third-party documents into an expert's knowledge, gated by
-#     its own allowlist and dry-run-by-default (docs/06). It is not self-memory.
+#     its own allowlist and dry-run-by-default. It is not self-memory.
 #   - Graph maintenance that operates over the whole graph rather than distilling this
 #     session: `repair-projects`, `derive-artifact-paths`, `backfill-chunks`,
 #     `retire-scans`, `snapshot`. These mutate, and an operator may well want them
@@ -33,7 +33,7 @@
 #   - `thalamus thread approve` — the close path is explicitly an in-session verb with
 #     operator approval (2026-08-11), and blocking it would invert that decision.
 #
-# NAMED MISSES, in lab/008's standing trade where a miss is the cheaper error:
+# NAMED MISSES, on the standing trade where a miss is the cheaper error:
 #
 #   - Ad-hoc gremlin mutation. `g.V(...).drop()` in an inline python one-liner writes
 #     the graph without naming `thalamus` at all. The gremlin-python skill's Rule 4
@@ -69,7 +69,7 @@ command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/nul
 # subcommand rather than on the bare flag: `--write` alone appears on the maintenance
 # commands above, which are not this decision's subject.
 # Markers carried as prose. A commit message describing this boundary names the
-# command it describes, and lab/008 already paid for this exact class on the gremlin
+# command it describes, and this exact class was already paid for on the gremlin
 # guard: its amendment tripped on the commit message explaining the amendment. The
 # residual — a real write chained after a `git commit` — is accepted knowingly, on the
 # standing trade that a false positive teaches route-around and route-around costs
@@ -98,7 +98,7 @@ log_event block "$verb" 2>/dev/null || true
 
 cat >&2 <<EOF
 Blocked: \`${verb}\` writes memory from inside a session, and a session does not
-write its own memory (docs/index.md, 2026-08-03).
+write its own memory.
 
 Episodic writes happen after this session ends, by \`thalamus extract\` over the
 retained transcript. Running it now is a *second* pass over the same session: claims
@@ -109,12 +109,10 @@ the entrypoint, as dedup work nobody asked for.
 
 What to do instead:
 
-  - A durable record for a future session — file it in the tracker, where the
-    operator can see and order it. The procedure, including the Linear mechanics
-    that silently mangle an issue body, is in
-    src/thalamus/harness/skills/track-open-work/SKILL.md — Read it. The skill sets
-    \`disable-model-invocation\`, so it is the operator's \`/track-open-work\` to
-    invoke and yours to read.
+  - A durable record for a future session — file it as a GitHub issue, where the
+    operator can see and order it. The procedure, including the issue template and
+    the register the body must be written in, is the \`track-open-work\` skill
+    (.claude/skills/track-open-work/SKILL.md) — invoke it.
   - Something this session learned — say it plainly in your final message. The
     SessionEnd distillation reads the transcript and writes it properly, once.
   - Closing a thread — that IS an in-session verb: \`thalamus thread propose\`, then

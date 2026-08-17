@@ -68,8 +68,8 @@ from pathlib import Path
 
 from thalamus.eval.arms import RUNS_BASE
 
-REGISTRY = Path(__file__).resolve().parents[3] / "experiments" / "corpora.jsonl"
-MANIFEST_DIR = Path(__file__).resolve().parents[3] / "experiments" / "corpora"
+REGISTRY = Path.home() / ".thalamus" / "corpora.jsonl"
+MANIFEST_DIR = Path.home() / ".thalamus" / "corpora"
 
 # Sealed copies sit beside the live log, outside git — the same split the snapshot
 # registry draws between the committed ledger and the uncommitted `.kryo`.
