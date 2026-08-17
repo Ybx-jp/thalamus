@@ -442,26 +442,51 @@ root password it will never get.
 The unit runs `.venv/bin/thalamus` out of `%h/code/thalamus`, and that venv is an
 editable install: the console serves `src/thalamus/console/` **from the shared
 checkout's working tree**, whatever branch it happens to be sitting on. Merging a PR
-to `master` on GitHub changes nothing the phone can see. Two steps put merged work
-on the surface:
+to `master` on GitHub changes nothing the phone can see. Two things have to move for
+a merge to reach the phone, and they cover different halves. The checkout updates `static/` — `app.js`, `style.css` and
+`index.html` are read from disk per request, so the client half goes live the moment
+the files change. The restart updates `server.py`: the Python is loaded once at
+process start, so a merged API change stays invisible until the unit recycles no
+matter how current the tree is. A client built against a server field the running
+process does not return renders as *nothing happened*.
+
+Both moves are one action. **INFRA → Build → deploy** fast-forwards the checkout onto
+its upstream and restarts the unit hosting the console, then the page reloads onto
+what it now serves. By hand it is the same two commands:
 
 ```bash
-git -C ~/code/thalamus checkout master && git -C ~/code/thalamus pull
+git -C ~/code/thalamus pull --ff-only
 systemctl --user restart thalamus-console
 ```
 
-Both are needed and they cover different halves. The checkout is what updates
-`static/` — `app.js`, `style.css`, `index.html` are read from disk per request, so
-the client half goes live the moment the files change. The restart is what updates
-`server.py`: the Python is loaded once at process start, so a merged API change is
-invisible until the unit recycles no matter how current the tree is. A client built
-against a server field the running process does not return renders as *nothing
-happened*.
+Deploy refuses rather than improvises. Uncommitted changes to tracked files, a
+detached HEAD, a branch with no upstream, and a history that will not fast-forward
+each stop it with git's own message and the checkout untouched — it stashes nothing,
+discards nothing and merges nothing. A refusal is always something to go and fix, not
+something to retry.
 
-Check both before diagnosing anything else — `git -C ~/code/thalamus log --oneline -1`
-against `origin/master`, and the unit's `Active:` timestamp against the merge time.
-The service worker is not a suspect: the shell is fetched network-first, so a
-reload always takes the newest files the server hands out.
+**Nothing here relies on remembering to check.** The console fetches the checkout's
+remote every ten minutes (`--fetch-interval`) and serves what it is running at
+`/api/build`: branch and commit, whether the tree is dirty, how far it is behind its
+upstream, and whether the running process predates the code on disk. When either of
+the last two is true, a bar appears above the roster saying which, with the deploy
+button beside it; dismissing it is keyed to the commit, so the next merge raises it
+again. The INFRA sheet states the commit whether or not anything is wrong with it,
+alongside how long the process has been up and when the remote was last heard from.
+
+A fetch moves remote-tracking refs and touches nothing else — no working tree, no
+branch, no index — so it is safe against a checkout other sessions are working in.
+`--fetch-interval 0` turns the thread off, and `behind` then means only "behind as of
+whenever somebody last fetched".
+
+The service worker is not a suspect in a stale surface: the shell is fetched
+network-first, so a reload always takes the newest files the server hands out.
+
+The checkout the console reports on is the one its **code** is imported from, which is
+not necessarily `--project-root`. That flag says where roster sync runs; this is a
+fact about which tree produced the process answering the request. Installed from a
+wheel rather than a checkout, `/api/build` reports `vcs: false`, there is nothing to
+fast-forward, and the deploy button is not offered.
 
 ### The voice unit
 
@@ -585,6 +610,7 @@ nothing about one operator's setup is baked into the code.
 | `--service UNIT` | none | A systemd `--user` unit the admin sheet may restart (repeatable) |
 | `--frames PATH` | none | Frame-theme definitions for the desktop client ([frame-themes.md](frame-themes.md)) |
 | `--voice URL` | `$THALAMUS_VOICE_URL`, else none | Speech service behind `say`. Without it the control is not shown |
+| `--fetch-interval MIN` | `10` | How often to fetch the checkout's remote, so "behind" is a fact rather than a report on the last manual fetch. `0` disables it |
 
 The spawn picker's directory list is also the **whitelist**: a spawn request is
 checked against the same computation that built the list, so the client can only
@@ -760,13 +786,17 @@ A window with `pane_dead 1` never execed its command — almost always PATH.
 **The phone disagrees with the server.** Rule the layers out in this order, because
 each one masks the next:
 
-1. `curl 127.0.0.1:8378/api/panes` on the host — if this is wrong, nothing else
+1. `curl 127.0.0.1:8378/api/build` — which commit is being served, and whether the
+   tree or the process is behind. A change that was merged but not deployed looks
+   from the phone exactly like a change that does not work, and this is the only
+   step that tells them apart.
+2. `curl 127.0.0.1:8378/api/panes` on the host — if this is wrong, nothing else
    matters and the problem is tmux or the console.
-2. Load the page in a desktop browser on the same network. If desktop is right and
+3. Load the page in a desktop browser on the same network. If desktop is right and
    the phone is wrong, it is the client, not the server.
-3. In the phone's browser, unregister the service worker and hard-reload. The shell
+4. In the phone's browser, unregister the service worker and hard-reload. The shell
    is network-first, so a stale SW is rare but not impossible.
-4. If the phone is a home-screen install, suspect **WebAPK scope**. Android installs
+5. If the phone is a home-screen install, suspect **WebAPK scope**. Android installs
    ignore ports and match on path prefix, so two apps published under overlapping
    paths on one host collide, and the icon can silently open the other one. Keep
    each app's mount path disjoint.
