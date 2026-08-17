@@ -10,11 +10,12 @@ model file and digests to a short hash that rides in every scan id, so a number 
 travels with the rules that produced it. Comparing two scans made under different
 policies is the error this exists to make visible.
 
-**A deferred import is recorded, not dropped.** `eval/corpora.py` imports `arms` at
-module level while `eval/arms.py` imports `corpora` inside two functions — a real cycle
-that module-level-only counting reports as zero cycles. Both readings come off the same
-edge list because every edge carries `depth`; the policy filters at read time rather
-than at walk time.
+**A deferred import is recorded, not dropped.** A real cycle was found this way in the
+research-battery package (since split into the companion `thalamus-eval` repo): one
+module imported another at module level while the reverse import was deferred inside
+two functions — module-level-only counting reports that as zero cycles. Both readings
+come off the same edge list because every edge carries `depth`; the policy filters at
+read time rather than at walk time.
 
 The resolver is deliberately closed over the scanned set: an import of `gremlin_python`
 leaves no edge, because propagation cost is a statement about how this repo's own
@@ -193,9 +194,10 @@ def _module_name(relative: PurePosixPath) -> str:
     """Dotted module name for a repo-relative path, with the source root stripped.
 
     The root is stripped by walking off the leading directories that are not packages:
-    `src/thalamus/eval/arms.py` is `thalamus.eval.arms` because `src/` holds no
-    `__init__.py` while `thalamus/` does. Done textually against the scanned set rather
-    than by touching the filesystem again, so the mapping cannot disagree with it.
+    `src/thalamus/eval/attribution.py` is `thalamus.eval.attribution` because `src/`
+    holds no `__init__.py` while `thalamus/` does. Done textually against the scanned
+    set rather than by touching the filesystem again, so the mapping cannot disagree
+    with it.
     """
     parts = list(relative.parts)
     if parts[-1] == "__init__.py":
@@ -229,9 +231,10 @@ def _collect_modules(repo: Path, policy: ExtractorPolicy) -> dict[str, str]:
 def _resolve(target: str, modules: dict[str, str]) -> str:
     """Deepest matching module for a dotted target, or "" when it is external.
 
-    `from thalamus.eval import arms` offers `thalamus.eval.arms` and `thalamus.eval`;
-    the deepest that exists in the scanned set wins, which is what makes an import of a
-    submodule land on that submodule rather than on its package's `__init__`.
+    `from thalamus.eval import attribution` offers `thalamus.eval.attribution` and
+    `thalamus.eval`; the deepest that exists in the scanned set wins, which is what
+    makes an import of a submodule land on that submodule rather than on its
+    package's `__init__`.
     """
     parts = target.split(".")
     for depth in range(len(parts), 0, -1):

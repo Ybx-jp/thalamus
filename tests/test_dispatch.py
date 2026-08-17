@@ -269,15 +269,20 @@ def test_an_event_row_does_not_hide_a_members_pane(room):
 # --- The rows are stimulus, not collaboration -----------------------------------------
 
 
-def test_rows_carry_a_guard_name_eval_rooms_excludes_by_construction(room):
+def test_rows_carry_a_guard_name_the_room_topology_check_excludes_by_construction(room):
     """
-    Verification: rows are written under `guard: "dispatch"`, which eval/rooms.py's
-    `guard != "room-boundary"` filter drops. A broadcast is the stimulus, not the
-    collaboration, and folding operator sends into RoomTopology.edges would let a room
-    pass its own manipulation check on operator action alone.
-    """
-    from thalamus.eval import rooms as eval_rooms
+    Verification: rows are written under `guard: "dispatch"`, distinct from
+    `"room-boundary"` — the guard name `thalamus-eval`'s room-manipulation check
+    (`room_topologies`, split out of this repo) filters on to drop exactly these rows.
+    A broadcast is the stimulus, not the collaboration, and folding operator sends into
+    a room's edge count would let a room pass its own manipulation check on operator
+    action alone.
 
+    The exclusion itself (`room_topologies` producing empty edges / not-occurred for
+    these rows) is verified in `thalamus-eval`'s own `tests/test_rooms.py`, which
+    depends on this repo but not vice versa; this test only owns the guard name
+    contract on the dispatch side of that boundary.
+    """
     dispatch.dispatch("alpha", "ping", sender="main", sender_fn=_sends([]), **room)
     rows = [
         json.loads(line)
@@ -285,14 +290,7 @@ def test_rows_carry_a_guard_name_eval_rooms_excludes_by_construction(room):
         for line in path.read_text().splitlines()
     ]
     assert rows and all(row["guard"] == dispatch.DISPATCH_GUARD for row in rows)
-    assert all(row["guard"] != eval_rooms.ROOM_GUARD for row in rows)
-
-    topologies = eval_rooms.room_topologies(
-        pins_file=room["pins_file"], guards_base=room["guards_dir"]
-    )
-    alpha = [t for t in topologies if t.room == "alpha"][0]
-    assert alpha.edges == ()
-    assert not alpha.occurred
+    assert all(row["guard"] != "room-boundary" for row in rows)
 
 
 def test_rows_record_the_preflight_status_and_the_fanout(room):

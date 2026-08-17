@@ -49,23 +49,9 @@ dev = [
     "ruff>=0.4",
     "httpx>=0.28.1",
 ]
-# Everything a published experiment needs to be re-run by someone who is not us:
-# the estimators, the figures, and the page they are rendered into. Kept out of the
-# runtime dependency set because the harness must stay installable on a work box
-# without a scientific stack — but declared, pinned and installed as one command
-# (`uv sync --extra experiments`), because "reproducible at will" cannot rest on a
-# reader assembling the environment by guesswork.
-experiments = [
-    "numpy>=2.1",         # the array layer everything below stands on
-    "scipy>=1.14",        # exact tests, bootstrap, distributions
-    "matplotlib>=3.9",    # figures, exported as inline SVG
-    "pandas>=2.2",        # trace/verdict frames
-    "statsmodels>=0.14",  # cluster-robust intervals, GLMs, proportion CIs
-    "jinja2>=3.1",        # the experiment write-up template
-]
-# The entailment judge — the eval loop's fast attribution path. Split from `experiments`
-# because it pulls a multi-gigabyte torch build: an experiment must be re-runnable
-# without it, and only the attribution instrument itself needs it.
+# The entailment judge — the eval loop's fast attribution path. Optional because it
+# pulls a multi-gigabyte torch build and only the attribution instrument itself needs
+# it.
 nli = [
     "torch>=2.5",
     "transformers>=4.46",

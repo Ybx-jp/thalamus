@@ -91,9 +91,8 @@ thalamus thread audit              # the close ledger
 
 ## The eval loop
 
-Layer 1 measures what retrieval did. Layer 2 asks whether it mattered.
-
-### Layer 1 — traces, priced
+Layer 1 measures what retrieval did, from what the harness already logs — this is the
+whole of what `thalamus eval` runs.
 
 ```bash
 thalamus eval sync --write         # land retrieval traces and used-vs-ignored verdicts
@@ -103,27 +102,16 @@ thalamus eval pins                 # per-expert routing signal: pinned vs consul
 thalamus eval conditioning         # per-firing behavioural join on injected reminders
 thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
 thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only
-thalamus eval rooms                # manipulation check on the room boundary
-thalamus eval legibility           # contrast audit over shipped diagrams
-thalamus eval gold --draw|--score  # hand-labelled sample the attribution judge is scored against
-thalamus eval rakes                # solved problems later sessions could have re-stepped on
-thalamus eval rake-audit           # draw or score the hand-audited precision sample
 ```
 
-### Layer 2 — counterfactuals
-
-```bash
-thalamus eval tasks                # validate and list the task battery
-thalamus eval oracle               # grade anchors and mutants against pre-registered rungs
-thalamus eval run <task>           # run one task under arms (confined worktree, headless session)
-thalamus eval rescore              # apply new detectors backwards over past campaigns
-thalamus eval corpus --name        # seal the current run log as a citable corpus pin
-thalamus eval randomize            # design-only feasibility check on a clustered assignment
-```
-
-The task battery is read from `$THALAMUS_CONFIG_DIR/tasks/`. No battery ships — a task
-is graded against a specific graph and a specific repository, so it belongs to whoever
-wrote it.
+Layer 2 — counterfactual campaigns that ask whether retrieval mattered (the task
+battery, the graded oracle, arms, corpora, calibration, the gold label set, rakes) —
+and the room-manipulation and diagram-legibility checks live in the private
+[`thalamus-eval`](https://github.com/Ybx-jp/thalamus-eval) companion repo, run via its
+own `thalamus-eval` CLI (`rooms`, `legibility`, `randomize`, `rakes`, `rake-audit`,
+`gold`, `tasks`, `corpus`, `rescore`, `oracle`, `run`). They moved out because they run
+research campaigns and produce findings that inform future versions, not live-serving
+behavior — see that repo's README for the split line and setup.
 
 ## Repository analysis
 
