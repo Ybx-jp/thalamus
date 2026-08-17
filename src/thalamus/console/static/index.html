@@ -26,10 +26,11 @@
 <link rel="stylesheet" href="style.css">
 <title>Thalamus Console</title>
 </head>
-<!-- The roster is the landing view. The alternative was the last window you looked
-     at, which is not a fact about what needs you: it charges an exploratory tap
-     (land somewhere arbitrary, read it, reach for the rail) where this charges an
-     informed one. `needs you` is on screen before the first touch. -->
+<!-- The roster is the landing view, and the only way into a session. The
+     alternative was the last window you looked at, which is not a fact about what
+     needs you: it charges an exploratory tap (land somewhere arbitrary, read it, go
+     looking) where this charges an informed one. `needs you` is on screen before the
+     first touch, and the marker under the mirror is the way back. -->
 <body data-view="roster">
 
 <header>
@@ -165,7 +166,6 @@
      actually exists, so it costs no vertical space in the ordinary case. -->
 <nav class="wsbar" id="wsbar" aria-label="Rooms" hidden></nav>
 
-<nav class="rail" id="rail" role="tablist" aria-label="Experts"></nav>
 
 <div class="screen-wrap" id="screen-wrap">
   <div class="recycle-note" id="recycle-note" hidden>session restarting — input is paused until the new process is up</div>

@@ -15,7 +15,7 @@ Measurements are from this box and are dated where a later change could move the
 
 ## 1. Open questions for the designer
 
-Four things here are not the implementer's to close. Each changes what the surface
+Three things here are not the implementer's to close. Each changes what the surface
 *means* rather than how it is drawn.
 
 ### 1.1 The identity palette does not identify
@@ -83,30 +83,7 @@ than none, because it looks identical to a real one" — and the failure directi
 a row *is*: a window, a session, or a session-in-a-window. §3.4's `no project
 recorded` group is the precedent for answering it honestly rather than by inference.
 
-### 1.3 What the workspace filter is allowed to scope
-
-The rail filters through `visibleWindows()` (`app.js:138-140`), which narrows on the
-selected workspace and room. `renderRoster` (`app.js:1037`) is handed every window.
-Pick a project, return to the roster, and the filter is not there.
-
-The spec cannot settle this: neither `workspace` nor `filter` occurs anywhere in its
-943 lines. §2.1 decides only *which surface is resident when the console opens* — it
-never contemplates a standing choice that scopes the list.
-
-**Why it is not closed at the keyboard:** §2.1's argument for landing on the roster is
-that `needs you` is on screen before the first touch, so the operator's first tap is
-informed rather than exploratory. A filtered roster answers *what needs me in this
-project*; an unfiltered one answers *what needs me*. Both are defensible and they are
-different surfaces — a blocked session in another project is either on screen or it is
-not. That is the design deciding what the landing view is for, not the implementer
-deciding how to draw it.
-
-The shipped split is not a third option, though. It is the rail and the roster
-disagreeing about the same sessions, which is the defect the spec opens by naming:
-three lists that disagree, replaced by one row per session. Whichever way this is
-ruled, both surfaces take the same answer.
-
-### 1.4 The permission-mode ladder does not match the modes that exist
+### 1.3 The permission-mode ladder does not match the modes that exist
 
 §5.2 specifies a segmented picker over `manual｜acceptEdits｜auto`, where selecting a
 segment presses `BTab` k times to walk there. Both halves are contradicted by the
@@ -148,18 +125,23 @@ survive alongside a mode control, or whether one affordance replaces the other.
 ### 2.1 The poll still carries every screen
 
 §1 specifies a per-window opaque change token, with the pane mirror moving to the
-focused-window request: *"The poll carries no screens."* The token exists —
-`/api/panes` serves `screen_rev` per window (`server.py:screen_rev`) and the client
-compares it for equality and never parses it (`app.js:revOf`, read at `app.js:977`
-and `app.js:988`, stored at `app.js:1066`). The split does not. The focused window's
-mirror is still fed from the poll payload (`app.js:290`, `app.js:1054`), so `lines`
-must keep carrying **every** window's text — including the windows nobody is looking
-at — until an endpoint serves a single window's screen.
+focused-window request: *"The poll carries no screens."* Half the token exists:
+`/api/panes` serves `screen_rev` per window (`server.py:screen_rev`), and **the client
+reads it nowhere**. Its only consumer was the rail's change indicator, which went with
+the rail — B1 draws no rail, and the design's own rule is no motion and no pulse.
+
+So the split is further from done than the served field suggests. The focused window's
+mirror is still fed from the poll payload, so `lines` must keep carrying **every**
+window's text, including the windows nobody is looking at. The mirror still decides
+whether to repaint by comparing the pane text against the last painted string
+(`app.js:renderScreen`, `renderedText`) — which is exactly the comparison the token
+was added to replace, and now the obvious place to spend it.
 
 Measured on this box, 2026-08-16, three windows: `/api/panes` returns **25,019 bytes,
 of which 23,058 is `lines`**, **uncompressed at every layer**, at a 1.2 s poll.
 Dropping `lines` once nothing reads it leaves 2,061. At nine windows the payload is
 one `capture-pane` subprocess per window per poll.
+
 
 ### 2.2 §5.2's segmented picker
 
@@ -181,14 +163,14 @@ so no segments are drawn and the control falls back to the single step. The fall
 is not an error state; it is §5.2's own degraded branch, "which is exactly what the
 hardware does".
 
-The membership and the ordering remain §1.4's, and the fallback is what makes shipping
+The membership and the ordering remain §1.3's, and the fallback is what makes shipping
 the picker safe ahead of that answer: a mode the ladder does not name is printed as
 itself and never mapped onto a segment.
 
 The `mode` keycap (`index.html:184`) still sends raw `shift-tab` in the session view.
 It is left alone: that bar is a terminal keyboard, the key does what the key does, and
 the readback loop has no meaning for a raw keystroke. Whether one mode affordance
-should exist rather than two is part of §1.4.
+should exist rather than two is part of §1.3.
 
 **On-demand does not mean cheap, and the request is shaped for it.** `/api/read`
 serves 60 transcript items on a cold open. The mode fetch passes a `since` past any

@@ -58,7 +58,6 @@ function hueForRoom(room) { return hashHue("room:" + room); }
 function hueOf(w) { return w.room ? hueForRoom(w.room) : hueFor(w.name, w.index); }
 
 const els = {
-  rail: document.getElementById("rail"),
   wsbar: document.getElementById("wsbar"),
   smark: document.getElementById("smark"),
   smarkName: document.getElementById("smark-name"),
@@ -107,7 +106,6 @@ let rosterSig = "";        // last drawn roster, so a 1.2s poll does not rebuild
 let openRow = null;        // the one row showing its controls, by window index
 let lastDistill = [];      // last served records, for a redraw between polls
 let lastGrace = 0;
-let lastRev = {};          // idx -> last screen_rev (for change detection)
 let lastOk = 0;            // ms of last good poll
 let lastFitCols = 0;       // column count the current fit was computed for
 let fitPx = 13;            // auto-fit size so a full pane line fits the viewport
@@ -130,14 +128,6 @@ let fontDelta = +(localStorage.getItem("plane-font-delta2") || 0);
 // silently short. Dropping the key is the migration.
 localStorage.removeItem("plane-workspace");
 
-function workspaces() {
-  const seen = new Map(); // cwd -> label, in window order
-  for (const w of windows) {
-    if (w.cwd && !seen.has(w.cwd)) seen.set(w.cwd, w.cwd_label || w.cwd);
-  }
-  return [...seen].map(([path, label]) => ({ path, label }));
-}
-const multiWs = () => workspaces().length > 1;
 
 // Rooms are the second dimension over the same set of windows. A session is now
 // (expert, directory, room), and the two filters compose: they answer different
@@ -206,7 +196,6 @@ function selectRoom(room) {
   if (room === null) localStorage.removeItem("plane-room");
   else localStorage.setItem("plane-room", room);
   renderWsBar();
-  renderRail();
   // The filter must never hide the window being viewed — the pane would keep
   // updating with no tab to explain where it came from.
   if (!visibleWindows().some((w) => w.index === activeIdx)) {
@@ -215,31 +204,6 @@ function selectRoom(room) {
   }
 }
 
-function renderRail() {
-  els.rail.innerHTML = "";
-  const showCwd = multiWs();
-  for (const w of visibleWindows()) {
-    const hue = hueOf(w);
-    const tab = document.createElement("button");
-    tab.className = "chan-tab" + (showCwd ? " two-line" : "");
-    tab.setAttribute("role", "tab");
-    tab.setAttribute("aria-selected", String(w.index === activeIdx));
-    tab.style.setProperty("--tab", hue);
-    tab.dataset.idx = w.index;
-    tab.title = (w.room ? `[${w.room}] ` : "") +
-      (w.cwd_short ? `${w.name} — ${w.cwd_short}` : w.name);
-    tab.innerHTML =
-      `<span class="dot"></span>` +
-      `<span class="tab-text">` +
-      `<span class="nm">${w.room ? `<span class="room">◈</span>` : ""}` +
-      `${escapeHtml(w.name)}</span>` +
-      (showCwd ? `<span class="cwd">${escapeHtml(w.cwd_label || "?")}</span>` : "") +
-      `</span>`;
-    tab.classList.toggle("recycling", !!w.recycling);
-    tab.addEventListener("click", () => selectWindow(w.index));
-    els.rail.appendChild(tab);
-  }
-}
 
 // Header hue, tab title, and the command cache follow the active window — including
 // when poll() picks one for us (first load, or the viewed tab going away), which
@@ -262,9 +226,6 @@ function syncActiveChrome() {
 function selectWindow(idx) {
   activeIdx = idx;
   syncActiveChrome();
-  for (const tab of els.rail.children) {
-    tab.setAttribute("aria-selected", String(+tab.dataset.idx === idx));
-  }
   const cur = windows.find((x) => x.index === idx);
   renderedText = null; // force a repaint even if the new window's text matches
   pendingScreen = null;
@@ -936,31 +897,6 @@ async function pollRead(idx) {
   renderRead(idx);
 }
 
-// The change token for one window, compared for equality and never parsed — its
-// format is the server's business (server.py:screen_rev). A server that does not
-// serve it yet falls back to the full pane text, which is what the rail compared
-// before the token existed: an old server degrades to the old behaviour instead
-// of to a pulse that never fires. Read and store go through here together, so the
-// two sides of a comparison can never come from different fields.
-function revOf(w) {
-  return w.screen_rev !== undefined ? w.screen_rev : w.lines;
-}
-
-function updateDots(next) {
-  for (const tab of els.rail.children) {
-    const idx = +tab.dataset.idx;
-    const w = next.find((x) => x.index === idx);
-    if (!w) continue;
-    tab.classList.toggle("recycling", !!w.recycling);
-    const changed = lastRev[idx] !== undefined && lastRev[idx] !== revOf(w);
-    tab.classList.toggle("active-live", changed);
-    if (changed) {
-      tab.classList.remove("pulse");
-      void tab.offsetWidth; // restart animation
-      tab.classList.add("pulse");
-    }
-  }
-}
 
 function setConn(state) {
   els.conn.className = "conn " + state;
@@ -992,7 +928,7 @@ async function poll() {
       const act = vis.find((w) => w.active) || vis[0];
       activeIdx = act ? act.index : null;
     }
-    if (changed) { renderWsBar(); renderRail(); }
+    if (changed) renderWsBar();
     syncActiveChrome();
     // `grace_s` is served rather than hardcoded, so the deadline the row draws is
     // the one the server actually enforces.
@@ -1002,7 +938,6 @@ async function poll() {
     // the list it is standing in for.
     renderMarker();
 
-    updateDots(next);
     const cur = windows.find((w) => w.index === activeIdx);
     if (!cur) {
       // No window to read. The onboarding text lives in the pane element, so show
@@ -1029,13 +964,7 @@ async function poll() {
       els.recycleNote.hidden = true;
     }
     if (activeCols() !== lastFitCols) computeFit(); // e.g. an attached terminal resized it
-    for (const w of next) lastRev[w.index] = revOf(w);
-
     setConn("live");
-    // keep selection styling in sync
-    for (const tab of els.rail.children) {
-      tab.setAttribute("aria-selected", String(+tab.dataset.idx === activeIdx));
-    }
   } catch (e) {
     if (Date.now() - lastOk > STALE_MS) setConn("stale");
   }
