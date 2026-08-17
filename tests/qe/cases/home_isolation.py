@@ -1,8 +1,8 @@
 """HOME redirection must actually redirect every path this package derives from home.
 
 Unlike its neighbours, this case is expected to PASS, and it is here because the deep
-tier's entire safety story rests on the property it asserts. Thirty-three module-level
-constants across `pin.py`, `ceremonies.py`, `eval/rooms.py`, `archive/store.py` and
+tier's entire safety story rests on the property it asserts. Thirteen module-level
+constants across `pin.py`, `ceremonies.py`, `eval/traces.py`, `archive/store.py` and
 others are built from `Path.home()` at *import* time. A deep-tier case that spawns real
 sessions is safe only if setting `HOME` in a child process moves all of them; a single
 constant that escapes would write into the operator's live state during a test run,
@@ -38,7 +38,7 @@ from ..model import Case, FailureClass, Finding, Substrate, Tier
 _PROBE = r"""
 import json, pathlib, importlib
 mods = ["thalamus.harness.pin", "thalamus.harness.ceremonies", "thalamus.harness.rescope",
-        "thalamus.harness.quick", "thalamus.eval.rooms", "thalamus.eval.conditioning",
+        "thalamus.harness.quick", "thalamus.eval.conditioning",
         "thalamus.eval.traces", "thalamus.archive.store"]
 found = {}
 for name in mods:

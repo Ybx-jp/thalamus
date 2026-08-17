@@ -1146,31 +1146,6 @@ def test_a_verdict_records_the_terms_it_was_computed_against(tmp_path, monkeypat
     assert set(stored["judged_terms"].split()) == set(aligned_node_terms(contents[verdict.node_id]))
 
 
-def test_auditability_is_reported_by_kind_not_assumed():
-    """A verdict is reproducible if it stored its terms; failing that it is at least
-    stable if the node is a content-addressed Claim; everything else is exposed."""
-    from datetime import datetime, timezone
-
-    from thalamus.eval import calibration
-    from thalamus.eval.attribution import OutputTurn, OutputWindow
-
-    window = OutputWindow(turns=[OutputTurn(index=0, parts=[("prose", "text")])])
-    case = calibration.Case(
-        trace_id="t1", session_id="s1", scope="main", tool="memory_recall",
-        ts=datetime(2026, 7, 30, tzinfo=timezone.utc),
-        nodes={
-            "scope:main:claim:a": "a", "scope:main:claim:b": "b",
-            "scope:main:thread:c": "c",
-        },
-        window=window,
-        stored={"scope:main:claim:a": True, "scope:main:claim:b": False,
-                "scope:main:thread:c": True},
-        judged_terms={"scope:main:claim:a": ["alpha"]},
-    )
-    with_terms, immutable, total = calibration.auditable([case])
-    assert (with_terms, immutable, total) == (1, 1, 3)
-
-
 # ---------------------------------------------------------------------------
 # Randomized render-withholding (I4)
 # ---------------------------------------------------------------------------
@@ -1317,27 +1292,6 @@ def test_the_shipped_judge_recovers_terms_the_split_reading_cannot_match():
     # Both readings exist side by side, and the pre-adoption one is untouched.
     assert JUDGES["shipped"].terms_from == "aligned"
     assert JUDGES["split"].terms_from == "split"
-
-
-def test_calibration_prepares_terms_with_the_judge_it_was_built_for():
-    """
-    Scenario: the per-judge term cache, asked for the same node under both readings
-
-    `_Prepared` caches node terms per judge. It hardcoded `node_terms`, which would
-    have fed the split extraction to a judge configured for the aligned one —
-    reporting a delta of exactly zero, the one result that looks like a finding rather
-    than a bug.
-    """
-    from thalamus.eval.attribution import JUDGES
-    from thalamus.eval.calibration import _Prepared
-
-    nodes = {"n1": "the parser; crashed on lab/029), see"}
-
-    split = _Prepared(JUDGES["split"]).terms(nodes)["n1"]
-    shipped = _Prepared(JUDGES["shipped"]).terms(nodes)["n1"]
-
-    assert "parser;" in split and "parser" not in split
-    assert "parser" in shipped and "parser;" not in shipped
 
 
 # --------------------------------------------------------------------------------------
