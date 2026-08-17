@@ -201,7 +201,6 @@ goes through a headless model pass to produce claims and open threads.
 ## 9. Look at what it remembers
 
 ```bash
-thalamus visualize          # browser graph explorer over the live graph
 thalamus pulse              # live telemetry over the eval loop
 thalamus contract check     # audit the graph against the contract
 ```
@@ -234,7 +233,7 @@ or activate the venv.
 
 **`nothing listening on localhost:8182 — start it with docker compose up -d`** — the
 graph container is not running. Every surface says this the same way, whether you hit
-it from `thalamus init --check`, a CLI command, the viewer, or a recall tool inside a
+it from `thalamus init --check`, a CLI command, or a recall tool inside a
 session.
 
 **A new session doesn't mention memory** — hooks arm per process. Fully quit and

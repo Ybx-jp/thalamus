@@ -30,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 TRACES_DIR = Path.home() / ".thalamus" / "traces"
 
-# The tap matcher is mcp__thalamus__.*, so consultation and visualize calls land in
-# the JSONL too — as do `memorize` records retained from before that tool was retired.
+# The tap matcher is mcp__thalamus__.*, so consultation calls land in the JSONL too
+# — as do `memorize` and `visualize` records retained from before those tools were
+# retired.
 # Only these read memory; only these are retrieval events. memory_query and
 # bash_gremlin (the ad-hoc Bash tap, gremlin-tap.sh) are retrieval surfaces like
 # any recall — one priced surface, not a parallel metric.
