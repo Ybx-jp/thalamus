@@ -202,7 +202,6 @@ def test_the_reduction_reads_only_fields_the_real_descriptor_has():
     covered the moment it is written.
     """
     import dataclasses
-    import re
 
     from thalamus.harness.quick import LiveSession
 

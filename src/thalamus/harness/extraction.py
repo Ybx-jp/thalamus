@@ -36,11 +36,14 @@ from dataclasses import dataclass
 import yaml
 
 from thalamus.eval.attribution import MIN_MATCHED_RATIO, MIN_MATCHED_TERMS
-from thalamus.harness.agents import (  # re-exported: extraction is their main caller
-    AGENT_CLIS,
+# Re-exported: extraction is their main caller, and `cli.py` and the suite reach
+# them through this module rather than through `agents`. The noqa markers are
+# load-bearing — a lint autofix strips these and breaks those callers, not this one.
+from thalamus.harness.agents import (
+    AGENT_CLIS,  # noqa: F401
     CLAUDE_DEFAULT_MODEL,
-    CURSOR_DEFAULT_MODEL,
-    AgentCLI,
+    CURSOR_DEFAULT_MODEL,  # noqa: F401
+    AgentCLI,  # noqa: F401
     UnknownHarness,
     cli_for,
     sandbox_env,

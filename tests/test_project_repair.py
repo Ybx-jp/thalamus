@@ -155,10 +155,10 @@ def test_a_subdirectory_of_a_checkout_re_anchors_to_the_checkout(tmp_path):
     subdirectory's name
 
     The other direction of the same defect, and the reason blanking is not the only
-    outcome: `resumes` is `resume-workbench/resumes` on the live graph, and the right
-    value is the checkout's name, not empty. Threads follow the session they belong to.
+    outcome: a value naming a subdirectory of a checkout should re-anchor to the
+    checkout's name, not to empty. Threads follow the session they belong to.
     """
-    repo = _checkout(tmp_path / "workbench")
+    _checkout(tmp_path / "workbench")
     inner = tmp_path / "workbench" / "sub"
     inner.mkdir()
     ledger = _ledger(tmp_path, [{"session_id": "s-1", "cwd": str(inner)}])

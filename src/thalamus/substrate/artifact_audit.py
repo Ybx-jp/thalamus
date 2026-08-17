@@ -23,7 +23,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
-from gremlin_python.process.traversal import T
 
 
 TOUCH_EDGE = "TOUCHES"

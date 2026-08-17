@@ -41,7 +41,6 @@ value overwritten with an empty one is not.
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
