@@ -93,16 +93,16 @@ def test_destructive_controls_are_separated_by_4mm():
 # ---- §4.3, the terminal row ----
 
 def test_a_terminal_rows_identity_bar_is_a_block_not_a_rule():
-    """§4.3, third of the five channels: "a solid full-height block, not a 4 px rule".
+    """Third of the five channels that make a terminal row detectable without reading.
 
-    Asserted against the collapsed bar rather than against 12, because the figure is
-    not what the spec decided — the *difference* is. A later change may widen both.
+    G states the figure as a doubling — "identity bar doubles to 8 px, full height" —
+    and draws it at 8 against the roster's 4. Asserted as the ratio rather than as 8,
+    because the multiple is what the design decided; a later change may widen both.
     """
     collapsed = _px(".srow::before", "width")
     terminal = _px(".srow.terminal::before", "width")
-    assert terminal > collapsed, "the terminal bar is still the collapsed row's rule"
-    assert terminal >= 3 * collapsed, (
-        f"{terminal}px against a {collapsed}px rule does not read as a block")
+    assert terminal >= 2 * collapsed, (
+        f"{terminal}px against a {collapsed}px rule is not the doubling G draws")
 
 
 # ---- §3.3, the group header label ----

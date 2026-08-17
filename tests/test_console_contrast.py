@@ -67,15 +67,46 @@ GROUNDS = {
     # text on the wait note, so both are held to the text floor on all three.
     "ok": ("bg", "panel", "panel-hi"),
     "pending": ("bg", "panel", "panel-hi"),
-    # `--danger` carries text too — `.viewcap.bad`, `.admin-state.bad`, `.chip.loose`,
-    # the `needs you` chip, and `.pol-expiry` at .62rem, the smallest text in the row.
-    # It was the one status hue with no declared ground while painting words on all
-    # three, so the corrected ramp in `lab/d3-identity-spec.md` could be applied and
-    # take `.pol-expiry` from 5.19:1 to 4.11:1 with nothing here objecting. The ramp
-    # is spaced for greyscale separation, not for text; where the two floors conflict
-    # this one holds, and the conflict is docs/frontend §1.5 for the designer.
+    # Every red word takes `--danger-text`, never `--danger`. The ramp value is spaced
+    # for greyscale severity and lands at 4.11:1 on `--panel`, so a token doing both
+    # jobs would have put `.pol-expiry` — .62rem, the smallest text in the row — under
+    # the floor. `--danger` is asserted below as the non-text carrier it now is.
+    "danger-text": ("bg", "panel", "panel-hi"),
+    "warn": ("bg", "panel", "panel-hi"),
+}
+
+# Tokens that are a fill, a border or a block and never carry a word. 3:1 is the
+# non-text floor (SC 1.4.11), and it is asserted rather than assumed: a token that
+# stops being text must still clear something, or "it is not text any more" becomes a
+# way to exempt a colour from every check in this file.
+NON_TEXT = {
     "danger": ("bg", "panel", "panel-hi"),
 }
+
+
+@pytest.mark.parametrize(
+    "token,ground",
+    [(t, g) for t, grounds in NON_TEXT.items() for g in grounds])
+def test_non_text_tokens_clear_the_3_to_1_floor(token: str, ground: str):
+    t = _tokens()
+    ratio = contrast(t[token], t[ground])
+    assert ratio >= 3.0, f"--{token} on --{ground} is {ratio:.2f}:1, below the 3:1 non-text floor"
+
+
+def test_the_danger_split_is_a_split_and_not_a_rename():
+    """Two reds, and each has to be doing a job the other cannot.
+
+    A split that drifts back together is worse than no split: it reads as two
+    considered values while measuring one. `--danger` must stay under the text floor
+    somewhere (or it should just be the text token), and `--danger-text` must clear it
+    everywhere (or the split bought nothing).
+    """
+    t = _tokens()
+    grounds = ("bg", "panel", "panel-hi")
+    assert min(contrast(t["danger"], t[g]) for g in grounds) < AA, (
+        "--danger now clears the text floor everywhere; collapse the split rather "
+        "than carrying two tokens that mean the same thing")
+    assert min(contrast(t["danger-text"], t[g]) for g in grounds) >= AA
 
 
 @pytest.mark.parametrize(
@@ -111,7 +142,19 @@ LITERALS = {
                 "panel", 3.0),
 
     "#100f1b": ("the base layer under the terminal art", "bg", 0.0),
+
+    # G gives the terminal band one flat ground and its own lifted red. Both are
+    # stated rather than composited: the band was a translucent red over whatever the
+    # row painted, which is a colour appearing in no file and varying with the row
+    # beneath it. `#e79c92` on `#2c161a` measures 7.74:1.
+    "#2c161a": ("the terminal band's ground", "bg", 0.0),
+    "#e79c92": ("the terminal band's text, on its own darker ground", "band", 4.5),
 }
+
+# Grounds that are not `:root` tokens. The band paints its own, so text on it cannot
+# be measured against the page — and measuring it against `--panel` would report a
+# ratio no reader ever receives.
+EXTRA_GROUNDS = {"band": "#2c161a"}
 
 
 def _literals() -> set[str]:
@@ -237,7 +280,7 @@ def test_each_declared_literal_clears_the_floor_its_role_implies(literal: str):
     role, ground, floor = LITERALS[literal]
     if floor == 0.0:
         return
-    t = _tokens()
+    t = dict(_tokens(), **EXTRA_GROUNDS)
     assert ground in t, f"{literal} declares ground --{ground}, which is not a token"
     ratio = contrast(literal, t[ground])
     assert ratio >= floor, (

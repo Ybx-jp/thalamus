@@ -1393,7 +1393,12 @@ function groupSessions(windows, distill) {
     if (!groups.has(key)) {
       groups.set(key, {
         key, rows: [], repoRoot,
-        label: project || baseName(repoRoot),
+        // B2 heads the group with the path, not the basename. The row never repeats
+        // it, so the header is the only place the operator learns where a session is
+        // rooted, and two checkouts of one project stop reading as the same group.
+        // `cwd_short` is the server's own `~`-relative form; the basename is the
+        // fallback for a record that outlived the window that knew its path.
+        label: src.cwd_short || project || baseName(repoRoot),
         known: !!key,
       });
     }
@@ -1464,10 +1469,50 @@ function renderRoster(windows, distill, now, graceS) {
     els.roster.appendChild(empty);
     return;
   }
+  els.roster.appendChild(rosterSummary(groups, now, graceS));
   for (const g of groups) {
     els.roster.appendChild(groupHeader(g));
     for (const r of g.rows) els.roster.appendChild(sessionRow(r, now, graceS));
   }
+}
+
+/**
+ * B2's sheet header: what the roster is, and what it adds up to.
+ *
+ * The count of sessions needing a human is the one number worth carrying above the
+ * fold, because it is the only one that is a demand. It is derived the same way the
+ * row is — from the presence of a pill, never by re-deciding the state here — so the
+ * summary and the rows beneath it cannot disagree about how many there are.
+ */
+function rosterSummary(groups, now, graceS) {
+  const head = document.createElement("div");
+  head.className = "rsum";
+
+  const grab = document.createElement("span");
+  grab.className = "rsum-grab";
+  head.appendChild(grab);
+
+  const label = document.createElement("span");
+  label.className = "rsum-label";
+  label.textContent = "SESSIONS";
+  head.appendChild(label);
+
+  let sessions = 0, needs = 0;
+  for (const g of groups) {
+    for (const r of g.rows) {
+      sessions++;
+      if (rowState(r.w, r.d, now, graceS).pill) needs++;
+    }
+  }
+  const bits = [String(sessions)];
+  if (groups.length > 1) bits.push(`${groups.length} projects`);
+  if (needs) bits.push(`${needs} needs you`);
+
+  const tally = document.createElement("span");
+  tally.className = "rsum-tally";
+  tally.textContent = bits.join(" · ");
+  head.appendChild(tally);
+  return head;
 }
 
 function groupHeader(g) {
@@ -1499,7 +1544,11 @@ function sessionRow(r, now, graceS) {
 
   const row = document.createElement("div");
   const open = !!w && w.index === openRow;
-  row.className = "srow" + (st.band ? " terminal" : "") + (open ? " open" : "");
+  // The pill's presence is what tints the qualifier lane, so the two channels cannot
+  // disagree: B2 draws the demand twice, as the filled pill and as the red lane under
+  // it, and neither is the sole carrier — the words say it in both places.
+  row.className = "srow" + (st.band ? " terminal" : "") + (open ? " open" : "")
+    + (st.pill ? " needs" : "");
   row.style.setProperty("--tab", w ? hueOf(w) : "var(--faint)");
   if (w) {
     row.tabIndex = 0;
@@ -1615,6 +1664,13 @@ function sessionRow(r, now, graceS) {
 // single control that advances one step, "which is exactly what the hardware does".
 const MODE_POLLS = 5;      // readback attempts before we admit we cannot confirm
 const MODE_POLL_MS = 700;  // ~3.5s total — a keypress reaches tmux far inside that
+// The ladder B3's picker walks, in the order the segments are drawn. It is the
+// harness's cycle order, so a segment's distance from the current mode is the number
+// of BTab presses that reach it — this array is the only thing that makes the picker
+// possible, and a mode not on it degrades the control rather than guessing a
+// position. Not every mode a transcript can record appears here; a reading we cannot
+// place is drawn as one, never as a segment.
+const MODE_LADDER = ["manual", "acceptEdits", "auto"];
 // Past any real `seq`, so `/api/read` returns its envelope without the 60-item cold
 // open. The mode is a field on that response; the transcript is not what we asked for.
 const MODE_SINCE = Number.MAX_SAFE_INTEGER;
@@ -1674,21 +1730,26 @@ function repaintRoster() {
 }
 
 /**
- * Advance one step and then watch for the readback.
+ * Advance `steps` positions and then watch for the readback.
  *
  * The act is not finished when the key is sent (§5.2). `BTab` cycles the mode in the
  * terminal, and the only evidence it landed is the session writing a permission-mode
  * record we can read back. Until that arrives the control says so rather than
  * claiming the change.
+ *
+ * `steps` is how the picker reaches a segment that is not adjacent: the key has no
+ * random access, so distance is walked. It is sent as one `count` rather than as N
+ * requests — the server already clamps repeat, and N round trips would interleave
+ * with the readback poll and race it.
  */
-async function cycleMode(idx) {
+async function cycleMode(idx, steps = 1) {
   const st = modeStateFor(idx);
   if (st.phase === "awaiting") return;
   st.before = st.mode;
   st.phase = "awaiting";
   st.polls = 0;
   repaintRoster();
-  await post("api/key", { index: idx, key: "shift-tab", count: 1 });
+  await post("api/key", { index: idx, key: "shift-tab", count: steps });
   const tick = async () => {
     // Bail if this state object is no longer the window's — a recycle drops it, and a
     // loop still writing into the orphan would resolve a readback for a session that
@@ -1741,19 +1802,69 @@ function modeControl(w) {
     return box;
   }
 
-  // The typeface carries the same split the state slot uses: a value that was read is
-  // monospace, and the console saying there is nothing to read is not.
-  if (st.mode) label.textContent = `mode ${st.mode}`;
-  else { label.textContent = "no mode recorded"; label.classList.add("unseen"); }
+  label.textContent = "PERMISSION MODE";
+  label.classList.add("mode-head");
 
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "mode-cycle" + (st.phase === "awaiting" ? " awaiting" : "");
-  btn.textContent = st.phase === "awaiting" ? "awaiting readback" : "cycle mode";
-  btn.disabled = st.phase === "awaiting";
-  btn.addEventListener("click", (e) => { e.stopPropagation(); cycleMode(w.index); });
-  box.appendChild(btn);
+  // B3 draws a segmented picker; J states why it cannot always be one. The keycap
+  // sends BTab, which *advances one step* — it does not set. Random access is only
+  // available when we know where the ladder currently is, because the number of
+  // presses is the distance from here to there. So the control is state-dependent:
+  // a picker when the mode was read, and the single step the hardware actually
+  // offers when it was not. The degraded branch is the same one §5.2 prescribes.
+  const at = MODE_LADDER.indexOf(st.mode);
+  if (at < 0) {
+    const why = document.createElement("span");
+    why.className = "mode-label unseen";
+    // `""` means no such record exists and is never `manual` (§1); a mode off the
+    // ladder is a real reading we cannot place, and neither is drawn as a position.
+    why.textContent = st.mode
+      ? `mode ${st.mode} — not on the ladder this control walks`
+      : "no mode recorded";
+    box.appendChild(why);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mode-cycle" + (st.phase === "awaiting" ? " awaiting" : "");
+    btn.textContent = st.phase === "awaiting" ? "awaiting readback" : "cycle mode";
+    btn.disabled = st.phase === "awaiting";
+    btn.addEventListener("click", (e) => { e.stopPropagation(); cycleMode(w.index); });
+    box.appendChild(btn);
+    return modeNote(box, st);
+  }
 
+  const seg = document.createElement("div");
+  seg.className = "mode-seg";
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", "Permission mode");
+  MODE_LADDER.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    const on = i === at;
+    // Selection is carried by the fill, the ink and `aria-pressed` together — the
+    // fill alone would be one channel, and this row has to read in greyscale.
+    b.className = "mode-chip" + (on ? " on" : "");
+    b.textContent = name;
+    b.setAttribute("aria-pressed", String(on));
+    b.disabled = st.phase === "awaiting";
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // The distance, not the destination: k presses forward around the ladder.
+      const k = (i - at + MODE_LADDER.length) % MODE_LADDER.length;
+      if (k) cycleMode(w.index, k);
+    });
+    seg.appendChild(b);
+  });
+  box.appendChild(seg);
+  return modeNote(box, st);
+}
+
+/** The readback's own voice, appended to whichever control was drawn. */
+function modeNote(box, st) {
+  if (st.phase === "awaiting") {
+    const note = document.createElement("span");
+    note.className = "mode-note";
+    note.textContent = "awaiting readback";
+    box.appendChild(note);
+  }
   if (st.phase === "unconfirmed") {
     const note = document.createElement("span");
     note.className = "mode-note";
