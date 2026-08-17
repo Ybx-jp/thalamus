@@ -47,12 +47,47 @@
      hue, and one hex owned by two registries means moving the palette silently moves
      every filled control, or fails to. This one is in no palette. */
   --accent: #8b7cf0;
-  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
-  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  /* Plex first, the old system stacks behind it. The fallbacks are load-bearing, not
+     politeness: the subsets carry Latin, box drawing and blocks, and the console's
+     symbol glyphs — ⋯ ⌃ ▾ ◈ ⚙ ✕ ＋ ❯ — are not in Plex at all, at any subset size.
+     Those fall through to the system face, which is where they render today. */
+  --mono: "Plex Mono", ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --ui: "Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   /* per-channel hues, overridden per-tab in JS */
   --chan: #9a8cff;
   --screen-size: 14px;
   --read-size: 15px;
+}
+
+/* IBM Plex, SIL OFL 1.1 — licence served alongside at `PLEX-OFL.txt`. Subset to the
+   glyphs this surface draws: Latin-1 and typographic marks for both faces, plus box
+   drawing, block elements and arrows for the mono face, which renders arbitrary
+   terminal output and would break every frame Claude Code draws if those fell back to
+   a proportional-metric fallback. 42 KB across four files, against 218 KB complete.
+
+   `font-display: swap` rather than `block`: the pane must be readable immediately on
+   a cold open, and the reflow it costs is small — measured on this box, Plex Mono is
+   0.34% narrower than the system stack over an 80-column line (672.0 px against
+   674.3 px at 14 px), so the auto-fit lands within a step of where it started. */
+@font-face {
+  font-family: "Plex Mono";
+  src: url("plex-mono-400.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Plex Mono";
+  src: url("plex-mono-600.woff2") format("woff2");
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Plex Sans";
+  src: url("plex-sans-400.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Plex Sans";
+  src: url("plex-sans-600.woff2") format("woff2");
+  font-weight: 600; font-style: normal; font-display: swap;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
