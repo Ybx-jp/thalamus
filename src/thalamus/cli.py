@@ -1285,6 +1285,12 @@ def main():
         help="Speech service backing the `say` control, e.g. http://127.0.0.1:8380 "
              "(default: $THALAMUS_VOICE_URL, else none — the control is hidden)"
     )
+    console_parser.add_argument(
+        "--fetch-interval", type=float, default=10.0, metavar="MINUTES",
+        help="How often to fetch the checkout's remote so the console knows whether "
+             "it is behind (default: 10; 0 disables, and the count then only reflects "
+             "the last fetch somebody ran)"
+    )
 
     # Pulse command — the live telemetry dashboard (docs/03)
     pulse_parser = subparsers.add_parser(
@@ -3974,6 +3980,7 @@ def _cmd_console(args):
         services=args.service,
         frames_file=args.frames,
         voice_url=args.voice,
+        fetch_interval_s=max(0.0, args.fetch_interval) * 60,
     )
     if subprocess.run(["tmux", "has-session", "-t", cfg.session],
                       capture_output=True).returncode != 0:

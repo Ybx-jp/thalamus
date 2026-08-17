@@ -51,6 +51,13 @@ from thalamus.harness import panes
 STATIC_DIR = Path(__file__).with_name("static")
 DEFAULT_PORT = 8378
 
+# When this process started. The console is normally an editable install served out
+# of a checkout, which puts two clocks between a commit and the phone: `static/` is
+# read from disk per request and tracks the working tree instantly, while the Python
+# is loaded once and tracks it only as far as this timestamp. `build_info` below
+# reads both so the surface can say which one is behind.
+STARTED_AT = time.time()
+
 # Defaults for a console running without the rest of Thalamus importable. `pin` owns
 # the real ones; these only have to be sane enough to bridge a tmux session.
 FALLBACK_SESSION = "thalamus"
@@ -613,6 +620,12 @@ class Config:
     # unit with an undeclarable model download behind it, so a console that
     # assumed one would hand every operator a button that fails on the first tap.
     voice_url: str | None = None
+    # How often the console fetches the checkout's remote, in seconds. Nothing about
+    # the working tree changes — a fetch moves remote-tracking refs only — but it is
+    # what makes "N commits behind" a fact rather than a report on whenever somebody
+    # last happened to fetch. 0 disables the thread and the count then means only
+    # that much.
+    fetch_interval_s: float = 600.0
 
     def __post_init__(self) -> None:
         pin = pin_module()
@@ -1231,6 +1244,241 @@ def service_restart(unit: str) -> None:
                    capture_output=True, text=True)
 
 
+CGROUP_PATH = Path("/proc/self/cgroup")
+
+
+def self_unit() -> str | None:
+    """The systemd unit this process is running under, read from its own cgroup.
+
+    The console is told which units it may restart (`--service`), but not which of
+    them is itself, and a deploy has to reload the one hosting it. Only the *leaf*
+    of the cgroup path counts: `user@1000.service` is an ancestor of everything a
+    user runs, so scanning rightwards for any `*.service` would name the user
+    manager for a console started from a terminal, and restarting that ends the
+    login session. A leaf that is a `.scope` — a terminal, a tmux pane — is not a
+    unit anyone should restart, and returns None so the deploy says what to restart
+    by hand instead.
+    """
+    try:
+        text = CGROUP_PATH.read_text().strip()
+    except OSError:
+        return None
+    if not text:
+        return None
+    leaf = text.splitlines()[-1].rsplit("/", 1)[-1]
+    return leaf if leaf.endswith(".service") else None
+
+
+# ---- What this process is serving ----
+#
+# Merging a PR changes a remote. It does not change this box, and nothing about a
+# console rendered on a phone says which commit it came from — the failure it
+# produces is a merged change that appears not to have happened. These read the
+# two clocks that decide what is on the surface and name the gap.
+
+
+def _git_run(cwd: Path | str, *args: str) -> subprocess.CompletedProcess | None:
+    """`git <args>` in `cwd`. None when git is not installed or cannot be run."""
+    try:
+        return subprocess.run(("git", *args), cwd=str(cwd), capture_output=True,
+                              text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _git(cwd: Path | str, *args: str) -> str | None:
+    """Stripped stdout of a successful `git <args>`, else None."""
+    r = _git_run(cwd, *args)
+    return r.stdout.strip() if r and r.returncode == 0 else None
+
+
+def checkout_root() -> Path | None:
+    """The git checkout this module is being imported from, if it is in one.
+
+    Deliberately derived from `__file__` rather than from `Config.project_root`:
+    the root roster sync runs against is a separate setting and may point somewhere
+    else entirely, while the question here is which tree produced the code now
+    answering the request. None under a wheel install — there is no tree to be
+    behind, and the running code is the only code there is.
+    """
+    top = _git(Path(__file__).resolve().parent, "rev-parse", "--show-toplevel")
+    return Path(top) if top else None
+
+
+def loaded_code_mtime() -> float:
+    """Newest mtime among the package files this process has already imported.
+
+    Exactly the files whose contents are frozen in memory. A module not yet
+    imported will be read fresh when it is, so a newer mtime there is not
+    staleness; one of *these* newer than `STARTED_AT` means the running server no
+    longer matches the tree it is served from, and an endpoint the client was built
+    against may simply not exist here.
+    """
+    newest = 0.0
+    for name, mod in list(sys.modules.items()):
+        if not name.startswith("thalamus"):
+            continue
+        path = getattr(mod, "__file__", None)
+        if not path or not path.endswith(".py"):
+            continue
+        try:
+            newest = max(newest, os.stat(path).st_mtime)
+        except OSError:
+            continue
+    return newest
+
+
+BUILD_TTL_S = 5.0
+_BUILD_CACHE: dict = {"at": 0.0, "info": None}
+_BUILD_LOCK = threading.Lock()
+
+
+def build_info(force: bool = False) -> dict:
+    """What this process is serving, and whether anything about it is out of date.
+
+    Cached briefly: it costs five `git` calls and several clients may be polling
+    it, but it must not be cached long enough to still say "current" after a
+    deploy the operator is watching.
+    """
+    with _BUILD_LOCK:
+        cached = _BUILD_CACHE["info"]
+        if not force and cached and time.time() - float(_BUILD_CACHE["at"]) < BUILD_TTL_S:
+            return cached
+    info = _read_build()
+    with _BUILD_LOCK:
+        _BUILD_CACHE.update(at=time.time(), info=info)
+    return info
+
+
+def _read_build() -> dict:
+    process_stale = loaded_code_mtime() > STARTED_AT
+    root = checkout_root()
+    info: dict = {"started": STARTED_AT, "process_stale": process_stale,
+                  "root": str(root) if root else None, "vcs": root is not None}
+    reasons: list[str] = []
+    if process_stale:
+        reasons.append("this process is running code older than the checkout")
+
+    if root is not None:
+        branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+        upstream = _git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+        committed = _git(root, "log", "-1", "--format=%ct")
+        ahead = behind = 0
+        if upstream:
+            counts = _git(root, "rev-list", "--left-right", "--count", f"HEAD...{upstream}")
+            parts = (counts or "").split()
+            if len(parts) == 2 and all(p.isdigit() for p in parts):
+                ahead, behind = int(parts[0]), int(parts[1])
+        info.update(
+            branch=branch, sha=_git(root, "rev-parse", "--short", "HEAD"),
+            subject=_git(root, "log", "-1", "--format=%s"),
+            committed=int(committed) if committed and committed.isdigit() else None,
+            # `-uno`: dirty means tracked files modified, which is the condition that
+            # blocks a fast-forward. Untracked build output and editor state do not,
+            # and counting them would leave the tree reading as dirty forever.
+            dirty=bool(_git(root, "status", "--porcelain", "-uno")),
+            upstream=upstream, ahead=ahead, behind=behind,
+            fetched=_last_fetch(root),
+        )
+        if behind:
+            reasons.append(f"the checkout is {behind} commit{'' if behind == 1 else 's'} "
+                           f"behind {upstream}")
+
+    info["stale"] = bool(reasons)
+    info["reason"] = "; ".join(reasons)
+    return info
+
+
+def _last_fetch(root: Path) -> float | None:
+    """When the checkout last heard from its remote, for reading `behind` honestly."""
+    path = _git(root, "rev-parse", "--git-path", "FETCH_HEAD")
+    if not path:
+        return None
+    try:
+        return (root / path).stat().st_mtime
+    except OSError:
+        return None
+
+
+def deploy(cfg: Config) -> dict:
+    """Fast-forward the checkout this code is served from, and say what to reload.
+
+    The two halves of a deploy have to move together: the pull is what updates
+    `static/`, and the restart is what updates the Python. Doing either alone is the
+    state where the phone shows a client and a server built against different
+    commits. This does the pull and names the unit in `restarting`; the caller
+    performs the restart, because it is the caller that has a response to deliver
+    first and the restart kills the process that would deliver it.
+
+    It refuses rather than improvises. A dirty tree, a detached HEAD, a branch with
+    no upstream, or a history that will not fast-forward all stop here carrying
+    git's own message — nothing is stashed, discarded or merged, and the only move
+    made is the one `git pull --ff-only` would have made.
+    """
+    root = checkout_root()
+    if root is None:
+        return {"ok": False, "error": "this console is not running from a git checkout"}
+    branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if not branch or branch == "HEAD":
+        return {"ok": False, "error": f"{root} is on a detached HEAD; check out a branch"}
+    upstream = _git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if not upstream:
+        return {"ok": False, "error": f"branch `{branch}` has no upstream to pull from"}
+    dirty = _git(root, "status", "--porcelain", "-uno")
+    if dirty:
+        return {"ok": False, "output": dirty,
+                "error": f"{root} has uncommitted changes to tracked files — "
+                         "commit or restore them first"}
+
+    fetched = _git_run(root, "fetch", "--quiet", "--prune")
+    if fetched is None or fetched.returncode != 0:
+        detail = (fetched.stderr or fetched.stdout).strip() if fetched else "git not runnable"
+        return {"ok": False, "error": f"could not reach the remote: {detail}"}
+    before = _git(root, "rev-parse", "--short", "HEAD")
+    ff = _git_run(root, "merge", "--ff-only", upstream)
+    if ff is None or ff.returncode != 0:
+        detail = (ff.stderr or ff.stdout).strip() if ff else "git not runnable"
+        return {"ok": False, "output": detail,
+                "error": f"`{branch}` will not fast-forward onto {upstream}"}
+    after = _git(root, "rev-parse", "--short", "HEAD")
+
+    info = build_info(force=True)
+    unit = self_unit()
+    moved = after != before
+    # Restarting when nothing moved would blip the console for no reason; not
+    # restarting when the process is already behind the tree would leave the half
+    # this cannot fix any other way. `--service` stays the whitelist it is for the
+    # admin sheet: a console never restarts a unit it was not told it owns, its own
+    # included.
+    restarting = None
+    if (moved or info.get("process_stale")) and unit and unit in cfg.services:
+        restarting = unit
+    return {"ok": True, "moved": moved, "from": before, "to": after, "branch": branch,
+            "upstream": upstream, "unit": unit, "restarting": restarting}
+
+
+def _fetch_loop(interval_s: float) -> None:
+    """Keep `behind` truthful without anyone having to ask.
+
+    A fetch moves remote-tracking refs and touches nothing else — no working tree,
+    no branch, no index. Without it the console can only compare the checkout
+    against whenever somebody last fetched by hand, which is the state in which a
+    merged PR sits invisible for a day.
+    """
+    first = True
+    while True:
+        # A short first delay rather than the full interval: at boot the network
+        # may not be up yet, and the answer should still be current within a minute.
+        time.sleep(30 if first else interval_s)
+        first = False
+        root = checkout_root()
+        if root is None:
+            return
+        _git_run(root, "fetch", "--quiet", "--prune")
+        with contextlib.suppress(Exception):
+            build_info(force=True)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -1396,7 +1644,13 @@ class Handler(BaseHTTPRequestHandler):
             with RECYCLING_LOCK:
                 recycling = sorted(RECYCLING)
             return self._send(200, {"services": service_status(self.cfg),
-                                    "recycling": recycling})
+                                    "recycling": recycling,
+                                    "build": build_info()})
+        if path == "/api/build":
+            # Its own endpoint as well as a field on /api/admin: the staleness
+            # banner has to be answerable without opening the admin sheet, which is
+            # the place an operator goes only once he already suspects something.
+            return self._send(200, build_info())
         if path == "/api/launch-policy":
             return self._send(200, {"harnesses": launch_policy_view()})
         if path == "/api/cursor-sweep":
@@ -1445,6 +1699,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "unknown unit"})
             service_restart(unit)
             return self._send(200, {"ok": True})
+
+        if path == "/api/deploy":
+            # A refusal is a 200 carrying the reason. Every way this stops is a fact
+            # about the checkout the operator has to read and act on — a dirty tree,
+            # a branch that will not fast-forward — and a status code the client
+            # renders as "request failed" throws that away.
+            result = deploy(self.cfg)
+            # Answer *before* restarting. The unit being restarted is the one
+            # serving this request, so the process dies with the socket: restarting
+            # first leaves the client unable to tell a deploy in progress from a box
+            # that fell over. `wfile` is unbuffered here (`wbufsize = 0`), so the
+            # body is on the wire by the time this returns.
+            self._send(200, result)
+            if result.get("restarting"):
+                service_restart(result["restarting"])
+            return
 
         if path == "/api/distill-dismiss":
             # Clears one error row. Not a window operation — the window whose
@@ -1667,6 +1937,12 @@ class Handler(BaseHTTPRequestHandler):
 def serve(cfg: Config, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> None:
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.config = cfg  # type: ignore[attr-defined]
+    if cfg.fetch_interval_s > 0:
+        threading.Thread(target=_fetch_loop, args=(cfg.fetch_interval_s,),
+                         daemon=True).start()
+    build = build_info()
+    if build.get("vcs"):
+        print(f"Serving {build.get('branch')}@{build.get('sha')} from {build.get('root')}")
     print(f"Control plane on http://{host}:{port}  (tmux session `{cfg.session}`)")
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("  ! bound off-loopback and this server has NO authentication — "
