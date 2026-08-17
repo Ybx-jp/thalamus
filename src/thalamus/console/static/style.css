@@ -170,6 +170,46 @@ header {
   font-size: .9rem; cursor: pointer; padding: .2rem .3rem;
 }
 
+/* ---- Build bar ---- */
+/* The install bar's geometry, with the warn hue as a left edge rather than as text.
+   The condition is carried by the sentence the server composes; the stripe only
+   reinforces it, so the bar survives greyscale and needs no new (text, ground) pair
+   measured — `--ink` on `--panel-hi` is already declared. As a 3 px non-text rule
+   `--warn` answers to the 3:1 floor, not 4.5:1. */
+.build-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .9rem;
+  background: var(--panel-hi);
+  border-bottom: 1px solid var(--hair);
+  border-left: 3px solid var(--warn);
+}
+.build-bar[hidden] { display: none; }
+/* The bar answers a question about the roster. In the session view the roster is not
+   on screen, and a deploy from inside a mirror would blip the connection the mirror
+   is reading through. */
+body[data-view="session"] .build-bar { display: none; }
+.build-msg { flex: 1 1 auto; min-width: 0; font-size: .8rem; color: var(--ink); }
+/* 44 px, not the 60 px §7 sets for controls that can lose work. Deploy refuses on a
+   dirty tree and stashes nothing, and tmux outlives the unit it restarts, so no
+   conversation is at risk — but it is consequential enough not to sit at the 24 px
+   floor of WCAG 2.2 SC 2.5.8 with the dismiss control next to it. */
+.build-do {
+  appearance: none; flex: 0 0 auto;
+  min-height: 44px; min-width: 44px;
+  background: var(--accent); border: 0; border-radius: 7px;
+  color: #0b0e12; font-family: var(--mono); font-weight: 600;
+  font-size: .72rem; letter-spacing: .06em; padding: .4rem .9rem; cursor: pointer;
+}
+.build-do[hidden] { display: none; }
+.build-do:disabled { opacity: .4; cursor: default; }
+/* The shared `.install-x` sits near the 24 px floor, which SC 2.5.8's spacing
+   exception would carry here — but the exception is measured against neighbours that
+   can move, and this one stands beside a 44 px control. Sized outright instead. */
+.build-bar .install-x { min-height: 44px; min-width: 44px; }
+
 /* ---- Room bar ---- */
 /* Only rendered when a room exists. Quieter than the rail on purpose: the rail is
    who you're talking to, this is which collaboration they're inside. */

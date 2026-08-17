@@ -338,8 +338,9 @@ action as the smaller target is how a mis-tap happens.
 
 **⚙ is the admin sheet**, and it holds what is not a per-session act:
 
-- **roster sync** is idempotent backfill — it adds windows the pin ledger expects
-  and touches nothing already running.
+- **roster sync** re-runs `thalamus roster`, which is idempotent backfill: it adds
+  windows the pin ledger expects, recreates the anchor if it exited, and touches
+  nothing already running.
 - **restart all** recycles every window in sequence, which is N irreversible losses
   behind one confirm. It sits in its own section with its own shape rather than
   beside `roster sync`, and its confirm enumerates the count and the groups it will
@@ -363,9 +364,9 @@ action as the smaller target is how a mis-tap happens.
   re-runs the *creation* command — so a posture change cannot reach a running session.
   Windows still on an older argv are badged **old posture**, and the restart button on
   the same row is the fix.
-- **roster sync** re-runs `thalamus roster`, which is idempotent — it recreates
-  the anchor if it exited and leaves everything else alone.
 - **Services** is hidden unless you named units with `--service` (below).
+- **Build** states which commit the console is serving, and offers the deploy that
+  moves it onto the next one. Present whenever the console runs from a checkout.
 
 Restarting or closing the session you're *reading* ends that conversation, so the
 prompt for the viewed window is worded more sharply than the others.
@@ -469,10 +470,21 @@ something to retry.
 remote every ten minutes (`--fetch-interval`) and serves what it is running at
 `/api/build`: branch and commit, whether the tree is dirty, how far it is behind its
 upstream, and whether the running process predates the code on disk. When either of
-the last two is true, a bar appears above the roster saying which, with the deploy
-button beside it; dismissing it is keyed to the commit, so the next merge raises it
-again. The INFRA sheet states the commit whether or not anything is wrong with it,
-alongside how long the process has been up and when the remote was last heard from.
+the last two is true, a bar appears above the roster carrying the server's own
+sentence — the client prints `reason` and branches on `stale`, so which condition
+leads is decided in one place — with the deploy button beside it.
+
+Dismissing the bar is keyed to the state it was showing, not to the commit alone: a
+checkout that sits still while the remote moves ahead keeps its sha, so a sha-keyed
+dismissal would silence the bar permanently at the moment it starts being right. The
+key folds in the behind-count and the process flag, which is what makes the next merge
+raise it again. It is per-device, in `localStorage`.
+
+The INFRA sheet states the commit whether or not anything is wrong with it, alongside
+how long the process has been up and when the remote was last heard from — a panel
+that appeared only when something was wrong would make "nothing to report" and "never
+looked" the same picture. It reads the build off the `/api/admin` payload it already
+fetches, so the sheet and the bar cannot disagree.
 
 A fetch moves remote-tracking refs and touches nothing else — no working tree, no
 branch, no index — so it is safe against a checkout other sessions are working in.

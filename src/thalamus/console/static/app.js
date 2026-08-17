@@ -94,6 +94,12 @@ const els = {
   dialogueLog: document.getElementById("dialogue-log"),
   dialogueX: document.getElementById("dialogue-x"),
   roster: document.getElementById("roster"),
+  buildBar: document.getElementById("build-bar"),
+  buildMsg: document.getElementById("build-msg"),
+  buildDo: document.getElementById("build-do"),
+  adminBuild: document.getElementById("admin-build"),
+  adminBuildSec: document.getElementById("admin-build-sec"),
+  adminDeploy: document.getElementById("admin-deploy"),
   read: document.getElementById("read"),
   readWait: document.getElementById("read-wait"),
   viewToggle: document.getElementById("view-toggle"),
@@ -965,6 +971,9 @@ async function poll() {
     }
     if (activeCols() !== lastFitCols) computeFit(); // e.g. an attached terminal resized it
     setConn("live");
+    // Rides this poll rather than owning a timer, and is not awaited: the roster must
+    // not wait on it, and its own guard keeps it to one request per BUILD_POLL_MS.
+    refreshBuild(false);
   } catch (e) {
     if (Date.now() - lastOk > STALE_MS) setConn("stale");
   }
@@ -2350,6 +2359,15 @@ async function loadServices() {
   try {
     const r = await req("api/admin", { cache: "no-store" });
     const data = await r.json();
+    // Before the units early-return below: the build panel is not conditional on
+    // anything having been named with --service, and a console with no managed units
+    // still runs from a checkout that can be behind.
+    if (data.build) {
+      buildInfo = data.build;
+      buildFetchedAt = Date.now();
+      renderBuild(buildInfo);
+      renderBuildBar(buildInfo);
+    }
     const units = data.services || [];
     sec.hidden = units.length === 0;
     if (!units.length) return;
@@ -2803,6 +2821,191 @@ function scheduleFit() {
 }
 window.addEventListener("resize", scheduleFit);
 window.addEventListener("orientationchange", scheduleFit);
+
+// ---- What this console is serving, and moving it onto the next commit ----
+//
+// Merging a PR changes a remote, not this box. The failure that produces is a merged
+// change that appears simply not to have happened, and no amount of looking at the
+// phone distinguishes it from a change that does not work. `/api/build` is the server
+// answering which commit it is running; the bar is that answer surfacing on its own,
+// so noticing does not depend on suspecting first.
+//
+// The server composes `reason` and reduces `stale`. The client prints the one and
+// branches on the other. Deciding here which of `behind` and `process_stale` outranks
+// the other would be a second policy about one fact, and the two would drift.
+
+const BUILD_POLL_MS = 30000;
+// Keyed to the reported state, not to the sha alone. A checkout that sits still while
+// the remote moves ahead keeps its sha, so a sha-keyed dismissal would silence the bar
+// permanently at exactly the moment it starts being right. `behind` is the part that
+// changes when the next merge lands, which is the behaviour the spec asks for.
+const BUILD_DISMISS_KEY = "plane-build-dismissed";
+
+let buildInfo = null;
+// The key for whatever the bar is currently showing. Written by renderBuildBar and
+// read by the dismiss control, so ✕ dismisses the state on screen rather than
+// re-deriving it from a variable a caller may not have set — which is a dismissal
+// that silently does nothing, and looks exactly like one that worked.
+let buildBarKey = "";
+let buildFetchedAt = 0;
+let buildInFlight = false;
+let deployInFlight = false;
+
+/**
+ * `{ show, text, key }` — whether the bar belongs on screen, and what it says.
+ *
+ * Split out from the DOM so the dismissal arithmetic is testable without a document.
+ * Returns `show: false` for a wheel install (`vcs: false`), where there is no checkout
+ * to be behind and the running code is the only code there is.
+ */
+function buildBarState(info, dismissed) {
+  if (!info || !info.vcs || !info.stale) return { show: false, text: "", key: "" };
+  const key = `${info.sha || "?"}:${info.behind || 0}:${info.process_stale ? 1 : 0}`;
+  return { show: dismissed !== key, text: info.reason || "this console is out of date", key };
+}
+
+function renderBuildBar(info) {
+  if (!els.buildBar) return;
+  const state = buildBarState(info, localStorage.getItem(BUILD_DISMISS_KEY));
+  buildBarKey = state.key;
+  if (deployInFlight) return;         // mid-deploy the bar is saying something else
+  els.buildBar.hidden = !state.show;
+  if (state.show) els.buildMsg.textContent = state.text;
+}
+
+/**
+ * Refresh the build answer, at most every `BUILD_POLL_MS`.
+ *
+ * Deliberately not on its own timer: it rides the 1.2 s poll and skips most ticks. A
+ * second interval would be a second thing to wedge, and the server caches this for 5 s
+ * anyway, so a faster cadence buys nothing. Not awaited by the caller either — a slow
+ * `/api/build` must not delay the roster, and `req` carries the abort timeout.
+ */
+async function refreshBuild(force) {
+  if (buildInFlight) return;
+  if (!force && Date.now() - buildFetchedAt < BUILD_POLL_MS) return;
+  buildInFlight = true;
+  try {
+    const r = await req("api/build", { cache: "no-store" });
+    if (!r.ok) return;
+    buildInfo = await r.json();
+    buildFetchedAt = Date.now();
+    renderBuildBar(buildInfo);
+    renderBuild(buildInfo);
+  } catch (e) {
+    // Leave the last answer standing. A bar that blanked whenever a poll failed would
+    // read as "nothing wrong" on exactly the flaky link that makes a stale console
+    // hardest to notice.
+  } finally {
+    buildInFlight = false;
+  }
+}
+
+/**
+ * Fast-forward the checkout and restart the unit serving this page.
+ *
+ * `/api/deploy` refuses with a 200 carrying the reason, so `data.ok` is the check and
+ * `ok` is not — every refusal is a fact about the checkout to go and act on, and
+ * treating it as a failed request would throw the sentence away.
+ *
+ * When it does restart, this page's own server dies with the response already on the
+ * wire. The in-flight state stays on screen: the service worker's `controllerchange`
+ * reload and the connection beacon are what come back, and pretending to a completion
+ * this code will not be alive to see would be a lie in the one direction that matters.
+ */
+async function doDeploy() {
+  if (deployInFlight) return;
+  deployInFlight = true;
+  if (els.buildDo) els.buildDo.disabled = true;
+  if (els.adminDeploy) els.adminDeploy.disabled = true;
+  // The disabled controls are dimmed; the state itself is carried in this sentence,
+  // which is the ground the .4 opacity is licensed on.
+  if (els.buildBar) {
+    els.buildBar.hidden = false;
+    els.buildMsg.textContent = "deploying — the console restarts and reconnects";
+  }
+  adminLog("deploy");
+  try {
+    const { data } = await postJson("api/deploy", {});
+    if (!data.ok) {
+      adminLog(data.error || "deploy refused");
+      if (data.output) adminLog(data.output);
+      if (els.buildMsg) els.buildMsg.textContent = data.error || "deploy refused";
+      return;
+    }
+    adminLog(data.moved ? `deployed ${data.from} → ${data.to}` : `already at ${data.to}`);
+    if (data.restarting) {
+      adminLog(`restarting ${data.restarting}`);
+      return;                          // this process is going away; let the reload land
+    }
+    if (!data.moved) {
+      // Nothing moved and nothing restarted, so no reload is coming to clear this.
+      localStorage.removeItem(BUILD_DISMISS_KEY);
+      await refreshBuild(true);
+    }
+  } catch (e) {
+    adminLog("deploy request failed");
+    if (els.buildMsg) els.buildMsg.textContent = "deploy request failed";
+  } finally {
+    deployInFlight = false;
+    if (els.buildDo) els.buildDo.disabled = false;
+    if (els.adminDeploy) els.adminDeploy.disabled = false;
+  }
+}
+
+/**
+ * The INFRA sheet's build panel: the commit, whether or not anything is wrong with it.
+ *
+ * Reads `build` off the `/api/admin` payload the sheet already fetches rather than
+ * asking again — the server serves the same object to both surfaces, and a second
+ * request is a second answer that can disagree with the bar standing above the roster.
+ */
+function renderBuild(info) {
+  if (!els.adminBuild || !els.adminBuildSec) return;
+  els.adminBuildSec.hidden = !(info && info.vcs);
+  if (!info || !info.vcs) return;
+  const now = Date.now() / 1000;
+  const rows = [
+    ["commit", `${info.sha || "?"} on ${info.branch || "?"}`, false],
+    ["subject", info.subject || "", false],
+    ["upstream", info.upstream
+      ? `${info.upstream} — ${info.behind ? `${info.behind} behind` : "up to date"}` +
+        (info.ahead ? `, ${info.ahead} ahead` : "")
+      : "no upstream", !!info.behind],
+    ["process", info.process_stale
+      ? `up ${fmtDur(now - info.started)}, older than the checkout`
+      : `up ${fmtDur(now - info.started)}`, !!info.process_stale],
+    ["tree", info.dirty ? "uncommitted changes — deploy will refuse" : "clean", !!info.dirty],
+    ["fetched", info.fetched ? `${fmtDur(now - info.fetched)} ago` : "never", false],
+  ];
+  els.adminBuild.innerHTML = "";
+  for (const [name, value, bad] of rows) {
+    if (!value) continue;
+    const row = document.createElement("div");
+    row.className = "admin-row";
+    row.innerHTML =
+      `<span class="admin-name">${escapeHtml(name)}</span>` +
+      `<span class="admin-state${bad ? " bad" : ""}">${escapeHtml(value)}</span>`;
+    els.adminBuild.appendChild(row);
+  }
+}
+
+if (els.buildDo) els.buildDo.addEventListener("click", doDeploy);
+if (els.adminDeploy) els.adminDeploy.addEventListener("click", doDeploy);
+/**
+ * Put the bar down for the state it is currently showing.
+ *
+ * Dismisses `buildBarKey` — what the last render actually drew — rather than
+ * recomputing a key from module state the renderer may not have written. Those two
+ * came apart once already: the bar went down, nothing was stored, and the next poll
+ * put it straight back up, which reads as a dismiss control that does not work.
+ */
+function dismissBuildBar() {
+  if (buildBarKey) localStorage.setItem(BUILD_DISMISS_KEY, buildBarKey);
+  els.buildBar.hidden = true;
+}
+
+document.getElementById("build-x").addEventListener("click", dismissBuildBar);
 
 // ---- Install (add to home screen) ----
 const installBar = document.getElementById("install-bar");
