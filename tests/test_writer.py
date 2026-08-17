@@ -124,12 +124,22 @@ def test_iterate_reports_operation_target_and_server_details():
 
 
 class RecordingGraph:
-    """Captures every vertex and edge a write would produce, without a graph server."""
+    """Captures every vertex and edge a write would produce, without a graph server.
 
-    def __init__(self):
+    It also serves the two *reads* `_upsert_artifacts` makes before it writes — the
+    proven-checkout registry and the projections already held. Serving them is the point
+    rather than a convenience: the writer fails closed when those reads raise, so a fake
+    that cannot answer them sends every test down the fallback path, and the projection
+    a session actually writes goes unexercised.
+    """
+
+    def __init__(self, sessions=(), artifacts=()):
         self.vertices: list[dict] = []
         self.edges: list[dict] = []
         self._pending: dict | None = None
+        # Rows the two reads answer with, keyed by the label each one starts from.
+        self._rows = {"Session": list(sessions), "Artifact": list(artifacts)}
+        self._reading: str | None = None
 
     # -- traversal surface used by the writer --
     def merge_v(self, values):
@@ -147,10 +157,24 @@ class RecordingGraph:
         return self
 
     def V(self, *_args):
+        self._reading = None
         return self
 
-    def has_label(self, *_args):
+    def has_label(self, label=None, *_args):
+        self._reading = label
         return self
+
+    def has(self, *_args, **_kwargs):
+        return self
+
+    def project(self, *_keys):
+        return self
+
+    def by(self, *_args, **_kwargs):
+        return self
+
+    def to_list(self):
+        return list(self._rows.get(self._reading, []))
 
     def property(self, *_args):
         return self
@@ -161,6 +185,14 @@ class RecordingGraph:
     @property
     def bytecode(self):
         return "recording"
+
+
+def _artifact_properties(graph, identifier):
+    """The properties written for one Artifact, by identifier."""
+    return next(
+        vertex["properties"] for vertex in graph.vertices
+        if vertex["match"].get("identifier") == identifier
+    )
 
 
 def test_every_written_node_carries_a_provenance_envelope():
@@ -228,6 +260,138 @@ def test_artifacts_are_written_unscoped_and_everything_else_scoped():
     # Verifies: scoped nodes are namespaced by the pin, so scopes cannot collide
     assert "scope:literature:session:s1" in ids
     assert any(node_id.startswith("scope:literature:claim:") for node_id in ids)
+
+
+def test_two_spellings_of_one_file_are_written_onto_one_projection():
+    """
+    Scenario: A session in a proven checkout touches one file twice — once by the
+    absolute path a tool call carried and once by the repo-relative path
+
+    Requires:
+    - infrastructure: none; the recording fake serves the registry read and records writes
+
+    Verifications:
+    - both Artifact vertices are written carrying the same `(repo, path)`
+    - the identifiers are written unchanged
+
+    This is the projection end to end, and the pair is the unit that matters: the
+    identifier stays the tier-1 string the tool call carried — re-keying it would break
+    every citation ever minted — while the derived key beside it is what lets a reader
+    reach both vertices as one file.
+    """
+    session = SessionGraph(
+        session_id="s1",
+        timestamp=datetime(2026, 8, 17, tzinfo=UTC),
+        tool=Tool.CLAUDE_CODE,
+        project="thalamus",
+        repo_root="/home/u/code/thalamus",
+        summary="Touched one file under two names.",
+        artifacts=[
+            Artifact(identifier="/home/u/code/thalamus/src/a.py", type=ArtifactType.FILE),
+            Artifact(identifier="src/a.py", type=ArtifactType.FILE),
+        ],
+    )
+
+    graph = RecordingGraph(sessions=[{"root": "/home/u/code/thalamus", "evidence": "cwd"}])
+    write_session(graph, session)
+
+    absolute = _artifact_properties(graph, "/home/u/code/thalamus/src/a.py")
+    relative = _artifact_properties(graph, "src/a.py")
+
+    # Verifies: one derived key, reached from either spelling
+    assert (absolute["repo"], absolute["path"]) == ("thalamus", "src/a.py")
+    assert (relative["repo"], relative["path"]) == ("thalamus", "src/a.py")
+    # Verifies: the identifier itself is untouched
+    assert absolute[T.id] == "artifact:/home/u/code/thalamus/src/a.py"
+
+
+def test_the_write_anchors_on_every_proven_checkout_and_yields_to_disagreement():
+    """
+    Scenario: A session working in one checkout touches a file inside a *different*
+    proven checkout, and also a relative path another session already anchored elsewhere
+
+    Requires:
+    - infrastructure: none; the fake serves both reads the writer makes
+
+    Verifications:
+    - the foreign checkout's file anchors on the registry, not on this session's root
+    - a relative path this session anchors differently than the held value is cleared
+
+    Both halves are reads, and a fake that cannot serve them sends the writer down its
+    fail-closed path where neither rule is exercised. Two owners honestly means none:
+    inventing one here is the false merge that re-keying the identifier was rejected for.
+    """
+    session = SessionGraph(
+        session_id="s2",
+        timestamp=datetime(2026, 8, 17, tzinfo=UTC),
+        tool=Tool.CLAUDE_CODE,
+        project="other",
+        repo_root="/home/u/code/other",
+        summary="Read a file in a neighbouring checkout.",
+        artifacts=[
+            Artifact(identifier="/home/u/code/thalamus/src/a.py", type=ArtifactType.FILE),
+            Artifact(identifier="src/a.py", type=ArtifactType.FILE),
+        ],
+    )
+
+    graph = RecordingGraph(
+        sessions=[
+            {"root": "/home/u/code/thalamus", "evidence": "cwd"},
+            {"root": "/home/u/code/other", "evidence": "touch"},
+        ],
+        artifacts=[{"identifier": "src/a.py", "repo": "thalamus", "path": "src/a.py"}],
+    )
+    write_session(graph, session)
+
+    foreign = _artifact_properties(graph, "/home/u/code/thalamus/src/a.py")
+    contested = _artifact_properties(graph, "src/a.py")
+
+    # Verifies: the registry decided this, not the session's own root
+    assert (foreign["repo"], foreign["path"]) == ("thalamus", "src/a.py")
+    # Verifies: `other` and the held `thalamus` disagree, so neither wins
+    assert (contested["repo"], contested["path"]) == ("", "")
+
+
+def test_a_graph_that_cannot_serve_the_projection_still_writes_the_artifact():
+    """
+    Scenario: The projection's reads fail — an older graph, or a server that errors
+
+    Requires:
+    - infrastructure: none; a recording fake whose reads raise
+
+    Verifications:
+    - the Artifact is written, carrying its identifier and provenance
+    - no `repo`/`path` is written at all
+
+    Failing closed is the point. Without the held projections the writer cannot tell
+    absence from disagreement, so a guess here would overwrite another session's anchor;
+    writing nothing leaves the derived properties to `thalamus derive-artifact-paths`,
+    which recomputes them. What must not happen is the write itself being lost.
+    """
+    class _UnreadableGraph(RecordingGraph):
+        def to_list(self):
+            raise RuntimeError("no such property key: repo_root")
+
+    session = SessionGraph(
+        session_id="s3",
+        timestamp=datetime(2026, 8, 17, tzinfo=UTC),
+        tool=Tool.CLAUDE_CODE,
+        project="thalamus",
+        repo_root="/home/u/code/thalamus",
+        summary="Wrote against a graph that cannot answer.",
+        artifacts=[Artifact(identifier="src/a.py", type=ArtifactType.FILE)],
+    )
+
+    graph = _UnreadableGraph()
+    write_session(graph, session)
+
+    properties = _artifact_properties(graph, "src/a.py")
+
+    # Verifies: the write survived the failed read
+    assert properties["source"] == "session:s3"
+    # Verifies: silence, not a guess — an empty projection would read as "no repo"
+    assert "repo" not in properties
+    assert "path" not in properties
 
 
 class _VertexChain:

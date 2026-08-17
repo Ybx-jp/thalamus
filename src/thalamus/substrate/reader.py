@@ -102,6 +102,12 @@ _THREAD_RANK_WINDOW = 400
 # wearing a fidelity story.
 _CHUNK_HIT_SCORE = 1.0
 _CHUNK_WINDOW_CAP = 2
+# Distinct `(repo, path)` keys an artifact lookup will expand to sibling spellings.
+# A query naming one file resolves to one or two keys; a query broad enough to exceed
+# this named many files, where the expansion is not what the caller was asking for.
+# What it bounds is the *widening* — every artifact the query matched directly is
+# still returned, so the cap can only cost sibling spellings of an already-vague query.
+_SPELLING_KEY_CAP = 25
 
 
 def _tie_break(query: str, node_id: str) -> str:
@@ -761,19 +767,77 @@ def _mixed_window(
     return chosen[:limit]
 
 
+def spellings_of(g: GraphTraversalSource, identifier: str) -> list[str]:
+    """Every identifier that names the same file as `identifier`.
+
+    A raw tool-call string is not identity — one file arrives absolute from one call and
+    repo-relative from the next — so matching identifiers alone reaches one spelling and
+    strands the touches on the others. `artifact_paths` derives a `(repo, path)` beside
+    each identifier for exactly this, and this is the read that spends it: resolve the
+    query to the files it names, then take every spelling of those files.
+
+    Substring matching is kept as the way *in*, because a caller who half-remembers a
+    path still has to land somewhere, and it already reaches a relative spelling from an
+    absolute query's suffix. What it cannot do is the other direction: an absolute
+    identifier is not a substring of its own repo-relative twin, so an agent recalling
+    with the path its tool call carried — the common case — sees only the one vertex.
+    The projection closes that, and closes it exactly: `(repo, path)` tells two repos'
+    `README.md` apart, where a suffix match fuses them.
+    """
+    seeds = (
+        g.V()
+        .has_label("Artifact")
+        .or_(
+            __.has("identifier", TextP.containing(identifier)),
+            __.has("path", TextP.containing(identifier)),
+        )
+        .project("identifier", "repo", "path")
+        .by("identifier")
+        .by(__.coalesce(__.values("repo"), __.constant("")))
+        .by(__.coalesce(__.values("path"), __.constant("")))
+        .to_list()
+    )
+    found = {str(row["identifier"]) for row in seeds}
+    # Unanchored artifacts share `("", "")`, which is two unknowns rather than one file.
+    # Expanding on it would merge every scratchpad in the graph into one result.
+    keys = sorted(
+        {(str(row["repo"]), str(row["path"])) for row in seeds if str(row["repo"])}
+    )[:_SPELLING_KEY_CAP]
+    if not keys:
+        return sorted(found)
+
+    siblings = (
+        g.V()
+        .has_label("Artifact")
+        .or_(*[__.has("repo", repo).has("path", path) for repo, path in keys])
+        .values("identifier")
+        .to_list()
+    )
+    return sorted(found | {str(spelling) for spelling in siblings})
+
+
 def recall_by_artifact(
     g: GraphTraversalSource, identifier: str, limit: int = 5, scope: str = MAIN_SCOPE
 ) -> list[MemoryResult]:
-    """Find sessions that touched a specific artifact.
+    """Find sessions that touched a specific artifact, under any spelling of its name.
 
     Artifacts are global — the same vertex is reachable from every scope — so the scope
     filter is applied to the *sessions*, not to the artifact. This is the join key doing
     its job: a shared artifact is a shared vocabulary, not a channel between experts.
+
+    The join key is `(repo, path)` rather than the identifier, so a file split across
+    several spellings answers as one file. `spellings_of` does that resolution; the
+    identifiers it returns are matched exactly here, because the widening has already
+    happened and re-running a substring test over it would widen it twice.
     """
+    spellings = spellings_of(g, identifier)
+    if not spellings:
+        return []
+
     sessions = (
         g.V()
         .has_label("Artifact")
-        .has("identifier", TextP.containing(identifier))
+        .has("identifier", P.within(spellings))
         .in_e("TOUCHES")
         .out_v()
         .in_e("CONTAINS")
@@ -786,8 +850,14 @@ def recall_by_artifact(
         .to_list()
     )
 
+    # The relevance line names what was actually searched. A result reached through a
+    # spelling the caller never typed is otherwise unexplainable from the output.
+    relevance = f"touches: {identifier}"
+    if len(spellings) > 1:
+        relevance += f" ({len(spellings)} spellings)"
+
     return [
-        _load_session_result(g, _first(s.get("session_id")), f"touches: {identifier}", scope)
+        _load_session_result(g, _first(s.get("session_id")), relevance, scope)
         for s in sessions
     ]
 

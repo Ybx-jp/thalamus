@@ -168,7 +168,7 @@ box to one expert.
 |---|---|---|
 | `memory_open_threads` | `project`, `limit`, `topic` | Active continuation points — **the entrypoint**. Pass `topic`; a bare call returns one page of many |
 | `memory_recall` | `query`, `limit` | Keyword search across session memories |
-| `memory_recall_by_artifact` | `identifier`, `limit` | Sessions that touched a file, class or dependency |
+| `memory_recall_by_artifact` | `identifier`, `limit` | Sessions that touched a file, class or dependency, under any spelling of its name — an absolute path answers for the repo-relative one and back |
 | `memory_recall_by_project` | `project`, `limit` | Recent sessions for a project |
 | `memory_recall_recent` | `limit` | Most recent sessions |
 | `memory_open_problems` | `project`, `limit` | Problems with no recorded solution, recurrence-ranked |
