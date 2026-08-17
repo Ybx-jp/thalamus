@@ -58,11 +58,46 @@ against nine scopes — which is exactly the designer's open thread
 to six identities, move identity to a non-colour channel) all change what the surface
 claims.
 
-Separately and **already decided**: `lab/d3-identity-spec.md:62-66` specifies a
-corrected status ramp — `danger #c55b50`, `warn #c18c4e`, `ok #54c5b3` — which was
-never applied. The shipped tokens are `--danger: #e0685c`, `--ok: #45c08d`,
-`--pending: #e8b44a`, and there is no `--warn` token at all. Applying a ramp that has
-already been designed is implementation, not design.
+### 1.5 The corrected status ramp cannot be applied as written
+
+`lab/d3-identity-spec.md:62-66` specifies a corrected status ramp — `danger #c55b50`,
+`warn #c18c4e`, `ok #54c5b3` — spaced to 1.41:1 minimum pairwise luminance so the
+severity order survives a greyscale render. The shipped tokens are `--danger:
+#e0685c`, `--ok: #45c08d`, `--pending: #e8b44a`, and there is no `--warn` token.
+
+`--danger` carries text: `.viewcap.bad`, `.admin-state.bad`, `.chip.loose`, the
+`needs you` chip, and `.pol-expiry` at .62rem. Measured on this box, 2026-08-16:
+
+| value | `--bg` | `--panel` | `--panel-hi` |
+|---|---|---|---|
+| shipped `#e0685c` | 5.68 | 5.19 | 4.75 |
+| spec `#c55b50` | 4.49 | **4.11** | **3.76** |
+
+The ramp regresses every ground, and two of the three below the 4.5:1 text floor the
+same design commits to. Lifting the hue until it clears 4.5 everywhere gives
+`#cc6e64` (5.39 / 4.93 / 4.51) — and that collapses the ramp's own separation:
+
+| pair | at `#cc6e64` | ramp's floor |
+|---|---|---|
+| danger/warn | **1.192:1** | 1.41:1 |
+| warn/ok | 1.405:1 | 1.41:1 |
+| danger/ok | 1.674:1 | 1.41:1 |
+
+So on this palette the 4.5:1 text floor and the 1.41:1 severity separation are
+jointly infeasible across three levels, the same luminance-budget problem §1.1 hits
+with nine identities. The spec resolved it silently in favour of separation.
+
+**Why it is not closed at the keyboard:** picking a value that satisfies a stated
+floor would be the implementer's, but no value satisfies both stated floors, and
+choosing which one yields decides whether the ramp's meaning is carried by colour or
+by something else. Two ways out — take `--danger` off text so the 3:1 non-text floor
+applies and the spec value stands (`#327e62` is the existing precedent for a token
+split this way), or relax the separation floor — and both change what the channel
+claims.
+
+Until it is settled the shipped tokens stay, because they are the ones that clear the
+text floor. `tests/test_console_contrast.py` now holds `danger` to AA on all three
+grounds, so applying the ramp fails the suite rather than the reader.
 
 ### 1.2 `/clear` puts two rows on screen for one session
 

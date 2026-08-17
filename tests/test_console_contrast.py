@@ -67,6 +67,14 @@ GROUNDS = {
     # text on the wait note, so both are held to the text floor on all three.
     "ok": ("bg", "panel", "panel-hi"),
     "pending": ("bg", "panel", "panel-hi"),
+    # `--danger` carries text too — `.viewcap.bad`, `.admin-state.bad`, `.chip.loose`,
+    # the `needs you` chip, and `.pol-expiry` at .62rem, the smallest text in the row.
+    # It was the one status hue with no declared ground while painting words on all
+    # three, so the corrected ramp in `lab/d3-identity-spec.md` could be applied and
+    # take `.pol-expiry` from 5.19:1 to 4.11:1 with nothing here objecting. The ramp
+    # is spaced for greyscale separation, not for text; where the two floors conflict
+    # this one holds, and the conflict is docs/frontend §1.5 for the designer.
+    "danger": ("bg", "panel", "panel-hi"),
 }
 
 
