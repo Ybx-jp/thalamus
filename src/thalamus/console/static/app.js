@@ -58,8 +58,11 @@ function hueForRoom(room) { return hashHue("room:" + room); }
 function hueOf(w) { return w.room ? hueForRoom(w.room) : hueFor(w.name, w.index); }
 
 const els = {
-  rail: document.getElementById("rail"),
   wsbar: document.getElementById("wsbar"),
+  smark: document.getElementById("smark"),
+  smarkName: document.getElementById("smark-name"),
+  smarkWhere: document.getElementById("smark-where"),
+  smarkPill: document.getElementById("smark-pill"),
   screen: document.getElementById("screen"),
   wrap: document.getElementById("screen-wrap"),
   msg: document.getElementById("msg"),
@@ -103,7 +106,6 @@ let rosterSig = "";        // last drawn roster, so a 1.2s poll does not rebuild
 let openRow = null;        // the one row showing its controls, by window index
 let lastDistill = [];      // last served records, for a redraw between polls
 let lastGrace = 0;
-let lastRev = {};          // idx -> last screen_rev (for change detection)
 let lastOk = 0;            // ms of last good poll
 let lastFitCols = 0;       // column count the current fit was computed for
 let fitPx = 13;            // auto-fit size so a full pane line fits the viewport
@@ -113,18 +115,19 @@ let fontDelta = +(localStorage.getItem("plane-font-delta2") || 0);
 
 // ---- Workspaces (cwd contexts) ----
 // A session is (expert, directory), not just expert — the same scope can be spawned
-// in several projects, and the rail used to render both as an identical "homelab".
-// `activeWs` is null for "all", else a cwd path the rail is filtered to.
-let activeWs = localStorage.getItem("plane-workspace") || null;
+// in several projects, and a tab that showed only the scope rendered both as an
+// identical "homelab".
+//
+// The project is a *group*, not a filter. B2 heads each group with its path and
+// lands on the unfiltered roster, because the question the landing view answers is
+// "what needs me", and a filtered one answers "what needs me in this project" —
+// a blocked session in another project is either on screen or it is not.
+//
+// A device that selected a project before the filter existed is holding a key that
+// nothing can now clear, and a filter with no control is a session list that is
+// silently short. Dropping the key is the migration.
+localStorage.removeItem("plane-workspace");
 
-function workspaces() {
-  const seen = new Map(); // cwd -> label, in window order
-  for (const w of windows) {
-    if (w.cwd && !seen.has(w.cwd)) seen.set(w.cwd, w.cwd_label || w.cwd);
-  }
-  return [...seen].map(([path, label]) => ({ path, label }));
-}
-const multiWs = () => workspaces().length > 1;
 
 // Rooms are the second dimension over the same set of windows. A session is now
 // (expert, directory, room), and the two filters compose: they answer different
@@ -134,45 +137,27 @@ let activeRoom = localStorage.getItem("plane-room") || null;
 function roomsPresent() {
   return [...new Set(windows.map((w) => w.room).filter(Boolean))];
 }
-// Tabs the rail shows: all of them, or just the selected workspace's and room's.
+// Tabs the rail shows: all of them, or just the selected room's. The project is no
+// longer a filter — it is the roster's group header.
 const visibleWindows = () =>
-  windows.filter((w) => (activeWs === null || w.cwd === activeWs) &&
-                        (activeRoom === null || (w.room || "") === activeRoom));
+  windows.filter((w) => activeRoom === null || (w.room || "") === activeRoom);
 
 function setChannelHue(hue) {
   document.documentElement.style.setProperty("--chan", hue);
 }
 
 function renderWsBar() {
-  const ws = workspaces();
   const rooms = roomsPresent();
-  // One directory and no rooms (the common case) → no bar at all, layout unchanged.
-  if (ws.length < 2 && rooms.length === 0) {
+  // No rooms (the common case) → no bar at all, and the pane heads straight into the
+  // mirror. The project chips that used to sit here are the roster's group headers
+  // now; a room is a different question and keeps its control.
+  if (rooms.length === 0) {
     els.wsbar.hidden = true;
     els.wsbar.innerHTML = "";
     return;
   }
   els.wsbar.hidden = false;
   els.wsbar.innerHTML = "";
-  const mk = (label, path, title) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "ws" + (activeWs === path ? " on" : "");
-    b.dataset.path = path === null ? "" : path;
-    b.textContent = label;
-    b.title = title || label;
-    b.addEventListener("click", () => selectWorkspace(path));
-    return b;
-  };
-  if (ws.length > 1) {
-    els.wsbar.appendChild(mk("⌂ all", null, "Show every session"));
-    for (const w of ws) {
-      const count = windows.filter((x) => x.cwd === w.path).length;
-      const full = (windows.find((x) => x.cwd === w.path) || {}).cwd_short || w.path;
-      els.wsbar.appendChild(mk(`${w.label} ${count}`, w.path, full));
-    }
-  }
-  if (!rooms.length) return;
   const mkRoom = (label, room, title, hue) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -211,7 +196,6 @@ function selectRoom(room) {
   if (room === null) localStorage.removeItem("plane-room");
   else localStorage.setItem("plane-room", room);
   renderWsBar();
-  renderRail();
   // The filter must never hide the window being viewed — the pane would keep
   // updating with no tab to explain where it came from.
   if (!visibleWindows().some((w) => w.index === activeIdx)) {
@@ -220,49 +204,6 @@ function selectRoom(room) {
   }
 }
 
-// Set the filter without touching the rail — for callers already inside a render
-// pass (poll), which repaints once at the end.
-function selectWorkspaceQuiet(path) {
-  activeWs = path;
-  if (path === null) localStorage.removeItem("plane-workspace");
-  else localStorage.setItem("plane-workspace", path);
-}
-
-function selectWorkspace(path) {
-  selectWorkspaceQuiet(path);
-  renderWsBar();
-  renderRail();
-  // Filtering away the tab you were viewing would leave the screen showing a
-  // session no visible tab points at — follow the filter into its first session.
-  const vis = visibleWindows();
-  if (vis.length && !vis.some((w) => w.index === activeIdx)) selectWindow(vis[0].index);
-}
-
-function renderRail() {
-  els.rail.innerHTML = "";
-  const showCwd = multiWs();
-  for (const w of visibleWindows()) {
-    const hue = hueOf(w);
-    const tab = document.createElement("button");
-    tab.className = "chan-tab" + (showCwd ? " two-line" : "");
-    tab.setAttribute("role", "tab");
-    tab.setAttribute("aria-selected", String(w.index === activeIdx));
-    tab.style.setProperty("--tab", hue);
-    tab.dataset.idx = w.index;
-    tab.title = (w.room ? `[${w.room}] ` : "") +
-      (w.cwd_short ? `${w.name} — ${w.cwd_short}` : w.name);
-    tab.innerHTML =
-      `<span class="dot"></span>` +
-      `<span class="tab-text">` +
-      `<span class="nm">${w.room ? `<span class="room">◈</span>` : ""}` +
-      `${escapeHtml(w.name)}</span>` +
-      (showCwd ? `<span class="cwd">${escapeHtml(w.cwd_label || "?")}</span>` : "") +
-      `</span>`;
-    tab.classList.toggle("recycling", !!w.recycling);
-    tab.addEventListener("click", () => selectWindow(w.index));
-    els.rail.appendChild(tab);
-  }
-}
 
 // Header hue, tab title, and the command cache follow the active window — including
 // when poll() picks one for us (first load, or the viewed tab going away), which
@@ -275,15 +216,16 @@ function syncActiveChrome() {
   if (!w) return;
   setChannelHue(hueOf(w));
   document.title = w.cwd_label ? `${w.name} · ${w.cwd_label}` : `${w.name} · Thalamus`;
+  // B1 names the session in the composer. "the active expert" was a phrase that made
+  // sense while a rail above the pane decided which one was active; the marker under
+  // it now says which session you are in, and the placeholder agrees with it.
+  els.msg.placeholder = `Message ${w.name}…`;
   commands = null; // project skills are per-directory; refetch for this window
 }
 
 function selectWindow(idx) {
   activeIdx = idx;
   syncActiveChrome();
-  for (const tab of els.rail.children) {
-    tab.setAttribute("aria-selected", String(+tab.dataset.idx === idx));
-  }
   const cur = windows.find((x) => x.index === idx);
   renderedText = null; // force a repaint even if the new window's text matches
   pendingScreen = null;
@@ -955,45 +897,6 @@ async function pollRead(idx) {
   renderRead(idx);
 }
 
-// The change token for one window, compared for equality and never parsed — its
-// format is the server's business (server.py:screen_rev). A server that does not
-// serve it yet falls back to the full pane text, which is what the rail compared
-// before the token existed: an old server degrades to the old behaviour instead
-// of to a pulse that never fires. Read and store go through here together, so the
-// two sides of a comparison can never come from different fields.
-function revOf(w) {
-  return w.screen_rev !== undefined ? w.screen_rev : w.lines;
-}
-
-// A session filtered out of the rail still needs to be able to announce itself —
-// otherwise picking a workspace makes you blind to the others. Its workspace chip
-// carries the signal that its hidden tab's dot would have.
-function updateWsSignal(next) {
-  if (els.wsbar.hidden) return;
-  for (const chip of els.wsbar.children) {
-    const p = chip.dataset.path;
-    const hidden = p && activeWs !== null && p !== activeWs;
-    chip.classList.toggle("live", !!hidden && next.some((w) =>
-      w.cwd === p && lastRev[w.index] !== undefined && lastRev[w.index] !== revOf(w)));
-  }
-}
-
-function updateDots(next) {
-  updateWsSignal(next);
-  for (const tab of els.rail.children) {
-    const idx = +tab.dataset.idx;
-    const w = next.find((x) => x.index === idx);
-    if (!w) continue;
-    tab.classList.toggle("recycling", !!w.recycling);
-    const changed = lastRev[idx] !== undefined && lastRev[idx] !== revOf(w);
-    tab.classList.toggle("active-live", changed);
-    if (changed) {
-      tab.classList.remove("pulse");
-      void tab.offsetWidth; // restart animation
-      tab.classList.add("pulse");
-    }
-  }
-}
 
 function setConn(state) {
   els.conn.className = "conn " + state;
@@ -1014,15 +917,10 @@ async function poll() {
                           windows[i].name !== w.name || windows[i].cwd !== w.cwd);
 
     windows = next;
-    // A workspace that no longer has any session (its last tab was closed, or a
-    // stale filter came back from localStorage) would hide every tab — drop it.
-    if (activeWs !== null && !windows.some((w) => w.cwd === activeWs)) selectWorkspaceQuiet(null);
-    // A just-spawned window is the highest index — jump to it once it appears, and
-    // follow it into its workspace so the filter doesn't hide what we just opened.
+    // A just-spawned window is the highest index — jump to it once it appears.
     if (selectNewestOnNextPoll && windows.length) {
       const newest = windows.reduce((a, b) => (b.index > a.index ? b : a));
       selectNewestOnNextPoll = false;
-      if (activeWs !== null && newest.cwd !== activeWs) selectWorkspaceQuiet(newest.cwd);
       activeIdx = newest.index;
     }
     if (activeIdx === null || !windows.some((w) => w.index === activeIdx)) {
@@ -1030,13 +928,16 @@ async function poll() {
       const act = vis.find((w) => w.active) || vis[0];
       activeIdx = act ? act.index : null;
     }
-    if (changed) { renderWsBar(); renderRail(); }
+    if (changed) renderWsBar();
     syncActiveChrome();
     // `grace_s` is served rather than hardcoded, so the deadline the row draws is
     // the one the server actually enforces.
     renderRoster(next, data.distill || [], Date.now() / 1000, data.grace_s);
+    // The marker summarises the roster, so it is redrawn from the same payload in
+    // the same tick. Reading it a beat later is how the bar comes to disagree with
+    // the list it is standing in for.
+    renderMarker();
 
-    updateDots(next);
     const cur = windows.find((w) => w.index === activeIdx);
     if (!cur) {
       // No window to read. The onboarding text lives in the pane element, so show
@@ -1063,13 +964,7 @@ async function poll() {
       els.recycleNote.hidden = true;
     }
     if (activeCols() !== lastFitCols) computeFit(); // e.g. an attached terminal resized it
-    for (const w of next) lastRev[w.index] = revOf(w);
-
     setConn("live");
-    // keep selection styling in sync
-    for (const tab of els.rail.children) {
-      tab.setAttribute("aria-selected", String(+tab.dataset.idx === activeIdx));
-    }
   } catch (e) {
     if (Date.now() - lastOk > STALE_MS) setConn("stale");
   }
@@ -1309,13 +1204,25 @@ function rowState(w, d, now, graceS) {
       { elapsed: fmtDur(now - w[op]) });
   }
 
-  if (op === "recycling") return slot(`restarting ${fmtDur(now - w.recycling)}`);
-  if (op === "closing") return slot(`closing ${fmtDur(now - w.closing)}`);
+  // The tone is reinforcement and never the carrier: every one of these is a word
+  // first, and the word alone is complete. It is set here beside the sentence that
+  // earns it rather than derived in the renderer, so a state cannot acquire a colour
+  // without someone writing down which state it is.
+  if (op === "recycling") {
+    return slot(`restarting ${fmtDur(now - w.recycling)}`, { tone: "warn" });
+  }
+  if (op === "closing") return slot(`closing ${fmtDur(now - w.closing)}`, { tone: "warn" });
 
   // `age` is precomputed server-side; stalled keeps steady geometry because it is
-  // past the stall clock but has not failed and may still complete.
-  if (d && d.state === "active") return slot(`distilling ${fmtDur(d.age)}`);
-  if (d && d.state === "stalled") return slot(`distilling ${fmtDur(d.age)} · stalled`);
+  // past the stall clock but has not failed and may still complete. The two are one
+  // sentence apart, so they are also one tone apart — the `· stalled` clause is what
+  // says it, and the colour only agrees with it.
+  if (d && d.state === "active") {
+    return slot(`distilling ${fmtDur(d.age)}`, { tone: "ok" });
+  }
+  if (d && d.state === "stalled") {
+    return slot(`distilling ${fmtDur(d.age)} · stalled`, { tone: "stalled" });
+  }
 
   if (!w) return slot("");
 
@@ -1393,7 +1300,12 @@ function groupSessions(windows, distill) {
     if (!groups.has(key)) {
       groups.set(key, {
         key, rows: [], repoRoot,
-        label: project || baseName(repoRoot),
+        // B2 heads the group with the path, not the basename. The row never repeats
+        // it, so the header is the only place the operator learns where a session is
+        // rooted, and two checkouts of one project stop reading as the same group.
+        // `cwd_short` is the server's own `~`-relative form; the basename is the
+        // fallback for a record that outlived the window that knew its path.
+        label: src.cwd_short || project || baseName(repoRoot),
         known: !!key,
       });
     }
@@ -1464,10 +1376,50 @@ function renderRoster(windows, distill, now, graceS) {
     els.roster.appendChild(empty);
     return;
   }
+  els.roster.appendChild(rosterSummary(groups, now, graceS));
   for (const g of groups) {
     els.roster.appendChild(groupHeader(g));
     for (const r of g.rows) els.roster.appendChild(sessionRow(r, now, graceS));
   }
+}
+
+/**
+ * B2's sheet header: what the roster is, and what it adds up to.
+ *
+ * The count of sessions needing a human is the one number worth carrying above the
+ * fold, because it is the only one that is a demand. It is derived the same way the
+ * row is — from the presence of a pill, never by re-deciding the state here — so the
+ * summary and the rows beneath it cannot disagree about how many there are.
+ */
+function rosterSummary(groups, now, graceS) {
+  const head = document.createElement("div");
+  head.className = "rsum";
+
+  const grab = document.createElement("span");
+  grab.className = "rsum-grab";
+  head.appendChild(grab);
+
+  const label = document.createElement("span");
+  label.className = "rsum-label";
+  label.textContent = "SESSIONS";
+  head.appendChild(label);
+
+  let sessions = 0, needs = 0;
+  for (const g of groups) {
+    for (const r of g.rows) {
+      sessions++;
+      if (rowState(r.w, r.d, now, graceS).pill) needs++;
+    }
+  }
+  const bits = [String(sessions)];
+  if (groups.length > 1) bits.push(`${groups.length} projects`);
+  if (needs) bits.push(`${needs} needs you`);
+
+  const tally = document.createElement("span");
+  tally.className = "rsum-tally";
+  tally.textContent = bits.join(" · ");
+  head.appendChild(tally);
+  return head;
 }
 
 function groupHeader(g) {
@@ -1499,7 +1451,11 @@ function sessionRow(r, now, graceS) {
 
   const row = document.createElement("div");
   const open = !!w && w.index === openRow;
-  row.className = "srow" + (st.band ? " terminal" : "") + (open ? " open" : "");
+  // The pill's presence is what tints the qualifier lane, so the two channels cannot
+  // disagree: B2 draws the demand twice, as the filled pill and as the red lane under
+  // it, and neither is the sole carrier — the words say it in both places.
+  row.className = "srow" + (st.band ? " terminal" : "") + (open ? " open" : "")
+    + (st.pill ? " needs" : "");
   row.style.setProperty("--tab", w ? hueOf(w) : "var(--faint)");
   if (w) {
     row.tabIndex = 0;
@@ -1523,8 +1479,11 @@ function sessionRow(r, now, graceS) {
   if (!st.band) {
     const slot = document.createElement("span");
     // The typeface is the claim: a state that was read is monospace, and the console
-    // saying it cannot see is not. The distinction survives greyscale.
-    slot.className = "srow-slot" + (st.mono ? "" : " unseen");
+    // saying it cannot see is not. The distinction survives greyscale. The tone is a
+    // second and weaker channel laid over it — the word is what carries the state,
+    // and every one of these reads complete with the colour removed.
+    slot.className = "srow-slot" + (st.mono ? "" : " unseen")
+      + (st.tone ? ` t-${st.tone}` : "");
     slot.textContent = st.text;
     line1.appendChild(slot);
   }
@@ -1615,6 +1574,13 @@ function sessionRow(r, now, graceS) {
 // single control that advances one step, "which is exactly what the hardware does".
 const MODE_POLLS = 5;      // readback attempts before we admit we cannot confirm
 const MODE_POLL_MS = 700;  // ~3.5s total — a keypress reaches tmux far inside that
+// The ladder B3's picker walks, in the order the segments are drawn. It is the
+// harness's cycle order, so a segment's distance from the current mode is the number
+// of BTab presses that reach it — this array is the only thing that makes the picker
+// possible, and a mode not on it degrades the control rather than guessing a
+// position. Not every mode a transcript can record appears here; a reading we cannot
+// place is drawn as one, never as a segment.
+const MODE_LADDER = ["manual", "acceptEdits", "auto"];
 // Past any real `seq`, so `/api/read` returns its envelope without the 60-item cold
 // open. The mode is a field on that response; the transcript is not what we asked for.
 const MODE_SINCE = Number.MAX_SAFE_INTEGER;
@@ -1674,21 +1640,26 @@ function repaintRoster() {
 }
 
 /**
- * Advance one step and then watch for the readback.
+ * Advance `steps` positions and then watch for the readback.
  *
  * The act is not finished when the key is sent (§5.2). `BTab` cycles the mode in the
  * terminal, and the only evidence it landed is the session writing a permission-mode
  * record we can read back. Until that arrives the control says so rather than
  * claiming the change.
+ *
+ * `steps` is how the picker reaches a segment that is not adjacent: the key has no
+ * random access, so distance is walked. It is sent as one `count` rather than as N
+ * requests — the server already clamps repeat, and N round trips would interleave
+ * with the readback poll and race it.
  */
-async function cycleMode(idx) {
+async function cycleMode(idx, steps = 1) {
   const st = modeStateFor(idx);
   if (st.phase === "awaiting") return;
   st.before = st.mode;
   st.phase = "awaiting";
   st.polls = 0;
   repaintRoster();
-  await post("api/key", { index: idx, key: "shift-tab", count: 1 });
+  await post("api/key", { index: idx, key: "shift-tab", count: steps });
   const tick = async () => {
     // Bail if this state object is no longer the window's — a recycle drops it, and a
     // loop still writing into the orphan would resolve a readback for a session that
@@ -1741,19 +1712,69 @@ function modeControl(w) {
     return box;
   }
 
-  // The typeface carries the same split the state slot uses: a value that was read is
-  // monospace, and the console saying there is nothing to read is not.
-  if (st.mode) label.textContent = `mode ${st.mode}`;
-  else { label.textContent = "no mode recorded"; label.classList.add("unseen"); }
+  label.textContent = "PERMISSION MODE";
+  label.classList.add("mode-head");
 
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "mode-cycle" + (st.phase === "awaiting" ? " awaiting" : "");
-  btn.textContent = st.phase === "awaiting" ? "awaiting readback" : "cycle mode";
-  btn.disabled = st.phase === "awaiting";
-  btn.addEventListener("click", (e) => { e.stopPropagation(); cycleMode(w.index); });
-  box.appendChild(btn);
+  // B3 draws a segmented picker; J states why it cannot always be one. The keycap
+  // sends BTab, which *advances one step* — it does not set. Random access is only
+  // available when we know where the ladder currently is, because the number of
+  // presses is the distance from here to there. So the control is state-dependent:
+  // a picker when the mode was read, and the single step the hardware actually
+  // offers when it was not. The degraded branch is the same one §5.2 prescribes.
+  const at = MODE_LADDER.indexOf(st.mode);
+  if (at < 0) {
+    const why = document.createElement("span");
+    why.className = "mode-label unseen";
+    // `""` means no such record exists and is never `manual` (§1); a mode off the
+    // ladder is a real reading we cannot place, and neither is drawn as a position.
+    why.textContent = st.mode
+      ? `mode ${st.mode} — not on the ladder this control walks`
+      : "no mode recorded";
+    box.appendChild(why);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mode-cycle" + (st.phase === "awaiting" ? " awaiting" : "");
+    btn.textContent = st.phase === "awaiting" ? "awaiting readback" : "cycle mode";
+    btn.disabled = st.phase === "awaiting";
+    btn.addEventListener("click", (e) => { e.stopPropagation(); cycleMode(w.index); });
+    box.appendChild(btn);
+    return modeNote(box, st);
+  }
 
+  const seg = document.createElement("div");
+  seg.className = "mode-seg";
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", "Permission mode");
+  MODE_LADDER.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    const on = i === at;
+    // Selection is carried by the fill, the ink and `aria-pressed` together — the
+    // fill alone would be one channel, and this row has to read in greyscale.
+    b.className = "mode-chip" + (on ? " on" : "");
+    b.textContent = name;
+    b.setAttribute("aria-pressed", String(on));
+    b.disabled = st.phase === "awaiting";
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // The distance, not the destination: k presses forward around the ladder.
+      const k = (i - at + MODE_LADDER.length) % MODE_LADDER.length;
+      if (k) cycleMode(w.index, k);
+    });
+    seg.appendChild(b);
+  });
+  box.appendChild(seg);
+  return modeNote(box, st);
+}
+
+/** The readback's own voice, appended to whichever control was drawn. */
+function modeNote(box, st) {
+  if (st.phase === "awaiting") {
+    const note = document.createElement("span");
+    note.className = "mode-note";
+    note.textContent = "awaiting readback";
+    box.appendChild(note);
+  }
   if (st.phase === "unconfirmed") {
     const note = document.createElement("span");
     note.className = "mode-note";
@@ -1841,7 +1862,7 @@ function terminalBand(r, st) {
   return band;
 }
 
-/** Roster → one session's mirror. The rail keeps switching between them from there. */
+/** Roster → one session's mirror. The marker under the pane is the way back. */
 function openSession(idx) {
   selectWindow(idx);
   setView("session");
@@ -1849,7 +1870,54 @@ function openSession(idx) {
 
 function setView(v) {
   document.body.dataset.view = v;
-  if (v === "session") scheduleFit();
+  els.smark.hidden = v !== "session";
+  if (v === "session") { scheduleFit(); renderMarker(); }
+}
+
+/**
+ * The four facts the pane cannot carry, in the bar above the composer.
+ *
+ * The count is what earns the bar its height: it is the one roster fact that stays
+ * true while you are reading something else, so it is the one worth the vertical
+ * space on a surface where everything else is the session you already chose.
+ *
+ * It is derived from the roster's own grouping and the same pill the rows draw —
+ * never counted separately here — so the marker and the list it summarises cannot
+ * disagree about how many sessions there are or how many want you.
+ */
+function renderMarker() {
+  const w = windows.find((x) => x.index === activeIdx);
+  if (!w) { els.smark.hidden = true; return; }
+  els.smark.hidden = document.body.dataset.view !== "session";
+  els.smark.style.setProperty("--tab", hueOf(w));
+
+  els.smarkName.textContent = w.name || "?";
+
+  const groups = groupSessions(windows, lastDistill);
+  const now = Date.now() / 1000;
+  let sessions = 0, needs = 0;
+  for (const g of groups) {
+    for (const r of g.rows) {
+      sessions++;
+      if (rowState(r.w, r.d, now, lastGrace).pill) needs++;
+    }
+  }
+  // The plural is the count's, not a fixed word: "1 sessions" reads as a bug in the
+  // console rather than as one session.
+  const bits = [];
+  if (w.cwd_short) bits.push(w.cwd_short);
+  bits.push(`${sessions} session${sessions === 1 ? "" : "s"}`);
+  if (groups.length > 1) bits.push(`${groups.length} projects`);
+  els.smarkWhere.textContent = bits.join(" · ");
+
+  // Nothing blocked is drawn as nothing. A zero here would be a standing reassurance
+  // that costs the same space as the demand it is standing in for.
+  els.smarkPill.hidden = !needs;
+  if (needs) els.smarkPill.textContent = `${needs} needs you`;
+
+  els.smark.setAttribute(
+    "aria-label",
+    `${w.name} — back to all ${sessions} sessions` + (needs ? `, ${needs} needing you` : ""));
 }
 
 // Destructive-action prompts must name the directory too — "Restart homelab?" is
@@ -2720,6 +2788,11 @@ function nudgeFont(d) {
 }
 document.getElementById("font-up").addEventListener("click", () => nudgeFont(1));
 document.getElementById("font-dn").addEventListener("click", () => nudgeFont(-1));
+
+// The whole marker is the target, not just the chevron: it is a 60 px bar the thumb
+// already rests near, and splitting it into a label and a small control beside the
+// label would put a 24 px target inboard of a 400 px inert one.
+els.smark.addEventListener("click", () => setView("roster"));
 
 let fitTimer = null;
 function scheduleFit() {

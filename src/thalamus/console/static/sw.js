@@ -12,6 +12,11 @@ const VERSION = "console-v1";
 const SHELL = [
   "./", "index.html", "app.js", "style.css",
   "manifest.webmanifest", "icon-192.png", "icon-512.png",
+  // The faces are part of the shell, not an enhancement: `install` fails as a whole
+  // if any entry 404s, so a font listed here must be one the server's STATIC
+  // allowlist actually serves. 42 KB across the four.
+  "plex-mono-400.woff2", "plex-mono-600.woff2",
+  "plex-sans-400.woff2", "plex-sans-600.woff2",
 ];
 
 self.addEventListener("install", (e) => {

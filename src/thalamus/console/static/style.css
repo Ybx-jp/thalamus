@@ -1,6 +1,6 @@
 /* Thalamus console — a signal console. Dark, mobile-first, one-handed.
-   Signature: each expert is a relay channel with its own hue and a live signal dot
-   that pulses when its screen changes. Everything else stays quiet. */
+   One row per session, carrying its whole life. Every state is a word first; hue is
+   redundant reinforcement and never the sole carrier. No motion. */
 
 :root {
   --bg: #0e1116;
@@ -16,21 +16,78 @@
      be carrying it, which is the thing the typeface rule exists to avoid. */
   --muted: #8b95a3;
   --faint: #768494;
-  --danger: #e0685c;
+  /* The signal ramp, spaced for greyscale severity: desaturated it runs #7b7b7b →
+     #969696 → #b3b3b3, so the order survives a greyscale render and red-blindness.
+     `--danger` is a fill, a border and a block — never text. At 4.11:1 on `--panel`
+     it clears the 3:1 non-text floor and misses the 4.5:1 text floor, which is why
+     the split exists rather than one token doing both jobs. */
+  --danger: #c55b50;
+  /* The same red lifted until it clears 4.5:1 on `--panel` (5.19) and on `--panel-hi`
+     (4.75), the two grounds a row is drawn on. Every red word takes this. */
+  --danger-text: #e0685c;
+  --warn: #c18c4e;
   /* Status hues, and deliberately not identity hues. An identity colour is assigned
      by hashing a scope name, so it must mean *nothing* — a row is teal because of
      what it is called, never because it is well. These mean exactly one thing each.
      Sharing a value made two registries own one hex: moving the identity palette
      would have silently moved the status signal, or failed to. Both clear the 3:1
      non-text floor and the 4.5:1 text floor on every ground they paint on. */
-  --ok: #45c08d;
+  /* The third rung of the signal ramp, and the tone the roster's `distilling` takes. */
+  --ok: #54c5b3;
   --pending: #e8b44a;
-  --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
-  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  /* The console's own accent, and the ground under every dark-ink control. It is
+     deliberately NOT `--chan`, which JS reassigns to the viewed session's identity
+     hue: an identity colour is assigned by hashing a name and must stay meaningless,
+     so a control that borrows it means "this is the designer" on one screen and
+     "send" on the next, and its ink/ground pair changes legibility with it. SEND
+     measured 4.22:1 against a 4.5 floor while wearing a channel hue. Fixed here, the
+     pair is one pair and it is the same on every screen: 5.75:1.
+
+     A shade off the comp's violet on purpose. That value is already `main`'s identity
+     hue, and one hex owned by two registries means moving the palette silently moves
+     every filled control, or fails to. This one is in no palette. */
+  --accent: #8b7cf0;
+  /* Plex first, the old system stacks behind it. The fallbacks are load-bearing, not
+     politeness: the subsets carry Latin, box drawing and blocks, and the console's
+     symbol glyphs — ⋯ ⌃ ▾ ◈ ⚙ ✕ ＋ ❯ — are not in Plex at all, at any subset size.
+     Those fall through to the system face, which is where they render today. */
+  --mono: "Plex Mono", ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --ui: "Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   /* per-channel hues, overridden per-tab in JS */
   --chan: #9a8cff;
   --screen-size: 14px;
   --read-size: 15px;
+}
+
+/* IBM Plex, SIL OFL 1.1 — licence served alongside at `PLEX-OFL.txt`. Subset to the
+   glyphs this surface draws: Latin-1 and typographic marks for both faces, plus box
+   drawing, block elements and arrows for the mono face, which renders arbitrary
+   terminal output and would break every frame Claude Code draws if those fell back to
+   a proportional-metric fallback. 42 KB across four files, against 218 KB complete.
+
+   `font-display: swap` rather than `block`: the pane must be readable immediately on
+   a cold open, and the reflow it costs is small — measured on this box, Plex Mono is
+   0.34% narrower than the system stack over an 80-column line (672.0 px against
+   674.3 px at 14 px), so the auto-fit lands within a step of where it started. */
+@font-face {
+  font-family: "Plex Mono";
+  src: url("plex-mono-400.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Plex Mono";
+  src: url("plex-mono-600.woff2") format("woff2");
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Plex Sans";
+  src: url("plex-sans-400.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Plex Sans";
+  src: url("plex-sans-600.woff2") format("woff2");
+  font-weight: 600; font-style: normal; font-display: swap;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -103,7 +160,7 @@ header {
 .install-msg { flex: 1 1 auto; min-width: 0; font-size: .8rem; color: var(--ink); }
 .install-do {
   appearance: none; flex: 0 0 auto;
-  background: var(--chan); border: 0; border-radius: 7px;
+  background: var(--accent); border: 0; border-radius: 7px;
   color: #0b0e12; font-family: var(--mono); font-weight: 600;
   font-size: .72rem; letter-spacing: .06em; padding: .4rem .8rem; cursor: pointer;
 }
@@ -113,9 +170,9 @@ header {
   font-size: .9rem; cursor: pointer; padding: .2rem .3rem;
 }
 
-/* ---- Workspace bar (cwd contexts) ---- */
-/* Only rendered when sessions span more than one directory. Quieter than the rail
-   on purpose: the rail is who you're talking to, this is only where they're rooted. */
+/* ---- Room bar ---- */
+/* Only rendered when a room exists. Quieter than the rail on purpose: the rail is
+   who you're talking to, this is which collaboration they're inside. */
 .wsbar {
   flex: 0 0 auto;
   display: flex;
@@ -151,79 +208,6 @@ header {
   background: var(--chan);
   border-color: var(--chan);
   font-weight: 600;
-}
-/* A hidden workspace whose screen just moved. Quiet — a lit edge, not a pulse:
-   it's peripheral news about somewhere you're not looking. */
-.ws.live {
-  color: var(--ink);
-  border-color: var(--chan);
-  box-shadow: 0 0 6px -1px var(--chan);
-}
-
-/* ---- Channel rail (the signature) ---- */
-.rail {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 0;
-  min-width: 0; /* contain horizontal overflow instead of widening the column */
-  border-bottom: 1px solid var(--hair);
-  background: var(--panel);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.rail::-webkit-scrollbar { display: none; }
-.chan-tab {
-  flex: 1 1 0;
-  min-width: max-content;
-  appearance: none;
-  border: 0;
-  border-top: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  font-family: var(--mono);
-  padding: .6rem .8rem .55rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  transition: color .2s, background .2s;
-}
-.chan-tab .dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--faint);
-  flex: 0 0 auto;
-  transition: background .25s, box-shadow .25s;
-}
-.chan-tab.pulse .dot { animation: pulse 1.1s ease-out; }
-.chan-tab .nm { font-size: .72rem; letter-spacing: .04em; white-space: nowrap; }
-/* Two-line form, used only while more than one directory is in play: expert on top,
-   its directory beneath. The dot stays vertically centred against both lines. */
-.chan-tab .tab-text { display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; min-width: 0; }
-.chan-tab .cwd {
-  font-size: .55rem;
-  /* Tracking is deliberately light here: `ch` ignores letter-spacing, so a wide
-     value makes the cap below under-measure and ellipsize names that would fit. */
-  letter-spacing: .05em;
-  color: var(--faint);
-  white-space: nowrap;
-  /* Wide enough for a typical repo directory name; anything longer ellipsizes
-     rather than stretching the tab. The full path is in the tab's title. */
-  max-width: 20ch; overflow: hidden; text-overflow: ellipsis;
-}
-/* No `opacity`: at .85 the palette's rose composited to 4.43:1 on this ground and
-   violet — which is `main`, so the most common tab — to 4.51:1, a hundredth of
-   headroom. Full strength puts the worst hue at 5.61:1. */
-.chan-tab[aria-selected="true"] .cwd { color: var(--tab); }
-.chan-tab[aria-selected="true"] {
-  color: var(--ink);
-  background: var(--panel-hi);
-  border-top-color: var(--tab);
-}
-.chan-tab[aria-selected="true"] .dot { background: var(--tab); box-shadow: 0 0 7px var(--tab); }
-.chan-tab.active-live .dot { background: var(--tab); box-shadow: 0 0 5px var(--tab); }
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 var(--tab); }
-  100% { box-shadow: 0 0 0 9px transparent; }
 }
 
 /* ---- Live screen ---- */
@@ -495,7 +479,7 @@ header {
 .viewcap.on { color: var(--chan); border-color: var(--chan); }
 /* A failed utterance has to be visible: the whole point of the control is that
    you are not looking at the screen, so silence alone is ambiguous. */
-.viewcap.bad { color: var(--danger); border-color: var(--danger); }
+.viewcap.bad { color: var(--danger-text); border-color: var(--danger-text); }
 /* Caught up — nothing new since you last listened. Distinct from a failure, and
    quieter, because it is the ordinary resting state of a session you follow. */
 .viewcap.done { color: var(--faint); border-color: var(--faint); }
@@ -585,11 +569,18 @@ header {
 /* Keystrokes go straight to the pane, so the composer is no longer the input path —
    dim it to say so, without removing it (it still takes multi-line paste and the
    slash-command hints). */
-/* Still a dim, because dimming a redirected control is the signal — but measured.
-   At .55 this sat at 4.51:1, clearing the floor by a hundredth and only because
-   --ink is bright; nothing below it may darken without taking it under. */
-body.passthrough .composer .input-line { opacity: .7; }
-body.passthrough .composer .input-line:focus-within { opacity: 1; }
+/* Still a dim, because dimming a redirected control is the signal — but measured,
+   and applied to the thing that was actually redirected. At .55 this sat at 4.51:1,
+   clearing the floor by a hundredth and only because --ink is bright; nothing below
+   it may darken without taking it under.
+
+   The dim is on the textarea, not on the row. On the row it also faded SEND, whose
+   pair is dark ink on a light fill and therefore moves the opposite way: light ink
+   at .7 on a dark panel stays legible, dark ink at .7 on --accent washes toward the
+   fill and measured 3.74:1. SEND is not redirected either — pressing it still sends
+   the composed text — so it was being dimmed for something that is not true of it. */
+body.passthrough .composer textarea { opacity: .7; }
+body.passthrough .composer textarea:focus { opacity: 1; }
 
 /* ---- Composer ---- */
 .composer {
@@ -661,9 +652,9 @@ body.passthrough .composer .input-line:focus-within { opacity: 1; }
   border-radius: 7px;
   cursor: pointer;
 }
-.keycap:active, .fontcap:active { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.keycap:active, .fontcap:active { background: var(--accent); color: #0b0e12; border-color: var(--accent); }
 .keycap[hidden], .fontcap[hidden] { display: none; }
-.keycap.danger { color: var(--danger); border-color: #4a2a29; }
+.keycap.danger { color: var(--danger-text); border-color: #4a2a29; }
 .keyrow .spacer { flex: 1 1 auto; }
 .input-line { display: flex; gap: .5rem; align-items: flex-end; }
 textarea {
@@ -685,7 +676,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .send {
   appearance: none;
   flex: 0 0 auto;
-  background: var(--chan);
+  background: var(--accent);
   border: 0;
   border-radius: 9px;
   color: #0b0e12;
@@ -773,7 +764,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
   font-size: .6rem;
   color: var(--faint);
 }
-.admin-state.bad { color: var(--danger); }
+.admin-state.bad { color: var(--danger-text); }
 .admin-act {
   appearance: none;
   flex: 0 0 auto;
@@ -787,7 +778,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
   border-radius: 7px;
   cursor: pointer;
 }
-.admin-act:active { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.admin-act:active { background: var(--accent); color: #0b0e12; border-color: var(--accent); }
 .admin-act:disabled { opacity: .4; }
 .admin-actions { display: flex; gap: .45rem; margin-top: .5rem; }
 .admin-log {
@@ -806,8 +797,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
   white-space: pre-wrap;
 }
 
-/* rail tab + screen indicators while a window's process is being replaced */
-.chan-tab.recycling .dot { animation: recycling 1s ease-in-out infinite; }
+/* Screen indicator while a window's process is being replaced. */
 @keyframes recycling {
   0%, 100% { background: var(--faint); }
   50% { background: var(--tab, var(--chan)); box-shadow: 0 0 6px var(--tab, var(--chan)); }
@@ -826,11 +816,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 }
 .recycle-note[hidden] { display: none; }
 
-@media (prefers-reduced-motion: reduce) {
-  .chan-tab.pulse .dot { animation: none; }
-  .chan-tab.recycling .dot { animation: none; background: var(--tab, var(--chan)); }
-}
-
 /* Pane text is selectable, and URLs in it are tappable links. Selection no longer
    disappears mid-copy (app.js defers the repaint while a selection is held). */
 .screen { -webkit-user-select: text; user-select: text; }
@@ -840,12 +825,12 @@ textarea:focus { outline: none; border-color: var(--chan); }
   text-underline-offset: 2px;
   word-break: break-all;   /* long URLs wrap rather than force horizontal scroll */
 }
-.screen a:active { background: var(--chan); color: #0b0e12; }
+.screen a:active { background: var(--accent); color: #0b0e12; }
 
 /* variant admin buttons: primary = spawn CTA, danger-lite = close a session */
-.admin-act.primary { background: var(--chan); color: #0b0e12; border-color: var(--chan); }
+.admin-act.primary { background: var(--accent); color: #0b0e12; border-color: var(--accent); }
 .admin-act.primary:disabled { opacity: .4; }
-.admin-act.danger-lite { color: var(--danger); border-color: #4a2a29; }
+.admin-act.danger-lite { color: var(--danger-text); border-color: #4a2a29; }
 
 /* ---- Launch posture ---- */
 .pol-cap { display: flex; flex-direction: column; gap: .3rem; padding: .1rem 0 .45rem; }
@@ -853,7 +838,7 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .pol-harness { font-family: var(--mono); font-size: .7rem; color: var(--ink); }
 .pol-title { font-size: .66rem; color: var(--muted); }
 /* The countdown is the visible half of the promise that a loose posture reverts. */
-.pol-expiry { margin-left: auto; font-size: .62rem; color: var(--danger); }
+.pol-expiry { margin-left: auto; font-size: .62rem; color: var(--danger-text); }
 /* The cost line. Reserved even when empty so choosing a rung does not reflow the panel
    under the thumb that is still on it. */
 .pol-drops {
@@ -862,8 +847,8 @@ textarea:focus { outline: none; border-color: var(--chan); }
   color: var(--muted);
   min-height: 1.4em;
 }
-.chip.loose { border-color: #4a2a29; color: var(--danger); }
-.chip.loose.on { color: #0b0e12; background: var(--danger); border-color: var(--danger); }
+.chip.loose { border-color: #4a2a29; color: var(--danger-text); }
+.chip.loose.on { color: #0b0e12; background: var(--danger); border-color: var(--danger-text); }
 
 /* spawn sheet: scope + directory pickers as tappable chips */
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0 .2rem; }
@@ -886,14 +871,6 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .chips-dirs .chip { font-size: .64rem; }
 
 /* ---- Rooms ---- */
-/* A room member's tab already carries the room's colour (hueForRoom); the mark is
-   what survives a palette collision between two rooms, and what tells a room's
-   `main` from the anchor at a glance. */
-.chan-tab .nm .room {
-  color: var(--tab);
-  margin-right: .18em;
-  font-size: .85em;
-}
 /* The room filter sits in the same bar as the workspace filter but reads as its
    own dimension: lit by the room's own hue rather than the channel's, so the two
    rows can be on at once without looking like one selection. */
@@ -941,8 +918,8 @@ textarea:focus { outline: none; border-color: var(--chan); }
   -webkit-overflow-scrolling: touch;
 }
 body[data-view="roster"] #wsbar,
-body[data-view="roster"] #rail,
 body[data-view="roster"] #screen-wrap,
+body[data-view="roster"] #smark,
 body[data-view="roster"] #composer,
 body[data-view="roster"] .back-btn { display: none; }
 body[data-view="session"] .roster { display: none; }
@@ -951,18 +928,129 @@ body[data-view="session"] .roster { display: none; }
    never by case. The header prints `project`, or the basename of `repo_root`; both
    are names with a case of their own, and uppercasing them shows the operator a
    string that is not the one on disk. The wide tracking went with the caps. */
+/* ---- The session marker (B1) ---- */
+/* Above the composer, never flush to the bottom edge: the lowermost strip is outside
+   the natural thumb zone, so the reachable region is a band rather than a half. */
+.smark {
+  position: relative;
+  flex: 0 0 auto;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+  min-height: 60px;
+  padding: .4rem .9rem .4rem 1.1rem;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+}
+.smark[hidden] { display: none; }
+/* The row's own identity rule, so the bar reads as the row you came from. */
+.smark::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--tab, var(--faint));
+}
+.smark-text { display: flex; flex-direction: column; gap: .18rem; min-width: 0; }
+.smark-name {
+  font-family: var(--mono);
+  font-size: .875rem;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.smark-where {
+  font-family: var(--ui);
+  font-size: .69rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The same pill the roster row draws, for the same fact. One shape, one meaning. */
+.smark-pill {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: .69rem;
+  letter-spacing: .02em;
+  color: #0b0e12;
+  background: var(--danger);
+  border-radius: 12px;
+  min-height: 24px;
+  padding: .2rem .8rem;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.smark-pill[hidden] { display: none; }
+/* The affordance for the bar's own action, not a second target — the whole bar is
+   the control, so this carries no pointer events of its own. */
+.smark-back {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: .9rem;
+  color: var(--muted);
+  pointer-events: none;
+}
+.smark-pill:not([hidden]) ~ .smark-back { margin-left: .6rem; }
+
+/* B2's sheet header. The grabber is the sheet's affordance, not a control: it says
+   the roster is a surface that came up over something, which is what makes the row's
+   mirror feel reachable from it. It is 30 x 4 and takes no pointer events. */
+.rsum {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  padding: 1rem .9rem .55rem;
+}
+.rsum-grab {
+  position: absolute;
+  top: .45rem; left: 50%;
+  transform: translateX(-50%);
+  width: 30px; height: 4px;
+  border-radius: 2px;
+  background: var(--faint);
+  pointer-events: none;
+}
+.rsum-label {
+  font-family: var(--mono);
+  font-size: .69rem;
+  letter-spacing: .18em;
+  color: var(--muted);
+}
+.rsum-tally {
+  margin-left: auto;
+  font-family: var(--ui);
+  font-size: .69rem;
+  color: var(--muted);
+}
+
+/* B2: the group header is the project's path, not its basename. It is the whole of
+   "pull the repo out" — the row never repeats it, so two sessions of one expert in
+   two projects stop reading as duplicates. The count sits at the far right and the
+   hairline under the header is what binds the rows beneath it into one group. */
 .grp {
   display: flex;
   align-items: baseline;
   gap: .5rem;
   height: 44px;
   padding: 0 .9rem;
+  margin-bottom: .25rem;
+  border-bottom: 1px solid var(--hair);
   font-family: var(--mono);
-  font-size: .62rem;
-  letter-spacing: .04em;
-  color: var(--muted);
+  font-size: .75rem;
+  letter-spacing: 0;
+  color: var(--ink);
 }
-.grp-n { color: var(--faint); }
+.grp-n { margin-left: auto; font-size: .69rem; color: var(--muted); }
 /* "We were not told" is not a project name, so it does not speak in one's voice. */
 .grp.unknown { height: auto; padding: .5rem .9rem .35rem; flex-wrap: wrap; }
 .grp.unknown .grp-name {
@@ -1004,7 +1092,7 @@ body[data-view="session"] .roster { display: none; }
 .srow-1 { display: flex; align-items: center; gap: .5rem; --more-w: 44px; }
 .srow-name {
   font-family: var(--mono);
-  font-size: .82rem;
+  font-size: .875rem;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -1023,6 +1111,22 @@ body[data-view="session"] .roster { display: none; }
    put a step in the column. The lane is reserved rather than the control moved: the
    expander inboard of the slot is a 44 px target adrift in the middle of the row. */
 .srow-slot:last-child { margin-right: var(--more-w); }
+/* The state slot's tones. Reinforcement only — each state is a word first, and the
+   sentence is complete without the hue: `restarting 0:42`, `distilling 2:14`,
+   `distilling 21:04 · stalled`. Read in greyscale the row loses nothing.
+
+   `t-ok` and `t-stalled` are 1.104:1 apart in luminance and are one grey to a reader
+   who cannot separate them by hue. That is deliberate and not a defect to fix: no
+   amber separates from this teal on this palette — the comp's own stalled amber
+   measures 1.073, worse than this one — and the two states differ by the words
+   `· stalled`, which is the carrier. Moving either value to buy separation from the
+   other costs its separation from `t-warn`, the pair that appears on adjacent rows.
+
+   `t-blocked` has no rule: that state is drawn as the filled pill, and giving the
+   slot a colour for it too would be one state painted twice. */
+.srow-slot.t-warn { color: var(--warn); }
+.srow-slot.t-ok { color: var(--ok); }
+.srow-slot.t-stalled { color: var(--pending); }
 /* A non-observation is never monospace. The console saying it cannot see must not
    look like a state it read, and the difference costs no colour. */
 .srow-slot.unseen {
@@ -1030,36 +1134,49 @@ body[data-view="session"] .roster { display: none; }
   font-style: italic;
   color: var(--faint);
 }
+/* The qualifier lane is proportional, and that is the split that does the work: the
+   name and the state slot are monospace because they are read values, and everything
+   true of the row that is not its state is prose. Letterspaced mono here made the two
+   lanes one texture and cost the row its hierarchy. */
 .srow-2 {
-  font-family: var(--mono);
-  font-size: .58rem;
-  letter-spacing: .04em;
-  color: var(--faint);
+  font-family: var(--ui);
+  font-size: .69rem;
+  letter-spacing: 0;
+  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A state, not a warning: it does not compete with the terminal band. */
+/* A row that stopped at a prompt says so twice — the pill, and the lane beneath it.
+   `--danger` is the fill under the pill's ink; text takes `--danger-text`, which is
+   the same red lifted to clear the text floor on both grounds a row is drawn on. */
+.srow.needs .srow-2 { color: var(--danger-text); }
+/* B2: `needs you` is a filled pill, ~104 x 24, fully rounded. It is the only filled
+   status in the roster, and it is filled because it is the only one that is a demand
+   rather than a report. The ink is the same one every filled control uses. */
 .srow-pill {
   font-family: var(--mono);
-  font-size: .58rem;
-  letter-spacing: .06em;
-  color: var(--danger);
-  border: 1px solid #4a2a29;
-  border-radius: 5px;
-  padding: .05rem .35rem;
+  font-size: .69rem;
+  letter-spacing: .02em;
+  color: #0b0e12;
+  background: var(--danger);
+  border-radius: 12px;
+  min-height: 24px;
+  padding: .2rem .8rem;
+  display: inline-flex;
+  align-items: center;
   white-space: nowrap;
 }
 
 /* Terminal: the height change is the salience channel — peripherally detectable
    without reading, and it survives greyscale and colour blindness. No motion. */
 .srow.terminal { background: var(--panel); }
-/* §4.3: the bar becomes a solid full-height block, not a 4 px rule — the third of
-   the five channels that make a terminal row detectable without reading it. 12 px
-   sits inside the row's 1.1rem left padding, so the block widens without moving a
-   word. It is still reinforcement and still never the sole carrier: the band text,
-   the lost slot and the height change each say the same thing. */
-.srow.terminal::before { background: var(--danger); width: 12px; }
+/* G draws the terminal bar at 8 px against the roster's 4 px — the third of the five
+   channels that make a terminal row detectable without reading it. 8 px sits inside
+   the row's 1.1rem left padding, so the block widens without moving a word. It is
+   still reinforcement and still never the sole carrier: the band text, the lost slot
+   and the height change each say the same thing. */
+.srow.terminal::before { background: var(--danger); width: 8px; }
 .srow-band {
   display: flex;
   flex-direction: column;
@@ -1068,14 +1185,18 @@ body[data-view="session"] .roster { display: none; }
   padding: .45rem .55rem;
   border: 1px solid #4a2a29;
   border-radius: 7px;
-  background: rgba(224, 104, 92, .06);
+  /* G gives the band one flat ground everywhere. It was a translucent red over
+     whatever the row painted, which is a colour that appears in no file and changes
+     with the row beneath it — the exact composite the contrast checker cannot see. */
+  background: #2c161a;
 }
 .band-top { display: flex; align-items: center; gap: .6rem; }
 .band-what {
   flex: 1 1 auto;
   font-family: var(--mono);
   font-size: .63rem;
-  color: var(--danger);
+  /* The band's own red, lifted for its own darker ground: 7.74:1 on #2c161a. */
+  color: #e79c92;
 }
 .band-detail {
   font-family: var(--mono);
@@ -1125,18 +1246,59 @@ body[data-view="session"] .roster { display: none; }
 /* §5: the mode a session is running under, drawn only on an opened row. A standing
    setting, so it is quiet — it sits above the action strip and takes none of the
    strip's weight, because looking at it is the primary use and changing it is not. */
+/* B3: the opened row's controls sit on a raised panel of their own, radius 8. The
+   raise is what separates "things true of this session" from "things that act on
+   it" without a rule or a gap doing it. */
 .srow-mode {
   display: flex;
   align-items: center;
   gap: .6rem;
   flex-wrap: wrap;
-  margin-top: .5rem;
+  margin-top: .6rem;
+  padding: .75rem .8rem;
+  background: var(--panel-hi);
+  border-radius: 8px;
+}
+/* The section label, in the channel hue: it names the setting rather than reporting
+   it, so it is not in the voice a read value uses. */
+.mode-head {
+  flex: 1 0 100%;
+  font-family: var(--mono);
+  font-size: .63rem;
+  letter-spacing: .12em;
+  color: var(--accent);
 }
 .mode-label {
   font-family: var(--mono);
   font-size: .68rem;
   color: var(--muted);
 }
+/* The segmented picker. 32 px pills, fully rounded, ≥24 px on every axis and spaced
+   so the 24 px circles around adjacent targets do not intersect (SC 2.5.8). */
+.mode-seg { display: flex; flex-wrap: wrap; gap: .55rem; }
+.mode-chip {
+  appearance: none;
+  min-height: 32px;
+  padding: 0 .85rem;
+  border: 1px solid var(--hair);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: .69rem;
+  cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.mode-chip:hover:not(:disabled) { color: var(--ink); }
+/* Selection is the fill, the ink and `aria-pressed` — three channels, so it survives
+   greyscale and does not rest on the hue alone. */
+.mode-chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0e12;
+  font-weight: 600;
+}
+.mode-chip:disabled { opacity: 1; cursor: default; color: var(--faint); }
 /* The state slot's rule, for the same reason: a value that was read is monospace, and
    the console saying it has nothing to read is not. Absence must not look like a
    reading — it is the one thing §1 forbids this control to imply. */
@@ -1199,7 +1361,7 @@ body[data-view="session"] .roster { display: none; }
 .srow-act.final {
   border-color: #4a2a29;
   border-style: dashed;
-  color: var(--danger);
+  color: var(--danger-text);
 }
 /* Not a per-session act, so it appears on no row and does not share their shape. */
 .danger-sec { border-top: 1px solid var(--hair); padding-top: .7rem; }
@@ -1208,5 +1370,5 @@ body[data-view="session"] .roster { display: none; }
   min-height: 60px;
   border-color: #4a2a29;
   border-style: dashed;
-  color: var(--danger);
+  color: var(--danger-text);
 }

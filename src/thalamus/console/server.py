@@ -580,6 +580,15 @@ STATIC = {
     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "/icon-192.png": ("icon-192.png", "image/png"),
     "/icon-512.png": ("icon-512.png", "image/png"),
+    # IBM Plex, subset to what this surface draws. Self-hosted rather than fetched
+    # from a CDN: the client must work with no route off the tailnet, and the service
+    # worker caches the shell for exactly that case.
+    "/plex-mono-400.woff2": ("plex-mono-400.woff2", "font/woff2"),
+    "/plex-mono-600.woff2": ("plex-mono-600.woff2", "font/woff2"),
+    "/plex-sans-400.woff2": ("plex-sans-400.woff2", "font/woff2"),
+    "/plex-sans-600.woff2": ("plex-sans-600.woff2", "font/woff2"),
+    # The OFL requires the licence travel with the fonts.
+    "/PLEX-OFL.txt": ("PLEX-OFL.txt", "text/plain; charset=utf-8"),
 }
 
 
