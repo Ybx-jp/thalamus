@@ -130,6 +130,38 @@ class TestCapabilityBoundary:
                       "frontend-design:frontend-design", "dataviz", "author-repo-diagram"):
             assert ROSTER_CAPABILITY_DEFAULT.denies_skill(skill), f"{skill} is design work"
         assert ROSTER_CAPABILITY_DEFAULT.denies_tool("Artifact")
+        assert ROSTER_CAPABILITY_DEFAULT.denies_tool("mcp__penpot__create_shape")
+
+    def test_allow_tools_carves_a_name_back_out_of_a_deny(self):
+        """The read/comment grant a scope like `frontend` needs: a deny on the whole
+        MCP server, with specific tool names un-blocked."""
+        boundary = CapabilityBoundary(
+            deny_tools=["mcp__penpot__*"],
+            allow_tools=["mcp__penpot__get_comments", "mcp__penpot__create_comment"],
+        )
+        assert boundary.denies_tool("mcp__penpot__get_comments") is None
+        assert boundary.denies_tool("mcp__penpot__create_comment") is None
+        assert boundary.denies_tool("mcp__penpot__create_shape") == "mcp__penpot__*"
+
+    def test_allow_tools_grants_nothing_on_its_own(self):
+        """It narrows a deny; it is not a second, independent grant. A name in
+        `allow_tools` that no `deny_tools` pattern reaches was never going to be
+        denied, and one that isn't covered by any deny stays exactly as open as an
+        undeclared boundary — `allow_tools` cannot deny anything by itself."""
+        boundary = CapabilityBoundary(deny_tools=[], allow_tools=["mcp__penpot__get_comments"])
+        assert boundary.denies_tool("mcp__penpot__get_comments") is None
+        assert boundary.denies_tool("mcp__penpot__create_shape") is None
+
+    def test_a_new_tool_in_the_denied_namespace_defaults_to_blocked(self):
+        """The failure direction `allow_tools` exists to invert relative to
+        `deny_skills`'s residual: a tool this list has never heard of stays denied,
+        because the server it belongs to can add one after this boundary was
+        written, and the scope holding it must not get it for free."""
+        boundary = CapabilityBoundary(
+            deny_tools=["mcp__penpot__*"],
+            allow_tools=["mcp__penpot__get_comments"],
+        )
+        assert boundary.denies_tool("mcp__penpot__some_tool_added_next_release") == "mcp__penpot__*"
 
     def test_it_leaves_the_working_skills_alone(self):
         """A capability boundary that caught the skills an expert needs to do its job
@@ -195,6 +227,32 @@ def write_payload(file_path, tool_name="Write"):
         "tool_name": tool_name,
         "tool_input": {"file_path": file_path},
     }
+
+
+def _mcp_tool_payload(tool_name):
+    return {
+        "session_id": "rg-1",
+        "cwd": str(REPO),
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool_name,
+        "tool_input": {},
+    }
+
+
+def _roster_config(tmp_path, manifests):
+    """A THALAMUS_CONFIG_DIR value carrying the given {scope: yaml_text} manifests.
+
+    Self-contained rather than pointed at the shipped roster: `frontend`'s real
+    capability_boundary lives outside this checkout (config/experts is
+    THALAMUS_CONFIG_DIR-overridden to a private notes repo in the operator's own
+    setup), so a test asserting the *mechanism* has to build its own fixture scope
+    rather than assume that file is present.
+    """
+    experts = tmp_path / "config" / "experts"
+    experts.mkdir(parents=True, exist_ok=True)
+    for scope, text in manifests.items():
+        (experts / f"{scope}.yaml").write_text(text)
+    return str(tmp_path / "config")
 
 
 class TestRoleGuardHook:
@@ -313,6 +371,39 @@ class TestRoleGuardHook:
         result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-literature"})
         assert result.returncode == 0
 
+    def test_it_blocks_an_mcp_penpot_tool_from_a_scope_with_no_override(self, tmp_path):
+        """A scope that declares no `capability_boundary` at all inherits
+        ROSTER_CAPABILITY_DEFAULT's blanket `mcp__penpot__*` deny, the same way it
+        already inherits the `Artifact` deny."""
+        config = _roster_config(tmp_path, {"plain": "scope: plain\nname: Plain\n"})
+        result = run_guard(
+            _mcp_tool_payload("mcp__penpot__create_shape"),
+            tmp_path,
+            {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-plain"},
+        )
+        assert result.returncode == 2
+        assert "mcp__penpot__*" in result.stderr
+
+    def test_it_passes_an_mcp_penpot_tool_a_scope_explicitly_allows(self, tmp_path):
+        """`frontend`'s shape: deny the whole server, allow the read/comment names
+        back out."""
+        manifest = (
+            "scope: viewer\nname: Viewer\n"
+            "capability_boundary:\n"
+            "  deny_tools: [\"mcp__penpot__*\"]\n"
+            "  allow_tools: [\"mcp__penpot__get_comments\", \"mcp__penpot__create_comment\"]\n"
+            "  reason: view and comment only\n"
+        )
+        config = _roster_config(tmp_path, {"viewer": manifest})
+        env = {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-viewer"}
+
+        allowed = run_guard(_mcp_tool_payload("mcp__penpot__get_comments"), tmp_path, env)
+        assert allowed.returncode == 0
+
+        blocked = run_guard(_mcp_tool_payload("mcp__penpot__create_shape"), tmp_path, env)
+        assert blocked.returncode == 2
+        assert "mcp__penpot__*" in blocked.stderr
+
     def test_it_governs_the_edit_tools_and_nothing_else(self, tmp_path):
         """Bash can still write, and that miss is deliberate — a miss is the cheaper
         error than a false positive. The guard must not pretend otherwise by firing
@@ -388,7 +479,7 @@ def test_the_guard_is_wired_into_the_installer():
                 if (event, script) == ("PreToolUse", "role-guard.sh")]
     assert len(matchers) == 1, "the role guard should be wired exactly once"
     wired = set(matchers[0].split("|"))
-    for tool in ("Edit", "Write", "NotebookEdit", "Skill", "Artifact"):
+    for tool in ("Edit", "Write", "NotebookEdit", "Skill", "Artifact", "mcp__penpot__.*"):
         assert tool in wired, f"{tool} is bounded by the guard but never routed to it"
 
 
@@ -399,3 +490,19 @@ def test_a_manifest_round_trips_the_boundary():
     )
     assert manifest.write_boundary.denies("/a/b.py") == "*.py"
     assert manifest.write_boundary.reason == "because"
+
+
+def test_a_manifest_round_trips_allow_tools():
+    """`frontend`'s read/comment grant is declared exactly this way on disk."""
+    manifest = ExpertManifest(
+        scope="x",
+        name="X",
+        capability_boundary={
+            "deny_tools": ["mcp__penpot__*"],
+            "allow_tools": ["mcp__penpot__get_comments"],
+            "reason": "because",
+        },
+    )
+    boundary = manifest.effective_capability_boundary
+    assert boundary.denies_tool("mcp__penpot__get_comments") is None
+    assert boundary.denies_tool("mcp__penpot__create_shape") == "mcp__penpot__*"

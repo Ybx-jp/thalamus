@@ -2293,13 +2293,16 @@ def _report_roster_boundaries():
         print(f"    writes     denied: {', '.join(writes) if writes else '(nothing)'}")
         tools = capability.deny_tools
         skills = capability.deny_skills
+        allowed = capability.allow_tools
         print(f"    tools      denied [{origin}]: {', '.join(tools) if tools else '(nothing)'}")
+        if allowed:
+            print(f"      ...except [{origin}]: {', '.join(allowed)}")
         print(f"    skills     denied [{origin}]: {', '.join(skills) if skills else '(nothing)'}")
 
     print("\nBoundaries are enforced by the role-guard PreToolUse hook, which binds "
-          "the file-editing tools, `Skill` and `Artifact`. Bash and `Read` on a "
-          "SKILL.md are named misses (role-guard.sh). Which of these binds on which "
-          "harness is a separate question with a separate record: "
+          "the file-editing tools, `Skill`, `Artifact`, and `mcp__penpot__*`. Bash "
+          "and `Read` on a SKILL.md are named misses (role-guard.sh). Which of these "
+          "binds on which harness is a separate question with a separate record: "
           "`thalamus contract check --capabilities`.")
 
 

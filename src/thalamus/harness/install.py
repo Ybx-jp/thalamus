@@ -93,7 +93,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PreToolUse", "Bash", "write-guard.sh"),
     ("PreToolUse", "SendMessage", "room-guard.sh"),
     ("PreToolUse", "Bash", "room-command-guard.sh"),
-    ("PreToolUse", "Edit|Write|NotebookEdit|Skill|Artifact", "role-guard.sh"),
+    ("PreToolUse", "Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*", "role-guard.sh"),
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),

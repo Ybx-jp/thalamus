@@ -111,6 +111,22 @@ class CapabilityBoundary(BaseModel):
     is never hit looks identical to one that is respected. Reading a `SKILL.md`
     with `Read` also reaches the procedure without a `Skill` call, and no tool-name
     matcher can see that.
+
+    `allow_tools` inverts that residual, deliberately, for a namespace that is
+    first-party and actively growing rather than upstream-owned and stable: an MCP
+    server's tool surface. `deny_tools=["mcp__penpot__*"]` denies every tool a
+    Penpot MCP server exposes, and `allow_tools` names the specific ones a scope may
+    still call — the read/comment surface for `frontend`, architect consultation
+    ticket `ca061c54581c4698`. The direction is reversed on purpose: for `Artifact`
+    and the design skills, an unrecognised name should fall through permitted
+    (the residual above), because that namespace belongs to Anthropic or a skill
+    author and a boundary that broke on every upstream rename would teach
+    route-around. For a scope's own MCP server, the opposite failure is the
+    dangerous one — a tool the *server* adds later (a new `create_*` or `modify_*`)
+    must default to blocked for a scope that may only read and comment, not fall
+    through to permitted the way an unrecognised skill does. `allow_tools` is
+    consulted only once `deny_tools` has already matched, so it narrows a deny; it
+    never grants a tool nothing else denies.
     """
 
     deny_tools: list[str] = Field(
@@ -120,6 +136,12 @@ class CapabilityBoundary(BaseModel):
     deny_skills: list[str] = Field(
         default_factory=list,
         description="fnmatch patterns over the invoked skill's name",
+    )
+    allow_tools: list[str] = Field(
+        default_factory=list,
+        description="fnmatch patterns over the tool name; a match un-blocks a call "
+        "that deny_tools would otherwise deny. Checked only when deny_tools matches — "
+        "it narrows a deny, it does not grant on its own.",
     )
     reason: str = Field(
         "", description="Shown to the blocked session — why this scope does not invoke this"
@@ -132,10 +154,20 @@ class CapabilityBoundary(BaseModel):
         return next((p for p in self.deny_skills if fnmatch(skill, p)), None)
 
     def denies_tool(self, tool: str) -> str | None:
-        """The pattern that blocks this tool, or None."""
+        """The pattern that blocks this tool, or None.
+
+        `allow_tools` is checked second and only on a match: it carves permitted
+        names back out of a deny pattern, so a scope can be handed the read/comment
+        slice of an MCP server's tools while the server's write tools — named and
+        unnamed, including ones added after this boundary was written — stay denied
+        by default.
+        """
         if not tool:
             return None
-        return next((p for p in self.deny_tools if fnmatch(tool, p)), None)
+        pattern = next((p for p in self.deny_tools if fnmatch(tool, p)), None)
+        if pattern and any(fnmatch(tool, p) for p in self.allow_tools):
+            return None
+        return pattern
 
 
 # One roster-wide decision, stored once. Six identical manifest blocks would be a
@@ -144,7 +176,7 @@ class CapabilityBoundary(BaseModel):
 # count is now derived rather than stated. Every pinned expert inherits this;
 # `designer` opts out in its own manifest; `main` never reaches the guard.
 ROSTER_CAPABILITY_DEFAULT = CapabilityBoundary(
-    deny_tools=["Artifact"],
+    deny_tools=["Artifact", "mcp__penpot__*"],
     deny_skills=[
         "artifact-*",
         "frontend-design*",
@@ -155,7 +187,11 @@ ROSTER_CAPABILITY_DEFAULT = CapabilityBoundary(
         "Design is the `designer` scope's deliverable, and a pinned expert that "
         "spends a design budget trades its own charter for presentation. Hand back "
         "a markdown file and its path, and the operator can read or publish it; if "
-        "the artifact itself matters, open a thread for `designer`."
+        "the artifact itself matters, open a thread for `designer`. The Penpot MCP "
+        "tools are `designer`'s authoring surface for the same reason and are denied "
+        "roster-wide for the same charter argument, narrower than the skill/Artifact "
+        "denial only in that a scope can carve a slice back out via its own "
+        "`allow_tools` — `frontend`'s read/comment grant is the one declared case."
     ),
 )
 

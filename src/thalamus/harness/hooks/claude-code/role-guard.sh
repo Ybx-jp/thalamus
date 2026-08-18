@@ -57,7 +57,7 @@
 # false positive teaches route-around, and route-around costs more than a gap.
 #
 # Install (user or project settings.json):
-#   {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|NotebookEdit|Skill|Artifact",
+#   {"hooks": {"PreToolUse": [{"matcher": "Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*",
 #     "hooks": [{"type": "command",
 #     "command": ".../hooks/claude-code/role-guard.sh"}]}]}}
 
@@ -85,6 +85,13 @@ case "$tool_name" in
   Artifact)
     # Listing is read-only: a scope that may not publish may still see what exists.
     [ "$(printf '%s' "$input" | jq -r '.tool_input.action // empty')" != "list" ] || exit 0
+    kind=tool
+    target="$tool_name" ;;
+  mcp__penpot__*)
+    # Named individually rather than folded into Artifact's `kind=tool`: the target
+    # is the specific MCP tool (`mcp__penpot__create_shape`, not a bare `Artifact`),
+    # because `allow_tools` carves permitted names back out of a scope's deny by
+    # matching against exactly this string (contract/manifest.CapabilityBoundary).
     kind=tool
     target="$tool_name" ;;
   *) exit 0 ;;

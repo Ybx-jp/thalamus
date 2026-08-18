@@ -115,6 +115,7 @@ WIRING_REQUIREMENT: dict[str, tuple[str, str]] = {
     "write_boundary.path": ("role-guard.sh", "Write"),
     "path_ownership.path": ("role-guard.sh", "Write"),
     "capability_boundary.tool": ("role-guard.sh", "Artifact"),
+    "capability_boundary.mcp_tool": ("role-guard.sh", "mcp__penpot__.*"),
     "capability_boundary.skill": ("role-guard.sh", "Skill"),
     "room_boundary.message": ("room-guard.sh", "SendMessage"),
 }
@@ -158,6 +159,18 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "capability_boundary.tool", "claude", Provision.PROVIDED, _WIRED,
         "The roster default denies `Artifact` for every scope but `designer`; "
         "`action: list` is read-only and passes.",
+    ),
+    BoundaryRow(
+        "capability_boundary.mcp_tool", "claude", Provision.PROVIDED, _WIRED,
+        "Extends the same `kind=tool` gate to a named MCP server's tool surface: "
+        "`role-guard.sh` treats `mcp__penpot__*` tool names the way it treats "
+        "`Artifact`, so `effective_capability_boundary.denies_tool` runs on the real "
+        "MCP-qualified name and a scope's `allow_tools` can carve a slice back out "
+        "of the roster-wide deny — `frontend`'s read/comment grant is the one "
+        "declared case. Named for one server rather than a blanket `mcp__.*`: no "
+        "other scope declares an MCP server today, and a matcher firing on every "
+        "MCP call would run this guard against `mcp__thalamus__*` too, for a "
+        "boundary that denies nothing there.",
     ),
     BoundaryRow(
         "capability_boundary.skill", "claude", Provision.PROVIDED, _WIRED,
