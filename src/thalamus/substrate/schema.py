@@ -94,6 +94,7 @@ class ProjectEvidence(str, Enum):
 class Tool(str, Enum):
     CURSOR = "cursor"
     CLAUDE_CODE = "claude_code"
+    CODEX = "codex"
 
 
 class ArtifactType(str, Enum):

@@ -62,7 +62,7 @@ class TestLaunchArgv:
 
     def test_an_unknown_harness_refuses_rather_than_guessing_a_binary(self):
         with pytest.raises(ValueError, match="no launch shape"):
-            launch_argv("codex", "qe")
+            launch_argv("no-such-harness", "qe")
 
     def test_every_harness_in_the_registry_can_be_pinned(self):
         from thalamus.harness.agents import HARNESSES

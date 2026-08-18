@@ -12,7 +12,7 @@ attention.
 | **Python ≥3.11** + [**uv**](https://docs.astral.sh/uv/) | the package and CLI | `uv --version` |
 | **jq** | every hook parses its stdin with it | `jq --version` |
 | **tmux** | the roster and console drive pinned sessions as tmux windows | `tmux -V` |
-| **Claude Code** (`claude`) or **Cursor** (`agent`) | distillation shells out to it | `claude --version` |
+| **Claude Code** (`claude`), **Cursor** (`agent`) or **codex** (`codex`) | distillation shells out to it | `claude --version` |
 
 `jq` is not optional. The hook layer is shell scripts that parse their stdin with it,
 and without it they exit silently rather than loudly. If it goes missing *after*
@@ -56,7 +56,7 @@ have not activated.
 uv run thalamus init
 ```
 
-This installs at **user scope** — `~/.claude/` and `~/.cursor/`, not the checkout — so
+This installs at **user scope** — `~/.claude/`, `~/.cursor/` and `~/.codex/`, not the checkout — so
 the harness arms in every directory you work in, not only here. Because it writes
 outside the repo, it lists the full blast radius and asks first.
 
@@ -67,19 +67,23 @@ What it writes:
 | `~/.claude/settings.json` | the hook wirings, by absolute path |
 | `~/.claude.json` | the MCP server, registered via `claude mcp add` |
 | `~/.cursor/hooks.json`, `~/.cursor/mcp.json` | the Cursor hook suite and the same MCP server |
+| `~/.codex/hooks.json` | the codex hook suite, in Claude Code's own hook format |
+| `~/.codex/config.toml` | the same MCP server, registered via `codex mcp add` |
 | `~/.claude/skills/` | symlinks to the shipped skills |
 | `~/.claude/agents/` | one derived agent per expert manifest |
 
-Useful flags: `--dry-run` (report, write nothing), `--harness claude` or
-`--harness cursor` (one editor only), `--yes` (skip the prompt in a script),
+Useful flags: `--dry-run` (report, write nothing), `--harness claude`,
+`--harness cursor` or `--harness codex` (one editor only), `--yes` (skip the prompt in
+a script),
 `--uninstall` (remove everything it can prove it installed, leaving your graph,
 `~/.thalamus/` and the archive alone).
 
 ### Reading the verification output
 
 Install ends by *exercising* what it wired rather than asserting it — it spawns the
-real interpreter from a foreign directory, round-trips the Cursor injection spool, and
-reads each skill back through its user-scope path.
+real interpreter from a foreign directory, round-trips the Cursor injection spool,
+drives one codex hook end to end against a payload codex actually sends, and reads
+each skill back through its user-scope path.
 
 ```
 Verification (exercised, not assumed):
@@ -113,10 +117,20 @@ saying it wrote nothing, including on a run that found faults.
 ## 5. Relaunch your editor
 
 Hooks and the MCP server arm **per process**. An already-running session picks up
-nothing, and `/clear` is not enough — quit and reopen Claude Code or Cursor.
+nothing, and `/clear` is not enough — quit and reopen your editor.
 
 A new session should greet you with a memory prompt naming its scope. Your graph is
 empty, so it will have nothing to tell you yet. That is the expected first run.
+
+**codex asks you to trust the hooks, and until you do it runs none of them.** The
+first `codex` you launch after installing shows a hooks-review prompt; take the
+trust-all option. Choosing to continue without trusting leaves the suite installed and
+silent — a headless `codex exec` then finishes, exits 0, says nothing about hooks and
+distills nothing, which looks exactly like a working install. A directory codex has
+not seen asks separately and first, and remembers the answer against the repository
+root. `thalamus init --check` reports the trust state as `!` until every wired entry
+carries a record, and neither answer is something the installer will give on your
+behalf.
 
 ## 6. Bring up the roster
 

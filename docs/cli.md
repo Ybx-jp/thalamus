@@ -23,6 +23,7 @@ thalamus bootstrap                 # list session transcripts available to inges
 thalamus bootstrap -- <project>    # stage 1 dry run: retain + derive (add --write to persist)
 thalamus extract                   # stage 2: Claims and Threads, via a model
 thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log
+thalamus extract --harness codex   # same, sweeping $CODEX_HOME/sessions by session id
 thalamus write session.yaml        # write a session graph from a file
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus ingest <url> --scope <expert>   # feed one document to an expert (dry run; --write to persist)
@@ -142,7 +143,7 @@ thalamus retire-scans              # remove graph records of architecture scans
 thalamus-mcp                       # run the MCP server (normally launched by your editor)
 ```
 
-`thalamus init` registers it at **user** scope for both harnesses, so it is available
+`thalamus init` registers it at **user** scope for every harness, so it is available
 in every directory. The registration carries no scope: `main` is the default for a
 plainly launched process, and a pinned session takes its scope from the agent that
 launched it. Baking a scope into the user-scope config would pin every session on the

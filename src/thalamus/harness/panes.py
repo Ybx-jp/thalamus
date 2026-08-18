@@ -71,7 +71,7 @@ from dataclasses import dataclass
 # Which harness a window is running, read from the command it was created with. The
 # binary is the only honest signal: `pane_current_command` shows whatever is in the
 # foreground, so a window shelling out reads as `bash` for as long as that lasts.
-HARNESS_BINARIES = {"claude": "claude", "agent": "cursor"}
+HARNESS_BINARIES = {"claude": "claude", "agent": "cursor", "codex": "codex"}
 
 # The three readiness verdicts. `DELIVERABLE` deliberately does not distinguish idle
 # from busy: both accept a send (one submits, one queues), and a distinction nothing

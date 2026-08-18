@@ -71,6 +71,7 @@ const caveat = harnessCaveat(OFFERED, "cursor");
 contains("a harness with no persona flag names itself", caveat, "cursor");
 contains("...and says what the scope still does", caveat, "holds its boundary");
 contains("...and what it does not", caveat, "will not think like the expert");
-check("an unknown harness is not described", harnessCaveat(OFFERED, "codex") === "");
+check("an unknown harness is not described",
+      harnessCaveat(OFFERED, "no-such-harness") === "");
 
 done();

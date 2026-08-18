@@ -66,10 +66,53 @@ class TestHeadlessPreconditions:
         for harness in agents.HARNESSES:
             cli = agents.cli_for(harness)
             argv = cli.argv("some-model")
-            assert argv[:2] == [cli.binary, "-p"]
-            assert "--output-format" in argv and "json" in argv
+            assert argv[0] == cli.binary
+            assert "--model" in argv and "some-model" in argv
             for flag in cli.headless_preconditions:
                 assert flag in argv
+
+    def test_every_invocation_dialect_asks_for_machine_readable_output(self):
+        """Whatever the dialect, the run must not come back as prose.
+
+        Asserted per dialect rather than on one shared flag, because that shared
+        assertion is exactly what hid the seam: `-p --output-format json` looked like
+        a property of headless invocation when it was a property of two vendors that
+        happened to agree. On codex `-p` is `--profile`, so the old assertion passing
+        would have meant the argv was wrong in a way that still parsed.
+        """
+        for harness in agents.HARNESSES:
+            cli = agents.cli_for(harness)
+            argv = cli.argv("some-model")
+            if cli.invocation == "print":
+                assert argv[1] == "-p"
+                assert "--output-format" in argv and "json" in argv
+            elif cli.invocation == "exec":
+                assert argv[1] == "exec"
+                assert "--json" in argv
+                assert "-p" not in argv, "`-p` is --profile on an exec-dialect CLI"
+            else:
+                raise AssertionError(f"undeclared invocation dialect {cli.invocation!r}")
+
+    def test_every_declared_envelope_dialect_has_a_reader(self):
+        """A dialect no reader implements is a harness that fails only when used."""
+        from thalamus.harness.extraction import _ENVELOPE_READERS
+
+        for harness in agents.HARNESSES:
+            assert agents.cli_for(harness).envelope in _ENVELOPE_READERS
+
+    def test_codex_declares_the_git_repo_check_and_no_persistence(self):
+        """Measured 2026-08-17, codex-cli 0.147.0.
+
+        Outside a git repo `codex exec` prints "Not inside a trusted directory and
+        --skip-git-repo-check was not specified" and exits 1 before any network call.
+        The extraction sandbox is a fresh `mkdtemp`, so without the flag every codex
+        distillation would fail having done no work — the same wall `--trust` answers
+        on Cursor. `--ephemeral` is the other half: it stops the sandbox writing a
+        rollout at all, so no later sweep can find the extraction as a session.
+        """
+        cli = agents.cli_for("codex")
+        assert "--skip-git-repo-check" in cli.headless_preconditions
+        assert "--ephemeral" in cli.headless_preconditions
 
     def test_cursor_declares_workspace_trust(self):
         """Measured, not guessed: without it `agent -p` exits 1 in a fresh dir.

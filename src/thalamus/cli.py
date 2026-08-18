@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import uvicorn
@@ -19,7 +20,13 @@ from thalamus.console.server import DEFAULT_PORT as CONSOLE_PORT
 from thalamus.contract.conformance import check_session
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval import snapshots
-from thalamus.harness import agents, cursor_transcripts, extraction, transcripts
+from thalamus.harness import (
+    agents,
+    codex_transcripts,
+    cursor_transcripts,
+    extraction,
+    transcripts,
+)
 from thalamus.harness import closes as closes_mod
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
@@ -94,20 +101,23 @@ def _main():
         "projects",
         nargs="*",
         help="Claude Code project dir names (e.g. -home-you-code-thalamus). "
-        "Omit to list what is available. Ignored with --harness cursor, which is "
-        "session-oriented and sweeps every discovered Cursor session.",
+        "Omit to list what is available. Ignored with --harness cursor and --harness "
+        "codex, which are session-oriented and sweep every discovered session.",
     )
     bootstrap_parser.add_argument(
         "--harness", choices=agents.HARNESSES, default="claude",
         help="Which harness wrote the transcripts (default: claude). `cursor` sweeps "
         "both discovery surfaces — the sessionEnd hook log and ~/.cursor/projects — "
-        "so sessions predating the hooks are included.",
+        "so sessions predating the hooks are included. `codex` sweeps "
+        "$CODEX_HOME/sessions, which the CLI writes for every session whether or not "
+        "the hooks were armed.",
     )
     bootstrap_parser.add_argument(
         "--assign-scope", default="",
-        help="Scope for Cursor sessions no hook ever saw, which therefore have no "
-        "resolved scope. Without it they are listed and skipped rather than defaulted "
-        "into `main`; scope is part of the vertex ID and cannot be walked back.",
+        help="Scope for Cursor or codex sessions no hook ever saw, which therefore "
+        "have no resolved scope. Without it they are listed and skipped rather than "
+        "defaulted into `main`; scope is part of the vertex ID and cannot be walked "
+        "back.",
     )
     bootstrap_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     bootstrap_parser.add_argument(
@@ -137,14 +147,15 @@ def _main():
         "projects",
         nargs="*",
         help="Claude Code project dir names. Omit to list what is available. "
-        "Ignored with --harness cursor, which discovers sessions from the "
-        "Cursor sessionEnd log instead.",
+        "Ignored with --harness cursor, which discovers sessions from the Cursor "
+        "sessionEnd log, and with --harness codex, which sweeps $CODEX_HOME/sessions.",
     )
     extract_parser.add_argument(
         "--harness", choices=agents.HARNESSES, default="claude",
         help="Which harness wrote the transcripts (default: claude). `cursor` sweeps "
         "~/.thalamus/logs/cursor-session-end.jsonl, including sessions logged before "
-        "the adapter existed.",
+        "the adapter existed. `codex` sweeps $CODEX_HOME/sessions by session id, since "
+        "a codex rollout is filed under the day it ran rather than under its project.",
     )
     extract_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     extract_parser.add_argument(
@@ -161,10 +172,18 @@ def _main():
     )
     extract_parser.add_argument(
         "--assign-scope", default="",
-        help="Scope for Cursor sessions found on disk that no hook ever saw, and which "
-        "therefore have no resolved scope of their own. Without this they are listed "
-        "and skipped rather than defaulted into `main` — separate from `--scope` so an "
-        "unmade routing decision can never be made by a flag's default value.",
+        help="Scope for Cursor or codex sessions found on disk that no hook ever saw, "
+        "and which therefore have no resolved scope of their own. Without this they are "
+        "listed and skipped rather than defaulted into `main` — separate from `--scope` "
+        "so an unmade routing decision can never be made by a flag's default value.",
+    )
+    extract_parser.add_argument(
+        "--transcript",
+        default="",
+        help="Distill exactly this transcript file, skipping discovery. The codex "
+        "SessionEnd hook is handed the rollout's path and passes it straight through: "
+        "a codex rollout is filed under the day it ran, so re-deriving the file by "
+        "scanning the tree for a matching id is a second chance to pick the wrong one.",
     )
     extract_parser.add_argument(
         "--room",
@@ -185,10 +204,10 @@ def _main():
     extract_parser.add_argument(
         "--model",
         default=None,
-        help="Extraction model. Defaults per harness: "
-        f"`{extraction.DEFAULT_MODEL}` via claude -p, "
-        f"`{extraction.CURSOR_DEFAULT_MODEL}` via agent -p. The archive is "
-        "immutable, so a better model can always re-extract later.",
+        help="Extraction model. Defaults per harness: " + ", ".join(
+            f"`{agents.default_model(h)}` via {' '.join(agents.cli_for(h).argv('…')[:2])}"
+            for h in agents.HARNESSES
+        ) + ". The archive is immutable, so a better model can always re-extract later.",
     )
     extract_parser.add_argument(
         "--limit", type=int, default=0, help="Stop after N sessions (0 = no limit)"
@@ -548,8 +567,11 @@ def _main():
         help="Only verify an existing install; write nothing"
     )
     init_parser.add_argument(
-        "--harness", choices=("claude", "cursor", "both"), default="both",
-        help="Which editor to wire (default: both)"
+        # Derived from the registry rather than listed, so a harness cannot arrive in
+        # `AGENT_CLIS` and be silently uninstallable — the property `install.HARNESSES`
+        # already states and this literal tuple quietly denied.
+        "--harness", choices=(*agents.HARNESSES, "all"), default="all",
+        help="Which editor to wire (default: all)"
     )
     init_parser.add_argument(
         "--uninstall", action="store_true",
@@ -592,7 +614,7 @@ def _main():
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
     pin_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     pin_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). `cursor` carries the scope as an argv prefix and passes no permission mode, so the session obeys your own ~/.cursor/cli-config.json and can stop at a prompt. `--force`/`--yolo` would not stop, but it is `auto` minus the safety classifier rather than an equivalent (see harness/launcher.py). No persona: Cursor has no `--agent` (see contract/pinning.py for what `pinned` covers there)."
+        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). A harness with no persona flag — `cursor`, `codex` — carries the scope as an argv `env` prefix instead, which is what survives `respawn-window`; see contract/pinning.py for what `pinned` covers without a persona. Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
 
     spawn_parser = subparsers.add_parser(
@@ -608,7 +630,7 @@ def _main():
     )
     spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     spawn_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). `cursor` carries the scope as an argv prefix and passes no permission mode, so the session obeys your own ~/.cursor/cli-config.json and can stop at a prompt. `--force`/`--yolo` would not stop, but it is `auto` minus the safety classifier rather than an equivalent (see harness/launcher.py). No persona: Cursor has no `--agent` (see contract/pinning.py for what `pinned` covers there)."
+        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). A harness with no persona flag — `cursor`, `codex` — carries the scope as an argv `env` prefix instead, which is what survives `respawn-window`; see contract/pinning.py for what `pinned` covers without a persona. Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
 
     roster_parser = subparsers.add_parser(
@@ -1174,28 +1196,41 @@ def _claude_bootstrap_groups(args):
     ]
 
 
-def _cursor_bootstrap_groups(args):
-    """One group per resolved scope — Cursor discovery is session-oriented.
+def _session_bootstrap_groups(args, harness: str):
+    """One group per resolved scope — Cursor and codex discovery are session-oriented.
 
-    Grouping by scope rather than by directory because that is the axis a Cursor
-    session actually varies on: it is pinned by `THALAMUS_SCOPE` at launch, and
-    the sanitized project directory it lands under is a flattened cwd we
-    deliberately never un-flatten.
+    Grouping by scope rather than by directory because that is the axis these sessions
+    actually vary on: they are pinned by `THALAMUS_SCOPE` at launch, and the directory
+    each lands under answers a different question — a flattened cwd we deliberately
+    never un-flatten on Cursor, the calendar day on codex.
     """
-    from thalamus.harness.bootstrap import bootstrap_cursor
+    from thalamus.harness.bootstrap import bootstrap_codex, bootstrap_cursor
 
-    found = [s for s in cursor_transcripts.discover() if s.exists]
+    reader = _READERS[harness]
+    builder = {"cursor": bootstrap_cursor, "codex": bootstrap_codex}[harness]
+
+    found = [s for s in reader.discover() if s.exists]
     if not found:
+        if harness == "cursor":
+            where = (
+                "Discovery reads the sessionEnd hook log "
+                f"({cursor_transcripts.CURSOR_SESSION_END_LOG}) and sweeps "
+                f"{cursor_transcripts.CURSOR_PROJECTS}; nothing in either"
+            )
+        else:
+            where = (
+                f"Discovery sweeps {codex_transcripts.sessions_root()}, which the CLI "
+                "writes for every session whether or not the hooks were armed; nothing "
+                "there"
+            )
         print(
-            "No Cursor sessions found. Discovery reads the sessionEnd hook log "
-            f"({cursor_transcripts.CURSOR_SESSION_END_LOG}) and sweeps "
-            f"{cursor_transcripts.CURSOR_PROJECTS}; nothing in either means no Cursor "
-            "session has run on this machine.",
+            f"No {harness} sessions found. {where} means no {harness} session has run "
+            "on this machine.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    ready, refused = cursor_transcripts.claim_unresolved(found, args.assign_scope)
+    ready, refused = reader.claim_unresolved(found, args.assign_scope)
     if refused:
         print(
             f"  ! {len(refused)} session(s) found on disk that no hook ever saw, so no "
@@ -1205,10 +1240,10 @@ def _cursor_bootstrap_groups(args):
             file=sys.stderr,
         )
         for session in refused:
-            print(
-                f"      {session.session_id[:8]}  {session.cwd or 'cwd unknown'}",
-                file=sys.stderr,
+            where = getattr(session, "cwd", "") or str(
+                getattr(session, "transcript_path", "") or "cwd unknown"
             )
+            print(f"      {session.session_id[:8]}  {where}", file=sys.stderr)
     if not ready:
         return None
 
@@ -1216,18 +1251,18 @@ def _cursor_bootstrap_groups(args):
     for session in ready:
         by_scope.setdefault(session.scope, []).append(session)
     return [
-        (f"cursor · scope {scope}", bootstrap_cursor(sessions))
+        (f"{harness} · scope {scope}", builder(sessions))
         for scope, sessions in sorted(by_scope.items())
     ]
 
 
 def _cmd_bootstrap(args):
-    if args.harness == "cursor":
-        groups = _cursor_bootstrap_groups(args)
+    if args.harness == "claude":
+        groups = _claude_bootstrap_groups(args)
+    else:
+        groups = _session_bootstrap_groups(args, args.harness)
         if groups is None:
             return
-    else:
-        groups = _claude_bootstrap_groups(args)
         if groups is None:
             return
 
@@ -1306,6 +1341,247 @@ def _retain_raw_extraction(session_id: str, scope: str, text: str) -> Path:
     return path
 
 
+@dataclass
+class _Candidates:
+    """What one harness's discovery-and-parse pass produced, for the shared tail."""
+
+    # `TranscriptFacts`, unsorted — the caller orders them chronologically.
+    parsed: list
+    # Sessions the substance gate withheld, by id, so an explicitly named one is
+    # reported as *skipped* rather than as *missing*.
+    insubstantial: list[str]
+    # session id -> scope, where the harness resolves scope per session rather than
+    # from the flag. Empty is the ordinary answer, not a gap: Claude Code carries its
+    # scope on the command line.
+    scopes: dict[str, str]
+    # What to name in "No session matching X under ..." — the surface actually swept.
+    where: str
+    # Whether a named session missing from the live surface may be recovered from the
+    # archive. Declared rather than tested, because it is a property of the harness:
+    # `transcripts.archived_transcripts` reads Claude Code's own `sessionId` field out
+    # of retained bytes, and Cursor's evidence is deliberately not retained whole.
+    recover_from_archive: bool = False
+    # A discovery that found nothing and has already said so. Distinct from an empty
+    # `parsed`, which is a sweep that found sessions and kept none of them.
+    nothing_found: bool = False
+
+
+def _report_unrecognized(parsed: list, harness: str, module: str) -> None:
+    """Say when a reader could not classify records, rather than absorbing it.
+
+    Recognition is kept complete and separate from processing in every reader here,
+    and this is the surface that makes the count matter: a parser written against a
+    vendor format can only learn the format changed by saying what it failed to read.
+    A count nobody reads is the same silent failure as no count at all.
+    """
+    unread = sum(f.unrecognized for f in parsed)
+    if not unread:
+        return
+    sessions = sum(1 for f in parsed if f.unrecognized)
+    print(
+        f"  ! {unread} record(s) across {sessions} session(s) did not match the "
+        f"expected {harness} shape — the format may have changed (see {module})",
+        file=sys.stderr,
+    )
+
+
+def _candidates_claude(args) -> _Candidates:
+    available = transcripts.discover(args.projects_dir)
+    if not args.projects:
+        print("Specify project dir(s); `thalamus bootstrap` lists what is available.")
+        return _Candidates([], [], {}, "", nothing_found=True)
+
+    unknown = [p for p in args.projects if p not in available]
+    if unknown:
+        # Naming the root matters here: a room member's transcripts live under
+        # its own CLAUDE_CONFIG_DIR, so the same project dir name is genuinely
+        # absent from the default root and the failure is otherwise
+        # indistinguishable from a typo.
+        root = args.projects_dir or transcripts.CLAUDE_PROJECTS
+        print(
+            f"Unknown project dir(s) under {root}: {', '.join(unknown)}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    parsed, insubstantial = [], []
+    for project in args.projects:
+        for path in available[project]:
+            facts = transcripts.parse(path)
+            if not facts.has_substance:
+                insubstantial.append(facts.session_id)
+                continue
+            # An extraction sandbox is not a session (harness/agents.py).
+            # `discover()` already withholds the project dir; this reads the
+            # cwd the transcript itself recorded, so the refusal holds for a
+            # sandbox transcript reached any other way.
+            if agents.is_sandbox_cwd(facts.cwd):
+                continue
+            parsed.append(facts)
+    return _Candidates(
+        parsed, insubstantial, {},
+        where=f"{', '.join(args.projects)} or the archive",
+        recover_from_archive=True,
+    )
+
+
+def _candidates_cursor(args) -> _Candidates:
+    ended = [s for s in cursor_transcripts.discover() if s.exists]
+    if not ended:
+        print(
+            "No Cursor sessions to extract. Sessions are found two ways: the "
+            f"sessionEnd hook's log ({cursor_transcripts.CURSOR_SESSION_END_LOG}) "
+            f"and a sweep of {cursor_transcripts.CURSOR_PROJECTS}. Nothing in "
+            "either means no Cursor session has ended on this machine yet.",
+            file=sys.stderr,
+        )
+        return _Candidates([], [], {}, "", nothing_found=True)
+
+    ended = _claim_or_report(ended, cursor_transcripts, args.assign_scope)
+
+    # Scope comes from the session's own sessionEnd record, not the flag:
+    # ledger-first resolution is what keeps a pinned Cursor session out of
+    # the wrong subgraph. A cursor session carries no timestamps
+    # or cwd of its own, so both come from the hooks' ledgers.
+    parsed, insubstantial, scopes = [], [], {}
+    for ended_session in ended:
+        cwd, started_at = cursor_transcripts.session_context(ended_session.session_id)
+        facts = cursor_transcripts.parse(
+            ended_session.transcript_path,
+            session_id=ended_session.session_id,
+            cwd=cwd,
+            started_at=started_at,
+            ended_at=ended_session.ended_at,
+        )
+        if not facts.has_substance:
+            insubstantial.append(facts.session_id)
+            continue
+        # An extraction sandbox is not a session (harness/agents.py). The
+        # Cursor sweep withholds sandbox project dirs, and this is the same
+        # second refusal the Claude Code path makes, on the cwd the session
+        # itself recorded — every headless extraction is a full Cursor session
+        # that files its own transcript, so a sandbox reached by any other
+        # route still has to be refused here.
+        if agents.is_sandbox_cwd(facts.cwd):
+            continue
+        scopes[facts.session_id] = ended_session.scope
+        parsed.append(facts)
+
+    _report_unrecognized(parsed, "Cursor", "harness/cursor_transcripts.py")
+    return _Candidates(parsed, insubstantial, scopes, where="the Cursor sessionEnd log")
+
+
+def _candidates_codex(args) -> _Candidates:
+    """Codex sessions, by session id rather than by project dir.
+
+    A codex rollout is filed under the day it ran, not under its cwd, so there is no
+    project-dir argument to take and the whole sessions tree is the sweep. Everything
+    else — timestamps, cwd, tool results — is in the file, so unlike Cursor there is
+    no ledger to consult for anything but the scope.
+
+    `--transcript` short-circuits the sweep with the path the SessionEnd hook was
+    handed. That is not an optimisation: the hook already knows the exact file, and
+    re-deriving it by scanning a tree for a matching id is a second chance to pick the
+    wrong one.
+    """
+    root = codex_transcripts.sessions_root()
+    if getattr(args, "transcript", ""):
+        path = Path(args.transcript)
+        if not path.is_file():
+            print(f"No codex transcript at {path} — nothing distilled.", file=sys.stderr)
+            sys.exit(1)
+        session_id = codex_transcripts.session_id_of(path) or path.stem
+        # Ledger first, flag second — the same precedence the sweep uses. The hook
+        # already resolves the scope and passes it, so this only decides the case
+        # where someone re-extracts a named transcript by hand and the flag is at its
+        # default: a session pinned to an expert must not land in `main` because a
+        # re-run forgot to say so.
+        found = [
+            codex_transcripts.CodexSession(
+                session_id=session_id,
+                transcript_path=path,
+                scope=codex_transcripts.ledger_scope(session_id) or args.scope,
+            )
+        ]
+    else:
+        found = [s for s in codex_transcripts.discover() if s.exists]
+        if not found:
+            print(
+                f"No codex sessions to extract. Codex writes every session as a "
+                f"rollout under {root}; nothing there means no codex session has run "
+                "on this machine yet.",
+                file=sys.stderr,
+            )
+            return _Candidates([], [], {}, "", nothing_found=True)
+        found = _claim_or_report(found, codex_transcripts, args.assign_scope)
+
+    parsed, insubstantial, scopes = [], [], {}
+    for session in found:
+        facts = codex_transcripts.parse(
+            session.transcript_path, session_id=session.session_id
+        )
+        if not facts.has_substance:
+            insubstantial.append(facts.session_id)
+            continue
+        # The same second refusal the other two make. Codex's own extraction sandbox
+        # runs `--ephemeral` and writes no rollout at all, so nothing this sweep finds
+        # should be one — which is exactly why the check stays: a sandbox that reached
+        # disk anyway is a broken assumption, not a session.
+        if agents.is_sandbox_cwd(facts.cwd):
+            continue
+        scopes[facts.session_id] = session.scope
+        parsed.append(facts)
+
+    _report_unrecognized(parsed, "codex", "harness/codex_transcripts.py")
+    return _Candidates(parsed, insubstantial, scopes, where=str(root))
+
+
+def _claim_or_report(found: list, reader, assign_scope: str) -> list:
+    """Keep the sessions a sweep may route, and say why the rest are being left.
+
+    A session no hook ever saw has no resolved scope, and `main` is not a safe stand-in
+    — routing an unattested session into the operator's own subgraph is a decision
+    nobody made and cannot be undone once written, because scope is part of the vertex
+    ID. Shared by the two harnesses that can find a session their hooks never saw.
+    """
+    ready, refused = reader.claim_unresolved(found, assign_scope)
+    if refused:
+        print(
+            f"  ! {len(refused)} session(s) found on disk that no hook ever saw, so no "
+            "scope was ever resolved for them. They are NOT being extracted. Re-run "
+            "with `--assign-scope <scope>` to route them, after checking they belong "
+            "there:",
+            file=sys.stderr,
+        )
+        for session in refused:
+            where = getattr(session, "cwd", "") or str(
+                getattr(session, "transcript_path", "") or "cwd unknown"
+            )
+            print(f"      {session.session_id[:8]}  {where}", file=sys.stderr)
+    return ready
+
+
+# The transcript reader and the candidate source, per harness.
+#
+# Deliberately **not** a `TranscriptReader` protocol. The three readers differ in what
+# they can offer, not merely in how they do it: Cursor cannot supply a cwd or a
+# timestamp from its transcript and reaches for our own ledgers to get them, while
+# Claude Code and codex read both out of the file. An interface wide enough for all
+# three would have to be the union of what they happen to do, which moves the fork
+# into optional methods and hides it. `harness/bootstrap.py` already settled this
+# shape — `_bootstrap_one` takes what differs as parameters and looks nothing up.
+_READERS = {
+    "claude": transcripts,
+    "cursor": cursor_transcripts,
+    "codex": codex_transcripts,
+}
+_CANDIDATE_SOURCES = {
+    "claude": _candidates_claude,
+    "cursor": _candidates_cursor,
+    "codex": _candidates_codex,
+}
+
+
 def _cmd_extract(args):
     """Stage 2 of the bootstrap: model-extracted Claims and Threads.
 
@@ -1316,56 +1592,7 @@ def _cmd_extract(args):
     from thalamus.contract.conformance import prune_orphan_artifacts
     from thalamus.contract.ontology import vid
 
-    cursor = args.harness == "cursor"
-    reader = cursor_transcripts if cursor else transcripts
-
-    if cursor:
-        ended = [s for s in cursor_transcripts.discover() if s.exists]
-        if not ended:
-            print(
-                "No Cursor sessions to extract. Sessions are found two ways: the "
-                f"sessionEnd hook's log ({cursor_transcripts.CURSOR_SESSION_END_LOG}) "
-                f"and a sweep of {cursor_transcripts.CURSOR_PROJECTS}. Nothing in "
-                "either means no Cursor session has ended on this machine yet.",
-                file=sys.stderr,
-            )
-            return
-
-        # A session no hook ever saw has no resolved scope, and `main` is not a
-        # safe stand-in — routing an unattested session into the operator's own
-        # subgraph is a decision nobody made and cannot be undone once written.
-        ended, refused = cursor_transcripts.claim_unresolved(ended, args.assign_scope)
-        if refused:
-            print(
-                f"  ! {len(refused)} session(s) found on disk that no hook ever saw, so no "
-                "scope was ever resolved for them. They are NOT being extracted. Re-run "
-                "with `--assign-scope <scope>` to route them, after checking they belong "
-                "there:",
-                file=sys.stderr,
-            )
-            for session in refused:
-                print(
-                    f"      {session.session_id[:8]}  {session.cwd or 'cwd unknown'}",
-                    file=sys.stderr,
-                )
-    else:
-        available = transcripts.discover(args.projects_dir)
-        if not args.projects:
-            print("Specify project dir(s); `thalamus bootstrap` lists what is available.")
-            return
-
-        unknown = [p for p in args.projects if p not in available]
-        if unknown:
-            # Naming the root matters here: a room member's transcripts live under
-            # its own CLAUDE_CONFIG_DIR, so the same project dir name is genuinely
-            # absent from the default root and the failure is otherwise
-            # indistinguishable from a typo.
-            root = args.projects_dir or transcripts.CLAUDE_PROJECTS
-            print(
-                f"Unknown project dir(s) under {root}: {', '.join(unknown)}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+    reader = _READERS[args.harness]
 
     extracted = skipped = failed = 0
     total_cost = 0.0
@@ -1374,66 +1601,13 @@ def _cmd_extract(args):
     # Session selection runs before the graph connection: a run that selects nothing
     # has no reason to open one, and the refusal below stays reachable on a machine
     # whose graph is down.
-    # Chronological across all requested projects: threads resolve forward in time.
-    parsed = []
-    # Sessions the substance gate withheld, kept by id so an explicitly named one can
-    # be reported as *skipped* rather than as *missing* below.
-    insubstantial: list[str] = []
-    if cursor:
-        # Scope comes from the session's own sessionEnd record, not the flag:
-        # ledger-first resolution is what keeps a pinned Cursor session out of
-        # the wrong subgraph. A cursor session carries no timestamps
-        # or cwd of its own, so both come from the hooks' ledgers.
-        scopes: dict[str, str] = {}
-        for ended_session in ended:
-            cwd, started_at = cursor_transcripts.session_context(ended_session.session_id)
-            facts = cursor_transcripts.parse(
-                ended_session.transcript_path,
-                session_id=ended_session.session_id,
-                cwd=cwd,
-                started_at=started_at,
-                ended_at=ended_session.ended_at,
-            )
-            if not facts.has_substance:
-                insubstantial.append(facts.session_id)
-                continue
-            # An extraction sandbox is not a session (harness/agents.py). The
-            # Cursor sweep withholds sandbox project dirs, and this is the same
-            # second refusal the Claude Code path makes below, on the cwd the
-            # session itself recorded — every headless extraction is a full
-            # Cursor session that files its own transcript, so a sandbox reached
-            # by any other route still has to be refused here.
-            if agents.is_sandbox_cwd(facts.cwd):
-                continue
-            scopes[facts.session_id] = ended_session.scope
-            parsed.append(facts)
-
-        # Surfaced, not swallowed: this parser was written against Cursor's
-        # documented shape without ever seeing a real transcript, so records it
-        # cannot classify are the first evidence that the shape is wrong. A
-        # count nobody reads is the same silent failure as no count at all.
-        unread = sum(f.unrecognized for f in parsed)
-        if unread:
-            print(
-                f"  ! {unread} record(s) across {sum(1 for f in parsed if f.unrecognized)} "
-                "session(s) did not match the expected Cursor shape — the format may "
-                "have changed (see harness/cursor_transcripts.py)",
-                file=sys.stderr,
-            )
-    else:
-        for project in args.projects:
-            for path in available[project]:
-                facts = transcripts.parse(path)
-                if not facts.has_substance:
-                    insubstantial.append(facts.session_id)
-                    continue
-                # An extraction sandbox is not a session (harness/agents.py).
-                # `discover()` already withholds the project dir; this reads the
-                # cwd the transcript itself recorded, so the refusal holds for a
-                # sandbox transcript reached any other way.
-                if agents.is_sandbox_cwd(facts.cwd):
-                    continue
-                parsed.append(facts)
+    candidates = _CANDIDATE_SOURCES[args.harness](args)
+    if candidates.nothing_found:
+        return
+    parsed = candidates.parsed
+    insubstantial = candidates.insubstantial
+    scopes = candidates.scopes
+    # Chronological across everything the sweep found: threads resolve forward in time.
     parsed.sort(key=lambda f: (f.started_at is None, f.started_at))
 
     if args.session:
@@ -1445,9 +1619,11 @@ def _cmd_extract(args):
         # — a recovery that could read only the live dir would still lose a
         # session to the rotation retention was built to survive. Only for a *named*
         # session: a sweep of the archive would re-offer the whole distilled corpus,
-        # and only for Claude Code, whose transcript is retained whole where Cursor's
-        # evidence deliberately is not.
-        if not cursor:
+        # and only where the harness declares the archive reachable, which today is
+        # Claude Code alone: its retained bytes carry the `sessionId` field
+        # `archived_transcripts` reads, where Cursor's evidence is deliberately not
+        # retained whole and codex's rollout names its session nowhere that scan looks.
+        if candidates.recover_from_archive:
             unmatched = [
                 requested for requested in args.session
                 if not any(f.session_id.startswith(requested) for f in parsed)
@@ -1493,12 +1669,9 @@ def _cmd_extract(args):
                     "(slash commands only, no tool use) — nothing to distill."
                 )
                 sys.exit(0)
-            where = (
-                "the Cursor sessionEnd log" if cursor
-                else f"{', '.join(args.projects)} or the archive"
-            )
             print(
-                f"No session matching {requested} under {where} — nothing distilled.",
+                f"No session matching {requested} under {candidates.where} — "
+                "nothing distilled.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -1523,7 +1696,10 @@ def _cmd_extract(args):
     try:
         for facts in parsed:
             name = facts.session_id[:8]
-            scope = scopes.get(facts.session_id, args.scope) if cursor else args.scope
+            # Per-session where the harness resolved one, the flag otherwise. Uniform
+            # rather than forked: a harness that carries no per-session scope supplies
+            # an empty map, and `args.scope` is then the answer by the same rule.
+            scope = scopes.get(facts.session_id, args.scope)
             session_vid = vid("Session", facts.session_id, scope)
 
             if not args.force and _session_has_claims(graph, session_vid):
@@ -1564,7 +1740,7 @@ def _cmd_extract(args):
 
             if retained is None:
                 payload = read_archived(entry.content_hash, suffix=".jsonl")
-                digest = extraction.render_digest(payload)
+                digest = extraction.render_digest(payload, harness=args.harness)
                 prompt = extraction.build_prompt(
                     digest,
                     project=facts.project,
@@ -2749,7 +2925,13 @@ def _cmd_roster(args):
         # to quote and the cause is almost always the binary. The hint is all the
         # operator gets in that case, and it is the case that brought them here.
         if isinstance(e, WindowDied):
-            print("Check that the harness binary is on your PATH — `claude --version`.",
+            # Every registered harness, not `claude`: the roster spawns whichever the
+            # pin asked for, and naming one binary sends an operator whose codex or
+            # Cursor window died to check a CLI that was never involved.
+            binaries = ", ".join(
+                f"`{agents.cli_for(h).binary} --version`" for h in agents.HARNESSES
+            )
+            print(f"Check that the harness binary is on your PATH — {binaries}.",
                   file=sys.stderr)
         sys.exit(1)
 

@@ -236,14 +236,44 @@ Where all of this meets your editor.
   and PreToolUse guards (the role boundary, the Gremlin guard, the room boundary).
 - **Skills** — procedures the agent loads when a task calls for them.
 
-Both **Claude Code** and **Cursor** are supported. Their hook contracts differ, so each
-has its own suite under `src/thalamus/harness/hooks/`, with Cursor's implemented as
-thin adapters over the Claude Code scripts so both share one detection logic and one
-set of on-disk records.
+**Claude Code**, **Cursor** and **codex** are supported. Their hook contracts differ,
+so each has its own suite under `src/thalamus/harness/hooks/`, over one set of
+detection logic and one set of on-disk records — Cursor's scripts are adapters that
+reshape its payloads into the Claude Code shape, while codex's are delegators, because
+its payloads already *are* that shape: the same hook config schema, the same stdin
+keys, the same regex matchers, the same exit-2-and-stderr blocking channel. Two codex
+scripts do more than delegate, and they mark the two places the harnesses genuinely
+differ: a shell result arrives as one string where Claude Code sends `{stdout,
+stderr}`, and the editing tool is `apply_patch`, whose argument is a patch envelope
+naming several files rather than one `file_path`.
 
-Cursor's fidelity is honestly reduced, and the system says so rather than pretending
-otherwise: Cursor gives prompt text to an event that cannot inject and injection to
-events that never see the prompt, so the injection tiers compute into a per-session
-spool and deliver one tool call late. Cursor transcripts also exclude tool outputs
-entirely, so those sessions are floored whole by the ingress defence rather than
-checked against evidence that does not exist.
+The three do not have equal fidelity, and the system says which is which rather than
+flattening them.
+
+Cursor is the reduced one. It gives prompt text to an event that cannot inject and
+injection to events that never see the prompt, so the injection tiers compute into a
+per-session spool and deliver one tool call late. Cursor transcripts also exclude tool
+outputs entirely, so those sessions are floored whole by the ingress defence rather
+than checked against evidence that does not exist, and a Cursor session distills on a
+later sweep because its transcript is not flushed when the hook fires.
+
+Codex is close to Claude Code and differs in three places worth knowing. Its rollout is
+filed under the day it ran rather than under its project, so a codex session is
+addressed by session id. Its tool calls arrive as *code mode* — a call is a JavaScript
+program calling `tools.exec_command(...)` or `tools.apply_patch(...)` — so the files a
+session touched are read from the structured `patch_apply_end` event beside the call
+rather than from the program, which the deterministic layer would have to guess at. And
+its `SessionStart` hook fires at the first submitted turn rather than at launch, so a
+codex window opened and never used leaves no pin-ledger row.
+
+Codex also gates its hooks behind a trust record the operator grants once, per
+configured entry, in the TUI. Until it is granted the suite is installed and inert —
+a headless run finishes, exits 0 and distills nothing — so `thalamus init` reports the
+trust state as its own finding rather than folding it into "the hooks are wired".
+Granting it is not something the installer does on the operator's behalf: it is a
+supply-chain control, and satisfying it from inside the thing being trusted would
+answer the question it exists to ask.
+
+Where a harness lacks something, that is recorded as a state and not as a silence:
+`contract/boundaries.py` distinguishes a capability the harness provides natively, one
+with no referent to enforce, and one nobody has asked about yet.

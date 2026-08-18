@@ -719,9 +719,22 @@ def test_the_harness_the_phone_picked_is_the_one_that_launches(tmp_path, monkeyp
         post("/api/spawn", {"scope": "main", "dir": str(code / "alpha"),
                             "harness": "cursor"})
 
+    from thalamus.harness.launcher import LAUNCH_SHAPES
+
     assert [s["harness"] for s in seen] == ["cursor"]
-    assert options["harnesses"] == [{"harness": "claude", "persona": True},
-                                    {"harness": "cursor", "persona": False}]
+    # Derived from the same table the spawn is validated against, not listed: a
+    # literal pair here made adding a third harness look like a console regression
+    # when the picker was in fact correct, and would have let a harness join the
+    # registry and never reach the sheet without anything failing.
+    # Table order, not sorted: the endpoint's first entry is the default it falls back
+    # to, so the order is load-bearing and asserting a sorted view would let a new
+    # harness silently become the default.
+    assert options["harnesses"] == [
+        {"harness": name, "persona": shape.persona_flag is not None}
+        for name, shape in LAUNCH_SHAPES.items()
+    ]
+    assert options["harnesses"][0]["harness"] == "claude"
+    assert {"harness": "cursor", "persona": False} in options["harnesses"]
 
 
 def test_a_harness_with_no_launch_shape_is_refused(tmp_path):
@@ -735,7 +748,7 @@ def test_a_harness_with_no_launch_shape_is_refused(tmp_path):
 
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         status, body = post("/api/spawn", {"scope": "main", "dir": str(code / "alpha"),
-                                           "harness": "codex"})
+                                           "harness": "no-such-harness"})
 
     assert status == 400 and body["error"] == "unknown harness"
 
@@ -1201,8 +1214,14 @@ def test_the_posture_panel_serves_options_with_their_costs(tmp_path):
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         body = post.get("/api/launch-policy")
 
+    from thalamus.harness.launcher import LAUNCH_SHAPES
+
     harnesses = {h["harness"]: h for h in body["harnesses"]}
-    assert set(harnesses) == {"claude", "cursor"}
+    # Every harness that offers a choice appears; one that offers none is omitted
+    # rather than rendered as an empty control (server.py:launch_policy_view).
+    assert set(harnesses) == {
+        name for name, shape in LAUNCH_SHAPES.items() if shape.capabilities
+    }
     cursor = harnesses["cursor"]["capabilities"][0]
     assert cursor["value"] == cursor["default"] == "manual"
     loose = [o for o in cursor["options"] if o["above_default"]]

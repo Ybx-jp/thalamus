@@ -17,12 +17,19 @@ subgraph, never into episodic memory — but that rule is about untrusted third-
 content. This is tier-1: the agent's own history, which is episodic by definition.
 Bootstrap is the session-stop distillation, applied retroactively in batch.
 
-**Both harnesses reach stage 1**, and the seam is narrow by construction. The two
-readers differ only in how facts are *obtained* — Claude Code reads cwd and times
-out of the transcript, Cursor is handed them by discovery, because its rows carry
-neither. Everything downstream is shared: one `TranscriptFacts` intermediate, one
-archive that has no opinion about which harness wrote the bytes, and one graph
-builder that Cursor's delegates to before re-stamping the tool.
+**Every harness reaches stage 1**, and the seam is narrow by construction. The readers
+differ only in how facts are *obtained* — Claude Code and codex read cwd and times out
+of the transcript, Cursor is handed them by discovery because its rows carry neither.
+Everything downstream is shared: one `TranscriptFacts` intermediate, one archive that
+has no opinion about which harness wrote the bytes, and one graph builder the other two
+delegate to before re-stamping the tool.
+
+What varies is what a session is *addressed by*, and it is why there are three entry
+points rather than one with a switch. Claude Code files transcripts under a directory
+named for the cwd, so its arm takes a project dir. Cursor and codex are found session by
+session — Cursor from its hook log and chat store, codex from a sessions tree filed by
+calendar day — so theirs take a list of sessions that discovery has already resolved a
+scope for.
 """
 
 from __future__ import annotations
@@ -32,7 +39,7 @@ from pathlib import Path
 
 from thalamus.contract.conformance import check_session
 from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.harness import agents, cursor_transcripts, transcripts
+from thalamus.harness import agents, codex_transcripts, cursor_transcripts, transcripts
 from thalamus.substrate.schema import SessionGraph
 
 
@@ -116,6 +123,36 @@ def bootstrap_cursor(
     return results
 
 
+def bootstrap_codex(
+    sessions: list,
+    *,
+    archive_base: Path | None = None,
+) -> list[BootstrapResult]:
+    """The same stage 1, for codex sessions the sessions tree holds.
+
+    Session-oriented like the Cursor arm and for a different reason: a codex rollout
+    is filed under the day it ran rather than under its cwd, so there is no project
+    dir to group by. The asymmetry Cursor has — facts that must be handed in from our
+    ledgers — does not apply, because the rollout carries its own cwd and timestamps
+    (harness/codex_transcripts.py). Only the scope comes from outside, and it is
+    already resolved on the record by the time a session reaches here.
+    """
+    results: list[BootstrapResult] = []
+    for session in sessions:
+        results.append(
+            _bootstrap_one(
+                session.transcript_path,
+                codex_transcripts.parse(
+                    session.transcript_path, session_id=session.session_id
+                ),
+                codex_transcripts.to_session_graph,
+                archive_base=archive_base,
+                scope=session.scope,
+            )
+        )
+    return results
+
+
 def _bootstrap_one(
     path: Path,
     facts,
@@ -127,7 +164,7 @@ def _bootstrap_one(
     """Retain the bytes, build the deterministic subgraph, check it.
 
     Takes the parsed facts and the builder rather than reading them off a module,
-    because the two harnesses differ in how facts are *obtained* and in nothing
+    because the harnesses differ in how facts are *obtained* and in nothing
     after that. Retention is shared outright: the archive stores bytes and has no
     opinion about which harness wrote them.
     """
