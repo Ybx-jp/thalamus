@@ -33,12 +33,18 @@ to name it rather than to reach for the hidden flag. `contract/pinning.py` is wh
 is named, per component, so "pinned" cannot quietly mean four things on one harness and
 two on another.
 
-Codex sits with Cursor on this and for its own reasons. It has no persona selector —
-its skills and subagents are things a session may use, not a charter it is started
-under — and it reads MCP servers from `$CODEX_HOME/config.toml` rather than per-scope,
-so arming is global there too. The routing tag likewise reaches it only through the
-environment, so it takes the same argv `env` prefix. One measured difference from
-Cursor is worth carrying: codex's `SessionStart` hook fires at the **first submitted
+Codex does **not** sit with Cursor here. `--profile <name>` layers
+`$CODEX_HOME/<name>.config.toml` over the base config, and a profile file carries both
+`developer_instructions` — the charter — and its own `[mcp_servers.*]` tables. So a
+pinned codex session thinks like the expert and arms the scope's tooling, and
+`harness/pin.py` generates the profile from the same manifest the Claude Code agent
+file comes from. Two things do not follow from that flag and are worth keeping
+distinct: it tells the hooks nothing, so the routing tag still rides the `env` prefix;
+and a `--profile` naming a file that does not exist starts a session with no charter
+and no error, which is why the generator writes the file before the launcher names it.
+
+One measured difference from Cursor is
+worth carrying: codex's `SessionStart` hook fires at the **first submitted
 turn**, not at launch, so a codex window that is spawned and never used writes no pin
 ledger row. The scope still reached it — the prefix is in the argv the window was
 created with, which is also what `panes.harness_of` reads — so this costs the ledger's
@@ -333,6 +339,17 @@ class LaunchShape:
     # The flag that selects a persona, and with it the scope's MCP arming. `None` means
     # the harness has no such flag — not that we chose not to use one.
     persona_flag: str | None
+    # Does `persona_flag` also tell the *hooks* which scope this is? On Claude Code it
+    # does: `resolve-scope.sh` reads the agent name off the argv, so the flag is the
+    # routing tag as well as the charter. On codex it does not — `--profile` selects a
+    # config layer and nothing in the hook payload names it — so the scope still has to
+    # reach the session through the environment.
+    #
+    # Kept separate from `persona_flag` because the two were fused only by coincidence
+    # on the one harness that had both. Deriving "needs an env prefix" from
+    # "persona_flag is None" was right while codex had no flag, and would have silently
+    # dropped codex's routing tag the moment it got one.
+    persona_flag_carries_scope: bool
     # Flags every launch carries. Preconditions, not policy: without `--trust` a fresh
     # Cursor workspace parks on a modal. Deliberately kept distinct from `capabilities`
     # — a precondition is not a thing to offer an operator, and putting the two in one
@@ -363,6 +380,7 @@ LAUNCH_SHAPES: dict[str, LaunchShape] = {
         harness="claude",
         binary="claude",
         persona_flag="--agent",
+        persona_flag_carries_scope=True,
         always=(),
         capabilities=(CLAUDE_PERMISSION,),
         pin_carrier="argv",
@@ -372,6 +390,7 @@ LAUNCH_SHAPES: dict[str, LaunchShape] = {
         harness="cursor",
         binary="agent",
         persona_flag=None,
+        persona_flag_carries_scope=False,
         always=("--trust",),
         capabilities=(CURSOR_PERMISSION,),
         pin_carrier="argv",
@@ -380,9 +399,20 @@ LAUNCH_SHAPES: dict[str, LaunchShape] = {
     "codex": LaunchShape(
         harness="codex",
         binary="codex",
-        # No `--agent`. Codex has skills and subagents, neither of which selects a
-        # persona for the session itself, so there is nothing here to point at.
-        persona_flag=None,
+        # `--profile <name>` layers `$CODEX_HOME/<name>.config.toml` over the base
+        # config, and that layer carries `developer_instructions` — so the flag selects
+        # a charter for the session itself, which is what a persona is. Measured live
+        # 2026-08-19 (codex-cli 0.148.0): a turn run under a generated profile answered
+        # from its `developer_instructions` and not from the base config.
+        #
+        # Not codex's *subagents* (`$CODEX_HOME/agents/*.toml`) and not its skills —
+        # both are things a session may use, and neither starts one under a charter.
+        # There is no `--agent` here and the flag is not a rename of one.
+        persona_flag="--profile",
+        # `--profile` picks the charter and the scope's MCP arming; it does not reach
+        # the hooks, which read `THALAMUS_SCOPE`. So codex keeps the `env` prefix that
+        # `pin_carrier` describes, and carries both.
+        persona_flag_carries_scope=False,
         # Empty, and not because codex has no preconditions — because its two are not
         # flags. `--skip-git-repo-check` belongs to the headless sandbox: a roster
         # window opens in the checkout, which is a git repo, so passing it here would
@@ -498,8 +528,10 @@ def launch_argv(
     argv += list(shape.always)
     argv += capability_argv(harness, selections)
 
-    if shape.persona_flag is None:
-        # Nothing on this argv names the scope, so a `respawn-window` would re-exec it
-        # with the window's `-e` environment gone. The prefix is the carrier.
+    if not shape.persona_flag_carries_scope:
+        # Nothing on this argv *names the scope to the hooks*, so a `respawn-window`
+        # would re-exec it with the window's `-e` environment gone. The prefix is the
+        # carrier. Codex takes it despite having a persona flag: `--profile` restores
+        # the charter on a recycle but tells `resolve-scope.sh` nothing.
         return ["env", f"THALAMUS_SCOPE={scope}", *argv]
     return argv

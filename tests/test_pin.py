@@ -18,12 +18,16 @@ from thalamus.contract.manifest import available_scopes, load_manifest
 from thalamus.harness import pin
 from thalamus.harness.pin import (
     agent_name,
+    codex_profile_name,
     render_agent,
+    render_codex_profile,
     resolve,
     resolve_pin,
+    scope_mcp_servers,
     spawn,
     write_agent,
     write_all_agents,
+    write_codex_profile,
 )
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
@@ -804,3 +808,149 @@ def test_a_missing_ledger_is_not_an_error(tmp_path):
     """A box that never launched a pinned session has no ledger, and re-extraction
     there is ordinary rather than broken."""
     assert pin.ledger_facts("s1", tmp_path / "absent.jsonl") == {}
+
+
+def test_the_codex_profile_carries_the_same_charter_as_the_agent_file(tmp_path):
+    """
+    Scenario: the operator opens `designer` on codex on Monday and on Claude Code on
+    Tuesday, and expects the same expert both times
+
+    Two harnesses, two carriers, one text. Claude Code reads the charter as an agent
+    file's body; codex reads it as a profile's `developer_instructions`. If the two
+    were rendered separately they would drift, and "the designer expert" would quietly
+    become two experts distinguished only by which window was open — a divergence with
+    no artifact anywhere reporting it.
+
+    So the assertion is on the *shared* body, not on a copy of it: everything the
+    Claude Code agent file says below its frontmatter must be in the profile too. The
+    scope used declares no servers, so the one paragraph that legitimately differs —
+    the self-check, which names each harness's own carrier — is absent from both.
+    """
+    import tomllib
+
+    base = _tooled_config(tmp_path)
+    manifest = load_manifest("qe", base)
+
+    body = render_agent(manifest).split("---\n", 2)[2].strip()
+    profile = tomllib.loads(render_codex_profile(manifest))
+
+    assert profile["developer_instructions"].strip() == body
+
+
+def test_the_codex_profile_names_codex_things_and_not_claude_code_things(tmp_path):
+    """
+    Scenario: a `designer` codex session finds no Penpot tools and tries to report it
+
+    The self-check paragraph is a repair instruction the session acts on. Handed
+    Claude Code's vocabulary — "this file's frontmatter", `--agent thalamus-designer`,
+    "load them with ToolSearch" — a codex session is being told to inspect three
+    things that do not exist in its world, and the operator-actionable report the
+    paragraph exists to produce is what it loses.
+    """
+    base = _tooled_config(tmp_path)
+    rendered = render_codex_profile(
+        load_manifest("designer", base), scope_mcp_servers("designer", base)
+    )
+
+    assert "--profile thalamus-designer" in rendered
+    assert "[mcp_servers.*]" in rendered
+    for claude_ism in ("--agent", "frontmatter", "ToolSearch", "this agent file"):
+        assert claude_ism not in rendered, f"codex was handed Claude Code's `{claude_ism}`"
+
+
+def test_a_scopes_servers_reach_the_codex_profile_in_codexs_own_spelling(tmp_path):
+    """
+    Scenario: `designer` declares Penpot over HTTP; the profile must arm it on codex
+
+    The declaration this repo stores is Claude Code's — `{"type": "http", "url": ...}`.
+    Codex spells the same server without the `type` marker, taking the presence of
+    `url` as the transport. A copy rather than a translation produces a profile that
+    still parses and arms nothing, which is the failure class the self-check above
+    catches only *after* the fact; this catches it before.
+
+    Key names verified against `codex exec --strict-config` (codex-cli 0.148.0), which
+    rejects any config field it does not recognise.
+    """
+    import tomllib
+
+    base = _tooled_config(tmp_path)
+    servers = scope_mcp_servers("designer", base)
+    profile = tomllib.loads(render_codex_profile(load_manifest("designer", base), servers))
+
+    assert profile["mcp_servers"] == {"penpot": {"url": "http://127.0.0.1:8787/mcp"}}
+
+    # And a scope declaring nothing arms nothing, rather than an empty table that
+    # would read as "this scope was considered and given no tools".
+    qe = tomllib.loads(render_codex_profile(load_manifest("qe", base)))
+    assert "mcp_servers" not in qe
+
+
+def test_a_stdio_server_survives_the_trip_through_toml(tmp_path):
+    """
+    Scenario: the house `thalamus` server, which is a command with args and an env map
+
+    TOML is emitted by hand here, so the quoting is this repo's problem. An `args`
+    array mangled into a string, or an `env` map flattened into a scalar, produces a
+    profile codex either rejects or — worse — reads as a different server.
+    """
+    import tomllib
+
+    experts = tmp_path / "experts"
+    experts.mkdir()
+    (experts / "qe.yaml").write_text("scope: qe\nname: Qe\n")
+    mcp = tmp_path / "mcp"
+    mcp.mkdir()
+    (mcp / "qe.json").write_text(json.dumps({"mcpServers": {"thalamus": {
+        "command": "uv",
+        "args": ["run", "--project", "/home/ybx/code/thalamus", "thalamus-mcp"],
+        "env": {"THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin"},
+    }}}))
+
+    profile = tomllib.loads(
+        render_codex_profile(load_manifest("qe", tmp_path), scope_mcp_servers("qe", tmp_path))
+    )
+    assert profile["mcp_servers"]["thalamus"] == {
+        "command": "uv",
+        "args": ["run", "--project", "/home/ybx/code/thalamus", "thalamus-mcp"],
+        "env": {"THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin"},
+    }
+
+
+def test_a_charter_with_toml_metacharacters_still_parses(tmp_path):
+    """
+    Scenario: an expert manifest whose domain contains a quote and a backslash
+
+    The charter goes out as one TOML basic string. A quoting bug there does not fail
+    loudly — it yields a file that still parses and carries a truncated persona, which
+    is a mis-armed session with nothing reporting it.
+    """
+    import tomllib
+
+    experts = tmp_path / "experts"
+    experts.mkdir()
+    (experts / "qe.yaml").write_text(
+        'scope: qe\nname: Qe\ndomain: |\n  he said "quote", a \\ backslash,\n  and a newline\n'
+    )
+    profile = tomllib.loads(render_codex_profile(load_manifest("qe", tmp_path)))
+    assert 'he said "quote", a \\ backslash,' in profile["developer_instructions"]
+
+
+def test_the_profile_lands_where_the_profile_flag_resolves_it(tmp_path):
+    """
+    Scenario: `codex --profile thalamus-designer` for a profile nobody wrote
+
+    Codex starts a normal session with no charter, no arming and **no error**
+    (measured 2026-08-19, codex-cli 0.148.0). There is no failure for an operator to
+    notice, so the only defence is that the file is always written before the flag
+    names it — and that it lands in `$CODEX_HOME`, which is where `--profile` looks.
+    """
+    base = _tooled_config(tmp_path)
+    home = tmp_path / "codex-home"
+
+    path = write_codex_profile(load_manifest("designer", base), home=home, base=base)
+
+    assert path == home / f"{codex_profile_name('designer')}.config.toml"
+    assert path.read_text().startswith("# GENERATED")
+    assert codex_profile_name("designer") == agent_name("designer"), (
+        "one name across both harnesses, so a stale artifact is findable by one name"
+    )

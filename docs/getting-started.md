@@ -71,6 +71,7 @@ What it writes:
 | `~/.codex/config.toml` | the same MCP server, registered via `codex mcp add` |
 | `~/.claude/skills/` | symlinks to the shipped skills |
 | `~/.claude/agents/` | one derived agent per expert manifest |
+| `~/.codex/thalamus-<scope>.config.toml` | one derived codex profile per expert manifest |
 
 Useful flags: `--dry-run` (report, write nothing), `--harness claude`,
 `--harness cursor` or `--harness codex` (one editor only), `--yes` (skip the prompt in

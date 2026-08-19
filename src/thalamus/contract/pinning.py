@@ -74,6 +74,21 @@ def _cursor(where: str, *, conditions=_CURSOR_COND) -> Evidence:
     )
 
 
+_CODEX_BUILD = "codex-cli/0.148.0"
+
+
+def _codex(where: str, *, kind: str = "live-session", reask: str = "live-session",
+           conditions=(Condition.PARSE,)) -> Evidence:
+    return Evidence(
+        kind=kind,
+        at="2026-08-19",
+        where=where,
+        verified_against=_CODEX_BUILD,
+        conditions=conditions,
+        reask=reask,
+    )
+
+
 PIN_ROWS: tuple[PinRow, ...] = (
     PinRow("pin.launcher", "claude", Provision.PROVIDED, _CLAUDE,
            "`thalamus pin` and `thalamus spawn`, and the console's spawn sheet over them."),
@@ -153,6 +168,53 @@ PIN_ROWS: tuple[PinRow, ...] = (
            "The failure it prevents is silent and phone-triggered: the console's "
            "restart button would have turned a bounded window into an unbounded one, "
            "because the guard short-circuits on `main` before loading a manifest."),
+
+    PinRow("pin.launcher", "codex", Provision.PROVIDED,
+           _codex("`thalamus pin --harness codex` opens a tmux window running "
+                  "`env THALAMUS_SCOPE=<scope> codex --profile thalamus-<scope>`",
+                  kind="source-read", reask="free",
+                  conditions=()),
+           "`harness/launcher.LAUNCH_SHAPES` builds it; rooms are still refused — "
+           "`pin.ensure_room` names codex explicitly."),
+    PinRow("pin.routing", "codex", Provision.PROVIDED,
+           _codex("`SessionStart` fires with `THALAMUS_SCOPE` from the argv `env` "
+                  "prefix, at the first submitted turn rather than at launch",
+                  conditions=(Condition.INTERACTIVE,)),
+           "Environment only. `--profile` does not reach the hook payload, so the "
+           "persona flag and the routing tag are two carriers here, not one — the "
+           "distinction `persona_flag_carries_scope` exists to hold."),
+    PinRow("pin.boundary", "codex", Provision.PROVIDED,
+           _codex("`hooks/codex/role-guard.sh` matches `apply_patch`, codex's editing "
+                  "tool, against the manifest's write boundary",
+                  kind="source-read", reask="free", conditions=()),
+           "See `boundaries.py`: the path half binds and the capability half does "
+           "not, because codex's skill and artifact surfaces are unmeasured."),
+    PinRow("pin.persona", "codex", Provision.PROVIDED,
+           _codex("a `codex exec` turn under a generated profile carrying "
+                  "`developer_instructions` answered from that charter and not from "
+                  "the base config; `--profile` also parses on the interactive path"),
+           "Through `$CODEX_HOME/thalamus-<scope>.config.toml`, which "
+           "`pin.write_codex_profile` derives from the same manifest the Claude Code "
+           "agent file comes from — so the charter is one text with two carriers. "
+           "Not `model_instructions_file`, which would replace codex's built-in "
+           "instructions rather than add to them."),
+    PinRow("pin.mcp_arming", "codex", Provision.PROVIDED,
+           _codex("`mcp_servers.<id>.command|args|env|url|http_headers` were each "
+                  "accepted by `codex exec --strict-config`, which rejects unknown "
+                  "fields; a profile file is a full config layer, so the tables live "
+                  "beside the charter in one generated artifact"),
+           "Per-scope, and the one open question in this record: whether a profile's "
+           "`[mcp_servers.*]` merges with the base config's or replaces it is "
+           "undocumented and was not settled. The generator therefore writes each "
+           "scope's complete server set, which is correct under either semantics."),
+    PinRow("pin.recycle_survival", "codex", Provision.PROVIDED,
+           _codex("both carriers ride the argv — the `env` prefix and `--profile` — "
+                  "so `respawn-window` re-execs a window that is scoped and "
+                  "personified",
+                  kind="derivation", reask="free", conditions=()),
+           "One hazard this row does not cover: `--profile` naming a file that does "
+           "not exist starts a session with no charter and no error, so the launcher "
+           "writes the profile before naming it rather than relying on a failure."),
 )
 
 
@@ -178,13 +240,17 @@ def check_pinning() -> list[tuple[PinRow, str, str]]:
 
         if row.component == "pin.persona":
             # Ask the parser rather than re-reading our own table: the whole point of
-            # this row is that a vendor could add `--agent` and nobody would notice.
-            probe = probe_flag(FlagProbe(shape.binary, "--agent", ("x",)),
+            # this row is that a vendor could add or drop the flag and nobody would
+            # notice. The flag asked about is the one the shape claims — `--agent` on
+            # Claude Code, `--profile` on codex — and `--agent` for a harness claiming
+            # none, so an absence row is still falsified the day a vendor ships one.
+            flag = shape.persona_flag or "--agent"
+            probe = probe_flag(FlagProbe(shape.binary, flag, ("x",)),
                                declared=shape.persona_flag is not None)
             if probe.outcome is Outcome.CONFIRMED:
                 results.append((row, "confirmed", ""))
             elif probe.outcome is Outcome.DRIFT:
-                results.append((row, "drift", f"`{shape.binary} --agent`: {probe.detail}"))
+                results.append((row, "drift", f"`{shape.binary} {flag}`: {probe.detail}"))
             else:
                 results.append((row, probe.outcome.value, probe.detail))
             continue

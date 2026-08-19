@@ -96,6 +96,24 @@ asking. The pin lasts as long as the process.
 of addressable processes. That is also what makes the console possible: a browser tab
 per window.
 
+A pin is not one property, and the harnesses do not carry all of it. Routing and the
+boundary bind on all three. The **charter** — the scope's own text in the session's
+context — and its **per-scope MCP arming** ride a generated artifact, and only two
+harnesses have somewhere to put it: Claude Code reads `--agent thalamus-<scope>`, an
+agent file under `.claude/agents/`; codex reads `--profile thalamus-<scope>`, a
+`$CODEX_HOME/thalamus-<scope>.config.toml` whose `developer_instructions` is the same
+text and whose `[mcp_servers.*]` tables are the same servers. Cursor has neither, so a
+pinned Cursor session routes and is bounded and does not think like the expert.
+`contract/pinning.py` records this per component with its evidence, so "pinned" cannot
+quietly mean more on one harness than another.
+
+Two things about the codex carrier are worth knowing before relying on it. `--profile`
+selects the charter but tells the hooks nothing, so the scope still reaches them
+through the argv's `env` prefix — the two are separate carriers that happen to travel
+together. And a `--profile` naming a file that does not exist starts an ordinary
+session with no charter, no arming and no error, which is why the profile is written on
+every launch rather than assumed to be there.
+
 ## The federation contract
 
 One artifact doing three jobs at once:

@@ -57,7 +57,12 @@ from pathlib import Path
 
 from thalamus.harness import agents
 from thalamus.harness.agents import HARNESSES as AGENT_HARNESSES
-from thalamus.harness.pin import PROJECT_ROOT, USER_AGENTS_DIR, write_all_agents
+from thalamus.harness.pin import (
+    PROJECT_ROOT,
+    USER_AGENTS_DIR,
+    write_all_agents,
+    write_all_codex_profiles,
+)
 from thalamus.substrate.writer import graph_down_detail, probe_socket, split_ws
 
 USER_SETTINGS = Path.home() / ".claude" / "settings.json"
@@ -781,6 +786,17 @@ def install_codex(dry_run: bool = False) -> list[str]:
             _write_json(USER_CODEX_HOOKS, merged)
 
     actions.append(register_codex_mcp(dry_run=dry_run))
+
+    # The persona half, and the codex twin of `write_all_agents`. Installed rather than
+    # left to `thalamus pin` because `--profile` is reachable without a launcher, and a
+    # profile that does not exist is not an error there — `codex --profile
+    # thalamus-designer` in a fresh shell would open a session indistinguishable from
+    # the designer and carrying none of the charter.
+    if dry_run:
+        actions.append(f"would write derived codex profiles to {CODEX_HOME}")
+    else:
+        written = write_all_codex_profiles()
+        actions.append(f"wrote {len(written)} derived codex profiles to {CODEX_HOME}")
     return actions
 
 
@@ -1301,6 +1317,22 @@ def verify_codex() -> list[Check]:
         pending=not served,
     ))
 
+    # Checked rather than assumed because the failure is silent on this harness
+    # specifically: `codex --profile thalamus-designer` for a profile that was never
+    # written starts an ordinary session with no charter and no arming, exits 0, and
+    # says nothing. There is no error for the operator to notice, so the check is the
+    # notice.
+    profiles = (sorted(CODEX_HOME.glob("thalamus-*.config.toml"))
+                if CODEX_HOME.is_dir() else [])
+    checks.append(Check(
+        "derived codex profiles installed", bool(profiles),
+        f"{len(profiles)} in {CODEX_HOME}" if profiles
+        else f"none written yet to {CODEX_HOME} — `thalamus init` writes one per "
+             "expert manifest, and until it does a `--profile` pin carries no charter "
+             "and reports no error",
+        pending=not profiles,
+    ))
+
     return checks
 
 
@@ -1610,6 +1642,7 @@ def _confirm() -> bool:
         "~/.claude.json — registers the `thalamus` MCP server (via `claude mcp add`)",
         f"{USER_SKILLS_DIR} — symlinks the shipped skills",
         f"{USER_AGENTS_DIR} — writes one derived agent per expert",
+        f"{CODEX_HOME} — writes one derived codex profile per expert",
     ):
         print(f"  - {line}")
     print("\nThose hooks then run in every session on this box, in every directory,\n"
@@ -1700,6 +1733,20 @@ def uninstall(dry_run: bool = False) -> list[str]:
                 a.unlink()
     else:
         actions.append(f"no derived agents in {USER_AGENTS_DIR}")
+
+    # Matched to the generator's own name, not to `*.config.toml`: the operator's own
+    # profiles live in the same directory under names of their choosing, and a glob
+    # wide enough to catch those would make uninstall destructive.
+    profiles = (sorted(CODEX_HOME.glob("thalamus-*.config.toml"))
+                if CODEX_HOME.is_dir() else [])
+    if profiles:
+        actions.append(f"{'would remove' if dry_run else 'removed'} {len(profiles)} derived "
+                       f"codex profile(s) from {CODEX_HOME}")
+        if not dry_run:
+            for profile in profiles:
+                profile.unlink()
+    else:
+        actions.append(f"no derived codex profiles in {CODEX_HOME}")
 
     return actions
 
