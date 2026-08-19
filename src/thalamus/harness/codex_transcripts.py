@@ -51,15 +51,31 @@ Two things are genuinely different from Claude Code, and both are handled explic
    name — `tools.web__run(` is a name in a documented namespace, not a word guessed
    out of a shell line.
 
+**Two event grammars, and both are current.** codex-cli 0.148.0 replaced the flat
+per-kind events above with a single `item_completed` carrying a typed `item`:
+`UserMessage` and `AgentMessage` (text under `content: [{type, text}]` rather than a
+plain `message` string), `CommandExecution`, `Reasoning`, and `Extension` — whose
+`kind: "web.search"` is what `web_search_end` used to be. Codex's own built-ins also
+moved to plain `function_call` alongside code mode. Both grammars are read, and the
+older one is not a legacy path: rollouts written by every version the operator ever ran
+sit in the same `sessions/` tree, so a reader that followed the CLI forward would stop
+being able to distill that history.
+
+The cost of learning this late is worth recording, because the recognition rule below
+did fire and was still not enough. Records outside the grammar were counted, but the
+sweep reports that count as a warning *beside* a session it then skips as empty — so a
+68-tool-call session read as "no substantive exchange — nothing to distill", exit 0.
+Completeness of recognition is not the same property as a break being visible.
+
 **Recognition is complete and kept separate from processing**, on the same rule the
 Cursor reader states: a record this grammar does not cover is counted in
 `unrecognized` and surfaced by the sweep, never quietly dropped. That rule bites
 harder here than it reads, and deliberately. Codex's own protocol layer admits
-record kinds this module has never observed — a `function_call` from a
-non-code-mode model, an `exec_command_end` event — and they are **not** pre-declared
-as tolerated. A codex release that moves tool calls off code mode must arrive as a
-loud `unrecognized` count and not as "those sessions touched no files" (RFC 9413's
-virtuous intolerance; LangSec, Momot et al., IEEE SecDev 2016).
+record kinds this module has never observed — an `exec_command_end` event, an
+`item_completed` item type beyond the five measured — and they are **not**
+pre-declared as tolerated. A codex release that changes the grammar again must arrive
+as a loud `unrecognized` count and not as "those sessions touched no files" (RFC
+9413's virtuous intolerance; LangSec, Momot et al., IEEE SecDev 2016).
 
 **Distillation does not wait, and this is measured rather than assumed.** Cursor's
 settle loop exists because Cursor is not documented to flush before firing
@@ -122,11 +138,29 @@ _UUID_GROUPS = (8, 4, 4, 4, 12)
 # absorbed — see the module docstring on why the list is short on purpose.
 _TOP_KINDS = frozenset({"session_meta", "turn_context", "world_state",
                         "response_item", "event_msg"})
+# `function_call`/`function_call_output` are the plain function-calling shape, which
+# codex uses alongside code mode for its own built-ins (`wait`). Observed on 0.148.0;
+# the module docstring predicted them as the shape a non-code-mode model would send.
 _RESPONSE_ITEMS = frozenset({"message", "reasoning",
-                             "custom_tool_call", "custom_tool_call_output"})
+                             "custom_tool_call", "custom_tool_call_output",
+                             "function_call", "function_call_output"})
+# `item_completed` is 0.148.0's envelope: the flat per-kind events below it
+# (`user_message`, `agent_message`, `patch_apply_end`, `web_search_end`) were replaced
+# by one event carrying a typed `item`. Both grammars are read, because rollouts
+# written by either version sit in the same `sessions/` tree forever — a reader that
+# followed the CLI would stop being able to distill the operator's own history.
 _EVENT_MSGS = frozenset({"task_started", "task_complete", "user_message",
                          "agent_message", "token_count",
-                         "patch_apply_end", "web_search_end"})
+                         "patch_apply_end", "web_search_end",
+                         "item_completed", "thread_settings_applied",
+                         "turn_aborted"})
+# The `item.type` values `item_completed` carries. `CommandExecution` and `Reasoning`
+# are recognised and deliberately not counted: each is a second view of a
+# `response_item` row that is already counted, and the tool-call total is taken there.
+_COMPLETED_ITEMS = frozenset({"UserMessage", "AgentMessage", "CommandExecution",
+                              "Reasoning", "Extension"})
+# The `Extension` kind that means a fetch happened — 0.148.0's `web_search_end`.
+_WEB_EXTENSION = "web.search"
 
 # The declared API name of codex's web tool, as it appears in a code-mode call's
 # JavaScript. Matching a namespaced function name is recognition, not the shell
@@ -356,6 +390,10 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
                 program = payload.get("input")
                 if call_id and isinstance(program, str) and _INGRESS_CALL in program:
                     ingress_calls.add(str(call_id))
+            elif item == "function_call":
+                # Same event as a code-mode call — one tool invocation — so it is
+                # counted in the same total and not in a second one.
+                facts.tool_calls += 1
             elif item == "custom_tool_call_output":
                 if payload.get("call_id") in ingress_calls:
                     text = _output_text(payload.get("output"))
@@ -381,11 +419,18 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
                 if not facts.first_prompt:
                     facts.first_prompt = text.strip()
         elif item == "agent_message":
-            facts.message_count += 1
+            # Recognised, not counted. The same reply is already counted as a
+            # `response_item` message with `role: assistant` — measured 1:1 on both
+            # grammars (2/2 on 0.147.0, 30/30 on 0.148.0). Counting both surfaces
+            # reported every codex session as having twice the assistant turns it had,
+            # the same alternatives-not-additions trap `search_ends` is reconciled for.
+            pass
         elif item == "patch_apply_end":
             _record_touches(facts, payload)
         elif item == "web_search_end":
             search_ends += 1
+        elif item == "item_completed":
+            search_ends += _record_completed_item(facts, payload)
 
     # The code-mode count wins where it exists, because that is the surface whose
     # output carried the verbatim text into `external_texts`; `web_search_end` is the
@@ -393,6 +438,60 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
     facts.ingress_detected = len(ingress_calls) or search_ends
     facts.repo_root = resolve_repo_root(facts.cwd)
     return facts
+
+
+def _item_text(item: dict) -> str:
+    """The text of an `item_completed` message item.
+
+    0.148.0 carries it as `content: [{type: "text", text: ...}]` where the flat events
+    carried a plain `message` string. Parts other than `text` are skipped rather than
+    stringified — an image part rendered as its repr would land in `first_prompt`.
+    """
+    content = item.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts = [p.get("text") for p in content
+             if isinstance(p, dict) and isinstance(p.get("text"), str)]
+    return "\n".join(part for part in parts if part)
+
+
+def _record_completed_item(facts: TranscriptFacts, payload: dict) -> int:
+    """Fold one 0.148.0 `item_completed` event in. Returns fetches to add.
+
+    Counts the two things this envelope is the *only* surface for — the operator's
+    prompts and a `web.search` extension — and deliberately counts nothing else. Its
+    `CommandExecution` and `Reasoning` items restate `response_item` rows that are
+    already counted, so folding them in would inflate the same totals twice.
+
+    An unknown `item.type` increments `unrecognized` rather than being ignored, on the
+    module's standing rule: the next grammar change has to arrive as a number somebody
+    reads. That rule is what surfaced this one — but only as a warning beside a session
+    the sweep then skipped as empty, which is why the recognition count alone was not
+    enough to make the break visible.
+    """
+    item = payload.get("item")
+    if not isinstance(item, dict):
+        facts.unrecognized += 1
+        return 0
+    kind = item.get("type")
+    if kind not in _COMPLETED_ITEMS:
+        facts.unrecognized += 1
+        return 0
+
+    if kind == "UserMessage":
+        text = _item_text(item)
+        if text.strip():
+            facts.user_turns += 1
+            # No command/prompt split, for the reason the flat grammar's branch gives:
+            # codex handles slash commands in the TUI and they never reach the rollout.
+            facts.prompt_turns += 1
+            if not facts.first_prompt:
+                facts.first_prompt = text.strip()
+    elif kind == "Extension" and item.get("kind") == _WEB_EXTENSION:
+        return 1
+    return 0
 
 
 def _record_touches(facts: TranscriptFacts, payload: dict) -> None:
