@@ -4,10 +4,16 @@ Interfaces: thalamus.harness.codex_transcripts.{session_id_of, discover,
 claim_unresolved, parse, to_session_graph}, thalamus.harness.extraction.render_digest
 and its jsonl-events envelope reader.
 
-Every fixture below is written in the shape **measured** from a live codex-cli 0.147.0
-rollout on 2026-08-17, including the two facts that make this reader different from
-the Cursor one: rows are `{timestamp, type, payload}`, and a tool call is a code-mode
-`custom_tool_call` whose structured twin is an `event_msg`.
+Every fixture below is written in the shape **measured** from a live codex rollout,
+including the two facts that make this reader different from the Cursor one: rows are
+`{timestamp, type, payload}`, and a tool call is a code-mode `custom_tool_call` whose
+structured twin is an `event_msg`.
+
+**Two grammars, both measured, both live.** The `_user`/`_assistant` fixtures are
+codex-cli 0.147.0 (2026-08-17); the `_*_v148` ones are 0.148.0 (2026-08-19), where the
+flat per-kind events were replaced by one `item_completed` carrying a typed `item`.
+Rollouts written by either version sit in the same `sessions/` tree forever, so the
+older grammar is not superseded and is not a legacy path — it is half the corpus.
 """
 
 import json
@@ -44,6 +50,22 @@ def _user(text):
 def _assistant(text):
     return _row("event_msg", {"type": "agent_message", "message": text},
                 ts="2026-08-18T06:50:44.000Z")
+
+
+def _completed(item, ts="2026-08-18T06:50:44.000Z"):
+    """A 0.148.0 `item_completed` event, the envelope that replaced the flat kinds."""
+    return _row("event_msg", {"type": "item_completed", "item": item}, ts=ts)
+
+
+def _user_v148(text):
+    return _completed({"type": "UserMessage", "id": "i1",
+                       "content": [{"type": "text", "text": text}]},
+                      ts="2026-08-18T06:50:37.000Z")
+
+
+def _assistant_v148(text):
+    return _completed({"type": "AgentMessage", "id": "i2", "phase": "final",
+                       "content": [{"type": "text", "text": text}]})
 
 
 def _exec_call(call_id, cmd):
@@ -269,12 +291,17 @@ class TestParse:
 
     def test_an_unknown_record_is_counted_and_never_absorbed(self, tmp_path):
         """Silent tolerance turns "codex changed the format" into "that session had
-        fewer turns". Recognition is complete and kept apart from processing."""
+        fewer turns". Recognition is complete and kept apart from processing.
+
+        The example rows are deliberately shapes codex does not send. `function_call`
+        used to be one of them and is now covered — 0.148.0 sends it for codex's own
+        `wait` built-in — so it moved out of this test and into the grammar.
+        """
         path = _write(tmp_path, [
             _meta(), _user("hi"),
             _row("brand_new_top_level_kind", {"type": "whatever"}),
             _row("event_msg", {"type": "some_future_event"}),
-            _row("response_item", {"type": "function_call", "name": "shell"}),
+            _row("response_item", {"type": "some_future_item", "name": "shell"}),
         ])
         facts = ct.parse(path)
 
@@ -297,6 +324,136 @@ class TestParse:
         ])
 
         assert ct.parse(path).cwd == "/home/op/code/thalamus"
+
+
+class TestGrammar148:
+    """codex-cli 0.148.0's `item_completed` envelope.
+
+    The break this class exists for was silent and total: with only the 0.147.0
+    grammar, a real 68-tool-call session parsed to zero user turns and was reported as
+    "no substantive exchange — nothing to distill", exit 0. Every codex session
+    recorded after the CLI updated was undistillable and nothing said so.
+    """
+
+    def test_the_operators_prompt_survives_the_envelope_change(self, tmp_path):
+        """`UserMessage` is the only surface carrying the operator's own words on this
+        grammar — `response_item` user rows are still the injected context block — so
+        missing it is the whole session's first_prompt and turn count."""
+        path = _write(tmp_path, [
+            _meta(), _user_v148("do the thing"), _assistant_v148("did it"),
+            _task_complete(),
+        ])
+        facts = ct.parse(path)
+
+        assert facts.user_turns == 1 and facts.prompt_turns == 1
+        assert facts.first_prompt == "do the thing"
+        assert facts.unrecognized == 0
+
+    def test_both_grammars_read_the_same_session_the_same_way(self, tmp_path):
+        """One rollout tree holds files from both CLI versions. A reader that followed
+        the CLI forward would stop being able to distill the operator's own history."""
+        old_way = ct.parse(_write(tmp_path, [
+            _meta(), _user("do the thing"), _assistant("did it"), _task_complete(),
+        ], name=ROLLOUT))
+        new_way = ct.parse(_write(tmp_path, [
+            _meta(), _user_v148("do the thing"), _assistant_v148("did it"),
+            _task_complete(),
+        ], name=f"rollout-2026-08-17T23-50-37-{SESSION}.jsonl"))
+
+        for field in ("user_turns", "prompt_turns", "first_prompt",
+                      "message_count", "unrecognized"):
+            assert getattr(old_way, field) == getattr(new_way, field), field
+
+    def test_an_assistant_reply_is_counted_once_though_two_rows_carry_it(self, tmp_path):
+        """Measured 1:1 on both grammars — 2/2 on 0.147.0, 30/30 on 0.148.0. The event
+        and the `response_item` are two views of one reply, the same
+        alternatives-not-additions trap the ingress count is reconciled for, and
+        counting both reported every codex session with twice the turns it had."""
+        path = _write(tmp_path, [
+            _meta(),
+            _user_v148("hi"),
+            _row("response_item", {"type": "message", "role": "assistant",
+                                   "content": [{"type": "output_text", "text": "hello"}]}),
+            _assistant_v148("hello"),
+            _task_complete(),
+        ])
+
+        assert ct.parse(path).message_count == 1
+
+    def test_a_wait_call_is_a_tool_call_not_an_unknown_record(self, tmp_path):
+        """0.148.0 sends codex's own built-ins through plain function calling while
+        everything else stays code mode, so one session carries both shapes and the
+        total has to span them."""
+        path = _write(tmp_path, [
+            _meta(), _user_v148("hi"),
+            _exec_call("c1", ["ls"]), _output("c1", "a\nb\n"),
+            _row("response_item", {"type": "function_call", "name": "wait",
+                                   "call_id": "call_x", "arguments": "{}"}),
+            _row("response_item", {"type": "function_call_output",
+                                   "call_id": "call_x", "output": "done"}),
+            _task_complete(),
+        ])
+        facts = ct.parse(path)
+
+        assert facts.tool_calls == 2
+        assert facts.unrecognized == 0
+
+    def test_a_web_search_extension_is_the_fetch_the_old_event_reported(self, tmp_path):
+        """`web_search_end` became an `Extension` item keyed `web.search`. Losing it
+        would floor the ingress count to zero and read as "this session fetched
+        nothing" rather than as "we cannot tell"."""
+        path = _write(tmp_path, [
+            _meta(), _user_v148("hi"),
+            _completed({"type": "Extension", "kind": "web.search", "id": "exec-1",
+                        "query": "remotion render",
+                        "action": {"type": "search", "queries": ["remotion render"]}}),
+            _task_complete(),
+        ])
+
+        assert ct.parse(path).ingress_detected == 1
+
+    def test_an_extension_that_is_not_a_fetch_is_not_counted_as_one(self, tmp_path):
+        """`Extension` is a family, not a synonym for search. Counting the family
+        would invent ingress for sessions that never left the machine."""
+        path = _write(tmp_path, [
+            _meta(), _user_v148("hi"),
+            _completed({"type": "Extension", "kind": "some.other", "id": "exec-2"}),
+            _task_complete(),
+        ])
+        facts = ct.parse(path)
+
+        assert facts.ingress_detected == 0
+        assert facts.unrecognized == 0, "recognised as an Extension, just not a fetch"
+
+    def test_a_restated_row_is_recognised_without_being_counted_twice(self, tmp_path):
+        """`CommandExecution` and `Reasoning` items restate `response_item` rows the
+        parser already counts. They must not raise `unrecognized` — that would report
+        a format break every session — and must not raise the totals either."""
+        path = _write(tmp_path, [
+            _meta(), _user_v148("hi"),
+            _exec_call("c1", ["ls"]), _output("c1", "a\n"),
+            _completed({"type": "CommandExecution", "id": "i9", "command": "ls",
+                        "exit_code": 0, "status": "completed", "stdout": "a\n"}),
+            _completed({"type": "Reasoning", "id": "i8", "content": []}),
+            _row("event_msg", {"type": "thread_settings_applied", "turn_id": "t1"}),
+            _row("event_msg", {"type": "turn_aborted", "turn_id": "t1"}),
+            _task_complete(),
+        ])
+        facts = ct.parse(path)
+
+        assert facts.tool_calls == 1
+        assert facts.unrecognized == 0
+
+    def test_an_unknown_item_type_is_still_counted_as_a_break(self, tmp_path):
+        """The envelope must not become a hole the next grammar change falls through.
+        Recognition stays complete one level down."""
+        path = _write(tmp_path, [
+            _meta(), _user_v148("hi"),
+            _completed({"type": "SomeFutureItem", "id": "i7"}),
+            _task_complete(),
+        ])
+
+        assert ct.parse(path).unrecognized == 1
 
 
 class TestSessionGraph:
