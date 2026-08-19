@@ -160,8 +160,14 @@ class TestDerivedRows:
         # that the count moved by exactly the one script the test added, which is the
         # property. A hardcoded pair asserts today's wiring instead, and goes red on
         # every legitimate hook — twice already.
-        declared = install.DECLARED_HOOK_PARITY.claude_scripts
-        assert f"declared {declared}, computed {declared + 1}" in result.detail
+        observed = probes.DERIVATIONS["hook_parity"]()
+        declared = install.DECLARED_HOOK_PARITY.scripts["claude"]
+        assert observed["scripts"]["claude"] == declared + 1
+        # And the newcomer reads as missing from every *other* harness, which is the
+        # half a bare count cannot say: a script wired on one harness alone is either
+        # a deliberate asymmetry or a port nobody finished, and the record has to name
+        # it either way.
+        assert all("newly-added.sh" in names for names in observed["missing"].values())
 
     def test_only_declared_fields_are_compared(self):
         # A partial declaration is checked on what it names and stays silent on the
@@ -188,11 +194,15 @@ class TestDerivedRows:
         """
         from thalamus.harness.install import DECLARED_HOOK_PARITY
 
-        assert "post-tool-use.sh" in DECLARED_HOOK_PARITY.claude_only
-        assert "post-tool-use.sh" not in DECLARED_HOOK_PARITY.real_gaps
+        assert "post-tool-use.sh" in DECLARED_HOOK_PARITY.missing["cursor"]
+        assert "post-tool-use.sh" not in DECLARED_HOOK_PARITY.real_gaps("cursor")
+        # And it is not a gap on codex at all: codex's payload names MCP tools
+        # `mcp__thalamus__<tool>` exactly as Claude Code does, so the real script is
+        # wired there under its own name rather than renamed.
+        assert "post-tool-use.sh" not in DECLARED_HOOK_PARITY.missing["codex"]
 
     def test_a_native_path_is_not_counted_as_a_gap_either(self):
-        """`role-guard.sh` is wired for Claude Code only and binds on Cursor anyway.
+        """`role-guard.sh` is unwired for Cursor and binds there anyway.
 
         Cursor translates `~/.claude/settings.json` into its own event names, so the
         guard runs there through the vendor's path with nothing under `.cursor/`.
@@ -202,9 +212,28 @@ class TestDerivedRows:
         """
         from thalamus.harness.install import DECLARED_HOOK_PARITY
 
-        assert "role-guard.sh" in DECLARED_HOOK_PARITY.claude_only
-        assert "role-guard.sh" in DECLARED_HOOK_PARITY.native
-        assert DECLARED_HOOK_PARITY.real_gaps == ("recipe-stage.sh", "room-guard.sh")
+        assert "role-guard.sh" in DECLARED_HOOK_PARITY.missing["cursor"]
+        assert "role-guard.sh" in DECLARED_HOOK_PARITY.native["cursor"]
+        assert DECLARED_HOOK_PARITY.real_gaps("cursor") == ("recipe-stage.sh",
+                                                            "room-guard.sh")
+
+    def test_the_native_exemption_does_not_carry_to_a_harness_that_earned_none(self):
+        """Codex has no `native` entry, and the record must not lend it Cursor's.
+
+        The two look identical from a name-set difference — a script Claude Code wires
+        and another harness does not — and they are opposite facts. Cursor reads
+        `~/.claude/settings.json` and runs the guard through the vendor's own path;
+        codex does not read that file at all (measured: three codex sessions with the
+        Claude Code suite installed at user scope fired none of it), so anything
+        absent from its table simply does not run. A `native` field keyed per harness
+        is what keeps the two apart; a flat one would have exempted both.
+        """
+        from thalamus.harness.install import DECLARED_HOOK_PARITY
+
+        assert "codex" not in DECLARED_HOOK_PARITY.native
+        # `room-guard.sh` matches `SendMessage`, a tool codex has no analogue of, so
+        # it stands as a declared gap rather than a quiet exemption.
+        assert DECLARED_HOOK_PARITY.real_gaps("codex") == ("room-guard.sh",)
 
 
 class TestBoundaryRows:

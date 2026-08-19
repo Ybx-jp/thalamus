@@ -120,6 +120,21 @@ WIRING_REQUIREMENT: dict[str, tuple[str, str]] = {
     "room_boundary.message": ("room-guard.sh", "SendMessage"),
 }
 
+# The tool names above are Claude Code's. Where a harness names the same operation
+# differently, the alias is declared rather than the requirement duplicated: the
+# obligation is one thing, and a second row per harness would let the two drift.
+# Codex's editing tool is `apply_patch`, measured against a live `codex exec` turn —
+# it carries a patch envelope on `tool_input.command` and no `file_path` at all, which
+# is why `hooks/codex/role-guard.sh` is an adapter rather than a delegator.
+HARNESS_TOOL_ALIASES: dict[str, dict[str, str]] = {
+    "codex": {"Write": "apply_patch"},
+}
+
+# Which table a harness's wiring lives in. Named here rather than branched inside the
+# check, so a harness with no table fails loudly instead of being checked against
+# Claude Code's and reported as confirmed.
+_WIRING_TABLES = {"claude": "HOOK_WIRING", "codex": "CODEX_HOOK_WIRING"}
+
 _WIRED = Evidence(
     kind="derivation",
     at="2026-08-12",
@@ -136,6 +151,23 @@ _WIRED = Evidence(
 # run cannot observe a modal, which is the whole subject of the room row.
 _CURSOR_LIVE = "cursor/2026.08.11-e8db854"
 _CURSOR_COND = (Condition.PARSE, Condition.PRINT)
+
+# Codex's rows split the same way, and more cleanly, because codex does not read
+# `~/.claude/settings.json` at all — measured, three sessions with the Claude Code
+# suite installed at user scope fired none of it. So nothing binds there through a
+# vendor path, every enforcing row is one this repo wired, and the wiring half
+# re-asks itself for free against our own table. What still needs a live session is
+# the *vocabulary*: whether a tool name exists to match on at all.
+_CODEX_LIVE = "codex-cli/0.147.0"
+_WIRED_CODEX = Evidence(
+    kind="derivation",
+    at="2026-08-18",
+    where="install.CODEX_HOOK_WIRING — the guard is wired on a matcher naming the "
+          "tool, and the tool names are the ones a live `codex exec` turn sent",
+    verified_against="install.CODEX_HOOK_WIRING",
+    conditions=(),
+    reask="free",
+)
 
 BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
     BoundaryRow(
@@ -187,6 +219,84 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "first; it was once declared here and never armed, so every room reported a "
         "treatment that had not occurred, which is why this row is "
         "recomputed rather than believed.",
+    ),
+    BoundaryRow(
+        "write_boundary.path", "codex", Provision.PROVIDED, _WIRED_CODEX,
+        "Through `hooks/codex/role-guard.sh`, the one adapter in that directory. "
+        "Codex's editing tool is `apply_patch` and its argument is a patch envelope "
+        "naming several files with no `file_path` anywhere, so the adapter lifts one "
+        "path per header line — `*** Add File:` / `*** Update File:` / "
+        "`*** Delete File:` / `*** Move to:` — and calls the guard once per path. "
+        "That is parsing a declared grammar, the line `harness/transcripts.py` draws "
+        "when it refuses to infer touched files from a shell command. The first "
+        "denial denies the whole call, because a patch applies atomically and a "
+        "partial verdict has no meaning.",
+    ),
+    BoundaryRow(
+        "path_ownership.path", "codex", Provision.PROVIDED, _WIRED_CODEX,
+        "Same route as write_boundary.path, and it binds `main` here as it does on "
+        "Claude Code — which is what makes wiring the adapter worth its cost on a "
+        "harness with no expert personas yet.",
+    ),
+    BoundaryRow(
+        "capability_boundary.mcp_tool", "codex", Provision.PROVIDED, _WIRED_CODEX,
+        "Codex registers an MCP tool as `mcp__<server>__<tool>` — measured for "
+        "`thalamus`, whose calls arrived as `mcp__thalamus__memory_open_threads` — so "
+        "the name a `designer` session's Penpot calls carry is the one the Claude "
+        "Code matcher already names, and the adapter passes those payloads through "
+        "untouched rather than translating anything.",
+    ),
+    BoundaryRow(
+        "capability_boundary.tool", "codex", Provision.UNKNOWN,
+        Evidence(
+            kind="live-session",
+            at="2026-08-18",
+            where="a `codex exec` turn that ran a shell command, edited a file and "
+                  "called an MCP tool produced exactly three hook tool names — "
+                  "`Bash`, `apply_patch`, `mcp__thalamus__memory_open_threads`; no "
+                  "artifact-publishing surface was exercised",
+            verified_against=_CODEX_LIVE,
+            conditions=(Condition.PARSE, Condition.PRINT),
+            reask="live-session",
+        ),
+        "UNKNOWN rather than ABSENT, and the distinction is the whole point of the "
+        "state: nothing was published in the probe, so nothing was observed either "
+        "way. `Artifact` is deliberately absent from the codex matcher — a matcher "
+        "naming a tool nobody has seen reads as enforcement and is not.",
+    ),
+    BoundaryRow(
+        "capability_boundary.skill", "codex", Provision.UNKNOWN,
+        Evidence(
+            kind="live-session",
+            at="2026-08-18",
+            where="`$CODEX_HOME/skills/` exists and is populated; no probe invoked a "
+                  "skill, so no tool name for it has been observed",
+            verified_against=_CODEX_LIVE,
+            conditions=(Condition.PARSE, Condition.PRINT),
+            reask="live-session",
+        ),
+        "Codex has a skills directory, so the referent plausibly exists — which is "
+        "exactly why this may not be written ABSENT. The Cursor row next to it was "
+        "settled by watching what a skill invocation actually emitted; nothing "
+        "equivalent has been run here.",
+    ),
+    BoundaryRow(
+        "room_boundary.message", "codex", Provision.ABSENT,
+        Evidence(
+            kind="live-session",
+            at="2026-08-18",
+            where="the same three-tool vocabulary: no `SendMessage` analogue, and "
+                  "`harness/pin.py` refuses to open a codex room at all",
+            verified_against=_CODEX_LIVE,
+            conditions=(Condition.PARSE, Condition.PRINT),
+            reask="live-session",
+        ),
+        "Two absences, and only one of them is about codex. There is no tool-name "
+        "channel to guard, as on Cursor — so `room-command-guard.sh` is wired on "
+        "`Bash` and is the only shape the boundary could take. And there is no codex "
+        "room for it to bound yet, so the guard stands armed over a condition no "
+        "codex session meets: it fires only when THALAMUS_ROOM is set. Wired now "
+        "because the alternative is a boundary that arrives after the first room.",
     ),
     BoundaryRow(
         "write_boundary.path", "cursor", Provision.NATIVE,
@@ -274,7 +384,7 @@ def check_boundaries() -> list[tuple[BoundaryRow, str, str]]:
     that is the honest state of a claim about a vendor's undocumented behaviour, and
     it belongs in the unchecked count rather than in a comment.
     """
-    from thalamus.harness.install import HOOK_WIRING
+    from thalamus.harness import install
 
     results = []
     for row in BOUNDARY_ROWS:
@@ -286,9 +396,11 @@ def check_boundaries() -> list[tuple[BoundaryRow, str, str]]:
             continue
 
         script, tool = WIRING_REQUIREMENT[row.boundary]
+        tool = HARNESS_TOOL_ALIASES.get(row.harness, {}).get(tool, tool)
+        wiring = getattr(install, _WIRING_TABLES[row.harness])
         wired = any(
             hook_script == script and matcher is not None and tool in matcher.split("|")
-            for _, matcher, hook_script in HOOK_WIRING
+            for _, matcher, hook_script in wiring
         )
         if wired == (row.state is Provision.PROVIDED):
             results.append((row, "confirmed", ""))

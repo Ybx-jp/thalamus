@@ -12,15 +12,26 @@ Deliberately a leaf module — it imports nothing from Thalamus, so both
 `harness/extraction.py` (which already depends on `eval/`) and `eval/arms.py`
 can use it without a cycle.
 
-**Capability is declared, not assumed.** The two CLIs are near-identical for
-extraction — both take `-p`, `--model` and `--output-format json`, and both
+**Capability is declared, not assumed.** Claude Code and Cursor are near-identical
+for extraction — both take `-p`, `--model` and `--output-format json`, and both
 return an envelope carrying `result`, `is_error` and `duration_ms` under those
-exact names — and quite different everywhere else. Rather than let each caller
-rediscover that, each entry states what it can and cannot do, and callers refuse
-loudly on the gaps instead of substituting a binary and hoping. The alternative
-— swapping `claude` for `agent` everywhere and seeing what breaks — produces
-surfaces that run and report success while measuring nothing, which is the
-failure class this project has already paid for twice.
+exact names. Codex agrees on none of it: `-p` is `--profile` there, print mode is
+the `exec` subcommand, and `--json` streams a line per event instead of one object
+(measured 2026-08-17, codex-cli 0.147.0). Rather than let each caller rediscover
+that, each entry states what it can and cannot do, and callers refuse loudly on
+the gaps instead of substituting a binary and hoping. The alternative — swapping
+one binary for another everywhere and seeing what breaks — produces surfaces that
+run and report success while measuring nothing, which is the failure class this
+project has already paid for twice.
+
+**Two discriminators, because the two things vary independently.** `invocation`
+says how the CLI is asked, `envelope` says how its answer is read. Cursor is the
+proof they are separate axes: it shares Claude Code's argv shape exactly and still
+differs in what the envelope carries (tokens, no price). One field covering both
+would have to be a harness name in disguise, which is the fork this module exists
+to replace. Neither field holds a callable: a row holding a function is no longer
+data that can be listed, diffed or serialized (`contract/probes.py`), and the
+readers therefore live with `ExtractionRun` in `harness/extraction.py`.
 """
 
 from __future__ import annotations
@@ -41,18 +52,27 @@ CLAUDE_DEFAULT_MODEL = "sonnet"
 # and `MODEL_HINT` turns that failure into one command's worth of fixing.
 CURSOR_DEFAULT_MODEL = "composer-2.5"
 
+# Codex's mid-catalog frontier slug, on the same trade Cursor's pick was made on:
+# distillation is a batch sweep where nothing waits on the result, so quality beats
+# latency and cost beats the top tier. `gpt-5.6-sol` is the catalog default (priority
+# 1) and is the one being declined; both are real identifiers.
+#
+# Verified against a live `codex debug models` (2026-08-17, codex-cli 0.147.0), which
+# renders the raw catalog as JSON and — unlike Cursor's — answers without auth.
+CODEX_DEFAULT_MODEL = "gpt-5.6-terra"
+
 MODEL_HINT = "run `agent --list-models` for the accepted identifiers"
+CODEX_MODEL_HINT = "run `codex debug models` for the accepted identifiers"
 
 # The sandbox a headless Thalamus subprocess runs in, named in two ways because
 # each one is visible to a different observer.
 #
-# A headless `claude -p` / `agent -p` is a full session to its own harness: it
-# gets a session id, a transcript on disk, and — because the hook suite is
-# installed at user scope — it fires SessionEnd, which distills it. The result is
-# memory *about the act of making memory*: a Session whose summary paraphrases
-# the session it was distilling, its own Claims and open Threads, and its own
-# headless run behind it, one level deeper. A sandbox is not a session and must
-# leave no memory.
+# A headless run is a full session to its own harness: it gets a session id, a
+# transcript on disk, and — because the hook suite is installed at user scope — it
+# fires SessionEnd, which distills it. The result is memory *about the act of making
+# memory*: a Session whose summary paraphrases the session it was distilling, its own
+# Claims and open Threads, and its own headless run behind it, one level deeper. A
+# sandbox is not a session and must leave no memory.
 #
 # `SANDBOX_ENV` marks the subprocess so every hook the sandbox inherits can
 # recognise itself and decline (hooks are children of the CLI, so the marker
@@ -60,6 +80,11 @@ MODEL_HINT = "run `agent --list-models` for the accepted identifiers"
 # is what the transcript *reader* sees — a transcript already on disk carries no
 # environment, so retroactive sweeps (`thalamus bootstrap`, an explicit
 # `thalamus extract -- <dir>`) need the second name to refuse the same input.
+#
+# Both are belt and braces where a harness can simply be told not to write: codex
+# takes `--ephemeral`, so its sandbox leaves no transcript for a reader to reach in
+# the first place. Where a CLI offers that, the flag is declared in
+# `headless_preconditions` and these two remain as the floor for the ones that do not.
 SANDBOX_ENV = "THALAMUS_SANDBOX"
 SANDBOX_TMP_PREFIX = "thalamus-extract-"
 
@@ -115,9 +140,42 @@ class AgentCLI:
     # precondition the other lacks, and a method returning a single argv had
     # nowhere to say so.
     headless_preconditions: tuple[str, ...] = field(default_factory=tuple)
+    # How this CLI is asked to run one non-interactive turn.
+    #
+    #   "print" — a flag on the bare binary (`claude -p …`, `agent -p …`)
+    #   "exec"  — a subcommand (`codex exec …`)
+    #
+    # Declared rather than derived from the binary name, because the difference is
+    # not cosmetic: on codex `-p` is `--profile`, so the print-mode argv would parse,
+    # run, and mean something else entirely. That is the failure this field exists
+    # to make impossible to reach by accident.
+    invocation: str = "print"
+    # How this CLI's answer is read back.
+    #
+    #   "object"       — one JSON object on stdout: `result`, `is_error`, `duration_ms`
+    #   "jsonl-events" — a line per event, terminated by a final `turn.completed`
+    #
+    # Separate from `invocation` because the two axes are independent, and Cursor is
+    # the standing proof: identical argv shape to Claude Code, different envelope
+    # contents. Collapsing them would key the reader to the caller's flags, which is
+    # true today by coincidence and not by anything either vendor promised.
+    envelope: str = "object"
 
     def argv(self, model: str) -> list[str]:
-        """The print-mode invocation, plus whatever this CLI needs to run at all."""
+        """The non-interactive invocation, plus whatever this CLI needs to run at all.
+
+        `headless_preconditions` comes last on both dialects, and on codex it carries
+        the real weight: outside a git repo `codex exec` refuses with
+        "Not inside a trusted directory and --skip-git-repo-check was not specified"
+        and exits 1 *before* any network call (measured 2026-08-17). The extraction
+        sandbox is a fresh `mkdtemp`, so without the flag every extraction fails
+        having done no work — the same wall Cursor's `--trust` answers.
+        """
+        if self.invocation == "exec":
+            return [
+                self.binary, "exec", "--json", "--model", model,
+                *self.headless_preconditions,
+            ]
         return [
             self.binary, "-p", "--model", model, "--output-format", "json",
             *self.headless_preconditions,
@@ -160,6 +218,37 @@ AGENT_CLIS: dict[str, AgentCLI] = {
             "the run envelope is read for num_turns, which Cursor does not report",
             "escape detection and session-fault classification read Claude Code's "
             "error strings, which Cursor's envelope does not carry",
+        ),
+    ),
+    "codex": AgentCLI(
+        harness="codex",
+        binary="codex",
+        default_model=CODEX_DEFAULT_MODEL,
+        # `turn.completed` carries a `usage` block — input_tokens, cached_input_tokens,
+        # cache_write_input_tokens, output_tokens, reasoning_output_tokens — and no
+        # dollar figure anywhere. Same gap as Cursor's and for the same reason: pricing,
+        # not instrumentation.
+        reports_cost=False,
+        model_hint=CODEX_MODEL_HINT,
+        invocation="exec",
+        envelope="jsonl-events",
+        # `--skip-git-repo-check` answers the trust refusal and nothing else — the
+        # narrow flag, the way `--trust` was chosen over `--force` on Cursor.
+        # `--ephemeral` ("run without persisting session files to disk") closes the
+        # self-distillation loop at its source rather than downstream of it: with no
+        # rollout on disk there is no session for a later sweep to find, so the
+        # `is_sandbox_cwd` reader-side refusal has nothing left to catch. `SANDBOX_ENV`
+        # still rides the environment, because hooks fire either way and they are what
+        # the marker is for.
+        headless_preconditions=("--skip-git-repo-check", "--ephemeral"),
+        arm_blockers=(
+            "credential staging copies ~/.claude.json and "
+            "~/.claude/.credentials.json into the arm HOME; codex authenticates from "
+            "$CODEX_HOME/auth.json, which CODEX_HOME moves",
+            "`codex exec` has no turn-limit flag, so an arm cannot bound turns",
+            "the run envelope is read for num_turns, which codex does not report",
+            "escape detection and session-fault classification read Claude Code's "
+            "error strings, which codex's event stream does not carry",
         ),
     ),
 }

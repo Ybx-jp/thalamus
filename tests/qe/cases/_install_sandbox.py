@@ -15,6 +15,19 @@ would silently send it to the operator's real `~/.claude`. Setting `HOME` for a 
 moves all of them at once and needs no list — the property
 `home-redirection-moves-every-path` exists to keep that premise true.
 
+**One pair is derived from the environment instead, and that is a different failure
+mode.** `USER_CODEX_HOOKS` and `USER_CODEX_MCP` hang off `CODEX_HOME`, which reads
+`os.environ` first and falls back to `Path.home() / ".codex"`. The fallback is what
+`HOME` moves; the env var is not, and it is inherited from the parent's environment by
+construction (`env = dict(os.environ)`). So on a box where `CODEX_HOME` is exported —
+by a shell profile, by a room, by another test — the redirect is silently defeated for
+those two paths alone and the probe writes the operator's real codex hooks file while
+every other target lands in the throwaway home. Unsetting it in the child is what keeps
+the premise above true of all seven, and is the same treatment `THALAMUS_ARCHIVE_DIR`
+gets in `_run` for the same reason. This is not the containment failure described
+below: nothing leaks past a correct redirect here, the redirect is simply not the thing
+being read.
+
 Three things `HOME` does not contain. The first is stubbed on `PATH`, the other two in
 the child:
 
@@ -30,12 +43,27 @@ the child:
   `PATH` rather than patching around it is the idiom `tests/test_spawn_settle.py` already
   uses to keep a real tmux off the operator's server.
 
+  `codex` is shadowed the same way and for the same reason. `verify_codex()` calls
+  `codex_mcp_registration()`, which runs `codex mcp get thalamus`; the CLI resolves its
+  own config root rather than taking ours, and it is present on some boxes and absent on
+  CI, so an unshimmed probe reports on whether codex is installed. The shim's non-zero
+  exit is the documented "nothing registered" answer there too.
+
 - `register_mcp` / `deregister_mcp` shell out to `claude mcp add|remove`, and
   `~/.claude.json` is **not** reliably contained by overriding `HOME` for that child —
   measured while `--uninstall` was being written (`9bcd7c7`): a removal run against a
   throwaway home wrote its backup into the fake home and edited the real file anyway,
   deregistering the box's actual server. Stubbing the two named seams is what makes this
   probe safe to run on a developer's machine.
+
+  `register_codex_mcp` / `deregister_codex_mcp` are the sharper version of the same
+  hazard and are stubbed alongside them. They shell out to `codex mcp add|remove`, which
+  resolves `$CODEX_HOME` itself and writes `config.toml` — a file that is codex's, not
+  ours, and that carries the operator's per-project `trust_level` records and the
+  `[hooks.state]` hook-trust hashes next to the server table. Unstubbed, a run of this
+  suite registers the thalamus MCP server in the operator's real codex config as a side
+  effect of asserting that the installer is well behaved. The four seams are named
+  functions in `install.py` precisely so a test has one place to cut.
 - The four `PROJECT_*` constants anchor on the checkout, and `install()` *strips* the
   project-scope hook block and MCP entry it finds there. Unredirected, this probe would
   edit tracked files in the operator's working tree. They are pointed at the temp dir.
@@ -69,6 +97,8 @@ for _name in ("PROJECT_SETTINGS", "PROJECT_MCP", "PROJECT_CURSOR_HOOKS", "PROJEC
     setattr(install, _name, tmp / "project" / getattr(install, _name).name)
 install.register_mcp = lambda dry_run=False: "mcp: stubbed"
 install.deregister_mcp = lambda dry_run=False: "mcp: stubbed"
+install.register_codex_mcp = lambda dry_run=False: "codex mcp: stubbed"
+install.deregister_codex_mcp = lambda dry_run=False: "codex mcp: stubbed"
 
 
 def tree():
@@ -116,6 +146,8 @@ print(json.dumps({
         "USER_AGENTS_DIR": str(install.USER_AGENTS_DIR),
         "USER_CURSOR_HOOKS": str(install.USER_CURSOR_HOOKS),
         "USER_CURSOR_MCP": str(install.USER_CURSOR_MCP),
+        "USER_CODEX_HOOKS": str(install.USER_CODEX_HOOKS),
+        "USER_CODEX_MCP": str(install.USER_CODEX_MCP),
     },
     "package_skills": [str(p.resolve()) for p in install.shipped_skills()],
     "install_actions": actions,
@@ -179,18 +211,25 @@ def _run(timeout: float) -> Probe | str:
     with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as proj:
         shim_dir = Path(proj) / "bin"
         shim_dir.mkdir()
-        shim = shim_dir / "claude"
-        shim.write_text("#!/bin/sh\n# qe: the vendor CLI writes to a home it resolves "
-                        "itself. Answer 'not registered' and touch nothing.\nexit 1\n")
-        shim.chmod(0o755)
+        for name in ("claude", "codex"):
+            shim = shim_dir / name
+            shim.write_text("#!/bin/sh\n# qe: the vendor CLI writes to a config root it "
+                            "resolves itself. Answer 'not registered' and touch "
+                            "nothing.\nexit 1\n")
+            shim.chmod(0o755)
 
         env = dict(os.environ)
         env["HOME"] = fake_home
         env["QE_PROJECT_TMP"] = proj
         env["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
         # An archive redirect pointing at the operator's real store would survive the
-        # HOME move and is not part of what this probe is about.
+        # HOME move and is not part of what this probe is about. `CODEX_HOME` is the
+        # same shape of leak and a live one: `install.py` reads it in preference to
+        # `Path.home()`, so an exported value sends the codex hooks file this probe
+        # writes to the operator's real config root while everything else lands in the
+        # fake home. Unset, the constants fall back to home and the redirect holds.
         env.pop("THALAMUS_ARCHIVE_DIR", None)
+        env.pop("CODEX_HOME", None)
         try:
             proc = subprocess.run(
                 [sys.executable, "-c", _CHILD],

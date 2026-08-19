@@ -81,21 +81,30 @@ _COMMAND_CAP = 300
 # ---------------------------------------------------------------------------
 
 
-def render_digest(payload: bytes, *, budget: int = _DIGEST_BUDGET) -> str:
+def render_digest(
+    payload: bytes, *, budget: int = _DIGEST_BUDGET, harness: str = "claude",
+) -> str:
     """Render archived transcript bytes into a compact, readable exchange log.
 
     Keeps user prompts, assistant prose, tool calls (name + salient input), and heavily
     truncated tool results. Drops sidechains, meta records, and system-injected noise —
     the extractor needs the *conversation*, not the plumbing.
 
-    Harness-tolerant on purpose: Claude Code discriminates rows with `type`, Cursor with
-    `role` and nothing else (harness/cursor_transcripts.py). The block vocabulary is the
-    same in both, so one renderer serves both and a Cursor digest simply contains no
-    `result:` lines — the format carries no tool outputs to render.
+    Harness-tolerant where the harnesses are alike and dispatched where they are not.
+    Claude Code discriminates rows with `type`, Cursor with `role` and nothing else
+    (harness/cursor_transcripts.py), but the *block* vocabulary is the same in both, so
+    one renderer serves them and a Cursor digest simply contains no `result:` lines —
+    that format carries no tool outputs to render. Codex shares none of that vocabulary:
+    its rows are `{timestamp, type, payload}` and its tool calls are JavaScript
+    programs, so it gets its own renderer rather than a widened one. Widening this one
+    to swallow a third grammar is how a renderer comes to produce a plausible digest of
+    a format it does not understand.
 
     If the result exceeds the budget, the middle is elided rather than the tail: openings
     state intent and endings state outcomes, and both matter more than the grind between.
     """
+    if harness == "codex":
+        return _render_codex_digest(payload, budget=budget)
     lines: list[str] = []
     external_tool_uses: set[str] = set()
     for record in _records(payload):
@@ -146,6 +155,109 @@ def render_digest(payload: bytes, *, budget: int = _DIGEST_BUDGET) -> str:
     if len(digest) <= budget:
         return digest
     return _elide_middle(lines, budget)
+
+
+_CODEX_CALL_RE = re.compile(r"tools\.([A-Za-z0-9_]+)\(")
+
+# Codex APIs whose call is also reported as a semantic `event_msg`, so the protocol
+# row is redundant in a digest. Deliberately a short measured list rather than a rule:
+# an API added here that stops emitting its event would vanish from the digest, and
+# the safe direction is a call rendered twice rather than one rendered never.
+_CODEX_EVENT_BACKED = frozenset({"apply_patch", "web__run"})
+
+
+def _render_codex_digest(payload: bytes, *, budget: int) -> str:
+    """The same exchange log, from codex's rollout grammar.
+
+    Codex writes the conversation twice — once as protocol `response_item` rows and
+    once as semantic `event_msg` rows — and this reads the second, because that is the
+    layer where a patch is a set of paths rather than a program that produced them
+    (harness/codex_transcripts.py). The exception is tool *output*, which only the
+    protocol layer carries.
+
+    The tool line names the declared API the program called (`tools.apply_patch(` →
+    `apply_patch`) rather than the wrapper `exec` every codex call shares. Naming the
+    wrapper would render every call in the session identically, which is a digest that
+    costs tokens and says nothing.
+    """
+    lines: list[str] = []
+    ingress_calls: set[str] = set()
+
+    for record in _records(payload):
+        payload_row = record.get("payload")
+        payload_row = payload_row if isinstance(payload_row, dict) else {}
+        kind, item = record.get("type"), payload_row.get("type")
+
+        if kind == "event_msg":
+            if item == "user_message":
+                text = str(payload_row.get("message") or "").strip()
+                if text:
+                    lines.append(f"USER: {_clip(text, _TEXT_CAP)}")
+            elif item == "agent_message":
+                text = str(payload_row.get("message") or "").strip()
+                if text:
+                    lines.append(f"ASSISTANT: {_clip(text, _TEXT_CAP)}")
+            elif item == "patch_apply_end":
+                changes = payload_row.get("changes")
+                paths = sorted(changes) if isinstance(changes, dict) else []
+                if paths:
+                    lines.append(f"  tool: apply_patch {_clip(', '.join(paths), _COMMAND_CAP)}")
+            elif item == "web_search_end":
+                query = str(payload_row.get("query") or "").strip()
+                lines.append(f"  tool: web_search {_clip(query, _COMMAND_CAP)}")
+            continue
+
+        if kind != "response_item":
+            continue
+
+        if item == "custom_tool_call":
+            program = payload_row.get("input")
+            program = program if isinstance(program, str) else ""
+            called = _CODEX_CALL_RE.search(program)
+            name = called.group(1) if called else str(payload_row.get("name") or "?")
+            call_id = str(payload_row.get("call_id") or "")
+            if call_id and "web__run" in program:
+                ingress_calls.add(call_id)
+            if name in _CODEX_EVENT_BACKED:
+                # Codex describes this call twice, and the `event_msg` says it better:
+                # a list of paths beats the patch program that produced them, and a
+                # query beats the search call. Rendering both spends the budget saying
+                # one thing twice.
+                continue
+            # For everything else the program is the only description of the call
+            # there is, so a clipped line of it goes in — the same role the `command`
+            # field plays in the Claude Code renderer.
+            lines.append(f"  tool: {name} {_clip(' '.join(program.split()), _COMMAND_CAP)}")
+        elif item == "custom_tool_call_output":
+            text = _codex_output_text(payload_row.get("output"))
+            if text:
+                # External-ingress results are labelled so the extractor can apply the
+                # external-origin rule; the label is data about the segment, decided
+                # here, not by the model.
+                label = (
+                    "result [EXTERNAL CONTENT]"
+                    if str(payload_row.get("call_id") or "") in ingress_calls
+                    else "result"
+                )
+                lines.append(f"  {label}: {_clip(text, _TOOL_RESULT_CAP)}")
+
+    digest = "\n".join(lines)
+    if len(digest) <= budget:
+        return digest
+    return _elide_middle(lines, budget)
+
+
+def _codex_output_text(output) -> str:
+    if isinstance(output, str):
+        return output.strip()
+    if not isinstance(output, list):
+        return ""
+    parts = [
+        block.get("text", "")
+        for block in output
+        if isinstance(block, dict) and isinstance(block.get("text"), str)
+    ]
+    return "\n".join(part for part in parts if part).strip()
 
 
 def _tool_use_line(block: dict) -> str:
@@ -416,7 +528,12 @@ class ExtractionRun:
     text: str
     # None means the CLI does not report cost — not that the call was free.
     cost_usd: float | None = None
-    duration_ms: int = 0
+    # Same rule, and it took a third harness to notice the field was breaking it: a
+    # `0` here read as "this run took no time" where codex means "the CLI does not
+    # report a duration". `turn.completed` carries usage and nothing else, and the
+    # rollout row that does carry `duration_ms` is never written, because the
+    # extraction sandbox runs `--ephemeral`.
+    duration_ms: int | None = None
     # Tokens are reported separately from price, because one CLI reports each.
     # Claude Code prices the call and Cursor counts the tokens, so a run that
     # carries no `cost_usd` is not an uninstrumented run — reading "no price" as
@@ -490,14 +607,40 @@ def run_extraction(
         # stderr, so an empty stderr must fall back rather than report nothing.
         hint = f" ({cli.model_hint})" if cli.model_hint and "model" in stderr.lower() else ""
         raise ExtractionError(
-            f"{cli.binary} -p --model {model} exited {proc.returncode}{hint}: {stderr}"
+            f"{' '.join(cli.argv(model))} exited {proc.returncode}{hint}: {stderr}"
         )
 
     try:
-        envelope = json.loads(proc.stdout)
+        reader = _ENVELOPE_READERS[cli.envelope]
+    except KeyError:
+        raise ExtractionError(
+            f"no envelope reader for dialect `{cli.envelope}` declared by "
+            f"harness `{cli.harness}`; known: {', '.join(sorted(_ENVELOPE_READERS))}"
+        ) from None
+    return reader(proc.stdout, cli)
+
+
+def _usage_counts(usage, *keys: str) -> list[int | None]:
+    """The named counts, absent ones staying None rather than becoming 0.
+
+    An absent count means "not reported" and a zero means "none were used"; the two
+    are different answers and collapsing them is how Cursor's token counts came to be
+    thrown away on every extraction.
+    """
+    usage = usage if isinstance(usage, dict) else {}
+    return [
+        int(usage[key]) if isinstance(usage.get(key), (int, float)) else None
+        for key in keys
+    ]
+
+
+def _read_object_envelope(stdout: str, cli) -> ExtractionRun:
+    """One JSON object on stdout — Claude Code and Cursor."""
+    try:
+        envelope = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise ExtractionError(
-            f"unparseable {cli.binary} -p output: {proc.stdout[:200]}"
+            f"unparseable {cli.binary} -p output: {stdout[:200]}"
         ) from exc
 
     if envelope.get("is_error"):
@@ -507,24 +650,97 @@ def run_extraction(
 
     cost = float(envelope.get("total_cost_usd") or 0.0) if cli.reports_cost else None
     # Read regardless of `reports_cost`: the two are different measurements and the
-    # flag governs only the price. Absent keys stay None rather than becoming 0 —
-    # the same absent-vs-zero distinction `cost_usd` already makes.
-    usage = envelope.get("usage")
-    usage = usage if isinstance(usage, dict) else {}
-
-    def _count(key: str) -> int | None:
-        value = usage.get(key)
-        return int(value) if isinstance(value, (int, float)) else None
-
+    # flag governs only the price.
+    tokens = _usage_counts(
+        envelope.get("usage"),
+        "inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens",
+    )
     return ExtractionRun(
         text=envelope.get("result", ""),
         cost_usd=cost,
         duration_ms=int(envelope.get("duration_ms") or 0),
-        input_tokens=_count("inputTokens"),
-        output_tokens=_count("outputTokens"),
-        cache_read_tokens=_count("cacheReadTokens"),
-        cache_write_tokens=_count("cacheWriteTokens"),
+        input_tokens=tokens[0],
+        output_tokens=tokens[1],
+        cache_read_tokens=tokens[2],
+        cache_write_tokens=tokens[3],
     )
+
+
+def _read_jsonl_events(stdout: str, cli) -> ExtractionRun:
+    """A line per event, terminated by `turn.completed` — codex.
+
+    The answer is not in one place. The text is the last `item.completed` whose item
+    is an `agent_message`, and the counts are on the terminal `turn.completed`, so
+    both are accumulated across the stream rather than read off a single object
+    (measured 2026-08-17, codex-cli 0.147.0).
+
+    **A stream with no terminal event is an error, not an empty result.** `codex exec`
+    can exit 0 having printed `turn.failed` — a 401, a rate limit, a refusal — and
+    returning the empty string there would file a session with a blank summary and
+    call it distilled. Unparseable lines are skipped rather than fatal for the
+    opposite reason: a future codex adding an event kind must not stop extraction,
+    and the terminal event is what says the turn actually finished.
+    """
+    text = ""
+    usage = None
+    failure = ""
+    completed = False
+
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("type")
+        if kind == "item.completed":
+            item = event.get("item")
+            if isinstance(item, dict) and item.get("type") == "agent_message":
+                text = item.get("text") or text
+        elif kind == "turn.completed":
+            usage = event.get("usage")
+            completed = True
+        elif kind == "turn.failed":
+            error = event.get("error")
+            if isinstance(error, dict):
+                failure = str(error.get("message") or "")
+
+    if failure:
+        raise ExtractionError(f"{cli.binary} exec reported an error: {failure[:300]}")
+    if not completed:
+        raise ExtractionError(
+            f"{cli.binary} exec printed no turn.completed event: {stdout[-200:]}"
+        )
+
+    tokens = _usage_counts(
+        usage,
+        "input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens",
+    )
+    return ExtractionRun(
+        text=text,
+        # Not a price. Codex carries no dollar figure anywhere in its stream, and a
+        # 0.0 here would read as "this call was free".
+        cost_usd=None,
+        # Nor a duration, and `None` for the same reason: `turn.completed` reports
+        # usage only. The rollout's `task_complete` row does carry `duration_ms`, but
+        # the sandbox runs `--ephemeral` and writes no rollout, so it is genuinely
+        # unavailable on this path rather than zero.
+        duration_ms=None,
+        input_tokens=tokens[0],
+        output_tokens=tokens[1],
+        cache_read_tokens=tokens[2],
+        cache_write_tokens=tokens[3],
+    )
+
+
+_ENVELOPE_READERS = {
+    "object": _read_object_envelope,
+    "jsonl-events": _read_jsonl_events,
+}
 
 
 # ---------------------------------------------------------------------------

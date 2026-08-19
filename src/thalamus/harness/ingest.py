@@ -469,10 +469,14 @@ def _combine_runs(runs: list[extraction.ExtractionRun]) -> extraction.Extraction
     understating what the pass actually cost.
     """
     priced = [run.cost_usd for run in runs if run.cost_usd is not None]
+    # Durations fold the same way as prices, and for the same reason: a CLI that
+    # reports no duration contributes nothing to the sum rather than a zero, so a
+    # total of `None` says "unmeasured" where `0` would say "instant".
+    timed = [run.duration_ms for run in runs if run.duration_ms is not None]
     return extraction.ExtractionRun(
         text="\n\n".join(run.text for run in runs),
         cost_usd=sum(priced) if priced else None,
-        duration_ms=sum(run.duration_ms for run in runs),
+        duration_ms=sum(timed) if timed else None,
     )
 
 

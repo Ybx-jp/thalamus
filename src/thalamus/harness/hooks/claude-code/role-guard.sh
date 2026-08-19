@@ -44,6 +44,13 @@
 #     namespace is owned upstream and a boundary that is never hit looks exactly
 #     like one that is respected.
 #
+# Codex is the third caller, and it does wire an adapter: its editing tool is
+# `apply_patch`, whose argument is a patch envelope naming several files and carrying
+# no `file_path` at all, so there is a real translation to make rather than a second
+# registration of the same call. Codex does not read `~/.claude/settings.json`
+# (measured: three codex sessions ran with the Claude Code suite installed at user
+# scope and fired none of it), so the double-fire hazard below does not arise there.
+#
 # This script runs on Cursor too, and nothing under `.cursor/` wires it: Cursor
 # translates `~/.claude/settings.json`, including the `|`-separated matcher, and
 # shims `permissionDecision` onto its own `permission` field. So the path boundary
@@ -75,8 +82,12 @@ scope="$(thalamus_scope_from_payload "$input")"
 # Two boundaries, one guard, because they are one role decision resolved from one
 # manifest. `kind` selects which of them the Python below consults.
 case "$tool_name" in
-  # NotebookEdit names its target differently from the two text editors.
-  Edit|Write|NotebookEdit)
+  # NotebookEdit names its target differently from the two text editors. `apply_patch`
+  # is codex's editing tool and is named here rather than translated to `Write` by its
+  # adapter, so the guard's event row records the tool that was actually called; the
+  # adapter (../codex/role-guard.sh) lifts one path per patch header and calls this
+  # once per path, since a patch names several files and a verdict is about one.
+  Edit|Write|NotebookEdit|apply_patch)
     kind=path
     target=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty') ;;
   Skill)

@@ -298,11 +298,10 @@ def _declared_parity_row() -> tuple[DerivedProbe, str]:
         DerivedProbe(
             derivation="hook_parity",
             declared={
-                "claude_scripts": DECLARED_HOOK_PARITY.claude_scripts,
-                "cursor_scripts": DECLARED_HOOK_PARITY.cursor_scripts,
+                "scripts": DECLARED_HOOK_PARITY.scripts,
                 "shared": DECLARED_HOOK_PARITY.shared,
-                "claude_only": DECLARED_HOOK_PARITY.claude_only,
-                "cursor_only": DECLARED_HOOK_PARITY.cursor_only,
+                "missing": DECLARED_HOOK_PARITY.missing,
+                "extra": DECLARED_HOOK_PARITY.extra,
             },
         ),
         "install.DECLARED_HOOK_PARITY — the count that was wrong for three scripts while "

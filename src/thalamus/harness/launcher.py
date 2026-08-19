@@ -31,7 +31,18 @@ So a pinned Cursor session **routes and is bounded, and does not think like the
 expert**. That is a smaller object than a Claude Code pin, and the honest response is
 to name it rather than to reach for the hidden flag. `contract/pinning.py` is where it
 is named, per component, so "pinned" cannot quietly mean four things on one harness and
-two on the other.
+two on another.
+
+Codex sits with Cursor on this and for its own reasons. It has no persona selector —
+its skills and subagents are things a session may use, not a charter it is started
+under — and it reads MCP servers from `$CODEX_HOME/config.toml` rather than per-scope,
+so arming is global there too. The routing tag likewise reaches it only through the
+environment, so it takes the same argv `env` prefix. One measured difference from
+Cursor is worth carrying: codex's `SessionStart` hook fires at the **first submitted
+turn**, not at launch, so a codex window that is spawned and never used writes no pin
+ledger row. The scope still reached it — the prefix is in the argv the window was
+created with, which is also what `panes.harness_of` reads — so this costs the ledger's
+record of the launch and not the pin itself.
 
 ## The recycle trap, which is the whole reason the argv is built here
 
@@ -63,9 +74,12 @@ later is a per-harness fact, because the two CLIs fail at different depths:
 | `agent`, untrusted dir / no credentials | **lives** — parks on a modal | alive at 30 s |
 | `agent`, rejected API key | dies, status 1 | 1.07–1.14 s (n=9) |
 | `agent`, rejected API key, +2 s of proxy latency | dies, status 1 | 3.14–3.20 s (n=3) |
+| `codex`, rejected flag | dies, status 1 | 0.128 s |
+| `codex`, unreachable `CODEX_HOME` | dies, status 1 | 0.124 s |
+| `codex`, unknown `--model` | **lives** — fails at the first turn instead | alive at 25 s |
 
-Claude Code decides everything that can kill it locally, so a fraction of a second
-covers it. Cursor's one measured death is an **authentication rejection**, which
+Claude Code and codex decide everything that can kill them locally, so a fraction of a
+second covers both. Cursor's one measured death is an **authentication rejection**, which
 resolves only after a round trip to its API — the last two rows are the same failure
 under two network conditions, and the time to it moved by exactly the added latency.
 So `settle_s` is a bet sized on a measurement, not a bound: a deadline covers the
@@ -112,6 +126,13 @@ The config file is deliberately not used as the mechanism. It is not the globaln
 it is that a session can rewrite it mid-run (`/config`, `/run-everything`, `/sandbox`
 are live slash commands), so a launcher that expressed policy there would be expressing
 a preference, not a constraint.
+
+Codex spreads the same posture across two flags — `--sandbox` says what may be touched,
+`--ask-for-approval` says when to ask — so a rung there sets both, and the ladder stops
+below `danger-full-access` and `--dangerously-bypass-approvals-and-sandbox` for the
+reason Claude Code's stops below `bypassPermissions`. Nothing is passed by default, so
+a codex window rests at its own configured posture (`approval OnRequest`, restricted
+filesystem and network, measured 2026-08-17) and can stop at a prompt.
 """
 
 from __future__ import annotations
@@ -167,7 +188,7 @@ class PolicyOption:
 class Capability:
     """One thing an operator may choose, and the values this harness offers for it.
 
-    A *capability*, not a flag, because the two harnesses do not divide the space the
+    A *capability*, not a flag, because the harnesses do not divide the space the
     same way: Claude Code says in one `--permission-mode` what Cursor spreads across
     `--force`/`--yolo`, `--auto-review`, `--sandbox` and `--mode`. Keying the choice to
     the flag would make the panel un-renderable for Cursor and would misdescribe what
@@ -264,6 +285,44 @@ CURSOR_PERMISSION = Capability(
     default="manual",
 )
 
+# Codex spreads the posture across two flags rather than one, which is the third
+# spelling of the same capability: `--sandbox` says what the agent may touch and
+# `--ask-for-approval` says when it must ask. A rung here therefore sets both, since
+# an operator picking "Auto" is picking a posture and not a flag.
+#
+# The ladder stops below `danger-full-access` and `--dangerously-bypass-approvals-and-
+# sandbox` on the same rule that stops Claude Code's below `bypassPermissions`: those
+# remove the enforcement the contract argues from, so they are a decision-log change
+# and not a rung on a panel. The surface must not be able to express a posture the
+# contract argues against.
+#
+# Measured 2026-08-17 (codex-cli 0.147.0): with no flag, `codex doctor` reports the
+# box's own resting posture as `approval OnRequest` + `restricted fs + restricted
+# network`, so the strictest rung is again "pass nothing".
+CODEX_PERMISSION = Capability(
+    key=PERMISSION_POSTURE,
+    title="Permission posture",
+    options=(
+        PolicyOption("manual", "Ask every time", ()),
+        PolicyOption(
+            "workspace-write", "Accept edits",
+            ("--sandbox", "workspace-write"),
+            drops="Confirmation on writes inside the workspace. Commands that need "
+                  "more still escalate.",
+        ),
+        PolicyOption(
+            "auto", "Auto",
+            ("--sandbox", "workspace-write", "--ask-for-approval", "never"),
+            drops="Per-call confirmation. The filesystem sandbox and the restricted "
+                  "network still hold, and PreToolUse hooks still enforce.",
+        ),
+    ),
+    # No flag, and deliberately not `auto` as on Claude Code. There is no shipped
+    # codex launch behaviour for this panel to preserve, so the neutral choice is the
+    # one that leaves the operator's own ~/.codex/config.toml governing.
+    default="manual",
+)
+
 
 @dataclass(frozen=True)
 class LaunchShape:
@@ -317,6 +376,38 @@ LAUNCH_SHAPES: dict[str, LaunchShape] = {
         capabilities=(CURSOR_PERMISSION,),
         pin_carrier="argv",
         settle_s=4.0,
+    ),
+    "codex": LaunchShape(
+        harness="codex",
+        binary="codex",
+        # No `--agent`. Codex has skills and subagents, neither of which selects a
+        # persona for the session itself, so there is nothing here to point at.
+        persona_flag=None,
+        # Empty, and not because codex has no preconditions — because its two are not
+        # flags. `--skip-git-repo-check` belongs to the headless sandbox: a roster
+        # window opens in the checkout, which is a git repo, so passing it here would
+        # declare a precondition this launch does not have.
+        #
+        # The two that do apply are **modals with no argv answer**, measured live
+        # 2026-08-17, and both are one-time operator decisions rather than launch
+        # policy. A directory codex has not seen parks on "Do you trust the contents of
+        # this directory?", cleared by a `[projects."<repo root>"] trust_level =
+        # "trusted"` entry in `$CODEX_HOME/config.toml`. A hooks.json that is new or
+        # changed then parks on "Hooks need review", whose third option is *continue
+        # without trusting*, under which the hooks silently never run. Nothing here
+        # bypasses either: `--dangerously-bypass-hook-trust` exists and is a
+        # supply-chain control to answer, not to route around from a launcher.
+        always=(),
+        capabilities=(CODEX_PERMISSION,),
+        pin_carrier="argv",
+        # Measured 2026-08-17 (codex-cli 0.147.0): a window given an unknown flag dies
+        # in 0.13s and one given an unreachable CODEX_HOME in 0.12s — 4x the slowest of
+        # those is half a second. Set at Claude Code's 1.2s anyway, because only three
+        # death modes were enumerated and a fourth candidate does not belong to this
+        # class at all: an unknown `--model` does not kill the window, it survives and
+        # fails at the first turn. Over-waiting costs a slower spawn; under-waiting
+        # reports a corpse as a started session.
+        settle_s=1.2,
     ),
 }
 

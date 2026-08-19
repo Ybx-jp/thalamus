@@ -33,6 +33,8 @@ def sandbox(tmp_path, monkeypatch):
     cursor_user_mcp = tmp_path / "user" / "cursor-mcp.json"
     cursor_project_hooks = tmp_path / "project" / "cursor-hooks.json"
     cursor_project_mcp = tmp_path / "project" / "cursor-mcp.json"
+    codex_hooks = tmp_path / "user" / "codex-hooks.json"
+    codex_config = tmp_path / "user" / "codex-config.toml"
     monkeypatch.setattr(install, "USER_SETTINGS", user_settings)
     monkeypatch.setattr(install, "PROJECT_SETTINGS", project_settings)
     monkeypatch.setattr(install, "PROJECT_MCP", project_mcp)
@@ -45,6 +47,26 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(install, "USER_CURSOR_MCP", cursor_user_mcp)
     monkeypatch.setattr(install, "PROJECT_CURSOR_HOOKS", cursor_project_hooks)
     monkeypatch.setattr(install, "PROJECT_CURSOR_MCP", cursor_project_mcp)
+    # The codex leg runs by default too, and its two paths are resolved from
+    # `CODEX_HOME` at *import* — so an unpatched run writes the operator's real
+    # ~/.codex/hooks.json and reads their real config.toml for the trust check.
+    monkeypatch.setattr(install, "USER_CODEX_HOOKS", codex_hooks)
+    monkeypatch.setattr(install, "USER_CODEX_MCP", codex_config)
+    # And never the real `codex mcp add|remove`: it writes `$CODEX_HOME/config.toml`,
+    # which HOME does not move — the same containment failure that made the Claude
+    # Code registration a stubbed seam.
+    codex_calls: list = []
+    monkeypatch.setattr(install, "register_codex_mcp",
+                        lambda dry_run=False: codex_calls.append(dry_run) or "codex mcp: stubbed")
+    monkeypatch.setattr(install, "deregister_codex_mcp",
+                        lambda dry_run=False: "codex mcp: deregistration stubbed")
+    # Stubbed as *registered against this checkout*, matching the stubbed `add` above:
+    # a fixture whose reader always answers "absent" would make a successful install
+    # read as a fresh box forever. The absent branch is exercised where it belongs, by
+    # the tests that are about it.
+    monkeypatch.setattr(
+        install, "codex_mcp_registration",
+        lambda: f"  args: run --project {PROJECT_ROOT} thalamus-mcp\n")
     monkeypatch.setattr(install, "write_all_agents", lambda d: d.mkdir(parents=True, exist_ok=True))
     # Never invoke the real `claude mcp add` from a test — it writes the
     # operator's shared ~/.claude.json.
@@ -60,7 +82,9 @@ def sandbox(tmp_path, monkeypatch):
             "project_mcp": project_mcp, "mcp_calls": calls, "skills": skills,
             "cursor_user": cursor_user_hooks, "cursor_user_mcp": cursor_user_mcp,
             "cursor_project": cursor_project_hooks,
-            "cursor_project_mcp": cursor_project_mcp}
+            "cursor_project_mcp": cursor_project_mcp,
+            "codex_hooks": codex_hooks, "codex_config": codex_config,
+            "codex_mcp_calls": codex_calls}
 
 
 class TestCursorWiring:
@@ -176,6 +200,222 @@ class TestCursorInstall:
         queries the graph with no recall-strategy and grounds nothing."""
         install.install(harnesses=("cursor",))
         assert list(sandbox["skills"].iterdir())
+
+
+class TestCodexWiring:
+    """Codex's table, whose subject is what its payloads actually name.
+
+    The wiring is Claude Code's schema — codex reads matcher groups from
+    `$CODEX_HOME/hooks.json` and its matchers are regexes (measured 2026-08-17) — so
+    what these assert is not the shape but the *vocabulary*: a matcher naming a tool
+    codex does not have is a boundary that reads as enforced and fires for nothing,
+    which is `room-guard.sh`'s history on this repo.
+    """
+
+    def test_every_command_is_absolute(self):
+        """`$CODEX_HOME` expands inside a command and nothing else does, so a
+        relative path resolves against the session's own cwd — a different repo
+        entirely whenever a session is opened outside the checkout."""
+        for groups in install.build_codex_hook_block().values():
+            for group in groups:
+                for hook in group["hooks"]:
+                    assert hook["command"].startswith("/")
+                    assert "$" not in hook["command"]
+
+    def test_scripts_named_in_the_wiring_actually_exist(self):
+        missing = [s for _, _, s in install.CODEX_HOOK_WIRING
+                   if not (install.CODEX_HOOK_DIR / s).is_file()]
+        assert not missing
+
+    def test_the_shell_matcher_is_the_name_codex_actually_sends(self):
+        """Codex's shell tool is `Bash`, with `tool_input.command` — measured against
+        a live `codex exec`, and not what the rollout says (there every call is a
+        `custom_tool_call` named `exec` carrying a JavaScript program). The hook layer
+        is the surface a matcher is matched against, so it is the one that decides."""
+        block = install.build_codex_hook_block()
+        bash_pre = {h["command"].rsplit("/", 1)[1]
+                    for g in block["PreToolUse"] if g.get("matcher") == "Bash"
+                    for h in g["hooks"]}
+        assert {"gremlin-guard.sh", "write-guard.sh", "room-command-guard.sh"} == bash_pre
+
+    def test_the_editing_matcher_is_apply_patch_and_nothing_unmeasured(self):
+        """`apply_patch` is codex's editing tool, and `Skill`/`Artifact` are not in
+        the matcher because codex's skill and artifact surfaces have not been
+        measured. A matcher naming an unobserved tool reads as enforcement and is
+        not — the failure `contract/boundaries.py` exists to keep separate."""
+        matchers = [g.get("matcher") for g in install.build_codex_hook_block()["PreToolUse"]
+                    for h in g["hooks"] if h["command"].endswith("role-guard.sh")]
+        assert matchers == ["apply_patch|mcp__penpot__.*"]
+        assert "Skill" not in str(matchers) and "Artifact" not in str(matchers)
+
+    def test_the_room_tool_guard_has_no_codex_wiring(self):
+        """`room-guard.sh` matches `SendMessage` and codex has no such tool, so peer
+        traffic there is a shell command or it is nothing — the same call Cursor
+        made. Declared as a gap in the parity record rather than silently absent."""
+        assert "room-guard.sh" not in {s for _, _, s in install.CODEX_HOOK_WIRING}
+        assert "room-guard.sh" in install.DECLARED_HOOK_PARITY.missing["codex"]
+
+    def test_taps_are_wired_on_the_names_codex_reports(self):
+        block = install.build_codex_hook_block()
+        post = {g.get("matcher"): {h["command"].rsplit("/", 1)[1] for h in g["hooks"]}
+                for g in block["PostToolUse"]}
+        assert post["mcp__thalamus__.*"] == {"post-tool-use.sh"}
+        assert post["Bash"] == {"gremlin-tap.sh", "recipe-stage.sh"}
+        # TaskCreate has no codex carrier — it is Claude Code task-list UI — so the
+        # milestone conditioning class must not be wired against a tool that never
+        # fires. The two lexical classes ride UserPromptSubmit and both cross.
+        assert "TaskCreate" not in post
+        prompt = {h["command"].rsplit("/", 1)[1]
+                  for g in block["UserPromptSubmit"] for h in g["hooks"]}
+        assert prompt == {"timestamp.sh", "conditioning.sh", "pin-engaged.sh"}
+
+
+class TestCodexInstall:
+    def test_writes_hooks_and_registers_mcp_at_the_codex_config_root(self, sandbox):
+        install.install()
+        hooks = json.loads(sandbox["codex_hooks"].read_text())["hooks"]
+        assert set(hooks) == {e for e, _, _ in install.CODEX_HOOK_WIRING}
+        assert sandbox["codex_mcp_calls"] == [False], "codex MCP goes through `codex mcp add`"
+
+    def test_there_is_no_project_scope_to_strip(self, sandbox):
+        """Measured: `$CODEX_HOME/hooks.json` is the only file codex loads hooks from
+        — a project-level `./.codex/hooks.json` is not discovered and hooks in
+        `config.toml` do not fire. So the mutual-exclusion problem the other two legs
+        solve by removing a second definition cannot arise, and the installer must not
+        invent a second place to look."""
+        assert not any(name.startswith("PROJECT_CODEX") for name in dir(install))
+
+    def test_config_toml_is_never_written_by_us(self, sandbox):
+        """`codex mcp add` owns that file: it also holds the per-project trust levels
+        and the `[hooks.state]` trust hashes codex writes for itself, so a
+        read-modify-write would drop whatever the CLI put there."""
+        install.install()
+        assert not sandbox["codex_config"].exists()
+
+    def test_preserves_codex_hooks_the_operator_added(self, sandbox):
+        sandbox["codex_hooks"].parent.mkdir(parents=True, exist_ok=True)
+        sandbox["codex_hooks"].write_text(json.dumps({"hooks": {
+            "PreCompact": [{"hooks": [{"type": "command", "command": "/opt/mine/note.sh"}]}]}}))
+        install.install()
+        hooks = json.loads(sandbox["codex_hooks"].read_text())["hooks"]
+        assert hooks["PreCompact"] == [
+            {"hooks": [{"type": "command", "command": "/opt/mine/note.sh"}]}]
+
+    def test_reinstall_does_not_accumulate_duplicates(self, sandbox):
+        """A duplicate costs more here than elsewhere: codex's trust records are keyed
+        by (event, group index, hook index), so a table that grows on every install
+        renumbers the coordinates and quietly untrusts the hooks that moved."""
+        install.install()
+        install.install()
+        settings = json.loads(sandbox["codex_hooks"].read_text())
+        wired = [(g.get("matcher"), h["command"])
+                 for g in settings["hooks"]["PostToolUse"] for h in g["hooks"]]
+        assert len(wired) == len(set(wired))
+
+    def test_dry_run_writes_nothing(self, sandbox):
+        install.install(dry_run=True)
+        assert not sandbox["codex_hooks"].exists()
+        assert sandbox["codex_mcp_calls"] == [True], "dry run must not register"
+
+    def test_codex_only_install_leaves_the_others_untouched(self, sandbox):
+        install.install(harnesses=("codex",))
+        assert sandbox["codex_hooks"].exists()
+        assert not sandbox["user"].exists()
+        assert not sandbox["cursor_user"].exists()
+        assert sandbox["mcp_calls"] == [], "codex-only must not register the Claude MCP server"
+
+    def test_claude_only_install_leaves_codex_untouched(self, sandbox):
+        install.install(harnesses=("claude",))
+        assert not sandbox["codex_hooks"].exists()
+
+    def test_uninstall_removes_the_codex_hooks_and_leaves_the_operators(self, sandbox):
+        install.install()
+        hooks = json.loads(sandbox["codex_hooks"].read_text())
+        hooks["hooks"].setdefault("PreCompact", []).append(
+            {"hooks": [{"type": "command", "command": "/opt/mine/note.sh"}]})
+        sandbox["codex_hooks"].write_text(json.dumps(hooks))
+
+        install.uninstall()
+
+        left = json.loads(sandbox["codex_hooks"].read_text())["hooks"]
+        assert left == {"PreCompact": [
+            {"hooks": [{"type": "command", "command": "/opt/mine/note.sh"}]}]}
+
+
+class TestCodexTrust:
+    """The gate that makes a correct install do nothing.
+
+    Measured 2026-08-17: with a `hooks.json` present and untrusted, a headless
+    `codex exec` ran to completion, exited 0, printed nothing about hooks, and fired
+    none of them. That is the latent configuration error this module is written
+    against — the wiring is right and the memory simply stops accumulating — so the
+    trust state is a finding of its own rather than an assumption inside the wiring
+    check.
+    """
+
+    def _trust(self, sandbox, *, all_of_them: bool) -> None:
+        keys = sorted(
+            f"{install.USER_CODEX_HOOKS}:{install._codex_event_key(event)}:{gi}:{hi}"
+            for event, groups in install.build_codex_hook_block().items()
+            for gi, group in enumerate(groups)
+            for hi, _ in enumerate(group["hooks"])
+        )
+        if not all_of_them:
+            keys = keys[:1]
+        sandbox["codex_config"].parent.mkdir(parents=True, exist_ok=True)
+        sandbox["codex_config"].write_text("".join(
+            f'[hooks.state."{key}"]\ntrusted_hash = "sha256:deadbeef"\n\n' for key in keys))
+
+    def test_an_untrusted_install_is_advisory_and_names_the_consequence(self, sandbox):
+        """Advisory, not pending: the install is wired correctly and something outside
+        it has to become true — the same shape as an unreachable graph. `pending`
+        would print "Run `thalamus init` to install it", and no run of that command
+        can grant a trust the operator has to give in a TUI."""
+        install.install()
+        check = {c.name: c for c in install.verify_codex()}["codex hooks trusted"]
+        assert check.advisory and not check.ok and not check.pending
+        assert "trust" in check.detail
+        # Verifies: the consequence is stated, not just the remedy. An operator who
+        # reads "not trusted yet" and shrugs has been told nothing about the silence.
+        assert "distilled nothing" in check.detail
+
+    def test_a_box_with_no_hooks_written_is_pending_on_thalamus_init(self, sandbox):
+        """Before the file exists there is no trust question, and the command that
+        moves the box forward is the installer's — so this one *is* the pending
+        state, and naming `thalamus init` in it is correct."""
+        check = {c.name: c for c in install.verify_codex()}["codex hooks trusted"]
+        assert check.pending and "thalamus init" in check.detail
+
+    def test_a_fully_trusted_install_passes(self, sandbox):
+        install.install()
+        self._trust(sandbox, all_of_them=True)
+        assert {c.name: c for c in install.verify_codex()}["codex hooks trusted"].ok
+
+    def test_a_partly_trusted_install_is_a_failure_not_a_pending_item(self, sandbox):
+        """Some entries trusted and some not is drift — the file was written, codex
+        was asked, and the answer covered only part of it. The untrusted ones do not
+        fire, so this must stay loud rather than reading as an uninstalled box."""
+        install.install()
+        self._trust(sandbox, all_of_them=False)
+        check = {c.name: c for c in install.verify_codex()}["codex hooks trusted"]
+        assert not check.ok and not check.pending
+
+    def test_the_trust_key_is_the_coordinate_codex_writes(self, sandbox):
+        """`<hooks.json path>:<event_snake>:<group index>:<hook index>` — measured
+        from a real `[hooks.state]` table after pressing trust in the codex TUI."""
+        assert install._codex_event_key("PreToolUse") == "pre_tool_use"
+        assert install._codex_event_key("UserPromptSubmit") == "user_prompt_submit"
+        assert install._codex_event_key("SessionEnd") == "session_end"
+
+    def test_trust_records_survive_a_reinstall_of_an_unchanged_wiring(self, sandbox):
+        """The install rewrites `hooks.json`, and the trust records live in a file it
+        never touches — so an idempotent re-run must not cost the operator the gate
+        they already cleared. It holds because the generated block is deterministic:
+        the same events, groups and indices every time."""
+        install.install()
+        self._trust(sandbox, all_of_them=True)
+        install.install()
+        assert {c.name: c for c in install.verify_codex()}["codex hooks trusted"].ok
 
 
 class TestHookBlock:
@@ -434,7 +674,8 @@ class TestAnUninstalledMachineIsNotABrokenOne:
 
     NOT_INSTALLED = ("derived agents installed", "skills load at user scope",
                      "declared hooks armed", "cursor hooks wired at user scope",
-                     "cursor MCP server registered")
+                     "cursor MCP server registered", "codex hooks wired at user scope",
+                     "codex hooks trusted")
 
     def test_a_fresh_box_reports_pending_and_names_the_fix(self, sandbox):
         checks = {c.name: c for c in install.verify()}

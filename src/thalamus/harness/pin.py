@@ -8,11 +8,12 @@ path. So the launcher's whole job is to make that process correctly:
 validate the scope against the tier-0 manifests, regenerate the derived agent
 definition, and hand the terminal to `claude` with agent and env agreeing.
 
-Claude-Code-only by nature, and not for want of plumbing: pinning rides the
-agent picker (`--agent thalamus-<scope>`), which Cursor has no equivalent of
-— a Cursor session is pinned by `THALAMUS_SCOPE` in its environment instead.
-This launcher is therefore not routed through harness/agents.py;
-there is no second thing for it to launch.
+The *persona* half is Claude-Code-only by nature, and not for want of plumbing:
+it rides the agent picker (`--agent thalamus-<scope>`), which neither Cursor nor
+codex has an equivalent of — those sessions are pinned by `THALAMUS_SCOPE` in the
+environment instead, carried as an argv `env` prefix so it survives a recycle.
+The argv itself comes from `harness/launcher.py`, which owns what each harness may
+be launched with.
 
 tmux is the control plane when present — one window per pinned expert, the window
 name being the scope. Coordination stays in tmux, not in Thalamus: the launcher
@@ -78,13 +79,19 @@ ROOMS_DIR = Path.home() / ".thalamus" / "rooms"
 ROOM_CONFIG_VAR: dict[str, str] = {
     "claude": "CLAUDE_CONFIG_DIR",
     "cursor": "CURSOR_CONFIG_DIR",
+    # Measured 2026-08-17 (codex-cli 0.147.0): `CODEX_HOME` moves config.toml,
+    # hooks.json, auth.json, the sqlite state and `sessions/` together, and a hook
+    # fired under it reports a `transcript_path` inside the relocated root. So the
+    # boundary is real on this harness in the way it is on Claude Code, rather than
+    # partial the way it is on Cursor.
+    "codex": "CODEX_HOME",
 }
 
 # Where each harness's room root sits under the room's own directory. Claude Code's
 # is the room directory itself — the shape live rooms already have on disk, so adding
 # a second harness moves nothing that exists. A harness whose root is a subdirectory
 # is inert to the other: neither CLI enumerates entries it does not know.
-ROOM_HARNESS_SUBDIR: dict[str, str] = {"claude": "", "cursor": "cursor"}
+ROOM_HARNESS_SUBDIR: dict[str, str] = {"claude": "", "cursor": "cursor", "codex": "codex"}
 
 # The pin ledger the session-start hooks append to — one row per (session, launch),
 # and the only record of a launch decision that outlives the process that made it.
@@ -226,6 +233,21 @@ def ensure_room(room: str, host: Path | None = None, harness: str = "claude") ->
         )
     if harness == "cursor":
         return _ensure_cursor_room(room)
+    if harness == "codex":
+        # Refused rather than provisioned, and the refusal is the honest state: codex
+        # resolves `auth.json`, `hooks.json` and `sessions/` *all* from `CODEX_HOME`
+        # (measured 2026-08-17), so a member under a relocated root is logged out and
+        # arms no hooks — the exact failure `ROOM_LINKED` exists to prevent on Claude
+        # Code, and the one Cursor is immune to because it resolves both from a fixed
+        # path. Making that work is a room-provisioning arm nobody has built or
+        # measured, and a directory alone would produce a member that starts, fails to
+        # authenticate, and distills nothing.
+        raise RuntimeError(
+            "codex rooms are not built: codex resolves credentials and hooks from "
+            "CODEX_HOME, so a room member under its own config root would start "
+            "logged out with no hooks armed. Launch codex outside a room, or use "
+            "claude or cursor for this room."
+        )
     host = host or host_config_dir()
     creds = host / ".credentials.json"
     if not creds.exists():
@@ -758,7 +780,7 @@ def launch_flags(room: str, scope: str, harness: str = "claude") -> list[str]:
     the window's own start command, so there is no name for a flag to carry
     (`harness/panes.py`, `contract/boundaries.py`).
 
-    The permission mode moved to `harness/launcher.py`, because the two harnesses do
+    The permission mode moved to `harness/launcher.py`, because the harnesses do
     not merely spell it differently — Cursor's non-stalling flag is `auto` minus the
     safety classifier, so which one a pinned window gets is a decision about that
     control and not a translation.

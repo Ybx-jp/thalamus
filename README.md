@@ -57,7 +57,7 @@ fresh, for everyone.
 | **Python ≥3.11** and [**uv**](https://docs.astral.sh/uv/) | the package and its CLI |
 | **jq** | every hook parses its stdin with it; without it the hook layer dies silently |
 | **tmux** | the roster and the console drive pinned sessions as tmux windows |
-| **A coding-agent CLI** — Claude Code (`claude`), Cursor (`agent`), or both | distillation shells out to it |
+| **A coding-agent CLI** — Claude Code (`claude`), Cursor (`agent`), codex (`codex`), or any mix | distillation shells out to it |
 
 ### Install
 
@@ -70,13 +70,14 @@ uv run thalamus init           # wire your editor, then verify what it wired
 ```
 
 `thalamus init` installs at **user scope**, so the harness arms in every directory
-rather than only inside this checkout. It wires Claude Code and Cursor by default;
-use `--harness claude` or `--harness cursor` for one. `--dry-run` reports without
-writing, and `--check` re-verifies any time.
+rather than only inside this checkout. It wires every supported harness by default;
+use `--harness claude`, `--harness cursor` or `--harness codex` for one. `--dry-run`
+reports without writing, and `--check` re-verifies any time.
 
 Because user scope means *outside this checkout*, it lists what it will write and asks
-before writing — `~/.claude/settings.json` and `~/.cursor/hooks.json`, `~/.claude.json`
-(the MCP server), plus skill symlinks and one derived agent per expert. Pass `--yes` to
+before writing — `~/.claude/settings.json`, `~/.cursor/hooks.json` and
+`~/.codex/hooks.json`, `~/.claude.json` (the MCP server), plus skill symlinks and one
+derived agent per expert. Pass `--yes` to
 skip the prompt in a script; a non-interactive stdin declines rather than assumes.
 **`thalamus init --uninstall` takes all of it back out**, removing only what it can
 prove it installed, and leaving your graph, `~/.thalamus/` and the transcript archive
@@ -85,7 +86,7 @@ alone.
 ### Then relaunch your editor
 
 Hooks and the MCP server arm **per process**, so an already-running session picks up
-nothing. Quit and reopen Claude Code or Cursor; `/clear` is not enough.
+nothing. Quit and reopen your editor; `/clear` is not enough.
 
 A new session should greet you with a memory prompt and its pinned scope. From there,
 memory builds itself.

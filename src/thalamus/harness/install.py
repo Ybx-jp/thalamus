@@ -48,10 +48,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from thalamus.harness import agents
@@ -78,9 +79,48 @@ USER_CURSOR_MCP = Path.home() / ".cursor" / "mcp.json"
 PROJECT_CURSOR_HOOKS = PROJECT_ROOT / ".cursor" / "hooks.json"
 PROJECT_CURSOR_MCP = PROJECT_ROOT / ".cursor" / "mcp.json"
 
-# One list, so a third harness cannot arrive in the agent registry and be
-# silently uninstallable.
+CODEX_HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "codex"
+
+# Codex's config root, and the one file that arms its hooks. Measured 2026-08-17
+# (codex-cli 0.147.0): `$CODEX_HOME/hooks.json` is the **only** path that works — a
+# project-level `./.codex/hooks.json` is not discovered, and hooks declared in
+# `config.toml` do not fire. So codex has no project scope at all, and the
+# strip-the-project-duplicate half of the Cursor and Claude Code legs has nothing to
+# mirror here: there is exactly one definition because there is exactly one place.
+#
+# CODEX_HOME is read at import, which is what makes a room's or a test's throwaway
+# home reachable — the same seam `CLAUDE_CONFIG_DIR` gives the Claude Code leg.
+CODEX_HOME = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+USER_CODEX_HOOKS = CODEX_HOME / "hooks.json"
+# Not written by us. `codex mcp add|remove` owns this file — it also holds the
+# per-project trust records codex writes on its own, so a read-modify-write of it
+# would be the `~/.claude.json` hazard again in TOML. Named here because `verify` and
+# the consent text must be able to say where the registration lands.
+USER_CODEX_MCP = CODEX_HOME / "config.toml"
+
+# One list, so a harness cannot arrive in the agent registry and be silently
+# uninstallable. The sentinel for "every one of them" is `all`, not `both`: the word
+# stopped being true the moment there were three, and a flag whose name asserts a
+# count is a flag that has to be renamed each time the count moves.
 HARNESSES = AGENT_HARNESSES
+ALL_HARNESSES = "all"
+
+# What to call each harness when addressing the operator. A dict rather than a
+# conditional expression for the reason the old `"Claude Code" if h == "claude" else
+# "Cursor"` is gone: a two-way conditional does not fail on a third name, it
+# mislabels it.
+EDITOR_NAMES = {"claude": "Claude Code", "cursor": "Cursor", "codex": "codex"}
+
+
+def _other_harnesses(harness: str) -> str:
+    """The harnesses a transcript could be extracted with instead of this one.
+
+    Written out rather than inlined as `'cursor' if harness == 'claude' else 'claude'`,
+    which was true only while there were two and silently advised the wrong CLI on the
+    third. The suggestion is a real fallback: extraction reads a transcript handed to
+    it on stdin, so any installed CLI can distill any harness's session.
+    """
+    return "|".join(h for h in HARNESSES if h != harness)
 
 # The hook wiring, as (event, matcher, script). Matcher None = all tools.
 HOOK_WIRING: list[tuple[str, str | None, str]] = [
@@ -186,86 +226,187 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
 ]
 
 
+# The codex wiring, in Claude Code's shape — (event, matcher, script) — because
+# codex's `hooks.json` *is* Claude Code's schema: matcher groups under an event key,
+# `{"type": "command", "command": ...}` entries, and matchers that are regexes rather
+# than literals. Measured 2026-08-17 (codex-cli 0.147.0) by wiring three matchers on
+# PostToolUse in a throwaway CODEX_HOME: `Bash`, `mcp__thalamus__.*` and
+# `Edit|Write|apply_patch` each fired for exactly the tool names they describe, and a
+# group with no matcher fired for all three.
+#
+# **No `native=` entries, and that is the important difference from Cursor.** Codex
+# does not read `~/.claude/settings.json`: three codex sessions ran on a box with the
+# Claude Code suite installed at user scope and wrote zero pin-ledger rows and zero
+# log lines. So there is no vendor compatibility path to decline an adapter in favour
+# of, no double-fire hazard, and anything wanted on codex is wired here or does not
+# run at all.
+#
+# The tool vocabulary is measured, not assumed. A live `codex exec` turn that ran a
+# shell command, edited a file and called an MCP tool produced exactly three tool
+# names in its hook payloads: `Bash` (with `tool_input.command`), `apply_patch` (with
+# the patch envelope on `tool_input.command`) and
+# `mcp__thalamus__memory_open_threads`. The rollout transcript disagrees — there every
+# call is a `custom_tool_call` named `exec` carrying a JavaScript program — so the
+# matchers here follow the hook layer, which is the surface they are matched against.
+#
+# What is deliberately absent:
+#
+#   `room-guard.sh` — it matches the `SendMessage` tool name and codex has no such
+#   tool, the same reason it is unwired on Cursor. Peer traffic here is a shell
+#   command, which `room-command-guard.sh` covers.
+#
+#   The readiness bracket (`readiness-pending.sh` / `readiness-ready.sh`). Rooms and
+#   dispatch are not built for codex, and a bracket exists to make a member
+#   addressable *within* a room. Building one now would publish a readiness signal
+#   for a member nothing can address.
+#
+#   `PostToolUse:TaskCreate` for conditioning's milestone class. That is Claude Code
+#   task-list UI; codex ships no analogous tool, so the class has no carrier — the
+#   same absence Cursor has, for the same reason.
+#
+#   `Skill` and `Artifact` on `role-guard.sh`'s matcher. Codex's skill and artifact
+#   surfaces have not been measured, and a matcher naming a tool nobody has observed
+#   is a guess that reads as enforcement. `apply_patch` is the measured editing tool,
+#   so the path half of the role boundary binds and the capability half does not.
+CODEX_HOOK_WIRING: list[tuple[str, str | None, str]] = [
+    ("SessionStart", None, "session-start.sh"),
+    ("SessionEnd", None, "session-end.sh"),
+    ("UserPromptSubmit", None, "timestamp.sh"),
+    ("UserPromptSubmit", None, "conditioning.sh"),
+    ("UserPromptSubmit", None, "pin-engaged.sh"),
+    ("PreToolUse", "Bash", "gremlin-guard.sh"),
+    ("PreToolUse", "Bash", "write-guard.sh"),
+    ("PreToolUse", "Bash", "room-command-guard.sh"),
+    # `mcp__penpot__.*` rides along on measured grounds rather than by analogy: codex
+    # registers an MCP tool as `mcp__<server>__<tool>` (observed for `thalamus`), so
+    # the name a `designer` session's Penpot calls arrive under is the one the Claude
+    # Code matcher already names.
+    ("PreToolUse", "apply_patch|mcp__penpot__.*", "role-guard.sh"),
+    ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
+    ("PostToolUse", "Bash", "gremlin-tap.sh"),
+    ("PostToolUse", "mcp__thalamus__memory_query", "recipe-stage.sh"),
+    ("PostToolUse", "Bash", "recipe-stage.sh"),
+]
+
+
 @dataclass(frozen=True)
 class HookParity:
-    """What the two wirings above are believed to add up to — the tables, only.
+    """What the wirings above are believed to add up to — the tables, only.
 
     Written as data so it can be re-derived and disagreed with. The same claim as a
     comment was wrong for three scripts and no test could notice, because a comment
     is not compared to anything.
 
     It is not circular to pin a hand-written expectation beside the tables it
-    describes and then recompute it: the derivation reads `HOOK_WIRING` and
-    `CURSOR_HOOK_WIRING`, this record does not, so adding a script to either table
-    moves one and not the other. That divergence is precisely the event that went
-    unnoticed before.
+    describes and then recompute it: the derivation reads the wiring tables, this
+    record does not, so adding a script to one table moves one and not the other.
+    That divergence is precisely the event that went unnoticed before.
+
+    **Per harness, with the differences taken pairwise against Claude Code.** The
+    record used to be two-harness by construction — `claude_scripts`,
+    `cursor_scripts`, `claude_only`, `cursor_only` — and a third table it had no field
+    for would have reproduced the original failure exactly: a wiring compared to
+    nothing. Claude Code is the reference not by seniority but because it is the only
+    table where a script's absence is always a decision rather than a translation, and
+    the old fields are the two-harness case of the new ones (`claude_only` was
+    `missing["cursor"]`, `cursor_only` was `extra["cursor"]`).
+
+    A per-harness set also carries what a shared/only split cannot: a script in two
+    tables and not the third is invisible to that split, and it is the commonest shape
+    now there are three — `role-guard.sh` is wired on Claude Code and on codex and not
+    on Cursor.
 
     **The subject is the wiring, never the obligation.** This record cannot say
     whether a boundary binds, and a reader who takes it for that gets a false answer
     in both directions: it over-reported gaps until `renames` was added, and it
-    under-reported enforcement until `native` was, because a script absent from both
-    tables can still be running through the vendor's own compatibility path.
+    under-reported enforcement until `native` was, because a script absent from a
+    table can still be running through the vendor's own compatibility path.
     `contract/boundaries.py` is the record that speaks about obligations.
     """
 
-    claude_scripts: int
-    cursor_scripts: int
+    # harness -> how many distinct scripts its table names.
+    scripts: dict[str, int]
+    # Scripts every table names.
     shared: int
-    claude_only: tuple[str, ...]
-    cursor_only: tuple[str, ...]
+    # harness -> Claude Code scripts its table does not name.
+    missing: dict[str, tuple[str, ...]]
+    # harness -> scripts its table names that Claude Code's does not.
+    extra: dict[str, tuple[str, ...]]
     # A name-set difference cannot tell a rename from a gap — the two are the same
-    # shape — so the renames are named. Without this, `post-tool-use.sh` reads as a
-    # missing MCP tap on Cursor when `mcp-tap.sh` is doing that job under a different
-    # filename, which is a capability the adapter *has* being reported as one it lacks.
-    renames: tuple[tuple[str, str], ...]
-    # Scripts wired for Claude Code only *on purpose*, because Cursor already runs
-    # them: it translates `~/.claude/settings.json` into its own event names, so a
-    # second registration under `.cursor/` would run the same guard twice on one
-    # call. Absence from `CURSOR_HOOK_WIRING` is the decision here, not the gap —
-    # and without this field the two are the same shape, exactly as a rename was.
-    native: tuple[str, ...] = ()
+    # shape — so the renames are named, per harness, as (claude_name, local_name).
+    # Without this, `post-tool-use.sh` reads as a missing MCP tap on Cursor when
+    # `mcp-tap.sh` is doing that job under a different filename, which is a capability
+    # the adapter *has* being reported as one it lacks.
+    renames: dict[str, tuple[tuple[str, str], ...]]
+    # harness -> Claude Code scripts it runs with no wiring of its own, because the
+    # vendor already runs them: Cursor translates `~/.claude/settings.json` into its
+    # own event names, so a second registration under `.cursor/` would run the same
+    # guard twice on one call. Absence from that table is the decision there, not the
+    # gap — and without this field the two are the same shape, exactly as a rename was.
+    #
+    # Codex has no entry here and cannot have one: it does not read
+    # `~/.claude/settings.json` at all (measured — three codex sessions ran with the
+    # suite installed at user scope and fired none of it), so every script it runs is
+    # one this module wired.
+    native: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
-    @property
-    def real_gaps(self) -> tuple[str, ...]:
-        """Claude-only scripts with no Cursor path, renames and natives excluded.
+    def real_gaps(self, harness: str) -> tuple[str, ...]:
+        """Claude Code scripts with no path on `harness`, renames and natives excluded.
 
         A name lands here by *default*, so this is a floor on the gaps and not a
-        measurement of them: a script nobody has probed on Cursor is indistinguishable
-        from one probed and found missing. `role-guard.sh` sat here for a release
-        while it was in fact binding.
+        measurement of them: a script nobody has probed on a harness is
+        indistinguishable from one probed and found missing. `role-guard.sh` sat here
+        for a release while it was in fact binding on Cursor.
         """
-        accounted = {claude_name for claude_name, _ in self.renames} | set(self.native)
-        return tuple(name for name in self.claude_only if name not in accounted)
+        accounted = (
+            {claude_name for claude_name, _ in self.renames.get(harness, ())}
+            | set(self.native.get(harness, ()))
+        )
+        return tuple(name for name in self.missing.get(harness, ())
+                     if name not in accounted)
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    claude_scripts=13,
-    cursor_scripts=14,
+    scripts={"claude": 13, "codex": 12, "cursor": 14},
     shared=9,
-    claude_only=("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh", "room-guard.sh"),
-    cursor_only=(
-        "distill.sh", "inject.sh", "mcp-tap.sh",
-        # Cursor-only because Claude Code needs no bracket: its harness writes `status`
-        # into the session descriptor from inside its own event loop, so readiness there
-        # is a first-party signal already. These two exist to give Cursor the same
-        # answer, not a better one.
-        "readiness-pending.sh", "readiness-ready.sh",
-    ),
-    renames=(("post-tool-use.sh", "mcp-tap.sh"),),
-    native=("role-guard.sh",),
+    missing={
+        "codex": ("room-guard.sh",),
+        "cursor": ("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh",
+                   "room-guard.sh"),
+    },
+    extra={
+        # Codex needs no script Claude Code does not have: its payloads are Claude
+        # Code's, so every entry in its table delegates into `hooks/claude-code/`.
+        "codex": (),
+        "cursor": (
+            "distill.sh", "inject.sh", "mcp-tap.sh",
+            # Cursor-only because neither other harness needs a bracket: Claude Code
+            # writes `status` into the session descriptor from inside its own event
+            # loop, so readiness there is a first-party signal already, and codex has
+            # no room for a member to be addressable in. These two exist to give
+            # Cursor the same answer, not a better one.
+            "readiness-pending.sh", "readiness-ready.sh",
+        ),
+    },
+    renames={"cursor": (("post-tool-use.sh", "mcp-tap.sh"),)},
+    native={"cursor": ("role-guard.sh",)},
 )
 
 
 def derive_hook_parity() -> dict:
     """Recompute the parity claim from the wirings themselves."""
-    claude = {script for _, _, script in HOOK_WIRING}
-    cursor = {script for _, script in CURSOR_HOOK_WIRING}
+    sets = {
+        "claude": {script for _, _, script in HOOK_WIRING},
+        "codex": {script for _, _, script in CODEX_HOOK_WIRING},
+        "cursor": {script for _, script in CURSOR_HOOK_WIRING},
+    }
+    reference = sets["claude"]
+    others = {h: s for h, s in sorted(sets.items()) if h != "claude"}
     return {
-        "claude_scripts": len(claude),
-        "cursor_scripts": len(cursor),
-        "shared": len(claude & cursor),
-        "claude_only": tuple(sorted(claude - cursor)),
-        "cursor_only": tuple(sorted(cursor - claude)),
+        "scripts": {harness: len(s) for harness, s in sorted(sets.items())},
+        "shared": len(set.intersection(*sets.values())),
+        "missing": {h: tuple(sorted(reference - s)) for h, s in others.items()},
+        "extra": {h: tuple(sorted(s - reference)) for h, s in others.items()},
     }
 
 
@@ -357,15 +498,19 @@ def _strip_thalamus_hooks(settings: dict) -> dict:
     return settings
 
 
-def build_hook_block() -> dict:
-    """The hook block with absolute paths — no $CLAUDE_PROJECT_DIR anywhere.
+def _build_matcher_block(wiring: list[tuple[str, str | None, str]],
+                         hook_dir: Path) -> dict:
+    """Claude Code's matcher-group schema, from a (event, matcher, script) table.
 
-    Grouped by (event, matcher) so several scripts on one event share a group,
-    matching the shape Claude Code's settings schema expects.
+    Shared by the Claude Code and codex legs because codex's `hooks.json` is that
+    schema — the same event keys, the same `{"type": "command", …}` entries, and
+    matchers read as regexes (measured 2026-08-17). Two builders would be two places
+    for the grouping rule to drift, and the grouping rule is load-bearing: one script
+    serving two matchers must land in two groups, or it fires twice for one tool call.
     """
     block: dict = {}
-    for event, matcher, script in HOOK_WIRING:
-        entry = {"type": "command", "command": str(HOOK_DIR / script)}
+    for event, matcher, script in wiring:
+        entry = {"type": "command", "command": str(hook_dir / script)}
         groups = block.setdefault(event, [])
         for group in groups:
             if group.get("matcher") == matcher:
@@ -377,6 +522,23 @@ def build_hook_block() -> dict:
                 group["matcher"] = matcher
             groups.append(group)
     return block
+
+
+def build_hook_block() -> dict:
+    """The hook block with absolute paths — no $CLAUDE_PROJECT_DIR anywhere."""
+    return _build_matcher_block(HOOK_WIRING, HOOK_DIR)
+
+
+def build_codex_hook_block() -> dict:
+    """The same, for `$CODEX_HOME/hooks.json`.
+
+    Absolute paths for a sharper reason than on Claude Code: `$CODEX_HOME` is
+    expanded inside a `command`, but nothing else is, and codex resolves a relative
+    command against the session's own cwd — which is some other repo entirely
+    whenever a session is opened outside the checkout, the reach-past-the-checkout
+    failure this module exists to fix.
+    """
+    return _build_matcher_block(CODEX_HOOK_WIRING, CODEX_HOOK_DIR)
 
 
 def build_mcp_entry() -> dict:
@@ -515,6 +677,110 @@ def install_cursor(dry_run: bool = False) -> list[str]:
     else:
         actions.append("project-scope cursor MCP server already absent")
 
+    return actions
+
+
+def register_codex_mcp(dry_run: bool = False) -> str:
+    """Register the server through `codex mcp add`, never by editing config.toml.
+
+    Same reasoning as `register_mcp`, with the file changed: `$CODEX_HOME/config.toml`
+    is codex's own, not ours. It carries the per-project `trust_level` records and the
+    `[hooks.state]` trust hashes codex writes for itself, so a read-modify-write of it
+    would drop whatever the CLI put there between our read and our replace — and it is
+    TOML, where a naive round-trip loses comments and ordering as well.
+
+    Idempotent with no remove-first, unlike the Claude Code leg: `codex mcp add`
+    overwrites an existing name rather than refusing it (measured — two adds under one
+    name left one `[mcp_servers.thalamus]` table carrying the second one's values).
+
+    A named function for the reason `deregister_mcp` is one: it reaches a real file on
+    a real machine, so the test suite needs exactly one seam to stub.
+    """
+    cli = shutil.which("codex")
+    if cli is None:
+        return "SKIPPED codex MCP registration: `codex` not on PATH"
+
+    entry = build_mcp_entry()
+    add_cmd = [cli, "mcp", "add", "thalamus"]
+    for name, value in entry["env"].items():
+        add_cmd += ["--env", f"{name}={value}"]
+    add_cmd += ["--", entry["command"], *entry["args"]]
+    if dry_run:
+        return f"would register `thalamus` MCP server with codex: {' '.join(add_cmd[1:])}"
+
+    proc = subprocess.run(add_cmd, capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        return f"codex MCP registration FAILED: {(proc.stderr or proc.stdout).strip()[:300]}"
+    return f"registered `thalamus` MCP server with codex ({USER_CODEX_MCP})"
+
+
+def deregister_codex_mcp(dry_run: bool = False) -> str:
+    """Remove the server, through the CLI for the reason it was added through it."""
+    cli = shutil.which("codex")
+    if cli is None:
+        return "SKIPPED codex MCP deregistration: `codex` not on PATH"
+    if dry_run:
+        return "would deregister `thalamus` MCP server (codex mcp remove thalamus)"
+    proc = subprocess.run([cli, "mcp", "remove", "thalamus"],
+                          capture_output=True, text=True, timeout=60)
+    out = f"{proc.stdout}{proc.stderr}"
+    return ("deregistered `thalamus` MCP server from codex" if "Removed" in out
+            else "`thalamus` MCP server was not registered with codex")
+
+
+def codex_mcp_registration() -> str:
+    """What `codex mcp get thalamus` reports, or "" when nothing is registered.
+
+    Read through the CLI rather than by parsing `config.toml`, mirroring
+    `registered_mcp_env`. One thing it cannot answer: codex **masks env values** in
+    this output (`THALAMUS_GRAPH_URL=*****`), so the env-drift check that raises a
+    relaunch advisory on the Claude Code leg has no codex counterpart — a withholding
+    rate that moved under a codex session is not detectable from here.
+    """
+    cli = shutil.which("codex")
+    if cli is None:
+        return ""
+    try:
+        proc = subprocess.run([cli, "mcp", "get", "thalamus"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    out = f"{proc.stdout}{proc.stderr}"
+    return "" if "No MCP server named" in out else proc.stdout
+
+
+def install_codex(dry_run: bool = False) -> list[str]:
+    """Wire codex at its config root. There is no project scope to strip.
+
+    Measured 2026-08-17: `$CODEX_HOME/hooks.json` is the only file codex loads hooks
+    from — a project-level `./.codex/hooks.json` is not discovered, and hooks declared
+    in `config.toml` do not fire. So the mutual-exclusion problem the other two legs
+    solve by removing a second definition does not arise: there is one place, and this
+    writes it.
+
+    Codex also does not read `~/.claude/settings.json` (measured — three codex
+    sessions ran with the Claude Code suite installed at user scope and left no
+    ledger row and no log line), so nothing here can be left to a vendor
+    compatibility path the way `role-guard.sh` is on Cursor.
+    """
+    actions: list[str] = []
+
+    current = _load_json(USER_CODEX_HOOKS)
+    desired = build_codex_hook_block()
+    merged = _strip_thalamus_hooks(json.loads(json.dumps(current)))
+    merged.setdefault("hooks", {})
+    for event, groups in desired.items():
+        merged["hooks"].setdefault(event, []).extend(groups)
+
+    if current == merged:
+        actions.append(f"codex hooks already current ({USER_CODEX_HOOKS})")
+    else:
+        actions.append(f"{'would write' if dry_run else 'wrote'} codex hooks to "
+                       f"{USER_CODEX_HOOKS}")
+        if not dry_run:
+            _write_json(USER_CODEX_HOOKS, merged)
+
+    actions.append(register_codex_mcp(dry_run=dry_run))
     return actions
 
 
@@ -720,7 +986,7 @@ def verify_runtime(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
             f"`{cli.binary}` at {found}" if found else
             f"`{cli.binary}` not on PATH — {harness} sessions will retrieve and "
             f"trace but never distill (install it, or extract with "
-            f"`--harness {'cursor' if harness == 'claude' else 'claude'}`)",
+            f"`--harness {_other_harnesses(harness)}`)",
             advisory=True,
         ))
 
@@ -874,6 +1140,170 @@ def verify_cursor() -> list[Check]:
     return checks
 
 
+def _codex_event_key(event: str) -> str:
+    """`PreToolUse` -> `pre_tool_use` — the spelling codex uses in a trust key."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", event).lower()
+
+
+def codex_trust_keys() -> set[str]:
+    """The hook coordinates codex has a trust record for, from its own config.
+
+    Measured 2026-08-17. Trust is persisted in `$CODEX_HOME/config.toml` as
+
+        [hooks.state."<hooks.json path>:<event_snake>:<group_index>:<hook_index>"]
+        trusted_hash = "sha256:…"
+
+    and it is **load-bearing in the silent direction**: with a hooks.json present and
+    untrusted, a headless `codex exec` ran to completion, exited 0, printed nothing
+    about hooks, and fired none of them. That is the Xu et al. latent error exactly —
+    the wiring is right, the memory simply stops accumulating — so it is checked here
+    rather than assumed.
+
+    What this cannot answer is whether a record is *current*. The key carries the
+    coordinates and the hash covers the entry, and we cannot recompute codex's hash;
+    a record left from an earlier wiring has the same key as a fresh one. Editing a
+    hook *script* does not invalidate anything (measured: a trusted hook still ran
+    after its script was edited), so the stale case is a changed wiring table, which
+    is exactly when `thalamus init` rewrites the file and codex asks again.
+    """
+    try:
+        import tomllib
+
+        with USER_CODEX_MCP.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, ValueError):
+        return set()
+    state = (data.get("hooks") or {}).get("state") or {}
+    return {key for key in state if isinstance(state.get(key), dict)}
+
+
+def verify_codex() -> list[Check]:
+    """Exercise the codex leg the way the other two are exercised.
+
+    Three of these are the shared shape — scripts present, executable, wired. The two
+    that are codex's own are the trust state, which no other harness has, and one live
+    delegation, which is the mechanism that replaces Cursor's eight adapters and so
+    the one thing nothing else here proves.
+    """
+    checks: list[Check] = []
+    scripts = sorted({s for _, _, s in CODEX_HOOK_WIRING})
+
+    missing = [s for s in scripts if not (CODEX_HOOK_DIR / s).is_file()]
+    checks.append(Check("codex hook scripts present", not missing,
+                        f"all {len(scripts)} wired scripts found" if not missing
+                        else f"missing: {missing}"))
+
+    unexec = [s for s in scripts
+              if (CODEX_HOOK_DIR / s).is_file() and not os.access(CODEX_HOOK_DIR / s, os.X_OK)]
+    checks.append(Check("codex hook scripts executable", not unexec,
+                        "all executable" if not unexec else f"not executable: {unexec}"))
+
+    wired = _load_json(USER_CODEX_HOOKS)
+    commands = {h.get("command")
+                for groups in (wired.get("hooks") or {}).values()
+                for group in groups or []
+                for h in group.get("hooks") or []}
+    unwired = [s for s in scripts if str(CODEX_HOOK_DIR / s) not in commands]
+    checks.append(Check(
+        "codex hooks wired at user scope",
+        not unwired,
+        f"{len(scripts)} scripts in {USER_CODEX_HOOKS}" if not unwired
+        else f"not written yet ({USER_CODEX_HOOKS}) — `thalamus init` writes it"
+        if len(unwired) == len(scripts)
+        else f"not wired: {unwired}",
+        pending=len(unwired) == len(scripts),
+    ))
+
+    # The trust state, reported as its own finding rather than folded into the wiring
+    # check: a wired-and-untrusted codex is fully installed and completely inert, and
+    # the fix is the operator's to make in a TUI — nothing this installer can write
+    # would grant it, and building a wrapper whose text never changes so the hash
+    # stays green would be routing around a supply-chain control.
+    #
+    # Which of the three states it reports matters, because each names a different
+    # fix. Nothing wired is `pending`: `thalamus init` is the command, and the trust
+    # question does not exist yet. Wired and untrusted is **advisory** — the install
+    # is correct and something outside it must become true before it does anything,
+    # which is the same shape as an unreachable graph, and telling the operator to
+    # re-run `thalamus init` would be sending them to a command that cannot grant it.
+    # Wired and *partly* trusted is a hard failure: codex was asked and the answer
+    # covered only part of the table, so some hooks fire and some silently do not.
+    expected = {
+        f"{USER_CODEX_HOOKS}:{_codex_event_key(event)}:{gi}:{hi}"
+        for event, groups in build_codex_hook_block().items()
+        for gi, group in enumerate(groups)
+        for hi, _ in enumerate(group["hooks"])
+    }
+    trusted = expected & codex_trust_keys()
+    never_wired = len(unwired) == len(scripts)
+    checks.append(Check(
+        "codex hooks trusted", trusted == expected,
+        f"all {len(expected)} entries carry a trust record in {USER_CODEX_MCP}"
+        if trusted == expected
+        else f"no hooks written yet ({USER_CODEX_HOOKS}) — `thalamus init` writes "
+             "them, and codex then asks you to trust them"
+        if never_wired
+        else "codex has not been asked to trust these hooks yet — launch `codex` once "
+             "and take the trust-all option on the hooks-review prompt. Until then "
+             "codex loads them and fires none of them: a headless `codex exec` with "
+             "an untrusted hooks.json ran to completion, exited 0, said nothing about "
+             "hooks, and distilled nothing"
+        if not trusted
+        else f"{len(trusted)} of {len(expected)} entries are trusted — launch `codex` "
+             "and trust the rest; the untrusted ones do not fire",
+        pending=never_wired,
+        advisory=not never_wired and not trusted,
+    ))
+
+    # The load-bearing codex check: one real delegation, in a throwaway HOME. Codex
+    # needs no payload adapters *except* on a shell result, which it sends as one
+    # string where Claude Code sends `{stdout, stderr}` — so this drives the reshape
+    # and the hand-off together. A silent failure here would price every ad-hoc
+    # gremlin query at zero and read as a traversal that returned nothing.
+    ok, detail = False, "not run"
+    tap = CODEX_HOOK_DIR / "gremlin-tap.sh"
+    if shutil.which("jq") and tap.is_file():
+        import tempfile
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                env = {**os.environ, "HOME": tmp}
+                env.pop("THALAMUS_SANDBOX", None)
+                payload = json.dumps({
+                    "hook_event_name": "PostToolUse",
+                    "session_id": "verify",
+                    "cwd": tmp,
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "python -c 'from gremlin_python import x'"},
+                    "tool_response": "verify-marker",
+                })
+                subprocess.run([str(tap)], input=payload, capture_output=True,
+                               text=True, timeout=30, env=env, check=True)
+                traces = list((Path(tmp) / ".thalamus" / "traces").glob("*.jsonl"))
+                landed = traces and "verify-marker" in traces[0].read_text()
+                ok = bool(landed)
+                detail = ("a codex shell payload reshaped and delegated into the "
+                          "shared trace log" if ok
+                          else "the delegation left no trace record")
+        except (subprocess.SubprocessError, OSError, ValueError) as exc:
+            detail = f"delegation failed: {exc}"
+    else:
+        detail = "skipped (jq or gremlin-tap.sh missing)"
+    checks.append(Check("codex delegation round trip", ok, detail))
+
+    served = codex_mcp_registration()
+    checks.append(Check(
+        "codex MCP server registered", str(PROJECT_ROOT) in served,
+        f"`thalamus` in {USER_CODEX_MCP}" if str(PROJECT_ROOT) in served
+        else f"not registered yet ({USER_CODEX_MCP}) — `thalamus init` registers it"
+        if not served
+        else f"registered with codex but not against this checkout ({PROJECT_ROOT}) "
+             "— re-run `thalamus init`",
+        pending=not served,
+    ))
+
+    return checks
+
+
 def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     """Exercise what would otherwise fail late (PCheck's early-detection idea).
 
@@ -958,6 +1388,9 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
 
     if "cursor" in harnesses:
         checks.extend(verify_cursor())
+
+    if "codex" in harnesses:
+        checks.extend(verify_codex())
 
     checks.extend(verify_runtime(harnesses))
 
@@ -1068,9 +1501,9 @@ def install(dry_run: bool = False,
             harnesses: tuple[str, ...] = HARNESSES) -> tuple[list[str], list[Check]]:
     """Install at user scope; strip the project-scope duplicate. Idempotent.
 
-    Both harnesses by default: the hook scripts, the MCP server and the graph
-    behind them are one installation, and a box that has only one of the two
-    editors simply ends up with an inert config file for the other.
+    Every harness by default: the hook scripts, the MCP server and the graph behind
+    them are one installation, and a box that has only one of the three editors simply
+    ends up with an inert config file for the others.
 
     Returns (actions, checks). Verification runs last and always, because an
     install that reports success without exercising anything is precisely the
@@ -1080,6 +1513,8 @@ def install(dry_run: bool = False,
 
     if "cursor" in harnesses:
         actions.extend(install_cursor(dry_run=dry_run))
+    if "codex" in harnesses:
+        actions.extend(install_codex(dry_run=dry_run))
     if "claude" not in harnesses:
         if not dry_run:
             write_all_agents(USER_AGENTS_DIR)
@@ -1170,6 +1605,8 @@ def _confirm() -> bool:
     for line in (
         f"{USER_SETTINGS} — registers {len(HOOK_WIRING)} hook entries",
         f"{USER_CURSOR_HOOKS} and {USER_CURSOR_MCP} — the same for Cursor",
+        f"{USER_CODEX_HOOKS} — registers {len(CODEX_HOOK_WIRING)} hook entries for codex",
+        f"{USER_CODEX_MCP} — registers the `thalamus` MCP server (via `codex mcp add`)",
         "~/.claude.json — registers the `thalamus` MCP server (via `claude mcp add`)",
         f"{USER_SKILLS_DIR} — symlinks the shipped skills",
         f"{USER_AGENTS_DIR} — writes one derived agent per expert",
@@ -1208,6 +1645,10 @@ def uninstall(dry_run: bool = False) -> list[str]:
     for path, strip, label in (
         (USER_SETTINGS, _strip_thalamus_hooks, "Claude Code user hooks"),
         (USER_CURSOR_HOOKS, _strip_cursor_hooks, "Cursor user hooks"),
+        # Codex's file takes the Claude Code stripper because it is the Claude Code
+        # schema. There is no project-scope leg to mirror: `$CODEX_HOME/hooks.json` is
+        # the only file codex loads hooks from.
+        (USER_CODEX_HOOKS, _strip_thalamus_hooks, "codex user hooks"),
     ):
         current = _load_json(path)
         stripped = strip(json.loads(json.dumps(current)))
@@ -1219,6 +1660,13 @@ def uninstall(dry_run: bool = False) -> list[str]:
             _write_json(path, stripped)
 
     actions.append(deregister_mcp(dry_run=dry_run))
+    actions.append(deregister_codex_mcp(dry_run=dry_run))
+
+    # The hook-trust records in `$CODEX_HOME/config.toml` are deliberately left where
+    # they are. They are codex's own state about a decision the operator made, the
+    # file is codex's to write, and a stale record is inert once the hooks it names
+    # are gone — while a partial edit of that file would take the per-project
+    # `trust_level` records with it.
 
     cursor_mcp = _load_json(USER_CURSOR_MCP)
     if "thalamus" in cursor_mcp.get("mcpServers", {}):
@@ -1257,7 +1705,7 @@ def uninstall(dry_run: bool = False) -> list[str]:
 
 
 def run(dry_run: bool = False, check_only: bool = False,
-        harness: str = "both", uninstall_mode: bool = False,
+        harness: str = ALL_HARNESSES, uninstall_mode: bool = False,
         assume_yes: bool = False) -> int:
     """CLI entry. Non-zero exit iff a check failed — install failures must be loud.
 
@@ -1279,7 +1727,7 @@ def run(dry_run: bool = False, check_only: bool = False,
         print("Nothing written.")
         return 1
 
-    harnesses = HARNESSES if harness == "both" else (harness,)
+    harnesses = HARNESSES if harness == ALL_HARNESSES else (harness,)
     if check_only:
         actions, checks = [], verify(harnesses)
     else:
@@ -1318,7 +1766,7 @@ def run(dry_run: bool = False, check_only: bool = False,
     if failed:
         return 1
     if not check_only:
-        editors = " and ".join("Claude Code" if h == "claude" else "Cursor" for h in harnesses)
+        editors = " and ".join(EDITOR_NAMES.get(h, h) for h in harnesses)
         print(f"\nInstalled for {editors}. Hooks and the MCP server arm per *process*: "
               "every session already open keeps the old config until the editor is "
               "relaunched, and `/clear` is not enough.")
@@ -1326,4 +1774,16 @@ def run(dry_run: bool = False, check_only: bool = False,
             print("Cursor: discovery reads the sessionEnd hook log, not the filesystem "
                   "(cursor_transcripts.discover), so sessions that ran on this box before "
                   "now will never be distilled — only ones ending from here on.")
+        if "codex" in harnesses:
+            # Two gates stand between a correct install and a codex session that
+            # actually distills, and both are the operator's to clear. Neither is
+            # written here: trusting a directory and trusting a hook are consent
+            # decisions, and an installer that granted them for you would be routing
+            # around the control rather than satisfying it.
+            print("codex: the next `codex` you launch asks you to review these hooks "
+                  "(`Trust all and continue`). Choosing to continue without trusting "
+                  "leaves them installed and silent — a headless run then exits 0, "
+                  "says nothing, and distills nothing. A directory codex has not seen "
+                  "asks separately, before that, and the answer is remembered against "
+                  "the repository root.")
     return 0
