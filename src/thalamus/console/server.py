@@ -1150,11 +1150,11 @@ def spawn_harnesses() -> list[dict]:
     """The harnesses a window can be pinned on, and what a pin means on each.
 
     `persona` is the difference the operator is picking between, not a detail: a
-    Claude Code pin fuses persona, MCP arming and routing onto `--agent`, while a
-    Cursor pin routes and is bounded and has no persona flag to select at all
-    (`harness/launcher.py`). Offering both as the same object would make the sheet
-    claim the second is something it is not, so the flag rides the payload and the
-    client says so at the point of choosing.
+    Claude Code pin fuses persona, MCP arming and routing onto `--agent` and a codex
+    pin carries the first two on `--profile`, while a Cursor pin routes and is bounded
+    with no carrier for a charter at all (`harness/launcher.py`). Offering all three as
+    the same object would make the sheet claim the last is something it is not, so the
+    flag rides the payload and the client says so at the point of choosing.
 
     First entry is the default the endpoint falls back to. Empty without the
     package, like every other expert-layer option — the client then offers the one

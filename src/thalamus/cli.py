@@ -614,7 +614,7 @@ def _main():
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
     pin_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     pin_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). A harness with no persona flag — `cursor`, `codex` — carries the scope as an argv `env` prefix instead, which is what survives `respawn-window`; see contract/pinning.py for what `pinned` covers without a persona. Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
+        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
 
     spawn_parser = subparsers.add_parser(
@@ -630,7 +630,7 @@ def _main():
     )
     spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     spawn_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). A harness with no persona flag — `cursor`, `codex` — carries the scope as an argv `env` prefix instead, which is what survives `respawn-window`; see contract/pinning.py for what `pinned` covers without a persona. Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
+        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
 
     roster_parser = subparsers.add_parser(

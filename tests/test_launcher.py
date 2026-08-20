@@ -112,6 +112,7 @@ class TestPinRecord:
         broken = dict(launcher.LAUNCH_SHAPES)
         broken["cursor"] = launcher.LaunchShape(
             harness="cursor", binary="agent", persona_flag=None,
+            persona_flag_carries_scope=False,
             always=("--trust",), capabilities=(), pin_carrier="env", settle_s=4.0,
         )
         monkeypatch.setattr(launcher, "LAUNCH_SHAPES", broken)
