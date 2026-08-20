@@ -61,7 +61,9 @@ A manifest can also declare:
   structural rather than a paragraph the model is asked to respect. The shipped `qe`
   manifest is the worked example: it holds the adversarial suite and is denied
   `src/`, because a scope that can repair the implementation it asserts against is
-  not independent of it.
+  not independent of it. `deny_globs` match absolute POSIX paths; optional
+  `allow_globs` are evaluated first and provide narrow exceptions for artifact trees
+  whose file extensions would otherwise trip a broad language deny.
 - **`capability_boundary`** — which skills and tools the scope may reach.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has. `designer` is the worked example.

@@ -2467,6 +2467,9 @@ def _report_roster_boundaries():
         print(f"\n  {scope}")
         writes = manifest.write_boundary.deny_globs
         print(f"    writes     denied: {', '.join(writes) if writes else '(nothing)'}")
+        write_exceptions = manifest.write_boundary.allow_globs
+        if write_exceptions:
+            print(f"      ...except: {', '.join(write_exceptions)}")
         tools = capability.deny_tools
         skills = capability.deny_skills
         allowed = capability.allow_tools
