@@ -173,7 +173,8 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
     BoundaryRow(
         "write_boundary.path", "claude", Provision.PROVIDED, _WIRED,
         "role-guard.sh resolves the pin, then fnmatches the path against the "
-        "manifest's deny_globs. Bash and a repo that keeps implementation outside "
+        "manifest's allow_globs and, failing those, its deny_globs. Bash and a "
+        "repo that keeps implementation outside "
         "`src/` are named misses, not gaps in the wiring.",
     ),
     BoundaryRow(

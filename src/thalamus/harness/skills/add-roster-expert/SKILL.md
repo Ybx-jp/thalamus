@@ -74,6 +74,13 @@ warns about is `src/thalamus/console/`, in this same package.
    declares nothing and says why (`architect` is the worked example).
    Write the denies narrow: a quality-engineering scope denies `*/src/*` and leaves
    the test tree open, because its campaign findings graduate into the green suite.
+
+   `allow_globs` is the escape hatch for a scope whose *artifact* is source code —
+   a named tree where the file constitutes the deliverable rather than implementing
+   it. Entries are checked before `deny_globs`, so they exempt a path the denies
+   would otherwise catch. Reach for it only when the alternative is dropping an
+   extension from `deny_globs`, which unbinds that language everywhere instead of in
+   one tree.
 2c. **Know what the new scope inherits without asking for it.** `capability_boundary`
    defaults the other way from `write_boundary`: declaring nothing inherits
    `ROSTER_CAPABILITY_DEFAULT`, so a new expert silently arrives denied the design
