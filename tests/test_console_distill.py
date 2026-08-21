@@ -43,7 +43,7 @@ def box(tmp_path):
     kills = tmp_path / "killed.jsonl"
     watch = DistillWatch(logs=logs, pins=pins, state=state, kills=kills)
 
-    def pin(sid, scope="homelab", cwd="/home/ybx/code/thalamus"):
+    def pin(sid, scope="homelab", cwd="/home/op/code/thalamus"):
         with pins.open("a") as fh:
             fh.write(json.dumps({"session_id": sid + "-rest", "scope": scope,
                                  "cwd": cwd, "tmux_pane": "%1", "ts": "now"}) + "\n")
@@ -59,7 +59,7 @@ def box(tmp_path):
         return path
 
     def kill(sid, op="close", at=None, scope="homelab",
-             cwd="/home/ybx/code/thalamus"):
+             cwd="/home/op/code/thalamus"):
         record_kill(sid, scope, cwd, op, at=at if at is not None else time.time(),
                     path=kills)
         watch._scanned_at = 0.0
@@ -101,7 +101,7 @@ def test_a_record_names_itself_because_it_outlives_its_window(box):
     failed but not whose is a new absence in the surface built to remove absences,
     so it carries the same grouping fields the row does, from the same pin.
     """
-    box.pin("aaaa7777", scope="literature", cwd="/home/ybx/code/thalamus/lab")
+    box.pin("aaaa7777", scope="literature", cwd="/home/op/code/thalamus/lab")
     box.log("aaaa7777", FAILED)
 
     (row,) = box.watch.rows()
@@ -116,14 +116,14 @@ def test_a_killed_window_record_carries_its_own_grouping_keys(box):
     box.kill("aaaa8888", op="recycle", scope="qe")
     box.watch._scanned_at = 0.0
     from thalamus.console.distill import record_kill
-    record_kill("aaaa9999", "designer", "/home/ybx/code/thalamus", "close",
-                project="thalamus", repo_root="/home/ybx/code/thalamus",
+    record_kill("aaaa9999", "designer", "/home/op/code/thalamus", "close",
+                project="thalamus", repo_root="/home/op/code/thalamus",
                 path=box.kills)
     box.watch._scanned_at = 0.0
 
     rows = {r["session"]: r for r in box.watch.rows()}
     assert rows["aaaa9999"]["project"] == "thalamus"
-    assert rows["aaaa9999"]["repo_root"] == "/home/ybx/code/thalamus"
+    assert rows["aaaa9999"]["repo_root"] == "/home/op/code/thalamus"
     assert rows["aaaa9999"]["scope"] == "designer"
     assert rows["aaaa8888"]["op"] == "recycle"
 
@@ -378,7 +378,7 @@ def test_the_backlog_on_disk_at_first_run_is_a_clean_slate(tmp_path):
     with pins.open("w") as fh:
         for n in range(3):
             fh.write(json.dumps({"session_id": f"old{n}0000-rest", "scope": "main",
-                                 "cwd": "/home/ybx/code/thalamus"}) + "\n")
+                                 "cwd": "/home/op/code/thalamus"}) + "\n")
     for n in range(3):
         (logs / f"session-end-old{n}0000.log").write_text(
             FAILED.format(sid=f"old{n}0000", scope="main"))
@@ -392,7 +392,7 @@ def test_the_backlog_on_disk_at_first_run_is_a_clean_slate(tmp_path):
         FAILED.format(sid="new00000", scope="main"))
     with pins.open("a") as fh:
         fh.write(json.dumps({"session_id": "new00000-rest", "scope": "main",
-                             "cwd": "/home/ybx/code/thalamus"}) + "\n")
+                             "cwd": "/home/op/code/thalamus"}) + "\n")
     watch._scanned_at = 0.0
     assert [r["session"] for r in watch.rows()] == ["new00000"]
 

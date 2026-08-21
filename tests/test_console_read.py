@@ -40,9 +40,9 @@ def ledger_row(sid, scope="main", cwd="/repo", pane="", ts="2026-08-09T00:00:00Z
 # ---- the project-directory flattening ----
 
 @pytest.mark.parametrize("cwd,slug", [
-    ("/home/ybx/code/thalamus", "-home-ybx-code-thalamus"),
-    ("/home/ybx/.claude/plugins", "-home-ybx--claude-plugins"),        # `.` and `/` both
-    ("/home/ybx/Documents/resume-workbench", "-home-ybx-Documents-resume-workbench"),
+    ("/home/op/code/thalamus", "-home-op-code-thalamus"),
+    ("/home/op/.claude/plugins", "-home-op--claude-plugins"),        # `.` and `/` both
+    ("/home/op/Documents/resume-workbench", "-home-op-Documents-resume-workbench"),
     ("/tmp/a__b", "-tmp-a--b"),                                        # `_` too
 ])
 def test_project_slug_matches_claude_codes_flattening(cwd, slug):

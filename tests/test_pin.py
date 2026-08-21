@@ -902,7 +902,7 @@ def test_a_stdio_server_survives_the_trip_through_toml(tmp_path):
     mcp.mkdir()
     (mcp / "qe.json").write_text(json.dumps({"mcpServers": {"thalamus": {
         "command": "uv",
-        "args": ["run", "--project", "/home/ybx/code/thalamus", "thalamus-mcp"],
+        "args": ["run", "--project", "/home/op/code/thalamus", "thalamus-mcp"],
         "env": {"THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin"},
     }}}))
 
@@ -911,7 +911,7 @@ def test_a_stdio_server_survives_the_trip_through_toml(tmp_path):
     )
     assert profile["mcp_servers"]["thalamus"] == {
         "command": "uv",
-        "args": ["run", "--project", "/home/ybx/code/thalamus", "thalamus-mcp"],
+        "args": ["run", "--project", "/home/op/code/thalamus", "thalamus-mcp"],
         "env": {"THALAMUS_GRAPH_URL": "ws://localhost:8182/gremlin"},
     }
 

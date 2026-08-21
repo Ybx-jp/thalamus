@@ -130,7 +130,7 @@ def write_descriptor(
     session_id: str,
     agent: str = "",
     status: str = "idle",
-    cwd: str = "/home/ybx/code/thalamus",
+    cwd: str = "/home/op/code/thalamus",
     proc_start: str | None = None,
     updated_at: int = 0,
     key: str = "",
@@ -387,7 +387,7 @@ def _target(**overrides) -> quick.LiveSession:
         "session_id": "parent-sid",
         "pid": 42,
         "proc_start": "1",
-        "cwd": "/home/ybx/code/thalamus",
+        "cwd": "/home/op/code/thalamus",
         "agent": "thalamus-homelab",
         "name": "room-homelab",
         "status": "idle",
@@ -458,10 +458,10 @@ def test_the_fork_inherits_the_room_and_is_told_its_parent():
     witness; the harness tells the forked process nothing about the session it was
     resumed from, so only the launcher can record it.
     """
-    env = quick.fork_env(_target(), {"CLAUDE_CONFIG_DIR": "/home/ybx/.thalamus/rooms/r"})
+    env = quick.fork_env(_target(), {"CLAUDE_CONFIG_DIR": "/home/op/.thalamus/rooms/r"})
 
     assert env["THALAMUS_FORKED_FROM"] == "parent-sid"
-    assert env["CLAUDE_CONFIG_DIR"] == "/home/ybx/.thalamus/rooms/r"
+    assert env["CLAUDE_CONFIG_DIR"] == "/home/op/.thalamus/rooms/r"
 
 
 def test_the_fork_runs_in_the_parents_cwd():
@@ -564,7 +564,7 @@ def test_the_prompt_counts_as_a_user_turn(tmp_path):
     )
     path = _transcript(
         tmp_path / "p" / "fork.jsonl",
-        [{"uuid": "u1", "type": "user", "cwd": "/home/ybx/code/thalamus",
+        [{"uuid": "u1", "type": "user", "cwd": "/home/op/code/thalamus",
           "message": {"role": "user", "content": prompt}}],
     )
 
@@ -743,15 +743,15 @@ def test_staging_the_delta_preserves_the_project_dir_name(tmp_path):
       `extract --projects-dir <root> -- <dir>` runs unchanged
     """
     projects = tmp_path / "projects"
-    _transcript(projects / "-home-ybx-code-thalamus" / "parent.jsonl", [{"uuid": "u1"}])
+    _transcript(projects / "-home-op-code-thalamus" / "parent.jsonl", [{"uuid": "u1"}])
     fork = _transcript(
-        projects / "-home-ybx-code-thalamus" / "fork.jsonl",
+        projects / "-home-op-code-thalamus" / "fork.jsonl",
         [{"uuid": "u1"}, {"uuid": "u2"}],
     )
 
     root = quick.stage_delta(fork, "parent", tmp_path / "forks")
 
-    staged = root / "-home-ybx-code-thalamus" / "fork.jsonl"
+    staged = root / "-home-op-code-thalamus" / "fork.jsonl"
     assert staged.is_file()
     assert [json.loads(line)["uuid"] for line in staged.read_text().splitlines()] == ["u2"]
 
@@ -817,7 +817,7 @@ def wired(monkeypatch, tmp_path):
     # The parent has had at least one turn, so there is a conversation to resume —
     # the difference between a live session and a forkable one.
     _transcript(
-        tmp_path / "projects" / "-home-ybx-code-thalamus" / "parent-sid.jsonl",
+        tmp_path / "projects" / "-home-op-code-thalamus" / "parent-sid.jsonl",
         [{"uuid": "u1", "type": "user", "message": {"role": "user", "content": "hi"}}],
     )
     return tmp_path
@@ -981,7 +981,7 @@ def test_a_live_session_that_never_had_a_turn_is_not_forkable(wired):
     """
     graph = FakeGraph()
     runner = fake_runner(envelope())
-    (wired / "projects" / "-home-ybx-code-thalamus" / "parent-sid.jsonl").unlink()
+    (wired / "projects" / "-home-op-code-thalamus" / "parent-sid.jsonl").unlink()
 
     with pytest.raises(quick.QuickRefused) as excinfo:
         quick.consult(

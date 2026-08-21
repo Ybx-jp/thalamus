@@ -122,11 +122,11 @@ def test_a_session_outside_any_checkout_has_no_project(tmp_path):
     """
     Scenario: A session whose cwd is a real directory that is not in a git repo
 
-    `project` used to be the cwd's basename unconditionally, which is how `ybx`, `tmp`,
-    `code`, a 64-char content hash and an Avatar episode title became project names on
-    3,078 vertices. The anchor is the thing at stake: a wrong one does not fail to
-    merge, it splits one file into two identities (`substrate/artifact_audit.py`), so
-    absent beats guessed.
+    `project` used to be the cwd's basename unconditionally, which is how a
+    home-directory name, `tmp`, `code`, a 64-char content hash and an Avatar episode
+    title became project names on 3,078 vertices. The anchor is the thing at stake: a
+    wrong one does not fail to merge, it splits one file into two identities
+    (`substrate/artifact_audit.py`), so absent beats guessed.
     """
     loose = tmp_path / "not-a-repo"
     loose.mkdir()
