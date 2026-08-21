@@ -1,26 +1,40 @@
 """Curated ingestion v0 — manual-first, evidence-first.
 
 The smallest thing that populates a knowledge subgraph: fetch (or read) one document,
-retain the bytes in the archive *before anything else*, extract a handful of typed
-claims and entities with a headless model pass, and hand the result to the contract.
-No crawler, no PDF pipeline, no embeddings — sophistication here is pulled by
-measurement, never pushed by enthusiasm.
+check the origin that served it against the scope's allowlist, retain the bytes in
+the archive, extract a handful of typed claims and entities with a headless model
+pass, and hand the result to the contract. No crawler, no embeddings — sophistication
+here is pulled by measurement, never pushed by enthusiasm.
 
-The order is load-bearing: archive first, extract second. Extraction is reversible
-(re-run against retained bytes with a better model or prompt); a fetch that was never
-retained is not.
+PDF text extraction is the one piece measurement did pull, and it rides the `pdf`
+extra. ICSE, CHI, FSE and TSE publish PDF only, including on hosts the literature
+allowlist already reaches, so refusing the format did not keep a literature out — it
+routed it through hand-conversion, which archives the conversion rather than the paper
+and records a local path where a citable origin belongs. Without the extra the refusal
+stands and names it, which is honest degradation rather than a silent empty read.
+
+The order is load-bearing at three points. The address is judged first, because what
+an abstract page is can be read off the URL and refusing costs not even a request.
+Then the allowlist gate, first among the things that spend something: an off-list
+document must not reach the archive the operator has to account for, nor a tool-enabled
+model. Then archive before extract, because extraction is reversible (re-run against
+retained bytes with a better model, prompt, or text extractor) and a fetch that was
+never retained is not.
 """
 
 from __future__ import annotations
 
 import html as html_lib
+import io
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from thalamus.archive import archive_bytes
+from thalamus.archive import archive_bytes, report_secrets, scan_for_secrets
+from thalamus.contract.manifest import load_manifest
 from thalamus.harness import extraction
 from thalamus.substrate.schema import (
     Chunk,
@@ -112,12 +126,21 @@ class DigestReport:
 
 
 def fetch(location: str) -> tuple[bytes, str]:
-    """Fetch a URL or read a local file. Returns (payload, origin)."""
+    """Fetch a URL or read a local file. Returns (payload, origin).
+
+    The origin is the address that **served** the bytes, which is not always the one
+    that was asked for: `urlopen` follows redirects, so a request to one host can be
+    answered by another. Every downstream use of `origin` — the allowlist gate, the
+    `Source` node's provenance, the supersession key — is a claim about where the
+    bytes came from, so answering it with the requested URL would let any allowlisted
+    address redirect content in from anywhere under its own name.
+    """
     if location.startswith(("http://", "https://")):
         request = Request(location, headers={"User-Agent": _USER_AGENT})
         try:
             with urlopen(request, timeout=_FETCH_TIMEOUT) as response:
-                return response.read(), location
+                payload = response.read()
+                return payload, (response.geturl() or location)
         except Exception as exc:
             raise IngestError(f"fetch failed for {location}: {exc}") from exc
 
@@ -127,26 +150,153 @@ def fetch(location: str) -> tuple[bytes, str]:
     return path.read_bytes(), str(path.resolve())
 
 
-def to_text(payload: bytes) -> str:
-    """Crude document → text. HTML gets tags stripped; PDFs are refused, not parsed.
+# arXiv's abstract page, whose id is what the two full-text forms are built from.
+_ARXIV_ABS_RE = re.compile(r"^https?://(?:www\.)?arxiv\.org/abs/(?P<id>[^/?#]+)")
 
-    Deliberately dumb: the archive holds the real bytes, so a better text extractor
-    is always a re-run away, and PDF plumbing is exactly the demoted cost the
-    ingestion protocol refuses to pay before measurement asks for it.
+
+def check_location(location: str) -> None:
+    """Refuse an address that serves a summary of the document instead of the document.
+
+    Its own check rather than a clause of the PDF path, because the hazard was never
+    about format. An abstract page parses cleanly, extracts cleanly, and yields
+    abstract-level claims that look exactly like paper-level ones — the failure is
+    silent, and silence is what makes it worth a refusal rather than a warning.
+
+    Refusing is affordable here only because the detector is exact and the repair is
+    mechanical: `arxiv.org/abs/<id>` is unambiguously the abstract page and both full
+    forms are the same id. A guard that refused on a guess would teach route-around,
+    which costs more than the miss.
+    """
+    match = _ARXIV_ABS_RE.match(location.strip())
+    if not match:
+        return
+    paper = match.group("id")
+    raise IngestError(
+        f"That is arXiv's abstract page, which yields abstract-level claims that read "
+        f"exactly like paper-level ones — the failure is silent, so it is refused "
+        f"rather than warned about. Feed the full text instead:\n"
+        f"  https://arxiv.org/html/{paper}   (rendering; not every paper has one)\n"
+        f"  https://arxiv.org/pdf/{paper}    (always exists; needs the `pdf` extra)"
+    )
+
+
+def check_origin(origin: str, scope: str, *, requested: str = "") -> None:
+    """Refuse bytes whose serving origin the scope's manifest does not allowlist.
+
+    Raises `IngestError`; returns None when the origin is allowed.
+
+    Positioned between the response and the archive, and that is the earliest it can
+    run and still be true: which host answers a URL is not knowable until it has
+    answered, so a check made before the request judges an address rather than a
+    source. What the gate has to protect is everything *downstream* of it — retained
+    bytes the operator now has to account for, and a pass through a tool-enabled
+    model. Both are spent unrecoverably, and neither happens until this returns.
+
+    Local paths need no manifest: an operator hand-feeding a file is the curation
+    decision (`ExpertManifest.allows`). A URL whose scope has no manifest is refused
+    rather than waved through — an ungoverned scope is the case with no curation at
+    all.
+    """
+    if urlparse(origin).scheme not in ("http", "https"):
+        return
+    try:
+        manifest = load_manifest(scope)
+    except (FileNotFoundError, ValueError) as exc:
+        raise IngestError(
+            f"cannot gate {origin}: no usable manifest for scope `{scope}` ({exc}). "
+            "Ingestion from a URL is allowlist-gated, so a scope with no manifest "
+            "fetches nothing"
+        ) from exc
+    if manifest.allows(origin):
+        return
+
+    detour = ""
+    if requested and requested != origin:
+        detour = f" (requested {requested}, redirected to {origin})"
+    raise IngestError(
+        f"Origin not allowlisted for `{scope}`: {origin}{detour} — nothing was "
+        "archived and no model was called; curation is the gate, so edit the "
+        "manifest's allowlist if this source belongs (config/experts/)"
+    )
+
+
+# A line-ending hyphen followed by a lowercase letter: a word a PDF's line breaking
+# split, not a compound. Rejoined before the whitespace collapse, because collapsing
+# first turns `con-\nflict` into `con- flict` and the term stops matching anything —
+# and lexical matching is what recall runs on. Restricted to lowercase so `Model-\nView`
+# and `FSE-\n2011` survive as written.
+_PDF_HYPHEN_BREAK_RE = re.compile(r"-\n([a-z])")
+
+# Typographic ligatures a PDF font emits as single glyphs. Left as-is they split every
+# word containing them (`conflict` → `con` + `ict` under a plain ASCII fold), which is
+# the same lexical damage as the hyphen case and hits common English trigrams.
+_PDF_LIGATURES = str.maketrans({
+    "ﬁ": "fi", "ﬂ": "fl", "ﬀ": "ff", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "ft", "ﬆ": "st",
+})
+
+
+def _pdf_to_text(payload: bytes) -> str:
+    """Extract a PDF's text, or say why it cannot be extracted here.
+
+    Needs the `pdf` extra (`uv sync --extra pdf`). Absent, this refuses and names the
+    extra — the same honest degradation the console's no-package tier takes, rather
+    than a silent empty extraction that would read downstream as a short document.
+
+    Extraction is crude on purpose and the crudeness is now affordable: the archive
+    holds the PDF itself, so a better extractor is genuinely a re-run away. That was
+    the property the old refusal claimed and could not deliver, because refusing meant
+    a hand-converted `.txt` was archived and the PDF never was.
+
+    Known and accepted: pypdf walks text objects in content-stream order, so a
+    two-column academic layout can interleave columns within a page. It costs term
+    adjacency, not term presence, and the claims this feeds are extracted by a model
+    reading prose rather than by positional parsing.
+    """
+    try:
+        from pypdf import PdfReader  # noqa: PLC0415
+    except ImportError as exc:
+        raise IngestError(
+            "PDF text extraction needs the `pdf` extra — install it with "
+            "`uv sync --extra pdf`, or hand-feed the relevant sections as a local "
+            "text file. Hand-feeding archives your conversion rather than the paper "
+            "and records a local path as the origin, so prefer the extra"
+        ) from exc
+
+    try:
+        reader = PdfReader(io.BytesIO(payload))
+        pages = [page.extract_text() or "" for page in reader.pages]
+    except Exception as exc:  # noqa: BLE001 — pypdf raises its own hierarchy plus OSError
+        raise IngestError(f"PDF could not be parsed: {type(exc).__name__}: {exc}") from exc
+
+    text = "\n".join(pages)
+    # A scanned or image-only PDF parses fine and yields nothing. Refused here, named
+    # for what it is: `ingest()`'s downstream length floor would report it as a
+    # document too short to assert anything, which sends the reader looking at the
+    # wrong thing.
+    if not text.strip():
+        raise IngestError(
+            f"PDF yielded no extractable text across {len(reader.pages)} page(s) — it is "
+            "scanned or image-only. OCR is not built; hand-feed the sections you need"
+        )
+
+    text = text.translate(_PDF_LIGATURES)
+    return _PDF_HYPHEN_BREAK_RE.sub(r"\1", text)
+
+
+def to_text(payload: bytes) -> str:
+    """Crude document → text. HTML gets tags stripped; PDFs go through pypdf.
+
+    Deliberately dumb, and safe to be: the archive holds the real bytes, so a better
+    text extractor is always a re-run away.
     """
     if payload[:5] == b"%PDF-":
-        raise IngestError(
-            "PDF parsing is deliberately unbuilt — feed an HTML rendering "
-            "(for arXiv, arxiv.org/html/<id>) or hand-feed the relevant sections as a "
-            "local text file under ~/.thalamus/hand-fed/. Do NOT settle for the "
-            "abstract page: /abs/ yields abstract-level claims only, and the failure "
-            "is silent. The archive will retain whatever you feed"
-        )
-    text = payload.decode("utf-8", errors="ignore")
-    if "<" in text and ">" in text:
-        text = _DROP_BLOCKS_RE.sub(" ", text)
-        text = _TAG_RE.sub(" ", text)
-        text = html_lib.unescape(text)
+        text = _pdf_to_text(payload)
+    else:
+        text = payload.decode("utf-8", errors="ignore")
+        if "<" in text and ">" in text:
+            text = _DROP_BLOCKS_RE.sub(" ", text)
+            text = _TAG_RE.sub(" ", text)
+            text = html_lib.unescape(text)
     return " ".join(text.split())
 
 
@@ -519,13 +669,25 @@ def ingest(
     title: str = "",
     known_entities: list[dict] | None = None,
 ) -> tuple[KnowledgeBatch, extraction.ExtractionRun, DigestReport]:
-    """The full v0 path: fetch → retain → extract → assemble. Contract checks and
-    graph writes belong to the caller (the CLI), which also owns dry-run semantics.
+    """The full v0 path: fetch → gate → retain → extract → assemble. Contract checks
+    and graph writes belong to the caller (the CLI), which also owns dry-run semantics.
+
+    The gate reads the origin that answered, and it sits ahead of both irreversible
+    steps — the archive write and the model pass — so a document from outside the
+    scope's allowlist costs a request and nothing else (see `check_origin`).
 
     `known_entities` rows carry name/kind/description from the scope's graph — names
     feed the prompt, the full shape feeds the batch backfill (see build_batch)."""
+    # Ahead of the fetch, unlike the allowlist gate below: what an abstract page is
+    # can be read off the address, so refusing costs not even a request.
+    check_location(location)
     payload, origin = fetch(location)
+    check_origin(origin, scope, requested=location)
     entry = archive_bytes(payload, suffix=".txt" if not payload.startswith(b"<") else ".html")
+    # Third-party bytes are the archive's least-trusted input. Reported, never
+    # redacted — the same posture as a transcript: the archive holds evidence, and
+    # evidence that has been quietly rewritten is not evidence.
+    report_secrets(scan_for_secrets(payload), f"ingested document {origin}")
 
     text = to_text(payload)
     if len(text) < 200:

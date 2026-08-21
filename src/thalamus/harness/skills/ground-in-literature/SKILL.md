@@ -60,13 +60,29 @@ audio/music ML), that is not permission to proceed — it is a **coverage gap to
 close first**:
 
 ```bash
-thalamus ingest <arxiv-url|aclanthology-url|local.pdf-path> --scope literature --write
+thalamus ingest <url-or-local-path> --scope literature --write
 ```
 
 Ingestion is allowlist-gated (`config/experts/literature.yaml`), evidence-first,
 and lands the source as tier-2 `LiteratureClaim`/`Entity` nodes with a citation you
 can then cite. Feeding a paper *is* the tier-2 curation decision. Local files bypass
-the allowlist — hand-feeding a PDF is itself the curation.
+the allowlist — hand-feeding is itself the curation.
+
+**HTML, PDF and local text all work; PDF needs the `pdf` extra** (`uv sync --extra
+pdf`), and without it the refusal names the extra. Prefer a URL over a hand-fed
+conversion in every case you can: hand-feeding archives *your conversion* rather than
+the paper, and records a local path where a citable origin belongs, so the Source can
+never be re-fetched, verified by anyone else, or deduped against a later ingest of the
+same work.
+
+**`arxiv.org/abs/<id>` is refused**, whatever it would have served. The abstract page
+extracts cleanly into abstract-level claims that read exactly like paper-level ones, so
+the failure is silent. Use `arxiv.org/html/<id>` where a rendering exists, and
+`arxiv.org/pdf/<id>`, which always does.
+
+**`--url` is the Gremlin endpoint, not the document.** The document is the positional
+argument. Passing a paper to `--url` fails after the extraction pass is already paid
+for (issue #66).
 
 ## Instructions
 

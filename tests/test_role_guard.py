@@ -64,6 +64,23 @@ class TestWriteBoundary:
         assert boundary.denies("/r/src/thalamus/eval/oracle.py") == "*/src/*"
         assert boundary.denies("/r/tests/test_eval_oracle.py") is None
 
+    def test_an_explicit_exception_is_narrower_than_the_language_deny(self):
+        """A named tree, not a language grant — the same extension stays denied elsewhere.
+
+        The case this exists for is a scope whose *artifact* is source code: the file
+        constitutes the deliverable rather than implementing it. Widening the deny list
+        would buy that by unbinding the boundary everywhere, which is the failure the
+        boundary exists to prevent. An allow entry is the narrow instrument, and the
+        third assertion is the one that matters — it proves the exception did not leak.
+        """
+        boundary = WriteBoundary(
+            allow_globs=["*/artifact/*"],
+            deny_globs=["*.tsx", "*.css"],
+        )
+        assert boundary.denies("/r/artifact/src/Film.tsx") is None
+        assert boundary.denies("/r/artifact/src/film.css") is None
+        assert boundary.denies("/r/src/App.tsx") == "*.tsx"
+
 
 class TestShippedManifests:
     def test_designer_is_bounded_off_software_but_not_off_design_artifacts(self):

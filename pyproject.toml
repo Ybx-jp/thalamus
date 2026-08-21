@@ -79,6 +79,17 @@ voice = [
     "torch>=2.5",
     "numpy>=2.1",
 ]
+# PDF text extraction for `thalamus ingest` (harness/ingest.to_text). Optional because
+# a text extractor is not a runtime path — every other surface reads bytes the archive
+# already holds — and because the ingestion protocol pays for plumbing when measurement
+# asks. It asked: the software-engineering and HCI venues (ICSE, CHI, FSE, TSE) publish
+# PDF only, including on hosts the literature allowlist already reaches, so without this
+# that whole literature is reachable only by hand-converting a file, which archives the
+# conversion instead of the paper and files it under a local path instead of a citable
+# origin. pypdf is pure Python and has no native build.
+pdf = [
+    "pypdf>=5.0",
+]
 
 [project.scripts]
 thalamus = "thalamus.cli:main"

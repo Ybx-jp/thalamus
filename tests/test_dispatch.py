@@ -266,6 +266,79 @@ def test_an_event_row_does_not_hide_a_members_pane(room):
     assert panes == {"sid-qe": "%11", "sid-arch": "%12"}
 
 
+# --- Addressability ------------------------------------------------------------------
+
+
+def _main_member(room):
+    """The room's `main`: on a pane, in the ledger, and launched with no `--agent`.
+
+    Written without `_descriptor`, which names an agent by construction — the absent
+    key IS the condition. `main` has no manifest, so there is nothing to launch it
+    with, and it is the one member every room has.
+    """
+    sessions = room["config_dir"] / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    (sessions / "106.json").write_text(json.dumps({
+        "sessionId": "sid-main", "pid": 106, "cwd": "/home/ybx/code/thalamus",
+        "name": "alpha-main", "status": "idle", "updatedAt": 1000,
+    }))
+    room["pins_file"].write_text(
+        room["pins_file"].read_text()
+        + "\n" + json.dumps({"session_id": "sid-main", "scope": "main",
+                             "room": "alpha", "tmux_pane": "%16"})
+    )
+    room["panes"].add("%16")
+
+
+def test_a_member_launched_without_an_agent_is_addressable_by_name(room):
+    """
+    Scenario: `--to main` against a room whose `main` is on a pane.
+
+    Verification: it resolves. `LiveSession.scope` is derived from the launch agent
+    and comes back empty here, so a filter reading only the descriptor made this
+    member visible when unnamed and invisible when named — and a caller cannot tell
+    "not in the room" from "cannot be named". The pin ledger records what the launcher
+    launched, `main` included, so it answers where the descriptor cannot.
+    """
+    _main_member(room)
+
+    everyone = dispatch.preflight(
+        "alpha", config_dir=room["config_dir"], pins_file=room["pins_file"],
+        panes=room["panes"],
+    )
+    # Control: the unfiltered call sees it. Without this, "unaddressable" and "the
+    # fixture never placed it" are the same result.
+    assert "sid-main" in {t.session_id for t in everyone}
+
+    named = dispatch.preflight(
+        "alpha", ["main"], config_dir=room["config_dir"], pins_file=room["pins_file"],
+        panes=room["panes"],
+    )
+    assert [t.session_id for t in named] == ["sid-main"]
+    assert named[0].scope == "main"
+
+
+def test_naming_one_member_does_not_widen_to_the_room(room):
+    """The other side of the filter: reconciling scopes must not stop filtering."""
+    _main_member(room)
+
+    named = dispatch.preflight(
+        "alpha", ["qe"], config_dir=room["config_dir"], pins_file=room["pins_file"],
+        panes=room["panes"],
+    )
+
+    assert [t.session_id for t in named] == ["sid-qe"]
+
+
+def test_the_ledger_answers_the_scope_the_descriptor_cannot(room):
+    """`ledger_scopes` is the reconciliation's source, and event rows do not win it."""
+    _main_member(room)
+
+    assert dispatch.ledger_scopes(room["pins_file"]) == {
+        "sid-qe": "qe", "sid-arch": "architect", "sid-main": "main",
+    }
+
+
 # --- The rows are stimulus, not collaboration -----------------------------------------
 
 

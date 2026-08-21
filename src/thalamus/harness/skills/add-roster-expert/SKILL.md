@@ -74,6 +74,13 @@ warns about is `src/thalamus/console/`, in this same package.
    declares nothing and says why (`architect` is the worked example).
    Write the denies narrow: a quality-engineering scope denies `*/src/*` and leaves
    the test tree open, because its campaign findings graduate into the green suite.
+
+   `allow_globs` is the escape hatch for a scope whose *artifact* is source code —
+   a named tree where the file constitutes the deliverable rather than implementing
+   it. Entries are checked before `deny_globs`, so they exempt a path the denies
+   would otherwise catch. Reach for it only when the alternative is dropping an
+   extension from `deny_globs`, which unbinds that language everywhere instead of in
+   one tree.
 2c. **Know what the new scope inherits without asking for it.** `capability_boundary`
    defaults the other way from `write_boundary`: declaring nothing inherits
    `ROSTER_CAPABILITY_DEFAULT`, so a new expert silently arrives denied the design
@@ -121,7 +128,7 @@ warns about is `src/thalamus/console/`, in this same package.
    is per *claude process*, so a restart changes nothing a relaunched session
    would not, and restarting whichever process created the tmux session can take
    the whole roster with it (hazard 2). Always check first:
-   `cat /proc/$(pgrep -f 'tmux new-session.*thalamus' | head -1)/cgroup`
+   `cat /proc/$(pgrep -f 'tmux.*-L thalamus' | head -1)/cgroup`
 7. **Verify — including that the pin actually armed.** `curl -s
    "$CONSOLE/api/panes"` — `CONSOLE` being the console's bind address,
    `127.0.0.1:8378` by default — lists the new window; a roster re-run prints
@@ -184,15 +191,15 @@ fit assumes 60 columns. Don't "fix" window sizes.
   roster idempotency (`already has a window`) keys on name and only governs
   `--all`, not on-demand spawn.
 - **How a stolen anchor presents here** (mechanism: hazard 1). When some other
-  process wins the race and attaches first with `tmux new -A -s thalamus`, index 0
+  process wins the race and attaches first with `tmux -L thalamus new -A -s thalamus`, index 0
   is a bare shell; roster sync adds `main` beside it at index 1, and INFRA →
   *restart* on that anchor types `/exit` into bash (`-bash: /exit: No such file or
   directory`), so the pane never dies and the console sits `recycling: true` for the
   full 4-min grace — which reads as **"sessions won't start"**. Ordering roster
   bring-up first prevents it; `pin.spawn()` creates the session with the scope's
   window for the same reason. Repair: confirm index 0 is an idle shell
-  (`tmux list-panes`, no child procs), `tmux kill-window -t thalamus:0`, re-run
-  roster.
+  (`tmux -L thalamus list-panes`, no child procs), `tmux -L thalamus kill-window -t
+  thalamus:0`, re-run roster.
 
 ## The seam in one line
 

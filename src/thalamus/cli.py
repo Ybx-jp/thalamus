@@ -1588,7 +1588,7 @@ def _cmd_extract(args):
     Sessions are processed chronologically so a thread opened in March can be resolved by
     a session from April — the same replay semantics a live agent would have produced.
     """
-    from thalamus.archive import read_archived
+    from thalamus.archive import read_archived, report_secrets
     from thalamus.contract.conformance import prune_orphan_artifacts
     from thalamus.contract.ontology import vid
 
@@ -1724,7 +1724,12 @@ def _cmd_extract(args):
                 launched.get("forked_from") or env_forked_from
             )
 
-            entry, _ = transcripts.retain(facts.path)
+            entry, secrets = transcripts.retain(facts.path)
+            # This is the path that runs at every session end. The scan reports and
+            # never redacts, so computing it and dropping it would be the same as not
+            # scanning at all — `report_secrets` is the consumer, on stderr and in
+            # ~/.thalamus/logs/secret-scan.log.
+            report_secrets(secrets, f"session {facts.session_id[:8]} transcript")
             # A Cursor session's ingress evidence lives outside its transcript, so the
             # transcript alone would not reach what the floor judged.
             transcripts.retain_ingress_receipt(facts)
@@ -2467,6 +2472,9 @@ def _report_roster_boundaries():
         print(f"\n  {scope}")
         writes = manifest.write_boundary.deny_globs
         print(f"    writes     denied: {', '.join(writes) if writes else '(nothing)'}")
+        write_exceptions = manifest.write_boundary.allow_globs
+        if write_exceptions:
+            print(f"      ...except: {', '.join(write_exceptions)}")
         tools = capability.deny_tools
         skills = capability.deny_skills
         allowed = capability.allow_tools
@@ -3437,6 +3445,7 @@ def _cmd_console(args):
     import subprocess
 
     from thalamus.console.server import Config, PortInUse, serve
+    from thalamus.harness import tmux
     from thalamus.harness.pin import PROJECT_ROOT
 
     if not shutil.which("tmux"):
@@ -3454,7 +3463,7 @@ def _cmd_console(args):
         voice_url=args.voice,
         fetch_interval_s=max(0.0, args.fetch_interval) * 60,
     )
-    if subprocess.run(["tmux", "has-session", "-t", cfg.session],
+    if subprocess.run(tmux.argv("has-session", "-t", cfg.session),
                       capture_output=True).returncode != 0:
         # Serve anyway: the console showing an empty roster and a working spawn
         # button is a better answer than a refusal the operator reads on a phone.

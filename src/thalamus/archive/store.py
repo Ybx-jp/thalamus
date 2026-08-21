@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_ARCHIVE_DIR = Path.home() / ".thalamus" / "archive"
@@ -106,3 +108,44 @@ def scan_for_secrets(payload: bytes) -> dict[str, int]:
         if hits:
             findings[name] = hits
     return findings
+
+
+# Where a finding goes when nobody is watching the terminal. Session-end distillation is
+# detached and its stderr is nobody's tail, so a warning that only printed would be a
+# warning only the interactive paths ever got — and the recurring path is the one that
+# archives on every session.
+SECRET_LOG = Path.home() / ".thalamus" / "logs" / "secret-scan.log"
+
+
+def report_secrets(findings: dict[str, int], subject: str, *,
+                   log_path: Path | None = None) -> str:
+    """Surface a scan's findings. Returns the one-line summary, empty when clean.
+
+    The scan reports and never redacts (see `scan_for_secrets`), so its entire value is
+    that a person is told — which makes "computed and dropped" the same as not scanning.
+    Every path that archives bytes calls this with what it found, and the call is the
+    consumer: it writes a dated row to `SECRET_LOG` and prints to stderr, so an
+    interactive run says it now and a detached one leaves it where `subject` can be
+    matched back to the archived bytes.
+
+    Clean input writes nothing. A log that also recorded the silences would bury the
+    rows worth reading, and the archive itself already records what was retained.
+    """
+    if not findings:
+        return ""
+    detail = ", ".join(f"{name}×{hits}" for name, hits in sorted(findings.items()))
+    line = f"⚠ possible credentials in retained bytes — {subject}: {detail}"
+
+    path = log_path or SECRET_LOG
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} {subject}: {detail}\n")
+    except OSError:
+        # An unwritable log must not take down the archiving path it rides on. The
+        # stderr line below is still delivered, so the finding is never lost silently.
+        pass
+
+    print(line, file=sys.stderr)
+    return line

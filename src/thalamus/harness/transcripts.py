@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from thalamus.archive import archive_bytes, archive_dir, scan_for_secrets
+from thalamus.archive import archive_bytes, archive_dir, report_secrets, scan_for_secrets
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.harness.agents import SANDBOX_TMP_PREFIX
 from thalamus.substrate.schema import (
@@ -445,7 +445,13 @@ def retain_ingress_receipt(facts: TranscriptFacts, *, archive_base: Path | None 
     if not facts.ingress_receipt:
         return None
     payload = json.dumps(facts.ingress_receipt, indent=2, sort_keys=True).encode()
-    return archive_bytes(payload, suffix=".ingress.json", base=archive_base)
+    entry = archive_bytes(payload, suffix=".ingress.json", base=archive_base)
+    # Scanned and reported here rather than handed back, unlike `retain` above. This
+    # runs on both the recurring and the historical path and neither caller wants a
+    # second findings map to thread; the receipt is derived from tool results, which
+    # is exactly where a fetched credential would be.
+    report_secrets(scan_for_secrets(payload), f"ingress receipt {entry.content_hash[:12]}")
+    return entry
 
 
 def to_session_graph(

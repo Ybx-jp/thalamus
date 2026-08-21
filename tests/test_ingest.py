@@ -1,17 +1,24 @@
 """
 Curated-ingestion tests — manifest gating and the model-free half of ingest.
 
-Interfaces: contract.manifest.ExpertManifest/load_manifest, harness.ingest.to_text/build_batch
-Infrastructure: tmp_path for manifest files; no network, no model
-Scope: the gates a document passes on its way into a knowledge subgraph. The fetch and
-the model pass are exercised live; everything either side of them is pinned here.
+Interfaces: contract.manifest.ExpertManifest/load_manifest,
+harness.ingest.fetch/check_origin/to_text/build_batch
+Infrastructure: tmp_path for manifest files; loopback HTTP servers for redirect
+handling; no egress, no model
+Scope: the gates a document passes on its way into a knowledge subgraph. The model
+pass is exercised live; everything either side of it is pinned here.
 """
+
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
 from thalamus.contract.conformance import check_knowledge
 from thalamus.contract.manifest import ExpertManifest, available_scopes, load_manifest
-from thalamus.harness.ingest import IngestError, build_batch, to_text
+from thalamus.harness import extraction
+from thalamus.harness import ingest as ingest_mod
+from thalamus.harness.ingest import IngestError, build_batch, check_origin, fetch, to_text
 from thalamus.substrate.schema import Tier
 
 
@@ -42,6 +49,116 @@ def test_local_files_bypass_the_allowlist():
     fetches on its own.
     """
     assert _manifest().allows("/home/op/papers/reflexion.html")
+
+
+def _loopback(handler_cls):
+    """A throwaway HTTP server on 127.0.0.1. Yields its base URL, then shuts down."""
+    server = HTTPServer(("127.0.0.1", 0), handler_cls)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def test_fetch_records_the_host_that_answered_not_the_one_asked():
+    """
+    Scenario: a requested URL 302s to a different host, which serves the bytes
+
+    `origin` is consumed as a claim about where the bytes came from — the allowlist
+    reads it, the Source node carries it as provenance, and supersession keys on it.
+    So it must name the responder. Reporting the requested URL would let any address
+    on the allowlist redirect content in from anywhere under its own name, and the
+    allowlist would answer correctly about a URL nobody fetched.
+
+    Loopback only, so this is hermetic: no egress, and 127.0.0.1 is on no allowlist.
+    """
+    payload = b"served by the host that actually answered"
+
+    class _Target(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *_args):
+            return
+
+    target_server, target_base = _loopback(_Target)
+    target_url = f"{target_base}/actually-served-here"
+
+    class _Redirector(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", target_url)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            return
+
+    redirect_server, redirect_base = _loopback(_Redirector)
+
+    try:
+        body, origin = fetch(f"{redirect_base}/looks-fine")
+    finally:
+        for server in (redirect_server, target_server):
+            server.shutdown()
+            server.server_close()
+
+    # The control: without this, origin == the requested URL would be correct here
+    # for the wrong reason, because no redirect was followed at all.
+    assert body == payload
+    assert origin == target_url
+
+
+def test_ingest_gates_the_serving_origin_before_it_spends_anything(tmp_path, monkeypatch):
+    """
+    Scenario: an allowlisted URL redirects to a host on no allowlist
+
+    Two properties in one, because either alone leaves the hole open. The gate reads
+    the origin that *answered* — checking the requested URL passes an allowlisted
+    address that fetched from anywhere. And it runs ahead of both irreversible steps:
+    an off-list document must not land in the archive the operator has to account
+    for, nor go through a tool-enabled model. Both are spent unrecoverably, so a
+    check made after them reports a leak rather than preventing one.
+    """
+    experts = tmp_path / "experts"
+    experts.mkdir()
+    (experts / "literature.yaml").write_text(
+        "scope: literature\nname: Lit\nclaim_kinds: [literature/finding]\nallowlist: [arxiv.org]\n"
+    )
+    monkeypatch.setenv("THALAMUS_CONFIG_DIR", str(tmp_path))
+
+    def _answered_elsewhere(_location):
+        return b"long enough to extract from " * 40, "https://elsewhere.example/served-here"
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("ran past the allowlist gate")
+
+    monkeypatch.setattr(ingest_mod, "fetch", _answered_elsewhere)
+    monkeypatch.setattr(ingest_mod, "archive_bytes", _must_not_run)
+    monkeypatch.setattr(extraction, "run_extraction", _must_not_run)
+
+    with pytest.raises(IngestError, match="not allowlisted") as caught:
+        ingest_mod.ingest("https://arxiv.org/html/2401.00001", scope="literature")
+
+    message = str(caught.value)
+    # Both addresses, because the refusal is unreadable with either one missing: the
+    # operator typed one URL and the gate is talking about another.
+    assert "elsewhere.example" in message and "arxiv.org" in message
+
+
+def test_a_url_whose_scope_has_no_manifest_is_refused_not_waved_through(tmp_path, monkeypatch):
+    """An ungoverned scope is the case with no curation at all, so it fetches nothing.
+
+    Local paths still pass: an operator hand-feeding a file IS the curation decision,
+    and there is no manifest to consult for a decision already made.
+    """
+    (tmp_path / "experts").mkdir()
+    monkeypatch.setenv("THALAMUS_CONFIG_DIR", str(tmp_path))
+
+    with pytest.raises(IngestError, match="no usable manifest"):
+        check_origin("https://arxiv.org/abs/2401.00001", "unmanifested")
+
+    check_origin("/home/op/papers/reflexion.html", "unmanifested")
 
 
 def _arxiv_batch():
@@ -113,17 +230,151 @@ def test_html_becomes_text_and_scripts_do_not():
     assert "evil" not in text and "color:red" not in text
 
 
-def test_pdfs_are_refused_not_half_parsed():
-    with pytest.raises(IngestError, match="deliberately unbuilt") as caught:
+def _pdf_bytes(*lines: str) -> bytes:
+    """A one-page PDF whose content stream shows `lines`, one text line each.
+
+    Built here rather than committed as a binary fixture: a fixture cannot be read in
+    review and drifts silently from what the parser is asked to handle, while this puts
+    the text going in beside the assertion on the text coming out. Generating it needs
+    nothing — only reading it back needs the `pdf` extra.
+
+    The text goes through a base-14 Helvetica with no /Encoding override, so it is
+    StandardEncoding: `\\257` is the `fl` ligature glyph, which is how a real typeset
+    paper delivers one. That makes the ligature case a genuine extraction result rather
+    than a string this test typed itself.
+    """
+    shown = "\n".join(f"({line}) Tj 0 -14 Td" for line in lines)
+    stream = f"BT /F1 11 Tf 50 700 Td\n{shown}\nET".encode("latin-1")
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + body + b"\nendobj\n"
+
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode() + b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_at}\n%%EOF\n").encode()
+    return bytes(out)
+
+
+def test_a_pdf_becomes_text():
+    """
+    Scenario: a PDF fed to the extractor with the `pdf` extra installed
+
+    Refusing this format never kept a literature out — ICSE, CHI, FSE and TSE publish
+    PDF only, including on hosts the allowlist already reaches — it routed one through
+    hand-conversion, which archives the conversion instead of the paper and records a
+    local path where a citable origin belongs.
+    """
+    pytest.importorskip("pypdf", reason="PDF extraction rides the `pdf` extra")
+
+    text = to_text(_pdf_bytes("Speculative merges detect conflicts before a merge."))
+
+    assert "Speculative merges detect conflicts" in text
+
+
+def test_a_pdfs_line_breaks_and_ligatures_do_not_sever_its_terms():
+    """
+    Scenario: a PDF that hyphenated `conflict` across a line break and set `fl` as a
+    ligature glyph — both of which a typeset paper does routinely
+
+    Verification: `conflict` and `flagged` each survive as one token.
+
+    Lexical matching is what recall runs on, so a term split by typesetting is a term
+    the graph cannot be searched for. Collapsing whitespace first would leave
+    `con- flict`, which is why the rejoin runs before it.
+    """
+    pytest.importorskip("pypdf", reason="PDF extraction rides the `pdf` extra")
+
+    # `\257` is StandardEncoding's `fl`; the second line begins mid-word.
+    text = to_text(_pdf_bytes("A merge con-", r"\257ict, and a \257agged one."))
+
+    assert "conflict" in text
+    assert "con- flict" not in text and "con-flict" not in text
+    assert "flagged" in text
+
+
+def test_a_pdf_with_no_extractable_text_is_named_for_what_it_is():
+    """A scanned PDF parses fine and yields nothing.
+
+    Reported as image-only rather than falling through to `ingest()`'s length floor,
+    which would call it a document too short to assert anything and send the reader
+    looking at the wrong thing.
+    """
+    pytest.importorskip("pypdf", reason="PDF extraction rides the `pdf` extra")
+
+    with pytest.raises(IngestError, match="scanned or image-only"):
+        to_text(_pdf_bytes())
+
+
+def test_a_pdf_without_the_extra_refuses_and_names_the_extra(monkeypatch):
+    """Honest degradation, not a silent empty read.
+
+    The import is forced to fail rather than the extra being uninstalled, so this runs
+    on a box that has it. Without the guard an absent parser would extract nothing and
+    read downstream as a short document.
+    """
+    import builtins  # noqa: PLC0415
+
+    real_import = builtins.__import__
+
+    def refuse_pypdf(name, *args, **kwargs):
+        if name == "pypdf":
+            raise ImportError("No module named 'pypdf'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", refuse_pypdf)
+
+    with pytest.raises(IngestError, match="uv sync --extra pdf") as caught:
         to_text(b"%PDF-1.7 ...")
 
-    # The refusal fires at exactly the hazardous moment — no HTML
-    # rendering available — so it must not send the operator to the landing page,
-    # whose abstract-only extraction fails silently. Pinned because the original
-    # message did precisely that for three weeks.
+    # It must also name the fallback's cost, or the fallback reads as equivalent.
+    assert "local path as the origin" in str(caught.value)
+
+
+def test_the_arxiv_abstract_page_is_refused_whatever_format_it_would_have_served():
+    """
+    Scenario: `arxiv.org/abs/<id>` handed to ingest
+
+    Verifications:
+    - refused before anything is fetched
+    - both full-text forms are named, by the same id
+
+    An abstract page parses cleanly and yields abstract-level claims that read exactly
+    like paper-level ones, so the failure is silent — which is what earns a refusal
+    rather than a warning. It is checked on the address, not inside the PDF path,
+    because the hazard was never about format.
+    """
+    with pytest.raises(IngestError, match="abstract page") as caught:
+        ingest_mod.check_location("https://arxiv.org/abs/2503.23278")
+
     message = str(caught.value)
-    assert "hand-feed" in message and "arxiv.org/html/" in message
-    assert "ingest the abstract" not in message
+    assert "https://arxiv.org/html/2503.23278" in message
+    assert "https://arxiv.org/pdf/2503.23278" in message
+
+
+def test_the_full_text_addresses_are_not_refused():
+    """The control. A refusal that fired on everything would pass the test above."""
+    for allowed in (
+        "https://arxiv.org/html/2503.23278",
+        "https://arxiv.org/pdf/2503.23278",
+        "https://dl.acm.org/doi/abs/10.1145/1985793.1985839",  # not arXiv's /abs/
+        "/home/ybx/.thalamus/hand-fed/crystal.txt",
+    ):
+        assert ingest_mod.check_location(allowed) is None
 
 
 def test_digest_report_names_what_the_extractor_never_saw():

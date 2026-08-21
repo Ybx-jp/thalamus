@@ -26,9 +26,24 @@ thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log
 thalamus extract --harness codex   # same, sweeping $CODEX_HOME/sessions by session id
 thalamus write session.yaml        # write a session graph from a file
 thalamus validate session.yaml     # check an extraction against the contract
-thalamus ingest <url> --scope <expert>   # feed one document to an expert (dry run; --write to persist)
+thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (dry run; --write to persist)
 thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
 ```
+
+`ingest` reads HTML, plain text, and PDF. **PDF needs the `pdf` extra** (`uv sync
+--extra pdf`); without it the format is refused and the message names the extra. The
+document is the positional argument — `--url` on this command is the Gremlin endpoint,
+as it is on `write`, `bootstrap` and `extract`.
+
+`arxiv.org/abs/<id>` is refused before anything is fetched: the abstract page extracts
+into abstract-level claims that read exactly like paper-level ones, so the failure
+would be silent. Feed `arxiv.org/html/<id>` where a rendering exists, or
+`arxiv.org/pdf/<id>`, which always does.
+
+A local path bypasses the allowlist, because hand-feeding is itself the curation
+decision. Prefer a URL where one works: a hand-fed file archives your conversion rather
+than the document, and its `Source.origin` is a path on one machine rather than a
+citable address.
 
 ## Inspecting the graph
 
@@ -177,3 +192,4 @@ the consulted expert's memory instead of the session's own scope.
 |---|---|
 | `THALAMUS_SCOPE` | The session's pin. Read once at server startup |
 | `THALAMUS_CONFIG_DIR` | Where `experts/` and `tasks/` are read from, instead of the checkout's `config/` |
+| `THALAMUS_TMUX_SOCKET` | The tmux server the roster, `spawn`, `dispatch` and the console address (`tmux -L …`), default `thalamus`. Two checkouts on one box get separate control planes by setting it differently |

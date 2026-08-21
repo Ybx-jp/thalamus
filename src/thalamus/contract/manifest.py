@@ -59,8 +59,26 @@ class WriteBoundary(BaseModel):
     defence-in-depth over a boundary the operator also states in `domain`, and the
     standing trade applies — a false positive teaches route-around, which
     costs more than a miss.
+
+    `allow_globs` is the narrow instrument for the one case a deny list reads wrongly:
+    a scope whose *artifact* is source code, where the file constitutes the deliverable
+    rather than implementing it. The alternative is to drop the extension from
+    `deny_globs`, which buys that one tree by unbinding the boundary everywhere — the
+    exact failure the boundary exists to prevent. An allow entry names the tree
+    instead, so the same extension stays denied outside it.
+
+    Evaluated **before** the denies, because the other order cannot express an
+    exception: a deny that already matched has nothing left to exempt it. That makes
+    an allow entry strictly widening, so it is written per scope and never defaulted.
     """
 
+    allow_globs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "fnmatch patterns over the absolute POSIX path; a match exempts the "
+            "path from deny_globs"
+        ),
+    )
     deny_globs: list[str] = Field(
         default_factory=list,
         description="fnmatch patterns over the absolute POSIX path; a match blocks the write",
@@ -74,6 +92,9 @@ class WriteBoundary(BaseModel):
         if not file_path:
             return None
         target = PurePosixPath(Path(file_path).as_posix()).as_posix()
+        for pattern in self.allow_globs:
+            if fnmatch(target, pattern):
+                return None
         for pattern in self.deny_globs:
             if fnmatch(target, pattern):
                 return pattern

@@ -53,15 +53,12 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
 thalamus_sandbox_guard
 
-input=$(cat)
+thalamus_read_guard_input write-guard.sh
+input="$thalamus_guard_input"
 
-# Fail CLOSED on a payload this cannot parse, which is the opposite of the posture the
-# other guards take and is deliberate. `guards-fail-closed-on-unparseable-input` is an
-# open qe finding against them: they permit when jq is missing or the JSON is
-# malformed, so the guard is absent precisely when something unusual is happening. The
-# other guards can afford it because their failure is a bad edit; this one's failure is
-# a graph write that distillation will then duplicate. So when the structured read
-# fails, the RAW payload is searched instead — no jq, no schema, still a haystack.
+# A parseable payload can still carry no command — a Bash call whose `tool_input` is
+# shaped differently than expected. The RAW payload is searched then: no schema, still
+# a haystack. Unparseable never reaches here; thalamus_read_guard_input blocks it.
 command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -n "$command" ] || command="$input"
 
