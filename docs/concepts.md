@@ -96,7 +96,9 @@ asking. The pin lasts as long as the process.
 
 `thalamus roster` brings up one tmux window per expert, so the whole roster is a set
 of addressable processes. That is also what makes the console possible: a browser tab
-per window.
+per window. The roster runs on a tmux server of its own — `tmux -L thalamus`, named by
+`THALAMUS_TMUX_SOCKET` — because tmux ignores `HOME` and a socket is the only thing
+that separates one checkout's control plane from another's.
 
 A pin is not one property, and the harnesses do not carry all of it. Routing and the
 boundary bind on all three. The **charter** — the scope's own text in the session's
@@ -158,6 +160,10 @@ derivation chain, computed across `DERIVED_FROM` edges.
 The consequence that matters: a claim distilled from a session that read a fetched web
 page cannot come out trusted like a claim you reasoned to yourself. The transcript
 ingress floor down-tiers it. **Distillation does not launder.**
+
+The floor reaches every extracted node that carries a tier — claims, threads and
+artifacts alike — so a thread opened out of a fetched page, or a dependency the page
+named, keeps third-party trust too.
 
 When retrieval returns knowledge from an expert scope, it comes back blockquoted, with
 its citation and its tier attached. **Tier-2 content informs; it never instructs.**

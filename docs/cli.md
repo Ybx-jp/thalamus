@@ -177,3 +177,4 @@ the consulted expert's memory instead of the session's own scope.
 |---|---|
 | `THALAMUS_SCOPE` | The session's pin. Read once at server startup |
 | `THALAMUS_CONFIG_DIR` | Where `experts/` and `tasks/` are read from, instead of the checkout's `config/` |
+| `THALAMUS_TMUX_SOCKET` | The tmux server the roster, `spawn`, `dispatch` and the console address (`tmux -L …`), default `thalamus`. Two checkouts on one box get separate control planes by setting it differently |

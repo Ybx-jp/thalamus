@@ -1,17 +1,24 @@
 """
 Curated-ingestion tests — manifest gating and the model-free half of ingest.
 
-Interfaces: contract.manifest.ExpertManifest/load_manifest, harness.ingest.to_text/build_batch
-Infrastructure: tmp_path for manifest files; no network, no model
-Scope: the gates a document passes on its way into a knowledge subgraph. The fetch and
-the model pass are exercised live; everything either side of them is pinned here.
+Interfaces: contract.manifest.ExpertManifest/load_manifest,
+harness.ingest.fetch/check_origin/to_text/build_batch
+Infrastructure: tmp_path for manifest files; loopback HTTP servers for redirect
+handling; no egress, no model
+Scope: the gates a document passes on its way into a knowledge subgraph. The model
+pass is exercised live; everything either side of it is pinned here.
 """
+
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
 from thalamus.contract.conformance import check_knowledge
 from thalamus.contract.manifest import ExpertManifest, available_scopes, load_manifest
-from thalamus.harness.ingest import IngestError, build_batch, to_text
+from thalamus.harness import extraction
+from thalamus.harness import ingest as ingest_mod
+from thalamus.harness.ingest import IngestError, build_batch, check_origin, fetch, to_text
 from thalamus.substrate.schema import Tier
 
 
@@ -42,6 +49,116 @@ def test_local_files_bypass_the_allowlist():
     fetches on its own.
     """
     assert _manifest().allows("/home/op/papers/reflexion.html")
+
+
+def _loopback(handler_cls):
+    """A throwaway HTTP server on 127.0.0.1. Yields its base URL, then shuts down."""
+    server = HTTPServer(("127.0.0.1", 0), handler_cls)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def test_fetch_records_the_host_that_answered_not_the_one_asked():
+    """
+    Scenario: a requested URL 302s to a different host, which serves the bytes
+
+    `origin` is consumed as a claim about where the bytes came from — the allowlist
+    reads it, the Source node carries it as provenance, and supersession keys on it.
+    So it must name the responder. Reporting the requested URL would let any address
+    on the allowlist redirect content in from anywhere under its own name, and the
+    allowlist would answer correctly about a URL nobody fetched.
+
+    Loopback only, so this is hermetic: no egress, and 127.0.0.1 is on no allowlist.
+    """
+    payload = b"served by the host that actually answered"
+
+    class _Target(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *_args):
+            return
+
+    target_server, target_base = _loopback(_Target)
+    target_url = f"{target_base}/actually-served-here"
+
+    class _Redirector(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", target_url)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            return
+
+    redirect_server, redirect_base = _loopback(_Redirector)
+
+    try:
+        body, origin = fetch(f"{redirect_base}/looks-fine")
+    finally:
+        for server in (redirect_server, target_server):
+            server.shutdown()
+            server.server_close()
+
+    # The control: without this, origin == the requested URL would be correct here
+    # for the wrong reason, because no redirect was followed at all.
+    assert body == payload
+    assert origin == target_url
+
+
+def test_ingest_gates_the_serving_origin_before_it_spends_anything(tmp_path, monkeypatch):
+    """
+    Scenario: an allowlisted URL redirects to a host on no allowlist
+
+    Two properties in one, because either alone leaves the hole open. The gate reads
+    the origin that *answered* — checking the requested URL passes an allowlisted
+    address that fetched from anywhere. And it runs ahead of both irreversible steps:
+    an off-list document must not land in the archive the operator has to account
+    for, nor go through a tool-enabled model. Both are spent unrecoverably, so a
+    check made after them reports a leak rather than preventing one.
+    """
+    experts = tmp_path / "experts"
+    experts.mkdir()
+    (experts / "literature.yaml").write_text(
+        "scope: literature\nname: Lit\nclaim_kinds: [literature/finding]\nallowlist: [arxiv.org]\n"
+    )
+    monkeypatch.setenv("THALAMUS_CONFIG_DIR", str(tmp_path))
+
+    def _answered_elsewhere(_location):
+        return b"long enough to extract from " * 40, "https://elsewhere.example/served-here"
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("ran past the allowlist gate")
+
+    monkeypatch.setattr(ingest_mod, "fetch", _answered_elsewhere)
+    monkeypatch.setattr(ingest_mod, "archive_bytes", _must_not_run)
+    monkeypatch.setattr(extraction, "run_extraction", _must_not_run)
+
+    with pytest.raises(IngestError, match="not allowlisted") as caught:
+        ingest_mod.ingest("https://arxiv.org/html/2401.00001", scope="literature")
+
+    message = str(caught.value)
+    # Both addresses, because the refusal is unreadable with either one missing: the
+    # operator typed one URL and the gate is talking about another.
+    assert "elsewhere.example" in message and "arxiv.org" in message
+
+
+def test_a_url_whose_scope_has_no_manifest_is_refused_not_waved_through(tmp_path, monkeypatch):
+    """An ungoverned scope is the case with no curation at all, so it fetches nothing.
+
+    Local paths still pass: an operator hand-feeding a file IS the curation decision,
+    and there is no manifest to consult for a decision already made.
+    """
+    (tmp_path / "experts").mkdir()
+    monkeypatch.setenv("THALAMUS_CONFIG_DIR", str(tmp_path))
+
+    with pytest.raises(IngestError, match="no usable manifest"):
+        check_origin("https://arxiv.org/abs/2401.00001", "unmanifested")
+
+    check_origin("/home/op/papers/reflexion.html", "unmanifested")
 
 
 def _arxiv_batch():

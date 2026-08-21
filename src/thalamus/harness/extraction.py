@@ -876,12 +876,18 @@ def apply_ingress_floor(
     *,
     ingress_verifiable: bool = True,
 ) -> SessionGraph:
-    """Down-tier claims that rest on external content the transcript embedded.
+    """Down-tier everything that rests on external content the transcript embedded.
 
     The laundering defense's write-path half: a session transcript is
     tier-1 evidence, but the pages it fetched are not — a claim distilled from them
     must keep third-party trust or recall will later serve a stranger's assertion as
     the agent's own lived experience.
+
+    Coverage is every enumerated list whose type carries provenance (`_TIERED_LISTS`),
+    not the three claim lists alone: a Thread or an Artifact minted out of a fetched
+    page carries a tier just as a Decision does, and a seventh claim type added to
+    `_CLAIM_LISTS` tomorrow is floored the day it is added. `ThreadRef` is the one
+    enumerated type left out, because it has no provenance to down-tier.
 
     Two layers, deliberately unequal:
     - the extractor's `external: true` marks are honored (good recall, but a poisoned
@@ -909,7 +915,7 @@ def apply_ingress_floor(
     to earn tier-1 back rather than something to remember to do.
     """
     if not ingress_verifiable:
-        if not graph.claims():
+        if not any(getattr(graph, attr) for attr in _TIERED_LISTS):
             return graph
     elif not external_texts and not any(c.external for c in graph.claims()):
         return graph
@@ -923,20 +929,22 @@ def apply_ingress_floor(
         ingested_at=graph.timestamp,
     )
 
-    def floor(claims: list) -> list:
+    def floor(items: list) -> list:
         out = []
-        for claim in claims:
-            if not ingress_verifiable or claim.external or _echoes(claim, corpus_tokens):
-                claim = claim.model_copy(update={"external": True, "provenance": floored})
-            out.append(claim)
+        for item in items:
+            marked = getattr(item, "external", False)
+            if not ingress_verifiable or marked or _echoes(item, corpus_tokens):
+                update: dict = {"provenance": floored}
+                # `external` is a Claim field; Thread and Artifact carry the tier and
+                # nothing else, so the provenance is the whole of the down-tier there.
+                if "external" in type(item).model_fields:
+                    update["external"] = True
+                item = item.model_copy(update=update)
+            out.append(item)
         return out
 
     return graph.model_copy(
-        update={
-            "decisions": floor(graph.decisions),
-            "problems": floor(graph.problems),
-            "solutions": floor(graph.solutions),
-        }
+        update={attr: floor(getattr(graph, attr)) for attr in _TIERED_LISTS}
     )
 
 
@@ -967,14 +975,25 @@ def _tokens(text: str) -> set[str]:
     return found
 
 
-def _echoes(claim: Claim, corpus_tokens: set[str]) -> bool:
-    """Does this claim's content lexically echo the external texts?"""
+# The free-text fields the echo check reads, across every tier-carrying type. Read by
+# `getattr`, so a type contributes whichever of them it has: a Claim's
+# description/rationale/approach/outcome, a Thread's title and description, an
+# Artifact's identifier and notes. An Artifact's identity *is* its identifier — a
+# dependency named only by the fetched page has nothing else to echo with — so it
+# counts as content here rather than as an address.
+_ECHO_FIELDS = (
+    "description", "rationale", "approach", "outcome", "title", "notes", "identifier",
+)
+
+
+def _echoes(item: Claim | Thread | Artifact, corpus_tokens: set[str]) -> bool:
+    """Does this item's content lexically echo the external texts?"""
     if not corpus_tokens:
         return False
     text = " ".join(
         str(value)
-        for field_name in ("description", "rationale", "approach", "outcome")
-        if (value := getattr(claim, field_name, None))
+        for field_name in _ECHO_FIELDS
+        if (value := getattr(item, field_name, None))
     )
     terms = sorted(t for t in _tokens(text) if len(t) > 2 and t not in STOPWORDS)
     if not terms:
@@ -991,6 +1010,13 @@ _CLAIM_LISTS: tuple[tuple[str, type], ...] = (
     ("threads", Thread),
     ("thread_refs", ThreadRef),
     ("artifacts", Artifact),
+)
+
+# What the ingress floor rewrites: every enumerated list whose type carries a tier.
+# Derived rather than listed, so a claim type added above is floored on arrival.
+# `ThreadRef` falls out here — it has no provenance, so it has nothing to down-tier.
+_TIERED_LISTS: tuple[str, ...] = tuple(
+    attr for attr, model in _CLAIM_LISTS if "provenance" in model.model_fields
 )
 
 

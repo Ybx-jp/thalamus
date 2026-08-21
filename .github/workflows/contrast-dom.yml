@@ -49,14 +49,18 @@ jobs:
       # tmux server, so without one the page is chrome with no rows — which would
       # produce a clean report over almost nothing, the exact failure this run is
       # built to refuse.
+      #
+      # `-L thalamus` is not decoration: every tmux call in `src/` names its server
+      # (`harness/tmux.py`), so a roster built on the box's default server is one the
+      # console cannot see.
       - name: Build a roster to render
         run: |
           sudo apt-get update -qq && sudo apt-get install -y tmux
-          tmux new-session -d -s thalamus -n main
+          tmux -L thalamus new-session -d -s thalamus -n main
           for scope in qe homelab designer architect; do
-            tmux new-window -t thalamus -n "$scope" 'sleep 3600'
+            tmux -L thalamus new-window -t thalamus -n "$scope" 'sleep 3600'
           done
-          tmux list-windows -t thalamus
+          tmux -L thalamus list-windows -t thalamus
 
       - name: Serve the console
         run: |

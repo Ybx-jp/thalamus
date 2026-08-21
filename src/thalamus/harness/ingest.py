@@ -1,14 +1,17 @@
 """Curated ingestion v0 — manual-first, evidence-first.
 
 The smallest thing that populates a knowledge subgraph: fetch (or read) one document,
-retain the bytes in the archive *before anything else*, extract a handful of typed
-claims and entities with a headless model pass, and hand the result to the contract.
-No crawler, no PDF pipeline, no embeddings — sophistication here is pulled by
-measurement, never pushed by enthusiasm.
+check the origin that served it against the scope's allowlist, retain the bytes in
+the archive, extract a handful of typed claims and entities with a headless model
+pass, and hand the result to the contract. No crawler, no PDF pipeline, no
+embeddings — sophistication here is pulled by measurement, never pushed by
+enthusiasm.
 
-The order is load-bearing: archive first, extract second. Extraction is reversible
-(re-run against retained bytes with a better model or prompt); a fetch that was never
-retained is not.
+The order is load-bearing at both ends. The allowlist gate comes first among the
+things that spend something: an off-list document must not reach the archive the
+operator has to account for, nor a tool-enabled model. Then archive before extract,
+because extraction is reversible (re-run against retained bytes with a better model
+or prompt) and a fetch that was never retained is not.
 """
 
 from __future__ import annotations
@@ -18,9 +21,11 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from thalamus.archive import archive_bytes
+from thalamus.archive import archive_bytes, report_secrets, scan_for_secrets
+from thalamus.contract.manifest import load_manifest
 from thalamus.harness import extraction
 from thalamus.substrate.schema import (
     Chunk,
@@ -112,12 +117,21 @@ class DigestReport:
 
 
 def fetch(location: str) -> tuple[bytes, str]:
-    """Fetch a URL or read a local file. Returns (payload, origin)."""
+    """Fetch a URL or read a local file. Returns (payload, origin).
+
+    The origin is the address that **served** the bytes, which is not always the one
+    that was asked for: `urlopen` follows redirects, so a request to one host can be
+    answered by another. Every downstream use of `origin` — the allowlist gate, the
+    `Source` node's provenance, the supersession key — is a claim about where the
+    bytes came from, so answering it with the requested URL would let any allowlisted
+    address redirect content in from anywhere under its own name.
+    """
     if location.startswith(("http://", "https://")):
         request = Request(location, headers={"User-Agent": _USER_AGENT})
         try:
             with urlopen(request, timeout=_FETCH_TIMEOUT) as response:
-                return response.read(), location
+                payload = response.read()
+                return payload, (response.geturl() or location)
         except Exception as exc:
             raise IngestError(f"fetch failed for {location}: {exc}") from exc
 
@@ -125,6 +139,46 @@ def fetch(location: str) -> tuple[bytes, str]:
     if not path.is_file():
         raise IngestError(f"no such file: {location}")
     return path.read_bytes(), str(path.resolve())
+
+
+def check_origin(origin: str, scope: str, *, requested: str = "") -> None:
+    """Refuse bytes whose serving origin the scope's manifest does not allowlist.
+
+    Raises `IngestError`; returns None when the origin is allowed.
+
+    Positioned between the response and the archive, and that is the earliest it can
+    run and still be true: which host answers a URL is not knowable until it has
+    answered, so a check made before the request judges an address rather than a
+    source. What the gate has to protect is everything *downstream* of it — retained
+    bytes the operator now has to account for, and a pass through a tool-enabled
+    model. Both are spent unrecoverably, and neither happens until this returns.
+
+    Local paths need no manifest: an operator hand-feeding a file is the curation
+    decision (`ExpertManifest.allows`). A URL whose scope has no manifest is refused
+    rather than waved through — an ungoverned scope is the case with no curation at
+    all.
+    """
+    if urlparse(origin).scheme not in ("http", "https"):
+        return
+    try:
+        manifest = load_manifest(scope)
+    except (FileNotFoundError, ValueError) as exc:
+        raise IngestError(
+            f"cannot gate {origin}: no usable manifest for scope `{scope}` ({exc}). "
+            "Ingestion from a URL is allowlist-gated, so a scope with no manifest "
+            "fetches nothing"
+        ) from exc
+    if manifest.allows(origin):
+        return
+
+    detour = ""
+    if requested and requested != origin:
+        detour = f" (requested {requested}, redirected to {origin})"
+    raise IngestError(
+        f"Origin not allowlisted for `{scope}`: {origin}{detour} — nothing was "
+        "archived and no model was called; curation is the gate, so edit the "
+        "manifest's allowlist if this source belongs (config/experts/)"
+    )
 
 
 def to_text(payload: bytes) -> str:
@@ -519,13 +573,22 @@ def ingest(
     title: str = "",
     known_entities: list[dict] | None = None,
 ) -> tuple[KnowledgeBatch, extraction.ExtractionRun, DigestReport]:
-    """The full v0 path: fetch → retain → extract → assemble. Contract checks and
-    graph writes belong to the caller (the CLI), which also owns dry-run semantics.
+    """The full v0 path: fetch → gate → retain → extract → assemble. Contract checks
+    and graph writes belong to the caller (the CLI), which also owns dry-run semantics.
+
+    The gate reads the origin that answered, and it sits ahead of both irreversible
+    steps — the archive write and the model pass — so a document from outside the
+    scope's allowlist costs a request and nothing else (see `check_origin`).
 
     `known_entities` rows carry name/kind/description from the scope's graph — names
     feed the prompt, the full shape feeds the batch backfill (see build_batch)."""
     payload, origin = fetch(location)
+    check_origin(origin, scope, requested=location)
     entry = archive_bytes(payload, suffix=".txt" if not payload.startswith(b"<") else ".html")
+    # Third-party bytes are the archive's least-trusted input. Reported, never
+    # redacted — the same posture as a transcript: the archive holds evidence, and
+    # evidence that has been quietly rewritten is not evidence.
+    report_secrets(scan_for_secrets(payload), f"ingested document {origin}")
 
     text = to_text(payload)
     if len(text) < 200:

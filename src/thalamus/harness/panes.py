@@ -68,6 +68,8 @@ import re
 import subprocess
 from dataclasses import dataclass
 
+from thalamus.harness.tmux import argv as tmux_argv
+
 # Which harness a window is running, read from the command it was created with. The
 # binary is the only honest signal: `pane_current_command` shows whatever is in the
 # foreground, so a window shelling out reads as `bash` for as long as that lasts.
@@ -151,7 +153,7 @@ class Pane:
 
 
 def _tmux(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["tmux", *args], capture_output=True, text=True, timeout=5)
+    return subprocess.run(tmux_argv(*args), capture_output=True, text=True, timeout=5)
 
 
 # A tab, and not one of the non-printable record separators that would be safer in

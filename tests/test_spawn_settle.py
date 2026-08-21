@@ -2,18 +2,18 @@
 Spawn confirmation: whether a window that dies late is reported as a failure.
 
 Interfaces: thalamus.harness.pin, thalamus.harness.launcher, thalamus.console.server
-Infrastructure: a real tmux server on a private socket, reached by shadowing `tmux`
-on PATH, plus fake harness binaries that die on a schedule. No claude, no `agent`,
-no network, no graph — and nothing that can see the operator's roster.
+Infrastructure: a real tmux server on a private socket, named by
+`THALAMUS_TMUX_SOCKET`, plus fake harness binaries that die on a schedule. No claude,
+no `agent`, no network, no graph — and nothing that can see the operator's roster.
 Scope: the one hazard where every layer below reports success. `tmux new-window`
 exits 0 when it has forked, so a launch is only confirmed by a window that is still
 alive later; how much later is a per-harness measurement (launcher's docstring), and
 these tests are what stop that number from being decorative.
 
-The private socket is the whole reason this can run at all. Nothing in `src/` passes
-`-L`, so `pin` addresses whatever tmux server the box is running — which on this box
-is the live roster. Shadowing the binary puts the socket in the environment instead
-of in the source, so the code under test is the code that ships.
+The private socket is the whole reason this can run at all. tmux ignores HOME, so it
+is the one surface no environment redirection reaches — `harness/tmux.py` names the
+server on every call it builds, and pointing that one variable somewhere else is what
+keeps a test off the operator's live roster.
 """
 
 import os
@@ -26,7 +26,7 @@ import pytest
 
 from thalamus.console import server
 from thalamus.console.server import Config, do_spawn
-from thalamus.harness import pin
+from thalamus.harness import pin, tmux
 from thalamus.harness.launcher import LAUNCH_SHAPES, settle_s
 
 pytestmark = pytest.mark.skipif(shutil.which("tmux") is None,
@@ -42,19 +42,21 @@ RETIRED_GLOBAL_SETTLE_S = 1.2
 def private_tmux(tmp_path, monkeypatch):
     """A tmux server of our own, plus a `bin` directory that shadows PATH.
 
+    The socket is set in the environment rather than by shimming the binary, so the
+    code under test is the code that ships: `harness/tmux.py` reads
+    `THALAMUS_TMUX_SOCKET` on every call and every argv in `src/` goes through it.
+
     Yields the bin directory: a test writes its fake harness binaries there, and
     `pin` finds them the same way a pane finds the real ones.
     """
-    real = shutil.which("tmux")
     socket = f"thalamus-test-{os.getpid()}"
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    shim = bindir / "tmux"
-    shim.write_text(f'#!/bin/sh\nexec {real} -L {socket} "$@"\n')
-    shim.chmod(0o755)
+    monkeypatch.setenv("THALAMUS_TMUX_SOCKET", socket)
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
     yield bindir
-    subprocess.run([real, "-L", socket, "kill-server"], capture_output=True)
+    subprocess.run([shutil.which("tmux"), "-L", socket, "kill-server"],
+                   capture_output=True)
 
 
 def _fake_harness(bindir: Path, name: str, body: str) -> None:
@@ -64,8 +66,11 @@ def _fake_harness(bindir: Path, name: str, body: str) -> None:
 
 
 def _windows(session: str) -> list[str]:
-    out = subprocess.run(["tmux", "list-windows", "-t", session, "-F",
-                          "#{window_id} #{pane_dead}"], capture_output=True, text=True)
+    # Through the same resolver the code under test uses, so the test and the code
+    # cannot end up looking at two different servers.
+    out = subprocess.run(tmux.argv("list-windows", "-t", session, "-F",
+                                   "#{window_id} #{pane_dead}"),
+                         capture_output=True, text=True)
     return out.stdout.split("\n") if out.returncode == 0 else []
 
 
@@ -192,8 +197,8 @@ def test_a_window_that_survives_its_settle_is_reported_started(private_tmux, tmp
     live = [w for w in _windows("settle-live") if w.endswith(" 0")]
     assert len(live) == 1
     window_id = live[0].split()[0]
-    shown = subprocess.run(["tmux", "show-options", "-w", "-t", window_id,
-                            "remain-on-exit"], capture_output=True, text=True)
+    shown = subprocess.run(tmux.argv("show-options", "-w", "-t", window_id,
+                                     "remain-on-exit"), capture_output=True, text=True)
     assert shown.stdout.split() == ["remain-on-exit", "off"]
 
 
@@ -237,8 +242,8 @@ def test_a_roster_window_that_survives_its_settle_is_reported_started(private_tm
     assert "Roster running in tmux session `roster-live`" in output
     live = [w for w in _windows("roster-live") if w.endswith(" 0")]
     assert len(live) == 1
-    shown = subprocess.run(["tmux", "show-options", "-w", "-t", live[0].split()[0],
-                            "remain-on-exit"], capture_output=True, text=True)
+    shown = subprocess.run(tmux.argv("show-options", "-w", "-t", live[0].split()[0],
+                                     "remain-on-exit"), capture_output=True, text=True)
     assert shown.stdout.split() == ["remain-on-exit", "off"]
 
 

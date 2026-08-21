@@ -48,6 +48,8 @@ from urllib.parse import parse_qs, unquote
 # Imported at module scope, unlike this module's other Thalamus imports: these two
 # names are re-exported below, and `panes` reaches nothing but the standard library.
 from thalamus.harness import panes
+from thalamus.harness.tmux import argv as tmux_argv
+from thalamus.harness.tmux import socket_name as tmux_socket
 
 STATIC_DIR = Path(__file__).with_name("static")
 DEFAULT_PORT = 8378
@@ -782,7 +784,7 @@ CLOSING_LOCK = threading.Lock()
 
 
 def tmux(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["tmux", *args], capture_output=True, text=True, timeout=5)
+    return subprocess.run(tmux_argv(*args), capture_output=True, text=True, timeout=5)
 
 
 def _tildify(path: str) -> str:
@@ -1600,8 +1602,13 @@ class Handler(BaseHTTPRequestHandler):
             # the same payload because the client renders elapsed time against it,
             # and a client holding its own copy would be a second statement of a
             # policy the server owns — wrong the first time this is tuned.
+            #
+            # `tmux_socket` rides it for the same reason: the empty-roster screen
+            # prints a command the operator is meant to paste, and the server is the
+            # only side that knows which tmux server this console drives.
             return self._send(200, {"session": self.cfg.session, "windows": windows,
                                     "distill": distill_rows(),
+                                    "tmux_socket": tmux_socket(),
                                     "grace_s": RECYCLE_GRACE_S})
         if path == "/api/read":
             # The read view: this window's session as prose and collapsed tool

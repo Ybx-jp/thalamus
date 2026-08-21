@@ -15,6 +15,19 @@ always addressing windows *by index*, so the session's active window never moves
 and a terminal attached to the same session is left exactly where you put it. You
 can drive the roster from a phone while your desk is still logged into it.
 
+### The roster's tmux server
+
+Every tmux call this project makes names its server: `tmux -L thalamus …`. The
+socket name is `THALAMUS_TMUX_SOCKET` (default `thalamus`), and it is the one
+isolation boundary the harness cannot get from the environment — tmux locates its
+server through `/tmp/tmux-<uid>/`, never through `HOME`, so `HOME=/tmp/x tmux
+list-sessions` returns the operator's real sessions.
+
+Two things follow. A bare `tmux attach` on your desk will not find the roster; use
+`tmux -L thalamus attach -t thalamus`, which is the line `thalamus roster` prints.
+And two checkouts on one box get separate control planes by setting
+`THALAMUS_TMUX_SOCKET` differently — nothing else has to change.
+
 Installable to a home screen as a PWA, and it works in any browser without that.
 
 ---
@@ -593,7 +606,7 @@ KillMode=process
 
 **Whichever unit creates the session defines window 0**, and the lowest-indexed
 window is the anchor — un-closable, and the reference directory for roster sync.
-A unit running bare `tmux new -A -s thalamus` (or a web terminal doing it on
+A unit running bare `tmux -L thalamus new -A -s thalamus` (or a web terminal doing it on
 first connect) puts a *shell* there, and it then outranks every real session for
 the life of the tmux server: roster sync adds `main` beside it rather than
 reclaiming index 0, and **restart** on it types `/exit` into a shell, so the
@@ -634,7 +647,7 @@ The tmux bridge is stdlib-only and the expert layer is imported on use, so the
 console runs under a bare `python3` with nothing else installed:
 
 ```bash
-tmux new -d -s thalamus -n main
+tmux -L thalamus new -d -s thalamus -n main
 python3 -m thalamus.console.server      # or: python3 src/thalamus/console/server.py
 ```
 
@@ -789,10 +802,11 @@ diffing the window list around the spawn, but to see it directly, make dead wind
 stay put and read the pane:
 
 ```bash
-tmux set -wg remain-on-exit on     # -wg: a session-level set is NOT inherited by new windows
+tmux -L thalamus set -wg remain-on-exit on   # -wg: a session-level set is NOT inherited by new windows
 ```
 
-Spawn again, then `tmux list-windows -a -F '#{window_index} #{pane_dead} #{pane_start_command}'`.
+Spawn again, then
+`tmux -L thalamus list-windows -a -F '#{window_index} #{pane_dead} #{pane_start_command}'`.
 A window with `pane_dead 1` never execed its command — almost always PATH.
 
 **The phone disagrees with the server.** Rule the layers out in this order, because

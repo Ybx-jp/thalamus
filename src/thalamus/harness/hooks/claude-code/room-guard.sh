@@ -36,7 +36,8 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
 thalamus_sandbox_guard
 
-input=$(cat)
+thalamus_read_guard_input room-guard.sh
+input="$thalamus_guard_input"
 
 tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty')
 [ "$tool_name" = "SendMessage" ] || exit 0
