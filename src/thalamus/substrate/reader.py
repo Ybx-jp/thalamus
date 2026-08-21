@@ -1181,14 +1181,24 @@ def _session_result(session: dict, relevance: str = "", details: list[dict] | No
     )
 
 
-def _select_details(details: list[dict], keywords: list[str], cap: int = _DETAIL_CAP) -> list[dict]:
+def _select_details(
+    details: list[dict], keywords: list[str], cap: int | None = None
+) -> list[dict]:
     """Keep the claims that match the query; elide the rest to a stub, not a dump.
 
     A matched session recalls the episode, but the episode's every claim is not the
     answer — only the claims the query's terms actually touch render in full. The
     elision stub keeps the count honest (the agent can expand via the session node),
     and renders no vertex ID, so the eval loop never prices phantom returns.
+
+    `cap` resolves to `_DETAIL_CAP` at call time rather than defaulting to it in the
+    signature: a default binds at def time, so a calibration run that rebinds the
+    module constant would move the `-d` field of `ranker_fingerprint()` while leaving
+    this selection at the shipped value — a run labelled with a configuration it never
+    used. Every dial the fingerprint stamps has to be read where a rebind reaches it.
     """
+    if cap is None:
+        cap = _DETAIL_CAP
     if not keywords:
         return details[:cap]
     matching = [

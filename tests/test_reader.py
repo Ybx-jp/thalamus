@@ -874,3 +874,22 @@ def test_unanchored_artifacts_are_not_joined_to_each_other():
     ])
 
     assert spellings_of(g, "notes.md") == ["/tmp/claude-1000/scratchpad/notes.md"]
+
+
+def test_fingerprinted_detail_cap_is_read_at_call_time(monkeypatch):
+    """Rebinding `_DETAIL_CAP` must move the selection, not only the stamp.
+
+    `ranker_fingerprint()` stamps `-d{_DETAIL_CAP}` as the configuration in force, and
+    a calibration run tunes the dial by rebinding the module constant. If the cap were
+    captured as a default argument it would bind at def time, so the run would be
+    labelled with a cap it never applied.
+    """
+    from thalamus.substrate import reader
+
+    details = [{"description": f"alpha item {i}"} for i in range(20)]
+
+    monkeypatch.setattr(reader, "_DETAIL_CAP", 3)
+    assert "-d3-" in reader.ranker_fingerprint()
+    rendered = [d for d in reader._select_details(details, ["alpha"]) if d.get("kind") != "elided"]
+    assert len(rendered) == 3
+    assert len(reader._select_details(details, [])) == 3

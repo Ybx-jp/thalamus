@@ -484,8 +484,12 @@ function mdInline(raw) {
 // read, so this is where that sentence actually reaches the operator. Say which
 // session was looked for and how to make one: the console bridges a session, it
 // never creates one.
-function renderNoSession(session) {
+function renderNoSession(session, socket) {
   const s = session || "thalamus";
+  // The socket comes from the server: the roster lives on its own tmux server
+  // (`-L`), so a pasted command without it addresses the box's default server and
+  // creates a session this console will never see.
+  const L = socket || "thalamus";
   els.screen.className = "screen-empty onboard";
   els.screen.textContent =
     `No windows in tmux session "${s}".\n\n` +
@@ -493,7 +497,7 @@ function renderNoSession(session) {
     `Start the roster on the host:\n\n` +
     `  thalamus roster\n\n` +
     `Or bridge any tmux session you like:\n\n` +
-    `  tmux new -d -s ${s} -n main`;
+    `  tmux -L ${L} new -d -s ${s} -n main`;
   renderedText = "";
 }
 
@@ -952,7 +956,7 @@ async function poll() {
       els.screen.hidden = false;
       els.read.hidden = true;
       els.readWait.hidden = true;
-      renderNoSession(data.session);
+      renderNoSession(data.session, data.tmux_socket);
     } else if (readMode) {
       els.screen.hidden = true;
       els.read.hidden = false;

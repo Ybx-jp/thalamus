@@ -156,6 +156,15 @@ manifest. Each window runs your agent CLI pinned to that scope, so it needs `cla
 on your PATH. A window whose command exits before it can be called started is
 reported as a failure with what the pane printed, and the command exits non-zero.
 
+The roster runs on its own tmux server, so attach with the socket named:
+
+```bash
+tmux -L thalamus attach -t thalamus
+```
+
+`thalamus roster` prints that line. `THALAMUS_TMUX_SOCKET` changes the socket name,
+which is how two checkouts on one box keep separate control planes.
+
 ## 7. Open the console
 
 ```bash
@@ -182,7 +191,7 @@ The console bridges a tmux session — it doesn't create one. Start the roster o
 
 Or bridge any tmux session you like:
 
-  tmux new -d -s thalamus -n main
+  tmux -L thalamus new -d -s thalamus -n main
 ```
 
 The console binds `127.0.0.1` and carries **no authentication**. To reach it from a
@@ -208,9 +217,12 @@ touched each file, recovered from tool-call records. Stage 2 needs judgement, so
 goes through a headless model pass to produce claims and open threads.
 
 > **Transcripts contain whatever was on screen, credentials included.** The archive
-> lives at `~/.thalamus/archive/`, outside the repo — not merely gitignored.
-> `bootstrap` scans for secrets and **reports**; it never redacts, because evidence
-> that has been quietly rewritten is not evidence. Read what it reports before you
+> lives at `~/.thalamus/archive/`, outside the repo — not merely gitignored. Every
+> path that puts bytes in it scans them — `bootstrap`, `extract` at each session end,
+> and `ingest` on fetched documents — and **reports**; none of them redacts, because
+> evidence that has been quietly rewritten is not evidence. Findings print to stderr
+> and append to `~/.thalamus/logs/secret-scan.log`, which is what session-end
+> distillation leaves behind when nobody is watching a terminal. Read them before you
 > share a graph with anyone.
 
 ## 9. Look at what it remembers

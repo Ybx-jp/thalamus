@@ -1465,9 +1465,16 @@ def verify_armed() -> Check:
     written about the filesystem and fires for nothing. Declared-versus-armed is a
     different question from present-versus-absent, and only the second was asked.
 
-    Reported rather than repaired, and advisory rather than fatal: `thalamus init`
-    without `--check` writes the block that fixes it, so the finding names that
-    command. A stale settings file is not a reason to refuse to verify the rest.
+    Reported rather than repaired, and fatal rather than advisory. `advisory` is for
+    the environment — a graph that is not up, another vendor's binary that is not
+    installed — and a settings file holding some of our declared wirings and not the
+    rest is not the environment: it is this install, present and wrong, which is the
+    one state `--check` exists to fail on. Advisory would leave the signal wired to
+    nothing that enforces it, and a run with no human reading the output (CI) would
+    pass with a hook firing for nothing, which is the shape of the bug above. Failing
+    costs nothing else: `verify()` runs and prints every check regardless of this
+    one's verdict, and the detail names `thalamus init`, the command that writes the
+    block that fixes it.
 
     *None* of them armed is a different fact from *some* of them missing, and it is
     the one a pre-install check finds: nothing has drifted, nothing has been written
@@ -1495,7 +1502,6 @@ def verify_armed() -> Check:
         f"{len(missing)} of {len(declared)} declared wirings are NOT in "
         f"{USER_SETTINGS}: {named} — these fire for nothing, and a hook that "
         "writes an eval ledger silently zeroes it. Run `thalamus init` to arm them",
-        advisory=True,
     )
 
 

@@ -89,6 +89,7 @@ from pathlib import Path
 
 from thalamus.harness import panes as panes_mod
 from thalamus.harness import pin, quick, readiness
+from thalamus.harness.tmux import argv as tmux_argv
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
@@ -174,7 +175,7 @@ def _now() -> str:
 
 
 def _tmux(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["tmux", *args], capture_output=True, text=True, timeout=5)
+    return subprocess.run(tmux_argv(*args), capture_output=True, text=True, timeout=5)
 
 
 def live_panes() -> set[str]:
@@ -212,6 +213,43 @@ def ledger_panes(pins_file: Path | None = None) -> dict[str, str]:
             if session_id and pane:
                 panes[session_id] = pane
     return panes
+
+
+def ledger_scopes(pins_file: Path | None = None) -> dict[str, str]:
+    """session_id → the scope it was launched under, newest row winning.
+
+    The descriptor cannot answer this for every member. `LiveSession.scope` is derived
+    from the launch agent, and a room's `main` has no manifest and so no `--agent` to
+    derive from — it comes back empty, which the scope filter then reads as "not the
+    member you named". The result was a member that an unfiltered pre-flight returned
+    and `--to main` could not reach, so a caller could not tell an absent member from
+    an unnameable one.
+
+    The pin ledger does know: the launcher records the scope it launched under, `main`
+    included. It is the same rows `ledger_panes` reads, and it stays a separate pass
+    for the same reason that one does — a member with a scope and no pane is a
+    different refusal from a member with a pane and no scope.
+    """
+    path = pins_file or PINS_FILE
+    if not path.is_file():
+        return {}
+    scopes: dict[str, str] = {}
+    with path.open(errors="ignore") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict) or row.get("event"):
+                continue
+            session_id = str(row.get("session_id") or "")
+            scope = str(row.get("scope") or "")
+            if session_id and scope:
+                scopes[session_id] = scope
+    return scopes
 
 
 @dataclass(frozen=True)
@@ -369,15 +407,25 @@ def _claude_targets(
     """Room members the harness registered, cross-checked against the pin ledger."""
     root = config_dir or pin.room_config_dir(room)
     sessions = quick.live_sessions(root)
-    if scopes:
-        wanted = set(scopes)
-        sessions = [s for s in sessions if s.scope in wanted]
 
     known_panes = ledger_panes(pins_file)
+    known_scopes = ledger_scopes(pins_file)
+
+    # The descriptor's derived scope first, the ledger's recorded scope where the
+    # descriptor has none. Filtering happens after the reconciliation, not before it:
+    # a filter over the descriptor alone cannot name a member launched without an
+    # agent, and that member is `main`, which is in every room.
+    def scope_of(session) -> str:
+        return session.scope or known_scopes.get(session.session_id, "")
+
+    if scopes:
+        wanted = set(scopes)
+        sessions = [s for s in sessions if scope_of(s) in wanted]
+
     live = live_panes() if panes is None else panes
 
     targets = []
-    for session in sorted(sessions, key=lambda s: s.scope or s.session_id):
+    for session in sorted(sessions, key=lambda s: scope_of(s) or s.session_id):
         pane = known_panes.get(session.session_id, "")
         refusal = ""
         if not pane:
@@ -404,7 +452,7 @@ def _claude_targets(
             )
         targets.append(
             Target(
-                scope=session.scope,
+                scope=scope_of(session),
                 session_id=session.session_id,
                 name=session.name,
                 pane=pane,

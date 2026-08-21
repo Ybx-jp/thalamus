@@ -101,24 +101,36 @@ def test_prose_that_names_the_command_is_not_the_command(tmp_path):
         assert run_guard(command, tmp_path).returncode == 0, command
 
 
-def test_an_unparseable_payload_still_blocks(tmp_path):
+def test_an_unparseable_payload_blocks(tmp_path):
     """
     Scenario: a payload the guard cannot read as JSON
 
-    Deliberately the opposite posture from the other guards, and the reason is the
-    consequence rather than the likelihood. `guards-fail-closed-on-unparseable-input`
-    is an open qe finding against them: they permit when jq is missing or the JSON is
-    malformed, so the guard is absent exactly when something unusual is happening.
-    They can afford it because their failure is a bad edit; this one's failure is a
-    graph write that distillation then duplicates. So the raw payload is searched when
-    the structured read fails.
+    Every PreToolUse guard reads its stdin through `thalamus_read_guard_input`, which
+    denies rather than permits when jq is missing, the JSON is malformed, or the
+    payload is empty. A guard that died before looking and a guard that looked and
+    approved are the same event from outside, so an unreadable payload would otherwise
+    be a way past this boundary — and this one's failure is a graph write that
+    distillation then duplicates.
     """
     result = run_guard(None, tmp_path, raw="not json at all: thalamus write /tmp/x.yaml")
 
     assert result.returncode == BLOCK_EXIT
-    assert "writes memory from inside a session" in result.stderr
+    assert "could not read the tool call" in result.stderr
 
 
-def test_an_empty_payload_is_not_a_write(tmp_path):
-    """Failing closed must not mean blocking everything: no command, nothing to block."""
-    assert run_guard(None, tmp_path, raw="").returncode == 0
+def test_an_empty_payload_blocks(tmp_path):
+    """An empty payload is unreadable, not permission: there is nothing to examine."""
+    result = run_guard(None, tmp_path, raw="")
+
+    assert result.returncode == BLOCK_EXIT
+    assert "the hook payload was empty" in result.stderr
+
+
+def test_a_payload_without_a_command_is_searched_raw(tmp_path):
+    """A readable payload shaped unexpectedly still gets a haystack search, not a pass.
+
+    This is the fallback the unparseable case no longer needs: the JSON parses, but
+    `tool_input.command` is absent, so the whole payload is the haystack.
+    """
+    raw = json.dumps({"tool_name": "Bash", "tool_input": {"argv": "thalamus write x.yaml"}})
+    assert run_guard(None, tmp_path, raw=raw).returncode == BLOCK_EXIT

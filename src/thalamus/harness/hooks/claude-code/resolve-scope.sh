@@ -96,6 +96,50 @@ thalamus_require_binaries() {
   return 1
 }
 
+# The stdin read for a PreToolUse guard, and the only one any of them may use.
+#
+# Every guard parses its payload with jq under `set -euo pipefail`. Three inputs abort
+# the script before a single line of guard logic runs — jq missing (127), jq refusing
+# malformed JSON (5), and an empty payload (which every guard's `// empty` fallback
+# turns into a plain `exit 0`) — and not one of those codes is the blocking code. From
+# outside, a guard that examined the call and approved it and a guard that died before
+# looking are the same event, so an unreadable payload is a way past every boundary the
+# roster draws.
+#
+# Reading through this makes all three a block instead. It sets `thalamus_guard_input`
+# for the caller, and on any of the three it prints the reason and exits 2 — the code
+# Claude Code reads as "deny, and show stderr to the model". Call it as a bare
+# statement, never in a command substitution: the `exit` has to end the guard, not a
+# subshell.
+#
+# $1 (optional): the guard's name, for the message the model is shown.
+thalamus_guard_input=""
+thalamus_read_guard_input() {
+  local name="${1:-this guard}" reason="" rc=0
+  thalamus_guard_input=$(cat)
+
+  if [ -z "$thalamus_guard_input" ]; then
+    reason="the hook payload was empty"
+  else
+    # One jq invocation answers both questions, which `command -v` cannot: a jq that
+    # is present and broken — shadowed by a stub, or a wrapper script that is not jq —
+    # passes a `command -v` test and then fails identically to a missing one. 127 is
+    # the shell's own "no such command" and is not in jq's exit set (0/1/2/3/5), so it
+    # separates the two without a second probe.
+    printf '%s' "$thalamus_guard_input" | jq . >/dev/null 2>&1 || rc=$?
+    if [ "$rc" = 127 ]; then
+      reason="jq is not on PATH"
+    elif [ "$rc" != 0 ]; then
+      reason="the hook payload is not valid JSON"
+    fi
+  fi
+  [ -n "$reason" ] || return 0
+
+  printf 'Blocked by %s: %s, so the guard could not read the tool call it exists to examine. A guard that cannot parse its input denies rather than permits — otherwise an unreadable payload passes every boundary. Run `thalamus init --check` and report this to the operator; nothing inside this session can repair it.\n' \
+    "$name" "$reason" >&2
+  exit 2
+}
+
 # The room this session belongs to — the collaboration it witnessed, empty when it
 # worked alone. Mirror of harness/pin.resolve_room. Env-only and deliberately without
 # the agent-picker fallback the pin has: a room is one launch decision covering a set
