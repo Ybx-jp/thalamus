@@ -206,8 +206,8 @@ suite("rows: a record outliving its window is the steady state");
 suite("groups: the key is the project, and a cwd is never it");
 {
   const groups = groupSessions([
-    { name: "a", project: "thalamus", repo_root: "/home/ybx/code/thalamus" },
-    { name: "b", project: "thalamus", repo_root: "/home/ybx/code/thalamus/.claude/worktrees/d4v2" },
+    { name: "a", project: "thalamus", repo_root: "/home/op/code/thalamus" },
+    { name: "b", project: "thalamus", repo_root: "/home/op/code/thalamus/.claude/worktrees/d4v2" },
     { name: "c", project: "", repo_root: "" },
   ], []);
 
@@ -227,7 +227,7 @@ suite("groups: the no-project group trails, and is self-liquidating");
 {
   const groups = groupSessions([
     { name: "orphan", project: "", repo_root: "" },
-    { name: "known", project: "thalamus", repo_root: "/home/ybx/code/thalamus" },
+    { name: "known", project: "thalamus", repo_root: "/home/op/code/thalamus" },
   ], []);
   check("named groups sort first", groups[0].label === "thalamus", groups[0].label);
   check("the unnamed one trails", groups[1].known === false && groups[1].key === "");

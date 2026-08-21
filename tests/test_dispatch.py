@@ -21,7 +21,7 @@ def _descriptor(sessions_dir, scope, session_id, pid, status, updated_at=1000):
     (sessions_dir / f"{pid}.json").write_text(json.dumps({
         "sessionId": session_id,
         "pid": pid,
-        "cwd": "/home/ybx/code/thalamus",
+        "cwd": "/home/op/code/thalamus",
         "agent": f"thalamus-{scope}",
         "name": f"alpha-{scope}",
         "status": status,

@@ -63,6 +63,7 @@ CASE_MODULES = (
     "qe.cases.uninstall_roundtrip",
     "qe.cases.suite_containment",
     "qe.cases.published_config",
+    "qe.cases.published_host_addresses",
     "qe.cases.oracle_parses_whole",
     "qe.cases.skill_arming",
     "qe.cases.reduction_binds_real_type",

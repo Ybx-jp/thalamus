@@ -49,7 +49,7 @@ def test_an_absolute_path_duplicating_a_relative_one_is_counted_with_its_touches
 def test_the_audit_does_not_depend_on_project_being_a_real_repo_name(monkeypatch):
     """
     Scenario: The duplicate belongs to a session whose `project` is junk — the live
-    graph carries values like `ybx`, `tmp`, `code` and an episode title
+    graph carries values like a home-directory name, `tmp`, `code` and an episode title
 
     Verifications:
     - The duplicate is still detected
@@ -61,7 +61,7 @@ def test_the_audit_does_not_depend_on_project_being_a_real_repo_name(monkeypatch
     """
     _rows(monkeypatch, [
         {"identifier": "docs/index.md", "project": "thalamus", "touches": 49},
-        {"identifier": "/home/ybx/code/thalamus/docs/index.md", "project": "ybx", "touches": 49},
+        {"identifier": "/home/u/code/thalamus/docs/index.md", "project": "u", "touches": 49},
     ])
 
     audit = audit_artifact_identity(object())

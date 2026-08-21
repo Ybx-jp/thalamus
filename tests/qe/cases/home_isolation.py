@@ -105,7 +105,7 @@ def run() -> Finding | None:
         # The naive filter — "starts with the real home" — is wrong, and the first
         # version of this case used it and reported `pin.PROJECT_ROOT` as an escape.
         # PROJECT_ROOT is derived from `__file__`, so it names the repository, which on
-        # this box merely happens to live under /home/ybx. It is *supposed* to point at
+        # this box merely happens to live under the real home. It is *supposed* to point at
         # the checkout and following HOME would be the bug.
         #
         # PROJECT_ROOT is still an isolation concern for a different reason — `install()`
