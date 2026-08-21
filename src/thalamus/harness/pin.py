@@ -1269,7 +1269,7 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
             write_codex_profile(manifest, base=base)
     argv = [*launch_argv(harness, scope, persona=persona), *launch_flags(room, scope, harness)]
 
-    # The session must exist (the tty unit's `tmux new -A -s thalamus` creates it,
+    # The session must exist (the tty unit's `tmux -L thalamus new -A -s thalamus` creates it,
     # as does `thalamus roster`); create it if somehow absent so spawn never fails.
     # Create it *with* this scope's window, the way `roster` does. A bare
     # `new-session` would leave a shell placeholder at the lowest index, and the
