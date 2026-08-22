@@ -888,7 +888,7 @@ class TestConnectRefusesADownGraph:
         container, so they must not describe it differently."""
         from thalamus.harness import install
 
-        _, probed = install._probe_graph(self.DEAD)
+        _, probed, _ = install._probe_graph(self.DEAD)
         with pytest.raises(GraphUnavailable) as exc:
             connect(self.DEAD)
         assert str(exc.value) == graph_down_detail(probed)

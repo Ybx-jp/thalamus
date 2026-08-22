@@ -436,19 +436,32 @@ class Check:
     pending finding names the command that installs it and leaves the exit code
     alone; anything present and *wrong* stays a hard failure, which is the
     distinction the check is actually for.
+
+    `blocked` is the fourth state and the one the other three could not say: **this
+    check could not run.** A prerequisite it needs is absent, so the question was
+    never asked and the answer is unknown — which is neither a pass, nor an install
+    that is missing, nor a thing that is present and wrong. Two shapes reached it.
+    A round trip that needs `jq` printed `✗` beside the word "skipped", against a
+    legend that defines `✗` as something present and wrong. And an optional
+    integration whose CLI is not installed reported `○` with `thalamus init` as the
+    fix, on every run forever, on the ordinary machine that has Claude Code and not
+    codex — an item the named command cannot clear devalues the whole `○` block.
+    A blocked finding names the prerequisite that is missing and leaves the exit
+    code alone.
     """
     name: str
     ok: bool
     detail: str
     advisory: bool = False
     pending: bool = False
+    blocked: bool = False
 
     def render(self) -> str:
         if self.ok:
             mark = "✓"
         elif self.pending:
             mark = "○"
-        elif self.advisory:
+        elif self.advisory or self.blocked:
             mark = "!"
         else:
             mark = "✗"
@@ -1022,9 +1035,18 @@ def verify_runtime(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     checks: list[Check] = []
     url = graph_url()
 
-    reachable, detail = _probe_graph(url)
-    if not reachable:
+    # Three outcomes, not two. Nothing listening is the container being down and
+    # gets the command that starts it. A port that is up while the query fails is
+    # the boot window, and the correct action there is to wait — telling that
+    # operator to `docker compose up -d` contradicts what he can see, on the one
+    # step of the documented sequence he has no way to debug.
+    reachable, detail, nothing_listening = _probe_graph(url)
+    if not reachable and nothing_listening:
         detail = graph_down_detail(detail)
+    elif not reachable:
+        detail = (f"{detail} — the port is published before the server finishes "
+                  "starting, which takes a few seconds. Check `docker compose ps` "
+                  "shows the graph healthy, then re-run `thalamus init --check`")
     checks.append(Check("graph reachable", reachable, detail, advisory=True))
 
     # One CLI per harness being installed. `agent` missing on a box without
@@ -1078,7 +1100,7 @@ def recorded_hook_failures() -> Check:
     )
 
 
-def _probe_graph(url: str) -> tuple[bool, str]:
+def _probe_graph(url: str) -> tuple[bool, str, bool]:
     """Reachable, and answering? Exercised the real way, but bounded.
 
     Two stages because they fail differently and only one of them can hang: a
@@ -1090,10 +1112,17 @@ def _probe_graph(url: str) -> tuple[bool, str]:
     A graph with zero vertices is a **pass**: every install is fresh, the graph is
     private to its operator and is never shipped, so an empty one is the normal
     starting state rather than a fault.
+
+    The third element is what the caller needs to say the right sentence: whether
+    *nothing was listening*. Docker publishes the port the moment the container
+    starts, and the JVM then takes another 3.5-4s to reach `Channel started at port
+    8182` — measured from container logs on this box, before any image pull. In that
+    window the socket check passes and the traversal does not, and the old text told
+    the operator to start a container he could see running.
     """
     down = probe_socket(url)
     if down is not None:
-        return False, down
+        return False, down, True
     host, port = split_ws(url)
 
     script = (
@@ -1110,14 +1139,14 @@ def _probe_graph(url: str) -> tuple[bool, str]:
             capture_output=True, text=True, timeout=30,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        return False, f"{host}:{port} accepted a connection but did not answer ({exc})"
+        return False, f"{host}:{port} accepted a connection but did not answer ({exc})", False
 
     if proc.returncode != 0:
-        return False, f"{host}:{port} refused the query: {proc.stderr.strip()[-160:]}"
+        return False, f"{host}:{port} refused the query: {proc.stderr.strip()[-160:]}", False
 
     count = proc.stdout.strip()
     fresh = " (fresh — every install starts empty)" if count == "0" else ""
-    return True, f"{count} vertices at {url}{fresh}"
+    return True, f"{count} vertices at {url}{fresh}", False
 
 
 def verify_cursor() -> list[Check]:
@@ -1197,8 +1226,12 @@ def verify_cursor() -> list[Check]:
         except (subprocess.SubprocessError, OSError, ValueError) as exc:
             detail = f"round trip failed: {exc}"
     else:
-        detail = "skipped (jq or inject.sh missing)"
-    checks.append(Check("cursor deferred injection round trip", ok, detail))
+        missing = [name for name, present in (("jq", shutil.which("jq")),
+                                              ("inject.sh", (CURSOR_HOOK_DIR / "inject.sh").is_file()))
+                   if not present]
+        detail = f"could not run: {', '.join(missing)} missing on this machine"
+    checks.append(Check("cursor deferred injection round trip", ok, detail,
+                        blocked=not ok and detail.startswith("could not run")))
 
     return checks
 
@@ -1306,6 +1339,9 @@ def verify_codex() -> list[Check]:
         else f"no hooks written yet ({USER_CODEX_HOOKS}) — `thalamus init` writes "
              "them, and codex then asks you to trust them"
         if never_wired
+        else "could not run: `codex` is not on this machine, and trust is granted "
+             "in its own hooks-review prompt"
+        if shutil.which("codex") is None
         else "codex has not been asked to trust these hooks yet — launch `codex` once "
              "and take the trust-all option on the hooks-review prompt. Until then "
              "codex loads them and fires none of them: a headless `codex exec` with "
@@ -1315,6 +1351,7 @@ def verify_codex() -> list[Check]:
         else f"{len(trusted)} of {len(expected)} entries are trusted — launch `codex` "
              "and trust the rest; the untrusted ones do not fire",
         pending=never_wired,
+        blocked=not never_wired and shutil.which("codex") is None,
         advisory=not never_wired and not trusted,
     ))
 
@@ -1350,18 +1387,31 @@ def verify_codex() -> list[Check]:
         except (subprocess.SubprocessError, OSError, ValueError) as exc:
             detail = f"delegation failed: {exc}"
     else:
-        detail = "skipped (jq or gremlin-tap.sh missing)"
-    checks.append(Check("codex delegation round trip", ok, detail))
+        missing = [name for name, present in (("jq", shutil.which("jq")),
+                                              ("gremlin-tap.sh", tap.is_file()))
+                   if not present]
+        detail = f"could not run: {', '.join(missing)} missing on this machine"
+    checks.append(Check("codex delegation round trip", ok, detail,
+                        blocked=not ok and detail.startswith("could not run")))
 
+    # `thalamus init` registers this by shelling out to `codex mcp add`, so on a box
+    # without the binary it is not a pending item: the command the pending text names
+    # runs, skips the registration, and leaves the check exactly where it was. Every
+    # `--check` on an ordinary Claude-Code-only machine carried it forever, under a
+    # closing line telling the operator to run `thalamus init` to clear it.
+    codex_cli = shutil.which("codex")
     served = codex_mcp_registration()
     checks.append(Check(
         "codex MCP server registered", str(PROJECT_ROOT) in served,
         f"`thalamus` in {USER_CODEX_MCP}" if str(PROJECT_ROOT) in served
+        else "could not run: `codex` is not on this machine, and the registration "
+             "goes in through `codex mcp add`" if codex_cli is None
         else f"not registered yet ({USER_CODEX_MCP}) — `thalamus init` registers it"
         if not served
         else f"registered with codex but not against this checkout ({PROJECT_ROOT}) "
              "— re-run `thalamus init`",
-        pending=not served,
+        pending=not served and codex_cli is not None,
+        blocked=codex_cli is None and str(PROJECT_ROOT) not in served,
     ))
 
     # Checked rather than assumed because the failure is silent on this harness
@@ -1857,14 +1907,22 @@ def run(dry_run: bool = False, check_only: bool = False,
             print(f"  ○ {c.name}: {c.detail}")
         print("Run `thalamus init` to install them.")
 
-    advisories = [c for c in checks if c.advisory and not c.ok]
+    advisories = [c for c in checks if c.advisory and not c.ok and not c.blocked]
     if advisories:
         print(f"\n{len(advisories)} advisory finding(s) — the install is wired, "
               "but these must be true before it does anything:")
         for c in advisories:
             print(f"  ! {c.name}: {c.detail}")
 
-    failed = [c for c in checks if not c.ok and not c.advisory and not c.pending]
+    blocked = [c for c in checks if c.blocked and not c.ok]
+    if blocked:
+        print(f"\n{len(blocked)} check(s) COULD NOT RUN — something they need is "
+              "not on this machine, so their answer is unknown rather than bad:")
+        for c in blocked:
+            print(f"  ! {c.name}: {c.detail}")
+
+    failed = [c for c in checks
+              if not c.ok and not c.advisory and not c.pending and not c.blocked]
     if failed:
         print(f"\n{len(failed)} check(s) FAILED — the harness will not arm correctly.")
 
