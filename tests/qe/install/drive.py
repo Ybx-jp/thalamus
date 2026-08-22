@@ -486,22 +486,36 @@ def evaluate(env: dict, recorder: Recorder) -> dict:
                 "not_evaluated": [c.name for c in spec.CHECKS]}
 
 
-def triage(findings: dict) -> tuple[set[int], list[str]]:
-    """Split failing checks into known defects reproduced, and unattributed failures.
+def triage(findings: dict) -> tuple[set[int], list[str], list[str]]:
+    """Split failing checks into reproduced defects, regressions, and novel failures.
 
-    A check that goes red naming issue #53 has reproduced something already filed. A
-    check that goes red naming nothing has found something that is not.
+    A check that goes red naming an OPEN issue has reproduced something already
+    filed. A check that goes red naming nothing has found something that is not.
+
+    A check that goes red naming a `fixed` issue is neither, and it is the reason
+    this returns three buckets instead of two. An issue number absolves a red — it
+    is what turns exit 1 into exit 0 — so a tag left in place after the fix landed
+    absolves forever, and the site it names becomes the one place in the matrix
+    where a regression cannot be seen. Two ways in, both observed: the defect comes
+    back, or the oracle drifts off the repaired behaviour and reports a working
+    install as broken. The second is not hypothetical — `moved-checkout-is-named-not
+    -denied` pinned the pre-fix wording of the #52 message, went red on the fix that
+    reworded it, and stayed absolved by its own tag.
     """
+    fixed = spec.fixed_issues()
     by_name = {c["name"]: c for c in findings.get("checks", [])}
     reproduced: set[int] = set()
+    regressed: list[str] = []
     novel: list[str] = []
     for name in findings.get("failed", []):
         issue = by_name.get(name, {}).get("issue", 0)
-        if issue:
+        if issue and issue in fixed:
+            regressed.append(f"{name} (#{issue})")
+        elif issue:
             reproduced.add(issue)
         else:
             novel.append(name)
-    return reproduced, novel
+    return reproduced, regressed, novel
 
 
 def build_payload(cell: str, config: spec.Config, recorder: Recorder,
@@ -608,12 +622,13 @@ def main(argv: list[str]) -> int:
                                   deadline_expired=False,
                                   last_phase=recorder.last_phase)
 
-    reproduced, novel = triage(findings)
-    return report(result, findings, reproduced, novel, recorder, verdict_path)
+    reproduced, regressed, novel = triage(findings)
+    return report(result, findings, reproduced, regressed, novel, recorder,
+                  verdict_path)
 
 
-def report(result, findings: dict, reproduced: set[int], novel: list[str],
-           recorder: Recorder, verdict_path: Path) -> int:
+def report(result, findings: dict, reproduced: set[int], regressed: list[str],
+           novel: list[str], recorder: Recorder, verdict_path: Path) -> int:
     counts = (len(findings.get("passed", [])), len(findings.get("failed", [])),
               len(findings.get("not_evaluated", [])))
     print(f"\ncell {result.outcome.value}: {counts[0]} passed, {counts[1]} failed, "
@@ -630,14 +645,31 @@ def report(result, findings: dict, reproduced: set[int], novel: list[str],
     step_failures = [f for f in recorder.failed
                      if f not in findings.get("failed", [])
                      and f != "check-evaluation-did-not-run"]
-    if novel or step_failures:
+    if novel or regressed or step_failures:
         for name in novel:
             print(f"\nNEW: {name} failed and names no filed issue.")
+        for name in regressed:
+            print(f"\nREGRESSED: {name} names an issue marked fixed in spec.py, so "
+                  "this check was expected to pass. Either the defect is back, or "
+                  "the check has drifted off the repaired behaviour and is now "
+                  "reporting a working install as broken. Read the witness before "
+                  "reopening anything.")
         for name in step_failures:
             print(f"\nNEW: step {name} failed and may not fail.")
         return 1
 
     known = sorted(spec.known_defect_issues())
+    if not known:
+        # Every tagged defect is marked fixed, so there is nothing left for a run to
+        # reproduce and "nothing reproduced" has stopped being evidence of a blind
+        # harness. The positive control this exit code provided is gone with it: from
+        # here a cell can only report the absence of NEW failures, which is a weaker
+        # claim than this matrix was built to make. Re-arm it by tagging the next
+        # filed defect, and read a green cell as "nothing new" until then.
+        print("\nNo unfixed defect is tagged in spec.py, so this cell had nothing "
+              "known to reproduce. Green here means no NEW failure — it is no longer "
+              "evidence that the harness can see.")
+        return 0
     if not reproduced:
         print(f"\nNothing reproduced. The tree carries filed install defects "
               f"({', '.join('#%d' % i for i in known)}), so a cell that reproduces "

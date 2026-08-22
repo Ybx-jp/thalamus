@@ -68,6 +68,16 @@ class Check:
     an absence. "Nothing was written" and "the step never ran" are the same
     observation otherwise, and the second one passes forever. It names a condition
     that MUST be observably true for the check's evidence to be meaningful.
+
+    `fixed` is what stops `issue` becoming permanent absolution. An issue number
+    absolves a red result — the runner reads it as "reproduced something already
+    filed" and exits 0 — and an untouched tag goes on absolving long after the
+    defect is gone, so a regression at that site, or an oracle that has drifted off
+    the repaired behaviour, lands as an expected red nobody reads. Flip this in the
+    same change that closes the issue, exactly as a known-red entry in
+    `tests/qe/expectations.json` is deleted in the change that fixes its defect.
+    Once set, the check is expected to PASS: a failure naming a fixed issue is
+    reported as a regression and exits 1, not as a known defect.
     """
 
     name: str
@@ -78,6 +88,8 @@ class Check:
     # property no filed defect covers.
     issue: int = 0
     control: str = ""
+    #: The issue is closed and this check must now pass. See the class docstring.
+    fixed: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,6 +121,10 @@ class Config:
     name: str
     summary: str
     issue: int = 0
+    #: The issue this variant was built to trigger is closed. The variant stays — a
+    #: box without `jq` or a moved checkout is a real condition worth running — but
+    #: it is no longer a defect the matrix expects to reproduce.
+    fixed: bool = False
     removes: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
     unset: tuple[str, ...] = ()
@@ -177,7 +193,7 @@ CONFIGS: tuple[Config, ...] = (
     Config("no-jq",
            "`jq` off PATH. getting-started promises --check exits 0 before install; "
            "three hard checks fail and two print an X beside the word 'skipped'.",
-           issue=58, removes=("jq",)),
+           issue=58, fixed=True, removes=("jq",)),
     Config("no-agent-cli",
            "No `claude` on PATH at init time. The MCP registration is SKIPPED into "
            "the actions list, verify() has no check for it, and init exits 0.",
@@ -185,16 +201,16 @@ CONFIGS: tuple[Config, ...] = (
     Config("no-config-dir",
            "THALAMUS_CONFIG_DIR unset, i.e. what a clean clone actually has: five "
            "tracked manifests rather than the operator's nine.",
-           issue=49, unset=("THALAMUS_CONFIG_DIR",)),
+           issue=49, fixed=True, unset=("THALAMUS_CONFIG_DIR",)),
     Config("graph-not-started",
            "`thalamus init` run before `docker compose up -d`. The readable "
            "diagnosis must reach the user rather than a transport error.",
-           issue=17, skip_steps=(Phase.GRAPH_STARTING, Phase.GRAPH_READY)),
+           issue=17, fixed=True, skip_steps=(Phase.GRAPH_STARTING, Phase.GRAPH_READY)),
     Config("moved-checkout",
            "The checkout is renamed after a successful init, which is what an "
            "ordinary upgrade looks like. Every later --check must name the "
            "mismatch rather than printing the healthy-install text.",
-           issue=52),
+           issue=52, fixed=True),
 )
 
 
@@ -229,7 +245,7 @@ CHECKS: tuple[Check, ...] = (
           "In the window where the port accepts a connection but the JVM does not yet "
           "answer, the diagnosis must not tell the user to start a container that is "
           "already running.",
-          issue=55,
+          issue=55, fixed=True,
           control="the window must be observed at all — if the first probe already "
                   "answers queries, this cell proves nothing and must report SKIPPED "
                   "rather than pass"),
@@ -237,7 +253,7 @@ CHECKS: tuple[Check, ...] = (
     Check("graph-down-diagnosis-reaches-the-user", Phase.CHECKED, Severity.BLOCKS,
           "With no graph running, the user must get the readable diagnosis naming the "
           "compose command, not a raw transport error relayed from the driver.",
-          issue=17,
+          issue=17, fixed=True,
           control="under the baseline variant, where the graph IS running, the same "
                   "probe must NOT produce that diagnosis — otherwise the check "
                   "passes on a box that always prints it"),
@@ -246,12 +262,12 @@ CHECKS: tuple[Check, ...] = (
     Check("check-exits-zero-before-install", Phase.CHECKED, Severity.DEGRADES,
           "getting-started:112 promises --check is safe before installing and exits 0. "
           "Under the no-jq variant it exits 1.",
-          issue=58),
+          issue=58, fixed=True),
     Check("no-failure-marker-beside-the-word-skipped", Phase.CHECKED, Severity.DEGRADES,
           "The legend at getting-started:105 defines the failure marker as something "
           "present and wrong. A check that could not run for want of a prerequisite is "
           "a third state and must not borrow that marker.",
-          issue=58,
+          issue=58, fixed=True,
           control="the run's output must carry the marker vocabulary at all — at "
                   "least one line bearing a pass, pending or failure marker. Without "
                   "that, a run whose output format changed entirely reports no "
@@ -277,7 +293,7 @@ CHECKS: tuple[Check, ...] = (
           "A pending item states the command that installs it. On a box without the "
           "codex CLI that command cannot ever clear it, so the run closes by telling "
           "the user to repeat what they just did.",
-          issue=54,
+          issue=54, fixed=True,
           control="re-running init must clear at least one OTHER pending item in the "
                   "same run, or the check cannot distinguish 'this item is stuck' "
                   "from 'init clears nothing'"),
@@ -286,7 +302,7 @@ CHECKS: tuple[Check, ...] = (
           "With THALAMUS_CONFIG_DIR unset, the scopes the CLI resolves must be the "
           "manifests a clean clone actually tracks. The operator's box resolves nine "
           "from a private repo; a clone has five, and nothing reports the difference.",
-          issue=49,
+          issue=49, fixed=True,
           control="the same probe under an explicitly-set THALAMUS_CONFIG_DIR must "
                   "resolve a DIFFERENT count, or it is not reading the override at "
                   "all and would report the same number either way"),
@@ -304,27 +320,27 @@ CHECKS: tuple[Check, ...] = (
           "After the checkout moves, --check must name the stale registration. The "
           "detail string currently takes the truthy branch and prints the text for a "
           "healthy install beside a failing check.",
-          issue=52),
+          issue=52, fixed=True),
 
     # ---- console ----------------------------------------------------------------
     Check("console-serves-its-shell", Phase.CONSOLE, Severity.BLOCKS,
           "The console binds through its real entry point and the page a user opens "
           "returns 200. No existing test starts it successfully or fetches that page.",
-          issue=50,
+          issue=50, fixed=True,
           control="a path the server does not serve must return 404 in the same "
                   "probe. A server answering 200 for everything would otherwise "
                   "satisfy every asset assertion in this phase"),
     Check("precached-assets-are-all-present", Phase.CONSOLE, Severity.BLOCKS,
           "Every entry in the service worker's shell list resolves. The worker fails "
           "installation as a whole if any one 404s.",
-          issue=48),
+          issue=48, fixed=True),
 
     # ---- uninstall --------------------------------------------------------------
     Check("uninstall-leaves-no-dangling-link", Phase.UNINSTALLED, Severity.DEGRADES,
           "Uninstall identifies its own links by resolving them against currently "
           "shipped skills, so a link whose target was renamed is neither removed nor "
           "reported.",
-          issue=59,
+          issue=59, fixed=True,
           control="uninstall must have removed something — a run that removes zero "
                   "links trivially leaves zero dangling ones"),
 )
@@ -394,6 +410,16 @@ def known_defect_issues() -> frozenset[int]:
     This is the harness's own positive control. A full run that reproduces none of
     these has not found a clean install; it has failed to observe. The runner
     reports it as MALFORMED rather than as a pass.
+
+    `fixed` entries are excluded: they are the defects this tree no longer carries,
+    so a run that fails to reproduce them is a run against a repaired tree, which is
+    the outcome the work was for.
     """
-    return frozenset(c.issue for c in CHECKS if c.issue) | frozenset(
-        c.issue for c in CONFIGS if c.issue)
+    return frozenset(c.issue for c in CHECKS if c.issue and not c.fixed) | frozenset(
+        c.issue for c in CONFIGS if c.issue and not c.fixed)
+
+
+def fixed_issues() -> frozenset[int]:
+    """Issues whose checks must now PASS. A red one here is a regression."""
+    return frozenset(c.issue for c in CHECKS if c.issue and c.fixed) | frozenset(
+        c.issue for c in CONFIGS if c.issue and c.fixed)

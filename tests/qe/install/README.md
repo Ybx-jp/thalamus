@@ -51,11 +51,33 @@ stands, and `drive.py` exits 2 when none of them reproduce. That is the harness
 reporting on itself, and it is not a pass.
 
 ```
-0  every failing check named a filed issue, and at least one did
-1  a check failed naming NO issue, or a step that may not fail did — a NEW defect
+0  every failing check named an unfixed filed issue, and at least one did
+1  a check failed naming NO issue or a FIXED one, or a step that may not fail did
 2  no known defect reproduced: they were fixed, or this cell cannot see them
 3  MALFORMED — the oracle could not run, or a gate refused
 ```
+
+### An issue tag expires
+
+An issue number **absolves** a red result: it is the whole of what turns exit 1
+into exit 0. So a tag left in place after the fix landed absolves forever, and the
+site it names becomes the one place in the matrix where a regression cannot be
+seen. **Set `fixed=True` on the `Check` and the `Config` in the same change that
+closes the issue** — the same rule that deletes a known-red entry from
+`expectations.json` when its defect is fixed. From then on the check is expected to
+pass and a red one is reported as `REGRESSED` at exit 1.
+
+Two ways in, and the second is why this is not paranoia. The defect comes back — or
+the *oracle* drifts off the repaired behaviour and reports a working install as
+broken. `moved-checkout-is-named-not-denied` did the second: it enumerated the
+diagnosis wording #52 shipped with, the fix reworded that message, the check went
+red on the fix, and its own tag kept the cell green. A check that reads a rendering
+pins the shape of the **healthy** branch, which is stable, never the prose of the
+unhealthy ones, which improves.
+
+When every tagged defect is marked fixed, `known_defect_issues()` empties, `lint.py`
+says so, and a cell can no longer claim more than "nothing new". Re-arm the control
+by tagging the next filed defect.
 
 ## The gates, and why a cell would rather abort than report
 
