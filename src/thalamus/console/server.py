@@ -18,7 +18,7 @@ Two properties are load-bearing:
   tunnel).
 
 The bridge itself is stdlib-only, unlike the FastAPI surface in `pulse/`: one of
-its jobs is restarting the systemd unit that hosts it, so the
+its jobs is restarting the service unit that hosts it, so the
 fewer moving parts between a tap and a tmux call, the better. The expert layer —
 the scope list, spawn, roster sync — is the one part that needs the rest of the
 package, so those imports are deferred to the call that uses them. Run this
@@ -1255,59 +1255,148 @@ def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
     return dirs, seen
 
 
-# What the Services section reports on a host that has no systemd. Reachable only
-# with `--service`, since nothing named means no section at all, and the client
-# renders any state that is not `active` as a bad row — so this reads as a status
-# rather than as the section having failed to load.
-NO_SYSTEMD = "no systemd"
+# ---- Service management: two supervisors, one vocabulary ----
+#
+# The console drives the units it was given (`--service`) through whatever
+# supervises processes on this box — systemd on Linux, launchd on macOS. The
+# translation happens *here*. The sheet renders `active` as a good row and every
+# other word as a bad one, so a client that had to know which supervisor produced a
+# word would be a second policy about one fact; launchd's answers are reduced into
+# systemd's vocabulary on the way out, and the client is unchanged by this file.
 
-NO_SYSTEMD_DETAIL = (
-    "this host has no `systemd-run`, so the console cannot restart units. "
-    "Start `--service` units by whatever supervises them here."
+# What the Services section reports on a host with no supervisor the console can
+# drive. Reachable only with `--service`, since nothing named means no section at
+# all — so this reads as a status rather than as the section having failed to load.
+NO_SUPERVISOR = "no service manager"
+
+NO_SUPERVISOR_DETAIL = (
+    "this host has no service manager the console can drive — no `systemd-run` on "
+    "Linux, no `launchctl` on macOS. Start `--service` units by whatever supervises "
+    "them here."
 )
 
 
+def service_manager() -> str:
+    """Which supervisor drives `--service` units: `"launchd"` or `"systemd"`.
+
+    Keyed on the platform, not on which binary is on PATH. A Linux container without
+    systemd is not a launchd box — it is a box whose restarts refuse — and that
+    refusal already has a route: every call below reports an absent binary as
+    `FileNotFoundError`, which is one answer for all the ways a supervisor can be
+    missing.
+    """
+    return "launchd" if sys.platform == "darwin" else "systemd"
+
+
+def _launchd_state(unit: str) -> str:
+    """One launchd job's state, in systemd's words.
+
+    `launchctl list <label>` answers in the caller's own domain — the domain the
+    documented LaunchAgent is loaded into — and prints a job dictionary whose two
+    load-bearing keys are `PID`, present only while it runs, and `LastExitStatus`.
+    A loaded job that is not running either stopped cleanly or died, which are
+    `inactive` and `failed` to a reader of the sheet, and nothing on this side tells
+    them apart but that exit status.
+
+    A label the domain does not carry is `not loaded`, deliberately not `inactive`:
+    `--service` names a job the operator claims exists, so a label with no job behind
+    it is a configuration mistake, and `inactive` would spell it as an ordinary
+    stopped service. That verdict is read off the refusal rather than assumed from a
+    non-zero exit, because `list` is a legacy subcommand: the day it stops existing,
+    every managed job would otherwise be reported as a label naming nothing, which is
+    a confident wrong answer where `unknown` is the true one.
+    """
+    r = subprocess.run(["launchctl", "list", unit], capture_output=True, text=True)
+    if r.returncode != 0:
+        refusal = (r.stderr + r.stdout).lower()
+        return "not loaded" if "could not find" in refusal else "unknown"
+    if re.search(r'^\s*"PID"\s*=\s*\d+;', r.stdout, re.M):
+        return "active"
+    exited = re.search(r'^\s*"LastExitStatus"\s*=\s*(-?\d+);', r.stdout, re.M)
+    return "failed" if exited and exited.group(1) != "0" else "inactive"
+
+
 def service_status(cfg: Config) -> list[dict]:
+    launchd = service_manager() == "launchd"
     out = []
     for unit in cfg.services:
         try:
-            r = subprocess.run(["systemctl", "--user", "is-active", unit],
-                               capture_output=True, text=True)
+            if launchd:
+                state = _launchd_state(unit)
+            else:
+                r = subprocess.run(["systemctl", "--user", "is-active", unit],
+                                   capture_output=True, text=True)
+                state = r.stdout.strip() or "unknown"
         except FileNotFoundError:
-            out.append({"unit": unit, "state": NO_SYSTEMD})
+            out.append({"unit": unit, "state": NO_SUPERVISOR})
             continue
-        out.append({"unit": unit, "state": (r.stdout.strip() or "unknown")})
+        out.append({"unit": unit, "state": state})
     return out
 
 
 def service_restart(unit: str) -> str | None:
     """Restart a managed unit. Returns an error sentence, or None on success."""
-    # systemd-run: the transient unit escapes this service's cgroup, so the restart
-    # survives even when the unit being restarted is the one serving this request.
     try:
-        subprocess.run(["systemd-run", "--user", "--collect", "--",
-                        "systemctl", "--user", "restart", unit],
-                       capture_output=True, text=True)
+        if service_manager() == "launchd":
+            # `kickstart -k` hands launchd the kill and the start, so the work
+            # outlives this process — the property `systemd-run` buys on the other
+            # platform, where the transient unit escapes the cgroup of the service
+            # being restarted. `start_new_session` is the rest of it: the unit being
+            # restarted is usually the one serving this request, and a client left in
+            # the dying job's process group can be signalled along with it before the
+            # request reaches launchd. `gui/<uid>` is the domain a LaunchAgent in
+            # `~/Library/LaunchAgents` loads into, which is what docs/console.md
+            # tells the operator to write.
+            subprocess.Popen(
+                ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{unit}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+        else:
+            # systemd-run: the transient unit escapes this service's cgroup, so the
+            # restart survives even when the unit being restarted is the one serving
+            # this request.
+            subprocess.run(["systemd-run", "--user", "--collect", "--",
+                            "systemctl", "--user", "restart", unit],
+                           capture_output=True, text=True)
     except FileNotFoundError:
-        return NO_SYSTEMD_DETAIL
+        return NO_SUPERVISOR_DETAIL
     return None
 
 
 CGROUP_PATH = Path("/proc/self/cgroup")
 
 
+def _self_launchd_label() -> str | None:
+    """The launchd job this process runs under, read from its own environment.
+
+    launchd stamps `XPC_SERVICE_NAME` with the job's label on every process it
+    starts. Two answers are refused, for the reason the cgroup side refuses a
+    `.scope` leaf: a console started from a shell inherits the *terminal's* XPC
+    name — an `application.` label — and restarting that closes the terminal the
+    operator is sitting in, while `0` is what launchd leaves on a process it did not
+    start as a job at all.
+    """
+    label = os.environ.get("XPC_SERVICE_NAME", "").strip()
+    if not label or label == "0" or label.startswith("application."):
+        return None
+    return label
+
+
 def self_unit() -> str | None:
-    """The systemd unit this process is running under, read from its own cgroup.
+    """The unit this process is running under, or None.
 
     The console is told which units it may restart (`--service`), but not which of
-    them is itself, and a deploy has to reload the one hosting it. Only the *leaf*
-    of the cgroup path counts: `user@1000.service` is an ancestor of everything a
-    user runs, so scanning rightwards for any `*.service` would name the user
-    manager for a console started from a terminal, and restarting that ends the
+    them is itself, and a deploy has to reload the one hosting it. Under launchd the
+    job stamps its own label into the environment; under systemd it is read from the
+    cgroup, where only the *leaf* counts: `user@1000.service` is an ancestor of
+    everything a user runs, so scanning rightwards for any `*.service` would name the
+    user manager for a console started from a terminal, and restarting that ends the
     login session. A leaf that is a `.scope` — a terminal, a tmux pane — is not a
     unit anyone should restart, and returns None so the deploy says what to restart
     by hand instead.
     """
+    if service_manager() == "launchd":
+        return _self_launchd_label()
     try:
         text = CGROUP_PATH.read_text().strip()
     except OSError:

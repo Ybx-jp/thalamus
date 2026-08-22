@@ -1005,7 +1005,8 @@ def _main():
     )
     console_parser.add_argument(
         "--service", action="append", default=[], metavar="UNIT",
-        help="A systemd --user unit the admin sheet may restart (repeatable; "
+        help="A unit the admin sheet may restart — a systemd `--user` unit on Linux, "
+             "a launchd label on macOS (repeatable; "
              "default: none, which hides the section)"
     )
     console_parser.add_argument(
