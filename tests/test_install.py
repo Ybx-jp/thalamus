@@ -654,6 +654,37 @@ class TestVerify:
         install.install()
         assert {c.name: c for c in install.verify()}["skills load at user scope"].ok
 
+    def test_a_link_to_a_skill_that_no_longer_ships_is_reported(self, sandbox):
+        """The dangling case the shipped-set walk cannot reach.
+
+        `verify` reads each skill through its user-scope path, which finds every
+        broken link whose *name* is still in `shipped_skills()`. Rename a skill or
+        drop one and the link its install left behind has a name in no shipped set:
+        the walk never visits it, and it sits in the user's skills directory
+        dangling and unreported until something silently fails to arm.
+        """
+        install.install()
+        stale = sandbox["skills"] / "skill-that-was-renamed"
+        stale.symlink_to(install.SKILL_DIR / "skill-that-was-renamed")
+
+        check = {c.name: c for c in install.verify()}["skills load at user scope"]
+
+        assert not check.ok and "skill-that-was-renamed" in check.detail
+        # Present and wrong, and `thalamus init` clears it — so a hard failure,
+        # not the pending shape an uninstalled box gets.
+        assert not check.pending
+        assert "thalamus init" in check.detail
+
+    def test_a_foreign_link_of_the_same_shape_is_not_claimed(self, sandbox):
+        """The other half of the identity test: it is scoped to *our* skill dir."""
+        install.install()
+        theirs = sandbox["skills"] / "someone-elses"
+        theirs.symlink_to(sandbox["skills"].parent / "elsewhere" / "someone-elses")
+
+        check = {c.name: c for c in install.verify()}["skills load at user scope"]
+
+        assert check.ok, check.detail
+
     def test_run_exits_nonzero_when_a_check_fails(self, sandbox, monkeypatch):
         monkeypatch.setattr(install, "verify",
                             lambda *a, **k: [install.Check("fake", False, "boom")])
@@ -716,6 +747,26 @@ class TestAnUninstalledMachineIsNotABrokenOne:
 
         check = {c.name: c for c in install.verify()}["cursor MCP server registered"]
         assert not check.ok and not check.pending
+
+    def test_a_stale_cursor_mcp_entry_says_so_and_names_the_field(self, sandbox):
+        """The mark and the words have to agree.
+
+        A stale entry is a non-empty dict, so ordering the detail's branches by
+        truthiness put the healthy-install sentence beside the `✗` — the run said
+        "`thalamus` in ~/.cursor/mcp.json" and exited 1. Reached by moving or
+        renaming a checkout after `thalamus init`, where the differing field is a
+        path inside `args` and the user has no other pointer to it.
+        """
+        install.install()
+        registered = json.loads(sandbox["cursor_user_mcp"].read_text())
+        registered["mcpServers"]["thalamus"]["args"] = ["--from", "somewhere-else"]
+        sandbox["cursor_user_mcp"].write_text(json.dumps(registered))
+
+        check = {c.name: c for c in install.verify()}["cursor MCP server registered"]
+
+        assert "does not match" in check.detail
+        assert "differing: args" in check.detail
+        assert "thalamus init" in check.detail
 
     def test_one_missing_wiring_is_still_named_and_loud(self, sandbox):
         """Pending is *none* of them armed. One missing is `room-guard.sh` all over
@@ -1072,6 +1123,37 @@ class TestUninstall:
         assert not (skills / shipped[0].name).exists()
         assert handwritten.is_dir(), "a hand-written skill was deleted"
         assert impostor.is_symlink(), "a symlink pointing outside the package was deleted"
+
+    def test_a_link_whose_skill_no_longer_ships_is_still_ours(self, sandbox):
+        """`README` promises uninstall removes only what it can prove it installed.
+
+        The gap ran the other way: a link this installer wrote, whose skill was
+        later renamed or dropped, resolved to a path in no shipped set — so it was
+        neither removed by `--uninstall` nor seen by `--check`, and stayed in the
+        user's skills directory for good. Identity is where the link points.
+        """
+        skills = sandbox["skills"]
+        skills.mkdir(parents=True)
+        stale = skills / "skill-that-was-renamed"
+        stale.symlink_to(install.SKILL_DIR / "skill-that-was-renamed")
+
+        actions = install.uninstall()
+
+        assert not stale.is_symlink()
+        assert any("skill-that-was-renamed" in a for a in actions)
+
+    def test_install_prunes_a_link_whose_skill_no_longer_ships(self, sandbox):
+        """And `thalamus init` is the command that clears it, so `--check` can
+        report it as a hard failure rather than an advisory nothing acts on."""
+        install.install()
+        stale = sandbox["skills"] / "skill-that-was-renamed"
+        stale.symlink_to(install.SKILL_DIR / "skill-that-was-renamed")
+
+        actions = install.link_skills()
+
+        assert not stale.is_symlink()
+        assert any("no longer ships" in a for a in actions)
+        assert {c.name: c for c in install.verify()}["skills load at user scope"].ok
 
     def test_a_dry_run_removes_nothing(self, sandbox):
         install._write_json(sandbox["user"], {"hooks": install.build_hook_block()})
