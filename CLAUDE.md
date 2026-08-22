@@ -84,11 +84,12 @@ Novelty claims are phrased "not found in the current scan", never a bare "novel"
   don't cross surfaces, and proven queries live in the skill's RECIPES.md (check before
   writing, append after validating).
 - Ingestion follows the procurement protocol: demand-driven against open threads,
-  anchor document first, per-project `--feed`. **Verify the source without spending on
-  it, then `--write` once.** Confirm the URL serves the paper you meant and is not an
-  abstract page — a `curl -sIL` for the status, final host and content-type does it.
-  Never dry-run first as a check: extraction runs on the dry pass too, so a dry run
-  followed by a write bills the model twice for one source.
+  anchor document first, per-project `--feed`. **Do the title check, then `--write`
+  once.** The check confirms the URL serves the paper you meant and is not an abstract
+  page, and it costs no model call: `curl -sIL` for status, post-redirect host and
+  content-type, then read the title itself — `<title>` for HTML, the first page through
+  `pdftotext` for a PDF. Do not use a dry run as the check: extraction runs on the dry
+  pass too and is thrown away, so it bills the model twice for one source (issue #81).
 - **A proposed thread close is reported with its title, a 1–2 sentence description,
   and its proposal id — all three, every time.** The operator approves these remotely
   and cannot inspect the ledger to find out what they are approving, so a bare
