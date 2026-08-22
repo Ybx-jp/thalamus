@@ -2517,8 +2517,19 @@ def _cmd_arch(args, arch_parser):
 
     from thalamus.arch import findings as arch_findings
     from thalamus.arch import model as arch_model
+    from thalamus.arch import routes as arch_routes
     from thalamus.arch.extractor import scan_repo
     from thalamus.arch.metrics import measure
+
+    def _scan(target):
+        """One scan under both declared channels.
+
+        Every subcommand goes through this, `diff` included: measuring one side with the
+        route channel on and the other with it off would compare two extractors, which
+        is the error the policy digest exists to make impossible.
+        """
+        extracted = arch_routes.extract_routes(target, model.routes)
+        return arch_routes.merge(scan_repo(target, policy), extracted), extracted
 
     # The repository, not the cwd. `arch/model.yaml` is a file in a checkout, and
     # resolving it against wherever the operator is standing made `thalamus arch` a
@@ -2538,7 +2549,7 @@ def _cmd_arch(args, arch_parser):
         _arch_growth(args, repo)
         return
 
-    graph = scan_repo(repo, policy)
+    graph, route_graph = _scan(repo)
     metrics = measure(graph)
 
     if command == "rules":
@@ -2559,7 +2570,7 @@ def _cmd_arch(args, arch_parser):
                 # Both sides are recomputed under one policy. Reading the stored number
                 # off the other commit's model file would compare a measurement against
                 # a report, which is the mistake `diff` exists to prevent.
-                other = measure(scan_repo(checkout, policy))
+                other = measure(_scan(checkout)[0])
             finally:
                 subprocess.run(
                     ["git", "-C", str(repo), "worktree", "remove", "--force", str(checkout)],
@@ -2571,11 +2582,17 @@ def _cmd_arch(args, arch_parser):
     # scan
     text, derived, metrics = arch_model.build(repo, graph, model)
     dirty = arch_model.dirty_paths(repo, policy)
-    found = arch_findings.findings(graph, metrics, model)
+    found = arch_findings.findings(graph, metrics, model) + arch_findings.route_findings(
+        route_graph
+    )
 
     print(f"Scan {derived['scan']}")
     print(f"  policy      import_depth={policy.import_depth} resolve={policy.resolve} "
           f"digest={policy.digest()[:7]}")
+    if model.routes.enabled:
+        print(f"  routes      {len(route_graph.called())} called, "
+              f"{len(route_graph.defined())} defined, match={model.routes.match} "
+              f"digest={model.routes.digest()[:7]}")
     print(f"  modules     {metrics.modules}")
     print(f"  edges       {metrics.dependencies} counted of {len(graph.edges)} recorded")
     print(f"  propagation {metrics.propagation_cost * 100:.2f}%")

@@ -139,16 +139,29 @@ behavior — see that repo's README for the split line and setup.
 ## Repository analysis
 
 ```bash
-thalamus arch scan                 # structural instrument over a repo's imports
-thalamus arch show                 # the current model
-thalamus arch diff                 # against a previous scan
-thalamus arch rules                # the rules a scan applies
-thalamus arch growth               # change over time
+thalamus arch scan                 # measure the tree; --write updates the model file
+thalamus arch show                 # the declared model and the last scan's numbers
+thalamus arch diff <commit-ish>    # re-scan both sides and compare
+thalamus arch rules                # measured edges against the declared layers
+thalamus arch growth               # unreferenced stock first, then rate
 ```
 
 All five measure this checkout by default, from any working directory — the model
 they read (`arch/model.yaml`) belongs to a repository, not to wherever you are
 standing. `--repo <path>` points them at another tree.
+
+`diff` takes a commit-ish, not a stored scan, and re-scans both sides under one
+policy: reading the other commit's recorded number would compare a measurement
+against a report. `growth` leads with unreferenced stock because a trend statistic
+scores a flat 894 MB of stranded worktrees as healthy.
+
+A scan reads two declared channels, each with its own policy block and digest in
+`arch/model.yaml`. `extractor` walks Python imports. `routes` matches client request
+literals against the routes a server defines, which is how the console's browser
+surface enters the graph at all — it reaches the server over HTTP, so no import
+relation exists to extract. The route channel is off unless the model file enables
+it; turning it on forks the scan key, because a propagation cost measured with those
+edges is not comparable to one measured without them.
 
 ## Maintenance
 

@@ -1,9 +1,42 @@
 """Structural metrics over an extracted dependency graph.
 
-MacCormack, Rusnak and Baldwin's propagation cost is the headline: the density of the
-visibility matrix, i.e. the share of all ordered module pairs where one can reach the
-other through any chain of dependencies. It answers "if I change a module, how much of
-the system can feel it" with a number rather than an impression.
+The headline is propagation cost: the density of the visibility matrix, i.e. the share
+of all ordered module pairs where one can reach the other through any chain of
+dependencies. It answers "if I change a module, how much of the system can feel it"
+with a number rather than an impression.
+
+**The construction is MacCormack, Rusnak and Baldwin's; the relation is not.** Their
+matrix is built from inter-file *function calls* recovered by a call-graph extractor.
+This one is built from Python imports plus the declared route channel. Same arithmetic
+over a different relation, so a number here is not comparable to a number in that paper
+— the Linux and Mozilla figures are not a scale this instrument's readings sit on. What
+transfers is the method, and the method's own discipline: every comparison in that work
+is between systems matched on size, and it flags a file-count change as a confound
+rather than reading it as an improvement.
+
+**Propagation cost is sensitive to file count, and this is measured, not suspected.**
+Mo, Cai, Kazman, Xiao and Feng (ICSE 2016, "Decoupling Level") state it as a headline
+objection: "PC is sensitive to the size of the DSM: the greater the number of files, the
+smaller the PC", shown distributionally — of 46 projects over 1000 files, 70% score
+under 20% PC, against 48% of the 62 projects under 1000 files. They also record the
+failure mode this module's route channel is built around: integrating an
+*architecturally isolated* component made PC report what they judged a false positive,
+while the system had not degraded.
+
+The mechanism, which is a derivation from the definition rather than a published
+result: every element is visible to itself, so the diagonal alone puts N cells in the
+matrix and PC cannot fall below 1/N. A small component therefore floors high (two
+modules with no edges between them measure 50%), and adding a *disconnected* element
+lowers the ratio while changing no structure. Adding a connected one can raise it,
+which is why the route channel moved this repo up rather than down. A blended figure
+over components that cannot reach each other is not a reading of anything — report
+those per component.
+
+Two disciplines follow, both theirs: read averages over several snapshots rather than a
+single scan, and treat a small movement as noise. Their replacement metric, Decoupling
+Level, is not computed here — it needs their Design Rule Hierarchy clustering, and
+adopting it is a decision with evidence attached, not a refactor. Recorded because this
+module's headline is the metric that paper was written to replace.
 
 Every function here recomputes from the edge list. Nothing is cached and nothing is
 stored as truth: the edge list is the observation, and a metric is a reading
