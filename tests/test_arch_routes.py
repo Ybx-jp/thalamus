@@ -110,12 +110,14 @@ def test_a_route_no_scanned_client_calls_is_reported(tmp_path):
     assert routes.uncalled_routes() == [(SERVER, "/api/orphan")]
 
 
-def test_a_declared_client_with_no_routes_does_not_become_a_module(tmp_path):
-    """The denominator error this channel exists to close, inverted.
+def test_a_declared_client_with_no_routes_is_still_an_element(tmp_path):
+    """The element set is a declaration, not a result of the matcher.
 
-    A file the channel found no dependency for is not evidence of an element. Entering
-    it would add a bare diagonal cell to the visibility matrix and lower propagation
-    cost by widening N with nothing. It is reported instead of dropped in silence.
+    Entering a client only when literals were found makes membership depend on recall:
+    a client addressing every route through a built string would leave the numerator
+    and the denominator together, so the miss would be invisible in the number it
+    moved. Measured on this repo the exclusion was worth 0.22 propagation points
+    against the matched edge's 0.02 — the larger effect, decided by a regex.
     """
     repo = _repo(
         tmp_path,
@@ -125,8 +127,10 @@ def test_a_declared_client_with_no_routes_does_not_become_a_module(tmp_path):
     )
     routes = extract_routes(repo, _policy())
 
-    assert "src/ui/quiet.js" not in routes.clients
-    assert any("quiet.js" in note for note in routes.unresolved), "reported, not silent"
+    assert routes.clients["src/ui/quiet.js"] == set(), "declared, calls nothing"
+    assert "src/ui/quiet.js" in merge(
+        DependencyGraph(modules=[SERVER], policy=ExtractorPolicy()), routes
+    ).modules
 
 
 def test_a_prefix_route_is_reported_as_beyond_the_matcher(tmp_path):
@@ -140,6 +144,62 @@ def test_a_prefix_route_is_reported_as_beyond_the_matcher(tmp_path):
     routes = extract_routes(repo, _policy())
 
     assert any("/frame/" in note for note in routes.unresolved)
+
+
+def test_the_server_matcher_reads_either_operand_order(tmp_path):
+    """`"/api/x" == path` is the same comparison as `path == "/api/x"`. Reading only
+    one order yields an empty server route set and then accuses the client of calling a
+    route that is defined three characters away."""
+    repo = _repo(
+        tmp_path,
+        client="req(`api/alpha`);",
+        server='if "/api/alpha" == path: pass\n',
+    )
+    routes = extract_routes(repo, _policy())
+
+    assert routes.defined() == {"/api/alpha"}
+    assert routes.unmatched_calls() == [], "no false accusation from operand order"
+
+
+def test_a_membership_table_route_is_reported_as_beyond_the_matcher(tmp_path):
+    """`if path in STATIC:` is a live routing form in the scanned server. A gap
+    detector that knows only `startswith` passes it in silence, and silence here is
+    what turns an unmatched-call finding into a false accusation."""
+    repo = _repo(
+        tmp_path,
+        client="req(`api/alpha`);",
+        server='if path == "/api/alpha": pass\nif path in STATIC: pass\n',
+    )
+    routes = extract_routes(repo, _policy())
+
+    assert any("STATIC" in note for note in routes.unresolved)
+
+
+def test_both_matchers_are_bound_to_the_declared_prefix(tmp_path):
+    """An unbounded server pattern collects routes the client pattern structurally
+    cannot call, then reports each as called by nobody — a finding manufactured by the
+    asymmetry rather than by the code."""
+    repo = _repo(
+        tmp_path,
+        client="req(`api/alpha`);",
+        server='if path == "/api/alpha": pass\nif path == "/internal/health": pass\n',
+    )
+    routes = extract_routes(repo, _policy())
+
+    assert routes.defined() == {"/api/alpha"}
+    assert routes.uncalled_routes() == [], "an unreachable route is not dead surface"
+
+
+def test_the_prefix_is_declared_not_hardcoded(tmp_path):
+    repo = _repo(
+        tmp_path,
+        client="req(`rpc/alpha`);",
+        server='if path == "/rpc/alpha": pass\n',
+    )
+    routes = extract_routes(repo, _policy(prefix="/rpc/"))
+
+    assert routes.called() == {"/rpc/alpha"}
+    assert len(routes.edges()) == 1
 
 
 def test_the_channel_is_off_until_the_authored_half_asks_for_it(tmp_path):

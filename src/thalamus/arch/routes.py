@@ -54,16 +54,38 @@ from thalamus.arch.extractor import (
 # it, and so adding a second cannot silently change what an old number meant.
 MATCH_EXACT_LITERAL = "exact-literal"
 
-# A client literal ends at the first query string or template substitution: the route
-# is the path, and `api/read/body?pane=${id}` names the same route as `api/read/body`.
-_CLIENT_LITERAL = re.compile(r"""["'`](/?api/[A-Za-z0-9/_-]*)""")
-# The server's routing form. Equality against a literal, which is the whole reason this
-# channel can claim exact matching.
-_SERVER_LITERAL = re.compile(r"""path\s*==\s*["'](/[A-Za-z0-9/_-]+)["']""")
-# Routing forms this matcher does NOT resolve. Found ones are reported as gaps in the
-# scanner's reach rather than passed over, because an unreported prefix route makes the
-# unmatched-client finding below wrong.
-_SERVER_INEXACT = re.compile(r"""path\.startswith\(\s*["'](/[A-Za-z0-9/_-]+)["']""")
+def _client_literal(prefix: str) -> re.Pattern[str]:
+    """Client-side literals under the declared prefix.
+
+    A literal ends at the first query string or template substitution, which is not a
+    style choice: `console/server.py` splits on `?` before it compares, so truncating
+    here reproduces the server's own tokenisation rather than guessing at it.
+    """
+    stem = re.escape(prefix.strip("/"))
+    return re.compile(r"""["'`](/?""" + stem + r"""/[A-Za-z0-9/_-]*)""")
+
+
+def _server_literal(prefix: str) -> re.Pattern[str]:
+    """Server-side equality against a literal, in either operand order.
+
+    Bound to the same declared prefix as the client pattern. An unbounded server
+    pattern would collect routes the client matcher structurally cannot call and then
+    report each one as called by nobody — a finding manufactured by the asymmetry
+    rather than by the code.
+    """
+    stem = re.escape(prefix.strip("/"))
+    literal = r"""["'](/""" + stem + r"""/[A-Za-z0-9/_-]+)["']"""
+    return re.compile(rf"""(?:path\s*==\s*{literal}|{literal}\s*==\s*path)""")
+
+
+# Routing forms this matcher does NOT resolve, each reported as a gap in the scan's
+# reach. An unreported route of these shapes would make an unmatched-call finding a
+# false accusation, so the detector covers every form the scanned servers actually use:
+# prefix tests and membership tables alike.
+_SERVER_INEXACT = re.compile(
+    r"""path\.startswith\(\s*["']([A-Za-z0-9/_.-]+)["']"""
+    r"""|path\s+in\s+([A-Za-z_][A-Za-z0-9_]*)"""
+)
 
 
 @dataclass(frozen=True)
@@ -75,11 +97,19 @@ class RoutePolicy:
     enabled — see `model.scan_id` — which keeps every scan taken before it valid.
     """
 
-    version: int = 1
+    version: int = 2
     enabled: bool = False
-    clients: tuple[str, ...] = ("src/thalamus/console/static/*.js",)
+    # Authored, not globbed. The element set must not be a function of what the matcher
+    # happened to find: a glob plus a "had literals" test makes a recall failure remove
+    # a file from numerator and denominator at once, so the miss is invisible in the
+    # number it moves. Naming the clients makes the element set a declaration.
+    clients: tuple[str, ...] = (
+        "src/thalamus/console/static/app.js",
+        "src/thalamus/console/static/sw.js",
+    )
     servers: tuple[str, ...] = ("src/thalamus/console/server.py",)
     match: str = MATCH_EXACT_LITERAL
+    prefix: str = "/api/"
 
     def block(self) -> dict[str, object]:
         """The policy as it appears in `arch/model.yaml`, without its own digest."""
@@ -89,6 +119,7 @@ class RoutePolicy:
             "clients": list(self.clients),
             "servers": list(self.servers),
             "match": self.match,
+            "prefix": self.prefix,
         }
 
     def digest(self) -> str:
@@ -106,6 +137,7 @@ class RoutePolicy:
             clients=tuple(block.get("clients", defaults.clients)),
             servers=tuple(block.get("servers", defaults.servers)),
             match=str(block.get("match", defaults.match)),
+            prefix=str(block.get("prefix", defaults.prefix)),
         )
 
 
@@ -209,6 +241,10 @@ def extract_routes(repo: Path, policy: RoutePolicy | None = None) -> RouteGraph:
         graph.unresolved.append(f"unknown match policy: {policy.match}")
         return graph
 
+    client_pattern = _client_literal(policy.prefix)
+    server_pattern = _server_literal(policy.prefix)
+    bare = policy.prefix.rstrip("/")
+
     servers = _matching(repo, policy.servers)
     for relative in _matching(repo, policy.clients):
         if relative in servers:
@@ -218,18 +254,17 @@ def extract_routes(repo: Path, policy: RoutePolicy | None = None) -> RouteGraph:
         except (UnicodeDecodeError, OSError) as exc:
             graph.unresolved.append(f"{relative}: unread ({exc.__class__.__name__})")
             continue
-        found = {_normalise(m.group(1)) for m in _CLIENT_LITERAL.finditer(text)}
-        calls = {route for route in found if route != "/api/"}
-        if not calls:
-            # Declared as a client, found to call nothing. Recorded rather than entered
-            # as a module: this channel measures route dependencies, and a file it found
-            # none for is not evidence of an element — adding it would contribute a bare
-            # diagonal cell to the visibility matrix and lower propagation cost by
-            # widening N, which is the denominator error this channel exists to close,
-            # inverted. Reported so the omission is visible instead of silent.
-            graph.unresolved.append(f"{relative}: declared a client, no route literals found")
-            continue
-        graph.clients[relative] = calls
+        found = {_normalise(match.group(1)) for match in client_pattern.finditer(text)}
+        # A declared client is an element whether or not it calls anything. Entering it
+        # only when the matcher found literals would make the element set a function of
+        # the matcher's *recall*: a client addressing every route through a built string
+        # would leave the numerator and the denominator together, so the miss would be
+        # invisible in the number it moved. Measured on this repo the exclusion was
+        # worth 0.22 propagation points against the matched edge's 0.02 — the larger of
+        # the two effects, and not one to leave to a regex.
+        graph.clients[relative] = {
+            route for route in found if route.rstrip("/") != bare
+        }
 
     for relative in servers:
         try:
@@ -237,12 +272,17 @@ def extract_routes(repo: Path, policy: RoutePolicy | None = None) -> RouteGraph:
         except (UnicodeDecodeError, OSError) as exc:
             graph.unresolved.append(f"{relative}: unread ({exc.__class__.__name__})")
             continue
-        graph.servers[relative] = {_normalise(m.group(1)) for m in _SERVER_LITERAL.finditer(text)}
+        graph.servers[relative] = {
+            _normalise(match.group(1) or match.group(2))
+            for match in server_pattern.finditer(text)
+        }
         for inexact in _SERVER_INEXACT.finditer(text):
-            # Declared out of the matcher's reach. Reported because an unseen prefix
-            # route would make an unmatched-call finding a false accusation.
+            # Declared out of the matcher's reach. Reported because an unseen route of
+            # any of these shapes would make an unmatched-call finding a false
+            # accusation.
+            form = inexact.group(1) or inexact.group(2)
             graph.unresolved.append(
-                f"{relative}: prefix route {inexact.group(1)!r} not matched by {policy.match}"
+                f"{relative}: route form {form!r} not matched by {policy.match}"
             )
     return graph
 

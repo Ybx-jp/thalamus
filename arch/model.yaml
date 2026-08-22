@@ -36,15 +36,25 @@ extractor:
 # channel on is not comparable to one measured without it, and the key must say so. With
 # `enabled: false` the digest is the import policy's alone, so scans taken before this
 # channel existed keep the key they were published under.
+#
+# `clients` is a list of files, not a glob, and every file on it is an element of the
+# measurement whether or not the matcher finds a route in it. Globbing the list and
+# entering only the files that yielded literals makes the element set a function of the
+# matcher's recall, which hides a recall failure inside the number it distorts. It is
+# also the larger of this channel's two effects on the headline: measured at 0868c2e,
+# the matched edge moves propagation cost 0.02 points and the decision about `sw.js`
+# moves it 0.22.
 routes:
-  version: 1
+  version: 2
   enabled: true
   clients:
-  - src/thalamus/console/static/*.js
+  - src/thalamus/console/static/app.js
+  - src/thalamus/console/static/sw.js
   servers:
   - src/thalamus/console/server.py
   match: exact-literal
-  digest: 1e69a9d8ac340a84d26335f9aeb65a0320c3d9d735754ff58dade5a53da6de69
+  prefix: /api/
+  digest: f0c80e2e63424afe61e379e784ba6fc560b742dc501078546cab86e15625c61c
 # Layers are listed most-specific-first, because `layer_of` returns the first pattern
 # that matches. `entry`, `vocabulary` and `conformance` therefore precede the broad
 # package globs that would otherwise swallow them. Read the `rules` block below for the
