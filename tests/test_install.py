@@ -735,7 +735,15 @@ class TestTheClaudeCodeMcpRegistration:
 
         assert check.ok and str(PROJECT_ROOT) in check.detail
 
+    def _present(self, monkeypatch, *names):
+        """Pin the CLI as present: pending is the state of a box that can act on it,
+        and a runner with no `claude` would otherwise read this as blocked."""
+        real = install.shutil.which
+        monkeypatch.setattr(install.shutil, "which",
+                            lambda b: f"/usr/bin/{b}" if b in names else real(b))
+
     def test_an_absent_registration_is_pending_on_thalamus_init(self, sandbox, monkeypatch):
+        self._present(monkeypatch, "claude")
         monkeypatch.setattr(install, "claude_mcp_registration", lambda: "")
 
         check = install.verify_claude_mcp()
@@ -748,7 +756,14 @@ class TestTheClaudeCodeMcpRegistration:
     def test_a_registration_against_another_checkout_is_a_hard_failure(self, sandbox,
                                                                        monkeypatch):
         """Reached by moving or renaming the checkout after `thalamus init` — the same
-        drift the Cursor leg reports, on the leg that had no report at all."""
+        drift the Cursor leg reports, on the leg that had no report at all.
+
+        Asserted with `claude` *absent*, which is the case that gets this wrong: the
+        registration was read and names another checkout, so the answer is known and
+        the finding is real. Blocking it on the missing binary would hide a live
+        defect behind "could not run".
+        """
+        self._absent(monkeypatch, "claude")
         monkeypatch.setattr(install, "claude_mcp_registration",
                             lambda: "  Args: run --project /somewhere/else thalamus-mcp\n")
 

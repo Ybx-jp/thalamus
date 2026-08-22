@@ -1611,14 +1611,20 @@ def verify_claude_mcp() -> Check:
         f"`thalamus` registered at user scope against {PROJECT_ROOT}"
         if against_this_checkout
         else "could not run: `claude` is not on this machine, and the registration "
-             "goes in through `claude mcp add`" if cli is None
+             "goes in through `claude mcp add`" if cli is None and not served
         else "not registered yet — `thalamus init` registers it, and until it does no "
              "`mcp__thalamus__*` tool appears in any session"
         if not served
         else f"registered, but not against this checkout ({PROJECT_ROOT}) — "
              "re-run `thalamus init`",
         pending=not served and cli is not None,
-        blocked=cli is None and not against_this_checkout,
+        # Blocked only when there is genuinely no answer: nothing registered *and* no
+        # CLI to have registered it. A registration that exists and names another
+        # checkout was read successfully, so it is a finding, and stays a hard failure
+        # whether or not the binary is on this PATH — the same line drawn on
+        # `codex hooks trusted`. `blocked` is "nobody could look", never "the fix
+        # needs a program you do not have".
+        blocked=cli is None and not served,
     )
 
 
