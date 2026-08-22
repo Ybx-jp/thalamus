@@ -456,21 +456,27 @@ class TestHookBlock:
             "mcp__thalamus__.*",
             "Bash",
             "TaskCreate",
+            "Agent",
             "mcp__thalamus__memory_query",
         }
         assert all("matcher" not in g for g in block["SessionEnd"])
 
-        # One script legitimately serves two matchers: conditioning.sh carries both
-        # the milestone class (TaskCreate) and the falsify class (memory_query).
-        # Grouping is per matcher, so the two must land in different groups — the
-        # same script in one group twice would fire it twice for one tool call.
+        # One script legitimately serves three matchers: conditioning.sh carries the
+        # milestone class (TaskCreate), the selfticket class (Agent) and the falsify
+        # class (memory_query). Grouping is per matcher, so they must land in
+        # different groups — the same script in one group twice would fire it twice
+        # for one tool call.
         conditioning = [
             g.get("matcher")
             for g in block["PostToolUse"]
             for h in g["hooks"]
             if h["command"].endswith("conditioning.sh")
         ]
-        assert sorted(conditioning) == ["TaskCreate", "mcp__thalamus__memory_query"]
+        assert sorted(conditioning) == [
+            "Agent",
+            "TaskCreate",
+            "mcp__thalamus__memory_query",
+        ]
 
         # recipe-stage.sh covers both graph surfaces, for the same reason the tap
         # does: memory_query and inline gremlin Bash query the same graph, and a

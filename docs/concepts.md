@@ -213,6 +213,13 @@ exists.
 The answer must cite nodes inside the consulted scope, and citations are validated
 before the ticket closes. Tickets are single-use.
 
+A scope may also consult **itself**. That ticket grants no reach the session did not
+already have and its answer corroborates nothing; what it buys is an independent pass —
+a fresh context, a brief built against the question, a cited close, and a recorded
+exchange. It is not a way of retrieving less: the close is refused unless the server
+served a recall under the ticket, and the grant keeps the knowledge commons so a
+ticketed read is never poorer than an ambient one.
+
 `thalamus quick ask <scope> "<question>"` is the second tier: rather than cold-starting
 an expert, it forks that expert's live session, so the answer comes from a process that
 is already warm. A fork distills its own delta, never the parent's transcript.
