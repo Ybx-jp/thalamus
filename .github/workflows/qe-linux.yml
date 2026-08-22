@@ -136,12 +136,37 @@ jobs:
           import spec
           c = next(c for c in spec.CONFIGS if c.name == '${{ matrix.config }}')
           print(' '.join(c.removes))")
+          if [ -z "$removes" ]; then
+            echo "config '${{ matrix.config }}' removes nothing"
+            exit 0
+          fi
+          mkdir -p "$HOME/.local/bin"
           for bin in $removes; do
             path=$(command -v "$bin") || { echo "::error::$bin is not on PATH to remove"; exit 1; }
-            sudo chown "$(id -u):$(id -g)" "$path"
-            echo "perturbable: $path"
+            dir=$(dirname "$path")
+            if [ -w "$dir" ]; then
+              echo "perturbable in place: $path"
+            else
+              # Relocate rather than widen permissions on a system directory. This is
+              # also why `no-agent-cli` passed from the first run: the Claude CLI
+              # installs into ~/.local/bin already.
+              sudo mv "$path" "$HOME/.local/bin/$bin"
+              sudo chown "$(id -u):$(id -g)" "$HOME/.local/bin/$bin"
+              echo "relocated: $path -> $HOME/.local/bin/$bin"
+            fi
           done
-          [ -n "$removes" ] || echo "config '${{ matrix.config }}' removes nothing"
+          # Assert the precondition rather than assume the move achieved it. Both halves
+          # matter and they fail differently: a binary the gate cannot find means the box
+          # is not the documented one, and a binary in a directory drive.py cannot write
+          # means the cell aborts at the boundary the way this one already did once.
+          for bin in $removes; do
+            p=$(command -v "$bin") || { echo "::error::$bin vanished from PATH"; exit 1; }
+            if [ ! -w "$(dirname "$p")" ]; then
+              echo "::error::$bin sits in an unwritable directory ($p); Perturbation renames in place and would abort"
+              exit 1
+            fi
+            echo "ready: $bin at $p"
+          done
 
       - name: Run the cell
         run: |
