@@ -39,6 +39,7 @@ REPO_ROOT = _HERE.parents[1]
 # a case it cannot find reports green over a shrinking denominator.
 CASE_MODULES = (
     "qe.cases.ingress_floor",
+    "qe.cases.install_driver_gates",
     "qe.cases.hook_arming",
     "qe.cases.guard_failopen",
     "qe.cases.ingest_gate",
