@@ -420,6 +420,13 @@ never cached — a stale pane would be a lie.
 
 ## Keeping it running
 
+**Linux only, and it is the one part of Thalamus that is.** Everything below is
+systemd, and so is the admin sheet's restart control — `serve()` reports `no systemd`
+and hides the Services section on a host without it. The console itself runs anywhere:
+a macOS cell serves the shell and passes both asset checks on every push
+(`.github/workflows/qe-macos.yml`). Start it there however you keep a process alive,
+and restart it from the terminal rather than the sheet.
+
 A user unit, so it starts with your session and restarts if it dies:
 
 ```ini
