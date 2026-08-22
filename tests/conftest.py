@@ -7,7 +7,23 @@ Anything under here exists because that already happened.
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Scrubbed at *import* rather than in the autouse fixture below, because the thing it
+# changes is collection, not execution. `THALAMUS_CONFIG_DIR` moves `manifest.config_root`
+# off `config/` in this checkout and onto whatever roster the operator's shell points
+# at, and `test_role_guard.py` parametrizes its capability-boundary guard over
+# `available_scopes()` — which is evaluated while the module is imported, before any
+# fixture runs. Exported, the suite collected 1369 tests against 9 private manifests;
+# unexported, 1365 against the 5 tracked here, and nothing said which run had happened.
+#
+# The tracked manifests win. A suite whose size depends on a private repository reports
+# on the operator's box rather than on this one, and a contributor's green run and his
+# are then not the same claim. A test that wants a different roster sets the variable in
+# its own body, which still works — this clears the floor, it does not hold it down.
+os.environ.pop("THALAMUS_CONFIG_DIR", None)
 
 
 @pytest.fixture(autouse=True)
