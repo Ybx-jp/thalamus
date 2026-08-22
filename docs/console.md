@@ -428,12 +428,14 @@ never cached — a stale pane would be a lie.
 
 ## Keeping it running
 
-**Linux only, and it is the one part of Thalamus that is.** Everything below is
-systemd, and so is the admin sheet's restart control — `serve()` reports `no systemd`
-and hides the Services section on a host without it. The console itself runs anywhere:
-a macOS cell serves the shell and passes both asset checks on every push
-(`.github/workflows/qe-macos.yml`). Start it there however you keep a process alive,
-and restart it from the terminal rather than the sheet.
+The console runs under whatever supervises processes on the box — systemd on Linux,
+launchd on macOS — and the admin sheet's Services section drives both: `--service`
+names a systemd `--user` unit or a launchd label, `restart` and **INFRA → Build →
+deploy** work the same on either, and a host with neither reports `no service manager`
+in place of a state rather than hiding the control. A macOS cell also serves the shell
+and passes both asset checks on every push (`.github/workflows/qe-macos.yml`).
+
+### Linux
 
 A user unit, so it starts with your session and restarts if it dies:
 
@@ -466,6 +468,57 @@ loginctl enable-linger $USER     # so it survives logout / starts at boot
 `inactive` while the console is plainly serving, and `restart` hangs asking for a
 root password it will never get.
 
+### macOS
+
+A LaunchAgent in `~/Library/LaunchAgents`, which is the domain the console restarts
+into:
+
+```xml
+<!-- ~/Library/LaunchAgents/com.thalamus.console.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>            <string>com.thalamus.console</string>
+  <key>WorkingDirectory</key> <string>/Users/you/code/thalamus</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/you/code/thalamus/.venv/bin/thalamus</string>
+    <string>console</string>
+    <string>--service</string>
+    <string>com.thalamus.console</string>
+  </array>
+  <!-- PATH must be pinned, not inherited — see "Pin PATH in the unit" below. An
+       agent gets launchd's PATH, which does not carry ~/.local/bin. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/you/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>  <true/>
+  <key>KeepAlive</key>  <true/>
+</dict>
+</plist>
+```
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.thalamus.console.plist
+launchctl kickstart -k gui/$(id -u)/com.thalamus.console   # what the sheet's restart runs
+```
+
+**The label is what `--service` takes**, and it is also how the console recognises
+itself: launchd stamps `XPC_SERVICE_NAME` on every process it starts, so a console
+running as this agent knows which of its managed units is the one hosting the page and
+deploy can restart it. Started by hand from a terminal it inherits the *terminal's*
+XPC name instead, recognises that it is not a job, and says what to restart by hand —
+the same refusal a Linux console makes when it finds itself in a `.scope`.
+
+**`bootstrap` is once, `kickstart` is every time.** A plist that has never been
+bootstrapped is not in the domain, and the sheet reports it as `not loaded` rather
+than as a stopped service — that word means the label names nothing, which is a
+config mistake and not a state.
+
 ### Merging is not deploying
 
 The unit runs `.venv/bin/thalamus` out of `%h/code/thalamus`, and that venv is an
@@ -485,7 +538,8 @@ what it now serves. By hand it is the same two commands:
 
 ```bash
 git -C ~/code/thalamus pull --ff-only
-systemctl --user restart thalamus-console
+systemctl --user restart thalamus-console                  # Linux
+launchctl kickstart -k gui/$(id -u)/com.thalamus.console   # macOS
 ```
 
 Deploy refuses rather than improvises. Uncommitted changes to tracked files, a
@@ -583,7 +637,9 @@ A tmux pane inherits the PATH of the *client that created the window* — which,
 a spawn from your phone, is the console process. A systemd user unit gets no
 login-shell PATH, and **at boot** the user manager's PATH has no `~/.local/bin`,
 which is where `claude` and `uv` live. A desktop login later adds it via
-`import-environment`, so the box looks fine until it reboots unattended.
+`import-environment`, so the box looks fine until it reboots unattended. A launchd
+agent has the same hole and no such rescue: it gets launchd's own PATH, which carries
+neither `~/.local/bin` nor `/opt/homebrew/bin`, at every start and not only at boot.
 
 The failure is silent in every layer: `tmux new-window` returns 0 as soon as it has
 forked, so a command that cannot exec leaves a window that dies instantly and is
@@ -591,15 +647,18 @@ reaped while tmux, `pin`, and the console all report success. It presents as
 "spawning is broken" — and worse, the roster's anchor dies the same way, and with
 no windows left the tmux server exits, taking the whole roster with it.
 
-Hence `Environment=PATH=` in the unit, and hence the console confirms a spawned
-window is still alive before reporting success. Never trust an exit code alone
-here.
+Hence `Environment=PATH=` in the unit and `EnvironmentVariables` in the plist, and
+hence the console confirms a spawned window is still alive before reporting success.
+Never trust an exit code alone here.
 
 `--service thalamus-console.service` is what puts a unit in the admin sheet's
-Services section. Listing the console's own unit there is the point: restarting it
-goes through `systemd-run`, so the transient unit escapes the console's own cgroup
-and the restart survives killing the process that requested it. Name any other
-units you want reachable from your phone the same way (`--service` repeats).
+Services section. Listing the console's own unit there is the point: restarting it is
+handed to the supervisor rather than run by the console, so the restart survives
+killing the process that requested it. On Linux that is `systemd-run`, whose transient
+unit escapes the console's own cgroup; on macOS it is `launchctl kickstart -k`, filed
+from a process of its own session so launchd signalling the job cannot take the
+request down with it. Name any other units you want reachable from your phone the same
+way (`--service` repeats).
 
 The tmux session is separate and outlives the console. If you want it up at boot
 too, give it its own unit — and let **`thalamus roster`** be what creates it:
@@ -647,7 +706,7 @@ nothing about one operator's setup is baked into the code.
 | `--project-root` | this checkout | Where roster sync runs |
 | `--dir PATH` | the project root | Star a directory in the spawn picker (repeatable) |
 | `--scan ROOT` | the project root's parent | Offer every git repo one level under ROOT (repeatable) |
-| `--service UNIT` | none | A systemd `--user` unit the admin sheet may restart (repeatable) |
+| `--service UNIT` | none | A unit the admin sheet may restart — a systemd `--user` unit, or a launchd label on macOS (repeatable) |
 | `--frames PATH` | none | Frame-theme definitions for the desktop client (see "On a desktop browser") |
 | `--voice URL` | `$THALAMUS_VOICE_URL`, else none | Speech service behind `say`. Without it the control is not shown |
 | `--fetch-interval MIN` | `10` | How often to fetch the checkout's remote, so "behind" is a fact rather than a report on the last manual fetch. `0` disables it |
@@ -683,7 +742,7 @@ keeps that true.
 `static/`. Stdlib Python and a dependency-free client.
 
 - **Stdlib `http.server`, not FastAPI** like `pulse/`. One of its jobs
-  is restarting the systemd unit hosting it; the fewer moving parts between a tap
+  is restarting the service unit hosting it; the fewer moving parts between a tap
   on a phone and a tmux call, the better.
 - **The read view is a deferred import.** It reuses the harness's transcript
   parsing, so `transcript.py` is imported on use like the expert layer — a console
@@ -842,9 +901,11 @@ each one masks the next:
    paths on one host collide, and the icon can silently open the other one. Keep
    each app's mount path disjoint.
 
-**A restart of the console kills the console.** Restart it through `systemd-run`,
-not `systemctl restart` from inside itself — the transient unit escapes the
-console's own cgroup, which is exactly what the admin sheet's Services button does.
+**A restart of the console kills the console.** Ask the supervisor to do it, never
+run the restart as a child of the process being restarted: `systemd-run` on Linux
+(the transient unit escapes the console's own cgroup), `launchctl kickstart -k` in
+its own session on macOS. That is exactly what the admin sheet's Services button
+does.
 
 **tmux 3.4 segfaults on startup.** `window-size manual` set *globally* does it.
 `pin` sets it per-window for this reason.

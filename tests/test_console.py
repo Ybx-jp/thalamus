@@ -14,6 +14,7 @@ only be tested by the tmux it bridges to.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -1018,10 +1019,10 @@ def _no_binary(monkeypatch, name: str):
     monkeypatch.setattr(server.subprocess, "run", raiser)
 
 
-def test_a_host_without_systemd_reports_it_instead_of_breaking_the_connection(
+def test_a_host_with_no_service_manager_reports_it_instead_of_breaking_the_connection(
         tmp_path, monkeypatch):
     """
-    Scenario: `--service` naming a unit, on a box with no systemd
+    Scenario: `--service` naming a unit, on a box with no supervisor to drive it
 
     Verifications:
     - the status read reports a state rather than raising
@@ -1036,13 +1037,13 @@ def test_a_host_without_systemd_reports_it_instead_of_breaking_the_connection(
     _no_binary(monkeypatch, "systemctl")
 
     assert server.service_status(cfg) == [
-        {"unit": "thalamus-console.service", "state": server.NO_SYSTEMD}
+        {"unit": "thalamus-console.service", "state": server.NO_SUPERVISOR}
     ]
     assert "systemd-run" in (server.service_restart("thalamus-console.service") or "")
 
 
-def test_a_restart_with_no_systemd_answers_the_phone_with_the_reason(tmp_path,
-                                                                     monkeypatch):
+def test_a_restart_with_no_service_manager_answers_the_phone_with_the_reason(
+        tmp_path, monkeypatch):
     cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
                  services=["thalamus-console.service"])
 
@@ -1053,6 +1054,117 @@ def test_a_restart_with_no_systemd_answers_the_phone_with_the_reason(tmp_path,
     assert status == 200
     assert body["ok"] is False
     assert "systemd-run" in body["error"]
+
+
+# ---- macOS: the same three operations through launchd ----
+#
+# Every one of these runs on Linux, because the platform is a function call
+# (`service_manager`) rather than an import-time constant — a mac cell in CI cannot
+# be the only place this is exercised, since it is exactly the box no one has when
+# the sheet stops working.
+
+
+def _on_darwin(monkeypatch):
+    monkeypatch.setattr(server, "service_manager", lambda: "launchd")
+
+
+def _launchctl(monkeypatch, stdout: str, code: int = 0):
+    """Answer `launchctl list` with a canned job dictionary."""
+    calls = []
+
+    def fake(command, *a, **kw):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, code, stdout, "")
+
+    monkeypatch.setattr(server.subprocess, "run", fake)
+    return calls
+
+
+# A real `launchctl list <label>` dictionary, trimmed to the keys that are read.
+RUNNING = '{\n\t"PID" = 4711;\n\t"LastExitStatus" = 0;\n\t"Label" = "com.x";\n};\n'
+STOPPED = '{\n\t"LastExitStatus" = 0;\n\t"Label" = "com.x";\n};\n'
+CRASHED = '{\n\t"LastExitStatus" = 256;\n\t"Label" = "com.x";\n};\n'
+
+
+@pytest.mark.parametrize("stdout, code, state", [
+    (RUNNING, 0, "active"),
+    (STOPPED, 0, "inactive"),
+    # A job that died is `failed` in the word the sheet already renders red, rather
+    # than a launchd exit code no reader of that row can interpret.
+    (CRASHED, 0, "failed"),
+    # `--service` names a job the operator claims exists. A label with no job behind
+    # it is a configuration mistake, and must not read as an ordinary stopped one.
+    ("Could not find service\n", 113, "not loaded"),
+    # A refusal this cannot read is `unknown`. `list` is legacy: were it withdrawn,
+    # treating every non-zero exit as "not loaded" would report every managed job as
+    # a label naming nothing — a confident wrong answer in place of a true one.
+    ("Usage: launchctl <subcommand>\n", 64, "unknown"),
+])
+def test_launchd_states_arrive_in_the_vocabulary_the_sheet_renders(
+        tmp_path, monkeypatch, stdout, code, state):
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
+                 services=["com.thalamus.console"])
+    _on_darwin(monkeypatch)
+    calls = _launchctl(monkeypatch, stdout, code)
+
+    assert server.service_status(cfg) == [
+        {"unit": "com.thalamus.console", "state": state}
+    ]
+    assert calls == [["launchctl", "list", "com.thalamus.console"]]
+
+
+def test_a_mac_without_launchctl_reports_it_like_any_other_absent_supervisor(
+        tmp_path, monkeypatch):
+    cfg = Config(project_root=_repo(tmp_path / "code" / "alpha"),
+                 services=["com.thalamus.console"])
+    _on_darwin(monkeypatch)
+    _no_binary(monkeypatch, "launchctl")
+
+    assert server.service_status(cfg) == [
+        {"unit": "com.thalamus.console", "state": server.NO_SUPERVISOR}
+    ]
+
+
+def test_a_launchd_restart_is_launchds_work_and_outlives_this_process(monkeypatch):
+    """
+    Scenario: the admin sheet restarts a unit on macOS
+
+    Verifications:
+    - the kill and the start are asked of launchd, in the GUI domain of this user
+    - the client runs in its own session, so the job's death cannot take it along
+
+    The unit being restarted is usually the one serving the request that asked for
+    it. On Linux `systemd-run` buys this by escaping the cgroup; here the request is
+    launchd's to carry out, and `start_new_session` keeps the process that files it
+    out of the process group launchd is about to signal.
+    """
+    _on_darwin(monkeypatch)
+    spawned = {}
+
+    def fake_popen(command, **kw):
+        spawned["command"] = command
+        spawned["kw"] = kw
+        return object()
+
+    monkeypatch.setattr(server.subprocess, "Popen", fake_popen)
+
+    assert server.service_restart("com.thalamus.console") is None
+    assert spawned["command"] == [
+        "launchctl", "kickstart", "-k",
+        f"gui/{os.getuid()}/com.thalamus.console",
+    ]
+    assert spawned["kw"]["start_new_session"] is True
+
+
+def test_a_mac_restart_with_no_launchctl_answers_with_the_reason(monkeypatch):
+    _on_darwin(monkeypatch)
+
+    def raiser(command, **kw):
+        raise FileNotFoundError(2, "No such file or directory", "launchctl")
+
+    monkeypatch.setattr(server.subprocess, "Popen", raiser)
+
+    assert "launchctl" in (server.service_restart("com.thalamus.console") or "")
 
 
 def test_an_endpoint_that_raises_answers_an_error_rather_than_dropping_the_socket(

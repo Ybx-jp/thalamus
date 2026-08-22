@@ -286,6 +286,35 @@ def test_self_unit_answers_the_leaf_or_nothing(tmp_path: Path, leaf, expected,
     assert server.self_unit() == expected
 
 
+@pytest.mark.parametrize("xpc, expected", [
+    ("com.thalamus.console", "com.thalamus.console"),
+    # What launchd leaves on a process it did not start as a job.
+    ("0", None),
+    ("", None),
+    # A console started from a shell inherits the terminal's XPC name. Restarting
+    # that closes the terminal the operator is sitting in — the mac's version of
+    # the `.scope` leaf whose ancestor is the user manager.
+    ("application.com.apple.Terminal.12345.67890", None),
+])
+def test_self_unit_under_launchd_reads_the_label_or_refuses(
+        xpc, expected, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(server, "service_manager", lambda: "launchd")
+    monkeypatch.setenv("XPC_SERVICE_NAME", xpc)
+    assert server.self_unit() == expected
+
+
+def test_self_unit_under_launchd_never_reads_the_cgroup(tmp_path: Path,
+                                                        monkeypatch: pytest.MonkeyPatch):
+    """A mac has no `/proc`, and a stale CGROUP_PATH left readable in a test rig must
+    not be able to name a unit on a box that has no systemd to run it."""
+    cgroup = tmp_path / "cgroup"
+    cgroup.write_text("0::/user.slice/thalamus-console.service\n")
+    monkeypatch.setattr(server, "CGROUP_PATH", cgroup)
+    monkeypatch.setattr(server, "service_manager", lambda: "launchd")
+    monkeypatch.delenv("XPC_SERVICE_NAME", raising=False)
+    assert server.self_unit() is None
+
+
 def test_the_bar_and_the_sheet_read_the_same_build(checkout: Path):
     """The staleness bar polls `/api/build` and the INFRA sheet reads `/api/admin`.
     One source behind both, so they cannot disagree about whether the surface the
