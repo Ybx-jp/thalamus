@@ -118,7 +118,13 @@ class TestInjectedInstruction:
         checkout.mkdir()
         for args in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "root"],
                      ["worktree", "add", "-q", str(tmp_path / "wt"), "-b", "side"]):
-            subprocess.run(["git", "-C", str(checkout), *args],
+            # `-c` rather than `git config`: a machine with no global identity — a CI
+            # runner, a fresh container — fails `commit` with exit 128 before this test
+            # has said anything, and a throwaway repo is no reason to edit the
+            # operator's own git configuration.
+            subprocess.run(["git", "-c", "user.name=thalamus tests",
+                            "-c", "user.email=tests@thalamus.invalid",
+                            "-C", str(checkout), *args],
                            check=True, capture_output=True)
 
         ctx = context_of(run_hook(session_start_payload(cwd=str(tmp_path / "wt")), tmp_path))
@@ -586,6 +592,93 @@ class TestTranscriptlessSessionsAreNotDistilled:
             time.sleep(0.2)
         assert argv_log.exists(), "a room session was skipped as transcriptless"
         assert "thalamus extract" in argv_log.read_text()
+
+
+class TestAFailedExtractionIsWrittenDown:
+    """The detached block runs two CLI commands, and had no status check between.
+
+    Distillation is the highest-volume write path in the system, and the whole of
+    it runs in a `nohup sh -c` whose only surface is a per-session log named nowhere
+    the operator looks. Without a check, a graph that is down or a transcript that
+    cannot be read failed the extract, ran `eval sync` anyway against whatever state
+    existed, and closed the block at exit 0 — memory stopped accumulating, and every
+    surface said the session ended normally.
+
+    A SessionEnd hook cannot raise: exiting non-zero does not stop the session, so a
+    non-zero status reaches no one. The record goes where `thalamus_require_binaries`
+    already writes and `thalamus init --check` already reads back.
+    """
+
+    FAILURE_LOG = Path(".thalamus") / "logs" / "hook-failures.log"
+
+    def _stub_uv(self, tmp_path, failing: str):
+        """A `uv` that records its argv and fails whichever subcommand is named."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        argv_log = tmp_path / "uv-argv.txt"
+        stub = bin_dir / "uv"
+        stub.write_text(
+            "#!/bin/bash\n"
+            f'printf "%s\\n" "$*" >> "{argv_log}"\n'
+            f'case "$*" in *"{failing}"*) exit 3;; esac\n'
+        )
+        stub.chmod(0o755)
+        return bin_dir, argv_log
+
+    def _wait_for(self, path, timeout=25):
+        deadline = time.time() + timeout
+        while time.time() < deadline and not path.exists():
+            time.sleep(0.2)
+        return path.exists()
+
+    def test_a_failed_extract_is_recorded_where_check_reads_it(self, tmp_path):
+        bin_dir, argv_log = self._stub_uv(tmp_path, "thalamus extract")
+        _transcript(tmp_path, tmp_path, "broke-sess-1")
+
+        _session_end(tmp_path, tmp_path, "broke-sess-1", bin_dir)
+
+        record = tmp_path / self.FAILURE_LOG
+        assert self._wait_for(record), "a failed distillation was never written down"
+        line = record.read_text().strip()
+        assert "session-end.sh" in line, line
+        assert "thalamus extract" in line and "3" in line, line
+        assert "not distilled" in line, line
+
+    def test_a_failed_extract_does_not_run_sync_against_a_half_written_episode(
+            self, tmp_path):
+        bin_dir, argv_log = self._stub_uv(tmp_path, "thalamus extract")
+        _transcript(tmp_path, tmp_path, "broke-sess-2")
+
+        _session_end(tmp_path, tmp_path, "broke-sess-2", bin_dir)
+
+        assert self._wait_for(tmp_path / self.FAILURE_LOG)
+        time.sleep(1.0)          # a second command would have landed by now
+        calls = argv_log.read_text()
+        assert "thalamus extract" in calls
+        assert "eval sync" not in calls, "sync ran after the extract failed"
+
+    def test_a_failed_sync_is_recorded_too(self, tmp_path):
+        """The second command is the same class of loss, one step later."""
+        bin_dir, argv_log = self._stub_uv(tmp_path, "eval sync")
+        _transcript(tmp_path, tmp_path, "broke-sess-3")
+
+        _session_end(tmp_path, tmp_path, "broke-sess-3", bin_dir)
+
+        record = tmp_path / self.FAILURE_LOG
+        assert self._wait_for(record)
+        assert "eval sync" in record.read_text()
+
+    def test_a_clean_run_writes_no_record(self, tmp_path):
+        """The record has to stay rare enough to read; a line per session is noise."""
+        bin_dir, argv_log = self._stub_uv(tmp_path, "never-matches-anything")
+        _transcript(tmp_path, tmp_path, "fine-sess-1")
+
+        _session_end(tmp_path, tmp_path, "fine-sess-1", bin_dir)
+
+        assert self._wait_for(argv_log), "session-end never invoked uv"
+        time.sleep(1.0)
+        assert "eval sync" in argv_log.read_text()
+        assert not (tmp_path / self.FAILURE_LOG).exists()
 
 
 class TestABinaryThatDisappearedAfterInstall:

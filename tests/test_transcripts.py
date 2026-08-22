@@ -605,8 +605,16 @@ def test_claude_bootstrap_also_refuses_a_sandbox_transcript(tmp_path):
     assert "sandbox" in results[0].skipped
 
 
+# A committing `git` needs an identity, and on a machine with no global one — a CI
+# runner, a fresh container — `git commit` exits 128 before the test it belongs to has
+# said anything. Passed with `-c` rather than written to config: these repos are
+# throwaway, and the suite has no business editing the operator's git configuration.
+GIT_IDENTITY = ("-c", "user.name=thalamus tests", "-c", "user.email=tests@thalamus.invalid")
+
+
 def _git_cmd(cwd, *args):
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+    subprocess.run(["git", *GIT_IDENTITY, "-C", str(cwd), *args],
+                   check=True, capture_output=True)
 
 
 def _checkout(path):

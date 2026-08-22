@@ -918,6 +918,31 @@ def shipped_skills() -> list[Path]:
                   and (d / "SKILL.md").read_text(errors="replace").startswith("---"))
 
 
+def installed_skill_links() -> list[Path]:
+    """Every link in the user's skills directory that points into this checkout.
+
+    Identity is where the link *points*, not whether its target is in
+    `shipped_skills()`. A link whose skill has since been renamed or dropped
+    resolves to a path in no shipped set, so a resolves-to-a-shipped-skill test
+    passes over it twice: `--uninstall` leaves it behind and `verify` never looks
+    at it, and it sits in the user's skills directory dangling and unreported.
+
+    Scoping to `SKILL_DIR` keeps the half of the promise that test was protecting.
+    A hand-written skill that happens to share a name points somewhere else, and so
+    does a link installed from a different checkout; both are still left alone.
+    """
+    if not USER_SKILLS_DIR.is_dir():
+        return []
+    root = SKILL_DIR.resolve()
+    return [dest for dest in sorted(USER_SKILLS_DIR.glob("*"))
+            if dest.is_symlink() and root in dest.resolve().parents]
+
+
+def stale_skill_links() -> list[Path]:
+    """Our links whose target is gone — the residue of a rename or a removal."""
+    return [dest for dest in installed_skill_links() if not dest.exists()]
+
+
 def link_skills(dry_run: bool = False) -> list[str]:
     """Symlink each shipped skill into user scope, so it arms outside the checkout.
 
@@ -942,6 +967,16 @@ def link_skills(dry_run: bool = False) -> list[str]:
     if not skills:
         return [f"no shipped skills found under {SKILL_DIR}"]
 
+    # Pruning before linking, so an upgrade that renames or drops a skill does not
+    # leave its link behind: `verify` reports one as a hard failure, and this is the
+    # command that clears it. It is the same identity test uninstall uses, and it
+    # only ever unlinks — the target is already gone.
+    pruned = []
+    for dest in stale_skill_links():
+        pruned.append(dest.name)
+        if not dry_run:
+            dest.unlink()
+
     linked, refused = [], []
     for src in skills:
         dest = USER_SKILLS_DIR / src.name
@@ -960,6 +995,9 @@ def link_skills(dry_run: bool = False) -> list[str]:
                        f"{USER_SKILLS_DIR}: {', '.join(linked)}")
     else:
         actions.append(f"skills already linked at user scope ({USER_SKILLS_DIR})")
+    if pruned:
+        actions.append(f"{'would unlink' if dry_run else 'unlinked'} {len(pruned)} skill "
+                       f"link(s) whose skill no longer ships: {', '.join(pruned)}")
     if refused:
         actions.append(f"left alone (not installed by us): {', '.join(refused)}")
     return actions
@@ -1117,14 +1155,23 @@ def verify_cursor() -> list[Check]:
         pending=len(unwired) == len(scripts),
     ))
 
+    # The absent case is tested *first*, and the healthy case second. Read the other
+    # way round a stale entry is a non-empty dict, so it is truthy, so it takes the
+    # healthy branch: the run prints `✗` beside the text for a working install and
+    # the drifted case is unreachable. Reached by moving or renaming the checkout
+    # after `thalamus init`, so the detail names the fields that differ — the
+    # failure is almost always one stale path inside `args`.
     served = _load_json(USER_CURSOR_MCP).get("mcpServers", {}).get("thalamus")
+    expected = build_mcp_entry()
+    drifted = sorted({k for k in set(served or {}) | set(expected)
+                      if (served or {}).get(k) != expected.get(k)})
     checks.append(Check(
-        "cursor MCP server registered", served == build_mcp_entry(),
-        f"`thalamus` in {USER_CURSOR_MCP}" if served
-        else f"not registered yet in {USER_CURSOR_MCP} — `thalamus init` registers it"
+        "cursor MCP server registered", served == expected,
+        f"not registered yet in {USER_CURSOR_MCP} — `thalamus init` registers it"
         if served is None
-        else f"registered in {USER_CURSOR_MCP} but not with the entry this checkout "
-             "builds — re-run `thalamus init`",
+        else f"`thalamus` in {USER_CURSOR_MCP}" if served == expected
+        else f"`thalamus` in {USER_CURSOR_MCP} does not match the entry this checkout "
+             f"builds — differing: {', '.join(drifted)}; re-run `thalamus init`",
         pending=served is None,
     ))
 
@@ -1405,15 +1452,24 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
                 unreadable.append(f"{src.name} ({exc.strerror or exc})")
             else:
                 unlinked.append(src.name)
-    if unreadable:
-        detail = f"unreadable: {unreadable}"
+    # A link of ours whose skill no longer ships: present, wrong, and clearable by
+    # `thalamus init`, so it is a hard failure rather than an advisory. The loop
+    # above cannot see it — it walks the shipped set, and this name is not in it.
+    stale = [d.name for d in stale_skill_links()]
+
+    if unreadable or stale:
+        detail = ", ".join(
+            part for part in (f"unreadable: {unreadable}" if unreadable else "",
+                              f"links to skills that no longer ship: {stale} — "
+                              "`thalamus init` unlinks them" if stale else "") if part)
     elif unlinked:
         detail = (f"{len(unlinked)} of {len(shipped_skills())} not linked yet into "
                   f"{USER_SKILLS_DIR} — `thalamus init` links them")
     else:
         detail = f"{len(shipped_skills())} readable via {USER_SKILLS_DIR}"
-    checks.append(Check("skills load at user scope", not (unreadable or unlinked), detail,
-                        pending=bool(unlinked) and not unreadable))
+    checks.append(Check("skills load at user scope", not (unreadable or stale or unlinked),
+                        detail,
+                        pending=bool(unlinked) and not (unreadable or stale)))
 
     if "claude" in harnesses:
         checks.append(verify_armed())
@@ -1717,15 +1773,14 @@ def uninstall(dry_run: bool = False) -> list[str]:
     else:
         actions.append(f"no cursor MCP server to remove ({USER_CURSOR_MCP})")
 
-    # Only our own symlinks: the same identity test link_skills uses to decide it
-    # may write. A hand-written skill that happens to share a name is left alone.
-    ours = {s.resolve() for s in shipped_skills()}
+    # Only our own symlinks — links pointing into this checkout's skill dir, which
+    # covers the ones whose skill has since been renamed away. A hand-written skill
+    # that happens to share a name points elsewhere and is left alone.
     removed = []
-    for dest in sorted(USER_SKILLS_DIR.glob("*")) if USER_SKILLS_DIR.is_dir() else []:
-        if dest.is_symlink() and dest.resolve() in ours:
-            removed.append(dest.name)
-            if not dry_run:
-                dest.unlink()
+    for dest in installed_skill_links():
+        removed.append(dest.name)
+        if not dry_run:
+            dest.unlink()
     actions.append(f"{'would unlink' if dry_run else 'unlinked'} {len(removed)} skill(s) from "
                    f"{USER_SKILLS_DIR}: {', '.join(removed)}" if removed
                    else f"no skill links of ours in {USER_SKILLS_DIR}")
