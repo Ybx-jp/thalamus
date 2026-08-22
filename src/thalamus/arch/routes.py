@@ -20,7 +20,9 @@ before any edge it produced could be counted.
 between the same two files are one dependency. The literals are not discarded — they
 are what the match is evidence of, and an unmatched one on either side is a finding in
 its own right: a client calling a route the server does not define is a defect, and a
-route no client calls is dead surface.
+route no *scanned* client calls is a route this policy cannot account for. Not dead
+surface — the declared client set is not the caller set, and the voice daemon and shell
+scripts call this server from outside it.
 
 **Runtime depth is not deferred depth.** A route edge executes when a request is made,
 which is neither import time nor a deferred import; `import_depth` therefore does not
@@ -79,12 +81,20 @@ def _server_literal(prefix: str) -> re.Pattern[str]:
 
 
 # Routing forms this matcher does NOT resolve, each reported as a gap in the scan's
-# reach. An unreported route of these shapes would make an unmatched-call finding a
-# false accusation, so the detector covers every form the scanned servers actually use:
-# prefix tests and membership tables alike.
+# reach, because an unreported route of these shapes would make an unmatched-call
+# finding a false accusation.
+#
+# This is a whitelist of two forms — a prefix test and a membership table — and it is
+# sized to the servers this policy actually scans, not to what a server could do.
+# Tuple-literal membership, `ROUTES.get(path)` dispatch and regex routing all pass
+# unreported. The guarantee is therefore bounded by the scanned server, and checking a
+# new server means checking which forms it uses before trusting a finding about it.
 _SERVER_INEXACT = re.compile(
     r"""path\.startswith\(\s*["']([A-Za-z0-9/_.-]+)["']"""
-    r"""|path\s+in\s+([A-Za-z_][A-Za-z0-9_]*)"""
+    # Anchored on `if` so an ordinary `for path in paths:` is not reported as a route
+    # form. Erring toward reporting is the safe direction, but a note that fires on
+    # every loop teaches a reader to skip the notes.
+    r"""|if\s+path\s+in\s+([A-Za-z_][A-Za-z0-9_]*)"""
 )
 
 
