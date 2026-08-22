@@ -104,8 +104,9 @@ warns about is `src/thalamus/console/`, in this same package.
    corpus shape (AWM) filters candidates through an evaluator before writing them.
 3. **Anchor the scope if it must be consultable now** — a scope with nothing to
    cite refuses the consultation mint. Procure anchors *into the new scope*,
-   `--feed` named for the demand, and always dry-run the title check before
-   `--write`. Then `uv run thalamus contract check`.
+   `--feed` named for the demand. Verify each source with a `curl -sIL` — status,
+   final host, content-type — then `--write` once; a dry run re-bills the extraction.
+   Then `uv run thalamus contract check`.
 4. **Never author or `git add -f` the agent file.** `.claude/agents/thalamus-
    <scope>.md` is derived from the manifest, regenerated on every launch, and
    gitignored on purpose.
