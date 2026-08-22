@@ -382,3 +382,39 @@ this query guessed `value_map("statement", "provenance_source")` and printed bla
 rows — the properties are `description` and `source`. A guessed property name does not
 error, it returns empty strings, which reads as "found nothing" when the truth was
 "found everything and asked it the wrong question."
+
+
+## Is memory being written? — counts and the newest Session
+**Question it answered:** "After installing, how does anyone confirm distillation is
+actually landing sessions in the graph?" — the read behind `thalamus status`
+(harness/status.py).
+**Surface:** gremlin-python
+**Validated:** 2026-08-21 against the live graph — 303 sessions, 34313 vertices,
+newest `d47288c9` at `2026-08-22T00:59:56` (project thalamus, scope designer).
+
+```python
+from gremlin_python.process.traversal import Order
+
+from thalamus.substrate.writer import close_connection, connect
+
+g = connect()
+try:
+    total = g.V().has_label("Session").count().next()
+    newest = (g.V().has_label("Session")
+              .order().by("timestamp", Order.desc).limit(1)
+              .value_map("session_id", "timestamp", "project", "scope", "tool")
+              .to_list())
+    print(total, newest)
+finally:
+    close_connection(g)
+```
+
+**Notes.** `timestamp` is stored as an isoformat *string*, so `Order.desc` on it is a
+lexical sort — which is the right answer only because every writer stamps the same
+zero-padded UTC isoformat (`_upsert_session_vertex`, writer.py). A row written in any
+other format would sort wrong rather than error.
+
+Count first and read second, guarded on the count. `order().by(...).limit(1)` on an
+empty label returns `[]` rather than raising, so an unguarded version of this reports
+"no sessions" and "could not read the newest" as the same thing — and on a fresh
+install those are the *only* rows there are.

@@ -583,6 +583,16 @@ def _main():
         help="Skip the confirmation — for non-interactive installs"
     )
 
+    # The counterpart to `init --check`, and deliberately not part of it: that
+    # command verifies wiring, all of which can be correct while nothing is written.
+    status_parser = subparsers.add_parser(
+        "status", help="Is memory being written? Sessions in the graph and the last "
+                       "distillation run"
+    )
+    status_parser.add_argument(
+        "--url", default=None, help="Gremlin endpoint (default: $THALAMUS_GRAPH_URL)"
+    )
+
     rescope_parser = subparsers.add_parser(
         "rescope", help="Redirect a session's distillation scope (before it distills)"
     )
@@ -1080,6 +1090,8 @@ def _main():
         _cmd_eval(args, eval_parser)
     elif args.command == "init":
         _cmd_init(args)
+    elif args.command == "status":
+        _cmd_status(args)
     elif args.command == "rescope":
         _cmd_rescope(args)
     elif args.command == "pin":
@@ -2888,6 +2900,12 @@ def _cmd_init(args):
     except RuntimeError as e:
         print(f"Init failed: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _cmd_status(args):
+    from thalamus.harness.status import run
+
+    sys.exit(run(args.url))
 
 
 def _cmd_rescope(args):
