@@ -105,9 +105,24 @@ every check and proves nothing.
 ## What runs where
 
 `.github/workflows/qe-macos.yml` runs the `graph-not-started` cell on `macos-14`.
-That is the only cell CI can host: Apple silicon runners have no nested
-virtualization, so there is no Docker and no graph, and everything after
-`docker compose up -d` lands as not evaluated with a reason. macOS cannot be a cell
-in the libvirt matrix at all — it may only be virtualized on Apple hardware.
+Apple silicon runners have no nested virtualization, so there is no Docker and no
+graph, and everything after `docker compose up -d` lands as not evaluated with a
+reason. macOS cannot be a cell in the libvirt matrix at all — it may only be
+virtualized on Apple hardware.
 
-The Linux matrix covers the graph phases and the other five configs.
+`.github/workflows/qe-linux.yml` runs the other five configs on `ubuntu-latest`, one
+job each, `fail-fast: false`. Hosted Linux runners ship Docker and Compose v2, so this
+is the only automated cell that reaches `GRAPH_STARTING` and `GRAPH_READY` — and
+therefore the only one that can evaluate `starting-graph-is-not-reported-as-absent`,
+which samples the window between the port accepting a connection and the server
+answering a query. On a box without Docker that snapshot is never taken and the check
+reports `not_evaluated`.
+
+`no-config-dir` is weaker on a hosted runner than on the operator's box: it unsets
+`THALAMUS_CONFIG_DIR`, which CI never set. The cell still confirms a clean clone
+resolves its five tracked manifests, and the `scopes` snapshot's own control covers
+whether an explicit override is read back.
+
+The libvirt matrix in the operator's notes repo boots the same configs on real VMs from
+golden images, which is the stronger claim — a hosted runner is a shared box with a
+populated image, not a machine that has never seen a project.

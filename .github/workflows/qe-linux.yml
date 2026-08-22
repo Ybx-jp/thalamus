@@ -1,0 +1,156 @@
+# The install matrix on Linux, where the graph can actually run.
+#
+# `qe-macos.yml` boots one cell on real Darwin and is the only install coverage that
+# gates a push today. Apple silicon runners have no nested virtualization, so that cell
+# has no Docker and no graph: everything from `docker compose up -d` onward lands as
+# `not_evaluated`, and five of the six configs in `spec.CONFIGS` run nowhere except the
+# libvirt matrix in the operator's notes repo, by hand. This closes both gaps on hosted
+# runners, which ship Docker and Compose v2.
+#
+# WHAT THIS SEES THAT NOTHING AUTOMATED SAW BEFORE
+#
+# The `graph-ready` snapshot. `drive.py` takes it the instant `docker compose up -d`
+# returns, deliberately, to sample the window where the port accepts a connection and
+# the server does not yet answer a query — issue #55, and the reason the documented
+# sequence runs `thalamus init --check` before the graph is confirmed ready rather than
+# waiting politely. On a box with no Docker that snapshot is never taken and the check
+# reports `not_evaluated`, which is what it has done on every automated run to date.
+# #55 is closed and marked `fixed=True`; this is the first cell that can confirm it.
+#
+# WHAT IT DOES NOT RUN, AND WHY
+#
+# `graph-not-started`. Its premise is a box with no graph, `gate_config_premise` refuses
+# it where one answers, and `qe-macos.yml` already runs it on a box that cannot host one.
+# Running it here would mean not starting the container we came for, to re-observe on
+# Linux what Darwin already reports.
+#
+# `no-config-dir` is weaker here than on the operator's box. It unsets
+# THALAMUS_CONFIG_DIR, and on a hosted runner that variable was never set — so the cell
+# confirms a clean clone resolves its five tracked manifests, but not that an override
+# is being read back off. The `scopes` snapshot's own control covers the second half.
+#
+# GREEN IS NOT THE GOAL
+#
+#   0  every failing check named an unfixed filed issue, and at least one did
+#   1  a check failed naming no issue or a FIXED one, or a step that may not fail did
+#   2  no known defect reproduced: fixed, or this cell cannot see them
+#   3  MALFORMED: the oracle did not run, or a gate refused
+#
+# An issue tag expires. It absolves a red result, so one left in place after the fix
+# landed absolves forever — `fixed=True` in spec.py withdraws that, and a red check
+# naming a fixed issue is a regression at exit 1. See tests/qe/install/README.md.
+#
+# `continue-on-error` is absent for the same reason it is absent from qe-fast.yml and
+# qe-macos.yml. `fail-fast: false` is present for a different one: each cell is an
+# independent observation, and cancelling four of them because the first went red
+# discards the evidence that would say whether the defect is config-specific.
+name: qe-linux
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install-cell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - baseline
+          - no-jq
+          - no-agent-cli
+          - no-config-dir
+          - moved-checkout
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      # tmux is a documented prerequisite (docs/getting-started.md:9-15) and is not in
+      # the runner image. `gate_prerequisites` refuses a box without it rather than
+      # trusting this step: a box missing tmux installs successfully and then quietly
+      # does less than it says.
+      - name: Install the prerequisites the image lacks
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y tmux
+
+      # The agent CLI distillation shells out to, installed the way a user installs it.
+      # The `no-agent-cli` cell gets it too and then has it taken away by the config's
+      # own perturbation — a binary moved off PATH by `drive.py` is absent by design and
+      # restored afterwards, which is not the same box as one that never had it.
+      - name: Install the Claude Code CLI
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Asserted, not assumed, in both directions — the inverse of the macOS cell, whose
+      # premise is that Docker is absent. Here Docker is the whole point, so its absence
+      # would silently turn every graph phase into `not_evaluated` and this workflow
+      # would report exactly what qe-macos.yml already reports.
+      #
+      # `agent` and `codex` are asserted ABSENT because `gate_prerequisites` inverts for
+      # a config that removes an agent CLI: `no-agent-cli` asserts that none of them
+      # answer, so an image that starts shipping one would make that cell refuse rather
+      # than measure. Better to fail here, naming the cause.
+      - name: Confirm the box is the box these cells assume
+        run: |
+          jq --version
+          tmux -V
+          claude --version
+          uv --version
+          docker --version
+          docker compose version
+          for cli in agent codex; do
+            if command -v "$cli"; then
+              echo "::error::this runner ships $cli; the no-agent-cli premise no longer holds"
+              exit 1
+            fi
+          done
+          # bash's /dev/tcp rather than nc: nc is not guaranteed on the image, and a
+          # missing binary would make this test exit nonzero and read as "nothing is
+          # listening" — a check that fails open on its own absence.
+          if timeout 2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8182' 2>/dev/null; then
+            echo "::error::something already answers on 8182; the preflight isolation probe is void"
+            exit 1
+          fi
+
+      - name: Run the cell
+        run: |
+          python3 tests/qe/install/drive.py \
+            --config "${{ matrix.config }}" \
+            --cell "ubuntu-latest-${{ matrix.config }}" \
+            --artifacts "$RUNNER_TEMP/qe-artifacts"
+
+      # The graph container's own account of itself. `drive.py` records the exit code of
+      # `docker compose up -d` and the readiness snapshot, neither of which says why a
+      # container that came up unhealthy did so, and #62 (uncapped container) is open.
+      - name: Graph container logs
+        if: always()
+        run: |
+          # `drive.py` creates this, but a cell that died before it ran leaves nothing
+          # here and `if-no-files-found: error` would then hide the real failure behind
+          # an upload error.
+          mkdir -p "$RUNNER_TEMP/qe-artifacts"
+          docker compose logs --no-color --tail 200 > "$RUNNER_TEMP/qe-artifacts/compose.log" 2>&1 || true
+          docker compose ps >> "$RUNNER_TEMP/qe-artifacts/compose.log" 2>&1 || true
+
+      # Uploaded on failure too, and especially then: the step logs and snapshots are the
+      # only account of a cell that went red, and a run whose evidence is discarded with
+      # the runner cannot be triaged a day later.
+      #
+      # These are also the input the timeout calibration is waiting on. `verdict.json`
+      # carries per-step start and end timestamps, and `spec.TIMEOUTS` is still the
+      # provisional table nobody has derived from real green cells — five of these, on a
+      # tree where the last 0.1.0 defect is fixed, is that data.
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-cell-${{ matrix.config }}
+          path: ${{ runner.temp }}/qe-artifacts
+          if-no-files-found: error
