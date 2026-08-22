@@ -34,9 +34,13 @@ Installable to a home screen as a PWA, and it works in any browser without that.
 
 ## Quick start
 
-Assumes the [main quick start](../README.md#quick-start) is done — Thalamus
-installed, `thalamus` on PATH. Beyond that you need **tmux** and the **claude**
-CLI, which the roster launches.
+Assumes [getting started](getting-started.md) is done — Thalamus installed and
+`thalamus init` run. Beyond that you need **tmux** and the **claude** CLI, which
+the roster launches.
+
+Commands below are written as `thalamus …`. The CLI lives at `.venv/bin/thalamus`
+and is not on your PATH: prefix them with `uv run`, or `source .venv/bin/activate`
+first.
 
 ```bash
 thalamus roster        # opens tmux session `thalamus` with the `main` anchor window
@@ -247,9 +251,8 @@ and it resolves exactly from then on.
 
 A read view showing one short exchange that never advances is a third state, and it
 is not a stall: the window's pane id was claimed by a headless `claude -p` spawned
-inside it, which inherits `TMUX_PANE` like any child process
-([console-hazards.md](console-hazards.md) §10). The next SessionStart in that window
-takes the key back.
+inside it, which inherits `TMUX_PANE` like any child process. The next SessionStart
+in that window takes the key back.
 
 A window that has been identified but has written nothing is a different state,
 and the view says so plainly rather than reporting the refusal above: Claude Code
@@ -405,7 +408,9 @@ for unbounded work.
 With `--frames`, the desktop surface can also render the pane inside a panel drawn
 in a background image — `frame` toggles (F12), `▸` cycles (F9). Off by default, and
 when it is off neither the controls nor the key bindings exist; no artwork ships
-with it. See [frame-themes.md](frame-themes.md).
+with it. The file `--frames` points at names each image and the panel rectangle to
+draw the pane inside; `frames()` in `console/server.py` is both the parser and the
+statement of the format.
 
 ### Install it to your home screen
 
@@ -633,7 +638,7 @@ nothing about one operator's setup is baked into the code.
 | `--dir PATH` | the project root | Star a directory in the spawn picker (repeatable) |
 | `--scan ROOT` | the project root's parent | Offer every git repo one level under ROOT (repeatable) |
 | `--service UNIT` | none | A systemd `--user` unit the admin sheet may restart (repeatable) |
-| `--frames PATH` | none | Frame-theme definitions for the desktop client ([frame-themes.md](frame-themes.md)) |
+| `--frames PATH` | none | Frame-theme definitions for the desktop client (see "On a desktop browser") |
 | `--voice URL` | `$THALAMUS_VOICE_URL`, else none | Speech service behind `say`. Without it the control is not shown |
 | `--fetch-interval MIN` | `10` | How often to fetch the checkout's remote, so "behind" is a fact rather than a report on the last manual fetch. `0` disables it |
 

@@ -175,10 +175,10 @@ thalamus console
 Control plane on http://127.0.0.1:8378  (tmux session `thalamus`)
 ```
 
-The console is a browser front end over the tmux roster: a tab per window, the live
-pane, a composer, the terminal keys a phone keyboard lacks, and one tap to spawn an
-expert in a project or restart one so a wiring change arms. It never moves the active
-window, so the terminal on your desk stays where you left it.
+The console is a browser front end over the tmux roster: one row per session, the
+live pane, a composer, the terminal keys a phone keyboard lacks, and one tap to spawn
+an expert in a project or restart one so a wiring change arms. It never moves the
+active window, so the terminal on your desk stays where you left it.
 
 If you have not started a roster yet, the console tells you so and serves anyway:
 
@@ -198,6 +198,10 @@ The console binds `127.0.0.1` and carries **no authentication**. To reach it fro
 phone, put `tailscale serve` in front of that loopback port and publish it on your
 tailnet — which is also what makes it installable as a PWA. Do not bind it to a public
 interface.
+
+[The console](console.md) covers the rest: the three ways to reach it off the box and
+the one not to, installing it to a home screen, running it as a systemd unit, and what
+each surface does when it cannot tell you the truth.
 
 ## 8. Seed memory from transcripts you already have
 

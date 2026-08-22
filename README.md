@@ -166,6 +166,7 @@ Roadmap and open work live in
 | [Getting started](docs/getting-started.md) | Install, first run, and what each step should look like |
 | [Concepts](docs/concepts.md) | Scopes, experts, the federation contract, trust tiers, distillation |
 | [CLI reference](docs/cli.md) | Every command |
+| [The console](docs/console.md) | Driving the roster from your phone — the PWA, reaching it off the box, keeping it up |
 | [Contributing](CONTRIBUTING.md) | Tests, conventions, how the pieces fit |
 
 ## Layout
