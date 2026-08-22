@@ -125,8 +125,11 @@ warning when you use it.
 ## Using it
 
 **The roster is the landing view and the only way into a session.** One row per
-session; tapping a row opens its mirror. Rows are grouped under the project's path,
-and the group header is the only place the path appears — the row never repeats it.
+session; tapping a row opens its mirror. Rows are grouped under the project's
+repository root, and the group header is the only place the path appears — the row
+repeats it only when that session's copy is a different one. The header is a launch
+fact, so a session that changes directory into a worktree or a subdirectory does not
+rename the group it sits in.
 
 **The session marker** sits above the composer in the mirror. It carries the four
 facts the pane cannot: which session you are in, which project it is rooted in, how
@@ -424,6 +427,13 @@ never cached — a stale pane would be a lie.
 ---
 
 ## Keeping it running
+
+**Linux only, and it is the one part of Thalamus that is.** Everything below is
+systemd, and so is the admin sheet's restart control — `serve()` reports `no systemd`
+and hides the Services section on a host without it. The console itself runs anywhere:
+a macOS cell serves the shell and passes both asset checks on every push
+(`.github/workflows/qe-macos.yml`). Start it there however you keep a process alive,
+and restart it from the terminal rather than the sheet.
 
 A user unit, so it starts with your session and restarts if it dies:
 

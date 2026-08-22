@@ -17,13 +17,16 @@ const api = evaluate(
     extractFunction("fmtDur", src),
     extractFunction("fmtOpened", src),
     extractFunction("rowState", src),
-    extractFunction("baseName", src),
+    extractFunction("homePrefix", src),
+    extractFunction("tildePath", src),
     extractFunction("groupSessions", src),
     extractFunction("annotateCollisions", src),
   ].join("\n"),
-  ["fmtDur", "fmtOpened", "rowState", "baseName", "groupSessions", "annotateCollisions"],
+  ["fmtDur", "fmtOpened", "rowState", "homePrefix", "tildePath", "groupSessions",
+   "annotateCollisions"],
 );
-const { fmtDur, fmtOpened, rowState, groupSessions, annotateCollisions } = api;
+const { fmtDur, fmtOpened, rowState, homePrefix, tildePath, groupSessions,
+        annotateCollisions } = api;
 
 const NOW = 1_700_000_000;
 const GRACE = 240;
@@ -214,7 +217,13 @@ suite("groups: the key is the project, and a cwd is never it");
   check("two repo roots and one project are one group", groups.length === 2,
     String(groups.length));
   const named = groups[0];
-  check("named by the project", named.label === "thalamus", named.label);
+  // The header carries the group's root, not its basename: the row never repeats the
+  // path, so this is the only place the operator learns where a session is rooted, and
+  // two checkouts of one project stop reading as the same group. No window here
+  // carries a `~`-form, so there is no home to strip and the header stays absolute —
+  // long, but true.
+  check("headed by the group's root", named.label === "/home/ybx/code/thalamus",
+    named.label);
   check("holding both copies", named.rows.length === 2, String(named.rows.length));
 
   // The group answers which project; the row answers which copy.
@@ -223,13 +232,65 @@ suite("groups: the key is the project, and a cwd is never it");
     named.rows[0].showCwd === false);
 }
 
+suite("the header shortens against home, and only against a home it can prove");
+{
+  // The client is never told `$HOME`. `cwd` and `cwd_short` are one path tildified and
+  // not, so the prefix the server stripped is recoverable from any live window — and
+  // from no live window, it is not recoverable at all.
+  check("derived from a window's own pair",
+    homePrefix([{ cwd: "/home/ybx/code/thalamus", cwd_short: "~/code/thalamus" }])
+      === "/home/ybx");
+  check("a window sitting in home itself still gives the prefix",
+    homePrefix([{ cwd: "/home/ybx", cwd_short: "~" }]) === "/home/ybx");
+  check("a window whose short form is absolute contributes nothing",
+    homePrefix([{ cwd: "/srv/qe/runs", cwd_short: "/srv/qe/runs" }]) === "");
+  check("no windows, no prefix", homePrefix([]) === "" && homePrefix(null) === "");
+  // The first window that can answer does. A roster mixing rooted-outside-home
+  // sessions with ordinary ones must not be silenced by whichever came first.
+  check("one usable pair among several is enough",
+    homePrefix([
+      { cwd: "/srv/qe/runs", cwd_short: "/srv/qe/runs" },
+      { cwd: "/home/ybx/lab", cwd_short: "~/lab" },
+    ]) === "/home/ybx");
+
+  check("home itself collapses to a tilde", tildePath("/home/ybx", "/home/ybx") === "~");
+  check("a child shortens", tildePath("/home/ybx/code/x", "/home/ybx") === "~/code/x");
+  // A sibling that merely shares a prefix is not inside home. Matching on the string
+  // alone would turn `/home/ybxwork` into `~work`.
+  check("a lookalike sibling does not",
+    tildePath("/home/ybxwork/x", "/home/ybx") === "/home/ybxwork/x");
+  check("a path outside home is left alone",
+    tildePath("/srv/qe/runs", "/home/ybx") === "/srv/qe/runs");
+  check("no prefix leaves every path absolute",
+    tildePath("/home/ybx/code/x", "") === "/home/ybx/code/x");
+
+  // End to end: the same roster, once with a live window that can supply the prefix.
+  const shortened = groupSessions([
+    { name: "a", project: "thalamus", repo_root: "/home/ybx/code/thalamus",
+      cwd: "/home/ybx/code/thalamus", cwd_short: "~/code/thalamus" },
+  ], []);
+  check("the header shortens when a window can prove home",
+    shortened[0].label === "~/code/thalamus", shortened[0].label);
+
+  // The group's root is a launch fact, so a session that cds elsewhere must not rename
+  // the header of a group whose membership never changed.
+  const wandered = groupSessions([
+    { name: "a", project: "thalamus", repo_root: "/home/ybx/code/thalamus",
+      cwd: "/home/ybx/code/thalamus/.claude/worktrees/d4v2",
+      cwd_short: "~/code/thalamus/.claude/worktrees/d4v2" },
+  ], []);
+  check("a wandered cwd does not become the header",
+    wandered[0].label === "~/code/thalamus", wandered[0].label);
+}
+
 suite("groups: the no-project group trails, and is self-liquidating");
 {
   const groups = groupSessions([
     { name: "orphan", project: "", repo_root: "" },
     { name: "known", project: "thalamus", repo_root: "/home/ybx/code/thalamus" },
   ], []);
-  check("named groups sort first", groups[0].label === "thalamus", groups[0].label);
+  check("named groups sort first",
+    groups[0].label === "/home/ybx/code/thalamus", groups[0].label);
   check("the unnamed one trails", groups[1].known === false && groups[1].key === "");
 
   // Today's live roster: no session started before the hook recorded a project, so

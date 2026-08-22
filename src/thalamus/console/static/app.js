@@ -1268,10 +1268,31 @@ function rowState(w, d, now, graceS) {
   return slot("");
 }
 
-/** `~/code/thalamus` → `thalamus`. */
-function baseName(path) {
-  const parts = String(path || "").replace(/\/+$/, "").split("/");
-  return parts[parts.length - 1] || "";
+/**
+ * The operator's home directory, read back off the server's own `~`-relative form.
+ *
+ * The client is never told `$HOME`, and the group header needs it: a header carries
+ * a repository path, and `/home/ybx/code/thalamus` is the same fact as
+ * `~/code/thalamus` at twice the width. `cwd` and `cwd_short` are one path
+ * tildified and not, so the prefix the server stripped is recoverable from any live
+ * window. Underivable — no live window, or a roster rooted outside home — leaves the
+ * headers absolute, which is long but true.
+ */
+function homePrefix(windows) {
+  for (const w of windows || []) {
+    const abs = w.cwd || "", short = w.cwd_short || "";
+    if (!abs || !short || short[0] !== "~") continue;
+    return short === "~" ? abs : abs.slice(0, abs.length - short.length + 1);
+  }
+  return "";
+}
+
+/** `/home/ybx/code/thalamus` → `~/code/thalamus`, given the prefix to strip. */
+function tildePath(path, home) {
+  const p = String(path || "");
+  if (!home || !p) return p;
+  if (p === home) return "~";
+  return p.startsWith(home + "/") ? "~" + p.slice(home.length) : p;
 }
 
 /**
@@ -1304,6 +1325,7 @@ function groupSessions(windows, distill) {
   // record alone, which is why the record carries its own identity.
   for (const d of byId.values()) rows.push({ w: null, d });
 
+  const home = homePrefix(windows);
   const groups = new Map();
   for (const r of rows) {
     const src = r.w || r.d || {};
@@ -1316,9 +1338,16 @@ function groupSessions(windows, distill) {
         // B2 heads the group with the path, not the basename. The row never repeats
         // it, so the header is the only place the operator learns where a session is
         // rooted, and two checkouts of one project stop reading as the same group.
-        // `cwd_short` is the server's own `~`-relative form; the basename is the
-        // fallback for a record that outlived the window that knew its path.
-        label: src.cwd_short || project || baseName(repoRoot),
+        //
+        // The path is `repo_root` — a launch fact, and the same field
+        // `annotateCollisions` compares each row against, so the header and the
+        // rows' "this copy differs" marks cannot disagree about which root is the
+        // group's. A *cwd* cannot head a group even though it reads like the same
+        // thing: it is live, so a session that cds into a worktree or a subdirectory
+        // renames the header of a group whose membership never changed. The project
+        // name is the fallback for a record that outlived the window that knew its
+        // path.
+        label: tildePath(repoRoot, home) || project,
         known: !!key,
       });
     }

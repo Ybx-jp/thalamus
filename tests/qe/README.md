@@ -28,6 +28,23 @@ to already know it exists.
 **Not shipped**, because a released package carrying known-red entries would hand every
 installer a working oracle for the defects in the release they just installed.
 
+## `install/` — the whole-box tier
+
+`tests/qe/install/` is a different shape of case and does not run under `run.py`. It
+holds the documented first-run sequence as data, the oracle over it, and `drive.py`,
+which runs both against a real box: clone, `uv sync`, `docker compose up -d`,
+`thalamus init`, reinstall, move the checkout, serve the console, uninstall. Its own
+README covers the gates and the exit codes.
+
+Two things run it. `.github/workflows/qe-macos.yml` drives one cell on a hosted macOS
+runner every push — real Darwin, never-seen-the-project, no Docker and therefore no
+graph. The libvirt matrix in the operator's notes repo boots Ubuntu cells and reads the
+same `spec.py` and `checks.py` out of this tree.
+
+The filename containment rule binds there too, and the `dev` extra does not: `spec.py`,
+`checks.py` and `verdict.py` are stdlib-only on purpose, because they are copied into
+boxes that have never seen this project.
+
 ## Known-red, and why it is not a mute button
 
 `expectations.json` triages defects that are real and unfixed. A triaged case exits 0,

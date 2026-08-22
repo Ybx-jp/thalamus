@@ -1,0 +1,91 @@
+# One install-matrix cell, on a real Darwin box that has never seen the project.
+#
+# The libvirt matrix in the operator's notes repo cannot run this one. macOS may only
+# be virtualized on Apple hardware, and the provisioner is Ubuntu cloud-image and
+# cloud-init end to end — a mac cell there is not a config, it is a second harness on
+# hardware nobody has. A hosted runner is the whole of the answer: real arm64 Darwin,
+# genuinely never-seen-the-project, and free for a public repo.
+#
+# WHAT THIS CELL CAN AND CANNOT SEE
+#
+# Apple silicon runners have no nested virtualization, so no Docker and no graph.
+# That is not a limitation worked around, it is the cell's premise: `graph-not-started`
+# is the config whose whole point is a box with no graph, and `drive.py` refuses to run
+# it on a box where one answers. Everything after `docker compose up -d` in the
+# documented sequence is out of reach here and lands as `not_evaluated` with a reason,
+# which is what "we could not look" is supposed to look like. The Linux matrix covers
+# the graph phases; this covers Darwin.
+#
+# GREEN IS NOT THE GOAL
+#
+# The tree carries filed install defects, so a cell that fails nothing has not found a
+# clean install — it has failed to observe. `drive.py` exits 2 on that, and this job
+# goes red for it, exactly as it does for a new defect. `continue-on-error` is absent
+# for the same reason it is absent from qe-fast.yml.
+#
+#   0  every failing check named a filed issue, and at least one did      -> green
+#   1  a check failed naming no issue, or a step that may not fail did    -> NEW defect
+#   2  no known defect reproduced: fixed, or this cell cannot see them    -> read it
+#   3  MALFORMED: the oracle did not run, or a gate refused               -> not evidence
+name: qe-macos
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install-cell:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      # tmux is a documented prerequisite (docs/getting-started.md:14) and is not in
+      # the runner image. `drive.py` gates on it rather than trusting this step: a box
+      # missing it installs successfully and then quietly does less than it says.
+      - name: Install the prerequisites the image lacks
+        run: brew install tmux
+
+      # The agent CLI distillation shells out to. Installed the way a user installs it,
+      # because the thing under test is the documented first run and not a synthetic
+      # PATH. `~/.local/bin` is where its installer lands it.
+      - name: Install the Claude Code CLI
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Asserted, not assumed — in both directions. A missing prerequisite would
+      # otherwise surface downstream as a skipped check, which reads like evidence that
+      # went astray rather than a runner that was never fit. And `docker` being absent
+      # is this cell's premise: if a future image ships it, the premise is false and
+      # the run must be re-scoped rather than quietly measuring something else.
+      - name: Confirm the box is the box this cell assumes
+        run: |
+          jq --version
+          tmux -V
+          claude --version
+          uv --version
+          if command -v docker; then
+            echo "::error::this runner has docker; the graph-not-started premise no longer holds"
+            exit 1
+          fi
+
+      - name: Run the cell
+        run: |
+          python3 tests/qe/install/drive.py \
+            --config graph-not-started \
+            --cell macos-14-graph-not-started \
+            --artifacts "$RUNNER_TEMP/qe-artifacts"
+
+      # Uploaded on failure too, and especially then: the step logs and snapshots are
+      # the only account of a cell that went red, and a run whose evidence is discarded
+      # with the runner cannot be triaged a day later.
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-cell-evidence
+          path: ${{ runner.temp }}/qe-artifacts
+          if-no-files-found: error
