@@ -159,8 +159,14 @@ STEPS: tuple[Step, ...] = (
     # shape to watch for — a sequence that fails open into measuring the wrong thing.
     Step(Phase.INSTALLED, ["uv", "run", "thalamus", "init", "--yes"],
          doc="docs/getting-started.md:60", may_fail=True),
+    # may_fail matches INSTALLED: a config that removes a documented prerequisite
+    # makes the first init fail legitimately, and the second one fails for the same
+    # reason. `second-init-does-not-duplicate-wiring` is control-guarded — it compares
+    # hook counts and requires the first init to have written wiring at all — so it
+    # degrades to not_evaluated here rather than passing vacuously.
     Step(Phase.REINSTALLED, ["uv", "run", "thalamus", "init", "--yes"],
-         doc="idempotency: re-running init after a git pull that adds a skill"),
+         doc="idempotency: re-running init after a git pull that adds a skill",
+         may_fail=True),
     Step(Phase.UNINSTALLED, ["uv", "run", "thalamus", "init", "--uninstall"],
          doc="README.md:82", may_fail=True),
 )
@@ -193,7 +199,7 @@ CONFIGS: tuple[Config, ...] = (
     Config("no-jq",
            "`jq` off PATH. getting-started promises --check exits 0 before install; "
            "three hard checks fail and two print an X beside the word 'skipped'.",
-           issue=58, fixed=True, removes=("jq",)),
+           issue=79, removes=("jq",)),
     Config("no-agent-cli",
            "No `claude` on PATH at init time. The MCP registration is SKIPPED into "
            "the actions list, verify() has no check for it, and init exits 0.",
@@ -262,7 +268,7 @@ CHECKS: tuple[Check, ...] = (
     Check("check-exits-zero-before-install", Phase.CHECKED, Severity.DEGRADES,
           "getting-started:112 promises --check is safe before installing and exits 0. "
           "Under the no-jq variant it exits 1.",
-          issue=58, fixed=True),
+          issue=79),
     Check("no-failure-marker-beside-the-word-skipped", Phase.CHECKED, Severity.DEGRADES,
           "The legend at getting-started:105 defines the failure marker as something "
           "present and wrong. A check that could not run for want of a prerequisite is "
@@ -417,6 +423,28 @@ def known_defect_issues() -> frozenset[int]:
     """
     return frozenset(c.issue for c in CHECKS if c.issue and not c.fixed) | frozenset(
         c.issue for c in CONFIGS if c.issue and not c.fixed)
+
+
+def expected_reproductions(config: Config) -> frozenset[int]:
+    """What THIS cell is built to reproduce, which is not the same as what the tree
+    carries.
+
+    `known_defect_issues()` is the whole tree's unfixed set, and using it as one cell's
+    positive control was wrong in a way that only showed once the set got small: a
+    defect reachable solely under one perturbation cannot be reproduced by the four
+    cells that do not apply it, so they reported "nothing reproduced" and exited 2 for
+    behaving correctly. It went unnoticed while an ungated check carried an open issue,
+    because that one fired in every cell.
+
+    A `Config` naming an issue is the statement that its perturbation triggers that
+    defect, so that is the cell's own control. A check carrying an issue that no config
+    claims is reachable from the baseline sequence and is expected everywhere.
+    """
+    claimed = {c.issue for c in CONFIGS if c.issue}
+    ungated = {c.issue for c in CHECKS
+               if c.issue and not c.fixed and c.issue not in claimed}
+    own = {config.issue} if config.issue and not config.fixed else set()
+    return frozenset(ungated | own)
 
 
 def fixed_issues() -> frozenset[int]:

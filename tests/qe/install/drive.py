@@ -624,11 +624,12 @@ def main(argv: list[str]) -> int:
 
     reproduced, regressed, novel = triage(findings)
     return report(result, findings, reproduced, regressed, novel, recorder,
-                  verdict_path)
+                  verdict_path, config)
 
 
 def report(result, findings: dict, reproduced: set[int], regressed: list[str],
-           novel: list[str], recorder: Recorder, verdict_path: Path) -> int:
+           novel: list[str], recorder: Recorder, verdict_path: Path,
+           config: spec.Config) -> int:
     counts = (len(findings.get("passed", [])), len(findings.get("failed", [])),
               len(findings.get("not_evaluated", [])))
     print(f"\ncell {result.outcome.value}: {counts[0]} passed, {counts[1]} failed, "
@@ -658,21 +659,23 @@ def report(result, findings: dict, reproduced: set[int], regressed: list[str],
             print(f"\nNEW: step {name} failed and may not fail.")
         return 1
 
-    known = sorted(spec.known_defect_issues())
-    if not known:
-        # Every tagged defect is marked fixed, so there is nothing left for a run to
-        # reproduce and "nothing reproduced" has stopped being evidence of a blind
-        # harness. The positive control this exit code provided is gone with it: from
-        # here a cell can only report the absence of NEW failures, which is a weaker
-        # claim than this matrix was built to make. Re-arm it by tagging the next
-        # filed defect, and read a green cell as "nothing new" until then.
-        print("\nNo unfixed defect is tagged in spec.py, so this cell had nothing "
-              "known to reproduce. Green here means no NEW failure — it is no longer "
-              "evidence that the harness can see.")
+    expected = sorted(spec.expected_reproductions(config))
+    if not expected:
+        # This cell is built to reproduce nothing: either every defect it could reach
+        # is marked fixed, or its config claims none. "Nothing reproduced" has stopped
+        # being evidence of a blind harness here, and the positive control that exit
+        # code provided is gone with it — from here the cell can only report the
+        # absence of NEW failures, which is a weaker claim than this matrix was built
+        # to make. Re-arm it by tagging the next filed defect this config can trigger.
+        carried = sorted(spec.known_defect_issues())
+        note = (f" Other cells still carry {', '.join('#%d' % i for i in carried)}."
+                if carried else "")
+        print(f"\nThis cell had nothing known to reproduce.{note} Green here means no "
+              "NEW failure — it is not evidence that the harness can see.")
         return 0
     if not reproduced:
-        print(f"\nNothing reproduced. The tree carries filed install defects "
-              f"({', '.join('#%d' % i for i in known)}), so a cell that reproduces "
+        print(f"\nNothing reproduced. This cell is built to reproduce "
+              f"({', '.join('#%d' % i for i in expected)}), so a run that reproduces "
               "none of them either ran against a tree where they are fixed or could "
               "not see them. This is not a pass.")
         return 2
