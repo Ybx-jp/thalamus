@@ -94,6 +94,12 @@ OUR_HOOK_MARKER = "thalamus/harness/hooks"
 #: install.py:375 declares 13 scripts across 16 entries in HOOK_WIRING.
 EXPECTED_HOOK_ENTRIES = 16
 
+#: The rendering a HEALTHY MCP registration produces: a backticked server name, the
+#: word `in`, one location, and nothing after it. Every unhealthy branch appends a
+#: clause. Matching the healthy shape is stable under rewording of the diagnoses;
+#: enumerating the diagnoses is not. Used by `check_moved_checkout_is_named`.
+_HEALTHY_MCP_DETAIL = re.compile(r"^`[\w-]+` in \S+$")
+
 
 @dataclass
 class Result:
@@ -861,9 +867,15 @@ def check_moved_checkout_is_named() -> Result:
     if not mcp:
         return skip("no MCP registration check failed after the move, so the branch "
                     "that chooses the stale wording was never reached")
-    names_it = ("not with the entry this checkout builds", "not against this checkout",
-                "not registered yet")
-    healthy = [f"{n}: {d}" for n, d in mcp if not any(t in d for t in names_it)]
+    # Pin the HEALTHY shape, not the diagnosis wording. The healthy branch renders a
+    # bare location and stops: "`thalamus` in /path/to/mcp.json". Every unhealthy
+    # branch appends a clause saying what is wrong and what to do. Enumerating those
+    # clauses instead is what this check used to do, and it made an improvement to the
+    # message read as the defect: the fix for #52 reworded "but not with the entry this
+    # checkout builds" to "does not match the entry this checkout builds — differing:
+    # args", which no pinned phrase matched, so a repaired install reported as broken
+    # and the cell stayed green because the failure still named a filed issue.
+    healthy = [f"{n}: {d}" for n, d in mcp if _HEALTHY_MCP_DETAIL.match(d.strip())]
     if healthy:
         return bad("an MCP registration check failed after the move while printing the "
                    f"text for a healthy install: {'; '.join(healthy[:2])}", control)

@@ -36,10 +36,12 @@ which runs both against a real box: clone, `uv sync`, `docker compose up -d`,
 `thalamus init`, reinstall, move the checkout, serve the console, uninstall. Its own
 README covers the gates and the exit codes.
 
-Two things run it. `.github/workflows/qe-macos.yml` drives one cell on a hosted macOS
-runner every push — real Darwin, never-seen-the-project, no Docker and therefore no
-graph. The libvirt matrix in the operator's notes repo boots Ubuntu cells and reads the
-same `spec.py` and `checks.py` out of this tree.
+Three things run it. `.github/workflows/qe-macos.yml` drives the `graph-not-started`
+cell on a hosted macOS runner every push — real Darwin, never-seen-the-project, no
+Docker and therefore no graph. `.github/workflows/qe-linux.yml` runs the other five
+configs on `ubuntu-latest`, which ships Docker, so it is the only automated cell that
+reaches the graph phases at all. The libvirt matrix in the operator's notes repo boots
+Ubuntu cells on real VMs and reads the same `spec.py` and `checks.py` out of this tree.
 
 The filename containment rule binds there too, and the `dev` extra does not: `spec.py`,
 `checks.py` and `verdict.py` are stdlib-only on purpose, because they are copied into

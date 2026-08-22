@@ -23,10 +23,15 @@
 # goes red for it, exactly as it does for a new defect. `continue-on-error` is absent
 # for the same reason it is absent from qe-fast.yml.
 #
-#   0  every failing check named a filed issue, and at least one did      -> green
-#   1  a check failed naming no issue, or a step that may not fail did    -> NEW defect
-#   2  no known defect reproduced: fixed, or this cell cannot see them    -> read it
-#   3  MALFORMED: the oracle did not run, or a gate refused               -> not evidence
+#   0  every failing check named an unfixed filed issue, and at least one did -> green
+#   1  a check failed naming no issue or a FIXED one, or a step that may not  -> NEW
+#      fail did                                                                  defect
+#   2  no known defect reproduced: fixed, or this cell cannot see them       -> read it
+#   3  MALFORMED: the oracle did not run, or a gate refused             -> not evidence
+#
+# An issue tag expires. It absolves a red result, so one left in place after the fix
+# landed absolves forever — `fixed=True` in spec.py withdraws that, and a red check
+# naming a fixed issue is a regression at exit 1. See tests/qe/install/README.md.
 name: qe-macos
 
 on:

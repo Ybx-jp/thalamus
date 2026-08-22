@@ -63,6 +63,34 @@ def findings() -> list[str]:
                 "produces and the runner does not synthesize — it would never run."
             )
 
+    # `fixed` only means anything relative to an issue: it is the flag that withdraws
+    # a tag's absolution, and there is nothing to withdraw where no tag was given.
+    for check in spec.CHECKS:
+        if check.fixed and not check.issue:
+            out.append(
+                f"{check.name}: marked fixed but names no issue. `fixed` withdraws "
+                "the absolution an issue number grants a red result; on an untagged "
+                "check it reads as a claim with no referent."
+            )
+    for config in spec.CONFIGS:
+        if config.fixed and not config.issue:
+            out.append(f"{config.name}: marked fixed but names no issue.")
+
+    # A config and the checks that observe its defect must agree about whether that
+    # defect is still there. Split state is how one half goes on absolving after the
+    # other half was repaired.
+    for config in spec.CONFIGS:
+        if not config.issue:
+            continue
+        peers = [c for c in spec.CHECKS if c.issue == config.issue]
+        if peers and any(c.fixed for c in peers) != all(c.fixed for c in peers) \
+                or (peers and peers[0].fixed != config.fixed):
+            out.append(
+                f"#{config.issue}: config {config.name!r} and its check(s) disagree "
+                "about `fixed`, so the same defect is both expected to reproduce and "
+                "expected to pass depending on which one a run consults."
+            )
+
     # A config naming an issue should have at least one check that can observe it,
     # otherwise the variant costs a full boot and asserts nothing specific.
     check_issues = {c.issue for c in spec.CHECKS if c.issue}

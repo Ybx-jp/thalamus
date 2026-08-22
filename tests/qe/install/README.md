@@ -51,11 +51,33 @@ stands, and `drive.py` exits 2 when none of them reproduce. That is the harness
 reporting on itself, and it is not a pass.
 
 ```
-0  every failing check named a filed issue, and at least one did
-1  a check failed naming NO issue, or a step that may not fail did — a NEW defect
+0  every failing check named an unfixed filed issue, and at least one did
+1  a check failed naming NO issue or a FIXED one, or a step that may not fail did
 2  no known defect reproduced: they were fixed, or this cell cannot see them
 3  MALFORMED — the oracle could not run, or a gate refused
 ```
+
+### An issue tag expires
+
+An issue number **absolves** a red result: it is the whole of what turns exit 1
+into exit 0. So a tag left in place after the fix landed absolves forever, and the
+site it names becomes the one place in the matrix where a regression cannot be
+seen. **Set `fixed=True` on the `Check` and the `Config` in the same change that
+closes the issue** — the same rule that deletes a known-red entry from
+`expectations.json` when its defect is fixed. From then on the check is expected to
+pass and a red one is reported as `REGRESSED` at exit 1.
+
+Two ways in, and the second is why this is not paranoia. The defect comes back — or
+the *oracle* drifts off the repaired behaviour and reports a working install as
+broken. `moved-checkout-is-named-not-denied` did the second: it enumerated the
+diagnosis wording #52 shipped with, the fix reworded that message, the check went
+red on the fix, and its own tag kept the cell green. A check that reads a rendering
+pins the shape of the **healthy** branch, which is stable, never the prose of the
+unhealthy ones, which improves.
+
+When every tagged defect is marked fixed, `known_defect_issues()` empties, `lint.py`
+says so, and a cell can no longer claim more than "nothing new". Re-arm the control
+by tagging the next filed defect.
 
 ## The gates, and why a cell would rather abort than report
 
@@ -83,9 +105,24 @@ every check and proves nothing.
 ## What runs where
 
 `.github/workflows/qe-macos.yml` runs the `graph-not-started` cell on `macos-14`.
-That is the only cell CI can host: Apple silicon runners have no nested
-virtualization, so there is no Docker and no graph, and everything after
-`docker compose up -d` lands as not evaluated with a reason. macOS cannot be a cell
-in the libvirt matrix at all — it may only be virtualized on Apple hardware.
+Apple silicon runners have no nested virtualization, so there is no Docker and no
+graph, and everything after `docker compose up -d` lands as not evaluated with a
+reason. macOS cannot be a cell in the libvirt matrix at all — it may only be
+virtualized on Apple hardware.
 
-The Linux matrix covers the graph phases and the other five configs.
+`.github/workflows/qe-linux.yml` runs the other five configs on `ubuntu-latest`, one
+job each, `fail-fast: false`. Hosted Linux runners ship Docker and Compose v2, so this
+is the only automated cell that reaches `GRAPH_STARTING` and `GRAPH_READY` — and
+therefore the only one that can evaluate `starting-graph-is-not-reported-as-absent`,
+which samples the window between the port accepting a connection and the server
+answering a query. On a box without Docker that snapshot is never taken and the check
+reports `not_evaluated`.
+
+`no-config-dir` is weaker on a hosted runner than on the operator's box: it unsets
+`THALAMUS_CONFIG_DIR`, which CI never set. The cell still confirms a clean clone
+resolves its five tracked manifests, and the `scopes` snapshot's own control covers
+whether an explicit override is read back.
+
+The libvirt matrix in the operator's notes repo boots the same configs on real VMs from
+golden images, which is the stronger claim — a hosted runner is a shared box with a
+populated image, not a machine that has never seen a project.
