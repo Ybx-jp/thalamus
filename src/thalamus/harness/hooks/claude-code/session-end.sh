@@ -203,10 +203,37 @@ nohup sh -c "
   fi
   projects_arg=''
   [ -n \"\$projects_dir\" ] && projects_arg=\"--projects-dir \$projects_dir\"
+  # Two sequential commands with a status check between them, and a record when
+  # either fails. Without the check a failed extraction still ran sync, against
+  # whatever state existed, and the block exited 0 — distillation is the
+  # highest-volume write path in the system, so a graph that is down, a transcript
+  # that cannot be read or a model error stopped memory accumulating with nothing
+  # on any surface the operator reads. \$log is not one: it is per-session and
+  # named nowhere he looks.
+  #
+  # The failure is written down rather than raised, for the reason the rest of this
+  # hook is: a SessionEnd hook exiting non-zero does not stop the session, so a
+  # non-zero status reaches no one. hook-failures.log is where
+  # thalamus_require_binaries already writes, and `thalamus init --check` already
+  # reads it back through install.recorded_hook_failures().
+  record_failure() {
+    mkdir -p '$log_dir' 2>/dev/null || return 0
+    now=\$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+    printf '%s session-end.sh: %s exited %s for session %s — this session was not distilled. See %s.\n' \
+      \"\$now\" \"\$1\" \"\$2\" '${session_id:0:8}' '$log' \
+      >>'$log_dir/hook-failures.log' 2>/dev/null || true
+  }
   uv run --project '$repo_root' thalamus extract --harness claude \
     --session '$session_id' --scope '$scope' --room '$room' \
     --forked-from '$forked_from' \$projects_arg --force --write -- '$project_dir'
-  uv run --project '$repo_root' thalamus eval sync --write
+  status=\$?
+  if [ \$status -ne 0 ]; then
+    record_failure 'thalamus extract' \$status
+    echo \"extract exited \$status — not running eval sync against a half-written episode\"
+    exit \$status
+  fi
+  uv run --project '$repo_root' thalamus eval sync --write \
+    || record_failure 'thalamus eval sync' \$?
 " >>"$log" 2>&1 </dev/null &
 
 exit 0
