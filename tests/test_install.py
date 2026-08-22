@@ -907,6 +907,25 @@ class TestACheckThatCouldNotRunIsNotACheckThatFailed:
         assert "thalamus init" not in check.detail
         assert check.render().startswith("  ?")
 
+    def test_a_check_that_reads_a_file_is_not_blocked_by_a_missing_remedy(
+            self, sandbox, monkeypatch):
+        """`blocked` is for a check nobody could look at, not for one whose fix needs
+        a missing program.
+
+        `codex hooks trusted` reads the trust record out of `$CODEX_HOME/config.toml`
+        whether or not the binary exists, so it has a real answer and the answer is a
+        real finding. Granting it `blocked` because the remedy — a codex TUI prompt —
+        is unreachable would make the word mean "inconvenient to fix", and there is
+        then nothing left that means "unknown".
+        """
+        self._absent(monkeypatch, "codex")
+        install.install()
+
+        check = {c.name: c for c in install.verify_codex()}["codex hooks trusted"]
+
+        assert not check.blocked
+        assert check.advisory and not check.ok
+
     def test_the_codex_mcp_item_is_still_pending_when_codex_is_installed(
             self, sandbox, monkeypatch):
         """The pending shape is right for the box that can actually clear it."""

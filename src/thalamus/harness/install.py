@@ -1347,9 +1347,6 @@ def verify_codex() -> list[Check]:
         else f"no hooks written yet ({USER_CODEX_HOOKS}) — `thalamus init` writes "
              "them, and codex then asks you to trust them"
         if never_wired
-        else "could not run: `codex` is not on this machine, and trust is granted "
-             "in its own hooks-review prompt"
-        if shutil.which("codex") is None
         else "codex has not been asked to trust these hooks yet — launch `codex` once "
              "and take the trust-all option on the hooks-review prompt. Until then "
              "codex loads them and fires none of them: a headless `codex exec` with "
@@ -1359,7 +1356,11 @@ def verify_codex() -> list[Check]:
         else f"{len(trusted)} of {len(expected)} entries are trusted — launch `codex` "
              "and trust the rest; the untrusted ones do not fire",
         pending=never_wired,
-        blocked=not never_wired and shutil.which("codex") is None,
+        # Not blocked when `codex` is absent, though the remedy needs it. The trust
+        # record lives in `$CODEX_HOME/config.toml`, which this reads whether or not
+        # the binary exists — so the question *was* asked and the answer is a real
+        # finding. `blocked` is for a check nobody could look at, and reaching for it
+        # wherever the *fix* needs a missing program would empty the word out.
         advisory=not never_wired and not trusted,
     ))
 
