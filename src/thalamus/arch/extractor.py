@@ -43,12 +43,19 @@ KIND_FROM = "from"
 # wants import-time coupling can count it without a re-scan. It is also the exact edge
 # whose undeclared handling separates two defensible dependency counts on this repo.
 KIND_PACKAGE = "package"
+# A request issued at runtime against a route the target file defines. Extracted by the
+# route channel (`arch/routes.py`), not by the import walk, and kept in this vocabulary
+# so one module owns what an edge may be.
+KIND_ROUTE = "route"
 
 # Where in the file the import sits. `module` is executed at import time and is what a
 # layering rule governs; `deferred` runs inside a function or class body, which is how a
 # cycle hides from a module-level reading (and how one is conventionally broken).
 DEPTH_MODULE = "module"
 DEPTH_DEFERRED = "deferred"
+# Executes when a request is made: neither import time nor first call of an enclosing
+# function. `import_depth` does not govern it.
+DEPTH_RUNTIME = "runtime"
 
 IMPORT_DEPTH_ALL = "all"
 IMPORT_DEPTH_MODULE_LEVEL = "module-level"
@@ -116,6 +123,11 @@ class ExtractorPolicy:
         imports count, and `resolve` decides whether the package half of
         `from pkg import mod` counts alongside the submodule it resolved to.
         """
+        if edge.kind == KIND_ROUTE:
+            # A route edge is not an import, so neither import filter applies to it.
+            # Saying so explicitly keeps a module-level reading from silently dropping
+            # the whole channel — which would report the console as absent again.
+            return True
         if edge.kind == KIND_PACKAGE and self.resolve != RESOLVE_MODULE_AND_PACKAGE:
             return False
         if self.import_depth == IMPORT_DEPTH_ALL:

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import json
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +32,7 @@ from pathlib import Path
 import yaml
 
 from thalamus.arch.extractor import DependencyGraph, ExtractorPolicy
+from thalamus.arch.routes import RoutePolicy
 from thalamus.arch.metrics import Metrics, measure
 
 # `src/thalamus/arch/model.py` -> parents[3] is the checkout root, the same anchor
@@ -109,6 +111,7 @@ class ArchModel:
     repo: str = ""
     root_commit: str = ""
     policy: ExtractorPolicy = field(default_factory=ExtractorPolicy)
+    routes: RoutePolicy = field(default_factory=RoutePolicy)
     layers: list[Layer] = field(default_factory=list)
     rules: list[Rule] = field(default_factory=list)
     seams: list[dict] = field(default_factory=list)
@@ -230,14 +233,40 @@ def _excluded_path(path: str, policy: ExtractorPolicy) -> bool:
     return any(fnmatch.fnmatch(path, pattern) for pattern in policy.exclude)
 
 
-def scan_id(repo_slug: str, commit: str, policy: ExtractorPolicy) -> str:
+def scan_id(
+    repo_slug: str,
+    commit: str,
+    policy: ExtractorPolicy,
+    routes: RoutePolicy | None = None,
+) -> str:
     """`arch:scan:<repo>:<sha7>:<policy-digest7>` — names the commit AND the rules.
 
     Both halves are load-bearing. The same code measured under a different policy is a
     different number, so a scan id that named only the commit would let two
     incomparable readings collide on one name.
+
+    **Every policy that feeds a published metric rides in the digest.** The route
+    channel contributes edges to the visibility matrix, so a propagation cost measured
+    with it on is not comparable to one measured with it off; if the key did not move,
+    the two would collide on one name and the older number would be silently relabelled.
+    That is the failure the key exists to prevent, so the digest is taken over both
+    blocks when the channel is enabled.
+
+    **Disabled is the identity case, not a third value.** With the channel off the
+    digest is the import policy's alone, byte for byte, so every scan taken before this
+    channel existed keeps the key it was published under. A channel that does *not*
+    feed the matrix — co-change, when it lands — stays out of this digest for the same
+    reason: it changes no number this key names.
     """
-    return f"arch:scan:{repo_slug}:{commit[:7]}:{policy.digest()[:7]}"
+    digest = policy.digest()
+    if routes is not None and routes.enabled:
+        combined = json.dumps(
+            {"extractor": policy.digest(), "routes": routes.digest()},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        digest = hashlib.sha256(combined.encode("utf-8")).hexdigest()
+    return f"arch:scan:{repo_slug}:{commit[:7]}:{digest[:7]}"
 
 
 def derived_block(graph: DependencyGraph, metrics: Metrics, commit: str, scan: str) -> dict:
@@ -265,6 +294,7 @@ def render(model: ArchModel, derived: dict) -> str:
         "repo": model.repo,
         "root_commit": model.root_commit,
         "extractor": {**model.policy.block(), "digest": model.policy.digest()},
+        "routes": {**model.routes.block(), "digest": model.routes.digest()},
         "layers": [{"name": layer.name, "includes": list(layer.includes)} for layer in model.layers],
         "rules": [{"layer": r.layer, "may_depend_on": list(r.may_depend_on)} for r in model.rules],
         "seams": model.seams,
@@ -292,6 +322,7 @@ def load(path: Path) -> ArchModel:
         repo=str(document.get("repo", "")),
         root_commit=str(document.get("root_commit", "")),
         policy=ExtractorPolicy.from_block(document.get("extractor") or {}),
+        routes=RoutePolicy.from_block(document.get("routes") or {}),
         layers=[
             Layer(name=str(entry.get("name", "")), includes=tuple(entry.get("includes") or ()))
             for entry in document.get("layers") or []
@@ -327,7 +358,9 @@ def build(repo: Path, graph: DependencyGraph, model: ArchModel | None = None) ->
     model.policy = graph.policy
 
     metrics = measure(graph)
-    derived = derived_block(graph, metrics, commit, scan_id(slug, commit, graph.policy))
+    derived = derived_block(
+        graph, metrics, commit, scan_id(slug, commit, graph.policy, model.routes)
+    )
 
     path = repo / MODEL_PATH
     if path.exists():
