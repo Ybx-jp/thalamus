@@ -52,18 +52,33 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The matrix is read out of spec.py rather than written here. A hardcoded list is a
+  # second source of truth: a config added to spec.CONFIGS would simply not run, and
+  # nothing would say so — the same silent-divergence shape the issue tags had.
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      configs: ${{ steps.read.outputs.configs }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          json=$(cd tests/qe/install && python3 -c "
+          import json, spec
+          names = list(spec.configs_needing_a_graph())
+          assert names, 'spec.CONFIGS names no config that runs with a graph'
+          print(json.dumps(names))")
+          echo "configs=$json" >> "$GITHUB_OUTPUT"
+          echo "matrix from spec.py: $json"
+
   install-cell:
+    needs: discover
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        config:
-          - baseline
-          - no-jq
-          - no-agent-cli
-          - no-config-dir
-          - moved-checkout
+        config: ${{ fromJSON(needs.discover.outputs.configs) }}
 
     steps:
       - uses: actions/checkout@v4

@@ -91,6 +91,31 @@ def findings() -> list[str]:
                 "expected to pass depending on which one a run consults."
             )
 
+    # The CI workflows read their cells out of these two functions instead of carrying
+    # their own copy of the list, so a config landing in neither is a config that runs
+    # nowhere — and would say nothing about it.
+    graphless = set(spec.configs_requiring_no_graph())
+    withgraph = set(spec.configs_needing_a_graph())
+    every = {c.name for c in spec.CONFIGS}
+    for name in sorted(every - graphless - withgraph):
+        out.append(
+            f"{name}: is in neither partition, so no workflow would run it."
+        )
+    for name in sorted(graphless & withgraph):
+        out.append(
+            f"{name}: is in both partitions, so it would run as two different cells."
+        )
+
+    # `qe-macos.yml` is a single job, not a matrix: it is the only hosted box with no
+    # Docker, and it runs one cell. The workflow asserts this too, but a lint finding
+    # costs a local run rather than a push and a CI round trip.
+    if len(graphless) > 1:
+        out.append(
+            f"{len(graphless)} configs are premised on a box with no graph "
+            f"({', '.join(sorted(graphless))}), and qe-macos.yml runs a single cell. "
+            "Give that job a matrix, or move the new one to a provisioned box."
+        )
+
     # A config naming an issue should have at least one check that can observe it,
     # otherwise the variant costs a full boot and asserts nothing specific.
     check_issues = {c.issue for c in spec.CHECKS if c.issue}

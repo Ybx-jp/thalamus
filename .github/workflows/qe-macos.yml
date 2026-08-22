@@ -77,11 +77,23 @@ jobs:
             exit 1
           fi
 
+      # The config is read out of spec.py, not named here. This cell exists to run the
+      # configs whose premise is a box with no graph, and it can run exactly one — so a
+      # second one added to spec.CONFIGS must fail here loudly rather than go unrun,
+      # which is what a hardcoded name would have done silently.
       - name: Run the cell
         run: |
+          config=$(cd tests/qe/install && python3 -c "
+          names = __import__('spec').configs_requiring_no_graph()
+          assert len(names) == 1, (
+              'this workflow runs a single cell, and spec.CONFIGS now names '
+              f'{len(names)} configs premised on a box with no graph: {names}. '
+              'Give this job a matrix, or move the new one to a provisioned box.')
+          print(names[0])")
+          echo "config from spec.py: $config"
           python3 tests/qe/install/drive.py \
-            --config graph-not-started \
-            --cell macos-14-graph-not-started \
+            --config "$config" \
+            --cell "macos-14-$config" \
             --artifacts "$RUNNER_TEMP/qe-artifacts"
 
       # Uploaded on failure too, and especially then: the step logs and snapshots are

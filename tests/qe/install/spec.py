@@ -425,6 +425,29 @@ def known_defect_issues() -> frozenset[int]:
         c.issue for c in CONFIGS if c.issue and not c.fixed)
 
 
+def configs_requiring_no_graph() -> tuple[str, ...]:
+    """Configs whose premise is a box where nothing answers on the graph port.
+
+    `gate_config_premise` refuses these where a graph answers, so they can only run on
+    a box that has none. Among hosted runners that is macOS, which has no nested
+    virtualization and therefore no Docker.
+    """
+    return tuple(c.name for c in CONFIGS
+                 if Phase.GRAPH_STARTING in c.skip_steps)
+
+
+def configs_needing_a_graph() -> tuple[str, ...]:
+    """Configs that run the whole documented sequence, graph included.
+
+    These two functions partition CONFIGS, and they exist so the CI workflows can be
+    told which cells to run instead of carrying their own copy of the list. A hardcoded
+    matrix is a second source of truth: a config added here would simply not run, and
+    nothing would say so.
+    """
+    return tuple(c.name for c in CONFIGS
+                 if Phase.GRAPH_STARTING not in c.skip_steps)
+
+
 def expected_reproductions(config: Config) -> frozenset[int]:
     """What THIS cell is built to reproduce, which is not the same as what the tree
     carries.
