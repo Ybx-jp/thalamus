@@ -119,6 +119,30 @@ jobs:
             exit 1
           fi
 
+      # `drive.py`'s Perturbation makes a binary absent by RENAMING it, not by shadowing
+      # it earlier on PATH — a shim can be stepped around by absolute path, a missing
+      # file cannot. That needs write permission on the directory holding it, which the
+      # libvirt cells have and a hosted runner does not: the first run of this workflow
+      # aborted with `renaming /usr/bin/jq failed with [Errno 13] Permission denied`.
+      #
+      # The gate refusing there was correct — a cell that runs unperturbed under a
+      # perturbed name reports on a box nobody asked about — so the fix is to grant the
+      # permission, narrowly. Ownership of the named binaries only, taken from the spec
+      # rather than hardcoded, so a config that starts removing something else is
+      # covered without this step being edited.
+      - name: Let the perturbation reach the binaries this config removes
+        run: |
+          removes=$(cd tests/qe/install && python3 -c "
+          import spec
+          c = next(c for c in spec.CONFIGS if c.name == '${{ matrix.config }}')
+          print(' '.join(c.removes))")
+          for bin in $removes; do
+            path=$(command -v "$bin") || { echo "::error::$bin is not on PATH to remove"; exit 1; }
+            sudo chown "$(id -u):$(id -g)" "$path"
+            echo "perturbable: $path"
+          done
+          [ -n "$removes" ] || echo "config '${{ matrix.config }}' removes nothing"
+
       - name: Run the cell
         run: |
           python3 tests/qe/install/drive.py \

@@ -197,7 +197,7 @@ CONFIGS: tuple[Config, ...] = (
     Config("no-agent-cli",
            "No `claude` on PATH at init time. The MCP registration is SKIPPED into "
            "the actions list, verify() has no check for it, and init exits 0.",
-           issue=53, removes=("claude",)),
+           issue=53, fixed=True, removes=("claude",)),
     Config("no-config-dir",
            "THALAMUS_CONFIG_DIR unset, i.e. what a clean clone actually has: five "
            "tracked manifests rather than the operator's nine.",
@@ -280,7 +280,7 @@ CHECKS: tuple[Check, ...] = (
           "verify() must report on whether the Claude Code MCP server registered. "
           "Today it checks cursor and codex and not this one, so a box without the "
           "CLI installs 'successfully' with no memory tools and no failure reported.",
-          issue=53,
+          issue=53, fixed=True,
           control="under the baseline variant the same check must find a REGISTERED "
                   "state, or it is asserting on a field that never populates"),
     Check("hooks-are-armed-and-resolvable", Phase.INSTALLED, Severity.BLOCKS,
