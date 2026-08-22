@@ -848,9 +848,96 @@ class TestADistillationLoopThatStalled:
     def test_the_runtime_block_carries_it(self, tmp_path, monkeypatch):
         self._record(tmp_path, monkeypatch,
                      "2026-08-15T09:00:00Z session-end.sh: not on PATH: uv")
-        monkeypatch.setattr(install, "_probe_graph", lambda url: (True, "ok"))
+        monkeypatch.setattr(install, "_probe_graph", lambda url: (True, "ok", False))
         names = [c.name for c in install.verify_runtime(("claude",))]
         assert "sessions lost to a missing binary" in names
+
+
+class TestACheckThatCouldNotRunIsNotACheckThatFailed:
+    """The fourth state, and the one the other three could not say.
+
+    `--check`'s legend defines `✗` as something the install needs being present and
+    wrong, and `○` as something not written yet whose fix is `thalamus init`. A check
+    whose prerequisite is missing is neither: the question was never asked. Both
+    shapes were live. Without `jq`, two round trips printed `✗` beside the word
+    "skipped". And on the ordinary machine that has Claude Code and not codex, the
+    codex MCP item reported `○` forever under a closing line telling the operator to
+    run a command that skips the registration and leaves the item exactly as it was.
+    """
+
+    def _absent(self, monkeypatch, *names):
+        real = install.shutil.which
+        monkeypatch.setattr(install.shutil, "which",
+                            lambda b: None if b in names else real(b))
+
+    def test_a_round_trip_without_jq_could_not_run_rather_than_failed(
+            self, sandbox, monkeypatch):
+        self._absent(monkeypatch, "jq")
+
+        checks = {c.name: c for c in install.verify_cursor()}
+        check = checks["cursor deferred injection round trip"]
+
+        assert check.blocked and not check.ok
+        assert "jq" in check.detail and "could not run" in check.detail
+        # `?` and not `!`: an advisory is a finding that is true, and this is the
+        # absence of one. A reader scanning marks should not need the closing
+        # summary to tell "the graph is down" from "nobody looked".
+        assert check.render().startswith("  ?")
+
+    def test_a_blocked_check_does_not_fail_the_run(self, sandbox, monkeypatch):
+        monkeypatch.setattr(install, "verify", lambda *a, **k: [
+            install.Check("hook scripts present", True, "all found"),
+            install.Check("codex delegation round trip", False,
+                          "could not run: jq missing on this machine", blocked=True),
+        ])
+
+        assert install.run(check_only=True) == 0
+
+    def test_the_codex_mcp_item_is_not_pending_on_a_box_without_codex(
+            self, sandbox, monkeypatch):
+        """`thalamus init` registers this through `codex mcp add`, so without the
+        binary the command the pending text names cannot clear the item."""
+        self._absent(monkeypatch, "codex")
+        monkeypatch.setattr(install, "codex_mcp_registration", lambda: "")
+
+        check = {c.name: c for c in install.verify_codex()}["codex MCP server registered"]
+
+        assert check.blocked and not check.pending and not check.ok
+        assert "codex" in check.detail and "could not run" in check.detail
+        assert "thalamus init" not in check.detail
+        assert check.render().startswith("  ?")
+
+    def test_a_check_that_reads_a_file_is_not_blocked_by_a_missing_remedy(
+            self, sandbox, monkeypatch):
+        """`blocked` is for a check nobody could look at, not for one whose fix needs
+        a missing program.
+
+        `codex hooks trusted` reads the trust record out of `$CODEX_HOME/config.toml`
+        whether or not the binary exists, so it has a real answer and the answer is a
+        real finding. Granting it `blocked` because the remedy — a codex TUI prompt —
+        is unreachable would make the word mean "inconvenient to fix", and there is
+        then nothing left that means "unknown".
+        """
+        self._absent(monkeypatch, "codex")
+        install.install()
+
+        check = {c.name: c for c in install.verify_codex()}["codex hooks trusted"]
+
+        assert not check.blocked
+        assert check.advisory and not check.ok
+
+    def test_the_codex_mcp_item_is_still_pending_when_codex_is_installed(
+            self, sandbox, monkeypatch):
+        """The pending shape is right for the box that can actually clear it."""
+        monkeypatch.setattr(install, "codex_mcp_registration", lambda: "")
+        real = install.shutil.which
+        monkeypatch.setattr(install.shutil, "which",
+                            lambda b: "/usr/bin/codex" if b == "codex" else real(b))
+
+        check = {c.name: c for c in install.verify_codex()}["codex MCP server registered"]
+
+        assert check.pending and not check.blocked
+        assert "thalamus init" in check.detail
 
 
 class TestRuntimeAdvisories:
@@ -866,17 +953,38 @@ class TestRuntimeAdvisories:
         assert not graph.ok and graph.advisory
         assert "docker compose up -d" in graph.detail
 
+    def test_a_graph_that_is_up_but_not_yet_serving_is_not_told_to_start(self, monkeypatch):
+        """The third state the two-stage probe did not distinguish.
+
+        Docker publishes 127.0.0.1:8182 the moment the container starts, and the JVM
+        then takes 3.5-4s to reach `Channel started at port 8182` — plus the image
+        pull on a genuinely first run. A user who runs step 4 promptly after step 2
+        landed in that window and was told to start a container he could see running.
+        """
+        monkeypatch.setattr(
+            install, "_probe_graph",
+            lambda url: (False, "localhost:8182 accepted a connection but did not "
+                                "answer (timed out)", False))
+
+        graph = [c for c in install.verify_runtime(("claude",))
+                 if c.name == "graph reachable"][0]
+
+        assert not graph.ok and graph.advisory
+        assert "docker compose up -d" not in graph.detail
+        assert "docker compose ps" in graph.detail
+        assert "a few seconds" in graph.detail
+
     def test_an_empty_graph_is_not_a_fault(self, monkeypatch):
         """Every install is fresh — the graph is one operator's private history and
         is never shipped, so zero vertices is the normal starting state."""
         monkeypatch.setattr(install, "_probe_graph",
-                            lambda url: (True, "0 vertices at " + url + " (fresh)"))
+                            lambda url: (True, "0 vertices at " + url + " (fresh)", False))
         graph = [c for c in install.verify_runtime(("claude",)) if c.name == "graph reachable"][0]
         assert graph.ok
 
     def test_a_missing_agent_cli_is_advisory_per_harness(self, monkeypatch):
         monkeypatch.setattr(install.shutil, "which", lambda b: None)
-        monkeypatch.setattr(install, "_probe_graph", lambda url: (True, "ok"))
+        monkeypatch.setattr(install, "_probe_graph", lambda url: (True, "ok", False))
         clis = [c for c in install.verify_runtime(("claude", "cursor"))
                 if c.name.endswith("distillation CLI")]
         assert len(clis) == 2
@@ -903,7 +1011,7 @@ class TestRuntimeAdvisories:
         from thalamus.substrate.writer import graph_down_detail
 
         monkey_url = "ws://localhost:9/gremlin"
-        _, probed = install._probe_graph(monkey_url)
+        _, probed, _ = install._probe_graph(monkey_url)
         assert graph_down_detail(probed).endswith("re-run `thalamus init --check`")
         assert "nothing listening on localhost:9" in graph_down_detail(probed)
 

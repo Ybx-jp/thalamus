@@ -69,6 +69,10 @@ uv sync --extra dev            # creates .venv with the package and its CLI
 uv run thalamus init           # wire your editor, then verify what it wired
 ```
 
+The graph answers a few seconds after `up -d` returns — Docker publishes the port
+before the server finishes starting. `docker compose ps` says `healthy` when it is
+actually serving.
+
 `thalamus init` installs at **user scope**, so the harness arms in every directory
 rather than only inside this checkout. It wires every supported harness by default;
 use `--harness claude`, `--harness cursor` or `--harness codex` for one. `--dry-run`
@@ -89,7 +93,15 @@ Hooks and the MCP server arm **per process**, so an already-running session pick
 nothing. Quit and reopen your editor; `/clear` is not enough.
 
 A new session should greet you with a memory prompt and its pinned scope. From there,
-memory builds itself.
+memory builds itself — distillation runs when a session **ends**, detached, and says
+nothing in your terminal. So have a real session, quit the editor, and ask:
+
+```bash
+uv run thalamus status         # sessions in the graph, and the last distillation run
+```
+
+The count going from 0 to 1 is the confirmation that it works. `thalamus init --check`
+answers the other half — whether the wiring that writes it is armed.
 
 **Full walkthrough, including what the first run looks like:**
 [docs/getting-started.md](docs/getting-started.md).

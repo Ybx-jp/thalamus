@@ -29,6 +29,11 @@ docker compose up -d
 That brings up Gremlin Server on TinkerGraph at `127.0.0.1:8182`. The image is public;
 there is no licence file and no account.
 
+**Give it a few seconds before step 4.** Docker publishes the port as soon as the
+container starts, and the JVM takes another 3-4 seconds to begin answering queries —
+longer on the first run, which pulls the image. `docker compose ps` reports `healthy`
+when it is actually serving.
+
 The graph lives in the named `thalamus-graph-data` Docker volume, outside the checkout.
 `docker compose stop` is safe. `docker compose down -v` deletes your memory.
 
@@ -86,6 +91,9 @@ real interpreter from a foreign directory, round-trips the Cursor injection spoo
 drives one codex hook end to end against a payload codex actually sends, and reads
 each skill back through its user-scope path.
 
+A real run prints about two dozen of these, then groups the ones that are not `✓`
+into a block per marker. Four lines, one of each kind:
+
 ```
 Verification (exercised, not assumed):
   ✓ distillation entry point: `thalamus` resolves from a foreign cwd
@@ -93,16 +101,22 @@ Verification (exercised, not assumed):
   ○ derived agents installed: none written yet to ~/.claude/agents — `thalamus init` writes one per expert manifest
   ! cursor distillation CLI: `agent` not on PATH — cursor sessions will retrieve
     and trace but never distill (install it, or extract with `--harness claude`)
+  ? codex MCP server registered: could not run: `codex` is not on this machine, and
+    the registration goes in through `codex mcp add`
 ```
 
-Four markers:
+Five markers:
 
 - **`✓`** — verified by running it, not by checking that a file exists.
 - **`○`** — not installed yet, with the command that installs it. This is what a box
   that has never run `thalamus init` looks like, and it never fails the run.
-- **`!`** — an advisory about your environment, with the command that fixes it. Install
-  wires configuration; it does not start your containers or install other vendors'
-  binaries. Advisories never fail the install.
+- **`!`** — an advisory about your environment, with the command that fixes it.
+  Install wires configuration; it does not start your containers or install other
+  vendors' binaries. Advisories never fail the install.
+- **`?`** — the check **could not run**: something it needs is not on this machine, so
+  nobody looked and the answer is unknown. `!` and `?` are different claims — an
+  advisory is a finding that is true, and this is the absence of one. Neither fails
+  the install.
 - **`✗`** — something the install needs is in place and wrong: a skill link that
   dangles, a hooks file holding only some of the wirings, an MCP entry that no longer
   matches this checkout. Only these fail the run.
@@ -112,8 +126,14 @@ like.
 
 **`--check` and `--dry-run` are safe to run before you have installed.** Everything
 not written yet — derived agents, user-scope skills, Cursor wiring — comes back `○`
-with the command that writes it, and the run exits 0. `--dry-run` always ends by
-saying it wrote nothing, including on a run that found faults.
+with the command that writes it, and a checkout whose prerequisites are in place
+exits 0. `--dry-run` always ends by saying it wrote nothing, including on a run that
+found faults.
+
+A **missing prerequisite is a real failure**, and it is the one thing on an
+uninstalled box that exits 1: without `jq`, `jq on PATH` comes back `✗`, and the two
+round trips that parse JSON with it come back `?` — they could not run. Install the
+prerequisites in §1 first and the run is clean.
 
 ## 5. Relaunch your editor
 
@@ -133,7 +153,43 @@ root. `thalamus init --check` reports the trust state as `!` until every wired e
 carries a record, and neither answer is something the installer will give on your
 behalf.
 
-## 6. Bring up the roster
+## 6. Confirm memory is being written
+
+The step everything else exists for, and the only one whose result is not visible
+where you are standing. Distillation runs **when a session ends**, detached, and
+writes nothing to your terminal. So: have a real session in your editor — a few
+turns, not an empty window — then quit the editor, and run
+
+```bash
+thalamus status
+```
+
+```
+Graph         ws://localhost:8182/gremlin — 412 vertices
+Memory        1 sessions distilled
+              newest 2026-08-22 00:59:56 (thalamus scope main)
+Distillation  last ran 2026-08-22 01:00:04
+              its log ends: wrote 1 session, 9 claims
+
+This reports what was written. `thalamus init --check` reports the wiring that writes it.
+```
+
+That is the answer to "did it work?". The count going from 0 to 1 is the whole
+signal.
+
+If it still says **no sessions distilled yet**, the graph is fine and nothing has
+been written. In order of likelihood: the editor is still open (distillation fires on
+exit, not on `/clear`); the editor was never relaunched after §5, so the hooks are
+not armed in it; or a hook died on a missing binary, which `thalamus status` reports
+under **Hook failures** and `thalamus init --check` reports too.
+
+The two commands answer different questions and neither answers the other's.
+`init --check` verifies the wiring — hooks armed, skills readable, an MCP entry that
+matches this checkout — all of which can be perfectly correct while nothing is being
+written. `status` reports what was actually written and cannot tell you why it was
+not.
+
+## 7. Bring up the roster
 
 An expert is a scope declared by a manifest in `config/experts/`. Five ship as
 examples: `architect`, `designer`, `eval-methodology`, `literature` and `qe`. Two of
@@ -165,7 +221,7 @@ tmux -L thalamus attach -t thalamus
 `thalamus roster` prints that line. `THALAMUS_TMUX_SOCKET` changes the socket name,
 which is how two checkouts on one box keep separate control planes.
 
-## 7. Open the console
+## 8. Open the console
 
 ```bash
 thalamus console
@@ -203,7 +259,7 @@ interface.
 the one not to, installing it to a home screen, running it as a systemd unit, and what
 each surface does when it cannot tell you the truth.
 
-## 8. Seed memory from transcripts you already have
+## 9. Seed memory from transcripts you already have
 
 If you have been using Claude Code, every session is already on disk as JSONL, and you
 can derive memory from it:
@@ -229,7 +285,7 @@ goes through a headless model pass to produce claims and open threads.
 > distillation leaves behind when nobody is watching a terminal. Read them before you
 > share a graph with anyone.
 
-## 9. Look at what it remembers
+## 10. Look at what it remembers
 
 ```bash
 thalamus pulse              # live telemetry over the eval loop
@@ -266,6 +322,12 @@ or activate the venv.
 graph container is not running. Every surface says this the same way, whether you hit
 it from `thalamus init --check`, a CLI command, or a recall tool inside a
 session.
+
+**`accepted a connection but did not answer`** — the container is running and the
+server is still starting. Docker publishes the port immediately; the JVM needs another
+3-4 seconds, more on the run that pulls the image. Wait for `docker compose ps` to say
+`healthy` and re-run. This is a different message from the one above on purpose: it is
+the state where starting the container again would do nothing.
 
 **A new session doesn't mention memory** — hooks arm per process. Fully quit and
 reopen your editor.

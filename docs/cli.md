@@ -13,8 +13,17 @@ thalamus init                      # wire your editor at user scope
 thalamus init --check              # verify the install, or report what is not installed yet
 thalamus init --dry-run            # report what would be written
 thalamus init --uninstall          # remove what it can prove it installed
+thalamus status                    # is memory being written? sessions, and the last distillation
 thalamus rescope <scope>           # redirect this session's distillation, before it distills
 ```
+
+`init --check` and `status` answer different questions and neither answers the
+other's. `--check` verifies the **wiring** — hooks armed, skills readable, an MCP
+entry that matches this checkout — all of which can be correct while nothing is being
+written. `status` reports what was **written**: sessions in the graph, the newest one,
+when distillation last ran and how its log ended, and any sessions the hooks recorded
+as lost. It exits non-zero only when the graph will not answer; an empty graph is a
+pass, because that is what every install starts as.
 
 ## Building memory
 
