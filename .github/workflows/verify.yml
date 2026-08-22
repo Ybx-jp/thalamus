@@ -1,0 +1,63 @@
+# The three commands CLAUDE.md names as the verification discipline, gated.
+#
+# Until this existed they were verified only by an operator typing them on a
+# developer machine: CI on push ran the adversarial fast tier and nothing else, so a
+# change breaking any of the ~1370 pytest tests, reintroducing a lint error, or
+# violating the federation contract merged green.
+#
+# It stays separate from `qe-fast.yml` on purpose. The qe tier deliberately carries
+# entries that are supposed to be red and is not shipped in the wheel; merging the two
+# suites would make each one's exit code mean the other's thing.
+#
+# `contract check` needs a reachable graph, so this brings up the real compose file
+# rather than a service container — the compose file is the thing a first-time user
+# runs, and its healthcheck is the readiness signal, so exercising it here also covers
+# `docker compose up -d` itself, which no test can.
+name: verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      # The `dev` *extra*, not the `dev` dependency-group: pytest is declared in the
+      # extra, and a bare `uv sync` leaves it out.
+      - name: Install
+        run: uv sync --extra dev
+
+      # node is optional substrate: tests/js/*.test.mjs run under it as part of the
+      # pytest run, driven by test_console_js.py, and a checkout without node skips
+      # them. Installed here so CI runs the suite the operator does rather than a
+      # quietly smaller one.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Lint
+        run: uv run ruff check src tests
+
+      - name: Tests
+        run: uv run pytest -q
+
+      # Started before the contract check and waited on by the compose healthcheck the
+      # file already declares — the graph accepts a TCP connection several seconds
+      # before it answers a query, so polling the port would pass too early.
+      - name: Bring up the graph
+        run: |
+          docker compose up -d --wait --wait-timeout 180
+          docker compose ps
+
+      - name: Contract check
+        run: uv run thalamus contract check
+
+      - name: Graph logs
+        if: failure()
+        run: docker compose logs graph
