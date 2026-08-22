@@ -14,6 +14,7 @@ two, and foreign hooks left intact — not about the installer's return value.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -35,6 +36,7 @@ def sandbox(tmp_path, monkeypatch):
     cursor_project_mcp = tmp_path / "project" / "cursor-mcp.json"
     codex_hooks = tmp_path / "user" / "codex-hooks.json"
     codex_config = tmp_path / "user" / "codex-config.toml"
+    codex_home = tmp_path / "codex-home"
     monkeypatch.setattr(install, "USER_SETTINGS", user_settings)
     monkeypatch.setattr(install, "PROJECT_SETTINGS", project_settings)
     monkeypatch.setattr(install, "PROJECT_MCP", project_mcp)
@@ -52,6 +54,18 @@ def sandbox(tmp_path, monkeypatch):
     # ~/.codex/hooks.json and reads their real config.toml for the trust check.
     monkeypatch.setattr(install, "USER_CODEX_HOOKS", codex_hooks)
     monkeypatch.setattr(install, "USER_CODEX_MCP", codex_config)
+    # The directory itself, not only the two paths derived from it. `CODEX_HOME` is
+    # resolved at import (install.py:98), and redirecting `USER_CODEX_HOOKS` and
+    # `USER_CODEX_MCP` leaves everything that globs the *directory* pointed at the
+    # operator's real ~/.codex: `install()` wrote derived profiles into it and
+    # `uninstall()` deleted them, so the suite rewrote his roster as it ran (#71).
+    # Both resolutions, because there are two and they disagree about *when*.
+    # `install.CODEX_HOME` is computed at import, so it needs the attribute; the
+    # profile writer goes through `codex_transcripts.codex_home()`, which reads the
+    # env var per call, so it needs the variable. Closing one and not the other left
+    # `uninstall()` deleting inside the sandbox while `install()` wrote outside it.
+    monkeypatch.setattr(install, "CODEX_HOME", codex_home)
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
     # And never the real `codex mcp add|remove`: it writes `$CODEX_HOME/config.toml`,
     # which HOME does not move — the same containment failure that made the Claude
     # Code registration a stubbed seam.
@@ -67,6 +81,12 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(
         install, "codex_mcp_registration",
         lambda: f"  args: run --project {PROJECT_ROOT} thalamus-mcp\n")
+    # The Claude Code read, stubbed for the same reason: it shells out to the
+    # operator's `claude`, so an unstubbed test reports on his registration rather
+    # than on the code, and comes back blocked on a runner that has no `claude`.
+    monkeypatch.setattr(
+        install, "claude_mcp_registration",
+        lambda: f"  Args: run --project {PROJECT_ROOT} thalamus-mcp\n")
     monkeypatch.setattr(install, "write_all_agents", lambda d: d.mkdir(parents=True, exist_ok=True))
     # Never invoke the real `claude mcp add` from a test — it writes the
     # operator's shared ~/.claude.json.
@@ -84,7 +104,7 @@ def sandbox(tmp_path, monkeypatch):
             "cursor_project": cursor_project_hooks,
             "cursor_project_mcp": cursor_project_mcp,
             "codex_hooks": codex_hooks, "codex_config": codex_config,
-            "codex_mcp_calls": codex_calls}
+            "codex_home": codex_home, "codex_mcp_calls": codex_calls}
 
 
 class TestCursorWiring:
@@ -691,6 +711,85 @@ class TestVerify:
         assert install.run(check_only=True) == 1
 
 
+class TestTheClaudeCodeMcpRegistration:
+    """The registration every Claude Code user depends on, and the one nobody checked.
+
+    Cursor's was verified and codex's was; this one was not. `register_mcp` returns
+    `SKIPPED MCP registration: 'claude' not on PATH` into the *actions* list, so an
+    install run before the CLI existed printed `Installed for Claude Code…`, exited 0,
+    registered nothing, and `--check` reported no failure — no `mcp__thalamus__*` tool
+    in any session, and no surface saying why.
+
+    Asserted on `verify()`'s output rather than on the registration call: `claude mcp
+    add|remove` writes the operator's real `~/.claude.json` even under a redirected
+    HOME, which is why the write is a stubbed seam and the read now is too.
+    """
+
+    def _absent(self, monkeypatch, *names):
+        real = install.shutil.which
+        monkeypatch.setattr(install.shutil, "which",
+                            lambda b: None if b in names else real(b))
+
+    def test_a_registration_against_this_checkout_passes(self, sandbox):
+        check = install.verify_claude_mcp()
+
+        assert check.ok and str(PROJECT_ROOT) in check.detail
+
+    def _present(self, monkeypatch, *names):
+        """Pin the CLI as present: pending is the state of a box that can act on it,
+        and a runner with no `claude` would otherwise read this as blocked."""
+        real = install.shutil.which
+        monkeypatch.setattr(install.shutil, "which",
+                            lambda b: f"/usr/bin/{b}" if b in names else real(b))
+
+    def test_an_absent_registration_is_pending_on_thalamus_init(self, sandbox, monkeypatch):
+        self._present(monkeypatch, "claude")
+        monkeypatch.setattr(install, "claude_mcp_registration", lambda: "")
+
+        check = install.verify_claude_mcp()
+
+        assert check.pending and not check.ok and not check.blocked
+        assert "thalamus init" in check.detail
+        # The consequence, not just the remedy — this is the failure that says nothing.
+        assert "mcp__thalamus__" in check.detail
+
+    def test_a_registration_against_another_checkout_is_a_hard_failure(self, sandbox,
+                                                                       monkeypatch):
+        """Reached by moving or renaming the checkout after `thalamus init` — the same
+        drift the Cursor leg reports, on the leg that had no report at all.
+
+        Asserted with `claude` *absent*, which is the case that gets this wrong: the
+        registration was read and names another checkout, so the answer is known and
+        the finding is real. Blocking it on the missing binary would hide a live
+        defect behind "could not run".
+        """
+        self._absent(monkeypatch, "claude")
+        monkeypatch.setattr(install, "claude_mcp_registration",
+                            lambda: "  Args: run --project /somewhere/else thalamus-mcp\n")
+
+        check = install.verify_claude_mcp()
+
+        assert not check.ok and not check.pending and not check.blocked
+        assert "not against this checkout" in check.detail
+        assert check.render().startswith("  ✗")
+
+    def test_a_box_without_the_claude_cli_could_not_run_it(self, sandbox, monkeypatch):
+        """`thalamus init` registers through `claude mcp add`, so without the binary
+        the command a pending item would name cannot clear it."""
+        self._absent(monkeypatch, "claude")
+        monkeypatch.setattr(install, "claude_mcp_registration", lambda: "")
+
+        check = install.verify_claude_mcp()
+
+        assert check.blocked and not check.pending and not check.ok
+        assert "claude" in check.detail and "could not run" in check.detail
+        assert check.render().startswith("  ?")
+
+    def test_it_is_in_the_claude_leg_and_not_the_others(self, sandbox):
+        assert "claude MCP server registered" in {c.name for c in install.verify(("claude",))}
+        assert "claude MCP server registered" not in {c.name for c in install.verify(("cursor",))}
+
+
 class TestAnUninstalledMachineIsNotABrokenOne:
     """`--check` and `--dry-run` are what a cautious operator runs *before*
     installing, and everything they find absent is the expected shape of a machine
@@ -1182,6 +1281,54 @@ def test_armed_hooks_reads_the_script_out_of_a_full_command_line():
         {"matcher": None, "hooks": [{"command": "/home/u/repo/hooks/session-end.sh"}]}
     ]}}
     assert install.armed_hooks(settings) == {("SessionEnd", None, "session-end.sh")}
+
+
+class TestTheSuiteWritesOnlyInsideItsSandbox:
+    """A test that reaches the operator's real config is a test that damages his box.
+
+    Found the slow way: `CODEX_HOME` is resolved at import, and the fixture redirected
+    the two paths *derived* from it while leaving the directory itself pointed at the
+    real `~/.codex`. `install()` wrote derived codex profiles into it and `uninstall()`
+    deleted them, so a suite run rewrote the operator's roster — 9 profiles from his
+    private manifests replaced by the 5 tracked here — and nothing said so. It
+    surfaced as a `thalamus init --check` line that disagreed with a directory listing
+    a minute later.
+
+    This asserts the containment directly, so the next constant that escapes the
+    fixture fails here instead.
+    """
+
+    def test_install_and_uninstall_touch_nothing_under_the_real_home(self, sandbox,
+                                                                     tmp_path):
+        real = Path.home()
+        redirected = [install.USER_SETTINGS, install.USER_AGENTS_DIR,
+                      install.USER_SKILLS_DIR, install.USER_CURSOR_HOOKS,
+                      install.USER_CURSOR_MCP, install.USER_CODEX_HOOKS,
+                      install.USER_CODEX_MCP, install.CODEX_HOME]
+
+        escaped = [str(p) for p in redirected
+                   if p == real or real in Path(p).parents and tmp_path not in Path(p).parents]
+
+        assert not escaped, (
+            f"these write targets still resolve under the real home: {escaped}. "
+            "A test that installs or uninstalls will edit the operator's own config.")
+
+    def test_a_full_install_writes_the_codex_profiles_into_the_sandbox(self, sandbox):
+        """The specific path that leaked: profiles are globbed off the directory."""
+        install.install()
+
+        written = sorted(sandbox["codex_home"].glob("thalamus-*.config.toml"))
+
+        assert written, "no profiles written — the test would pass vacuously"
+        assert all(str(sandbox["codex_home"]) in str(p) for p in written)
+
+    def test_uninstall_removes_only_the_sandbox_profiles(self, sandbox):
+        install.install()
+        assert sorted(sandbox["codex_home"].glob("thalamus-*.config.toml"))
+
+        install.uninstall()
+
+        assert not sorted(sandbox["codex_home"].glob("thalamus-*.config.toml"))
 
 
 class TestUninstall:
