@@ -118,7 +118,13 @@ class TestInjectedInstruction:
         checkout.mkdir()
         for args in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "root"],
                      ["worktree", "add", "-q", str(tmp_path / "wt"), "-b", "side"]):
-            subprocess.run(["git", "-C", str(checkout), *args],
+            # `-c` rather than `git config`: a machine with no global identity — a CI
+            # runner, a fresh container — fails `commit` with exit 128 before this test
+            # has said anything, and a throwaway repo is no reason to edit the
+            # operator's own git configuration.
+            subprocess.run(["git", "-c", "user.name=thalamus tests",
+                            "-c", "user.email=tests@thalamus.invalid",
+                            "-C", str(checkout), *args],
                            check=True, capture_output=True)
 
         ctx = context_of(run_hook(session_start_payload(cwd=str(tmp_path / "wt")), tmp_path))
