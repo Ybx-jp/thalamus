@@ -121,8 +121,11 @@ warning when you use it.
 ## Using it
 
 **The roster is the landing view and the only way into a session.** One row per
-session; tapping a row opens its mirror. Rows are grouped under the project's path,
-and the group header is the only place the path appears — the row never repeats it.
+session; tapping a row opens its mirror. Rows are grouped under the project's
+repository root, and the group header is the only place the path appears — the row
+repeats it only when that session's copy is a different one. The header is a launch
+fact, so a session that changes directory into a worktree or a subdirectory does not
+rename the group it sits in.
 
 **The session marker** sits above the composer in the mirror. It carries the four
 facts the pane cannot: which session you are in, which project it is rooted in, how
