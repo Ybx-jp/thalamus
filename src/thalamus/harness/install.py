@@ -857,6 +857,27 @@ def registered_mcp_env() -> dict[str, str]:
     return env
 
 
+def claude_mcp_registration() -> str:
+    """What `claude mcp get thalamus` reports, or "" when nothing is registered.
+
+    The twin of `codex_mcp_registration`, and read through the CLI for the reason
+    `register_mcp` writes through it: `~/.claude.json` is not ours. A named function
+    rather than an inline call because every test needs one seam to stub — this one
+    only reads, but a test that shells out to the operator's `claude` reports on his
+    box rather than on the code.
+    """
+    cli = shutil.which("claude")
+    if cli is None:
+        return ""
+    try:
+        proc = subprocess.run([cli, "mcp", "get", "thalamus"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    out = f"{proc.stdout}{proc.stderr}"
+    return "" if "No MCP server named" in out else proc.stdout
+
+
 def mcp_env_drift(before: dict[str, str], after: dict[str, str]) -> list[str]:
     """What changed in the MCP server's env, named one variable at a time."""
     changes = []
@@ -1532,6 +1553,7 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
 
     if "claude" in harnesses:
         checks.append(verify_armed())
+        checks.append(verify_claude_mcp())
 
     if "cursor" in harnesses:
         checks.extend(verify_cursor())
@@ -1562,6 +1584,42 @@ def armed_hooks(settings: dict | None = None) -> set[tuple[str, str | None, str]
                 if script:
                     armed.add((event, matcher or None, script))
     return armed
+
+
+def verify_claude_mcp() -> Check:
+    """The registration every Claude Code user depends on, and the one nobody checked.
+
+    Cursor's registration was verified (`verify_cursor`) and codex's was
+    (`verify_codex`); this one was not. `register_mcp` returns
+    `SKIPPED MCP registration: 'claude' not on PATH` into the *actions* list, so an
+    install that ran before the CLI existed printed `Installed for Claude Code…`,
+    exited 0, and registered nothing — no `mcp__thalamus__*` tool in any session, and
+    `--check` reporting no failure. The only adjacent signal was the advisory naming
+    distillation, which is a different subsystem.
+
+    Blocked rather than pending when `claude` is absent: `thalamus init` registers
+    through `claude mcp add`, so on a box without the binary the command the pending
+    text would name cannot clear the item. (`claude mcp get` also prints a `Status:`
+    line reporting a live connect attempt; this deliberately reads only the
+    registration, so the check does not depend on the graph being up.)
+    """
+    cli = shutil.which("claude")
+    served = claude_mcp_registration()
+    against_this_checkout = str(PROJECT_ROOT) in served
+    return Check(
+        "claude MCP server registered", against_this_checkout,
+        f"`thalamus` registered at user scope against {PROJECT_ROOT}"
+        if against_this_checkout
+        else "could not run: `claude` is not on this machine, and the registration "
+             "goes in through `claude mcp add`" if cli is None
+        else "not registered yet — `thalamus init` registers it, and until it does no "
+             "`mcp__thalamus__*` tool appears in any session"
+        if not served
+        else f"registered, but not against this checkout ({PROJECT_ROOT}) — "
+             "re-run `thalamus init`",
+        pending=not served and cli is not None,
+        blocked=cli is None and not against_this_checkout,
+    )
 
 
 def verify_armed() -> Check:
