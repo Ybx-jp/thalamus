@@ -104,19 +104,34 @@ every check and proves nothing.
 
 ## What runs where
 
-`.github/workflows/qe-macos.yml` runs the `graph-not-started` cell on `macos-14`.
-Apple silicon runners have no nested virtualization, so there is no Docker and no
-graph, and everything after `docker compose up -d` lands as not evaluated with a
-reason. macOS cannot be a cell in the libvirt matrix at all — it may only be
-virtualized on Apple hardware.
+**Neither workflow names a config.** `configs_requiring_no_graph()` and
+`configs_needing_a_graph()` partition `CONFIGS`, and the two workflows read their cells
+out of them — `qe-linux.yml` builds its matrix from a `discover` job, `qe-macos.yml`
+derives its single config and refuses if there is more than one. A hardcoded list would
+be a second source of truth, and a config added to `spec.CONFIGS` would simply not run
+with nothing to say so. `lint.py` refuses a config in neither partition or in both.
 
-`.github/workflows/qe-linux.yml` runs the other five configs on `ubuntu-latest`, one
-job each, `fail-fast: false`. Hosted Linux runners ship Docker and Compose v2, so this
-is the only automated cell that reaches `GRAPH_STARTING` and `GRAPH_READY` — and
-therefore the only one that can evaluate `starting-graph-is-not-reported-as-absent`,
+`.github/workflows/qe-macos.yml` runs the graphless config on `macos-14`. Apple silicon
+runners have no nested virtualization, so there is no Docker and no graph, and
+everything after `docker compose up -d` lands as not evaluated with a reason. That is
+also the only hosted box a graphless config can run on, which is why that job is a
+single cell and asserts it. macOS cannot be a cell in the libvirt matrix at all — it may
+only be virtualized on Apple hardware.
+
+`.github/workflows/qe-linux.yml` runs the graph-bearing configs on `ubuntu-latest`, one
+job each, `fail-fast: false`. Hosted Linux runners ship Docker and Compose v2, so these
+are the only automated cells that reach `GRAPH_STARTING` and `GRAPH_READY` — and
+therefore the only ones that can evaluate `starting-graph-is-not-reported-as-absent`,
 which samples the window between the port accepting a connection and the server
 answering a query. On a box without Docker that snapshot is never taken and the check
 reports `not_evaluated`.
+
+`drive.py`'s `Perturbation` makes a binary absent by renaming it, which needs write
+permission on the holding directory. A hosted runner does not have that on `/usr/bin`,
+so `qe-linux.yml` relocates the binaries a config removes into `~/.local/bin` first,
+reading the list from `spec.CONFIGS`. The end state is the one the config asks for — the
+binary is off PATH once perturbed — but it is reached by moving the file rather than by
+the box never having had it.
 
 `no-config-dir` is weaker on a hosted runner than on the operator's box: it unsets
 `THALAMUS_CONFIG_DIR`, which CI never set. The cell still confirms a clean clone
