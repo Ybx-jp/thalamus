@@ -101,20 +101,22 @@ Verification (exercised, not assumed):
   ○ derived agents installed: none written yet to ~/.claude/agents — `thalamus init` writes one per expert manifest
   ! cursor distillation CLI: `agent` not on PATH — cursor sessions will retrieve
     and trace but never distill (install it, or extract with `--harness claude`)
-  ! codex MCP server registered: could not run: `codex` is not on this machine, and
+  ? codex MCP server registered: could not run: `codex` is not on this machine, and
     the registration goes in through `codex mcp add`
 ```
 
-Four markers, and one of them says two things:
+Five markers:
 
 - **`✓`** — verified by running it, not by checking that a file exists.
 - **`○`** — not installed yet, with the command that installs it. This is what a box
   that has never run `thalamus init` looks like, and it never fails the run.
-- **`!`** — either an advisory about your environment, with the command that fixes it,
-  or a check that **could not run** because something it needs is not on this machine.
+- **`!`** — an advisory about your environment, with the command that fixes it.
   Install wires configuration; it does not start your containers or install other
-  vendors' binaries, and it cannot ask a question about a program you do not have.
-  The closing summary separates the two. Neither fails the install.
+  vendors' binaries. Advisories never fail the install.
+- **`?`** — the check **could not run**: something it needs is not on this machine, so
+  nobody looked and the answer is unknown. `!` and `?` are different claims — an
+  advisory is a finding that is true, and this is the absence of one. Neither fails
+  the install.
 - **`✗`** — something the install needs is in place and wrong: a skill link that
   dangles, a hooks file holding only some of the wirings, an MCP entry that no longer
   matches this checkout. Only these fail the run.
@@ -130,8 +132,8 @@ found faults.
 
 A **missing prerequisite is a real failure**, and it is the one thing on an
 uninstalled box that exits 1: without `jq`, `jq on PATH` comes back `✗`, and the two
-round trips that parse JSON with it come back `!` saying they could not run. Install
-the prerequisites in §1 first and the run is clean.
+round trips that parse JSON with it come back `?` — they could not run. Install the
+prerequisites in §1 first and the run is clean.
 
 ## 5. Relaunch your editor
 

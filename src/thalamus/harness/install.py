@@ -448,6 +448,12 @@ class Check:
     codex — an item the named command cannot clear devalues the whole `○` block.
     A blocked finding names the prerequisite that is missing and leaves the exit
     code alone.
+
+    It gets `?` rather than sharing `!` with an advisory, because the two say
+    different things and a reader scanning marks should not have to reach the closing
+    summary to tell them apart. An advisory is a finding — the graph is down, a CLI
+    is missing — and it is *true*. A blocked check has no finding at all: nobody
+    looked. `?` is the only mark here that means "unknown" rather than a result.
     """
     name: str
     ok: bool
@@ -459,9 +465,11 @@ class Check:
     def render(self) -> str:
         if self.ok:
             mark = "✓"
+        elif self.blocked:
+            mark = "?"
         elif self.pending:
             mark = "○"
-        elif self.advisory or self.blocked:
+        elif self.advisory:
             mark = "!"
         else:
             mark = "✗"
@@ -1919,7 +1927,7 @@ def run(dry_run: bool = False, check_only: bool = False,
         print(f"\n{len(blocked)} check(s) COULD NOT RUN — something they need is "
               "not on this machine, so their answer is unknown rather than bad:")
         for c in blocked:
-            print(f"  ! {c.name}: {c.detail}")
+            print(f"  ? {c.name}: {c.detail}")
 
     failed = [c for c in checks
               if not c.ok and not c.advisory and not c.pending and not c.blocked]

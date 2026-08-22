@@ -879,7 +879,10 @@ class TestACheckThatCouldNotRunIsNotACheckThatFailed:
 
         assert check.blocked and not check.ok
         assert "jq" in check.detail and "could not run" in check.detail
-        assert check.render().startswith("  !")
+        # `?` and not `!`: an advisory is a finding that is true, and this is the
+        # absence of one. A reader scanning marks should not need the closing
+        # summary to tell "the graph is down" from "nobody looked".
+        assert check.render().startswith("  ?")
 
     def test_a_blocked_check_does_not_fail_the_run(self, sandbox, monkeypatch):
         monkeypatch.setattr(install, "verify", lambda *a, **k: [
@@ -902,6 +905,7 @@ class TestACheckThatCouldNotRunIsNotACheckThatFailed:
         assert check.blocked and not check.pending and not check.ok
         assert "codex" in check.detail and "could not run" in check.detail
         assert "thalamus init" not in check.detail
+        assert check.render().startswith("  ?")
 
     def test_the_codex_mcp_item_is_still_pending_when_codex_is_installed(
             self, sandbox, monkeypatch):
