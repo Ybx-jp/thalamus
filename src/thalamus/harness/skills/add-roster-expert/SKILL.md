@@ -104,8 +104,9 @@ warns about is `src/thalamus/console/`, in this same package.
    corpus shape (AWM) filters candidates through an evaluator before writing them.
 3. **Anchor the scope if it must be consultable now** — a scope with nothing to
    cite refuses the consultation mint. Procure anchors *into the new scope*,
-   `--feed` named for the demand. Title-check each source without a model call —
-   `curl -sIL` for status, host and content-type, then `<title>` or `pdftotext` page 1
+   `--feed` named for the demand. Title-check each source without a model call — one
+   `curl -sL` (a GET, not `-sIL`, which can stop a redirect short of the host the gate
+   reads) for status, final host and content-type, then `<title>` or `pdftotext` page 1
    — then `--write` once; a dry run re-bills the extraction. Then
    `uv run thalamus contract check`.
 4. **Never author or `git add -f` the agent file.** `.claude/agents/thalamus-
