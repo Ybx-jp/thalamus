@@ -272,6 +272,13 @@ def _main():
         "Reports the final origin, content-type, title and the opening text.",
     )
     ingest_parser.add_argument(
+        "--refetch",
+        action="store_true",
+        help="Ask the address again instead of ingesting the bytes a recent --check "
+        "verified. Without it, a check within the last day supplies the bytes, so what "
+        "is written is what was checked.",
+    )
+    ingest_parser.add_argument(
         "--write",
         action="store_true",
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
@@ -1923,7 +1930,7 @@ def _report_preflight(args, ingest_mod):
     Exits non-zero on refusal, because this is what a batch script gates on.
     """
     try:
-        checked = ingest_mod.preflight(args.location, scope=args.scope)
+        checked = ingest_mod.preflight(args.location, scope=args.scope, fresh=True)
     except ingest_mod.IngestError as e:
         print(f"CHECK FAILED: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1949,7 +1956,8 @@ def _report_preflight(args, ingest_mod):
     print(f"\nOpening {len(excerpt):,} chars, as the extractor would read them:\n  {excerpt}")
     print(
         "\nCHECKED — nothing extracted, no model called. This is the ingest path up to "
-        "the model,\nso a --write run reaches the same origin through the same gate."
+        "the model,\nso a --write run within the day ingests these exact bytes rather "
+        "than asking again."
     )
 
 
@@ -2029,11 +2037,19 @@ def _cmd_ingest(args):
             harness=args.harness,
             title=args.title,
             known_entities=known_entities,
+            refetch=args.refetch,
         )
     except (ingest_mod.IngestError, extraction_mod.ExtractionError) as e:
         print(f"Ingest failed: {e}", file=sys.stderr)
         sys.exit(1)
 
+    if digest.verified_at is not None:
+        stamp = digest.verified_at.strftime("%Y-%m-%d %H:%M UTC")
+        print(
+            f"Bytes:    the ones --check verified at {stamp}, not a fresh request — "
+            f"so what is\n          written is what was checked. --refetch asks the "
+            f"address again."
+        )
     print(f"Retained: {batch.source.uri} ({batch.source.byte_size:,} bytes)")
     if digest.chunks > 1:
         read = digest.chunks - len(digest.failed_chunks)

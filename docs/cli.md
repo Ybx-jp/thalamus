@@ -54,6 +54,16 @@ Because it is the ingest path rather than a description of it, a source that pas
 `--check` cannot then fail the gate. A run *without* `--write` is not this: it extracts
 and reports, so using one as a pre-check bills the model twice for one document.
 
+**An ingest within a day of a check writes the bytes that check verified**, and says so.
+A check indexes what it fetched (`~/.thalamus/index/fetched.jsonl`, beside the archive
+it indexes), and a later ingest of the same address reads them back rather than asking
+again. The saved request is the smaller half: the gap between checking a source and
+writing it is where a document can change, so re-requesting can write something other
+than what was confirmed. Past a day the address is asked again, because a URL is not a
+document; `--refetch` asks again inside the window. The allowlist gate re-runs on reused
+bytes against the manifest as it stands *now* — the index supplies bytes, never
+permission.
+
 A batch is accepted per claim. A claim whose kind only misspells a declared one — wrong
 namespace, plural, case — is repaired; one that names something the scope's manifest
 does not declare leaves the batch and the rest is written. Every rejection is printed

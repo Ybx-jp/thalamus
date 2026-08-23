@@ -34,6 +34,112 @@ def archive_dir() -> Path:
     return Path(override) if override else DEFAULT_ARCHIVE_DIR
 
 
+def index_dir() -> Path:
+    """Where mutable indexes over the archive live — beside it, never inside it.
+
+    Derived from `archive_dir()` rather than given its own override, because an index
+    of content hashes is worthless against a different archive: point the archive
+    somewhere else and the index that belongs to it follows. Kept outside because
+    `arch.growth` walks the archive root and counts everything unreferenced by a Source
+    as stray retained bytes, which an index file is not.
+    """
+    return archive_dir().parent / "index"
+
+
+FETCH_INDEX = "fetched.jsonl"
+
+
+@dataclass(frozen=True)
+class FetchRecord:
+    """One verified fetch, keyed by the address that was asked for.
+
+    Not content addressing and deliberately not immutable: the same URL serves
+    different bytes over time, so this is last-writer-wins and every read carries `at`
+    so the caller can decide whether the record is still worth anything.
+    """
+
+    location: str
+    origin: str
+    content_hash: str
+    suffix: str
+    content_type: str
+    at: datetime
+
+    def age_seconds(self) -> float:
+        return (datetime.now(timezone.utc) - self.at).total_seconds()
+
+
+def record_fetch(
+    *,
+    location: str,
+    origin: str,
+    content_hash: str,
+    suffix: str,
+    content_type: str,
+    base: Path | None = None,
+) -> Path | None:
+    """Index a fetch so a later run can ingest the bytes that were verified.
+
+    Append-only, one row per fetch. An unwritable index costs a re-fetch and nothing
+    else, so it never takes down the run that was retaining evidence.
+    """
+    path = (base or index_dir()) / FETCH_INDEX
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "location": location,
+                        "origin": origin,
+                        "content_hash": content_hash,
+                        "suffix": suffix,
+                        "content_type": content_type,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except OSError:
+        return None
+    return path
+
+
+def recall_fetch(location: str, *, base: Path | None = None) -> FetchRecord | None:
+    """The most recent indexed fetch of `location`, or None.
+
+    Last row wins: a URL re-fetched today is not the URL fetched last month, and the
+    older rows are kept only so the sequence is auditable. A malformed row is skipped
+    rather than raised on — the index is an optimization, and a corrupt line must cost
+    a re-fetch, never an ingest.
+    """
+    path = (base or index_dir()) / FETCH_INDEX
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+            if row.get("location") != location:
+                continue
+            return FetchRecord(
+                location=location,
+                origin=str(row["origin"]),
+                content_hash=str(row["content_hash"]),
+                suffix=str(row.get("suffix") or ""),
+                content_type=str(row.get("content_type") or ""),
+                at=datetime.strptime(row["at"], "%Y-%m-%dT%H:%M:%SZ").replace(
+                    tzinfo=timezone.utc
+                ),
+            )
+        except (ValueError, KeyError, TypeError):
+            continue
+    return None
+
+
 def archive_bytes(payload: bytes, *, suffix: str = "", base: Path | None = None) -> ArchiveEntry:
     """Retain bytes under their sha256. Idempotent, and never overwrites.
 

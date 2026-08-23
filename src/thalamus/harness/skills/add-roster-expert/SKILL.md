@@ -106,9 +106,9 @@ warns about is `src/thalamus/console/`, in this same package.
    cite refuses the consultation mint. Procure anchors *into the new scope*,
    `--feed` named for the demand. Check each source without a model call —
    `thalamus ingest <doc> --scope <new-scope> --check` reports the serving host, the
-   content-type and the document's title — then `--write` once; a run without
-   `--write` re-bills the extraction and is not the check. Then
-   `uv run thalamus contract check`.
+   content-type and the document's title — then `--write` once, which ingests the
+   bytes the check verified; a run without `--write` re-bills the extraction and is
+   not the check. Then `uv run thalamus contract check`.
 4. **Never author or `git add -f` the agent file.** `.claude/agents/thalamus-
    <scope>.md` is derived from the manifest, regenerated on every launch, and
    gitignored on purpose.

@@ -35,7 +35,11 @@ from urllib.request import Request, urlopen
 
 from thalamus.archive import (
     ArchiveEntry,
+    FetchRecord,
     archive_bytes,
+    read_archived,
+    recall_fetch,
+    record_fetch,
     record_rejections,
     report_secrets,
     scan_for_secrets,
@@ -117,6 +121,11 @@ class DigestReport:
     # is reported, and a claim dropped quietly is the failure it exists to stop.
     repaired_kinds: tuple[tuple[int, str, str], ...] = ()
     rejected_claims: tuple[ClaimRejection, ...] = ()
+    # When the bytes came from a `--check` rather than this run's own request, when
+    # that check ran. Reported because "these are not bytes I just fetched" is a fact
+    # about what is being written, and the operator is the one who knows whether the
+    # document is likely to have moved since.
+    verified_at: datetime | None = None
 
     @property
     def truncated(self) -> bool:
@@ -747,13 +756,51 @@ class Preflight:
     payload: bytes
     text: str
     title: str
+    # When these bytes came from a `--check` instead of a fresh request, the time that
+    # check ran. None means this run fetched them.
+    verified_at: datetime | None = None
 
     @property
     def redirected(self) -> bool:
         return bool(self.origin) and self.origin != self.requested
 
 
-def preflight(location: str, *, scope: str) -> Preflight:
+# How long a `--check` speaks for. The window exists because a URL is not a document:
+# it serves different bytes over time, and an ingest that silently used month-old bytes
+# would be the same silent-wrong-document failure the check exists to catch. A day
+# covers checking a batch and writing it; past that the address is asked again.
+_VERIFIED_WINDOW_SECONDS = 24 * 60 * 60
+
+
+def _archive_suffix(payload: bytes) -> str:
+    """One rule for how retained bytes are named, so the read cannot miss the write."""
+    return ".txt" if not payload.startswith(b"<") else ".html"
+
+
+def _verified_bytes(location: str) -> tuple[bytes, FetchRecord] | None:
+    """Bytes a recent `--check` already fetched and gated, or None to go and get them.
+
+    Reuse is the safer half of the trade, not just the cheaper one. The gap between
+    checking a source and writing it is exactly where the document can change, so a
+    `--write` that re-requests may ingest something other than what was confirmed.
+    Reusing the checked bytes closes that gap; the window above bounds how long it
+    stays closed, and the CLI says out loud when it happens.
+
+    A missing archive file falls back to a fetch — the archive may have been moved or
+    cleared out from under the index, and that costs a request. Bytes that are present
+    but no longer hash to their name do *not* fall back: `read_archived` raises, and
+    corrupt retained evidence has to be loud.
+    """
+    record = recall_fetch(location)
+    if record is None or record.age_seconds() > _VERIFIED_WINDOW_SECONDS:
+        return None
+    try:
+        return read_archived(record.content_hash, suffix=record.suffix), record
+    except OSError:
+        return None
+
+
+def preflight(location: str, *, scope: str, fresh: bool = False) -> Preflight:
     """Address → gate → retain → text. Every step of `ingest()` that precedes the model.
 
     The order is load-bearing at three points, and it is the same order either way.
@@ -761,18 +808,36 @@ def preflight(location: str, *, scope: str) -> Preflight:
     URL and refusing costs not even a request. Then the allowlist gate, first among the
     things that spend something. Then archive before text, because extraction is
     reversible against retained bytes and a fetch that was never retained is not.
+
+    `fresh` goes to the network and indexes what comes back. `--check` sets it because
+    a check answered out of an index would not be a check; `--refetch` sets it to ask
+    an address again. Left unset — the ordinary ingest — recent indexed bytes are
+    reused, so what gets written is what was confirmed.
+
+    The gate runs on either path. A reused origin is re-checked against the manifest as
+    it stands *now*, so an allowlist edited since the check is the allowlist in force.
     """
     # Ahead of the fetch, unlike the allowlist gate below: what an abstract page is
     # can be read off the address, so refusing costs not even a request.
     check_location(location)
-    fetched = fetch(location)
-    check_origin(fetched.origin, scope, requested=location)
-    payload = fetched.payload
-    entry = archive_bytes(payload, suffix=".txt" if not payload.startswith(b"<") else ".html")
+
+    verified = None if fresh else _verified_bytes(location)
+    if verified is not None:
+        payload, record = verified
+        origin, content_type, verified_at = record.origin, record.content_type, record.at
+    else:
+        fetched = fetch(location)
+        payload, origin, content_type = fetched.payload, fetched.origin, fetched.content_type
+        verified_at = None
+
+    check_origin(origin, scope, requested=location)
+    entry = archive_bytes(payload, suffix=_archive_suffix(payload))
     # Third-party bytes are the archive's least-trusted input. Reported, never
     # redacted — the same posture as a transcript: the archive holds evidence, and
-    # evidence that has been quietly rewritten is not evidence.
-    report_secrets(scan_for_secrets(payload), f"ingested document {fetched.origin}")
+    # evidence that has been quietly rewritten is not evidence. Run on the reuse path
+    # too: the finding is worth having at the moment something is written, and the
+    # scan is local.
+    report_secrets(scan_for_secrets(payload), f"ingested document {origin}")
 
     text = to_text(payload)
     if len(text) < 200:
@@ -780,14 +845,25 @@ def preflight(location: str, *, scope: str) -> Preflight:
             f"document reduced to {len(text)} chars of text — not enough to assert "
             "anything; the fetch is archived either way"
         )
+
+    if fresh:
+        record_fetch(
+            location=location,
+            origin=origin,
+            content_hash=entry.content_hash,
+            suffix=_archive_suffix(payload),
+            content_type=content_type,
+        )
+
     return Preflight(
         requested=location,
-        origin=fetched.origin,
-        content_type=fetched.content_type,
+        origin=origin,
+        content_type=content_type,
         entry=entry,
         payload=payload,
         text=text,
         title=document_title(payload),
+        verified_at=verified_at,
     )
 
 
@@ -814,13 +890,16 @@ def ingest(
     harness: str = "claude",
     title: str = "",
     known_entities: list[dict] | None = None,
+    refetch: bool = False,
 ) -> tuple[KnowledgeBatch, extraction.ExtractionRun, DigestReport]:
     """The full v0 path: fetch → gate → retain → extract → assemble. Contract checks
     and graph writes belong to the caller (the CLI).
 
     Everything up to the model call is `preflight()`, which `--check` runs on its own —
     the check and the ingest are the same code, so they cannot disagree about what a
-    source is.
+    source is. Where a recent check indexed this address, its bytes are what get
+    ingested, so what is written is what was confirmed; `refetch` asks the address
+    again instead.
 
     The gate reads the origin that answered, and it sits ahead of both irreversible
     steps — the archive write and the model pass — so a document from outside the
@@ -828,7 +907,7 @@ def ingest(
 
     `known_entities` rows carry name/kind/description from the scope's graph — names
     feed the prompt, the full shape feeds the batch backfill (see build_batch)."""
-    checked = preflight(location, scope=scope)
+    checked = preflight(location, scope=scope, fresh=refetch)
     entry, origin, text = checked.entry, checked.origin, checked.text
 
     known_names = [str(row["name"]) for row in known_entities or [] if row.get("name")]
@@ -959,4 +1038,5 @@ def ingest(
         dropped_entities=tuple(sorted(raw_declared - reconciled_entities)),
         repaired_kinds=repairs,
         rejected_claims=rejected,
+        verified_at=checked.verified_at,
     )

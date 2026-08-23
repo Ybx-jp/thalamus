@@ -87,9 +87,11 @@ Novelty claims are phrased "not found in the current scan", never a bare "novel"
   anchor document first, per-project `--feed`. **Check the source, then `--write`
   once**, with `thalamus ingest <doc> --scope <s> --check` — it runs the ingest path
   and stops at the model call, reporting the host that actually served the bytes, the
-  content-type and the document's own title for no model spend. Do not hand-build the
-  check out of `curl`, and do not use a run without `--write` as one: extraction runs
-  on that pass too and is thrown away, so it bills the model twice for one source.
+  content-type and the document's own title for no model spend. The `--write` that
+  follows within the day ingests the bytes the check verified rather than asking the
+  address again, so what lands is what you read. Do not hand-build the check out of
+  `curl`, and do not use a run without `--write` as one: extraction runs on that pass
+  too and is thrown away, so it bills the model twice for one source.
 - **A proposed thread close is reported with its title, a 1–2 sentence description,
   and its proposal id — all three, every time.** The operator approves these remotely
   and cannot inspect the ledger to find out what they are approving, so a bare

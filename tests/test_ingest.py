@@ -1154,7 +1154,7 @@ def test_the_document_url_in_the_endpoint_flag_is_refused_before_the_fetch(
 
     args = SimpleNamespace(
         location="", scope="literature", feed="manual", model=None, harness="claude",
-        title="", url="https://cs.uwaterloo.ca/~x/paper.pdf", check=False, write=True,
+        title="", url="https://cs.uwaterloo.ca/~x/paper.pdf", check=False, refetch=False, write=True,
     )
     with pytest.raises(SystemExit) as exit_info:
         cli._cmd_ingest(args)
@@ -1198,7 +1198,7 @@ def test_a_write_run_reaches_the_endpoint_before_it_bills_the_model(
     args = SimpleNamespace(
         location="https://arxiv.org/html/2401.00001", scope="literature", feed="manual",
         model=None, harness="claude", title="", url="ws://localhost:8182/gremlin",
-        check=False, write=True,
+        check=False, refetch=False, write=True,
     )
     with pytest.raises(SystemExit) as exit_info:
         cli._cmd_ingest(args)
@@ -1219,10 +1219,192 @@ def test_check_and_write_are_refused_together(tmp_path, monkeypatch, capsys):
     args = SimpleNamespace(
         location="https://arxiv.org/html/2401.00001", scope="literature", feed="manual",
         model=None, harness="claude", title="", url="ws://localhost:8182/gremlin",
-        check=True, write=True,
+        check=True, refetch=False, write=True,
     )
     with pytest.raises(SystemExit) as exit_info:
         cli._cmd_ingest(args)
 
     assert exit_info.value.code == 1
     assert "opposites" in capsys.readouterr().err
+
+
+# --- The fetch index: an ingest writes what the check verified --------------------
+
+
+def _counting_fetch(monkeypatch, payload, origin="http://127.0.0.1/paper", content_type="text/html"):
+    """Replace `fetch` with one that records how many times the network was reached."""
+    calls: list[str] = []
+
+    def _fetch(location):
+        calls.append(location)
+        return ingest_mod.Fetched(payload, origin, content_type)
+
+    monkeypatch.setattr(ingest_mod, "fetch", _fetch)
+    return calls
+
+
+_PAPER = (b"<html><head><title>Speculative Merging</title></head><body>"
+          + b"the paper's text goes on for a while " * 20 + b"</body></html>")
+
+
+def test_an_ingest_writes_the_bytes_the_check_verified(tmp_path, monkeypatch):
+    """
+    Scenario: `--check` a source, then ingest it
+
+    The gap between checking a source and writing it is where the document can change,
+    so a `--write` that re-requests may ingest something other than what was confirmed.
+    Reusing the checked bytes closes that gap; the saving of one request is the smaller
+    half of it.
+    """
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+
+    checked = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+    assert len(calls) == 1
+    assert checked.verified_at is None  # it fetched; it did not reuse
+
+    reused = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature")
+
+    assert len(calls) == 1, "the ingest asked the address again"
+    assert reused.verified_at is not None
+    assert reused.entry.content_hash == checked.entry.content_hash
+    assert reused.origin == checked.origin
+    assert reused.content_type == checked.content_type
+    assert reused.title == "Speculative Merging"
+
+
+def test_a_check_never_answers_out_of_the_index(tmp_path, monkeypatch):
+    """A check that did not reach the address is not a check."""
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+
+    ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+    second = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+
+    assert len(calls) == 2
+    assert second.verified_at is None
+
+
+def test_the_gate_runs_again_on_reused_bytes(tmp_path, monkeypatch):
+    """
+    Scenario: the allowlist is edited between the check and the ingest
+
+    The index supplies bytes, never permission. The origin is re-checked against the
+    manifest as it stands now, or an allowlist edit would apply to everything except
+    the documents already indexed — which is the set most likely to be the reason for
+    the edit.
+    """
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    _counting_fetch(monkeypatch, _PAPER)
+
+    ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+
+    (tmp_path / "experts" / "literature.yaml").write_text(
+        "scope: literature\nname: Lit\n"
+        "claim_kinds: [literature/finding, literature/technique]\n"
+        "allowlist: [arxiv.org]\n"
+    )
+
+    with pytest.raises(IngestError, match="not allowlisted"):
+        ingest_mod.preflight("http://127.0.0.1/paper", scope="literature")
+
+
+def test_an_indexed_check_speaks_only_for_a_day(tmp_path, monkeypatch):
+    """
+    A URL is not a document — it serves different bytes over time. Past the window the
+    address is asked again, because silently ingesting month-old bytes would be the
+    wrong-document failure the check exists to catch.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from thalamus.archive import index_dir, recall_fetch
+
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+    ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+
+    stale = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    index = index_dir() / "fetched.jsonl"
+    index.write_text(index.read_text().replace(recall_fetch("http://127.0.0.1/paper").at
+                                               .strftime("%Y-%m-%dT%H:%M:%SZ"), stale))
+
+    reused = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature")
+
+    assert len(calls) == 2
+    assert reused.verified_at is None
+
+
+def test_refetch_makes_an_ingest_ask_the_address_again(tmp_path, monkeypatch):
+    """The escape hatch: a document known to have moved inside the window."""
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+    monkeypatch.setattr(
+        extraction, "run_extraction", lambda *a, **k: extraction.ExtractionRun(text="")
+    )
+    monkeypatch.setattr(extraction, "parse_extraction", lambda _t: {
+        "title": "Speculative Merging",
+        "claims": [{"description": "A finding.", "kind": "literature/finding"}],
+        "entities": [],
+    })
+
+    ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+
+    _b, _r, reusing = ingest_mod.ingest("http://127.0.0.1/paper", scope="literature")
+    assert len(calls) == 1 and reusing.verified_at is not None
+
+    _b, _r, refetched = ingest_mod.ingest(
+        "http://127.0.0.1/paper", scope="literature", refetch=True
+    )
+    assert len(calls) == 2
+    assert refetched.verified_at is None
+
+
+def test_a_missing_archive_file_costs_a_request_not_the_ingest(tmp_path, monkeypatch):
+    """The archive can be moved or cleared out from under the index. That is a fetch."""
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+
+    checked = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+    checked.entry.path.unlink()
+
+    reused = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature")
+
+    assert len(calls) == 2
+    assert reused.verified_at is None
+
+
+def test_the_index_is_last_writer_wins_and_survives_a_corrupt_row(tmp_path):
+    """
+    A URL re-fetched today is not the URL fetched last month, so the newest row wins.
+    A malformed row costs a re-fetch, never an ingest — the index is an optimization.
+    """
+    from thalamus.archive import recall_fetch, record_fetch
+
+    for content_hash in ("aaa", "bbb"):
+        record_fetch(location="https://x.example/p", origin="https://x.example/p",
+                     content_hash=content_hash, suffix=".html", content_type="text/html",
+                     base=tmp_path)
+
+    assert recall_fetch("https://x.example/p", base=tmp_path).content_hash == "bbb"
+    assert recall_fetch("https://y.example/other", base=tmp_path) is None
+
+    index = tmp_path / "fetched.jsonl"
+    index.write_text(index.read_text() + "{not json at all\n")
+    assert recall_fetch("https://x.example/p", base=tmp_path).content_hash == "bbb"
+
+    assert recall_fetch("https://x.example/p", base=tmp_path / "nowhere") is None
+
+
+def test_the_index_lives_beside_the_archive_not_inside_it(tmp_path, monkeypatch):
+    """
+    `arch.growth` walks the archive root and counts everything unreferenced by a Source
+    as stray retained bytes. An index file there would be counted as evidence for a
+    write that failed, which it is not.
+    """
+    from thalamus.archive import archive_dir, index_dir
+
+    monkeypatch.setenv("THALAMUS_ARCHIVE_DIR", str(tmp_path / "archive"))
+
+    assert index_dir() == tmp_path / "index"
+    assert archive_dir() not in index_dir().parents
+    assert index_dir() != archive_dir()
