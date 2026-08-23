@@ -486,3 +486,124 @@ def _timestamp(value) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Live status
+#
+# Claude Code answers "what is this session doing" from a descriptor its own runtime
+# writes; codex publishes nothing of the kind, and the repo's hook table has no
+# turn-*end* event to synthesize one from — `SessionStart`, `SessionEnd`,
+# `UserPromptSubmit`, `PreToolUse` and `PostToolUse` can all say a turn began and none
+# can say it finished. A status bracketed by those events alone would enter `busy` and
+# never leave it.
+#
+# The rollout carries the missing half. `task_started` and `task_complete` are
+# `event_msg` rows codex writes from inside its own event loop, timestamped, one pair
+# per turn — a first-party record of the turn boundary rather than a state we infer
+# from the outside. Measured 2026-08-22 on codex-cli 0.148.0: a completed TUI turn ends
+# `… token_count, task_complete`, and the pair brackets the turn exactly.
+#
+# So the reader here is not a heartbeat and not a screen read. It reports what codex
+# recorded, and reports UNKNOWN whenever the record does not reach.
+
+#: The status vocabulary, which is `harness/dispatch.py`'s and not a second one.
+#: Spelled rather than imported because `dispatch` imports half the harness and this
+#: module is on the extraction path; `tests/test_codex_liveness.py` asserts the two
+#: agree, so the duplication cannot drift silently.
+CODEX_IDLE = "idle"
+CODEX_BUSY = "busy"
+
+#: No turn boundary in reach. Distinct from `idle` on purpose: "codex recorded that it
+#: finished" and "we could not find out" are different facts, and collapsing them is
+#: the inversion the readiness design refuses — absence must never render as rest.
+CODEX_UNKNOWN = ""
+
+#: How much of the rollout's tail to read. A rollout runs to megabytes over a long
+#: session and the console polls this per row per refresh, so the whole file is not an
+#: option. 256 KiB clears the largest single turn observed on this box (a 2.6 MB
+#: rollout whose final turn was 41 KiB) with room to spare; when it does not reach a
+#: boundary the answer is UNKNOWN, which is the honest outcome rather than a fallback.
+_TAIL_BYTES = 256 * 1024
+
+
+def live_status(path: Path, *, tail_bytes: int = _TAIL_BYTES) -> tuple[str, datetime | None]:
+    """(status, since) for a codex session, read from its rollout's tail.
+
+    `status` is `busy` when the last turn boundary in reach is a `task_started`, `idle`
+    when it is a `task_complete`, and `CODEX_UNKNOWN` when the tail holds neither — an
+    unwritten rollout, a session still in its first turn, a file that is not there, or
+    a turn longer than the window read. `since` is that boundary's timestamp, or None.
+
+    Liveness is deliberately *not* answered here. Whether the process still exists is a
+    question tmux already answers for the console (`#{pane_dead}`) and `/proc` answers
+    for `quick.live_sessions`; a rollout is a record of what happened, and its last row
+    says the same thing whether the session is running or was killed an hour ago. A
+    caller that wants "alive and idle" must ask both, and the two must not be fused
+    into one field that reads as either.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return CODEX_UNKNOWN, None
+
+    try:
+        with path.open("rb") as handle:
+            if size > tail_bytes:
+                handle.seek(size - tail_bytes)
+                # The seek lands mid-record; that partial first line is dropped rather
+                # than parsed, so a truncated row never decodes into a boundary.
+                handle.readline()
+            blob = handle.read()
+    except OSError:
+        return CODEX_UNKNOWN, None
+
+    status, since = CODEX_UNKNOWN, None
+    for line in blob.splitlines():
+        if b"task_started" not in line and b"task_complete" not in line:
+            # The substring test is a filter, never the decision: `task_complete` also
+            # occurs inside message text, so a line that passes it is still parsed and
+            # checked structurally below. It exists because JSON-decoding every row of
+            # a 256 KiB tail on every console poll is the cost this avoids.
+            continue
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(record, dict) or record.get("type") != "event_msg":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        kind = payload.get("type")
+        if kind == "task_started":
+            status, since = CODEX_BUSY, _timestamp(record.get("timestamp"))
+        elif kind == "task_complete":
+            status, since = CODEX_IDLE, _timestamp(record.get("timestamp"))
+    return status, since
+
+
+def rollout_path(session_id: str, home: Path | None = None) -> Path | None:
+    """The rollout a codex session writes, located by id, or None.
+
+    `console/transcript.transcript_path` answers the same question for Claude Code and
+    cannot answer it here: it looks under `~/.claude/projects/<slug>/`, a tree keyed by
+    the session's working directory. Codex partitions by *date* instead
+    (`$CODEX_HOME/sessions/YYYY/MM/DD/`), and a session's cwd appears nowhere in the
+    path — so the directory a caller knows is no help and the id in the filename is the
+    whole of the join.
+
+    The glob is bounded to the date layout rather than a full `rglob`: a session's
+    rollout is always exactly three levels down, and walking the whole tree to find it
+    would put every archived day on the path of a console poll.
+    """
+    if not session_id:
+        return None
+    root = sessions_root(home)
+    if not root.is_dir():
+        return None
+    # Newest first: a resumed session can leave more than one rollout carrying the same
+    # id, and the live one is the one still being appended to.
+    found = sorted(root.glob(f"*/*/*/{_ROLLOUT_PREFIX}*{session_id}.jsonl"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    return found[0] if found else None

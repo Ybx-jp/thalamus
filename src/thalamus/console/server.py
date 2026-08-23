@@ -378,6 +378,66 @@ def _record_forced_kill(who: dict, op: str) -> None:
         pass
 
 
+#: session_id -> its rollout path, so the console's poll does not re-glob the codex
+#: sessions tree once per codex row per refresh. A rollout's path is fixed for the
+#: life of the session, so a hit never goes stale; a miss is not cached, because the
+#: file a session has not written yet is one a later poll must be able to find.
+_CODEX_ROLLOUTS: dict[str, Path] = {}
+
+
+def _attach_codex_activity(windows: list[dict]) -> None:
+    """Fill the liveness half of every codex row from its rollout, in place.
+
+    Codex is the harness that publishes no session descriptor, which is why these rows
+    read `not in reach` on a console that only knows how to look for one. Its rollout
+    carries the same fact in a different place: `task_started` and `task_complete` are
+    written by codex from inside its own event loop, one pair per turn, so the last
+    boundary in the file is what the session is doing.
+
+    Only `activity` is filled. `blocked` stays None — see `attach_blocked` on why that
+    is *not known* rather than *not blocked*, and on why the record's own shape keeps
+    the gap from reading as reassurance.
+
+    A row is left untouched — and so keeps `observed=False` — whenever the rollout does
+    not answer: no package to read it with, no session id, no file yet (codex's
+    SessionStart fires at the first submitted turn, so a spawned-but-unused window has
+    written nothing), or a tail holding no turn boundary. Absence is never rendered as
+    rest.
+    """
+    codex_rows = [w for w in windows if w.get("harness") == "codex"]
+    if not codex_rows:
+        return
+    try:
+        from thalamus.harness import codex_transcripts
+    except ImportError:
+        return  # no package around this console: the rows stay unobserved
+    for w in codex_rows:
+        session_id = w.get("session_id") or ""
+        if not session_id:
+            continue
+        path = _CODEX_ROLLOUTS.get(session_id)
+        if path is None or not path.is_file():
+            try:
+                path = codex_transcripts.rollout_path(session_id)
+            except OSError:
+                path = None
+            if path is None:
+                continue
+            _CODEX_ROLLOUTS[session_id] = path
+        try:
+            status, since = codex_transcripts.live_status(path)
+        except OSError:
+            continue
+        if not status:
+            continue  # the tail reached no boundary: we could not find out
+        w["observed"] = True
+        w["activity"] = status
+        if status == codex_transcripts.CODEX_BUSY and since is not None:
+            # The same rule the descriptor path follows: only `busy` carries a clock,
+            # because an elapsed on every idle row is motion on most rows at once.
+            w["activity_since"] = since.timestamp()
+
+
 def attach_blocked(windows: list[dict]) -> None:
     """Mark the windows whose session is stopped waiting on a human, in place.
 
@@ -420,11 +480,29 @@ def attach_blocked(windows: list[dict]) -> None:
     knows anything about that session's state, and the row's confident half is what
     the pin ledger supplies (name, project, `started`).
 
-    `blocked` is None exactly when `observed` is False, and `activity` is empty on
-    every unobserved row. Observability travels as one fact about the row rather than
-    as an absence repeated across each field: they are one lookup written from a
-    single branch and cannot disagree, so `observed` is the one to branch on. A
-    client that had to reconcile them would be a client computing state.
+    `activity` is empty on every unobserved row, and `blocked` is None there too.
+    Observability travels as one fact about the row rather than as an absence repeated
+    across each field: they are one lookup written from a single branch and cannot
+    disagree, so `observed` is the one to branch on. A client that had to reconcile
+    them would be a client computing state.
+
+    **`blocked` is None on an observed codex row, and that is not a contradiction.**
+    The two halves come from different evidence and only Claude Code publishes both.
+    Its descriptor carries `status`, which its runtime writes from inside its own event
+    loop and which names `waiting` directly. Codex publishes no descriptor at all, so a
+    codex row's activity is read from the turn boundaries in its own rollout
+    (`codex_transcripts.live_status`) — a first-party record of when a turn began and
+    ended, and silent on whether an approval prompt is up inside one. So `blocked` on
+    such a row means *not known*, never *not blocked*, and only a truthy `blocked` is
+    ever a claim.
+
+    What keeps that gap from being a false reassurance is the shape of the record
+    rather than a promise: an approval prompt can only be up *mid-turn*, and mid-turn
+    is exactly when the last boundary is a `task_started` — so a codex session holding
+    one renders `busy`, and the elapsed beside it is the finding. It cannot render
+    `idle`, because `idle` requires a `task_complete` that a held prompt has not
+    reached. The row understates a stuck session as a long-running one; it never
+    reports it as resting.
     """
     for w in windows:
         w["observed"] = False
@@ -435,11 +513,14 @@ def attach_blocked(windows: list[dict]) -> None:
     dispatch = dispatch_module()
     if dispatch is None:
         return
+    _attach_codex_activity(windows)
     try:
         live = {s.session_id: s for s in dispatch.quick.live_sessions()}
     except Exception:  # noqa: BLE001 — an unreadable sessions dir is "we cannot know"
         return
     for w in windows:
+        if w["observed"]:
+            continue  # already answered from the rollout: codex writes no descriptor
         session = live.get(w.get("session_id") or "")
         if session is None:
             continue  # no descriptor in reach: the row stays unobserved
