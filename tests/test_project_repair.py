@@ -79,7 +79,7 @@ def test_a_directory_name_is_disproved_and_a_repo_name_is_not(tmp_path):
     `$HOME`, which exists and is not a checkout
 
     The whole migration turns on telling those apart, and neither is distinguishable
-    from the value alone — `ybx` and `resumes` are equally directory-shaped, and only
+    from the value alone — `op` and `resumes` are equally directory-shaped, and only
     the recovered working directory says one belongs to a repo and the other does not.
     """
     repo = _checkout(tmp_path / "myrepo")

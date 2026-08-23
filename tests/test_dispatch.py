@@ -21,7 +21,7 @@ def _descriptor(sessions_dir, scope, session_id, pid, status, updated_at=1000):
     (sessions_dir / f"{pid}.json").write_text(json.dumps({
         "sessionId": session_id,
         "pid": pid,
-        "cwd": "/home/ybx/code/thalamus",
+        "cwd": "/home/op/code/thalamus",
         "agent": f"thalamus-{scope}",
         "name": f"alpha-{scope}",
         "status": status,
@@ -279,7 +279,7 @@ def _main_member(room):
     sessions = room["config_dir"] / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
     (sessions / "106.json").write_text(json.dumps({
-        "sessionId": "sid-main", "pid": 106, "cwd": "/home/ybx/code/thalamus",
+        "sessionId": "sid-main", "pid": 106, "cwd": "/home/op/code/thalamus",
         "name": "alpha-main", "status": "idle", "updatedAt": 1000,
     }))
     room["pins_file"].write_text(

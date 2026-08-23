@@ -62,7 +62,7 @@ def run() -> Finding | None:
         (sessions / "102.json").write_text(json.dumps({
             "sessionId": "sid-main",
             "pid": 102,
-            "cwd": "/home/ybx/code/thalamus",
+            "cwd": "/home/op/code/thalamus",
             "name": f"{_ROOM}-main",
             "status": "idle",
             "updatedAt": 1000,
