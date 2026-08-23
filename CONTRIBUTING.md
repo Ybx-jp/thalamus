@@ -18,6 +18,15 @@ uv run thalamus init          # only if you want the harness armed in your own e
 You do not need `thalamus init` to develop or run the tests. It wires hooks into your
 editor at user scope; skip it if you only want to build and test.
 
+`.python-version` pins CPython 3.12 for the checkout, and uv reads it, so every
+worktree resolves the same interpreter without being told. The pin is load-bearing for
+the `voice` extra: its `spacy` dependency publishes no wheel above 3.13, so
+`uv sync --all-extras` fails outright on a newer one. It also keeps a measurement taken
+in one worktree comparable to the same measurement in another.
+
+The package itself supports Python >=3.11 (`requires-python`); the pin is this
+checkout's development interpreter, not the range Thalamus installs into.
+
 ## Verification
 
 ```bash
