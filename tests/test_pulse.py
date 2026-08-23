@@ -11,6 +11,8 @@ by the data layer, so that is what gets pinned here.
 import json
 from pathlib import Path
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from thalamus.pulse import metrics
@@ -73,6 +75,23 @@ def _ledgers(tmp_path: Path) -> dict:
     )
     conditioning = tmp_path / "conditioning"
     conditioning.mkdir()
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    (profiles / "2026-07.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-07-15T10:05:00Z",
+                "origin": "mcp",
+                "scope": "main",
+                "surface": "gremlin-python",
+                "shape": "v.haslabel.valuemap",
+                "calls": 4,
+                "total_ms": 40.0,
+                "ms": [8.0, 9.0, 11.0, 12.0],
+                "tap_ns": 4000,
+            }
+        )
+    )
     pins = tmp_path / "pins.jsonl"
     pins.write_text(
         json.dumps({"session_id": "sess-1", "scope": "homelab", "ts": "2026-07-15T09:59:00Z"})
@@ -81,6 +100,7 @@ def _ledgers(tmp_path: Path) -> dict:
         "traces_base": traces,
         "guards_base": guards,
         "conditioning_base": conditioning,
+        "profiles_base": profiles,
         "pins_file": pins,
     }
 
@@ -95,7 +115,9 @@ def test_live_snapshot_is_cost_only_and_flags_the_guardrail(tmp_path):
     - the miss is an event class, not an error state
     - the pinned scope from the ledger reaches the feed rows
     """
-    live = live_snapshot(**_ledgers(tmp_path))
+    ledgers = _ledgers(tmp_path)
+    ledgers.pop("profiles_base")  # the span tap is report-side; the 5s feed never reads it
+    live = live_snapshot(**ledgers)
 
     assert [e["ts"] for e in live["feed"]] == sorted(
         (e["ts"] for e in live["feed"]), reverse=True
@@ -131,6 +153,15 @@ def test_report_without_graph_is_tap_only_not_empty(tmp_path):
     assert report["conditioning"]["measured"] is False
     assert any("dial" in d or "≥2 terms" in d for d in report["disclosures"]["dials"])
     assert "layer 1" in report["disclosures"]["standing"]
+
+    # Query cost is span-ledger side: it survives the graph being down, and it
+    # arrives with the spread and its own measured overhead rather than a mean.
+    cost = report["query_cost"]
+    assert cost["calls"] == 4 and cost["shapes"][0]["shape"] == "v.haslabel.valuemap"
+    assert cost["shapes"][0]["p50"] == 9.0 and cost["shapes"][0]["max"] == 12.0
+    assert "mean" not in cost["shapes"][0]
+    assert cost["tap_overhead_pct"] == pytest.approx(0.01)
+    assert "one machine" in report["disclosures"]["query_cost"]
 
 
 def test_trend_and_sessions_price_verdicts_with_absolutes(tmp_path):

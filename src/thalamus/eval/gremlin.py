@@ -34,6 +34,7 @@ from pathlib import Path
 
 from thalamus.eval.traces import TraceEvent, load_events
 from thalamus.substrate.query import run_query
+from thalamus.substrate.spans import step_shape
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 
@@ -77,7 +78,6 @@ _SMOKE_DENIED = (
 # shipped 2026-07-16, which bounds their admission for temporal reuse tagging.
 _RECALL_STRATEGY_ADMITTED = datetime.fromisoformat("2026-07-16T00:00:00+00:00")
 
-_STEP_RE = re.compile(r"\.\s*([A-Za-z_]+)\s*\(")
 _VALIDATED_RE = re.compile(r"\*\*Validated:\*\*\s*(\d{4}-\d{2}-\d{2})")
 
 
@@ -149,13 +149,13 @@ def load_guard_events(base: Path | None = None, guard: str = "") -> list[GuardEv
 def step_fingerprint(text: str) -> tuple[str, ...]:
     """The ordered gremlin step sequence, dialect-folded.
 
-    `has_label` and `hasLabel` fold to the same token, so a fingerprint matches
-    across the gremlin-python / gremlin-lang split. Quoting, arguments, and
-    whitespace are invisible — reuse is shape reuse (adapting a recipe's
-    arguments is still reuse; DAIL-SQL's example selection matches on query
-    skeletons for the same reason).
+    Reuse is shape reuse — adapting a recipe's arguments is still reuse, which is
+    why DAIL-SQL's example selection matches on query skeletons too. The folding
+    rule itself is `substrate.spans.step_shape`, shared with the span tap so that a
+    shape this module calls recipe-derived and a shape the tap prices are the same
+    key.
     """
-    return tuple(m.lower().replace("_", "") for m in _STEP_RE.findall(text))
+    return step_shape(text)
 
 
 @dataclass(frozen=True)

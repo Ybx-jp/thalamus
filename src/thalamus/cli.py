@@ -20,6 +20,7 @@ from thalamus.console.server import DEFAULT_PORT as CONSOLE_PORT
 from thalamus.contract.conformance import check_session
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval import snapshots
+from thalamus.eval.profile import DEFAULT_REPEAT as PROFILE_REPEAT
 from thalamus.harness import (
     agents,
     codex_transcripts,
@@ -568,6 +569,36 @@ def _main():
         "--staged", action="store_true",
         help="Show queries the PostToolUse hook staged for RECIPES.md instead of "
              "smoke-running the store",
+    )
+
+    eval_profile_parser = eval_sub.add_parser(
+        "profile",
+        help="Gremlin query cost: what each traversal shape costs in wall time, and "
+        "where a single query spends it step by step",
+    )
+    eval_profile_parser.add_argument(
+        "--profiles", type=Path, default=None,
+        help="Span ledger directory (default: ~/.thalamus/profiles)",
+    )
+    eval_profile_parser.add_argument(
+        "--top", type=int, default=10, help="How many costliest shapes to list"
+    )
+    eval_profile_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    eval_profile_parser.add_argument(
+        "--query",
+        default="",
+        help="Step-profile one read-only gremlin-lang traversal instead of reading the "
+        "ledger. Server-side per-step metrics via TinkerPop's profile(); profiling "
+        "impedes the traversal, so read the steps against each other.",
+    )
+    eval_profile_parser.add_argument(
+        "--corpus",
+        action="store_true",
+        help="Step-profile every gremlin-lang recipe the skills store, slowest first",
+    )
+    eval_profile_parser.add_argument(
+        "--repeat", type=int, default=None,
+        help=f"Timed runs per query for --query/--corpus (default: {PROFILE_REPEAT})",
     )
 
     eval_conditioning_parser = eval_sub.add_parser(
@@ -3023,6 +3054,22 @@ def _cmd_eval(args, eval_parser):
         print(render_smoke(results))
         if any(not r.ok for r in results):
             sys.exit(1)
+    elif getattr(args, "eval_command", None) == "profile":
+        from thalamus.eval.profile import (
+            profile_corpus,
+            profile_query,
+            profile_report,
+            render_corpus,
+            render_query_profile,
+        )
+
+        repeat = args.repeat if args.repeat is not None else PROFILE_REPEAT
+        if args.query:
+            print(render_query_profile(profile_query(args.url, args.query, repeat=repeat)))
+        elif args.corpus:
+            print(render_corpus(profile_corpus(args.url, repeat=repeat)))
+        else:
+            print(profile_report(base=args.profiles, top=args.top).render(top=args.top))
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report
 

@@ -33,10 +33,12 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 from gremlin_python.driver.client import Client
 
 from thalamus.contract.ontology import CORE_EDGES, CORE_NODES
+from thalamus.substrate import spans
 
 QUERY_TIMEOUT_MS = 10_000
 MAX_RESULTS = 50
@@ -151,6 +153,7 @@ def run_query(url: str, query: str) -> str:
         return rejection
 
     client = Client(url, "g")
+    started = time.perf_counter()
     try:
         result_set = client.submit(
             query, request_options={"evaluationTimeout": QUERY_TIMEOUT_MS}
@@ -159,6 +162,13 @@ def run_query(url: str, query: str) -> str:
     except Exception as exc:  # server-side parse/eval errors come back as text
         return f"Query failed: {_clip(str(exc), 500)}"
     finally:
+        # Timed here rather than at the driver seam `connect()` wraps: this surface
+        # holds a `Client` of its own, and it also holds the query *text*, so the
+        # shape it records is read off what was submitted rather than reconstructed.
+        # A failed query is still a cost the caller paid, so it is recorded too.
+        spans.record(
+            "memory_query", spans.step_shape(query), (time.perf_counter() - started) * 1000.0
+        )
         client.close()
 
     return render_rows(rows)

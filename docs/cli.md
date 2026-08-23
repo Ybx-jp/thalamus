@@ -175,7 +175,29 @@ thalamus eval pins                 # per-expert routing signal: pinned vs consul
 thalamus eval conditioning         # per-firing behavioural join on injected reminders
 thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
 thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only
+thalamus eval profile              # gremlin query cost: wall time per traversal shape
 ```
+
+`eval profile` reads the span tap: every traversal issued through `connect()` and
+every `memory_query` is timed at its own seam and aggregated by traversal shape into
+`~/.thalamus/profiles/`, flushed once per process. The report ranks shapes by total
+time and gives each one its call count and p50/p95/max, never a bare mean; it also
+states the tap's own measured overhead rather than calling it negligible. Set
+`THALAMUS_PROFILE=0` to stop recording.
+
+Two flags switch it from wall time to the server's own per-step metrics, via
+TinkerPop's `profile()`:
+
+```bash
+thalamus eval profile --query "g.V().hasLabel('Trace').outE('RETURNS')..."
+thalamus eval profile --corpus     # every gremlin-lang recipe the skills store
+```
+
+Those milliseconds are read against each other and never against a span-ledger
+figure — profiling impedes the traversal it measures, which is why it is on demand
+only. Element counts sit beside the durations because the counts are the half of a
+reading that transfers off this machine. Nothing here gates: with one machine and
+small n, a regression threshold would be a false-alarm generator.
 
 Layer 2 — counterfactual campaigns that ask whether retrieval mattered (the task
 battery, the graded oracle, arms, corpora, calibration, the gold label set, rakes) —
