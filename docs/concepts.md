@@ -238,6 +238,12 @@ evidence-first, dry-run by default, `--write` to persist. The document is co-ind
 as `Chunk` vertices beside the claims drawn from it, so a claim can be traced back to
 the passage it came from.
 
+The model pass is the only irreversible spend on the path, so everything that can be
+known before it is. `--check` runs the path and stops there, which is how a source is
+verified without paying for it; the allowlist gate sits ahead of both the archive and
+the model; and the contract refuses a batch one claim at a time, so a single mistyped
+claim costs itself rather than the extraction it arrived in.
+
 Feeding a document *is* the curation decision. There is no crawler racing ahead of
 demand.
 

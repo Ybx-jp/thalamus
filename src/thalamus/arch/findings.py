@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from thalamus.arch.extractor import DependencyGraph
 from thalamus.arch.metrics import Metrics
 from thalamus.arch.model import ArchModel
+from thalamus.arch.routes import RouteGraph
 
 # Why a finding was raised, which decides who it is addressed to. A design finding is
 # about the code and is the architect's to answer; an understanding finding is about the
@@ -41,6 +42,39 @@ class Finding:
     description: str
     category: str = DESIGN
     artifacts: tuple[str, ...] = field(default_factory=tuple)
+
+
+def route_findings(routes: RouteGraph) -> list[Finding]:
+    """What the route channel asserts about the client/server boundary.
+
+    Both findings are stated against the *declared* client and server sets, never
+    against the system: a route no scanned client calls may be called by something the
+    policy does not scan — the voice daemon, a shell script, a second front end — so the
+    sentence says "no scanned client" and means it. Overstating it would turn a policy
+    boundary into a false accusation of dead code.
+    """
+    found: list[Finding] = []
+    for path, route in routes.unmatched_calls():
+        found.append(
+            Finding(
+                description=(
+                    f"{path} calls {route}, which no scanned server defines."
+                ),
+                category=DESIGN,
+                artifacts=(path,),
+            )
+        )
+    for path, route in routes.uncalled_routes():
+        found.append(
+            Finding(
+                description=(
+                    f"{path} defines {route}, which no scanned client calls."
+                ),
+                category=DESIGN,
+                artifacts=(path,),
+            )
+        )
+    return found
 
 
 def findings(graph: DependencyGraph, metrics: Metrics, model: ArchModel) -> list[Finding]:
@@ -81,7 +115,11 @@ def findings(graph: DependencyGraph, metrics: Metrics, model: ArchModel) -> list
     for note in graph.unresolved:
         found.append(
             Finding(
-                description=f"Scanner could not read a module: {note}.",
+                # "Reach", not "could not read": an unparsed module is one way the walk
+                # falls short of the tree, and a declared file the matcher found nothing
+                # in is another. Both are gaps in what the scan saw; only the first is a
+                # read failure, and saying so of both was false of the second.
+                description=f"Limit of the scan's reach: {note}.",
                 category=UNDERSTANDING,
                 artifacts=(note.split(":")[0],),
             )

@@ -24,22 +24,36 @@ including credentials — and a `.gitignore` is one `git add -f` away from a bad
 
 from thalamus.archive.store import (
     DEFAULT_ARCHIVE_DIR,
+    FETCH_INDEX,
+    REJECT_LOG,
     SECRET_LOG,
     ArchiveEntry,
+    FetchRecord,
     archive_bytes,
     archive_dir,
+    index_dir,
     read_archived,
+    recall_fetch,
+    record_fetch,
+    record_rejections,
     report_secrets,
     scan_for_secrets,
 )
 
 __all__ = [
     "DEFAULT_ARCHIVE_DIR",
+    "FETCH_INDEX",
+    "REJECT_LOG",
     "SECRET_LOG",
     "ArchiveEntry",
+    "FetchRecord",
     "archive_bytes",
     "archive_dir",
+    "index_dir",
     "read_archived",
+    "recall_fetch",
+    "record_fetch",
+    "record_rejections",
     "report_secrets",
     "scan_for_secrets",
 ]

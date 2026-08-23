@@ -59,6 +59,7 @@ CASE_MODULES = (
     "qe.cases.tool_write_freedom",
     "qe.cases.emptiness_predicate",
     "qe.cases.arch_extractor",
+    "qe.cases.arch_route_channel",
     "qe.cases.expectation_additions",
     "qe.cases.install_consent",
     "qe.cases.uninstall_roundtrip",

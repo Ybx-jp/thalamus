@@ -259,7 +259,25 @@ def _main():
         "machine actually has.",
     )
     ingest_parser.add_argument("--title", default="", help="Override the extracted title")
-    ingest_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    ingest_parser.add_argument(
+        "--url", default=DEFAULT_URL,
+        help="Gremlin endpoint (ws:// or wss://). The document to ingest is the "
+        "positional argument, not this.",
+    )
+    ingest_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify the source and stop before the model call: same fetch, same "
+        "User-Agent, same redirects, same allowlist gate, same text extraction. "
+        "Reports the final origin, content-type, title and the opening text.",
+    )
+    ingest_parser.add_argument(
+        "--refetch",
+        action="store_true",
+        help="Ask the address again instead of ingesting the bytes a recent --check "
+        "verified. Without it, a check within the last day supplies the bytes, so what "
+        "is written is what was checked.",
+    )
     ingest_parser.add_argument(
         "--write",
         action="store_true",
@@ -1896,12 +1914,84 @@ def _open_threads(graph, scope: str, project: str) -> list[dict]:
     ]
 
 
+_PREFLIGHT_EXCERPT = 400
+
+
+def _report_preflight(args, ingest_mod):
+    """`thalamus ingest <doc> --scope <s> --check` — everything short of the model call.
+
+    Deliberately not a reimplementation of the checks: it calls `ingest.preflight`, the
+    same function `ingest()` calls, so the check and the ingest cannot disagree about
+    which host served the bytes or whether the allowlist admits it. A prose procedure
+    could not hold that parity — the `curl` incantation it replaces went through three
+    revisions in one day, each against a measurement, and still stopped a redirect hop
+    short of `urlopen` and sent a different User-Agent.
+
+    Exits non-zero on refusal, because this is what a batch script gates on.
+    """
+    try:
+        checked = ingest_mod.preflight(args.location, scope=args.scope, fresh=True)
+    except ingest_mod.IngestError as e:
+        print(f"CHECK FAILED: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Requested:    {checked.requested}")
+    print(f"Served by:    {checked.origin}" + ("  (redirected)" if checked.redirected else ""))
+    # A local path is not allowlisted and never was — hand-feeding a file *is* the
+    # curation decision, so the gate does not consult the manifest at all. Reporting a
+    # pass here would claim the manifest admitted something it never saw.
+    if checked.origin.startswith(("http://", "https://")):
+        print(f"Allowlisted:  yes — `{args.scope}` admits this origin")
+    else:
+        print("Allowlisted:  n/a — a local file is hand-fed, which is the curation decision")
+    print(f"Content-Type: {checked.content_type or '(none reported)'}")
+    print(f"Retained:     {checked.entry.uri} ({checked.entry.byte_size:,} bytes)")
+    print(f"Text:         {len(checked.text):,} chars")
+    # The title is what the check exists to confirm, and it is the one thing a HEAD
+    # request cannot answer. When the bytes do not carry one — a PDF whose producer left
+    # the metadata field empty or filled it with a temp filename — the opening text is
+    # the answer, so it is printed either way rather than only on the failure.
+    print(f"Title:        {checked.title or '(none in the document metadata)'}")
+    excerpt = checked.text[:_PREFLIGHT_EXCERPT]
+    print(f"\nOpening {len(excerpt):,} chars, as the extractor would read them:\n  {excerpt}")
+    print(
+        "\nCHECKED — nothing extracted, no model called. This is the ingest path up to "
+        "the model,\nso a --write run within the day ingests these exact bytes rather "
+        "than asking again."
+    )
+
+
 def _cmd_ingest(args):
+    from urllib.parse import urlparse
+
     from thalamus.contract.conformance import check_knowledge
     from thalamus.contract.manifest import load_manifest
     from thalamus.harness import extraction as extraction_mod
     from thalamus.harness import ingest as ingest_mod
     from thalamus.substrate.writer import write_knowledge
+
+    if args.check and args.write:
+        print(
+            "--check and --write are opposites: --check stops before the model call, "
+            "--write runs it and persists the result.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # `--url` is the Gremlin endpoint on all four subcommands that carry it, and on
+    # this one the positional argument is normally a URL too — so `--url <document>`
+    # reads as the flag that names the document. It is accepted, and it points the
+    # graph write at the document's host. Validated here, ahead of the fetch, the
+    # archive write and the extraction pass, all three of which used to complete
+    # before the error arrived as a connection failure against the paper's host.
+    if urlparse(args.url).scheme not in ("ws", "wss"):
+        print(
+            f"--url is the Gremlin endpoint (ws:// or wss://), and got `{args.url}`.\n"
+            f"The document to ingest is the positional argument:\n"
+            f"  thalamus ingest {args.url} --scope {args.scope}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     try:
         manifest = load_manifest(args.scope)
@@ -1909,8 +1999,15 @@ def _cmd_ingest(args):
         print(str(e), file=sys.stderr)
         sys.exit(1)
 
+    if args.check:
+        _report_preflight(args, ingest_mod)
+        return
+
     # Advisory, like the known-claims feed: an unreachable graph degrades to an
-    # ingest with no entity vocabulary, never a failed ingest.
+    # ingest with no entity vocabulary, never a failed ingest — *unless* the run
+    # intends to write, in which case the endpoint has to answer before the model is
+    # billed. An endpoint that is merely down otherwise costs a whole extraction pass
+    # and reports it at the write, after the only irreversible spend on the path.
     known_entities: list[dict] = []
     try:
         from thalamus.substrate.reader import knowledge_entities
@@ -1920,8 +2017,16 @@ def _cmd_ingest(args):
             known_entities = knowledge_entities(graph, args.scope)
         finally:
             close_connection(graph)
-    except Exception:
-        pass
+    except Exception as e:
+        if args.write:
+            print(
+                f"Graph endpoint unreachable at {args.url}: {e}\n"
+                "Nothing was fetched and no model was called. --write needs the "
+                "endpoint the write lands on; re-run without it to extract and report "
+                "only.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     try:
         batch, run, digest = ingest_mod.ingest(
@@ -1932,11 +2037,19 @@ def _cmd_ingest(args):
             harness=args.harness,
             title=args.title,
             known_entities=known_entities,
+            refetch=args.refetch,
         )
     except (ingest_mod.IngestError, extraction_mod.ExtractionError) as e:
         print(f"Ingest failed: {e}", file=sys.stderr)
         sys.exit(1)
 
+    if digest.verified_at is not None:
+        stamp = digest.verified_at.strftime("%Y-%m-%d %H:%M UTC")
+        print(
+            f"Bytes:    the ones --check verified at {stamp}, not a fresh request — "
+            f"so what is\n          written is what was checked. --refetch asks the "
+            f"address again."
+        )
     print(f"Retained: {batch.source.uri} ({batch.source.byte_size:,} bytes)")
     if digest.chunks > 1:
         read = digest.chunks - len(digest.failed_chunks)
@@ -1992,6 +2105,38 @@ def _cmd_ingest(args):
             "    The claims themselves are intact — only these edges are absent.",
             file=sys.stderr,
         )
+    if digest.repaired_kinds:
+        print(
+            f"\n  Repaired {len(digest.repaired_kinds)} claim kind"
+            f"{'s' if len(digest.repaired_kinds) > 1 else ''} onto the `{args.scope}` "
+            f"manifest's declared set — spelling only, no judgement:",
+            file=sys.stderr,
+        )
+        for _index, was, now in digest.repaired_kinds:
+            print(f"    {was} → {now}", file=sys.stderr)
+    if digest.rejected_claims:
+        from thalamus.archive import REJECT_LOG
+
+        print(
+            f"\n  ⚠ {len(digest.rejected_claims)} claim"
+            f"{'s' if len(digest.rejected_claims) > 1 else ''} left the batch; the rest "
+            f"is intact.\n"
+            f"    The extraction is already paid for, so these are retained rather than "
+            f"discarded:\n      {REJECT_LOG}",
+            file=sys.stderr,
+        )
+        for rejection in digest.rejected_claims:
+            print(
+                f"    [{rejection.triage}] {rejection.reason}\n"
+                f"      {rejection.description[:110]}",
+                file=sys.stderr,
+            )
+        if any(r.triage == "ambiguous" for r in digest.rejected_claims):
+            print(
+                "    Ambiguous is a decision, not a defect: no rule can retype these "
+                "without\n    asserting something the document may not support.",
+                file=sys.stderr,
+            )
     priced = f"${run.cost_usd:.2f}" if run.cost_usd is not None else "cost not reported"
     print(f"Extracted: {len(batch.claims)} claims, {len(batch.entities)} entities "
           f"({priced})")
@@ -2517,8 +2662,19 @@ def _cmd_arch(args, arch_parser):
 
     from thalamus.arch import findings as arch_findings
     from thalamus.arch import model as arch_model
+    from thalamus.arch import routes as arch_routes
     from thalamus.arch.extractor import scan_repo
     from thalamus.arch.metrics import measure
+
+    def _scan(target):
+        """One scan under both declared channels.
+
+        Every subcommand goes through this, `diff` included: measuring one side with the
+        route channel on and the other with it off would compare two extractors, which
+        is the error the policy digest exists to make impossible.
+        """
+        extracted = arch_routes.extract_routes(target, model.routes)
+        return arch_routes.merge(scan_repo(target, policy), extracted), extracted
 
     # The repository, not the cwd. `arch/model.yaml` is a file in a checkout, and
     # resolving it against wherever the operator is standing made `thalamus arch` a
@@ -2538,7 +2694,7 @@ def _cmd_arch(args, arch_parser):
         _arch_growth(args, repo)
         return
 
-    graph = scan_repo(repo, policy)
+    graph, route_graph = _scan(repo)
     metrics = measure(graph)
 
     if command == "rules":
@@ -2559,7 +2715,7 @@ def _cmd_arch(args, arch_parser):
                 # Both sides are recomputed under one policy. Reading the stored number
                 # off the other commit's model file would compare a measurement against
                 # a report, which is the mistake `diff` exists to prevent.
-                other = measure(scan_repo(checkout, policy))
+                other = measure(_scan(checkout)[0])
             finally:
                 subprocess.run(
                     ["git", "-C", str(repo), "worktree", "remove", "--force", str(checkout)],
@@ -2571,11 +2727,17 @@ def _cmd_arch(args, arch_parser):
     # scan
     text, derived, metrics = arch_model.build(repo, graph, model)
     dirty = arch_model.dirty_paths(repo, policy)
-    found = arch_findings.findings(graph, metrics, model)
+    found = arch_findings.findings(graph, metrics, model) + arch_findings.route_findings(
+        route_graph
+    )
 
     print(f"Scan {derived['scan']}")
     print(f"  policy      import_depth={policy.import_depth} resolve={policy.resolve} "
           f"digest={policy.digest()[:7]}")
+    if model.routes.enabled:
+        print(f"  routes      {len(route_graph.called())} called, "
+              f"{len(route_graph.defined())} defined, match={model.routes.match} "
+              f"digest={model.routes.digest()[:7]}")
     print(f"  modules     {metrics.modules}")
     print(f"  edges       {metrics.dependencies} counted of {len(graph.edges)} recorded")
     print(f"  propagation {metrics.propagation_cost * 100:.2f}%")

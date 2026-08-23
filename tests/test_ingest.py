@@ -1,12 +1,14 @@
 """
 Curated-ingestion tests — manifest gating and the model-free half of ingest.
 
-Interfaces: contract.manifest.ExpertManifest/load_manifest,
-harness.ingest.fetch/check_origin/to_text/build_batch
-Infrastructure: tmp_path for manifest files; loopback HTTP servers for redirect
-handling; no egress, no model
-Scope: the gates a document passes on its way into a knowledge subgraph. The model
-pass is exercised live; everything either side of it is pinned here.
+Interfaces: contract.manifest.ExpertManifest/load_manifest (allowlist, claim-kind
+triage), harness.ingest.fetch/preflight/check_origin/to_text/build_batch,
+cli._cmd_ingest argument handling
+Infrastructure: tmp_path for manifest files and the archive; loopback HTTP servers for
+redirect handling; no egress, no model
+Scope: the gates a document passes on its way into a knowledge subgraph, and what
+survives one that refuses it. The model pass is exercised live; everything either side
+of it is pinned here.
 """
 
 import threading
@@ -97,7 +99,7 @@ def test_fetch_records_the_host_that_answered_not_the_one_asked():
     redirect_server, redirect_base = _loopback(_Redirector)
 
     try:
-        body, origin = fetch(f"{redirect_base}/looks-fine")
+        fetched = fetch(f"{redirect_base}/looks-fine")
     finally:
         for server in (redirect_server, target_server):
             server.shutdown()
@@ -105,8 +107,8 @@ def test_fetch_records_the_host_that_answered_not_the_one_asked():
 
     # The control: without this, origin == the requested URL would be correct here
     # for the wrong reason, because no redirect was followed at all.
-    assert body == payload
-    assert origin == target_url
+    assert fetched.payload == payload
+    assert fetched.origin == target_url
 
 
 def test_ingest_gates_the_serving_origin_before_it_spends_anything(tmp_path, monkeypatch):
@@ -128,7 +130,9 @@ def test_ingest_gates_the_serving_origin_before_it_spends_anything(tmp_path, mon
     monkeypatch.setenv("THALAMUS_CONFIG_DIR", str(tmp_path))
 
     def _answered_elsewhere(_location):
-        return b"long enough to extract from " * 40, "https://elsewhere.example/served-here"
+        return ingest_mod.Fetched(
+            b"long enough to extract from " * 40, "https://elsewhere.example/served-here"
+        )
 
     def _must_not_run(*_args, **_kwargs):
         raise AssertionError("ran past the allowlist gate")
@@ -812,3 +816,595 @@ def test_contract_rejects_a_dangling_anchor():
 
     empty = good.model_copy(update={"chunks": [Chunk(text="   ", ordinal=0, start=0, end=3)]})
     assert any("a chunk is its text" in issue for issue in check_knowledge(empty))
+
+
+# --- Claim-granularity triage at the contract gate -------------------------------
+
+
+def test_a_kind_that_is_only_misspelled_is_repaired_not_rejected():
+    """
+    Scenario: the extractor emits `finding`, `literature/findings`, `episodic/Finding`
+
+    Each names a declared kind and gets its namespace, case or plural wrong. Renaming
+    needs no judgement — the leaf already says which declared kind it is — so these are
+    spelling, and a spelling mistake must not cost an extraction pass.
+    """
+    manifest = _manifest()
+
+    for wrong in ("finding", "literature/findings", "episodic/Finding", " FINDINGS "):
+        verdict, repair = manifest.triage_claim_kind(wrong)
+        assert (verdict, repair) == ("recoverable", "literature/finding"), wrong
+
+    assert manifest.triage_claim_kind("literature/technique") == (
+        "declared", "literature/technique",
+    )
+
+
+def test_literature_concept_is_ambiguous_because_concept_is_an_entity_kind():
+    """
+    Scenario: the measured Miller 1956 failure — a Claim emitted as `literature/concept`
+
+    `concept` is a real ontology kind, but for **Entity**. Neither repair is mechanical:
+    converting the claim discards a sentence-long description for a name, and coercing
+    it to finding or technique is the semantic call the manifest declaration exists to
+    govern. So it escalates rather than being guessed at, and the reason says why.
+    """
+    manifest = _manifest()
+
+    verdict, repair = manifest.triage_claim_kind("literature/concept")
+    assert verdict == "ambiguous"
+    assert repair == ""
+
+    from thalamus.substrate.schema import LiteratureClaim, Provenance
+
+    provenance = Provenance(tier=Tier.CURATED, source="https://arxiv.org/html/2401.1")
+    claims = [
+        LiteratureClaim(
+            description=f"claim {n}", kind="literature/finding", provenance=provenance
+        )
+        for n in range(30)
+    ]
+    claims.append(
+        LiteratureClaim(
+            description="Working memory holds about seven items.",
+            kind="literature/concept",
+            provenance=provenance,
+        )
+    )
+
+    kept, repairs, rejected = manifest.triage_claims(claims)
+
+    # The whole point: 30 conforming claims survive the one that does not.
+    assert len(kept) == 30
+    assert repairs == []
+    assert [r.triage for r in rejected] == ["ambiguous"]
+    assert rejected[0].index == 30
+    assert "literature/concept" in rejected[0].reason
+    assert "literature/finding, literature/technique" in rejected[0].reason
+
+
+def test_a_claim_with_no_description_is_unsalvageable():
+    """A claim asserting nothing has nothing a rule or a person could recover."""
+    from thalamus.substrate.schema import LiteratureClaim, Provenance
+
+    provenance = Provenance(tier=Tier.CURATED, source="https://arxiv.org/html/2401.1")
+    claims = [
+        LiteratureClaim(description="   ", kind="literature/finding", provenance=provenance),
+        LiteratureClaim(description="a real one", kind="literature/finding", provenance=provenance),
+    ]
+
+    kept, _repairs, rejected = _manifest().triage_claims(claims)
+
+    assert [c.description for c in kept] == ["a real one"]
+    assert [r.triage for r in rejected] == ["unsalvageable"]
+
+
+def test_a_manifest_declaring_no_kinds_governs_no_vocabulary():
+    """No declaration is no filter — the same rule `check_batch` already applies."""
+    wide_open = _manifest(claim_kinds=[])
+
+    assert wide_open.triage_claim_kind("anything/at-all") == ("declared", "anything/at-all")
+
+
+def test_duplicate_claims_are_not_a_rejection():
+    """
+    `merge_extractions` keeps two chunks reporting the same finding on purpose — it is
+    a fact about the document, and claim identity downstream is latest-wins. Dropping
+    them here would be a new rule wearing triage's clothes.
+    """
+    from thalamus.substrate.schema import LiteratureClaim, Provenance
+
+    provenance = Provenance(tier=Tier.CURATED, source="https://arxiv.org/html/2401.1")
+    twice = [
+        LiteratureClaim(description="the same finding", kind="literature/finding",
+                        provenance=provenance)
+        for _ in range(2)
+    ]
+
+    kept, _repairs, rejected = _manifest().triage_claims(twice)
+
+    assert len(kept) == 2
+    assert rejected == []
+
+
+def test_a_rejected_claim_takes_only_its_own_entities_out_of_the_batch(tmp_path, monkeypatch):
+    """
+    Scenario: one claim is rejected, and it was the only claim about one entity
+
+    Leaving that entity declared would strand it as an orphan, which `check_knowledge`
+    refuses — turning partial acceptance straight back into the whole-batch rejection
+    it exists to replace. So the batch that reaches the gate must satisfy it.
+    """
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+
+    data = {
+        "title": "A paper",
+        "claims": [
+            {"description": "A finding worth keeping.", "kind": "literature/finding",
+             "about": ["Reflexion"]},
+            {"description": "A concept-shaped assertion.", "kind": "literature/concept",
+             "about": ["Orphaned Idea"]},
+        ],
+        "entities": [
+            {"name": "Reflexion", "kind": "technique", "description": "self-reflection"},
+            {"name": "Orphaned Idea", "kind": "concept", "description": "reached by one claim"},
+        ],
+    }
+    batch, digest = _ingest_with_extraction(monkeypatch, data, scope="literature")
+
+    assert [c.kind for c in batch.claims] == ["literature/finding"]
+    assert [e.name for e in batch.entities] == ["Reflexion"]
+    assert [r.triage for r in digest.rejected_claims] == ["ambiguous"]
+
+    # The batch the gate now sees is clean — no orphan, and no undeclared kind.
+    manifest = load_manifest("literature")
+    assert check_knowledge(batch) == []
+    assert manifest.check_batch(batch) == []
+
+
+def test_rejections_are_retained_where_a_later_count_can_find_them(tmp_path):
+    """
+    A rejection nobody records is a measurement nobody can make. The row joins back to
+    the retained document by content hash, so re-reading what was rejected never
+    depends on the graph having accepted anything.
+    """
+    import json
+
+    from thalamus.archive import record_rejections
+
+    log = tmp_path / "rejected-claims.jsonl"
+    written = record_rejections(
+        [{"index": 30, "kind": "literature/concept", "description": "d",
+          "triage": "ambiguous", "reason": "why"}],
+        scope="designer",
+        content_hash="abc123",
+        origin="https://example.org/paper",
+        log_path=log,
+    )
+
+    assert written == log
+    row = json.loads(log.read_text().splitlines()[0])
+    assert row["scope"] == "designer"
+    assert row["content_hash"] == "abc123"
+    assert row["kind"] == "literature/concept"
+    assert row["at"].endswith("Z")
+
+    # Nothing rejected writes nothing: a ledger recording the silences buries the rows
+    # worth reading, and one file across every scope is what makes them countable.
+    assert record_rejections([], scope="designer", content_hash="abc123",
+                             origin="x", log_path=log) is None
+
+
+# --- `--check`: the pre-flight that is the ingest path ---------------------------
+
+
+def _install_manifest(tmp_path, monkeypatch, *, scope="literature", allowlist=("arxiv.org",)):
+    experts = tmp_path / "experts"
+    experts.mkdir(exist_ok=True)
+    (experts / f"{scope}.yaml").write_text(
+        f"scope: {scope}\nname: Lit\n"
+        "claim_kinds: [literature/finding, literature/technique]\n"
+        f"allowlist: [{', '.join(allowlist)}]\n"
+    )
+    monkeypatch.setenv("THALAMUS_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("THALAMUS_ARCHIVE_DIR", str(tmp_path / "archive"))
+
+
+def _ingest_with_extraction(monkeypatch, data, *, scope, payload=None, location=None):
+    """Run the real ingest path with only the model pass stubbed out."""
+    body = payload or (b"<html><title>A paper</title><body>"
+                       + b"long enough to extract from " * 40 + b"</body></html>")
+
+    monkeypatch.setattr(
+        ingest_mod, "fetch",
+        lambda _loc: ingest_mod.Fetched(body, "http://127.0.0.1/paper", "text/html"),
+    )
+    monkeypatch.setattr(
+        extraction, "run_extraction",
+        lambda *a, **k: extraction.ExtractionRun(text=""),
+    )
+    monkeypatch.setattr(extraction, "parse_extraction", lambda _text: data)
+
+    batch, _run, digest = ingest_mod.ingest(location or "http://127.0.0.1/paper", scope=scope)
+    return batch, digest
+
+
+def test_the_check_reports_the_host_the_gate_will_actually_read(tmp_path, monkeypatch):
+    """
+    Scenario: the requested URL redirects, and the check has to name the responder
+
+    This is the parity property the whole command exists for. A hand-built `curl`
+    check stops where curl stops; measured on one batch, HEAD resolved
+    `depositonce.tu-berlin.de` where the ingester's GET reached
+    `api-depositonce.tu-berlin.de`, and the allowlist carried only the first. Because
+    `preflight` IS what `ingest` calls, the two cannot disagree.
+    """
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    payload = b"<html><head><title>Speculative Merging</title></head><body>" + \
+        b"the paper's text goes on for a while " * 20 + b"</body></html>"
+
+    class _Target(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *_args):
+            return
+
+    target_server, target_base = _loopback(_Target)
+    target_url = f"{target_base}/actually-served-here"
+
+    class _Redirector(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", target_url)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            return
+
+    redirect_server, redirect_base = _loopback(_Redirector)
+    requested = f"{redirect_base}/looks-fine"
+
+    try:
+        checked = ingest_mod.preflight(requested, scope="literature")
+    finally:
+        for server in (redirect_server, target_server):
+            server.shutdown()
+            server.server_close()
+
+    assert checked.origin == target_url
+    assert checked.redirected
+    assert checked.requested == requested
+    assert checked.content_type.startswith("text/html")
+    # The title is what a HEAD request cannot answer, and it is why the check is a GET.
+    assert checked.title == "Speculative Merging"
+    assert checked.entry.byte_size == len(payload)
+
+
+def test_the_check_refuses_an_off_allowlist_origin_before_it_retains_anything(
+    tmp_path, monkeypatch
+):
+    """The check runs the gate in the same place the ingest does — ahead of the archive."""
+    _install_manifest(tmp_path, monkeypatch, allowlist=["arxiv.org"])
+
+    monkeypatch.setattr(
+        ingest_mod, "fetch",
+        lambda _loc: ingest_mod.Fetched(b"x" * 400, "https://elsewhere.example/served", ""),
+    )
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("retained bytes past the allowlist gate")
+
+    monkeypatch.setattr(ingest_mod, "archive_bytes", _must_not_run)
+
+    with pytest.raises(IngestError, match="not allowlisted"):
+        ingest_mod.preflight("https://arxiv.org/html/2401.00001", scope="literature")
+
+
+def test_the_check_refuses_an_abstract_page_without_a_request(tmp_path, monkeypatch):
+    """`check_location` is the first step of the path, so `--check` inherits it."""
+    _install_manifest(tmp_path, monkeypatch)
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("fetched an address that is refused on shape")
+
+    monkeypatch.setattr(ingest_mod, "fetch", _must_not_run)
+
+    with pytest.raises(IngestError, match="abstract page"):
+        ingest_mod.preflight("https://arxiv.org/abs/2503.23278", scope="literature")
+
+
+def test_a_producer_placeholder_is_not_reported_as_the_document_title():
+    """
+    Academic PDFs routinely carry a LaTeX temp filename in the metadata title. A
+    confidently wrong title is worse than none here: none sends the reader to the
+    opening text, and wrong does not.
+    """
+    page = b"<html><head><title>  Attention   &amp; Effort </title></head><body>x</body></html>"
+    assert ingest_mod.document_title(page) == "Attention & Effort"
+    assert ingest_mod.document_title(b"<html><body>no title here</body></html>") == ""
+
+
+def test_the_document_url_in_the_endpoint_flag_is_refused_before_the_fetch(
+    tmp_path, monkeypatch, capsys
+):
+    """
+    Scenario: `thalamus ingest --url <paper> --scope literature`
+
+    `--url` is the Gremlin endpoint on all four subcommands that carry it, and this is
+    the one whose positional argument is normally a URL too. Passing the document there
+    used to complete the fetch, the archive write and the paid extraction pass before
+    failing at the write, as a connection error against the paper's host — four passes,
+    roughly $2, on one 2026-08-21 session.
+    """
+    from types import SimpleNamespace
+
+    from thalamus import cli
+
+    _install_manifest(tmp_path, monkeypatch)
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("spent something on a run that cannot write")
+
+    monkeypatch.setattr(ingest_mod, "fetch", _must_not_run)
+    monkeypatch.setattr(extraction, "run_extraction", _must_not_run)
+
+    args = SimpleNamespace(
+        location="", scope="literature", feed="manual", model=None, harness="claude",
+        title="", url="https://cs.uwaterloo.ca/~x/paper.pdf", check=False, refetch=False, write=True,
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        cli._cmd_ingest(args)
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "Gremlin endpoint" in err
+    # The message has to name where a document goes, or it only says what is wrong.
+    assert "positional argument" in err
+    assert "thalamus ingest https://cs.uwaterloo.ca/~x/paper.pdf --scope literature" in err
+
+
+def test_a_write_run_reaches_the_endpoint_before_it_bills_the_model(
+    tmp_path, monkeypatch, capsys
+):
+    """
+    Scenario: `--write` against an endpoint that is simply down
+
+    Without this the connection failure arrives after the extraction pass, which is the
+    only irreversible spend on the path. Reaching the endpoint first makes an
+    unreachable graph cost nothing. Without `--write` the same failure stays advisory:
+    nothing is being persisted, so the endpoint is only a source of entity vocabulary.
+    """
+    from types import SimpleNamespace
+
+    from thalamus import cli
+
+    _install_manifest(tmp_path, monkeypatch)
+
+    def _refuse(*_args, **_kwargs):
+        raise ConnectionRefusedError("nothing listening on localhost:8182")
+
+    monkeypatch.setattr(cli, "connect", _refuse)
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("billed a model against an endpoint that cannot be written to")
+
+    monkeypatch.setattr(ingest_mod, "fetch", _must_not_run)
+    monkeypatch.setattr(extraction, "run_extraction", _must_not_run)
+
+    args = SimpleNamespace(
+        location="https://arxiv.org/html/2401.00001", scope="literature", feed="manual",
+        model=None, harness="claude", title="", url="ws://localhost:8182/gremlin",
+        check=False, refetch=False, write=True,
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        cli._cmd_ingest(args)
+
+    assert exit_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "unreachable" in err
+    assert "no model was called" in err
+
+
+def test_check_and_write_are_refused_together(tmp_path, monkeypatch, capsys):
+    """They are opposites: one stops before the model call, the other runs it."""
+    from types import SimpleNamespace
+
+    from thalamus import cli
+
+    _install_manifest(tmp_path, monkeypatch)
+    args = SimpleNamespace(
+        location="https://arxiv.org/html/2401.00001", scope="literature", feed="manual",
+        model=None, harness="claude", title="", url="ws://localhost:8182/gremlin",
+        check=True, refetch=False, write=True,
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        cli._cmd_ingest(args)
+
+    assert exit_info.value.code == 1
+    assert "opposites" in capsys.readouterr().err
+
+
+# --- The fetch index: an ingest writes what the check verified --------------------
+
+
+def _counting_fetch(monkeypatch, payload, origin="http://127.0.0.1/paper", content_type="text/html"):
+    """Replace `fetch` with one that records how many times the network was reached."""
+    calls: list[str] = []
+
+    def _fetch(location):
+        calls.append(location)
+        return ingest_mod.Fetched(payload, origin, content_type)
+
+    monkeypatch.setattr(ingest_mod, "fetch", _fetch)
+    return calls
+
+
+_PAPER = (b"<html><head><title>Speculative Merging</title></head><body>"
+          + b"the paper's text goes on for a while " * 20 + b"</body></html>")
+
+
+def test_an_ingest_writes_the_bytes_the_check_verified(tmp_path, monkeypatch):
+    """
+    Scenario: `--check` a source, then ingest it
+
+    The gap between checking a source and writing it is where the document can change,
+    so a `--write` that re-requests may ingest something other than what was confirmed.
+    Reusing the checked bytes closes that gap; the saving of one request is the smaller
+    half of it.
+    """
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+
+    checked = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+    assert len(calls) == 1
+    assert checked.verified_at is None  # it fetched; it did not reuse
+
+    reused = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature")
+
+    assert len(calls) == 1, "the ingest asked the address again"
+    assert reused.verified_at is not None
+    assert reused.entry.content_hash == checked.entry.content_hash
+    assert reused.origin == checked.origin
+    assert reused.content_type == checked.content_type
+    assert reused.title == "Speculative Merging"
+
+
+def test_a_check_never_answers_out_of_the_index(tmp_path, monkeypatch):
+    """A check that did not reach the address is not a check."""
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+
+    ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+    second = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+
+    assert len(calls) == 2
+    assert second.verified_at is None
+
+
+def test_the_gate_runs_again_on_reused_bytes(tmp_path, monkeypatch):
+    """
+    Scenario: the allowlist is edited between the check and the ingest
+
+    The index supplies bytes, never permission. The origin is re-checked against the
+    manifest as it stands now, or an allowlist edit would apply to everything except
+    the documents already indexed — which is the set most likely to be the reason for
+    the edit.
+    """
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    _counting_fetch(monkeypatch, _PAPER)
+
+    ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+
+    (tmp_path / "experts" / "literature.yaml").write_text(
+        "scope: literature\nname: Lit\n"
+        "claim_kinds: [literature/finding, literature/technique]\n"
+        "allowlist: [arxiv.org]\n"
+    )
+
+    with pytest.raises(IngestError, match="not allowlisted"):
+        ingest_mod.preflight("http://127.0.0.1/paper", scope="literature")
+
+
+def test_an_indexed_check_speaks_only_for_a_day(tmp_path, monkeypatch):
+    """
+    A URL is not a document — it serves different bytes over time. Past the window the
+    address is asked again, because silently ingesting month-old bytes would be the
+    wrong-document failure the check exists to catch.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from thalamus.archive import index_dir, recall_fetch
+
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+    ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+
+    stale = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    index = index_dir() / "fetched.jsonl"
+    index.write_text(index.read_text().replace(recall_fetch("http://127.0.0.1/paper").at
+                                               .strftime("%Y-%m-%dT%H:%M:%SZ"), stale))
+
+    reused = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature")
+
+    assert len(calls) == 2
+    assert reused.verified_at is None
+
+
+def test_refetch_makes_an_ingest_ask_the_address_again(tmp_path, monkeypatch):
+    """The escape hatch: a document known to have moved inside the window."""
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+    monkeypatch.setattr(
+        extraction, "run_extraction", lambda *a, **k: extraction.ExtractionRun(text="")
+    )
+    monkeypatch.setattr(extraction, "parse_extraction", lambda _t: {
+        "title": "Speculative Merging",
+        "claims": [{"description": "A finding.", "kind": "literature/finding"}],
+        "entities": [],
+    })
+
+    ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+
+    _b, _r, reusing = ingest_mod.ingest("http://127.0.0.1/paper", scope="literature")
+    assert len(calls) == 1 and reusing.verified_at is not None
+
+    _b, _r, refetched = ingest_mod.ingest(
+        "http://127.0.0.1/paper", scope="literature", refetch=True
+    )
+    assert len(calls) == 2
+    assert refetched.verified_at is None
+
+
+def test_a_missing_archive_file_costs_a_request_not_the_ingest(tmp_path, monkeypatch):
+    """The archive can be moved or cleared out from under the index. That is a fetch."""
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    calls = _counting_fetch(monkeypatch, _PAPER)
+
+    checked = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature", fresh=True)
+    checked.entry.path.unlink()
+
+    reused = ingest_mod.preflight("http://127.0.0.1/paper", scope="literature")
+
+    assert len(calls) == 2
+    assert reused.verified_at is None
+
+
+def test_the_index_is_last_writer_wins_and_survives_a_corrupt_row(tmp_path):
+    """
+    A URL re-fetched today is not the URL fetched last month, so the newest row wins.
+    A malformed row costs a re-fetch, never an ingest — the index is an optimization.
+    """
+    from thalamus.archive import recall_fetch, record_fetch
+
+    for content_hash in ("aaa", "bbb"):
+        record_fetch(location="https://x.example/p", origin="https://x.example/p",
+                     content_hash=content_hash, suffix=".html", content_type="text/html",
+                     base=tmp_path)
+
+    assert recall_fetch("https://x.example/p", base=tmp_path).content_hash == "bbb"
+    assert recall_fetch("https://y.example/other", base=tmp_path) is None
+
+    index = tmp_path / "fetched.jsonl"
+    index.write_text(index.read_text() + "{not json at all\n")
+    assert recall_fetch("https://x.example/p", base=tmp_path).content_hash == "bbb"
+
+    assert recall_fetch("https://x.example/p", base=tmp_path / "nowhere") is None
+
+
+def test_the_index_lives_beside_the_archive_not_inside_it(tmp_path, monkeypatch):
+    """
+    `arch.growth` walks the archive root and counts everything unreferenced by a Source
+    as stray retained bytes. An index file there would be counted as evidence for a
+    write that failed, which it is not.
+    """
+    from thalamus.archive import archive_dir, index_dir
+
+    monkeypatch.setenv("THALAMUS_ARCHIVE_DIR", str(tmp_path / "archive"))
+
+    assert index_dir() == tmp_path / "index"
+    assert archive_dir() not in index_dir().parents
+    assert index_dir() != archive_dir()

@@ -384,6 +384,49 @@ error, it returns empty strings, which reads as "found nothing" when the truth w
 "found everything and asked it the wrong question."
 
 
+## What a Source actually holds — claims and excerpts hang off it, not under it
+
+**Question it answered:** "Did that `thalamus ingest` run write anything?" The obvious
+traversal — `Source` out through `CONTAINS` — returns a clean `0` for a source that in
+fact carries dozens of claims, because the edge runs the other way and carries a
+different name. (2026-08-22)
+
+**Surface:** gremlin-python
+
+```python
+from gremlin_python.process.graph_traversal import __
+from thalamus.substrate.writer import connect, close_connection
+
+g = connect()
+try:
+    sid = "scope:designer:source:<hash>"
+    claims = g.V(sid).in_("DERIVED_FROM").has_label("Claim").count().next()
+    chunks = g.V(sid).in_("DERIVED_FROM").has_label("Chunk").count().next()
+    # what the source is about, via its claims
+    ents = (g.V(sid).in_("DERIVED_FROM").has_label("Claim")
+            .out("ABOUT").values("name").dedup().to_list())
+    print(claims, chunks, len(ents))
+finally:
+    close_connection(g)
+```
+
+**Validated:** 2026-08-22 against the live graph. On
+`scope:designer:source:e854b6b9a497…` (Cutting 2016, *Narrative theory and the dynamics
+of popular movies*), `out("CONTAINS")` returns **0** while `in_("DERIVED_FROM")` returns
+**85 claims and 125 excerpts**, and walking on through `ABOUT` names 12 entities. The
+same `0` came back for all nine sources of that ingest batch, which together hold 464
+claims and 709 excerpts.
+
+**Notes.** `CONTAINS` is the session-privacy edge (`Session -CONTAINS-> Claim`), and it
+is the *only* thing that edge means; provenance to a document is a separate edge in the
+opposite direction, `Claim -DERIVED_FROM-> Source`. Confusing them is easy because both
+sound like containment in English.
+
+The failure mode is the one this file keeps finding: a wrong-but-legal traversal returns
+an empty result rather than an error, and an empty result reads as a finding. Before
+concluding a write did not land, run the traversal against a source you *know* is
+populated — if it also returns `0`, the query is wrong, not the data.
+
 ## Is memory being written? — counts and the newest Session
 **Question it answered:** "After installing, how does anyone confirm distillation is
 actually landing sessions in the graph?" — the read behind `thalamus status`

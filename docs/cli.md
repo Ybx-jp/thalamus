@@ -35,6 +35,7 @@ thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log
 thalamus extract --harness codex   # same, sweeping $CODEX_HOME/sessions by session id
 thalamus write session.yaml        # write a session graph from a file
 thalamus validate session.yaml     # check an extraction against the contract
+thalamus ingest <url|path> --scope <expert> --check   # verify the source, no model call
 thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (dry run; --write to persist)
 thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
 ```
@@ -42,7 +43,32 @@ thalamus backfill-chunks           # co-index already-ingested documents as Chun
 `ingest` reads HTML, plain text, and PDF. **PDF needs the `pdf` extra** (`uv sync
 --extra pdf`); without it the format is refused and the message names the extra. The
 document is the positional argument — `--url` on this command is the Gremlin endpoint,
-as it is on `write`, `bootstrap` and `extract`.
+as it is on `write`, `bootstrap` and `extract`, and a document passed there is refused
+before anything is fetched.
+
+**`--check` verifies a source for no model spend.** It runs the ingest path — same
+request, same User-Agent, same redirects, same allowlist gate, same text extraction —
+and stops at the model call, reporting the host that actually served the bytes, the
+content-type, the title read from the document itself, and its opening 400 chars.
+Because it is the ingest path rather than a description of it, a source that passes
+`--check` cannot then fail the gate. A run *without* `--write` is not this: it extracts
+and reports, so using one as a pre-check bills the model twice for one document.
+
+**An ingest within a day of a check writes the bytes that check verified**, and says so.
+A check indexes what it fetched (`~/.thalamus/index/fetched.jsonl`, beside the archive
+it indexes), and a later ingest of the same address reads them back rather than asking
+again. The saved request is the smaller half: the gap between checking a source and
+writing it is where a document can change, so re-requesting can write something other
+than what was confirmed. Past a day the address is asked again, because a URL is not a
+document; `--refetch` asks again inside the window. The allowlist gate re-runs on reused
+bytes against the manifest as it stands *now* — the index supplies bytes, never
+permission.
+
+A batch is accepted per claim. A claim whose kind only misspells a declared one — wrong
+namespace, plural, case — is repaired; one that names something the scope's manifest
+does not declare leaves the batch and the rest is written. Every rejection is printed
+and retained in `~/.thalamus/logs/rejected-claims.jsonl` against the document's content
+hash, because the extraction is paid for either way.
 
 `arxiv.org/abs/<id>` is refused before anything is fetched: the abstract page extracts
 into abstract-level claims that read exactly like paper-level ones, so the failure
@@ -139,16 +165,29 @@ behavior — see that repo's README for the split line and setup.
 ## Repository analysis
 
 ```bash
-thalamus arch scan                 # structural instrument over a repo's imports
-thalamus arch show                 # the current model
-thalamus arch diff                 # against a previous scan
-thalamus arch rules                # the rules a scan applies
-thalamus arch growth               # change over time
+thalamus arch scan                 # measure the tree; --write updates the model file
+thalamus arch show                 # the declared model and the last scan's numbers
+thalamus arch diff <commit-ish>    # re-scan both sides and compare
+thalamus arch rules                # measured edges against the declared layers
+thalamus arch growth               # unreferenced stock first, then rate
 ```
 
 All five measure this checkout by default, from any working directory — the model
 they read (`arch/model.yaml`) belongs to a repository, not to wherever you are
 standing. `--repo <path>` points them at another tree.
+
+`diff` takes a commit-ish, not a stored scan, and re-scans both sides under one
+policy: reading the other commit's recorded number would compare a measurement
+against a report. `growth` leads with unreferenced stock because a trend statistic
+scores a flat 894 MB of stranded worktrees as healthy.
+
+A scan reads two declared channels, each with its own policy block and digest in
+`arch/model.yaml`. `extractor` walks Python imports. `routes` matches client request
+literals against the routes a server defines, which is how the console's browser
+surface enters the graph at all — it reaches the server over HTTP, so no import
+relation exists to extract. The route channel is off unless the model file enables
+it; turning it on forks the scan key, because a propagation cost measured with those
+edges is not comparable to one measured without them.
 
 ## Maintenance
 
