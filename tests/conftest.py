@@ -47,6 +47,24 @@ def _isolate_launch_policy(tmp_path_factory, monkeypatch):
                         directory / "policy.jsonl")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_extractor_policy(tmp_path_factory, monkeypatch):
+    """Point the extractor store at a tmp path for every test.
+
+    Same defect as the posture store above, one command along: `_cmd_extract` and
+    `_cmd_ingest` resolve which CLI runs the pass through the module-level `STORE`, so a
+    test that builds an args namespace and calls either reads whichever extractor the
+    operator picked in the console. It decides the harness, the model and a printed
+    line, and none of the tests that go through those paths passed a store or knew they
+    were reading one.
+    """
+    directory = tmp_path_factory.mktemp("extractor-policy")
+    monkeypatch.setattr("thalamus.harness.extractor_policy.STORE",
+                        directory / "policy.json")
+    monkeypatch.setattr("thalamus.harness.extractor_policy.LEDGER",
+                        directory / "policy.jsonl")
+
+
 # The variables that describe *the session running pytest* rather than anything under
 # test. `resolve_room` and `resolve_pin` are env-first by design — inside a session
 # that is the right answer and there is no second channel to disagree with — so a test

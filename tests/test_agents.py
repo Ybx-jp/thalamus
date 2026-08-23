@@ -128,3 +128,50 @@ class TestHeadlessPreconditions:
         # Not an oversight to be filled in later: Claude Code has no workspace
         # trust gate, and an empty tuple is the declaration that it needs nothing.
         assert agents.cli_for("claude").headless_preconditions == ()
+
+
+class TestDeclaredModels:
+    """The closed list a surface offers from, and the one vendor that will re-answer.
+
+    A model list is the same kind of claim as a flag: prose about a vendor, written
+    once, invalidated silently. It is not equally dangerous — `extractor_policy.select`
+    refuses anything off the list, so a stale list can only *under*-offer, never
+    mis-invoke, and `--model` remains the escape hatch. But codex publishes its catalog
+    offline and unauthenticated, so for that one harness there is no excuse for never
+    asking again.
+    """
+
+    def test_a_default_is_always_one_of_the_offered_models(self):
+        for harness, cli in agents.AGENT_CLIS.items():
+            assert cli.default_model in cli.models, (
+                f"{harness} defaults to a model no surface would offer"
+            )
+
+    def test_the_codex_slugs_are_still_in_the_live_catalog(self):
+        """Re-ask the one CLI that answers for free. Skipped where it is not installed.
+
+        `codex debug models` renders the raw catalog as JSON without auth or network
+        cost, which is what makes this a test rather than a lab note.
+        """
+        import json
+        import shutil
+        import subprocess
+
+        if not shutil.which("codex"):
+            pytest.skip("codex is not on this box")
+        try:
+            out = subprocess.run(["codex", "debug", "models"], capture_output=True,
+                                 text=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            pytest.skip(f"codex did not answer: {exc}")
+        if out.returncode != 0:
+            pytest.skip(f"codex debug models exited {out.returncode}")
+        try:
+            catalog = {m["slug"] for m in json.loads(out.stdout).get("models", [])}
+        except (ValueError, KeyError, TypeError) as exc:
+            pytest.skip(f"codex changed the catalog format: {exc}")
+        missing = [m for m in agents.cli_for("codex").models if m not in catalog]
+        assert not missing, (
+            f"declared but no longer in codex's catalog: {', '.join(missing)} — "
+            f"a slug the panel offers has to be one the CLI accepts"
+        )

@@ -1283,6 +1283,39 @@ def policy_expected() -> dict[str, tuple[str, ...]]:
     return {h: tuple(capability_argv(h, effective(h))) for h in LAUNCH_SHAPES}
 
 
+_extractor_policy_cache: object = _PIN_UNSET
+
+
+def extractor_policy_module():
+    """`thalamus.harness.extractor_policy`, or None when the package is absent.
+
+    Deliberately *not* behind `has_experts()`, unlike the launch-posture panel. That
+    one reads the expert launch registry and has nothing to say without it; this one
+    reads `harness/agents.py`, which is core — a console on a box with no roster still
+    distills, and the CLI that pays for the pass is still worth choosing.
+    """
+    global _extractor_policy_cache
+    if _extractor_policy_cache is _PIN_UNSET:
+        try:
+            from thalamus.harness import extractor_policy
+        except Exception:  # noqa: BLE001 — any import failure means "not available"
+            _extractor_policy_cache = None
+        else:
+            _extractor_policy_cache = extractor_policy
+    return _extractor_policy_cache
+
+
+def extractor_policy_view() -> list[dict]:
+    """Every extraction pass, which CLI and model runs it, and what the alternatives cost.
+
+    A list rather than one object because the passes are two independent budgets — a
+    payload carrying only the one the operator last asked about would let the panel
+    render a stale card for the other.
+    """
+    module = extractor_policy_module()
+    return module.describe_all() if module else []
+
+
 # Reading a harness off a start command is the control plane's own question, and it is
 # now dispatch's too — a Cursor room member is addressed by the pane its start command
 # created. It lives with the rest of that reading in `harness/panes.py`; re-exported
@@ -1897,6 +1930,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, build_info())
         if path == "/api/launch-policy":
             return self._send(200, {"harnesses": launch_policy_view()})
+        if path == "/api/extractor-policy":
+            return self._send(200, {"passes": extractor_policy_view()})
         if path == "/api/cursor-sweep":
             from thalamus.console import sweep
             return self._send(200, sweep.status())
@@ -2098,6 +2133,27 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(code, {"error": str(exc)})
             return self._send(200, {"ok": True, "change": row,
                                     "harnesses": launch_policy_view()})
+
+        if path == "/api/extractor-policy":
+            module = extractor_policy_module()
+            if module is None:
+                return self._send(503, {"error": "the thalamus package is not importable"})
+            try:
+                row = module.select(
+                    str(data.get("harness", "")),
+                    str(data.get("model", "")),
+                    pass_=str(data.get("pass", module.DEFAULT_PASS)),
+                    actor="console",
+                )
+            except (TypeError, ValueError) as exc:
+                # `ExtractorRefused` and `UnknownPass` both subclass ValueError, and
+                # the first is written for the person mid-decision — the reason for the
+                # rule is the rule's whole argument, so it goes to the panel verbatim.
+                # An unknown pass is a client bug, not a decision, and is a 400.
+                code = 409 if isinstance(exc, module.ExtractorRefused) else 400
+                return self._send(code, {"error": str(exc)})
+            return self._send(200, {"ok": True, "change": row,
+                                    "passes": extractor_policy_view()})
 
         windows = list_windows(self.cfg)
         idx = data.get("index")

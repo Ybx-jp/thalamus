@@ -383,6 +383,38 @@ action as the smaller target is how a mis-tap happens.
   re-runs the *creation* command — so a posture change cannot reach a running session.
   Windows still on an older argv are badged **old posture**, and the restart button on
   the same row is the fix.
+- **Extraction** picks which coding-agent CLI calls a model on your behalf, and on which
+  model — a separate budget question from the launch posture above, because neither pass
+  is something you wait on and neither need run on the same allowance as your interactive
+  sessions. Two cards, because they are two budgets: **distillation** is one pass per
+  ended session, and **ingestion** is one pass *per chunk* of a procured document, so a
+  single paper can cost what a day of distillation does.
+
+  Distillation defaults to `follow the session` — each session distills through the CLI
+  that wrote it. Ingestion defaults to `follow distillation`, and the card names what that
+  resolves to right now, so "follow distillation" is never the last word on screen. Set
+  ingestion on its own to move the expensive pass without moving the cheap one. Models come
+  from a closed list per CLI (`harness/agents.py`); `--model` on either command takes any
+  slug the vendor accepts if you need one the panel does not carry.
+
+  A CLI that is not on the box's PATH is shown and disabled rather than omitted, and
+  choosing one is refused: running a pass through a missing binary does not fail loudly —
+  distillation fails inside the detached job SessionEnd forks, and the session is simply
+  never distilled. A choice whose CLI disappears later is kept, reported, and stepped back
+  to whatever the pass would have done unset.
+
+  Each option states what it gives up. Only Claude Code prices its own headless run, and
+  `thalamus eval cost` buckets both passes by reading that sandbox's own transcript — so
+  routing a pass elsewhere does not shrink the extraction spend that report shows, it
+  removes it from the report. Every change lands a row in
+  `~/.thalamus/extractor/policy.jsonl`, naming the pass it moved; since the graph records
+  the harness that *wrote* a session and not the one that extracted it, and a Source
+  records no extractor at all, that ledger is the only thing that can say which model
+  produced a given week's claims.
+
+  Unlike a posture, this needs no restart to take. A posture rides the argv and is fixed
+  when a window is created; this is read when the pass runs, so a window already open
+  adopts it at the moment it ends.
 - **Services** is hidden unless you named units with `--service` (below).
 - **Build** states which commit the console is serving, and offers the deploy that
   moves it onto the next one. Present whenever the console runs from a checkout.

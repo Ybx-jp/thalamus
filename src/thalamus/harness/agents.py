@@ -37,6 +37,7 @@ readers therefore live with `ExtractionRun` in `harness/extraction.py`.
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import PurePath
 
@@ -127,6 +128,19 @@ class AgentCLI:
     # a hint appended to every failure misattributes unrelated ones, which is how
     # a workspace-trust refusal came to advise running `agent --list-models`.
     model_hint: str = ""
+    # Model identifiers this CLI accepts, for the surfaces that must offer a *closed*
+    # list rather than a text box — the console's distillation panel is the one that
+    # forced it. A model typed into a box is a value nothing can check, and it fails
+    # at invocation inside a detached SessionEnd job, which is the one place a failure
+    # reaches nobody. `default_model` is the entry a caller gets by choosing nothing
+    # and is required to appear here.
+    #
+    # Not exhaustive and not meant to be: each list is the handful worth choosing
+    # between for a batch extraction pass, taken from the vendor's own live catalog
+    # (the `model_hint` command, or `--help` where there is no catalog). A slug absent
+    # here is still reachable through `--model`, which is the escape hatch that keeps
+    # this list a curation rather than a gate.
+    models: tuple[str, ...] = ()
     # Flags this CLI needs before it will run non-interactively in a directory it
     # has never seen. Not a preference: Cursor refuses an untrusted workspace with
     # exit 1 and a human-readable prompt *instead of* the JSON envelope, so every
@@ -185,6 +199,19 @@ class AgentCLI:
     def runs_arms(self) -> bool:
         return not self.arm_blockers
 
+    @property
+    def available(self) -> bool:
+        """Is this CLI's binary on PATH?
+
+        Asked because selecting an absent binary is not a failed setting — it is
+        distillation that stops happening. `run_extraction` raises `ExtractionError`
+        on `FileNotFoundError`, and the only caller is a detached SessionEnd job
+        writing to a per-session log, so the loss surfaces as a widget row hours
+        later and as nothing at all if the widget is not open. A surface that offers
+        a harness therefore has to ask this first.
+        """
+        return shutil.which(self.binary) is not None
+
 
 AGENT_CLIS: dict[str, AgentCLI] = {
     "claude": AgentCLI(
@@ -192,6 +219,12 @@ AGENT_CLIS: dict[str, AgentCLI] = {
         binary="claude",
         default_model=CLAUDE_DEFAULT_MODEL,
         reports_cost=True,
+        # Aliases rather than dated ids, and exactly the three `claude --help` names
+        # under `--model` (read 2026-08-23). An alias tracks the latest model behind
+        # it, which is what a batch pass wants; a pinned `claude-fable-5` would have
+        # to be re-verified on every vendor release and there is no catalog command
+        # to re-verify it against — hence no `model_hint` on this entry.
+        models=("sonnet", "opus", "fable"),
     ),
     "cursor": AgentCLI(
         harness="cursor",
@@ -199,6 +232,12 @@ AGENT_CLIS: dict[str, AgentCLI] = {
         default_model=CURSOR_DEFAULT_MODEL,
         reports_cost=False,
         model_hint=MODEL_HINT,
+        # The two Composer rungs and nothing else. The catalog `--list-models` prints
+        # is ~40 entries wide and most of it is other vendors' models resold through
+        # Cursor — offering those here would let the panel route a distillation to
+        # Anthropic *through* Cursor, which is the opposite of what picking a
+        # non-Claude extractor is for. Verified live 2026-08-23.
+        models=("composer-2.5", "composer-2.5-fast"),
         # `--trust` and not `--force`: the refusal is about the *workspace*, and
         # the narrower flag is the one that answers it. `--force`/`--yolo` would
         # also clear it, by additionally allowing every tool call — authority the
@@ -230,6 +269,11 @@ AGENT_CLIS: dict[str, AgentCLI] = {
         # not instrumentation.
         reports_cost=False,
         model_hint=CODEX_MODEL_HINT,
+        # The listed catalog's top three plus the cheap rung, by the vendor's own
+        # `priority` (2, 1, 3, 23). Verified live 2026-08-23, codex-cli 0.147.0.
+        # `codex-auto-review` is in the catalog and omitted: it ships
+        # `visibility: "hide"`, so it is not a model the vendor offers for selection.
+        models=("gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.4-mini"),
         invocation="exec",
         envelope="jsonl-events",
         # `--skip-git-repo-check` answers the trust refusal and nothing else — the

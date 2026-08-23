@@ -80,6 +80,23 @@
       own if you give it one.</p>
     <div class="admin-list" id="admin-policy"></div>
   </section>
+  <!-- Not hidden without the expert layer: the CLIs are read from harness/agents.py,
+       which is core. Hidden only when the package itself is unreachable.
+
+       Two cards in one section, because the operator is answering one question twice
+       and the second answer is meaningful only beside the first: ingestion's default
+       is to follow distillation, which is unreadable as a standalone setting. -->
+  <section class="admin-sec" id="admin-extractor-sec" hidden>
+    <h3>Extraction</h3>
+    <p class="admin-note">Which CLI calls a model on your behalf, and on which model.
+      <b>Distillation</b> turns an ended session into memory — one pass per session,
+      nothing waiting on it. <b>Ingestion</b> reads a procured document, one pass per
+      chunk, so a single paper can cost what a day of distillation does. Neither needs
+      to run on the same allowance as your interactive sessions. Both take effect on the
+      next pass — running windows are unaffected, because the choice is read when the
+      pass starts, not when the session launched.</p>
+    <div class="admin-list" id="admin-extractor"></div>
+  </section>
   <!-- Hidden unless `thalamus console --service <unit>` named units to manage. -->
   <section class="admin-sec" id="admin-services-sec" hidden>
     <h3>Services</h3>

@@ -74,6 +74,7 @@ const els = {
   admin: document.getElementById("admin"),
   adminServices: document.getElementById("admin-services"),
   adminPolicy: document.getElementById("admin-policy"),
+  adminExtractor: document.getElementById("admin-extractor"),
   adminSweep: document.getElementById("admin-sweep"),
   adminLog: document.getElementById("admin-log"),
   recycleNote: document.getElementById("recycle-note"),
@@ -2383,6 +2384,176 @@ async function setPolicy(harness, capability, value, ttlHours) {
   }
 }
 
+// ---- Extraction passes ----
+//
+// The launch-posture panel above chooses what a session starts with; this chooses what
+// happens once a session ends, and what happens when a document is ingested. Kept as its
+// own card rather than a fourth capability on that one, because the two settings reach a
+// pass through different carriers and at different moments: a posture rides the argv and
+// is fixed when a window is created, while these are read at the moment the pass runs.
+// Rendering them as one kind of control would imply the "restart to adopt" rule applies
+// here, and it does not.
+//
+// One renderer for both passes rather than one per pass: the two differ only in what
+// deferring means, which the server states per pass (`options[0].label`, `resolved`), so
+// a second copy of this code could only drift from the first.
+let extractorState = null;
+
+// The one-line statement of what is in force. Pure over the server's payload so the
+// phrasing is testable without a DOM: an operator reading "codex · gpt-5.6-terra" has to
+// be able to tell it apart from a pass that is deferring, and — where the payload can
+// say what deferring resolves to — from one that is deferring to something expensive.
+function extractorSummary(state) {
+  if (!state || !state.value) return "";
+  const named = (h) => {
+    const opt = (state.options || []).find((o) => o.value === h);
+    return (opt && opt.label) || h;
+  };
+  const harness = state.value.harness || "";
+  if (harness) {
+    const opt = (state.options || []).find((o) => o.value === harness);
+    const model = state.value.model || (opt && opt.default_model) || "";
+    return model ? `${named(harness)} · ${model}` : named(harness);
+  }
+  // Deferring. The label alone ("follow distillation") names a rule and not an outcome,
+  // and the outcome is the whole question the operator opened this card to answer, so
+  // the concrete answer rides along wherever the server can name one. Distillation
+  // following the session is the case where it cannot: no session has ended yet.
+  const inherit = (state.options || [])[0];
+  const label = (inherit && inherit.label) || "";
+  const r = state.resolved || {};
+  if (!r.harness) return label;
+  return `${label} → ${named(r.harness)}${r.model ? ` · ${r.model}` : ""}`;
+}
+
+// The model chips for one harness: its declared slugs, with the one a blank selection
+// resolves to marked. The default is shown as a *named* chip rather than a "default"
+// chip, because the operator is choosing a model and "default" is not one — the
+// distinction that matters to him is which slug will run, not whether he typed it.
+function extractorModelOptions(state, harness) {
+  if (!state || !harness) return [];
+  const opt = (state.options || []).find((o) => o.value === harness);
+  if (!opt || !opt.models || !opt.models.length) return [];
+  const chosen = (state.value && state.value.model) || "";
+  return opt.models.map((m) => ({
+    value: m,
+    label: m,
+    on: chosen ? m === chosen : m === opt.default_model,
+    isDefault: m === opt.default_model,
+  }));
+}
+
+function renderExtractorCard(state) {
+  const box = document.createElement("div");
+  box.className = "pol-cap";
+
+  const head = document.createElement("div");
+  head.className = "pol-head";
+  head.innerHTML =
+    `<span class="pol-harness">${escapeHtml(state.label || state.pass)}</span>` +
+    `<span class="pol-title">${escapeHtml(extractorSummary(state))}</span>`;
+  box.appendChild(head);
+
+  const chips = document.createElement("div");
+  chips.className = "chips";
+  for (const opt of state.options) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip" + (opt.value === state.value.harness ? " on" : "");
+    b.textContent = opt.label;
+    if (!opt.available) {
+      // Shown and disabled rather than dropped. An operator who expected codex here
+      // needs to be told it is missing; an option that silently is not offered says
+      // nothing at all, which is the same silence a failed distillation already has.
+      b.disabled = true;
+      b.title = "not on this box's PATH";
+      b.textContent = `${opt.label} (not installed)`;
+    } else {
+      b.addEventListener("click", () => {
+        if (opt.value === state.value.harness) return;
+        setExtractorPolicy(state.pass, opt.value, "");
+      });
+    }
+    chips.appendChild(b);
+  }
+  box.appendChild(chips);
+
+  const models = extractorModelOptions(state, state.value.harness);
+  if (models.length) {
+    const row = document.createElement("div");
+    row.className = "chips";
+    for (const m of models) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip" + (m.on ? " on" : "");
+      b.textContent = m.isDefault ? `${m.label} ✓` : m.label;
+      b.addEventListener("click",
+                        () => setExtractorPolicy(state.pass, state.value.harness, m.value));
+      row.appendChild(b);
+    }
+    box.appendChild(row);
+  }
+
+  // Always appended, empty or not — the same reserved line the posture card uses, so
+  // choosing a cost-free option does not reflow the sheet under a moving thumb.
+  const drops = document.createElement("div");
+  drops.className = "pol-drops";
+  const current = (state.options || []).find((o) => o.value === state.value.harness);
+  drops.textContent = current && current.drops ? `Drops: ${current.drops}`
+    : (current && current.note ? current.note : "");
+  box.appendChild(drops);
+
+  if (state.unusable) {
+    const warn = document.createElement("div");
+    warn.className = "pol-warn";
+    warn.textContent = state.unusable;
+    box.appendChild(warn);
+  }
+  return box;
+}
+
+function renderExtractorPolicy() {
+  const sec = document.getElementById("admin-extractor-sec");
+  const passes = (extractorState && extractorState.passes) || [];
+  sec.hidden = !passes.length;
+  els.adminExtractor.innerHTML = "";
+  if (sec.hidden) return;
+  for (const state of passes) els.adminExtractor.appendChild(renderExtractorCard(state));
+}
+
+async function loadExtractorPolicy() {
+  try {
+    const r = await req("api/extractor-policy", { cache: "no-store" });
+    extractorState = await r.json();
+  } catch (e) {
+    extractorState = null;
+  }
+  renderExtractorPolicy();
+}
+
+async function setExtractorPolicy(pass, harness, model) {
+  const { ok, data } = await postJson("api/extractor-policy", { pass, harness, model });
+  if (ok && data.ok) {
+    extractorState = data.passes ? { passes: data.passes } : extractorState;
+    const c = data.change || {};
+    // The deferring label is read off the payload rather than spelled here: "follow the
+    // session" and "follow distillation" are the same stored value on two passes, and a
+    // log line naming the wrong one is a record of a change that did not happen.
+    const state = ((extractorState && extractorState.passes) || [])
+      .find((s) => s.pass === c.pass);
+    const deferring =
+      (state && (state.options || [])[0] && state.options[0].label) || "default";
+    const side = (h, m) => (h ? `${h}/${m || "default"}` : deferring);
+    adminLog(`${(state && state.label) || c.pass}: ` +
+             `${side(c.from_harness, c.from_model)} → ${side(c.to_harness, c.to_model)}`);
+  } else {
+    // The server's refusal is written for the person mid-decision — show it, don't
+    // translate it into a status code.
+    adminLog(data.error || "extractor change refused");
+  }
+  renderExtractorPolicy();
+}
+
 // The Services section manages systemd --user units named with
 // `thalamus console --service <unit>`. Nothing named → no section at all, rather
 // than an empty box implying the console lost track of something.
@@ -2437,6 +2608,7 @@ document.getElementById("admin-btn").addEventListener("click", () => {
     els.spawn.hidden = true;
     loadServices();
     loadLaunchPolicy();
+    loadExtractorPolicy();
     loadSweep();
   }
 });
