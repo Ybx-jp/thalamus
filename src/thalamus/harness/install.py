@@ -1839,6 +1839,8 @@ def _confirm() -> bool:
         f"{USER_SKILLS_DIR} — symlinks the shipped skills",
         f"{USER_AGENTS_DIR} — writes one derived agent per expert",
         f"{CODEX_HOME} — writes one derived codex profile per expert",
+        "~/.thalamus/profiles/ — appends this run's own query-cost rows "
+        "(`THALAMUS_PROFILE=0` disables the tap)",
     ):
         print(f"  - {line}")
     print("\nThose hooks then run in every session on this box, in every directory,\n"
