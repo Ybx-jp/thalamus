@@ -145,10 +145,10 @@ Do not restate its findings back to it — restating invites agreement.
 ## Feed it what it asks for, and check that you did
 
 Ingestion is demand-driven against open threads: anchor document first, per-project
-`--feed`. Title-check the source without a model call — one `curl -sL` (a GET, not
-`-sIL`, which can stop a redirect short of the host the gate reads) for status, final
-host and content-type, then `<title>` or `pdftotext` page 1 — then `--write` once. A
-dry run runs extraction too, so dry-running first bills it twice.
+`--feed`. Check the source without a model call — `thalamus ingest <doc> --scope <s>
+--check` runs the ingest path and stops before extraction, reporting the host that
+served the bytes, the content-type and the document's title — then `--write` once. A
+run without `--write` extracts too, so using one as the check bills the model twice.
 
 **Buying the document is not the same as buying the knowledge.** Verify the extracted
 claims answer the question the expert asked, and expect it to tell you when they do

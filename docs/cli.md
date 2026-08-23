@@ -35,6 +35,7 @@ thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log
 thalamus extract --harness codex   # same, sweeping $CODEX_HOME/sessions by session id
 thalamus write session.yaml        # write a session graph from a file
 thalamus validate session.yaml     # check an extraction against the contract
+thalamus ingest <url|path> --scope <expert> --check   # verify the source, no model call
 thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (dry run; --write to persist)
 thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
 ```
@@ -42,7 +43,22 @@ thalamus backfill-chunks           # co-index already-ingested documents as Chun
 `ingest` reads HTML, plain text, and PDF. **PDF needs the `pdf` extra** (`uv sync
 --extra pdf`); without it the format is refused and the message names the extra. The
 document is the positional argument — `--url` on this command is the Gremlin endpoint,
-as it is on `write`, `bootstrap` and `extract`.
+as it is on `write`, `bootstrap` and `extract`, and a document passed there is refused
+before anything is fetched.
+
+**`--check` verifies a source for no model spend.** It runs the ingest path — same
+request, same User-Agent, same redirects, same allowlist gate, same text extraction —
+and stops at the model call, reporting the host that actually served the bytes, the
+content-type, the title read from the document itself, and its opening 400 chars.
+Because it is the ingest path rather than a description of it, a source that passes
+`--check` cannot then fail the gate. A run *without* `--write` is not this: it extracts
+and reports, so using one as a pre-check bills the model twice for one document.
+
+A batch is accepted per claim. A claim whose kind only misspells a declared one — wrong
+namespace, plural, case — is repaired; one that names something the scope's manifest
+does not declare leaves the batch and the rest is written. Every rejection is printed
+and retained in `~/.thalamus/logs/rejected-claims.jsonl` against the document's content
+hash, because the extraction is paid for either way.
 
 `arxiv.org/abs/<id>` is refused before anything is fetched: the abstract page extracts
 into abstract-level claims that read exactly like paper-level ones, so the failure

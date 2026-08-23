@@ -1930,7 +1930,13 @@ def _report_preflight(args, ingest_mod):
 
     print(f"Requested:    {checked.requested}")
     print(f"Served by:    {checked.origin}" + ("  (redirected)" if checked.redirected else ""))
-    print(f"Allowlisted:  yes — `{args.scope}` admits this origin")
+    # A local path is not allowlisted and never was — hand-feeding a file *is* the
+    # curation decision, so the gate does not consult the manifest at all. Reporting a
+    # pass here would claim the manifest admitted something it never saw.
+    if checked.origin.startswith(("http://", "https://")):
+        print(f"Allowlisted:  yes — `{args.scope}` admits this origin")
+    else:
+        print("Allowlisted:  n/a — a local file is hand-fed, which is the curation decision")
     print(f"Content-Type: {checked.content_type or '(none reported)'}")
     print(f"Retained:     {checked.entry.uri} ({checked.entry.byte_size:,} bytes)")
     print(f"Text:         {len(checked.text):,} chars")
