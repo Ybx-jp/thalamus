@@ -43,10 +43,21 @@
 #   about to be committed". Measured need: two consultation answers,
 #   both correctly cited, both with the mechanism wrong; each was overturned by
 #   one more traversal that could have been run first.
+# - PostToolUse matcher Agent (tier 2, selfticket): a pinned session spawned a
+#   plain subagent for judgement work inside its own domain -> name the
+#   self-ticket, which buys the same fresh context plus a brief, a cited close
+#   and an exchange record. Fires after the spawn because there is no earlier
+#   observable: the class shapes the next pass and the decision this one feeds.
+#   The filter is three conjunctions deep because a looser one is wallpaper —
+#   measured over 135 real non-thalamus spawns, matching design vocabulary
+#   anywhere in the *prompt* fires on 46 (surveys, ingestion passes, issue
+#   filing); matching the caller-written `description` and excluding
+#   reconnaissance verbs fires on 3.
 #
 # Install (project .claude/settings.json):
-#   UserPromptSubmit -> this script; PostToolUse {"matcher": "TaskCreate"} and
-#   {"matcher": "mcp__thalamus__memory_query"} -> this script.
+#   UserPromptSubmit -> this script; PostToolUse {"matcher": "TaskCreate"},
+#   {"matcher": "Agent"} and {"matcher": "mcp__thalamus__memory_query"} -> this
+#   script.
 
 set -euo pipefail
 
@@ -65,8 +76,9 @@ log_file="$log_dir/$(date -u +%Y-%m).jsonl"
 # The pin, resolved once: it is both a logged field and — for the design class — part
 # of what gets injected. A reminder that tells every session to consult the same three
 # experts is wrong twice over on an expert session: it names a subset of the roster,
-# and it can name the reader's own scope, advising an `architect` session to go ask
-# `architect`.
+# and it puts the reader's own scope in a list whose sentence is "where the design
+# crosses out of your domain", which its own scope by definition does not. The
+# self-ticket is a different move and is named separately in the pinned branch.
 scope="$(thalamus_scope_from_payload "$input")"
 
 # The throttle key is (session, agent, class), not (session, class). Subagents share
@@ -113,9 +125,9 @@ case "$event" in
       if [ "$scope" = "main" ]; then
         routing="consult_request to whichever roster expert owns this domain — $others"
       else
-        routing="you are pinned to \`$scope\`, so design inside that domain is yours to do; consult_request where it crosses out of it — $others"
+        routing="you are pinned to \`$scope\`, so design inside that domain is yours to do — and when it is big enough that you would otherwise spawn a general-purpose subagent to second-pass it, the move is \`consult_request(expert=\"$scope\")\`, a self-ticket: same fresh context, plus a brief assembled against the question, a close the server refuses unless reads happened under the ticket, and an exchange record. consult_request where the design crosses out of \`$scope\` — $others"
       fi
-      emit design "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt reads as design work. Before designing: (1) does the graph already answer it — ground-in-literature step A0, because a design can be perfectly cited and still already built; (2) ground-in-literature proper (binding, CLAUDE.md); (3) $routing. If you consult, you are pre-authorized to spawn the subagent that voices the expert and expected to — never answer your own ticket; self-answering measured 8 citations against a voiced 25 and missed the objection that killed the design. Effectiveness of this reminder is measured per firing."
+      emit design "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt reads as design work. Before designing: (1) does the graph already answer it — ground-in-literature step A0, because a design can be perfectly cited and still already built; (2) ground-in-literature proper (binding, CLAUDE.md); (3) $routing. If you consult, you are pre-authorized to spawn the subagent that voices the expert and expected to — never answer the ticket inline, a self-ticket least of all, where the subagent is the whole of what it buys; self-answering measured 8 citations against a voiced 25 and missed the objection that killed the design. Effectiveness of this reminder is measured per firing."
       exit 0
     fi
 
@@ -133,6 +145,32 @@ case "$event" in
       TaskCreate)
         if ! fired_already milestone; then
           emit milestone "Thalamus conditioning (tier-0 operator hook, fires once/session): multi-step work is starting. Check now: (1) does an open thread overlap this work? (2) which roster expert covers this domain — consult before designing, not after; (3) any gremlin ahead: RECIPES.md before writing new queries."
+          exit 0
+        fi
+        ;;
+      Agent)
+        # Every conjunct removes a population that should not be nudged, and the
+        # order is cheapest-first.
+        #
+        # `main` cannot self-consult at all: there is no `main.yaml`, so
+        # `consult_request(expert="main")` is refused at the mint. A `thalamus-*`
+        # spawn is the consultation protocol already running — voicing a ticket is
+        # the behavior this class exists to produce, so nudging it would be telling
+        # a session to do what it is doing.
+        #
+        # The `description` is the surface, not the prompt: it is the three to five
+        # words the caller wrote to name the task, where the prompt is a page of
+        # context in which "design" and "review" appear incidentally. Reconnaissance
+        # is excluded by its opening verb — a survey is not the class, and the
+        # standing operator authorization blesses disposable-context sweeps.
+        spawned=$(printf '%s' "$input" | jq -r '.tool_input.subagent_type // ""')
+        desc=$(printf '%s' "$input" | jq -r '.tool_input.description // ""')
+        if [ "$scope" != "main" ] \
+          && [ "${spawned#thalamus-}" = "$spawned" ] \
+          && printf '%s' "$desc" | grep -qiE "\b(design|architect|propose|proposal|critique|review|assess|evaluate|spec|plan)\b" \
+          && ! printf '%s' "$desc" | grep -qiE "^[[:space:]]*(survey|map|trace|find|search|extract|check|read|list|probe|mine|locate|grep|inventory)\b" \
+          && ! fired_already selfticket; then
+          emit selfticket "Thalamus conditioning (tier-0 operator hook, fires once/session): you are pinned to \`$scope\` and spawned a plain subagent for judgement work inside your own domain (\"$desc\"). The instrument for that is \`consult_request(expert=\"$scope\")\` — a self-ticket, which is allowed and buys what the spawn does not: a brief assembled against the question, a close the server refuses unless reads happened under the ticket, and an exchange record a later session and the eval loop can find. It grants no reach you do not already have and corroborates nothing — one memory agreeing with itself is not a second source — so mint it for the independent pass, not for confirmation, and voice it with a subagent like any other ticket. Surveys, searches and mechanical work are not this class; keep spawning those. Procedure: the consult-an-expert skill."
           exit 0
         fi
         ;;

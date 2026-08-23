@@ -76,6 +76,55 @@ def test_firings_join_against_subsequent_thalamus_calls(tmp_path):
     assert len(load_firings(conditioning)) == 3
 
 
+def test_selfticket_counts_only_a_consult_request(tmp_path):
+    """
+    Scenario: Two selfticket firings. One session mints a consultation after it;
+    the other recalls and carries on with the subagent it already spawned.
+
+    Verifications:
+    - only `consult_request` satisfies the class. An unregistered class would
+      fall through `_EXPECTED.get` to None, where *any* thalamus call counts —
+      and a recall is what a session does anyway, so the rescue rate would read
+      as the reminder landing when nothing changed
+    """
+    conditioning = tmp_path / "conditioning"
+    traces = tmp_path / "traces"
+    _write_jsonl(
+        conditioning / "2026-08.jsonl",
+        [
+            {"ts": "2026-08-22T10:00:00Z", "session_id": "s1", "class": "selfticket"},
+            {"ts": "2026-08-22T10:00:00Z", "session_id": "s2", "class": "selfticket"},
+        ],
+    )
+    _write_jsonl(
+        traces / "2026-08.jsonl",
+        [
+            {
+                "ts": "2026-08-22T10:05:00Z",
+                "session_id": "s1",
+                "tool_name": "mcp__thalamus__consult_request",
+                "tool_input": {"expert": "dl"},
+                "tool_response": "## Consultation ticket ...",
+            },
+            {
+                "ts": "2026-08-22T10:05:00Z",
+                "session_id": "s2",
+                "tool_name": "mcp__thalamus__memory_recall",
+                "tool_input": {"query": "ranker"},
+                "tool_response": "## Recalled memory ...",
+            },
+        ],
+    )
+
+    report = conditioning_report(conditioning_base=conditioning, traces_base=traces)
+
+    assert {f.session_id: f.followed for f in report.firings} == {
+        "s1": True,
+        "s2": False,
+    }
+    assert "selfticket: 1/2" in report.render()
+
+
 def test_empty_logs_render_the_unmeasured_line(tmp_path):
     report = conditioning_report(
         conditioning_base=tmp_path / "none", traces_base=tmp_path / "none"

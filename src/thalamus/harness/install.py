@@ -142,6 +142,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
+    ("PostToolUse", "Agent", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "recipe-stage.sh"),
     ("PostToolUse", "Bash", "recipe-stage.sh"),
@@ -193,6 +194,12 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # No carrier: Claude Code's PostToolUse:TaskCreate milestone class. TaskCreate
 # is task-list UI; Cursor's `Task` tool type is subagent spawning, which is a
 # different event and would fire on the wrong thing.
+#
+# No carrier: the PostToolUse:Agent selfticket class. Cursor's `Task` tool *is*
+# the spawn, so the event exists there, but the class reads
+# `tool_input.subagent_type` and `tool_input.description` — a Claude Code payload
+# shape. Wiring it before those fields are located in a live Cursor payload would
+# fire the branch on a `""` description, which the filter drops silently.
 CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("sessionStart", "session-start.sh"),
     ("sessionEnd", "session-end.sh"),
@@ -268,6 +275,10 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
 #   `PostToolUse:TaskCreate` for conditioning's milestone class. That is Claude Code
 #   task-list UI; codex ships no analogous tool, so the class has no carrier — the
 #   same absence Cursor has, for the same reason.
+#
+#   `PostToolUse:Agent` for conditioning's selfticket class. codex has no subagent
+#   spawn to observe, so there is no event on which a session could be told it
+#   reached for one instead of a self-ticket.
 #
 #   `Skill` and `Artifact` on `role-guard.sh`'s matcher. Codex's skill and artifact
 #   surfaces have not been measured, and a matcher naming a tool nobody has observed

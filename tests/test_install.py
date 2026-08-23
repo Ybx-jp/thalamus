@@ -14,6 +14,7 @@ two, and foreign hooks left intact — not about the installer's return value.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -456,21 +457,27 @@ class TestHookBlock:
             "mcp__thalamus__.*",
             "Bash",
             "TaskCreate",
+            "Agent",
             "mcp__thalamus__memory_query",
         }
         assert all("matcher" not in g for g in block["SessionEnd"])
 
-        # One script legitimately serves two matchers: conditioning.sh carries both
-        # the milestone class (TaskCreate) and the falsify class (memory_query).
-        # Grouping is per matcher, so the two must land in different groups — the
-        # same script in one group twice would fire it twice for one tool call.
+        # One script legitimately serves three matchers: conditioning.sh carries the
+        # milestone class (TaskCreate), the selfticket class (Agent) and the falsify
+        # class (memory_query). Grouping is per matcher, so they must land in
+        # different groups — the same script in one group twice would fire it twice
+        # for one tool call.
         conditioning = [
             g.get("matcher")
             for g in block["PostToolUse"]
             for h in g["hooks"]
             if h["command"].endswith("conditioning.sh")
         ]
-        assert sorted(conditioning) == ["TaskCreate", "mcp__thalamus__memory_query"]
+        assert sorted(conditioning) == [
+            "Agent",
+            "TaskCreate",
+            "mcp__thalamus__memory_query",
+        ]
 
         # recipe-stage.sh covers both graph surfaces, for the same reason the tap
         # does: memory_query and inline gremlin Bash query the same graph, and a
@@ -1422,3 +1429,27 @@ class TestUninstall:
     def test_uninstalling_a_machine_that_never_installed_is_not_an_error(self, sandbox):
         actions = install.uninstall()
         assert actions and not any("FAILED" in a for a in actions)
+
+
+class TestTheInstallMatrixCountsTheSameWiring:
+    """`tests/qe/install/checks.py` hardcodes how many hook entries a healthy box
+    carries, deliberately: it is an oracle run *against an installed machine* and
+    must not import the package it is judging. The cost of that independence is a
+    number that rots — adding a HOOK_WIRING entry reddens every cell of the install
+    matrix with `N of our hook entries are wired, but HOOK_WIRING declares M`, a
+    45-second-per-cell CI job reporting a stale constant as an install defect.
+
+    Read out of the source text rather than imported, so this stays a consistency
+    guard and does not make the oracle depend on the package by a back route.
+    """
+
+    def test_expected_hook_entries_matches_hook_wiring(self):
+        source = (PROJECT_ROOT / "tests" / "qe" / "install" / "checks.py").read_text()
+        match = re.search(r"^EXPECTED_HOOK_ENTRIES = (\d+)$", source, re.M)
+        assert match, "checks.py no longer declares EXPECTED_HOOK_ENTRIES"
+
+        assert int(match.group(1)) == len(install.HOOK_WIRING), (
+            "tests/qe/install/checks.py:EXPECTED_HOOK_ENTRIES is stale — the install "
+            "matrix will fail every cell until it is bumped to "
+            f"{len(install.HOOK_WIRING)}"
+        )

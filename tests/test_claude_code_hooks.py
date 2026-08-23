@@ -877,6 +877,8 @@ def test_design_class_names_the_roster_it_finds_on_disk(tmp_path):
     - every scope with a manifest is offered, so adding an expert does not
       require editing this hook — the enumerated subset it replaced named three
       of nine and fired on every design-shaped prompt in every session
+    - no self-ticket is offered: `main` has no manifest, so `consult_request`
+      against it is refused at the mint
     """
     config = _roster(tmp_path, "architect", "dl", "literature", "qe")
 
@@ -886,18 +888,24 @@ def test_design_class_names_the_roster_it_finds_on_disk(tmp_path):
     context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
 
     assert "architect dl literature qe" in context
+    assert 'consult_request(expert=' not in context
     assert _firings(tmp_path, "design")[0]["scope"] == "main"
 
 
-def test_design_class_does_not_send_an_expert_session_to_consult_itself(tmp_path):
+def test_design_class_routes_an_expert_session_across_and_offers_the_self_ticket(
+    tmp_path,
+):
     """
     Scenario: The `dl` expert's own session asks a design-shaped question.
 
     Verifications:
     - the reminder names the pin and leaves the design inside it to the session
-    - `dl` is absent from the consult list; a fixed roster string advised every
-      expert to open a ticket against its own scope, which consultation.py
-      rejects outright
+    - `dl` is absent from the cross-scope list, whose sentence is "where the
+      design crosses out of `dl`" — a fixed roster string put every expert's own
+      scope in it
+    - the self-ticket is named instead, since a general-purpose subagent is what
+      a session reaches for when nothing points at `consult_request` on its own
+      scope
     """
     config = _roster(tmp_path, "architect", "dl", "qe")
 
@@ -911,7 +919,91 @@ def test_design_class_does_not_send_an_expert_session_to_consult_itself(tmp_path
 
     assert "pinned to `dl`" in context
     assert "architect qe" in context
+    assert 'consult_request(expert="dl")' in context
     assert _firings(tmp_path, "design")[0]["scope"] == "dl"
+
+
+def _spawn(session_id, description, subagent_type="general-purpose"):
+    return {
+        "hook_event_name": "PostToolUse",
+        "session_id": session_id,
+        "agent_id": "",
+        "tool_name": "Agent",
+        "tool_input": {
+            "description": description,
+            "subagent_type": subagent_type,
+            "prompt": "Do the thing.",
+        },
+    }
+
+
+def test_selfticket_class_names_the_self_ticket_to_a_pinned_session(tmp_path):
+    """
+    Scenario: The `dl` expert's session spawns a general-purpose subagent to
+    second-pass a design inside `dl`'s own domain.
+
+    Verifications:
+    - the class names `consult_request(expert="dl")` and what it buys over the
+      spawn that just ran
+    - it says what the ticket does not buy, so the reminder cannot be read as
+      "consult yourself for corroboration"
+    - once per session
+    """
+    config = _roster(tmp_path, "architect", "dl", "qe")
+    env = {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-dl"}
+
+    out = _run_conditioning(
+        _spawn("s-self", "Review the ranker design"), tmp_path, **env
+    ).stdout
+    context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+    assert 'consult_request(expert="dl")' in context
+    assert "exchange record" in context
+    assert "not a second source" in context
+    assert _firings(tmp_path, "selfticket")[0]["scope"] == "dl"
+
+    again = _run_conditioning(
+        _spawn("s-self", "Review the ranker design"), tmp_path, **env
+    )
+    assert again.stdout.strip() == ""
+
+
+def test_selfticket_class_is_silent_where_the_ticket_would_be_refused_or_wrong(tmp_path):
+    """
+    Scenario: Three spawns that must not be nudged — a main session, an expert
+    session voicing a consultation, and an expert session running a survey.
+
+    Verifications:
+    - `main` is silent: there is no `main.yaml`, so `consult_request(expert=
+      "main")` is refused at the mint and the reminder would name an impossible
+      call
+    - a `thalamus-*` spawn is silent: that spawn IS the consultation protocol,
+      and the class exists to produce it
+    - a reconnaissance description is silent even though it carries design
+      vocabulary; a survey is not the class, and the standing operator
+      authorization blesses disposable-context sweeps
+    """
+    config = _roster(tmp_path, "architect", "dl", "qe")
+    expert = {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-dl"}
+
+    main = _run_conditioning(
+        _spawn("s-main", "Review the ranker design"),
+        tmp_path,
+        THALAMUS_CONFIG_DIR=config,
+    )
+    voiced = _run_conditioning(
+        _spawn("s-voiced", "Voice architect on ticket", "thalamus-architect"),
+        tmp_path,
+        **expert,
+    )
+    survey = _run_conditioning(
+        _spawn("s-survey", "Survey room design in docs"), tmp_path, **expert
+    )
+
+    assert main.stdout.strip() == ""
+    assert voiced.stdout.strip() == ""
+    assert survey.stdout.strip() == ""
+    assert _firings(tmp_path, "selfticket") == []
 
 
 def test_milestone_class_survives_the_new_branch(tmp_path):

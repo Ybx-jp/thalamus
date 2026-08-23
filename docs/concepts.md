@@ -213,6 +213,13 @@ exists.
 The answer must cite nodes inside the consulted scope, and citations are validated
 before the ticket closes. Tickets are single-use.
 
+A scope may also consult **itself**. That ticket grants no reach the session did not
+already have and its answer corroborates nothing; what it buys is an independent pass —
+a fresh context, a brief built against the question, a cited close, and a recorded
+exchange. It is not a way of retrieving less: the close is refused unless the server
+served a recall under the ticket, and the grant keeps the knowledge commons so a
+ticketed read is never poorer than an ambient one.
+
 `thalamus quick ask <scope> "<question>"` is the second tier: rather than cold-starting
 an expert, it forks that expert's live session, so the answer comes from a process that
 is already warm. A fork distills its own delta, never the parent's transcript.
@@ -283,14 +290,39 @@ outputs entirely, so those sessions are floored whole by the ingress defence rat
 than checked against evidence that does not exist, and a Cursor session distills on a
 later sweep because its transcript is not flushed when the hook fires.
 
-Codex is close to Claude Code and differs in three places worth knowing. Its rollout is
+Codex is close to Claude Code and differs in four places worth knowing. Its rollout is
 filed under the day it ran rather than under its project, so a codex session is
 addressed by session id. Its tool calls arrive as *code mode* — a call is a JavaScript
 program calling `tools.exec_command(...)` or `tools.apply_patch(...)` — so the files a
 session touched are read from the structured `patch_apply_end` event beside the call
-rather than from the program, which the deterministic layer would have to guess at. And
-its `SessionStart` hook fires at the first submitted turn rather than at launch, so a
-codex window opened and never used leaves no pin-ledger row.
+rather than from the program, which the deterministic layer would have to guess at. Its
+`SessionStart` hook fires at the first submitted turn rather than at launch, so a codex
+window opened and never used leaves no pin-ledger row. And it publishes no session
+descriptor at all, which is what the next paragraph is about.
+
+Claude Code writes `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` — identity, liveness and a
+`status` its runtime keeps from inside its own event loop — and the console reads a
+row's whole liveness half out of it. Codex writes nothing of the kind, and its hook
+table has no turn-*end* event to build one from: `SessionStart`, `SessionEnd`,
+`UserPromptSubmit`, `PreToolUse` and `PostToolUse` can each say a turn began and none
+can say it finished. What answers instead is the rollout, which carries `task_started`
+and `task_complete` rows codex writes itself, one pair per turn — so a codex row reads
+`busy` while the last boundary is a start and `idle` once a completion lands, and reads
+as unobserved whenever neither is in reach. It does **not** carry the `waiting` half:
+nothing in that record says an approval prompt is up, so `blocked` on a codex row means
+*not known* rather than *not blocked*. The gap is bounded by the record's own shape — a
+prompt can only be held mid-turn, and mid-turn is exactly when the row says `busy` — so
+a codex session stuck at one understates as long-running and never renders as resting.
+
+A codex session claims its tmux pane, which is what lets the console join a window to a
+session at all, and the claim is gated: only an interactive TUI may make one. Nothing in
+codex's hook payload separates a TUI turn from a headless `codex exec` run, but the
+rollout's first record does — `originator` and `source` together, `codex-tui`/`"cli"`
+against `codex_exec`/`"exec"`, with a subagent run distinguished by a `source` that is an
+object rather than a string. Both fields are read, because a subagent inherits its
+parent's originator and is precisely the nested case the gate exists for: a headless run
+shelled out of a roster window inherits that window's `TMUX_PANE`, and an unconditional
+claim would hand the operator's read view to a probe.
 
 Codex also gates its hooks behind a trust record the operator grants once, per
 configured entry, in the TUI. Until it is granted the suite is installed and inert —
