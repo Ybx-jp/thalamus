@@ -33,12 +33,36 @@ thalamus bootstrap -- <project>    # stage 1 dry run: retain + derive (add --wri
 thalamus extract                   # stage 2: Claims and Threads, via a model
 thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log
 thalamus extract --harness codex   # same, sweeping $CODEX_HOME/sessions by session id
+thalamus extract --extract-with codex   # read Claude Code transcripts, pay codex for the pass
 thalamus write session.yaml        # write a session graph from a file
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus ingest <url|path> --scope <expert> --check   # verify the source, no model call
 thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (dry run; --write to persist)
 thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
 ```
+
+`--harness` and `--extract-with` are two questions, not one. `--harness` says who
+*wrote* the transcripts, which decides how the digest is rendered and where sessions are
+discovered. `--extract-with` says which CLI runs the extraction pass — a digest is plain
+text by the time a model reads it, so any CLI can read any harness's session. `ingest` has
+no transcript and so no source harness: its `--harness` is the extractor choice outright.
+
+**Two passes, two budgets.** Distillation is one model call per ended session, arriving at
+whatever rate you work at. Ingestion is one call *per chunk*, so a single paper can cost
+what a day of distillation does. They are therefore chosen separately, in the console
+(⚙ → Extraction, stored at `~/.thalamus/extractor/policy.json`). With no flag, `extract`
+reads the distillation setting and falls back to the session's own harness; `ingest` reads
+the ingestion setting, falls back to the distillation setting, and failing both to `claude`
+— so setting one answer for everything is still one tap, and splitting them costs nothing
+until you ask for it. Every ingest prints the CLI and model it is about to bill.
+
+Only Claude Code prices its own headless run, and `thalamus eval cost` buckets both passes'
+spend by finding the sandbox's transcript under `~/.claude/projects/-tmp-thalamus-extract*`.
+Routing a pass to another CLI therefore does not shrink the extraction spend that report
+shows — it removes it from the report. Every change to either setting lands a row in
+`~/.thalamus/extractor/policy.jsonl`, which is the only record of which model produced a
+given week's claims: the graph stores the harness that *wrote* a session, not the one that
+extracted it, and a Source stores no extractor at all.
 
 `ingest` reads HTML, plain text, and PDF. **PDF needs the `pdf` extra** (`uv sync
 --extra pdf`); without it the format is refused and the message names the extra. The

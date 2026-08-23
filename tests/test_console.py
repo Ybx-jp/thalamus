@@ -1366,6 +1366,113 @@ def test_an_unknown_posture_is_a_refusal_not_a_crash(tmp_path, monkeypatch):
     assert status == 409 and "not a posture" in body["error"]
 
 
+def _own_extractor_store(tmp_path, monkeypatch):
+    """Point the extractor store at tmp_path.
+
+    Sharper than the posture equivalent: one case here *succeeds*, and the module
+    defaults are the file the operator's own SessionEnd hook reads on the next session
+    that ends.
+    """
+    from thalamus.harness import extractor_policy
+    monkeypatch.setattr(extractor_policy, "STORE", tmp_path / "extractor.json")
+    monkeypatch.setattr(extractor_policy, "LEDGER", tmp_path / "extractor.jsonl")
+
+
+def test_the_extraction_panel_serves_both_passes_with_what_they_cost(tmp_path, monkeypatch):
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    _own_extractor_store(tmp_path, monkeypatch)
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        body = post.get("/api/extractor-policy")
+
+    from thalamus.harness import agents, extractor_policy
+
+    # Both passes, always, in the order the panel stacks them. A payload carrying only
+    # the one last asked about would let the phone render a stale card for the other.
+    assert [p["pass"] for p in body["passes"]] == list(extractor_policy.PASS_KEYS)
+    for view in body["passes"]:
+        options = {o["value"]: o for o in view["options"]}
+        # The deferring default plus every declared CLI. An uninstalled one is marked,
+        # never omitted: an option that is silently absent tells the operator nothing,
+        # which is the same silence a lost distillation already has.
+        assert set(options) == {""} | set(agents.HARNESSES)
+        assert view["value"] == {"harness": "", "model": ""}
+        assert options["claude"]["drops"] == ""
+        assert "eval cost" in options["codex"]["drops"]
+        assert options["codex"]["models"] and options["codex"]["default_model"]
+
+
+def test_choosing_an_extractor_from_the_phone_lands_and_reports_back(tmp_path, monkeypatch):
+    """One round trip has to leave the panel showing the new state.
+
+    The client renders from the POST's own response rather than re-fetching, so a
+    response that omitted the new view would show the old setting until the sheet was
+    reopened — on a surface whose only feedback is what it shows.
+    """
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    _own_extractor_store(tmp_path, monkeypatch)
+    from thalamus.harness import agents
+    monkeypatch.setattr(agents.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/extractor-policy",
+                            {"pass": "distill", "harness": "codex",
+                             "model": "gpt-5.4-mini"})
+
+    assert status == 200 and body["ok"] is True
+    served = {p["pass"]: p for p in body["passes"]}
+    assert served["distill"]["value"] == {"harness": "codex", "model": "gpt-5.4-mini"}
+    assert body["change"]["to_harness"] == "codex" and body["change"]["pass"] == "distill"
+    assert (tmp_path / "extractor.jsonl").exists(), "the change must be dateable later"
+
+
+def test_moving_ingestion_leaves_distillation_where_it_was(tmp_path, monkeypatch):
+    """The split the panel exists for, over the wire: a paper is one model call per
+    chunk, so the ingest pass is the spend worth moving on its own."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    _own_extractor_store(tmp_path, monkeypatch)
+    from thalamus.harness import agents
+    monkeypatch.setattr(agents.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/extractor-policy",
+                            {"pass": "ingest", "harness": "codex", "model": ""})
+
+    assert status == 200
+    served = {p["pass"]: p for p in body["passes"]}
+    assert served["ingest"]["value"]["harness"] == "codex"
+    assert served["distill"]["value"]["harness"] == ""
+
+
+def test_a_pass_the_build_does_not_have_is_a_client_bug_not_a_decision(tmp_path, monkeypatch):
+    """409 is reserved for a refusal written for the person mid-decision. An unknown
+    pass is neither a decision nor readable prose about one."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    _own_extractor_store(tmp_path, monkeypatch)
+    from thalamus.harness import agents
+    monkeypatch.setattr(agents.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/extractor-policy",
+                            {"pass": "summarise", "harness": "codex", "model": ""})
+
+    assert status == 400 and "summarise" in body["error"]
+
+
+def test_an_uninstalled_extractor_reaches_the_phone_as_its_reason(tmp_path, monkeypatch):
+    """The refusal explains the failure it is preventing, which is a silent one:
+    a missing binary fails inside the detached job SessionEnd forks."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    _own_extractor_store(tmp_path, monkeypatch)
+    from thalamus.harness import agents
+    monkeypatch.setattr(agents.shutil, "which", lambda binary: None)
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/extractor-policy",
+                            {"pass": "distill", "harness": "codex", "model": ""})
+
+    assert status == 409 and "PATH" in body["error"]
+
+
 class _serving:
     """A live console on an ephemeral port, with tmux stubbed out.
 

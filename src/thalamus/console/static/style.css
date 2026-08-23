@@ -890,6 +890,16 @@ textarea:focus { outline: none; border-color: var(--chan); }
 .chip.loose { border-color: #4a2a29; color: var(--danger-text); }
 .chip.loose.on { color: #0b0e12; background: var(--danger); border-color: var(--danger-text); }
 
+/* ---- Extraction passes ---- */
+/* Why the stored choice is not the one in force. Same danger colour as the posture
+   countdown, because it reports the same class of fact: the setting on screen is not
+   what will happen. */
+.pol-warn { font-size: .63rem; line-height: 1.4; color: var(--danger-text); }
+/* A CLI that is not installed. Dimmed to --muted rather than to an opacity, so the
+   floor tests/test_console_contrast.py holds over the tokens still applies to it —
+   an opacity would move the rendered colour out from under the arithmetic. */
+.chip:disabled { color: var(--muted); cursor: default; }
+
 /* spawn sheet: scope + directory pickers as tappable chips */
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem 0 .2rem; }
 .chip {

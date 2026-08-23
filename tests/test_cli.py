@@ -63,6 +63,7 @@ def test_extract_refuses_an_explicit_session_that_matches_nothing(
 
     args = SimpleNamespace(
         harness="claude",
+        extract_with=None,
         projects=["-proj"],
         projects_dir=None,
         session=["bbbb2222"],
@@ -136,6 +137,7 @@ def test_extract_reports_a_withheld_session_as_skipped_not_missing(
 
     args = SimpleNamespace(
         harness="claude",
+        extract_with=None,
         projects=["-proj"],
         projects_dir=None,
         session=["cccc3333"],
@@ -233,6 +235,7 @@ def _extract_fakes(monkeypatch, tmp_path, session_ids, *, fake_parse=True):
 
     return SimpleNamespace(
         harness="claude",
+        extract_with=None,
         projects=["-proj"],
         projects_dir=None,
         session=[],

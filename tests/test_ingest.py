@@ -1408,3 +1408,128 @@ def test_the_index_lives_beside_the_archive_not_inside_it(tmp_path, monkeypatch)
     assert index_dir() == tmp_path / "index"
     assert archive_dir() not in index_dir().parents
     assert index_dir() != archive_dir()
+
+
+# --- Which CLI runs the ingest pass -----------------------------------------------
+
+
+# One claim, quoted verbatim from `_PAPER` so the citation anchors. A batch asserting
+# nothing is refused by the contract, and these tests are about which CLI ran the pass
+# — not about what an empty extraction does.
+_EXTRACTED = """```yaml
+title: Speculative Merging
+claims:
+  - description: The paper's text goes on for a while.
+    kind: literature/finding
+    citation: "the paper's text goes on for a while"
+    about:
+      - "Speculative Merging"
+entities:
+  - name: "Speculative Merging"
+    kind: technique
+    description: A merging technique the paper names.
+```"""
+
+
+def _captured_extraction(monkeypatch):
+    """Replace `run_extraction` with one that records the extractor it was handed."""
+    seen: list[tuple[str, str]] = []
+
+    def _run(prompt, *, model=None, harness="claude"):
+        seen.append((harness, model))
+        return extraction.ExtractionRun(text=_EXTRACTED, cost_usd=0.0, duration_ms=1)
+
+    monkeypatch.setattr(extraction, "run_extraction", _run)
+    return seen
+
+
+def _ingest_args(**over):
+    from types import SimpleNamespace
+
+    base = dict(
+        location="http://127.0.0.1/paper", scope="literature", feed="manual",
+        model=None, harness=None, title="", url="ws://localhost:8182/gremlin",
+        check=False, refetch=False, write=False,
+    )
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def _ingest_ready(tmp_path, monkeypatch):
+    """A literature scope, a stubbed fetch, and every CLI on PATH."""
+    from thalamus.harness import agents
+
+    _install_manifest(tmp_path, monkeypatch, allowlist=["127.0.0.1"])
+    _counting_fetch(monkeypatch, _PAPER)
+    monkeypatch.setattr(agents.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+
+
+def test_ingestion_runs_on_its_own_setting_not_distillation_s(tmp_path, monkeypatch):
+    """
+    Scenario: distillation stays on Claude; ingestion is moved off it
+
+    The reason the two are separate settings at all. A paper is chunked and every chunk
+    is its own model call, so one ingest can cost what a day of distillation does — and
+    moving that spend must not require also moving the SessionEnd pass, which is the
+    cheap one and the one whose output the operator reads every day.
+    """
+    from thalamus import cli
+    from thalamus.harness import extractor_policy as ep
+
+    _ingest_ready(tmp_path, monkeypatch)
+    seen = _captured_extraction(monkeypatch)
+    ep.select("codex", "gpt-5.4-mini", pass_="ingest")
+
+    cli._cmd_ingest(_ingest_args())
+
+    assert seen and seen[0] == ("codex", "gpt-5.4-mini")
+    # The other pass is untouched: nothing was chosen for it, so it still follows the
+    # session that ended.
+    assert ep.effective("distill") == {}
+
+
+def test_ingestion_follows_distillation_until_it_is_set(tmp_path, monkeypatch):
+    """An operator who wants one answer for both still gets it in one tap."""
+    from thalamus import cli
+    from thalamus.harness import extractor_policy as ep
+
+    _ingest_ready(tmp_path, monkeypatch)
+    seen = _captured_extraction(monkeypatch)
+    ep.select("codex", pass_="distill")
+
+    cli._cmd_ingest(_ingest_args())
+
+    assert seen and seen[0][0] == "codex"
+
+
+def test_the_ingest_flag_outranks_both_settings(tmp_path, monkeypatch):
+    """`--harness` is the narrower statement: it is about this document, and a stored
+    policy overriding it would make the flag unusable for trying an extractor once."""
+    from thalamus import cli
+    from thalamus.harness import extractor_policy as ep
+
+    _ingest_ready(tmp_path, monkeypatch)
+    seen = _captured_extraction(monkeypatch)
+    ep.select("codex", pass_="ingest")
+
+    cli._cmd_ingest(_ingest_args(harness="cursor"))
+
+    assert seen and seen[0][0] == "cursor"
+
+
+def test_an_ingest_says_what_extracted_it(tmp_path, monkeypatch, capsys):
+    """A Source vertex carries the document's provenance, not the extractor's, so this
+    line is the only record a completed ingest leaves of which CLI produced its claims —
+    and it prints before the call, where it is also a statement of what is about to be
+    billed."""
+    from thalamus import cli
+    from thalamus.harness import extractor_policy as ep
+
+    _ingest_ready(tmp_path, monkeypatch)
+    _captured_extraction(monkeypatch)
+    ep.select("codex", "gpt-5.4-mini", pass_="ingest")
+
+    cli._cmd_ingest(_ingest_args())
+
+    out = capsys.readouterr().out
+    assert "Extractor: codex/gpt-5.4-mini — the ingestion setting" in out

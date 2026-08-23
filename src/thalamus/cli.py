@@ -24,6 +24,7 @@ from thalamus.harness import (
     agents,
     codex_transcripts,
     cursor_transcripts,
+    extractor_policy,
     extraction,
     transcripts,
 )
@@ -157,6 +158,14 @@ def _main():
         "the adapter existed. `codex` sweeps $CODEX_HOME/sessions by session id, since "
         "a codex rollout is filed under the day it ran rather than under its project.",
     )
+    extract_parser.add_argument(
+        "--extract-with", choices=agents.HARNESSES, default=None,
+        help="Which coding-agent CLI runs the extraction pass. A separate question "
+        "from --harness, which says who *wrote* the transcript: a digest is plain "
+        "text by the time a model sees it, so any CLI can read any harness's session. "
+        "Default: the console's distillation setting "
+        "(~/.thalamus/extractor/policy.json), else the session's own harness.",
+    )
     extract_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     extract_parser.add_argument(
         "--projects-dir",
@@ -253,10 +262,11 @@ def _main():
         help="Extraction model. Defaults to the harness's own (see --harness)."
     )
     ingest_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude",
-        help="Which coding-agent CLI runs the extraction pass (default: claude). "
-        "Ingestion has no harness of its own — this picks whichever CLI the "
-        "machine actually has.",
+        "--harness", choices=agents.HARNESSES, default=None,
+        help="Which coding-agent CLI runs the extraction pass. Ingestion has no "
+        "harness of its own — this picks whichever CLI the machine actually has. "
+        "Default: the console's ingestion setting, else its distillation setting "
+        "(~/.thalamus/extractor/policy.json), else claude.",
     )
     ingest_parser.add_argument("--title", default="", help="Override the extracted title")
     ingest_parser.add_argument(
@@ -1721,7 +1731,20 @@ def _cmd_extract(args):
     env_room = resolve_room()
     env_forked_from = resolve_forked_from()
 
-    print(f"{len(parsed)} sessions to extract (model: {args.model})")
+    # One resolution for the whole sweep, printed once. This line lands in
+    # ~/.thalamus/logs/session-end-<sid8>.log, which — since the graph records the
+    # harness that *wrote* a Session and not the CLI that distilled it — is the only
+    # per-run record of what produced these claims.
+    extractor = extractor_policy.resolve(
+        pass_="distill",
+        source_harness=args.harness,
+        harness=args.extract_with or "",
+        model=args.model or "",
+    )
+    print(
+        f"{len(parsed)} sessions to extract "
+        f"(extractor: {extractor.harness}/{extractor.model} — {extractor.reason})"
+    )
 
     graph = connect(args.url)
     try:
@@ -1788,7 +1811,7 @@ def _cmd_extract(args):
             try:
                 if retained is None:
                     run = extraction.run_extraction(
-                        prompt, model=args.model, harness=args.harness
+                        prompt, model=extractor.model, harness=extractor.harness
                     )
                     # The paid output lands on disk before anything can reject it. Every
                     # failure below is then re-parseable without re-invoking a model —
@@ -2028,13 +2051,25 @@ def _cmd_ingest(args):
             )
             sys.exit(1)
 
+    # Ingestion is resolved as its own pass, not as a second reader of the
+    # distillation setting. A paper is one model call per chunk, so an ingest can cost
+    # what a day of distillation does — which is the spend worth moving on its own,
+    # rather than only as a side effect of a decision about SessionEnd.
+    extractor = extractor_policy.resolve(
+        pass_="ingest", harness=args.harness or "", model=args.model or ""
+    )
+    # Printed before the call, not with the results: it names what is about to be
+    # billed, and a chunked document bills it once per chunk. It is also the only place
+    # a completed ingest says what extracted it — a Source vertex carries the document's
+    # provenance, not the extractor's.
+    print(f"Extractor: {extractor.harness}/{extractor.model} — {extractor.reason}")
     try:
         batch, run, digest = ingest_mod.ingest(
             args.location,
             scope=args.scope,
             feed=args.feed,
-            model=args.model,
-            harness=args.harness,
+            model=extractor.model,
+            harness=extractor.harness,
             title=args.title,
             known_entities=known_entities,
             refetch=args.refetch,
