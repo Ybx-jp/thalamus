@@ -1273,7 +1273,7 @@ function rowState(w, d, now, graceS) {
  * The operator's home directory, read back off the server's own `~`-relative form.
  *
  * The client is never told `$HOME`, and the group header needs it: a header carries
- * a repository path, and `/home/ybx/code/thalamus` is the same fact as
+ * a repository path, and `/home/op/code/thalamus` is the same fact as
  * `~/code/thalamus` at twice the width. `cwd` and `cwd_short` are one path
  * tildified and not, so the prefix the server stripped is recoverable from any live
  * window. Underivable — no live window, or a roster rooted outside home — leaves the
@@ -1288,7 +1288,7 @@ function homePrefix(windows) {
   return "";
 }
 
-/** `/home/ybx/code/thalamus` → `~/code/thalamus`, given the prefix to strip. */
+/** `/home/op/code/thalamus` → `~/code/thalamus`, given the prefix to strip. */
 function tildePath(path, home) {
   const p = String(path || "");
   if (!home || !p) return p;

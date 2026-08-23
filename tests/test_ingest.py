@@ -376,7 +376,7 @@ def test_the_full_text_addresses_are_not_refused():
         "https://arxiv.org/html/2503.23278",
         "https://arxiv.org/pdf/2503.23278",
         "https://dl.acm.org/doi/abs/10.1145/1985793.1985839",  # not arXiv's /abs/
-        "/home/ybx/.thalamus/hand-fed/crystal.txt",
+        "/home/op/.thalamus/hand-fed/crystal.txt",
     ):
         assert ingest_mod.check_location(allowed) is None
 

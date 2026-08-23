@@ -279,7 +279,7 @@ def _main_member(room):
     sessions = room["config_dir"] / "sessions"
     sessions.mkdir(parents=True, exist_ok=True)
     (sessions / "106.json").write_text(json.dumps({
-        "sessionId": "sid-main", "pid": 106, "cwd": "/home/ybx/code/thalamus",
+        "sessionId": "sid-main", "pid": 106, "cwd": "/home/op/code/thalamus",
         "name": "alpha-main", "status": "idle", "updatedAt": 1000,
     }))
     room["pins_file"].write_text(
