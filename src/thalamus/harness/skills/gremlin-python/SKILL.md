@@ -102,6 +102,41 @@ queries recipe-derived vs from-scratch by traversal shape — reuse is the
 store's earn-its-keep signal, weighted by what it displaces, never raw entry
 count.
 
+## Rule 6 — a slow traversal is a measurement, not an impression
+
+Every traversal the house issues is timed by *shape* (the folded step sequence, the
+same key rule 5 uses) and aggregated into `~/.thalamus/profiles/`. Two commands,
+and they answer different questions:
+
+```bash
+thalamus eval profile                       # which shapes this system spends its time in
+thalamus eval profile --query "g.V()..."    # where one traversal spends it, step by step
+thalamus eval profile --corpus              # the same, over every gremlin-lang recipe
+```
+
+The first is wall time, always on, near-free (measured overhead is printed with the
+report). The second asks the *server* for its own per-step metrics via TinkerPop's
+`profile()`, which reports each step's element count, traverser count, duration and
+share of total — the step whose `%dur` is large is where the query is expensive, and
+the element count beside it usually says why.
+
+Three things to hold when reading either:
+
+- **Do not compare the two channels' milliseconds.** `profile()` impedes the
+  traversal it measures ("durations are best considered in relation to each other" —
+  TinkerPop reference). This repo has the same artifact measured on itself:
+  `contract check` runs 10.29/10.35/10.36 s plain and 37.69/38.02 s under cProfile.
+- **One reading is not a finding.** The report gives p50/p95/max and a call count for
+  exactly this reason; a single pair of runs cannot support "X is faster than Y".
+- **Element counts transfer off this machine; milliseconds do not.** Quote the counts
+  when you are describing why a traversal is expensive.
+
+The common finding this surfaces is a full-graph materialisation hiding behind a
+short query — `g.V().valueMap()` and `g.E().elementMap()` are two steps and most of a
+`contract check`'s wall time. The second common one is an unindexed `has()` filtering
+a large edge sweep: the `HasStep` carries the `%dur`, the `VertexStep` above it
+carries the element count that explains it.
+
 ## Deeper reference
 
 `gremlin-docs/`, beside this skill, is a local gremlin-python-focused subset of the
@@ -116,3 +151,10 @@ Schema-aware LLM-written graph queries: Multi-Agent GraphRAG (arXiv 2511.08274).
 Deterministic pre-execution feedback as the cheap half of execution-feedback
 self-correction: Self-Debugging (arXiv 2304.05128). Question+query example
 stores for generation: DAIL-SQL (arXiv 2308.15363).
+
+Reporting a timing at all: distributions with their n rather than a mean (Hoefler &
+Belli, SC 2015; Georges, Buytaert & Eeckhout, OOPSLA 2007), and a machine-independent
+count reported beside the machine-dependent duration (HELM separates an *idealized*
+runtime that compares across systems from the per-request runtime a user experiences
+— Liang et al., arXiv 2211.09110, TMLR 2023). Profilers are themselves biased measurements — Mytkowicz,
+Diwan, Hauswirth & Sweeney, "Evaluating the Accuracy of Java Profilers" (PLDI 2010).

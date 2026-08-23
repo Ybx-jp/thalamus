@@ -15,6 +15,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Direction, Merge, P, T
 
 from thalamus.contract.ontology import vid
+from thalamus.substrate import spans
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
 from thalamus.substrate.schema import (
     Claim,
@@ -102,6 +103,9 @@ def connect(url: str = DEFAULT_URL) -> GraphTraversalSource:
     if down is not None:
         raise GraphUnavailable(graph_down_detail(down))
     connection = DriverRemoteConnection(url, "g")
+    # Every traversal this source runs is timed by shape (substrate/spans.py). The
+    # wrap goes on before the source exists, so no caller can hold an untimed one.
+    spans.instrument(connection)
     g = traversal().with_remote(connection)
     # GraphTraversalSource has no public close() method in gremlinpython 3.x.
     # Retain the connection so callers can deterministically close its client session.
@@ -114,6 +118,9 @@ def close_connection(g: GraphTraversalSource) -> None:
     connection = getattr(g, "_thalamus_connection", None)
     if connection is not None:
         connection.close()
+    # A long-lived process (the MCP server) opens and closes a connection per call
+    # and may never exit; the span ledger would otherwise only ever see its atexit.
+    spans.maybe_flush()
 
 
 def write_session(g: GraphTraversalSource, session: SessionGraph) -> str:

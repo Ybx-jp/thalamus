@@ -11,7 +11,9 @@ The honesty states the frontend renders are produced here, not styled there:
 - `pending` → tap events whose session has not distilled (a trace can only
   land after its session distills — sync.py);
 - pins carry their floor verdicts verbatim (`insufficient data …` is a state,
-  never a zero).
+  never a zero);
+- query cost is wall time from the span tap, so it carries its own measured tap
+  overhead and never a mean without the spread beside it.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from thalamus.contract.manifest import available_scopes
 from thalamus.eval.conditioning import conditioning_report
 from thalamus.eval.cost import PINS_FILE, cost_report, load_engaged, load_pins
 from thalamus.eval.gremlin import gremlin_report, load_guard_events
+from thalamus.eval.profile import profile_report, to_json as profile_json
 from thalamus.eval.pins import (
     TraceRow,
     VerdictRow,
@@ -201,6 +204,7 @@ def report_snapshot(
     guards_base: Path | None = None,
     conditioning_base: Path | None = None,
     pins_file: Path | None = None,
+    profiles_base: Path | None = None,
     since_days: int = 14,
     top: int = 8,
 ) -> dict:
@@ -242,6 +246,7 @@ def report_snapshot(
 
     # Ledger-side reports need no graph.
     out["gremlin"] = _gremlin_dict(gremlin_report(traces_base, guards_base))
+    out["query_cost"] = profile_json(profile_report(base=profiles_base, top=top), top=top)
     out["conditioning"] = _conditioning_dict(conditioning_report(conditioning_base, traces_base))
     since = date.today() - timedelta(days=since_days)
     try:
@@ -395,6 +400,12 @@ def _disclosures() -> dict:
             "pin signal floor: ≥10 attributed nodes per side",
         ],
         "surfaces": "priced: recall tools, memory_query (incl. rejections), bash_gremlin via tap. Blind: gremlin in script files.",
+        "query_cost": (
+            "wall time per traversal shape, one machine, unrepeated — p50/p95/max, "
+            "never a bare mean; the tap reports its own measured overhead. Step-level "
+            "cost is on demand only (`thalamus eval profile --query`), because "
+            "profiling distorts the traversal it measures."
+        ),
         "attribution_lag": "verdicts exist only after a session distills and sync runs; the NOW column is cost-only by design.",
     }
 

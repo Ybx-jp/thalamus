@@ -157,6 +157,15 @@ header h1::before { content: "◉ "; color: var(--s1); }
 .recalls div { display: flex; gap: 8px; padding: 1px 0; }
 .recalls .right { margin-left: auto; }
 
+/* ---------- query cost ---------- */
+.qc .shape { display: flex; gap: 8px; align-items: baseline; padding: 5px 0 0; }
+.qc .shape .s { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
+  color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.qc .shape .n { margin-left: auto; flex: none; font-size: 11.5px; color: var(--ink-2);
+  font-variant-numeric: tabular-nums; }
+.qc .meter { margin: 3px 0 7px; }
+.qc-origins { font-size: 11.5px; color: var(--ink-2); margin-bottom: 4px; }
+
 /* ---------- svg charts ---------- */
 svg { display: block; width: 100%; height: auto; }
 .axis { font-size: 10px; fill: var(--muted); font-family: ui-monospace, Menlo, monospace; }
@@ -268,6 +277,10 @@ body.offline #offline { display: block; }
       <div id="conditioning"></div>
     </section>
     <section class="panel desktop-only">
+      <h2>Query cost — traversal wall time <span class="stamp" id="qc-stamp">—</span></h2>
+      <div id="querycost"></div>
+    </section>
+    <section class="panel desktop-only">
       <h2>Gremlin fluency <span class="stamp" id="grem-stamp">—</span></h2>
       <div id="gremlin"></div>
     </section>
@@ -278,6 +291,7 @@ body.offline #offline { display: block; }
   <h2>Calibration plate — dials &amp; blind spots</h2>
   <ul id="plate-dials"></ul>
   <div id="plate-surfaces"></div>
+  <div id="plate-querycost"></div>
   <div class="standing-line" id="plate-standing"></div>
 </footer>
 
@@ -295,6 +309,9 @@ const scopeColor = s => css(SCOPE_SLOT[s] || "--deemph");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 const tok = n => n >= 1e6 ? (n/1e6).toFixed(1)+"M" : n >= 1e4 ? Math.round(n/1e3)+"K" : n >= 1e3 ? (n/1e3).toFixed(1)+"K" : String(n);
 const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const ms = v => v === null || v === undefined ? "—"
+  : v >= 1000 ? (v / 1000).toFixed(2) + "s" : v >= 10 ? v.toFixed(0) + "ms" : v.toFixed(1) + "ms";
+const secs = v => v >= 60000 ? (v / 60000).toFixed(1) + "m" : (v / 1000).toFixed(1) + "s";
 
 let lastReport = null, rankByCount = false;
 
@@ -380,6 +397,7 @@ function renderReport(rpt) {
 
   renderHeadline(rpt); renderTrend(rpt.trend); renderSessions(rpt); renderPins(rpt.pins);
   renderDecay(rpt); renderCost(rpt.cost); renderConditioning(rpt.conditioning); renderGremlin(rpt.gremlin);
+  renderQueryCost(rpt.query_cost);
   renderPlate(rpt.disclosures);
 }
 
@@ -556,6 +574,49 @@ function renderConditioning(cond) {
     }).join("");
 }
 
+/* Query cost: wall time per traversal shape from the span tap. Ranked by total time,
+   because a 2 ms shape run 4,000 times is the cost, not the 400 ms one run twice. Every
+   row carries its own n and its p50/p95 — a mean here would hide exactly the tail the
+   panel exists to show, and the bar length is share-of-total only, never a verdict. */
+function renderQueryCost(q) {
+  const el = document.getElementById("querycost");
+  const any = q && q.calls;
+  stamp(document.getElementById("qc-stamp"), !!any, "measured", "no spans yet");
+  if (!any) {
+    el.innerHTML = `<div class="empty">no traversals timed yet — the span tap fills as the
+      system is used, and each process flushes on exit</div>`;
+    return;
+  }
+  const overhead = q.tap_overhead_pct === null || q.tap_overhead_pct === undefined
+    ? "unmeasured" : q.tap_overhead_pct.toFixed(3) + "%";
+  const origins = (q.origins || []).map(o =>
+    `${esc(o.origin)} ${o.calls.toLocaleString()} (${secs(o.total_ms)})`).join(" · ");
+  const worst = q.shapes && q.shapes.length ? q.shapes[0].total_ms : 0;
+  const shapes = (q.shapes || []).map(s => {
+    const truncated = s.sampled < s.calls ? `, p over ${s.sampled}` : "";
+    return `<div class="shape">
+      <span class="s" data-tip="${esc(s.shape)} · surface ${esc(s.surface)}">${esc(s.shape)}</span>
+      <span class="n">${s.calls.toLocaleString()}x &middot; p50 ${ms(s.p50)} &middot; p95 ${ms(s.p95)} &middot; max ${ms(s.max)}${truncated}</span>
+    </div>
+    <div class="meter"><i style="width:${worst ? Math.max(2, 100 * s.total_ms / worst) : 0}%"></i></div>`;
+  }).join("");
+  el.innerHTML = `
+    <div class="tiles">
+      <div class="tile"><div class="lbl">traversals</div><div class="val">${tok(q.calls)}</div>
+        <div class="sub">${q.rows} flushed bucket(s)</div></div>
+      <div class="tile"><div class="lbl">wall time</div><div class="val">${secs(q.total_ms)}</div>
+        <div class="sub">summed round trips</div></div>
+      <div class="tile"><div class="lbl">tap overhead</div><div class="val">${overhead}</div>
+        <div class="sub">measured, not assumed</div></div>
+    </div>
+    <div class="qc-origins" style="margin-top:10px">by origin: ${origins || "—"}</div>
+    <div class="qc">${shapes}</div>
+    <div class="chart-note">wall time on one machine, unrepeated &mdash; read the spread, not a
+      single figure. Bars are share of the costliest shape's total time. Step-level cost is on
+      demand only: <code>thalamus eval profile --query</code>, because profiling distorts the
+      traversal it measures.</div>`;
+}
+
 /* Gremlin: rescue rate only with a real denominator; blocks are context, not achievement. */
 function renderGremlin(g) {
   const el = document.getElementById("gremlin");
@@ -584,6 +645,7 @@ function renderPlate(d) {
   plate.hidden = false;
   document.getElementById("plate-dials").innerHTML = d.dials.map(x => `<li>${esc(x)}</li>`).join("");
   document.getElementById("plate-surfaces").textContent = d.surfaces + " · " + d.attribution_lag;
+  document.getElementById("plate-querycost").textContent = d.query_cost || "";
   document.getElementById("plate-standing").textContent = d.standing;
   document.getElementById("standing").textContent = d.standing.split(".")[0];
 }

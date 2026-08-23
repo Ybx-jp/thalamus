@@ -185,7 +185,7 @@ Roadmap and open work live in
 
 ```
 src/thalamus/
-  substrate/   storage kernel — schema, Gremlin writer, Gremlin reader
+  substrate/   storage kernel — schema, Gremlin writer, Gremlin reader, query span tap
   contract/    the federation boundary — ontology, expert manifests, conformance
   console/     the browser/PWA control plane over the tmux roster
   archive/     immutable content-addressed store for retained evidence
