@@ -15,6 +15,10 @@ The classes carry different expected behaviors:
                  that would overturn the conclusion, and that check is itself a
                  query. A firing with no second traversal is the class failing
                  in exactly the way it exists to prevent.
+- selfticket  -> a consult_request should follow, and nothing else counts: the
+                 class names one instrument in place of the plain subagent that
+                 just ran, so a recall after it is the session carrying on, not
+                 the reminder landing.
 
 An injection with no thalamus call after it is a "wallpaper" firing — the
 reminder rode along in context and changed nothing. Rising wallpaper share is
@@ -48,6 +52,7 @@ _EXPECTED: dict[str, frozenset | None] = {
     ),
     "milestone": None,  # any thalamus call counts
     "falsify": frozenset({"memory_query", "bash_gremlin"}),
+    "selfticket": frozenset({"consult_request"}),
 }
 
 

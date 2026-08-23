@@ -8,8 +8,10 @@
 #                                   "additionalContext": "..."}}
 # — Claude Code's payload and Claude Code's envelope. What differs is not the shape
 # but the *harness*, so this is its own script rather than a delegator: the Claude
-# Code variant names ToolSearch, CLAUDE_CODE_SESSION_ID, an agent-picker channel and
-# a tmux-pane claim, and every one of those is a fact about the other harness.
+# Code variant names ToolSearch, CLAUDE_CODE_SESSION_ID and an agent-picker channel,
+# and every one of those is a fact about the other harness. Both claim a tmux pane,
+# but on evidence neither can read for the other — CLAUDE_CODE_ENTRYPOINT there, the
+# rollout's `session_meta` here.
 #
 # Two jobs, the same two as on every harness: record the session's pin in the tier-0
 # ledger (~/.thalamus/pins/pins.jsonl, which session-end.sh resolves the distillation
@@ -72,17 +74,44 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 # `agent` and `forked_from` have no codex referent: the pin arrives as an environment
 # variable rather than a picked agent, and the fork protocol is Claude-Code-only.
 #
-# `tmux_pane` is deliberately NOT written, the same call ../cursor/session-start.sh
-# makes and for the same reason. Only an interactive session may claim a pane, because
-# a headless run spawned from a shell inside a roster window inherits TMUX_PANE from
-# that window and an unconditional claim hands the console's read view to a probe
-# (measured 2026-08-10 on Claude Code: five hours of a window's read view lost to a
-# two-message probe). Claude Code discriminates on CLAUDE_CODE_ENTRYPOINT; codex
-# exposes no entrypoint field — `source` is `startup` for both `codex exec` and a TUI
-# turn, and `permission_mode` tracks the sandbox flags rather than the caller. With no
-# discriminator to condition on, a claim here would reproduce that failure with no way
-# to prevent it. An absent pane costs dispatch the ability to address a codex member;
-# a wrong pane costs the operator their console.
+# `tmux_pane` is claimed only by an interactive TUI session, and the discriminator is
+# the rollout's own `session_meta`, not the hook payload. The hazard is the one
+# ../cursor/session-start.sh still has no answer to: a headless run spawned from a
+# shell inside a roster window inherits TMUX_PANE from that window, and an
+# unconditional claim hands the console's read view to a probe (measured 2026-08-10 on
+# Claude Code: five hours of a window's read view lost to a two-message probe).
+#
+# Nothing in the *hook payload* separates the two — `source` there is `startup` for
+# both a `codex exec` run and a TUI turn, and `permission_mode` tracks the sandbox
+# flags rather than the caller. The rollout's first record does, measured 2026-08-22
+# across seven rollouts on this box:
+#
+#   codex-cli 0.148.0 TUI       originator=codex-tui   source="cli"
+#   codex-cli 0.147.0 exec      originator=codex_exec  source="exec"
+#   codex-cli 0.148.0 subagent  originator=codex-tui   source={"subagent":{...}}
+#
+# so the claim is gated on both fields, not on `originator` alone: a subagent run is
+# spawned *by* a TUI and inherits its originator, and it is exactly the nested case
+# the pane hazard is about. `source` is a string for a top-level session and an object
+# for a subagent, so requiring the literal string `cli` refuses the object without
+# having to enumerate what may appear inside it.
+#
+# Fails closed at every step: a null or unreadable `transcript_path`, a first line
+# that is not JSON, a missing field, or any value pair other than the one above
+# leaves `tmux_pane` unwritten and costs only what its absence has always cost.
+pane=""
+transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
+if [ -n "${TMUX_PANE:-}" ] && [ -n "$transcript" ] && [ -r "$transcript" ]; then
+  # `head -1` and not a whole-file read: the rollout grows to megabytes over a
+  # session, and `session_meta` is always its first record.
+  meta=$(head -n 1 "$transcript" 2>/dev/null || true)
+  originator=$(printf '%s' "$meta" | jq -r '(.payload // .).originator // empty' 2>/dev/null || true)
+  origin_source=$(printf '%s' "$meta" | jq -r '(.payload // .).source | if type == "string" then . else empty end' 2>/dev/null || true)
+  if [ "$originator" = "codex-tui" ] && [ "$origin_source" = "cli" ]; then
+    pane="$TMUX_PANE"
+  fi
+fi
+
 if [ -n "$session_id" ]; then
   pin_dir="$HOME/.thalamus/pins"
   mkdir -p "$pin_dir"
@@ -90,9 +119,10 @@ if [ -n "$session_id" ]; then
     --arg room "$(thalamus_resolve_room)" \
     --arg repo_root "$repo_root" \
     --arg project "$project" \
+    --arg tmux_pane "$pane" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{session_id: $sid, scope: $scope, cwd: $cwd, room: $room,
-      repo_root: $repo_root, project: $project, ts: $ts}' \
+      repo_root: $repo_root, project: $project, tmux_pane: $tmux_pane, ts: $ts}' \
     >> "$pin_dir/pins.jsonl"
 fi
 

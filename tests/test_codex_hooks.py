@@ -124,18 +124,100 @@ class TestSessionStart:
                 "repo_root": str(checkout),
                 "project": "myproject",
                 "ts": pins[0]["ts"],
+                # Empty, not absent: the payload's `transcript_path` names no file, so
+                # the claim below could not read a discriminator and refused.
+                "tmux_pane": "",
             }
         ]
 
-    def test_no_pane_is_claimed(self, tmp_path):
-        """codex exposes no entrypoint discriminator — `source` is `startup` for both
-        `codex exec` and an interactive turn — so a pane claim could not be
-        conditioned on being interactive, and an unconditional one hands the
-        console's read view to whatever headless run inherited TMUX_PANE."""
-        run_hook("session-start.sh", session_start_payload(), tmp_path,
-                 env={"TMUX_PANE": "%7"})
+
+class TestThePaneClaim:
+    """Which codex sessions may claim a tmux pane, and on what evidence.
+
+    A claim decides who owns the console's read view for that window, so the cost of
+    getting it wrong is asymmetric: an absent pane costs dispatch the ability to
+    address a codex member, and a *wrong* one hands the operator's read view to a
+    headless probe — measured 2026-08-10 on Claude Code as five hours of a window's
+    read view lost to a two-message run.
+
+    Nothing in codex's hook payload separates an interactive turn from `codex exec`;
+    that is measured and remains true. The rollout's first record does, measured
+    2026-08-22 across seven rollouts on this box (codex-cli 0.147.0 and 0.148.0), and
+    it is what these gate on.
+    """
+
+    def rollout(self, tmp_path, originator, source, name="rollout.jsonl"):
+        """A rollout whose first record is a `session_meta` in codex's measured shape."""
+        path = tmp_path / name
+        path.write_text(json.dumps({
+            "type": "session_meta",
+            "payload": {"originator": originator, "source": source,
+                        "cli_version": "0.148.0", "session_id": "x"},
+        }) + "\n")
+        return path
+
+    def test_an_interactive_tui_claims_its_pane(self, tmp_path):
+        """`originator=codex-tui` with a plain `source=cli` is the roster window the
+        operator is looking at, and the only shape that may claim."""
+        transcript = self.rollout(tmp_path, "codex-tui", "cli")
+        run_hook("session-start.sh",
+                 session_start_payload(transcript_path=str(transcript)),
+                 tmp_path, env={"TMUX_PANE": "%9"})
         pin = read_jsonl(tmp_path / ".thalamus" / "pins" / "pins.jsonl")[0]
-        assert "tmux_pane" not in pin
+        assert pin["tmux_pane"] == "%9"
+
+    def test_a_headless_exec_run_claims_nothing(self, tmp_path):
+        """The case the hazard is about: `codex exec` shelled out of a roster window
+        inherits that window's TMUX_PANE, and writes `originator=codex_exec`."""
+        transcript = self.rollout(tmp_path, "codex_exec", "exec")
+        run_hook("session-start.sh",
+                 session_start_payload(transcript_path=str(transcript)),
+                 tmp_path, env={"TMUX_PANE": "%9"})
+        pin = read_jsonl(tmp_path / ".thalamus" / "pins" / "pins.jsonl")[0]
+        assert pin["tmux_pane"] == ""
+
+    def test_a_subagent_claims_nothing_despite_the_tui_originator(self, tmp_path):
+        """The reason the gate reads both fields. A subagent is spawned *by* a TUI and
+        inherits `originator=codex-tui`, so `originator` alone would hand it the
+        parent's read view — the nested case the hazard is entirely about. Its
+        `source` is an object rather than the string `cli`, measured on 0.148.0."""
+        transcript = self.rollout(tmp_path, "codex-tui",
+                                  {"subagent": {"other": "guardian"}})
+        run_hook("session-start.sh",
+                 session_start_payload(transcript_path=str(transcript)),
+                 tmp_path, env={"TMUX_PANE": "%9"})
+        pin = read_jsonl(tmp_path / ".thalamus" / "pins" / "pins.jsonl")[0]
+        assert pin["tmux_pane"] == ""
+
+    def test_no_tmux_pane_in_the_environment_claims_nothing(self, tmp_path):
+        """A session outside tmux has no pane to claim, whatever its rollout says."""
+        transcript = self.rollout(tmp_path, "codex-tui", "cli")
+        run_hook("session-start.sh",
+                 session_start_payload(transcript_path=str(transcript)), tmp_path)
+        pin = read_jsonl(tmp_path / ".thalamus" / "pins" / "pins.jsonl")[0]
+        assert pin["tmux_pane"] == ""
+
+    def test_an_unreadable_rollout_claims_nothing(self, tmp_path):
+        """Fails closed. `transcript_path` is nullable in codex's own schema, and a
+        session whose evidence cannot be read is not one to give a pane to."""
+        for payload in (session_start_payload(transcript_path=""),
+                        session_start_payload(transcript_path="/nope/missing.jsonl")):
+            home = tmp_path / f"h{abs(hash(str(payload)))}"
+            home.mkdir()
+            run_hook("session-start.sh", payload, home, env={"TMUX_PANE": "%9"})
+            pin = read_jsonl(home / ".thalamus" / "pins" / "pins.jsonl")[0]
+            assert pin["tmux_pane"] == ""
+
+    def test_a_rollout_whose_first_line_is_not_json_claims_nothing(self, tmp_path):
+        """The gate parses, rather than pattern-matching a substring: a file that
+        merely *contains* `codex-tui` is not a session_meta saying so."""
+        transcript = tmp_path / "junk.jsonl"
+        transcript.write_text("not json at all — codex-tui cli\n")
+        run_hook("session-start.sh",
+                 session_start_payload(transcript_path=str(transcript)),
+                 tmp_path, env={"TMUX_PANE": "%9"})
+        pin = read_jsonl(tmp_path / ".thalamus" / "pins" / "pins.jsonl")[0]
+        assert pin["tmux_pane"] == ""
 
     def test_env_pin_is_announced_and_recorded(self, tmp_path):
         """Env is the only pin channel on codex: no agent picker, and no `agent_type`

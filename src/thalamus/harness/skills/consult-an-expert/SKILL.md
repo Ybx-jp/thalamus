@@ -22,6 +22,9 @@ grounding, and reaching the literature scope specifically, is
 - When an answer comes back thin, generic, or agrees with everything you said.
 - When the question is big enough that one round will not settle it — a new
   component, a contract, a migration, a measurement design.
+- When a design **inside your own pinned domain** is big enough that you would
+  otherwise spawn a general-purpose subagent to second-pass it — mint a self-ticket
+  instead (below).
 
 ## Interview the operator before you mint
 
@@ -63,6 +66,36 @@ If something blocks the spawn, say so **before** minting — a minted-then-self-
 ticket burns a single-use ticket and writes an exchange record indistinguishable from
 a real one. `eval sync` stamps `answered_from`, so it is auditable afterwards, but the
 answer is already worse.
+
+## Consulting your own scope
+
+`consult_request(expert="<your own scope>")` is allowed, and it is the right instrument
+for an independent pass over work inside your own domain. It is open to a pinned expert
+session only: `main` has no manifest, so a main session asking `main` is refused. The
+section above still binds — a self-ticket is voiced by a subagent like any other, and
+answering it inline is the thing that is never allowed.
+
+**What it buys** is the same four things a cross-expert ticket buys, minus the reach: a
+subagent with a fresh context, a brief assembled against the question, a close that
+will not accept an uncited answer, and an exchange record in the graph. A
+general-purpose subagent buys the first of those and none of the other three, and
+leaves nothing behind that a later session or the eval loop can find.
+
+**What it does not buy** is corroboration. One memory agreeing with itself is not a
+second source, and the ticket grants no scope you could not already read. If the
+question is really "am I right about this", the answer has to come from a scope that
+holds different evidence.
+
+**It is not a way of not retrieving.** `consult_answer` refuses to close a self-ticket
+the server served no ticketed recall under — counted where the grant is resolved, so it
+records reads that happened rather than an answer's claim to have read. This costs you
+nothing: a self-ticket keeps the knowledge commons rather than trading it for depth
+(the trade a cross-expert ticket makes), so a ticketed read is never poorer than the
+ambient one. Tell the subagent to pass the ticket to `memory_recall*`, because the
+close depends on it.
+
+Everything else in this skill applies unchanged — the operator interview, the voiced
+subagent, rounds, verification.
 
 ## Run it in rounds
 
