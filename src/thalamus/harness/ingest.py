@@ -33,8 +33,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from thalamus.archive import archive_bytes, report_secrets, scan_for_secrets
-from thalamus.contract.manifest import load_manifest
+from thalamus.archive import (
+    ArchiveEntry,
+    archive_bytes,
+    record_rejections,
+    report_secrets,
+    scan_for_secrets,
+)
+from thalamus.contract.manifest import ClaimRejection, load_manifest
 from thalamus.harness import extraction
 from thalamus.substrate.schema import (
     Chunk,
@@ -105,6 +111,12 @@ class DigestReport:
     failed_chunks: tuple[int, ...] = ()
     dropped_refs: tuple[str, ...] = ()
     dropped_entities: tuple[str, ...] = ()
+    # Claim-granularity triage. `repaired_kinds` is (index, from, to) per mechanical
+    # rename; `rejected_claims` is what left the batch. Both ride back here for the same
+    # reason the chunk failures do — partial acceptance is only defensible when the loss
+    # is reported, and a claim dropped quietly is the failure it exists to stop.
+    repaired_kinds: tuple[tuple[int, str, str], ...] = ()
+    rejected_claims: tuple[ClaimRejection, ...] = ()
 
     @property
     def truncated(self) -> bool:
@@ -125,29 +137,43 @@ class DigestReport:
         return min(self.text_chars, self.budget) / self.text_chars
 
 
-def fetch(location: str) -> tuple[bytes, str]:
-    """Fetch a URL or read a local file. Returns (payload, origin).
+@dataclass(frozen=True)
+class Fetched:
+    """Bytes, and the two facts about the response a caller downstream needs.
 
-    The origin is the address that **served** the bytes, which is not always the one
-    that was asked for: `urlopen` follows redirects, so a request to one host can be
-    answered by another. Every downstream use of `origin` — the allowlist gate, the
-    `Source` node's provenance, the supersession key — is a claim about where the
-    bytes came from, so answering it with the requested URL would let any allowlisted
-    address redirect content in from anywhere under its own name.
+    `origin` is the address that **served** the bytes, which is not always the one that
+    was asked for: `urlopen` follows redirects, so a request to one host can be answered
+    by another. Every downstream use of it — the allowlist gate, the `Source` node's
+    provenance, the supersession key — is a claim about where the bytes came from, so
+    answering it with the requested URL would let any allowlisted address redirect
+    content in from anywhere under its own name.
+
+    `content_type` is carried because it is the cheapest available answer to "is this
+    the PDF I asked for, or an HTML error page wearing its URL", and a caller that only
+    receives bytes has to re-derive it by sniffing.
     """
+
+    payload: bytes
+    origin: str
+    content_type: str = ""
+
+
+def fetch(location: str) -> Fetched:
+    """Fetch a URL or read a local file."""
     if location.startswith(("http://", "https://")):
         request = Request(location, headers={"User-Agent": _USER_AGENT})
         try:
             with urlopen(request, timeout=_FETCH_TIMEOUT) as response:
                 payload = response.read()
-                return payload, (response.geturl() or location)
+                content_type = response.headers.get("Content-Type", "") or ""
+                return Fetched(payload, response.geturl() or location, content_type)
         except Exception as exc:
             raise IngestError(f"fetch failed for {location}: {exc}") from exc
 
     path = Path(location).expanduser()
     if not path.is_file():
         raise IngestError(f"no such file: {location}")
-    return path.read_bytes(), str(path.resolve())
+    return Fetched(path.read_bytes(), str(path.resolve()), "")
 
 
 # arXiv's abstract page, whose id is what the two full-text forms are built from.
@@ -298,6 +324,44 @@ def to_text(payload: bytes) -> str:
             text = _TAG_RE.sub(" ", text)
             text = html_lib.unescape(text)
     return " ".join(text.split())
+
+
+_HTML_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.DOTALL | re.IGNORECASE)
+
+
+def document_title(payload: bytes) -> str:
+    """The document's own title, read from the bytes without a model. May be empty.
+
+    Best-effort and advisory — this is what `--check` can confirm before anything is
+    billed, never what a `Source` is titled. The written title comes from the extraction
+    or from `--title`, both of which arrive after the model pass.
+
+    HTML carries one in `<title>`. A PDF carries one only if its producer filled the
+    metadata field, and academic PDFs frequently leave it as a LaTeX temp filename, so
+    an implausible value is dropped rather than reported as the paper's title — a
+    confidently wrong title is worse here than none, because none sends the reader to
+    the opening text and wrong does not.
+    """
+    if payload[:5] == b"%PDF-":
+        try:
+            from pypdf import PdfReader  # noqa: PLC0415
+
+            meta = PdfReader(io.BytesIO(payload)).metadata
+            title = " ".join(str(meta.title or "").split()) if meta else ""
+        except Exception:  # noqa: BLE001 — an unreadable title is not a failed check
+            return ""
+        # `.dvi`, `untitled`, `Microsoft Word - paper.doc`: producer noise, not a title.
+        if len(title) < 8 or Path(title).suffix.lower() in _TITLE_NOISE_SUFFIXES:
+            return ""
+        return title
+
+    match = _HTML_TITLE_RE.search(payload.decode("utf-8", errors="ignore"))
+    if not match:
+        return ""
+    return " ".join(html_lib.unescape(_TAG_RE.sub(" ", match.group(1))).split())
+
+
+_TITLE_NOISE_SUFFIXES = frozenset({".dvi", ".doc", ".docx", ".tex", ".pdf", ".ps", ".indd"})
 
 
 _ARTICLE_PROMPT = """You are extracting typed knowledge from ONE document for a graph \
@@ -659,6 +723,88 @@ def merge_extractions(parts: list[dict]) -> dict:
     return {"title": title, "claims": claims, "entities": list(entities.values())}
 
 
+@dataclass(frozen=True)
+class Preflight:
+    """Everything `ingest()` establishes about a document before it bills a model.
+
+    The whole point of naming this is parity. The protocol requires a source to be
+    verified before it is written, and every hand-built check drifts from the ingester
+    in some way that matters — `curl -sIL` stops a redirect hop earlier than `urlopen`,
+    a different User-Agent gets a different status (`curl/8.5.0` 200 against
+    `thalamus-ingest/0.1` 403 on the same URL, measured 2026-08-22), and a HEAD response
+    carries no title at all. Two of 45 sources in one batch passed a hand check and were
+    refused at ingest for parity reasons alone.
+
+    So the check is not reimplemented anywhere; it is this function, and `ingest()`
+    calls it too. `--check` differs from an ingest in exactly one respect: it stops
+    here, before the model call, which is the only irreversible spend on the path.
+    """
+
+    requested: str
+    origin: str
+    content_type: str
+    entry: ArchiveEntry
+    payload: bytes
+    text: str
+    title: str
+
+    @property
+    def redirected(self) -> bool:
+        return bool(self.origin) and self.origin != self.requested
+
+
+def preflight(location: str, *, scope: str) -> Preflight:
+    """Address → gate → retain → text. Every step of `ingest()` that precedes the model.
+
+    The order is load-bearing at three points, and it is the same order either way.
+    The address is judged first, because what an abstract page is can be read off the
+    URL and refusing costs not even a request. Then the allowlist gate, first among the
+    things that spend something. Then archive before text, because extraction is
+    reversible against retained bytes and a fetch that was never retained is not.
+    """
+    # Ahead of the fetch, unlike the allowlist gate below: what an abstract page is
+    # can be read off the address, so refusing costs not even a request.
+    check_location(location)
+    fetched = fetch(location)
+    check_origin(fetched.origin, scope, requested=location)
+    payload = fetched.payload
+    entry = archive_bytes(payload, suffix=".txt" if not payload.startswith(b"<") else ".html")
+    # Third-party bytes are the archive's least-trusted input. Reported, never
+    # redacted — the same posture as a transcript: the archive holds evidence, and
+    # evidence that has been quietly rewritten is not evidence.
+    report_secrets(scan_for_secrets(payload), f"ingested document {fetched.origin}")
+
+    text = to_text(payload)
+    if len(text) < 200:
+        raise IngestError(
+            f"document reduced to {len(text)} chars of text — not enough to assert "
+            "anything; the fetch is archived either way"
+        )
+    return Preflight(
+        requested=location,
+        origin=fetched.origin,
+        content_type=fetched.content_type,
+        entry=entry,
+        payload=payload,
+        text=text,
+        title=document_title(payload),
+    )
+
+
+def _manifest_for(scope: str):
+    """The scope's manifest, or None when there is none to be had.
+
+    `ingest()` triages claim kinds against it, and a scope with no usable manifest has
+    no declared vocabulary to triage against. Returning None leaves the batch exactly as
+    extracted; `check_batch` still refuses it at the gate, which is the behaviour with
+    no manifest either way.
+    """
+    try:
+        return load_manifest(scope)
+    except (FileNotFoundError, ValueError):
+        return None
+
+
 def ingest(
     location: str,
     *,
@@ -670,7 +816,11 @@ def ingest(
     known_entities: list[dict] | None = None,
 ) -> tuple[KnowledgeBatch, extraction.ExtractionRun, DigestReport]:
     """The full v0 path: fetch → gate → retain → extract → assemble. Contract checks
-    and graph writes belong to the caller (the CLI), which also owns dry-run semantics.
+    and graph writes belong to the caller (the CLI).
+
+    Everything up to the model call is `preflight()`, which `--check` runs on its own —
+    the check and the ingest are the same code, so they cannot disagree about what a
+    source is.
 
     The gate reads the origin that answered, and it sits ahead of both irreversible
     steps — the archive write and the model pass — so a document from outside the
@@ -678,23 +828,8 @@ def ingest(
 
     `known_entities` rows carry name/kind/description from the scope's graph — names
     feed the prompt, the full shape feeds the batch backfill (see build_batch)."""
-    # Ahead of the fetch, unlike the allowlist gate below: what an abstract page is
-    # can be read off the address, so refusing costs not even a request.
-    check_location(location)
-    payload, origin = fetch(location)
-    check_origin(origin, scope, requested=location)
-    entry = archive_bytes(payload, suffix=".txt" if not payload.startswith(b"<") else ".html")
-    # Third-party bytes are the archive's least-trusted input. Reported, never
-    # redacted — the same posture as a transcript: the archive holds evidence, and
-    # evidence that has been quietly rewritten is not evidence.
-    report_secrets(scan_for_secrets(payload), f"ingested document {origin}")
-
-    text = to_text(payload)
-    if len(text) < 200:
-        raise IngestError(
-            f"document reduced to {len(text)} chars of text — not enough to assert "
-            "anything; the fetch is archived either way"
-        )
+    checked = preflight(location, scope=scope)
+    entry, origin, text = checked.entry, checked.origin, checked.text
 
     known_names = [str(row["name"]) for row in known_entities or [] if row.get("name")]
     chunks = chunk_text(text)
@@ -760,6 +895,39 @@ def ingest(
         title_override=title,
         known_entities=known_entities,
     )
+    # What `reconcile_entity_references` narrowed, captured before triage narrows the
+    # batch again — the two losses have different causes and the report names them
+    # apart. Read after triage, this set would blame the reconciliation for entities
+    # that a rejected claim took with it.
+    reconciled_entities = {entity.name for entity in batch.entities}
+
+    # Partial acceptance at claim granularity — the third layer of a rule this path
+    # already applies per item (e470620) and per chunk (above). The contract gate was
+    # the layer that still refused whole, so one mistyped claim discarded a paid
+    # extraction. Repairs are mechanical renames onto a declared kind; anything needing
+    # judgement leaves the batch and is retained rather than dropped, because a
+    # rejection nobody records is a measurement nobody can make.
+    manifest = _manifest_for(scope)
+    repairs: tuple[tuple[int, str, str], ...] = ()
+    rejected: tuple[ClaimRejection, ...] = ()
+    if manifest is not None:
+        kept, repaired, dropped = manifest.triage_claims(batch.claims)
+        repairs, rejected = tuple(repaired), tuple(dropped)
+        if rejected:
+            # Entities are re-narrowed against the survivors: a claim that leaves takes
+            # its exclusive entities with it, and leaving them declared would strand
+            # them as orphans the contract then refuses — turning partial acceptance
+            # back into the whole-batch rejection it exists to replace.
+            kept, entities = reconcile_entity_references(kept, batch.entities)
+            batch = batch.model_copy(update={"claims": kept, "entities": entities})
+        elif repairs:
+            batch = batch.model_copy(update={"claims": kept})
+        record_rejections(
+            [rejection.as_row() for rejection in rejected],
+            scope=scope,
+            content_hash=entry.content_hash,
+            origin=origin,
+        )
 
     # Chunks are built against the assembled batch, not the raw extraction, so anchor
     # indices cannot drift: build_batch drops malformed items, and an anchor computed
@@ -782,12 +950,13 @@ def ingest(
     raw_declared = {
         str(e.get("name")) for e in data.get("entities") or [] if isinstance(e, dict) and e.get("name")
     }
-    survived = {entity.name for entity in batch.entities}
 
     return batch, run, DigestReport(
         text_chars=len(text),
         chunks=len(chunks),
         failed_chunks=chunk_failures,
-        dropped_refs=tuple(sorted(raw_refs - survived)),
-        dropped_entities=tuple(sorted(raw_declared - survived)),
+        dropped_refs=tuple(sorted(raw_refs - reconciled_entities)),
+        dropped_entities=tuple(sorted(raw_declared - reconciled_entities)),
+        repaired_kinds=repairs,
+        rejected_claims=rejected,
     )

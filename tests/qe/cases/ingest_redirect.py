@@ -66,7 +66,7 @@ def run() -> Finding | None:
     entry_url = f"http://127.0.0.1:{redirect_port}/looks-allowlisted"
 
     try:
-        payload, origin = ingest_mod.fetch(entry_url)
+        fetched = ingest_mod.fetch(entry_url)
     except Exception as exc:  # noqa: BLE001
         return Finding(
             failure_class=FailureClass.COLLAPSED_SENTINEL,
@@ -83,6 +83,7 @@ def run() -> Finding | None:
     # POSITIVE CONTROL: the redirect must actually have been followed. If it were not,
     # origin would equal the entry URL for the correct reason, and this case would
     # report a leak that is not there.
+    payload, origin = fetched.payload, fetched.origin
     if payload != _PAYLOAD:
         return Finding(
             failure_class=FailureClass.COLLAPSED_SENTINEL,

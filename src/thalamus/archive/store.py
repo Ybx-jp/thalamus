@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import sys
@@ -149,3 +150,57 @@ def report_secrets(findings: dict[str, int], subject: str, *,
 
     print(line, file=sys.stderr)
     return line
+
+
+# Rejected extraction objects, retained beside the batch they left. A rejection is the
+# one part of a paid extraction that used to leave no trace at all, which is what made
+# "is the claim-kind vocabulary adequate?" a question with no data behind it. One file
+# across every scope, deliberately: all nine manifests declare an identical claim-kind
+# pair today, so a schema weakness would appear identically in nine unjoined logs and
+# the dominant signal would be the one thing per-scope files hide.
+REJECT_LOG = Path.home() / ".thalamus" / "logs" / "rejected-claims.jsonl"
+
+
+def record_rejections(
+    rows: list[dict],
+    *,
+    scope: str,
+    content_hash: str,
+    origin: str,
+    log_path: Path | None = None,
+) -> Path | None:
+    """Append rejected extraction objects to the ledger. Returns the path, or None.
+
+    Rows are plain dicts so this stays below the contract — the archive knows bytes and
+    provenance, not claim kinds. `content_hash` joins a row back to the retained
+    document, so a re-read of what was rejected never depends on the graph having
+    accepted anything.
+
+    An unwritable ledger must not take down the ingest riding on it: the CLI reports
+    every rejection to the operator either way, and this is the durable copy rather
+    than the only one.
+    """
+    if not rows:
+        return None
+    path = log_path or REJECT_LOG
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(
+                    json.dumps(
+                        {
+                            "at": stamp,
+                            "scope": scope,
+                            "content_hash": content_hash,
+                            "origin": origin,
+                            **row,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+    except OSError:
+        return None
+    return path

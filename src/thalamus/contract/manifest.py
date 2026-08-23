@@ -13,6 +13,7 @@ can write.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
@@ -23,6 +24,44 @@ from pydantic import BaseModel, Field
 # src/thalamus/contract/manifest.py -> parents[3] is the repo root. Local-first
 # project; THALAMUS_CONFIG_DIR overrides for anything fancier.
 _DEFAULT_CONFIG = Path(__file__).resolve().parents[3] / "config"
+
+
+@dataclass(frozen=True)
+class ClaimRejection:
+    """One claim that left a batch at the contract gate, and why.
+
+    Retained rather than discarded: the extraction is already paid for, and a
+    rejection nobody records is a measurement nobody can make. `triage` is
+    `unsalvageable` or `ambiguous` — a `recoverable` claim is repaired and kept, so it
+    is never a rejection.
+    """
+
+    index: int
+    kind: str
+    description: str
+    triage: str
+    reason: str
+
+    def as_row(self) -> dict:
+        """A plain dict, for a ledger that must not import the contract."""
+        return {
+            "index": self.index,
+            "kind": self.kind,
+            "description": self.description,
+            "triage": self.triage,
+            "reason": self.reason,
+        }
+
+
+def _claim_kind_key(kind: str) -> str:
+    """The comparison key a claim kind normalizes onto: leaf, lowercased, singular.
+
+    Namespace and plural are spelling; the leaf is what names the kind. Kept narrow
+    on purpose — a looser normalizer would start guessing, and a guess here silently
+    files a claim under a kind the document did not support.
+    """
+    leaf = kind.strip().rsplit("/", 1)[-1].strip().lower()
+    return leaf[:-1] if len(leaf) > 1 and leaf.endswith("s") else leaf
 
 
 class WriteBoundary(BaseModel):
@@ -267,8 +306,110 @@ class ExpertManifest(BaseModel):
             for suffix in (s.lower().lstrip(".") for s in self.allowlist)
         )
 
+    def triage_claim_kind(self, kind: str) -> tuple[str, str]:
+        """Classify one claim's kind against this manifest. Returns (verdict, repair).
+
+        Deterministic by construction — no model call. Triage runs on the failure
+        path, and a model-driven classifier would spend there the same thing partial
+        acceptance exists to stop spending.
+
+        Verdicts:
+
+        - `declared` — legal as written; `repair` is the kind itself.
+        - `recoverable` — the kind normalizes onto exactly one declared kind by case,
+          leaf and plural, so `finding`, `literature/findings` and `episodic/Finding`
+          all land on `literature/finding`. `repair` is that declared kind. The rename
+          needs no judgement: the leaf already names the declared kind and only its
+          spelling or namespace is wrong.
+        - `ambiguous` — the leaf names nothing this manifest declares, or names more
+          than one. `repair` is empty and a person decides. `literature/concept` is the
+          case this bucket was measured on: `concept` is a real ontology kind but an
+          **Entity** kind, so neither repair is mechanical — converting the claim to an
+          Entity discards a sentence-long description for a name, and coercing it to
+          finding or technique is the semantic call the manifest declaration exists to
+          govern.
+
+        A manifest declaring no claim kinds governs no vocabulary, so every kind is
+        `declared`.
+        """
+        declared = list(self.claim_kinds)
+        if not declared or kind in declared:
+            return "declared", kind
+        key = _claim_kind_key(kind)
+        matches = [d for d in declared if _claim_kind_key(d) == key] if key else []
+        if len(matches) == 1:
+            return "recoverable", matches[0]
+        return "ambiguous", ""
+
+    def triage_claims(
+        self, claims
+    ) -> tuple[list, list[tuple[int, str, str]], list[ClaimRejection]]:
+        """Partial acceptance at claim granularity. Returns (kept, repairs, rejected).
+
+        The third layer of a rule this path already applies twice: per extracted item
+        (e470620) and per chunk (`ingest.py`), one malformed unit costs its own unit
+        and never the ones beside it. The contract gate was the layer that still
+        refused whole, so one mistyped claim discarded a paid extraction — measured
+        2026-08-22 on Miller 1956 into `designer`, where 30 conforming claims were
+        thrown away with the one that was not.
+
+        `kept` carries repaired kinds already applied. `repairs` is
+        `(index, from_kind, to_kind)` per rename. `rejected` is every claim that left
+        the batch, which the caller must retain and report — a claim dropped quietly is
+        the failure this exists to stop.
+
+        Duplicates are **not** a rejection here. Two chunks reporting the same finding
+        is a fact about the document that `merge_extractions` keeps on purpose, and the
+        contract has never refused one; dropping them here would be a new rule wearing
+        triage's clothes rather than a triage of an existing refusal.
+
+        Only claim-*level* failures are triaged. A batch whose scope or origin is wrong
+        is unsalvageable whole, and `check_batch` still refuses it entire.
+        """
+        kept: list = []
+        repairs: list[tuple[int, str, str]] = []
+        rejected: list[ClaimRejection] = []
+        for index, claim in enumerate(claims):
+            if not (claim.description or "").strip():
+                rejected.append(
+                    ClaimRejection(
+                        index=index,
+                        kind=claim.kind,
+                        description=claim.description or "",
+                        triage="unsalvageable",
+                        reason="claim has no description — nothing is asserted, and "
+                        "nothing a rule or a person could recover",
+                    )
+                )
+                continue
+            verdict, repair = self.triage_claim_kind(claim.kind)
+            if verdict == "declared":
+                kept.append(claim)
+            elif verdict == "recoverable":
+                repairs.append((index, claim.kind, repair))
+                kept.append(claim.model_copy(update={"kind": repair}))
+            else:
+                rejected.append(
+                    ClaimRejection(
+                        index=index,
+                        kind=claim.kind,
+                        description=claim.description,
+                        triage="ambiguous",
+                        reason=f"kind `{claim.kind}` names nothing the `{self.scope}` "
+                        f"manifest declares ({', '.join(sorted(self.claim_kinds))}) and "
+                        "does not normalize onto one; a person decides",
+                    )
+                )
+        return kept, repairs, rejected
+
     def check_batch(self, batch) -> list[str]:
-        """Manifest-level obligations, on top of conformance.check_knowledge."""
+        """Manifest-level obligations, on top of conformance.check_knowledge.
+
+        The claim-kind loop is a backstop for callers that do not triage first. A
+        caller that ran `triage_claims` arrives with every claim declared, so what this
+        can still refuse is batch-level — a scope mismatch or an off-allowlist origin —
+        and both are unsalvageable whole.
+        """
         issues: list[str] = []
         if batch.scope != self.scope:
             issues.append(
