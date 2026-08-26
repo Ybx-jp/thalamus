@@ -57,8 +57,8 @@ from pathlib import Path
 
 from thalamus.harness import agents
 from thalamus.harness.agents import HARNESSES as AGENT_HARNESSES
+from thalamus.contract.paths import PROJECT_ROOT
 from thalamus.harness.pin import (
-    PROJECT_ROOT,
     USER_AGENTS_DIR,
     write_all_agents,
     write_all_codex_profiles,

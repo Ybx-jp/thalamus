@@ -16,6 +16,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Direction, Merge, P, T
 
 from thalamus.contract.ontology import vid
+from thalamus.contract.paths import PROJECT_ROOT
 from thalamus.substrate import spans
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
 from thalamus.substrate.schema import (
@@ -86,10 +87,6 @@ def graph_down_detail(reason: str) -> str:
     tools reach it from a read they wanted to do, and a first-time user should not
     get two different accounts of the same container being down.
     """
-    # Local import: the substrate does not otherwise depend on the harness, and this
-    # is only ever reached on a failure path.
-    from thalamus.harness.pin import PROJECT_ROOT
-
     return (f"{reason} — start it with `docker compose up -d` in {PROJECT_ROOT}, "
             "then re-run `thalamus init --check`")
 

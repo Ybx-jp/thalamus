@@ -36,7 +36,6 @@ from typing import Any
 
 import yaml
 
-from thalamus.eval.attribution import MIN_MATCHED_RATIO, MIN_MATCHED_TERMS
 # Re-exported: extraction is their main caller, and `cli.py` and the suite reach
 # them through this module rather than through `agents`. The noqa markers are
 # load-bearing — a lint autofix strips these and breaks those callers, not this one.
@@ -50,7 +49,11 @@ from thalamus.harness.agents import (
     sandbox_env,
 )
 from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS
-from thalamus.substrate.reader import STOPWORDS
+from thalamus.substrate.reader import (
+    MIN_MATCHED_RATIO,
+    MIN_MATCHED_TERMS,
+    STOPWORDS,
+)
 from thalamus.substrate.schema import (
     Artifact,
     Claim,

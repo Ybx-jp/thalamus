@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from thalamus.harness import install
-from thalamus.harness.pin import PROJECT_ROOT
+from thalamus.contract.paths import PROJECT_ROOT
 
 
 @pytest.fixture
