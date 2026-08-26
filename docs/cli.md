@@ -289,7 +289,21 @@ thalamus audit-artifacts           # measure how fragmented Artifact identity is
 thalamus repair-projects           # re-anchor project values that named a directory, not a repo
 thalamus derive-artifact-paths     # project Artifact identifiers onto (repo, path)
 thalamus retire-scans              # remove graph records of architecture scans
+thalamus repair-claim-addresses    # move Claims back to the address their content produces
 ```
+
+`repair-claim-addresses` is the repair half of `contract check`'s content-address
+audit, and it treats the audit's two groups differently. A stale duplicate — one whose
+twin at the recomputed id holds the `CONTAINS` — has its edges moved to the twin before
+it is dropped, so the record that retrieval or a consultation ever surfaced that
+content survives the vertex. A vertex with no twin is the live record at a wrong
+address: it is re-minted at the correct id with every edge moved, never renamed in
+place, which is the rewrite that produces this class.
+
+Where the far endpoint already holds the same edge to the destination, the move
+**collapses**: one trace returned the same claim twice under two ids, and its fan-out
+was counted as two. The dry run prints those separately, because merging them changes
+a number the eval loop has already reported.
 
 ## The MCP server
 
