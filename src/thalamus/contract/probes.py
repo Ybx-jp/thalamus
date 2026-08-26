@@ -259,9 +259,27 @@ def _derive_hook_parity() -> dict:
     return derive_hook_parity()
 
 
+def _refute_hook_parity_claims() -> dict:
+    # Same local import, same reason.
+    from thalamus.harness.install import DECLARED_HOOK_PARITY, refute_parity_claims
+
+    return {"refuted": refute_parity_claims(DECLARED_HOOK_PARITY)}
+
+
 # Name -> the function that recomputes it. Adding a derivation here is what makes a
 # self-claim checkable; a claim with no entry is prose again.
-DERIVATIONS = {"hook_parity": _derive_hook_parity}
+#
+# Two entries for one record, because its six fields split on whether the tables can
+# produce them. `hook_parity` recomputes the four that are set arithmetic over the
+# wirings. `hook_parity_claims` cannot recompute `renames` and `native` — the tables
+# carry nothing that says one script plays another's role — so it tries to refute them
+# instead, and declares that nothing does. Refutation is a weaker instrument than
+# recomputation and is the one available; the alternative was leaving two fields
+# compared to nothing, which is the state the record was built to end.
+DERIVATIONS = {
+    "hook_parity": _derive_hook_parity,
+    "hook_parity_claims": _refute_hook_parity_claims,
+}
 
 
 def probe_derived(probe: DerivedProbe) -> ProbeResult:
@@ -306,9 +324,24 @@ def _declared_parity_row() -> tuple[DerivedProbe, str]:
     )
 
 
+def _parity_claims_row() -> tuple[DerivedProbe, str]:
+    """The two fields the wirings cannot produce, declared as unrefuted.
+
+    `()` is a real claim, not a tautology: it asserts every hand-written rename and
+    native entry is still consistent with the tables that moved underneath it and with
+    the scripts on disk. When it breaks, the computed side names which one and how.
+    """
+    return (
+        DerivedProbe(derivation="hook_parity_claims", declared={"refuted": ()}),
+        "install.DECLARED_HOOK_PARITY.renames/.native — the two fields the wiring "
+        "tables cannot re-derive, checked by refutation instead",
+    )
+
+
 def check_capabilities() -> list[ProbeResult]:
     """Re-ask every checkable declaration. Opens no graph connection, by design."""
     results = [probe_flag(probe, declared=declared) for probe, declared, _ in CAPABILITY_ROWS]
-    parity_probe, _ = _declared_parity_row()
-    results.append(probe_derived(parity_probe))
+    for row in (_declared_parity_row(), _parity_claims_row()):
+        probe, _ = row
+        results.append(probe_derived(probe))
     return results
