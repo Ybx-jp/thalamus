@@ -73,12 +73,18 @@ layers:
   - src/thalamus/contract/ontology.py
   - src/thalamus/contract/manifest.py
   - src/thalamus/contract/__init__.py
+  # ownership.py declares which paths belong to which scope and imports nothing but
+  # stdlib. A leaf that everything may read is what this layer is.
+  - src/thalamus/contract/ownership.py
 - name: conformance
   includes:
   - src/thalamus/contract/conformance.py
   - src/thalamus/contract/boundaries.py
   - src/thalamus/contract/pinning.py
   - src/thalamus/contract/probes.py
+  # rooms.py imports boundaries and probes and answers the same kind of question about
+  # a member that they answer about a boundary and a pin.
+  - src/thalamus/contract/rooms.py
 - name: archive
   includes:
   - src/thalamus/archive/**
@@ -146,6 +152,103 @@ rejected_refactors:
     dialects) under substrate, which is the store and should not know what a session is.
     The cheaper cut is to have project_repair accept already-parsed facts from its caller,
     leaving the format knowledge in harness where the per-harness transcript dialects live.
+
+# Edges the rules forbid and the gate tolerates. `thalamus arch rules --gate` exits 1 on
+# anything measured and not listed here, and 2 on anything listed here that no longer
+# happens — an exception that has stopped firing is deleted, not left to describe a
+# design that moved. Every entry states why, because an exception list whose entries do
+# not is a list that only grows.
+accepted:
+- from_path: src/thalamus/harness/bootstrap.py
+  to_path: src/thalamus/contract/conformance.py
+  reason: >-
+    The write gate. `check_session` refuses a session that does not conform, and a gate
+    has to be called by the thing it gates, so the edge runs against the height rule by
+    construction: conformance sits above harness because checkers reach down into what
+    they check, and this one is reached back up to. Removing the edge means moving the
+    gate off the write path, which is the property it exists to have.
+- from_path: src/thalamus/harness/extraction.py
+  to_path: src/thalamus/eval/attribution.py
+  reason: >-
+    Two threshold constants, MIN_MATCHED_RATIO and MIN_MATCHED_TERMS, and nothing else.
+    The fix is to relocate the pair below both layers rather than to permit harness to
+    read eval; accepted until that move, not endorsed.
+- from_path: src/thalamus/substrate/project_repair.py
+  to_path: src/thalamus/harness/transcripts.py
+  reason: >-
+    The one edge holding the substrate/harness cycle, with the obvious refactor already
+    tried and rejected on 2026-08-13 (see rejected_refactors): moving the transcript
+    reader down would put per-vendor session formats under the store. The recorded
+    cheaper cut, project_repair taking already-parsed facts from its caller, is unbuilt.
+- from_path: src/thalamus/substrate/writer.py
+  to_path: src/thalamus/harness/pin.py
+  reason: >-
+    One deferred import of one constant, PROJECT_ROOT. Same shape and same fix as the
+    extraction/attribution edge: the constant is below both layers in meaning and above
+    one of them in placement. Accepted until it is moved.
+
+# The dead-end census. `thalamus arch dead --gate` exits 1 on anything reported here and
+# not exempted, and 2 on an exemption that no longer matches — the same two directions
+# the rule gate uses, and for the same reason.
+#
+# `reference_extensions` is what keeps the census from accusing live code: the hook
+# scripts embed Python heredocs that import from the package, so a symbol whose only
+# caller is `role-guard.sh` is reached, not dead. Those blocks are parsed as Python and
+# walked by the same reference pass the .py files get — a text match cannot tell a call
+# from a mention, and this repo contains both on adjacent lines.
+deadends:
+  version: 1
+  enabled: true
+  source_roots: [src]
+  test_roots: [tests]
+  reference_extensions: ['.sh']
+  # Modules whose caller is outside the scanned import graph, so a fan-in of zero says
+  # nothing about them. Two kinds sit here and the name covers both: a process entry
+  # nothing imports because something *runs* it, and a module imported from outside this
+  # repository. Each non-obvious entry names which it is — a bare list would leave the
+  # next reader unable to tell a declaration from an oversight.
+  entry_points:
+  - '**/__init__.py'
+  - '**/__main__.py'
+  - '**/cli.py'
+  - '**/conftest.py'
+  - '**/static/*'
+  # Declared in [project.scripts]; the MCP client launches it as a process.
+  - src/thalamus/harness/mcp_server.py
+  # A resident service on its own lifecycle, started as its own process.
+  - src/thalamus/voice/daemon.py
+  # Imported by the companion repo thalamus-eval, not by anything here: the WCAG
+  # arithmetic stayed in this repo when the research battery split out so that it has one
+  # owner across both. `contrast_ratio` inside it is exempted separately — declaring the
+  # module silences the orphan finding, not the symbol one.
+  - src/thalamus/eval/legibility.py
+  kinds: [function, method, class]
+  report_unreferenced: false
+  exemptions:
+  - reason: >-
+      role-guard.sh reaches its degraded path exactly when `thalamus.contract.ownership`
+      will not import, so it cannot call this — it inlines the same literals in its
+      `for pair in ...` loop instead. tests/test_ownership.py
+      ::TestTheDegradedPathFailsClosed::test_the_inlined_markers_match_the_table parses
+      those literals back out of the script and asserts they equal this function's
+      output, so the duplication is checked rather than trusted.
+    path: src/thalamus/contract/ownership.py
+    symbol: fallback_markers
+  - reason: >-
+      Imported by the companion repo thalamus-eval, whose
+      src/thalamus_eval/legibility.py re-exports the WCAG arithmetic from here and calls
+      contrast_ratio in its degradation transform. The math stayed in this repo when the
+      research battery split out (12bd638) so that it has one owner across both, and
+      tests/test_console_contrast.py measures the shipped console CSS with it.
+    path: src/thalamus/eval/legibility.py
+    symbol: contrast_ratio
+  - reason: >-
+      Called by the companion repo thalamus-eval at src/thalamus_eval/arms.py, which
+      refuses to run an eval arm on a CLI whose `arm_blockers` are non-empty and prints
+      those blockers. eval/arms.py moved there in 12bd638; the property stayed with the
+      registry whose field it reads.
+    path: src/thalamus/harness/agents.py
+    symbol: AgentCLI.runs_arms
 
 # ─── DERIVED ─── regenerated by `thalamus arch scan`. Do not hand-edit below this
 # line: the next scan overwrites it. Committed anyway, because the diff is the point.

@@ -233,7 +233,7 @@ class DistillWatch:
         self._lock = threading.Lock()
         self._ledger: dict[str, dict] = {}
         self._ledger_sig: tuple = ()
-        self._logs_cache: dict[str, tuple[float, int, str, str]] = {}
+        self._logs_cache: dict[str, tuple[float, int, str, str, int]] = {}
         self._rows: list[dict] = []
         self._scanned_at = 0.0
         self._state: dict | None = None

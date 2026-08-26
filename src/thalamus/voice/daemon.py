@@ -32,6 +32,7 @@ import threading
 import time
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 LOG = logging.getLogger("thalamus.voice")
@@ -86,8 +87,9 @@ class Synthesiser:
     def _ensure_pipeline(self):
         if self._pipeline is not None:
             return self._pipeline
-        import torch
-        from kokoro import KPipeline
+        # `voice` extra: declared in pyproject, absent from a default dev sync.
+        import torch  # ty: ignore[unresolved-import]
+        from kokoro import KPipeline  # ty: ignore[unresolved-import]
 
         # torch takes every core it can find; on a four-core box shared with the
         # roster and the media stack that is the difference between a background
@@ -108,7 +110,8 @@ class Synthesiser:
 
     def to_wav(self, text: str, voice: str = "", speed: float = 1.0) -> bytes:
         """Synthesise one utterance and return a complete RIFF wav."""
-        import numpy as np
+        # `voice` extra: declared in pyproject, absent from a default dev sync.
+        import numpy as np  # ty: ignore[unresolved-import]
 
         with self._lock:
             pipeline = self._ensure_pipeline()
@@ -129,7 +132,8 @@ class Synthesiser:
 
 def encode_wav(samples) -> bytes:
     """Float samples in [-1, 1] to 16-bit PCM in a wav container."""
-    import numpy as np
+    # `voice` extra: declared in pyproject, absent from a default dev sync.
+    import numpy as np  # ty: ignore[unresolved-import]
 
     clipped = np.clip(np.asarray(samples, dtype="float32"), -1.0, 1.0)
     pcm = (clipped * 32767.0).astype("<i2")
@@ -143,13 +147,14 @@ def encode_wav(samples) -> bytes:
 
 
 class Handler(BaseHTTPRequestHandler):
-    synthesiser: Synthesiser = None  # set on the server before serving
+    # Bound on the subclass `serve()` builds; the base class is never served.
+    synthesiser: Synthesiser
 
     protocol_version = "HTTP/1.1"
     server_version = "thalamus-voice"
 
-    def log_message(self, fmt, *args):  # noqa: A003 - BaseHTTPRequestHandler API
-        LOG.debug(fmt, *args)
+    def log_message(self, format: str, *args: Any) -> None:
+        LOG.debug(format, *args)
 
     def _send(self, code: int, body: bytes, content_type: str) -> None:
         self.send_response(code)

@@ -9,8 +9,10 @@ import os
 import re
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol
 
 import uvicorn
 import yaml
@@ -330,7 +332,7 @@ def _main():
 
     arch_scan_parser = arch_sub.add_parser(
         "scan",
-        help="Measure the import graph, regenerate arch/model.yaml, and land the scan "
+        help="Measure the import graph and regenerate arch/model.yaml "
         "(dry-run unless --write)",
     )
     arch_scan_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
@@ -342,8 +344,13 @@ def _main():
     arch_scan_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     arch_scan_parser.add_argument(
         "--write", action="store_true",
-        help="Write the model file and land the scan in the graph. Without it, the scan "
-        "runs and is reported but nothing is persisted.",
+        help="Write the model file. Without it, the scan runs and is reported but "
+        "nothing is persisted.",
+    )
+    arch_scan_parser.add_argument(
+        "--check", action="store_true",
+        help="Exit 1 if the committed model file does not match a fresh scan. The "
+        "staleness gate: measures, compares, writes nothing.",
     )
 
     arch_show_parser = arch_sub.add_parser(
@@ -363,6 +370,29 @@ def _main():
         "rules", help="Check the measured edge list against the declared design rules"
     )
     arch_rules_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
+    arch_rules_parser.add_argument(
+        "--gate", action="store_true",
+        help="Exit nonzero on a finding the model does not accept. 1 = a violation or "
+        "unplaced module not declared in `accepted`; 2 = an `accepted` entry that no "
+        "longer happens and should be deleted.",
+    )
+
+    arch_dead_parser = arch_sub.add_parser(
+        "dead",
+        help="Definitions under the source roots that nothing outside the test roots "
+        "refers to, and modules nothing imports",
+    )
+    arch_dead_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
+    arch_dead_parser.add_argument(
+        "--gate", action="store_true",
+        help="Exit nonzero on a finding the model does not exempt. 1 = a reported "
+        "definition or orphan module; 2 = an exemption that no longer matches anything.",
+    )
+    arch_dead_parser.add_argument(
+        "--limits", action="store_true",
+        help="Print what the census could not see — runtime name lookup, names reached "
+        "through a string, star re-exports, unparsed files.",
+    )
 
     arch_growth_parser = arch_sub.add_parser(
         "growth",
@@ -1118,7 +1148,9 @@ def _main():
     args = parser.parse_args()
     # Long-running commands (bootstrap, extract) are routinely piped to a log; without
     # line buffering their progress sits invisible in Python's block buffer for minutes.
-    sys.stdout.reconfigure(line_buffering=True)
+    # typeshed types `sys.stdout` as the `TextIO` ABC, which does not carry
+    # `reconfigure`; the concrete `TextIOWrapper` CPython actually installs does.
+    sys.stdout.reconfigure(line_buffering=True)  # ty: ignore[unresolved-attribute]
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -1286,7 +1318,7 @@ def _session_bootstrap_groups(args, harness: str):
     """
     from thalamus.harness.bootstrap import bootstrap_codex, bootstrap_cursor
 
-    reader = _READERS[harness]
+    reader = _SESSION_READERS[harness]
     builder = {"cursor": bootstrap_cursor, "codex": bootstrap_codex}[harness]
 
     found = [s for s in reader.discover() if s.exists]
@@ -1650,8 +1682,44 @@ def _claim_or_report(found: list, reader, assign_scope: str) -> list:
 # three would have to be the union of what they happen to do, which moves the fork
 # into optional methods and hides it. `harness/bootstrap.py` already settled this
 # shape — `_bootstrap_one` takes what differs as parameters and looks nothing up.
+class _DiscoveredSession(Protocol):
+    """What every session-oriented reader guarantees about what it discovered.
+
+    A read-only property rather than an attribute: both readers derive `exists` from
+    the filesystem, and a protocol declaring a settable attribute does not match one.
+    """
+
+    @property
+    def exists(self) -> bool: ...
+
+
+class SessionReader(Protocol):
+    """The surface `_session_bootstrap_groups` needs from a harness's reader module.
+
+    Declared because it is a real contract that three modules carry and no base class
+    states. Without it the modules are three unrelated objects that happen to share
+    method names, which is a duck type nothing can check — and the ducks had already
+    drifted apart: only two of the three answer `claim_unresolved`.
+    """
+
+    def discover(self) -> Sequence[_DiscoveredSession]: ...
+
+    def claim_unresolved(
+        self, sessions: list[Any], assign_scope: str = ""
+    ) -> tuple[list[Any], list[Any]]: ...
+
+
 _READERS = {
     "claude": transcripts,
+    "cursor": cursor_transcripts,
+    "codex": codex_transcripts,
+}
+# The session-oriented subset. Cursor and codex discover *sessions* and can be asked
+# which of them no hook ever resolved a scope for; Claude Code discovers transcripts
+# under a project directory and answers no such question. Keeping the two mappings
+# apart states which harnesses `_session_bootstrap_groups` actually accepts, instead of
+# leaving it to a KeyError at the third one.
+_SESSION_READERS: dict[str, SessionReader] = {
     "cursor": cursor_transcripts,
     "codex": codex_transcripts,
 }
@@ -2725,7 +2793,7 @@ def _report_roster_boundaries():
 def _cmd_arch(args, arch_parser):
     """The architect's instrument. Reads code; writes a model file and findings."""
     command = getattr(args, "arch_command", None)
-    if command not in {"scan", "show", "diff", "rules", "growth"}:
+    if command not in {"scan", "show", "diff", "rules", "growth", "dead"}:
         arch_parser.print_help()
         sys.exit(1)
 
@@ -2772,7 +2840,11 @@ def _cmd_arch(args, arch_parser):
     metrics = measure(graph)
 
     if command == "rules":
-        _arch_rules(model, graph)
+        _arch_rules(model, graph, gate=getattr(args, "gate", False))
+        return
+
+    if command == "dead":
+        _arch_dead(args, repo, graph)
         return
 
     if command == "diff":
@@ -2850,6 +2922,23 @@ def _cmd_arch(args, arch_parser):
             print(f"  {path}")
         if len(dirty) > 10:
             print(f"  … and {len(dirty) - 10} more")
+
+    if getattr(args, "check", False):
+        # The staleness gate. The committed model is a measurement of a commit; once the
+        # code moves past it, `arch show` reports numbers for a tree that no longer
+        # exists and nothing notices. Comparing a fresh scan against the file on disk is
+        # the only check that catches that, and it costs one scan.
+        model_path = repo / arch_model.MODEL_PATH
+        current = model_path.read_text(encoding="utf-8") if model_path.exists() else ""
+        if current == text:
+            print("\nModel file matches a fresh scan.")
+            return
+        print(
+            "\nStale: `arch/model.yaml` does not match a fresh scan. Run "
+            "`thalamus arch scan --write` and commit the result.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if not args.write:
         print("\nDry run. Re-run with --write to regenerate the model file.")
@@ -2930,25 +3019,146 @@ def _arch_show(repo, model) -> None:
         print("last scan    (never scanned)")
 
 
-def _arch_rules(model, graph) -> None:
-    """Check the measured edges against the declared rules."""
+def _arch_rules(model, graph, gate: bool = False) -> None:
+    """Check the measured edges against the declared rules.
+
+    The report is the same either way: every violation prints, accepted or not, because
+    an architect reading this wants the design's real shape and not the subset that is
+    still news. `--gate` adds a verdict on top of that report rather than filtering it.
+    """
     if not model.layers:
         print(
             f"No layers declared, so the partition places none of {len(graph.modules)} "
             "scanned modules. Declaring them is the architect's work — an empty "
             "partition reports nothing rather than passing."
         )
+        if gate:
+            sys.exit(1)
         return
     unplaced = model.unplaced(graph)
     violations = model.violations(graph)
+    result = model.gate(graph)
+    accepted_keys = {entry.key for entry in result.accepted_hits}
+
+    def mark(key) -> str:
+        return "accepted " if key in accepted_keys else "NEW      "
+
     print(f"{len(graph.modules)} modules, {len(unplaced)} unplaced by the declared partition")
     for module in unplaced[:20]:
-        print(f"  unplaced  {module}")
-    print(f"{len(violations)} rule violation(s)")
+        print(f"  {mark((module, ''))} unplaced  {module}")
+    print(f"{len(violations)} rule violation(s), {len(result.accepted_hits)} accepted")
     for violation in violations:
-        print(f"  violation {violation.describe()}")
+        print(f"  {mark((violation.from_path, violation.to_path))} {violation.describe()}")
+    for entry in result.stale:
+        print(f"  STALE     accepted and no longer measured: {entry.describe()}")
     if not unplaced and not violations:
         print("The declared model and the measured graph agree.")
+
+    if not gate:
+        return
+    code = result.exit_code
+    if code == 1:
+        print(
+            f"\nGate: {len(result.new_violations)} violation(s) and "
+            f"{len(result.new_unplaced)} unplaced module(s) the model does not accept. "
+            "Fix the edge, or declare it in `accepted` with the reason it stands.",
+            file=sys.stderr,
+        )
+    elif code == 2:
+        print(
+            f"\nGate: {len(result.stale)} `accepted` entry/entries no longer happen. "
+            "Delete them — an exception that has stopped firing describes a design that "
+            "moved.",
+            file=sys.stderr,
+        )
+    sys.exit(code)
+
+
+def _dead_policy(repo):
+    """The declared census policy, read straight off the model file.
+
+    Read here rather than hung off `ArchModel` because `deadends` imports `findings`,
+    which imports `model` — putting the policy on the model would close that into a
+    cycle. `regenerate` preserves the authored half byte for byte, so a hand-declared
+    block survives every scan.
+    """
+    from thalamus.arch import model as arch_model
+    from thalamus.arch.deadends import DeadEndPolicy
+
+    path = repo / arch_model.MODEL_PATH
+    document = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return DeadEndPolicy.from_block((document or {}).get("deadends") or {})
+
+
+def _arch_dead(args, repo, graph) -> None:
+    """Report definitions nothing outside the test roots refers to.
+
+    The report states what was measured and never that a symbol is unused: the census
+    resolves identifiers, and `--limits` lists every mechanism that could hide a caller
+    from it. `--gate` adds a verdict without narrowing that report.
+    """
+    from thalamus.arch import deadends as arch_deadends
+
+    policy = _dead_policy(repo)
+    if not policy.enabled:
+        print(
+            "The dead-end channel is off. Enable it in `arch/model.yaml` under "
+            "`deadends: enabled: true` — a census nobody declared is a census nobody "
+            "can read the exceptions of."
+        )
+        return
+
+    report = arch_deadends.scan(repo, graph, policy)
+    matched = {
+        (e.definition.path, e.definition.qualname)
+        for e in report.exempted
+        if e.rule == arch_deadends.RULE_DECLARED
+    }
+
+    # Reported through `deadend_findings` rather than off the report's lists directly:
+    # the finding is where the hedging lives. "No reference outside the test roots was
+    # found" is refutable by pointing at one; "unused" is a verdict a static census is
+    # not entitled to, given what `limits` says it cannot see.
+    for finding in arch_deadends.deadend_findings(report):
+        print(f"  {finding.description}")
+    print(
+        f"{len(report.test_only)} test-only, {len(report.orphans)} orphan module(s), "
+        f"{len(report.exempted)} exempted, {len(report.silenced)} reached only from a "
+        f"non-Python caller"
+    )
+    for entry in report.silenced:
+        print(f"  reached    {entry.describe()}")
+
+    stale = [entry for entry in policy.exemptions if (entry.path, entry.symbol) not in matched]
+    for entry in stale:
+        print(f"  STALE      exemption matches nothing: {entry.path} {entry.symbol}")
+
+    if args.limits or not (report.test_only or report.orphans):
+        print(f"{len(report.limits)} stated limit(s) on the census's reach")
+        for limit in report.limits:
+            print(f"  limit      {limit}")
+
+    if not report.test_only and not report.orphans and not stale:
+        print("Every definition under the source roots is referenced outside the tests.")
+
+    if not args.gate:
+        return
+    if report.test_only or report.orphans:
+        print(
+            f"\nGate: {len(report.test_only) + len(report.orphans)} finding(s) the model "
+            "does not exempt. Wire the definition to a caller, delete it, or add an "
+            "`exemptions` entry under `deadends` with the reason it stands.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if stale:
+        print(
+            f"\nGate: {len(stale)} exemption(s) match nothing. Delete them — an "
+            "exemption for a symbol that is now referenced, or gone, describes a tree "
+            "that moved.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 def _arch_diff(against: str, other, current) -> None:

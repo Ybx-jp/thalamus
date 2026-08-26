@@ -104,6 +104,62 @@ class Violation:
         )
 
 
+@dataclass(frozen=True)
+class Accepted:
+    """One declared exception to the rules, carrying the reason it is tolerated.
+
+    A violation nobody has accepted fails the gate. A violation accepted here does not,
+    and the reason is required rather than optional: an exception list whose entries do
+    not say why is a list that only grows, because the next reader has no basis on which
+    to remove one.
+
+    `module` names an unplaced module; `from_path`/`to_path` name a forbidden edge. An
+    entry sets one or the other, never both.
+    """
+
+    reason: str
+    module: str = ""
+    from_path: str = ""
+    to_path: str = ""
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.module, "") if self.module else (self.from_path, self.to_path)
+
+    def describe(self) -> str:
+        subject = self.module or f"{self.from_path} -> {self.to_path}"
+        return f"{subject} — {self.reason}"
+
+
+@dataclass
+class GateResult:
+    """What the gate found: what is new, and what is accepted and no longer happens.
+
+    Two directions, because one alone rots. Reporting only new findings lets the
+    exception list accumulate entries for edges that were refactored away years ago,
+    and the list stops describing the design. `stale` is that second direction, and it
+    is why the gate distinguishes exit 2 from exit 1: a passing exception is not a
+    regression and must not read as one.
+    """
+
+    new_violations: list[Violation] = field(default_factory=list)
+    new_unplaced: list[str] = field(default_factory=list)
+    accepted_hits: list[Accepted] = field(default_factory=list)
+    stale: list[Accepted] = field(default_factory=list)
+
+    @property
+    def exit_code(self) -> int:
+        """0 clean or exactly as accepted, 1 a new finding, 2 an acceptance that passed.
+
+        The same three-way split `tests/qe/run.py` uses, for the same reason: collapsing
+        "a tolerated defect is now fixed" into either "green" or "broken" loses the one
+        signal that keeps the exception list honest.
+        """
+        if self.new_violations or self.new_unplaced:
+            return 1
+        return 2 if self.stale else 0
+
+
 @dataclass
 class ArchModel:
     """The whole file: authored judgement, plus the last scan's measurements."""
@@ -116,6 +172,7 @@ class ArchModel:
     rules: list[Rule] = field(default_factory=list)
     seams: list[dict] = field(default_factory=list)
     rejected_refactors: list[dict] = field(default_factory=list)
+    accepted: list[Accepted] = field(default_factory=list)
     derived: dict = field(default_factory=dict)
 
     def layer_of(self, path: str) -> str:
@@ -182,6 +239,36 @@ class ArchModel:
             if at and at not in measured:
                 stale.append(f"seam `{seam.get('name', at)}` names `{at}`, which was not scanned")
         return stale
+
+    def gate(self, graph: DependencyGraph) -> GateResult:
+        """Measured findings partitioned against the declared exceptions.
+
+        The check `rules` prints; the verdict CI acts on. Splitting them keeps the
+        printed report complete — an architect reading `rules` still sees every
+        violation, accepted or not — while giving automation something that can be red.
+        """
+        result = GateResult()
+        by_key = {entry.key: entry for entry in self.accepted}
+        hit: set[tuple[str, str]] = set()
+
+        for violation in self.violations(graph):
+            key = (violation.from_path, violation.to_path)
+            if key in by_key:
+                hit.add(key)
+                result.accepted_hits.append(by_key[key])
+            else:
+                result.new_violations.append(violation)
+
+        for module in self.unplaced(graph):
+            key = (module, "")
+            if key in by_key:
+                hit.add(key)
+                result.accepted_hits.append(by_key[key])
+            else:
+                result.new_unplaced.append(module)
+
+        result.stale = [entry for entry in self.accepted if entry.key not in hit]
+        return result
 
 
 def root_commit(repo: Path) -> str:
@@ -299,6 +386,12 @@ def render(model: ArchModel, derived: dict) -> str:
         "rules": [{"layer": r.layer, "may_depend_on": list(r.may_depend_on)} for r in model.rules],
         "seams": model.seams,
         "rejected_refactors": model.rejected_refactors,
+        "accepted": [
+            {k: v for k, v in
+             (("module", a.module), ("from_path", a.from_path), ("to_path", a.to_path),
+              ("reason", a.reason)) if v}
+            for a in model.accepted
+        ],
     }
     head = yaml.safe_dump(authored, sort_keys=False, width=100)
     tail = yaml.safe_dump({"derived": derived}, sort_keys=False, width=100)
@@ -333,6 +426,15 @@ def load(path: Path) -> ArchModel:
         ],
         seams=list(document.get("seams") or []),
         rejected_refactors=list(document.get("rejected_refactors") or []),
+        accepted=[
+            Accepted(
+                reason=str(entry.get("reason", "")),
+                module=str(entry.get("module", "")),
+                from_path=str(entry.get("from_path", "")),
+                to_path=str(entry.get("to_path", "")),
+            )
+            for entry in document.get("accepted") or []
+        ],
         derived=dict(document.get("derived") or {}),
     )
 

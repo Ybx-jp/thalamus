@@ -225,7 +225,7 @@ def plan(
     # whatever one session's cwd says.
     confirmed: set[str] = set()
     testable: set[str] = set()
-    verdicts: dict[str, list[bool]] = {}
+    verdicts: dict[str, list[tuple[str, str, str, ProjectEvidence | None]]] = {}
     for row in sessions:
         before = str(row["project"])
         cwd = ledger_cwds.get(str(row["sid"]), "")

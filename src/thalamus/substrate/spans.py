@@ -218,10 +218,6 @@ _RECORDER = SpanRecorder()
 atexit.register(_RECORDER.flush)
 
 
-def recorder() -> SpanRecorder:
-    return _RECORDER
-
-
 def record(surface: str, shape: tuple[str, ...], ms: float) -> None:
     if enabled():
         _RECORDER.record(surface, shape, ms)

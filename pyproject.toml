@@ -49,6 +49,11 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
     "httpx>=0.28.1",
+    # Pinned to the patch, unlike everything else here. ty is pre-1.0: its rule set and
+    # its inference both still move between releases, so a floating spec makes a green
+    # tree go red on someone else's schedule with no change of ours. Raise it
+    # deliberately, with the diagnostics that come with it fixed in the same change.
+    "ty==0.0.74",
 ]
 # The entailment judge — the eval loop's fast attribution path. Optional because it
 # pulls a multi-gigabyte torch build and only the attribution instrument itself needs
@@ -109,6 +114,22 @@ packages = ["src/thalamus"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+# Type checking is gated in CI (.github/workflows/verify.yml) alongside ruff and the
+# contract check. The tree is clean, so the gate is "no diagnostics" rather than a
+# baseline file — ty has no baseline mechanism, and a suppression carrying a reason is
+# a better record than a count in a file nobody reads.
+[tool.ty.environment]
+python = ".venv"
+python-version = "3.11"
+
+# No rule is switched off globally. The optional extras (`nli`, `voice`, `frames`,
+# `pdf`) are imported inside the functions that need them and are absent from a default
+# `uv sync --extra dev`; an unresolved import of one is the declared arrangement rather
+# than a defect, and is suppressed at the import site with its reason, so that every
+# *other* unresolved import stays an error.
+[tool.ty.terminal]
+error-on-warning = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

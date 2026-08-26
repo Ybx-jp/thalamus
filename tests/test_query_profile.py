@@ -1,7 +1,7 @@
 """
 Gremlin query-cost tests — the span tap and the report over it.
 
-Interfaces: thalamus.substrate.spans (recorder, shape folding, instrument,
+Interfaces: thalamus.substrate.spans (SpanRecorder, shape folding, instrument,
 ledger), thalamus.eval.profile (pooling, percentiles, corpus extraction,
 step-metric parsing)
 Infrastructure: tmp_path ledgers and a fake DriverRemoteConnection; no live

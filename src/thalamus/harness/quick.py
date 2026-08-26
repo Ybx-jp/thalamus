@@ -135,8 +135,8 @@ def config_dir(env: dict[str, str] | None = None) -> Path:
     is the room boundary: a caller inside a room must see its room-mates and nobody
     else, which is exactly what reading its own `CLAUDE_CONFIG_DIR` gives.
     """
-    env = os.environ if env is None else env
-    value = env.get("CLAUDE_CONFIG_DIR", "")
+    values = os.environ if env is None else env
+    value = values.get("CLAUDE_CONFIG_DIR", "")
     return Path(value).expanduser() if value else Path.home() / ".claude"
 
 

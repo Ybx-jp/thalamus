@@ -17,9 +17,11 @@ URI. The audit functions are pure over plain rows so they are testable without a
 
 Both layers check written data **against** the ontology. `audit_declarations` runs the
 comparison the other way — the ontology against what writers produce — which is the only
-direction that catches a declaration nothing backs. Findings in that direction are
-`ADVISORY`: absence in one graph is not proof a writer is missing, and a check that can
-fail forever on unfixable history is a check that gets ignored.
+direction that catches a declaration nothing backs. `audit_reader_projection` closes the
+third side of the same triangle, declared → written → read: a field the writer puts on a
+vertex that no read path ever names is persisted and structurally unreachable. Findings
+in both directions are `ADVISORY`: absence in one graph, or in one scan, is not proof,
+and a check that can fail forever on unfixable history is a check that gets ignored.
 
 Not yet enforced (needs a second scope to be meaningful):
   - projection grants — what the plane may read from a scope
@@ -27,9 +29,17 @@ Not yet enforced (needs a second scope to be meaningful):
 
 from __future__ import annotations
 
+import ast
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
+from types import UnionType
+from typing import TypeVar, Union, get_args, get_origin
+
+from pydantic import BaseModel
 
 from thalamus.contract.ontology import (
     CORE_EDGES,
@@ -40,10 +50,21 @@ from thalamus.contract.ontology import (
     scope_of,
     vid,
 )
-from thalamus.substrate.schema import SessionGraph
+from thalamus.substrate.schema import (
+    Artifact,
+    Chunk,
+    Claim,
+    Entity,
+    SessionGraph,
+    Source,
+    Thread,
+    Touch,
+)
 
 VIOLATION = "violation"
 ADVISORY = "advisory"
+
+_M = TypeVar("_M", bound=BaseModel)
 
 
 class Issue(str):
@@ -277,6 +298,29 @@ def check_knowledge(batch) -> list[str]:
 # --------------------------------------------------------------------------------------
 
 _PROVENANCE_FIELDS = ("tier", "source", "ingested_at")
+
+# Every vertex property key a rule in this module reads by name. `_fetch` asks the graph
+# for these and nothing else.
+#
+# The reason it is a list rather than "everything": `g.V().valueMap(true)` ships every
+# property of every vertex, and ~58% of the vertices here are Chunks carrying ~1,500
+# characters of `text` apiece. Measured on the live graph (47,450 vertices), asking for
+# these nine instead took the vertex read from a 5,054 ms median to 2,443 ms.
+#
+# **It fails open.** A rule that reads a key missing from this tuple sees `None` and
+# passes silently rather than erroring — the check would go on reporting green while no
+# longer checking. `tests/test_contract_fetch.py` closes that by deriving the read set
+# from this module's own source and asserting this tuple covers it, so adding a rule
+# that reads a new key fails the suite rather than disabling itself.
+_AUDIT_VERTEX_KEYS = (
+    "tier", "source", "ingested_at", "external", "scope",
+    "kind", "status", "protocol", "content_hash",
+)
+
+# The two edge property keys read by name: `basis` on an Agent's RESOLVES, `role` on
+# REFERENCES. The full edge property *vocabulary* is a separate question, asked as an
+# aggregate — see `edge_property_vocabulary`.
+_AUDIT_EDGE_KEYS = ("role", "basis")
 
 
 @dataclass(frozen=True)
@@ -514,7 +558,11 @@ def audit_evidence(vertices: list[AuditVertex], archive_base: Path | None = None
     return issues
 
 
-def audit_declarations(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list[Issue]:
+def audit_declarations(
+    vertices: list[AuditVertex],
+    edges: list[AuditEdge],
+    edge_properties: dict[str, set[str]] | None = None,
+) -> list[Issue]:
     """Audit the *ontology* against what writers produce — the other direction.
 
     Every other check here reads the ontology as ground truth and judges the graph by
@@ -579,9 +627,18 @@ def audit_declarations(vertices: list[AuditVertex], edges: list[AuditEdge]) -> l
                 )
 
     edge_labels = {e.label for e in edges}
-    properties_seen: dict[str, set[str]] = defaultdict(set)
-    for edge in edges:
-        properties_seen[edge.label].update(str(key) for key in edge.properties)
+    # The property vocabulary per edge label. `edge_properties` is the aggregate form,
+    # asked of the graph directly because deriving it here requires every edge to carry
+    # every property it has — which is the whole reason the row scan cannot be narrowed
+    # without it. Deriving from the rows stays the default so that a caller holding
+    # complete rows, including every test in this suite, needs to pass nothing.
+    properties_seen: dict[str, set[str]]
+    if edge_properties is None:
+        properties_seen = defaultdict(set)
+        for edge in edges:
+            properties_seen[edge.label].update(str(key) for key in edge.properties)
+    else:
+        properties_seen = defaultdict(set, {k: set(v) for k, v in edge_properties.items()})
 
     for edge_type in CORE_EDGES:
         if edge_type.label not in edge_labels:
@@ -616,6 +673,234 @@ def audit_declarations(vertices: list[AuditVertex], edges: list[AuditEdge]) -> l
     return issues
 
 
+# Vertex-producing schema models that are not Claim subtypes, by the graph label they
+# land on. `Touch` is the odd one: it becomes TOUCHES edge properties rather than a
+# vertex, and it is checked here because an edge property is reachable or unreachable on
+# exactly the same terms.
+_NODE_MODELS: tuple[tuple[str, type[BaseModel]], ...] = (
+    ("Artifact", Artifact),
+    ("Source", Source),
+    ("Entity", Entity),
+    ("Thread", Thread),
+    ("Chunk", Chunk),
+    ("Session", SessionGraph),
+    ("TOUCHES", Touch),
+)
+
+
+def _package_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _default_writer_path() -> Path:
+    return _package_root() / "substrate" / "writer.py"
+
+
+def _default_read_paths() -> list[Path]:
+    """The code that turns vertex properties back into something a caller sees.
+
+    `substrate` owns graph access, so every module in it apart from the writer and the
+    schema is a read path. `conformance` itself is one too: the ingress floor reads
+    `Claim.external` off the vertex, which makes that property reachable and used even
+    though no retrieval surface renders it. `ontology` is deliberately absent — it
+    declares property names, it does not project them, and counting a declaration as a
+    read would make the check unable to see the very gap it exists for.
+    """
+    root = _package_root()
+    substrate = sorted(
+        path
+        for path in (root / "substrate").glob("*.py")
+        if path.name not in ("writer.py", "schema.py", "__init__.py")
+    )
+    return [*substrate, root / "contract" / "conformance.py"]
+
+
+def _string_constants(path: Path) -> set[str]:
+    """Every string literal in a module. A name that appears anywhere in a read path is
+    counted as projected — generous on purpose, because a missed read would make this
+    check accuse code that works."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return set()
+    return {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+
+
+def _writer_property_names(path: Path) -> set[str]:
+    """Property names the writer states literally: dict-literal keys and subscript
+    assignments onto a property dict. Both spellings are in use — the artifact
+    projection sets `properties["repo"]` after the dict is built."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return set()
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            names.update(
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            )
+        elif isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+            if isinstance(node.slice.value, str):
+                names.add(node.slice.value)
+    return names
+
+
+def _placeholder(annotation: object) -> object:
+    """A non-None value of the annotated type.
+
+    Optional fields are what makes this necessary: the writer drops `None`, so a model
+    left at its defaults would under-report the fields it actually serializes.
+    """
+    origin = get_origin(annotation)
+    if origin is Union or origin is UnionType:
+        for arg in get_args(annotation):
+            if arg is not type(None):
+                return _placeholder(arg)
+        return "x"
+    if origin in (list, set, frozenset, tuple):
+        args = get_args(annotation)
+        return [_placeholder(args[0])] if args else ["x"]
+    if origin is dict:
+        return {}
+    if isinstance(annotation, type):
+        # Enum first: this schema's enums subclass `str` and `int` as well.
+        if issubclass(annotation, Enum):
+            return next(iter(annotation))
+        if issubclass(annotation, bool):
+            return True
+        if issubclass(annotation, datetime):
+            return datetime.now(timezone.utc)
+        if issubclass(annotation, (int, float)):
+            return 1
+        if issubclass(annotation, str):
+            return "x"
+        if issubclass(annotation, BaseModel):
+            return _populated(annotation)
+    return "x"
+
+
+def _populated(model: type[_M]) -> _M:
+    """An instance with every field set, so nothing drops out as absent.
+
+    Generic in the model so a caller that passed a `Claim` subtype gets one back:
+    `_claim_written_fields` hands the result to `writer._claim_properties`, which takes
+    a `Claim` and should not be widened to accept anything a `BaseModel` might be.
+    """
+    return model(**{name: _placeholder(f.annotation) for name, f in model.model_fields.items()})
+
+
+def _claim_written_fields() -> dict[str, set[str]]:
+    """What the writer flattens onto a Claim vertex, per subtype.
+
+    Asked of `_claim_properties` rather than restated from the model, because the
+    exclusions are the writer's own: `artifacts` and `about` become edges, `provenance`
+    is flattened separately, and a restatement here would drift from all three. This is
+    also the half a name-matching tool cannot see — the fields arrive through
+    `model_dump`, so no subtype field is ever named as a literal on the write side.
+    """
+    from thalamus.substrate.writer import _claim_properties
+
+    written: dict[str, set[str]] = {}
+    for model in (Claim, *Claim.__subclasses__()):
+        try:
+            written[model.__name__] = set(_claim_properties(_populated(model)))
+        except Exception:
+            continue
+    return written
+
+
+def audit_reader_projection(
+    read_paths: Sequence[Path] | None = None,
+    writer_path: Path | None = None,
+) -> list[Issue]:
+    """Audit what writers produce against what readers project — the third direction.
+
+    `audit_declarations` asks whether a declaration has a writer behind it. This asks
+    the same question one step further along: a field can be declared, written to every
+    vertex of its label, and still be unreachable, because nothing on the read side ever
+    names it. The value is persisted and no caller can obtain it, which is worse than an
+    absent field — the graph carries a fact it cannot answer with, and a design reading
+    the schema will plan against a property no retrieval path can return.
+
+    The two sides are asymmetric, which is why a generic static tool misses this. Claim
+    subtype fields reach the graph through `model_dump`, so the write side never names
+    them; the read side selects a fixed list of properties, so a field nothing projects
+    is not mentioned once in any reader. Absence of a *name* is the whole signal, and it
+    is only visible by asking the writer what it produces and the read path what it
+    mentions, then differencing the two.
+
+    Static by construction — no graph, no connection. What is written is a property of
+    the code, not of any one corpus, so a live graph would only add the question of
+    whether the corpus happens to exercise the field.
+
+    Everything here is ADVISORY, on the same terms `audit_declarations` states: absence
+    proves nothing on its own, and this reads absence twice over.
+
+    Reach limits, reported rather than papered over:
+      - A read path outside `substrate` — the CLI, the console, the eval loop, and the
+        out-of-repo viewer all query the graph — is not scanned, so a property only
+        those project reports here anyway.
+      - A reader that projects dynamically, by building property names at runtime or by
+        taking whatever `value_map(True)` returns, names nothing and is invisible.
+      - Only the writer's literal property names and the Claim serializer are read on
+        the write side; a property assembled dynamically is not seen as written.
+      - Claim subtypes must be imported to be enumerated, so an expert extension living
+        outside `substrate.schema` is checked only if something already loaded it.
+      - Declared node types with no schema model are named in their own advisory.
+    """
+    issues: list[Issue] = []
+
+    projected: set[str] = set()
+    for path in read_paths if read_paths is not None else _default_read_paths():
+        projected |= _string_constants(path)
+
+    def report(name: str, written: set[str]) -> None:
+        unread = sorted(written - projected)
+        if unread:
+            issues.append(
+                advisory(
+                    f"Unprojected {name} field(s): {', '.join(unread)} — written to the "
+                    "graph, and no read path names them"
+                )
+            )
+
+    claim_fields = _claim_written_fields()
+    base = claim_fields.get("Claim", set())
+    report("Claim", base)
+    for name in sorted(claim_fields):
+        if name != "Claim":
+            # Subtype fields only. The shared ones are Claim's to answer for, and
+            # repeating them once per subtype would report one gap four times.
+            report(name, claim_fields[name] - base)
+
+    writer_names = _writer_property_names(
+        writer_path if writer_path is not None else _default_writer_path()
+    )
+    modelled = {"Claim"}
+    for label, model in _NODE_MODELS:
+        modelled.add(label)
+        report(label, set(model.model_fields) & writer_names)
+
+    unmodelled = sorted(node.label for node in CORE_NODES if node.label not in modelled)
+    if unmodelled:
+        issues.append(
+            advisory(
+                f"Outside projection reach: {', '.join(unmodelled)} — declared node "
+                "types with no schema model, so nothing compares what is written on "
+                "them against what is read"
+            )
+        )
+
+    return issues
+
+
 def check_graph(g, archive_base: Path | None = None) -> tuple[list[str], dict[str, int]]:
     """Audit the live graph against the contract. Returns (issues, counts)."""
     vertices, edges = _fetch(g)
@@ -625,43 +910,85 @@ def check_graph(g, archive_base: Path | None = None) -> tuple[list[str], dict[st
         *audit_exchanges(vertices, edges),
         *audit_orphans(vertices, edges),
         *audit_evidence(vertices, archive_base),
-        *audit_declarations(vertices, edges),
+        *audit_declarations(vertices, edges, edge_property_vocabulary(g)),
+        *audit_reader_projection(),
     ]
     return issues, {"vertices": len(vertices), "edges": len(edges)}
 
 
+def edge_property_vocabulary(g) -> dict[str, set[str]]:
+    """Which property keys each edge label carries, as one aggregate.
+
+    `audit_declarations` needs the vocabulary and nothing else — roughly fourteen
+    strings. Deriving it from rows requires shipping all 161,904 edges with all their
+    properties; asking the graph for it directly costs a 230 ms median against the
+    10,600 ms that scan costs. The scan is narrowed to the keys rules read by name only
+    because this question is answered separately.
+    """
+    from gremlin_python.process.graph_traversal import __
+    from gremlin_python.process.traversal import T
+
+    grouped = g.E().group().by(T.label).by(__.properties().key().dedup().fold()).next()
+    return {str(label): {str(key) for key in keys} for label, keys in (grouped or {}).items()}
+
+
 def _fetch(g) -> tuple[list[AuditVertex], list[AuditEdge]]:
-    """Pull the whole graph into plain rows. Fine at this graph's size (~10^3 nodes);
-    pagination is a problem worth having later."""
-    from gremlin_python.process.traversal import Direction, T
+    """Pull the graph into plain rows — only the columns a rule reads.
+
+    Both sides are full scans and cannot be anything else: TinkerGraph's only index is
+    an exact-value hash map, none is declared, and `hasLabel` has no index there at all.
+    So what is controllable is not how many elements are walked but how much of each one
+    crosses the wire, which is what both narrowings below do.
+
+    Measured on the live graph, 47,450 vertices and 161,904 edges, medians:
+    the vertex read 5,054 ms as `valueMap(true)` and 2,443 ms as `elementMap` over
+    `_AUDIT_VERTEX_KEYS`; the edge read 10,611 ms as `elementMap()` and 6,299 ms as the
+    `project` below. Narrowing the edge *properties* alone was measured at 1.1x and
+    rejected: most edges carry no properties, so `elementMap`'s cost is the 161,904
+    nested maps themselves, not their contents.
+    """
+    from gremlin_python.process.graph_traversal import __
+    from gremlin_python.process.traversal import T
 
     vertices = []
-    for row in g.V().value_map(True).to_list():
+    # `element_map` returns scalars where `value_map` returned single-element lists.
+    for row in g.V().element_map(*_AUDIT_VERTEX_KEYS).to_list():
         properties = {
-            str(key): (value[0] if isinstance(value, list) and value else value)
-            for key, value in row.items()
-            if key not in (T.id, T.label)
+            str(key): value for key, value in row.items() if key not in (T.id, T.label)
         }
         vertices.append(
             AuditVertex(vid=str(row[T.id]), label=str(row[T.label]), properties=properties)
         )
 
+    # `project` rather than `element_map`: five flat strings beat a nested map carrying
+    # two endpoint sub-maps, on the wire and in deserialisation, even though it adds a
+    # sub-traversal per clause where `element_map` resolves endpoints natively.
+    # `coalesce` supplies "" for an absent property, since `by(values(k))` would drop
+    # the whole edge from the result rather than leave the column empty.
     edges = []
-    for row in g.E().element_map().to_list():
-        out_v = row.get(Direction.OUT) or {}
-        in_v = row.get(Direction.IN) or {}
+    rows = (
+        g.E()
+        .project("label", "from", "to", "from_label", "to_label", *_AUDIT_EDGE_KEYS)
+        .by(T.label)
+        .by(__.out_v().id_())
+        .by(__.in_v().id_())
+        .by(__.out_v().label())
+        .by(__.in_v().label())
+        .by(__.coalesce(__.values("role"), __.constant("")))
+        .by(__.coalesce(__.values("basis"), __.constant("")))
+        .to_list()
+    )
+    for row in rows:
         edges.append(
             AuditEdge(
-                label=str(row.get(T.label)),
-                from_vid=str(out_v.get(T.id, "")),
-                from_label=str(out_v.get(T.label, "")),
-                to_vid=str(in_v.get(T.id, "")),
-                to_label=str(in_v.get(T.label, "")),
-                properties={
-                    str(key): value
-                    for key, value in row.items()
-                    if key not in (T.id, T.label, Direction.OUT, Direction.IN)
-                },
+                label=str(row["label"]),
+                from_vid=str(row["from"]),
+                from_label=str(row["from_label"]),
+                to_vid=str(row["to"]),
+                to_label=str(row["to_label"]),
+                # An absent property is absent, not "": a rule testing `.get("role") ==
+                # "citation"` must not see a value the edge does not carry.
+                properties={key: row[key] for key in _AUDIT_EDGE_KEYS if row[key] != ""},
             )
         )
     return vertices, edges

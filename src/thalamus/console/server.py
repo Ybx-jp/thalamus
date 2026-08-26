@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import parse_qs, unquote
 
 # Imported at module scope, unlike this module's other Thalamus imports: these two
@@ -184,8 +185,9 @@ def voice_available(cfg: Config) -> bool:
     """Whether this console has a `say` control at all.
 
     The counterpart to `frames()`: one predicate the handlers and the client's
-    availability probe both read, so "is the feature on" is answered in exactly
-    one place rather than re-derived at each endpoint.
+    availability probe both read, so "is the feature on" is answered here rather
+    than re-derived at each endpoint. The route that synthesises binds the URL
+    itself, because it needs the value and not the verdict.
     """
     return bool(cfg.voice_url)
 
@@ -566,7 +568,7 @@ def read_feed(cfg: Config, idx: int):
         return window, None, "no-package" if window is not None else "unresolved"
     global _LEDGER, _FEEDS
     with READ_LOCK:
-        if _LEDGER is None:
+        if _LEDGER is None or _FEEDS is None:
             _LEDGER, _FEEDS = tr.LedgerIndex(), tr.FeedStore()
         # The window name is the scope: the roster names a window for the expert
         # pinned in it, and the fallback route needs that to join the ledger.
@@ -768,7 +770,7 @@ IMAGE_TYPES = {".png": "image/png", ".gif": "image/gif", ".jpg": "image/jpeg",
                ".jpeg": "image/jpeg", ".webp": "image/webp"}
 
 # Parsed frames, keyed by (path, mtime) so an edit is picked up without a restart.
-_FRAMES_CACHE: dict[str, object] = {"key": None, "frames": []}
+_FRAMES_CACHE: tuple[tuple[str, float] | None, list[dict]] = (None, [])
 _FRAMES_LOCK = threading.Lock()
 
 
@@ -781,6 +783,7 @@ def frames(cfg: Config) -> list[dict]:
     background. A frame theme is decoration; it must not be able to take down the
     surface an operator reaches for when something else is already wrong.
     """
+    global _FRAMES_CACHE
     if not cfg.frames_file:
         return []
     path = str(cfg.frames_file)
@@ -789,8 +792,9 @@ def frames(cfg: Config) -> list[dict]:
     except OSError:
         return []
     with _FRAMES_LOCK:
-        if _FRAMES_CACHE["key"] == key:
-            return _FRAMES_CACHE["frames"]
+        cached_key, cached_frames = _FRAMES_CACHE
+        if cached_key == key:
+            return cached_frames
         try:
             raw = Path(path).read_text()
         except OSError:
@@ -816,8 +820,7 @@ def frames(cfg: Config) -> list[dict]:
                 "path": image,
                 "panel": panel,
             })
-        _FRAMES_CACHE["key"] = key
-        _FRAMES_CACHE["frames"] = out
+        _FRAMES_CACHE = (key, out)
         return out
 
 
@@ -913,6 +916,7 @@ def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) 
     with CLOSING_LOCK:
         closing = dict(CLOSING)
     out = []
+    indexes: list[int] = []
     for line in raw.splitlines():
         parts = (line.split("\t") + [""] * 11)[:11]
         idx, name, active, cmd, width, height, dead, cwd, start, pane_id, pane_pid = parts
@@ -920,6 +924,7 @@ def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) 
             index = int(idx)
         except ValueError:
             continue
+        indexes.append(index)
         room = re.search(r"THALAMUS_ROOM=(\S+)", start)
         harness = window_harness(start)
         want = (expected or {}).get(harness)
@@ -965,7 +970,7 @@ def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) 
                 harness and want is not None and not _contains_run(start.split(), want)
             ),
         })
-    anchor_idx = min((w["index"] for w in out), default=None)
+    anchor_idx = min(indexes, default=None)
     for w in out:
         w["anchor"] = w["index"] == anchor_idx
     return out
@@ -1731,14 +1736,20 @@ def _fetch_loop(interval_s: float) -> None:
             build_info(force=True)
 
 
+class ConsoleServer(ThreadingHTTPServer):
+    """The server object that carries this console's `Config` to every handler."""
+
+    config: Config
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     @property
     def cfg(self) -> Config:
-        return self.server.config  # type: ignore[attr-defined]
+        return cast("ConsoleServer", self.server).config
 
-    def log_message(self, *a):  # quiet
+    def log_message(self, format: str, *args: Any) -> None:  # quiet
         pass
 
     def _send(self, code, body, ctype="application/json", cache=None):
@@ -1887,7 +1898,8 @@ class Handler(BaseHTTPRequestHandler):
             # synthesised by the voice service. Audio is returned inline so the
             # client can set an <audio> src and play it in the same click — a
             # phone will not autoplay anything that arrives after an await.
-            if not voice_available(self.cfg):
+            voice_url = self.cfg.voice_url
+            if not voice_url:
                 return self._send(404, {"error": "no voice service configured"})
             q = parse_qs(query)
             raw = q.get("index", [""])[0]
@@ -1913,7 +1925,7 @@ class Handler(BaseHTTPRequestHandler):
                 # say so — the control flashes and stays quiet.
                 return self._send(204, b"", "application/json")
             say_pending(feed.session_id, high)
-            audio, err = synthesise_update(source, self.cfg.voice_url)
+            audio, err = synthesise_update(source, voice_url)
             if err:
                 return self._send(502, {"error": err})
             return self._send(200, audio, "audio/wav", cache="no-store")
@@ -2238,7 +2250,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve(cfg: Config, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> None:
     try:
-        httpd = ThreadingHTTPServer((host, port), Handler)
+        httpd = ConsoleServer((host, port), Handler)
     except OSError as exc:
         if exc.errno != errno.EADDRINUSE:
             raise
@@ -2247,7 +2259,7 @@ def serve(cfg: Config, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> Non
             f"that is still running. Stop that one, or serve this one somewhere else "
             f"with `thalamus console --port <n>`."
         ) from exc
-    httpd.config = cfg  # type: ignore[attr-defined]
+    httpd.config = cfg
     if cfg.fetch_interval_s > 0:
         threading.Thread(target=_fetch_loop, args=(cfg.fetch_interval_s,),
                          daemon=True).start()

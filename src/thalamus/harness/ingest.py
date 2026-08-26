@@ -288,7 +288,8 @@ def _pdf_to_text(payload: bytes) -> str:
     reading prose rather than by positional parsing.
     """
     try:
-        from pypdf import PdfReader  # noqa: PLC0415
+        # `pdf` extra: declared in pyproject, absent from a default dev sync.
+        from pypdf import PdfReader  # noqa: PLC0415  # ty: ignore[unresolved-import]
     except ImportError as exc:
         raise IngestError(
             "PDF text extraction needs the `pdf` extra — install it with "
@@ -353,7 +354,8 @@ def document_title(payload: bytes) -> str:
     """
     if payload[:5] == b"%PDF-":
         try:
-            from pypdf import PdfReader  # noqa: PLC0415
+            # `pdf` extra: declared in pyproject, absent from a default dev sync.
+            from pypdf import PdfReader  # noqa: PLC0415  # ty: ignore[unresolved-import]
 
             meta = PdfReader(io.BytesIO(payload)).metadata
             title = " ".join(str(meta.title or "").split()) if meta else ""

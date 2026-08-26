@@ -49,10 +49,11 @@ in a mode the probe never entered. This is not pedantry: a `<timestamp>` observe
 print mode is one inference away from unwiring the clock tier for interactive sessions
 nobody has looked at.
 
-So a probe carries the `condition` it was taken under, and the default is the narrowest
-one, because a wide default is exactly how one print-mode observation becomes a general
-belief. A declaration does not state a condition it claims to hold under, so the checker
-cannot compare the two and a claim wider than its evidence is not detectable here.
+So a flag probe establishes the narrowest condition there is — `Condition.PARSE`, that
+the argument parser accepted the flag — and never a mode it did not enter, because a
+wider reading is exactly how one print-mode observation becomes a general belief. A
+declaration does not state a condition it claims to hold under, so the checker cannot
+compare the two and a claim wider than its evidence is not detectable here.
 **MALFORMED** reports the defects in the record it can see — an unresolvable derivation,
 or a sentinel the CLI accepted — and stays separate from DRIFT, a defect in the world.
 """
@@ -115,10 +116,6 @@ class FlagProbe:
     flag: str
     # Values the flag requires to parse. `--max-turns` needs one; `--trust` takes none.
     args: tuple[str, ...] = ()
-
-    @property
-    def condition(self) -> Condition:
-        return Condition.PARSE
 
     def argv(self) -> list[str]:
         # The flag under test first, the sentinel second, so the sentinel is the only

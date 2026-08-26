@@ -52,8 +52,6 @@ every modal is caught.
 from __future__ import annotations
 
 import json
-import os
-from datetime import datetime, timezone
 from pathlib import Path
 
 from thalamus.harness import panes as panes_mod
@@ -136,48 +134,3 @@ def pane_status(pane, *, root: Path | None = None, screen_fn=None) -> str:
     # no branch here in which the screen upgrades a verdict, which is what keeps its
     # uninformative negative out of the decision.
     return (screen_fn or panes_mod.pane_status)(pane.pane_id)
-
-
-def write_descriptor(
-    room: str,
-    scope: str,
-    phase: str,
-    *,
-    session_id: str = "",
-    root: Path | None = None,
-) -> Path | None:
-    """Write a member's phase, atomically. Returns the path, or None if there is no room.
-
-    The Python half of what the hooks do in shell, so the transition rule has one
-    implementation that tests can drive without a live Cursor session. A `ready` never
-    clears a `pending` left by a *different* session: a headless `agent -p` spawned from
-    a member's own shell inherits `THALAMUS_ROOM` and `THALAMUS_SCOPE`, fires its own
-    `sessionStart`, and would otherwise report the parent ready while the parent sits at
-    the modal that shell call raised.
-    """
-    if not room or not scope:
-        return None
-    path = descriptor_path(room, scope, root=root)
-    if phase == READY:
-        standing = read_descriptor(room, scope, root=root)
-        if (
-            standing is not None
-            and standing.get("phase") == PENDING
-            and standing.get("session_id", "") != session_id
-        ):
-            return None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # `ts` is diagnostic only. Nothing here expires a `ready` on age: an idle member is
-    # idle for as long as nobody types at it, so a staleness bound would refuse exactly
-    # the members that are most available.
-    record = {
-        "phase": phase,
-        "room": room,
-        "scope": scope,
-        "session_id": session_id,
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(record) + "\n")
-    os.replace(temporary, path)
-    return path

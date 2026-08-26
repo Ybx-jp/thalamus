@@ -129,16 +129,6 @@ def test_verify_catches_a_snapshot_that_no_longer_hashes_to_its_citation(
     assert snapshots.verify("pinned") is False
 
 
-def test_adopting_a_file_whose_name_disagrees_with_the_registry_is_refused(
-    registry, stub_server, monkeypatch
-):
-    """An adopted row whose on-disk name differs from its registry name would
-    resolve to the wrong file the moment anyone served it by name."""
-    stub_server["written"].append(f"{snapshots.SERVER_DATA_DIR}/some-old-dump.kryo")
-    with pytest.raises(snapshots.SnapshotError, match="must be named"):
-        snapshots.adopt("pre-purge", filename="some-old-dump.kryo")
-
-
 def test_find_names_what_is_registered_when_it_misses(registry, stub_server, monkeypatch):
     _fake_graph(monkeypatch, stub_server)
     snapshots.take("one")

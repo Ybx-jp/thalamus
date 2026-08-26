@@ -461,3 +461,79 @@ Count first and read second, guarded on the count. `order().by(...).limit(1)` on
 empty label returns `[]` rather than raising, so an unguarded version of this reports
 "no sessions" and "could not read the newest" as the same thing — and on a fresh
 install those are the *only* rows there are.
+
+---
+
+## What does `contract check`'s whole-graph fetch cost, and what is cheaper?
+
+**Question it answered.** `contract check` spends ~14 s per invocation in two start
+steps that materialise the entire graph, and the audit rules above them read nine
+vertex property keys and two edge ones. Which narrowings actually pay, and by how much?
+
+**Surface:** gremlin-python
+**Validated:** 2026-08-25 against the live graph — 47,450 vertices, 161,904 edges,
+TinkerGraph 3.7.3, n=5 per arm (n=3 for the edge arms), medians reported.
+
+```python
+import statistics, time
+from gremlin_python.process.graph_traversal import __
+from gremlin_python.process.traversal import T
+from thalamus.substrate.writer import close_connection, connect
+
+KEYS = ("tier", "source", "ingested_at", "external", "scope",
+        "kind", "status", "protocol", "content_hash")
+
+g = connect()
+try:
+    # vertices: 5,054 ms -> 2,443 ms  (2.1x)
+    g.V().value_map(True).to_list()
+    g.V().element_map(*KEYS).to_list()
+
+    # edges: 11,422 ms -> 5,654 ms  (2.0x)
+    g.E().element_map().to_list()
+    (g.E().project("label", "from", "to", "from_label", "to_label")
+     .by(T.label).by(__.out_v().id_()).by(__.in_v().id_())
+     .by(__.out_v().label()).by(__.in_v().label()).to_list())
+
+    # aggregates that replace whole scans
+    g.E().group_count().by(T.label).next()                                    #    85 ms
+    g.E().group().by(T.label).by(__.properties().key().dedup().fold()).next() #   230 ms
+    g.V().not_(__.both_e()).element_map("protocol", "status").to_list()       #    77 ms
+finally:
+    close_connection(g)
+```
+
+**Measured, medians over the n above:**
+
+| traversal | elements | median |
+|---|---|---|
+| `g.V().value_map(True)` | 47,450 | 5,054 ms |
+| `g.V().element_map(*9 keys)` | 47,450 | 2,443 ms |
+| `g.E().element_map()` | 161,904 | 11,422 ms |
+| `g.E().element_map("role","basis")` | 161,904 | 10,660 ms |
+| `g.E().project(label, from, to, from_label, to_label)` | 161,904 | 5,654 ms |
+| `g.E().group_count().by(T.label)` | 1 | 85 ms |
+| `g.E().group().by(label).by(property keys)` | 1 | 230 ms |
+| `g.V().not_(both_e()).element_map(...)` | 0 | 77 ms |
+
+**Notes.** Two results are counter-intuitive and are the reason to keep this entry.
+
+*Narrowing edge **properties** buys almost nothing* — 1.1x. Most edges carry no
+properties at all (`ABOUT`, `DERIVED_FROM`), so `elementMap`'s cost is the 161,904
+nested maps themselves: `T.id`, `T.label`, and an `IN`/`OUT` sub-map each. Selecting
+fewer properties does not remove a map that was already nearly empty.
+
+*Replacing `elementMap` with `project` **does** pay* — 2.0x, even though it adds four
+sub-traversals per edge where `elementMap` resolves the endpoints natively. Five flat
+strings beat a nested map with two sub-maps, on the wire and in Python
+deserialisation. The prediction before measuring was that it might come out slower; it
+did not, which is the whole reason to run the arm rather than reason about it.
+
+An aggregate beats both by an order of magnitude when the question is aggregate:
+`group_count().by(T.label)` answers "which edge labels exist" in 85 ms against a scan
+that costs 11 s. Reach for the scan only when a rule genuinely needs per-element rows.
+
+None of these is an index question. TinkerGraph's only index is an exact-value hash
+map (`graph.createIndex`), no index is declared in `config/tinkergraph.properties`, and
+`hasLabel` has no index in TinkerGraph at all — every one of these is a full scan by
+construction, so what varies is only how much crosses the wire.
