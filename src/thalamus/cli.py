@@ -465,6 +465,19 @@ def _main():
         help="Apply the plan. Without this, nothing is removed.",
     )
 
+    repair_addresses_parser = subparsers.add_parser(
+        "repair-claim-addresses",
+        help="Move Claims whose id disagrees with their own content back to the "
+        "address that content produces (dry-run unless --write)",
+    )
+    repair_addresses_parser.add_argument(
+        "--url", default=DEFAULT_URL, help="Gremlin endpoint"
+    )
+    repair_addresses_parser.add_argument(
+        "--write", action="store_true",
+        help="Apply the plan. Without this, nothing is written.",
+    )
+
     # Snapshot command — durability on demand
     snapshot_parser = subparsers.add_parser(
         "snapshot",
@@ -1180,6 +1193,8 @@ def _main():
         _cmd_derive_artifact_paths(args)
     elif args.command == "retire-scans":
         _cmd_retire_scans(args)
+    elif args.command == "repair-claim-addresses":
+        _cmd_repair_claim_addresses(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -2403,6 +2418,73 @@ def _cmd_retire_scans(args):
         print(f"\nRemoved {removed} vertices.")
         _persist(graph)
         print("Run `thalamus contract check` to confirm the graph is still whole.")
+    finally:
+        close_connection(graph)
+
+
+def _cmd_repair_claim_addresses(args):
+    """Move Claims back to the address their own `(kind, description)` produces.
+
+    Dry-run by default, and it prints the collapsing edges separately from the moving
+    ones: a collapse is the case where a trace already reached the destination, so the
+    move merges two edges into one and a reported fan-out drops by one. That is a
+    number the eval loop has published, and a migration that folded it into a total
+    could not be checked for it.
+    """
+    from thalamus.substrate.claim_address_repair import plan, write_repairs
+
+    graph = connect(args.url)
+    try:
+        repair = plan(graph)
+
+        if not repair.total():
+            print(
+                f"Every one of {repair.examined} Claims sits at the address its own "
+                "(kind, description) produces."
+            )
+            return
+
+        print(
+            f"{repair.examined} Claims examined, {repair.total()} at an address their "
+            "own content does not produce.\n"
+        )
+
+        if repair.rewires:
+            print(f"{len(repair.rewires)} stale duplicate(s) — edges move to the twin, "
+                  "then the vertex is dropped:")
+            for rewire in repair.rewires:
+                print(f"\n  {rewire.stale}  [{rewire.kind}]")
+                print(f"    twin  {rewire.twin}")
+                for edge in rewire.edges:
+                    print(f"    {edge.describe()}")
+                print(f"    {rewire.description[:110]!r}")
+
+        if repair.remints:
+            print(f"\n{len(repair.remints)} wrong address(es) with no twin — re-minted "
+                  "at the correct id, edges moved, old vertex dropped:")
+            for remint in repair.remints:
+                print(f"\n  {remint.old}  [{remint.kind}]")
+                print(f"    ->    {remint.new}")
+                for edge in remint.edges:
+                    print(f"    {edge.describe()}")
+                print(f"    {remint.description[:110]!r}")
+
+        collapses = repair.collapses()
+        if collapses:
+            print(
+                f"\n{collapses} edge(s) collapse: the far endpoint already holds the "
+                "same edge to the destination, so the pair merges and that trace's "
+                "fan-out drops by one. It counted one claim twice under two ids."
+            )
+
+        if not args.write:
+            print(f"\nDry run. Re-run with --write to move {repair.total()} vertices.")
+            return
+
+        rewired, reminted, moved = write_repairs(graph, repair)
+        print(f"\nRewired and dropped {rewired}, re-minted {reminted}, moved {moved} edges.")
+        _persist(graph)
+        print("Run `thalamus contract check` to confirm the addresses now agree.")
     finally:
         close_connection(graph)
 
