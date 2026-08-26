@@ -47,6 +47,10 @@ Issues = "https://github.com/Ybx-jp/thalamus/issues"
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    # The suite waits on subprocesses far more than it computes, so it parallelizes
+    # well past the core count. `tests/conftest.py` turns this on for the bare
+    # whole-suite run only; a run that names a path stays serial.
+    "pytest-xdist>=3.6",
     "ruff>=0.4",
     "httpx>=0.28.1",
     # Pinned to the patch, unlike everything else here. ty is pre-1.0: its rule set and
@@ -134,3 +138,21 @@ error-on-warning = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# The suite waits on subprocesses far more than it computes — hook scripts under
+# `set -euo pipefail`, real `git`, real `tmux`, node — so it scales well past the core
+# count. Measured 2026-08-26 on a 4-core box: 343s serial, 157s at `-n auto` (4), 68s
+# at 12, **47s at 16**, 57s at 24. Sixteen is the knee, and it counts blocked waits
+# rather than cores, which is why it is a literal rather than derived from
+# `os.cpu_count()`.
+#
+# It is a flat default rather than one that fans out only for the whole-suite run,
+# because pytest has no seam that runs early enough to decide: xdist resolves `-n`
+# into `dist` during `pytest_cmdline_main`, before any conftest's `pytest_configure`,
+# and `pytest_load_initial_conftests` — which is early enough — cannot be implemented
+# by a conftest that hook is itself loading. A root-level `-p` plugin would work only
+# if it were importable, which means shipping test machinery in the wheel.
+#
+# The cost of the flat default is worker startup on a run that cannot amortise it:
+# one file measured 1.9s serial against 4.9s at `-n 16`. Pass `-n 0` when iterating
+# on a single file.
+addopts = "-n 16"

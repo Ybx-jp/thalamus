@@ -30,7 +30,8 @@ checkout's development interpreter, not the range Thalamus installs into.
 ## Verification
 
 ```bash
-uv run pytest                      # the suite must stay green
+uv run pytest                      # the suite must stay green (16 workers, ~50s)
+uv run pytest -n 0 tests/test_x.py # one file: skip the ~3s worker boot
 uv run ruff check src tests
 uv run ty check src                # no diagnostics
 uv run thalamus arch rules --gate  # dependencies against the declared layers
