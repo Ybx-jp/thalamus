@@ -427,11 +427,7 @@ class TestDistillationAnchor:
 
         _session_end(tmp_path, tmp_path, "cc-sess-9", bin_dir)
 
-        deadline = time.time() + 20
-        while time.time() < deadline and not argv_log.exists():
-            time.sleep(0.2)
-        assert argv_log.exists(), "session-end never invoked uv"
-        calls = argv_log.read_text()
+        calls = _wait_for_text(argv_log, "thalamus extract")
 
         checkout = str(HOOKS.parents[4])
         assert f"--project {checkout}" in calls
@@ -472,14 +468,33 @@ class TestDistillationAnchor:
                  "THALAMUS_SCOPE": "main"},
         )
 
-        deadline = time.time() + 20
-        while time.time() < deadline and not argv_log.exists():
-            time.sleep(0.2)
-        assert argv_log.exists(), "session-end never invoked uv"
-        calls = argv_log.read_text()
+        calls = _wait_for_text(argv_log, "thalamus extract")
 
         assert f"-- {started_in}" in calls
         assert str(drifted_to).replace("/", "-") not in calls
+
+
+def _wait_for_text(path, wanted, timeout=25):
+    """Wait until `path` contains `wanted`, and return what it holds.
+
+    Every file these tests wait on is appended to with `>>`, by the stubbed `uv`
+    or by the hook's own record_failure. The shell creates the file when it sets
+    the redirection up and writes on the statement after, so a reader that waits
+    on `exists()` and then reads can land in between and get an empty file —
+    caught 14 times in 400 spawns on an idle box. CI's 16 workers widen that
+    window by descheduling the writer between the two syscalls. Waiting on the
+    content is the condition these assertions actually depend on.
+    """
+    deadline = time.time() + timeout
+    while True:
+        text = path.read_text() if path.exists() else ""
+        if wanted in text:
+            return text
+        if time.time() >= deadline:
+            held = repr(text) if path.exists() else "no such file"
+            raise AssertionError(
+                f"{wanted!r} never reached {path} in {timeout}s; it holds {held}")
+        time.sleep(0.2)
 
 
 def _transcript(home, cwd, session_id, body="{}\n"):
@@ -564,11 +579,7 @@ class TestTranscriptlessSessionsAreNotDistilled:
 
         _session_end(tmp_path, tmp_path, "real-sess-2", bin_dir)
 
-        deadline = time.time() + 20
-        while time.time() < deadline and not argv_log.exists():
-            time.sleep(0.2)
-        assert argv_log.exists()
-        assert "thalamus extract" in argv_log.read_text()
+        _wait_for_text(argv_log, "thalamus extract")
 
     def test_the_guard_looks_where_the_transcript_actually_landed(self, tmp_path):
         """A room runs under its own CLAUDE_CONFIG_DIR and files its transcript in
@@ -587,11 +598,8 @@ class TestTranscriptlessSessionsAreNotDistilled:
         _session_end(tmp_path, tmp_path, "room-sess-1", bin_dir,
                      transcript_path=transcript)
 
-        deadline = time.time() + 20
-        while time.time() < deadline and not argv_log.exists():
-            time.sleep(0.2)
-        assert argv_log.exists(), "a room session was skipped as transcriptless"
-        assert "thalamus extract" in argv_log.read_text()
+        # An absent log here is the guard skipping a room session as transcriptless.
+        _wait_for_text(argv_log, "thalamus extract")
 
 
 class TestAFailedExtractionIsWrittenDown:
@@ -625,12 +633,6 @@ class TestAFailedExtractionIsWrittenDown:
         stub.chmod(0o755)
         return bin_dir, argv_log
 
-    def _wait_for(self, path, timeout=25):
-        deadline = time.time() + timeout
-        while time.time() < deadline and not path.exists():
-            time.sleep(0.2)
-        return path.exists()
-
     def test_a_failed_extract_is_recorded_where_check_reads_it(self, tmp_path):
         bin_dir, argv_log = self._stub_uv(tmp_path, "thalamus extract")
         _transcript(tmp_path, tmp_path, "broke-sess-1")
@@ -638,8 +640,7 @@ class TestAFailedExtractionIsWrittenDown:
         _session_end(tmp_path, tmp_path, "broke-sess-1", bin_dir)
 
         record = tmp_path / self.FAILURE_LOG
-        assert self._wait_for(record), "a failed distillation was never written down"
-        line = record.read_text().strip()
+        line = _wait_for_text(record, "thalamus extract").strip()
         assert "session-end.sh" in line, line
         assert "thalamus extract" in line and "3" in line, line
         assert "not distilled" in line, line
@@ -651,7 +652,7 @@ class TestAFailedExtractionIsWrittenDown:
 
         _session_end(tmp_path, tmp_path, "broke-sess-2", bin_dir)
 
-        assert self._wait_for(tmp_path / self.FAILURE_LOG)
+        _wait_for_text(tmp_path / self.FAILURE_LOG, "thalamus extract")
         time.sleep(1.0)          # a second command would have landed by now
         calls = argv_log.read_text()
         assert "thalamus extract" in calls
@@ -665,8 +666,7 @@ class TestAFailedExtractionIsWrittenDown:
         _session_end(tmp_path, tmp_path, "broke-sess-3", bin_dir)
 
         record = tmp_path / self.FAILURE_LOG
-        assert self._wait_for(record)
-        assert "eval sync" in record.read_text()
+        _wait_for_text(record, "eval sync")
 
     def test_a_clean_run_writes_no_record(self, tmp_path):
         """The record has to stay rare enough to read; a line per session is noise."""
@@ -675,9 +675,8 @@ class TestAFailedExtractionIsWrittenDown:
 
         _session_end(tmp_path, tmp_path, "fine-sess-1", bin_dir)
 
-        assert self._wait_for(argv_log), "session-end never invoked uv"
-        time.sleep(1.0)
-        assert "eval sync" in argv_log.read_text()
+        _wait_for_text(argv_log, "eval sync")
+        time.sleep(1.0)          # a failure record would have landed by now
         assert not (tmp_path / self.FAILURE_LOG).exists()
 
 
