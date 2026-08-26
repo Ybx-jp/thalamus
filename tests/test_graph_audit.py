@@ -1,7 +1,8 @@
 """
 Live-graph audit tests — `thalamus contract check`.
 
-Interfaces: thalamus.contract.conformance.audit_vertices/audit_edges/audit_orphans/audit_evidence
+Interfaces: thalamus.contract.conformance.audit_vertices/audit_edges/audit_orphans/
+audit_evidence/audit_declarations/audit_content_addresses
 Infrastructure: tmp_path for the archive check; no graph
 Scope: the contract re-verified against what is actually in the graph, not what came
 through the front door. Pure functions over plain rows, so drift is testable.
@@ -14,6 +15,7 @@ from thalamus.contract.conformance import (
     VIOLATION,
     AuditEdge,
     AuditVertex,
+    audit_content_addresses,
     audit_declarations,
     audit_edges,
     audit_evidence,
@@ -432,3 +434,73 @@ def test_a_claim_kind_landing_on_an_entity_is_reported_as_undeclared():
         "Undeclared Entity kind(s): literature/finding" in issue for issue in issues
     )
     assert not any("Undeclared Claim kind" in issue for issue in issues)
+
+
+def _claim_row(kind, description, scope="main", local_id=None):
+    """One `claim_identity_rows` row, addressed correctly unless `local_id` overrides."""
+    from thalamus.substrate.schema import Claim
+
+    content_id = local_id or Claim(kind=kind, description=description).content_id()
+    return (f"scope:{scope}:claim:{content_id}", kind, description)
+
+
+def test_a_claim_at_the_address_its_content_produces_raises_nothing():
+    rows = [
+        _claim_row("decision", "Substrate moved to TinkerGraph"),
+        _claim_row("problem", "Recall scans every Chunk once per keyword"),
+        # `_normalized` collapses whitespace and drops one trailing period, so neither
+        # is an address change — the check must not report the hashing form as drift.
+        _claim_row("decision", "Substrate  moved to   TinkerGraph."),
+    ]
+
+    assert audit_content_addresses(rows) == []
+
+
+def test_a_claim_whose_id_disagrees_with_its_content_is_reported_by_whether_a_twin_exists():
+    """
+    Scenario: two vertices at an address their own content no longer produces — one
+    left behind by an identity re-key, one whose description was rewritten in place
+
+    Verifications:
+    - both are reported, and the two mechanisms are reported separately
+    - the split is on whether a vertex holds the recomputed address
+    - reporting only; nothing here fails the run
+
+    The split is the actionable half. A stale vertex with a live twin lost its
+    `CONTAINS` to that twin, so a provenance walk from it dead-ends with no session and
+    the repair is a retirement. A vertex with no twin is still the live record and is
+    simply at the wrong address, so retiring it would delete the claim.
+    """
+    description = "Distillation trusts the full transcript as tier-1"
+    rows = [
+        _claim_row("decision", description),
+        _claim_row("decision", description, local_id="0" * 16),
+        _claim_row("problem", "A scrub rewrote this text in place", local_id="f" * 16),
+    ]
+
+    issues = audit_content_addresses(rows)
+
+    stale = [i for i in issues if i.startswith("Stale claim address")]
+    wrong = [i for i in issues if i.startswith("Wrong claim address")]
+    assert len(stale) == 1 and "scope:main:claim:" + "0" * 16 in stale[0]
+    assert len(wrong) == 1 and "scope:main:claim:" + "f" * 16 in wrong[0]
+    assert all(severity_of(issue) == ADVISORY for issue in issues)
+
+
+def test_the_twin_lookup_is_scoped():
+    """A correctly addressed claim in one scope does not excuse a stale id in another.
+
+    Vertex ids carry their scope, and two scopes may hold the same assertion at the same
+    content hash. Comparing bare hashes would let `literature`'s copy stand in as
+    `main`'s twin and report a retirement that would strand the only session edge.
+    """
+    description = "Retrieval budgets are a cost-utility frontier"
+    rows = [
+        _claim_row("decision", description, scope="literature"),
+        _claim_row("decision", description, scope="main", local_id="0" * 16),
+    ]
+
+    issues = audit_content_addresses(rows)
+
+    assert len(issues) == 1
+    assert issues[0].startswith("Wrong claim address")

@@ -22,6 +22,9 @@ third side of the same triangle, declared → written → read: a field the writ
 vertex that no read path ever names is persisted and structurally unreachable. Findings
 in both directions are `ADVISORY`: absence in one graph, or in one scan, is not proof,
 and a check that can fail forever on unfixable history is a check that gets ignored.
+`audit_content_addresses` asks the one question that needs no second party at all —
+whether a content-addressed vertex's id still agrees with the content it was hashed
+from — and reports on the same terms.
 
 Not yet enforced (needs a second scope to be meaningful):
   - projection grants — what the plane may read from a scope
@@ -45,6 +48,7 @@ from thalamus.contract.ontology import (
     CORE_EDGES,
     CORE_NODES,
     EDGES_BY_LABEL,
+    MAIN_SCOPE,
     NODES_BY_LABEL,
     edge_crosses_scope,
     scope_of,
@@ -673,6 +677,61 @@ def audit_declarations(
     return issues
 
 
+def audit_content_addresses(rows: Sequence[tuple[str, str, str]]) -> list[Issue]:
+    """Does a content-addressed Claim still live at the address its content produces?
+
+    `Claim.content_id` hashes `(kind, normalized description)` and `vid` puts that hash
+    in the vertex id, so the id is a claim *about* the content — and the only claim in
+    the graph that can be re-asked from the vertex alone. Nothing re-asked it. It goes
+    stale two ways, both outside the live write path: an identity formula that changed
+    under vertices already written, and an identity-bearing property rewritten in place
+    without re-minting the id.
+
+    The consequence is not cosmetic. A vertex left behind by a re-key keeps whatever
+    edges it acquired afterwards but not the `CONTAINS` the re-key moved to its twin, so
+    a provenance walk from it dead-ends with no session — a retrieved claim whose
+    evidence chain cannot be walked, which is the property the tier model rests on.
+    Whether a twin exists is therefore reported, not just the disagreement: it is what
+    separates a duplicate that can be retired from a vertex that is the live record and
+    is simply at the wrong address.
+
+    Recomputed through `Claim.content_id` rather than by restating the hash here, so a
+    change to the identity function moves this check with it instead of past it.
+
+    ADVISORY on the terms `audit_declarations` states, and for the sharper reason: this
+    fires on history no write path can now produce, and every repair is a data decision
+    rather than a code one.
+    """
+    issues: list[Issue] = []
+    known = {vertex_id for vertex_id, _, _ in rows}
+    twinned: list[str] = []
+    orphaned: list[str] = []
+    for vertex_id, kind, description in rows:
+        expected = Claim(kind=kind, description=description).content_id()
+        if vertex_id.rsplit(":", 1)[-1] == expected:
+            continue
+        twin = vid("Claim", expected, scope=scope_of(vertex_id) or MAIN_SCOPE)
+        (twinned if twin in known else orphaned).append(vertex_id)
+
+    if twinned:
+        issues.append(
+            advisory(
+                f"Stale claim address: {len(twinned)} Claim(s) sit at an id their own "
+                "(kind, description) no longer produces, and a live twin holds the "
+                f"recomputed id — {', '.join(sorted(twinned))}"
+            )
+        )
+    if orphaned:
+        issues.append(
+            advisory(
+                f"Wrong claim address: {len(orphaned)} Claim(s) sit at an id their own "
+                "(kind, description) no longer produces, with no vertex at the "
+                f"recomputed id — {', '.join(sorted(orphaned))}"
+            )
+        )
+    return issues
+
+
 # Vertex-producing schema models that are not Claim subtypes, by the graph label they
 # land on. `Touch` is the odd one: it becomes TOUCHES edge properties rather than a
 # vertex, and it is checked here because an edge property is reachable or unreachable on
@@ -911,9 +970,31 @@ def check_graph(g, archive_base: Path | None = None) -> tuple[list[str], dict[st
         *audit_orphans(vertices, edges),
         *audit_evidence(vertices, archive_base),
         *audit_declarations(vertices, edges, edge_property_vocabulary(g)),
+        *audit_content_addresses(claim_identity_rows(g)),
         *audit_reader_projection(),
     ]
     return issues, {"vertices": len(vertices), "edges": len(edges)}
+
+
+def claim_identity_rows(g) -> list[tuple[str, str, str]]:
+    """Every Claim as `(vertex id, kind, description)` — identity's three columns.
+
+    Asked as its own narrow traversal rather than by widening `_AUDIT_VERTEX_KEYS`.
+    `description` is the largest property in the graph — 4.2 MB across 17,559 Claims —
+    and no other rule here reads it, so adding it to the shared vertex scan would make
+    every audit pay for one. Measured on the live graph: 404 ms median (n=3) for this
+    scan against the 2,443 ms the shared vertex read costs. Same trade
+    `edge_property_vocabulary` makes in the other direction.
+    """
+    from gremlin_python.process.traversal import T
+
+    rows = (
+        g.V().has_label("Claim")
+        .project("vid", "kind", "description")
+        .by(T.id).by("kind").by("description")
+        .to_list()
+    )
+    return [(str(r["vid"]), str(r["kind"]), str(r["description"])) for r in rows]
 
 
 def edge_property_vocabulary(g) -> dict[str, set[str]]:
