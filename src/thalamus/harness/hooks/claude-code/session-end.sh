@@ -214,8 +214,13 @@ nohup sh -c "
   # The failure is written down rather than raised, for the reason the rest of this
   # hook is: a SessionEnd hook exiting non-zero does not stop the session, so a
   # non-zero status reaches no one. hook-failures.log is where
-  # thalamus_require_binaries already writes, and `thalamus init --check` already
+  # thalamus_require_binaries already writes, and thalamus init --check already
   # reads it back through install.recorded_hook_failures().
+  #
+  # No backticks anywhere in this block. It is a double-quoted string, so bash
+  # runs them as command substitution before sh ever sees the script — the prose
+  # markup around a command name becomes a command this hook executes, and its
+  # output is spliced into the script. tests/test_hook_scripts.py checks this.
   record_failure() {
     mkdir -p '$log_dir' 2>/dev/null || return 0
     now=\$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
