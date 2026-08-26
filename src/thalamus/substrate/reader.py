@@ -686,10 +686,18 @@ def recall(
             )
             knowledge_hits.setdefault(key, set()).add(keyword)
 
-        # Co-indexing: chunks are searched in the same pass, over the same scopes, and
-        # ranked against claims rather than appended after them. A chunk is
-        # ~14x the text of a claim, so it is scored *below* one per keyword hit — a
-        # long passage should not outrank a claim merely by containing more words.
+        # Chunks are searched in the same pass and over the same scopes as claims, but
+        # they are ranked in a window of their own: `_CHUNK_HIT_SCORE` orders chunks
+        # against each other, and the survivors are prepended ahead of the mixed
+        # session/knowledge window rather than competing for a slot in it. A chunk
+        # therefore never loses a place to a claim, and the two hit scores are never
+        # compared. `_CHUNK_WINDOW_CAP` is the whole of what bounds this tier's output.
+        #
+        # It is also the most expensive scan the reader issues: ~17.7k vertices holding
+        # ~1,500 characters of `text` each against a claim description's ~210, walked by
+        # a per-element regex once per keyword because nothing in the chain is indexable
+        # under TinkerGraph. Measured 2026-08-26 over 100 replayed queries — 60% of the
+        # four tiers' time, rendering 2 rows out of a median 2,190 matched. See #112.
         chunks = (
             g.V()
             .has_label("Chunk")
