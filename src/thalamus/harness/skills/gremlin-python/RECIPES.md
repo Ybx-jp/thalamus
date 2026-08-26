@@ -461,3 +461,135 @@ Count first and read second, guarded on the count. `order().by(...).limit(1)` on
 empty label returns `[]` rather than raising, so an unguarded version of this reports
 "no sessions" and "could not read the newest" as the same thing — and on a fresh
 install those are the *only* rows there are.
+
+## Does `kind` behave like an identity criterion or like a role?
+**Question it answered:** Claim identity is `(kind, normalized_description)`
+(`schema.py`), so the same sentence asserted as a `problem` and as a `decision`
+forks into two vertices. Does that actually happen in the live graph, and at what
+rate? (schema-coherence design room, 2026-08-25)
+**Surface:** gremlin-python
+**Validated:** 2026-08-25 against the live graph — 2 cross-kind descriptions out of
+17512 distinct (both `decision`/`solution`); 13 claims whose vertex id no longer
+matches a recomputed `content_id`.
+
+```python
+from collections import Counter, defaultdict
+from gremlin_python.process.traversal import T
+from thalamus.substrate.schema import Claim, _normalized
+from thalamus.substrate.writer import connect, close_connection
+
+g = connect()
+try:
+    rows = (g.V().has_label("Claim").project("id", "kind", "description", "scope")
+            .by(T.id).by("kind").by("description").by("scope").to_list())
+finally:
+    close_connection(g)
+
+by_desc = defaultdict(list)
+for r in rows:
+    by_desc[_normalized(r["description"])].append(r)
+multi = {d: rs for d, rs in by_desc.items() if len({r["kind"] for r in rs}) > 1}
+print(len(by_desc), len(multi))          # denominator first, then the hits
+
+mism = [r for r in rows
+        if r["id"].rsplit(":", 1)[-1]
+        != Claim(kind=r["kind"], description=r["description"]).content_id()]
+print(len(mism), Counter(r["kind"] for r in mism))
+```
+
+**Notes.** Do the grouping in Python, not server-side: a `group().by('description')`
+over every Claim materialises the whole corpus into one map and the counts you want
+are one dict comprehension away anyway. Normalise with the schema's own
+`_normalized` — grouping on the raw property answers a different question than the
+identity function does, and here the two happen to agree only because no pair
+differs by whitespace alone.
+
+Report the denominator with the hit count. "2 collisions" is unreadable without
+"of 17512 distinct descriptions"; a near-zero rate is a finding only when its base
+is stated.
+
+**Call `Claim(...).content_id()`, never a local reimplementation of the hash.** The
+payload, the separators and the digest length are `schema.py`'s to change; a recipe
+that inlines them keeps returning confident answers after they do.
+
+The id-vs-recomputed-`content_id` check is the second half and catches a different
+thing: a vertex whose identity-bearing text was written after the id was minted keeps
+the old id, so identical `(kind, scope, description)` triples can sit on two distinct
+vertices. Recomputing is the only way to see it — `thalamus contract check` passes
+clean on all of them, because nothing verifies that a content-addressed vertex still
+hashes to its own address.
+
+The 13 this found are two populations, and the split is `twin exists / no twin`
+(issue #111): 9 are pre-2026-07-15 vertices left behind by the `9e78ca2` identity
+re-key, still reproducing their stored id under the *old* all-substance-fields
+formula, each beside a byte-identical live twin; 4 had `description` rewritten in
+place by the 2026-07-27 secret scrub and have no twin. Check twin existence before
+concluding anything — an orphan mismatch and a duplicated one need opposite repairs.
+
+## Ontology drift — declared vs observed, both directions
+
+**Question:** Which declared node types, kinds, edge types and edge properties does
+nothing actually write, and what do writers produce that the ontology never declared?
+**Surface:** gremlin-python
+**Validated:** 2026-08-25 against the live graph (47,399 vertices, 161,508 edges).
+Found `BLOCKS` never written, `DERIVED_FROM.anchors` declared across 31,042
+propertyless edges, `ANCHORS.start`/`end` against a model with no such field,
+`RETURNS.judged_terms` written and undeclared, and `literature/finding` — a claim
+kind — on 2 Entities.
+
+```python
+from collections import Counter
+
+from gremlin_python.process.graph_traversal import __
+from gremlin_python.process.traversal import T
+
+from thalamus.contract.ontology import CORE_EDGES, CORE_NODES
+from thalamus.substrate.writer import close_connection, connect
+
+g = connect()
+try:
+    vlabels = {str(k): v for k, v in g.V().group_count().by(T.label).next().items()}
+    elabels = {str(k): v for k, v in g.E().group_count().by(T.label).next().items()}
+    print("declared node types never written:",
+          sorted({n.label for n in CORE_NODES} - set(vlabels)))
+    print("declared edge types never written:",
+          sorted({e.label for e in CORE_EDGES} - set(elabels)))
+
+    for n in CORE_NODES:
+        if not n.kinds:
+            continue
+        seen = {str(k) for k in g.V().has_label(n.label).group_count().by("kind").next()}
+        print(f"{n.label}: unwritten={sorted(set(n.kinds) - seen)} "
+              f"undeclared={sorted(seen - set(n.kinds))}")
+
+    for label in sorted(elabels):
+        keys = {str(k) for k in g.E().has_label(label).properties().key().dedup().to_list()}
+        print(f"{label} properties observed: {sorted(keys)}")
+
+    # Endpoint label pairs, for promoting `note` prose to from_labels/to_labels.
+    rows = (g.E().project("e", "o", "i").by(T.label)
+            .by(__.out_v().label()).by(__.in_v().label()).to_list())
+    for pair, n in sorted(Counter(
+        (str(r["e"]), str(r["o"]), str(r["i"])) for r in rows
+    ).items()):
+        print(f"  {pair[0]}: {pair[1]} -> {pair[2]}   ({n})")
+finally:
+    close_connection(g)
+```
+
+**Notes.** `properties().key().dedup()` per edge label is the cheap way to the
+observed property vocabulary — `element_map()` over 161k edges materialises the whole
+edge set to answer a question about ~14 strings.
+
+Run the endpoint-pair census **before** promoting any `note` direction string to a
+`from_labels`/`to_labels` field. The notes were not a reliable statement of intent:
+`DERIVED_FROM` said `Session/Claim -> Source` and omitted `Chunk`, which is 17,753 of
+its 31,042 edges, and `RETURNS` named four targets where the reader serves eight.
+Three wrong invariants would have landed without this pass.
+
+Both directions matter and they fail differently. Declared-and-unwritten is a broken
+promise to consumers; written-and-undeclared is a surface the ontology cannot be read
+to discover, and it is the direction that carries actual wrong data. This is the query
+behind `conformance.audit_declarations`, so `thalamus contract check` now answers it
+without the ad-hoc run — reach for this version when you need the raw counts or the
+endpoint pairs, which the check does not print.
