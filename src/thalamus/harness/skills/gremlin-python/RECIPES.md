@@ -669,3 +669,36 @@ None of these is an index question. TinkerGraph's only index is an exact-value h
 map (`graph.createIndex`), no index is declared in `config/tinkergraph.properties`, and
 `hasLabel` has no index in TinkerGraph at all — every one of these is a full scan by
 construction, so what varies is only how much crosses the wire.
+
+## How many keywords does a real recall query carry?
+**Question:** `recall()` costs four traversals *per keyword*. Is a per-keyword
+optimisation worth anything — i.e. what is the keyword count of the queries that
+actually arrive?
+**Surface:** gremlin-python
+**Validated:** 2026-08-26 against the live graph (2,963 `Trace` vertices)
+
+```python
+from collections import Counter
+
+from thalamus.substrate.reader import _extract_keywords
+from thalamus.substrate.writer import close_connection, connect
+
+g = connect()
+try:
+    queries = g.V().has_label("Trace").values("query").to_list()
+finally:
+    close_connection(g)
+
+counts = Counter(len(_extract_keywords(str(q))) for q in queries)
+total = sum(counts.values())
+for n in sorted(counts):
+    print(f"{n:>3} keywords: {counts[n]:>5} ({counts[n] / total:.1%})")
+```
+
+**Notes:** The point is to size a cost that is invisible in any single query.
+Measured 2026-08-26: median 7; 1–2 keywords 18.7%, ≥4 keywords 80.5%, tail to 340 —
+a 340-keyword query issues 1,360 traversals under the current per-keyword loop.
+`Trace.query` covers every recorded retrieval, not only `memory_recall`, so read the
+distribution as "queries the reader is asked", not "recall calls".
+The same shape sizes any other per-input cost: swap `_extract_keywords` for whatever
+the code under test derives from `query`.
