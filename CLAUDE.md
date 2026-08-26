@@ -13,7 +13,10 @@ knowing that.
 Every one of these is gated in CI (`.github/workflows/verify.yml`). Run them before you
 push rather than after CI tells you.
 
-- `uv run pytest` — the suite must stay green.
+- `uv run pytest` — the suite must stay green. It runs on 16 xdist workers by
+  default (~50s; it is blocked on subprocess waits, not CPU, so the count is not
+  bounded by cores). Add `-n 0` when iterating on one file — 16 workers cost ~3s
+  to boot, which a single file never earns back.
 - `uv run ruff check src tests`
 - `uv run ty check src` — no diagnostics. ty is pinned to the patch in `pyproject.toml`;
   raise it deliberately, fixing whatever the new release reports in the same change.
