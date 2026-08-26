@@ -88,6 +88,17 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(
         install, "claude_mcp_registration",
         lambda: f"  Args: run --project {PROJECT_ROOT} thalamus-mcp\n")
+    # The twin of the seam above, and the one that was never wired into it:
+    # `registered_mcp_env` shells out to the same `claude mcp get thalamus`, so an
+    # unstubbed test reads the operator's real registration and pays a real CLI boot
+    # for it. Measured 2026-08-26: 47 spawns, 137s of a 343s suite.
+    monkeypatch.setattr(install, "registered_mcp_env", dict)
+    # And the graph probe. Unstubbed it opens a real socket to the operator's live
+    # graph and spawns an interpreter to run a real traversal against it — so a
+    # sandboxed test's verdict depends on whether his container happens to be up.
+    # The tests that are *about* the advisory monkeypatch this themselves, which
+    # still wins: this clears the floor, it does not hold it down.
+    monkeypatch.setattr(install, "_probe_graph", lambda url: (True, "stubbed", False))
     monkeypatch.setattr(install, "write_all_agents", lambda d: d.mkdir(parents=True, exist_ok=True))
     # Never invoke the real `claude mcp add` from a test — it writes the
     # operator's shared ~/.claude.json.
