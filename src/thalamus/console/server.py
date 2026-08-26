@@ -438,6 +438,45 @@ def _attach_codex_activity(windows: list[dict]) -> None:
             w["activity_since"] = since.timestamp()
 
 
+def _live_descriptors(dispatch, room: str, harness: str) -> dict:
+    """Session descriptors visible from the config dir a window's own session runs in.
+
+    Session descriptors are partitioned by config dir, and a room member writes its
+    own into the room's. Reading only this process's dir is what made every row in a
+    room render `not in reach` — measured 2026-08-25 on a two-member room whose
+    sessions were publishing healthy `busy`/`idle` status the whole time, one
+    directory over.
+
+    Widening the console's read is **not** widening the boundary the partition
+    exists for. That boundary is agent-to-agent: `quick.live_sessions` defaults to the
+    caller's own dir so a session inside a room discovers its room-mates and nobody
+    else, and the fork/target path (`quick.py`) still gets exactly that. The console
+    is not a session — it already spawns into rooms, lists them, and prints which room
+    a window is in — and `dispatch` already reads a room's dir from outside to address
+    one. What the operator may see of his own sessions is a different axis from what a
+    room member may reach.
+
+    Per-call rather than cached: a descriptor's status is the thing being read, and
+    the room set changes under a long-lived server. `live_sessions` is a directory
+    glob over a handful of small files, and the poll already globs more than this.
+    """
+    if not room:
+        return _descriptors_at(dispatch, None)
+    pin = pin_module()
+    if pin is None or not pin.valid_room(room):
+        # An unvalidated name reaches a path join. Falling back to the host dir keeps
+        # the row honestly unobserved rather than trusting the name.
+        return _descriptors_at(dispatch, None)
+    return _descriptors_at(dispatch, pin.room_config_dir(room, harness))
+
+
+def _descriptors_at(dispatch, config_dir) -> dict:
+    try:
+        return {s.session_id: s for s in dispatch.quick.live_sessions(config_dir)}
+    except Exception:  # noqa: BLE001 — an unreadable sessions dir is "we cannot know"
+        return {}
+
+
 def attach_blocked(windows: list[dict]) -> None:
     """Mark the windows whose session is stopped waiting on a human, in place.
 
@@ -466,12 +505,14 @@ def attach_blocked(windows: list[dict]) -> None:
     Whether the session could be observed at all is **one fact per row**, `observed`,
     and it is the field a reader keys on. Session descriptors are partitioned by
     config dir: a session launched into a collaboration writes its descriptor under
-    that collaboration's dir, and `quick.config_dir` reads only the one this process
-    is in, because discovery is that boundary. So a console outside a
-    collaboration cannot see the descriptors of sessions inside one — measured on
-    this box 2026-08-15, the same roster at the same instant resolved 7 of 9 windows
-    from the host config dir and the complementary 2 of 9 from inside the
-    collaboration.
+    that collaboration's dir. Each row is therefore looked up in **its own** session's
+    config dir, resolved from the `room` the window already carries
+    (`_live_descriptors`), not in this process's. Reading only this process's dir made
+    every row in a room unobservable, which cost the `needs you` indicator on exactly
+    the sessions least watched — measured 2026-08-15 as 7 of 9 windows resolving from
+    the host dir and the complementary 2 of 9 only from inside the collaboration, and
+    again 2026-08-25 on a two-member room publishing healthy status one directory over
+    while the console drew `not in reach` on both.
 
     Reporting an unobserved window as "not stuck" would state a fact on exactly the
     evidence that says nothing at all — the failure this row exists to remove,
@@ -514,14 +555,12 @@ def attach_blocked(windows: list[dict]) -> None:
     if dispatch is None:
         return
     _attach_codex_activity(windows)
-    try:
-        live = {s.session_id: s for s in dispatch.quick.live_sessions()}
-    except Exception:  # noqa: BLE001 — an unreadable sessions dir is "we cannot know"
-        return
     for w in windows:
         if w["observed"]:
             continue  # already answered from the rollout: codex writes no descriptor
-        session = live.get(w.get("session_id") or "")
+        session = _live_descriptors(dispatch, w.get("room") or "",
+                                    w.get("harness") or "claude").get(
+            w.get("session_id") or "")
         if session is None:
             continue  # no descriptor in reach: the row stays unobserved
         w["observed"] = True
