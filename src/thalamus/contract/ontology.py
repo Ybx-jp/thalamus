@@ -1,10 +1,16 @@
 """The core ontology — declared once, derived everywhere.
 
-Before this module the node/edge vocabulary was hardcoded in seven places (schema,
-writer, reader, mermaid, view_model, view_query, and the frontend legend), which meant
-adding a node type touched all seven. That is exactly the "bespoke glue"
-the federation contract forbids, and M1's literature expert would have hit it
-immediately. Everything downstream now derives from the tuples below.
+The vocabulary is declared here once and derived everywhere — schema, writer, reader,
+and the out-of-repo viewer, which imports `EXPANDABLE_LABELS` and `LABEL_PROPERTIES`
+rather than restating them. Duplicating it per consumer is the "bespoke glue" the
+federation contract forbids.
+
+Declarations here are **audited against the live graph** by `thalamus contract check`
+(`conformance.audit_declarations`). A node type, kind, edge type or edge property that
+nothing writes is a schema-layer assertion every consumer may act on with nothing behind
+it, and this module carried three of them at once. Only structural fields — `kinds`,
+`from_labels`, `to_labels`, `properties` — are checkable; `note` prose is not, so
+anything a consumer might act on belongs in a field.
 
 Two contract rules are encoded here rather than described in prose:
 
@@ -61,6 +67,32 @@ class NodeType:
 class EdgeType:
     label: str
     may_cross_scope: bool = False
+
+    from_labels: tuple[str, ...] = ()
+    """Node labels this edge may leave. Empty means any — `TOUCHES` is the only such
+    case, and its constraint is on the target."""
+
+    to_labels: tuple[str, ...] = ()
+    """Node labels this edge may enter. Empty means any."""
+
+    strict_endpoints: bool = True
+    """Whether an endpoint outside `from_labels`/`to_labels` is a violation.
+
+    True by default, and true for every type here: endpoint typing was promoted from
+    `note` prose to fields only after the whole live graph was measured against it
+    (161,508 edges, 2026-08-25, no deviation once `RETURNS` was corrected). False is
+    the escape for a type that acquires non-conforming history — the deviation still
+    reports, as an advisory, so the count stays visible instead of the rule being
+    dropped to keep the check green."""
+
+    properties: tuple[str, ...] = ()
+    """Edge properties this type is declared to carry.
+
+    Declared structurally rather than in `note` prose so `contract check` can ask the
+    live graph whether anything actually writes them. A property named only in prose
+    is a schema-layer assertion every downstream consumer may act on and nothing
+    backs — `DERIVED_FROM.anchors` was one for a month across 31,042 edges."""
+
     note: str = ""
 
 
@@ -125,9 +157,9 @@ CORE_NODES: tuple[NodeType, ...] = (
 )
 
 CORE_EDGES: tuple[EdgeType, ...] = (
-    EdgeType("CONTAINS", note="Session -> Claim"),
-    EdgeType("SPAWNS", note="Session -> Thread"),
-    EdgeType("CONTINUES", note="Session -> Thread"),
+    EdgeType("CONTAINS", from_labels=("Session",), to_labels=("Claim",)),
+    EdgeType("SPAWNS", from_labels=("Session",), to_labels=("Thread",)),
+    EdgeType("CONTINUES", from_labels=("Session",), to_labels=("Thread",)),
     # Two closers, one label, at two levels of detail. Distillation writes the bare
     # `Session -> Thread` when a transcript settles a thread; an operator-approved
     # close writes `Agent -> Thread` carrying its evidence in edge properties (basis,
@@ -139,37 +171,65 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     #
     # `may_cross_scope` stays False and needs no exception: an Agent is global, and
     # `edge_crosses_scope` does not count a global endpoint as a crossing.
-    EdgeType("RESOLVES", note="Session|Agent -> Thread"),
-    EdgeType("BLOCKS", note="Thread -> Thread"),
-    EdgeType("SOLVED_BY", note="Claim(problem) -> Claim(solution)"),
+    EdgeType(
+        "RESOLVES",
+        from_labels=("Session", "Agent"),
+        to_labels=("Thread",),
+        properties=(
+            "basis",
+            "role",
+            "on_behalf_of",
+            "surface",
+            "approval_ref",
+            "approver_evidence",
+            "closed_at",
+            "disposition",
+            "notes",
+        ),
+    ),
+    EdgeType("BLOCKS", from_labels=("Thread",), to_labels=("Thread",)),
+    EdgeType(
+        "SOLVED_BY",
+        from_labels=("Claim",),
+        to_labels=("Claim",),
+        note="Claim(problem) -> Claim(solution)",
+    ),
     EdgeType(
         "TOUCHES",
         may_cross_scope=True,
+        to_labels=("Artifact",),
+        properties=("anchors",),
         note="* -> Artifact. Artifact is global, so this is not a scope crossing "
-        "in the sense the density metric counts.",
+        "in the sense the density metric counts. `anchors` is the message UUIDs of "
+        "the tool calls the touch was recovered from.",
     ),
     # Declared now, unused until M1/M3. They exist here so the contract can already
     # answer 'is this edge legal?' rather than growing the question later.
     EdgeType(
         "DERIVED_FROM",
         may_cross_scope=True,
-        note="Session/Claim -> Source. Effective tier = max(tier) over this closure — "
-        "'distillation does not launder'. Carries an `anchors` property: the "
-        "message UUIDs inside the Source that this node was distilled from, so the "
-        "provenance walk lands on the exact evidence rather than a whole transcript.",
+        from_labels=("Session", "Claim", "Chunk"),
+        to_labels=("Source",),
+        note="Effective tier = max(tier) over this closure — 'distillation does not "
+        "launder'. Message-UUID anchoring into the Source is `TOUCHES.anchors`, which "
+        "is where it is actually written.",
     ),
     EdgeType(
         "REFERENCES",
         may_cross_scope=True,
-        note="main -> expert node, by ID. Never copies. From an Exchange it carries a "
-        "`role` property: 'brief' (served into the consultation's expert brief) or "
-        "'citation' (cited by the validated answer) — the evidence-support record of "
-        "the exchange.",
+        from_labels=("Exchange",),
+        to_labels=("Claim", "Chunk", "Session", "Source", "Thread", "Exchange"),
+        properties=("role",),
+        note="main -> expert node, by ID. Never copies. `role` is 'brief' (served into "
+        "the consultation's expert brief) or 'citation' (cited by the validated "
+        "answer) — the evidence-support record of the exchange.",
     ),
     EdgeType(
         "CONSULTS",
         may_cross_scope=True,
-        note="Session -> Exchange. The consulting session's side of a "
+        from_labels=("Session",),
+        to_labels=("Exchange",),
+        note="The consulting session's side of a "
         "consultation. The MCP server cannot see its caller's session id (a measured "
         "harness limit), so this edge is landed by `eval sync`/distillation "
         "from the ticket carried in retrieval traces, not at mint time.",
@@ -179,7 +239,7 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     # into context; after attribution it carries `used` (bool) and `evidence` — the
     # used-vs-ignored verdict lives on the edge because it is a fact about *this
     # retrieval* of the node, not about the node itself.
-    EdgeType("QUERIES", note="Session -> Trace"),
+    EdgeType("QUERIES", from_labels=("Session",), to_labels=("Trace",)),
     # Snapshot lineage. A session distilled while still open archives its transcript
     # as it stands, and a grown transcript hashes to a new blob — so one session can
     # legitimately hold several Source snapshots. Rather than
@@ -189,31 +249,47 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     # walkable — they are evidence of what earlier distillations saw.
     EdgeType(
         "SUPERSEDES",
-        note="Source -> Source, within one evidence lineage: a session's transcript "
-        "snapshots, or re-ingestions of one article origin.",
+        from_labels=("Source",),
+        to_labels=("Source",),
+        note="Within one evidence lineage: a session's transcript snapshots, or "
+        "re-ingestions of one article origin.",
     ),
     # Claim -> Entity: what an assertion is about. The knowledge subgraph's connective
     # tissue — entities are reached through the claims that mention them, so an entity
     # nobody asserts anything about is an orphan the contract rejects.
-    EdgeType("ABOUT", note="Claim/Chunk -> Entity"),
+    EdgeType("ABOUT", from_labels=("Claim", "Chunk"), to_labels=("Entity",)),
     EdgeType(
         "ANCHORS",
-        note="Claim -> Chunk. The claim's verbatim `citation` was found inside that "
-        "chunk, so a note reaches the passage it came from. Carries `start`/`end`: "
-        "the citation's character offsets within the Source text, which is the "
-        "locator the 2026-07-14 decision promised and never built.",
+        from_labels=("Claim",),
+        to_labels=("Chunk",),
+        note="The claim's verbatim `citation` was found inside that chunk, so a note "
+        "reaches the passage it came from. Chunk granularity, not character offsets: "
+        "`KnowledgeBatch.anchors` maps a claim index to a chunk ordinal.",
     ),
     EdgeType(
         "ADJACENT_IN_TEXT",
-        note="Chunk -> Chunk, document order, next-only. Lets a retrieved chunk expand "
+        from_labels=("Chunk",),
+        to_labels=("Chunk",),
+        note="Document order, next-only. Lets a retrieved chunk expand "
         "to its neighbours — a secondary affordance, not the mechanism: expansion over "
         "verbatim chunks measured a no-op.",
     ),
     EdgeType(
         "RETURNS",
         may_cross_scope=True,
-        note="Trace -> Session/Claim/Thread/Artifact. Carries `used`/`evidence` after "
-        "attribution. May cross scope: the reader serves expert knowledge claims into "
+        from_labels=("Trace",),
+        # Target is deliberately unconstrained, which is the one place endpoint typing
+        # would be wrong. What a trace may point at is not a schema question: the tap
+        # records what the reader *served*, and `memory_query` serves whatever a
+        # traversal selected — Entities via `knowledge_entities`, Traces via a recall
+        # over the eval loop's own layer 1. Constraining the target here would make the
+        # contract reject the honest record of a legal read, and a trace that cannot
+        # point at what was served is a tap that lies.
+        properties=("used", "evidence", "judged_terms"),
+        note="Carries `used`/`evidence` after "
+        "attribution, and `judged_terms` — the term-set the verdict was taken "
+        "against, so a verdict stays readable when the node's text moves under it. "
+        "May cross scope: the reader serves expert knowledge claims into "
         "any session (tier-2, informs-never-instructs) and ticket-scoped consultation "
         "recall returns consulted-scope nodes — the trace records what the reader "
         "actually returned, and its legality is the reader's server-side policy, not "

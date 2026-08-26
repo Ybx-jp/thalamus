@@ -15,17 +15,25 @@ front door; the audit catches what write-time cannot: drift from schema changes,
 that bypassed the contract, evidence blobs that went missing under an immutable-looking
 URI. The audit functions are pure over plain rows so they are testable without a graph.
 
-Not yet enforced (they need a second scope to be meaningful):
-  - manifest validation — declared node/edge types vs. what is actually written
-  - projection grants   — what the plane may read from a scope
+Both layers check written data **against** the ontology. `audit_declarations` runs the
+comparison the other way — the ontology against what writers produce — which is the only
+direction that catches a declaration nothing backs. Findings in that direction are
+`ADVISORY`: absence in one graph is not proof a writer is missing, and a check that can
+fail forever on unfixable history is a check that gets ignored.
+
+Not yet enforced (needs a second scope to be meaningful):
+  - projection grants — what the plane may read from a scope
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from thalamus.contract.ontology import (
+    CORE_EDGES,
+    CORE_NODES,
     EDGES_BY_LABEL,
     NODES_BY_LABEL,
     edge_crosses_scope,
@@ -33,6 +41,38 @@ from thalamus.contract.ontology import (
     vid,
 )
 from thalamus.substrate.schema import SessionGraph
+
+VIOLATION = "violation"
+ADVISORY = "advisory"
+
+
+class Issue(str):
+    """A contract finding, carrying whether it may fail the run.
+
+    A `str` subclass rather than a wrapper: every consumer that prints, joins or
+    substring-tests an issue keeps working unchanged, and only the code that has to
+    route on severity needs to know severity exists.
+
+    `VIOLATION` is the default here and in `severity_of`, so a finding raised by code
+    that predates severity — or by code that forgets it — fails the run. Fail-closed is
+    the only safe default for a gate.
+    """
+
+    severity: str
+
+    def __new__(cls, message: str, severity: str = VIOLATION) -> Issue:
+        issue = super().__new__(cls, message)
+        issue.severity = severity
+        return issue
+
+
+def severity_of(issue: str) -> str:
+    """Severity of an issue, defaulting to VIOLATION for a plain string."""
+    return getattr(issue, "severity", VIOLATION)
+
+
+def advisory(message: str) -> Issue:
+    return Issue(message, ADVISORY)
 
 
 def referenced_artifacts(session: SessionGraph) -> set[str]:
@@ -111,6 +151,44 @@ def check_session(session: SessionGraph) -> list[str]:
         *validate_provenance(session),
         *validate_scope(session),
     ]
+
+
+class ContractViolation(RuntimeError):
+    """A session that does not satisfy the contract was offered to the write path."""
+
+    def __init__(self, session_id: str, issues: list[str]) -> None:
+        self.session_id = session_id
+        self.issues = list(issues)
+        detail = "\n".join(f"  - {issue}" for issue in self.issues)
+        super().__init__(
+            f"Session {session_id} does not satisfy the federation contract:\n{detail}"
+        )
+
+
+def write_session_checked(g, session: SessionGraph) -> str:
+    """Check the contract, then write. The gated entry point to `write_session`.
+
+    The gate cannot live in `substrate/writer.py`, which is where it would most
+    obviously belong: the substrate sits *below* the contract — it knows nodes and
+    edges, not scopes, tiers or federation — and importing `conformance` there would
+    invert the layering the whole boundary rests on. So the gate sits here, one level
+    up, and the obligation on callers changes from "remember to check" to "use this
+    door".
+
+    That obligation was previously discharged by convention and unevenly: of the three
+    `write_session` call sites, two checked and `thalamus write` — the one that takes
+    an operator-supplied JSON file, the least trustworthy input of the three — did not.
+
+    Callers that need the issues for reporting should still call `check_session`
+    themselves and handle them; re-checking here is pure over an in-memory model and
+    costs nothing.
+    """
+    from thalamus.substrate.writer import write_session
+
+    issues = [issue for issue in check_session(session) if severity_of(issue) != ADVISORY]
+    if issues:
+        raise ContractViolation(session.session_id, issues)
+    return write_session(g, session)
 
 
 def prune_orphan_artifacts(session: SessionGraph) -> SessionGraph:
@@ -315,24 +393,36 @@ def audit_edges(edges: list[AuditEdge]) -> list[str]:
                         f"which a reader confined to `{thread_scope}` cannot resolve"
                     )
 
-        if edge.label == "SUPERSEDES" and (
-            edge.from_label != "Source" or edge.to_label != "Source"
-        ):
-            issues.append(
-                f"SUPERSEDES between non-Sources: `{edge.from_vid}` "
-                f"({edge.from_label}) -> `{edge.to_vid}` ({edge.to_label}) — "
-                "lineage is a fact about evidence snapshots only"
-            )
-
-        if edge.label == "CONSULTS" and (
-            edge.from_label != "Session" or edge.to_label != "Exchange"
-        ):
-            issues.append(
-                f"CONSULTS between wrong endpoints: `{edge.from_vid}` "
-                f"({edge.from_label}) -> `{edge.to_vid}` ({edge.to_label}) — "
-                "a consultation is a Session's edge to its Exchange record"
-            )
+        issues.extend(_endpoint_issues(edge, declared))
     return issues
+
+
+def _endpoint_issues(edge: AuditEdge, declared) -> list[str]:
+    """Endpoint typing, from the ontology's declared `from_labels`/`to_labels`.
+
+    These were documentation for twelve of the fourteen edge types — direction strings
+    in a `note`, which nothing could check, so an edge written backwards or between the
+    wrong labels passed the contract. Promoting them to fields makes the same intent an
+    invariant, and the severity is per-type: strict where the whole live graph has been
+    measured conforming, advisory where it has not.
+    """
+    wrong: list[str] = []
+    if declared.from_labels and edge.from_label not in declared.from_labels:
+        wrong.append(f"source is a {edge.from_label}, not {_or_list(declared.from_labels)}")
+    if declared.to_labels and edge.to_label not in declared.to_labels:
+        wrong.append(f"target is a {edge.to_label}, not {_or_list(declared.to_labels)}")
+    if not wrong:
+        return []
+
+    message = (
+        f"{edge.label} between wrong endpoints: `{edge.from_vid}` ({edge.from_label}) "
+        f"-> `{edge.to_vid}` ({edge.to_label}) — {'; '.join(wrong)}"
+    )
+    return [Issue(message) if declared.strict_endpoints else advisory(message)]
+
+
+def _or_list(labels: tuple[str, ...]) -> str:
+    return " or ".join(labels) if len(labels) < 3 else ", ".join(labels)
 
 
 _EXCHANGE_STATUSES = frozenset({"open", "answered"})
@@ -424,6 +514,108 @@ def audit_evidence(vertices: list[AuditVertex], archive_base: Path | None = None
     return issues
 
 
+def audit_declarations(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list[Issue]:
+    """Audit the *ontology* against what writers produce — the other direction.
+
+    Every other check here reads the ontology as ground truth and judges the graph by
+    it. Nothing judged the ontology, so a declaration could stop matching reality and
+    no run would say so. Three did at once: `DERIVED_FROM.anchors` was declared across
+    31,042 edges that carry no properties at all, `ANCHORS` was documented as carrying
+    character offsets the data model has no field for, and `RETURNS.judged_terms` was
+    written by the eval loop while the ontology named neither it nor half the labels
+    RETURNS actually points at. A design that reads `ontology.py` and plans against a
+    declared property is planning against nothing.
+
+    Everything here is ADVISORY, for a reason worth keeping straight: absence proves
+    nothing on its own. A property legitimately unused in a small graph, an edge type
+    declared ahead of the writer that will produce it, an expert kind no feed has
+    exercised yet — each is a false positive waiting to happen, and a check that can
+    fail forever on unfixable history is a check that gets switched off. What this
+    reports is a *count to explain*, not a verdict.
+    """
+    issues: list[Issue] = []
+
+    vertex_labels = {v.label for v in vertices}
+    kinds_seen: dict[str, set[str]] = defaultdict(set)
+    for vertex in vertices:
+        kind = vertex.properties.get("kind")
+        if kind:
+            kinds_seen[vertex.label].add(str(kind))
+
+    for node in CORE_NODES:
+        if node.label not in vertex_labels:
+            issues.append(
+                advisory(
+                    f"Unwritten node type: `{node.label}` is declared and no vertex "
+                    "carries the label"
+                )
+            )
+            continue
+        unwritten = [k for k in node.kinds if k not in kinds_seen[node.label]]
+        if unwritten:
+            issues.append(
+                advisory(
+                    f"Unwritten {node.label} kind(s): {', '.join(sorted(unwritten))} — "
+                    f"declared, and no {node.label} carries them"
+                )
+            )
+        # The other direction. `Claim.kind` is open by design — an expert manifest's
+        # `claim_kinds` adds namespaced values without touching this module — so only
+        # a bare kind is drift there. Entity and Source have no such extension
+        # surface, which makes any undeclared value on them a writer escaping its
+        # vocabulary: `literature/finding`, a *claim* kind, sits on 2 Entities today.
+        if node.kinds:
+            undeclared = sorted(
+                k
+                for k in kinds_seen[node.label]
+                if k not in node.kinds and not (node.label == "Claim" and "/" in k)
+            )
+            if undeclared:
+                issues.append(
+                    advisory(
+                        f"Undeclared {node.label} kind(s): {', '.join(undeclared)} — "
+                        "written, and the ontology does not declare them"
+                    )
+                )
+
+    edge_labels = {e.label for e in edges}
+    properties_seen: dict[str, set[str]] = defaultdict(set)
+    for edge in edges:
+        properties_seen[edge.label].update(str(key) for key in edge.properties)
+
+    for edge_type in CORE_EDGES:
+        if edge_type.label not in edge_labels:
+            issues.append(
+                advisory(
+                    f"Unwritten edge type: `{edge_type.label}` is declared and no edge "
+                    "carries the label"
+                )
+            )
+            continue
+        unwritten = [p for p in edge_type.properties if p not in properties_seen[edge_type.label]]
+        if unwritten:
+            issues.append(
+                advisory(
+                    f"Unwritten {edge_type.label} propert(ies): "
+                    f"{', '.join(sorted(unwritten))} — declared, and no "
+                    f"{edge_type.label} edge sets them"
+                )
+            )
+        undeclared = sorted(
+            p for p in properties_seen[edge_type.label] if p not in edge_type.properties
+        )
+        if undeclared:
+            issues.append(
+                advisory(
+                    f"Undeclared {edge_type.label} propert(ies): "
+                    f"{', '.join(undeclared)} — written, and the ontology does not "
+                    "declare them"
+                )
+            )
+
+    return issues
+
+
 def check_graph(g, archive_base: Path | None = None) -> tuple[list[str], dict[str, int]]:
     """Audit the live graph against the contract. Returns (issues, counts)."""
     vertices, edges = _fetch(g)
@@ -433,6 +625,7 @@ def check_graph(g, archive_base: Path | None = None) -> tuple[list[str], dict[st
         *audit_exchanges(vertices, edges),
         *audit_orphans(vertices, edges),
         *audit_evidence(vertices, archive_base),
+        *audit_declarations(vertices, edges),
     ]
     return issues, {"vertices": len(vertices), "edges": len(edges)}
 

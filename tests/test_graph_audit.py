@@ -10,13 +10,17 @@ through the front door. Pure functions over plain rows, so drift is testable.
 import hashlib
 
 from thalamus.contract.conformance import (
+    ADVISORY,
+    VIOLATION,
     AuditEdge,
     AuditVertex,
+    audit_declarations,
     audit_edges,
     audit_evidence,
     audit_exchanges,
     audit_orphans,
     audit_vertices,
+    severity_of,
 )
 
 _PROV = {"tier": 1, "source": "session:s1", "ingested_at": "2026-07-15T00:00:00"}
@@ -146,7 +150,9 @@ def test_supersedes_is_for_evidence_snapshots_only():
     issues = audit_edges([wrong])
 
     assert len(issues) == 1
-    assert "SUPERSEDES between non-Sources" in issues[0]
+    assert "SUPERSEDES between wrong endpoints" in issues[0]
+    assert "source is a Claim, not Source" in issues[0]
+    assert severity_of(issues[0]) == VIOLATION
 
 
 def test_consults_is_a_sessions_edge_to_its_exchange_record():
@@ -343,3 +349,86 @@ def test_a_close_may_not_cite_evidence_its_readers_cannot_resolve():
     assert len(issues) == 1
     assert "Unreadable basis" in issues[0]
     assert "literature" in issues[0]
+
+
+def _claim(vid="scope:main:claim:c1", kind="decision", scope="main"):
+    return AuditVertex(vid=vid, label="Claim",
+                       properties={**_PROV, "scope": scope, "kind": kind})
+
+
+def test_a_declaration_nothing_writes_is_reported_and_does_not_fail_the_run():
+    """
+    Scenario: A graph holding one Session, one Claim and one CONTAINS edge, audited
+    against the full declared ontology
+
+    Every other check here reads the ontology as ground truth. This one runs the
+    comparison the other way — the ontology against what writers produce — which is
+    the only direction that catches a declaration with nothing behind it. Three were
+    live at once before it existed, the largest across 31,042 edges.
+
+    Verifications:
+    - node types, node kinds and edge types nobody wrote are each reported
+    - every finding is ADVISORY, so an audit that meets them still exits 0
+    """
+    vertices = [_session(), _claim()]
+    edges = [AuditEdge(label="CONTAINS",
+                       from_vid="scope:main:session:s1", from_label="Session",
+                       to_vid="scope:main:claim:c1", to_label="Claim")]
+
+    issues = audit_declarations(vertices, edges)
+
+    # Verifies: absence is reported for each declared kind of thing
+    assert any("Unwritten node type: `Thread`" in issue for issue in issues)
+    assert any("Unwritten edge type: `SOLVED_BY`" in issue for issue in issues)
+    assert any("Unwritten Claim kind(s)" in issue for issue in issues)
+
+    # Verifies: reporting only. A rule that can fail forever on unfixable history is
+    # a rule nobody can land, which is the whole reason severity exists.
+    assert all(severity_of(issue) == ADVISORY for issue in issues)
+
+
+def test_a_property_a_writer_produces_and_the_ontology_omits_is_reported():
+    """
+    Scenario: A TOUCHES edge carrying its declared `anchors` plus an undeclared key
+
+    Drift runs both ways. A declared-and-unwritten property is a promise to consumers
+    that nothing keeps; a written-and-undeclared one is a consumer surface the
+    ontology cannot be read to discover. `RETURNS.judged_terms` was the second kind.
+    """
+    edges = [AuditEdge(label="TOUCHES",
+                       from_vid="scope:main:session:s1", from_label="Session",
+                       to_vid="artifact:src/app.js", to_label="Artifact",
+                       properties={"anchors": "u1", "invented_key": "x"})]
+
+    issues = audit_declarations([_session()], edges)
+
+    # Verifies: the undeclared key is named, the declared one is not complained about
+    assert any(
+        "Undeclared TOUCHES propert(ies): invented_key" in issue for issue in issues
+    )
+    assert not any("Unwritten TOUCHES propert" in issue for issue in issues)
+
+
+def test_a_claim_kind_landing_on_an_entity_is_reported_as_undeclared():
+    """
+    Scenario: An Entity carrying `literature/finding`, a *claim* kind
+
+    `Claim.kind` is open by design — an expert manifest adds namespaced values without
+    touching the ontology — so a namespaced claim kind is not drift. Entity has no such
+    extension surface, which makes the same string on an Entity a writer escaping its
+    vocabulary. Two Entities carry exactly this in the live graph, from an extraction
+    prompt that presented both vocabularies in adjacent bullets sharing a word.
+    """
+    entity = AuditVertex(vid="scope:literature:entity:e1", label="Entity",
+                         properties={**_PROV, "kind": "literature/finding",
+                                     "scope": "literature"})
+    claim = _claim(vid="scope:literature:claim:c1", kind="literature/finding",
+                   scope="literature")
+
+    issues = audit_declarations([entity, claim], [])
+
+    # Verifies: flagged on the Entity, and the extensible Claim is left alone
+    assert any(
+        "Undeclared Entity kind(s): literature/finding" in issue for issue in issues
+    )
+    assert not any("Undeclared Claim kind" in issue for issue in issues)
