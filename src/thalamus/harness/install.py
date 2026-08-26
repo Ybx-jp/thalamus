@@ -239,6 +239,15 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("afterMCPExecution", "readiness-ready.sh"),
 ]
 
+#: The Cursor hooks that are boundaries, and the only ones wired `failClosed`.
+#: Derived from the wiring rather than restated: a guard is a `beforeShellExecution`
+#: entry whose script is named for one, so a fourth guard added to the table above
+#: arrives here without a second edit that could be forgotten.
+CURSOR_GUARDS: frozenset[str] = frozenset(
+    script for event, script in CURSOR_HOOK_WIRING
+    if event == "beforeShellExecution" and script.endswith("-guard.sh")
+)
+
 
 # The codex wiring, in Claude Code's shape — (event, matcher, script) — because
 # codex's `hooks.json` *is* Claude Code's schema: matcher groups under an event key,
@@ -723,16 +732,25 @@ def build_cursor_hook_block() -> dict:
     session whose workspace root was the checkout itself — which is exactly the
     reach-past-the-checkout failure this module exists to fix.
 
-    `failClosed` is set explicitly on the guard rather than left to its `false`
-    default: the fail-open posture matches Claude Code (a hook that errors does
-    not block the command, only an exit-2 verdict does), and a security-shaped
-    hook should state that rather than inherit it.
+    `failClosed` is set explicitly on the three guards rather than left to its
+    `false` default, and it is set *true*. Each of them now prints a verdict for
+    every input it can be given — an empty payload, malformed JSON, a jq that is not
+    there, a payload carrying no command — so the only way one of them still exits
+    without a verdict is a fault nobody anticipated. That is exactly the case the
+    flag decides, and a boundary whose unanticipated failure grants permission is
+    not a boundary: from outside, a guard that examined the call and approved it and
+    a guard that died before looking are the same event.
+
+    It is set on the guards alone. The distillation, injection, conditioning and
+    readiness hooks are not boundaries — a crash in one costs a session's memory or
+    a stale modal, and blocking the operator's shell over it would trade a recorded
+    loss for an unrecoverable one.
     """
     block: dict = {}
     for event, script in CURSOR_HOOK_WIRING:
         entry: dict = {"command": str(CURSOR_HOOK_DIR / script), "type": "command"}
-        if script == "gremlin-guard.sh":
-            entry["failClosed"] = False
+        if script in CURSOR_GUARDS:
+            entry["failClosed"] = True
         block.setdefault(event, []).append(entry)
     return block
 

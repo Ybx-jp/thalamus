@@ -176,10 +176,32 @@ class TestCursorWiring:
         assert taps_on["afterShellExecution"] == {"gremlin-tap.sh"}
         assert "tap" not in str(block["postToolUse"])
 
-    def test_guard_declares_its_fail_open_posture(self):
-        guard = [e for e in install.build_cursor_hook_block()["beforeShellExecution"]
-                 if e["command"].endswith("gremlin-guard.sh")][0]
-        assert guard["failClosed"] is False
+    def test_every_guard_declares_the_fail_closed_posture(self):
+        """The guards now answer every input they can be given — empty, malformed, no
+        jq, no command field — so a guard that still exits without a verdict has hit
+        a fault nobody anticipated. That is the case this flag decides, and a
+        boundary whose unanticipated failure grants permission is not a boundary.
+        """
+        entries = install.build_cursor_hook_block()["beforeShellExecution"]
+        guards = {e["command"].rsplit("/", 1)[1]: e for e in entries
+                  if e["command"].endswith("-guard.sh")}
+
+        assert set(guards) == set(install.CURSOR_GUARDS)
+        assert guards, "no guard is wired on beforeShellExecution"
+        for name, entry in guards.items():
+            assert entry["failClosed"] is True, name
+
+    def test_only_the_guards_are_fail_closed(self):
+        """Distillation, injection, conditioning and readiness are not boundaries. A
+        crash in one costs a session's memory or a stale modal; blocking the
+        operator's shell over it trades a recorded loss for an unrecoverable one."""
+        block = install.build_cursor_hook_block()
+        closed = {e["command"].rsplit("/", 1)[1]
+                  for entries in block.values() for e in entries
+                  if e.get("failClosed")}
+
+        assert closed == set(install.CURSOR_GUARDS)
+        assert "distill.sh" not in closed and "inject.sh" not in closed
 
 
 class TestCursorInstall:

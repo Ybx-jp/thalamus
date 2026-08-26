@@ -45,7 +45,12 @@ thalamus_sandbox_guard
 
 guard="$here/../claude-code/role-guard.sh"
 
-input=$(cat)
+# The shared read, not a bare `cat`: this was the last entry point still parsing its
+# own stdin, and under `set -euo pipefail` malformed JSON killed it at the jq below
+# with jq's exit code rather than the blocking one. codex reads exit 2 as a denial,
+# the same as Claude Code, so the claude-code helper is the right one here.
+thalamus_read_guard_input role-guard.sh
+input="$thalamus_guard_input"
 tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty')
 
 if [ "$tool_name" != "apply_patch" ]; then

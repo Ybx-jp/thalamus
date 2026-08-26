@@ -163,3 +163,39 @@ class TestScopeAndSchema:
             tmp_path,
         )
         assert events(tmp_path)[0]["guard_version"] == 5
+
+
+class TestAPayloadTheGuardCannotRead:
+    """Past the `Bash` gate, an absent command is drift and not an empty call.
+
+    This hook's matcher is `Bash`, and Claude Code does not raise a Bash event
+    without `tool_input.command` — so a read that comes back empty means the payload
+    is not the shape this guard was written against. It used to `exit 0` on that,
+    which is indistinguishable from having looked and approved.
+    """
+
+    def _run_raw(self, stdin, home):
+        return subprocess.run(
+            [str(GUARD)], input=stdin, capture_output=True, text=True, timeout=30,
+            env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin"},
+        )
+
+    def test_a_field_that_moved_blocks(self, tmp_path):
+        result = self._run_raw(json.dumps({
+            "tool_name": "Bash",
+            "tool_input": {"shell_command": "g.V().has_label('Session')"},
+            "session_id": "s1", "cwd": "/tmp"}), tmp_path)
+
+        assert result.returncode == BLOCK_EXIT
+        assert "no tool_input.command" in result.stderr
+        assert "gremlin-guard.sh" in result.stderr
+
+    def test_a_non_bash_tool_is_still_none_of_its_business(self, tmp_path):
+        """The gate before the read, and the reason the rule is not general: on a
+        matcher that is not `Bash` a call legitimately carries no command, and
+        denying there would block every tool this guard was never wired to."""
+        result = self._run_raw(json.dumps({
+            "tool_name": "Read", "tool_input": {"file_path": "/tmp/x"},
+            "session_id": "s1", "cwd": "/tmp"}), tmp_path)
+
+        assert result.returncode == 0

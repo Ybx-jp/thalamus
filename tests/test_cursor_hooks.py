@@ -17,6 +17,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 HOOKS = Path(__file__).resolve().parents[1] / "src" / "thalamus" / "harness" / "hooks" / "cursor"
 
@@ -230,6 +232,103 @@ class TestGremlinGuard:
         result = run_hook("gremlin-guard.sh", {"command": "ls -la"}, tmp_path)
         assert json.loads(result.stdout) == {"permission": "allow"}
         assert not (tmp_path / ".thalamus" / "guards").exists()
+
+
+def run_hook_raw(script, stdin, home, env=None):
+    """`run_hook` for input that is not a dict — the point being that it is not."""
+    full_env = {"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin"}
+    if env:
+        full_env.update(env)
+    return subprocess.run([str(HOOKS / script)], input=stdin, capture_output=True,
+                          text=True, env=full_env, timeout=30)
+
+
+class TestACursorGuardThatCannotReadItsPayload:
+    """All three deny, and say why.
+
+    Cursor's payload schema is Cursor's, versioned on their release cadence rather
+    than this repo's, and the adapters had two ways past them. A field that moved left
+    `.command` empty and the adapter answered `{"permission": "allow"}` outright. And
+    malformed JSON killed the adapter at its first `jq` under `set -euo pipefail`,
+    printing no permission object at all — what a Cursor build does with a
+    `beforeShellExecution` hook that returns no verdict is not established anywhere
+    here, which is the point: the guard stopped deciding and nothing said so.
+
+    Either way the write boundary, the gremlin terminal-step rule and the room-command
+    rule go quiet together, with exit 0 and no log line. The only signal is silence.
+    """
+
+    GUARDS = ("write-guard.sh", "gremlin-guard.sh", "room-command-guard.sh")
+
+    def _denied(self, result):
+        assert result.returncode == 0, result.stderr
+        out = json.loads(result.stdout)
+        assert out["permission"] == "deny", out
+        # Both channels, for the reason the gremlin adapter measured: on
+        # `cursor/2026.08.11-e8db854` a denial's tool result carries `user_message`
+        # and no occurrence of `agent_message`.
+        assert "could not read the tool call" in out["agent_message"]
+        assert out["user_message"] == out["agent_message"]
+        return out
+
+    @pytest.mark.parametrize("script", GUARDS)
+    def test_a_field_that_moved_is_denied_not_permitted(self, script, tmp_path):
+        """Valid JSON in a shape the adapter does not know. This is the drift a
+        Cursor schema bump actually produces, and it used to return `allow`."""
+        result = run_hook(script, {"shell_command": "thalamus write claim.yaml",
+                                   "cwd": "/w", "conversation_id": "c1"},
+                          tmp_path, env={"THALAMUS_ROOM": "atlas"})
+        out = self._denied(result)
+        assert script in out["agent_message"], "the refusal does not name the guard"
+        assert "no command to examine" in out["agent_message"]
+
+    @pytest.mark.parametrize("script", GUARDS)
+    def test_malformed_json_produces_a_verdict_rather_than_a_corpse(
+            self, script, tmp_path):
+        result = run_hook_raw(script, '{"command": "ls", broken', tmp_path,
+                              env={"THALAMUS_ROOM": "atlas"})
+        out = self._denied(result)
+        assert "not valid JSON" in out["agent_message"]
+
+    @pytest.mark.parametrize("script", GUARDS)
+    def test_an_empty_payload_is_denied(self, script, tmp_path):
+        out = self._denied(run_hook_raw(script, "", tmp_path,
+                                        env={"THALAMUS_ROOM": "atlas"}))
+        assert "payload was empty" in out["agent_message"]
+
+    @pytest.mark.parametrize("script", GUARDS)
+    def test_a_jq_that_is_not_there_is_denied(self, script, tmp_path):
+        """A guard whose parser is missing has not examined anything.
+
+        The payload is well-formed, so the failure is jq's absence and not its
+        verdict — and the refusal then has to be built without jq, which is why it is
+        `printf` and not `jq -n`.
+
+        A `jq` shim exiting 127 rather than an emptied `PATH`: the scripts also need
+        `dirname` to find their prologue, so removing everything kills them before
+        they reach the read this is about. That is the mistake the qe case's
+        `_shadow_jq` records having made.
+        """
+        shim = tmp_path / "shim"
+        shim.mkdir()
+        (shim / "jq").write_text("#!/bin/sh\nexit 127\n")
+        (shim / "jq").chmod(0o755)
+
+        out = self._denied(run_hook_raw(
+            script, json.dumps({"command": "ls", "conversation_id": "c1"}), tmp_path,
+            env={"PATH": f"{shim}:/usr/bin:/bin:/usr/local/bin",
+                 "THALAMUS_ROOM": "atlas"}))
+        assert "jq is not on PATH" in out["agent_message"]
+
+    @pytest.mark.parametrize("script", GUARDS)
+    def test_a_readable_permitted_command_is_still_allowed(self, script, tmp_path):
+        """The control. A guard that denied everything would pass every case above,
+        and the four-attempt history behind `guards-fail-closed-on-unparseable-input`
+        is the record of what that costs."""
+        result = run_hook(script, {"command": "ls -la /tmp", "cwd": "/w",
+                                   "conversation_id": "c1"},
+                          tmp_path, env={"THALAMUS_ROOM": "atlas"})
+        assert json.loads(result.stdout)["permission"] == "allow", result.stdout
 
 
 class TestGremlinTap:
