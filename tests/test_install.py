@@ -1065,6 +1065,65 @@ class TestACheckThatCouldNotRunIsNotACheckThatFailed:
         assert not check.blocked
         assert check.advisory and not check.ok
 
+    def test_a_missing_prerequisite_is_an_advisory_and_exits_zero(
+            self, sandbox, monkeypatch):
+        """`jq` and `uv` are other vendors' binaries, so a box without them is an
+        environment finding and not a broken install.
+
+        `--check` is what the getting-started page teaches as the step you run
+        *before* installing. Exiting 1 on a box that is simply missing a prerequisite
+        tells a reader following that sequence their install is broken, when what
+        they have is a machine they have not finished setting up — the same reason a
+        graph that is not up is `!` rather than `✗`.
+        """
+        self._absent(monkeypatch, "jq")
+
+        checks = {c.name: c for c in install.verify()}
+        check = checks["jq on PATH"]
+
+        assert check.advisory and not check.ok
+        assert check.render().startswith("  !"), check.render()
+        # The severity moved; the finding did not. Without jq the hook layer dies on
+        # the first event, and an advisory that did not say so would be a demotion of
+        # the fact rather than of the exit code.
+        assert "every hook will fail" in check.detail
+        assert "install jq" in check.detail.lower(), "no command that fixes it"
+        assert install.run(check_only=True) == 0
+
+    def test_a_missing_prerequisite_is_a_finding_rather_than_unknown(
+            self, sandbox, monkeypatch):
+        """`!` and not `?`. The check ran `shutil.which` and got a real answer, so it
+        has a finding; `blocked` is "nobody could look", never "the fix needs a
+        program you do not have" — the line already drawn on `codex hooks trusted`
+        and on the MCP registration items.
+        """
+        self._absent(monkeypatch, "jq", "uv")
+
+        checks = {c.name: c for c in install.verify()}
+
+        for name in ("jq on PATH", "uv on PATH"):
+            assert not checks[name].blocked, f"{name} claims nobody looked"
+            assert checks[name].advisory, name
+
+    def test_the_entry_point_probe_is_blocked_rather_than_absent_without_uv(
+            self, sandbox, monkeypatch):
+        """It is the one check here that genuinely could not run, and it used to
+        vanish instead of saying so.
+
+        `probe_entry_point` spawns `uv run`, so without `uv` there is nothing to ask.
+        Dropping the item left a shorter list in which every remaining line had
+        passed, which reads as a cleaner box rather than a less-examined one.
+        """
+        self._absent(monkeypatch, "uv")
+
+        checks = {c.name: c for c in install.verify()}
+
+        assert "distillation entry point" in checks, "the check vanished with uv"
+        check = checks["distillation entry point"]
+        assert check.blocked and not check.ok
+        assert check.render().startswith("  ?"), check.render()
+        assert install.run(check_only=True) == 0
+
     def test_the_codex_mcp_item_is_still_pending_when_codex_is_installed(
             self, sandbox, monkeypatch):
         """The pending shape is right for the box that can actually clear it."""

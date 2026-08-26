@@ -1630,19 +1630,40 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     checks.append(Check("hook scripts executable", not unexec,
                         "all executable" if not unexec else f"not executable: {unexec}"))
 
-    # jq: every retained hook parses stdin with it under `set -euo pipefail`,
-    # so without it the whole hook layer dies on the first event.
+    # jq and uv are prerequisites, and a prerequisite that is not on the box is an
+    # advisory rather than a failure. Both are other vendors' binaries: install wires
+    # configuration and does not fetch them, which is the same line already drawn on a
+    # graph that is not up and a coding-agent CLI that is not present. The check did
+    # run and did get an answer, so it is a finding and not `?` — `blocked` is "nobody
+    # could look", never "the fix needs a program you do not have".
+    #
+    # The severity is what moved, not the report: without jq every hook dies on the
+    # first event, so the line still says so, and now carries the command that fixes it.
     jq = shutil.which("jq")
-    checks.append(Check("jq on PATH", jq is not None, jq or "NOT FOUND — every hook will fail"))
+    checks.append(Check("jq on PATH", jq is not None,
+                        jq or "NOT FOUND — every hook will fail. Install jq "
+                              "(`apt install jq`, `brew install jq`)",
+                        advisory=jq is None))
 
     uv = shutil.which("uv")
-    checks.append(Check("uv on PATH", uv is not None, uv or "NOT FOUND — distillation cannot run"))
+    checks.append(Check("uv on PATH", uv is not None,
+                        uv or "NOT FOUND — distillation cannot run. Install uv "
+                              "(https://astral.sh/uv)",
+                        advisory=uv is None))
 
     # The load-bearing one: SessionEnd's exact invocation, from a cwd that is
     # deliberately not the checkout. This is the call that used to die detached.
+    #
+    # Without uv it cannot be attempted, and an item that vanishes from the output
+    # reads as a check that passed. Reporting it blocked keeps the count honest about
+    # what was and was not asked.
     if uv:
         ok, detail = probe_entry_point()
         checks.append(Check("distillation entry point", ok, detail))
+    else:
+        checks.append(Check("distillation entry point", False,
+                            "not attempted — uv is not on PATH to run it with",
+                            blocked=True))
 
     agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []
     checks.append(Check("derived agents installed", bool(agents),
