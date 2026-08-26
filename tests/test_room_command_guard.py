@@ -271,3 +271,44 @@ class TestPrecision:
         result = run_guard('thalamus dispatch alpha "how do I use --help here"',
                            tmp_path, room="d4v2")
         assert result.returncode == 2
+
+
+class TestAPayloadTheGuardCannotRead:
+    """Inside a room an unreadable payload blocks; outside one it stays a no-op.
+
+    The room question is asked first deliberately. Outside a room this guard has no
+    boundary to hold — it is a documented no-op on every command — so failing closed
+    there would block a session over a payload that was never going to be judged.
+    Inside a room the command is the event, and an absent one is drift.
+    """
+
+    def _run_raw(self, stdin, home, room=None):
+        env = {"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin",
+               "THALAMUS_SCOPE": "qe"}
+        if room is not None:
+            env["THALAMUS_ROOM"] = room
+        return subprocess.run(
+            [str(HOOKS / "claude-code" / "room-command-guard.sh")],
+            input=stdin, capture_output=True, text=True, env=env, timeout=30,
+        )
+
+    DRIFTED = json.dumps({
+        "tool_name": "Bash",
+        "tool_input": {"shell_command": "tmux send-keys -t d4v2:designer x Enter"},
+        "session_id": "s1", "cwd": "/tmp"})
+
+    def test_in_a_room_a_field_that_moved_blocks(self, tmp_path):
+        result = self._run_raw(self.DRIFTED, tmp_path, room="d4v2")
+
+        assert result.returncode == 2
+        assert "no tool_input.command" in result.stderr
+        assert "room-command-guard.sh" in result.stderr
+
+    def test_outside_a_room_it_is_still_a_no_op(self, tmp_path):
+        assert self._run_raw(self.DRIFTED, tmp_path).returncode == 0
+
+    def test_malformed_json_blocks_inside_a_room(self, tmp_path):
+        result = self._run_raw('{"tool_name": "Bash", broken', tmp_path, room="d4v2")
+
+        assert result.returncode == 2
+        assert "not valid JSON" in result.stderr

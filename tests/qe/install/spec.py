@@ -139,16 +139,16 @@ class Config:
 
 STEPS: tuple[Step, ...] = (
     Step(Phase.SYNCED, ["uv", "sync", "--extra", "dev"],
-         doc="docs/getting-started.md:38"),
+         doc="docs/getting-started.md:43"),
     Step(Phase.GRAPH_STARTING, ["docker", "compose", "up", "-d"],
          doc="README.md quick start / docker-compose.yml"),
     # Deliberately BEFORE the graph is confirmed ready. The window between "the port
     # accepts a connection" and "the server answers a query" is issue #55, and a
     # sequence that waits politely would never observe it.
     Step(Phase.CHECKED, ["uv", "run", "thalamus", "init", "--check"],
-         doc="docs/getting-started.md:112", may_fail=True),
+         doc="docs/getting-started.md:127", may_fail=True),
     # `--yes` is how a cell answers the consent prompt, and it is not a departure from
-    # the documented sequence — it is the only way to run it here. getting-started:60
+    # the documented sequence — it is the only way to run it here. getting-started:61
     # says `uv run thalamus init`, and a user at a terminal is asked to confirm before
     # anything is written outside the checkout. A cell has no tty, so bare `init` prints
     # "stdin is not a terminal — re-run with --yes" and exits 1 having written nothing.
@@ -158,7 +158,7 @@ STEPS: tuple[Step, ...] = (
     # after the install was reading a box that had never been installed to. That is the
     # shape to watch for — a sequence that fails open into measuring the wrong thing.
     Step(Phase.INSTALLED, ["uv", "run", "thalamus", "init", "--yes"],
-         doc="docs/getting-started.md:60", may_fail=True),
+         doc="docs/getting-started.md:61", may_fail=True),
     # may_fail matches INSTALLED: a config that removes a documented prerequisite
     # makes the first init fail legitimately, and the second one fails for the same
     # reason. `second-init-does-not-duplicate-wiring` is control-guarded — it compares
@@ -168,7 +168,7 @@ STEPS: tuple[Step, ...] = (
          doc="idempotency: re-running init after a git pull that adds a skill",
          may_fail=True),
     Step(Phase.UNINSTALLED, ["uv", "run", "thalamus", "init", "--uninstall"],
-         doc="README.md:82", may_fail=True),
+         doc="README.md:86", may_fail=True),
 )
 
 
@@ -197,9 +197,10 @@ CONFIGS: tuple[Config, ...] = (
            "Everything present. The documented happy path, and the control for "
            "every other variant in the column."),
     Config("no-jq",
-           "`jq` off PATH. getting-started promises --check exits 0 before install; "
-           "three hard checks fail and two print an X beside the word 'skipped'.",
-           issue=79, removes=("jq",)),
+           "`jq` off PATH — another vendor's binary that install does not provide. "
+           "The absence must be reported as an advisory, the checks that need it as "
+           "could-not-run, and `--check` must still exit 0 before install.",
+           issue=79, fixed=True, removes=("jq",)),
     Config("no-agent-cli",
            "No `claude` on PATH at init time. The MCP registration is SKIPPED into "
            "the actions list, verify() has no check for it, and init exits 0.",
@@ -242,7 +243,7 @@ CHECKS: tuple[Check, ...] = (
 
     # ---- synced -----------------------------------------------------------------
     Check("cli-exists-after-sync", Phase.SYNCED, Severity.BLOCKS,
-          "`.venv/bin/thalamus` exists and reports a version. getting-started:41 "
+          "`.venv/bin/thalamus` exists and answers `--help`. getting-started:46 "
           "states the CLI is here and not on PATH."),
 
     # ---- the readiness window ---------------------------------------------------
@@ -266,11 +267,19 @@ CHECKS: tuple[Check, ...] = (
 
     # ---- pre-install check ------------------------------------------------------
     Check("check-exits-zero-before-install", Phase.CHECKED, Severity.DEGRADES,
-          "getting-started:112 promises --check is safe before installing and exits 0. "
-          "Under the no-jq variant it exits 1.",
-          issue=79),
+          "getting-started:127 promises --check is safe before installing and exits 0, "
+          "and getting-started:132 that a missing prerequisite is an advisory. A box "
+          "without `jq` must therefore report it and still exit 0.",
+          issue=79, fixed=True,
+          control="the run's output must have carried rendered check lines at all. An "
+                  "exit code with nothing parsed behind it cannot be attributed to any "
+                  "finding, so the check degrades to not_evaluated rather than reading "
+                  "a silent run as a clean one. The count of could-not-run markers "
+                  "rides in the observation for the same reason: exit 0 with the `jq` "
+                  "line and its dependants simply not rendered is the same exit code "
+                  "as a healthy box"),
     Check("no-failure-marker-beside-the-word-skipped", Phase.CHECKED, Severity.DEGRADES,
-          "The legend at getting-started:105 defines the failure marker as something "
+          "The legend at getting-started:120 defines the failure marker as something "
           "present and wrong. A check that could not run for want of a prerequisite is "
           "a third state and must not borrow that marker.",
           issue=58, fixed=True,

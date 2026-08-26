@@ -20,13 +20,12 @@ here="$(dirname "${BASH_SOURCE[0]}")"
 . "$here/resolve-scope.sh"
 thalamus_sandbox_guard
 
-input=$(cat)
+thalamus_read_guard_input gremlin-guard.sh
+input="$thalamus_guard_input"
 
-command=$(printf '%s' "$input" | jq -r '.command // empty')
-if [ -z "$command" ]; then
-  printf '{"permission": "allow"}\n'
-  exit 0
-fi
+# Called for the refusal, not the value: the reshaping below reads `.command`
+# out of the payload itself. What this asks is whether there is one to read.
+thalamus_read_guard_command gremlin-guard.sh
 
 claude_payload=$(printf '%s' "$input" | jq -c \
   '{tool_name: "Bash",

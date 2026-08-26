@@ -186,13 +186,15 @@ class TestTheCostThatDecidedTheModule:
 
 
 class TestTheDegradedPathFailsClosed:
-    """The guard around this rule fails OPEN by design; this rule does not.
+    """This rule does not depend on the structured read having worked.
 
-    `guards-fail-closed-on-unparseable-input` is an open qe finding that the shared jq
-    prologue permits precisely when something unusual is happening. The other
-    boundaries can afford that because their failure is a bad edit. This one's failure
-    is a scope editing the oracle that indicts it, so it takes `write-guard.sh`'s
-    posture instead: when the structured read fails, search the raw payload.
+    The shared prologue already denies a payload it cannot parse, so this is the
+    second of two closed doors — and the two catch different things. The prologue
+    catches an input that is not JSON; this catches one that parses cleanly and puts
+    the path somewhere the structured read does not look. It takes `write-guard.sh`'s
+    posture for that: when the structured read fails, search the raw payload. The
+    other boundaries can afford less, because their failure is a bad edit and this
+    one's is a scope editing the oracle that indicts it.
     """
 
     def test_the_inlined_markers_match_the_table(self):

@@ -92,7 +92,7 @@ drives one codex hook end to end against a payload codex actually sends, and rea
 each skill back through its user-scope path.
 
 A real run prints about two dozen of these, then groups the ones that are not `✓`
-into a block per marker. Four lines, one of each kind:
+into a block per marker. A healthy box, with nothing present and wrong:
 
 ```
 Verification (exercised, not assumed):
@@ -126,14 +126,15 @@ like.
 
 **`--check` and `--dry-run` are safe to run before you have installed.** Everything
 not written yet — derived agents, user-scope skills, Cursor wiring — comes back `○`
-with the command that writes it, and a checkout whose prerequisites are in place
-exits 0. `--dry-run` always ends by saying it wrote nothing, including on a run that
-found faults.
+with the command that writes it, and an uninstalled checkout exits 0. `--dry-run`
+always ends by saying it wrote nothing, including on a run that found faults.
 
-A **missing prerequisite is a real failure**, and it is the one thing on an
-uninstalled box that exits 1: without `jq`, `jq on PATH` comes back `✗`, and the two
-round trips that parse JSON with it come back `?` — they could not run. Install the
-prerequisites in §1 first and the run is clean.
+**A missing prerequisite is an advisory, not a failure.** `jq` and `uv` are other
+vendors' binaries, so a box without them comes back `!` with the command that
+installs it, and the run still exits 0 — the same rule as a graph that is not up.
+The advisory is not a small claim: without `jq` every hook dies on the first event,
+and the checks that need it to run at all come back `?` beside it. Install the
+prerequisites in §1 and the run is clean.
 
 ## 5. Relaunch your editor
 

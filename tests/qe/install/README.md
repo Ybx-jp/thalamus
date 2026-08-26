@@ -44,11 +44,16 @@ python3 tests/qe/install/drive.py --config graph-not-started \
 
 ## Green is not the goal
 
-Every check names the issue whose defect it reproduces, so **a run that fails
-nothing has not found a clean install — it has failed to observe.**
-`spec.known_defect_issues()` says which issues are expected on the tree as it
-stands, and `drive.py` exits 2 when none of them reproduce. That is the harness
+Every check names the issue whose defect it reproduces, so **while a cell has
+something to reproduce, a run that fails nothing has not found a clean install — it
+has failed to observe.** `spec.expected_reproductions(config)` says what THIS cell is
+built to reproduce, and `drive.py` exits 2 when none of them do. That is the harness
 reporting on itself, and it is not a pass.
+
+A cell whose expected set is empty makes the weaker claim instead — no new failure,
+no regression — and says so on the way out at exit 0. It is not a fault, and neither
+`drive.py` nor `lint.py` treats it as one; it is the state a repaired tree is in, and
+the thing to do about it is tag the next filed defect, not keep one open.
 
 ```
 0  every failing check named an unfixed filed issue, and at least one did
@@ -75,9 +80,13 @@ red on the fix, and its own tag kept the cell green. A check that reads a render
 pins the shape of the **healthy** branch, which is stable, never the prose of the
 unhealthy ones, which improves.
 
-When every tagged defect is marked fixed, `known_defect_issues()` empties, `lint.py`
-says so, and a cell can no longer claim more than "nothing new". Re-arm the control
-by tagging the next filed defect.
+When every tagged defect is marked fixed, `known_defect_issues()` empties and
+`lint.py` prints it as a `NOTE` at exit 0. It is not a lint failure: making it one
+would leave two ways to a clean lint, closing the last defect or tagging one nobody
+measured, and the second is a fabricated positive control. What `lint.py` does refuse
+is a matrix where nothing is tagged at all, open or fixed — with no `fixed` tag either
+there is no site at which a red result reads as a regression, and the run can only
+report novel failures. Re-arm the control by tagging the next filed defect.
 
 ## The gates, and why a cell would rather abort than report
 
