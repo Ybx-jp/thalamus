@@ -2668,7 +2668,7 @@ let isDesktop = DESKTOP_Q.matches;
 // of truth; here we reproduce the same contain-fit + panel inset in CSS, so a frame
 // added there shows up with no copying. The file is a contract, not a dependency on
 // any one emulator: anything emitting {name, path, panel} works. Absent or empty →
-// the controls read "no frames" and do nothing. See docs/frame-themes.md.
+// the controls read "no frames" and do nothing.
 let frames = [];
 // Storage keys keep their `plane-` prefix deliberately. They are private to the
 // browser and their only job is to stay stable — renaming them to match the app's
