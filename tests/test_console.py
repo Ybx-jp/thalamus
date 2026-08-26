@@ -158,7 +158,9 @@ def test_an_unobservable_session_is_not_reported_as_unblocked(monkeypatch):
 
         class quick:
             @staticmethod
-            def live_sessions():
+            def live_sessions(config_dir=None):
+                if config_dir is not None:
+                    return []
                 return [_Session("seen-blocked", "waiting", 1_700_000_000_000),
                         _Session("seen-fine", "idle", 1_700_000_000_000)]
 
@@ -181,6 +183,84 @@ def test_an_unobservable_session_is_not_reported_as_unblocked(monkeypatch):
         assert row["blocked_since"] is None
         assert row["activity"] == ""
         assert row["activity_since"] is None
+
+
+def test_a_room_members_row_is_read_from_the_rooms_own_config_dir(monkeypatch):
+    """
+    Scenario: Two windows in room `ontoclean` whose descriptors live under that
+    room's config dir, beside one roomless window under the host's
+
+    Session descriptors are partitioned by config dir, and a room member writes its
+    own into the room's. Reading only the console process's dir made every row in a
+    room render `not in reach` while its sessions were publishing healthy status one
+    directory over — measured 2026-08-25 on a live two-member room.
+
+    That is not a cosmetic gap: `observed=False` disclaims the whole liveness half of
+    the row, so the `needs you` pill cannot fire for a room member. A session sitting
+    at a permission prompt is the state with no cost ceiling, and a room is where the
+    operator is least likely to be watching the pane.
+
+    Verifications:
+    - each row is resolved from its own session's config dir, not the process's
+    - the roomless row still resolves from the host dir
+    - a room name that would not survive a path join falls back to unobserved rather
+      than reaching for it
+    """
+    class _Session:
+        def __init__(self, session_id, status, stamp):
+            self.session_id, self.status, self.status_updated_at = (
+                session_id, status, stamp)
+
+    room_dir = Path("/rooms/ontoclean")
+    by_dir = {
+        None: [_Session("host-session", "idle", 1_700_000_000_000)],
+        room_dir: [_Session("lit", "busy", 1_700_000_000_000),
+                   _Session("eval", "waiting", 1_700_000_000_000)],
+    }
+
+    class _Dispatch:
+        WAITING_STATUS = "waiting"
+        BUSY_STATUS = "busy"
+        DELIVERABLE_STATUSES = ("idle", "busy")
+
+        class quick:
+            @staticmethod
+            def live_sessions(config_dir=None):
+                return by_dir.get(config_dir, [])
+
+    class _Pin:
+        @staticmethod
+        def valid_room(room):
+            return room == "ontoclean"
+
+        @staticmethod
+        def room_config_dir(room, harness="claude"):
+            return room_dir
+
+    monkeypatch.setattr(server, "dispatch_module", lambda: _Dispatch)
+    monkeypatch.setattr(server, "pin_module", lambda: _Pin)
+
+    windows = [
+        {"session_id": "lit", "room": "ontoclean", "harness": "claude"},
+        {"session_id": "eval", "room": "ontoclean", "harness": "claude"},
+        {"session_id": "host-session", "room": "", "harness": "claude"},
+        {"session_id": "lit", "room": "../escape", "harness": "claude"},
+    ]
+
+    server.attach_blocked(windows)
+
+    # Verifies: the room's own dir answered both rows, with their real states
+    assert (windows[0]["observed"], windows[0]["activity"]) == (True, "busy")
+    assert (windows[1]["observed"], windows[1]["blocked"]) == (True, True)
+    assert windows[1]["blocked_since"] == 1_700_000_000.0
+
+    # Verifies: the roomless row is unaffected
+    assert (windows[2]["observed"], windows[2]["activity"]) == (True, "idle")
+
+    # Verifies: an unvalidated name never reaches `room_config_dir`. The row stays
+    # honestly unobserved instead of the console trusting a name to build a path.
+    assert windows[3]["observed"] is False
+    assert windows[3]["blocked"] is None
 
 
 def test_the_reduction_reads_only_fields_the_real_descriptor_has():
@@ -474,7 +554,7 @@ def test_the_state_word_is_composed_here_and_only_busy_earns_a_clock(monkeypatch
 
         class quick:
             @staticmethod
-            def live_sessions():
+            def live_sessions(config_dir=None):
                 return [_Session("busy-one", "busy", 1_700_000_000_000),
                         _Session("idle-one", "idle", 1_700_000_000_000),
                         _Session("blocked-one", "waiting", 1_700_000_000_000),
