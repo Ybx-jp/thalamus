@@ -387,3 +387,33 @@ def test_extract_refuses_a_session_in_neither_the_project_dir_nor_the_archive(
     err = capsys.readouterr().err
     assert "deadbeef" in err
     assert "-proj or the archive" in err
+
+
+def test_repeated_advisories_collapse_to_one_line_with_a_count():
+    """
+    Scenario: Sixteen advisories that differ only in which vertices they name, beside
+    one that stands alone
+
+    An advisory fired per-vertex fires thousands of times on a real graph, and a wall
+    of near-identical lines is how a reporting-only check earns the habit of being
+    scrolled past — the failure mode the recommendation that asked for this audit
+    named explicitly.
+
+    Verifications:
+    - the repeated shape becomes one line carrying the count and an example id
+    - the singleton is printed unchanged
+    """
+    repeated = [
+        f"RETURNS between wrong endpoints: `scope:main:trace:t{n}` (Trace) -> "
+        f"`scope:main:trace:x{n}` (Trace) — target is a Trace"
+        for n in range(16)
+    ]
+    alone = "Unwritten edge type: `BLOCKS` is declared and no edge carries the label"
+
+    lines = cli._collapse_advisories([*repeated, alone])
+
+    assert len(lines) == 2
+    collapsed = next(line for line in lines if "RETURNS" in line)
+    assert "×16" in collapsed
+    assert "e.g. scope:main:trace:t0" in collapsed
+    assert alone in lines

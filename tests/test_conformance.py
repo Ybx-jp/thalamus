@@ -10,7 +10,12 @@ from datetime import datetime
 
 import pytest
 
-from thalamus.contract.conformance import check_session, prune_orphan_artifacts
+from thalamus.contract.conformance import (
+    ContractViolation,
+    check_session,
+    prune_orphan_artifacts,
+    write_session_checked,
+)
 from thalamus.substrate.schema import (
     Artifact,
     ArtifactType,
@@ -145,3 +150,64 @@ def test_prune_removes_only_unreferenced_artifacts(scope):
 
     # Verifies: pruning is by reachability, not by position or scope
     assert [a.identifier for a in pruned.artifacts] == ["src/used.py"]
+
+
+def test_the_gated_write_path_refuses_a_session_the_contract_rejects():
+    """
+    Scenario: A session carrying an orphan artifact is offered to the gated writer
+
+    Verifications:
+    - the write is refused, and the exception carries the session id and the issues
+    - nothing reached the writer
+
+    The gate exists because the obligation used to be a caller convention, discharged
+    unevenly: of three `write_session` call sites two checked, and the one that did
+    not was `thalamus write`, whose input is an operator-supplied JSON file. It cannot
+    live in `substrate/writer.py` — the substrate sits below the contract, and
+    importing conformance there would invert the layering — so it sits one level up
+    and callers use the door instead of remembering the check.
+    """
+    session = _session(
+        artifacts=[Artifact(identifier="src/lonely.py", type=ArtifactType.FILE)],
+    )
+
+    def _explode(*_args, **_kwargs):  # pragma: no cover - must never run
+        raise AssertionError("the writer was reached despite a contract violation")
+
+    with pytest.raises(ContractViolation) as caught:
+        write_session_checked(_explode, session)
+
+    assert caught.value.session_id == "s1"
+    assert any("src/lonely.py" in issue for issue in caught.value.issues)
+
+
+def test_the_gated_write_path_passes_a_conforming_session_straight_through():
+    """
+    Scenario: A session that satisfies the contract
+
+    Verifications:
+    - the writer is called with the same graph and session, and its return is passed back
+
+    The gate is a check plus a delegation, not a second write path — a fork here would
+    be a second place for write semantics to drift.
+    """
+    session = _session()
+    assert check_session(session) == []
+
+    calls = []
+
+    def _fake_writer(g, offered):
+        calls.append((g, offered))
+        return "scope:main:session:s1"
+
+    import thalamus.substrate.writer as writer_module
+
+    original = writer_module.write_session
+    writer_module.write_session = _fake_writer
+    try:
+        result = write_session_checked("graph-handle", session)
+    finally:
+        writer_module.write_session = original
+
+    assert result == "scope:main:session:s1"
+    assert calls == [("graph-handle", session)]

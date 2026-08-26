@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -17,7 +18,11 @@ import yaml
 from thalamus.substrate.schema import CloseDisposition, SessionGraph, ThreadClose
 from thalamus.archive import archive_dir
 from thalamus.console.server import DEFAULT_PORT as CONSOLE_PORT
-from thalamus.contract.conformance import check_session
+from thalamus.contract.conformance import (
+    ContractViolation,
+    check_session,
+    write_session_checked,
+)
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval import snapshots
 from thalamus.eval.profile import DEFAULT_REPEAT as PROFILE_REPEAT
@@ -45,7 +50,6 @@ from thalamus.substrate.writer import (
     GraphUnavailable,
     close_connection,
     connect,
-    write_session,
 )
 
 ROOM_FLAG_HELP = (
@@ -1197,9 +1201,13 @@ def _cmd_write(args):
     session = SessionGraph(**data)
     g = connect(args.url)
     try:
-        vid = write_session(g, session)
+        vid = write_session_checked(g, session)
         _persist(g)
         print(f"Wrote session: {session.session_id} -> {vid}")
+    except ContractViolation as e:
+        print(f"REJECTED — {e}", file=sys.stderr)
+        print("\n`thalamus validate` reports the same issues without a graph.", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"Write failed: {e}", file=sys.stderr)
         print("Re-run with --debug for Gremlin bytecode and server details.", file=sys.stderr)
@@ -1373,7 +1381,7 @@ def _cmd_bootstrap(args):
                 )
 
                 if graph is not None:
-                    write_session(graph, session)
+                    write_session_checked(graph, session)
                 written += 1
     finally:
         if graph is not None:
@@ -1900,7 +1908,7 @@ def _cmd_extract(args):
             )
             if args.write:
                 try:
-                    write_session(graph, session)
+                    write_session_checked(graph, session)
                 except Exception as e:
                     failed += 1
                     print(f"  ✗ {name}  write failed: {str(e)[:160]}")
@@ -2960,6 +2968,29 @@ def _arch_diff(against: str, other, current) -> None:
         print(f"  cycle resolved {' <-> '.join(cycle)}")
 
 
+def _collapse_advisories(issues: list[str]) -> list[str]:
+    """One line per *shape* of advisory, with the count and one example.
+
+    An advisory that fires per-vertex fires thousands of times on a graph this size,
+    and a wall of near-identical lines is how a reporting-only check earns the habit
+    of being scrolled past. The shape is the message with its backticked vertex IDs
+    blanked, which is exactly the part that varies.
+    """
+    shapes: dict[str, list[str]] = {}
+    for issue in issues:
+        shapes.setdefault(re.sub(r"`[^`]*`", "``", str(issue)), []).append(str(issue))
+
+    lines = []
+    for members in shapes.values():
+        if len(members) == 1:
+            lines.append(members[0])
+        else:
+            ids = re.findall(r"`([^`]*)`", members[0])
+            example = f" (e.g. {ids[0]})" if ids else ""
+            lines.append(f"{re.sub(r'`[^`]*`', '…', members[0])} — ×{len(members)}{example}")
+    return lines
+
+
 def _cmd_contract(args, contract_parser):
     if getattr(args, "contract_command", None) != "check":
         contract_parser.print_help()
@@ -2976,7 +3007,7 @@ def _cmd_contract(args, contract_parser):
         _report_roster_boundaries()
         return
 
-    from thalamus.contract.conformance import check_graph
+    from thalamus.contract.conformance import ADVISORY, check_graph, severity_of
 
     graph = connect(args.url)
     try:
@@ -2985,12 +3016,26 @@ def _cmd_contract(args, contract_parser):
         close_connection(graph)
 
     print(f"Audited {counts['vertices']} vertices, {counts['edges']} edges.")
-    if not issues:
-        print("Contract OK — every node carries provenance, every edge is legal, "
+
+    # Severity is what lets a rule land at all. An audit that exits 1 on every finding
+    # can only ever carry rules that are already satisfied, so the ones worth adding —
+    # anything that fires on historical data nobody can go back and fix — could not be
+    # written down. Advisories are printed to stdout beside the census, not to stderr
+    # with the failures, because they are a count to explain and not a broken build.
+    advisories = [i for i in issues if severity_of(i) == ADVISORY]
+    violations = [i for i in issues if severity_of(i) != ADVISORY]
+
+    if advisories:
+        print(f"\n{len(advisories)} advisory — reported, does not fail the check:")
+        for line in _collapse_advisories(advisories):
+            print(f"  · {line}")
+
+    if not violations:
+        print("\nContract OK — every node carries provenance, every edge is legal, "
               "every Source resolves to retained bytes.")
         return
-    print(f"\n{len(issues)} issue(s):", file=sys.stderr)
-    for issue in issues:
+    print(f"\n{len(violations)} violation(s):", file=sys.stderr)
+    for issue in violations:
         print(f"  - {issue}", file=sys.stderr)
     sys.exit(1)
 
