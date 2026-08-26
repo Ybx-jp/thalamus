@@ -92,7 +92,7 @@ drives one codex hook end to end against a payload codex actually sends, and rea
 each skill back through its user-scope path.
 
 A real run prints about two dozen of these, then groups the ones that are not `✓`
-into a block per marker. One line of each kind:
+into a block per marker. A healthy box, with nothing present and wrong:
 
 ```
 Verification (exercised, not assumed):
