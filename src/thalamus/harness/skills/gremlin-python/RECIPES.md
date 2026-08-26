@@ -702,3 +702,51 @@ a 340-keyword query issues 1,360 traversals under the current per-keyword loop.
 distribution as "queries the reader is asked", not "recall calls".
 The same shape sizes any other per-input cost: swap `_extract_keywords` for whatever
 the code under test derives from `query`.
+
+## Would moving a vertex's edges onto another vertex merge any of them?
+
+**Question it answered:** Before repairing the duplicate Claims in #111 — rewiring a
+stale vertex's in-edges onto its twin and dropping it — does any of those edges already
+exist on the twin? A merge is not an addition: it silently removes one edge and drops
+the far endpoint's fan-out by one. (2026-08-26)
+
+**Surface:** gremlin-python
+
+```python
+from gremlin_python.process.graph_traversal import __
+from thalamus.substrate.writer import connect, close_connection
+
+def edge_keys(g, vertex_id):
+    """`(label, other endpoint, incoming)` — what makes two edges the same edge."""
+    incoming = (g.V(vertex_id).in_e().project("label", "other")
+                .by(__.label()).by(__.out_v().id_()).to_list())
+    outgoing = (g.V(vertex_id).out_e().project("label", "other")
+                .by(__.label()).by(__.in_v().id_()).to_list())
+    return ({(r["label"], str(r["other"]), True) for r in incoming}
+            | {(r["label"], str(r["other"]), False) for r in outgoing})
+
+g = connect()
+try:
+    source, destination = "scope:main:claim:4fdb5cf205991d78", "scope:main:claim:6cfb75945a47b6a1"
+    collapse = edge_keys(g, source) & edge_keys(g, destination)
+    print(f"{len(collapse)} edge(s) would merge rather than move: {sorted(collapse)}")
+finally:
+    close_connection(g)
+```
+
+**Validated:** 2026-08-26 against the live graph, over the 9 stale/twin pairs #111
+names. Predicted 5 collapses; the migration's own plan reported 5, and the edge count
+fell by exactly 5 (163,038 → 163,033) after `thalamus repair-claim-addresses --write`.
+
+**Notes — direction is part of the key, and forgetting it under-counts.** A `TOUCHES`
+out to an artifact and a `RETURNS` in from a trace can name the same neighbour; keying
+on `(label, other)` alone reads them as the same edge and predicts a collapse that will
+not happen. Keying on the neighbour alone is worse in the other direction.
+
+The finding this shape produces is usually more interesting than the merge itself. Here,
+5 traces held a `RETURNS` to *both* members of a duplicate pair — one recall returned the
+same claim twice under two ids and the eval ledger counted fan-out 2. Run this before any
+vertex merge and read the overlap as a measurement, not as an obstacle.
+
+Do **not** reach for `where(__.both_e().count().is_(0))`-style formulations near this;
+see the orphan recipe above for why an empty stream never satisfies a count predicate.
