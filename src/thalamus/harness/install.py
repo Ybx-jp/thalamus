@@ -366,21 +366,6 @@ class HookParity:
     # one this module wired.
     native: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
-    def real_gaps(self, harness: str) -> tuple[str, ...]:
-        """Claude Code scripts with no path on `harness`, renames and natives excluded.
-
-        A name lands here by *default*, so this is a floor on the gaps and not a
-        measurement of them: a script nobody has probed on a harness is
-        indistinguishable from one probed and found missing. `role-guard.sh` sat here
-        for a release while it was in fact binding on Cursor.
-        """
-        accounted = (
-            {claude_name for claude_name, _ in self.renames.get(harness, ())}
-            | set(self.native.get(harness, ()))
-        )
-        return tuple(name for name in self.missing.get(harness, ())
-                     if name not in accounted)
-
 
 DECLARED_HOOK_PARITY = HookParity(
     scripts={"claude": 13, "codex": 12, "cursor": 14},
@@ -1407,7 +1392,7 @@ def verify_codex() -> list[Check]:
         import tempfile
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                env = {**os.environ, "HOME": tmp}
+                env: dict[str, str] = {**os.environ, "HOME": tmp}
                 env.pop("THALAMUS_SANDBOX", None)
                 payload = json.dumps({
                     "hook_event_name": "PostToolUse",

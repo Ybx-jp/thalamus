@@ -7,10 +7,10 @@ Scope: the global-Artifact carve-out and the scope segment in vertex IDs
 """
 
 from thalamus.contract.ontology import (
+    GLOBAL_LABELS,
     LABEL_PROPERTIES,
     MAIN_SCOPE,
     edge_crosses_scope,
-    is_global,
     scope_of,
     vid,
 )
@@ -25,18 +25,18 @@ def test_artifact_and_agent_are_the_global_node_types():
     - Session, Thread, and Claim vertex IDs are scoped
     """
     # Verifies: Artifact is global — one vertex per identifier, shared by every scope
-    assert is_global("Artifact")
+    assert "Artifact" in GLOBAL_LABELS
     assert vid("Artifact", "src/foo.py") == "artifact:src/foo.py"
     assert vid("Artifact", "src/foo.py", scope="literature") == "artifact:src/foo.py"
 
     # Verifies: Agent is global — one vertex per identity, whatever scope it acts in
-    assert is_global("Agent")
+    assert "Agent" in GLOBAL_LABELS
     assert vid("Agent", "operator") == "agent:operator"
     assert vid("Agent", "operator", scope="homelab") == "agent:operator"
 
     # Verifies: everything else is scoped
     for label in ("Session", "Thread", "Claim"):
-        assert not is_global(label)
+        assert label not in GLOBAL_LABELS
     assert vid("Session", "abc", "main") == "scope:main:session:abc"
     assert vid("Claim", "9f3a", "literature") == "scope:literature:claim:9f3a"
     assert scope_of(vid("Thread", "t1", "dl")) == "dl"

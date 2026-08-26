@@ -109,15 +109,6 @@ class TestProbeShape:
         argv = FlagProbe("agent", "--model", ("composer-2.5",)).argv()
         assert argv[:4] == ["agent", "--model", "composer-2.5", probes.SENTINEL]
 
-    def test_a_flag_probe_claims_only_parse_scope(self):
-        """Sound as a falsifier, unsound as a generalizer.
-
-        That a flag parses says nothing about what it does, and nothing about a mode
-        the probe never entered — the error this session nearly shipped by inferring
-        interactive behaviour from one print-mode observation.
-        """
-        assert FlagProbe("agent", "--trust").condition is probes.Condition.PARSE
-
     def test_every_row_carries_a_reason(self):
         # A row without a stated reason is the unverified prose comment again, moved
         # into a tuple. The reason is what tells a later reader whether to retire it.
@@ -195,7 +186,7 @@ class TestDerivedRows:
         from thalamus.harness.install import DECLARED_HOOK_PARITY
 
         assert "post-tool-use.sh" in DECLARED_HOOK_PARITY.missing["cursor"]
-        assert "post-tool-use.sh" not in DECLARED_HOOK_PARITY.real_gaps("cursor")
+        assert ("post-tool-use.sh", "mcp-tap.sh") in DECLARED_HOOK_PARITY.renames["cursor"]
         # And it is not a gap on codex at all: codex's payload names MCP tools
         # `mcp__thalamus__<tool>` exactly as Claude Code does, so the real script is
         # wired there under its own name rather than renamed.
@@ -214,8 +205,6 @@ class TestDerivedRows:
 
         assert "role-guard.sh" in DECLARED_HOOK_PARITY.missing["cursor"]
         assert "role-guard.sh" in DECLARED_HOOK_PARITY.native["cursor"]
-        assert DECLARED_HOOK_PARITY.real_gaps("cursor") == ("recipe-stage.sh",
-                                                            "room-guard.sh")
 
     def test_the_native_exemption_does_not_carry_to_a_harness_that_earned_none(self):
         """Codex has no `native` entry, and the record must not lend it Cursor's.
@@ -231,9 +220,10 @@ class TestDerivedRows:
         from thalamus.harness.install import DECLARED_HOOK_PARITY
 
         assert "codex" not in DECLARED_HOOK_PARITY.native
+        assert "codex" not in DECLARED_HOOK_PARITY.renames
         # `room-guard.sh` matches `SendMessage`, a tool codex has no analogue of, so
         # it stands as a declared gap rather than a quiet exemption.
-        assert DECLARED_HOOK_PARITY.real_gaps("codex") == ("room-guard.sh",)
+        assert DECLARED_HOOK_PARITY.missing["codex"] == ("room-guard.sh",)
 
 
 class TestBoundaryRows:

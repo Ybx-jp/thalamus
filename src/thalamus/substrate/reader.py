@@ -37,9 +37,11 @@ _TIER_NAMES = {
 
 
 def _tier_label(tier: object) -> str:
+    # A tier property is written as an int and comes back as one; a digit string
+    # converts the same way. Anything else names no tier, so it reads as the default.
     try:
-        value = int(tier)
-    except (TypeError, ValueError):
+        value = int(tier) if isinstance(tier, int | str) else int(Tier.FIRST_PARTY)
+    except ValueError:
         value = int(Tier.FIRST_PARTY)
     return f"tier {value} · {_TIER_NAMES.get(value, 'unknown')}"
 

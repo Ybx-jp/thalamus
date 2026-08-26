@@ -296,28 +296,6 @@ def record_assignment(
     )
 
 
-def assigned_arm(room: str, kind: str, unit: str, rows: list[dict] | None = None,
-                 path: Path | None = None) -> str:
-    """The arm a unit was dealt, or "" if it was never assigned.
-
-    Last matching assignment wins, so a re-drawn block supersedes its predecessor while
-    both rows survive — the superseded draw is evidence about what the design did, and
-    deleting it would hide a re-randomization.
-    """
-    records = rows if rows is not None else read_rows(path)
-    arm = ""
-    for row in records:
-        if (
-            row.get("event") == EVENT_ASSIGNED
-            and row.get("room") == room
-            and row.get("ceremony_kind") == kind
-        ):
-            mapping = row.get("assignment")
-            if isinstance(mapping, dict) and unit in mapping:
-                arm = str(mapping[unit])
-    return arm
-
-
 # --- 1. The occasion, written at start ----------------------------------------------
 
 

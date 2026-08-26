@@ -305,11 +305,6 @@ EXPANDABLE_LABELS: frozenset[str] = frozenset(n.label for n in CORE_NODES if n.e
 LABEL_PROPERTIES: dict[str, str] = {n.label: n.label_property for n in CORE_NODES}
 
 
-def is_global(label: str) -> bool:
-    """True if this node type is shared across all scopes."""
-    return label in GLOBAL_LABELS
-
-
 def vid(label: str, local_id: str, scope: str = MAIN_SCOPE) -> str:
     """Build a vertex ID.
 

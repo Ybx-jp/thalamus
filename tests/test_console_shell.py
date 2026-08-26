@@ -138,14 +138,14 @@ def booted(tmp_path):
     cfg = Config(project_root=project, fetch_interval_s=0)
 
     booted_server: list = []
-    real = server.ThreadingHTTPServer
+    real = server.ConsoleServer
 
     class Recording(real):  # type: ignore[misc, valid-type]
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
             booted_server.append(self)
 
-    server.ThreadingHTTPServer = Recording
+    server.ConsoleServer = Recording
     thread = threading.Thread(target=server.serve,
                               kwargs={"cfg": cfg, "host": "127.0.0.1", "port": port},
                               daemon=True)
@@ -157,7 +157,7 @@ def booted(tmp_path):
         assert booted_server, "serve() did not bind within 10s"
         yield port
     finally:
-        server.ThreadingHTTPServer = real
+        server.ConsoleServer = real
         if booted_server:
             booted_server[0].shutdown()
         thread.join(timeout=10)

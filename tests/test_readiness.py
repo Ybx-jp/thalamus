@@ -24,6 +24,22 @@ def _pane(room="alpha", scope="qe", pane_id="%100"):
     return panes_mod.Pane(pane_id, scope, room, scope, "cursor", "/w", dead=False)
 
 
+def _write(room, scope, phase, *, session_id="", root):
+    """Put a descriptor on disk without going through a hook.
+
+    A fixture for the reader's tests, not a second implementation of the write: the
+    transition rule lives in `readiness-pending.sh` and `readiness-ready.sh`, and
+    `TestTheHooksWriteWhatTheReaderReads` drives those scripts for it.
+    """
+    path = readiness.descriptor_path(room, scope, root=root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "phase": phase, "room": room, "scope": scope, "session_id": session_id,
+        "ts": "2026-08-25T00:00:00Z",
+    }))
+    return path
+
+
 class TestAbsenceRefuses:
     """Condition 1: absence of a record is never read as "probably idle"."""
 
@@ -59,60 +75,27 @@ class TestAbsenceRefuses:
         still holding that modal or it is gone, and `panes.room_panes` drops the gone
         ones by liveness before readiness is ever asked.
         """
-        readiness.write_descriptor("alpha", "qe", readiness.PENDING,
-                                   session_id="s1", root=tmp_path)
+        _write("alpha", "qe", readiness.PENDING, session_id="s1", root=tmp_path)
         assert readiness.descriptor_status("alpha", "qe", root=tmp_path) == panes_mod.WAITING
 
 
 class TestTheBracket:
-    def test_ready_then_pending_then_ready(self, tmp_path):
+    def test_each_phase_reads_as_the_verdict_it_stands_for(self, tmp_path):
         """The interval a modal can occupy, delimited by two events we emit."""
         for phase, expected in (
             (readiness.READY, panes_mod.DELIVERABLE),
             (readiness.PENDING, panes_mod.WAITING),
             (readiness.READY, panes_mod.DELIVERABLE),
         ):
-            readiness.write_descriptor("alpha", "qe", phase, session_id="s1", root=tmp_path)
+            _write("alpha", "qe", phase, session_id="s1", root=tmp_path)
             assert readiness.descriptor_status("alpha", "qe", root=tmp_path) == expected
 
-    def test_a_foreign_session_cannot_close_a_bracket_it_did_not_open(self, tmp_path):
-        """
-        Scenario: a member runs `agent -p` from its own shell while holding a modal
-
-        Verification: the child's `sessionStart` does not report the parent ready.
-
-        The child inherits `THALAMUS_ROOM` and `THALAMUS_SCOPE`, so it writes to the
-        same descriptor. Without this rule the bracket would be cleared by its own side
-        effect, at the exact moment it is describing.
-        """
-        readiness.write_descriptor("alpha", "qe", readiness.PENDING,
-                                   session_id="parent", root=tmp_path)
-        readiness.write_descriptor("alpha", "qe", readiness.READY,
-                                   session_id="child", root=tmp_path)
-        assert readiness.descriptor_status("alpha", "qe", root=tmp_path) == panes_mod.WAITING
-
-        readiness.write_descriptor("alpha", "qe", readiness.READY,
-                                   session_id="parent", root=tmp_path)
-        assert readiness.descriptor_status("alpha", "qe", root=tmp_path) == panes_mod.DELIVERABLE
-
-    def test_a_roomless_session_writes_nothing(self, tmp_path):
-        """Readiness is a room's question; a solo session has no dispatcher asking it."""
-        assert readiness.write_descriptor("", "qe", readiness.READY, root=tmp_path) is None
-        assert list(tmp_path.iterdir()) == []
-
     def test_members_of_one_room_do_not_share_a_descriptor(self, tmp_path):
-        readiness.write_descriptor("alpha", "qe", readiness.PENDING, root=tmp_path)
-        readiness.write_descriptor("alpha", "designer", readiness.READY, root=tmp_path)
+        _write("alpha", "qe", readiness.PENDING, root=tmp_path)
+        _write("alpha", "designer", readiness.READY, root=tmp_path)
         assert readiness.descriptor_status("alpha", "qe", root=tmp_path) == panes_mod.WAITING
         assert readiness.descriptor_status("alpha", "designer",
                                            root=tmp_path) == panes_mod.DELIVERABLE
-
-    def test_the_write_is_atomic(self, tmp_path):
-        """No reader ever sees a half-written object under the real path."""
-        readiness.write_descriptor("alpha", "qe", readiness.READY, root=tmp_path)
-        room_dir = tmp_path / "alpha"
-        assert [p.name for p in room_dir.iterdir()] == ["qe.json"]
-        assert json.loads((room_dir / "qe.json").read_text())["phase"] == readiness.READY
 
 
 class TestTheScreenIsAPositiveOnlyFalsifier:
@@ -131,7 +114,7 @@ class TestTheScreenIsAPositiveOnlyFalsifier:
         This is the coverage gap being caught by the falsifier that covers part of it.
         A descriptor-only reading would deliver into this pane.
         """
-        readiness.write_descriptor("alpha", "qe", readiness.READY, root=tmp_path)
+        _write("alpha", "qe", readiness.READY, root=tmp_path)
         verdict = readiness.pane_status(
             _pane(), root=tmp_path, screen_fn=lambda _pane_id: panes_mod.WAITING,
         )
@@ -144,7 +127,7 @@ class TestTheScreenIsAPositiveOnlyFalsifier:
         as a clean screen. If a clean screen could upgrade a verdict, the descriptor
         would be decorative.
         """
-        readiness.write_descriptor("alpha", "qe", readiness.PENDING, root=tmp_path)
+        _write("alpha", "qe", readiness.PENDING, root=tmp_path)
         verdict = readiness.pane_status(
             _pane(), root=tmp_path, screen_fn=lambda _pane_id: panes_mod.DELIVERABLE,
         )
@@ -159,7 +142,7 @@ class TestTheScreenIsAPositiveOnlyFalsifier:
         assert verdict == panes_mod.UNREADABLE
 
     def test_both_signals_agreeing_is_the_only_way_to_be_deliverable(self, tmp_path):
-        readiness.write_descriptor("alpha", "qe", readiness.READY, root=tmp_path)
+        _write("alpha", "qe", readiness.READY, root=tmp_path)
         verdict = readiness.pane_status(
             _pane(), root=tmp_path, screen_fn=lambda _pane_id: panes_mod.DELIVERABLE,
         )
@@ -167,8 +150,9 @@ class TestTheScreenIsAPositiveOnlyFalsifier:
 
 
 class TestTheHooksWriteWhatTheReaderReads:
-    """The shell half and the Python half are two implementations of one format, which
-    is exactly the pair that drifts. These drive the real scripts."""
+    """The hooks are the only writers of the descriptor, and `readiness.py` is its only
+    reader. These drive the real scripts, so the format is checked across the seam
+    rather than assumed on either side of it."""
 
     def _run(self, script, home, *, room="alpha", scope="qe", session="s1", payload=None):
         return subprocess.run(
@@ -186,6 +170,9 @@ class TestTheHooksWriteWhatTheReaderReads:
         assert result.returncode == 0, result.stderr
         root = tmp_path / ".thalamus" / "readiness"
         assert readiness.descriptor_status("alpha", "qe", root=root) == panes_mod.WAITING
+        # The write is atomic: the temporary file is renamed onto the real path, so no
+        # reader ever sees a half-written object and none is left behind.
+        assert [p.name for p in (root / "alpha").iterdir()] == ["qe.json"]
 
     def test_the_pending_hook_abstains_on_the_permission_decision(self, tmp_path):
         """It is wired to `beforeShellExecution` beside two guards that do decide. A

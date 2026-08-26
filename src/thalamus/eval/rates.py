@@ -115,7 +115,8 @@ class Rate:
         """One line, self-describing. Never a naked percentage."""
         unit = f" {self.unit}" if self.unit else ""
         counts = f"{self.hits:,.0f}/{self.total:,.0f}{unit}"
-        if not self.total:
+        value = self.value
+        if value is None:
             return f"{self.label}: n/a — no observations"
         if self.total < self.floor:
             return (
@@ -124,14 +125,14 @@ class Rate:
                 "quoting a percentage"
             )
 
-        parts = [f"{self.label}: {counts} ({100.0 * self.value:.0f}%)"]
+        parts = [f"{self.label}: {counts} ({100.0 * value:.0f}%)"]
         if self.interval is not None:
             lo, hi = self.interval
             parts.append(f"95% CI [{100 * lo:.0f}%, {100 * hi:.0f}%]")
         else:
             parts.append(f"no interval — {self.interval_reason}")
         if self.null is not None:
-            verdict = "above" if self.value > self.null else "at or below"
+            verdict = "above" if value > self.null else "at or below"
             parts.append(f"null {100 * self.null:.0f}% ({verdict} chance)")
         else:
             parts.append(f"no null — {self.null_reason}")

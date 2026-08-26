@@ -134,13 +134,16 @@ rejected when they are written, by the gate every session write goes through
 (`conformance.write_session_checked`). `thalamus contract check` audits the live graph
 against it, and `thalamus validate` checks a pending extraction before it lands.
 
-The audit runs in **both directions**. Checking written nodes against the ontology
-catches a bad write; checking the ontology against what writers produce catches a
-declaration with nothing behind it — a node type, kind, edge type or edge property
-that consumers may plan against and no code writes. Findings in that second direction
-are **advisories**: they are printed and never fail the check, because absence in one
-graph is not proof a writer is missing, and a rule that can fail forever on history
-nobody can fix is a rule that gets switched off.
+The audit runs in **three directions**, around declared → written → read. Checking
+written nodes against the ontology catches a bad write. Checking the ontology against
+what writers produce catches a declaration with nothing behind it — a node type, kind,
+edge type or edge property that consumers may plan against and no code writes. Checking
+what writers produce against what readers project catches the opposite gap: a field
+written onto every vertex of its label that no read path ever names, so the value is
+persisted and no caller can obtain it. Findings in the second and third directions are
+**advisories**: they are printed and never fail the check, because absence in one graph
+— or in one scan — is not proof, and a rule that can fail forever on history nobody can
+fix is a rule that gets switched off.
 
 ### Four load-bearing properties
 

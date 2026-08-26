@@ -32,6 +32,7 @@ import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from typing import Any
 
 import yaml
 
@@ -1100,26 +1101,25 @@ def partition_valid(data: dict) -> tuple[dict, list[str]]:
     return kept, dropped
 
 
-def merge_extraction(base: SessionGraph, data: dict) -> SessionGraph:
+def merge_extraction(base: SessionGraph, data: dict[str, Any]) -> SessionGraph:
     """Merge model judgement into the deterministic stage-1 graph.
 
     Identity, provenance, sources, and anchored touches come from the record; the model
     contributes summary, claims, and threads. Fields the model was told not to emit are
     overridden even if it emitted them anyway.
     """
-    extracted = SessionGraph(
-        **{
-            **data,
-            "session_id": base.session_id,
-            "timestamp": base.timestamp,
-            "tool": base.tool,
-            "scope": base.scope,
-            "project": base.project,
-            "summary": data.get("summary") or base.summary,
-            "sources": [],
-            "touched": [],
-        }
-    )
+    payload: dict[str, Any] = {
+        **data,
+        "session_id": base.session_id,
+        "timestamp": base.timestamp,
+        "tool": base.tool,
+        "scope": base.scope,
+        "project": base.project,
+        "summary": data.get("summary") or base.summary,
+        "sources": [],
+        "touched": [],
+    }
+    extracted = SessionGraph(**payload)
 
     artifacts = {artifact.identifier: artifact for artifact in base.artifacts}
     for artifact in extracted.artifacts:

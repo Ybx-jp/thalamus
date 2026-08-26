@@ -132,53 +132,6 @@ def take(name: str, *, note: str = "", url: str | None = None) -> SnapshotRow:
     return row
 
 
-def adopt(name: str, *, filename: str, note: str = "") -> SnapshotRow:
-    """Register a `.kryo` that already exists on the server under `name`.
-
-    For states pinned before there was a registry — `pre-sandbox-purge-20260729.kryo`
-    is one, and it is the only pre-existing pinned artifact in the corpus. Its counts
-    are read by *serving* it rather than taken on trust, so an adopted row says the
-    same thing a `take()` row does.
-    """
-    if not _NAME_RE.match(name):
-        raise SnapshotError(f"invalid snapshot name `{name}`")
-    if any(row.name == name for row in registry()):
-        raise SnapshotError(f"snapshot `{name}` already registered")
-    path = f"{SERVER_DATA_DIR}/{filename}"
-    if not _file_exists(path):
-        raise SnapshotError(f"{path} does not exist on the server")
-    if filename != f"{name}.kryo":
-        raise SnapshotError(
-            f"adopted file must be named `{name}.kryo` — `{filename}` would make the "
-            "registry name and the on-disk name disagree"
-        )
-
-    digest, size = _sha256_and_size(path)
-    # Counts come from the snapshot itself, not from whoever adopted it — and the
-    # registry row is written only once they are in hand, so a failed adoption
-    # leaves no half-row claiming a state nobody counted.
-    vertices, edges = _count_by_serving(name, digest)
-
-    row = SnapshotRow(
-        name=name, taken_at=datetime.now(timezone.utc).isoformat(),
-        vertices=vertices, edges=edges, sha256=digest, byte_size=size,
-        git_ref=_git_ref(), note=note,
-    )
-    REGISTRY.parent.mkdir(parents=True, exist_ok=True)
-    with REGISTRY.open("a") as handle:
-        handle.write(json.dumps(asdict(row)) + "\n")
-    return row
-
-
-def _count_by_serving(name: str, digest: str) -> tuple[int, int]:
-    with _serve_path(name, server_path(name), digest) as url:
-        g = connect(url)
-        try:
-            return int(g.V().count().next()), int(g.E().count().next())
-        finally:
-            close_connection(g)
-
-
 def registry() -> list[SnapshotRow]:
     if not REGISTRY.is_file():
         return []

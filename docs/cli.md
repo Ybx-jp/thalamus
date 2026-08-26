@@ -213,28 +213,72 @@ behavior — see that repo's README for the split line and setup.
 
 ```bash
 thalamus arch scan                 # measure the tree; --write updates the model file
+thalamus arch scan --check         # exit 1 if the committed model is stale
 thalamus arch show                 # the declared model and the last scan's numbers
 thalamus arch diff <commit-ish>    # re-scan both sides and compare
 thalamus arch rules                # measured edges against the declared layers
+thalamus arch rules --gate         # exit nonzero on an edge the model does not accept
+thalamus arch dead                 # definitions nothing outside tests/ refers to
 thalamus arch growth               # unreferenced stock first, then rate
 ```
 
-All five measure this checkout by default, from any working directory — the model
+All six measure this checkout by default, from any working directory — the model
 they read (`arch/model.yaml`) belongs to a repository, not to wherever you are
 standing. `--repo <path>` points them at another tree.
+
+### The gates
+
+`rules`, `scan --check` and `dead` run in CI on every push. The three of them exist
+because the instrument they wrap had no trigger: `arch/model.yaml` reached 25 commits
+past the code it claimed to measure, and nothing said so.
+
+`--gate` adds a verdict without filtering the report — every violation still prints,
+accepted or not, because an architect reading `rules` wants the design's real shape and
+not the subset that is still news. Exit codes follow `tests/qe/run.py`:
+
+| code | meaning |
+|------|---------|
+| 0 | clean, or exactly what `arch/model.yaml`'s `accepted` list declares |
+| 1 | a violation, unplaced module or dead end the model does not accept |
+| 2 | an `accepted` entry that no longer happens — delete it |
+
+Exit 2 is the half that keeps the exception list honest. An entry that has stopped
+firing is not a pass; left in place it goes on describing a design that moved. Every
+`accepted` entry carries a required `reason`, because a list whose entries do not say
+why is a list that only grows.
+
+`scan --check` compares a fresh scan against the committed file rather than against a
+recorded commit stamp: a stamp says which tree was measured and not whether the numbers
+beside it are still true.
 
 `diff` takes a commit-ish, not a stored scan, and re-scans both sides under one
 policy: reading the other commit's recorded number would compare a measurement
 against a report. `growth` leads with unreferenced stock because a trend statistic
 scores a flat 894 MB of stranded worktrees as healthy.
 
-A scan reads two declared channels, each with its own policy block and digest in
+A scan reads three declared channels, each with its own policy block and digest in
 `arch/model.yaml`. `extractor` walks Python imports. `routes` matches client request
 literals against the routes a server defines, which is how the console's browser
 surface enters the graph at all — it reaches the server over HTTP, so no import
 relation exists to extract. The route channel is off unless the model file enables
 it; turning it on forks the scan key, because a propagation cost measured with those
 edges is not comparable to one measured without them.
+
+`deadends` is the third, and it measures definitions rather than edges, which is why it
+carries its own digest and stays out of the scan key: it changes no number that key
+names. Its `reference_extensions` list is what stops it accusing live code — the hook
+scripts under `harness/hooks/` embed Python heredocs that import from the package, so a
+symbol whose only caller is `role-guard.sh` is reached, not dead. Those blocks are
+parsed as Python and walked by the same reference pass the `.py` files get; a text match
+would not do, because this repo has a real call to `WriteBoundary.denies` and a comment
+mentioning `ownership.fallback_markers()` in the same file, and only one of them is a
+caller.
+
+The census states its own reach limits as findings rather than dropping them: a
+`getattr()` with a computed name, a name that appears in a string, a star re-export and
+an unparsed file can each hide a caller, and each is reported beside the findings it
+could refute. What it reports is that no reference was found outside the test roots —
+never that a symbol is unused, which is a verdict a static census is not entitled to.
 
 ## Maintenance
 

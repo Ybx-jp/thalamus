@@ -29,8 +29,9 @@ from thalamus.harness.consultation import (
     exchange_vid,
     extract_citations,
     open_exchange,
-    ticket_scope,
+    ticket_grant,
 )
+
 # --------------------------------------------------------------------------------------
 # Fake graph: just enough traversal surface for load_exchange, _vertex_exists,
 # write_exchange, and close_exchange.
@@ -468,9 +469,9 @@ def test_only_an_open_ticket_grants_its_expert_scope():
     open_graph, _ = _open_exchange_graph(ticket="t1", status="open")
     burned_graph, _ = _open_exchange_graph(ticket="t2", status="answered")
 
-    assert ticket_scope(open_graph, "t1") == "literature"
-    assert ticket_scope(burned_graph, "t2") is None
-    assert ticket_scope(FakeGraph(), "t3") is None
+    assert ticket_grant(open_graph, "t1")[0] == "literature"
+    assert ticket_grant(burned_graph, "t2") is None
+    assert ticket_grant(FakeGraph(), "t3") is None
 
 
 # --------------------------------------------------------------------------------------

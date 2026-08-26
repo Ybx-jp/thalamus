@@ -30,14 +30,51 @@ checkout's development interpreter, not the range Thalamus installs into.
 ## Verification
 
 ```bash
-uv run pytest                 # the suite must stay green
+uv run pytest                      # the suite must stay green
 uv run ruff check src tests
-uv run thalamus contract check   # after any change to a live write path
+uv run ty check src                # no diagnostics
+uv run thalamus arch rules --gate  # dependencies against the declared layers
+uv run thalamus arch scan --check  # the committed structural model must be current
+uv run thalamus arch dead --gate   # definitions nothing outside tests/ refers to
+uv run thalamus contract check     # after any change to a live write path
 ```
+
+Every one of these runs in CI on each push (`.github/workflows/verify.yml`). Run them
+before you push rather than after CI tells you.
 
 The federation contract is enforced, not aspirational — `contract check` audits the
 live graph, and a change to a write path that has not been checked against it is not
 finished.
+
+### Type checking is pinned
+
+`ty` is pinned to an exact patch version in `pyproject.toml`, unlike every other
+dependency here. It is pre-1.0 and its inference changes between releases, so a
+floating spec turns a green tree red on someone else's schedule. Raise the pin
+deliberately, in a change that also fixes whatever the new release reports.
+
+### The structural gates, and the exception list
+
+`arch rules --gate` checks measured dependencies against the layer rules declared in
+`arch/model.yaml`, and `arch dead` looks for definitions under `src/` that nothing
+outside `tests/` refers to. Both read their exceptions from the same place: an
+`accepted` list in `arch/model.yaml` where every entry carries a required `reason`.
+
+The exit codes are load-bearing and match `tests/qe/run.py`:
+
+- **0** — clean, or exactly what `accepted` declares.
+- **1** — a finding the model does not accept. Fix it, or add an entry saying why it
+  stands.
+- **2** — an `accepted` entry that no longer happens. Delete it.
+
+Exit 2 is the half that keeps the list honest. An exception that stopped firing is not
+a pass; left alone it goes on describing a design that has moved, and a list whose
+entries nobody can justify removing is a list that only grows.
+
+`arch scan --check` compares a fresh scan against the committed `arch/model.yaml`. When
+it fails, run `thalamus arch scan --write` and commit the regenerated file with your
+change — the model is a measurement of a specific tree, and one that lags the code
+reports numbers for a tree that no longer exists.
 
 ### The console's JavaScript is tested
 

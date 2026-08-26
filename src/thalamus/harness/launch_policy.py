@@ -230,7 +230,8 @@ def select(
     capability = _capability(harness, key)
     if capability is None:
         raise PolicyRefused(f"`{harness}` has no `{key}` to set.")
-    if capability.option(value) is None:
+    option = capability.option(value)
+    if option is None:
         raise PolicyRefused(f"`{value}` is not a posture `{harness}` offers.")
 
     moment = _now(now)
@@ -259,7 +260,7 @@ def select(
         # flipped. Refused rather than ignored, so a caller asking for it is told.
         if ttl_hours is not None:
             raise PolicyRefused(
-                f"`{capability.option(value).label}` is not more permissive than the "
+                f"`{option.label}` is not more permissive than the "
                 f"default, so it does not take a lifetime."
             )
         expires_at = None
