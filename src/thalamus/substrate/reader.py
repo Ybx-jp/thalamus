@@ -81,8 +81,10 @@ _MATCH_FLOOR = 2
 # 17% of rendered blocks, so it is not idle; it is simply a *volume* knob at a fixed
 # ~60/40 exchange rate, with no ordering signal that would let a smaller cap keep the
 # better claims. Lowering it to 5 would drop ~146 used claims to save ~88 ignored ones.
-# The one discriminator found is claim kind (decision 62% / solution 56% / problem
-# 53%) — marginal, and untried. Caveat that bounds all of it: only 1.4% of detail
+# Claim kind was tried as the ordering signal and did not separate: every per-kind
+# used-rate landed at or below the ~57% permuted null, inside the judge's own
+# discrimination band of κ = 0.140 [0.028, 0.272]. There was no dial to tune because
+# there was no signal to tune on. Caveat that bounds all of it: only 1.4% of detail
 # verdicts come from the strong vertex-ID citation path, so this rests on lexical echo.
 _DETAIL_CAP = 8
 # Knowledge holds up to 1/this of the result window when sessions also matched.
