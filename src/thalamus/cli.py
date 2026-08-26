@@ -2924,17 +2924,28 @@ def _cmd_arch(args, arch_parser):
             print(f"  … and {len(dirty) - 10} more")
 
     if getattr(args, "check", False):
-        # The staleness gate. The committed model is a measurement of a commit; once the
+        # The staleness gate. The committed model is a measurement of a tree; once the
         # code moves past it, `arch show` reports numbers for a tree that no longer
-        # exists and nothing notices. Comparing a fresh scan against the file on disk is
-        # the only check that catches that, and it costs one scan.
+        # exists and nothing says so.
+        #
+        # It compares the *measurement* and not the whole file, because `scan` and
+        # `commit` name the tree that was measured and necessarily lag by one: writing
+        # the model and committing it moves HEAD, so a fresh scan's stamp can never
+        # equal the stamp inside the file that commit created. Comparing the text would
+        # make this gate impossible to satisfy rather than merely hard.
         model_path = repo / arch_model.MODEL_PATH
-        current = model_path.read_text(encoding="utf-8") if model_path.exists() else ""
-        if current == text:
+        committed = arch_model.load(model_path).derived if model_path.exists() else {}
+        measured = {k: v for k, v in derived.items() if k not in ("scan", "commit")}
+        stored = {k: v for k, v in committed.items() if k not in ("scan", "commit")}
+        if stored == measured:
             print("\nModel file matches a fresh scan.")
             return
+        drifted = sorted(
+            key for key in set(stored) | set(measured) if stored.get(key) != measured.get(key)
+        )
         print(
-            "\nStale: `arch/model.yaml` does not match a fresh scan. Run "
+            f"\nStale: `arch/model.yaml` no longer matches a fresh scan — "
+            f"{', '.join(drifted) or 'no measured key'} differ(s). Run "
             "`thalamus arch scan --write` and commit the result.",
             file=sys.stderr,
         )
