@@ -1372,6 +1372,20 @@ STOPWORDS = {
 """Terms too common to discriminate. Shared with the ingress floor's term extraction
 (`harness/extraction.py`), which needs the same list under a different tokenizer."""
 
+# A node's text counts as matched when at least this many of its distinctive terms —
+# and this fraction of them — appear in the text it is being matched against. Two
+# dials, both arbitrary, both honest: they are the starting point the eval loop exists
+# to pressure-test.
+#
+# They sit here, beside the term extraction they threshold, because both readers need
+# them: `eval/attribution.py` judges a recalled node used-or-ignored, and
+# `harness/extraction.py` applies the same floor to an extracted item against its
+# source text. Moving either value re-attributes every verdict already stored —
+# `judge_fingerprint` stamps both into a verdict's identity — so `JUDGE_VERSION` in
+# `eval/attribution.py` moves in the same change.
+MIN_MATCHED_TERMS = 2
+MIN_MATCHED_RATIO = 0.3
+
 
 def _extract_keywords(query: str) -> list[str]:
     """Extract meaningful keywords from a natural language query.

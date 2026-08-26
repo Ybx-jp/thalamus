@@ -3510,7 +3510,8 @@ def _cmd_rescope(args):
 
 
 def _cmd_pin(args):
-    from thalamus.harness.pin import PROJECT_ROOT, launch
+    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.harness.pin import launch
 
     try:
         launch(args.scope, PROJECT_ROOT, room=args.room, harness=args.harness)
@@ -3522,7 +3523,8 @@ def _cmd_pin(args):
 def _cmd_spawn(args):
     import subprocess
 
-    from thalamus.harness.pin import PROJECT_ROOT, spawn
+    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.harness.pin import spawn
 
     cwd = args.dir if args.dir is not None else PROJECT_ROOT
     try:
@@ -3534,7 +3536,8 @@ def _cmd_spawn(args):
 
 
 def _cmd_roster(args):
-    from thalamus.harness.pin import PROJECT_ROOT, WindowDied, roster
+    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.harness.pin import WindowDied, roster
 
     try:
         roster(PROJECT_ROOT, full=getattr(args, "all", False), room=args.room)
@@ -4057,7 +4060,7 @@ def _cmd_console(args):
 
     from thalamus.console.server import Config, PortInUse, serve
     from thalamus.harness import tmux
-    from thalamus.harness.pin import PROJECT_ROOT
+    from thalamus.contract.paths import PROJECT_ROOT
 
     if not shutil.which("tmux"):
         print("The console needs tmux — it drives the pinned roster's windows.",

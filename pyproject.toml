@@ -11,8 +11,8 @@ license-files = ["LICENSE"]
 authors = [{ name = "Jackson Porter" }]
 keywords = ["agents", "memory", "knowledge-graph", "gremlin", "llm", "evaluation"]
 classifiers = [
-    # Not published to any index: the package runs from its checkout — `pin.py` and
-    # `contract/manifest.py` anchor on the repo root and the expert manifests live
+    # Not published to any index: the package runs from its checkout —
+    # `contract/paths.py` anchors on the repo root and the expert manifests live
     # in `config/` outside the package, so an installed wheel resolves paths that
     # only exist in a clone. This classifier makes that a mechanical guarantee
     # rather than an intention; PyPI refuses an upload carrying it. The name is

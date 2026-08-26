@@ -21,9 +21,10 @@ from urllib.parse import urlparse
 import yaml
 from pydantic import BaseModel, Field
 
-# src/thalamus/contract/manifest.py -> parents[3] is the repo root. Local-first
-# project; THALAMUS_CONFIG_DIR overrides for anything fancier.
-_DEFAULT_CONFIG = Path(__file__).resolve().parents[3] / "config"
+from thalamus.contract.paths import PROJECT_ROOT
+
+# Local-first project; THALAMUS_CONFIG_DIR overrides for anything fancier.
+_DEFAULT_CONFIG = PROJECT_ROOT / "config"
 
 
 @dataclass(frozen=True)

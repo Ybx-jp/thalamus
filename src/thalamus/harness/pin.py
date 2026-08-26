@@ -43,14 +43,10 @@ from thalamus.contract.manifest import (
     load_manifest,
 )
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.contract.paths import PROJECT_ROOT
 from thalamus.harness import tmux
 
 AGENT_PREFIX = "thalamus-"
-
-# The repo root, same anchoring convention as contract/manifest.py's config dir:
-# this project runs from its checkout (uv run), so the tree the file sits in is
-# the project the pinned session should open in.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # User-level agents dir. Derived expert agents are written here (not only into the
 # repo's .claude/agents) so `claude --agent thalamus-<scope>` resolves from ANY

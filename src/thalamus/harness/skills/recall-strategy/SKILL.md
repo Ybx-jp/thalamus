@@ -222,7 +222,8 @@ explains it. Only the last is a finding about the system:
 1. **Your traversal** — wrong label, edge direction, a missing `dedup()`, a
    filter that silently matched nothing, counting edges where you meant vertices.
 2. **The instrument** — what does this number *mean*? `used` comes from
-   `attribution.py`, where `MIN_MATCHED_RATIO = 0.3` is a fraction of the node's
+   `attribution.py`, and its `MIN_MATCHED_RATIO = 0.3` (defined beside the term
+   extraction it thresholds, in `substrate/reader.py`) is a fraction of the node's
    **own** distinctive terms, so the bar scales with text length and long nodes
    are structurally harder to score used. A node that was never returned has no
    RETURNS edge at all, so harm from *not* retrieving something is invisible here
