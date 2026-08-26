@@ -1771,8 +1771,8 @@ def verify_armed() -> Check:
 
     The gap this closes is one that corrupted a real measurement. `room-guard.sh`
     was declared in `HOOK_WIRING` and absent from `~/.claude/settings.json`, so it
-    had never once run — and because `eval/rooms.py` builds a room's realized edges
-    exclusively from the rows that guard writes, every real room read as
+    had never once run — and because a room's realized edges are built exclusively
+    from the rows that guard writes, every real room read as
     *"TREATMENT DID NOT OCCUR — a set of solo sessions wearing a room label"*. The
     manipulation check was reporting on the hook's installation, not on the room.
 

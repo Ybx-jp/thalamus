@@ -3909,7 +3909,7 @@ def _cmd_ceremony(args, parser):
                 print(f"  {unit:32} {arm}")
             if row["space"] > 0:
                 # The floor is a property of the design and knowable now, which is the
-                # only time it is still free to change (eval/randomization.py).
+                # only time it is still free to change.
                 print(f"  smallest attainable p from this block alone: {1 / row['space']:.3f}")
             return
 

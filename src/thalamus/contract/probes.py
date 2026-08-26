@@ -36,8 +36,8 @@ Two traps this shape avoids, both measured rather than reasoned about:
   on it reports every absent flag as present. The sentinel must be the *only* thing
   that can fail.
 - **Do not read `--help`.** `claude --help` does not mention `--max-turns`, while
-  `eval/arms.py:707` passes it in production and the sentinel confirms the CLI
-  accepts it. Help output omits working flags, and `agent create-chat` is a
+  the sentinel confirms the CLI accepts it. Help output omits working flags, and
+  `agent create-chat` is a
   subcommand absent from `agent --help` too. Help text is unsound in both
   directions; the parser is the authority.
 
@@ -246,8 +246,9 @@ CAPABILITY_ROWS: tuple[tuple[FlagProbe, bool, str], ...] = (
     (FlagProbe("claude", "--output-format", ("json",)), True,
      "agents.AgentCLI.argv — the shared half of the two invocations"),
     (FlagProbe("claude", "--max-turns", ("5",)), True,
-     "eval/arms.py:707 passes it in production, and `claude --help` does not "
-     "mention it — so this row exists to outlive the help text"),
+     "the counterpart to the `agent` row above — agents.cursor.arm_blockers claims "
+     "Cursor lacks what Claude Code has; `claude --help` does not mention it, so "
+     "this row exists to outlive the help text"),
 )
 
 

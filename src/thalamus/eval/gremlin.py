@@ -92,8 +92,8 @@ class GuardEvent:
     branch: str = ""
     fingerprint: tuple[str, ...] = ()
     # Which guard wrote the row. The ledger directory is shared — the room boundary
-    # writes here too (`room-boundary`, read by `eval/rooms.py`) — so a reader that
-    # wants one guard's events has to say which, or it counts another's as its own.
+    # writes here too, under `room-boundary` — so a reader that wants one guard's
+    # events has to say which, or it counts another's as its own.
     guard: str = ""
 
 

@@ -15,8 +15,7 @@ can reconstruct:
    in a finished graph tells you two artifacts at two times were one deliverable.
 4. **The assignment and its seed, written before the ceremony runs.** A
    randomization-inference reference distribution is the set of assignments that *could
-   have* happened; unrecorded in advance, that set does not exist
-   (`eval/randomization.py`).
+   have* happened; unrecorded in advance, that set does not exist.
 
 **Nothing here is an outcome.** The ledger records that an occasion happened, to whom,
 under which arm — never whether it worked. Room-level inference is descriptive forever

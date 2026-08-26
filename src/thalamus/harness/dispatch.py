@@ -71,9 +71,8 @@ truncates to the visible height and would report a long reply as no reply.
 ## The rows are not collaboration
 
 Dispatch rows land in `~/.thalamus/guards/` in the guard row shape but under
-`guard: "dispatch"`, so `eval/rooms.py` — which filters on `guard == "room-boundary"`
-— excludes them from `RoomTopology.edges` by construction rather than by remembering
-to. A broadcast is the **stimulus**, not the collaboration, and folding operator
+`guard: "dispatch"`, so a reader filtering on `guard == "room-boundary"` excludes
+them from the realized edge set by construction rather than by remembering to. A broadcast is the **stimulus**, not the collaboration, and folding operator
 sends into the edge set would let a room pass its own manipulation check on operator
 action alone.
 """
@@ -94,8 +93,8 @@ from thalamus.harness.tmux import argv as tmux_argv
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
 
-# Distinct from `room-boundary` so eval/rooms.py's own filter keeps these out of the
-# realized edge set. The name is the mechanism, not a label on one.
+# Distinct from `room-boundary` so that filter keeps these out of the realized edge
+# set. The name is the mechanism, not a label on one.
 DISPATCH_GUARD = "dispatch"
 GUARD_VERSION = 1
 
@@ -136,10 +135,10 @@ def authenticate(room: str, sender: str = "", *, operator: bool = False,
     and a shell command reaches any room by name, so the room was isolated in the
     direction nobody was walking and open in the direction the collaboration lives.
 
-    **And an unauthenticated sender cannot carry evidence.** `eval/rooms.py` already
-    refuses a peer that parses but is not in the roster, on the grounds that the prefix
-    alone is not membership; a sender nobody established is weaker provenance than the
-    peer it already declines. So the row records *how* the sender was established, and
+    **And an unauthenticated sender cannot carry evidence.** A peer that parses but is
+    not in the roster is already refused, on the grounds that the prefix alone is not
+    membership; a sender nobody established is weaker provenance than the peer that
+    refusal already declines. So the row records *how* the sender was established, and
     a reader that ever counts these rows has the field it would need to be honest.
 
     A roomless caller is the operator — the console server is long-lived and in no

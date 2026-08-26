@@ -123,8 +123,8 @@ def cycles(graph: DependencyGraph) -> tuple[tuple[str, ...], ...]:
     large enough to have the problem this is looking for.
 
     A single module is not a cycle even when it imports itself; self-edges are already
-    dropped by the extractor. What this finds is `eval/corpora.py` and `eval/arms.py`
-    holding each other up — which the module-level-only reading reports as zero.
+    dropped by the extractor. What this finds is two modules holding each other up —
+    which the module-level-only reading reports as zero.
     """
     adjacency = graph.adjacency()
     index: dict[str, int] = {}

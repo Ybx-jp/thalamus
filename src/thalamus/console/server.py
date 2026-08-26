@@ -793,7 +793,7 @@ class Config:
 # crosses the wire from the emulator, so what is ported is the *data*: a frame file
 # holds {name, path, panel fractions} and this server reads it. The file is a
 # contract, not a dependency on any particular emulator — anything that emits the
-# shape works, and hand-authoring it is supported (docs/frame-themes.md).
+# shape works, and hand-authoring it is supported.
 #
 # There is no default location and no art in this package. `--frames PATH` opts in;
 # without it `frames()` is empty, the deskbar says so, and nothing is offered. A
