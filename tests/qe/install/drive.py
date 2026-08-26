@@ -155,7 +155,7 @@ def config_by_name(name: str) -> spec.Config:
 def cell_env(config: spec.Config, repo: Path, home: Path, artifacts: Path) -> dict:
     """The environment every documented command and every probe runs under.
 
-    `PYTHONUTF8` is not decoration. `checks.py` reads the rendered `✓ ○ ! ✗` markers
+    `PYTHONUTF8` is not decoration. `checks.py` reads the rendered `✓ ○ ! ? ✗` markers
     with a regex, and a runner whose locale lands on ASCII turns every marker line
     into mojibake that matches nothing — which reports as "no rendered check lines
     were captured", i.e. as missing evidence rather than as a broken locale.

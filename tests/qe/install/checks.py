@@ -78,17 +78,26 @@ PASS = "pass"
 FAIL = "fail"
 NOT_EVALUATED = "not_evaluated"
 
-#: The four markers `init --check` renders, from install.py:446-455 and the legend at
-#: docs/getting-started.md:98-108. `✗` is the only one that fails the run.
+#: The five markers `init --check` renders, from install.py:590-601 and the legend at
+#: docs/getting-started.md:108-122. `✗` is the only one that fails the run.
 MARK_OK = "✓"        # ✓ verified by running it
 MARK_PENDING = "○"   # ○ not installed yet — never fails the run
-MARK_ADVISORY = "!"       # ! an advisory about the environment
+MARK_ADVISORY = "!"  # ! an advisory about the environment, and it is TRUE
+MARK_BLOCKED = "?"   # ? the check could not run: nobody looked, the answer is unknown
 MARK_FAIL = "✗"      # ✗ in place and wrong — only these fail
 
-#: Line shape, install.py:455: two spaces, marker, space, name, ": ", detail.
-CHECK_LINE = re.compile(r"^  ([✓○!✗]) ([^:]+): (.*)$")
+#: Every marker the renderer can emit, and the alphabet `CHECK_LINE` is built from.
+#: Derived rather than restated: a marker constant that the line regex did not know
+#: about was invisible to this whole file — a check moving onto it did not become an
+#: unmatched line, it stopped being parsed at all, and every count drawn from
+#: `parse_check_lines` shortened silently. That is what `?` did before it was added
+#: here, and one alphabet is what stops it recurring.
+MARKS = (MARK_OK, MARK_PENDING, MARK_ADVISORY, MARK_BLOCKED, MARK_FAIL)
 
-#: The substring install.py:477-481 uses to recognise its own hook entries.
+#: Line shape, install.py:601: two spaces, marker, space, name, ": ", detail.
+CHECK_LINE = re.compile(r"^  ([" + "".join(MARKS) + r"]) ([^:]+): (.*)$")
+
+#: The substring install.py:623-626 uses to recognise its own hook entries.
 OUR_HOOK_MARKER = "thalamus/harness/hooks"
 
 #: install.py:131 declares 13 scripts across 17 entries in HOOK_WIRING.
@@ -231,7 +240,7 @@ def _dump(code: str, env: dict | None = None):
 def _hook_entries() -> list[dict]:
     """Every hook entry in the user settings file, flattened.
 
-    install.py:518 writes `{"type": "command", "command": "<abs path>"}` — a bare path,
+    install.py:664 writes `{"type": "command", "command": "<abs path>"}` — a bare path,
     no arguments and no shell, so the command needs no splitting to be treated as a file.
     """
     settings = _read_json(HOME / ".claude" / "settings.json") or {}
@@ -257,7 +266,7 @@ def _our_hooks() -> list[str]:
 
 
 def _shipped_skills() -> list[str]:
-    """The skills the checkout ships, by the same rule install.py:915-919 uses."""
+    """The skills the checkout ships, by the same rule install.shipped_skills (:1082) uses."""
     root = REPO / "src" / "thalamus" / "harness" / "skills"
     out = []
     try:
@@ -504,7 +513,7 @@ def check_cli_exists_after_sync() -> Result:
         return skip("the synced step recorded no exit code")
     cli = REPO / ".venv" / "bin" / "thalamus"
     if not cli.exists():
-        return bad(f"{cli} does not exist after `uv sync`, which getting-started.md:41 "
+        return bad(f"{cli} does not exist after `uv sync`, which getting-started.md:46 "
                    "states is where the CLI lands", f"uv sync exited {rc}")
     # `--help`, not `--version`: measured 2026-08-21, this CLI has no version flag and
     # answers `--version` with `error: unrecognized arguments` and exit 2. Asserting a
@@ -522,11 +531,17 @@ def check_cli_exists_after_sync() -> Result:
 
 
 def check_check_exits_zero_before_install() -> Result:
-    """CHECKED: getting-started:112 promises --check is safe before installing.
+    """CHECKED: getting-started:127 promises --check is safe before installing.
 
-    Exit 1 comes only from a check that is `ok=False` and neither advisory nor pending
-    (install.py:1806), so a non-zero here names something in place and wrong on a box
-    where nothing is in place at all.
+    Exit 1 comes only from a check that is `ok=False` and none of advisory, pending or
+    blocked (install.py:2177-2185), so a non-zero here names something in place and
+    wrong on a box where nothing is in place at all.
+
+    The blocked count rides in the control because exit 0 alone is too weak a
+    reading of the no-jq cell. A run where the `jq` line and everything downstream of
+    it simply stopped being rendered would also exit 0, and would be the same output
+    as a box that has jq. `?` is what a prerequisite's absence must produce, so
+    counting it is what tells the two apart.
     """
     rc = step_rc("checked")
     if rc is None:
@@ -536,8 +551,10 @@ def check_check_exits_zero_before_install() -> Result:
         return skip("the --check output carried no rendered check lines, so its exit "
                     "code cannot be attributed to anything")
     failing = [f"{n}: {d}" for m, n, d in lines if m == MARK_FAIL]
+    blocked = [n for m, n, _ in lines if m == MARK_BLOCKED]
     control = (f"{len(lines)} check line(s) were parsed out of the run, "
-               f"{len(failing)} of them failures")
+               f"{len(failing)} of them failures and {len(blocked)} could-not-run"
+               + (f" ({', '.join(blocked[:4])})" if blocked else ""))
     if rc != 0:
         return bad(f"`init --check` exited {rc} before any install, naming: "
                    f"{'; '.join(failing[:4]) or '(no failure line was rendered)'}",
@@ -548,10 +565,14 @@ def check_check_exits_zero_before_install() -> Result:
 def check_no_failure_marker_beside_skipped() -> Result:
     """CHECKED: a check that could not run must not borrow the failure marker.
 
-    The legend (getting-started.md:98-108) defines `✗` as something *in place and wrong*.
-    A prerequisite that is absent is a third state, and install.py:1133/1153 renders it
-    `ok=False` with the word "skipped" in the detail, so it prints `✗ ...: skipped (...)`
-    and fails the run.
+    The legend (getting-started.md:108-122) defines `✗` as something *in place and
+    wrong*. A check that could not run for want of a prerequisite is a different claim
+    and carries `?`: install.py:1427-1428 and :1589-1590 set `blocked` from a detail
+    beginning "could not run", which renders `?` and leaves the exit code alone.
+
+    The pairing this forbids is therefore absent by construction today, which is
+    exactly when a detector is worth keeping and worth reading with suspicion — see
+    the control, which requires the marker vocabulary to have been observed at all.
     """
     text = step_log("checked")
     lines = parse_check_lines(text)
@@ -583,9 +604,10 @@ def check_graph_down_diagnosis() -> Result:
     diagnosis = "docker compose up -d" in text and "start it with" in text
     graph_down_config = CONFIG_NAME == "graph-not-started"
 
-    # install.py:988-989 applies graph_down_detail only when the probe says unreachable,
-    # so the diagnosis appearing under a graph-up config does not by itself indict this
-    # check's subject — it may mean the graph had not finished starting when --check
+    # install.py:1206-1208 applies graph_down_detail only when the probe says nothing is
+    # listening, so the diagnosis appearing under a graph-up config does not by itself
+    # indict this check's subject — it may mean the graph had not finished starting
+    # when --check
     # ran, which is issue #55's readiness window and a different finding entirely.
     # Without knowing the graph was answering, the two are indistinguishable and this
     # must not pick one.
