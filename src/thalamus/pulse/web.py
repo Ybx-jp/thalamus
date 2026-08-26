@@ -74,6 +74,7 @@ def create_pulse_app(
     conditioning_base: Path | None = None,
     pins_file: Path | None = None,
     profiles_base: Path | None = None,
+    projects_base: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Thalamus Pulse", docs_url=None, redoc_url=None)
 
@@ -88,6 +89,7 @@ def create_pulse_app(
                 conditioning_base=conditioning_base,
                 pins_file=pins_file,
                 profiles_base=profiles_base,
+                projects_base=projects_base,
             )
         finally:
             if g is not None:
