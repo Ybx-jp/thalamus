@@ -1125,6 +1125,37 @@ def recorded_hook_failures() -> Check:
     )
 
 
+def probe_entry_point() -> tuple[bool, str]:
+    """Does `thalamus` resolve from a cwd that is not the checkout?
+
+    SessionEnd's exact invocation, run for real from `~`. Nothing static can
+    answer this: the failure it guards is `uv` resolving the project from the
+    caller's directory, which every check that reads a file gets right and the
+    detached hook got wrong.
+
+    A named function rather than an inline call because every test needs one
+    seam to stub — the same reason `claude_mcp_registration` and `deregister_mcp`
+    are functions. `verify()` runs on every `install()`, so unstubbed this is a
+    full `uv` resolution and CLI boot per installing test: measured 2026-08-26,
+    72 spawns and 42.9s across `tests/test_install.py`, buying the one assertion
+    in `test_exercises_the_entry_point_rather_than_asserting_it`.
+
+    Stubbing it in the sandbox fixture does not weaken the check. That one test
+    calls this function directly, so the real command still runs exactly once
+    per suite, which is what the check was ever worth.
+    """
+    try:
+        proc = subprocess.run(
+            ["uv", "run", "--project", str(PROJECT_ROOT), "thalamus", "--help"],
+            capture_output=True, text=True, timeout=180, cwd=str(Path.home()),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"could not run: {exc}"
+    if proc.returncode == 0:
+        return True, "`thalamus` resolves from a foreign cwd"
+    return False, f"exit {proc.returncode}: {proc.stderr.strip()[:200]}"
+
+
 def _probe_graph(url: str) -> tuple[bool, str, bool]:
     """Reachable, and answering? Exercised the real way, but bounded.
 
@@ -1490,16 +1521,7 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     # The load-bearing one: SessionEnd's exact invocation, from a cwd that is
     # deliberately not the checkout. This is the call that used to die detached.
     if uv:
-        try:
-            proc = subprocess.run(
-                ["uv", "run", "--project", str(PROJECT_ROOT), "thalamus", "--help"],
-                capture_output=True, text=True, timeout=180, cwd=str(Path.home()),
-            )
-            ok = proc.returncode == 0
-            detail = ("`thalamus` resolves from a foreign cwd"
-                      if ok else f"exit {proc.returncode}: {proc.stderr.strip()[:200]}")
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            ok, detail = False, f"could not run: {exc}"
+        ok, detail = probe_entry_point()
         checks.append(Check("distillation entry point", ok, detail))
 
     agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []
