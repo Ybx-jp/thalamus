@@ -89,6 +89,39 @@ The good title names the component and the defect, so a reader scanning a list k
 whether it is theirs. The bad one is a story title: it names nothing searchable and
 tells the reader only that something was wrong somewhere.
 
+## A defect that can be reproduced is filed with its reproduction
+
+Before you file a `type:bug`, ask which qe harness can reach it:
+
+| The defect shows up… | Reproduction goes in |
+|---|---|
+| During the documented install sequence — sync, `docker compose up`, `init --check`, `init`, re-init, uninstall — on a box a config can shape (a binary removed, an env var unset, the checkout moved, a wheel installed) | `tests/qe/install/` — a `Check` with `issue=<n>` and no `fixed` |
+| By driving a surface directly — a hook script, the CLI, an MCP tool, a console route | `tests/qe/cases/` — a case module |
+
+File both in the same change. The issue then records a defect that is **confirmed**
+rather than asserted, and the matrix keeps a live positive control on itself: a run
+in which nothing is tagged says only that nothing new broke, never that the instrument
+can still see.
+
+**Say so when it does not qualify**, in the issue, rather than filing untagged and
+silent. Three shapes genuinely do not:
+
+- Evidence that is one long-lived machine's state. A fresh cell builds the thing
+  correctly, so the check passes and reproduces nothing.
+- A question that still needs a measurement designed. Undetermined is not known-wrong.
+- A gap in coverage. Writing the check *closes* that issue; it does not reproduce it.
+
+**Never tag what you have not watched reproduce.** A tagged check that unexpectedly
+passes fails the run (`drive.py` exit 2), which is the mechanism working — but a tag
+placed on a guess spends someone else's CI to find that out.
+
+`tests/qe/` is owned by scope `qe` (`contract/ownership.PATH_OWNERSHIP`) and
+`role-guard.sh` enforces it. From any other scope, hand the reproduction to a
+`qe`-pinned session; do not route around the guard.
+
+When the defect is fixed, the same check gains `fixed=True` and its control and stays
+as the regression guard — a red there afterwards means the repair came undone.
+
 ## Issue template
 
 Follow this. Drop a section only when it genuinely has no content — do not pad it.

@@ -185,6 +185,36 @@ exactly the sentence that belongs in a PR.
 Suggested labels: `type:bug`, `type:feature`, `type:docs`, `type:chore`, plus one
 `area:` label — `substrate`, `harness`, `console`, `eval`, `contract`, or `ingestion`.
 
+### A defect that can be reproduced is filed with its reproduction
+
+If one of the qe harnesses can reach a defect, it gets a check in the same change as
+the issue: `tests/qe/install/` when it shows up during the documented install sequence
+on a box a config can shape, `tests/qe/cases/` when a case can reach it by driving a
+surface directly. The check carries the issue number and no `fixed` flag.
+
+Two things follow from it, and the second is the one that is easy to miss.
+
+The issue becomes a *confirmed* defect rather than an asserted one. A report is a
+description of behaviour written by someone who is no longer in front of the machine;
+a check is that behaviour, on demand, on a box neither of you owns.
+
+And the matrix keeps a positive control on itself. Its verdict is only worth reading if
+it can still see — and a run in which nothing is tagged proves only that nothing new
+broke, never that the instrument works. That is why the tag is not bookkeeping to be
+backfilled: without at least one defect it is expected to catch, green means very
+little.
+
+Not everything qualifies, and saying so in the issue is part of filing it. A defect
+whose evidence is one long-lived machine's state will not reproduce on a fresh cell. A
+question that still needs a measurement designed is not yet a defect to reproduce. And
+a gap in coverage is closed by writing the check, not reproduced by it.
+
+Never tag what you have not watched reproduce. `tests/qe/` belongs to the `qe` scope
+(`contract/ownership.PATH_OWNERSHIP`), so a change from anywhere else hands the
+reproduction over rather than writing it. When the defect is fixed, that same check
+gains `fixed=True` and its control, and goes on standing as the regression guard — a
+red there afterwards means the repair came undone.
+
 ### Commits
 
 Commit by path. `git add -A` in a checkout that may have concurrent work sweeps
