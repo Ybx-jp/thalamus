@@ -130,8 +130,32 @@ One artifact doing three jobs at once:
 - **A trust boundary.** Every edge crossing between scopes crosses it.
 
 It is enforced at write time, not filtered at read time. Orphans and violations are
-rejected when they are written. `thalamus contract check` audits the live graph
+rejected when they are written, by the gate every session write goes through
+(`conformance.write_session_checked`). `thalamus contract check` audits the live graph
 against it, and `thalamus validate` checks a pending extraction before it lands.
+
+The audit runs in **four directions**. Three of them close the loop declared → written
+→ read. Checking
+written nodes against the ontology catches a bad write. Checking the ontology against
+what writers produce catches a declaration with nothing behind it — a node type, kind,
+edge type or edge property that consumers may plan against and no code writes. Checking
+what writers produce against what readers project catches the opposite gap: a field
+written onto every vertex of its label that no read path ever names, so the value is
+persisted and no caller can obtain it.
+
+A fourth check stands outside that triangle and needs no second party: a `Claim`'s
+vertex id contains a hash of its own `(kind, description)`, so the id is a claim about
+the content, and re-hashing the content asks whether the address still agrees. It goes
+stale when an identity formula changes under vertices already written, or when an
+identity-bearing property is rewritten in place. The disagreement matters because the
+vertex left behind by a re-key keeps the edges it acquired afterwards but not the
+`CONTAINS` that moved to its twin — so it is retrievable, and a provenance walk from it
+dead-ends with no session.
+
+Findings in the second, third and fourth directions are **advisories**: they are
+printed and never fail the check, because absence in one graph
+— or in one scan — is not proof, and a rule that can fail forever on history nobody can
+fix is a rule that gets switched off.
 
 ### Four load-bearing properties
 
@@ -145,8 +169,9 @@ description)**, so the same claim reached in two sessions converges on one node.
 **Every node carries provenance** — trust tier, source, ingestion time.
 
 **`Source` is retained primary evidence** — a transcript, or an ingested paper. Same
-node type, different tier. It is the floor of the provenance chain, and `DERIVED_FROM`
-edges carry `anchors`: the precise messages a belief came from.
+node type, different tier. It is the floor of the provenance chain: `DERIVED_FROM`
+lands a belief on the evidence it came from, `TOUCHES` carries the `anchors` that name
+the exact messages, and `ANCHORS` puts a literature claim on the passage it quotes.
 
 **Every node carries a scope, except `Artifact`.** Artifacts are deliberately
 **global** — one vertex per identifier, shared by every scope. A file touched by two

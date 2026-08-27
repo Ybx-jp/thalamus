@@ -49,10 +49,11 @@ in a mode the probe never entered. This is not pedantry: a `<timestamp>` observe
 print mode is one inference away from unwiring the clock tier for interactive sessions
 nobody has looked at.
 
-So a probe carries the `condition` it was taken under, and the default is the narrowest
-one, because a wide default is exactly how one print-mode observation becomes a general
-belief. A declaration does not state a condition it claims to hold under, so the checker
-cannot compare the two and a claim wider than its evidence is not detectable here.
+So a flag probe establishes the narrowest condition there is — `Condition.PARSE`, that
+the argument parser accepted the flag — and never a mode it did not enter, because a
+wider reading is exactly how one print-mode observation becomes a general belief. A
+declaration does not state a condition it claims to hold under, so the checker cannot
+compare the two and a claim wider than its evidence is not detectable here.
 **MALFORMED** reports the defects in the record it can see — an unresolvable derivation,
 or a sentinel the CLI accepted — and stays separate from DRIFT, a defect in the world.
 """
@@ -115,10 +116,6 @@ class FlagProbe:
     flag: str
     # Values the flag requires to parse. `--max-turns` needs one; `--trust` takes none.
     args: tuple[str, ...] = ()
-
-    @property
-    def condition(self) -> Condition:
-        return Condition.PARSE
 
     def argv(self) -> list[str]:
         # The flag under test first, the sentinel second, so the sentinel is the only
@@ -262,9 +259,27 @@ def _derive_hook_parity() -> dict:
     return derive_hook_parity()
 
 
+def _refute_hook_parity_claims() -> dict:
+    # Same local import, same reason.
+    from thalamus.harness.install import DECLARED_HOOK_PARITY, refute_parity_claims
+
+    return {"refuted": refute_parity_claims(DECLARED_HOOK_PARITY)}
+
+
 # Name -> the function that recomputes it. Adding a derivation here is what makes a
 # self-claim checkable; a claim with no entry is prose again.
-DERIVATIONS = {"hook_parity": _derive_hook_parity}
+#
+# Two entries for one record, because its six fields split on whether the tables can
+# produce them. `hook_parity` recomputes the four that are set arithmetic over the
+# wirings. `hook_parity_claims` cannot recompute `renames` and `native` — the tables
+# carry nothing that says one script plays another's role — so it tries to refute them
+# instead, and declares that nothing does. Refutation is a weaker instrument than
+# recomputation and is the one available; the alternative was leaving two fields
+# compared to nothing, which is the state the record was built to end.
+DERIVATIONS = {
+    "hook_parity": _derive_hook_parity,
+    "hook_parity_claims": _refute_hook_parity_claims,
+}
 
 
 def probe_derived(probe: DerivedProbe) -> ProbeResult:
@@ -309,9 +324,24 @@ def _declared_parity_row() -> tuple[DerivedProbe, str]:
     )
 
 
+def _parity_claims_row() -> tuple[DerivedProbe, str]:
+    """The two fields the wirings cannot produce, declared as unrefuted.
+
+    `()` is a real claim, not a tautology: it asserts every hand-written rename and
+    native entry is still consistent with the tables that moved underneath it and with
+    the scripts on disk. When it breaks, the computed side names which one and how.
+    """
+    return (
+        DerivedProbe(derivation="hook_parity_claims", declared={"refuted": ()}),
+        "install.DECLARED_HOOK_PARITY.renames/.native — the two fields the wiring "
+        "tables cannot re-derive, checked by refutation instead",
+    )
+
+
 def check_capabilities() -> list[ProbeResult]:
     """Re-ask every checkable declaration. Opens no graph connection, by design."""
     results = [probe_flag(probe, declared=declared) for probe, declared, _ in CAPABILITY_ROWS]
-    parity_probe, _ = _declared_parity_row()
-    results.append(probe_derived(parity_probe))
+    for row in (_declared_parity_row(), _parity_claims_row()):
+        probe, _ = row
+        results.append(probe_derived(probe))
     return results

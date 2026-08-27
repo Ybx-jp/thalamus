@@ -205,6 +205,7 @@ def report_snapshot(
     conditioning_base: Path | None = None,
     pins_file: Path | None = None,
     profiles_base: Path | None = None,
+    projects_base: Path | None = None,
     since_days: int = 14,
     top: int = 8,
 ) -> dict:
@@ -212,6 +213,12 @@ def report_snapshot(
 
     `g` may be None (graph unreachable): the ledger-side reports still render
     and `graph_ok` states it — TAP-ONLY is an explicit condition, not a blank.
+
+    `projects_base` is the transcript root the cost scan walks. It exists as a
+    parameter for the same reason the ledger bases do: left unset, `cost_report`
+    resolves the operator's own `~/.claude/projects`, so a caller that means to
+    report on a fixture reads his archive instead and its numbers are a function
+    of what he ran this week.
     """
     pins = _read_pins(pins_file or PINS_FILE)
     scopes = [MAIN_SCOPE, *available_scopes()]
@@ -251,7 +258,11 @@ def report_snapshot(
     since = date.today() - timedelta(days=since_days)
     try:
         out["cost"] = _cost_dict(
-            cost_report(project_dir or REPO_ROOT, since, traces_base=traces_base), since
+            cost_report(
+                project_dir or REPO_ROOT, since,
+                traces_base=traces_base, projects_base=projects_base,
+            ),
+            since,
         )
     except Exception:  # noqa: BLE001 — transcripts move; cost must not take the page down
         logger.exception("Cost scan failed")

@@ -30,13 +30,12 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
-from thalamus.substrate.reader import STOPWORDS, _extract_keywords
-
-# A node is "used" when at least this many of its distinctive terms — and this fraction
-# of them — appear in the session's subsequent output. Two dials, both arbitrary, both
-# honest: they are the starting point the eval loop exists to pressure-test.
-MIN_MATCHED_TERMS = 2
-MIN_MATCHED_RATIO = 0.3
+from thalamus.substrate.reader import (
+    MIN_MATCHED_RATIO,
+    MIN_MATCHED_TERMS,
+    STOPWORDS,
+    _extract_keywords,
+)
 
 # Bump when a dial above moves, or when the term extraction under it changes, so the
 # fingerprint moves even if two dials cancel out numerically.

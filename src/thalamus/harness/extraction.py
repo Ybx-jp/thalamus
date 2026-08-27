@@ -32,10 +32,10 @@ import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from typing import Any
 
 import yaml
 
-from thalamus.eval.attribution import MIN_MATCHED_RATIO, MIN_MATCHED_TERMS
 # Re-exported: extraction is their main caller, and `cli.py` and the suite reach
 # them through this module rather than through `agents`. The noqa markers are
 # load-bearing — a lint autofix strips these and breaks those callers, not this one.
@@ -49,7 +49,11 @@ from thalamus.harness.agents import (
     sandbox_env,
 )
 from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS
-from thalamus.substrate.reader import STOPWORDS
+from thalamus.substrate.reader import (
+    MIN_MATCHED_RATIO,
+    MIN_MATCHED_TERMS,
+    STOPWORDS,
+)
 from thalamus.substrate.schema import (
     Artifact,
     Claim,
@@ -1100,26 +1104,25 @@ def partition_valid(data: dict) -> tuple[dict, list[str]]:
     return kept, dropped
 
 
-def merge_extraction(base: SessionGraph, data: dict) -> SessionGraph:
+def merge_extraction(base: SessionGraph, data: dict[str, Any]) -> SessionGraph:
     """Merge model judgement into the deterministic stage-1 graph.
 
     Identity, provenance, sources, and anchored touches come from the record; the model
     contributes summary, claims, and threads. Fields the model was told not to emit are
     overridden even if it emitted them anyway.
     """
-    extracted = SessionGraph(
-        **{
-            **data,
-            "session_id": base.session_id,
-            "timestamp": base.timestamp,
-            "tool": base.tool,
-            "scope": base.scope,
-            "project": base.project,
-            "summary": data.get("summary") or base.summary,
-            "sources": [],
-            "touched": [],
-        }
-    )
+    payload: dict[str, Any] = {
+        **data,
+        "session_id": base.session_id,
+        "timestamp": base.timestamp,
+        "tool": base.tool,
+        "scope": base.scope,
+        "project": base.project,
+        "summary": data.get("summary") or base.summary,
+        "sources": [],
+        "touched": [],
+    }
+    extracted = SessionGraph(**payload)
 
     artifacts = {artifact.identifier: artifact for artifact in base.artifacts}
     for artifact in extracted.artifacts:

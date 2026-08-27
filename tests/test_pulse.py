@@ -96,12 +96,18 @@ def _ledgers(tmp_path: Path) -> dict:
     pins.write_text(
         json.dumps({"session_id": "sess-1", "scope": "homelab", "ts": "2026-07-15T09:59:00Z"})
     )
+    # An empty transcript root, not an absent one. Left unset, the cost scan walks
+    # `~/.claude/projects` and every room the pin ledger names, so the report under
+    # test would be assembled from the operator's own sessions.
+    projects = tmp_path / "projects"
+    projects.mkdir()
     return {
         "traces_base": traces,
         "guards_base": guards,
         "conditioning_base": conditioning,
         "profiles_base": profiles,
         "pins_file": pins,
+        "projects_base": projects,
     }
 
 
@@ -116,7 +122,9 @@ def test_live_snapshot_is_cost_only_and_flags_the_guardrail(tmp_path):
     - the pinned scope from the ledger reaches the feed rows
     """
     ledgers = _ledgers(tmp_path)
-    ledgers.pop("profiles_base")  # the span tap is report-side; the 5s feed never reads it
+    # Both are report-side; the 5s feed reads neither the span tap nor a transcript.
+    ledgers.pop("profiles_base")
+    ledgers.pop("projects_base")
     live = live_snapshot(**ledgers)
 
     assert [e["ts"] for e in live["feed"]] == sorted(
@@ -162,6 +170,12 @@ def test_report_without_graph_is_tap_only_not_empty(tmp_path):
     assert "mean" not in cost["shapes"][0]
     assert cost["tap_overhead_pct"] == pytest.approx(0.01)
     assert "one machine" in report["disclosures"]["query_cost"]
+
+    # The transcript scan ran against the fixture's empty root and found nothing.
+    # Non-empty here means `projects_base` stopped reaching `cost_report` and the
+    # scan walked the operator's own archive, which is not this test's subject and
+    # would make its verdict a function of what he ran this week.
+    assert report["cost"]["buckets"] == [] and report["cost"]["by_day"] == []
 
 
 def test_trend_and_sessions_price_verdicts_with_absolutes(tmp_path):

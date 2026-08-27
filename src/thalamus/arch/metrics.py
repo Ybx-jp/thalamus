@@ -194,18 +194,3 @@ def fan_in(graph: DependencyGraph) -> dict[str, int]:
     for edge in graph.counted_edges():
         counts[edge.to_path] = counts.get(edge.to_path, 0) + 1
     return counts
-
-
-def reachable_from(graph: DependencyGraph) -> dict[str, int]:
-    """How many modules can reach each module — the citation render's headline shape.
-
-    "`thalamus.contract.ontology` is import-reachable from 41 of 76 modules (54%)" is
-    this number. It is the column sum of the visibility matrix, not the row sum: what
-    depends on me, transitively, rather than what I depend on.
-    """
-    counts = {module: 0 for module in graph.modules}
-    for source, targets in visibility(graph).items():
-        for target in targets:
-            if target != source:
-                counts[target] = counts.get(target, 0) + 1
-    return counts

@@ -19,7 +19,7 @@ from thalamus.arch.extractor import (
     ExtractorPolicy,
     scan_repo,
 )
-from thalamus.arch.metrics import cycles, measure, propagation_cost, reachable_from
+from thalamus.arch.metrics import cycles, measure, propagation_cost
 
 
 def _tree(root: Path, files: dict[str, str]) -> Path:
@@ -192,22 +192,6 @@ def test_cycles_and_propagation_over_a_known_shape(tmp_path):
     assert propagation_cost(graph) == 7 / 9
     metrics = measure(graph)
     assert (metrics.modules, metrics.dependencies, metrics.modules_in_cycles) == (3, 3, 2)
-
-
-def test_reachable_from_counts_dependents_not_dependencies(tmp_path):
-    """The citation render's headline is the column sum, not the row sum."""
-    repo = _tree(
-        tmp_path,
-        {
-            "src/leaf.py": "",
-            "src/one.py": "import leaf\n",
-            "src/two.py": "import one\n",
-        },
-    )
-    graph = scan_repo(repo, ExtractorPolicy(roots=("src",)))
-    counts = reachable_from(graph)
-    assert counts["src/leaf.py"] == 2
-    assert counts["src/two.py"] == 0
 
 
 def test_empty_repo_does_not_divide_by_zero(tmp_path):

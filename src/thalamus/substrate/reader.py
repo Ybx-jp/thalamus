@@ -37,9 +37,11 @@ _TIER_NAMES = {
 
 
 def _tier_label(tier: object) -> str:
+    # A tier property is written as an int and comes back as one; a digit string
+    # converts the same way. Anything else names no tier, so it reads as the default.
     try:
-        value = int(tier)
-    except (TypeError, ValueError):
+        value = int(tier) if isinstance(tier, int | str) else int(Tier.FIRST_PARTY)
+    except ValueError:
         value = int(Tier.FIRST_PARTY)
     return f"tier {value} · {_TIER_NAMES.get(value, 'unknown')}"
 
@@ -79,8 +81,10 @@ _MATCH_FLOOR = 2
 # 17% of rendered blocks, so it is not idle; it is simply a *volume* knob at a fixed
 # ~60/40 exchange rate, with no ordering signal that would let a smaller cap keep the
 # better claims. Lowering it to 5 would drop ~146 used claims to save ~88 ignored ones.
-# The one discriminator found is claim kind (decision 62% / solution 56% / problem
-# 53%) — marginal, and untried. Caveat that bounds all of it: only 1.4% of detail
+# Claim kind was tried as the ordering signal and did not separate: every per-kind
+# used-rate landed at or below the ~57% permuted null, inside the judge's own
+# discrimination band of κ = 0.140 [0.028, 0.272]. There was no dial to tune because
+# there was no signal to tune on. Caveat that bounds all of it: only 1.4% of detail
 # verdicts come from the strong vertex-ID citation path, so this rests on lexical echo.
 _DETAIL_CAP = 8
 # Knowledge holds up to 1/this of the result window when sessions also matched.
@@ -682,10 +686,18 @@ def recall(
             )
             knowledge_hits.setdefault(key, set()).add(keyword)
 
-        # Co-indexing: chunks are searched in the same pass, over the same scopes, and
-        # ranked against claims rather than appended after them. A chunk is
-        # ~14x the text of a claim, so it is scored *below* one per keyword hit — a
-        # long passage should not outrank a claim merely by containing more words.
+        # Chunks are searched in the same pass and over the same scopes as claims, but
+        # they are ranked in a window of their own: `_CHUNK_HIT_SCORE` orders chunks
+        # against each other, and the survivors are prepended ahead of the mixed
+        # session/knowledge window rather than competing for a slot in it. A chunk
+        # therefore never loses a place to a claim, and the two hit scores are never
+        # compared. `_CHUNK_WINDOW_CAP` is the whole of what bounds this tier's output.
+        #
+        # It is also the most expensive scan the reader issues: ~17.7k vertices holding
+        # ~1,500 characters of `text` each against a claim description's ~210, walked by
+        # a per-element regex once per keyword because nothing in the chain is indexable
+        # under TinkerGraph. Measured 2026-08-26 over 100 replayed queries — 60% of the
+        # four tiers' time, rendering 2 rows out of a median 2,190 matched. See #112.
         chunks = (
             g.V()
             .has_label("Chunk")
@@ -1367,6 +1379,20 @@ STOPWORDS = {
 }
 """Terms too common to discriminate. Shared with the ingress floor's term extraction
 (`harness/extraction.py`), which needs the same list under a different tokenizer."""
+
+# A node's text counts as matched when at least this many of its distinctive terms —
+# and this fraction of them — appear in the text it is being matched against. Two
+# dials, both arbitrary, both honest: they are the starting point the eval loop exists
+# to pressure-test.
+#
+# They sit here, beside the term extraction they threshold, because both readers need
+# them: `eval/attribution.py` judges a recalled node used-or-ignored, and
+# `harness/extraction.py` applies the same floor to an extracted item against its
+# source text. Moving either value re-attributes every verdict already stored —
+# `judge_fingerprint` stamps both into a verdict's identity — so `JUDGE_VERSION` in
+# `eval/attribution.py` moves in the same change.
+MIN_MATCHED_TERMS = 2
+MIN_MATCHED_RATIO = 0.3
 
 
 def _extract_keywords(query: str) -> list[str]:

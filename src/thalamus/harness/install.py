@@ -57,8 +57,8 @@ from pathlib import Path
 
 from thalamus.harness import agents
 from thalamus.harness.agents import HARNESSES as AGENT_HARNESSES
+from thalamus.contract.paths import PROJECT_ROOT
 from thalamus.harness.pin import (
-    PROJECT_ROOT,
     USER_AGENTS_DIR,
     write_all_agents,
     write_all_codex_profiles,
@@ -151,12 +151,14 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # The Cursor wiring, as (event, script). Event names and their I/O shapes were
 # re-verified against cursor.com/docs/hooks.md on 2026-07-29.
 #
-# Parity between the two tables is declared in `DECLARED_HOOK_PARITY` below and re-derived
+# Parity across the three tables is declared in `DECLARED_HOOK_PARITY` below and checked
 # by `thalamus contract check --capabilities`, because stating it here in prose is
 # what failed: the count was wrong for the three scripts that joined the Claude list
-# after it was written, and nothing failed with it.
+# after it was written, and nothing failed with it. Four of its fields are re-derived
+# from the tables; `renames` and `native` are not derivable from them and are checked
+# by refutation instead (`refute_parity_claims`).
 #
-# What that record is about is **these two tables and nothing else**. It cannot say
+# What that record is about is **these three tables and nothing else**. It cannot say
 # whether an obligation binds, because a boundary can bind through a path in neither
 # table — Cursor runs `role-guard.sh` off `~/.claude/settings.json` with nothing wired
 # under `.cursor/`, so this list's silence about it is correct and reads as a gap
@@ -309,14 +311,24 @@ CODEX_HOOK_WIRING: list[tuple[str, str | None, str]] = [
 class HookParity:
     """What the wirings above are believed to add up to — the tables, only.
 
-    Written as data so it can be re-derived and disagreed with. The same claim as a
-    comment was wrong for three scripts and no test could notice, because a comment
-    is not compared to anything.
+    Written as data so it can be disagreed with. The same claim as a comment was wrong
+    for three scripts and no test could notice, because a comment is not compared to
+    anything.
 
     It is not circular to pin a hand-written expectation beside the tables it
     describes and then recompute it: the derivation reads the wiring tables, this
     record does not, so adding a script to one table moves one and not the other.
     That divergence is precisely the event that went unnoticed before.
+
+    **The six fields split on how they are checked, because two of them cannot be
+    recomputed.** `scripts`, `shared`, `missing` and `extra` are set arithmetic over
+    the tables and are re-derived by `derive_hook_parity`. `renames` and `native` are
+    not: no table says one script plays another's role, or that a vendor runs one on
+    our behalf, and putting that in the tables would make this record derivable from
+    the data it describes — agreement by construction, which is the check removed
+    rather than repaired. `refute_parity_claims` asks the weaker question the tables
+    and the hook directories can answer — is this claim still *possible* — and both
+    halves reach `thalamus contract check --capabilities` as their own rows.
 
     **Per harness, with the differences taken pairwise against Claude Code.** The
     record used to be two-harness by construction — `claude_scripts`,
@@ -366,21 +378,6 @@ class HookParity:
     # one this module wired.
     native: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
-    def real_gaps(self, harness: str) -> tuple[str, ...]:
-        """Claude Code scripts with no path on `harness`, renames and natives excluded.
-
-        A name lands here by *default*, so this is a floor on the gaps and not a
-        measurement of them: a script nobody has probed on a harness is
-        indistinguishable from one probed and found missing. `role-guard.sh` sat here
-        for a release while it was in fact binding on Cursor.
-        """
-        accounted = (
-            {claude_name for claude_name, _ in self.renames.get(harness, ())}
-            | set(self.native.get(harness, ()))
-        )
-        return tuple(name for name in self.missing.get(harness, ())
-                     if name not in accounted)
-
 
 DECLARED_HOOK_PARITY = HookParity(
     scripts={"claude": 13, "codex": 12, "cursor": 14},
@@ -409,13 +406,21 @@ DECLARED_HOOK_PARITY = HookParity(
 )
 
 
-def derive_hook_parity() -> dict:
-    """Recompute the parity claim from the wirings themselves."""
-    sets = {
+def _wiring_sets() -> dict[str, set[str]]:
+    """harness -> the distinct scripts its table names."""
+    return {
         "claude": {script for _, _, script in HOOK_WIRING},
         "codex": {script for _, _, script in CODEX_HOOK_WIRING},
         "cursor": {script for _, script in CURSOR_HOOK_WIRING},
     }
+
+
+HOOK_DIRS = {"claude": HOOK_DIR, "codex": CODEX_HOOK_DIR, "cursor": CURSOR_HOOK_DIR}
+
+
+def derive_hook_parity() -> dict:
+    """Recompute the parity claim from the wirings themselves."""
+    sets = _wiring_sets()
     reference = sets["claude"]
     others = {h: s for h, s in sorted(sets.items()) if h != "claude"}
     return {
@@ -424,6 +429,106 @@ def derive_hook_parity() -> dict:
         "missing": {h: tuple(sorted(reference - s)) for h, s in others.items()},
         "extra": {h: tuple(sorted(s - reference)) for h, s in others.items()},
     }
+
+
+def refute_parity_claims(declared: HookParity) -> tuple[str, ...]:
+    """Try to refute `renames` and `native` against the wiring tables and the tree.
+
+    These two fields are the half of `HookParity` `derive_hook_parity` does not
+    recompute, and cannot: the tables carry `(event, matcher, script)` and nothing
+    that says one script plays another's role, or that a vendor runs one on our
+    behalf. Adding that to the tables would make the record derivable from them,
+    which is the one repair this must not perform — a declaration generated from
+    the data it describes agrees with it by construction.
+
+    So the comparison available here is refutation, not recomputation. Every
+    declared claim implies conditions the tables and the hook directories *can*
+    answer, and each one is a way the claim can be false:
+
+    - a rename's Claude Code name must be a script Claude Code wires, must **not**
+      be one the renaming harness wires (a script present under its own name is not
+      renamed), and its local name must be one that harness does wire;
+    - both halves of a rename must exist as files in their harnesses' hook
+      directories, since a rename that names no file renames nothing;
+    - a native script must be one Claude Code wires and the harness does not — if
+      the harness wires it too, it runs twice on one call, which is the hazard the
+      field exists to prevent — and must have **no file** in that harness's own hook
+      directory, because a local copy is a local implementation, not the vendor's;
+    - a harness that declares either must have a wiring table at all.
+
+    **What this cannot establish, and does not claim to.** That Cursor's translation
+    of `~/.claude/settings.json` actually fires `role-guard.sh` is a statement about
+    another vendor's runtime, and no table or file on this machine observes it. The
+    refutations above can show the claim is *impossible* — never that it holds. That
+    half stays a dated measurement in `native`'s own comment, and the honest reading
+    of a clean result here is "nothing we can check contradicts it".
+
+    Returns one sentence per refutation, empty when none is found.
+    """
+    sets = _wiring_sets()
+    reasons: list[str] = []
+
+    def wired(harness: str, script: str) -> bool:
+        return script in sets.get(harness, set())
+
+    def on_disk(harness: str, script: str) -> bool:
+        directory = HOOK_DIRS.get(harness)
+        return directory is not None and (directory / script).is_file()
+
+    for harness, pairs in sorted(declared.renames.items()):
+        if harness not in sets:
+            reasons.append(f"{harness} declares renames and has no wiring table")
+            continue
+        for claude_name, local_name in pairs:
+            if not wired("claude", claude_name):
+                reasons.append(
+                    f"{harness} renames {claude_name} -> {local_name}: "
+                    f"{claude_name} is not wired on Claude Code"
+                )
+            if wired(harness, claude_name):
+                reasons.append(
+                    f"{harness} renames {claude_name} -> {local_name}: "
+                    f"{harness} wires {claude_name} under its own name, so it is not renamed"
+                )
+            if not wired(harness, local_name):
+                reasons.append(
+                    f"{harness} renames {claude_name} -> {local_name}: "
+                    f"{harness} does not wire {local_name}"
+                )
+            if not on_disk("claude", claude_name):
+                reasons.append(
+                    f"{harness} renames {claude_name} -> {local_name}: "
+                    f"no {claude_name} in {HOOK_DIRS['claude'].name}/"
+                )
+            if not on_disk(harness, local_name):
+                reasons.append(
+                    f"{harness} renames {claude_name} -> {local_name}: "
+                    f"no {local_name} in {HOOK_DIRS[harness].name}/"
+                )
+
+    for harness, scripts in sorted(declared.native.items()):
+        if harness not in sets:
+            reasons.append(f"{harness} declares native scripts and has no wiring table")
+            continue
+        for script in scripts:
+            if not wired("claude", script):
+                reasons.append(
+                    f"{harness} runs {script} natively: {script} is not wired on Claude "
+                    "Code, so there is nothing for the vendor to translate"
+                )
+            if wired(harness, script):
+                reasons.append(
+                    f"{harness} runs {script} natively and wires it as well: "
+                    "it would run twice on one call"
+                )
+            if on_disk(harness, script):
+                reasons.append(
+                    f"{harness} runs {script} natively: "
+                    f"{HOOK_DIRS[harness].name}/{script} exists, which is a local "
+                    "implementation rather than the vendor's"
+                )
+
+    return tuple(reasons)
 
 
 @dataclass
@@ -1140,6 +1245,37 @@ def recorded_hook_failures() -> Check:
     )
 
 
+def probe_entry_point() -> tuple[bool, str]:
+    """Does `thalamus` resolve from a cwd that is not the checkout?
+
+    SessionEnd's exact invocation, run for real from `~`. Nothing static can
+    answer this: the failure it guards is `uv` resolving the project from the
+    caller's directory, which every check that reads a file gets right and the
+    detached hook got wrong.
+
+    A named function rather than an inline call because every test needs one
+    seam to stub — the same reason `claude_mcp_registration` and `deregister_mcp`
+    are functions. `verify()` runs on every `install()`, so unstubbed this is a
+    full `uv` resolution and CLI boot per installing test: measured 2026-08-26,
+    72 spawns and 42.9s across `tests/test_install.py`, buying the one assertion
+    in `test_exercises_the_entry_point_rather_than_asserting_it`.
+
+    Stubbing it in the sandbox fixture does not weaken the check. That one test
+    calls this function directly, so the real command still runs exactly once
+    per suite, which is what the check was ever worth.
+    """
+    try:
+        proc = subprocess.run(
+            ["uv", "run", "--project", str(PROJECT_ROOT), "thalamus", "--help"],
+            capture_output=True, text=True, timeout=180, cwd=str(Path.home()),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"could not run: {exc}"
+    if proc.returncode == 0:
+        return True, "`thalamus` resolves from a foreign cwd"
+    return False, f"exit {proc.returncode}: {proc.stderr.strip()[:200]}"
+
+
 def _probe_graph(url: str) -> tuple[bool, str, bool]:
     """Reachable, and answering? Exercised the real way, but bounded.
 
@@ -1407,7 +1543,7 @@ def verify_codex() -> list[Check]:
         import tempfile
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                env = {**os.environ, "HOME": tmp}
+                env: dict[str, str] = {**os.environ, "HOME": tmp}
                 env.pop("THALAMUS_SANDBOX", None)
                 payload = json.dumps({
                     "hook_event_name": "PostToolUse",
@@ -1505,16 +1641,7 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     # The load-bearing one: SessionEnd's exact invocation, from a cwd that is
     # deliberately not the checkout. This is the call that used to die detached.
     if uv:
-        try:
-            proc = subprocess.run(
-                ["uv", "run", "--project", str(PROJECT_ROOT), "thalamus", "--help"],
-                capture_output=True, text=True, timeout=180, cwd=str(Path.home()),
-            )
-            ok = proc.returncode == 0
-            detail = ("`thalamus` resolves from a foreign cwd"
-                      if ok else f"exit {proc.returncode}: {proc.stderr.strip()[:200]}")
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            ok, detail = False, f"could not run: {exc}"
+        ok, detail = probe_entry_point()
         checks.append(Check("distillation entry point", ok, detail))
 
     agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []

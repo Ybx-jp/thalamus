@@ -461,3 +461,292 @@ Count first and read second, guarded on the count. `order().by(...).limit(1)` on
 empty label returns `[]` rather than raising, so an unguarded version of this reports
 "no sessions" and "could not read the newest" as the same thing — and on a fresh
 install those are the *only* rows there are.
+
+## Does `kind` behave like an identity criterion or like a role?
+**Question it answered:** Claim identity is `(kind, normalized_description)`
+(`schema.py`), so the same sentence asserted as a `problem` and as a `decision`
+forks into two vertices. Does that actually happen in the live graph, and at what
+rate? (schema-coherence design room, 2026-08-25)
+**Surface:** gremlin-python
+**Validated:** 2026-08-25 against the live graph — 2 cross-kind descriptions out of
+17512 distinct (both `decision`/`solution`); 13 claims whose vertex id no longer
+matches a recomputed `content_id`.
+
+```python
+from collections import Counter, defaultdict
+from gremlin_python.process.traversal import T
+from thalamus.substrate.schema import Claim, _normalized
+from thalamus.substrate.writer import connect, close_connection
+
+g = connect()
+try:
+    rows = (g.V().has_label("Claim").project("id", "kind", "description", "scope")
+            .by(T.id).by("kind").by("description").by("scope").to_list())
+finally:
+    close_connection(g)
+
+by_desc = defaultdict(list)
+for r in rows:
+    by_desc[_normalized(r["description"])].append(r)
+multi = {d: rs for d, rs in by_desc.items() if len({r["kind"] for r in rs}) > 1}
+print(len(by_desc), len(multi))          # denominator first, then the hits
+
+mism = [r for r in rows
+        if r["id"].rsplit(":", 1)[-1]
+        != Claim(kind=r["kind"], description=r["description"]).content_id()]
+print(len(mism), Counter(r["kind"] for r in mism))
+```
+
+**Notes.** Do the grouping in Python, not server-side: a `group().by('description')`
+over every Claim materialises the whole corpus into one map and the counts you want
+are one dict comprehension away anyway. Normalise with the schema's own
+`_normalized` — grouping on the raw property answers a different question than the
+identity function does, and here the two happen to agree only because no pair
+differs by whitespace alone.
+
+Report the denominator with the hit count. "2 collisions" is unreadable without
+"of 17512 distinct descriptions"; a near-zero rate is a finding only when its base
+is stated.
+
+**Call `Claim(...).content_id()`, never a local reimplementation of the hash.** The
+payload, the separators and the digest length are `schema.py`'s to change; a recipe
+that inlines them keeps returning confident answers after they do.
+
+The id-vs-recomputed-`content_id` check is the second half and catches a different
+thing: a vertex whose identity-bearing text was written after the id was minted keeps
+the old id, so identical `(kind, scope, description)` triples can sit on two distinct
+vertices. Recomputing is the only way to see it — `thalamus contract check` passes
+clean on all of them, because nothing verifies that a content-addressed vertex still
+hashes to its own address.
+
+The 13 this found are two populations, and the split is `twin exists / no twin`
+(issue #111): 9 are pre-2026-07-15 vertices left behind by the `9e78ca2` identity
+re-key, still reproducing their stored id under the *old* all-substance-fields
+formula, each beside a byte-identical live twin; 4 had `description` rewritten in
+place by the 2026-07-27 secret scrub and have no twin. Check twin existence before
+concluding anything — an orphan mismatch and a duplicated one need opposite repairs.
+
+## Ontology drift — declared vs observed, both directions
+
+**Question:** Which declared node types, kinds, edge types and edge properties does
+nothing actually write, and what do writers produce that the ontology never declared?
+**Surface:** gremlin-python
+**Validated:** 2026-08-25 against the live graph (47,399 vertices, 161,508 edges).
+Found `BLOCKS` never written, `DERIVED_FROM.anchors` declared across 31,042
+propertyless edges, `ANCHORS.start`/`end` against a model with no such field,
+`RETURNS.judged_terms` written and undeclared, and `literature/finding` — a claim
+kind — on 2 Entities.
+
+```python
+from collections import Counter
+
+from gremlin_python.process.graph_traversal import __
+from gremlin_python.process.traversal import T
+
+from thalamus.contract.ontology import CORE_EDGES, CORE_NODES
+from thalamus.substrate.writer import close_connection, connect
+
+g = connect()
+try:
+    vlabels = {str(k): v for k, v in g.V().group_count().by(T.label).next().items()}
+    elabels = {str(k): v for k, v in g.E().group_count().by(T.label).next().items()}
+    print("declared node types never written:",
+          sorted({n.label for n in CORE_NODES} - set(vlabels)))
+    print("declared edge types never written:",
+          sorted({e.label for e in CORE_EDGES} - set(elabels)))
+
+    for n in CORE_NODES:
+        if not n.kinds:
+            continue
+        seen = {str(k) for k in g.V().has_label(n.label).group_count().by("kind").next()}
+        print(f"{n.label}: unwritten={sorted(set(n.kinds) - seen)} "
+              f"undeclared={sorted(seen - set(n.kinds))}")
+
+    for label in sorted(elabels):
+        keys = {str(k) for k in g.E().has_label(label).properties().key().dedup().to_list()}
+        print(f"{label} properties observed: {sorted(keys)}")
+
+    # Endpoint label pairs, for promoting `note` prose to from_labels/to_labels.
+    rows = (g.E().project("e", "o", "i").by(T.label)
+            .by(__.out_v().label()).by(__.in_v().label()).to_list())
+    for pair, n in sorted(Counter(
+        (str(r["e"]), str(r["o"]), str(r["i"])) for r in rows
+    ).items()):
+        print(f"  {pair[0]}: {pair[1]} -> {pair[2]}   ({n})")
+finally:
+    close_connection(g)
+```
+
+**Notes.** `properties().key().dedup()` per edge label is the cheap way to the
+observed property vocabulary — `element_map()` over 161k edges materialises the whole
+edge set to answer a question about ~14 strings.
+
+Run the endpoint-pair census **before** promoting any `note` direction string to a
+`from_labels`/`to_labels` field. The notes were not a reliable statement of intent:
+`DERIVED_FROM` said `Session/Claim -> Source` and omitted `Chunk`, which is 17,753 of
+its 31,042 edges, and `RETURNS` named four targets where the reader serves eight.
+Three wrong invariants would have landed without this pass.
+
+Both directions matter and they fail differently. Declared-and-unwritten is a broken
+promise to consumers; written-and-undeclared is a surface the ontology cannot be read
+to discover, and it is the direction that carries actual wrong data. This is the query
+behind `conformance.audit_declarations`, so `thalamus contract check` now answers it
+without the ad-hoc run — reach for this version when you need the raw counts or the
+endpoint pairs, which the check does not print.
+
+---
+
+## What does `contract check`'s whole-graph fetch cost, and what is cheaper?
+
+**Question it answered.** `contract check` spends ~14 s per invocation in two start
+steps that materialise the entire graph, and the audit rules above them read nine
+vertex property keys and two edge ones. Which narrowings actually pay, and by how much?
+
+**Surface:** gremlin-python
+**Validated:** 2026-08-25 against the live graph — 47,450 vertices, 161,904 edges,
+TinkerGraph 3.7.3, n=5 per arm (n=3 for the edge arms), medians reported.
+
+```python
+import statistics, time
+from gremlin_python.process.graph_traversal import __
+from gremlin_python.process.traversal import T
+from thalamus.substrate.writer import close_connection, connect
+
+KEYS = ("tier", "source", "ingested_at", "external", "scope",
+        "kind", "status", "protocol", "content_hash")
+
+g = connect()
+try:
+    # vertices: 5,054 ms -> 2,443 ms  (2.1x)
+    g.V().value_map(True).to_list()
+    g.V().element_map(*KEYS).to_list()
+
+    # edges: 11,422 ms -> 5,654 ms  (2.0x)
+    g.E().element_map().to_list()
+    (g.E().project("label", "from", "to", "from_label", "to_label")
+     .by(T.label).by(__.out_v().id_()).by(__.in_v().id_())
+     .by(__.out_v().label()).by(__.in_v().label()).to_list())
+
+    # aggregates that replace whole scans
+    g.E().group_count().by(T.label).next()                                    #    85 ms
+    g.E().group().by(T.label).by(__.properties().key().dedup().fold()).next() #   230 ms
+    g.V().not_(__.both_e()).element_map("protocol", "status").to_list()       #    77 ms
+finally:
+    close_connection(g)
+```
+
+**Measured, medians over the n above:**
+
+| traversal | elements | median |
+|---|---|---|
+| `g.V().value_map(True)` | 47,450 | 5,054 ms |
+| `g.V().element_map(*9 keys)` | 47,450 | 2,443 ms |
+| `g.E().element_map()` | 161,904 | 11,422 ms |
+| `g.E().element_map("role","basis")` | 161,904 | 10,660 ms |
+| `g.E().project(label, from, to, from_label, to_label)` | 161,904 | 5,654 ms |
+| `g.E().group_count().by(T.label)` | 1 | 85 ms |
+| `g.E().group().by(label).by(property keys)` | 1 | 230 ms |
+| `g.V().not_(both_e()).element_map(...)` | 0 | 77 ms |
+
+**Notes.** Two results are counter-intuitive and are the reason to keep this entry.
+
+*Narrowing edge **properties** buys almost nothing* — 1.1x. Most edges carry no
+properties at all (`ABOUT`, `DERIVED_FROM`), so `elementMap`'s cost is the 161,904
+nested maps themselves: `T.id`, `T.label`, and an `IN`/`OUT` sub-map each. Selecting
+fewer properties does not remove a map that was already nearly empty.
+
+*Replacing `elementMap` with `project` **does** pay* — 2.0x, even though it adds four
+sub-traversals per edge where `elementMap` resolves the endpoints natively. Five flat
+strings beat a nested map with two sub-maps, on the wire and in Python
+deserialisation. The prediction before measuring was that it might come out slower; it
+did not, which is the whole reason to run the arm rather than reason about it.
+
+An aggregate beats both by an order of magnitude when the question is aggregate:
+`group_count().by(T.label)` answers "which edge labels exist" in 85 ms against a scan
+that costs 11 s. Reach for the scan only when a rule genuinely needs per-element rows.
+
+None of these is an index question. TinkerGraph's only index is an exact-value hash
+map (`graph.createIndex`), no index is declared in `config/tinkergraph.properties`, and
+`hasLabel` has no index in TinkerGraph at all — every one of these is a full scan by
+construction, so what varies is only how much crosses the wire.
+
+## How many keywords does a real recall query carry?
+**Question:** `recall()` costs four traversals *per keyword*. Is a per-keyword
+optimisation worth anything — i.e. what is the keyword count of the queries that
+actually arrive?
+**Surface:** gremlin-python
+**Validated:** 2026-08-26 against the live graph (2,963 `Trace` vertices)
+
+```python
+from collections import Counter
+
+from thalamus.substrate.reader import _extract_keywords
+from thalamus.substrate.writer import close_connection, connect
+
+g = connect()
+try:
+    queries = g.V().has_label("Trace").values("query").to_list()
+finally:
+    close_connection(g)
+
+counts = Counter(len(_extract_keywords(str(q))) for q in queries)
+total = sum(counts.values())
+for n in sorted(counts):
+    print(f"{n:>3} keywords: {counts[n]:>5} ({counts[n] / total:.1%})")
+```
+
+**Notes:** The point is to size a cost that is invisible in any single query.
+Measured 2026-08-26: median 7; 1–2 keywords 18.7%, ≥4 keywords 80.5%, tail to 340 —
+a 340-keyword query issues 1,360 traversals under the current per-keyword loop.
+`Trace.query` covers every recorded retrieval, not only `memory_recall`, so read the
+distribution as "queries the reader is asked", not "recall calls".
+The same shape sizes any other per-input cost: swap `_extract_keywords` for whatever
+the code under test derives from `query`.
+
+## Would moving a vertex's edges onto another vertex merge any of them?
+
+**Question it answered:** Before repairing the duplicate Claims in #111 — rewiring a
+stale vertex's in-edges onto its twin and dropping it — does any of those edges already
+exist on the twin? A merge is not an addition: it silently removes one edge and drops
+the far endpoint's fan-out by one. (2026-08-26)
+
+**Surface:** gremlin-python
+
+```python
+from gremlin_python.process.graph_traversal import __
+from thalamus.substrate.writer import connect, close_connection
+
+def edge_keys(g, vertex_id):
+    """`(label, other endpoint, incoming)` — what makes two edges the same edge."""
+    incoming = (g.V(vertex_id).in_e().project("label", "other")
+                .by(__.label()).by(__.out_v().id_()).to_list())
+    outgoing = (g.V(vertex_id).out_e().project("label", "other")
+                .by(__.label()).by(__.in_v().id_()).to_list())
+    return ({(r["label"], str(r["other"]), True) for r in incoming}
+            | {(r["label"], str(r["other"]), False) for r in outgoing})
+
+g = connect()
+try:
+    source, destination = "scope:main:claim:4fdb5cf205991d78", "scope:main:claim:6cfb75945a47b6a1"
+    collapse = edge_keys(g, source) & edge_keys(g, destination)
+    print(f"{len(collapse)} edge(s) would merge rather than move: {sorted(collapse)}")
+finally:
+    close_connection(g)
+```
+
+**Validated:** 2026-08-26 against the live graph, over the 9 stale/twin pairs #111
+names. Predicted 5 collapses; the migration's own plan reported 5, and the edge count
+fell by exactly 5 (163,038 → 163,033) after `thalamus repair-claim-addresses --write`.
+
+**Notes — direction is part of the key, and forgetting it under-counts.** A `TOUCHES`
+out to an artifact and a `RETURNS` in from a trace can name the same neighbour; keying
+on `(label, other)` alone reads them as the same edge and predicts a collapse that will
+not happen. Keying on the neighbour alone is worse in the other direction.
+
+The finding this shape produces is usually more interesting than the merge itself. Here,
+5 traces held a `RETURNS` to *both* members of a duplicate pair — one recall returned the
+same claim twice under two ids and the eval ledger counted fan-out 2. Run this before any
+vertex merge and read the overlap as a measurement, not as an obstacle.
+
+Do **not** reach for `where(__.both_e().count().is_(0))`-style formulations near this;
+see the orphan recipe above for why an empty stream never satisfies a count predicate.

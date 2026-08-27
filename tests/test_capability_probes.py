@@ -109,15 +109,6 @@ class TestProbeShape:
         argv = FlagProbe("agent", "--model", ("composer-2.5",)).argv()
         assert argv[:4] == ["agent", "--model", "composer-2.5", probes.SENTINEL]
 
-    def test_a_flag_probe_claims_only_parse_scope(self):
-        """Sound as a falsifier, unsound as a generalizer.
-
-        That a flag parses says nothing about what it does, and nothing about a mode
-        the probe never entered — the error this session nearly shipped by inferring
-        interactive behaviour from one print-mode observation.
-        """
-        assert FlagProbe("agent", "--trust").condition is probes.Condition.PARSE
-
     def test_every_row_carries_a_reason(self):
         # A row without a stated reason is the unverified prose comment again, moved
         # into a tuple. The reason is what tells a later reader whether to retire it.
@@ -195,7 +186,7 @@ class TestDerivedRows:
         from thalamus.harness.install import DECLARED_HOOK_PARITY
 
         assert "post-tool-use.sh" in DECLARED_HOOK_PARITY.missing["cursor"]
-        assert "post-tool-use.sh" not in DECLARED_HOOK_PARITY.real_gaps("cursor")
+        assert ("post-tool-use.sh", "mcp-tap.sh") in DECLARED_HOOK_PARITY.renames["cursor"]
         # And it is not a gap on codex at all: codex's payload names MCP tools
         # `mcp__thalamus__<tool>` exactly as Claude Code does, so the real script is
         # wired there under its own name rather than renamed.
@@ -214,8 +205,6 @@ class TestDerivedRows:
 
         assert "role-guard.sh" in DECLARED_HOOK_PARITY.missing["cursor"]
         assert "role-guard.sh" in DECLARED_HOOK_PARITY.native["cursor"]
-        assert DECLARED_HOOK_PARITY.real_gaps("cursor") == ("recipe-stage.sh",
-                                                            "room-guard.sh")
 
     def test_the_native_exemption_does_not_carry_to_a_harness_that_earned_none(self):
         """Codex has no `native` entry, and the record must not lend it Cursor's.
@@ -231,9 +220,150 @@ class TestDerivedRows:
         from thalamus.harness.install import DECLARED_HOOK_PARITY
 
         assert "codex" not in DECLARED_HOOK_PARITY.native
+        assert "codex" not in DECLARED_HOOK_PARITY.renames
         # `room-guard.sh` matches `SendMessage`, a tool codex has no analogue of, so
         # it stands as a declared gap rather than a quiet exemption.
-        assert DECLARED_HOOK_PARITY.real_gaps("codex") == ("room-guard.sh",)
+        assert DECLARED_HOOK_PARITY.missing["codex"] == ("room-guard.sh",)
+
+
+class TestRefutedParityClaims:
+    """The two fields the wiring tables cannot re-derive, checked by refutation.
+
+    `renames` and `native` were data in form and comment in effect: nothing compared
+    them to anything, which is the exact state `HookParity`'s docstring says the record
+    exists to end. The tables cannot produce their values — no table says one script
+    plays another's role — so what is asked instead is whether anything the tables and
+    the hook directories *do* know contradicts them.
+
+    Every case here moves the world and expects the claim to break, because a
+    refutation checker that cannot be made to fire is the green suite these fields
+    already had.
+    """
+
+    def _declared(self, renames=None, native=None):
+        from thalamus.harness.install import DECLARED_HOOK_PARITY, HookParity
+
+        return HookParity(
+            scripts=DECLARED_HOOK_PARITY.scripts,
+            shared=DECLARED_HOOK_PARITY.shared,
+            missing=DECLARED_HOOK_PARITY.missing,
+            extra=DECLARED_HOOK_PARITY.extra,
+            renames=DECLARED_HOOK_PARITY.renames if renames is None else renames,
+            native=DECLARED_HOOK_PARITY.native if native is None else native,
+        )
+
+    def test_the_declared_claims_are_unrefuted_today(self):
+        probe, _ = probes._parity_claims_row()
+        result = probes.probe_derived(probe)
+        assert result.outcome is Outcome.CONFIRMED, result.detail
+
+    def test_wiring_the_renamed_script_under_its_own_name_refutes_the_rename(
+        self, monkeypatch
+    ):
+        """The drift the issue names: a harness starts wiring `post-tool-use.sh`
+        itself, and the record still calls it renamed to `mcp-tap.sh`."""
+        from thalamus.harness import install
+
+        monkeypatch.setattr(
+            install, "CURSOR_HOOK_WIRING",
+            [*install.CURSOR_HOOK_WIRING, ("afterShellCommand", "post-tool-use.sh")],
+        )
+        reasons = install.refute_parity_claims(self._declared())
+        assert any("under its own name" in r for r in reasons), reasons
+        assert any("post-tool-use.sh" in r and "cursor" in r for r in reasons)
+
+    def test_a_rename_to_a_script_the_harness_does_not_wire_is_refuted(self):
+        from thalamus.harness import install
+
+        declared = self._declared(renames={"cursor": (("post-tool-use.sh", "gone.sh"),)})
+        reasons = install.refute_parity_claims(declared)
+        assert any("does not wire gone.sh" in r for r in reasons), reasons
+
+    def test_a_rename_of_a_script_claude_code_does_not_wire_is_refuted(self):
+        from thalamus.harness import install
+
+        declared = self._declared(renames={"cursor": (("imaginary.sh", "mcp-tap.sh"),)})
+        reasons = install.refute_parity_claims(declared)
+        assert any("not wired on Claude Code" in r for r in reasons), reasons
+
+    def test_wiring_a_native_script_locally_is_refuted_as_a_double_run(self, monkeypatch):
+        """The hazard `native`'s own comment names: Cursor already runs the guard
+        through the vendor's translation, so wiring it again runs it twice."""
+        from thalamus.harness import install
+
+        monkeypatch.setattr(
+            install, "CURSOR_HOOK_WIRING",
+            [*install.CURSOR_HOOK_WIRING, ("beforeShellCommand", "role-guard.sh")],
+        )
+        reasons = install.refute_parity_claims(self._declared())
+        assert any("run twice on one call" in r for r in reasons), reasons
+
+    def test_a_native_script_claude_code_does_not_wire_is_refuted(self):
+        """There is nothing for the vendor to translate."""
+        from thalamus.harness import install
+
+        declared = self._declared(native={"cursor": ("imaginary.sh",)})
+        reasons = install.refute_parity_claims(declared)
+        assert any("nothing for the vendor to translate" in r for r in reasons), reasons
+
+    def test_a_local_copy_of_a_native_script_is_refuted(self, tmp_path, monkeypatch):
+        """A file under the harness's own hook directory is a local implementation.
+        The claim is that the *vendor* runs it, and a local copy contradicts that."""
+        from thalamus.harness import install
+
+        cursor = tmp_path / "cursor"
+        cursor.mkdir()
+        # Everything the surviving claims need, so only the new file can refute.
+        (cursor / "mcp-tap.sh").write_text("#!/bin/sh\n")
+        (cursor / "role-guard.sh").write_text("#!/bin/sh\n")
+        monkeypatch.setitem(install.HOOK_DIRS, "cursor", cursor)
+
+        reasons = install.refute_parity_claims(self._declared())
+        assert any("local implementation" in r for r in reasons), reasons
+        assert not any("mcp-tap.sh" in r for r in reasons), "the rename must stay clean"
+
+    def test_a_rename_naming_no_file_is_refuted(self, tmp_path, monkeypatch):
+        """A rename that names nothing on disk renames nothing."""
+        from thalamus.harness import install
+
+        cursor = tmp_path / "cursor"
+        cursor.mkdir()
+        monkeypatch.setitem(install.HOOK_DIRS, "cursor", cursor)
+
+        reasons = install.refute_parity_claims(self._declared())
+        assert any("no mcp-tap.sh in cursor/" in r for r in reasons), reasons
+
+    def test_a_harness_with_no_wiring_table_cannot_declare_either(self):
+        from thalamus.harness import install
+
+        assert install.refute_parity_claims(
+            self._declared(renames={"zed": (("a.sh", "b.sh"),)})
+        ) == ("zed declares renames and has no wiring table",)
+        assert install.refute_parity_claims(
+            self._declared(native={"zed": ("a.sh",)})
+        ) == ("zed declares native scripts and has no wiring table",)
+
+    def test_a_refutation_surfaces_as_drift_on_the_probe(self, monkeypatch):
+        """The refutations have to reach `contract check --capabilities`, not just
+        the function — a checker nothing runs is the state this replaced."""
+        from thalamus.harness import install
+
+        monkeypatch.setattr(
+            install, "CURSOR_HOOK_WIRING",
+            [*install.CURSOR_HOOK_WIRING, ("beforeShellCommand", "role-guard.sh")],
+        )
+        probe, _ = probes._parity_claims_row()
+        result = probes.probe_derived(probe)
+        assert result.outcome is Outcome.DRIFT
+        assert "role-guard.sh" in result.detail
+
+    def test_both_parity_rows_run_under_check_capabilities(self):
+        """Two rows about one record, and neither may quietly stop being asked."""
+        derivations = {
+            r.probe.derivation for r in probes.check_capabilities()
+            if isinstance(r.probe, probes.DerivedProbe)
+        }
+        assert derivations == {"hook_parity", "hook_parity_claims"}
 
 
 class TestBoundaryRows:

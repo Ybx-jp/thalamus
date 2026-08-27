@@ -6,10 +6,13 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol
 
 import uvicorn
 import yaml
@@ -17,7 +20,11 @@ import yaml
 from thalamus.substrate.schema import CloseDisposition, SessionGraph, ThreadClose
 from thalamus.archive import archive_dir
 from thalamus.console.server import DEFAULT_PORT as CONSOLE_PORT
-from thalamus.contract.conformance import check_session
+from thalamus.contract.conformance import (
+    ContractViolation,
+    check_session,
+    write_session_checked,
+)
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval import snapshots
 from thalamus.eval.profile import DEFAULT_REPEAT as PROFILE_REPEAT
@@ -45,7 +52,6 @@ from thalamus.substrate.writer import (
     GraphUnavailable,
     close_connection,
     connect,
-    write_session,
 )
 
 ROOM_FLAG_HELP = (
@@ -326,7 +332,7 @@ def _main():
 
     arch_scan_parser = arch_sub.add_parser(
         "scan",
-        help="Measure the import graph, regenerate arch/model.yaml, and land the scan "
+        help="Measure the import graph and regenerate arch/model.yaml "
         "(dry-run unless --write)",
     )
     arch_scan_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
@@ -338,8 +344,13 @@ def _main():
     arch_scan_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     arch_scan_parser.add_argument(
         "--write", action="store_true",
-        help="Write the model file and land the scan in the graph. Without it, the scan "
-        "runs and is reported but nothing is persisted.",
+        help="Write the model file. Without it, the scan runs and is reported but "
+        "nothing is persisted.",
+    )
+    arch_scan_parser.add_argument(
+        "--check", action="store_true",
+        help="Exit 1 if the committed model file does not match a fresh scan. The "
+        "staleness gate: measures, compares, writes nothing.",
     )
 
     arch_show_parser = arch_sub.add_parser(
@@ -359,6 +370,29 @@ def _main():
         "rules", help="Check the measured edge list against the declared design rules"
     )
     arch_rules_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
+    arch_rules_parser.add_argument(
+        "--gate", action="store_true",
+        help="Exit nonzero on a finding the model does not accept. 1 = a violation or "
+        "unplaced module not declared in `accepted`; 2 = an `accepted` entry that no "
+        "longer happens and should be deleted.",
+    )
+
+    arch_dead_parser = arch_sub.add_parser(
+        "dead",
+        help="Definitions under the source roots that nothing outside the test roots "
+        "refers to, and modules nothing imports",
+    )
+    arch_dead_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
+    arch_dead_parser.add_argument(
+        "--gate", action="store_true",
+        help="Exit nonzero on a finding the model does not exempt. 1 = a reported "
+        "definition or orphan module; 2 = an exemption that no longer matches anything.",
+    )
+    arch_dead_parser.add_argument(
+        "--limits", action="store_true",
+        help="Print what the census could not see — runtime name lookup, names reached "
+        "through a string, star re-exports, unparsed files.",
+    )
 
     arch_growth_parser = arch_sub.add_parser(
         "growth",
@@ -429,6 +463,19 @@ def _main():
     retire_scans_parser.add_argument(
         "--write", action="store_true",
         help="Apply the plan. Without this, nothing is removed.",
+    )
+
+    repair_addresses_parser = subparsers.add_parser(
+        "repair-claim-addresses",
+        help="Move Claims whose id disagrees with their own content back to the "
+        "address that content produces (dry-run unless --write)",
+    )
+    repair_addresses_parser.add_argument(
+        "--url", default=DEFAULT_URL, help="Gremlin endpoint"
+    )
+    repair_addresses_parser.add_argument(
+        "--write", action="store_true",
+        help="Apply the plan. Without this, nothing is written.",
     )
 
     # Snapshot command — durability on demand
@@ -1114,7 +1161,9 @@ def _main():
     args = parser.parse_args()
     # Long-running commands (bootstrap, extract) are routinely piped to a log; without
     # line buffering their progress sits invisible in Python's block buffer for minutes.
-    sys.stdout.reconfigure(line_buffering=True)
+    # typeshed types `sys.stdout` as the `TextIO` ABC, which does not carry
+    # `reconfigure`; the concrete `TextIOWrapper` CPython actually installs does.
+    sys.stdout.reconfigure(line_buffering=True)  # ty: ignore[unresolved-attribute]
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -1144,6 +1193,8 @@ def _main():
         _cmd_derive_artifact_paths(args)
     elif args.command == "retire-scans":
         _cmd_retire_scans(args)
+    elif args.command == "repair-claim-addresses":
+        _cmd_repair_claim_addresses(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -1197,9 +1248,13 @@ def _cmd_write(args):
     session = SessionGraph(**data)
     g = connect(args.url)
     try:
-        vid = write_session(g, session)
+        vid = write_session_checked(g, session)
         _persist(g)
         print(f"Wrote session: {session.session_id} -> {vid}")
+    except ContractViolation as e:
+        print(f"REJECTED — {e}", file=sys.stderr)
+        print("\n`thalamus validate` reports the same issues without a graph.", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"Write failed: {e}", file=sys.stderr)
         print("Re-run with --debug for Gremlin bytecode and server details.", file=sys.stderr)
@@ -1278,7 +1333,7 @@ def _session_bootstrap_groups(args, harness: str):
     """
     from thalamus.harness.bootstrap import bootstrap_codex, bootstrap_cursor
 
-    reader = _READERS[harness]
+    reader = _SESSION_READERS[harness]
     builder = {"cursor": bootstrap_cursor, "codex": bootstrap_codex}[harness]
 
     found = [s for s in reader.discover() if s.exists]
@@ -1373,7 +1428,7 @@ def _cmd_bootstrap(args):
                 )
 
                 if graph is not None:
-                    write_session(graph, session)
+                    write_session_checked(graph, session)
                 written += 1
     finally:
         if graph is not None:
@@ -1642,8 +1697,44 @@ def _claim_or_report(found: list, reader, assign_scope: str) -> list:
 # three would have to be the union of what they happen to do, which moves the fork
 # into optional methods and hides it. `harness/bootstrap.py` already settled this
 # shape — `_bootstrap_one` takes what differs as parameters and looks nothing up.
+class _DiscoveredSession(Protocol):
+    """What every session-oriented reader guarantees about what it discovered.
+
+    A read-only property rather than an attribute: both readers derive `exists` from
+    the filesystem, and a protocol declaring a settable attribute does not match one.
+    """
+
+    @property
+    def exists(self) -> bool: ...
+
+
+class SessionReader(Protocol):
+    """The surface `_session_bootstrap_groups` needs from a harness's reader module.
+
+    Declared because it is a real contract that three modules carry and no base class
+    states. Without it the modules are three unrelated objects that happen to share
+    method names, which is a duck type nothing can check — and the ducks had already
+    drifted apart: only two of the three answer `claim_unresolved`.
+    """
+
+    def discover(self) -> Sequence[_DiscoveredSession]: ...
+
+    def claim_unresolved(
+        self, sessions: list[Any], assign_scope: str = ""
+    ) -> tuple[list[Any], list[Any]]: ...
+
+
 _READERS = {
     "claude": transcripts,
+    "cursor": cursor_transcripts,
+    "codex": codex_transcripts,
+}
+# The session-oriented subset. Cursor and codex discover *sessions* and can be asked
+# which of them no hook ever resolved a scope for; Claude Code discovers transcripts
+# under a project directory and answers no such question. Keeping the two mappings
+# apart states which harnesses `_session_bootstrap_groups` actually accepts, instead of
+# leaving it to a KeyError at the third one.
+_SESSION_READERS: dict[str, SessionReader] = {
     "cursor": cursor_transcripts,
     "codex": codex_transcripts,
 }
@@ -1900,7 +1991,7 @@ def _cmd_extract(args):
             )
             if args.write:
                 try:
-                    write_session(graph, session)
+                    write_session_checked(graph, session)
                 except Exception as e:
                     failed += 1
                     print(f"  ✗ {name}  write failed: {str(e)[:160]}")
@@ -2331,6 +2422,73 @@ def _cmd_retire_scans(args):
         close_connection(graph)
 
 
+def _cmd_repair_claim_addresses(args):
+    """Move Claims back to the address their own `(kind, description)` produces.
+
+    Dry-run by default, and it prints the collapsing edges separately from the moving
+    ones: a collapse is the case where a trace already reached the destination, so the
+    move merges two edges into one and a reported fan-out drops by one. That is a
+    number the eval loop has published, and a migration that folded it into a total
+    could not be checked for it.
+    """
+    from thalamus.substrate.claim_address_repair import plan, write_repairs
+
+    graph = connect(args.url)
+    try:
+        repair = plan(graph)
+
+        if not repair.total():
+            print(
+                f"Every one of {repair.examined} Claims sits at the address its own "
+                "(kind, description) produces."
+            )
+            return
+
+        print(
+            f"{repair.examined} Claims examined, {repair.total()} at an address their "
+            "own content does not produce.\n"
+        )
+
+        if repair.rewires:
+            print(f"{len(repair.rewires)} stale duplicate(s) — edges move to the twin, "
+                  "then the vertex is dropped:")
+            for rewire in repair.rewires:
+                print(f"\n  {rewire.stale}  [{rewire.kind}]")
+                print(f"    twin  {rewire.twin}")
+                for edge in rewire.edges:
+                    print(f"    {edge.describe()}")
+                print(f"    {rewire.description[:110]!r}")
+
+        if repair.remints:
+            print(f"\n{len(repair.remints)} wrong address(es) with no twin — re-minted "
+                  "at the correct id, edges moved, old vertex dropped:")
+            for remint in repair.remints:
+                print(f"\n  {remint.old}  [{remint.kind}]")
+                print(f"    ->    {remint.new}")
+                for edge in remint.edges:
+                    print(f"    {edge.describe()}")
+                print(f"    {remint.description[:110]!r}")
+
+        collapses = repair.collapses()
+        if collapses:
+            print(
+                f"\n{collapses} edge(s) collapse: the far endpoint already holds the "
+                "same edge to the destination, so the pair merges and that trace's "
+                "fan-out drops by one. It counted one claim twice under two ids."
+            )
+
+        if not args.write:
+            print(f"\nDry run. Re-run with --write to move {repair.total()} vertices.")
+            return
+
+        rewired, reminted, moved = write_repairs(graph, repair)
+        print(f"\nRewired and dropped {rewired}, re-minted {reminted}, moved {moved} edges.")
+        _persist(graph)
+        print("Run `thalamus contract check` to confirm the addresses now agree.")
+    finally:
+        close_connection(graph)
+
+
 def _cmd_repair_projects(args):
     """Re-anchor project values that named a working directory rather than a checkout.
 
@@ -2717,7 +2875,7 @@ def _report_roster_boundaries():
 def _cmd_arch(args, arch_parser):
     """The architect's instrument. Reads code; writes a model file and findings."""
     command = getattr(args, "arch_command", None)
-    if command not in {"scan", "show", "diff", "rules", "growth"}:
+    if command not in {"scan", "show", "diff", "rules", "growth", "dead"}:
         arch_parser.print_help()
         sys.exit(1)
 
@@ -2764,7 +2922,11 @@ def _cmd_arch(args, arch_parser):
     metrics = measure(graph)
 
     if command == "rules":
-        _arch_rules(model, graph)
+        _arch_rules(model, graph, gate=getattr(args, "gate", False))
+        return
+
+    if command == "dead":
+        _arch_dead(args, repo, graph)
         return
 
     if command == "diff":
@@ -2842,6 +3004,34 @@ def _cmd_arch(args, arch_parser):
             print(f"  {path}")
         if len(dirty) > 10:
             print(f"  … and {len(dirty) - 10} more")
+
+    if getattr(args, "check", False):
+        # The staleness gate. The committed model is a measurement of a tree; once the
+        # code moves past it, `arch show` reports numbers for a tree that no longer
+        # exists and nothing says so.
+        #
+        # It compares the *measurement* and not the whole file, because `scan` and
+        # `commit` name the tree that was measured and necessarily lag by one: writing
+        # the model and committing it moves HEAD, so a fresh scan's stamp can never
+        # equal the stamp inside the file that commit created. Comparing the text would
+        # make this gate impossible to satisfy rather than merely hard.
+        model_path = repo / arch_model.MODEL_PATH
+        committed = arch_model.load(model_path).derived if model_path.exists() else {}
+        measured = {k: v for k, v in derived.items() if k not in ("scan", "commit")}
+        stored = {k: v for k, v in committed.items() if k not in ("scan", "commit")}
+        if stored == measured:
+            print("\nModel file matches a fresh scan.")
+            return
+        drifted = sorted(
+            key for key in set(stored) | set(measured) if stored.get(key) != measured.get(key)
+        )
+        print(
+            f"\nStale: `arch/model.yaml` no longer matches a fresh scan — "
+            f"{', '.join(drifted) or 'no measured key'} differ(s). Run "
+            "`thalamus arch scan --write` and commit the result.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if not args.write:
         print("\nDry run. Re-run with --write to regenerate the model file.")
@@ -2922,25 +3112,146 @@ def _arch_show(repo, model) -> None:
         print("last scan    (never scanned)")
 
 
-def _arch_rules(model, graph) -> None:
-    """Check the measured edges against the declared rules."""
+def _arch_rules(model, graph, gate: bool = False) -> None:
+    """Check the measured edges against the declared rules.
+
+    The report is the same either way: every violation prints, accepted or not, because
+    an architect reading this wants the design's real shape and not the subset that is
+    still news. `--gate` adds a verdict on top of that report rather than filtering it.
+    """
     if not model.layers:
         print(
             f"No layers declared, so the partition places none of {len(graph.modules)} "
             "scanned modules. Declaring them is the architect's work — an empty "
             "partition reports nothing rather than passing."
         )
+        if gate:
+            sys.exit(1)
         return
     unplaced = model.unplaced(graph)
     violations = model.violations(graph)
+    result = model.gate(graph)
+    accepted_keys = {entry.key for entry in result.accepted_hits}
+
+    def mark(key) -> str:
+        return "accepted " if key in accepted_keys else "NEW      "
+
     print(f"{len(graph.modules)} modules, {len(unplaced)} unplaced by the declared partition")
     for module in unplaced[:20]:
-        print(f"  unplaced  {module}")
-    print(f"{len(violations)} rule violation(s)")
+        print(f"  {mark((module, ''))} unplaced  {module}")
+    print(f"{len(violations)} rule violation(s), {len(result.accepted_hits)} accepted")
     for violation in violations:
-        print(f"  violation {violation.describe()}")
+        print(f"  {mark((violation.from_path, violation.to_path))} {violation.describe()}")
+    for entry in result.stale:
+        print(f"  STALE     accepted and no longer measured: {entry.describe()}")
     if not unplaced and not violations:
         print("The declared model and the measured graph agree.")
+
+    if not gate:
+        return
+    code = result.exit_code
+    if code == 1:
+        print(
+            f"\nGate: {len(result.new_violations)} violation(s) and "
+            f"{len(result.new_unplaced)} unplaced module(s) the model does not accept. "
+            "Fix the edge, or declare it in `accepted` with the reason it stands.",
+            file=sys.stderr,
+        )
+    elif code == 2:
+        print(
+            f"\nGate: {len(result.stale)} `accepted` entry/entries no longer happen. "
+            "Delete them — an exception that has stopped firing describes a design that "
+            "moved.",
+            file=sys.stderr,
+        )
+    sys.exit(code)
+
+
+def _dead_policy(repo):
+    """The declared census policy, read straight off the model file.
+
+    Read here rather than hung off `ArchModel` because `deadends` imports `findings`,
+    which imports `model` — putting the policy on the model would close that into a
+    cycle. `regenerate` preserves the authored half byte for byte, so a hand-declared
+    block survives every scan.
+    """
+    from thalamus.arch import model as arch_model
+    from thalamus.arch.deadends import DeadEndPolicy
+
+    path = repo / arch_model.MODEL_PATH
+    document = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return DeadEndPolicy.from_block((document or {}).get("deadends") or {})
+
+
+def _arch_dead(args, repo, graph) -> None:
+    """Report definitions nothing outside the test roots refers to.
+
+    The report states what was measured and never that a symbol is unused: the census
+    resolves identifiers, and `--limits` lists every mechanism that could hide a caller
+    from it. `--gate` adds a verdict without narrowing that report.
+    """
+    from thalamus.arch import deadends as arch_deadends
+
+    policy = _dead_policy(repo)
+    if not policy.enabled:
+        print(
+            "The dead-end channel is off. Enable it in `arch/model.yaml` under "
+            "`deadends: enabled: true` — a census nobody declared is a census nobody "
+            "can read the exceptions of."
+        )
+        return
+
+    report = arch_deadends.scan(repo, graph, policy)
+    matched = {
+        (e.definition.path, e.definition.qualname)
+        for e in report.exempted
+        if e.rule == arch_deadends.RULE_DECLARED
+    }
+
+    # Reported through `deadend_findings` rather than off the report's lists directly:
+    # the finding is where the hedging lives. "No reference outside the test roots was
+    # found" is refutable by pointing at one; "unused" is a verdict a static census is
+    # not entitled to, given what `limits` says it cannot see.
+    for finding in arch_deadends.deadend_findings(report):
+        print(f"  {finding.description}")
+    print(
+        f"{len(report.test_only)} test-only, {len(report.orphans)} orphan module(s), "
+        f"{len(report.exempted)} exempted, {len(report.silenced)} reached only from a "
+        f"non-Python caller"
+    )
+    for entry in report.silenced:
+        print(f"  reached    {entry.describe()}")
+
+    stale = [entry for entry in policy.exemptions if (entry.path, entry.symbol) not in matched]
+    for entry in stale:
+        print(f"  STALE      exemption matches nothing: {entry.path} {entry.symbol}")
+
+    if args.limits or not (report.test_only or report.orphans):
+        print(f"{len(report.limits)} stated limit(s) on the census's reach")
+        for limit in report.limits:
+            print(f"  limit      {limit}")
+
+    if not report.test_only and not report.orphans and not stale:
+        print("Every definition under the source roots is referenced outside the tests.")
+
+    if not args.gate:
+        return
+    if report.test_only or report.orphans:
+        print(
+            f"\nGate: {len(report.test_only) + len(report.orphans)} finding(s) the model "
+            "does not exempt. Wire the definition to a caller, delete it, or add an "
+            "`exemptions` entry under `deadends` with the reason it stands.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if stale:
+        print(
+            f"\nGate: {len(stale)} exemption(s) match nothing. Delete them — an "
+            "exemption for a symbol that is now referenced, or gone, describes a tree "
+            "that moved.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 def _arch_diff(against: str, other, current) -> None:
@@ -2960,6 +3271,29 @@ def _arch_diff(against: str, other, current) -> None:
         print(f"  cycle resolved {' <-> '.join(cycle)}")
 
 
+def _collapse_advisories(issues: list[str]) -> list[str]:
+    """One line per *shape* of advisory, with the count and one example.
+
+    An advisory that fires per-vertex fires thousands of times on a graph this size,
+    and a wall of near-identical lines is how a reporting-only check earns the habit
+    of being scrolled past. The shape is the message with its backticked vertex IDs
+    blanked, which is exactly the part that varies.
+    """
+    shapes: dict[str, list[str]] = {}
+    for issue in issues:
+        shapes.setdefault(re.sub(r"`[^`]*`", "``", str(issue)), []).append(str(issue))
+
+    lines = []
+    for members in shapes.values():
+        if len(members) == 1:
+            lines.append(members[0])
+        else:
+            ids = re.findall(r"`([^`]*)`", members[0])
+            example = f" (e.g. {ids[0]})" if ids else ""
+            lines.append(f"{re.sub(r'`[^`]*`', '…', members[0])} — ×{len(members)}{example}")
+    return lines
+
+
 def _cmd_contract(args, contract_parser):
     if getattr(args, "contract_command", None) != "check":
         contract_parser.print_help()
@@ -2976,7 +3310,7 @@ def _cmd_contract(args, contract_parser):
         _report_roster_boundaries()
         return
 
-    from thalamus.contract.conformance import check_graph
+    from thalamus.contract.conformance import ADVISORY, check_graph, severity_of
 
     graph = connect(args.url)
     try:
@@ -2985,12 +3319,26 @@ def _cmd_contract(args, contract_parser):
         close_connection(graph)
 
     print(f"Audited {counts['vertices']} vertices, {counts['edges']} edges.")
-    if not issues:
-        print("Contract OK — every node carries provenance, every edge is legal, "
+
+    # Severity is what lets a rule land at all. An audit that exits 1 on every finding
+    # can only ever carry rules that are already satisfied, so the ones worth adding —
+    # anything that fires on historical data nobody can go back and fix — could not be
+    # written down. Advisories are printed to stdout beside the census, not to stderr
+    # with the failures, because they are a count to explain and not a broken build.
+    advisories = [i for i in issues if severity_of(i) == ADVISORY]
+    violations = [i for i in issues if severity_of(i) != ADVISORY]
+
+    if advisories:
+        print(f"\n{len(advisories)} advisory — reported, does not fail the check:")
+        for line in _collapse_advisories(advisories):
+            print(f"  · {line}")
+
+    if not violations:
+        print("\nContract OK — every node carries provenance, every edge is legal, "
               "every Source resolves to retained bytes.")
         return
-    print(f"\n{len(issues)} issue(s):", file=sys.stderr)
-    for issue in issues:
+    print(f"\n{len(violations)} violation(s):", file=sys.stderr)
+    for issue in violations:
         print(f"  - {issue}", file=sys.stderr)
     sys.exit(1)
 
@@ -3162,7 +3510,8 @@ def _cmd_rescope(args):
 
 
 def _cmd_pin(args):
-    from thalamus.harness.pin import PROJECT_ROOT, launch
+    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.harness.pin import launch
 
     try:
         launch(args.scope, PROJECT_ROOT, room=args.room, harness=args.harness)
@@ -3174,7 +3523,8 @@ def _cmd_pin(args):
 def _cmd_spawn(args):
     import subprocess
 
-    from thalamus.harness.pin import PROJECT_ROOT, spawn
+    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.harness.pin import spawn
 
     cwd = args.dir if args.dir is not None else PROJECT_ROOT
     try:
@@ -3186,7 +3536,8 @@ def _cmd_spawn(args):
 
 
 def _cmd_roster(args):
-    from thalamus.harness.pin import PROJECT_ROOT, WindowDied, roster
+    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.harness.pin import WindowDied, roster
 
     try:
         roster(PROJECT_ROOT, full=getattr(args, "all", False), room=args.room)
@@ -3709,7 +4060,7 @@ def _cmd_console(args):
 
     from thalamus.console.server import Config, PortInUse, serve
     from thalamus.harness import tmux
-    from thalamus.harness.pin import PROJECT_ROOT
+    from thalamus.contract.paths import PROJECT_ROOT
 
     if not shutil.which("tmux"):
         print("The console needs tmux — it drives the pinned roster's windows.",

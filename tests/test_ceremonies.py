@@ -418,7 +418,7 @@ def test_a_redraw_supersedes_without_deleting_the_first(ledger):
     """
     Scenario: a block is assigned, then re-assigned under a different seed.
 
-    Verification: the later deal governs, and both rows survive. A superseded draw is
+    Verification: both rows survive and the later one is last. A superseded draw is
     evidence about what the design did; dropping it would hide a re-randomization,
     which is the thing an audit most needs to be able to see.
     """
@@ -428,11 +428,10 @@ def test_a_redraw_supersedes_without_deleting_the_first(ledger):
     second = ceremonies.record_assignment(
         "alpha", "review", ["d1", "d2"], ["peer", "solo"], [1, 1], 2, path=ledger
     )
-    rows = ceremonies.read_rows(ledger)
-    assert len([row for row in rows if row["event"] == "assigned"]) == 2
-    assert ceremonies.assigned_arm("alpha", "review", "d1", path=ledger) == (
-        second["assignment"]["d1"]
-    )
+    assigned = [row for row in ceremonies.read_rows(ledger) if row["event"] == "assigned"]
+    assert len(assigned) == 2
+    assert [row["assignment_seed"] for row in assigned] == [1, 2]
+    assert assigned[-1]["assignment"] == second["assignment"]
 
 
 # --- 5-7. The forecast, its resolution, and the comparator ----------------------------

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import socket
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
@@ -15,6 +16,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Direction, Merge, P, T
 
 from thalamus.contract.ontology import vid
+from thalamus.contract.paths import PROJECT_ROOT
 from thalamus.substrate import spans
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
 from thalamus.substrate.schema import (
@@ -85,10 +87,6 @@ def graph_down_detail(reason: str) -> str:
     tools reach it from a read they wanted to do, and a first-time user should not
     get two different accounts of the same container being down.
     """
-    # Local import: the substrate does not otherwise depend on the harness, and this
-    # is only ever reached on a failure path.
-    from thalamus.harness.pin import PROJECT_ROOT
-
     return (f"{reason} — start it with `docker compose up -d` in {PROJECT_ROOT}, "
             "then re-run `thalamus init --check`")
 
@@ -254,6 +252,13 @@ def _source_on_match(
         value = stored.get(key)
         return value[0] if isinstance(value, list) and value else value
 
+    def as_tier(value: object) -> int:
+        # Written as an int and read back as one; a digit string from an older
+        # writer converts the same way. Anything else is not a tier.
+        if isinstance(value, int | str):
+            return int(value)
+        raise TypeError(f"Source {source_vid}: tier property is not a number: {value!r}")
+
     held_tier, incoming_tier = held("tier"), properties.get("tier")
     if incoming_tier is None:
         pass  # nothing offered; never write an absent property as null
@@ -262,8 +267,8 @@ def _source_on_match(
         # incoming value through, or the node would end up with no tier at all and fail
         # the contract's provenance obligation.
         refreshable["tier"] = incoming_tier
-    elif incoming_tier is not None and int(incoming_tier) != int(held_tier):
-        keep = max(int(held_tier), int(incoming_tier))
+    elif as_tier(incoming_tier) != as_tier(held_tier):
+        keep = max(as_tier(held_tier), as_tier(incoming_tier))
         refreshable["tier"] = keep
         logger.warning(
             "Source %s holds tier %s and was re-written at tier %s; keeping %s — "
@@ -948,7 +953,7 @@ def write_thread_close(
 def write_trace(
     g: GraphTraversalSource,
     trace_vid: str,
-    properties: dict[str, object],
+    properties: Mapping[str, object],
     session_vid: str,
     returns: dict[str, dict[str, object] | None],
 ) -> None:
@@ -978,7 +983,7 @@ def _ensure_edge(
     from_vid: str,
     to_vid: str,
     label: str,
-    properties: dict[str, object] | None = None,
+    properties: Mapping[str, object] | None = None,
 ) -> None:
     """Create an edge if it doesn't already exist, optionally carrying properties.
 

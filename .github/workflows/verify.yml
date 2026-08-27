@@ -1,9 +1,9 @@
-# The three commands CLAUDE.md names as the verification discipline, gated.
+# The commands CLAUDE.md names as the verification discipline, gated.
 #
-# Until this existed they were verified only by an operator typing them on a
-# developer machine: CI on push ran the adversarial fast tier and nothing else, so a
-# change breaking any of the ~1370 pytest tests, reintroducing a lint error, or
-# violating the federation contract merged green.
+# The rule this file exists to enforce: an instrument with no trigger reports to
+# nobody. Every check here was once a command an operator had to remember to type, and
+# each one drifted while nobody typed it — lint errors on master, a structural model
+# measuring a commit 25 behind HEAD. A check that cannot fail a build is documentation.
 #
 # It stays separate from `qe-fast.yml` on purpose. The qe tier deliberately carries
 # entries that are supposed to be red and is not shipped in the wheel; merging the two
@@ -44,8 +44,33 @@ jobs:
       - name: Lint
         run: uv run ruff check src tests
 
+      # Pinned to the patch in pyproject.toml. ty is pre-1.0 and its inference moves
+      # between releases, so the version is raised deliberately with its new diagnostics
+      # fixed in the same change, never picked up by a floating spec on a Tuesday.
+      - name: Types
+        run: uv run ty check src
+
       - name: Tests
         run: uv run pytest -q
+
+      # Structure, in two directions. `rules --gate` fails on a dependency the declared
+      # layers forbid and `arch/model.yaml` does not accept — and on an `accepted` entry
+      # that no longer happens, which is exit 2 and equally a thing to fix. `scan --check`
+      # fails when the committed model no longer matches the code it claims to measure.
+      #
+      # Neither needs the graph, so both run before compose comes up.
+      - name: Structure — declared rules
+        run: uv run thalamus arch rules --gate
+
+      - name: Structure — model freshness
+        run: uv run thalamus arch scan --check
+
+      # Built-but-never-used is the largest single defect class in this tracker. This is
+      # the static half of catching it: a definition under src/ that nothing outside
+      # tests/ refers to. Exceptions are declared in arch/model.yaml with their reasons,
+      # the same mechanism the rule gate uses.
+      - name: Structure — dead ends
+        run: uv run thalamus arch dead --gate
 
       # Started before the contract check and waited on by the compose healthcheck the
       # file already declares — the graph accepts a TCP connection several seconds

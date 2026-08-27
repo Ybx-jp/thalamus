@@ -16,7 +16,7 @@ low while consulted high means the pin was wrong — compares a within-scope rat
 cross-scope one, and the used-vs-ignored judge scores ~63% within a project against
 ~5% across. Cross-scope service is vocabulary-distant by construction, so
 that reading is the artifact the instrument produces for free. Until each side has
-its own permutation null (`eval/calibration.py`) the report prints
+its own permutation null — neither is computed anywhere yet — the report prints
 the numbers and says so, which is the same floor-gate it already applies to thin
 samples. Both numbers are attribution, never utility claims — the counterfactual bar
  still applies.
@@ -63,10 +63,11 @@ SIGNAL_FLOOR = 10  # attributed nodes required on each side before a signal rend
 # scope and every "healthy" verdict this report ever emitted was unfalsifiable.
 #
 # What unsuspends it: two separate nulls, a within-scope permutation and a
-# cross-scope one, each side judged against its own. `eval/calibration.py` computes
-# the first; the second needs a cross-scope rotation pool. Until both exist the
-# report prints its numbers and declines to interpret them — the same floor-gate
-# discipline it already applies to thin samples.
+# cross-scope one, each side judged against its own. Neither is built — the
+# within-scope one needs a shuffle over the attributed set, the cross-scope one a
+# rotation pool that does not exist. Until both exist the report prints its numbers
+# and declines to interpret them — the same floor-gate discipline it already applies
+# to thin samples.
 CALIBRATED_NULLS_AVAILABLE = False
 
 

@@ -2,11 +2,15 @@
 Retrieval-rendering tests.
 
 Interfaces: thalamus.substrate.reader.MemoryResult.format, ExchangeResult.format,
-recall_exchanges, spellings_of, _extract_keywords
-Infrastructure: none
+recall, recall_exchanges, spellings_of, _extract_keywords
+Infrastructure: none; recording fakes only
 Scope: recalled memory enters context as data with provenance, never as instructions;
-       and an artifact lookup answers for the file, not for one spelling of its name
+       an artifact lookup answers for the file, not for one spelling of its name;
+       and a recall's traversal budget is asserted beside its ranking, because the
+       cost is per keyword and no result assertion can see it
 """
+
+import re
 
 from thalamus.substrate.reader import (
     ExchangeResult,
@@ -893,3 +897,236 @@ def test_fingerprinted_detail_cap_is_read_at_call_time(monkeypatch):
     rendered = [d for d in reader._select_details(details, ["alpha"]) if d.get("kind") != "elided"]
     assert len(rendered) == 3
     assert len(reader._select_details(details, [])) == 3
+
+
+# --------------------------------------------------------------------------------------
+# `recall()` itself — what it ranks, and how many traversals it spends getting there.
+# --------------------------------------------------------------------------------------
+
+
+class _RecallGraph:
+    """The four match traversals `recall()` issues, and a count of how many ran.
+
+    `V()` starts a fresh chain, so one instance serves a whole multi-keyword recall and
+    `traversals` is the budget for the call rather than for one query. Both halves of
+    the assertion are load-bearing: a ranking assertion alone cannot see a per-keyword
+    N+1, and a count alone cannot see a collapse that quietly changes what ranks.
+
+    Rows are flat dicts. A Claim carries `container` — the `session_id` of the Session
+    that CONTAINS it, or `None` for a knowledge claim, which is the whole of the
+    `in_e("CONTAINS")` / `not_(in_e("CONTAINS"))` split the reader draws on.
+    """
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.traversals = 0
+
+    def V(self, vertex_id=None):
+        return _RecallChain(self)
+
+
+class _RecallChain:
+    """One traversal. Steps accumulate; `to_list` materializes and is counted."""
+
+    def __init__(self, graph):
+        self._graph = graph
+        self._label = None
+        self._filters = []
+        self._hopped = False
+        self._uncontained = False
+        self._id_only = False
+        self._value_keys = ()
+
+    def has_label(self, label):
+        # After `in_e(...).out_v()` the label names the container, and only a Session
+        # contains a Claim — so the second `has_label` is already implied by the row
+        # shape and must not overwrite the label the scan started from.
+        if not self._hopped:
+            self._label = label
+        return self
+
+    def has(self, key, value):
+        self._filters.append((key, value))
+        return self
+
+    def in_e(self, label):
+        assert label == "CONTAINS", label
+        return self
+
+    def out_v(self):
+        self._hopped = True
+        return self
+
+    def not_(self, traversal):
+        # Read the branch off the bytecode rather than re-implementing `not_`, the way
+        # the `or_` doubles above do. The only branch the reader passes is `in_e`.
+        steps = [step[0] for step in traversal.bytecode.step_instructions]
+        assert steps == ["inE"], steps
+        self._uncontained = True
+        return self
+
+    def id_(self):
+        self._id_only = True
+        return self
+
+    def value_map(self, *keys):
+        self._value_keys = keys
+        return self
+
+    @staticmethod
+    def _satisfies(row, key, value):
+        actual = str(row.get(key, ""))
+        operator = getattr(value, "operator", None)
+        if operator == "within":
+            return actual in value.value
+        if operator == "regex":
+            return re.search(value.value, actual) is not None
+        return actual == str(value)
+
+    def to_list(self):
+        self._graph.traversals += 1
+        rows = [
+            row for row in self._graph.rows
+            if row["label"] == self._label
+            and all(self._satisfies(row, key, value) for key, value in self._filters)
+        ]
+        if self._uncontained:
+            rows = [row for row in rows if not row.get("container")]
+        if self._hopped:
+            return [{"session_id": [row["container"]]}
+                    for row in rows if row.get("container")]
+        if self._id_only:
+            return [row["id"] for row in rows]
+        return [{key: [row.get(key, "")] for key in self._value_keys} for row in rows]
+
+
+def _stub_loaders(monkeypatch):
+    """Replace the three result loaders with recorders that issue no traversals.
+
+    What is under test here is selection and ordering, not rendering — and the loaders
+    are the only other thing in `recall()` that touches the graph, so stubbing them is
+    what makes the traversal count read as the match budget rather than a mixture of
+    matching and rendering.
+    """
+    from thalamus.substrate import reader
+
+    monkeypatch.setattr(reader, "_load_chunk_result", lambda g, vid: ("chunk", vid))
+    monkeypatch.setattr(reader, "_load_knowledge_result", lambda g, vid: ("claim", vid))
+    monkeypatch.setattr(
+        reader, "_load_session_result",
+        lambda g, sid, relevance, scope, keywords=None: ("session", sid, relevance),
+    )
+
+
+_RECALL_ROWS = [
+    {"id": "v-s1", "label": "Session", "scope": "main", "session_id": "s1",
+     "summary": "Ported the substrate to TinkerGraph and priced the retrieval"},
+    {"id": "v-s2", "label": "Session", "scope": "main", "session_id": "s2",
+     "summary": "Wired the console retrieval bracket"},
+    {"id": "v-s3", "label": "Session", "scope": "other", "session_id": "s3",
+     "summary": "TinkerGraph retrieval in another scope entirely"},
+    {"id": "v-c1", "label": "Claim", "scope": "main", "container": "s1",
+     "description": "TinkerGraph durability is a write-path obligation"},
+    {"id": "v-c2", "label": "Claim", "scope": "main", "container": "s2",
+     "description": "The retrieval bracket has no codex writer"},
+    {"id": "v-k1", "label": "Claim", "scope": "literature", "container": None,
+     "description": "Episodic retrieval over TinkerGraph is lexical, not learned"},
+    {"id": "v-k2", "label": "Claim", "scope": "literature", "container": None,
+     "description": "Retrieval budgets are a cost-utility frontier"},
+    {"id": "v-ch1", "label": "Chunk", "scope": "literature",
+     "text": "a passage about TinkerGraph and retrieval alike"},
+    {"id": "v-ch2", "label": "Chunk", "scope": "literature",
+     "text": "a second passage about TinkerGraph and retrieval alike"},
+    {"id": "v-ch3", "label": "Chunk", "scope": "literature",
+     "text": "a third passage about TinkerGraph and retrieval alike"},
+    {"id": "v-ch4", "label": "Chunk", "scope": "literature",
+     "text": "retrieval only, one term"},
+]
+
+
+def test_recall_spends_four_traversals_per_keyword(monkeypatch):
+    """
+    Scenario: a recall whose keywords each scan sessions, claims and chunks
+
+    Verifications:
+    - the match phase issues exactly four traversals per keyword
+    - a keyword that matches nothing still costs its four
+
+    Pinned as a number because the cost is per keyword and the graph is scanned once
+    for each: the Chunk tier alone was measured at 65% of all MCP graph time, and a
+    six-keyword recall pays six full vertex scans of it before returning anything.
+    None of that is visible in a result assertion, so a change to the budget — in
+    either direction — has to move this line deliberately.
+    """
+    _stub_loaders(monkeypatch)
+    from thalamus.substrate.reader import recall
+
+    graph = _RecallGraph(_RECALL_ROWS)
+    recall(graph, "tinkergraph retrieval", knowledge_scopes=["literature"])
+    assert graph.traversals == 4 * 2
+
+    graph = _RecallGraph(_RECALL_ROWS)
+    recall(graph, "tinkergraph retrieval nothingmatchesthis",
+           knowledge_scopes=["literature"])
+    assert graph.traversals == 4 * 3
+
+
+def test_recall_ranks_chunks_first_then_the_mixed_session_and_knowledge_window(monkeypatch):
+    """
+    Scenario: every tier matches the same two keywords
+
+    Verifications:
+    - chunks lead the result list and are capped at `_CHUNK_WINDOW_CAP`
+    - knowledge claims and sessions share the remaining window
+    - episodic matching stays inside `scope`; knowledge reaches `knowledge_scopes`
+    - the relevance line names only the terms a session actually hit
+
+    This is the ordering half of the regression net. The chunk cap and the mixed window
+    are separate mechanisms that both decide what a caller sees, and any collapse of the
+    per-keyword loop moves the hit sets that both of them rank on.
+    """
+    _stub_loaders(monkeypatch)
+    from thalamus.substrate.reader import recall
+
+    graph = _RecallGraph(_RECALL_ROWS)
+    results = recall(graph, "tinkergraph retrieval", limit=4,
+                     knowledge_scopes=["literature"])
+
+    kinds = [r[0] for r in results]
+    assert kinds[:2] == ["chunk", "chunk"], "chunks lead, and only two of the three"
+    assert set(kinds[2:]) == {"claim", "session"}
+
+    chunks = {r[1] for r in results if r[0] == "chunk"}
+    assert chunks <= {"v-ch1", "v-ch2", "v-ch3"}, "v-ch4 hit one keyword, under the floor"
+
+    sessions = [r for r in results if r[0] == "session"]
+    assert [r[1] for r in sessions] == ["s1"], "s2 hit one keyword; s3 is out of scope"
+    assert sessions[0][2] == "matched on: tinkergraph, retrieval"
+
+    assert {r[1] for r in results if r[0] == "claim"} == {"v-k1"}, "v-k2 hit one keyword"
+
+
+def test_recall_holds_a_multi_keyword_query_to_the_match_floor(monkeypatch):
+    """
+    Scenario: no candidate hits more than one term of a three-term query
+
+    Verifications:
+    - a candidate hit by a single term of a multi-term query does not rank
+    - a single-keyword query is untouched by the floor
+
+    The floor is about queries whose breadth outruns their intent: priced traces showed
+    single-keyword OR-matches pulling neighbour-project sessions that were then ignored.
+    Narrowing it to nothing would restore that; applying it to a single-term query would
+    make the narrowest recalls return nothing at all.
+    """
+    _stub_loaders(monkeypatch)
+    from thalamus.substrate.reader import recall
+
+    graph = _RecallGraph(_RECALL_ROWS)
+    broad = recall(graph, "codex frontier obligation", limit=5,
+                   knowledge_scopes=["literature"])
+    assert broad == [], "every candidate hit exactly one of the three terms"
+
+    graph = _RecallGraph(_RECALL_ROWS)
+    narrow = recall(graph, "bracket", limit=5, knowledge_scopes=["literature"])
+    assert [r[1] for r in narrow if r[0] == "session"] == ["s2"]

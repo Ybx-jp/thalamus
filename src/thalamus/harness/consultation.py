@@ -200,18 +200,11 @@ def exchange_vid(ticket: str) -> str:
     return vid("Exchange", ticket, MAIN_SCOPE)
 
 
-def ticket_scope(g: GraphTraversalSource, ticket: str) -> str | None:
-    """The scope an open ticket grants retrieval into, or None.
+def ticket_grant(g: GraphTraversalSource, ticket: str) -> tuple[str, str] | None:
+    """`(consulted scope, asking scope)` for an open ticket, or None.
 
     A burned ticket grants nothing — single-use means one answer closes both the
     exchange and the retrieval grant that came with it.
-    """
-    granted = ticket_grant(g, ticket)
-    return granted[0] if granted else None
-
-
-def ticket_grant(g: GraphTraversalSource, ticket: str) -> tuple[str, str] | None:
-    """`(consulted scope, asking scope)` for an open ticket, or None.
 
     The asking half is what separates a self-consultation from a cross-expert one,
     and the two must not read alike: a ticket normally trades breadth for depth (the

@@ -11,8 +11,8 @@ license-files = ["LICENSE"]
 authors = [{ name = "Jackson Porter" }]
 keywords = ["agents", "memory", "knowledge-graph", "gremlin", "llm", "evaluation"]
 classifiers = [
-    # Not published to any index: the package runs from its checkout — `pin.py` and
-    # `contract/manifest.py` anchor on the repo root and the expert manifests live
+    # Not published to any index: the package runs from its checkout —
+    # `contract/paths.py` anchors on the repo root and the expert manifests live
     # in `config/` outside the package, so an installed wheel resolves paths that
     # only exist in a clone. This classifier makes that a mechanical guarantee
     # rather than an intention; PyPI refuses an upload carrying it. The name is
@@ -47,8 +47,17 @@ Issues = "https://github.com/Ybx-jp/thalamus/issues"
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    # The suite waits on subprocesses far more than it computes, so it parallelizes
+    # well past the core count. `tests/conftest.py` turns this on for the bare
+    # whole-suite run only; a run that names a path stays serial.
+    "pytest-xdist>=3.6",
     "ruff>=0.4",
     "httpx>=0.28.1",
+    # Pinned to the patch, unlike everything else here. ty is pre-1.0: its rule set and
+    # its inference both still move between releases, so a floating spec makes a green
+    # tree go red on someone else's schedule with no change of ours. Raise it
+    # deliberately, with the diagnostics that come with it fixed in the same change.
+    "ty==0.0.74",
 ]
 # The entailment judge — the eval loop's fast attribution path. Optional because it
 # pulls a multi-gigabyte torch build and only the attribution instrument itself needs
@@ -110,6 +119,40 @@ packages = ["src/thalamus"]
 line-length = 100
 target-version = "py311"
 
+# Type checking is gated in CI (.github/workflows/verify.yml) alongside ruff and the
+# contract check. The tree is clean, so the gate is "no diagnostics" rather than a
+# baseline file — ty has no baseline mechanism, and a suppression carrying a reason is
+# a better record than a count in a file nobody reads.
+[tool.ty.environment]
+python = ".venv"
+python-version = "3.11"
+
+# No rule is switched off globally. The optional extras (`nli`, `voice`, `frames`,
+# `pdf`) are imported inside the functions that need them and are absent from a default
+# `uv sync --extra dev`; an unresolved import of one is the declared arrangement rather
+# than a defect, and is suppressed at the import site with its reason, so that every
+# *other* unresolved import stays an error.
+[tool.ty.terminal]
+error-on-warning = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# The suite waits on subprocesses far more than it computes — hook scripts under
+# `set -euo pipefail`, real `git`, real `tmux`, node — so it scales well past the core
+# count. Measured 2026-08-26 on a 4-core box: 343s serial, 157s at `-n auto` (4), 68s
+# at 12, **47s at 16**, 57s at 24. Sixteen is the knee, and it counts blocked waits
+# rather than cores, which is why it is a literal rather than derived from
+# `os.cpu_count()`.
+#
+# It is a flat default rather than one that fans out only for the whole-suite run,
+# because pytest has no seam that runs early enough to decide: xdist resolves `-n`
+# into `dist` during `pytest_cmdline_main`, before any conftest's `pytest_configure`,
+# and `pytest_load_initial_conftests` — which is early enough — cannot be implemented
+# by a conftest that hook is itself loading. A root-level `-p` plugin would work only
+# if it were importable, which means shipping test machinery in the wheel.
+#
+# The cost of the flat default is worker startup on a run that cannot amortise it:
+# one file measured 1.9s serial against 4.9s at `-n 16`. Pass `-n 0` when iterating
+# on a single file.
+addopts = "-n 16"

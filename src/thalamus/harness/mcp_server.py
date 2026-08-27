@@ -325,7 +325,7 @@ def memory_consultations(limit: int = 5) -> str:
         return g
     try:
         # No ticket parameter, deliberately. A ticket grant resolves to the *consulted*
-        # scope and dies the instant the answer lands (consultation.ticket_scope), so a
+        # scope and dies the instant the answer lands (consultation.ticket_grant), so a
         # ticket could never reach the record it just closed. This reads the pin.
         results = recall_exchanges(g, SCOPE, limit)
         if not results:

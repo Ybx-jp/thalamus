@@ -10,14 +10,38 @@ knowing that.
 
 ## Verification
 
-- `uv run pytest` — the suite must stay green.
+Every one of these is gated in CI (`.github/workflows/verify.yml`). Run them before you
+push rather than after CI tells you.
+
+- `uv run pytest` — the suite must stay green. It runs on 16 xdist workers by
+  default (~50s; it is blocked on subprocess waits, not CPU, so the count is not
+  bounded by cores). Add `-n 0` when iterating on one file — 16 workers cost ~3s
+  to boot, which a single file never earns back.
 - `uv run ruff check src tests`
+- `uv run ty check src` — no diagnostics. ty is pinned to the patch in `pyproject.toml`;
+  raise it deliberately, fixing whatever the new release reports in the same change.
+- `uv run thalamus arch rules --gate` — a dependency the declared layers forbid fails
+  the build unless `arch/model.yaml` accepts it **with a reason**. Exit 2 means an
+  `accepted` entry has stopped firing: delete it, do not leave it describing a design
+  that moved.
+- `uv run thalamus arch scan --check` — the committed model must match a fresh scan. If
+  it is stale, `thalamus arch scan --write` and commit the result alongside your change.
+- `uv run thalamus arch dead --gate` — a definition under `src/` that nothing outside
+  `tests/` refers to. Same exception mechanism, same requirement of a reason.
 - `uv run thalamus contract check` after any live write path change — the federation
   contract is enforced, not aspirational.
+
 - `tests/js/*.test.mjs` run under node as part of the same pytest run, driven by
   `tests/test_console_js.py`. They lift functions out of `static/app.js` **by name**,
   so renaming one breaks extraction loudly — that is the intended failure, not a
   flake. node is optional; a checkout without it skips them.
+
+**Built-but-never-used is the largest single defect class in this tracker.** When you
+add a code path, a config key, an ontology term or a declared capability, the same
+change wires it to something that reads it — or files the gap. `arch dead` catches the
+Python-symbol half of that; the cross-surface half (a term with no writer, a documented
+flag with no parser entry, an env var with no producer) is what `contract check`'s
+advisories cover, and neither one sees a doc that describes a thing that does not exist.
 
 ## Docs
 

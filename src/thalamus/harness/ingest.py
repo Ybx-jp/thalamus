@@ -288,7 +288,8 @@ def _pdf_to_text(payload: bytes) -> str:
     reading prose rather than by positional parsing.
     """
     try:
-        from pypdf import PdfReader  # noqa: PLC0415
+        # `pdf` extra: declared in pyproject, absent from a default dev sync.
+        from pypdf import PdfReader  # noqa: PLC0415  # ty: ignore[unresolved-import]
     except ImportError as exc:
         raise IngestError(
             "PDF text extraction needs the `pdf` extra — install it with "
@@ -353,7 +354,8 @@ def document_title(payload: bytes) -> str:
     """
     if payload[:5] == b"%PDF-":
         try:
-            from pypdf import PdfReader  # noqa: PLC0415
+            # `pdf` extra: declared in pyproject, absent from a default dev sync.
+            from pypdf import PdfReader  # noqa: PLC0415  # ty: ignore[unresolved-import]
 
             meta = PdfReader(io.BytesIO(payload)).metadata
             title = " ".join(str(meta.title or "").split()) if meta else ""
@@ -378,11 +380,15 @@ memory system. Output ONLY a fenced yaml block, nothing else.
 
 Rules:
 - `claims`: {claim_range} assertions THE DOCUMENT ITSELF makes — findings it reports, techniques \
-it introduces or evaluates. kind is `literature/finding` or `literature/technique`. \
+it introduces or evaluates. A claim's `kind` is ALWAYS one of the two namespaced values \
+`literature/finding` or `literature/technique` — never a bare word. \
 Each claim needs `description` (one self-contained sentence), `citation` (a short \
 verbatim phrase from the document that anchors the claim), and `about` (1-3 entity names).
-- `entities`: every name used in any claim's `about`, with kind `concept`, `technique`, \
-or `system`, and a one-line description. No entity that no claim is about.
+- `entities`: every name used in any claim's `about`, and a one-line description. \
+No entity that no claim is about. An entity's `kind` is ALWAYS one of the three bare \
+words `concept`, `technique` or `system` — never namespaced, and never a claim kind. \
+These two vocabularies are separate and both contain the word "technique": \
+`literature/technique` describes an assertion, bare `technique` describes a thing.
 - When the document discusses something in the known-entities list, use that exact \
 name in `about` — never coin a near-duplicate for a concept the graph already names.
 - ALWAYS double-quote entity names, in `about` and in `entities[].name` alike. Real \

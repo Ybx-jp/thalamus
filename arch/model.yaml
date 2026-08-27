@@ -73,12 +73,22 @@ layers:
   - src/thalamus/contract/ontology.py
   - src/thalamus/contract/manifest.py
   - src/thalamus/contract/__init__.py
+  # ownership.py declares which paths belong to which scope and imports nothing but
+  # stdlib. A leaf that everything may read is what this layer is.
+  - src/thalamus/contract/ownership.py
+  # paths.py holds PROJECT_ROOT and imports nothing but stdlib. The checkout root is
+  # read from three layers at once, so any home inside one of them is a boundary
+  # crossing for the other two.
+  - src/thalamus/contract/paths.py
 - name: conformance
   includes:
   - src/thalamus/contract/conformance.py
   - src/thalamus/contract/boundaries.py
   - src/thalamus/contract/pinning.py
   - src/thalamus/contract/probes.py
+  # rooms.py imports boundaries and probes and answers the same kind of question about
+  # a member that they answer about a boundary and a pin.
+  - src/thalamus/contract/rooms.py
 - name: archive
   includes:
   - src/thalamus/archive/**
@@ -147,27 +157,115 @@ rejected_refactors:
     The cheaper cut is to have project_repair accept already-parsed facts from its caller,
     leaving the format knowledge in harness where the per-harness transcript dialects live.
 
+# Edges the rules forbid and the gate tolerates. `thalamus arch rules --gate` exits 1 on
+# anything measured and not listed here, and 2 on anything listed here that no longer
+# happens — an exception that has stopped firing is deleted, not left to describe a
+# design that moved. Every entry states why, because an exception list whose entries do
+# not is a list that only grows.
+accepted:
+- from_path: src/thalamus/harness/bootstrap.py
+  to_path: src/thalamus/contract/conformance.py
+  reason: >-
+    The write gate. `check_session` refuses a session that does not conform, and a gate
+    has to be called by the thing it gates, so the edge runs against the height rule by
+    construction: conformance sits above harness because checkers reach down into what
+    they check, and this one is reached back up to. Removing the edge means moving the
+    gate off the write path, which is the property it exists to have.
+- from_path: src/thalamus/substrate/project_repair.py
+  to_path: src/thalamus/harness/transcripts.py
+  reason: >-
+    The one edge holding the substrate/harness cycle, with the obvious refactor already
+    tried and rejected on 2026-08-13 (see rejected_refactors): moving the transcript
+    reader down would put per-vendor session formats under the store. The recorded
+    cheaper cut, project_repair taking already-parsed facts from its caller, is unbuilt.
+
+# The dead-end census. `thalamus arch dead --gate` exits 1 on anything reported here and
+# not exempted, and 2 on an exemption that no longer matches — the same two directions
+# the rule gate uses, and for the same reason.
+#
+# `reference_extensions` is what keeps the census from accusing live code: the hook
+# scripts embed Python heredocs that import from the package, so a symbol whose only
+# caller is `role-guard.sh` is reached, not dead. Those blocks are parsed as Python and
+# walked by the same reference pass the .py files get — a text match cannot tell a call
+# from a mention, and this repo contains both on adjacent lines.
+deadends:
+  version: 1
+  enabled: true
+  source_roots: [src]
+  test_roots: [tests]
+  reference_extensions: ['.sh']
+  # Modules whose caller is outside the scanned import graph, so a fan-in of zero says
+  # nothing about them. Two kinds sit here and the name covers both: a process entry
+  # nothing imports because something *runs* it, and a module imported from outside this
+  # repository. Each non-obvious entry names which it is — a bare list would leave the
+  # next reader unable to tell a declaration from an oversight.
+  entry_points:
+  - '**/__init__.py'
+  - '**/__main__.py'
+  - '**/cli.py'
+  - '**/conftest.py'
+  - '**/static/*'
+  # Declared in [project.scripts]; the MCP client launches it as a process.
+  - src/thalamus/harness/mcp_server.py
+  # A resident service on its own lifecycle, started as its own process.
+  - src/thalamus/voice/daemon.py
+  # Imported by the companion repo thalamus-eval, not by anything here: the WCAG
+  # arithmetic stayed in this repo when the research battery split out so that it has one
+  # owner across both. `contrast_ratio` inside it is exempted separately — declaring the
+  # module silences the orphan finding, not the symbol one.
+  - src/thalamus/eval/legibility.py
+  kinds: [function, method, class]
+  report_unreferenced: false
+  exemptions:
+  - reason: >-
+      role-guard.sh reaches its degraded path exactly when `thalamus.contract.ownership`
+      will not import, so it cannot call this — it inlines the same literals in its
+      `for pair in ...` loop instead. tests/test_ownership.py
+      ::TestTheDegradedPathFailsClosed::test_the_inlined_markers_match_the_table parses
+      those literals back out of the script and asserts they equal this function's
+      output, so the duplication is checked rather than trusted.
+    path: src/thalamus/contract/ownership.py
+    symbol: fallback_markers
+  - reason: >-
+      Imported by the companion repo thalamus-eval, whose
+      src/thalamus_eval/legibility.py re-exports the WCAG arithmetic from here and calls
+      contrast_ratio in its degradation transform. The math stayed in this repo when the
+      research battery split out (12bd638) so that it has one owner across both, and
+      tests/test_console_contrast.py measures the shipped console CSS with it.
+    path: src/thalamus/eval/legibility.py
+    symbol: contrast_ratio
+  - reason: >-
+      Called by the companion repo thalamus-eval at src/thalamus_eval/arms.py, which
+      refuses to run an eval arm on a CLI whose `arm_blockers` are non-empty and prints
+      those blockers. eval/arms.py moved there in 12bd638; the property stayed with the
+      registry whose field it reads.
+    path: src/thalamus/harness/agents.py
+    symbol: AgentCLI.runs_arms
+
 # ─── DERIVED ─── regenerated by `thalamus arch scan`. Do not hand-edit below this
 # line: the next scan overwrites it. Committed anyway, because the diff is the point.
 derived:
-  scan: arch:scan:thalamus:dbf15cc:5411c47
-  commit: dbf15cc527c3329b356f30d301a1fc62cbdb0dd0
+  scan: arch:scan:thalamus:359ea5f:5411c47
+  commit: 359ea5fe431f0365d30d6681e6a1a73350f784f8
   metrics:
-    modules: 84
-    dependencies: 214
-    propagation_cost: 9.55
+    modules: 88
+    dependencies: 228
+    propagation_cost: 8.68
     cycles:
     - - src/thalamus/harness/launch_policy.py
       - src/thalamus/harness/launcher.py
     modules_in_cycles: 2
-  counted_edges: 214
-  recorded_edges: 236
+  counted_edges: 228
+  recorded_edges: 250
   unresolved:
   - 'src/thalamus/console/server.py: route form ''/frame/'' not matched by exact-literal'
   - 'src/thalamus/console/server.py: route form ''STATIC'' not matched by exact-literal'
   edges:
   - src/thalamus/arch/__init__.py -> src/thalamus/arch/extractor.py [from,module]
   - src/thalamus/arch/__init__.py -> src/thalamus/arch/metrics.py [from,module]
+  - src/thalamus/arch/deadends.py -> src/thalamus/arch/extractor.py [from,module]
+  - src/thalamus/arch/deadends.py -> src/thalamus/arch/findings.py [from,module]
+  - src/thalamus/arch/deadends.py -> src/thalamus/arch/metrics.py [from,module]
   - src/thalamus/arch/findings.py -> src/thalamus/arch/extractor.py [from,module]
   - src/thalamus/arch/findings.py -> src/thalamus/arch/metrics.py [from,module]
   - src/thalamus/arch/findings.py -> src/thalamus/arch/model.py [from,module]
@@ -180,6 +278,7 @@ derived:
   - src/thalamus/arch/routes.py -> src/thalamus/arch/extractor.py [from,module]
   - src/thalamus/archive/__init__.py -> src/thalamus/archive/store.py [from,module]
   - src/thalamus/cli.py -> src/thalamus/arch/__init__.py [package,deferred]
+  - src/thalamus/cli.py -> src/thalamus/arch/deadends.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/arch/extractor.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/arch/findings.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/arch/growth.py [from,deferred]
@@ -192,6 +291,7 @@ derived:
   - src/thalamus/cli.py -> src/thalamus/contract/conformance.py [from,module]
   - src/thalamus/cli.py -> src/thalamus/contract/manifest.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/contract/ontology.py [from,module]
+  - src/thalamus/cli.py -> src/thalamus/contract/paths.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/contract/pinning.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/contract/probes.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/contract/rooms.py [from,deferred]
@@ -213,6 +313,7 @@ derived:
   - src/thalamus/cli.py -> src/thalamus/harness/cursor_transcripts.py [from,module]
   - src/thalamus/cli.py -> src/thalamus/harness/dispatch.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/harness/extraction.py [from,module]
+  - src/thalamus/cli.py -> src/thalamus/harness/extractor_policy.py [from,module]
   - src/thalamus/cli.py -> src/thalamus/harness/ingest.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/harness/install.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/harness/pin.py [from,module]
@@ -224,6 +325,7 @@ derived:
   - src/thalamus/cli.py -> src/thalamus/pulse/web.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/substrate/artifact_audit.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/substrate/artifact_paths.py [from,deferred]
+  - src/thalamus/cli.py -> src/thalamus/substrate/claim_address_repair.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/substrate/project_repair.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/substrate/reader.py [from,deferred]
   - src/thalamus/cli.py -> src/thalamus/substrate/scan_retirement.py [from,deferred]
@@ -240,6 +342,7 @@ derived:
   - src/thalamus/console/server.py -> src/thalamus/harness/__init__.py [package,module]
   - src/thalamus/console/server.py -> src/thalamus/harness/codex_transcripts.py [from,deferred]
   - src/thalamus/console/server.py -> src/thalamus/harness/dispatch.py [from,deferred]
+  - src/thalamus/console/server.py -> src/thalamus/harness/extractor_policy.py [from,deferred]
   - src/thalamus/console/server.py -> src/thalamus/harness/launch_policy.py [from,deferred]
   - src/thalamus/console/server.py -> src/thalamus/harness/launcher.py [from,deferred]
   - src/thalamus/console/server.py -> src/thalamus/harness/panes.py [from,module]
@@ -255,6 +358,8 @@ derived:
   - src/thalamus/contract/conformance.py -> src/thalamus/archive/__init__.py [from,deferred]
   - src/thalamus/contract/conformance.py -> src/thalamus/contract/ontology.py [from,module]
   - src/thalamus/contract/conformance.py -> src/thalamus/substrate/schema.py [from,module]
+  - src/thalamus/contract/conformance.py -> src/thalamus/substrate/writer.py [from,deferred]
+  - src/thalamus/contract/manifest.py -> src/thalamus/contract/paths.py [from,module]
   - src/thalamus/contract/pinning.py -> src/thalamus/contract/boundaries.py [from,module]
   - src/thalamus/contract/pinning.py -> src/thalamus/contract/probes.py [from,module]
   - src/thalamus/contract/pinning.py -> src/thalamus/harness/launcher.py [from,deferred]
@@ -322,16 +427,17 @@ derived:
   - src/thalamus/harness/dispatch.py -> src/thalamus/harness/quick.py [from,module]
   - src/thalamus/harness/dispatch.py -> src/thalamus/harness/readiness.py [from,module]
   - src/thalamus/harness/dispatch.py -> src/thalamus/harness/tmux.py [from,module]
-  - src/thalamus/harness/extraction.py -> src/thalamus/eval/attribution.py [from,module]
   - src/thalamus/harness/extraction.py -> src/thalamus/harness/agents.py [from,module]
   - src/thalamus/harness/extraction.py -> src/thalamus/harness/transcripts.py [from,module]
   - src/thalamus/harness/extraction.py -> src/thalamus/substrate/reader.py [from,module]
   - src/thalamus/harness/extraction.py -> src/thalamus/substrate/schema.py [from,module]
+  - src/thalamus/harness/extractor_policy.py -> src/thalamus/harness/agents.py [from,module]
   - src/thalamus/harness/ingest.py -> src/thalamus/archive/__init__.py [from,module]
   - src/thalamus/harness/ingest.py -> src/thalamus/contract/manifest.py [from,module]
   - src/thalamus/harness/ingest.py -> src/thalamus/harness/__init__.py [package,module]
   - src/thalamus/harness/ingest.py -> src/thalamus/harness/extraction.py [from,module]
   - src/thalamus/harness/ingest.py -> src/thalamus/substrate/schema.py [from,module]
+  - src/thalamus/harness/install.py -> src/thalamus/contract/paths.py [from,module]
   - src/thalamus/harness/install.py -> src/thalamus/harness/__init__.py [package,module]
   - src/thalamus/harness/install.py -> src/thalamus/harness/agents.py [from,module]
   - src/thalamus/harness/install.py -> src/thalamus/harness/pin.py [from,module]
@@ -353,6 +459,7 @@ derived:
   - src/thalamus/harness/panes.py -> src/thalamus/harness/tmux.py [from,module]
   - src/thalamus/harness/pin.py -> src/thalamus/contract/manifest.py [from,module]
   - src/thalamus/harness/pin.py -> src/thalamus/contract/ontology.py [from,module]
+  - src/thalamus/harness/pin.py -> src/thalamus/contract/paths.py [from,module]
   - src/thalamus/harness/pin.py -> src/thalamus/harness/__init__.py [package,module]
   - src/thalamus/harness/pin.py -> src/thalamus/harness/codex_transcripts.py [from,deferred]
   - src/thalamus/harness/pin.py -> src/thalamus/harness/launcher.py [from,deferred]
@@ -386,6 +493,8 @@ derived:
   - src/thalamus/pulse/web.py -> src/thalamus/pulse/metrics.py [from,module]
   - src/thalamus/pulse/web.py -> src/thalamus/substrate/writer.py [from,deferred]
   - src/thalamus/substrate/artifact_paths.py -> src/thalamus/substrate/schema.py [from,module]
+  - src/thalamus/substrate/claim_address_repair.py -> src/thalamus/contract/ontology.py [from,module]
+  - src/thalamus/substrate/claim_address_repair.py -> src/thalamus/substrate/schema.py [from,module]
   - src/thalamus/substrate/project_repair.py -> src/thalamus/harness/transcripts.py [from,module]
   - src/thalamus/substrate/project_repair.py -> src/thalamus/substrate/schema.py [from,module]
   - src/thalamus/substrate/query.py -> src/thalamus/contract/ontology.py [from,module]
@@ -396,7 +505,7 @@ derived:
   - src/thalamus/substrate/reader.py -> src/thalamus/substrate/witnesses.py [from,module]
   - src/thalamus/substrate/schema.py -> src/thalamus/contract/ontology.py [from,module]
   - src/thalamus/substrate/writer.py -> src/thalamus/contract/ontology.py [from,module]
-  - src/thalamus/substrate/writer.py -> src/thalamus/harness/pin.py [from,deferred]
+  - src/thalamus/substrate/writer.py -> src/thalamus/contract/paths.py [from,module]
   - src/thalamus/substrate/writer.py -> src/thalamus/substrate/__init__.py [package,module]
   - src/thalamus/substrate/writer.py -> src/thalamus/substrate/artifact_paths.py [from,module]
   - src/thalamus/substrate/writer.py -> src/thalamus/substrate/schema.py [from,module]

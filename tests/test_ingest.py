@@ -56,7 +56,7 @@ def test_local_files_bypass_the_allowlist():
 def _loopback(handler_cls):
     """A throwaway HTTP server on 127.0.0.1. Yields its base URL, then shuts down."""
     server = HTTPServer(("127.0.0.1", 0), handler_cls)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, args=(0.01,), daemon=True).start()
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
 

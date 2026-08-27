@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from thalamus.harness import install
-from thalamus.harness.pin import PROJECT_ROOT
+from thalamus.contract.paths import PROJECT_ROOT
 
 
 @pytest.fixture
@@ -88,6 +88,27 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(
         install, "claude_mcp_registration",
         lambda: f"  Args: run --project {PROJECT_ROOT} thalamus-mcp\n")
+    # The twin of the seam above, and the one that was never wired into it:
+    # `registered_mcp_env` shells out to the same `claude mcp get thalamus`, so an
+    # unstubbed test reads the operator's real registration and pays a real CLI boot
+    # for it. Measured 2026-08-26: 47 spawns, 137s of a 343s suite.
+    monkeypatch.setattr(install, "registered_mcp_env", dict)
+    # And the graph probe. Unstubbed it opens a real socket to the operator's live
+    # graph and spawns an interpreter to run a real traversal against it — so a
+    # sandboxed test's verdict depends on whether his container happens to be up.
+    # The tests that are *about* the advisory monkeypatch this themselves, which
+    # still wins: this clears the floor, it does not hold it down.
+    monkeypatch.setattr(install, "_probe_graph", lambda url: (True, "stubbed", False))
+    # And the entry-point spawn, the third of the same family. `verify()` runs on
+    # every `install()`, so unstubbed this is a full `uv` resolution and CLI boot
+    # per installing test. Measured 2026-08-26: 72 spawns, 42.9s.
+    #
+    # The real one is handed back under `probe_entry_point` because the stub is a
+    # module attribute: the one test that must pay the real spawn cannot reach it
+    # by calling `install.probe_entry_point()`, which is the stub by then.
+    real_probe_entry_point = install.probe_entry_point
+    monkeypatch.setattr(install, "probe_entry_point",
+                        lambda: (True, "stubbed: `thalamus` resolves from a foreign cwd"))
     monkeypatch.setattr(install, "write_all_agents", lambda d: d.mkdir(parents=True, exist_ok=True))
     # Never invoke the real `claude mcp add` from a test — it writes the
     # operator's shared ~/.claude.json.
@@ -105,7 +126,8 @@ def sandbox(tmp_path, monkeypatch):
             "cursor_project": cursor_project_hooks,
             "cursor_project_mcp": cursor_project_mcp,
             "codex_hooks": codex_hooks, "codex_config": codex_config,
-            "codex_home": codex_home, "codex_mcp_calls": codex_calls}
+            "codex_home": codex_home, "codex_mcp_calls": codex_calls,
+            "probe_entry_point": real_probe_entry_point}
 
 
 class TestCursorWiring:
@@ -655,9 +677,20 @@ class TestSkills:
 class TestVerify:
     def test_exercises_the_entry_point_rather_than_asserting_it(self, sandbox):
         """PCheck's early-detection idea: run the late usage now. The check must
-        be a real spawn, so a broken uv project fails here and not at SessionEnd."""
+        be a real spawn, so a broken uv project fails here and not at SessionEnd.
+
+        Takes the real seam from the sandbox, which stubs the module attribute
+        for every other test. This is the one place in the suite that pays the
+        real spawn, and one is what the check is worth: the other 71 asserted
+        nothing about it.
+        """
+        ok, detail = sandbox["probe_entry_point"]()
+        assert ok, detail
+        assert "foreign cwd" in detail
+
+        # And `verify()` still reports it, so the seam cannot go orphaned.
         checks = {c.name: c for c in install.verify()}
-        assert checks["distillation entry point"].ok
+        assert "distillation entry point" in checks
         assert checks["jq on PATH"].ok
 
     def test_reports_missing_agents_rather_than_silently_passing(self, sandbox):
