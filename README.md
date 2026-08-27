@@ -113,13 +113,9 @@ modules resolve paths from the repo root, and the expert manifests in `config/` 
 outside the package, so an installed wheel would look for paths that only exist in a
 clone. Installing without a clone is the 0.1.1 milestone.
 
-Two features are **experimental and off by default**, each behind a flag on
-`thalamus console`:
-
-| | Flag | Off means |
-|---|---|---|
-| `say` — reads the active window aloud | `--voice URL` | no control, no endpoints. Needs a separate TTS unit (`--extra voice`) |
-| Frame themes — the pane inside artwork | `--frames PATH` | no controls and no key bindings; no artwork ships |
+One feature is **experimental and off by default**: frame themes, which render the
+pane inside artwork, behind `thalamus console --frames PATH`. Without the flag there
+are no controls and no key bindings, and no artwork ships.
 
 ## What's live
 
@@ -206,7 +202,6 @@ src/thalamus/
   arch/        the `architect` scope's instrument — a declared-policy import extractor
                and the structural metrics computed over it, gated in CI
   pulse/       live telemetry dashboard over the eval loop
-  voice/       the console's optional `say` synthesis daemon (`--extra voice`)
 arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
 docs/          user documentation

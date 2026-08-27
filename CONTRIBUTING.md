@@ -19,10 +19,11 @@ You do not need `thalamus init` to develop or run the tests. It wires hooks into
 editor at user scope; skip it if you only want to build and test.
 
 `.python-version` pins CPython 3.12 for the checkout, and uv reads it, so every
-worktree resolves the same interpreter without being told. The pin is load-bearing for
-the `voice` extra: its `spacy` dependency publishes no wheel above 3.13, so
-`uv sync --all-extras` fails outright on a newer one. It also keeps a measurement taken
-in one worktree comparable to the same measurement in another.
+worktree resolves the same interpreter without being told. What it buys is
+comparability: a measurement taken in one worktree means the same thing as the same
+measurement in another. No dependency caps the version — the pin is a choice, and
+raising it is a change to make deliberately with the suite run on the new interpreter,
+not a thing to drift into one worktree at a time.
 
 The package itself supports Python >=3.11 (`requires-python`); the pin is this
 checkout's development interpreter, not the range Thalamus installs into.
@@ -102,7 +103,6 @@ src/thalamus/
   arch/        the `architect` scope's instrument — a declared-policy import extractor
                and the structural metrics computed over it, behind the three arch gates
   pulse/       live telemetry dashboard
-  voice/       the console's optional `say` synthesis daemon (`--extra voice`)
 arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
 docs/          user documentation

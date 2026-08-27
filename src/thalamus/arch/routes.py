@@ -21,8 +21,8 @@ between the same two files are one dependency. The literals are not discarded �
 are what the match is evidence of, and an unmatched one on either side is a finding in
 its own right: a client calling a route the server does not define is a defect, and a
 route no *scanned* client calls is a route this policy cannot account for. Not dead
-surface — the declared client set is not the caller set, and the voice daemon and shell
-scripts call this server from outside it.
+surface — the declared client set is not the caller set, and shell scripts and
+scheduled jobs call this server from outside it.
 
 **Runtime depth is not deferred depth.** A route edge executes when a request is made,
 which is neither import time nor a deferred import; `import_depth` therefore does not

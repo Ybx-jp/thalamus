@@ -126,7 +126,6 @@ def dispatch_module():
 
 
 _read_cache: object = _PIN_UNSET
-_speech_cache: object = _PIN_UNSET
 
 
 def transcript_module():
@@ -147,134 +146,6 @@ def transcript_module():
         else:
             _read_cache = transcript
     return _read_cache
-
-
-def speech_module():
-    """`.speech`, or None under a bare `python3` with no package around it.
-
-    Deferred for the same reason `.transcript` is — the bridge is documented to
-    run without the package, and a console that cannot import the transform
-    simply has no voice rather than no console.
-    """
-    global _speech_cache
-    if _speech_cache is _PIN_UNSET:
-        try:
-            from . import speech
-        except Exception:  # noqa: BLE001 — any import failure means "not available"
-            _speech_cache = None
-        else:
-            _speech_cache = speech
-    return _speech_cache
-
-
-# The voice service is a separate unit on loopback: it holds a GPU-resident model
-# and this process restarts itself on edit, which are incompatible lifecycles. Its
-# URL lives on `Config` rather than here, because naming a service on this machine
-# is exactly what makes the feature opt-in — see `Config.voice_url`.
-
-# Spoken when the transform drops something it promised to keep. A listener who
-# hears nothing knows to go and look; a listener fed a fluent sentence with the
-# wrong number in it has no way to know at all, and no way to rewind and check.
-WITHHELD_NOTICE = (
-    "This update was withheld. The spoken summary lost a value it was required "
-    "to keep, so it was not read out. Check the console."
-)
-
-
-def voice_available(cfg: Config) -> bool:
-    """Whether this console has a `say` control at all.
-
-    The counterpart to `frames()`: one predicate the handlers and the client's
-    availability probe both read, so "is the feature on" is answered here rather
-    than re-derived at each endpoint. The route that synthesises binds the URL
-    itself, because it needs the value and not the verdict.
-    """
-    return bool(cfg.voice_url)
-
-
-def synthesise_update(source: str, voice_url: str, timeout: float = 60.0):
-    """Raw turn text to wav bytes, via the transform and the voice service.
-
-    Returns `(audio, error)`. The protected-token contract is enforced here
-    rather than in the client: a summary that lost a number is replaced by a
-    notice saying so, because the failure it guards against is audio that sounds
-    entirely correct.
-    """
-    speech = speech_module()
-    if speech is None:
-        return None, "speech transform unavailable"
-
-    update = speech.spoken_update(source)
-    if not update.faithful:
-        lost = ", ".join(token.literal for token in update.missing)
-        print(f"say: withheld — protected tokens lost: {lost}", file=sys.stderr, flush=True)
-        spoken = WITHHELD_NOTICE
-    else:
-        spoken = update.text
-    if not spoken.strip():
-        return None, "nothing to say"
-    return _post_to_voice(spoken, voice_url, timeout)
-
-
-def _post_to_voice(text: str, voice_url: str, timeout: float):
-    """The transport half, separate so the gate above can be tested without one."""
-    import urllib.error
-    import urllib.parse
-    import urllib.request
-
-    url = f"{voice_url}/say?" + urllib.parse.urlencode({"text": text})
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
-            return response.read(), None
-    except urllib.error.HTTPError as exc:
-        # The service answered and refused. Reporting that as "unreachable" sends
-        # the next reader to check whether it is running, which it is.
-        print(f"say: voice service refused: {exc}", file=sys.stderr, flush=True)
-        return None, f"voice service refused: {exc.code}"
-    except urllib.error.URLError as exc:
-        print(f"say: voice service unreachable at {voice_url}: {exc}",
-              file=sys.stderr, flush=True)
-        return None, "voice service unreachable"
-    except Exception as exc:  # noqa: BLE001 — the console must survive this
-        print(f"say: synthesis failed: {exc}", file=sys.stderr, flush=True)
-        return None, "synthesis failed"
-
-
-# How far each session has been listened to, and what the last utterance covered
-# but has not yet been confirmed heard. Two dictionaries rather than one because
-# generating audio is not hearing it: the cursor advances when playback *ends*, so
-# stopping halfway replays from where your ears stopped rather than skipping to
-# where the synthesiser got to. Process-local and deliberately not persisted — a
-# listening position is a fact about the last few minutes, not about the session.
-SAY_LOCK = threading.Lock()
-SPOKEN_THROUGH: dict[str, int] = {}
-SAY_PENDING: dict[str, int] = {}
-
-
-def say_cursor(session_id: str) -> int:
-    with SAY_LOCK:
-        return SPOKEN_THROUGH.get(session_id, 0)
-
-
-def say_pending(session_id: str, high: int) -> None:
-    with SAY_LOCK:
-        SAY_PENDING[session_id] = high
-
-
-def say_commit(session_id: str) -> int:
-    """Confirm the last utterance was heard. Returns the new cursor."""
-    with SAY_LOCK:
-        high = SAY_PENDING.pop(session_id, 0)
-        if high > SPOKEN_THROUGH.get(session_id, 0):
-            SPOKEN_THROUGH[session_id] = high
-        return SPOKEN_THROUGH.get(session_id, 0)
-
-
-def say_mark(session_id: str, seq: int) -> None:
-    """Start listening from a chosen point: everything before it counts as heard."""
-    with SAY_LOCK:
-        SPOKEN_THROUGH[session_id] = max(0, seq)
-        SAY_PENDING.pop(session_id, None)
 
 
 # One ledger index and one feed store for the process, both stateful across polls
@@ -757,12 +628,6 @@ class Config:
     # Frame-theme definitions (see `frames`). None — the default — means no frame
     # themes: the feature is opt-in because it names image paths on this machine.
     frames_file: Path | None = None
-    # Speech service backing the `say` control. None — the default — means the
-    # control is not offered at all: no button, no endpoints. Opt-in for the same
-    # reason `frames_file` is, and for a sharper one — the service is a separate
-    # unit with an undeclarable model download behind it, so a console that
-    # assumed one would hand every operator a button that fails on the first tap.
-    voice_url: str | None = None
     # How often the console fetches the checkout's remote, in seconds. Nothing about
     # the working tree changes — a fetch moves remote-tracking refs only — but it is
     # what makes "N commits behind" a fact rather than a report on whenever somebody
@@ -2008,47 +1873,6 @@ class Handler(BaseHTTPRequestHandler):
             if body is None:
                 return self._send(404, {"error": "no such item"})
             return self._send(200, {"body": body})
-        if path == "/api/voice":
-            # What the client asks before deciding whether to show the control at
-            # all — the same shape as `/api/frames`, and for the same reason: the
-            # server owns what this machine has, the client owns what it draws.
-            return self._send(200, {"available": voice_available(self.cfg)})
-        if path == "/api/say":
-            # Tap-to-listen: this window's latest turn, rewritten for the ear and
-            # synthesised by the voice service. Audio is returned inline so the
-            # client can set an <audio> src and play it in the same click — a
-            # phone will not autoplay anything that arrives after an await.
-            voice_url = self.cfg.voice_url
-            if not voice_url:
-                return self._send(404, {"error": "no voice service configured"})
-            q = parse_qs(query)
-            raw = q.get("index", [""])[0]
-            if not raw.lstrip("-").isdigit():
-                return self._send(400, {"error": "index required"})
-            _, feed, reason = read_feed(self.cfg, int(raw))
-            if feed is None:
-                return self._send(404, {"error": reason or "unresolved"})
-            # `restart` re-reads the current turn from its beginning, for when you
-            # missed it rather than when you want what came next.
-            restart = q.get("restart", ["0"])[0] == "1"
-            # `from` is a tapped block: start there, and treat what precedes it as
-            # heard. It rides the audio request rather than a POST before it so the
-            # client can play in the same gesture as the tap.
-            start = q.get("from", [""])[0]
-            if start.isdigit():
-                say_mark(feed.session_id, max(0, int(start) - 1))
-            cursor = 0 if restart else say_cursor(feed.session_id)
-            with READ_LOCK:
-                source, high = feed.prose_since(cursor)
-            if not source.strip():
-                # Caught up. Not an error, and not worth speaking a sentence to
-                # say so — the control flashes and stays quiet.
-                return self._send(204, b"", "application/json")
-            say_pending(feed.session_id, high)
-            audio, err = synthesise_update(source, voice_url)
-            if err:
-                return self._send(502, {"error": err})
-            return self._send(200, audio, "audio/wav", cache="no-store")
         if path == "/api/admin":
             with RECYCLING_LOCK:
                 recycling = sorted(RECYCLING)
@@ -2336,18 +2160,6 @@ class Handler(BaseHTTPRequestHandler):
                 tmux("send-keys", "-t", target, "Enter")
             return self._send(200, {"ok": True})
 
-        if path == "/api/say/ack":
-            # Playback finished. Only now does the listening position move — the
-            # request that produced the audio cannot know whether it was heard.
-            if not voice_available(self.cfg):
-                return self._send(404, {"error": "no voice service configured"})
-            idx = data.get("index")
-            if not isinstance(idx, int):
-                return self._send(400, {"error": "index required"})
-            _, feed, reason = read_feed(self.cfg, idx)
-            if feed is None:
-                return self._send(404, {"error": reason or "unresolved"})
-            return self._send(200, {"ok": True, "through": say_commit(feed.session_id)})
         if path == "/api/key":
             key = KEYMAP.get(data.get("key", ""))
             if not key:
