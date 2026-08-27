@@ -39,9 +39,25 @@ const VIEWS = [
     // The view the first manual run never measured, and the one the compounding
     // defect lived in: `.rd-side` x `.rd-thinking` x `.rd-name` is reachable only
     // where a subagent's tool calls are rendered.
+    // Two steps, because the loop re-`goto`s before every view: this one starts on
+    // the roster like the others and has to reach the read view on its own. The
+    // toggle lives in `#composer`, which is `display: none` until a row is open —
+    // measured on the live console, where it is 0x0 with a null offsetParent on the
+    // roster and 49x27 once a row is opened.
+    //
+    // `#view-toggle` by id, not `.viewcap` by class: that class is shared with
+    // `#say-toggle`, which sits earlier in index.html and ships `hidden`, so
+    // `.first()` resolved to a permanently invisible button. Between the two faults
+    // Playwright spent its actionability timeout on an element that could never be
+    // clicked, and this view had never been measured on any run.
+    //
+    // No `if (count())` guard around either click: failing to reach the view is
+    // this walker failing at the one thing it exists for, and skipping silently
+    // would open the same hole one level up.
     open: async (page) => {
-      const tab = page.locator('[data-view="read"], .viewcap, .deskbar button').first();
-      if (await tab.count()) await tab.click({ timeout: 5000 });
+      await page.locator(".srow, .chan-tab").first().click({ timeout: 5000 });
+      await page.waitForTimeout(600);
+      await page.locator("#view-toggle").click({ timeout: 5000 });
       await page.waitForTimeout(800);
     },
   },

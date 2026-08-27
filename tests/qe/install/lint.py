@@ -6,9 +6,8 @@ the harness that gates a change to the harness.
 
     python tests/qe/install/lint.py
 
-Exit 0 clean, 1 with findings. `NOTE` lines are conditions worth printing that are
-not faults and do not move the exit code. Deliberately not named `test_*` — see the
-containment rule in tests/qe/README.md.
+Exit 0 clean, 1 with findings. Deliberately not named `test_*` — see the containment
+rule in tests/qe/README.md.
 """
 
 from __future__ import annotations
@@ -56,6 +55,12 @@ def findings() -> list[str]:
     # sequence never enters is a check that never runs, which reads as a pass.
     synthesized = {spec.Phase.PREFLIGHT, spec.Phase.GRAPH_READY, spec.Phase.MOVED,
                    spec.Phase.CONSOLE}
+    # WHEEL is synthesized as well, but only by a config that asks for it: `drive.py`
+    # runs that phase where `builds_a_wheel` is set and nowhere else. A check pinned
+    # there with no config building a wheel would report not_evaluated in every cell of
+    # the matrix, which is the same silence this rule refuses everywhere else.
+    if any(c.builds_a_wheel for c in spec.CONFIGS):
+        synthesized.add(spec.Phase.WHEEL)
     reachable = {s.phase for s in spec.STEPS} | synthesized
     for check in spec.CHECKS:
         if check.phase not in reachable:
@@ -157,47 +162,29 @@ def findings() -> list[str]:
         if not checks.DEFERRED.get(name, "").strip():
             out.append(f"{name}: deferred with an empty reason.")
 
-    # The harness's own falsifiability. An empty `known_defect_issues()` used to be a
-    # FAIL here, and that was the wrong gate: it made a repaired tree lintable only by
-    # leaving a defect open or by tagging one nobody had measured, and a tag invented
-    # to satisfy a lint is a fabricated positive control — the exact move this suite
-    # exists to catch. `drive.py` already treats the same condition as a state to name
-    # rather than a fault, and reports the cell green with the weaker claim spelled
-    # out; the lint now agrees with it. The condition is reported by `notes()`.
+    # The harness's own falsifiability, and the reason this file exists. An empty
+    # `known_defect_issues()` is a matrix in which no cell is built to reproduce
+    # anything: no red result anywhere can be read as a reproduction, and a green run
+    # says only that nothing NEW broke — which is not the claim this matrix was built
+    # to make and cannot be told apart from an oracle that has stopped seeing.
     #
-    # What survives as a gate is the part that is still a fault. `fixed` keeps exit 1
-    # reachable — a check naming a fixed issue that goes red is a REGRESSION, not an
-    # absolved red — so a matrix carrying neither an open tag nor a fixed one has no
-    # issue-tagged check at all, and can only ever report novel failures. That is a
-    # harness with no self-control, and it is what this now refuses.
-    if not spec.known_defect_issues() and not spec.fixed_issues():
-        out.append(
-            "no check or config names an issue at all: `known_defect_issues()` and "
-            "`fixed_issues()` are both empty, so no red result can be read as either "
-            "a reproduction or a regression and the matrix can only report novel "
-            "failures."
-        )
-
-    return out
-
-
-def notes() -> list[str]:
-    """Conditions worth printing that are not faults, so exit 0 still means clean.
-
-    Kept separate from `findings()` rather than folded into it as a severity: a caller
-    that reads the exit code and a caller that reads the output should not disagree
-    about what a note is.
-    """
-    out: list[str] = []
+    # It is satisfiable by the practice rather than by a chore: a filed defect this
+    # matrix can trigger arrives WITH its reproduction and its tag, in the change that
+    # files it (tests/qe/install/README.md). So an empty set does not mean the product
+    # is repaired — it means a defect was filed without one, or the last tag was
+    # marked fixed without the next one being written. Neither is a state to pass over.
+    #
+    # What it must NOT become is a reason to tag a defect nobody measured, which would
+    # be a fabricated positive control — the exact move this suite exists to catch. The
+    # way out is a reproduction that runs, not a number in a field.
     if not spec.known_defect_issues():
-        fixed = sorted(spec.fixed_issues())
         out.append(
-            "every issue this matrix names is marked fixed "
-            f"({', '.join('#%d' % i for i in fixed)}), so no cell is built to "
-            "reproduce anything. A green run means no NEW failure and no regression "
-            "at a repaired site — it is not evidence that the harness can see. "
-            "Re-arm it by tagging the next filed install defect a config can trigger."
+            "no check or config names an unfixed issue: `known_defect_issues()` is "
+            "empty, so no cell has anything to reproduce and every green run makes "
+            "only the weaker claim. Add the reproduction of a filed defect this "
+            "matrix can trigger, and tag it (tests/qe/install/README.md)."
         )
+
     return out
 
 
@@ -208,8 +195,6 @@ def main() -> int:
           f"{len(spec.CONFIGS)} configs, {len(spec.STEPS)} steps")
     for line in found:
         print(f"  FAIL {line}")
-    for line in notes():
-        print(f"  NOTE {line}")
     if not found:
         print("  clean")
     return 1 if found else 0
