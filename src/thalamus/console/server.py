@@ -44,7 +44,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, unquote, urlsplit
 
 # Imported at module scope, unlike this module's other Thalamus imports: these two
 # names are re-exported below, and `panes` reaches nothing but the standard library.
@@ -769,6 +769,12 @@ class Config:
     # last happened to fetch. 0 disables the thread and the count then means only
     # that much.
     fetch_interval_s: float = 600.0
+    # Origins accepted on a write besides the request's own `Host` (see
+    # `same_origin`). Empty — the default — is right for every deployment in
+    # docs/console.md, all of which reach the console at the host the browser
+    # addressed. It exists for the proxy that rewrites `Host` to the upstream, where
+    # same-origin is true of the page and unprovable from the headers.
+    allowed_origins: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         pin = pin_module()
@@ -1775,6 +1781,63 @@ def _fetch_loop(interval_s: float) -> None:
             build_info(force=True)
 
 
+# ---- Where a request came from ----
+# The console has no authentication, and that is deliberate: it is fronted by
+# something that already authenticates (see docs/console.md). What that reasoning
+# does not cover is a request the operator's *own* browser is tricked into sending.
+# A page on any other origin can POST here cross-site — `_body()` reads JSON whatever
+# the declared content type, so `text/plain` makes it a CORS *simple* request that is
+# delivered without a preflight — and while the reply is unreadable to that page, the
+# write has already landed on the tmux session. Loopback binding is no defence: the
+# request originates inside the boundary, carrying whatever the proxy granted.
+#
+# So the one thing checked on a state-changing request is where the browser says it
+# came from, per OWASP's CSRF Prevention Cheat Sheet ("Verifying Origin With Standard
+# Headers"): compare the request's `Origin` against its `Host`. Both are set by the
+# browser and neither is settable from script.
+#
+# `Host` is the right thing to compare against because the deployments this repo
+# recommends preserve it. Measured against this console's own published surface:
+# `tailscale serve --set-path` forwards `Host: <machine>.<tailnet>.ts.net` with a
+# matching `Origin`, and Caddy's `reverse_proxy` preserves `Host` by default. nginx
+# does not unless told (`proxy_set_header Host $host`), which is what
+# `--allow-origin` is for.
+
+DEFAULT_PORTS = {"http": "80", "https": "443"}
+
+
+def same_origin(origin: str, host_header: str) -> bool:
+    """Does `origin` name the same host:port the request was addressed to?
+
+    `Host` carries no scheme, so its port is compared only when it states one — a
+    TLS-terminating proxy on 443 sends a bare hostname, and the origin's own default
+    port is then the only port either side could mean.
+    """
+    parts = urlsplit(origin)
+    if not parts.scheme or not parts.hostname:
+        return False  # "null" (sandboxed frame, file://) and anything unparseable
+    origin_port = str(parts.port) if parts.port else DEFAULT_PORTS.get(parts.scheme)
+    # `Host` is authority-only, and urlsplit needs a scheme to read one as authority.
+    target = urlsplit(f"//{host_header}")
+    if not target.hostname or target.hostname.lower() != parts.hostname.lower():
+        return False
+    return target.port is None or str(target.port) == origin_port
+
+
+def origin_key(origin: str) -> str | None:
+    """`scheme://host:port` with the default port spelled out, or None if unparseable.
+
+    Two origins are the same one when these agree. This is the comparison for
+    `--allow-origin`, where both sides are full origins and the scheme is known on
+    each — unlike the `Host` comparison above, which has a scheme on one side only.
+    """
+    parts = urlsplit(origin)
+    port = str(parts.port) if parts.port else DEFAULT_PORTS.get(parts.scheme)
+    if not parts.hostname or not port:
+        return None
+    return f"{parts.scheme}://{parts.hostname.lower()}:{port}"
+
+
 class ConsoleServer(ThreadingHTTPServer):
     """The server object that carries this console's `Config` to every handler."""
 
@@ -1808,6 +1871,24 @@ class Handler(BaseHTTPRequestHandler):
     def _body(self):
         n = int(self.headers.get("Content-Length", 0))
         return json.loads(self.rfile.read(n) or "{}") if n else {}
+
+    def _origin_ok(self) -> bool:
+        """Is this write coming from the console's own page?
+
+        A non-browser client — curl, a script, a test — sends neither header and is
+        allowed through: this closes the browser vector, it does not invent an
+        authentication the module docstring promises is absent. Browsers send
+        `Origin` on every cross-site POST, so nothing this is meant to stop can reach
+        the routes by leaving it off.
+        """
+        claimed = self.headers.get("Origin") or self.headers.get("Referer")
+        if not claimed:
+            return True
+        if same_origin(claimed, self.headers.get("Host", "")):
+            return True
+        key = origin_key(claimed)
+        return key is not None and any(key == origin_key(allowed)
+                                       for allowed in self.cfg.allowed_origins)
 
     def do_GET(self):
         """Route a GET, and answer with a 500 rather than a dropped connection.
@@ -2014,6 +2095,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
+        if not self._origin_ok():
+            # Refused before the body is read, so a rejected request costs nothing.
+            return self._send(403, {"error": "cross-origin request refused"})
         try:
             data = self._body()
         except Exception:

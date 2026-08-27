@@ -1138,6 +1138,18 @@ def _main():
         help="Speech service backing the `say` control, e.g. http://127.0.0.1:8380 "
              "(default: $THALAMUS_VOICE_URL, else none — the control is hidden)"
     )
+    # A console reached at the host the browser addressed needs none of these: the
+    # request's own `Host` is the comparison. This is for a reverse proxy that
+    # rewrites `Host` to the upstream (nginx does unless told
+    # `proxy_set_header Host $host`), which makes the browser's `Origin` unmatchable
+    # against anything the request still carries.
+    console_parser.add_argument(
+        "--allow-origin", action="append", default=[], metavar="ORIGIN",
+        dest="allow_origin",
+        help="Also accept writes from this origin, e.g. https://console.example.com "
+             "(repeatable; default: none — only the origin the request was addressed "
+             "to is accepted)"
+    )
     console_parser.add_argument(
         "--fetch-interval", type=float, default=10.0, metavar="MINUTES",
         help="How often to fetch the checkout's remote so the console knows whether "
@@ -4076,6 +4088,7 @@ def _cmd_console(args):
         frames_file=args.frames,
         voice_url=args.voice,
         fetch_interval_s=max(0.0, args.fetch_interval) * 60,
+        allowed_origins=args.allow_origin,
     )
     if subprocess.run(tmux.argv("has-session", "-t", cfg.session),
                       capture_output=True).returncode != 0:

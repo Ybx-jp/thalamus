@@ -113,6 +113,42 @@ your.domain {
 `handle_path` (not `handle`) is the prefix-stripping form. Reached without the
 trailing slash, the page redirects to add it before any resource loads.
 
+### The one thing reachability does not cover
+
+Everything above is about which network can reach the console. It leaves out the
+request that comes from the machine you already trust: a page open in your own
+browser can POST to the console cross-site, and because the server reads JSON
+whatever content type is declared, `text/plain` makes that a CORS *simple* request
+— no preflight, delivered. The reply is unreadable to the page that sent it, but
+the write has already gone to the tmux session. Loopback binding is no defence
+here and neither is a proxy with real auth: the request starts inside the boundary
+and carries whatever you were already granted.
+
+So a POST is refused unless the browser's `Origin` names the same host and port
+the request was addressed to. That is the whole check. A client that sends no
+`Origin` and no `Referer` — curl, a script, a health probe — is let through, which
+is not a hole: browsers send `Origin` on every cross-site POST, so nothing this
+refuses can get in by leaving it out.
+
+Nothing above needs configuring for this. `tailscale serve` and Caddy's
+`reverse_proxy` both forward the browser's `Host` unchanged, and a direct
+connection or an SSH tunnel is trivially same-origin. **nginx is the exception**:
+it rewrites `Host` to the upstream unless told not to, and then the console cannot
+see that its own page is its own page. Either fix it in the proxy —
+
+```nginx
+proxy_set_header Host $host;
+```
+
+— or name the origin the browser uses:
+
+```bash
+thalamus console --allow-origin https://console.example.com
+```
+
+A refused request answers `403 {"error": "cross-origin request refused"}`, so a
+proxy misconfigured this way says what is wrong rather than failing silently.
+
 ### What not to do
 
 `thalamus console --host 0.0.0.0` on a network you don't control publishes an
@@ -741,6 +777,7 @@ nothing about one operator's setup is baked into the code.
 | `--service UNIT` | none | A unit the admin sheet may restart — a systemd `--user` unit, or a launchd label on macOS (repeatable) |
 | `--frames PATH` | none | Frame-theme definitions for the desktop client (see "On a desktop browser") |
 | `--voice URL` | `$THALAMUS_VOICE_URL`, else none | Speech service behind `say`. Without it the control is not shown |
+| `--allow-origin ORIGIN` | none | Also accept writes from this origin, for a proxy that rewrites `Host` (repeatable — see "The one thing reachability does not cover") |
 | `--fetch-interval MIN` | `10` | How often to fetch the checkout's remote, so "behind" is a fact rather than a report on the last manual fetch. `0` disables it |
 
 The spawn picker's directory list is also the **whitelist**: a spawn request is

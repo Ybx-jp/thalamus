@@ -1573,10 +1573,13 @@ class _serving:
         self.thread.start()
         port = self.httpd.server_address[1]
 
-        def post(path: str, payload: dict) -> tuple[int, dict]:
+        def post(path: str, payload: dict, headers: dict | None = None) -> tuple[int, dict]:
             conn = HTTPConnection("127.0.0.1", port, timeout=5)
+            # A cross-site POST has to stay a *simple* request or it would be
+            # preflighted out of existence, so the header set a test sends must be
+            # substitutable down to `text/plain` — the shape the refusal exists to stop.
             conn.request("POST", path, json.dumps(payload),
-                         {"Content-Type": "application/json"})
+                         headers or {"Content-Type": "application/json"})
             response = conn.getresponse()
             body = json.loads(response.read() or "{}")
             conn.close()
@@ -1600,6 +1603,9 @@ class _serving:
 
         post.get = get
         post.get_status = get_status
+        # An origin check compares against the port the request was addressed to, so
+        # a test asserting the same-origin case has to know the ephemeral one.
+        post.port = port
         # The recorded argv is the only place some behaviour is observable — a
         # counted key repeat has no response body that differs from a single press.
         post.fake = self.fake
@@ -1958,3 +1964,102 @@ def test_every_read_branch_stamps_a_contracted_read_status(tmp_path, monkeypatch
         assert body["permission_mode_read"] == expected, expected
     assert {v["permission_mode_read"] for v in seen.values()} == {
         "ok", "unresolved", "pending", "no-package"}
+
+
+# ---- a write is refused unless the browser says it came from here ----
+# The console authenticates nothing and says so. What that posture never covered is
+# the operator's own browser being driven from another page: a `text/plain` POST is a
+# CORS simple request, so it is delivered without a preflight and the write lands on
+# the tmux session even though the reply is unreadable to the page that sent it.
+# Binding loopback does not help — the request comes from inside the boundary.
+
+
+@pytest.mark.parametrize("origin,host,expected", [
+    # Direct, and through an SSH tunnel: both sides carry the port.
+    ("http://127.0.0.1:8378", "127.0.0.1:8378", True),
+    ("http://localhost:8378", "localhost:8378", True),
+    # `tailscale serve --set-path` and Caddy's `reverse_proxy` both forward the
+    # browser's Host. TLS on 443 means neither side states a port.
+    ("https://box.tailnet.ts.net", "box.tailnet.ts.net", True),
+    ("https://box.tailnet.ts.net:8443", "box.tailnet.ts.net:8443", True),
+    # Case is not part of a host's identity.
+    ("https://Box.Tailnet.TS.net", "box.tailnet.ts.net", True),
+    # A different site, and the same site on a different port: both are other origins.
+    ("https://evil.example", "127.0.0.1:8378", False),
+    ("http://127.0.0.1:9999", "127.0.0.1:8378", False),
+    # A sandboxed frame or a file:// page sends this literally, and it is not a host.
+    ("null", "127.0.0.1:8378", False),
+    ("", "127.0.0.1:8378", False),
+    # Scheme differs, authority matches. `Host` carries no scheme, so this is the one
+    # case the comparison cannot refuse — recorded rather than asserted away.
+    ("https://127.0.0.1:8378", "127.0.0.1:8378", True),
+])
+def test_an_origin_is_the_same_one_only_when_host_and_port_agree(origin, host, expected):
+    assert server.same_origin(origin, host) is expected
+
+
+def test_a_write_from_another_page_is_refused_before_the_body_is_read(tmp_path):
+    """The whole point: the tmux call must not happen.
+
+    `/api/send` types into a pane, so a refusal that still reached tmux would be no
+    refusal at all — the recorded argv is what makes the difference observable.
+    """
+    cfg = Config(session="t", project_root=_repo(tmp_path))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/send", {"index": 0, "text": "rm -rf /"},
+                            {"Content-Type": "text/plain",
+                             "Origin": "https://evil.example"})
+        assert status == 403
+        assert "cross-origin" in body["error"]
+        assert not [c for c in post.fake.calls if "send-keys" in c]
+
+
+def test_a_write_from_the_consoles_own_page_goes_through(tmp_path):
+    cfg = Config(session="t", project_root=_repo(tmp_path))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, _ = post("/api/send", {"index": 0, "text": "hello"},
+                         {"Content-Type": "application/json",
+                          "Origin": f"http://127.0.0.1:{post.port}"})
+    assert status == 200
+
+
+def test_a_client_that_sends_no_origin_at_all_is_not_locked_out(tmp_path):
+    """curl, a script, a health check.
+
+    Refusing these would invent an authentication the module docstring promises is
+    absent, and it would buy nothing: a browser sends `Origin` on every cross-site
+    POST, so the attack this refuses cannot reach the routes by omitting it.
+    """
+    cfg = Config(session="t", project_root=_repo(tmp_path))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, _ = post("/api/send", {"index": 0, "text": "hello"},
+                         {"Content-Type": "application/json"})
+    assert status == 200
+
+
+def test_a_referer_stands_in_when_the_origin_header_is_absent(tmp_path):
+    cfg = Config(session="t", project_root=_repo(tmp_path))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, _ = post("/api/send", {"index": 0, "text": "x"},
+                         {"Content-Type": "text/plain",
+                          "Referer": "https://evil.example/page"})
+    assert status == 403
+
+
+def test_a_proxy_that_rewrites_host_is_what_allowed_origins_is_for(tmp_path):
+    """nginx does this unless told `proxy_set_header Host $host`.
+
+    The page is same-origin with the console and the headers can no longer show it,
+    so the operator names the origin instead. Naming one does not widen anything
+    else: a third origin is still refused.
+    """
+    cfg = Config(session="t", project_root=_repo(tmp_path),
+                 allowed_origins=["https://console.example.com"])
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        allowed, _ = post("/api/send", {"index": 0, "text": "x"},
+                          {"Content-Type": "text/plain",
+                           "Origin": "https://console.example.com"})
+        other, _ = post("/api/send", {"index": 0, "text": "x"},
+                        {"Content-Type": "text/plain",
+                         "Origin": "https://evil.example"})
+    assert (allowed, other) == (200, 403)
