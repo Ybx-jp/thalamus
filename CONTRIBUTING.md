@@ -95,12 +95,19 @@ src/thalamus/
   contract/    the federation boundary — ontology, expert manifests, conformance
   console/     the browser control plane over the tmux roster
   archive/     immutable content-addressed store for retained evidence
-  harness/     MCP server, hooks, skills, transcript bootstrap
+  harness/     MCP server, hooks, skills, transcript bootstrap, ingest
   eval/        trace tap, attribution, cost — the live-serving half of the eval loop.
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
+  arch/        the `architect` scope's instrument — a declared-policy import extractor
+               and the structural metrics computed over it, behind the four arch gates
   pulse/       live telemetry dashboard
+  voice/       the console's optional `say` synthesis daemon (`--extra voice`)
+arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
+docs/          user documentation
+docker/        the confinement image a counterfactual arm runs inside
+tools/         frame-theme authoring scripts (`--extra frames`)
 tests/         pytest suite, plus tests/js and tests/qe
 ```
 

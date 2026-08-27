@@ -40,8 +40,8 @@ retained transcript into claims and open threads, and the next session opens alr
 knowing where you left off.
 
 **You can audit all of it.** The main scope is dense and connective, referencing
-expert nodes by ID and copying nothing. A live dashboard prices what retrieval
-actually cost.
+expert nodes by ID and copying nothing. `thalamus pulse` serves a live dashboard that
+prices what retrieval actually cost.
 
 ## Quick start
 
@@ -111,7 +111,7 @@ answers the other half — whether the wiring that writes it is armed.
 **0.1.0 runs from a checkout.** There is no `pip install thalamus` yet — several
 modules resolve paths from the repo root, and the expert manifests in `config/` live
 outside the package, so an installed wheel would look for paths that only exist in a
-clone. Installing without a clone is the 0.2.0 milestone.
+clone. Installing without a clone is the 0.1.1 milestone.
 
 Two features are **experimental and off by default**, each behind a flag on
 `thalamus console`:
@@ -123,12 +123,19 @@ Two features are **experimental and off by default**, each behind a flag on
 
 ## What's live
 
-- **The substrate** — a property graph (Apache TinkerPop / TinkerGraph) of `Session` /
-  `Claim` / `Thread` / `Source` / `Artifact` nodes, every one carrying provenance and a
-  scope. Orphans and contract violations are rejected at write time.
+- **The substrate** — a property graph (Apache TinkerPop / TinkerGraph) whose ten node
+  kinds are `Session`, `Claim`, `Thread`, `Source`, `Artifact`, `Chunk`, `Entity`,
+  `Exchange`, `Trace` and `Agent` — every one carrying provenance and a scope. Orphans
+  and contract violations are rejected at write time.
 - **The evidence archive** — memory is bootstrapped from retained session transcripts,
   held in an immutable content-addressed store outside the repo. The graph is a
   materialized view over that log: re-extract, never migrate.
+- **Curated ingestion** — an expert subgraph's domain half is fed a document at a time.
+  `thalamus ingest <url|path> --scope <expert>` refuses bytes whose serving origin the
+  scope's manifest does not allowlist, retains them in the archive as a `Source`, and
+  co-indexes the text as `Chunk` vertices beside the claims drawn from it. `--check`
+  verifies the source and reports the host that actually served it for no model spend;
+  nothing persists until `--write`.
 - **The expert roster** — each scope declared by a manifest in `config/experts/` and
   nothing else. Five ship as examples; write a YAML file and you have a sixth.
 - **Structural role boundaries** — where a scope is defined by what it must *not*
@@ -137,9 +144,10 @@ Two features are **experimental and off by default**, each behind a flag on
   holds the adversarial suite and is denied `src/`, so the scope that asserts against
   an implementation cannot quietly repair it. The reverse denial is in the ownership
   table, so no other scope can soften what it asserts either.
-- **Session pinning** — one OS process, one immutable pin. The MCP server reads the
-  scope from its environment at startup and no tool accepts a scope argument, so a
-  model cannot widen its own view by asking.
+- **Session pinning** — one OS process, one immutable pin. `thalamus pin <scope>`
+  launches a session into a scope and `thalamus roster` brings up the whole set as
+  tmux windows. The MCP server reads the scope from its environment at startup and no
+  tool accepts a scope argument, so a model cannot widen its own view by asking.
 - **The console** — because a pin is a process in a tmux window, the whole roster is
   addressable from one place. `thalamus console` serves it to a browser: a tab per
   window, the live pane, a composer, and one tap to spawn an expert in a project.
@@ -160,8 +168,9 @@ Two features are **experimental and off by default**, each behind a flag on
 
 ## Status
 
-Built and running: the substrate, the archive, the roster and pinning, the
-consultation protocol, rooms, and the eval loop's trace, attribution and cost layers.
+Built and running: the substrate, the archive, curated ingestion, the roster and
+pinning, the consultation protocol, rooms, and the eval loop's trace, attribution and
+cost layers.
 
 In progress: counterfactual measurement at a scale that can settle whether recalled
 memory changes task outcomes. What the instrument shows today is that memory gets
@@ -189,13 +198,20 @@ src/thalamus/
   contract/    the federation boundary — ontology, expert manifests, conformance
   console/     the browser/PWA control plane over the tmux roster
   archive/     immutable content-addressed store for retained evidence
-  harness/     where it meets the agent — MCP server, hooks, skills, bootstrap
+  harness/     where it meets the agent — MCP server, hooks, skills, bootstrap, ingest
   eval/        trace tap, attribution, cost — the live-serving half of the eval loop.
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
+  arch/        the `architect` scope's instrument — a declared-policy import extractor
+               and the structural metrics computed over it, gated in CI
   pulse/       live telemetry dashboard over the eval loop
+  voice/       the console's optional `say` synthesis daemon (`--extra voice`)
+arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
 docs/          user documentation
+docker/        the confinement image a counterfactual arm runs inside
+tools/         frame-theme authoring scripts (`--extra frames`)
+tests/         the suite, including `tests/qe/` — the adversarial suite, owned by `qe`
 ```
 
 ## License

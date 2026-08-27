@@ -203,11 +203,10 @@ small n, a regression threshold would be a false-alarm generator.
 Layer 2 — counterfactual campaigns that ask whether retrieval mattered (the task
 battery, the graded oracle, arms, corpora, calibration, the gold label set, rakes) —
 and the room-manipulation and diagram-legibility checks live in the private
-[`thalamus-eval`](https://github.com/Ybx-jp/thalamus-eval) companion repo, run via its
-own `thalamus-eval` CLI (`rooms`, `legibility`, `randomize`, `rakes`, `rake-audit`,
-`gold`, `tasks`, `corpus`, `rescore`, `oracle`, `run`). They moved out because they run
-research campaigns and produce findings that inform future versions, not live-serving
-behavior — see that repo's README for the split line and setup.
+`thalamus-eval` companion repo, run via its own `thalamus-eval` CLI (`rooms`,
+`legibility`, `randomize`, `rakes`, `rake-audit`, `gold`, `tasks`, `corpus`, `rescore`,
+`oracle`, `run`). They moved out because they run research campaigns and produce
+findings that inform future versions, not live-serving behavior.
 
 ## Repository analysis
 
