@@ -10,8 +10,7 @@ without saying what its null is and what its interval is — or, when the statis
 genuinely does not exist for that rate, saying so in words that then travel with
 the number. Forcing a null onto a rate that has none would manufacture rigor
 instead of adding it, which is why a reason is a first-class answer and not an
-escape hatch. `publish.py` already established the shape: "n/a **with a reason**,
-never dropped".
+escape hatch. The established shape is "n/a **with a reason**, never dropped".
 
 Two refusals are built in:
 
@@ -60,7 +59,6 @@ def percentile_ci(values: list[float], alpha: float = 0.05) -> tuple[float, floa
     lo = ordered[max(0, int(len(ordered) * alpha / 2) - 1)]
     hi = ordered[min(len(ordered) - 1, int(len(ordered) * (1 - alpha / 2)))]
     return (lo, hi)
-
 
 def session_bootstrap(
     groups: Mapping[str, Sequence[tuple[int, int]]],
