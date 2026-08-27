@@ -259,8 +259,7 @@ def _docker(command: list[str], **kwargs) -> subprocess.CompletedProcess:
 
     Every call in this module drives the graph container, so `docker` missing is one
     condition with one answer rather than nine bare tracebacks at nine call sites.
-    Same shape `eval/arms.py` uses for the confinement image: the refusal says what
-    is missing and what to run.
+    The refusal says what is missing and what to run.
     """
     try:
         return subprocess.run(command, **kwargs)

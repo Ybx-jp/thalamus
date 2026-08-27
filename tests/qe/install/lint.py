@@ -4,9 +4,10 @@ The matrix is expensive to run and slow to fail, so the properties that can be
 checked by reading the spec are checked by reading the spec. This is the part of
 the harness that gates a change to the harness.
 
-    python ops/qe-install-matrix/lint.py
+    python tests/qe/install/lint.py
 
-Exit 0 clean, 1 with findings. Deliberately not named `test_*` — see the
+Exit 0 clean, 1 with findings. `NOTE` lines are conditions worth printing that are
+not faults and do not move the exit code. Deliberately not named `test_*` — see the
 containment rule in tests/qe/README.md.
 """
 
@@ -156,13 +157,47 @@ def findings() -> list[str]:
         if not checks.DEFERRED.get(name, "").strip():
             out.append(f"{name}: deferred with an empty reason.")
 
-    if not spec.known_defect_issues():
+    # The harness's own falsifiability. An empty `known_defect_issues()` used to be a
+    # FAIL here, and that was the wrong gate: it made a repaired tree lintable only by
+    # leaving a defect open or by tagging one nobody had measured, and a tag invented
+    # to satisfy a lint is a fabricated positive control — the exact move this suite
+    # exists to catch. `drive.py` already treats the same condition as a state to name
+    # rather than a fault, and reports the cell green with the weaker claim spelled
+    # out; the lint now agrees with it. The condition is reported by `notes()`.
+    #
+    # What survives as a gate is the part that is still a fault. `fixed` keeps exit 1
+    # reachable — a check naming a fixed issue that goes red is a REGRESSION, not an
+    # absolved red — so a matrix carrying neither an open tag nor a fixed one has no
+    # issue-tagged check at all, and can only ever report novel failures. That is a
+    # harness with no self-control, and it is what this now refuses.
+    if not spec.known_defect_issues() and not spec.fixed_issues():
         out.append(
-            "known_defect_issues() is empty: the harness has no positive control "
-            "on itself and a fully green run would be indistinguishable from a "
-            "run that observed nothing."
+            "no check or config names an issue at all: `known_defect_issues()` and "
+            "`fixed_issues()` are both empty, so no red result can be read as either "
+            "a reproduction or a regression and the matrix can only report novel "
+            "failures."
         )
 
+    return out
+
+
+def notes() -> list[str]:
+    """Conditions worth printing that are not faults, so exit 0 still means clean.
+
+    Kept separate from `findings()` rather than folded into it as a severity: a caller
+    that reads the exit code and a caller that reads the output should not disagree
+    about what a note is.
+    """
+    out: list[str] = []
+    if not spec.known_defect_issues():
+        fixed = sorted(spec.fixed_issues())
+        out.append(
+            "every issue this matrix names is marked fixed "
+            f"({', '.join('#%d' % i for i in fixed)}), so no cell is built to "
+            "reproduce anything. A green run means no NEW failure and no regression "
+            "at a repaired site — it is not evidence that the harness can see. "
+            "Re-arm it by tagging the next filed install defect a config can trigger."
+        )
     return out
 
 
@@ -173,6 +208,8 @@ def main() -> int:
           f"{len(spec.CONFIGS)} configs, {len(spec.STEPS)} steps")
     for line in found:
         print(f"  FAIL {line}")
+    for line in notes():
+        print(f"  NOTE {line}")
     if not found:
         print("  clean")
     return 1 if found else 0

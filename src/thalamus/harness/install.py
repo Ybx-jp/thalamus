@@ -239,6 +239,15 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("afterMCPExecution", "readiness-ready.sh"),
 ]
 
+#: The Cursor hooks that are boundaries, and the only ones wired `failClosed`.
+#: Derived from the wiring rather than restated: a guard is a `beforeShellExecution`
+#: entry whose script is named for one, so a fourth guard added to the table above
+#: arrives here without a second edit that could be forgotten.
+CURSOR_GUARDS: frozenset[str] = frozenset(
+    script for event, script in CURSOR_HOOK_WIRING
+    if event == "beforeShellExecution" and script.endswith("-guard.sh")
+)
+
 
 # The codex wiring, in Claude Code's shape — (event, matcher, script) — because
 # codex's `hooks.json` *is* Claude Code's schema: matcher groups under an event key,
@@ -723,16 +732,25 @@ def build_cursor_hook_block() -> dict:
     session whose workspace root was the checkout itself — which is exactly the
     reach-past-the-checkout failure this module exists to fix.
 
-    `failClosed` is set explicitly on the guard rather than left to its `false`
-    default: the fail-open posture matches Claude Code (a hook that errors does
-    not block the command, only an exit-2 verdict does), and a security-shaped
-    hook should state that rather than inherit it.
+    `failClosed` is set explicitly on the three guards rather than left to its
+    `false` default, and it is set *true*. Each of them now prints a verdict for
+    every input it can be given — an empty payload, malformed JSON, a jq that is not
+    there, a payload carrying no command — so the only way one of them still exits
+    without a verdict is a fault nobody anticipated. That is exactly the case the
+    flag decides, and a boundary whose unanticipated failure grants permission is
+    not a boundary: from outside, a guard that examined the call and approved it and
+    a guard that died before looking are the same event.
+
+    It is set on the guards alone. The distillation, injection, conditioning and
+    readiness hooks are not boundaries — a crash in one costs a session's memory or
+    a stale modal, and blocking the operator's shell over it would trade a recorded
+    loss for an unrecoverable one.
     """
     block: dict = {}
     for event, script in CURSOR_HOOK_WIRING:
         entry: dict = {"command": str(CURSOR_HOOK_DIR / script), "type": "command"}
-        if script == "gremlin-guard.sh":
-            entry["failClosed"] = False
+        if script in CURSOR_GUARDS:
+            entry["failClosed"] = True
         block.setdefault(event, []).append(entry)
     return block
 
@@ -1630,19 +1648,40 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     checks.append(Check("hook scripts executable", not unexec,
                         "all executable" if not unexec else f"not executable: {unexec}"))
 
-    # jq: every retained hook parses stdin with it under `set -euo pipefail`,
-    # so without it the whole hook layer dies on the first event.
+    # jq and uv are prerequisites, and a prerequisite that is not on the box is an
+    # advisory rather than a failure. Both are other vendors' binaries: install wires
+    # configuration and does not fetch them, which is the same line already drawn on a
+    # graph that is not up and a coding-agent CLI that is not present. The check did
+    # run and did get an answer, so it is a finding and not `?` — `blocked` is "nobody
+    # could look", never "the fix needs a program you do not have".
+    #
+    # The severity is what moved, not the report: without jq every hook dies on the
+    # first event, so the line still says so, and now carries the command that fixes it.
     jq = shutil.which("jq")
-    checks.append(Check("jq on PATH", jq is not None, jq or "NOT FOUND — every hook will fail"))
+    checks.append(Check("jq on PATH", jq is not None,
+                        jq or "NOT FOUND — every hook will fail. Install jq "
+                              "(`apt install jq`, `brew install jq`)",
+                        advisory=jq is None))
 
     uv = shutil.which("uv")
-    checks.append(Check("uv on PATH", uv is not None, uv or "NOT FOUND — distillation cannot run"))
+    checks.append(Check("uv on PATH", uv is not None,
+                        uv or "NOT FOUND — distillation cannot run. Install uv "
+                              "(https://astral.sh/uv)",
+                        advisory=uv is None))
 
     # The load-bearing one: SessionEnd's exact invocation, from a cwd that is
     # deliberately not the checkout. This is the call that used to die detached.
+    #
+    # Without uv it cannot be attempted, and an item that vanishes from the output
+    # reads as a check that passed. Reporting it blocked keeps the count honest about
+    # what was and was not asked.
     if uv:
         ok, detail = probe_entry_point()
         checks.append(Check("distillation entry point", ok, detail))
+    else:
+        checks.append(Check("distillation entry point", False,
+                            "not attempted — uv is not on PATH to run it with",
+                            blocked=True))
 
     agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []
     checks.append(Check("derived agents installed", bool(agents),
@@ -1771,8 +1810,8 @@ def verify_armed() -> Check:
 
     The gap this closes is one that corrupted a real measurement. `room-guard.sh`
     was declared in `HOOK_WIRING` and absent from `~/.claude/settings.json`, so it
-    had never once run — and because `eval/rooms.py` builds a room's realized edges
-    exclusively from the rows that guard writes, every real room read as
+    had never once run — and because a room's realized edges are built exclusively
+    from the rows that guard writes, every real room read as
     *"TREATMENT DID NOT OCCUR — a set of solo sessions wearing a room label"*. The
     manipulation check was reporting on the hook's installation, not on the room.
 

@@ -134,10 +134,38 @@ thalamus_read_guard_input() {
     fi
   fi
   [ -n "$reason" ] || return 0
+  thalamus_refuse_unreadable "$name" "$reason"
+}
 
+# The refusal itself, so every "could not read the call" path words it identically.
+#
+# $1: the guard's name. $2: the reason, as a noun phrase.
+thalamus_refuse_unreadable() {
   printf 'Blocked by %s: %s, so the guard could not read the tool call it exists to examine. A guard that cannot parse its input denies rather than permits — otherwise an unreadable payload passes every boundary. Run `thalamus init --check` and report this to the operator; nothing inside this session can repair it.\n' \
-    "$name" "$reason" >&2
+    "$1" "$2" >&2
   exit 2
+}
+
+# The command a Bash-matched guard was given, or a refusal.
+#
+# On a hook whose matcher is `Bash`, `tool_input.command` is what the event *is* —
+# Claude Code does not raise one without it. So an empty read here is not a call with
+# nothing to inspect, it is a payload this guard cannot read, and the same rule
+# applies as to malformed JSON: deny rather than wave it through. Treating it as
+# "nothing to check" is a way past the boundary for any payload whose shape drifts.
+#
+# Only for `Bash` matchers. `role-guard.sh` matches Edit/Write/Skill and `room-guard.sh`
+# matches SendMessage, where a call legitimately carries no command and an absent one
+# means the guard has nothing to say — not that it was blinded.
+#
+# $1 (optional): the guard's name, for the message the model is shown.
+thalamus_guard_command=""
+thalamus_read_guard_command() {
+  local name="${1:-this guard}"
+  thalamus_guard_command=$(printf '%s' "$thalamus_guard_input" \
+    | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+  [ -n "$thalamus_guard_command" ] && return 0
+  thalamus_refuse_unreadable "$name" "the payload carries no tool_input.command to examine"
 }
 
 # The room this session belongs to — the collaboration it witnessed, empty when it

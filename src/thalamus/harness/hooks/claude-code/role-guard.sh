@@ -151,13 +151,14 @@ log_event() {
 # interpreter 15ms, that module ~15ms, `contract.manifest` 151ms. Importing the typed
 # contract here would make the cheap test more expensive than the expensive one.
 #
-# This rule fails CLOSED, which the guard around it does not. That is the
-# `write-guard.sh` posture applied to one rule: when the structured read fails, the
-# RAW payload is searched instead. The other boundaries can afford failing open
-# because their failure is a bad edit; this one's failure is a scope editing the
-# oracle that indicts it, and `guards-fail-closed-on-unparseable-input` is an open qe
-# finding that the shared jq prologue permits exactly when something unusual is
-# happening.
+# This rule does not depend on the structured read having worked. That is the
+# `write-guard.sh` posture applied to one rule: when the read fails, the RAW payload
+# is searched instead. `thalamus_read_guard_input` already denies a payload it cannot
+# parse, so this is the second of two closed doors rather than the only one — and it
+# stays because the two fail on different things. The prologue catches an input that
+# is not JSON; this catches one that parses cleanly and puts the path somewhere the
+# structured read does not look. The other boundaries' failure is a bad edit; this
+# one's is a scope editing the oracle that indicts it.
 if [ "$kind" = "path" ]; then
   ownership=""
   if [ -n "$target" ]; then

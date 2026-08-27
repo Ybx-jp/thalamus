@@ -672,3 +672,44 @@ def test_the_sourced_library_is_not_executable():
     import os
 
     assert not os.access(HOOKS / "resolve-scope.sh", os.X_OK)
+
+
+class TestCodexRoleGuardReadsItsPayloadThroughTheSharedGate:
+    """It was the last entry point still parsing its own stdin.
+
+    The three shell guards on this harness `exec` into their Claude Code twins and so
+    inherit that prologue, but `role-guard.sh` is a real adapter — it reads
+    `tool_name` itself to decide whether to handle `apply_patch` or delegate. Under
+    `set -euo pipefail` a payload jq refused killed it at that first read, with jq's
+    exit code rather than the blocking one, and codex reads only 2 as a denial.
+    """
+
+    def _run_raw(self, stdin, home):
+        return subprocess.run(
+            [str(HOOKS / "role-guard.sh")], input=stdin, capture_output=True,
+            text=True, timeout=60,
+            env={"HOME": str(home), "PATH": PATH, "THALAMUS_SCOPE": "main"},
+        )
+
+    def test_malformed_json_blocks_with_the_blocking_code(self, tmp_path):
+        result = self._run_raw('{"tool_name": "apply_patch", broken', tmp_path)
+
+        assert result.returncode == 2, result.stderr
+        assert "not valid JSON" in result.stderr
+        assert "role-guard.sh" in result.stderr
+
+    def test_an_empty_payload_blocks(self, tmp_path):
+        result = self._run_raw("", tmp_path)
+
+        assert result.returncode == 2, result.stderr
+        assert "payload was empty" in result.stderr
+
+    def test_a_readable_patch_outside_an_owned_path_is_still_allowed(self, tmp_path):
+        """The control: the gate is on the read, not on the verdict."""
+        result = run_hook("role-guard.sh",
+                          {"tool_name": "apply_patch",
+                           "tool_input": {"command": patch(("Update", str(tmp_path / "notes.md")))},
+                           "cwd": str(tmp_path)},
+                          tmp_path, env={"THALAMUS_SCOPE": "main"})
+
+        assert result.returncode == 0, result.stderr

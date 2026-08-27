@@ -40,8 +40,10 @@ input="$thalamus_guard_input"
 tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty')
 [ "$tool_name" = "Bash" ] || exit 0
 
-command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
-[ -n "$command" ] || exit 0
+# Past the Bash gate the command is the event, so an absent one is a payload this
+# guard cannot read rather than a call with nothing in it.
+thalamus_read_guard_command gremlin-guard.sh
+command="$thalamus_guard_command"
 
 # Only inline gremlin-python concerns this guard.
 printf '%s' "$command" | grep -qE \

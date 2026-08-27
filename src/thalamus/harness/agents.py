@@ -8,9 +8,9 @@ invisible until the machine that lacks it tries to use it, and then it fails as
 session on a Cursor-only machine must not need Claude Code installed and
 authenticated to become memory.
 
-Deliberately a leaf module — it imports nothing from Thalamus, so both
-`harness/extraction.py` (which already depends on `eval/`) and `eval/arms.py`
-can use it without a cycle.
+Deliberately a leaf module — it imports nothing from Thalamus, so
+`harness/extraction.py`, which already depends on `eval/`, can use it without a
+cycle.
 
 **Capability is declared, not assumed.** Claude Code and Cursor are near-identical
 for extraction — both take `-p`, `--model` and `--output-format json`, and both
@@ -120,8 +120,8 @@ class AgentCLI:
     # under-report the spend `eval cost` totals.
     reports_cost: bool
     # Why this CLI cannot yet drive an eval arm. Empty means it can. Arms need far
-    # more than a binary — see `eval/arms.py` — and a half-ported arm produces
-    # records that look like measurements and are not.
+    # more than a binary, and a half-ported arm produces records that look like
+    # measurements and are not.
     arm_blockers: tuple[str, ...] = field(default_factory=tuple)
     # Extra hint appended to invocation failures, where the vendor gives us a way
     # to discover the right value. Attached to the *model* argument specifically —

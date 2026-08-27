@@ -30,12 +30,16 @@ thalamus_sandbox_guard
 thalamus_read_guard_input room-command-guard.sh
 input="$thalamus_guard_input"
 
-command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
-[ -n "$command" ] || exit 0
-
 room="$(thalamus_resolve_room)"
-# Not in a room: nothing to bound. The common case, and a no-op.
+# Not in a room: nothing to bound. The common case, and a no-op. Asked before the
+# command is read so that an unreadable payload outside a room stays the no-op it
+# already was — there is no boundary here to fail closed around.
 [ -n "$room" ] || exit 0
+
+# Inside a room there is, and this hook is matched on `Bash`, where the command is
+# the event. An absent one is a payload the guard cannot read, not an empty call.
+thalamus_read_guard_command room-command-guard.sh
+command="$thalamus_guard_command"
 
 log_event() {
   local verdict="$1" branch="$2" target="$3"
