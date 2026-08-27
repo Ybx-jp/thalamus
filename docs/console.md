@@ -233,7 +233,7 @@ options, and all. So the read view shows it in full for as long as the session
 sits blocked, marked as waiting on you, instead of collapsing it to a chip that
 looks like a slow tool. Answer it in `term` with the ↑ ↓ keycaps and `⏎`: the
 dialog is a modal, and typing into the composer would discard the text and
-actuate whichever option happened to be highlighted (hazard 9).
+actuate whichever option happened to be highlighted.
 
 The waiting state reads the newest item on the *main* thread rather than the
 newest item outright, because a subagent writes into the same transcript — its
@@ -249,8 +249,8 @@ The view needs to know which session is in a window, which it reads from the pin
 ledger by tmux pane id. Sessions started before the console recorded that resolve
 by a narrower fallback — process start time joined on scope and directory — which
 **refuses when two windows share a scope and a directory**, since showing the wrong
-session's transcript is worse than showing none. Restart the window (⚙ → restart)
-and it resolves exactly from then on.
+session's transcript is worse than showing none. Open the session's row and restart
+the window from there, and it resolves exactly from then on.
 
 A read view showing one short exchange that never advances is a third state, and it
 is not a stall: the window's pane id was claimed by a headless `claude -p` spawned
