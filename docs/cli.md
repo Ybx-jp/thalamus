@@ -219,10 +219,20 @@ thalamus arch diff <commit-ish>    # re-scan both sides and compare
 thalamus arch rules                # measured edges against the declared layers
 thalamus arch rules --gate         # exit nonzero on an edge the model does not accept
 thalamus arch dead                 # definitions nothing outside tests/ refers to
+thalamus arch refs                 # names a comment points at that the tree no longer holds
+thalamus arch refs --limits        # what the recognizer did not consume, and what it declined to judge
 thalamus arch growth               # unreferenced stock first, then rate
 ```
 
-All six measure this checkout by default, from any working directory — the model
+`refs` reports and never gates: it has no `--gate` flag, because its precision has
+not been measured and a checker that acts on an unmeasured precision leaves no
+record of the calls it got wrong. A name the surrounding sentence asserts the
+*absence* of is not a finding — those are listed under `--limits` so the
+suppression can be audited — and backticked dotted names and bare `.json`/`.yaml`
+names are counted but never judged, since their referents are as often a graph
+property or another program's file as they are ours.
+
+All seven measure this checkout by default, from any working directory — the model
 they read (`arch/model.yaml`) belongs to a repository, not to wherever you are
 standing. `--repo <path>` points them at another tree.
 

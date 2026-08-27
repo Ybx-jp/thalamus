@@ -394,6 +394,18 @@ def _main():
         "through a string, star re-exports, unparsed files.",
     )
 
+    arch_refs_parser = arch_sub.add_parser(
+        "refs",
+        help="Names a comment points at that the tree no longer holds (report only)",
+    )
+    arch_refs_parser.add_argument("--repo", default=None, help=ARCH_REPO_HELP)
+    arch_refs_parser.add_argument(
+        "--limits", action="store_true",
+        help="Print what the recognizer did not consume — candidate tokens no form "
+        "matched, files it could not read, and the references a sentence asserts the "
+        "absence of.",
+    )
+
     arch_growth_parser = arch_sub.add_parser(
         "growth",
         help="What this system accumulates, and what nothing refers to (read-only)",
@@ -2875,7 +2887,7 @@ def _report_roster_boundaries():
 def _cmd_arch(args, arch_parser):
     """The architect's instrument. Reads code; writes a model file and findings."""
     command = getattr(args, "arch_command", None)
-    if command not in {"scan", "show", "diff", "rules", "growth", "dead"}:
+    if command not in {"scan", "show", "diff", "rules", "growth", "dead", "refs"}:
         arch_parser.print_help()
         sys.exit(1)
 
@@ -2927,6 +2939,10 @@ def _cmd_arch(args, arch_parser):
 
     if command == "dead":
         _arch_dead(args, repo, graph)
+        return
+
+    if command == "refs":
+        _arch_refs(args, repo)
         return
 
     if command == "diff":
@@ -3181,6 +3197,42 @@ def _dead_policy(repo):
     path = repo / arch_model.MODEL_PATH
     document = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
     return DeadEndPolicy.from_block((document or {}).get("deadends") or {})
+
+
+def _refs_policy(repo):
+    """The declared reference policy, read straight off the model file.
+
+    Read here rather than hung off `ArchModel` for the reason `_dead_policy` is:
+    `references` imports `findings`, which imports `model`, so putting the policy on
+    the model would close that into a cycle.
+    """
+    from thalamus.arch import model as arch_model
+    from thalamus.arch.references import ReferencePolicy
+
+    path = repo / arch_model.MODEL_PATH
+    document = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return ReferencePolicy.from_block((document or {}).get("references") or {})
+
+
+def _arch_refs(args, repo) -> None:
+    """Report references in comment prose that the tree no longer resolves.
+
+    No `--gate`, deliberately, and the absence is the design rather than an oversight:
+    this channel's precision has not been measured, and an unmeasured checker that
+    acts leaves no record of the calls it got wrong.
+    """
+    from thalamus.arch import references as arch_references
+
+    policy = _refs_policy(repo)
+    if not policy.enabled:
+        print(
+            "The reference channel is off. Enable it in `arch/model.yaml` under "
+            "`references: enabled: true` — a census nobody declared is a census "
+            "nobody can read the exceptions of."
+        )
+        return
+
+    print(arch_references.render(arch_references.census(repo, policy), limits=args.limits))
 
 
 def _arch_dead(args, repo, graph) -> None:
