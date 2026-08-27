@@ -39,16 +39,24 @@ const VIEWS = [
     // The view the first manual run never measured, and the one the compounding
     // defect lived in: `.rd-side` x `.rd-thinking` x `.rd-name` is reachable only
     // where a subagent's tool calls are rendered.
-    // `#view-toggle` by id, not `.viewcap` by class. `.viewcap` is shared with
-    // `#say-toggle`, which sits earlier in index.html and ships `hidden` — it is
-    // opt-in per device. `.first()` therefore resolved to a permanently invisible
-    // button, and Playwright waited out its actionability timeout rather than
-    // reporting no match, so this view had never been measured on any run.
+    // Two steps, because the loop re-`goto`s before every view: this one starts on
+    // the roster like the others and has to reach the read view on its own. The
+    // toggle lives in `#composer`, which is `display: none` until a row is open —
+    // measured on the live console, where it is 0x0 with a null offsetParent on the
+    // roster and 49x27 once a row is opened.
     //
-    // No `if (count())` guard around the click either: a missing toggle is this
-    // walker failing to reach the view it exists for, and skipping the click
-    // silently would open the same hole one level up.
+    // `#view-toggle` by id, not `.viewcap` by class: that class is shared with
+    // `#say-toggle`, which sits earlier in index.html and ships `hidden`, so
+    // `.first()` resolved to a permanently invisible button. Between the two faults
+    // Playwright spent its actionability timeout on an element that could never be
+    // clicked, and this view had never been measured on any run.
+    //
+    // No `if (count())` guard around either click: failing to reach the view is
+    // this walker failing at the one thing it exists for, and skipping silently
+    // would open the same hole one level up.
     open: async (page) => {
+      await page.locator(".srow, .chan-tab").first().click({ timeout: 5000 });
+      await page.waitForTimeout(600);
       await page.locator("#view-toggle").click({ timeout: 5000 });
       await page.waitForTimeout(800);
     },
