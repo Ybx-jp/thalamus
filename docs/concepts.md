@@ -94,8 +94,9 @@ The MCP server reads that at startup, and **no tool accepts a scope argument** �
 server decides what the session can see, and a model cannot widen its own view by
 asking. The pin lasts as long as the process.
 
-`thalamus roster` brings up one tmux window per expert, so the whole roster is a set
-of addressable processes. That is also what makes the console possible: a browser tab
+`thalamus roster` brings up the `main` anchor and experts are spawned on demand
+(`--all` opens one window per expert), so the roster is a set of addressable
+processes. That is also what makes the console possible: a browser tab
 per window. The roster runs on a tmux server of its own — `tmux -L thalamus`, named by
 `THALAMUS_TMUX_SOCKET` — because tmux ignores `HOME` and a socket is the only thing
 that separates one checkout's control plane from another's.
@@ -122,10 +123,12 @@ every launch rather than assumed to be there.
 
 One artifact doing three jobs at once:
 
-- **A data schema.** Five episodic node types — `Session`, `Claim`, `Thread`,
-  `Source`, `Artifact` — joined by `CONTAINS` / `TOUCHES` / `SPAWNS` / `BLOCKS` /
-  `CONTINUES` / `RESOLVES` / `SOLVED_BY` / `DERIVED_FROM`, plus whatever knowledge
-  types an expert manifest declares. Declared once in `contract/ontology.py`.
+- **A data schema.** Ten node types, of which five are episodic — `Session`,
+  `Claim`, `Thread`, `Source`, `Artifact`, beside `Entity`, `Chunk`, `Exchange`,
+  `Trace` and `Agent` — joined by sixteen edge types including `CONTAINS` /
+  `TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` / `SOLVED_BY` /
+  `DERIVED_FROM`. An expert manifest declares the *claim kinds* its scope may write,
+  not new node types. Declared once in `contract/ontology.py`.
 - **A permission system.** What a scope may write, and where.
 - **A trust boundary.** Every edge crossing between scopes crosses it.
 
@@ -173,7 +176,7 @@ node type, different tier. It is the floor of the provenance chain: `DERIVED_FRO
 lands a belief on the evidence it came from, `TOUCHES` carries the `anchors` that name
 the exact messages, and `ANCHORS` puts a literature claim on the passage it quotes.
 
-**Every node carries a scope, except `Artifact`.** Artifacts are deliberately
+**Every node carries a scope, except `Artifact` and `Agent`.** Both are deliberately
 **global** — one vertex per identifier, shared by every scope. A file touched by two
 experts is one node, which makes it the join key between them.
 

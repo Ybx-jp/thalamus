@@ -76,19 +76,6 @@ frames = [
     "numpy>=2.1",
     "scipy>=1.14",
 ]
-# The console's `say` control (thalamus/voice/daemon.py), reached only when the
-# console is started with `--voice URL`. Optional because it is the heaviest thing
-# in the repo by an order of magnitude — torch, plus a Kokoro-82M download from
-# HuggingFace on first synthesis, so a first run needs network. The daemon is also
-# normally its own venv and its own systemd unit, on a different lifecycle from the
-# console process; this extra exists so the dependency is *declared* rather than
-# discovered from an ImportError. Kokoro-82M is Apache-2.0; its espeak-ng G2P
-# backend is GPL and is not installed by this extra.
-voice = [
-    "kokoro>=0.9",
-    "torch>=2.5",
-    "numpy>=2.1",
-]
 # PDF text extraction for `thalamus ingest` (harness/ingest.to_text). Optional because
 # a text extractor is not a runtime path — every other surface reads bytes the archive
 # already holds — and because the ingestion protocol pays for plumbing when measurement
@@ -127,7 +114,7 @@ target-version = "py311"
 python = ".venv"
 python-version = "3.11"
 
-# No rule is switched off globally. The optional extras (`nli`, `voice`, `frames`,
+# No rule is switched off globally. The optional extras (`nli`, `frames`,
 # `pdf`) are imported inside the functions that need them and are absent from a default
 # `uv sync --extra dev`; an unresolved import of one is the declared arrangement rather
 # than a defect, and is suppressed at the import site with its reason, so that every

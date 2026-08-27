@@ -45,11 +45,9 @@ const VIEWS = [
     // measured on the live console, where it is 0x0 with a null offsetParent on the
     // roster and 49x27 once a row is opened.
     //
-    // `#view-toggle` by id, not `.viewcap` by class: that class is shared with
-    // `#say-toggle`, which sits earlier in index.html and ships `hidden`, so
-    // `.first()` resolved to a permanently invisible button. Between the two faults
-    // Playwright spent its actionability timeout on an element that could never be
-    // clicked, and this view had never been measured on any run.
+    // `#view-toggle` by id, not `.viewcap` by class: `.first()` on a shared class
+    // resolves to whichever element ships earliest in index.html, which is not a
+    // property this walker should be depending on.
     //
     // No `if (count())` guard around either click: failing to reach the view is
     // this walker failing at the one thing it exists for, and skipping silently

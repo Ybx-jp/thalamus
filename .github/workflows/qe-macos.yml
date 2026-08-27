@@ -18,15 +18,20 @@
 #
 # GREEN IS NOT THE GOAL
 #
-# The tree carries filed install defects, so a cell that fails nothing has not found a
-# clean install — it has failed to observe. `drive.py` exits 2 on that, and this job
-# goes red for it, exactly as it does for a new defect. `continue-on-error` is absent
-# for the same reason it is absent from qe-fast.yml.
+# Exit 2 is the positive control: a cell built to reproduce a filed defect and finding
+# nothing has not observed a clean install, it has failed to observe. It is scoped to
+# the cell's own perturbation (`spec.expected_reproductions`), and this cell's config
+# is `graph-not-started`, whose issue #17 is `fixed=True` — so it expects nothing, and
+# `drive.py` returns 0 with a line saying green here means no NEW failure and is not
+# evidence that the harness can see. Re-arm it by tagging the next filed defect a
+# no-graph box can trigger. `continue-on-error` is absent for the same reason it is
+# absent from qe-fast.yml.
 #
-#   0  every failing check named an unfixed filed issue, and at least one did -> green
+#   0  no failing check went unaccounted for: each named an unfixed filed  -> green
+#      issue, or this cell had nothing to reproduce
 #   1  a check failed naming no issue or a FIXED one, or a step that may not  -> NEW
 #      fail did                                                                  defect
-#   2  no known defect reproduced: fixed, or this cell cannot see them       -> read it
+#   2  this cell expected a reproduction and got none: fixed, or blind      -> read it
 #   3  MALFORMED: the oracle did not run, or a gate refused             -> not evidence
 #
 # An issue tag expires. It absolves a red result, so one left in place after the fix

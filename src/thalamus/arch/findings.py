@@ -49,7 +49,7 @@ def route_findings(routes: RouteGraph) -> list[Finding]:
 
     Both findings are stated against the *declared* client and server sets, never
     against the system: a route no scanned client calls may be called by something the
-    policy does not scan — the voice daemon, a shell script, a second front end — so the
+    policy does not scan — a shell script, a scheduled job, a second front end — so
     sentence says "no scanned client" and means it. Overstating it would turn a policy
     boundary into a false accusation of dead code.
     """

@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 import time
@@ -81,13 +80,20 @@ def main():
 
 
 def _main():
-    parser = argparse.ArgumentParser(description="Thalamus — federated graph memory for coding agents")
+    parser = argparse.ArgumentParser(
+        description="Thalamus — federated graph memory for coding agents",
+        epilog="One-shot graph repairs (backfill-chunks, audit-artifacts, "
+               "repair-projects, derive-artifact-paths, retire-scans, "
+               "repair-claim-addresses) are not listed here: they migrate an "
+               "existing graph and a new one can never need them. Each answers "
+               "--help, and docs/cli.md documents them under Maintenance.",
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Log Gremlin bytecode and server stack traces",
     )
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", metavar="<command>")
 
     # Write command
     write_parser = subparsers.add_parser("write", help="Write a session graph from YAML/JSON file")
@@ -406,7 +412,7 @@ def _main():
     # compute and nothing else, and it is safe to re-run.
     backfill_parser = subparsers.add_parser(
         "backfill-chunks",
-        help="Build co-indexed Chunk vertices for already-ingested documents",
+        description="Build co-indexed Chunk vertices for already-ingested documents.",
     )
     backfill_parser.add_argument(
         "--scope", default="", help="Limit to one expert scope (default: every scope)"
@@ -424,7 +430,7 @@ def _main():
 
     audit_artifacts_parser = subparsers.add_parser(
         "audit-artifacts",
-        help="Measure how fragmented Artifact identity is (read-only)",
+        description="Measure how fragmented Artifact identity is (read-only).",
     )
     audit_artifacts_parser.add_argument(
         "--url", default=DEFAULT_URL, help="Gremlin endpoint"
@@ -432,8 +438,8 @@ def _main():
 
     repair_projects_parser = subparsers.add_parser(
         "repair-projects",
-        help="Re-anchor project values that named a directory instead of a repo "
-        "(dry-run unless --write)",
+        description="Re-anchor project values that named a directory instead of a "
+        "repo. Dry-run unless --write.",
     )
     repair_projects_parser.add_argument(
         "--url", default=DEFAULT_URL, help="Gremlin endpoint"
@@ -445,8 +451,8 @@ def _main():
 
     derive_paths_parser = subparsers.add_parser(
         "derive-artifact-paths",
-        help="Project Artifact identifiers onto (repo, path) without re-keying them "
-        "(dry-run unless --write)",
+        description="Project Artifact identifiers onto (repo, path) without "
+        "re-keying them. Dry-run unless --write.",
     )
     derive_paths_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     derive_paths_parser.add_argument(
@@ -456,8 +462,8 @@ def _main():
 
     retire_scans_parser = subparsers.add_parser(
         "retire-scans",
-        help="Remove the graph records of architecture scans, which are no longer "
-        "written (dry-run unless --write)",
+        description="Remove the graph records of architecture scans, which are no "
+        "longer written. Dry-run unless --write.",
     )
     retire_scans_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     retire_scans_parser.add_argument(
@@ -467,8 +473,8 @@ def _main():
 
     repair_addresses_parser = subparsers.add_parser(
         "repair-claim-addresses",
-        help="Move Claims whose id disagrees with their own content back to the "
-        "address that content produces (dry-run unless --write)",
+        description="Move Claims whose id disagrees with their own content back to "
+        "the address that content produces. Dry-run unless --write.",
     )
     repair_addresses_parser.add_argument(
         "--url", default=DEFAULT_URL, help="Gremlin endpoint"
@@ -1130,13 +1136,17 @@ def _main():
         help="Frame-theme definitions for the desktop client, e.g. "
              "$WEZTERM_CONFIG_DIR/frames.lua (default: none — no frame themes)"
     )
-    # THALAMUS_VOICE_URL supplies the default rather than the feature: an operator
-    # already running the unit keeps their setting, and a box without one gets no
-    # `say` control instead of a button that fails on first tap.
+    # A console reached at the host the browser addressed needs none of these: the
+    # request's own `Host` is the comparison. This is for a reverse proxy that
+    # rewrites `Host` to the upstream (nginx does unless told
+    # `proxy_set_header Host $host`), which makes the browser's `Origin` unmatchable
+    # against anything the request still carries.
     console_parser.add_argument(
-        "--voice", default=os.environ.get("THALAMUS_VOICE_URL") or None, metavar="URL",
-        help="Speech service backing the `say` control, e.g. http://127.0.0.1:8380 "
-             "(default: $THALAMUS_VOICE_URL, else none — the control is hidden)"
+        "--allow-origin", action="append", default=[], metavar="ORIGIN",
+        dest="allow_origin",
+        help="Also accept writes from this origin, e.g. https://console.example.com "
+             "(repeatable; default: none — only the origin the request was addressed "
+             "to is accepted)"
     )
     console_parser.add_argument(
         "--fetch-interval", type=float, default=10.0, metavar="MINUTES",
@@ -4074,8 +4084,8 @@ def _cmd_console(args):
         scan_roots=args.scan,
         services=args.service,
         frames_file=args.frames,
-        voice_url=args.voice,
         fetch_interval_s=max(0.0, args.fetch_interval) * 60,
+        allowed_origins=args.allow_origin,
     )
     if subprocess.run(tmux.argv("has-session", "-t", cfg.session),
                       capture_output=True).returncode != 0:

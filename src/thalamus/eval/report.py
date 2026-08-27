@@ -7,7 +7,8 @@ nodes repeatedly retrieved-but-ignored are the decay candidates — surfaced her
 report long before anything acts on it.
 
 Discipline: these numbers say "instrumented, measuring". They do not say the
-memory helps. That claim needs layer 2's counterfactual arms, which do not exist yet.
+memory helps. That claim needs layer 2's counterfactual arms, which live in the
+`thalamus-eval` companion repo and have not yet run at a scale that settles it.
 """
 
 from __future__ import annotations

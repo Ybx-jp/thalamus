@@ -80,6 +80,7 @@ jobs:
       - name: Serve the console
         run: |
           uv run thalamus console --port 8378 --session thalamus &
+          echo $! > /tmp/console.pid
           for i in $(seq 1 40); do
             curl -sf http://127.0.0.1:8378/ >/dev/null && break || sleep 0.5
           done
@@ -107,3 +108,23 @@ jobs:
           name: contrast-views
           path: /tmp/contrast-*.png
           if-no-files-found: ignore
+
+      # The console and the roster outlive the steps that started them, and the runner
+      # is left to reap them: both appear under "Terminate orphan processes" on every
+      # run, green or red. That is not free. `setup-uv`'s post step saves the cache on
+      # a miss, and a live `uv run` at that moment turns the save into a five-minute
+      # stall ending in `uv failed with exit code 2` — a red job whose measurement
+      # passed, and which is green whenever the cache happens to hit. Stopping what
+      # this job started leaves the verdict to the contrast walker, which is the only
+      # thing this workflow is entitled to fail for.
+      #
+      # `if: always()`, because a failed Measure step is exactly when the processes
+      # still need stopping. Every command swallows its own failure: nothing here may
+      # turn a clean run red, and a process already gone is the expected case.
+      - name: Stop what this job started
+        if: always()
+        run: |
+          [ -f /tmp/console.pid ] && kill "$(cat /tmp/console.pid)" 2>/dev/null || true
+          pkill -f "thalamus console" 2>/dev/null || true
+          tmux -L thalamus kill-server 2>/dev/null || true
+          exit 0
