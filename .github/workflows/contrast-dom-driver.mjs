@@ -39,9 +39,17 @@ const VIEWS = [
     // The view the first manual run never measured, and the one the compounding
     // defect lived in: `.rd-side` x `.rd-thinking` x `.rd-name` is reachable only
     // where a subagent's tool calls are rendered.
+    // `#view-toggle` by id, not `.viewcap` by class. `.viewcap` is shared with
+    // `#say-toggle`, which sits earlier in index.html and ships `hidden` — it is
+    // opt-in per device. `.first()` therefore resolved to a permanently invisible
+    // button, and Playwright waited out its actionability timeout rather than
+    // reporting no match, so this view had never been measured on any run.
+    //
+    // No `if (count())` guard around the click either: a missing toggle is this
+    // walker failing to reach the view it exists for, and skipping the click
+    // silently would open the same hole one level up.
     open: async (page) => {
-      const tab = page.locator('[data-view="read"], .viewcap, .deskbar button').first();
-      if (await tab.count()) await tab.click({ timeout: 5000 });
+      await page.locator("#view-toggle").click({ timeout: 5000 });
       await page.waitForTimeout(800);
     },
   },
