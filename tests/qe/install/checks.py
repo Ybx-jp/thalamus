@@ -223,10 +223,23 @@ def _venv_python() -> Path:
 
 def _dump(code: str, env: dict | None = None):
     """Run a one-liner in the checkout's venv and parse its JSON, or None."""
-    python = _venv_python()
+    return _dump_from(_venv_python(), code, env=env)
+
+
+def _dump_from(python: Path, code: str, env: dict | None = None,
+               cwd: Path | None = None):
+    """The same, from an interpreter named explicitly.
+
+    The wheel probe reads `contract.paths` out of a venv that is not the checkout's,
+    and it has to be the same reader: two spellings of "ask the package where it
+    thinks it is" would eventually answer differently for a reason that is about the
+    two spellings. `cwd` is a parameter for that probe's sake — `python -c` puts the
+    working directory on `sys.path`, so a wheel interrogated from inside the checkout
+    could answer for a package the checkout holds rather than the one installed.
+    """
     if not python.exists():
         return None
-    rc, out = run([str(python), "-c", code], cwd=REPO, env=env)
+    rc, out = run([str(python), "-c", code], cwd=REPO if cwd is None else cwd, env=env)
     if rc != 0:
         return None
     for line in reversed(out.strip().splitlines()):
@@ -371,6 +384,8 @@ def snapshot(label: str) -> dict:
         state["verify"] = _dump(_VERIFY_DUMP)
     if label == "console":
         state["console"] = _console_probe()
+    if label == "wheel":
+        state["wheel"] = _wheel_probe()
     if label == "graph-ready":
         state["port_open"] = tcp_open("127.0.0.1", GRAPH_PORT)
         state["query_ok"] = _graph_answers()
@@ -425,6 +440,86 @@ def _console_probe() -> dict:
         "control_404": http_get("/console/"),
         "shell_paths": shell,
         "shell_results": {path: http_get(path) for path in shell},
+    }
+
+
+#: The `verify()` checks that look for a directory anchored on PROJECT_ROOT, by the
+#: names install.py renders them under (install.py:1642, :1357, :1482). All three
+#: resolve `PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / <harness>` and
+#: report a `missing: [...]` list, so all three read the anchor and nothing else.
+SCRIPT_PRESENCE_CHECKS = ("hook scripts present", "cursor hook scripts present",
+                          "codex hook scripts present")
+
+#: What the package thinks its project root is, and whether a checkout is there. Run
+#: under both interpreters, so the two answers are comparable rather than merely both
+#: recorded.
+_PATHS_DUMP = (
+    "import json;"
+    "from thalamus.contract.paths import PROJECT_ROOT as r;"
+    "print(json.dumps({'project_root': str(r),"
+    "'pyproject': (r / 'pyproject.toml').is_file(),"
+    "'config_experts': (r / 'config' / 'experts').is_dir(),"
+    "'hook_dir': (r / 'src' / 'thalamus' / 'harness' / 'hooks' / 'claude-code')"
+    ".is_dir()}))"
+)
+
+
+def _probe_home(name: str) -> Path:
+    """A home directory of this probe's own.
+
+    The cell's own HOME has been installed to and uninstalled from by the time the
+    wheel phase runs, and a probe reading that state would be reading the checkout's
+    install rather than the packaged layout. One per CLI, so neither probe reads the
+    other's leftovers either.
+    """
+    home = ARTIFACTS / f"{name}-probe-home"
+    home.mkdir(parents=True, exist_ok=True)
+    return home
+
+
+def _init_check_from(cli: Path, home: Path) -> dict:
+    """`thalamus init --check` from one CLI, with a home of its own.
+
+    The documented pre-install command (getting-started:127), which is also what the
+    reproduction of #35 ran. `wheel-probe` rather than `thalamus-init` for the budget:
+    `verify()` calls `probe_entry_point`, which allows itself 180 s for a `uv run`
+    resolution, and a probe killed inside a wait the product considers normal reports
+    as missing evidence rather than as a finding.
+    """
+    if not cli.exists():
+        return {"cli": str(cli), "present": False}
+    rc, out = run([str(cli), "init", "--check"], timeout=spec.TIMEOUTS["wheel-probe"],
+                  cwd=home, env={"HOME": str(home)})
+    lines = parse_check_lines(out)
+    return {
+        "cli": str(cli),
+        "present": True,
+        "rc": rc,
+        "lines": len(lines),
+        "scripts": {name: [mark, detail] for mark, name, detail in lines
+                    if name in SCRIPT_PRESENCE_CHECKS},
+    }
+
+
+def _wheel_probe() -> dict:
+    """What the installed wheel resolves, and what the checkout resolves beside it.
+
+    Both halves are taken here, in one function, on the same box and minutes apart.
+    The checkout half is the control: "the wheel cannot find its hook scripts" and
+    "this box renders no such line" are the same reading otherwise, and the second one
+    would report the defect on a tree where it had been fixed.
+    """
+    venv = HOME / spec.WHEEL_VENV_DIRNAME
+    wheel_python = venv / "bin" / "python"
+    wheel_home = _probe_home("wheel")
+    return {
+        "venv": str(venv),
+        "installed": wheel_python.exists(),
+        "wheel_paths": _dump_from(wheel_python, _PATHS_DUMP, cwd=wheel_home),
+        "checkout_paths": _dump_from(_venv_python(), _PATHS_DUMP),
+        "wheel_cli": _init_check_from(venv / "bin" / "thalamus", wheel_home),
+        "checkout_cli": _init_check_from(REPO / ".venv" / "bin" / "thalamus",
+                                         _probe_home("checkout")),
     }
 
 
@@ -974,6 +1069,87 @@ def check_uninstall_leaves_no_dangling_link() -> Result:
     return ok("no dangling skill link survives the uninstall", control)
 
 
+def check_installed_wheel_finds_the_scripts_it_ships() -> Result:
+    """Does a wheel installed outside a checkout resolve the files it shipped with?
+
+    Read off `init --check`'s own rendering rather than off `PROJECT_ROOT` directly,
+    because the anchor being wrong is the cause and the missing scripts are the
+    impact: a fix that re-anchors on the package makes these lines pass, and a fix
+    that only moves the constant somewhere else does not. The resolved root is
+    recorded in the detail either way, so the witness names the cause.
+    """
+    snapshot_state = load_snapshot("wheel")
+    if snapshot_state is None:
+        return skip("this cell built no wheel — only the config that sets "
+                    "`builds_a_wheel` runs that phase, and nothing here is evidence "
+                    "about the packaged layout")
+    probe = snapshot_state.get("wheel") or {}
+    if not probe.get("installed"):
+        return skip(f"the wheel was not installed (phase rc={step_rc('wheel')}), so "
+                    "there is no packaged layout to read; see step-wheel.log")
+
+    wheel_cli = probe.get("wheel_cli") or {}
+    control_cli = probe.get("checkout_cli") or {}
+    control_scripts = control_cli.get("scripts") or {}
+    wheel_scripts = wheel_cli.get("scripts") or {}
+
+    # The control is read first and in full, because every branch below is a statement
+    # about the difference between the two CLIs and none of them means anything until
+    # the checkout's own answer is known to be the healthy one.
+    if not control_cli.get("present"):
+        return skip(f"the control CLI {control_cli.get('cli')} is not on this box, so "
+                    "the wheel's answer has nothing to be compared against")
+    if not control_scripts:
+        return skip("the checkout's own `init --check` rendered no script-presence "
+                    f"line at all ({control_cli.get('lines')} check lines parsed, "
+                    f"rc={control_cli.get('rc')}), so this run can say nothing about "
+                    "where a packaged install looks for them")
+    control_missing = [n for n, (mark, _d) in control_scripts.items()
+                       if mark == MARK_FAIL]
+    if control_missing:
+        return skip(
+            "the checkout's own CLI reports " + ", ".join(sorted(control_missing))
+            + " missing too, so the probe is reading a path that does not populate on "
+            "this box and a missing script under the wheel could not be attributed to "
+            "packaging")
+
+    checkout_root = (probe.get("checkout_paths") or {}).get("project_root")
+    control = (f"the same probe from {control_cli['cli']} found all "
+               f"{len(control_scripts)} script sets present, anchored on "
+               f"{checkout_root} (rc={control_cli.get('rc')})")
+
+    paths = probe.get("wheel_paths") or {}
+    root = paths.get("project_root", "unresolved")
+    where = (f"the installed package resolves PROJECT_ROOT to {root} "
+             f"(pyproject.toml: {paths.get('pyproject')}, "
+             f"config/experts: {paths.get('config_experts')}, "
+             f"hooks dir: {paths.get('hook_dir')})")
+
+    # Ordered ahead of the intersection deliberately: a wheel with no console script
+    # renders no lines to intersect with, and reading that as "nothing comparable" would
+    # turn the sharper failure — the documented command cannot be run at all — into
+    # silence.
+    if not wheel_cli.get("present"):
+        return bad(f"the wheel installed no `thalamus` console script at "
+                   f"{wheel_cli.get('cli')}, so the documented pre-install command "
+                   f"cannot be run at all. {where}", control=control)
+    both = sorted(set(control_scripts) & set(wheel_scripts))
+    if not both:
+        return skip(
+            "the wheel's CLI rendered none of the script-presence lines the "
+            f"checkout's did (checkout: {sorted(control_scripts)}, wheel: "
+            f"{sorted(wheel_scripts)}, rc={wheel_cli.get('rc')}), so the two runs "
+            "cannot be compared line for line")
+    missing = [n for n in both if wheel_scripts[n][0] == MARK_FAIL]
+    if missing:
+        detail = "; ".join(f"{n}: {wheel_scripts[n][1]}" for n in missing)
+        return bad(f"{len(missing)} of {len(both)} script sets are missing under the "
+                   f"wheel — {detail}. {where}. `init --check` exited "
+                   f"{wheel_cli.get('rc')}", control=control)
+    return ok(f"the wheel-installed CLI found all {len(both)} script sets; {where}",
+              control)
+
+
 # ---------------------------------------------------------------------------------
 # The registry
 # ---------------------------------------------------------------------------------
@@ -998,6 +1174,8 @@ EVALUATORS = {
     "console-serves-its-shell": check_console_serves_its_shell,
     "precached-assets-are-all-present": check_precached_assets_are_present,
     "uninstall-leaves-no-dangling-link": check_uninstall_leaves_no_dangling_link,
+    "installed-wheel-finds-the-scripts-it-ships":
+        check_installed_wheel_finds_the_scripts_it_ships,
 }
 
 #: Checks with no implementation, each with the reason. Reported in `not_evaluated` with

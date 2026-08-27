@@ -42,6 +42,7 @@ class Phase(str, Enum):
     MOVED = "moved"                  # after the checkout is renamed
     CONSOLE = "console"              # with `thalamus console` serving
     UNINSTALLED = "uninstalled"      # after `thalamus init --uninstall`
+    WHEEL = "wheel"                  # the built wheel installed outside the checkout
 
 
 class Severity(str, Enum):
@@ -129,6 +130,12 @@ class Config:
     env: dict[str, str] = field(default_factory=dict)
     unset: tuple[str, ...] = ()
     skip_steps: tuple[Phase, ...] = ()
+    #: Build the wheel, install it outside the checkout, and probe the installed
+    #: artifact after the documented sequence has finished. Off by default because it
+    #: costs a build and a second venv in every cell that carries it, and because the
+    #: property it reads — what the PACKAGED layout resolves — is the same whichever
+    #: box the sequence ran on. `drive.py` runs the phase; `checks.py` reads it.
+    builds_a_wheel: bool = False
 
 
 # --------------------------------------------------------------------------------------
@@ -187,6 +194,15 @@ PREREQUISITES: tuple[str, ...] = ("jq", "tmux")
 #: "at least one", not "all three".
 AGENT_CLIS: tuple[str, ...] = ("claude", "agent", "codex")
 
+#: Where the wheel phase installs the built wheel, under the cell's home. Named here
+#: because `drive.py` creates it and `checks.py` reads it, and a second spelling of
+#: the path would be a probe reporting on a venv nobody built. Under the HOME rather
+#: than under `$QE_ARTIFACTS` on purpose: the artifacts directory is uploaded whole as
+#: a cell's evidence, and a venv is a hundred megabytes of dependency that says
+#: nothing a reader of that evidence needs. The wheel itself does stay in artifacts —
+#: it is the artifact under test.
+WHEEL_VENV_DIRNAME = ".qe-wheel-venv"
+
 
 # --------------------------------------------------------------------------------------
 # Config variants. Each reproduces a filed defect's precondition.
@@ -218,6 +234,20 @@ CONFIGS: tuple[Config, ...] = (
            "ordinary upgrade looks like. Every later --check must name the "
            "mismatch rather than printing the healthy-install text.",
            issue=52, fixed=True),
+    # The one variant that is not a perturbation of the BOX. Every other config here
+    # changes what the machine has; this one changes what the product IS — the wheel
+    # `uv build` produces, installed into a venv of its own with no checkout anywhere
+    # near it, which is what a user who did not clone would get. It runs the whole
+    # documented sequence against the checkout as well, because the wheel probe's
+    # control is the checkout's own answer to the same question and both have to come
+    # off the same box on the same day.
+    Config("installed-wheel",
+           "The product installed as a wheel outside a checkout. `contract/paths.py:21` "
+           "anchors PROJECT_ROOT at `parents[3]`, which from "
+           "`site-packages/thalamus/contract/paths.py` is the venv's `lib/pythonX.Y`, "
+           "so everything the harness loads by repo-relative path is looked for "
+           "somewhere nothing was installed.",
+           issue=35, builds_a_wheel=True),
 )
 
 
@@ -350,6 +380,24 @@ CHECKS: tuple[Check, ...] = (
           "installation as a whole if any one 404s.",
           issue=48, fixed=True),
 
+    # ---- the packaged layout ----------------------------------------------------
+    Check("installed-wheel-finds-the-scripts-it-ships", Phase.WHEEL, Severity.BLOCKS,
+          "A wheel installed outside a checkout must resolve the files it shipped "
+          "with. `contract/paths.py:21` is `Path(__file__).resolve().parents[3]`, and "
+          "its own docstring states the premise — 'this project runs from its "
+          "checkout'. From `site-packages/thalamus/contract/paths.py` that arithmetic "
+          "lands on the venv's `lib/pythonX.Y`, so `verify()` looks for the hook "
+          "scripts under `<venv>/lib/pythonX.Y/src/thalamus/harness/hooks/`, where "
+          "nothing is, while the scripts themselves sit in the package it just "
+          "installed. `config/experts/` is not in the wheel at all.",
+          issue=35,
+          control="the SAME `thalamus init --check`, run in the same phase from the "
+                  "checkout's own `.venv/bin/thalamus` against a home of its own, "
+                  "must report those script sets PRESENT. Without that half the "
+                  "check is asserting on a rendering that could be missing on any "
+                  "box, for any reason, and would report the defect on a repaired "
+                  "tree"),
+
     # ---- uninstall --------------------------------------------------------------
     Check("uninstall-leaves-no-dangling-link", Phase.UNINSTALLED, Severity.DEGRADES,
           "Uninstall identifies its own links by resolving them against currently "
@@ -391,6 +439,18 @@ TIMEOUTS: dict[str, int] = {
     "uv-sync": 300,          # measured at 2.1 s; the floor guards a resolver stall
     "thalamus-init": 120,    # two 60 s subprocess timeouts inside register_mcp
     "asserts": 180,
+    # `uv build` fetches a build backend and `uv pip install` resolves the runtime
+    # dependencies into a second venv. Both hit the same uv cache `uv sync` has
+    # already warmed in this cell, so this is sized for a cold cache and a network
+    # round trip rather than for the measured case.
+    "wheel": 600,
+    # One `thalamus init --check`, and the floor is not arbitrary: `verify()` calls
+    # `probe_entry_point`, which allows ITSELF 180 s for a `uv run` resolution. A
+    # budget under that would kill the probe inside a wait the product considers
+    # normal, and the cell would report missing evidence where there was a finding.
+    # Two of these run in the wheel phase, so it also has to stay well inside
+    # CELL_CEILING_S.
+    "wheel-probe": 300,
 }
 
 #: The per-cell hard ceiling, in seconds. Passed to virt-install as `--wait` in minutes.

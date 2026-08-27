@@ -93,6 +93,7 @@ SNAPSHOT_PHASE: dict[str, spec.Phase] = {
     "reinstalled": spec.Phase.REINSTALLED,
     "console": spec.Phase.CONSOLE,
     "uninstalled": spec.Phase.UNINSTALLED,
+    "wheel": spec.Phase.WHEEL,
 }
 
 
@@ -415,6 +416,74 @@ def moved_phase(repo: Path, env: dict, artifacts: Path, recorder: Recorder) -> N
     recorder.mark(f"moved END rc={rc}")
 
 
+def wheel_phase(repo: Path, env: dict, artifacts: Path, recorder: Recorder) -> None:
+    """Build the wheel, install it outside the checkout, and let the oracle read it.
+
+    **Not a `Step`, and the reason is the `doc` field.** Every entry in `spec.STEPS`
+    is quoted to the file:line that teaches it, because a step whose real behaviour
+    disagrees with its documentation is this matrix's most common finding. No doc
+    teaches `uv build`: a user installing without a clone has no documented sequence
+    at all yet, which is milestone 0.1.1's whole subject. Putting it in `STEPS` would
+    either publish a command the docs do not carry as though they did, or make five
+    other configs skip a phase they never asked for.
+
+    So it is a synthesized phase, which is what `moved` and `console` already are, and
+    it runs LAST — after `init --uninstall` has put the box back. A build nobody
+    documents cannot then move a result in a sequence everybody does, and the checkout
+    CLI the control probe needs is still in `.venv` either way.
+
+    The probe itself lives in `checks.py`, for the reason the console phase gives: the
+    driver acts and the oracle observes. It matters more here than there — the control
+    is the checkout's answer to the same question, and a control taken by a different
+    code path than the reading is not a control.
+    """
+    wheel_dir = artifacts / "wheel"
+    venv = Path(env["QE_GUEST_HOME"]) / spec.WHEEL_VENV_DIRNAME
+    timeout = spec.TIMEOUTS["wheel"]
+    recorder.mark("wheel START")
+    recorder.note(f"phase wheel: building into {wheel_dir}")
+    start = time.time()
+    log: list[str] = []
+
+    def stage(argv: list[str], cwd: Path) -> int:
+        log.append(f"$ {' '.join(argv)}")
+        try:
+            proc = subprocess.run(argv, cwd=cwd, env=env, timeout=timeout,
+                                  capture_output=True, text=True, errors="replace")
+            out, rc = proc.stdout + proc.stderr, proc.returncode
+        except subprocess.TimeoutExpired as exc:
+            out, rc = (exc.output or "") + f"\n[drive] timed out after {timeout}s", 124
+        except FileNotFoundError:
+            out, rc = f"[drive] {argv[0]} not found on PATH", 127
+        log.append(out)
+        return rc
+
+    argv = ["uv", "build", "--wheel", "-o", str(wheel_dir)]
+    rc = stage(argv, repo)
+    built = sorted(wheel_dir.glob("*.whl")) if rc == 0 else []
+    if rc == 0 and not built:
+        # `uv build` exiting 0 with nothing on disk is not a defect in the product,
+        # and reporting it as one would be. The evaluator reads this rc and says the
+        # wheel was never installed rather than that it resolved the wrong paths.
+        log.append(f"[drive] uv build exited 0 and left no .whl in {wheel_dir}")
+        rc = 1
+    if built:
+        rc = stage(["uv", "venv", str(venv)], artifacts) or rc
+        rc = stage(["uv", "pip", "install", "--python", str(venv / "bin" / "python"),
+                    str(built[-1])], artifacts) or rc
+
+    (artifacts / "step-wheel.log").write_text("\n".join(log))
+    (artifacts / "step-wheel.rc").write_text(f"{rc}\n")
+    recorder.log.append("\n".join(log)[-4000:])
+    recorder.record("wheel", rc, start, time.time(), argv)
+    recorder.mark(f"wheel END rc={rc}")
+    recorder.note(f"phase wheel: exited {rc}")
+    # Snapshotted whatever the build did. A failed build still has to be told apart
+    # from a wheel that installed and then could not find itself, and the snapshot is
+    # where the evaluator reads which one it got.
+    snap("wheel", env, recorder)
+
+
 def console_phase(repo: Path, env: dict, artifacts: Path, recorder: Recorder) -> None:
     """Start the console, fetch its shell, stop it.
 
@@ -606,6 +675,8 @@ def main(argv: list[str]) -> int:
                         moved_phase(repo, env, artifacts, recorder)
                     if spec.Phase.CONSOLE not in config.skip_steps:
                         console_phase(repo, env, artifacts, recorder)
+            if config.builds_a_wheel and spec.Phase.WHEEL not in config.skip_steps:
+                wheel_phase(repo, env, artifacts, recorder)
             findings = evaluate(env, recorder)
     except GateRefused as exc:
         print(f"boundary-abort: {exc}", file=sys.stderr)
