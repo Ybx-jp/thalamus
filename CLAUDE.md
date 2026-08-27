@@ -127,6 +127,24 @@ Novelty claims are phrased "not found in the current scan", never a bare "novel"
 GitHub Issues on this repo is the tracker. Use the `track-open-work` skill — it carries
 the template and the register.
 
+**A defect a qe harness can trigger is filed with its reproduction, in the same
+change.** If the install matrix can reach it — it shows up during the documented
+sequence on a box a config can shape — it gets a `tests/qe/install/` check tagged with
+the issue number and no `fixed`. If a case can reach it by driving a surface directly,
+it gets one in `tests/qe/cases/`. Then the tracker holds defects that are *confirmed*
+rather than asserted, and the matrix keeps a live positive control on itself instead of
+one being backfilled as a chore.
+
+It does not qualify when the reproduction would not be one: evidence that is the
+operator's own long-lived state, a measurement still to be designed, or a coverage gap
+where writing the check closes the issue rather than reproducing it. Say which of these
+it is in the issue rather than filing untagged and silent.
+
+Tag only what you have shown reproduces. `tests/qe/` is owned by `qe`, so hand the
+reproduction over — see the ownership note under Repo hygiene. When the defect is
+fixed, the same check flips to `fixed=True` with its control and becomes the regression
+guard.
+
 ## Commit messages, PRs, and anything else published
 
 **Describe the change and its impact. Do not editorialize, and never grade the
@@ -190,3 +208,9 @@ the thing in ordinary words, and cut what he did not ask about.
   not installed for users.
 - `substrate/` sits below the contract: it knows nodes and edges, not experts or trust
   tiers. An import of `contract/` into `substrate/` means the change belongs elsewhere.
+- **`tests/qe/` is owned by scope `qe`, and `main` cannot write it.** The oracle is not
+  edited by the party it indicts — `contract/ownership.PATH_OWNERSHIP` declares it
+  tier-0 and `role-guard.sh` blocks the write, which is the mirror of qe's own `src/`
+  deny. Hand the change to a `qe`-pinned session and let it land the file. The
+  boundary is not a lint to work around: a scope that can edit what asserts against it
+  has no oracle, only a second opinion of its own.

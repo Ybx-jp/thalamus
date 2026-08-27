@@ -50,10 +50,18 @@ has failed to observe.** `spec.expected_reproductions(config)` says what THIS ce
 built to reproduce, and `drive.py` exits 2 when none of them do. That is the harness
 reporting on itself, and it is not a pass.
 
-A cell whose expected set is empty makes the weaker claim instead — no new failure,
-no regression — and says so on the way out at exit 0. It is not a fault, and neither
-`drive.py` nor `lint.py` treats it as one; it is the state a repaired tree is in, and
-the thing to do about it is tag the next filed defect, not keep one open.
+One cell's expected set may legitimately be empty. A config claims the defect its own
+perturbation triggers, and a config whose tag is marked fixed claims nothing, so a
+cell can have nothing of its own to reproduce while another cell still does. Those
+cells make the weaker claim — no new failure, no regression at a repaired site — say
+so on the way out, and exit 0.
+
+The **matrix** having nothing to reproduce is a different condition, and `lint.py`
+fails on it at exit 1. An empty `known_defect_issues()` means no cell anywhere is
+built to reproduce anything, so no red result in the matrix can be read as a
+reproduction and the harness has no positive control at all. It is not evidence that
+the product is repaired; it means a defect was filed without its reproduction, or the
+last tag was marked fixed without the next one being written.
 
 ```
 0  every failing check named an unfixed filed issue, and at least one did
@@ -80,13 +88,54 @@ red on the fix, and its own tag kept the cell green. A check that reads a render
 pins the shape of the **healthy** branch, which is stable, never the prose of the
 unhealthy ones, which improves.
 
-When every tagged defect is marked fixed, `known_defect_issues()` empties and
-`lint.py` prints it as a `NOTE` at exit 0. It is not a lint failure: making it one
-would leave two ways to a clean lint, closing the last defect or tagging one nobody
-measured, and the second is a fabricated positive control. What `lint.py` does refuse
-is a matrix where nothing is tagged at all, open or fixed — with no `fixed` tag either
-there is no site at which a red result reads as a regression, and the run can only
-report novel failures. Re-arm the control by tagging the next filed defect.
+Marking the last open tag fixed empties `known_defect_issues()`, and `lint.py` fails.
+The way out is never a number in a field: a tag invented to satisfy a lint is a
+fabricated positive control, which is the exact move this suite exists to catch. It
+is the reproduction below.
+
+## A filed defect arrives with its reproduction
+
+Standing practice, and what keeps that gate satisfiable: **a defect this matrix can
+trigger and observe is filed together with the cell that reproduces it, in the same
+change.** The tracker then carries confirmed defects rather than asserted ones — an
+issue with a red cell behind it has been shown happening on a box, not read off the
+source — and the harness's positive control stays armed as a side effect rather than
+as a chore. What is out of reach here goes to the tracker without a tag; what is
+reachable and untagged is a reproduction someone has yet to write.
+
+Four decisions, qe-side. The filing procedure itself is elsewhere — `CLAUDE.md`,
+`CONTRIBUTING.md` and the `track-open-work` skill.
+
+**Which phase.** A defect reachable from a command in `STEPS` pins its check to that
+step's phase and runs in every cell. One that needs work the docs do not teach gets a
+*synthesized* phase instead: `drive.py` runs it, `STEPS` does not carry it, and the
+`doc` field is the reason — every step there is quoted to the file:line a user would
+have read, and a command no documentation teaches has no such line to offer. `moved`,
+`console` and `wheel` are all that shape. A check whose phase did not run in this cell
+returns `skip()` with the reason, never a pass.
+
+**Which cell.** `expected_reproductions()` reads a `Config`'s own tag to decide what
+THIS cell must reproduce, so a defect that needs a perturbation — or a different
+artifact, as `installed-wheel` does — gets a `Config` naming the same issue. A check
+tagged with an issue no config claims is taken as reachable from the baseline sequence
+and is expected everywhere. Either way the new config must land in exactly one of the
+partitions the workflows fan out over — see *What runs where* — or nothing runs it.
+
+**The control.** Mandatory wherever the check asserts something is missing, and it
+must be an observation this run actually made — `ok()` refuses to build a pass out of
+an empty control string. For #35 it is the checkout's own CLI answering the same
+question, in the same phase, minutes apart on the same box: "the wheel cannot find its
+hook scripts" and "this box renders no such line" are one reading otherwise, and the
+second would go on reporting the defect after it was fixed.
+
+**What `fixed` means later.** Nothing yet — leave it off. It is the flag the change
+that *closes* the issue sets, on the check and the config together, and from then on
+the site is expected to pass. See the section above for why that matters more than it
+sounds.
+
+Do not tag a defect you have not watched reproduce. A red cell is what makes the
+number mean anything; without one the tag absolves a failure nobody has seen, which is
+worse than an untagged gap.
 
 ## The gates, and why a cell would rather abort than report
 
@@ -141,6 +190,17 @@ so `qe-linux.yml` relocates the binaries a config removes into `~/.local/bin` fi
 reading the list from `spec.CONFIGS`. The end state is the one the config asks for — the
 binary is off PATH once perturbed — but it is reached by moving the file rather than by
 the box never having had it.
+
+`installed-wheel` is the only config that is not a perturbation of the box. It runs
+the documented sequence like any other cell and then builds the wheel, installs it
+into a venv of its own outside the checkout, and asks the packaged CLI the documented
+pre-install question (`thalamus init --check`, getting-started:127) — which is the
+whole sequence a user who did not clone has, milestone 0.1.1 being where the rest of
+it is owed. It needs nothing from the workflow beyond what `uv sync` already needs: it
+removes no binary, skips no phase, and builds with the `uv` the cell already has. The
+venv it installs into goes in the cell's home (`spec.WHEEL_VENV_DIRNAME`) rather than
+under `$QE_ARTIFACTS`, which is uploaded whole — the wheel is evidence, a hundred
+megabytes of resolved dependency is not.
 
 `no-config-dir` is weaker on a hosted runner than on the operator's box: it unsets
 `THALAMUS_CONFIG_DIR`, which CI never set. The cell still confirms a clean clone

@@ -33,6 +33,21 @@ on:
         description: "Fail if a view renders fewer elements than expected"
         type: boolean
         default: true
+  # Dispatch-only meant never: this workflow sat unrun from the day it was written
+  # until 2026-08-26, and its first run failed — the read-view locator matched a
+  # `hidden` button, so the one view it exists to cover had never been measured on
+  # any run. An instrument nobody fires is not a check, and its own header is the
+  # argument for why: the failures it was built for are invisible to every static
+  # check in this repo, so nothing else would have found the gap either.
+  #
+  # Still not on every push. It wants Chromium and a tmux roster, and the surface it
+  # measures is the rendered console — so it runs when that surface changes, which is
+  # the set of commits where its verdict can differ from the last one's.
+  pull_request:
+    paths:
+      - "src/thalamus/console/static/**"
+      - ".github/workflows/contrast-dom.yml"
+      - ".github/workflows/contrast-dom-driver.mjs"
 
 jobs:
   composited-contrast:
@@ -78,6 +93,10 @@ jobs:
 
       - name: Measure
         env:
+          # Empty on a pull_request event, where `inputs` does not exist. The driver
+          # reads `STRICT_VIEWS !== "false"`, so empty means strict — which is the
+          # posture a PR run wants, and the only way to opt out stays the dispatch
+          # form that offers the checkbox.
           STRICT_VIEWS: ${{ inputs.strict_views }}
         run: node .github/workflows/contrast-dom-driver.mjs
 
