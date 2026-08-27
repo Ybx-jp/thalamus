@@ -82,8 +82,16 @@ frames = [
 # HuggingFace on first synthesis, so a first run needs network. The daemon is also
 # normally its own venv and its own systemd unit, on a different lifecycle from the
 # console process; this extra exists so the dependency is *declared* rather than
-# discovered from an ImportError. Kokoro-82M is Apache-2.0; its espeak-ng G2P
-# backend is GPL and is not installed by this extra.
+# discovered from an ImportError.
+#
+# Licensing, because this extra is the one place copyleft enters the tree. The
+# Kokoro-82M model is Apache-2.0, but `kokoro` requires `misaki[en]`, whose `en`
+# extra installs `phonemizer-fork` (GPL-3.0-or-later), `espeakng-loader` (which
+# ships the espeak-ng shared library and its data, GPL-3.0-or-later) and
+# `num2words` (LGPL). Installing this extra therefore puts GPL code in your
+# environment. It is opt-in, nothing Thalamus distributes links against it, and no
+# other extra or the default install pulls any of it — but the claim to check
+# before shipping a build is this one.
 voice = [
     "kokoro>=0.9",
     "torch>=2.5",

@@ -100,7 +100,7 @@ src/thalamus/
                The counterfactual harness (task battery, arms, oracle) is research
                instrumentation; it lives in the private thalamus-eval companion repo
   arch/        the `architect` scope's instrument — a declared-policy import extractor
-               and the structural metrics computed over it, behind the four arch gates
+               and the structural metrics computed over it, behind the three arch gates
   pulse/       live telemetry dashboard
   voice/       the console's optional `say` synthesis daemon (`--extra voice`)
 arch/          model.yaml — the committed architecture model the gates check against

@@ -145,9 +145,10 @@ Two features are **experimental and off by default**, each behind a flag on
   an implementation cannot quietly repair it. The reverse denial is in the ownership
   table, so no other scope can soften what it asserts either.
 - **Session pinning** — one OS process, one immutable pin. `thalamus pin <scope>`
-  launches a session into a scope and `thalamus roster` brings up the whole set as
-  tmux windows. The MCP server reads the scope from its environment at startup and no
-  tool accepts a scope argument, so a model cannot widen its own view by asking.
+  launches a session into a scope; `thalamus roster` brings up the `main` anchor and
+  experts are spawned on demand (`--all` opens one window per manifest). The MCP
+  server reads the scope from its environment at startup and no tool accepts a scope
+  argument, so a model cannot widen its own view by asking.
 - **The console** — because a pin is a process in a tmux window, the whole roster is
   addressable from one place. `thalamus console` serves it to a browser: a tab per
   window, the live pane, a composer, and one tap to spawn an expert in a project.
