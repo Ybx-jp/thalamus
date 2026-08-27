@@ -124,6 +124,17 @@ class Case:
     classes: tuple[FailureClass, ...]
     summary: str
     run: Callable[[], Finding | None] = field(repr=False)
+    # The GitHub issue whose defect this case reproduces, or 0 for a case guarding a
+    # property no filed defect covers. Same field, same meaning and the same pair of
+    # rules as `install/spec.py::Check` — a red naming an issue has reproduced
+    # something already filed, and a red naming nothing has found something new.
+    issue: int = 0
+    #: The issue is closed and this case is now the regression guard for it, so it is
+    #: expected to PASS. `run.py` refuses to reconcile a fixed case against an entry in
+    #: `expectations.json`: an issue number absolves a red result, and an untouched tag
+    #: goes on absolving long after the defect is gone. Flip this in the change that
+    #: closes the issue, and delete the expectation in the same one.
+    fixed: bool = False
 
 
 @dataclass(frozen=True)

@@ -1980,10 +1980,10 @@ def test_every_read_branch_stamps_a_contracted_read_status(tmp_path, monkeypatch
     ("http://localhost:8378", "localhost:8378", True),
     # `tailscale serve --set-path` and Caddy's `reverse_proxy` both forward the
     # browser's Host. TLS on 443 means neither side states a port.
-    ("https://box.tailnet.ts.net", "box.tailnet.ts.net", True),
-    ("https://box.tailnet.ts.net:8443", "box.tailnet.ts.net:8443", True),
+    ("https://some-box.some-tailnet.ts.net", "some-box.some-tailnet.ts.net", True),
+    ("https://some-box.some-tailnet.ts.net:8443", "some-box.some-tailnet.ts.net:8443", True),
     # Case is not part of a host's identity.
-    ("https://Box.Tailnet.TS.net", "box.tailnet.ts.net", True),
+    ("https://Some-Box.Some-Tailnet.TS.net", "some-box.some-tailnet.ts.net", True),
     # A different site, and the same site on a different port: both are other origins.
     ("https://evil.example", "127.0.0.1:8378", False),
     ("http://127.0.0.1:9999", "127.0.0.1:8378", False),

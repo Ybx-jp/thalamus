@@ -74,6 +74,15 @@ exception is MALFORMED, which says the check is broken, not the code. Declare th
 `FailureClass` values the case may emit; emitting one outside that set is MALFORMED,
 because an expectation could not have anticipated it.
 
+**A case that reproduces a filed defect names its issue**, with `issue=` and `fixed=` on
+the `Case` — the same two fields, with the same meanings, as `install/spec.py::Check`. An
+issue number tells a reader of a red run that the defect was already filed; `fixed=True`
+withdraws that, and says the case is now the regression guard for a closed issue and is
+expected to pass. `run.py` prints the tag beside the verdict and refuses two states: a
+case `fixed` with no issue to withdraw, and a case `fixed` while an entry in
+`expectations.json` still acknowledges its failure. Both are MALFORMED — a triaged red on
+a closed defect is a regression nobody reads.
+
 **Every case that asserts an absence needs a positive control.** "Nothing was archived"
 and "nothing ran" are the same output otherwise, and the second one passes forever.
 Every case carries one, and building the guard control took four attempts — three

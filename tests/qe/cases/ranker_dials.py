@@ -24,8 +24,9 @@ labelled itself with the patched value. Nothing under `tests/` names `_DETAIL_CA
 the fix for that measurement left no guard behind.
 
 Scoped to the fingerprinted dials, deliberately. A blanket "no module constant may be a
-default argument" scan matches 53 sites in `src/`, nearly all of them genuine defaults
-(host, port, voice, image) whose consumers never rebind them. The property that makes
+default argument" scan matches 36 sites in `src/` across 24 constants, nearly all of them
+genuine defaults (`DEFAULT_PORT`, `DEFAULT_TIMEOUT`, `ROSTER_SESSION`) whose consumers
+never rebind them. The property that makes
 this a defect is the *pair*: a value that is both stamped as the configuration in force
 and captured where rebinding cannot reach it.
 """

@@ -32,8 +32,8 @@ It covers the forms that separate two defensible implementations:
 - `api/ghost`, called and defined nowhere — a finding, never an edge
 - `/api/orphan`, defined and called by no scanned client — reported, and reported as *no
   scanned client calls it*, which is a smaller claim than dead surface: the declared
-  client set is not the caller set, and the voice daemon and shell scripts call the real
-  server from outside it
+  client set is not the caller set, and the `curl` sequences in docs/console.md and in
+  the `ship-a-browser-surface` skill call the real server from outside it
 - `path.startswith("/frame/")` and `path in EXTRA` — two routing forms beyond the
   matcher, both named, because an unreported route form of any shape turns an
   unmatched-call finding into a false accusation
