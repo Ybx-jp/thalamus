@@ -80,13 +80,20 @@ def main():
 
 
 def _main():
-    parser = argparse.ArgumentParser(description="Thalamus — federated graph memory for coding agents")
+    parser = argparse.ArgumentParser(
+        description="Thalamus — federated graph memory for coding agents",
+        epilog="One-shot graph repairs (backfill-chunks, audit-artifacts, "
+               "repair-projects, derive-artifact-paths, retire-scans, "
+               "repair-claim-addresses) are not listed here: they migrate an "
+               "existing graph and a new one can never need them. Each answers "
+               "--help, and docs/cli.md documents them under Maintenance.",
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Log Gremlin bytecode and server stack traces",
     )
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", metavar="<command>")
 
     # Write command
     write_parser = subparsers.add_parser("write", help="Write a session graph from YAML/JSON file")
@@ -405,7 +412,7 @@ def _main():
     # compute and nothing else, and it is safe to re-run.
     backfill_parser = subparsers.add_parser(
         "backfill-chunks",
-        help="Build co-indexed Chunk vertices for already-ingested documents",
+        description="Build co-indexed Chunk vertices for already-ingested documents.",
     )
     backfill_parser.add_argument(
         "--scope", default="", help="Limit to one expert scope (default: every scope)"
@@ -423,7 +430,7 @@ def _main():
 
     audit_artifacts_parser = subparsers.add_parser(
         "audit-artifacts",
-        help="Measure how fragmented Artifact identity is (read-only)",
+        description="Measure how fragmented Artifact identity is (read-only).",
     )
     audit_artifacts_parser.add_argument(
         "--url", default=DEFAULT_URL, help="Gremlin endpoint"
@@ -431,8 +438,8 @@ def _main():
 
     repair_projects_parser = subparsers.add_parser(
         "repair-projects",
-        help="Re-anchor project values that named a directory instead of a repo "
-        "(dry-run unless --write)",
+        description="Re-anchor project values that named a directory instead of a "
+        "repo. Dry-run unless --write.",
     )
     repair_projects_parser.add_argument(
         "--url", default=DEFAULT_URL, help="Gremlin endpoint"
@@ -444,8 +451,8 @@ def _main():
 
     derive_paths_parser = subparsers.add_parser(
         "derive-artifact-paths",
-        help="Project Artifact identifiers onto (repo, path) without re-keying them "
-        "(dry-run unless --write)",
+        description="Project Artifact identifiers onto (repo, path) without "
+        "re-keying them. Dry-run unless --write.",
     )
     derive_paths_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     derive_paths_parser.add_argument(
@@ -455,8 +462,8 @@ def _main():
 
     retire_scans_parser = subparsers.add_parser(
         "retire-scans",
-        help="Remove the graph records of architecture scans, which are no longer "
-        "written (dry-run unless --write)",
+        description="Remove the graph records of architecture scans, which are no "
+        "longer written. Dry-run unless --write.",
     )
     retire_scans_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     retire_scans_parser.add_argument(
@@ -466,8 +473,8 @@ def _main():
 
     repair_addresses_parser = subparsers.add_parser(
         "repair-claim-addresses",
-        help="Move Claims whose id disagrees with their own content back to the "
-        "address that content produces (dry-run unless --write)",
+        description="Move Claims whose id disagrees with their own content back to "
+        "the address that content produces. Dry-run unless --write.",
     )
     repair_addresses_parser.add_argument(
         "--url", default=DEFAULT_URL, help="Gremlin endpoint"

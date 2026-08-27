@@ -451,7 +451,13 @@ and passes both asset checks on every push (`.github/workflows/qe-macos.yml`).
 
 ### Linux
 
-A user unit, so it starts with your session and restarts if it dies:
+A user unit, so it starts with your session and restarts if it dies.
+
+**Every unit and command on this page assumes the checkout is at `~/code/thalamus`.**
+`%h` is your home directory and systemd expands it, but `code/thalamus` is an
+assumption it takes on faith — so a unit pasted unchanged on a checkout that lives
+somewhere else starts cleanly and fails at `ExecStart`, naming a path you never typed.
+Substitute your own path wherever one appears below.
 
 ```ini
 # ~/.config/systemd/user/thalamus-console.service

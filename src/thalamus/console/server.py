@@ -28,6 +28,7 @@ the expert controls report themselves unavailable instead of failing to import.
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import errno
 import hashlib
@@ -2210,3 +2211,36 @@ def serve(cfg: Config, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> Non
         httpd.serve_forever()
     except KeyboardInterrupt:
         httpd.server_close()
+
+
+def main(argv: list[str] | None = None) -> None:
+    """`python3 -m thalamus.console.server`, and the file run directly.
+
+    The bridge is documented to run under a bare `python3` with nothing installed,
+    and that is only true if there is something to run: without an entry point the
+    module imports, defines `serve`, and exits 0 without ever listening — which
+    looks exactly like a server that started and said nothing.
+
+    Deliberately not `thalamus console`. That command builds a `Config` from an
+    installed package's notion of the project root and offers the expert layer's
+    flags; this one takes the two arguments a bare bridge can honour and lets
+    `Config.__post_init__` fall back to the checkout-less defaults.
+    """
+    ap = argparse.ArgumentParser(
+        prog="python3 -m thalamus.console.server",
+        description="The console's tmux bridge, without the expert layer.",
+    )
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="Bind address (default: localhost — there is no auth here)")
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT,
+                    help=f"Port (default: {DEFAULT_PORT})")
+    args = ap.parse_args(argv)
+    try:
+        serve(Config(), host=args.host, port=args.port)
+    except PortInUse as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    main()

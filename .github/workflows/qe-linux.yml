@@ -31,10 +31,16 @@
 #
 # GREEN IS NOT THE GOAL
 #
-#   0  every failing check named an unfixed filed issue, and at least one did
+#   0  no failing check went unaccounted for: each named an unfixed filed issue, or
+#      this cell was built to reproduce nothing and says so in its output
 #   1  a check failed naming no issue or a FIXED one, or a step that may not fail did
-#   2  no known defect reproduced: fixed, or this cell cannot see them
+#   2  this cell expected a reproduction and got none: fixed, or it cannot see them
 #   3  MALFORMED: the oracle did not run, or a gate refused
+#
+# Exit 2 is scoped per cell (`spec.expected_reproductions`), not to the tree. Of the six
+# configs run here only `installed-wheel` carries an unfixed issue (#35), so it is the
+# only one that can reach exit 2; the rest print that green means no NEW failure rather
+# than a seeing harness. Re-arm one by tagging the next filed defect its config triggers.
 #
 # An issue tag expires. It absolves a red result, so one left in place after the fix
 # landed absolves forever — `fixed=True` in spec.py withdraws that, and a red check

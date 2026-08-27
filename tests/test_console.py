@@ -16,8 +16,11 @@ only be tested by the tmux it bridges to.
 import json
 import os
 import shutil
+import socket
 import subprocess
+import sys
 import threading
+import time
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -2063,3 +2066,45 @@ def test_a_proxy_that_rewrites_host_is_what_allowed_origins_is_for(tmp_path):
                         {"Content-Type": "text/plain",
                          "Origin": "https://evil.example"})
     assert (allowed, other) == (200, 403)
+
+
+# ---- the bridge runs under a bare python3, which is a claim with an entry point ----
+
+
+def test_the_module_serves_when_run_as_a_module(tmp_path):
+    """docs/console.md tells a reader with nothing installed to run this.
+
+    The failure this guards against is silent and reads as success: with no
+    `__main__` block the module imports, defines `serve`, and exits 0 without
+    listening, so the reader sees a command that returned cleanly and a port with
+    nothing on it. Asserting on the exit code alone would not catch it — the
+    assertion has to be that something answered.
+    """
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "thalamus.console.server", "--port", str(port)],
+        cwd=tmp_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    )
+    try:
+        deadline = time.time() + 20
+        status = None
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                raise AssertionError(
+                    f"exited {proc.returncode} instead of serving: {proc.communicate()[0]}"
+                )
+            try:
+                conn = HTTPConnection("127.0.0.1", port, timeout=2)
+                conn.request("GET", "/")
+                status = conn.getresponse().status
+                conn.close()
+                break
+            except OSError:
+                time.sleep(0.2)
+        assert status == 200, "nothing answered on the port the module was told to serve"
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)

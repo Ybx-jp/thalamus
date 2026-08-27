@@ -38,7 +38,6 @@ thalamus write session.yaml        # write a session graph from a file
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus ingest <url|path> --scope <expert> --check   # verify the source, no model call
 thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (dry run; --write to persist)
-thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
 ```
 
 `--harness` and `--extract-with` are two questions, not one. `--harness` says who
@@ -281,9 +280,14 @@ never that a symbol is unused, which is a verdict a static census is not entitle
 
 ## Maintenance
 
-Each of these is a dry run unless `--write` is passed.
+One-shot repairs against a graph that already has history in it. **None of them is
+listed in `thalamus --help`** — a graph that has just been created can never need one,
+so listing them puts six commands in front of a first-time reader before the ones they
+came for. Each still answers `--help`, and each is a dry run unless `--write` is
+passed.
 
 ```bash
+thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
 thalamus audit-artifacts           # measure how fragmented Artifact identity is (read-only)
 thalamus repair-projects           # re-anchor project values that named a directory, not a repo
 thalamus derive-artifact-paths     # project Artifact identifiers onto (repo, path)
@@ -343,5 +347,8 @@ the consulted expert's memory instead of the session's own scope.
 | Variable | Effect |
 |---|---|
 | `THALAMUS_SCOPE` | The session's pin. Read once at server startup |
-| `THALAMUS_CONFIG_DIR` | Where `experts/` and `tasks/` are read from, instead of the checkout's `config/` |
+| `THALAMUS_CONFIG_DIR` | Where `experts/` and `mcp/` are read from, instead of the checkout's `config/`. The eval battery in the companion repo reads its own `tasks/` from the same variable |
+| `THALAMUS_GRAPH_URL` | The Gremlin endpoint, read by `status`, `init`, `init --check` and the MCP server. **Every other command ignores it** and takes `--url`, defaulting to `ws://localhost:8182/gremlin` — so setting this and running `ingest` or `extract` still writes to localhost ([#60](https://github.com/Ybx-jp/thalamus/issues/60)) |
+| `THALAMUS_ARCHIVE_DIR` | Where retained transcripts and their indexes live, instead of `~/.thalamus/archive`. The index follows the archive; it has no override of its own |
+| `THALAMUS_LOG_LEVEL` | Log level for the MCP server process (`thalamus-mcp`), default `WARNING`. Set it to `INFO` or `DEBUG` when a recall is returning something you cannot explain |
 | `THALAMUS_TMUX_SOCKET` | The tmux server the roster, `spawn`, `dispatch` and the console address (`tmux -L …`), default `thalamus`. Two checkouts on one box get separate control planes by setting it differently |
