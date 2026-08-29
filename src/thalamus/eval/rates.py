@@ -31,6 +31,8 @@ quote fractions less often than percentages.
 from __future__ import annotations
 
 import math
+import random
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 # Below this, render the counts and refuse the percentage. See the module docstring
@@ -50,20 +52,48 @@ def wilson_interval(hits: int, total: int, z: float = 1.96) -> tuple[float, floa
     return (max(0.0, centre - spread), min(1.0, centre + spread))
 
 
-def widen(interval: tuple[float, float], design_effect: float) -> tuple[float, float]:
-    """Inflate an independence-assuming interval by a measured design effect.
+def percentile_ci(values: list[float], alpha: float = 0.05) -> tuple[float, float]:
+    """Empirical percentile interval over bootstrap draws."""
+    if not values:
+        return (0.0, 1.0)
+    ordered = sorted(values)
+    lo = ordered[max(0, int(len(ordered) * alpha / 2) - 1)]
+    hi = ordered[min(len(ordered) - 1, int(len(ordered) * (1 - alpha / 2)))]
+    return (lo, hi)
 
-    Verdicts are not independent — they cluster in sessions, and `waste.py` measured
-    ICC around 0.26, a design effect near 4. An interval computed as though they were
-    is not conservative, it is wrong in the direction that makes findings look
-    stronger, so the correction belongs next to the interval rather than in a footnote.
+
+def session_bootstrap(
+    groups: Mapping[str, Sequence[tuple[int, int]]],
+    *,
+    draws: int = 2000,
+    seed: int = 20260730,
+) -> tuple[float, float] | None:
+    """Resample **sessions**, not verdicts, for a clustered rate's interval.
+
+    Verdicts inside one session are not independent draws: they share an output
+    window, a topic and an operator. Resampling the sessions is the correction; a
+    scalar design effect applied to an independence-assuming interval is an
+    approximation of this, and it was applied here at a cluster size it was never
+    measured for — the ICC was estimated over retrievals per session and the rate
+    it widened is counted over returned nodes, which cluster harder.
+
+    `groups` maps a session to its (hits, total) pairs. Returns None when there are
+    fewer than two sessions, because an interval over one cluster is not one.
     """
-    if design_effect <= 1:
-        return interval
-    lo, hi = interval
-    centre = (lo + hi) / 2
-    radius = (hi - lo) / 2 * math.sqrt(design_effect)
-    return (max(0.0, centre - radius), min(1.0, centre + radius))
+    if len(groups) < 2:
+        return None
+    rng = random.Random(seed)
+    sessions = list(groups)
+    rates = []
+    for _ in range(draws):
+        hits = total = 0
+        for _ in sessions:
+            for h, t in groups[sessions[rng.randrange(len(sessions))]]:
+                hits += h
+                total += t
+        if total:
+            rates.append(hits / total)
+    return percentile_ci(rates) if rates else None
 
 
 class BareRateError(ValueError):

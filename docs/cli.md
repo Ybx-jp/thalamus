@@ -204,8 +204,20 @@ battery, the graded oracle, arms, corpora, calibration, the gold label set, rake
 and the room-manipulation and diagram-legibility checks live in the private
 `thalamus-eval` companion repo, run via its own `thalamus-eval` CLI (`rooms`,
 `legibility`, `randomize`, `rakes`, `rake-audit`, `gold`, `tasks`, `corpus`, `rescore`,
-`oracle`, `run`). They moved out because they run research campaigns and produce
-findings that inform future versions, not live-serving behavior.
+`oracle`, `run`, `calibration`). They moved out because they run research campaigns and
+produce findings that inform future versions, not live-serving behavior.
+
+`eval report` gives the used-vs-ignored rate one ranker window at a time and refuses to
+pool across a dial change, because a rate averaged over two settings measures neither.
+Each window's interval resamples **sessions** rather than verdicts — verdicts inside one
+session share an output window, a topic and an operator — so a window with fewer than
+two sessions gets no interval rather than a narrow one.
+
+It reports no null. The permutation null re-judges each retrieval against an
+uncorrelated session's output, which needs the transcript archive rather than the graph,
+so it belongs to `thalamus-eval calibration`. Measured there on 2026-08-29 it was 69.2%
+(v3), 76.5% (v1) and 72.1% (v2) — high enough that a used rate is read as its distance
+above that window's null, never as a rate on its own.
 
 ## Repository analysis
 

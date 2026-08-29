@@ -781,10 +781,16 @@ def test_scope_report_renders_priced_verdicts_and_ranks_by_waste():
     assert "~7,500 earned (used) vs ~2,500 wasted" in rendered
     # Verifies: the share renders with its instruments, not as a naked percentage
     assert "wasted share of priced tokens: 10,000/40,000 chars (25%)" in rendered
-    assert "null 41% (at or below chance)" in rendered
+    # Verifies: the wasted share no longer carries a stored null. The constant that
+    # stood in for it (0.41, from a used-null of 0.59) was measured wrong on every
+    # single-ranker window — 69.2%/76.5%/72.1% on v3/v1/v2, 2026-08-29 — so the rate
+    # names the surface that computes one instead of borrowing a number.
+    assert "null 41%" not in rendered
+    assert "understated chance by 10-18 points" in rendered
     assert "no interval — token-weighted" in rendered
-    # Verifies: n=6 attributed verdicts is below the floor, so no used% is offered
-    assert "used: 4/6" in rendered and "no rate rendered (n<20)" in rendered
+    # Verifies: with no ranker recorded, the used rate is refused outright rather
+    # than printed against a setting it cannot name
+    assert "used: not rendered" in rendered
     assert "by wasted tokens" in rendered
     assert "3x ~2,000 tok  `scope:main:claim:x` — a stale claim" in rendered
 
@@ -1117,6 +1123,90 @@ def test_every_judge_variant_scores_the_same_nodes():
     # The claim's vocabulary is echoed in prose, not in any tool call — exactly the
     # discrimination the split exists to expose.
     assert tool_only["scope:main:claim:aaa"] is False
+
+
+def test_the_ratio_floor_penalises_a_node_for_its_own_length():
+    """
+    Scenario: Two nodes echo the same two terms in the output. One is short, so the
+    two terms are most of what it says; the other is long, so they are a small share
+    of it.
+
+    Verifications:
+    - `shipped` calls the short node used and the long one ignored
+    - `count-only` calls both used, because the absolute floor is met either way
+
+    This is the defect eval-methodology surfaced on 2026-08-11 and nothing had been
+    able to test: the ratio's denominator is the node's *own* term count, so the
+    verdict is anti-correlated with node length and with everything length tracks.
+    `count-only` is one dial from `shipped`, so the difference here is that dial.
+    """
+    from thalamus.eval.attribution import JUDGES, output_window
+
+    window = output_window(_WINDOW_TRANSCRIPT, _AFTER)
+    short = "reader caps details"
+    long = (
+        "reader caps details, and separately discusses provenance, tiering, "
+        "ingestion cadence, snapshot pinning, federation contracts, rake queues, "
+        "consultation tickets, ontology terms, and dispatch routing"
+    )
+    returned = {"scope:main:claim:short": short, "scope:main:claim:long": long}
+
+    shipped = {v.node_id: v.used for v in JUDGES["shipped"](returned, window)}
+    count_only = {v.node_id: v.used for v in JUDGES["count-only"](returned, window)}
+
+    assert shipped["scope:main:claim:short"] is True
+    assert shipped["scope:main:claim:long"] is False
+    assert count_only["scope:main:claim:short"] is True
+    assert count_only["scope:main:claim:long"] is True
+
+
+def test_capping_the_denominator_lifts_the_length_penalty_without_admitting_everything():
+    """
+    Scenario: A long node whose terms are barely echoed at all — two matches out of
+    many — against the three ratio settings
+
+    Verifications:
+    - `count-only` admits it, because two matches is the whole of its test
+    - `capped-ratio` still rejects it: 2/min(len, 10) is below the 0.3 floor
+    - but `capped-ratio` admits the long node from the length-penalty case, which
+      `shipped` rejects purely for length
+
+    This is the difference that matters. Removing the proportional floor fixes the
+    anti-correlation by admitting nearly everything — measured on the v3 window,
+    `count-only` calls 98.5% of nodes used and 96.9% of nodes judged against an
+    unrelated session used, so absolute separation falls from 10.6 points to 1.6
+    even as kappa rises. Capping keeps the floor and makes it length-independent.
+    """
+    from thalamus.eval.attribution import JUDGES, output_window
+
+    window = output_window(_WINDOW_TRANSCRIPT, _AFTER)
+    barely = (
+        "reader caps provenance tiering ingestion cadence snapshot pinning "
+        "federation rakes consultation ontology dispatch routing telemetry"
+    )
+    returned = {"scope:main:claim:barely": barely}
+
+    count_only = {v.node_id: v.used for v in JUDGES["count-only"](returned, window)}
+    capped = {v.node_id: v.used for v in JUDGES["capped-ratio"](returned, window)}
+
+    assert count_only["scope:main:claim:barely"] is True
+    assert capped["scope:main:claim:barely"] is False
+
+
+def test_adding_the_ratio_dial_does_not_re_attribute_stored_verdicts():
+    """
+    The fingerprint is a verdict's identity. `shipped` keeps the module default, so
+    its fingerprint must be byte-identical to what it was before the dial existed —
+    otherwise every verdict already in the graph silently changes settings.
+    """
+    from thalamus.eval.attribution import JUDGES, judge_fingerprint
+
+    assert judge_fingerprint("shipped") == "j2:shipped-t2-r0.3"
+    # Verifies: a variant that moves the dial is a different identity, not a silent
+    # re-reading of the same one
+    assert judge_fingerprint("count-only") != judge_fingerprint("shipped")
+    assert JUDGES["count-only"].ratio == 0.0
+    assert JUDGES["half-ratio"].ratio == 0.15
 
 
 def test_a_verdict_records_the_terms_it_was_computed_against(tmp_path, monkeypatch):

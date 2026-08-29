@@ -19,6 +19,26 @@ tested anywhere in the window with no proximity, so long windows match more (use
 vocabulary by definition. Read every used% as ~59 points of overlap plus ~4 of
 utility until a permuted baseline is reported beside it.
 
+**The ratio floor is load-bearing, measured.** `MIN_MATCHED_RATIO`'s denominator is
+the node's own term count, so a longer node must match more of itself to clear the
+same bar — the verdict is anti-correlated with node length and with whatever length
+tracks. That is a real defect and every correction to it costs more than it fixes.
+Scored on the v3 window (730 cases, 59 sessions, 200 rotations, 2026-08-29), against
+`shipped` at 79.8% used / 69.2% null / **10.6 points of separation** / kappa 0.345:
+
+    capped-ratio (denominator capped at 10)   96.5 / 93.5 / 3.0 / 0.465
+    half-ratio   (0.15)                       96.1 / 92.2 / 3.9 / 0.502
+    count-only   (no proportional test)       98.5 / 96.9 / 1.5 / 0.504
+
+Every relaxation raises kappa and *lowers* separation, monotonically, because
+loosening admits more rotated nodes than real ones: most nodes clear a two-term bar
+against any window drawn from the same project's vocabulary. Kappa divides by the
+headroom `1 - null`, which collapses along with the discrimination, so it rewards a
+judge that calls everything used. **Read separation beside kappa, never kappa alone**,
+and do not move this dial to fix the length bias. The axis with room left is the one
+no variant explores: weighting a term by its rarity, which attacks the vocabulary
+floor rather than trading against it.
+
 Verdicts are facts about one retrieval of one node, so they land as properties on the
 Trace -[RETURNS]-> node edge, never on the node itself.
 """
@@ -62,7 +82,10 @@ def judge_fingerprint(name: str = "shipped") -> str:
     and the judge had no equivalent. Legible rather than hashed, for the same
     reason: a window straddling `j1:t2-r0.3` and `j1:t3-r0.3` says *which* dial moved.
     """
-    return f"j{JUDGE_VERSION}:{name}-t{MIN_MATCHED_TERMS}-r{MIN_MATCHED_RATIO}"
+    judge = JUDGES.get(name)
+    ratio = judge.ratio if judge else MIN_MATCHED_RATIO
+    cap = f"-c{judge.ratio_cap}" if judge and judge.ratio_cap else ""
+    return f"j{JUDGE_VERSION}:{name}-t{MIN_MATCHED_TERMS}-r{ratio}{cap}"
 
 
 @dataclass
@@ -217,7 +240,12 @@ TERM_EXTRACTORS = {"split": node_terms, "aligned": aligned_node_terms}
 
 
 def attribute(
-    returned: dict[str, str], outputs: str, *, terms_from: str = "aligned"
+    returned: dict[str, str],
+    outputs: str,
+    *,
+    terms_from: str = "aligned",
+    ratio: float = MIN_MATCHED_RATIO,
+    ratio_cap: int | None = None,
 ) -> list[Verdict]:
     """Judge each returned node against the session's subsequent outputs.
 
@@ -225,7 +253,10 @@ def attribute(
     title — whatever the graph holds for it).
     """
     output_lower, output_tokens = prepare(outputs)
-    return attribute_prepared(returned, output_lower, output_tokens, terms_from=terms_from)
+    return attribute_prepared(
+        returned, output_lower, output_tokens,
+        terms_from=terms_from, ratio=ratio, ratio_cap=ratio_cap,
+    )
 
 
 def attribute_prepared(
@@ -235,6 +266,8 @@ def attribute_prepared(
     terms: dict[str, list[str]] | None = None,
     *,
     terms_from: str = "aligned",
+    ratio: float = MIN_MATCHED_RATIO,
+    ratio_cap: int | None = None,
 ) -> list[Verdict]:
     """`attribute` with the window — and optionally the nodes' terms — precomputed."""
     extract = TERM_EXTRACTORS[terms_from]
@@ -246,6 +279,8 @@ def attribute_prepared(
             output_tokens,
             terms=None if terms is None else terms.get(node_id),
             extract=extract,
+            ratio=ratio,
+            ratio_cap=ratio_cap,
         )
         for node_id, content in returned.items()
     ]
@@ -258,6 +293,8 @@ def _judge(
     output_tokens: set[str],
     terms: list[str] | None = None,
     extract=aligned_node_terms,
+    ratio: float = MIN_MATCHED_RATIO,
+    ratio_cap: int | None = None,
 ) -> Verdict:
     # Strongest signal first: the agent quoted the node's identity itself. The reader
     # renders vertex IDs precisely so this becomes possible.
@@ -275,7 +312,22 @@ def _judge(
 
     matched = [term for term in terms if term in output_tokens]
     needed = min(len(terms), MIN_MATCHED_TERMS)
-    used = len(matched) >= needed and len(matched) / len(terms) >= MIN_MATCHED_RATIO
+    # The ratio's denominator is the node's *own* term count, so a longer node must
+    # match proportionally more of itself to clear the same bar. That makes the
+    # verdict anti-correlated with node length, and therefore with anything length
+    # tracks — tier, kind, how much a node says. `ratio=0.0` drops the proportional
+    # test and leaves the absolute floor, which is the variant that isolates it.
+    # `ratio_cap` bounds that denominator. Removing the proportional test outright
+    # (`ratio=0.0`) does fix the anti-correlation and destroys the instrument doing
+    # it — measured on the v3 window it calls 98.5% of nodes used and 96.9% of nodes
+    # judged against an *unrelated* session used, collapsing discrimination from
+    # 10.6 points to 1.6 while κ rises, because κ's headroom denominator collapses
+    # with it. Capping keeps a floor for short nodes and stops the bar climbing with
+    # length above the cap.
+    denominator = min(len(terms), ratio_cap) if ratio_cap else len(terms)
+    used = len(matched) >= needed and (
+        ratio <= 0.0 or len(matched) / denominator >= ratio
+    )
 
     detail = ", ".join(matched[:6]) if matched else "none"
     return Verdict(
@@ -304,6 +356,14 @@ class Judge:
     # *window*; this one narrows nothing and instead fixes the node side, which is the
     # only axis on which `shipped` is not merely a choice but a defect.
     terms_from: str = "split"
+    # The proportional floor, denominated in the node's own term count. `shipped`
+    # carries the module default; a variant setting it lower — or to 0.0, dropping
+    # the proportional test entirely — is the only way to read the length
+    # anti-correlation apart from everything else the judge does.
+    ratio: float = MIN_MATCHED_RATIO
+    # Bound on the ratio's denominator. `None` leaves it as the node's own term
+    # count, which is the defect; a cap makes the bar length-independent above it.
+    ratio_cap: int | None = None
     description: str = ""
 
     def __call__(self, returned: dict[str, str], window: OutputWindow) -> list[Verdict]:
@@ -311,6 +371,8 @@ class Judge:
             returned,
             window.text(turns=self.turns, prose=self.prose, tools=self.tools),
             terms_from=self.terms_from,
+            ratio=self.ratio,
+            ratio_cap=self.ratio_cap,
         )
 
 
@@ -353,6 +415,32 @@ JUDGES: dict[str, Judge] = {
             "whitespace-split with punctuation attached, mismatched against the "
             "window's tokeniser. Kept for retrospective comparison against verdicts "
             "stored before the switch, not because it is a defensible choice.",
+        ),
+        Judge(
+            "count-only",
+            terms_from="aligned",
+            ratio=0.0,
+            description="`shipped` with the proportional floor removed, so a node "
+            "clears on the absolute term count alone. One dial from `shipped`, and "
+            "the only variant that touches the length anti-correlation rather than "
+            "the window",
+        ),
+        Judge(
+            "half-ratio",
+            terms_from="aligned",
+            ratio=0.15,
+            description="half the proportional floor — separates the ratio's *level* "
+            "from its existence, so a gain under `count-only` can be read as the "
+            "threshold being too high rather than the test being wrong",
+        ),
+        Judge(
+            "capped-ratio",
+            terms_from="aligned",
+            ratio_cap=10,
+            description="the proportional test kept, but its denominator bounded at "
+            "10 terms, so a node stops being penalised for saying more. The variant "
+            "that targets the length anti-correlation without surrendering the floor "
+            "that `count-only` gives up",
         ),
         Judge(
             "aligned-tool-bounded-3",

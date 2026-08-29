@@ -230,6 +230,16 @@ deadends:
     path: src/thalamus/eval/legibility.py
     symbol: contrast_ratio
   - reason: >-
+      Called by the companion repo thalamus-eval at src/thalamus_eval/rake_audit.py,
+      which scores a rake queue's hit rate with it and carries a comment saying
+      wilson_interval has one definition, here, so a fix reaches every consumer. It
+      lost its last in-repo caller when eval/report.py stopped widening an
+      independence-assuming interval by a scalar design effect and started resampling
+      sessions instead; the binomial interval is still the right instrument for
+      rake_audit's unclustered denominator.
+    path: src/thalamus/eval/rates.py
+    symbol: wilson_interval
+  - reason: >-
       Called by the companion repo thalamus-eval at src/thalamus_eval/arms.py, which
       refuses to run an eval arm on a CLI whose `arm_blockers` are non-empty and prints
       those blockers. eval/arms.py moved there in 12bd638; the property stayed with the
