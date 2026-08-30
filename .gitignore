@@ -32,5 +32,12 @@ frontend/dist/
 # Derived pinned-agent definitions (thalamus pin) — the manifest is the source of truth
 .claude/agents/thalamus-*.md
 
+# Concurrent-session worktrees and per-machine harness settings. Ignored here rather
+# than only in .git/info/exclude because hatchling's sdist walk reads .gitignore and
+# nothing else: without these, `uv build` sweeps every in-progress branch checkout and
+# the local permission list into a publishable archive.
+.claude/worktrees/
+.claude/settings.local.json
+
 # qe findings — session-generated triage and corpus drafts, not the shipped suite.
 /tests/qe/findings/

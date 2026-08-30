@@ -106,9 +106,6 @@ layers:
   - src/thalamus/console/**
   - src/thalamus/pulse/**
   - src/thalamus/arch/**
-  # voice/ is a resident service that imports nothing from thalamus — it appears in no
-  # measured edge, so it is placed here by judgement rather than by a dependency.
-  - src/thalamus/voice/**
 
 # Height, low to high: vocabulary, archive < substrate < harness < conformance < eval
 # < surfaces < entry. Each allow-list is closed: a layer may depend on exactly what is
@@ -207,8 +204,6 @@ deadends:
   - '**/static/*'
   # Declared in [project.scripts]; the MCP client launches it as a process.
   - src/thalamus/harness/mcp_server.py
-  # A resident service on its own lifecycle, started as its own process.
-  - src/thalamus/voice/daemon.py
   # Imported by the companion repo thalamus-eval, not by anything here: the WCAG
   # arithmetic stayed in this repo when the research battery split out so that it has one
   # owner across both. `contrast_ratio` inside it is exempted separately — declaring the
@@ -354,7 +349,6 @@ derived:
   - src/thalamus/cli.py -> src/thalamus/substrate/writer.py [from,module]
   - src/thalamus/console/server.py -> src/thalamus/console/__init__.py [package,deferred]
   - src/thalamus/console/server.py -> src/thalamus/console/distill.py [from,deferred]
-  - src/thalamus/console/server.py -> src/thalamus/console/speech.py [from,deferred]
   - src/thalamus/console/server.py -> src/thalamus/console/sweep.py [from,deferred]
   - src/thalamus/console/server.py -> src/thalamus/console/transcript.py [from,deferred]
   - src/thalamus/console/server.py -> src/thalamus/contract/manifest.py [from,deferred]

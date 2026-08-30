@@ -28,6 +28,7 @@ the expert controls report themselves unavailable instead of failing to import.
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import errno
 import hashlib
@@ -44,7 +45,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, unquote, urlsplit
 
 # Imported at module scope, unlike this module's other Thalamus imports: these two
 # names are re-exported below, and `panes` reaches nothing but the standard library.
@@ -126,7 +127,6 @@ def dispatch_module():
 
 
 _read_cache: object = _PIN_UNSET
-_speech_cache: object = _PIN_UNSET
 
 
 def transcript_module():
@@ -147,134 +147,6 @@ def transcript_module():
         else:
             _read_cache = transcript
     return _read_cache
-
-
-def speech_module():
-    """`.speech`, or None under a bare `python3` with no package around it.
-
-    Deferred for the same reason `.transcript` is — the bridge is documented to
-    run without the package, and a console that cannot import the transform
-    simply has no voice rather than no console.
-    """
-    global _speech_cache
-    if _speech_cache is _PIN_UNSET:
-        try:
-            from . import speech
-        except Exception:  # noqa: BLE001 — any import failure means "not available"
-            _speech_cache = None
-        else:
-            _speech_cache = speech
-    return _speech_cache
-
-
-# The voice service is a separate unit on loopback: it holds a GPU-resident model
-# and this process restarts itself on edit, which are incompatible lifecycles. Its
-# URL lives on `Config` rather than here, because naming a service on this machine
-# is exactly what makes the feature opt-in — see `Config.voice_url`.
-
-# Spoken when the transform drops something it promised to keep. A listener who
-# hears nothing knows to go and look; a listener fed a fluent sentence with the
-# wrong number in it has no way to know at all, and no way to rewind and check.
-WITHHELD_NOTICE = (
-    "This update was withheld. The spoken summary lost a value it was required "
-    "to keep, so it was not read out. Check the console."
-)
-
-
-def voice_available(cfg: Config) -> bool:
-    """Whether this console has a `say` control at all.
-
-    The counterpart to `frames()`: one predicate the handlers and the client's
-    availability probe both read, so "is the feature on" is answered here rather
-    than re-derived at each endpoint. The route that synthesises binds the URL
-    itself, because it needs the value and not the verdict.
-    """
-    return bool(cfg.voice_url)
-
-
-def synthesise_update(source: str, voice_url: str, timeout: float = 60.0):
-    """Raw turn text to wav bytes, via the transform and the voice service.
-
-    Returns `(audio, error)`. The protected-token contract is enforced here
-    rather than in the client: a summary that lost a number is replaced by a
-    notice saying so, because the failure it guards against is audio that sounds
-    entirely correct.
-    """
-    speech = speech_module()
-    if speech is None:
-        return None, "speech transform unavailable"
-
-    update = speech.spoken_update(source)
-    if not update.faithful:
-        lost = ", ".join(token.literal for token in update.missing)
-        print(f"say: withheld — protected tokens lost: {lost}", file=sys.stderr, flush=True)
-        spoken = WITHHELD_NOTICE
-    else:
-        spoken = update.text
-    if not spoken.strip():
-        return None, "nothing to say"
-    return _post_to_voice(spoken, voice_url, timeout)
-
-
-def _post_to_voice(text: str, voice_url: str, timeout: float):
-    """The transport half, separate so the gate above can be tested without one."""
-    import urllib.error
-    import urllib.parse
-    import urllib.request
-
-    url = f"{voice_url}/say?" + urllib.parse.urlencode({"text": text})
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
-            return response.read(), None
-    except urllib.error.HTTPError as exc:
-        # The service answered and refused. Reporting that as "unreachable" sends
-        # the next reader to check whether it is running, which it is.
-        print(f"say: voice service refused: {exc}", file=sys.stderr, flush=True)
-        return None, f"voice service refused: {exc.code}"
-    except urllib.error.URLError as exc:
-        print(f"say: voice service unreachable at {voice_url}: {exc}",
-              file=sys.stderr, flush=True)
-        return None, "voice service unreachable"
-    except Exception as exc:  # noqa: BLE001 — the console must survive this
-        print(f"say: synthesis failed: {exc}", file=sys.stderr, flush=True)
-        return None, "synthesis failed"
-
-
-# How far each session has been listened to, and what the last utterance covered
-# but has not yet been confirmed heard. Two dictionaries rather than one because
-# generating audio is not hearing it: the cursor advances when playback *ends*, so
-# stopping halfway replays from where your ears stopped rather than skipping to
-# where the synthesiser got to. Process-local and deliberately not persisted — a
-# listening position is a fact about the last few minutes, not about the session.
-SAY_LOCK = threading.Lock()
-SPOKEN_THROUGH: dict[str, int] = {}
-SAY_PENDING: dict[str, int] = {}
-
-
-def say_cursor(session_id: str) -> int:
-    with SAY_LOCK:
-        return SPOKEN_THROUGH.get(session_id, 0)
-
-
-def say_pending(session_id: str, high: int) -> None:
-    with SAY_LOCK:
-        SAY_PENDING[session_id] = high
-
-
-def say_commit(session_id: str) -> int:
-    """Confirm the last utterance was heard. Returns the new cursor."""
-    with SAY_LOCK:
-        high = SAY_PENDING.pop(session_id, 0)
-        if high > SPOKEN_THROUGH.get(session_id, 0):
-            SPOKEN_THROUGH[session_id] = high
-        return SPOKEN_THROUGH.get(session_id, 0)
-
-
-def say_mark(session_id: str, seq: int) -> None:
-    """Start listening from a chosen point: everything before it counts as heard."""
-    with SAY_LOCK:
-        SPOKEN_THROUGH[session_id] = max(0, seq)
-        SAY_PENDING.pop(session_id, None)
 
 
 # One ledger index and one feed store for the process, both stateful across polls
@@ -757,18 +629,18 @@ class Config:
     # Frame-theme definitions (see `frames`). None — the default — means no frame
     # themes: the feature is opt-in because it names image paths on this machine.
     frames_file: Path | None = None
-    # Speech service backing the `say` control. None — the default — means the
-    # control is not offered at all: no button, no endpoints. Opt-in for the same
-    # reason `frames_file` is, and for a sharper one — the service is a separate
-    # unit with an undeclarable model download behind it, so a console that
-    # assumed one would hand every operator a button that fails on the first tap.
-    voice_url: str | None = None
     # How often the console fetches the checkout's remote, in seconds. Nothing about
     # the working tree changes — a fetch moves remote-tracking refs only — but it is
     # what makes "N commits behind" a fact rather than a report on whenever somebody
     # last happened to fetch. 0 disables the thread and the count then means only
     # that much.
     fetch_interval_s: float = 600.0
+    # Origins accepted on a write besides the request's own `Host` (see
+    # `same_origin`). Empty — the default — is right for every deployment in
+    # docs/console.md, all of which reach the console at the host the browser
+    # addressed. It exists for the proxy that rewrites `Host` to the upstream, where
+    # same-origin is true of the page and unprovable from the headers.
+    allowed_origins: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         pin = pin_module()
@@ -1775,6 +1647,63 @@ def _fetch_loop(interval_s: float) -> None:
             build_info(force=True)
 
 
+# ---- Where a request came from ----
+# The console has no authentication, and that is deliberate: it is fronted by
+# something that already authenticates (see docs/console.md). What that reasoning
+# does not cover is a request the operator's *own* browser is tricked into sending.
+# A page on any other origin can POST here cross-site — `_body()` reads JSON whatever
+# the declared content type, so `text/plain` makes it a CORS *simple* request that is
+# delivered without a preflight — and while the reply is unreadable to that page, the
+# write has already landed on the tmux session. Loopback binding is no defence: the
+# request originates inside the boundary, carrying whatever the proxy granted.
+#
+# So the one thing checked on a state-changing request is where the browser says it
+# came from, per OWASP's CSRF Prevention Cheat Sheet ("Verifying Origin With Standard
+# Headers"): compare the request's `Origin` against its `Host`. Both are set by the
+# browser and neither is settable from script.
+#
+# `Host` is the right thing to compare against because the deployments this repo
+# recommends preserve it. Measured against this console's own published surface:
+# `tailscale serve --set-path` forwards `Host: <machine>.<tailnet>.ts.net` with a
+# matching `Origin`, and Caddy's `reverse_proxy` preserves `Host` by default. nginx
+# does not unless told (`proxy_set_header Host $host`), which is what
+# `--allow-origin` is for.
+
+DEFAULT_PORTS = {"http": "80", "https": "443"}
+
+
+def same_origin(origin: str, host_header: str) -> bool:
+    """Does `origin` name the same host:port the request was addressed to?
+
+    `Host` carries no scheme, so its port is compared only when it states one — a
+    TLS-terminating proxy on 443 sends a bare hostname, and the origin's own default
+    port is then the only port either side could mean.
+    """
+    parts = urlsplit(origin)
+    if not parts.scheme or not parts.hostname:
+        return False  # "null" (sandboxed frame, file://) and anything unparseable
+    origin_port = str(parts.port) if parts.port else DEFAULT_PORTS.get(parts.scheme)
+    # `Host` is authority-only, and urlsplit needs a scheme to read one as authority.
+    target = urlsplit(f"//{host_header}")
+    if not target.hostname or target.hostname.lower() != parts.hostname.lower():
+        return False
+    return target.port is None or str(target.port) == origin_port
+
+
+def origin_key(origin: str) -> str | None:
+    """`scheme://host:port` with the default port spelled out, or None if unparseable.
+
+    Two origins are the same one when these agree. This is the comparison for
+    `--allow-origin`, where both sides are full origins and the scheme is known on
+    each — unlike the `Host` comparison above, which has a scheme on one side only.
+    """
+    parts = urlsplit(origin)
+    port = str(parts.port) if parts.port else DEFAULT_PORTS.get(parts.scheme)
+    if not parts.hostname or not port:
+        return None
+    return f"{parts.scheme}://{parts.hostname.lower()}:{port}"
+
+
 class ConsoleServer(ThreadingHTTPServer):
     """The server object that carries this console's `Config` to every handler."""
 
@@ -1808,6 +1737,24 @@ class Handler(BaseHTTPRequestHandler):
     def _body(self):
         n = int(self.headers.get("Content-Length", 0))
         return json.loads(self.rfile.read(n) or "{}") if n else {}
+
+    def _origin_ok(self) -> bool:
+        """Is this write coming from the console's own page?
+
+        A non-browser client — curl, a script, a test — sends neither header and is
+        allowed through: this closes the browser vector, it does not invent an
+        authentication the module docstring promises is absent. Browsers send
+        `Origin` on every cross-site POST, so nothing this is meant to stop can reach
+        the routes by leaving it off.
+        """
+        claimed = self.headers.get("Origin") or self.headers.get("Referer")
+        if not claimed:
+            return True
+        if same_origin(claimed, self.headers.get("Host", "")):
+            return True
+        key = origin_key(claimed)
+        return key is not None and any(key == origin_key(allowed)
+                                       for allowed in self.cfg.allowed_origins)
 
     def do_GET(self):
         """Route a GET, and answer with a 500 rather than a dropped connection.
@@ -1927,47 +1874,6 @@ class Handler(BaseHTTPRequestHandler):
             if body is None:
                 return self._send(404, {"error": "no such item"})
             return self._send(200, {"body": body})
-        if path == "/api/voice":
-            # What the client asks before deciding whether to show the control at
-            # all — the same shape as `/api/frames`, and for the same reason: the
-            # server owns what this machine has, the client owns what it draws.
-            return self._send(200, {"available": voice_available(self.cfg)})
-        if path == "/api/say":
-            # Tap-to-listen: this window's latest turn, rewritten for the ear and
-            # synthesised by the voice service. Audio is returned inline so the
-            # client can set an <audio> src and play it in the same click — a
-            # phone will not autoplay anything that arrives after an await.
-            voice_url = self.cfg.voice_url
-            if not voice_url:
-                return self._send(404, {"error": "no voice service configured"})
-            q = parse_qs(query)
-            raw = q.get("index", [""])[0]
-            if not raw.lstrip("-").isdigit():
-                return self._send(400, {"error": "index required"})
-            _, feed, reason = read_feed(self.cfg, int(raw))
-            if feed is None:
-                return self._send(404, {"error": reason or "unresolved"})
-            # `restart` re-reads the current turn from its beginning, for when you
-            # missed it rather than when you want what came next.
-            restart = q.get("restart", ["0"])[0] == "1"
-            # `from` is a tapped block: start there, and treat what precedes it as
-            # heard. It rides the audio request rather than a POST before it so the
-            # client can play in the same gesture as the tap.
-            start = q.get("from", [""])[0]
-            if start.isdigit():
-                say_mark(feed.session_id, max(0, int(start) - 1))
-            cursor = 0 if restart else say_cursor(feed.session_id)
-            with READ_LOCK:
-                source, high = feed.prose_since(cursor)
-            if not source.strip():
-                # Caught up. Not an error, and not worth speaking a sentence to
-                # say so — the control flashes and stays quiet.
-                return self._send(204, b"", "application/json")
-            say_pending(feed.session_id, high)
-            audio, err = synthesise_update(source, voice_url)
-            if err:
-                return self._send(502, {"error": err})
-            return self._send(200, audio, "audio/wav", cache="no-store")
         if path == "/api/admin":
             with RECYCLING_LOCK:
                 recycling = sorted(RECYCLING)
@@ -2014,6 +1920,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
+        if not self._origin_ok():
+            # Refused before the body is read, so a rejected request costs nothing.
+            return self._send(403, {"error": "cross-origin request refused"})
         try:
             data = self._body()
         except Exception:
@@ -2252,18 +2161,6 @@ class Handler(BaseHTTPRequestHandler):
                 tmux("send-keys", "-t", target, "Enter")
             return self._send(200, {"ok": True})
 
-        if path == "/api/say/ack":
-            # Playback finished. Only now does the listening position move — the
-            # request that produced the audio cannot know whether it was heard.
-            if not voice_available(self.cfg):
-                return self._send(404, {"error": "no voice service configured"})
-            idx = data.get("index")
-            if not isinstance(idx, int):
-                return self._send(400, {"error": "index required"})
-            _, feed, reason = read_feed(self.cfg, idx)
-            if feed is None:
-                return self._send(404, {"error": reason or "unresolved"})
-            return self._send(200, {"ok": True, "through": say_commit(feed.session_id)})
         if path == "/api/key":
             key = KEYMAP.get(data.get("key", ""))
             if not key:
@@ -2314,3 +2211,36 @@ def serve(cfg: Config, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> Non
         httpd.serve_forever()
     except KeyboardInterrupt:
         httpd.server_close()
+
+
+def main(argv: list[str] | None = None) -> None:
+    """`python3 -m thalamus.console.server`, and the file run directly.
+
+    The bridge is documented to run under a bare `python3` with nothing installed,
+    and that is only true if there is something to run: without an entry point the
+    module imports, defines `serve`, and exits 0 without ever listening — which
+    looks exactly like a server that started and said nothing.
+
+    Deliberately not `thalamus console`. That command builds a `Config` from an
+    installed package's notion of the project root and offers the expert layer's
+    flags; this one takes the two arguments a bare bridge can honour and lets
+    `Config.__post_init__` fall back to the checkout-less defaults.
+    """
+    ap = argparse.ArgumentParser(
+        prog="python3 -m thalamus.console.server",
+        description="The console's tmux bridge, without the expert layer.",
+    )
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="Bind address (default: localhost — there is no auth here)")
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT,
+                    help=f"Port (default: {DEFAULT_PORT})")
+    args = ap.parse_args(argv)
+    try:
+        serve(Config(), host=args.host, port=args.port)
+    except PortInUse as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    main()

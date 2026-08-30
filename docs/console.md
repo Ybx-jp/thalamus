@@ -113,6 +113,42 @@ your.domain {
 `handle_path` (not `handle`) is the prefix-stripping form. Reached without the
 trailing slash, the page redirects to add it before any resource loads.
 
+### The one thing reachability does not cover
+
+Everything above is about which network can reach the console. It leaves out the
+request that comes from the machine you already trust: a page open in your own
+browser can POST to the console cross-site, and because the server reads JSON
+whatever content type is declared, `text/plain` makes that a CORS *simple* request
+— no preflight, delivered. The reply is unreadable to the page that sent it, but
+the write has already gone to the tmux session. Loopback binding is no defence
+here and neither is a proxy with real auth: the request starts inside the boundary
+and carries whatever you were already granted.
+
+So a POST is refused unless the browser's `Origin` names the same host and port
+the request was addressed to. That is the whole check. A client that sends no
+`Origin` and no `Referer` — curl, a script, a health probe — is let through, which
+is not a hole: browsers send `Origin` on every cross-site POST, so nothing this
+refuses can get in by leaving it out.
+
+Nothing above needs configuring for this. `tailscale serve` and Caddy's
+`reverse_proxy` both forward the browser's `Host` unchanged, and a direct
+connection or an SSH tunnel is trivially same-origin. **nginx is the exception**:
+it rewrites `Host` to the upstream unless told not to, and then the console cannot
+see that its own page is its own page. Either fix it in the proxy —
+
+```nginx
+proxy_set_header Host $host;
+```
+
+— or name the origin the browser uses:
+
+```bash
+thalamus console --allow-origin https://console.example.com
+```
+
+A refused request answers `403 {"error": "cross-origin request refused"}`, so a
+proxy misconfigured this way says what is wrong rather than failing silently.
+
 ### What not to do
 
 `thalamus console --host 0.0.0.0` on a network you don't control publishes an
@@ -148,60 +184,6 @@ cycle), arrows, page up/down, `tab`, `⏎`, `clr` (Ctrl-U) and `⌃C`. `A−`/`A
 the font off the auto-fit size, which is computed so a full pane line fits your
 screen without horizontal scrolling.
 
-**`say` reads the active window aloud, from wherever you left off.** It speaks on
-a tap and never on its own: nothing is narrated unattended, and only the window
-you have selected can talk, so a roster of five sessions can never talk over
-itself. Tap again to stop. The control sits in the always-visible key row rather
-than inside the read view, because the read view is opt-in per device — a control
-behind a toggle a device never enabled is a control that device does not have.
-
-**It appears only on a console started with `--voice URL`.** The service is a
-separate unit with a model download behind it (below), so a console that assumed
-one would hand every operator a button whose only behaviour is to fail — and the
-reason lands in the server's stderr, which is not where the person holding the
-phone is looking. The client asks `/api/voice` before it draws anything; without a
-service both `/api/say` and `/api/say/ack` are 404 and the button is absent rather
-than dead. `$THALAMUS_VOICE_URL` supplies the flag's default, so a box already
-running the unit keeps its setting.
-
-Each session keeps a listening position:
-
-- **Tap** speaks what you have not heard yet. The first tap on a session falls
-  back to its latest turn rather than the whole history.
-- **The position moves when playback ends,** not when the audio is made. Stopping
-  halfway means the next tap resumes where your ears stopped, not where the
-  synthesiser got to.
-- **Caught up** greys the control and stays silent — that is the ordinary resting
-  state of a session you follow, not a failure worth announcing.
-- **Long-press** re-reads the current turn from its start, for when you missed it
-  rather than when you want what came next.
-- **Tap any paragraph in the read view** to start listening there; everything
-  above it counts as heard, since you just read it to find the place. The chosen
-  block keeps a coloured left edge.
-
-The start point travels in the audio request rather than a call that precedes it.
-Marking and *then* playing is the natural shape and puts `play()` after an await,
-which spends the user activation a phone requires — the same reason the plain tap
-assigns `src` and plays in one gesture. Positions are process-local and are not
-persisted: where you are in listening to a session is a fact about the last few
-minutes, and a console restart is a fine time to forget it.
-
-What you hear is not the reply read out. It is rewritten for the ear: fenced code
-is dropped, `src/thalamus/console/server.py` becomes "console server", identifiers
-are split into words, acronyms are spelled, and a commit hash goes character by
-character. Numbers, versions, hashes, identifiers and acronyms are extracted from
-the raw turn *before* the rewrite and checked against the finished utterance; if
-one went missing, the console speaks a short notice instead of the update. A
-listener told nothing knows to go and look, while a fluent sentence with the wrong
-number in it is undetectable and cannot be rewound. Long turns are cut at a
-sentence at roughly ninety seconds and say so, rather than reading for five
-minutes. The transform is `console/speech.py`; the budget is
-`DEFAULT_BUDGET_CHARS`.
-
-Speech needs `thalamus-voice.service` (below), named with `--voice`. A console
-started without it simply has no `say` control; one whose service dies turns the
-control red and is otherwise unaffected.
-
 **`read` switches to the transcript view.** The pane view mirrors a *rendering* of
 the session: an 80-column repaint, colours stripped by tmux, reflowing under you
 while a turn streams. The read view shows the session itself — Claude Code writes
@@ -233,7 +215,7 @@ options, and all. So the read view shows it in full for as long as the session
 sits blocked, marked as waiting on you, instead of collapsing it to a chip that
 looks like a slow tool. Answer it in `term` with the ↑ ↓ keycaps and `⏎`: the
 dialog is a modal, and typing into the composer would discard the text and
-actuate whichever option happened to be highlighted (hazard 9).
+actuate whichever option happened to be highlighted.
 
 The waiting state reads the newest item on the *main* thread rather than the
 newest item outright, because a subagent writes into the same transcript — its
@@ -249,8 +231,8 @@ The view needs to know which session is in a window, which it reads from the pin
 ledger by tmux pane id. Sessions started before the console recorded that resolve
 by a narrower fallback — process start time joined on scope and directory — which
 **refuses when two windows share a scope and a directory**, since showing the wrong
-session's transcript is worse than showing none. Restart the window (⚙ → restart)
-and it resolves exactly from then on.
+session's transcript is worse than showing none. Open the session's row and restart
+the window from there, and it resolves exactly from then on.
 
 A read view showing one short exchange that never advances is a third state, and it
 is not a stall: the window's pane id was claimed by a headless `claude -p` spawned
@@ -469,7 +451,13 @@ and passes both asset checks on every push (`.github/workflows/qe-macos.yml`).
 
 ### Linux
 
-A user unit, so it starts with your session and restarts if it dies:
+A user unit, so it starts with your session and restarts if it dies.
+
+**Every unit and command on this page assumes the checkout is at `~/code/thalamus`.**
+`%h` is your home directory and systemd expands it, but `code/thalamus` is an
+assumption it takes on faith — so a unit pasted unchanged on a checkout that lives
+somewhere else starts cleanly and fails at `ExecStart`, naming a path you never typed.
+Substitute your own path wherever one appears below.
 
 ```ini
 # ~/.config/systemd/user/thalamus-console.service
@@ -614,55 +602,6 @@ fact about which tree produced the process answering the request. Installed from
 wheel rather than a checkout, `/api/build` reports `vcs: false`, there is nothing to
 fast-forward, and the deploy button is not offered.
 
-### The voice unit
-
-`say` needs a second unit. It holds a neural TTS model resident and answers on
-loopback; the console proxies to it.
-
-```ini
-# ~/.config/systemd/user/thalamus-voice.service
-[Service]
-Environment=HF_HOME=%h/.cache/huggingface
-ExecStart=%h/.local/share/thalamus-voice/venv/bin/python \
-    %h/code/thalamus/src/thalamus/voice/daemon.py \
-    --host 127.0.0.1 --port 8380 --device cuda
-AllowedCPUs=2-3
-Nice=5
-Restart=on-failure
-```
-
-Three things about it are deliberate:
-
-- **Its own venv, outside the checkout.** torch and a CUDA build do not belong in
-  the package's environment. `uv pip install` writes into whatever `VIRTUAL_ENV`
-  the calling shell exports, which is how a GPU stack lands in a checkout nobody
-  meant to put it in — clear that variable before installing here.
-- **A separate process from the console.** The console restarts itself on demand
-  and is stdlib-only by design; a GPU-resident model has the opposite lifecycle.
-- **Pinned to two cores.** Synthesis runs on the GPU but the Python around it does
-  not, and torch helps itself to every core it can see. On a four-core box also
-  running the roster, ttyd and a media stack, `AllowedCPUs` is what keeps a long
-  utterance from being felt in the terminal. `torch.set_num_threads(1)` in the
-  daemon is the other half.
-
-Model load is most of the cost — about 2.3s, against ~0.02 real-time for
-synthesis once warm — so the daemon loads at start and synthesises a throwaway
-word before it listens. That second step is not a smoke test: the voice tensor is
-fetched separately from the model on first use, so a pipeline that has only been
-constructed still owes a network round trip, and a box that is offline when the
-first tap arrives would fail outright.
-
-The console reaches it at the URL passed to `--voice` (or `$THALAMUS_VOICE_URL`,
-which supplies that flag's default) — conventionally `http://127.0.0.1:8380`. Its
-dependencies are the `voice` extra: `kokoro`, `torch` and `numpy`, with a
-Kokoro-82M download from HuggingFace on first synthesis, so a first run needs
-network. Warming is wrapped: a venv missing one of them logs and starts anyway,
-leaving the first request to report the real error rather than killing the unit.
-
-It is never exposed through `tailscale serve` — audio reaches the phone through
-the console's own `/api/say`, which the service worker leaves uncached along with
-every other `/api/` path.
-
 ### Pin PATH in the unit
 
 A tmux pane inherits the PATH of the *client that created the window* — which, for
@@ -740,7 +679,7 @@ nothing about one operator's setup is baked into the code.
 | `--scan ROOT` | the project root's parent | Offer every git repo one level under ROOT (repeatable) |
 | `--service UNIT` | none | A unit the admin sheet may restart — a systemd `--user` unit, or a launchd label on macOS (repeatable) |
 | `--frames PATH` | none | Frame-theme definitions for the desktop client (see "On a desktop browser") |
-| `--voice URL` | `$THALAMUS_VOICE_URL`, else none | Speech service behind `say`. Without it the control is not shown |
+| `--allow-origin ORIGIN` | none | Also accept writes from this origin, for a proxy that rewrites `Host` (repeatable — see "The one thing reachability does not cover") |
 | `--fetch-interval MIN` | `10` | How often to fetch the checkout's remote, so "behind" is a fact rather than a report on the last manual fetch. `0` disables it |
 
 The spawn picker's directory list is also the **whitelist**: a spawn request is

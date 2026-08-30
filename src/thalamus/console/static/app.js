@@ -104,7 +104,6 @@ const els = {
   read: document.getElementById("read"),
   readWait: document.getElementById("read-wait"),
   viewToggle: document.getElementById("view-toggle"),
-  sayToggle: document.getElementById("say-toggle"),
 };
 
 let windows = [];          // last known window list
@@ -586,109 +585,6 @@ function setReadMode(on) {
 
 els.viewToggle.addEventListener("click", () => setReadMode(!readMode));
 
-// --- Speaking the latest reply -------------------------------------------
-// One <audio> for the app, reused rather than recreated: a mobile browser grants
-// playback permission to an element the user has activated, and a fresh element
-// per tap starts from no permission every time.
-const sayAudio = new Audio();
-let saying = false;
-let sayIdx = null;      // window the current utterance belongs to
-
-// Whether this console has a voice service behind it at all. The server owns the
-// answer (`--voice`); the client's only job is to not draw a control that nothing
-// backs. The button ships hidden and is revealed only on a positive answer, so the
-// failure mode of an unreachable check is a missing control rather than a dead one.
-let voiceAvailable = false;
-
-async function loadVoice() {
-  try {
-    const r = await fetch("api/voice");
-    voiceAvailable = r.ok && (await r.json()).available === true;
-  } catch {
-    voiceAvailable = false;
-  }
-  els.sayToggle.hidden = !voiceAvailable;
-}
-
-function sayUrl(idx, restart, from) {
-  let url = "api/say?index=" + encodeURIComponent(idx);
-  if (restart) url += "&restart=1";
-  if (from !== undefined && from !== null) url += "&from=" + encodeURIComponent(from);
-  return url;
-}
-
-function setSayState(state) {
-  // "" idle · "on" speaking · "done" caught up · "err" the last attempt failed
-  els.sayToggle.classList.toggle("on", state === "on");
-  els.sayToggle.classList.toggle("bad", state === "err");
-  els.sayToggle.classList.toggle("done", state === "done");
-  els.sayToggle.textContent = state === "on" ? "stop" : "say";
-}
-
-function stopSaying() {
-  sayAudio.pause();
-  saying = false;
-  setSayState("");
-}
-
-function startSaying(idx, restart, from) {
-  // Assign src and play in the same turn as the click. Awaiting anything first
-  // and playing afterwards loses the user activation, and the phone — the device
-  // this exists for — silently refuses to play.
-  sayIdx = idx;
-  sayAudio.src = sayUrl(idx, restart, from);
-  saying = true;
-  setSayState("on");
-  sayAudio.play().catch(() => { saying = false; setSayState("err"); });
-}
-
-function speakActiveWindow(restart) {
-  if (!voiceAvailable) return;
-  if (saying) { stopSaying(); return; }
-  if (activeIdx === null) return;
-  startSaying(activeIdx, restart, undefined);
-}
-
-/** Speak from a block the reader tapped, treating everything above it as heard. */
-function speakFrom(idx, seq) {
-  // Guarded here as well as at the button: tapping a block reaches this directly,
-  // so hiding the control alone would leave the whole read view silently speaking.
-  if (!voiceAvailable) return;
-  if (saying) sayAudio.pause();
-  startSaying(idx, false, seq);
-}
-
-// Playback finished, so the listening position may move. Stopping early
-// deliberately does not ack: the next tap resumes where your ears stopped, not
-// where the synthesiser did.
-function ackSpoken() {
-  if (sayIdx === null) return;
-  post("api/say/ack", { index: sayIdx }).catch(() => {});
-}
-
-sayAudio.addEventListener("ended", () => {
-  saying = false;
-  setSayState("");
-  ackSpoken();
-});
-// A 204 means nothing new to say. The element reports it as an error because
-// there is no audio to decode, so it is caught here and shown as "caught up"
-// rather than as a failure.
-sayAudio.addEventListener("error", () => {
-  saying = false;
-  setSayState(sayAudio.networkState === sayAudio.NETWORK_NO_SOURCE ? "done" : "err");
-});
-els.sayToggle.addEventListener("click", () => speakActiveWindow(false));
-// Long-press re-reads the current turn from its start, for when you missed it
-// rather than when you want what came next.
-let sayHold = null;
-els.sayToggle.addEventListener("pointerdown", () => {
-  sayHold = setTimeout(() => { sayHold = null; stopSaying(); speakActiveWindow(true); }, 600);
-});
-for (const ev of ["pointerup", "pointerleave", "pointercancel"]) {
-  els.sayToggle.addEventListener(ev, () => { clearTimeout(sayHold); sayHold = null; });
-}
-
 function readItemNode(idx, it) {
   const el = document.createElement("div");
   el.className = "rd rd-" + it.kind + (it.sidechain ? " rd-side" : "");
@@ -705,21 +601,6 @@ function readItemNode(idx, it) {
       const b = el.querySelector(".rd-body");
       b.textContent = it.text;
       b.hidden = !b.hidden;
-    });
-  } else if (it.kind === "prose") {
-    // Tap a paragraph to start listening there. The gesture reads as "begin
-    // here", so everything above it is recorded as already heard — which it
-    // effectively is, since you just read it to find the place.
-    //
-    // The start point rides the audio URL rather than a POST that precedes it.
-    // Marking first and then playing would put the play() call after an await
-    // and spend the user activation, which is the one thing a phone will not
-    // forgive.
-    el.addEventListener("click", () => {
-      if (window.getSelection && String(window.getSelection()).length) return; // selecting, not marking
-      for (const other of els.read.querySelectorAll(".rd-mark")) other.classList.remove("rd-mark");
-      el.classList.add("rd-mark");
-      speakFrom(idx, it.seq);
     });
   }
   return el;
@@ -3264,8 +3145,6 @@ setConn("connecting");
 buildDesktopBar();
 setPassthrough(passthrough);
 loadFrames();
-// Unconditional, unlike loadFrames: `say` is the phone-first control of the two.
-loadVoice();
 
 // Adaptive poll. Was `setInterval(poll, POLL_MS)`, which could stack overlapping
 // requests whenever a poll outran its own interval; a self-scheduling chain can't.

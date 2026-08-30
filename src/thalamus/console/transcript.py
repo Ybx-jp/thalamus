@@ -445,52 +445,6 @@ class Feed:
             out = out[-limit:]
         return out
 
-    def latest_turn_prose(self) -> str:
-        """The assistant's most recent turn as plain text, for speaking.
-
-        Walks back to the last thing the user said and takes the prose emitted
-        after it, which is the unit a listener means by "read me the update".
-        Thinking and tool calls are left out — they are working, not the report
-        — and sidechain items are too, since a subagent's narration is not this
-        session speaking.
-        """
-        collected: list[str] = []
-        for item in reversed(self.items):
-            if item["kind"] == "user" and not item.get("sidechain"):
-                break
-            if item["kind"] != "prose" or item.get("sidechain"):
-                continue
-            text = (item.get("text") or "").strip()
-            if text:
-                collected.append(text)
-        return "\n\n".join(reversed(collected))
-
-    def prose_since(self, seq: int) -> tuple[str, int]:
-        """Unspoken prose after `seq`, and the seq it reads up to.
-
-        The resume path. `seq` 0 means nothing has been listened to yet, which
-        falls back to the latest turn rather than the whole session — a first tap
-        on an hour-old window should not start an hour ago.
-
-        The returned seq is the high-water mark of what this text covers, and is
-        deliberately the caller's to commit or discard: audio that was generated
-        is not audio that was heard, and a listener who stops halfway wants the
-        next tap to pick up where their ears left off, not where the synthesiser
-        did.
-        """
-        if seq <= 0:
-            return self.latest_turn_prose(), self.seq
-        collected: list[str] = []
-        high = seq
-        for item in self.items:
-            if item["seq"] <= seq or item["kind"] != "prose" or item.get("sidechain"):
-                continue
-            text = (item.get("text") or "").strip()
-            if text:
-                collected.append(text)
-            high = max(high, item["seq"])
-        return "\n\n".join(collected), high
-
     def body(self, item_id: int) -> str | None:
         """The retained result text for one tool item, fetched on expand."""
         for item in self.items:

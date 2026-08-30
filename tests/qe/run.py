@@ -70,6 +70,7 @@ CASE_MODULES = (
     "qe.cases.skill_arming",
     "qe.cases.reduction_binds_real_type",
     "qe.cases.longlived_caller_names_its_room",
+    "qe.cases.console_write_origin",
 )
 
 
@@ -173,7 +174,10 @@ def main(argv: list[str] | None = None) -> int:
         verdict, why = exp_mod.reconcile(result, expectations)
         rows.append((result, verdict))
         detail = result.finding.summary if result.finding else (result.detail or why)
-        print(f"  {_MARK.get(verdict, '?')} {case.name} [{verdict}]")
+        # The issue is printed beside the verdict, so a reader of a red run can tell a
+        # reproduced-and-filed defect from a new one without opening the case.
+        tag = f" (#{case.issue}{', fixed' if case.fixed else ''})" if case.issue else ""
+        print(f"  {_MARK.get(verdict, '?')} {case.name}{tag} [{verdict}]")
         if detail:
             print(f"      {detail}")
         if result.finding and result.finding.witness:
@@ -195,19 +199,40 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  ! {name} [{exp_mod.MALFORMED}]\n      expectation names a case that does "
               f"not exist — rename or delete it; it is currently acknowledging nothing")
 
+    # A tag that cannot be checked is a comment. `fixed` withdraws the absolution an
+    # issue number grants, so the two states it must never be in are: fixed with no
+    # issue to withdraw, and fixed while an expectation still acknowledges a red here.
+    # The second is the one that matters — an acknowledged red on a closed defect is a
+    # regression nobody reads, which is the failure `install/lint.py` guards on its own
+    # side of the tree.
+    mistagged = []
+    for case in cases:
+        if case.fixed and not case.issue:
+            mistagged.append(f"{case.name}: marked fixed but names no issue — `fixed` "
+                             f"withdraws what an issue number grants, and there is "
+                             f"nothing here to withdraw")
+        if case.fixed and case.name in expectations:
+            mistagged.append(f"{case.name}: names issue #{case.issue} as fixed while an "
+                             f"expectation still acknowledges its failure — the defect "
+                             f"is both closed and triaged as open; delete the entry")
+    for entry in mistagged:
+        print(f"  ! <tagging> [{exp_mod.MALFORMED}]\n      {entry}")
+
     counts = ledger_mod.summarize(rows)
     print("\n" + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     if broken:
         print(f"unloadable={len(broken)}")
     if orphans:
         print(f"orphan-expectations={len(orphans)}")
+    if mistagged:
+        print(f"mistagged-cases={len(mistagged)}")
 
     if not args.no_ledger and rows:
         path = ledger_mod.append(header, rows)
         print(f"ledger: {path}")
 
     verdicts = {v for _, v in rows}
-    if broken or orphans or exp_mod.MALFORMED in verdicts:
+    if broken or orphans or mistagged or exp_mod.MALFORMED in verdicts:
         print("\nA case is broken. That is not evidence about the code under test.",
               file=sys.stderr)
         return 3

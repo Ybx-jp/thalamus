@@ -10,8 +10,8 @@ focused on Gremlin Server implementations and the Python driver.
 > is filtered to the pages above, split and renumbered, and cross-links are
 > rewritten to resolve inside this directory. Nothing here is authoritative —
 > read [the upstream reference](https://tinkerpop.apache.org/docs/current/reference/)
-> for the current text. The rest of Thalamus is MIT (see [LICENSE](../../LICENSE));
-> this directory is not.
+> for the current text. The rest of Thalamus is MIT (see the `LICENSE` file at the
+> root of the repository); this directory is not.
 
 ## Agent routing — read the one file your problem lives in
 
