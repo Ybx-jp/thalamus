@@ -620,10 +620,14 @@ CODEX_UNKNOWN = ""
 
 #: How much of the rollout's tail to read. A rollout runs to megabytes over a long
 #: session and the console polls this per row per refresh, so the whole file is not an
-#: option. 256 KiB clears the largest single turn observed on this box (a 2.6 MB
-#: rollout whose final turn was 41 KiB) with room to spare; when it does not reach a
-#: boundary the answer is UNKNOWN, which is the honest outcome rather than a fallback.
-_TAIL_BYTES = 256 * 1024
+#: option. When the bounded window does not reach a boundary the answer is UNKNOWN,
+#: which is the honest outcome rather than a fallback.
+#: Tool-heavy Codex turns routinely carry screenshots, command output, and MCP
+#: envelopes after `task_started`.  The original 256 KiB window therefore lost the
+#: boundary during an otherwise healthy turn and made the console say "not in
+#: reach".  Eight MiB still bounds every poll, while covering the multi-megabyte
+#: turns the console is specifically meant to watch.
+_TAIL_BYTES = 8 * 1024 * 1024
 
 
 def live_status(path: Path, *, tail_bytes: int = _TAIL_BYTES) -> tuple[str, datetime | None]:

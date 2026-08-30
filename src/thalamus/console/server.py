@@ -777,6 +777,12 @@ RECYCLING_LOCK = threading.Lock()
 CLOSING: dict[int, float] = {}
 CLOSING_LOCK = threading.Lock()
 
+# Codex batches rapidly inserted characters before committing them to its composer.
+# Enter in the same instant can finish that batch instead of submitting it, leaving
+# the operator to press Enter a second time. This is deliberately harness-specific:
+# other panes have no such settle boundary and should stay immediate.
+CODEX_COMPOSER_SETTLE_S = 0.08
+
 
 def tmux(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(tmux_argv(*args), capture_output=True, text=True, timeout=5)
@@ -2158,6 +2164,9 @@ class Handler(BaseHTTPRequestHandler):
             if text:
                 tmux("send-keys", "-t", target, "-l", text)
             if data.get("submit", True):
+                win = next((w for w in windows if w["index"] == idx), None)
+                if text and win and win.get("harness") == "codex":
+                    time.sleep(CODEX_COMPOSER_SETTLE_S)
                 tmux("send-keys", "-t", target, "Enter")
             return self._send(200, {"ok": True})
 

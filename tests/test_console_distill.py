@@ -244,6 +244,22 @@ def test_a_session_with_no_summary_line_yet_is_distilling(box):
     assert row["dir"] == "thalamus"
 
 
+def test_a_run_already_active_when_the_widget_starts_is_visible(tmp_path):
+    """Starting the console during a quiet extraction must not seed away the only
+    visible phase of that distillation."""
+    logs, pins = tmp_path / "logs", tmp_path / "pins.jsonl"
+    logs.mkdir()
+    pins.write_text(json.dumps({"session_id": "aaaaaaaa-rest", "scope": "main",
+                                "cwd": "/code/thalamus"}) + "\n")
+    (logs / "session-end-aaaaaaaa.log").write_text(RUNNING.format(
+        sid="aaaaaaaa", scope="main"))
+    watch = DistillWatch(logs=logs, pins=pins, state=tmp_path / "new-state.json",
+                         kills=tmp_path / "kills.jsonl")
+
+    (row,) = watch.rows()
+    assert row["state"] == "active"
+
+
 def test_a_clean_finish_drops_off_the_list(box):
     box.pin("bbbbbbbb")
     box.log("bbbbbbbb", DONE)
