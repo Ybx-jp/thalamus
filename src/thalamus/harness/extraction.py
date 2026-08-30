@@ -966,8 +966,8 @@ def _tokens(text: str) -> set[str]:
     claim used; characters outside `_TOKEN_RE`'s class (`~`, `,`, `|`, U+200B) split
     on both sides and never survived a shared tokenizer anyway.
 
-    The cost is a coarser signal — `notes/trust-model.md` also contributes `notes`,
-    `trust`, `model` — which lands as more first-party claims read as tier 2. That is
+    The cost is a coarser signal — `docs/concepts.md` also contributes `docs` and
+    `concepts` — which lands as more first-party claims read as tier 2. That is
     the direction this whole layer is allowed to fail in.
     """
     found: set[str] = set()

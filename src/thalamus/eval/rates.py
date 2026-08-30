@@ -10,8 +10,7 @@ without saying what its null is and what its interval is — or, when the statis
 genuinely does not exist for that rate, saying so in words that then travel with
 the number. Forcing a null onto a rate that has none would manufacture rigor
 instead of adding it, which is why a reason is a first-class answer and not an
-escape hatch. `publish.py` already established the shape: "n/a **with a reason**,
-never dropped".
+escape hatch. The established shape is "n/a **with a reason**, never dropped".
 
 Two refusals are built in:
 
@@ -53,8 +52,8 @@ def wilson_interval(hits: int, total: int, z: float = 1.96) -> tuple[float, floa
 def widen(interval: tuple[float, float], design_effect: float) -> tuple[float, float]:
     """Inflate an independence-assuming interval by a measured design effect.
 
-    Verdicts are not independent — they cluster in sessions, and `waste.py` measured
-    ICC around 0.26, a design effect near 4. An interval computed as though they were
+    Verdicts are not independent — they cluster in sessions, with a measured ICC
+    around 0.26 and a design effect near 4. An interval computed as though they were
     is not conservative, it is wrong in the direction that makes findings look
     stronger, so the correction belongs next to the interval rather than in a footnote.
     """
