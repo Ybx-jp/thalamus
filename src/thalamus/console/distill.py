@@ -406,11 +406,6 @@ class DistillWatch:
                     continue
                 seen.add(name)
                 seen_sessions.add(session)
-                # The clean slate, applied before anything is read: a log that has
-                # not been touched since this widget first ran is backlog.
-                if st.st_mtime <= seeded_at:
-                    continue
-
                 cached = self._logs_cache.get(name)
                 if cached and cached[0] == st.st_mtime and cached[1] == st.st_size:
                     kind, detail, runs = cached[2], cached[3], cached[4]
@@ -430,6 +425,14 @@ class DistillWatch:
                     runs = _runs(text)
                     self._logs_cache[name] = (st.st_mtime, st.st_size,
                                               kind, detail, runs)
+
+                # Seed away old terminal archaeology, not work that is running now.
+                # The watcher is often first constructed after SessionEnd has already
+                # created the log and entered a quiet model call. Hiding every file
+                # older than `seeded_at` made that whole active phase invisible; a
+                # successful run then disappeared without ever drawing a row.
+                if st.st_mtime <= seeded_at and kind != "active":
+                    continue
 
                 if kind == "done":
                     continue

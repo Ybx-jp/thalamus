@@ -22,22 +22,21 @@ from gremlin_python.process.traversal import Direction, T
 
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval.rankers import UNKNOWN as RANKER_UNKNOWN
-from thalamus.eval.rates import Rate, widen, wilson_interval
+from thalamus.eval.rates import Rate, session_bootstrap
 
 # Rendered chars per token — the same rough dial as eval/cost.py.
 _CHARS_PER_TOKEN = 4
 
-# The judge calls ~59% of *unrelated* tokens "used", so a system
-# with no signal at all wastes the remaining ~41%. The wasted share is therefore
-# bounded below by chance rather than by zero, which is the correction the "50%
-# wasted" figure never carried.
-_JUDGE_USED_NULL = 0.59
-_JUDGE_NULL = 1.0 - _JUDGE_USED_NULL
-
-# Verdicts cluster in sessions: waste.py measured ICC ~0.26, a design effect near 4.
-# An interval that assumes independence is not conservative here, it is wrong in the
-# direction that makes a finding look stronger.
-_DESIGN_EFFECT = 4.0
+# No null is hardcoded here. The permutation null is a property of the corpus and
+# the ranker window, not a constant: measured per single-ranker window on 2026-08-29
+# it was 69.2% (v3), 76.5% (v1) and 72.1% (v2) — so a frozen 0.59 understated chance
+# by 10-18 points wherever it was applied. `thalamus-eval calibration` computes it;
+# this report states what it does not know rather than borrowing a number.
+NULL_UNMEASURED = (
+    "the permutation null is corpus- and ranker-specific and is not computable from "
+    "the graph alone (it re-judges against rotated windows, which needs the "
+    "transcript archive) — run `thalamus-eval calibration --scope {scope}` for it"
+)
 
 
 def parse_window_bound(
@@ -98,6 +97,37 @@ class ScopeReport:
     ignored_chars: int = 0
     # (vid, times_ignored, wasted_chars, text) — ranked by wasted chars.
     most_ignored: list[tuple[str, int, int, str]] = field(default_factory=list)
+    # ranker fingerprint -> session -> [used, attributed]. Carried per session
+    # because the interval resamples sessions, and per ranker because a rate that
+    # averages across a dial change measures neither setting.
+    by_window: dict[str, dict[str, list[int]]] = field(default_factory=dict)
+
+    @property
+    def served_rankers(self) -> list[str]:
+        return [f for f in self.by_ranker if f != RANKER_UNKNOWN]
+
+    def _window_rate(self, fingerprint: str) -> str:
+        sessions = self.by_window.get(fingerprint, {})
+        used = sum(v[0] for v in sessions.values())
+        attributed = sum(v[1] for v in sessions.values())
+        groups = {sid: [(v[0], v[1])] for sid, v in sessions.items()}
+        interval = session_bootstrap(groups)
+        return Rate(
+            label=f"    {fingerprint}",
+            hits=used,
+            total=attributed,
+            interval=interval,
+            interval_reason=(
+                "fewer than two sessions in this window, so there is nothing to "
+                "resample — an interval over one cluster is not one"
+            ),
+            null=None,
+            null_reason=NULL_UNMEASURED.format(scope=self.scope),
+            note=(
+                f"session-clustered over {len(sessions)} session(s); verdicts inside "
+                "one session share a window, a topic and an operator"
+            ),
+        ).render()
 
     def render(self) -> str:
         lines = [
@@ -146,25 +176,25 @@ class ScopeReport:
                     f"  returned nodes: {self.returns}; attributed {self.attributed}, "
                     f"{ignored} ignored"
                 )
-                lines.append("  " + Rate(
-                    label="  used",
-                    hits=self.used,
-                    total=self.attributed,
-                    interval=widen(wilson_interval(self.used, self.attributed),
-                                   _DESIGN_EFFECT),
-                    null=None,
-                    null_reason=(
-                        "the permuted null is corpus-specific and is not recomputed "
-                        "here; a permutation null measured 57% on this judge, which is "
-                        "close enough to the observed rate that the figure is not "
-                        "self-evidently above chance"
-                    ),
-                    note=(
-                        f"interval widened by the measured design effect (~{_DESIGN_EFFECT:g}, "
-                        "ICC~0.26): verdicts cluster in sessions and the independent "
-                        "interval would be too narrow"
-                    ),
-                ).render())
+                served = self.served_rankers
+                if len(served) > 1:
+                    # Refusing the pooled figure rather than printing it with a
+                    # warning: the warned number is the one that gets quoted.
+                    lines.append(
+                        "  used: not pooled — this window straddles "
+                        f"{len(served)} ranker settings, and one rate across them "
+                        "measures neither. Per setting:"
+                    )
+                    for fingerprint, _count in self.by_ranker.most_common():
+                        if fingerprint in self.by_window:
+                            lines.append(self._window_rate(fingerprint))
+                elif served:
+                    lines.append(self._window_rate(served[0]))
+                else:
+                    lines.append(
+                        "  used: not rendered — no trace here records which ranker "
+                        "served it, so this rate cannot be attributed to a setting"
+                    )
             else:
                 lines.append(f"  returned nodes: {self.returns}; none attributed yet")
             if unattributed:
@@ -205,7 +235,14 @@ class ScopeReport:
                         "sample size; the session-clustered interval is +/-7pp at "
                         "this corpus size"
                     ),
-                    null=_JUDGE_NULL,
+                    null=None,
+                    null_reason=(
+                        "the wasted share's null is one minus the judge's used-null, "
+                        "which is corpus- and ranker-specific, and token-weighted here "
+                        "rather than node-weighted — the constant that stood in for it "
+                        "understated chance by 10-18 points. Read it against the "
+                        "window's own null from `thalamus-eval calibration`"
+                    ),
                     note=(
                         "the null is the judge calling unrelated tokens used, so the "
                         "wasted share is bounded below by chance, not by zero"
@@ -263,6 +300,10 @@ def scope_report(
     # before layer 1b carry no injected_chars; they price as zero, never as a guess.
     node_share: dict[str, int] = {}
     in_window: set[str] = set()
+    # Which setting served each trace, and whose session it was — the two keys the
+    # used rate has to be cut by before it means anything.
+    trace_ranker: dict[str, str] = {}
+    trace_session: dict[str, str] = {}
     for row in traces:
         trace_vid = str(row.get(T.id) or row.get("id") or "")
         if windowed:
@@ -276,7 +317,11 @@ def scope_report(
         if trace_vid:
             in_window.add(trace_vid)
         report.traces += 1
-        report.by_ranker[_first(row.get("ranker_config")) or RANKER_UNKNOWN] += 1
+        fingerprint = _first(row.get("ranker_config")) or RANKER_UNKNOWN
+        report.by_ranker[fingerprint] += 1
+        if trace_vid:
+            trace_ranker[trace_vid] = fingerprint
+            trace_session[trace_vid] = _first(row.get("session_id")) or ""
         tool = _first(row.get("tool"))
         if tool:
             report.by_tool[tool] += 1
@@ -308,9 +353,15 @@ def scope_report(
         if used is None:
             continue
         report.attributed += 1
-        share = node_share.get(_edge_source(edge), 0)
+        source = _edge_source(edge)
+        window = report.by_window.setdefault(
+            trace_ranker.get(source, RANKER_UNKNOWN), {}
+        ).setdefault(trace_session.get(source, ""), [0, 0])
+        window[1] += 1
+        share = node_share.get(source, 0)
         if _as_bool(used):
             report.used += 1
+            window[0] += 1
             report.used_chars += share
         else:
             target = _edge_target(edge)

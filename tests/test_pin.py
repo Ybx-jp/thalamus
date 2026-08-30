@@ -61,6 +61,7 @@ def test_agent_definition_is_derived_from_the_manifest():
     rendered = render_agent(manifest)
 
     assert f"name: {agent_name('literature')}" in rendered
+    assert "model: inherit" in rendered
     assert "GENERATED from config/experts/literature.yaml" in rendered
     assert manifest.name in rendered
     assert "enforced server-side" in rendered
@@ -88,6 +89,7 @@ def test_write_all_agents_writes_every_expert_into_the_dir(tmp_path):
         f = tmp_path / f"{agent_name(scope)}.md"
         assert f.exists()
         assert f"scope `{scope}`" in f.read_text()
+        assert "model: inherit" in f.read_text()
 
 
 def test_spawn_rejects_a_nonexistent_directory(tmp_path, monkeypatch):

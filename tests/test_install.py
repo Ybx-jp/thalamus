@@ -130,6 +130,24 @@ def sandbox(tmp_path, monkeypatch):
             "probe_entry_point": real_probe_entry_point}
 
 
+def test_install_routes_vanilla_workers_to_sonnet_without_clobbering_env(sandbox):
+    sandbox["user"].parent.mkdir(parents=True, exist_ok=True)
+    sandbox["user"].write_text(json.dumps({
+        "model": "fable",
+        "env": {"KEEP_ME": "yes"},
+        "hooks": {},
+    }))
+
+    install.install(harnesses=("claude",))
+
+    written = json.loads(sandbox["user"].read_text())
+    assert written["model"] == "fable"
+    assert written["env"] == {
+        "KEEP_ME": "yes",
+        "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
+    }
+
+
 class TestCursorWiring:
     """Cursor parity. The contract that matters is that the
     written config still works when the session's workspace root is some other

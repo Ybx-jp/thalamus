@@ -673,6 +673,7 @@ def render_agent(manifest: ExpertManifest, servers: dict[str, dict] | None = Non
     return f"""---
 name: {agent_name(manifest.scope)}
 description: Pinned Thalamus session for the {manifest.name} expert (scope `{manifest.scope}`). GENERATED from config/experts/{manifest.scope}.yaml — edit the manifest, not this file.
+model: inherit
 {_mcp_frontmatter(servers)}---
 
 {_charter(manifest, selfcheck)}"""

@@ -84,6 +84,13 @@ class TestLiveStatus:
         assert ct.live_status(path, tail_bytes=2048)[0] == ct.CODEX_UNKNOWN
         assert ct.live_status(path)[0] == ct.CODEX_BUSY
 
+    def test_a_tool_heavy_turn_stays_in_reach_by_default(self, tmp_path):
+        """The console's old 256 KiB tail lost `task_started` mid-turn, so active
+        Codex sessions usually rendered as "not in reach" while doing real work."""
+        path = rollout(tmp_path / "r.jsonl", meta(), event("task_started"),
+                       {"type": "response_item", "payload": {"pad": "z" * (2 * 1024 * 1024)}})
+        assert ct.live_status(path)[0] == ct.CODEX_BUSY
+
     def test_the_partial_first_line_of_a_tail_read_is_not_parsed(self, tmp_path):
         """Seeking into the middle of the file lands mid-record. That fragment is
         dropped rather than parsed, so a half-written row cannot decode as a

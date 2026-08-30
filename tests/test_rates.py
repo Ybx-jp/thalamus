@@ -13,9 +13,18 @@ as that one had been. `publish.py` established the shape this enforces: "n/a wit
 reason, never dropped".
 """
 
+from collections import Counter
+
 import pytest
 
-from thalamus.eval.rates import BareRateError, MIN_N, Rate, widen, wilson_interval
+from thalamus.eval.rates import (
+    BareRateError,
+    MIN_N,
+    Rate,
+    percentile_ci,
+    session_bootstrap,
+    wilson_interval,
+)
 
 
 def test_a_rate_with_no_null_and_no_reason_cannot_be_built():
@@ -139,26 +148,97 @@ def test_a_rate_at_or_below_its_null_says_so():
     assert "at or below chance" in rate.render()
 
 
-def test_the_design_effect_widens_an_interval_rather_than_a_footnote_mentioning_it():
+def test_resampling_sessions_is_wider_than_assuming_verdicts_are_independent():
     """
-    Scenario: Verdicts cluster in sessions (waste.py measured ICC ~0.26, design
-    effect ~4)
+    Scenario: Two sessions disagree sharply — one is nearly all used, the other
+    nearly none — over the same number of verdicts as a single pooled sample
 
     Verifications:
-    - the widened interval is centred where the original was
-    - it is wider by sqrt(design effect)
-    - a design effect of 1 or less is a no-op
+    - the session-clustered interval is strictly wider than the binomial one
+    - it brackets the pooled point estimate
 
-    An interval assuming independence is not conservative here; it is wrong in the
-    direction that makes a finding look stronger. So the correction goes into the
-    number, not into prose beside it.
+    This is the correction that replaced widening a Wilson interval by a scalar
+    design effect. The scalar was measured over retrievals per session and applied
+    to a rate counted over returned nodes, which cluster harder, so it under-widened
+    in the direction that makes a finding look stronger.
     """
-    base = (0.4, 0.6)
-    wide = widen(base, 4.0)
+    groups = {"s1": [(48, 50)], "s2": [(2, 50)]}
+    clustered = session_bootstrap(groups, draws=400)
+    assert clustered is not None
+    lo, hi = clustered
+    binom_lo, binom_hi = wilson_interval(50, 100)
 
-    assert sum(wide) / 2 == pytest.approx(0.5)
-    assert (wide[1] - wide[0]) == pytest.approx((base[1] - base[0]) * 2)
-    assert widen(base, 1.0) == base
+    assert (hi - lo) > (binom_hi - binom_lo)
+    assert lo <= 0.5 <= hi
+
+
+def test_one_cluster_yields_no_interval_rather_than_a_narrow_one():
+    """An interval over a single session is not an interval; it must be refused."""
+    assert session_bootstrap({"only": [(4, 10)]}) is None
+    assert session_bootstrap({}) is None
+
+
+def test_percentile_ci_of_an_empty_draw_admits_everything():
+    """No draws is not certainty."""
+    assert percentile_ci([]) == (0.0, 1.0)
+
+
+def test_the_used_rate_is_refused_when_the_window_straddles_two_rankers():
+    """
+    Scenario: A report window spans two ranker settings, each with its own sessions
+
+    Verifications:
+    - no pooled used% is rendered
+    - the refusal names how many settings it spans
+    - each setting gets its own rate
+
+    The previous behaviour printed the pooled figure with a warning above it. A
+    warned number is still the number that gets quoted, and this rate had already
+    travelled once as a point estimate on n=5.
+    """
+    from thalamus.eval.report import ScopeReport
+
+    report = ScopeReport(
+        scope="main",
+        traces=40,
+        sessions=4,
+        returns=80,
+        attributed=80,
+        used=56,
+        by_ranker=Counter({"v3:dials": 20, "v1:dials": 20}),
+        by_window={
+            "v3:dials": {"sA": [18, 20], "sB": [16, 20]},
+            "v1:dials": {"sC": [12, 20], "sD": [10, 20]},
+        },
+    )
+    rendered = report.render()
+
+    assert "used: not pooled" in rendered
+    assert "straddles 2 ranker settings" in rendered
+    assert "v3:dials" in rendered and "v1:dials" in rendered
+    # Verifies: the pooled 56/80 is nowhere in the output
+    assert "56/80" not in rendered
+
+
+def test_a_single_ranker_window_gets_one_rate_with_a_session_clustered_interval():
+    """One setting is attributable, so the rate renders — with its own interval."""
+    from thalamus.eval.report import ScopeReport
+
+    report = ScopeReport(
+        scope="main",
+        traces=20,
+        sessions=2,
+        returns=40,
+        attributed=40,
+        used=28,
+        by_ranker=Counter({"v3:dials": 20}),
+        by_window={"v3:dials": {"sA": [18, 20], "sB": [10, 20]}},
+    )
+    rendered = report.render()
+
+    assert "not pooled" not in rendered
+    assert "28/40" in rendered
+    assert "session-clustered over 2 session(s)" in rendered
 
 
 def test_wilson_holds_at_the_extremes_a_small_sample_produces():

@@ -1813,6 +1813,24 @@ def test_send_keeps_no_waiting_preflight_because_the_operator_can_see_it(tmp_pat
     assert any("1" in args for args in sent)
 
 
+def test_codex_composer_settles_before_enter(tmp_path, monkeypatch):
+    """Codex coalesces inserted text; Enter must follow that settle boundary or it
+    only commits the text and the operator has to submit twice."""
+    codex = ("0\tmain\t1\tcodex\t60\t50\t0\t/home/op/code/thalamus\t"
+             "env THALAMUS_SCOPE=main codex --profile thalamus-main")
+    slept = []
+    monkeypatch.setattr(server.time, "sleep", slept.append)
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path], session="s")
+
+    with _serving(cfg, windows=codex) as post:
+        status, _ = post("/api/send", {"index": 0, "text": "hello"})
+        sends = [c for c in post.fake.calls if c[0] == "send-keys"]
+
+    assert status == 200
+    assert slept == [server.CODEX_COMPOSER_SETTLE_S]
+    assert sends[-1][-1] == "Enter"
+
+
 # ---- the read view's read-status field ----
 
 

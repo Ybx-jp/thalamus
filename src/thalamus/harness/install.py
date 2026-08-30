@@ -73,6 +73,14 @@ HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "claude-cod
 SKILL_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "skills"
 USER_SKILLS_DIR = Path.home() / ".claude" / "skills"
 
+# Keep disposable, general-purpose workers off the interactive session's model. A
+# parent running Fable otherwise gives every model-less Agent spawn Fable too, which
+# turns a parallel filesystem/search sweep into the expensive part of the session.
+# Generated `thalamus-*` agents explicitly inherit the parent model in
+# pin.render_agent, so cross-expert and self-consultation voices follow a session-local
+# Fable choice while model-less vanilla workers still take this cheaper default.
+VANILLA_SUBAGENT_MODEL = "sonnet"
+
 # Where a hook records that it could not run at all. Written by
 # `thalamus_require_binaries` (hooks/claude-code/resolve-scope.sh), read by
 # `recorded_hook_failures`.
@@ -1920,14 +1928,18 @@ def install(dry_run: bool = False,
     desired_hooks = build_hook_block()
     current = _strip_thalamus_hooks(json.loads(json.dumps(user_settings)))
     merged = json.loads(json.dumps(current))
+    merged.setdefault("env", {})["CLAUDE_CODE_SUBAGENT_MODEL"] = VANILLA_SUBAGENT_MODEL
     merged.setdefault("hooks", {})
     for event, groups in desired_hooks.items():
         merged["hooks"].setdefault(event, []).extend(groups)
 
-    if user_settings.get("hooks") == merged.get("hooks"):
-        actions.append(f"user hooks already current ({USER_SETTINGS})")
+    if (user_settings.get("hooks") == merged.get("hooks")
+            and user_settings.get("env") == merged.get("env")):
+        actions.append(f"user hooks and subagent model already current ({USER_SETTINGS})")
     else:
-        actions.append(f"{'would write' if dry_run else 'wrote'} hooks to {USER_SETTINGS}")
+        actions.append(
+            f"{'would write' if dry_run else 'wrote'} hooks and vanilla-subagent model "
+            f"to {USER_SETTINGS}")
         if not dry_run:
             _write_json(USER_SETTINGS, merged)
 
