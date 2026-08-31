@@ -505,14 +505,17 @@ def _main():
     snapshot_parser.add_argument(
         "--path",
         default=DEFAULT_SNAPSHOT_PATH,
-        help="Server-side path to write. Defaults to the configured graphLocation; "
-        "point it elsewhere to take a side copy without touching the live file.",
+        help=f"Server-side path to write. Defaults to {DEFAULT_SNAPSHOT_PATH}, which is "
+        "this build's compiled-in value and not read from the server's own "
+        "graphLocation; point it elsewhere to take a side copy without touching the "
+        "live file.",
     )
     snapshot_parser.add_argument(
         "--name",
         help="Pin the graph under this name instead: writes a named .kryo and records "
-        "counts, sha256 and git ref in the committed registry. A published number cites "
-        "the snapshot it was computed on; snapshots are immutable.",
+        "counts, sha256 and git ref in the operator's registry at "
+        "~/.thalamus/snapshots.jsonl. A published number cites the snapshot it was "
+        "computed on; snapshots are immutable.",
     )
     snapshot_parser.add_argument(
         "--note", default="", help="Why this state was worth pinning (goes in the registry)"

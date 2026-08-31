@@ -80,6 +80,12 @@ layers:
   # read from three layers at once, so any home inside one of them is a boundary
   # crossing for the other two.
   - src/thalamus/contract/paths.py
+  # artifacts.py is how a pinned artifact is named, hashed and refused — the shared
+  # half of `eval/snapshots.py`, with the graph-specific half left there. It imports
+  # nothing but stdlib and every kind that pins anything reads it, which is what this
+  # layer is. Unrelated to `contract/pinning.py`, which is about pinning a session to
+  # a scope; these two words mean different things and the modules share nothing.
+  - src/thalamus/artifacts.py
 - name: conformance
   includes:
   - src/thalamus/contract/conformance.py
