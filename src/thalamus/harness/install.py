@@ -594,19 +594,50 @@ class Check:
     advisory: bool = False
     pending: bool = False
     blocked: bool = False
+    # Which install surface the row belongs to, tagged where `verify` assembles
+    # the block rather than at each construction site — a reader that has to
+    # infer the surface from the name is one rewording away from being wrong.
+    # `claude`, `cursor` and `codex` are the three harnesses; `runtime` is the
+    # environment rather than the install. `verify()` tags every row it emits,
+    # so the default is only ever reached by a `Check` built somewhere else.
+    surface: str = "shared"
+
+    MARKS = {"ok": "✓", "blocked": "?", "pending": "○", "advisory": "!",
+             "failed": "✗"}
+
+    @property
+    def state(self) -> str:
+        """The four states plus `ok`, as one word.
+
+        The mark and the machine-readable state are derived from the same
+        expression, so a caller gating on `state` and an operator reading marks
+        cannot be told different things about the same row.
+        """
+        if self.ok:
+            return "ok"
+        if self.blocked:
+            return "blocked"
+        if self.pending:
+            return "pending"
+        if self.advisory:
+            return "advisory"
+        return "failed"
+
+    @property
+    def key(self) -> str:
+        """A stable slug for a caller that gates on individual rows.
+
+        Derived from the name rather than declared beside it, which makes a
+        reworded check break its callers loudly instead of silently dropping out
+        of whatever set they matched it into — the same intended failure the
+        node tests' by-name extraction relies on. Callers that exempt a row
+        (`thalamus-eval`'s cell gate) fail closed when a key moves: the row is no
+        longer exempt, the gate fires, and nothing is spent.
+        """
+        return re.sub(r"[^a-z0-9]+", "_", self.name.lower()).strip("_")
 
     def render(self) -> str:
-        if self.ok:
-            mark = "✓"
-        elif self.blocked:
-            mark = "?"
-        elif self.pending:
-            mark = "○"
-        elif self.advisory:
-            mark = "!"
-        else:
-            mark = "✗"
-        return f"  {mark} {self.name}: {self.detail}"
+        return f"  {self.MARKS[self.state]} {self.name}: {self.detail}"
 
 
 def _load_json(path: Path) -> dict:
@@ -1649,12 +1680,14 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     missing = [s for s in wired if not (HOOK_DIR / s).is_file()]
     checks.append(Check("hook scripts present", not missing,
                         f"all {len(wired)} wired scripts found" if not missing
-                        else f"missing: {missing}"))
+                        else f"missing: {missing}",
+                        surface="claude"))
 
     unexec = sorted({s for _, _, s in HOOK_WIRING
                      if (HOOK_DIR / s).is_file() and not os.access(HOOK_DIR / s, os.X_OK)})
     checks.append(Check("hook scripts executable", not unexec,
-                        "all executable" if not unexec else f"not executable: {unexec}"))
+                        "all executable" if not unexec else f"not executable: {unexec}",
+                        surface="claude"))
 
     # jq and uv are prerequisites, and a prerequisite that is not on the box is an
     # advisory rather than a failure. Both are other vendors' binaries: install wires
@@ -1669,13 +1702,13 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     checks.append(Check("jq on PATH", jq is not None,
                         jq or "NOT FOUND — every hook will fail. Install jq "
                               "(`apt install jq`, `brew install jq`)",
-                        advisory=jq is None))
+                        advisory=jq is None, surface="runtime"))
 
     uv = shutil.which("uv")
     checks.append(Check("uv on PATH", uv is not None,
                         uv or "NOT FOUND — distillation cannot run. Install uv "
                               "(https://astral.sh/uv)",
-                        advisory=uv is None))
+                        advisory=uv is None, surface="runtime"))
 
     # The load-bearing one: SessionEnd's exact invocation, from a cwd that is
     # deliberately not the checkout. This is the call that used to die detached.
@@ -1685,18 +1718,18 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
     # what was and was not asked.
     if uv:
         ok, detail = probe_entry_point()
-        checks.append(Check("distillation entry point", ok, detail))
+        checks.append(Check("distillation entry point", ok, detail, surface="runtime"))
     else:
         checks.append(Check("distillation entry point", False,
                             "not attempted — uv is not on PATH to run it with",
-                            blocked=True))
+                            blocked=True, surface="runtime"))
 
     agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []
     checks.append(Check("derived agents installed", bool(agents),
                         f"{len(agents)} in {USER_AGENTS_DIR}" if agents
                         else f"none written yet to {USER_AGENTS_DIR} — `thalamus init` "
                              "writes one per expert manifest",
-                        pending=not agents))
+                        pending=not agents, surface="claude"))
 
     # Read each skill *through* its user-scope path, the way a session outside
     # the checkout will. A symlink that exists can still dangle, and a dangling
@@ -1734,20 +1767,33 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
         detail = f"{len(shipped_skills())} readable via {USER_SKILLS_DIR}"
     checks.append(Check("skills load at user scope", not (unreadable or stale or unlinked),
                         detail,
-                        pending=bool(unlinked) and not (unreadable or stale)))
+                        pending=bool(unlinked) and not (unreadable or stale),
+                        surface="claude"))
 
     if "claude" in harnesses:
-        checks.append(verify_armed())
-        checks.append(verify_claude_mcp())
+        checks.extend(_on_surface([verify_armed(), verify_claude_mcp()], "claude"))
 
     if "cursor" in harnesses:
-        checks.extend(verify_cursor())
+        checks.extend(_on_surface(verify_cursor(), "cursor"))
 
     if "codex" in harnesses:
-        checks.extend(verify_codex())
+        checks.extend(_on_surface(verify_codex(), "codex"))
 
-    checks.extend(verify_runtime(harnesses))
+    checks.extend(_on_surface(verify_runtime(harnesses), "runtime"))
 
+    return checks
+
+
+def _on_surface(checks: list[Check], surface: str) -> list[Check]:
+    """Tag a whole block at the point that knows which surface it is.
+
+    Tagging where the block is assembled rather than at each `Check(...)` keeps
+    one statement of the fact per surface — the alternative is thirty
+    construction sites that can each be tagged wrongly, and a caller that gates
+    on the surface would inherit every one of those mistakes.
+    """
+    for check in checks:
+        check.surface = surface
     return checks
 
 
@@ -2126,9 +2172,58 @@ def uninstall(dry_run: bool = False) -> list[str]:
     return actions
 
 
+# The shape `--check --json` emits. Bumped when a field changes meaning or
+# leaves; a reader pinned to a version it does not speak should refuse rather
+# than guess, the same rule the arm runner's VM backend contract states.
+CHECK_REPORT_VERSION = 1
+
+
+def check_report(harnesses: tuple[str, ...] = HARNESSES) -> dict:
+    """`verify()`, as data.
+
+    The prose report is written for an operator reading marks; a program cannot
+    gate on it without matching sentences, and the first reworded detail line
+    breaks the match silently. This exists because a caller outside the repo now
+    has to decide something from a check — `thalamus-eval` runs it inside a
+    confinement cell before an arm session spends anything, to establish that the
+    treatment it is about to measure was actually delivered.
+
+    No verdict is computed here. Which rows must be `ok` before a cell may spend,
+    and which are legitimately `pending` because of what that cell *is*, is the
+    caller's question about its own experiment — a boolean invented here would be
+    a judgement about a situation this module cannot see.
+    """
+    checks = verify(harnesses)
+    states: dict[str, int] = {}
+    for check in checks:
+        states[check.state] = states.get(check.state, 0) + 1
+    return {
+        "report": CHECK_REPORT_VERSION,
+        # Which machine, and which source, produced these rows. A check result
+        # read back out of a run record months later says nothing unless it
+        # carries the HOME it was taken against: the whole point of running it in
+        # a cell is that the answer differs per HOME.
+        "home": str(Path.home()),
+        "project_root": str(PROJECT_ROOT),
+        "harnesses": list(harnesses),
+        "checks": [
+            {
+                "key": check.key,
+                "name": check.name,
+                "surface": check.surface,
+                "state": check.state,
+                "ok": check.ok,
+                "detail": check.detail,
+            }
+            for check in checks
+        ],
+        "states": states,
+    }
+
+
 def run(dry_run: bool = False, check_only: bool = False,
         harness: str = ALL_HARNESSES, uninstall_mode: bool = False,
-        assume_yes: bool = False) -> int:
+        assume_yes: bool = False, as_json: bool = False) -> int:
     """CLI entry. Non-zero exit iff a check failed — install failures must be loud.
 
     "Failed" is narrower than "not ok". A pending finding is the uninstalled state
@@ -2137,6 +2232,17 @@ def run(dry_run: bool = False, check_only: bool = False,
     closing line whatever the checks said, because the one thing it promises is that
     nothing was written, and that is most worth saying on the run that found faults.
     """
+    if as_json:
+        # Write-free by construction: `--json` is refused anywhere but `--check`
+        # at the parser, so this branch never runs against an install or an
+        # uninstall. The exit code stays the one the prose path computes, so a
+        # caller can gate on either the status or the rows and get the same
+        # answer.
+        harnesses = HARNESSES if harness == ALL_HARNESSES else (harness,)
+        report = check_report(harnesses)
+        print(json.dumps(report, indent=2))
+        return 1 if report["states"].get("failed") else 0
+
     if uninstall_mode:
         for a in uninstall(dry_run=dry_run):
             print(f"  - {a}")

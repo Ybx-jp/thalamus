@@ -16,9 +16,11 @@ two, and foreign hooks left intact — not about the installer's return value.
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from thalamus import cli
 from thalamus.harness import install
 from thalamus.contract.paths import PROJECT_ROOT
 
@@ -1585,3 +1587,142 @@ class TestTheInstallMatrixCountsTheSameWiring:
             "matrix will fail every cell until it is bumped to "
             f"{len(install.HOOK_WIRING)}"
         )
+
+
+class TestTheCheckAsData:
+    """`--check --json` is the surface a *program* gates on, and the program is
+    outside this repo: `thalamus-eval` runs it inside a confinement cell to
+    establish that an arm's memory treatment was delivered before the cell spends
+    a model call measuring it. That caller cannot match prose — the first reworded
+    detail line breaks the match, and breaks it silently, which in a campaign
+    means an under-treated cell recorded as a treated one.
+
+    So the contract held here is the row shape rather than the wording: every row
+    carries a key, the surface it belongs to, and one word for its state. The
+    wording stays free to change.
+    """
+
+    # Derived from the registry rather than listed, for the reason `--harness`'s
+    # choices are: a harness that arrives in `AGENT_CLIS` must not be able to emit
+    # rows under a surface name no caller knows to ask about.
+    SURFACES = set(install.HARNESSES) | {"shared", "runtime"}
+
+    # Everything `thalamus init` writes under ~/.claude. A caller asks "is the
+    # claude surface installed on this box" by filtering on `surface`, so a row
+    # that writes into ~/.claude under any other tag is not merely mislabelled —
+    # it is silently excluded from the answer, which still looks complete.
+    CLAUDE_ROWS = ("hook scripts present", "hook scripts executable",
+                   "derived agents installed", "skills load at user scope",
+                   "declared hooks armed", "claude MCP server registered")
+
+    def test_every_row_carries_the_fields_a_caller_gates_on(self, sandbox):
+        for row in install.check_report()["checks"]:
+            assert row["key"], row
+            assert row["name"], row
+            assert row["detail"], row
+            assert row["state"] in install.Check.MARKS, row
+            assert row["surface"] in self.SURFACES, row
+            assert isinstance(row["ok"], bool), row
+
+    def test_the_state_and_the_mark_cannot_disagree(self, sandbox):
+        """One expression feeds both, and this is what keeps it that way.
+
+        An operator reads marks and a campaign gates on `state`; if a later edit
+        gives them separate branches the two can drift, and the run record will
+        say a cell was treated while the console output said it was not.
+        """
+        for check in install.verify():
+            assert check.render().startswith(f"  {install.Check.MARKS[check.state]} "), (
+                f"{check.name}: state {check.state!r} does not match its mark"
+            )
+
+    def test_the_key_is_the_name_slugged(self, sandbox):
+        keyed = {c.name: c.key for c in install.verify()}
+        assert keyed["skills load at user scope"] == "skills_load_at_user_scope"
+        assert keyed["claude MCP server registered"] == "claude_mcp_server_registered"
+
+    def test_keys_are_unique_across_a_report(self, sandbox):
+        """A caller dicts the rows by key. Two rows sharing one drop whichever
+        came first, and the row it drops is invisible — the report still looks
+        complete, one shorter."""
+        keys = [row["key"] for row in install.check_report()["checks"]]
+        assert len(keys) == len(set(keys)), sorted(k for k in keys if keys.count(k) > 1)
+
+    def test_every_claude_scoped_row_is_tagged_to_the_claude_surface(self, sandbox):
+        surfaces = {c.name: c.surface for c in install.verify()}
+        for name in self.CLAUDE_ROWS:
+            assert surfaces[name] == "claude", f"{name} is tagged {surfaces[name]!r}"
+
+    def test_the_other_harnesses_rows_are_not_tagged_claude(self, sandbox):
+        """The tag is applied per block, so a mis-tagged block moves every row of
+        that harness into the claude answer at once rather than one of them."""
+        surfaces = {c.name: c.surface for c in install.verify()}
+        assert surfaces["cursor hooks wired at user scope"] == "cursor"
+        assert surfaces["codex hooks wired at user scope"] == "codex"
+
+    def test_a_fresh_home_reports_the_claude_surface_pending_not_failed(self, sandbox):
+        """The state a freshly seeded confinement-cell HOME is in: two files
+        copied in and no install run. A `failed` here would make an uninstalled
+        cell indistinguishable from one whose install is broken, and a campaign's
+        refusal to spend would fire on both alike.
+        """
+        rows = {row["key"]: row for row in install.check_report()["checks"]}
+        for key in ("derived_agents_installed", "skills_load_at_user_scope",
+                    "declared_hooks_armed"):
+            assert rows[key]["state"] == "pending", rows[key]
+
+    def test_the_report_states_its_version(self, sandbox):
+        assert install.check_report()["report"] == install.CHECK_REPORT_VERSION
+
+    def test_the_state_tally_accounts_for_every_row(self, sandbox):
+        """A caller reading only `states` must be reading about the same rows it
+        would get from `checks` — a tally that loses one can report a clean cell
+        that carries a failure."""
+        report = install.check_report()
+        assert sum(report["states"].values()) == len(report["checks"])
+
+    def test_the_report_names_the_home_it_was_taken_against(self, sandbox):
+        """The whole reason the check runs inside a cell is that its answer
+        differs per HOME; a row set read back out of a run record months later
+        says nothing without the HOME it describes."""
+        report = install.check_report()
+        assert report["home"] == str(Path.home())
+        assert report["project_root"] == str(PROJECT_ROOT)
+
+    def test_json_without_check_is_refused_rather_than_ignored(self, sandbox):
+        """`--json` is the shape of the *verification*, so accepting it beside an
+        install would have to either withhold the actions taken or invent a shape
+        for them. Refusing costs the caller one message; ignoring the flag hands a
+        program prose it cannot parse and no signal that it asked wrongly.
+        """
+        args = SimpleNamespace(dry_run=False, check=False, harness="all",
+                               uninstall=False, yes=False, json=True)
+
+        with pytest.raises(SystemExit) as exit_info:
+            cli._cmd_init(args)
+
+        assert exit_info.value.code == 2
+        assert not sandbox["user"].exists(), "the refused run wrote settings"
+        assert not sandbox["mcp_calls"], "the refused run registered the MCP server"
+
+    def test_it_prints_parseable_json_and_exits_zero_on_a_clean_box(
+            self, sandbox, capsys):
+        code = install.run(check_only=True, as_json=True)
+
+        report = json.loads(capsys.readouterr().out)
+        assert code == 0
+        assert report["checks"], "an empty report would pass every caller's gate"
+
+    def test_a_failed_row_exits_one_the_way_the_prose_path_does(
+            self, sandbox, capsys, monkeypatch):
+        """Both paths compute the exit code from the same rows. A caller is free
+        to gate on the status or on the states and must not get two answers."""
+        monkeypatch.setattr(
+            install, "verify",
+            lambda *a, **k: [install.Check("hooks present", False, "gone")])
+
+        code = install.run(check_only=True, as_json=True)
+
+        report = json.loads(capsys.readouterr().out)
+        assert code == 1
+        assert report["states"] == {"failed": 1}

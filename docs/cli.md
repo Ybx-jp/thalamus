@@ -11,6 +11,7 @@ virtualenv. `thalamus <command> --help` gives the full flag list for any of them
 ```bash
 thalamus init                      # wire your editor at user scope
 thalamus init --check              # verify the install, or report what is not installed yet
+thalamus init --check --json       # the same verification as rows, for a program to gate on
 thalamus init --dry-run            # report what would be written
 thalamus init --uninstall          # remove what it can prove it installed
 thalamus status                    # is memory being written? sessions, and the last distillation
@@ -24,6 +25,15 @@ written. `status` reports what was **written**: sessions in the graph, the newes
 when distillation last ran and how its log ended, and any sessions the hooks recorded
 as lost. It exits non-zero only when the graph will not answer; an empty graph is a
 pass, because that is what every install starts as.
+
+`--json` prints that same verification as data rather than prose: one row per check,
+each carrying a stable `key`, the `surface` it belongs to (`claude`, `cursor`,
+`codex`, `runtime`), its `state` (`ok`, `failed`, `pending`, `advisory`, `blocked`)
+and the same `detail` the prose line shows, under a `report` schema version. It only
+means anything with `--check`, and is refused otherwise. The reader is a program
+deciding something: the counterfactual arm runner in the companion repo runs it inside
+a confinement cell before the cell spends anything, to establish that the treatment it
+is about to measure was actually installed there.
 
 ## Building memory
 
