@@ -512,7 +512,7 @@ def _main():
     )
     snapshot_parser.add_argument(
         "--name",
-        help="Pin the graph under this name instead: writes a named .kryo and records "
+        help="Snapshot the graph under this name instead: writes a named .kryo and records "
         "counts, sha256 and git ref in the operator's registry at "
         "~/.thalamus/snapshots.jsonl. A published number cites the snapshot it was "
         "computed on; snapshots are immutable.",
@@ -521,11 +521,11 @@ def _main():
         "--note", default="", help="Why this state was worth pinning (goes in the registry)"
     )
     snapshot_parser.add_argument(
-        "--list", action="store_true", help="List pinned snapshots and verify their hashes"
+        "--list", action="store_true", help="List snapshots and verify their hashes"
     )
     snapshot_parser.add_argument(
         "--serve",
-        help="Serve a pinned snapshot read-only on --port so an analysis can address the "
+        help="Serve a snapshot read-only on --port so an analysis can address the "
         "past without the live graph moving underneath it",
     )
     snapshot_parser.add_argument(
@@ -533,14 +533,14 @@ def _main():
     )
     snapshot_parser.add_argument(
         "--restore",
-        help="Make a pinned snapshot the live graph again. Verifies its hash first, "
-        "pins the current graph as a safety net, then stops the server, swaps the file "
-        "and restarts. Destructive: the live graph is replaced.",
+        help="Make a snapshot the live graph again. Verifies its hash first, "
+        "snapshots the current graph as a safety net, then stops the server, swaps the "
+        "file and restarts. Destructive: the live graph is replaced.",
     )
     snapshot_parser.add_argument(
-        "--no-safety-pin",
+        "--no-safety-snapshot",
         action="store_true",
-        help="Skip pinning the current graph before --restore. Only when the state "
+        help="Skip snapshotting the current graph before --restore. Only when the state "
         "being discarded is already known-bad.",
     )
 
@@ -2752,7 +2752,7 @@ def _cmd_snapshot(args):
     if args.list:
         rows = snapshots.registry()
         if not rows:
-            print("No pinned snapshots. `thalamus snapshot --name <id>` pins one.")
+            print("No snapshots. `thalamus snapshot --name <id>` takes one.")
             return
         for row in rows:
             ok = "ok" if snapshots.verify(row.name) else "HASH MISMATCH"
@@ -2781,7 +2781,7 @@ def _cmd_snapshot(args):
     if args.restore:
         try:
             row = snapshots.restore(
-                args.restore, safety_pin=not args.no_safety_pin, url=args.url
+                args.restore, safety_snapshot=not args.no_safety_snapshot, url=args.url
             )
         except snapshots.SnapshotError as e:
             print(str(e), file=sys.stderr)

@@ -85,7 +85,7 @@ layers:
   # nothing but stdlib and every kind that pins anything reads it, which is what this
   # layer is. Unrelated to `contract/pinning.py`, which is about pinning a session to
   # a scope; these two words mean different things and the modules share nothing.
-  - src/thalamus/artifacts.py
+  - src/thalamus/snapshotting.py
 - name: conformance
   includes:
   - src/thalamus/contract/conformance.py
@@ -414,7 +414,7 @@ derived:
   - src/thalamus/eval/report.py -> src/thalamus/eval/rankers.py [from,module]
   - src/thalamus/eval/report.py -> src/thalamus/eval/rates.py [from,module]
   - src/thalamus/eval/snapshots.py -> src/thalamus/__init__.py [package,module]
-  - src/thalamus/eval/snapshots.py -> src/thalamus/artifacts.py [from,module]
+  - src/thalamus/eval/snapshots.py -> src/thalamus/snapshotting.py [from,module]
   - src/thalamus/eval/snapshots.py -> src/thalamus/substrate/snapshot.py [from,module]
   - src/thalamus/eval/snapshots.py -> src/thalamus/substrate/writer.py [from,module]
   - src/thalamus/eval/sync.py -> src/thalamus/archive/__init__.py [from,module]
