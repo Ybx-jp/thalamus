@@ -691,6 +691,16 @@ def _main():
         help="Only verify an existing install; write nothing"
     )
     init_parser.add_argument(
+        # Only with --check, and refused otherwise rather than ignored: the
+        # report is the check's rows, so a `--json` beside an install would have
+        # to either withhold the actions it took or invent a shape for them.
+        # The reader is a program deciding something — thalamus-eval runs this
+        # inside a confinement cell to establish that an arm's treatment was
+        # delivered before the cell spends anything.
+        "--json", action="store_true",
+        help="With --check, print the verification as JSON instead of prose"
+    )
+    init_parser.add_argument(
         # Derived from the registry rather than listed, so a harness cannot arrive in
         # `AGENT_CLIS` and be silently uninstallable — the property `install.HARNESSES`
         # already states and this literal tuple quietly denied.
@@ -3549,9 +3559,15 @@ def _known_claims(graph, scope: str, project: str, limit: int = 50) -> list[dict
 def _cmd_init(args):
     from thalamus.harness.install import run
 
+    if args.json and not args.check:
+        print("`--json` is the shape of `--check`'s verification, so it only "
+              "means anything with `--check`. Re-run as "
+              "`thalamus init --check --json`.", file=sys.stderr)
+        sys.exit(2)
     try:
         sys.exit(run(dry_run=args.dry_run, check_only=args.check, harness=args.harness,
-                     uninstall_mode=args.uninstall, assume_yes=args.yes))
+                     uninstall_mode=args.uninstall, assume_yes=args.yes,
+                     as_json=args.json))
     except RuntimeError as e:
         print(f"Init failed: {e}", file=sys.stderr)
         sys.exit(1)
