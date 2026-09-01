@@ -2126,3 +2126,73 @@ def test_the_module_serves_when_run_as_a_module(tmp_path):
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+
+
+# ---- Closing a window without slandering the session that was in it ----
+
+
+def _tmux_stub(calls, present):
+    """A tmux that reproduces the one behaviour this close path has to survive.
+
+    `display -p -t <session>:<idx>` for an index that no longer exists resolves to
+    the session's *active* window and exits 0 — measured on tmux 3.4, and it is why
+    an index-keyed existence check can never fire. `list-windows` enumerates instead
+    of resolving a target, so it is the surface that can say a window is gone.
+    """
+    def tmux(*args):
+        calls.append(args)
+        out = ""
+        if args[0] == "display":
+            out = "@7" if args[-1] == "#{window_id}" else "0"
+        elif args[0] == "list-windows":
+            out = "\n".join(present) + ("\n" if present else "")
+        return subprocess.CompletedProcess(args, 0, out, "")
+    return tmux
+
+
+def test_a_graceful_close_is_not_recorded_as_a_kill_that_skipped_sessionend(
+        monkeypatch):
+    """The record has to be an observation, not the elapsing of a timer.
+
+    `/exit` fires SessionEnd, the agent distills, and tmux removes the window. A
+    close path that cannot see that waits out the whole grace budget and then writes
+    a row saying this session never distilled — a failure invented for a session
+    that succeeded, on the one surface that exists to report the real ones.
+    """
+    present: list[str] = []          # the window is already gone when polling starts
+    calls: list[tuple] = []
+    monkeypatch.setattr(server, "tmux", _tmux_stub(calls, present))
+    monkeypatch.setattr(server, "_pinned_session",
+                        lambda cfg, idx: {"session": "abcd1234", "scope": "main",
+                                          "cwd": "/home/op", "project": "thalamus",
+                                          "repo_root": "/home/op"})
+    recorded: list[tuple] = []
+    monkeypatch.setattr(server, "_record_forced_kill",
+                        lambda who, op: recorded.append((who, op)))
+
+    server.close_window(Config(session="thalamus"), 3)
+
+    assert recorded == [], "a window that left on its own was reported as force-killed"
+    assert not any(c[0] == "kill-window" for c in calls)
+
+
+def test_a_window_that_outlives_the_grace_budget_is_killed_by_id_not_by_index(
+        monkeypatch):
+    """An index is not an identity, and this kill lands four minutes later.
+
+    By then the index may name a window opened after the close began, so the force
+    path aims at the `@N` captured while the index still meant this session — the
+    same id the poll above asks about.
+    """
+    calls: list[tuple] = []
+    monkeypatch.setattr(server, "tmux", _tmux_stub(calls, ["@7"]))
+    monkeypatch.setattr(server, "_pinned_session", lambda cfg, idx: {})
+    monkeypatch.setattr(server, "RECYCLE_GRACE_S", 0)
+    recorded: list[tuple] = []
+    monkeypatch.setattr(server, "_record_forced_kill",
+                        lambda who, op: recorded.append((who, op)))
+
+    server.close_window(Config(session="thalamus"), 3)
+
+    assert [op for _, op in recorded] == ["close"]
+    assert ("kill-window", "-t", "@7") in calls

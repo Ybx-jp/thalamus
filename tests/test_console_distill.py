@@ -26,6 +26,10 @@ FAILED = ("distilling session {sid} into scope {scope}\n"
 RUNNING = "distilling session {sid} into scope {scope}\n"
 NO_TX = ("distilling session {sid} into scope {scope}\n"
          "No session matching {sid}-a157-47ff-b8b2-f5ab under -home — nothing distilled.\n")
+# What SessionEnd writes when the transcript is missing before extract is ever
+# launched. One line, and the job stops there: no run mark and no summary follow it.
+HOOK_NO_TX = ("no transcript at /home/op/.claude/projects/-home-op-code/"
+              "{sid}-a157-47ff-b8b2-f5ab.jsonl — nothing to distill\n")
 
 
 @pytest.fixture()
@@ -428,4 +432,48 @@ def test_an_engaged_ledger_row_is_not_a_session_start(box):
         fh.write(json.dumps({"event": "engaged", "session_id": "55555555-rest",
                              "scope": "homelab", "ts": "now"}) + "\n")
     box.log("55555555", NO_TX)
+    assert box.watch.rows() == []
+
+
+def test_a_window_that_was_never_touched_finished_and_is_not_a_stall(box):
+    """SessionEnd finds no transcript and stops before extract runs.
+
+    Measured 2026-09-01 on two pinned `main` windows: Claude Code writes the
+    transcript at the first interaction, not at session start, so a window nobody
+    touched leaves none and there was no conversation to lose. `/exit` is itself an
+    interaction, which is why a console close never reaches this line; ending an
+    untouched window by signal reproduced it exactly.
+
+    That log is one line and is never appended to again, so with no rule of its own
+    the stall clock is what judges it — and calls a job that never started a process
+    that died mid-flight.
+    """
+    box.pin("aa11aa11")
+    box.log("aa11aa11", HOOK_NO_TX, age_s=STALL_AFTER_S + 60)
+    assert box.watch.rows() == []
+
+
+# A failure whose log stops before the run mark. `thalamus extract` writes the mark
+# as it starts on each session, so a job killed between the hook's fork and that
+# first line leaves a body with a reason in it and no runs counted.
+FAILED_NO_RUN_MARK = "  ✗ {sid}  extraction failed: graph unreachable\n"
+
+
+def test_a_log_that_never_reached_the_run_mark_is_not_treated_as_dismissed(box):
+    """The suppression this module's own state file was one comparison from causing.
+
+    A dismissal records how many runs the operator has already seen, and a row is
+    hidden when the log has not run again since. A log that stops before the run mark
+    counts zero of them, so a zero default would compare `0 <= 0` and hide a failure
+    nobody ever acknowledged — the silent loss this widget exists to break, rebuilt
+    inside the widget.
+    """
+    box.pin("bb22bb22")
+    box.log("bb22bb22", FAILED_NO_RUN_MARK)
+    (row,) = box.watch.rows()
+    assert row["session"] == "bb22bb22"
+    assert row["state"] == "error"
+
+    # And it is still dismissible: acknowledging zero runs hides it until it runs.
+    assert box.watch.dismiss("bb22bb22")
     assert box.watch.rows() == []
