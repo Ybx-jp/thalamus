@@ -11,5 +11,27 @@
     "Delete an entry in the same change that fixes its defect. A stale entry makes the suite",
     "exit 2, which is deliberate - a silently-fixed defect hides the next regression at that site."
   ],
-  "expectations": []
+  "expectations": [
+    {
+      "case": "a-graceful-close-is-not-recorded-as-a-forced-kill",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "close_window recorded 1 forced kill(s) ['close'] and kill-window ran=True",
+      "triaged_at_rev": "ea06c91",
+      "note": "Issue #151. close_window polls #{pane_dead} and discards it, so a pane that exited gracefully under remain-on-exit is waited out for the whole grace budget and then force-killed and recorded as never distilled. The pin names both halves of the current behaviour - the forced-kill record AND the kill-window - so a partial repair that stopped one and not the other drifts rather than staying triaged."
+    },
+    {
+      "case": "typed-text-reaches-the-pane-as-data-not-as-tmux-arguments",
+      "failure_class": "boundary-leak",
+      "witness_contains": "'-t 0' (a chunk that retargets the send to a pane of its own choosing) -> pane held ''",
+      "triaged_at_rev": "ea06c91",
+      "note": "Issue #152. Text posted to /api/send is read by tmux as arguments. The pin is the retarget payload rather than the dash-flag ones because it is the sharpest of the set: a repair that added `--` fixes every entry in the witness at once, and a repair that somehow left this one would drift here."
+    },
+    {
+      "case": "a-malformed-post-body-gets-a-response-not-a-dropped-connection",
+      "failure_class": "failed-open",
+      "witness_contains": "37 of 37 probes dropped the connection",
+      "triaged_at_rev": "ea06c91",
+      "note": "Issue #74. do_POST guards the JSON parse and nothing after it, so any body that parses to a non-object, and several wrong-typed fields, escape as unhandled exceptions and kill the handler thread. The count is the pin: it is a denominator over routes derived from the shipped dispatch, so fixing any route, or adding one, moves it and drifts."
+    }
+  ]
 }
