@@ -241,6 +241,12 @@ returned to that ground — not evidence anyone noticed a gap. The report prints
 effect the design could have detected at 80% power beside the p-value, so a null
 arrives with a magnitude attached.
 
+A null on this measure has a falsifier that has not been run. Recurrence needs the
+same node **id** back, which needs a later query whose terms match it — so a session
+that closes a gap by asking in different words scores as a miss in both arms, and the
+measure would read null whether or not withholding mattered. Settling it means scoring
+the withheld node's *text* against later retrievals instead of its id.
+
 `eval report` gives the used-vs-ignored rate one ranker window at a time and refuses to
 pool across a dial change, because a rate averaged over two settings measures neither.
 Each window's interval resamples **sessions** rather than verdicts — verdicts inside one

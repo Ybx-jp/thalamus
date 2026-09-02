@@ -41,6 +41,18 @@ the gap, and not evidence the node would have helped. A session that re-asks
 because it was stuck and one that re-asks because the topic simply continued are
 the same row here.
 
+**The falsifier for a null, and it has not been run.** A null here is consistent
+with withholding changing nothing — and equally consistent with the measure being
+blind to the thing it was built for. Recurrence needs the *same node id* to come
+back, which needs a later query whose terms match it; a session that closes a gap
+by asking in different words re-surfaces different nodes and scores as a miss in
+both arms. The base recurrence rate is 33%, so the measure is not floored, but
+that is an argument about sensitivity in general and not about this mechanism.
+What would settle it: score the withheld node's *text* against later retrievals
+rather than its id — outcome candidate (1)'s machinery in `b73e25ff0268496d`,
+whose own weakest point is whether a judge's false-positive rate is symmetric
+between text that was shown and text that was not.
+
 Grounded in `b73e25ff0268496d` (the outcome layer and the cluster structure) and
 `5bb4d93324c64f95` (one eligibility predicate shared by null pool and denominator).
 """
