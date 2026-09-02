@@ -23,7 +23,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Order, P, T, TextP
 
 from thalamus.contract.ontology import MAIN_SCOPE, vid
-from thalamus.substrate.schema import Tier
+from thalamus.substrate.schema import Tier, is_rejected_kind
 from thalamus.substrate.witnesses import Corroboration, Witness, corroboration
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,12 @@ _MATCH_FLOOR = 2
 # there was no signal to tune on. Caveat that bounds all of it: only 1.4% of detail
 # verdicts come from the strong vertex-ID citation path, so this rests on lexical echo.
 _DETAIL_CAP = 8
+
+# Claim properties rendered beside the description when the claim carries them —
+# the subtype fields distillation writes (`Decision.rationale`/`outcome`,
+# `Solution.approach`/`outcome_kind`). Rendered, never matched: matching stays on
+# `description` so the floor and cap above keep the text they were measured on.
+_RENDERED_CLAIM_FIELDS = ("rationale", "outcome", "approach", "outcome_kind")
 # Knowledge holds up to 1/this of the result window when sessions also matched.
 _KNOWLEDGE_WINDOW_DIVISOR = 2
 # Answered exchanges read before ranking a query against them. Wide because an expert
@@ -220,6 +226,34 @@ class MemoryResult:
                 tier = detail.get("tier", int(Tier.FIRST_PARTY))
                 external = f" _[{_tier_label(tier)}]_" if tier >= int(Tier.CURATED) else ""
                 lines.append(f"- **{kind}**{handle}: {desc}{external}")
+                # The stored fields, when the claim carries them. `worked` renders
+                # only when it is False: True is the schema default on every
+                # solution, so rendering it would spend a line per claim to say
+                # nothing, while a False is the one outcome an agent has to know.
+                for key in _RENDERED_CLAIM_FIELDS:
+                    value = detail.get(key)
+                    if value:
+                        lines.append(f"  - _{key}:_ {value}")
+                if detail.get("worked") is False:
+                    lines.append("  - _worked:_ false")
+                # What the claim reasoned with, one line per USES edge. The target is
+                # rendered *without* backticks on purpose: the trace tap reads every
+                # backticked vertex ID as a node this retrieval put into context, and
+                # a one-line citation puts nothing but the ID there — pricing the
+                # target as returned would attribute text the agent never saw, and
+                # `eval sync` would then verify the very edge this line cites.
+                # A rejected option renders as what it was and why it lost; a
+                # reference renders as its ID alone — the target's text is the
+                # drill-down, and the citation line is the default.
+                for use in detail.get("uses", ()):
+                    reason = f" — {use['reason']}" if use.get("reason") else ""
+                    if use.get("role") == "rejected":
+                        option = use.get("target_text") or use["target"]
+                        lines.append(f"  - _rejected:_ {option}{reason} [{use['target']}]")
+                    else:
+                        lines.append(
+                            f"  - _uses:_ {use['target']} _[{use['verified']}]_{reason}"
+                        )
         return "\n".join(lines)
 
 
@@ -1281,17 +1315,100 @@ def _load_session_result(
         description = _first(child.get("description"))
         if not description:
             continue
-        details.append(
-            {
-                "kind": _first(child.get("kind")) or _first(child.get(T.label)),
-                "description": description,
-                "tier": _first_int(child.get("tier"), int(Tier.FIRST_PARTY)),
-                "node_id": _first(child.get(T.id)),
-            }
-        )
+        kind = _first(child.get("kind")) or _first(child.get(T.label))
+        # A rejected alternative renders under the decision that turned it down
+        # (its USES line carries the option and the reason), never as a claim of its
+        # own in the default view — the one-line citation is the default, the node
+        # is the drill-down. Skipped before selection so it is not counted either.
+        if is_rejected_kind(kind):
+            continue
+        detail = {
+            "kind": kind,
+            "description": description,
+            "tier": _first_int(child.get("tier"), int(Tier.FIRST_PARTY)),
+            "node_id": _first(child.get(T.id)),
+        }
+        # The outcome's evidence — message UUIDs into the Source — projected so a
+        # caller holding the result can walk to it; not rendered, since a UUID list
+        # tells an agent nothing the description did not.
+        anchors = _first(child.get("anchors"))
+        if anchors:
+            detail["anchors"] = anchors
+        # The fields distillation already stores beside the description — a
+        # decision's rationale and outcome, a solution's approach and whether it
+        # worked. Measured 2026-09-01 on the designer scope: every decision carried a
+        # rationale and none was rendered, so "why did this lose" sat on the very
+        # claim recall returned and never reached the agent. They ride along for
+        # rendering only; `_select_details` still matches on the description, so the
+        # match floor and detail cap keep the text they were tuned on.
+        for key in _RENDERED_CLAIM_FIELDS:
+            value = _first(child.get(key))
+            if value:
+                detail[key] = value
+        if _first(child.get("worked")).lower() == "false":
+            detail["worked"] = False
+        details.append(detail)
 
     details = _select_details(details, keywords or [])
+    if any(d.get("node_id") for d in details):
+        _attach_uses(details, _uses_rows(g, session_vid))
     return _session_result(session_data[0], relevance=relevance, details=details)
+
+
+def _uses_rows(g: GraphTraversalSource, session_vid: str) -> list[dict]:
+    """Every USES edge leaving this session's claims, with the properties recall renders."""
+    try:
+        return (
+            g.V(session_vid)
+            .out("CONTAINS")
+            .out_e("USES")
+            .project(
+                "claim", "target", "target_text", "role", "reason", "verified", "verified_by"
+            )
+            .by(__.out_v().id_())
+            .by(__.in_v().id_())
+            .by(__.in_v().coalesce(__.values("description"), __.constant("")))
+            .by(__.coalesce(__.values("role"), __.constant("")))
+            .by(__.coalesce(__.values("reason"), __.constant("")))
+            .by(__.coalesce(__.values("verified"), __.constant("")))
+            .by(__.coalesce(__.values("verified_by"), __.constant("")))
+            .to_list()
+        )
+    except Exception:
+        return []
+
+
+# How a `USES.verified` value reads on the line. Absent is its own state: sync has
+# not looked, which is not the same as having looked and found nothing served.
+_VERIFIED_LABELS = {"true": "served", "false": "not served", "": "unchecked"}
+
+
+def _attach_uses(details: list[dict], rows: list[dict]) -> None:
+    """Hang each USES row off the rendered claim it leaves.
+
+    Only claims selected in full carry a `node_id`; the elision stub has none and gets
+    nothing, so a reference on an elided claim stays out of the render along with the
+    claim itself.
+    """
+    by_claim: dict[str, list[dict]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        verified = str(row.get("verified", "")).lower()
+        by_claim.setdefault(str(row.get("claim", "")), []).append(
+            {
+                "target": str(row.get("target", "")),
+                "target_text": str(row.get("target_text") or ""),
+                "role": str(row.get("role") or "reason"),
+                "reason": str(row.get("reason") or ""),
+                "verified": _VERIFIED_LABELS.get(verified, verified),
+                "verified_by": str(row.get("verified_by") or ""),
+            }
+        )
+    for detail in details:
+        uses = by_claim.get(detail.get("node_id") or "")
+        if uses:
+            detail["uses"] = uses
 
 
 def _load_chunk_result(g: GraphTraversalSource, chunk_vid: str) -> ChunkResult | None:

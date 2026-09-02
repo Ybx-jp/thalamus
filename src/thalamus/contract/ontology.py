@@ -266,6 +266,38 @@ CORE_EDGES: tuple[EdgeType, ...] = (
         "reaches the passage it came from. Chunk granularity, not character offsets: "
         "`KnowledgeBatch.anchors` maps a claim index to a chunk ordinal.",
     ),
+    # Claim -> Claim | Chunk: what an episodic claim reasoned *with*, qualified by
+    # `role`. PROV-DM's Usage relation, kept apart from Derivation on purpose:
+    # DERIVED_FROM says what a node was distilled from and reaches only Source, while
+    # this says which knowledge item a decision or solution used as grounds. Neither
+    # ABOUT nor ANCHORS can carry it — co-topicality through a shared Entity is the
+    # same vocabulary-overlap signal attribution already fails to separate from use,
+    # and ANCHORS means a verbatim citation was found in a chunk, which a distilled
+    # decision does not have.
+    #
+    # Written at distillation with `verified` unset; `eval sync` stamps it from the
+    # traces of the sessions that contain the claim. `verified` means the target was
+    # *served* into such a session — never that it was used, which stays the
+    # attribution instrument's verdict on RETURNS. Always written, never gated on
+    # verification: an unverifiable reference is itself evidence of a mis-attributed
+    # one, and a served-but-unmatched reference is not proof of fabrication.
+    #
+    # May cross scope on the terms RETURNS does: the reader already serves tier-2
+    # knowledge from any expert into any session, and the edge records what that
+    # session then reasoned with, by ID, copying nothing.
+    EdgeType(
+        "USES",
+        may_cross_scope=True,
+        from_labels=("Claim",),
+        to_labels=("Claim", "Chunk"),
+        properties=("role", "reason", "verified", "verifier", "verified_by"),
+        note="`role` is 'reason' (the target was grounds for the claim) or 'rejected' "
+        "(the target is an alternative the decision turned down, and `reason` says "
+        "why). `verified` is `eval sync`'s stamp: True when a trace served the target "
+        "into a session containing the claim, False when sync checked and none did, "
+        "absent when sync has not run over the session. `verifier` names the stamping "
+        "rule's version and `verified_by` the serving trace.",
+    ),
     EdgeType(
         "ADJACENT_IN_TEXT",
         from_labels=("Chunk",),

@@ -22,9 +22,10 @@ being computable the moment it arms. The shadow run comes first; the flag comes 
 it, or not at all.
 
 **Three outcomes, not two, because a non-resolving name is not always wrong.** This
-repo argues about what it does not contain — "`Solution.worked` is written and never
-read", "no analyzer computing the closure exists", "codex ships no analogous tool" —
-and those sentences carry a name that *correctly* fails to resolve. Flagging them
+repo argues about what it does not contain — "no read-side closure computes the
+`DERIVED_FROM` tier floor", "no analyzer computing the closure exists", "codex ships
+no analogous tool" — and those sentences carry a name that *correctly* fails to
+resolve. Flagging them
 would be bad enough; the repair is worse, because the obedient way to satisfy the
 checker is to delete a true statement. So a non-resolving reference on a sentence
 that asserts absence is reported in its own bucket and is never a finding. It is a

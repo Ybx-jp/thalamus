@@ -111,3 +111,31 @@ def test_an_agent_closing_a_thread_in_any_scope_is_not_a_crossing():
         thread = vid("Thread", "some-thread", scope)
         assert not edge_crosses_scope(operator, thread)
         assert not edge_crosses_scope(thread, operator)
+
+
+def test_uses_is_a_qualified_claim_to_knowledge_edge_that_may_cross_scope():
+    """
+    Scenario: The edge a decision's reference becomes, as the ontology declares it
+
+    Verifications:
+    - USES leaves a Claim and lands on a Claim or a Chunk, nothing else
+    - it may cross scope: an episodic claim in one expert reasons with a literature
+      claim served from another, by ID, and the edge records that
+    - it is qualified — role and the verification stamp are declared properties, so
+      `contract check` can ask the live graph whether anything writes them
+
+    The two-hop substitute (ABOUT to a shared Entity, ANCHORS to a shared Chunk)
+    expresses co-topicality, not use; DERIVED_FROM reaches only Source. Neither says
+    "this claim used that knowledge item as a reason", which is the one thing this
+    edge exists to say (lab/067 §9.2).
+    """
+    from thalamus.contract.ontology import EDGES_BY_LABEL
+
+    uses = EDGES_BY_LABEL["USES"]
+
+    assert uses.from_labels == ("Claim",)
+    assert uses.to_labels == ("Claim", "Chunk")
+    assert uses.strict_endpoints
+    assert uses.may_cross_scope
+    assert set(uses.properties) >= {"role", "reason", "verified", "verifier", "verified_by"}
+    assert edge_crosses_scope(vid("Claim", "aaa", "designer"), vid("Claim", "bbb", "literature"))

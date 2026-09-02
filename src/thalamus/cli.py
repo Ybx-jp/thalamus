@@ -1998,10 +1998,21 @@ def _cmd_extract(args):
                     # same bytes rather than at a differently-worded second answer.
                     run = extraction.ExtractionRun(text=retained.read_text(), cost_usd=0.0)
                     raw_path = retained
+                    # The transcript is read only to resolve outcome anchors. A replay
+                    # whose archive is gone still replays; its anchors resolve to
+                    # nothing and are dropped, which is the honest reading of them.
+                    try:
+                        payload = read_archived(entry.content_hash, suffix=".jsonl")
+                    except FileNotFoundError:
+                        payload = b""
                 data = extraction.parse_extraction(run.text)
                 # Partial acceptance: one malformed item costs that item, not the
                 # session. Nothing is invented to satisfy a required field.
                 data, dropped = extraction.partition_valid(data)
+                # Outcome anchors come back as the digest's UUID prefixes; the graph
+                # carries full message UUIDs, and a handle naming no message is
+                # dropped rather than written as evidence.
+                data = extraction.resolve_anchors(data, payload)
                 for note in dropped:
                     print(f"  ! {name}  dropped {note}")
                 if dropped:

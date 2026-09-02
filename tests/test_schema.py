@@ -147,3 +147,51 @@ def test_scope_defaults_to_main_and_is_independent_of_project():
     # Verifies: orthogonal axes, not one dressed as the other
     assert session.scope == MAIN_SCOPE
     assert session.project == "thalamus"
+
+
+def test_a_solution_says_how_it_ended_and_a_decision_what_it_turned_down():
+    """
+    Scenario: The outcome fields stage 1 adds to the episodic subtypes
+
+    Verifications:
+    - `outcome_kind` is the four-bucket enum the ledgers needed, and optional
+    - `anchors` and `references` default empty rather than being required, so a
+      model that omits them costs nothing under `partition_valid`
+    - a rejected alternative is a model of its own with the same optional fields
+    - the rejected kind is namespaced beneath its scope, never a core kind
+    """
+    from thalamus.substrate.schema import (
+        Alternative,
+        ClaimKind,
+        Decision,
+        OutcomeKind,
+        Solution,
+        is_rejected_kind,
+        rejected_kind,
+    )
+
+    assert {k.value for k in OutcomeKind} == {"unresolved", "reversed", "rejected", "residual"}
+
+    solution = Solution(description="Widened the shutter", approach="edit", worked=False)
+    assert solution.outcome_kind is None
+    assert solution.anchors == [] and solution.references == []
+    failed = Solution(
+        description="Widened the shutter", approach="edit", worked=False,
+        outcome_kind="reversed", anchors=["a" * 36],
+    )
+    assert failed.outcome_kind is OutcomeKind.REVERSED
+
+    decision = Decision(
+        description="Chose the carry arm", rationale="continuity",
+        alternatives=[Alternative(description="the cut arm", reason="loses the object")],
+    )
+    assert decision.alternatives[0].references == []
+    # Identity is still (kind, description): the alternatives do not move it.
+    assert decision.content_id() == Decision(
+        description="Chose the carry arm", rationale="other"
+    ).content_id()
+
+    assert rejected_kind("designer") == "designer/rejected"
+    assert is_rejected_kind("designer/rejected")
+    assert not is_rejected_kind(ClaimKind.DECISION.value)
+    assert "designer/rejected" not in {k.value for k in ClaimKind}

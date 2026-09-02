@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 import pytest
 from gremlin_python.driver.protocol import GremlinServerError
-from gremlin_python.process.traversal import Merge
+from gremlin_python.process.traversal import Direction, Merge
 
 from gremlin_python.process.traversal import T
 
@@ -400,7 +400,7 @@ class _VertexChain:
         self.vid = vid
         self.bytecode = "fake-bytecode"
 
-    def has_label(self, _label):
+    def has_label(self, *_labels):
         return self
 
     def has_next(self):
@@ -898,3 +898,156 @@ class TestConnectRefusesADownGraph:
         assert split_ws("ws://:8182/gremlin") == (None, 0)
         assert split_ws("ws://host:notaport/g") == (None, 0)
         assert "could not parse" in probe_socket("ws://:8182/gremlin")
+
+
+def test_references_become_uses_edges_only_to_knowledge_items_that_exist():
+    """
+    Scenario: A decision's references name a literature claim, a chunk, a vertex
+    the model invented, a Session, and the decision itself
+
+    Verifications:
+    - the claim and the chunk each get a `USES {role: reason}` edge
+    - the invented ID and the Session are dropped without a write, and nothing raises
+    - the self-reference is dropped
+    - `verified` is never written here: it is `eval sync`'s stamp, and a re-assertion
+      of the claim must not erase it
+    """
+    from thalamus.substrate.writer import _write_references
+    from thalamus.contract.ontology import vid as make_vid
+
+    claim = make_vid("Claim", "dddd", "designer")
+    literature = make_vid("Claim", "aaaa", "literature")
+    chunk = make_vid("Chunk", "cccc-0001", "literature")
+    session = make_vid("Session", "s1", "designer")
+    fake = _ThreadRefFake(existing={literature, chunk, session})
+    # The label check is what keeps a Session out: the fake answers existence for
+    # every vertex it holds, so narrow it the way the real `has_label` would.
+    fake.existing.discard(session)
+
+    _write_references(
+        fake, claim, [literature, chunk, "scope:literature:claim:invented", session, claim]
+    )
+
+    assert [(e[Direction.from_], e[Direction.to], e[T.label]) for e in fake.edges] == [
+        (claim, literature, "USES"),
+        (claim, chunk, "USES"),
+    ]
+
+
+def test_the_reference_write_carries_role_and_never_verified():
+    """
+    Scenario: One reference, written; the properties the merge carries
+
+    Verifications:
+    - on-create and on-match both carry only `role: reason`
+    """
+    from thalamus.substrate.writer import _write_references
+    from thalamus.contract.ontology import vid as make_vid
+
+    claim = make_vid("Claim", "dddd", "designer")
+    literature = make_vid("Claim", "aaaa", "literature")
+
+    class _Fake(_ThreadRefFake):
+        def __init__(self, existing):
+            super().__init__(existing)
+            self.traversals = []
+
+        def merge_e(self, spec):
+            self.edges.append(spec)
+            traversal = FakeTraversal()
+            self.traversals.append(traversal)
+            return traversal
+
+    fake = _Fake(existing={literature})
+    _write_references(fake, claim, [literature])
+
+    [traversal] = fake.traversals
+    assert traversal.options == [
+        (Merge.on_create, {"role": "reason"}),
+        (Merge.on_match, {"role": "reason"}),
+    ]
+
+
+def test_a_rejected_alternative_becomes_a_claim_the_decision_uses_with_its_reason():
+    """
+    Scenario: A decision with one alternative it turned down, which itself rested on
+    a literature claim; a solution that did not hold, with anchors
+
+    Verifications:
+    - the alternative is upserted as a Claim of kind `<scope>/rejected`, contained by
+      the session, with its anchors joined the way `TOUCHES.anchors` are
+    - the decision reaches it by `USES {role: rejected, reason}`
+    - the alternative's own reference becomes a `USES {role: reason}` edge from it
+    - the solution's `outcome_kind` and joined `anchors` land as properties, and
+      `alternatives`/`references` never do
+    """
+    from thalamus.contract.ontology import vid as make_vid
+    from thalamus.substrate.schema import Alternative, Solution
+    from thalamus.substrate.writer import _claim_properties, _write_claims
+
+    literature = make_vid("Claim", "aaaa", "literature")
+
+    class _Fake(_ThreadRefFake):
+        def __init__(self, existing):
+            super().__init__(existing)
+            self.vertices = []
+
+        def merge_v(self, spec):
+            self.vertices.append({"match": spec, "traversal": FakeTraversal()})
+            return self.vertices[-1]["traversal"]
+
+    session = SessionGraph(
+        session_id="s1",
+        tool=Tool.CLAUDE_CODE,
+        summary="x",
+        scope="designer",
+        decisions=[
+            Decision(
+                description="Chose the carry arm",
+                rationale="continuity",
+                alternatives=[
+                    Alternative(
+                        description="the cut arm",
+                        reason="never shows the object is the same",
+                        references=[literature],
+                        anchors=["u1", "u2"],
+                    )
+                ],
+            )
+        ],
+        solutions=[
+            Solution(
+                description="Widened the shutter", approach="edit", worked=False,
+                outcome_kind="reversed", anchors=["u3"],
+            )
+        ],
+    )
+    fake = _Fake(existing={literature})
+    session_vid = make_vid("Session", "s1", "designer")
+
+    vids = _write_claims(fake, session, session_vid, {})
+
+    decision_vid = vids[session.decisions[0].content_id()]
+    option = next(
+        v for v in fake.vertices if v["match"].get(T.id, "").startswith("scope:designer:claim:")
+        and v["match"].get(T.id) != decision_vid
+        and any(
+            key is Merge.on_create and value.get("kind") == "designer/rejected"
+            for key, value in v["traversal"].options
+        )
+    )
+    option_vid = option["match"][T.id]
+    created = dict(option["traversal"].options)[Merge.on_create]
+    assert created["description"] == "the cut arm"
+    assert created["anchors"] == "u1,u2"
+    assert "alternatives" not in created and "references" not in created
+
+    edges = [(e[Direction.from_], e[Direction.to], e[T.label]) for e in fake.edges]
+    assert (session_vid, option_vid, "CONTAINS") in edges
+    assert (option_vid, literature, "USES") in edges
+    assert (decision_vid, option_vid, "USES") in edges
+
+    solution_props = _claim_properties(session.solutions[0])
+    assert solution_props["outcome_kind"] == "reversed"
+    assert solution_props["anchors"] == "u3"
+    assert solution_props["worked"] is False

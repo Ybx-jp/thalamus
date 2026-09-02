@@ -116,12 +116,13 @@ def render_digest(
             continue
         record_type = record.get("type") or record.get("role")
         content = (record.get("message") or {}).get("content")
+        tag = _anchor_tag(record)
 
         if record_type == "user":
             if isinstance(content, str):
                 text = content.strip()
                 if text and not text.startswith("<"):
-                    lines.append(f"USER: {_clip(text, _TEXT_CAP)}")
+                    lines.append(f"{tag}USER: {_clip(text, _TEXT_CAP)}")
             elif isinstance(content, list):
                 for block in content:
                     if not isinstance(block, dict):
@@ -131,7 +132,7 @@ def render_digest(
                     if block.get("type") == "text":
                         text = block.get("text", "").strip()
                         if text and not text.startswith("<"):
-                            lines.append(f"USER: {_clip(text, _TEXT_CAP)}")
+                            lines.append(f"{tag}USER: {_clip(text, _TEXT_CAP)}")
                     elif block.get("type") == "tool_result":
                         text = _tool_result_text(block)
                         if text:
@@ -143,17 +144,19 @@ def render_digest(
                                 if block.get("tool_use_id") in external_tool_uses
                                 else "result"
                             )
-                            lines.append(f"  {label}: {_clip(text, _TOOL_RESULT_CAP)}")
+                            lines.append(f"{tag}  {label}: {_clip(text, _TOOL_RESULT_CAP)}")
         elif record_type == "assistant":
             for block in content if isinstance(content, list) else []:
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "text" and block.get("text", "").strip():
-                    lines.append(f"ASSISTANT: {_clip(block['text'].strip(), _TEXT_CAP)}")
+                    lines.append(
+                        f"{tag}ASSISTANT: {_clip(block['text'].strip(), _TEXT_CAP)}"
+                    )
                 elif block.get("type") == "tool_use":
                     if block.get("name") in EXTERNAL_INGRESS_TOOLS and block.get("id"):
                         external_tool_uses.add(block["id"])
-                    lines.append(f"  tool: {_tool_use_line(block)}")
+                    lines.append(f"{tag}  tool: {_tool_use_line(block)}")
 
     digest = "\n".join(lines)
     if len(digest) <= budget:
@@ -312,6 +315,79 @@ def _questions(tool_input: dict) -> list[dict]:
     return out
 
 
+# How many characters of a message UUID the digest shows. Eight is what the
+# extractor is asked to copy back as an anchor; `resolve_anchors` expands it to the
+# full UUID before the write, so the graph carries the `TOUCHES.anchors` shape and
+# the digest spends 11 characters a line rather than 39.
+_ANCHOR_PREFIX = 8
+
+
+def _anchor_tag(record: dict) -> str:
+    """`[a8202b5a] ` for a record carrying a message UUID, empty for one that does not.
+
+    The tag is what lets the extractor anchor an outcome — a `worked: false`, an
+    `outcome_kind`, a refused alternative — to the message that shows it, the way the
+    deterministic layer anchors a touch to the tool call that made it. Without a
+    handle in the digest the model can only assert an outcome; with one it can cite.
+    """
+    uuid = record.get("uuid")
+    if not isinstance(uuid, str) or not uuid:
+        return ""
+    return f"[{uuid[:_ANCHOR_PREFIX]}] "
+
+
+def resolve_anchors(data: dict, payload: bytes) -> dict:
+    """Expand the digest's UUID prefixes in every `anchors` list to full message UUIDs.
+
+    An anchor that resolves to no message in the transcript is dropped, not kept: the
+    model was asked to copy a handle it saw, and one that matches nothing is either
+    invented or mistyped, and a fabricated anchor is worse than none — it reads
+    exactly like evidence. A prefix matching more than one message is dropped for the
+    same reason. Returns a new dict; `data` is not modified.
+    """
+    by_prefix: dict[str, list[str]] = {}
+    for record in _records(payload):
+        uuid = record.get("uuid")
+        if isinstance(uuid, str) and uuid:
+            by_prefix.setdefault(uuid[:_ANCHOR_PREFIX], [])
+            if uuid not in by_prefix[uuid[:_ANCHOR_PREFIX]]:
+                by_prefix[uuid[:_ANCHOR_PREFIX]].append(uuid)
+
+    def resolve(anchors: object) -> list[str]:
+        if not isinstance(anchors, list):
+            return []
+        resolved: list[str] = []
+        for anchor in anchors:
+            handle = str(anchor).strip().strip("[]")
+            candidates = by_prefix.get(handle[:_ANCHOR_PREFIX], [])
+            matches = [u for u in candidates if u.startswith(handle)]
+            if len(matches) == 1 and matches[0] not in resolved:
+                resolved.append(matches[0])
+        return resolved
+
+    out = dict(data)
+    solutions = data.get("solutions")
+    if isinstance(solutions, list):
+        out["solutions"] = [
+            {**s, "anchors": resolve(s.get("anchors"))} if isinstance(s, dict) else s
+            for s in solutions
+        ]
+    decisions = data.get("decisions")
+    if isinstance(decisions, list):
+        out["decisions"] = []
+        for decision in decisions:
+            if isinstance(decision, dict) and isinstance(decision.get("alternatives"), list):
+                decision = {
+                    **decision,
+                    "alternatives": [
+                        {**a, "anchors": resolve(a.get("anchors"))} if isinstance(a, dict) else a
+                        for a in decision["alternatives"]
+                    ],
+                }
+            out["decisions"].append(decision)
+    return out
+
+
 def _tool_result_text(block: dict) -> str:
     content = block.get("content")
     if isinstance(content, str):
@@ -394,10 +470,20 @@ understand what happened and why.
 
 1. **summary** — 1-3 sentences: the goal and what was achieved.
 2. **decisions** — choices made WITH rationale. A decision without a rationale is not \
-worth recording.
+worth recording. Record the **alternatives** the session considered and turned down, \
+each with the reason it lost: the reason an option was refused is often the most \
+reusable thing in a session, and it is what a later session needs to avoid re-arguing \
+the same choice. An alternative the operator refused counts, even if it was never \
+tried.
 3. **problems** — what blocked progress, confused, or required debugging.
-4. **solutions** — how problems were resolved; link via problem_ref (0-indexed into \
-problems).
+4. **solutions** — how problems were addressed; link via problem_ref (0-indexed into \
+problems). `worked` is a finding, not a default: set `false` when the fix did not \
+hold, and say how it ended with `outcome_kind` — `unresolved` (tried, did not fix it), \
+`reversed` (worked, later undone), `rejected` (the operator refused it), `residual` \
+(held, with a known remaining defect). A failed attempt with its reason is worth as \
+much as a fix: both outcomes are wanted, symmetrically. Anchor every `worked: false` \
+and every `outcome_kind` with the digest handles of the messages that show it (the \
+`[a8202b5a]` tags), copied exactly.
 5. **threads** — a continuation point a *different* session could pick up **cold**. \
 Use stable lowercase-hyphenated ids. Threads are served into the next session's \
 entrypoint and into consultation briefs, so each one spends context in sessions that \
@@ -439,6 +525,12 @@ are stamped from the record.
 `external: true`. What a web page asserts is that page's claim, not this session's \
 lived experience — it keeps third-party trust even when quoted first-hand. Claims about \
 what the agent DID with such content (edited a file, ran a command) stay first-party.
+11. **references** — when a decision, solution or rejected alternative rested on \
+something recalled from memory, list the vertex ids it used under `references`. A \
+memory result in the digest names its nodes as `scope:<expert>:claim:<hash>` or \
+`scope:<expert>:chunk:<hash>-<n>`; copy the id exactly as it appears. Only ids that \
+appear verbatim in the digest — never compose or shorten one. Leave `references` empty \
+when the reasoning drew on nothing recalled; an empty list is a true statement.
 
 ### Schema
 
@@ -451,6 +543,12 @@ decisions:
   - description: "<what was decided>"
     rationale: "<why>"
     outcome: "<what resulted, if known>"
+    references: ["<vertex id copied from a memory result, if any>"]
+    alternatives:
+      - description: "<an option considered and turned down>"
+        reason: "<why it lost>"
+        references: ["<vertex id, if the reason rested on one>"]
+        anchors: ["<digest handle of the message that raised or refused it>"]
     artifacts: ["<identifiers>"]
     external: false
 problems:
@@ -459,9 +557,12 @@ problems:
     artifacts: ["<identifiers>"]
     external: false
 solutions:
-  - description: "<what fixed it>"
+  - description: "<what was tried>"
     approach: "<how>"
-    worked: true
+    worked: "<true only if it held; false otherwise>"
+    outcome_kind: "<unresolved|reversed|rejected|residual — omit when it simply held>"
+    anchors: ["<digest handle of the message that shows the outcome>"]
+    references: ["<vertex id copied from a memory result, if any>"]
     problem_ref: 0
     artifacts: ["<identifiers>"]
     external: false
