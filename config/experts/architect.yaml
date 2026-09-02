@@ -62,6 +62,23 @@ allowlist:
   # system's shape — is free full text only in NC State's repository.
   - research.google.com
   - repository.lib.ncsu.edu
+  # Provenance-fidelity canon, procured against the run-record instrument: whether a
+  # sha256 sidecar over a finished VM image is a sufficient fingerprint, or the record
+  # needs a fuller attestation, a step-chain, source-level reproducibility, a
+  # content-addressed derivation model, materials/parameters separation, or a
+  # snapshot/restore alternative. SLSA and in-toto's own USENIX paper carry the
+  # attestation and link-file formats; reproducible-builds.org carries the
+  # bit-reproducibility discipline SOURCE_DATE_EPOCH argues from; Dolstra's LISA 2004
+  # paper is the content-addressed-derivation anchor; DVC's docs are the clearest
+  # single statement of pinned-materials-vs-per-run-params; the Firecracker NSDI paper
+  # is the snapshot/restore alternative; libguestfs's own manual pages are the only
+  # source for virt-copy-in/-out's documented behaviour and throughput.
+  - slsa.dev
+  - usenix.org
+  - reproducible-builds.org
+  - edolstra.github.io
+  - doc.dvc.org
+  - libguestfs.org
 
 # No write_boundary, deliberately. This scope's charter is to perform the
 # reorganizations and fixes it identifies; a path deny would block the work rather

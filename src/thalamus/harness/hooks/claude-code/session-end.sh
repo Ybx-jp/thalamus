@@ -83,9 +83,13 @@ log="$log_dir/session-end-${session_id:0:8}.log"
 # lost memory, which is the worse failure. A real session always has a transcript.
 transcript="${projects_dir:-$HOME/.claude/projects}/$project_dir/$session_id.jsonl"
 if [ ! -f "$transcript" ]; then
-  # A ledger row means this *was* a real session, so a missing transcript is a
-  # fault worth surfacing (the console widget renders it as an error). A session
-  # with neither is a subagent: leave nothing behind, not even a log.
+  # A ledger row means this *was* a real session, so the absence is worth writing
+  # down — but it is a clean ending, not a fault. Claude Code creates the transcript
+  # at the first interaction rather than at session start (measured 2026-09-01), so a
+  # window that was spawned and never touched has none, and there was no conversation
+  # to lose. `/exit` is itself an interaction, which is why a session closed that way
+  # always leaves one and never reaches this branch. A session with neither transcript
+  # nor ledger row is a subagent: leave nothing behind, not even a log.
   if [ -f "$HOME/.thalamus/pins/pins.jsonl" ] && jq -e --arg sid "$session_id" \
        'select(.session_id == $sid and (has("event") | not))' \
        "$HOME/.thalamus/pins/pins.jsonl" >/dev/null 2>&1; then

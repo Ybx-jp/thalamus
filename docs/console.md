@@ -275,9 +275,20 @@ window, and a row then renders from the record alone.
   case worth having: a failed extraction exits *zero*, so nothing else on the box
   would ever mention that a conversation was not recorded.
 - **never distilled** — the band, for a window killed before SessionEnd could run.
+  Only a close or a restart that outlives the four-minute grace budget writes one.
+  The window is identified by its tmux `@N` for the whole of that wait, because an
+  index is not an identity: `tmux display` resolves an index that no longer exists
+  to the session's *active* window and exits 0, so a poll keyed on the index would
+  never see its own window leave, and would report every clean close as a kill.
 
 A clean finish is served as no record at all, so **success is drawn as nothing** and
-the absence is unambiguous once every other outcome draws something. A banded row
+the absence is unambiguous once every other outcome draws something. Two endings
+count as clean without distilling anything: a session with no substantive exchange,
+and a window that was never touched at all. Claude Code writes the transcript at the
+first interaction rather than at session start, so an untouched window leaves none
+and SessionEnd stops before extract runs — the missing file is the evidence that
+there was no conversation, not that one was lost. `/exit` is itself an interaction,
+so a session closed from the console always leaves a transcript and never lands here. A banded row
 stays until dismissed: if it vanished on the next poll the failure would evaporate,
 and it has to still be there hours later when someone next looks.
 

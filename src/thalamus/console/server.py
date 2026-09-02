@@ -232,6 +232,37 @@ def _pinned_session(cfg: Config, idx: int) -> dict:
             "repo_root": rows[0]["repo_root"]}
 
 
+def _window_id(cfg: Config, idx: int) -> str:
+    """The window's `@N` id, captured while the index still names it.
+
+    An index is not an identity, and `display` does not treat it as one: measured on
+    tmux 3.4, `display -p -t <session>:<idx>` for an index that no longer exists
+    resolves to the session's *active* window and exits 0. Anything polling an index
+    to learn whether its window is gone therefore reads a different window's state
+    forever. A `@N` is minted once and never reassigned, so it is what a poll asks
+    about and what a kill is aimed at.
+    """
+    r = tmux("display", "-p", "-t", f"{cfg.session}:{idx}", "#{window_id}")
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def _window_gone(cfg: Config, wid: str) -> bool:
+    """Has this window id left the session's window list?
+
+    `list-windows` enumerates rather than resolves a target, so it has no lenient
+    fallback to land in — which is exactly what makes it, and not `display`, the
+    thing that can answer this question. An unknown id (the capture failed) is
+    reported as present: waiting out the grace budget costs time, while a wrong
+    "gone" would return from a close that never happened.
+    """
+    if not wid:
+        return False
+    r = tmux("list-windows", "-t", cfg.session, "-F", "#{window_id}")
+    if r.returncode != 0:
+        return True          # the session itself is gone, and so is the window
+    return wid not in r.stdout.split()
+
+
 def _record_forced_kill(who: dict, op: str) -> None:
     """Say that this window died without distilling, because nothing else can.
 
@@ -995,10 +1026,13 @@ def recycle_window(cfg: Config, idx: int) -> None:
     If the session won't die within the grace budget, force with
     `respawn-window -k`, which skips distillation. Runs in a background thread.
     """
-    target = f"{cfg.session}:{idx}"
     # Identify the session while it is still alive; after the respawn the pane holds
-    # a different one and there is nothing left to name.
+    # a different one and there is nothing left to name. The window id is captured
+    # for the same reason and one more: every command below outlives the index, and
+    # an index freed here is handed to the next window that opens.
     who = _pinned_session(cfg, idx)
+    wid = _window_id(cfg, idx)
+    target = wid or f"{cfg.session}:{idx}"
     try:
         tmux("set", "-w", "-t", target, "remain-on-exit", "on")
         tmux("send-keys", "-t", target, "Escape")
@@ -1009,9 +1043,9 @@ def recycle_window(cfg: Config, idx: int) -> None:
         deadline = time.time() + RECYCLE_GRACE_S
         dead = False
         while time.time() < deadline:
-            r = tmux("display", "-p", "-t", target, "#{pane_dead}")
-            if r.returncode != 0:
+            if _window_gone(cfg, wid):
                 return  # window vanished entirely; roster sync recreates it
+            r = tmux("display", "-p", "-t", target, "#{pane_dead}")
             if r.stdout.strip() == "1":
                 dead = True
                 break
@@ -1040,8 +1074,9 @@ def close_window(cfg: Config, idx: int) -> None:
     (`harness/cursor_transcripts.py`). So a forced close costs a Claude Code session
     its distillation and costs a Cursor session only its ledger row, which the pin
     ledger then covers for scope."""
-    target = f"{cfg.session}:{idx}"
     who = _pinned_session(cfg, idx)
+    wid = _window_id(cfg, idx)
+    target = wid or f"{cfg.session}:{idx}"
     try:
         tmux("send-keys", "-t", target, "Escape")
         time.sleep(0.3)
@@ -1050,8 +1085,7 @@ def close_window(cfg: Config, idx: int) -> None:
         tmux("send-keys", "-t", target, "Enter")
         deadline = time.time() + RECYCLE_GRACE_S
         while time.time() < deadline:
-            r = tmux("display", "-p", "-t", target, "#{pane_dead}")
-            if r.returncode != 0:
+            if _window_gone(cfg, wid):
                 return  # window already gone: claude exited and tmux closed it
             time.sleep(1)
         # Hung past the grace budget. The kill skips SessionEnd, so nothing will
