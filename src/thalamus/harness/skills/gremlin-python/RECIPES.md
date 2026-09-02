@@ -750,3 +750,55 @@ vertex merge and read the overlap as a measurement, not as an obstacle.
 
 Do **not** reach for `where(__.both_e().count().is_(0))`-style formulations near this;
 see the orphan recipe above for why an empty stream never satisfies a count predicate.
+
+## The withholding draw and the trace it produced, joined
+
+**Question it answered:** "Did a node the retrieval policy suppressed come back later
+in the same session?" (#107). Needs both halves of a withholding event, and neither
+side holds both: the graph knows the session and what the retrieval surfaced, the
+ledger knows which nodes were offered.
+**Surface:** gremlin-python
+**Validated:** 2026-09-01 against the live graph — 738 traces carry `policy_seed`,
+738 of 738 join to a ledger row, 40 distinct non-empty session ids, sums 822 withheld
+/ 3,565 offered.
+
+```python
+from gremlin_python.process.graph_traversal import __
+from gremlin_python.process.traversal import T
+
+from thalamus.eval import policy as policy_mod
+from thalamus.substrate.writer import connect, close_connection
+
+by_seed = {r.seed: r for r in policy_mod.load().values()}
+g = connect()
+try:
+    rows = (
+        g.V().has_label("Trace").has("policy_seed")
+        .project("id", "session", "scope", "ts", "seed", "withheld", "oc", "returned")
+        .by(T.id).by("session_id").by("scope").by("ts")
+        .by("policy_seed").by("withheld").by("offered_count")
+        .by(__.out("RETURNS").id_().dedup().fold())
+        .to_list()
+    )
+    for row in rows:
+        record = by_seed[row["seed"]]
+        offered = set(record.offered)                       # the draw's own universe
+        surfaced = set(row["returned"]) | set(record.withheld)  # all the ranker showed
+        print(row["session"], len(offered), len(surfaced))
+finally:
+    close_connection(g)
+```
+
+**Notes — the trace's `RETURNS` set is a SUPERSET of what the draw covered, and
+reconstructing `offered` from it is wrong.** A rendered response is assembled from more
+retrieval than the one `policy.apply` call sees: 277 of 738 traces return nodes that
+were never in the draw. `eval sync` lands `offered_count` and drops the ids, so the
+only correct source for the offered list is the ledger. Rebuilding it as
+RETURNS-plus-withheld inflates the offered set on 37% of events and sweeps
+never-randomized nodes into whichever arm you call the control.
+
+Join on `policy_seed`, not on `session_id`: the ledger's own `session_id` is the empty
+string on every row **by design** (`policy.py` — the MCP server cannot see its caller's
+session, and `eval sync` fills it in on the Trace instead). Seeds are unique across the
+ledger. `response_sha256` is the key `sync.py` itself joins on and works too, but it
+collides on 9 hashes covering 10 rows (#143), where `policy_seed` does not.
