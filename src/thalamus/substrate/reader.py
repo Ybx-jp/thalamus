@@ -23,7 +23,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Order, P, T, TextP
 
 from thalamus.contract.ontology import MAIN_SCOPE, vid
-from thalamus.substrate.schema import Tier
+from thalamus.substrate.schema import Tier, is_rejected_kind
 from thalamus.substrate.witnesses import Corroboration, Witness, corroboration
 
 logger = logging.getLogger(__name__)
@@ -90,9 +90,9 @@ _DETAIL_CAP = 8
 
 # Claim properties rendered beside the description when the claim carries them —
 # the subtype fields distillation writes (`Decision.rationale`/`outcome`,
-# `Solution.approach`). Rendered, never matched: matching stays on `description` so
-# the floor and cap above keep the text they were measured on.
-_RENDERED_CLAIM_FIELDS = ("rationale", "outcome", "approach")
+# `Solution.approach`/`outcome_kind`). Rendered, never matched: matching stays on
+# `description` so the floor and cap above keep the text they were measured on.
+_RENDERED_CLAIM_FIELDS = ("rationale", "outcome", "approach", "outcome_kind")
 # Knowledge holds up to 1/this of the result window when sessions also matched.
 _KNOWLEDGE_WINDOW_DIVISOR = 2
 # Answered exchanges read before ranking a query against them. Wide because an expert
@@ -242,10 +242,14 @@ class MemoryResult:
                 # a one-line citation puts nothing but the ID there — pricing the
                 # target as returned would attribute text the agent never saw, and
                 # `eval sync` would then verify the very edge this line cites.
+                # A rejected option renders as what it was and why it lost; a
+                # reference renders as its ID alone — the target's text is the
+                # drill-down, and the citation line is the default.
                 for use in detail.get("uses", ()):
                     reason = f" — {use['reason']}" if use.get("reason") else ""
                     if use.get("role") == "rejected":
-                        lines.append(f"  - _rejected:_ {use['target']}{reason}")
+                        option = use.get("target_text") or use["target"]
+                        lines.append(f"  - _rejected:_ {option}{reason} [{use['target']}]")
                     else:
                         lines.append(
                             f"  - _uses:_ {use['target']} _[{use['verified']}]_{reason}"
@@ -1311,12 +1315,25 @@ def _load_session_result(
         description = _first(child.get("description"))
         if not description:
             continue
+        kind = _first(child.get("kind")) or _first(child.get(T.label))
+        # A rejected alternative renders under the decision that turned it down
+        # (its USES line carries the option and the reason), never as a claim of its
+        # own in the default view — the one-line citation is the default, the node
+        # is the drill-down. Skipped before selection so it is not counted either.
+        if is_rejected_kind(kind):
+            continue
         detail = {
-            "kind": _first(child.get("kind")) or _first(child.get(T.label)),
+            "kind": kind,
             "description": description,
             "tier": _first_int(child.get("tier"), int(Tier.FIRST_PARTY)),
             "node_id": _first(child.get(T.id)),
         }
+        # The outcome's evidence — message UUIDs into the Source — projected so a
+        # caller holding the result can walk to it; not rendered, since a UUID list
+        # tells an agent nothing the description did not.
+        anchors = _first(child.get("anchors"))
+        if anchors:
+            detail["anchors"] = anchors
         # The fields distillation already stores beside the description — a
         # decision's rationale and outcome, a solution's approach and whether it
         # worked. Measured 2026-09-01 on the designer scope: every decision carried a
@@ -1345,9 +1362,12 @@ def _uses_rows(g: GraphTraversalSource, session_vid: str) -> list[dict]:
             g.V(session_vid)
             .out("CONTAINS")
             .out_e("USES")
-            .project("claim", "target", "role", "reason", "verified", "verified_by")
+            .project(
+                "claim", "target", "target_text", "role", "reason", "verified", "verified_by"
+            )
             .by(__.out_v().id_())
             .by(__.in_v().id_())
+            .by(__.in_v().coalesce(__.values("description"), __.constant("")))
             .by(__.coalesce(__.values("role"), __.constant("")))
             .by(__.coalesce(__.values("reason"), __.constant("")))
             .by(__.coalesce(__.values("verified"), __.constant("")))
@@ -1378,6 +1398,7 @@ def _attach_uses(details: list[dict], rows: list[dict]) -> None:
         by_claim.setdefault(str(row.get("claim", "")), []).append(
             {
                 "target": str(row.get("target", "")),
+                "target_text": str(row.get("target_text") or ""),
                 "role": str(row.get("role") or "reason"),
                 "reason": str(row.get("reason") or ""),
                 "verified": _VERIFIED_LABELS.get(verified, verified),

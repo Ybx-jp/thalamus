@@ -186,6 +186,15 @@ Served is not used: the used verdict stays on the trace's `RETURNS` edge. Recall
 renders each reference as one line under the claim, without a backticked ID, so the
 citation is never priced as a node the retrieval returned.
 
+The same edge carries what a decision turned down. An alternative the session
+considered and refused is written as a claim of kind `<scope>/rejected`, reached from
+the decision by `USES {role: rejected, reason}`, so the reason an option lost is a
+node that can cite its own references rather than a sentence inside the rationale.
+A solution says how it ended: `worked` is a finding rather than a default, and
+`outcome_kind` (`unresolved`, `reversed`, `rejected`, `residual`) tells a fix that
+did not hold from one that was undone or refused. Both carry `anchors`, the message
+UUIDs that show the outcome, resolved from the handles the digest exposes.
+
 **Every node carries a scope, except `Artifact` and `Agent`.** Both are deliberately
 **global** — one vertex per identifier, shared by every scope. A file touched by two
 experts is one node, which makes it the join key between them.

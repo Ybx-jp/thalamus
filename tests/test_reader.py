@@ -12,6 +12,8 @@ Scope: recalled memory enters context as data with provenance, never as instruct
 
 import re
 
+import pytest
+
 from thalamus.substrate.reader import (
     ExchangeResult,
     MemoryResult,
@@ -1275,7 +1277,7 @@ def test_recall_renders_what_a_claim_reasoned_with_and_never_prices_it_as_return
     assert "  - _uses:_ scope:literature:claim:1111 _[served]_" in lines
     assert "  - _uses:_ scope:literature:chunk:2222-0003 _[not served]_" in lines
     assert ("  - _rejected:_ scope:designer:claim:3333 — "
-            "the cut arm never shows the object is the same") in lines
+            "the cut arm never shows the object is the same [scope:designer:claim:3333]") in lines
     assert "  - _uses:_ scope:literature:claim:4444 _[unchecked]_" in lines
 
     event = TraceEvent(
@@ -1287,3 +1289,81 @@ def test_recall_renders_what_a_claim_reasoned_with_and_never_prices_it_as_return
         "scope:designer:claim:aaaa",
         "scope:designer:claim:bbbb",
     ]
+
+
+def test_rejected_options_render_under_their_decision_and_outcome_kind_beside_its_solution():
+    """
+    Scenario: A session containing a decision, the alternative it rejected (a claim
+    of kind `designer/rejected`), and a solution that was reversed
+
+    Verifications:
+    - the rejected claim is not a detail of its own and is not counted by the
+      elision stub: it renders as the decision's `_rejected:_` line, with its text
+    - `outcome_kind` renders beside the solution like the other stored fields
+    - `anchors` is projected onto the detail, not rendered
+    """
+    from gremlin_python.process.traversal import T
+
+    from thalamus.substrate import reader
+
+    children = [
+        {T.id: "scope:designer:claim:d1", T.label: "Claim", "kind": ["decision"],
+         "description": ["Chose the carry arm"], "rationale": ["continuity"]},
+        {T.id: "scope:designer:claim:r1", T.label: "Claim", "kind": ["designer/rejected"],
+         "description": ["the cut arm"], "anchors": ["u1,u2"]},
+        {T.id: "scope:designer:claim:s1", T.label: "Claim", "kind": ["solution"],
+         "description": ["Widened the shutter"], "approach": ["edit"], "worked": ["false"],
+         "outcome_kind": ["reversed"], "anchors": ["u3"]},
+    ]
+    uses = [
+        {"claim": "scope:designer:claim:d1", "target": "scope:designer:claim:r1",
+         "target_text": "the cut arm", "role": "rejected",
+         "reason": "never shows the object is the same", "verified": "", "verified_by": ""},
+    ]
+
+    class _Graph:
+        def V(self, *_a):
+            return self
+
+        def has_label(self, *_a):
+            return self
+
+        def has(self, *_a):
+            return self
+
+        def value_map(self, *_a):
+            return self
+
+        def out(self, *_a):
+            return self
+
+        def to_list(self):
+            return [{"session_id": ["s1"], "summary": ["A session"], "timestamp": ["t"],
+                     "tool": ["claude_code"], "project": ["thalamus"], "scope": ["designer"]}]
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(reader, "_uses_rows", lambda g, session_vid: uses)
+    graph = _Graph()
+    calls = {"n": 0}
+
+    def to_list():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _Graph().to_list()
+        return children
+
+    graph.to_list = to_list
+    try:
+        result = reader._load_session_result(graph, "s1", "", "designer", keywords=[])
+    finally:
+        monkeypatch.undo()
+
+    kinds = [d["kind"] for d in result.details]
+    assert kinds == ["decision", "solution"]
+    assert result.details[1]["anchors"] == "u3"
+    text = result.format()
+    lines = text.splitlines()
+    assert ("  - _rejected:_ the cut arm — never shows the object is the same "
+            "[scope:designer:claim:r1]") in lines
+    assert "  - _outcome_kind:_ reversed" in lines
+    assert "u3" not in text

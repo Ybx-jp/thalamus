@@ -20,11 +20,13 @@ from thalamus.contract.paths import PROJECT_ROOT
 from thalamus.substrate import spans
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
 from thalamus.substrate.schema import (
+    Alternative,
     Claim,
     Provenance,
     SessionGraph,
     ThreadClose,
     Tier,
+    rejected_kind,
 )
 
 logger = logging.getLogger(__name__)
@@ -528,11 +530,21 @@ def _claim_properties(claim: Claim) -> dict[str, object]:
     """
     fields = claim.model_dump(
         mode="json",
-        # `about` and `references` are excluded for the same reason `derived_from` is
-        # on provenance: relationships become edges, never list-valued properties.
-        exclude={"provenance", "artifacts", "kind", "description", "about", "references"},
+        # `about`, `references` and `alternatives` are excluded for the same reason
+        # `derived_from` is on provenance: relationships become edges (and, for an
+        # alternative, a node), never list-valued properties.
+        exclude={
+            "provenance", "artifacts", "kind", "description", "about", "references",
+            "alternatives",
+        },
     )
-    return {key: value for key, value in fields.items() if value is not None}
+    # `anchors` is the one list that *is* a property — message UUIDs, joined the way
+    # `TOUCHES.anchors` is, so one convention reads both.
+    return {
+        key: ",".join(str(v) for v in value) if isinstance(value, list) else value
+        for key, value in fields.items()
+        if value is not None and value != []
+    }
 
 
 def _write_claims(
@@ -545,35 +557,10 @@ def _write_claims(
     claim_vids: dict[str, str] = {}
 
     for claim in session.claims():
-        claim_vid = vid("Claim", claim.content_id(), session.scope)
-        provenance = claim.provenance or session.default_provenance()
-
-        properties = {
-            "kind": claim.kind,
-            "description": claim.description,
-            "scope": session.scope,
-            **_claim_properties(claim),
-            **_provenance_properties(provenance),
-        }
-
-        graph_traversal = (
-            g.merge_v({T.id: claim_vid, T.label: "Claim"})
-            .option(Merge.on_create, {T.id: claim_vid, **properties})
-            .option(Merge.on_match, properties)
-        )
-        _iterate(graph_traversal, "upsert Claim", claim_vid)
-
+        claim_vid = _upsert_claim(g, session, session_vid, artifact_vids, claim)
         claim_vids[claim.content_id()] = claim_vid
-        _ensure_edge(g, session_vid, claim_vid, "CONTAINS")
-
-        for artifact_id in claim.artifacts:
-            if artifact_id in artifact_vids:
-                _ensure_edge(g, claim_vid, artifact_vids[artifact_id], "TOUCHES")
-
-        for origin_vid in provenance.derived_from:
-            _ensure_edge(g, claim_vid, origin_vid, "DERIVED_FROM")
-
-        _write_references(g, claim_vid, getattr(claim, "references", []))
+        for alternative in getattr(claim, "alternatives", []):
+            _write_alternative(g, session, session_vid, artifact_vids, claim_vid, alternative)
 
     # problem_ref is an index into the problems list; resolve it to a content ID.
     problem_vids = {
@@ -587,6 +574,79 @@ def _write_claims(
             _ensure_edge(g, problem_vid, solution_vid, "SOLVED_BY")
 
     return claim_vids
+
+
+def _upsert_claim(
+    g: GraphTraversalSource,
+    session: SessionGraph,
+    session_vid: str,
+    artifact_vids: dict[str, str],
+    claim: Claim,
+    extra: Mapping[str, object] | None = None,
+) -> str:
+    """One Claim vertex with the edges every claim carries: CONTAINS from its session,
+    TOUCHES to its artifacts, DERIVED_FROM to its origins, USES to its references."""
+    claim_vid = vid("Claim", claim.content_id(), session.scope)
+    provenance = claim.provenance or session.default_provenance()
+
+    properties = {
+        "kind": claim.kind,
+        "description": claim.description,
+        "scope": session.scope,
+        **_claim_properties(claim),
+        **(extra or {}),
+        **_provenance_properties(provenance),
+    }
+
+    graph_traversal = (
+        g.merge_v({T.id: claim_vid, T.label: "Claim"})
+        .option(Merge.on_create, {T.id: claim_vid, **properties})
+        .option(Merge.on_match, properties)
+    )
+    _iterate(graph_traversal, "upsert Claim", claim_vid)
+
+    _ensure_edge(g, session_vid, claim_vid, "CONTAINS")
+
+    for artifact_id in claim.artifacts:
+        if artifact_id in artifact_vids:
+            _ensure_edge(g, claim_vid, artifact_vids[artifact_id], "TOUCHES")
+
+    for origin_vid in provenance.derived_from:
+        _ensure_edge(g, claim_vid, origin_vid, "DERIVED_FROM")
+
+    _write_references(g, claim_vid, getattr(claim, "references", []))
+    return claim_vid
+
+
+def _write_alternative(
+    g: GraphTraversalSource,
+    session: SessionGraph,
+    session_vid: str,
+    artifact_vids: dict[str, str],
+    decision_vid: str,
+    alternative: Alternative,
+) -> None:
+    """The option a decision turned down, as a claim of its own.
+
+    Kind `<scope>/rejected`, contained by the session like any episodic claim, and
+    reached from the decision by `USES {role: rejected, reason}` — the reason lives on
+    the edge, so the same option refused by two decisions for two reasons converges on
+    one node carrying both. The option's own `references` become USES edges from it,
+    which is the whole point of its being a node: the reason it lost is often a
+    literature claim, and a property list could not point at one.
+    """
+    option = Claim(
+        kind=rejected_kind(session.scope),
+        description=alternative.description,
+        provenance=session.default_provenance(),
+    )
+    extra = {"anchors": ",".join(alternative.anchors)} if alternative.anchors else None
+    option_vid = _upsert_claim(g, session, session_vid, artifact_vids, option, extra)
+    _write_references(g, option_vid, alternative.references)
+    qualification: dict[str, object] = {"role": "rejected"}
+    if alternative.reason:
+        qualification["reason"] = alternative.reason
+    _ensure_edge(g, decision_vid, option_vid, "USES", qualification)
 
 
 def _write_references(g: GraphTraversalSource, claim_vid: str, references: list[str]) -> None:
