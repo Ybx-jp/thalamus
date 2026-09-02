@@ -171,10 +171,10 @@ def mint_ticket() -> str:
 
 
 # The same lexical design-intent classifier `conditioning.sh` fires on at
-# UserPromptSubmit. One rule, two events: a prompt that reads as design work gets the
-# ground-and-consult reminder, and a *ticket* that reads as design work gets the
-# readiness check when it closes. Two different regexes would be two different
-# answers to one question.
+# UserPromptSubmit. One rule, two surfaces: a prompt that reads as design work gets the
+# ground-and-consult reminder, and a *ticket* that reads as design work is stamped
+# `kind: design` at mint. Two different regexes would be two different answers to one
+# question.
 _DESIGN_RE = re.compile(
     r"\b(design|architect|propose|schema|new (feature|component|skill|hook|expert|metric)"
     r"|should (we|i) (build|add|write|create|adopt)"
@@ -186,10 +186,10 @@ _DESIGN_RE = re.compile(
 def question_kind(question: str) -> str:
     """`design` when a ticket settles a design, else `general`.
 
-    Recorded at mint because closing a design ticket is the mechanical signal that a
-    design was settled — the point of asking an expert and then acting on the answer.
-    Leaving it to be recognized later means it is recognized only when someone
-    remembers to look, which is the failure mode the readiness check already had.
+    Recorded at mint, when the question's own wording is the evidence; a property
+    decided later is decided from whatever the closing session remembers. It marks the
+    exchange record and nothing reads it back yet — the design/general split is
+    available to anything that wants to count or filter design rounds.
     """
     return "design" if _DESIGN_RE.search(question or "") else "general"
 
@@ -294,8 +294,7 @@ def open_exchange(
             # rather than a judgement made later by whoever happens to read it.
             "kind": question_kind(question),
             # Which tier answered. Orthogonal to `kind`, which classifies the
-            # *question*: a quick exchange can still settle a design, and the
-            # readiness check must still fire when it does.
+            # *question*: a quick exchange can still settle a design.
             "protocol": protocol,
             # Which research procedure the answering subagent was working from, as a
             # content hash of the text actually served (empty on the quick tier, which
@@ -507,23 +506,10 @@ def consult_answer(
         },
         citation_refs=in_scope,
     )
-    closed = (
+    return (
         f"Exchange `{exchange_vid(ticket)}` closed: answer recorded with "
         f"{len(in_scope)} validated citation(s). The ticket is burned."
     )
-    # Closing a design ticket IS the signal that a design was settled — the whole
-    # point of asking an expert was to act on the answer. Firing the readiness check
-    # here rather than on the consulting agent's judgement is the difference between
-    # a step that runs and one that runs when someone remembers it. Advisory by
-    # construction: the skill never blocks work and never changes a design.
-    if (exchange.get("kind") or "") == "design":
-        closed += (
-            "\n\nThis ticket was minted as design work and is now settled, which is "
-            "the trigger condition for the `thalamus-design-readiness` skill "
-            "(operator-fluency check on a settled design; advisory, never blocking). "
-            "Invoke it before the session moves on, passing this exchange id."
-        )
-    return closed
 
 
 def _assemble_brief(
