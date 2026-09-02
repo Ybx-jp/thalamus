@@ -2,7 +2,7 @@
 
 A measurement taken against the live graph is not reproducible: the graph moves
 every time a session ends. Every figure in `lab/` was computed that way, and
-`pre-sandbox-purge-20260729.kryo` is the only pinned artifact in 33 entries — it
+`pre-sandbox-purge-20260729.kryo` is the only named snapshot in 33 entries — it
 exists by accident of a purge, not by policy.
 
 So: a published number names the snapshot it was computed on, and anyone can serve
@@ -13,12 +13,17 @@ that snapshot back and re-run the script. Three pieces:
 - `serve()` starts a **throwaway, read-only** Gremlin server on that snapshot at
   another port, so an analysis can address the past without the live graph moving
   underneath it — and without the risk of writing to it.
-- `registry()` reads the committed ledger.
+- `registry()` reads the ledger.
 
-The registry is committed; the `.kryo` files are not. The graph is one operator's
-session history and is never shipped — what travels is the
-*claim* that a number came from a named, hash-identified state, which is falsifiable
-by anyone holding the same snapshot and is honest about what they cannot check.
+The ledger and the `.kryo` files are both operator state: the registry lives at
+`~/.thalamus/snapshots.jsonl`, outside any checkout, because a snapshot belongs to whoever
+took it rather than to the source it was taken from. The graph is one operator's
+session history and is never shipped — what travels is the *claim* that a number came
+from a named, hash-identified state, which is falsifiable by anyone holding the same
+snapshot and is honest about what they cannot check.
+
+The vocabulary here — the name rule, the digest pairing, immutability, the mismatch
+refusal — is `thalamus.artifacts`'s, and a graph snapshot is one artifact kind using it.
 
 **The sha256 identifies the file, not the state.** A graph loaded from a `.kryo` does
 not re-serialize to those bytes. Measured: restoring a snapshot leaves the live file
@@ -36,18 +41,18 @@ hashing it is not a change detector either.
 
 from __future__ import annotations
 
-import json
 import re
 import socket
 import subprocess
 import sys
 import time
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from thalamus import snapshotting
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect
 
@@ -58,18 +63,15 @@ CONTAINER = "thalamus-graph-1"
 VOLUME = "thalamus_thalamus-graph-data"
 IMAGE = "tinkerpop/gremlin-server:3.7.3"
 
-# Operator state, beside the graph's other ledgers — a pinned snapshot belongs to
+# Operator state, beside the graph's other ledgers — a snapshot belongs to
 # whoever took it, not to the checkout it was taken from.
 REGISTRY = Path.home() / ".thalamus" / "snapshots.jsonl"
 
-# A snapshot name is part of a filename and of a published citation, so it is
-# restricted rather than sanitised — a name that needs escaping is a name that
-# will be quoted wrong somewhere.
-_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
-
-
-class SnapshotError(RuntimeError):
-    pass
+# A graph snapshot is one kind of named artifact, and its failures are snapshot failures:
+# a name that cannot be cited, a name already taken, bytes that no longer hash to what
+# the registry recorded. There is nothing snapshot-specific about any of those, so this
+# is the same type rather than a parallel one a caller would have to catch twice.
+SnapshotError = snapshotting.SnapshotError
 
 
 @dataclass(frozen=True)
@@ -92,18 +94,20 @@ def server_path(name: str) -> str:
     return f"{SERVER_DATA_DIR}/{name}.kryo"
 
 
+def _registry() -> snapshotting.Registry[SnapshotRow]:
+    """Built per call rather than at import, so `REGISTRY` stays the one place the
+    ledger's location is stated and a caller that redirects it is obeyed."""
+    return snapshotting.Registry(REGISTRY, SnapshotRow, noun="snapshot", plural="snapshots")
+
+
 def take(name: str, *, note: str = "", url: str | None = None) -> SnapshotRow:
-    """Pin the live graph under `name` and record what was pinned.
+    """Snapshot the live graph under `name` and record what was captured.
 
     Refuses to overwrite: a name that has been cited must keep meaning what it
-    meant. Re-pinning the same state is a new name, not a mutation of an old one.
+    meant. Re-taking the same state is a new name, not a mutation of an old one.
     """
-    if not _NAME_RE.match(name):
-        raise SnapshotError(
-            f"invalid snapshot name `{name}` — lowercase letters, digits and hyphens, 3-64 chars"
-        )
-    if any(row.name == name for row in registry()):
-        raise SnapshotError(f"snapshot `{name}` already exists; snapshots are immutable")
+    snapshotting.check_name(name, noun="snapshot")
+    _registry().refuse_duplicate(name)
     if _file_exists(server_path(name)):
         raise SnapshotError(f"{server_path(name)} exists on the server but is not in the registry")
 
@@ -118,7 +122,7 @@ def take(name: str, *, note: str = "", url: str | None = None) -> SnapshotRow:
     digest, size = _sha256_and_size(server_path(name))
     row = SnapshotRow(
         name=name,
-        taken_at=datetime.now(timezone.utc).isoformat(),
+        taken_at=snapshotting.now(),
         vertices=int(vertices),
         edges=int(edges),
         sha256=digest,
@@ -126,33 +130,19 @@ def take(name: str, *, note: str = "", url: str | None = None) -> SnapshotRow:
         git_ref=_git_ref(),
         note=note,
     )
-    REGISTRY.parent.mkdir(parents=True, exist_ok=True)
-    with REGISTRY.open("a") as handle:
-        handle.write(json.dumps(asdict(row)) + "\n")
-    return row
+    return _registry().append(row)
 
 
 def registry() -> list[SnapshotRow]:
-    if not REGISTRY.is_file():
-        return []
-    rows = []
-    for line in REGISTRY.read_text().splitlines():
-        line = line.strip()
-        if line:
-            rows.append(SnapshotRow(**json.loads(line)))
-    return rows
+    return _registry().rows()
 
 
 def find(name: str) -> SnapshotRow:
-    for row in registry():
-        if row.name == name:
-            return row
-    known = ", ".join(r.name for r in registry()) or "none"
-    raise SnapshotError(f"unknown snapshot `{name}`; registered: {known}")
+    return _registry().find(name)
 
 
 def verify(name: str) -> bool:
-    """Does the pinned file still hash to what the registry says it did?"""
+    """Does the snapshot file still hash to what the registry says it did?"""
     row = find(name)
     digest, _size = _sha256_and_size(row.server_path)
     return digest == row.sha256
@@ -169,19 +159,16 @@ def serve(name: str, *, port: int = 8183, timeout: int = 90):
     """
     row = find(name)
     digest, _ = _sha256_and_size(row.server_path)
-    if digest != row.sha256:
-        raise SnapshotError(
-            f"snapshot `{name}` no longer hashes to its registry entry "
-            f"({digest[:12]} != {row.sha256[:12]}) — it is not the state that was cited"
-        )
+    snapshotting.check_digest(name, digest, row.sha256, noun="snapshot",
+                         consequence="it is not the state that was cited")
     with _serve_path(name, row.server_path, digest, port=port, timeout=timeout) as url:
         yield url
 
 
-def restore(name: str, *, safety_pin: bool = True, url: str | None = None) -> SnapshotRow:
-    """Make a pinned snapshot the live graph again.
+def restore(name: str, *, safety_snapshot: bool = True, url: str | None = None) -> SnapshotRow:
+    """Make a snapshot the live graph again.
 
-    Pinning exists so a state can be returned to, and until this the returning half
+    Snapshotting exists so a state can be returned to, and until this the returning half
     did not exist: `serve` reads the past read-only, and nothing put it back. The gap
     is only visible when it matters, which is after a bad write — recovery then meant
     hand-run `docker` against the data volume, exactly the operation that should not
@@ -192,7 +179,7 @@ def restore(name: str, *, safety_pin: bool = True, url: str | None = None) -> Sn
     `graphLocation` on clean shutdown and would write the state being discarded back
     over the state being restored.
 
-    A safety pin of the current graph is taken first, so this is reversible in the
+    A safety snapshot of the current graph is taken first, so this is reversible in the
     direction it is most likely to be needed — a restore run against the wrong name.
     """
     row = find(name)
@@ -201,16 +188,13 @@ def restore(name: str, *, safety_pin: bool = True, url: str | None = None) -> Sn
     # registry entry is not the state that was cited, and restoring it would put the
     # graph into a condition nothing on record describes.
     digest, _size = _sha256_and_size(row.server_path)
-    if digest != row.sha256:
-        raise SnapshotError(
-            f"snapshot `{name}` no longer hashes to its registry entry "
-            f"({digest[:12]} != {row.sha256[:12]}) — refusing to restore it"
-        )
+    snapshotting.check_digest(name, digest, row.sha256, noun="snapshot",
+                         consequence="refusing to restore it")
 
-    pinned: SnapshotRow | None = None
-    if safety_pin:
+    saved: SnapshotRow | None = None
+    if safety_snapshot:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        pinned = take(
+        saved = take(
             f"pre-restore-{stamp}",
             note=f"Live graph immediately before restoring `{name}`.",
             url=url,
@@ -242,7 +226,7 @@ def restore(name: str, *, safety_pin: bool = True, url: str | None = None) -> Sn
         raise SnapshotError(
             f"restored `{name}` but the live graph holds {vertices}V/{edges}E where the "
             f"registry records {row.vertices}V/{row.edges}E"
-            + (f" — the prior state is pinned as `{pinned.name}`" if pinned else "")
+            + (f" — the prior state is saved as `{saved.name}`" if saved else "")
         )
     return row
 
@@ -415,9 +399,4 @@ def _sha256_and_size(path: str) -> tuple[str, int]:
 
 
 def _git_ref() -> str:
-    proc = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        cwd=Path(__file__).resolve().parents[3],
-        capture_output=True, text=True,
-    )
-    return proc.stdout.strip() if proc.returncode == 0 else "unknown"
+    return snapshotting.git_ref(Path(__file__).resolve().parents[3])
