@@ -1130,3 +1130,93 @@ def test_recall_holds_a_multi_keyword_query_to_the_match_floor(monkeypatch):
     graph = _RecallGraph(_RECALL_ROWS)
     narrow = recall(graph, "bracket", limit=5, knowledge_scopes=["literature"])
     assert [r[1] for r in narrow if r[0] == "session"] == ["s2"]
+
+
+def test_memory_result_renders_stored_claim_fields_beside_the_description():
+    """
+    Scenario: A recalled decision carries the rationale and outcome distillation
+    stored on it; a recalled solution carries its approach and did not work
+
+    Measured 2026-09-01 on the designer scope: every decision carried a stored
+    rationale and none was rendered, so the reason an alternative lost sat on the
+    very claim recall returned and never reached the agent (lab/067 §7b).
+
+    Verifications:
+    - rationale, outcome and approach render as indented sub-lines under the claim
+    - `worked` renders only when False; True is the schema default and says nothing
+    - a claim without the fields renders exactly as before
+    """
+    from thalamus.substrate.reader import MemoryResult
+
+    result = MemoryResult(
+        session_id="s1",
+        summary="A session",
+        timestamp="2026-09-01T00:00:00",
+        tool="claude_code",
+        project="thalamus",
+        details=[
+            {
+                "kind": "decision",
+                "description": "Chose the carry arm",
+                "node_id": "scope:designer:claim:aaaa",
+                "rationale": "The cut arm never tells the viewer the object is the same",
+                "outcome": "carry delivered as the primary film",
+            },
+            {
+                "kind": "solution",
+                "description": "Widened the shutter",
+                "node_id": "scope:designer:claim:bbbb",
+                "approach": "Edited r3layout.ts",
+                "worked": False,
+            },
+            {
+                "kind": "solution",
+                "description": "Bumped the font size",
+                "node_id": "scope:designer:claim:cccc",
+            },
+        ],
+    )
+
+    text = result.format()
+    lines = text.splitlines()
+
+    assert "- **decision** `scope:designer:claim:aaaa`: Chose the carry arm" in lines
+    assert "  - _rationale:_ The cut arm never tells the viewer the object is the same" in lines
+    assert "  - _outcome:_ carry delivered as the primary film" in lines
+    assert "  - _approach:_ Edited r3layout.ts" in lines
+    assert "  - _worked:_ false" in lines
+    assert text.count("_worked:_") == 1
+    # The field-less claim renders on one line and nothing follows it.
+    idx = lines.index("- **solution** `scope:designer:claim:cccc`: Bumped the font size")
+    assert idx == len(lines) - 1
+
+
+def test_detail_selection_matches_on_description_not_on_stored_fields():
+    """
+    Scenario: A claim's rationale contains the query term but its description
+    does not
+
+    The match floor and detail cap were tuned on description-only text
+    (recall-strategy: the floor cuts no fan-out, the cap 8%, query shape 28%).
+    The stored fields ride along for rendering; they must not widen what a
+    query selects, or those measured dials move.
+    """
+    from thalamus.substrate.reader import _select_details
+
+    details = [
+        {
+            "kind": "decision",
+            "description": "Chose the carry arm",
+            "node_id": "v1",
+            "rationale": "gremlin was the wrong tool here",
+        },
+        {"kind": "decision", "description": "Chose a gremlin recipe", "node_id": "v2"},
+    ]
+    selected = _select_details(details, ["gremlin"])
+    full = [d["node_id"] for d in selected if d.get("node_id")]
+    assert full == ["v2"]
+    # The rationale survives selection on the claim that was selected for its
+    # description, so rendering can show it.
+    both = _select_details(details, ["carry", "gremlin"])
+    kept = {d["node_id"]: d for d in both if d.get("node_id")}
+    assert kept["v1"]["rationale"] == "gremlin was the wrong tool here"

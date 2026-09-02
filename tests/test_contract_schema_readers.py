@@ -86,23 +86,25 @@ def test_a_read_path_that_names_a_field_clears_it(tmp_path):
     assert {"approach", "problem_ref"} <= solution
 
 
-def test_solution_worked_is_written_and_unreachable():
+def test_the_stored_claim_fields_are_projected_by_the_recall_path():
     """
     Scenario: The repo's own read path, scanned as it stands
 
     Verifications:
-    - `Solution.worked` is reported for the Claim label's `Solution` subtype
+    - `Solution.worked` and `Solution.approach` are not reported unprojected
+    - `Decision.rationale` and `Decision.outcome` are not reported unprojected
 
-    `worked` records whether a solution succeeded. `_claim_properties` dumps every
-    subtype field onto the shared Claim label, so the value reaches the graph; no
-    retrieval path filters, ranks or renders it, so a solution recorded as having
-    failed comes back indistinguishable from one that worked. This assertion is
-    expected to fail the day a read path projects it — that failure means the gap
-    closed, and the assertion goes with it.
+    `_claim_properties` dumps every subtype field onto the shared Claim label, so
+    these values reach the graph. `recall` renders them beside a selected claim's
+    description (`substrate/reader.py`, `_RENDERED_CLAIM_FIELDS` and the `worked`
+    read), so a solution recorded as having failed, and the reason a decision went the
+    way it did, reach the agent. A regression that stopped reading any of them would
+    surface here as the field returning to the advisory.
     """
     issues = audit_reader_projection()
 
-    assert "worked" in _fields(issues, "Solution")
+    assert not {"worked", "approach"} & _fields(issues, "Solution")
+    assert not {"rationale", "outcome"} & _fields(issues, "Decision")
 
 
 def test_the_artifact_repo_path_projection_is_not_reported():

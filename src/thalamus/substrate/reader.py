@@ -87,6 +87,12 @@ _MATCH_FLOOR = 2
 # there was no signal to tune on. Caveat that bounds all of it: only 1.4% of detail
 # verdicts come from the strong vertex-ID citation path, so this rests on lexical echo.
 _DETAIL_CAP = 8
+
+# Claim properties rendered beside the description when the claim carries them —
+# the subtype fields distillation writes (`Decision.rationale`/`outcome`,
+# `Solution.approach`). Rendered, never matched: matching stays on `description` so
+# the floor and cap above keep the text they were measured on.
+_RENDERED_CLAIM_FIELDS = ("rationale", "outcome", "approach")
 # Knowledge holds up to 1/this of the result window when sessions also matched.
 _KNOWLEDGE_WINDOW_DIVISOR = 2
 # Answered exchanges read before ranking a query against them. Wide because an expert
@@ -220,6 +226,16 @@ class MemoryResult:
                 tier = detail.get("tier", int(Tier.FIRST_PARTY))
                 external = f" _[{_tier_label(tier)}]_" if tier >= int(Tier.CURATED) else ""
                 lines.append(f"- **{kind}**{handle}: {desc}{external}")
+                # The stored fields, when the claim carries them. `worked` renders
+                # only when it is False: True is the schema default on every
+                # solution, so rendering it would spend a line per claim to say
+                # nothing, while a False is the one outcome an agent has to know.
+                for key in _RENDERED_CLAIM_FIELDS:
+                    value = detail.get(key)
+                    if value:
+                        lines.append(f"  - _{key}:_ {value}")
+                if detail.get("worked") is False:
+                    lines.append("  - _worked:_ false")
         return "\n".join(lines)
 
 
@@ -1281,14 +1297,26 @@ def _load_session_result(
         description = _first(child.get("description"))
         if not description:
             continue
-        details.append(
-            {
-                "kind": _first(child.get("kind")) or _first(child.get(T.label)),
-                "description": description,
-                "tier": _first_int(child.get("tier"), int(Tier.FIRST_PARTY)),
-                "node_id": _first(child.get(T.id)),
-            }
-        )
+        detail = {
+            "kind": _first(child.get("kind")) or _first(child.get(T.label)),
+            "description": description,
+            "tier": _first_int(child.get("tier"), int(Tier.FIRST_PARTY)),
+            "node_id": _first(child.get(T.id)),
+        }
+        # The fields distillation already stores beside the description — a
+        # decision's rationale and outcome, a solution's approach and whether it
+        # worked. Measured 2026-09-01 on the designer scope: every decision carried a
+        # rationale and none was rendered, so "why did this lose" sat on the very
+        # claim recall returned and never reached the agent. They ride along for
+        # rendering only; `_select_details` still matches on the description, so the
+        # match floor and detail cap keep the text they were tuned on.
+        for key in _RENDERED_CLAIM_FIELDS:
+            value = _first(child.get(key))
+            if value:
+                detail[key] = value
+        if _first(child.get("worked")).lower() == "false":
+            detail["worked"] = False
+        details.append(detail)
 
     details = _select_details(details, keywords or [])
     return _session_result(session_data[0], relevance=relevance, details=details)
