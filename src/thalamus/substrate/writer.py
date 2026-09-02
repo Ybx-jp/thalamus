@@ -528,9 +528,9 @@ def _claim_properties(claim: Claim) -> dict[str, object]:
     """
     fields = claim.model_dump(
         mode="json",
-        # `about` is excluded for the same reason `derived_from` is on provenance:
-        # relationships become edges, never list-valued properties.
-        exclude={"provenance", "artifacts", "kind", "description", "about"},
+        # `about` and `references` are excluded for the same reason `derived_from` is
+        # on provenance: relationships become edges, never list-valued properties.
+        exclude={"provenance", "artifacts", "kind", "description", "about", "references"},
     )
     return {key: value for key, value in fields.items() if value is not None}
 
@@ -573,6 +573,8 @@ def _write_claims(
         for origin_vid in provenance.derived_from:
             _ensure_edge(g, claim_vid, origin_vid, "DERIVED_FROM")
 
+        _write_references(g, claim_vid, getattr(claim, "references", []))
+
     # problem_ref is an index into the problems list; resolve it to a content ID.
     problem_vids = {
         index: vid("Claim", problem.content_id(), session.scope)
@@ -585,6 +587,31 @@ def _write_claims(
             _ensure_edge(g, problem_vid, solution_vid, "SOLVED_BY")
 
     return claim_vids
+
+
+def _write_references(g: GraphTraversalSource, claim_vid: str, references: list[str]) -> None:
+    """Claim -[USES {role: reason}]-> Claim | Chunk, one per knowledge item the claim
+    reasoned with.
+
+    Existence and label are checked first, on the thread_refs rule: an ID the model
+    invented names no vertex, mergeE cannot create an edge to a missing one, and a
+    reference to a Session or a Source is not a knowledge item. Dropping either loses
+    nothing real. A claim naming itself is dropped the same way.
+
+    `verified` is deliberately not written here. It is `eval sync`'s stamp, taken from
+    the traces of the sessions containing this claim, and re-asserting the claim must
+    not erase it — mergeE's on-match sets only the keys given, so `role` is all this
+    write touches on an edge that already exists.
+    """
+    for target_vid in dict.fromkeys(references):
+        if not target_vid or target_vid == claim_vid:
+            continue
+        if not g.V(target_vid).has_label("Claim", "Chunk").has_next():
+            logger.warning(
+                "reference %r on %s names no Claim or Chunk; dropping", target_vid, claim_vid
+            )
+            continue
+        _ensure_edge(g, claim_vid, target_vid, "USES", {"role": "reason"})
 
 
 def _write_threads(

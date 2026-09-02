@@ -379,8 +379,10 @@ _QUERY_TOOL_DESCRIPTION = f"""Run one read-only Gremlin traversal against the me
 Use for relational questions lexical recall cannot answer: provenance chains
 (DERIVED_FROM to retained Sources), evidence lineage (SUPERSEDES heads), the eval
 loop's own verdicts (Trace RETURNS edges carry used/evidence; Traces carry
-injected_chars), consultation audits (Exchange, CONSULTS), and cross-scope
-convergence. Prefer the recall tools for "what do I remember about X".
+injected_chars), what a decision reasoned with (Claim USES edges carry role and a
+`verified` stamp meaning served, never used), consultation audits (Exchange,
+CONSULTS), and cross-scope convergence. Prefer the recall tools for "what do I
+remember about X".
 
 Schema: {query_schema_summary()}
 

@@ -1220,3 +1220,70 @@ def test_detail_selection_matches_on_description_not_on_stored_fields():
     both = _select_details(details, ["carry", "gremlin"])
     kept = {d["node_id"]: d for d in both if d.get("node_id")}
     assert kept["v1"]["rationale"] == "gremlin was the wrong tool here"
+
+
+def test_recall_renders_what_a_claim_reasoned_with_and_never_prices_it_as_returned():
+    """
+    Scenario: A recalled decision carries two USES edges — a literature claim sync
+    verified as served and a chunk it found unserved — and a solution carries a
+    rejected alternative and an edge sync has not stamped
+
+    Verifications:
+    - each edge renders as one line under its claim, with the served/not served/
+      unchecked reading of `verified` and the reason when there is one
+    - the target ID is rendered WITHOUT backticks, so the trace tap does not read it
+      as a node this retrieval put into context — otherwise a citation line would be
+      attributed as if the agent had seen the target's text, and `eval sync` would
+      then verify the very edge the line cites
+    - a reference on the elided stub renders nothing: the stub has no node_id
+    """
+    from datetime import datetime, timezone
+
+    from thalamus.eval.traces import TraceEvent
+    from thalamus.substrate.reader import MemoryResult, _attach_uses
+
+    details = [
+        {"kind": "decision", "description": "Chose the carry arm",
+         "node_id": "scope:designer:claim:aaaa"},
+        {"kind": "solution", "description": "Widened the shutter",
+         "node_id": "scope:designer:claim:bbbb"},
+        {"kind": "elided", "description": "3 more claim(s) in this session"},
+    ]
+    rows = [
+        {"claim": "scope:designer:claim:aaaa", "target": "scope:literature:claim:1111",
+         "role": "reason", "reason": "", "verified": True, "verified_by": "scope:designer:trace:t1"},
+        {"claim": "scope:designer:claim:aaaa", "target": "scope:literature:chunk:2222-0003",
+         "role": "reason", "reason": "", "verified": False, "verified_by": ""},
+        {"claim": "scope:designer:claim:bbbb", "target": "scope:designer:claim:3333",
+         "role": "rejected", "reason": "the cut arm never shows the object is the same",
+         "verified": "", "verified_by": ""},
+        {"claim": "scope:designer:claim:bbbb", "target": "scope:literature:claim:4444",
+         "role": "reason", "reason": "", "verified": "", "verified_by": ""},
+    ]
+    _attach_uses(details, rows)
+
+    assert "uses" not in details[2]
+    assert details[0]["uses"][0]["verified_by"] == "scope:designer:trace:t1"
+
+    text = MemoryResult(
+        session_id="s1", summary="A session", timestamp="2026-09-02T00:00:00",
+        tool="claude_code", project="thalamus", node_id="scope:designer:session:s1",
+        details=details,
+    ).format()
+    lines = text.splitlines()
+
+    assert "  - _uses:_ scope:literature:claim:1111 _[served]_" in lines
+    assert "  - _uses:_ scope:literature:chunk:2222-0003 _[not served]_" in lines
+    assert ("  - _rejected:_ scope:designer:claim:3333 — "
+            "the cut arm never shows the object is the same") in lines
+    assert "  - _uses:_ scope:literature:claim:4444 _[unchecked]_" in lines
+
+    event = TraceEvent(
+        ts=datetime.now(timezone.utc), session_id="s", cwd="",
+        tool="memory_recall", tool_response=text,
+    )
+    assert event.returned_node_ids() == [
+        "scope:designer:session:s1",
+        "scope:designer:claim:aaaa",
+        "scope:designer:claim:bbbb",
+    ]

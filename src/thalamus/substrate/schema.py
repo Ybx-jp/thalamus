@@ -227,10 +227,18 @@ class Claim(BaseModel):
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
+_REFERENCES_DESCRIPTION = (
+    "Vertex IDs of the knowledge items this claim reasoned with — a literature claim "
+    "or passage the session recalled and used as grounds. Each becomes a `USES` edge "
+    "with role `reason`; relationships are edges, never list-valued properties."
+)
+
+
 class Decision(Claim):
     kind: str = ClaimKind.DECISION.value
     rationale: str
     outcome: Optional[str] = None
+    references: list[str] = Field(default_factory=list, description=_REFERENCES_DESCRIPTION)
 
 
 class Problem(Claim):
@@ -243,6 +251,7 @@ class Solution(Claim):
     approach: str
     worked: bool = True
     problem_ref: Optional[int] = Field(None, description="Index into problems list")
+    references: list[str] = Field(default_factory=list, description=_REFERENCES_DESCRIPTION)
 
 
 class LiteratureClaim(Claim):

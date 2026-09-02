@@ -125,9 +125,9 @@ One artifact doing three jobs at once:
 
 - **A data schema.** Ten node types, of which five are episodic — `Session`,
   `Claim`, `Thread`, `Source`, `Artifact`, beside `Entity`, `Chunk`, `Exchange`,
-  `Trace` and `Agent` — joined by sixteen edge types including `CONTAINS` /
+  `Trace` and `Agent` — joined by seventeen edge types including `CONTAINS` /
   `TOUCHES` / `SPAWNS` / `BLOCKS` / `CONTINUES` / `RESOLVES` / `SOLVED_BY` /
-  `DERIVED_FROM`. An expert manifest declares the *claim kinds* its scope may write,
+  `DERIVED_FROM` / `USES`. An expert manifest declares the *claim kinds* its scope may write,
   not new node types. Declared once in `contract/ontology.py`.
 - **A permission system.** What a scope may write, and where.
 - **A trust boundary.** Every edge crossing between scopes crosses it.
@@ -175,6 +175,16 @@ description)**, so the same claim reached in two sessions converges on one node.
 node type, different tier. It is the floor of the provenance chain: `DERIVED_FROM`
 lands a belief on the evidence it came from, `TOUCHES` carries the `anchors` that name
 the exact messages, and `ANCHORS` puts a literature claim on the passage it quotes.
+
+**A claim records what it reasoned with.** A decision or solution that used a
+recalled literature claim or passage as grounds carries a `USES` edge to it, with
+`role` saying how (`reason`, or `rejected` for an alternative the decision turned
+down). Distillation writes the edge from the extractor's references; `thalamus eval
+sync` then stamps `verified` from the session's own traces — true when a retrieval
+actually served that target into a session containing the claim, false when none did.
+Served is not used: the used verdict stays on the trace's `RETURNS` edge. Recall
+renders each reference as one line under the claim, without a backticked ID, so the
+citation is never priced as a node the retrieval returned.
 
 **Every node carries a scope, except `Artifact` and `Agent`.** Both are deliberately
 **global** — one vertex per identifier, shared by every scope. A file touched by two

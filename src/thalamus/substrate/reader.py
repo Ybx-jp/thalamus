@@ -236,6 +236,20 @@ class MemoryResult:
                         lines.append(f"  - _{key}:_ {value}")
                 if detail.get("worked") is False:
                     lines.append("  - _worked:_ false")
+                # What the claim reasoned with, one line per USES edge. The target is
+                # rendered *without* backticks on purpose: the trace tap reads every
+                # backticked vertex ID as a node this retrieval put into context, and
+                # a one-line citation puts nothing but the ID there — pricing the
+                # target as returned would attribute text the agent never saw, and
+                # `eval sync` would then verify the very edge this line cites.
+                for use in detail.get("uses", ()):
+                    reason = f" — {use['reason']}" if use.get("reason") else ""
+                    if use.get("role") == "rejected":
+                        lines.append(f"  - _rejected:_ {use['target']}{reason}")
+                    else:
+                        lines.append(
+                            f"  - _uses:_ {use['target']} _[{use['verified']}]_{reason}"
+                        )
         return "\n".join(lines)
 
 
@@ -1319,7 +1333,61 @@ def _load_session_result(
         details.append(detail)
 
     details = _select_details(details, keywords or [])
+    if any(d.get("node_id") for d in details):
+        _attach_uses(details, _uses_rows(g, session_vid))
     return _session_result(session_data[0], relevance=relevance, details=details)
+
+
+def _uses_rows(g: GraphTraversalSource, session_vid: str) -> list[dict]:
+    """Every USES edge leaving this session's claims, with the properties recall renders."""
+    try:
+        return (
+            g.V(session_vid)
+            .out("CONTAINS")
+            .out_e("USES")
+            .project("claim", "target", "role", "reason", "verified", "verified_by")
+            .by(__.out_v().id_())
+            .by(__.in_v().id_())
+            .by(__.coalesce(__.values("role"), __.constant("")))
+            .by(__.coalesce(__.values("reason"), __.constant("")))
+            .by(__.coalesce(__.values("verified"), __.constant("")))
+            .by(__.coalesce(__.values("verified_by"), __.constant("")))
+            .to_list()
+        )
+    except Exception:
+        return []
+
+
+# How a `USES.verified` value reads on the line. Absent is its own state: sync has
+# not looked, which is not the same as having looked and found nothing served.
+_VERIFIED_LABELS = {"true": "served", "false": "not served", "": "unchecked"}
+
+
+def _attach_uses(details: list[dict], rows: list[dict]) -> None:
+    """Hang each USES row off the rendered claim it leaves.
+
+    Only claims selected in full carry a `node_id`; the elision stub has none and gets
+    nothing, so a reference on an elided claim stays out of the render along with the
+    claim itself.
+    """
+    by_claim: dict[str, list[dict]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        verified = str(row.get("verified", "")).lower()
+        by_claim.setdefault(str(row.get("claim", "")), []).append(
+            {
+                "target": str(row.get("target", "")),
+                "role": str(row.get("role") or "reason"),
+                "reason": str(row.get("reason") or ""),
+                "verified": _VERIFIED_LABELS.get(verified, verified),
+                "verified_by": str(row.get("verified_by") or ""),
+            }
+        )
+    for detail in details:
+        uses = by_claim.get(detail.get("node_id") or "")
+        if uses:
+            detail["uses"] = uses
 
 
 def _load_chunk_result(g: GraphTraversalSource, chunk_vid: str) -> ChunkResult | None:

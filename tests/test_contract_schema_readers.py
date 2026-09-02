@@ -158,12 +158,14 @@ def test_every_claim_subtype_can_be_populated(model):
 
     properties = _claim_properties(_populated(model))
 
+    # `about` and `references` become edges (ABOUT, USES); neither is a property.
     assert set(properties) == set(model.model_fields) - {
         "provenance",
         "artifacts",
         "kind",
         "description",
         "about",
+        "references",
     }
 
 
