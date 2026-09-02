@@ -12,6 +12,8 @@ Scope: recalled memory enters context as data with provenance, never as instruct
 
 import re
 
+import pytest
+
 from thalamus.substrate.reader import (
     ExchangeResult,
     MemoryResult,
@@ -1130,3 +1132,238 @@ def test_recall_holds_a_multi_keyword_query_to_the_match_floor(monkeypatch):
     graph = _RecallGraph(_RECALL_ROWS)
     narrow = recall(graph, "bracket", limit=5, knowledge_scopes=["literature"])
     assert [r[1] for r in narrow if r[0] == "session"] == ["s2"]
+
+
+def test_memory_result_renders_stored_claim_fields_beside_the_description():
+    """
+    Scenario: A recalled decision carries the rationale and outcome distillation
+    stored on it; a recalled solution carries its approach and did not work
+
+    Measured 2026-09-01 on the designer scope: every decision carried a stored
+    rationale and none was rendered, so the reason an alternative lost sat on the
+    very claim recall returned and never reached the agent (lab/067 §7b).
+
+    Verifications:
+    - rationale, outcome and approach render as indented sub-lines under the claim
+    - `worked` renders only when False; True is the schema default and says nothing
+    - a claim without the fields renders exactly as before
+    """
+    from thalamus.substrate.reader import MemoryResult
+
+    result = MemoryResult(
+        session_id="s1",
+        summary="A session",
+        timestamp="2026-09-01T00:00:00",
+        tool="claude_code",
+        project="thalamus",
+        details=[
+            {
+                "kind": "decision",
+                "description": "Chose the carry arm",
+                "node_id": "scope:designer:claim:aaaa",
+                "rationale": "The cut arm never tells the viewer the object is the same",
+                "outcome": "carry delivered as the primary film",
+            },
+            {
+                "kind": "solution",
+                "description": "Widened the shutter",
+                "node_id": "scope:designer:claim:bbbb",
+                "approach": "Edited r3layout.ts",
+                "worked": False,
+            },
+            {
+                "kind": "solution",
+                "description": "Bumped the font size",
+                "node_id": "scope:designer:claim:cccc",
+            },
+        ],
+    )
+
+    text = result.format()
+    lines = text.splitlines()
+
+    assert "- **decision** `scope:designer:claim:aaaa`: Chose the carry arm" in lines
+    assert "  - _rationale:_ The cut arm never tells the viewer the object is the same" in lines
+    assert "  - _outcome:_ carry delivered as the primary film" in lines
+    assert "  - _approach:_ Edited r3layout.ts" in lines
+    assert "  - _worked:_ false" in lines
+    assert text.count("_worked:_") == 1
+    # The field-less claim renders on one line and nothing follows it.
+    idx = lines.index("- **solution** `scope:designer:claim:cccc`: Bumped the font size")
+    assert idx == len(lines) - 1
+
+
+def test_detail_selection_matches_on_description_not_on_stored_fields():
+    """
+    Scenario: A claim's rationale contains the query term but its description
+    does not
+
+    The match floor and detail cap were tuned on description-only text
+    (recall-strategy: the floor cuts no fan-out, the cap 8%, query shape 28%).
+    The stored fields ride along for rendering; they must not widen what a
+    query selects, or those measured dials move.
+    """
+    from thalamus.substrate.reader import _select_details
+
+    details = [
+        {
+            "kind": "decision",
+            "description": "Chose the carry arm",
+            "node_id": "v1",
+            "rationale": "gremlin was the wrong tool here",
+        },
+        {"kind": "decision", "description": "Chose a gremlin recipe", "node_id": "v2"},
+    ]
+    selected = _select_details(details, ["gremlin"])
+    full = [d["node_id"] for d in selected if d.get("node_id")]
+    assert full == ["v2"]
+    # The rationale survives selection on the claim that was selected for its
+    # description, so rendering can show it.
+    both = _select_details(details, ["carry", "gremlin"])
+    kept = {d["node_id"]: d for d in both if d.get("node_id")}
+    assert kept["v1"]["rationale"] == "gremlin was the wrong tool here"
+
+
+def test_recall_renders_what_a_claim_reasoned_with_and_never_prices_it_as_returned():
+    """
+    Scenario: A recalled decision carries two USES edges — a literature claim sync
+    verified as served and a chunk it found unserved — and a solution carries a
+    rejected alternative and an edge sync has not stamped
+
+    Verifications:
+    - each edge renders as one line under its claim, with the served/not served/
+      unchecked reading of `verified` and the reason when there is one
+    - the target ID is rendered WITHOUT backticks, so the trace tap does not read it
+      as a node this retrieval put into context — otherwise a citation line would be
+      attributed as if the agent had seen the target's text, and `eval sync` would
+      then verify the very edge the line cites
+    - a reference on the elided stub renders nothing: the stub has no node_id
+    """
+    from datetime import datetime, timezone
+
+    from thalamus.eval.traces import TraceEvent
+    from thalamus.substrate.reader import MemoryResult, _attach_uses
+
+    details = [
+        {"kind": "decision", "description": "Chose the carry arm",
+         "node_id": "scope:designer:claim:aaaa"},
+        {"kind": "solution", "description": "Widened the shutter",
+         "node_id": "scope:designer:claim:bbbb"},
+        {"kind": "elided", "description": "3 more claim(s) in this session"},
+    ]
+    rows = [
+        {"claim": "scope:designer:claim:aaaa", "target": "scope:literature:claim:1111",
+         "role": "reason", "reason": "", "verified": True, "verified_by": "scope:designer:trace:t1"},
+        {"claim": "scope:designer:claim:aaaa", "target": "scope:literature:chunk:2222-0003",
+         "role": "reason", "reason": "", "verified": False, "verified_by": ""},
+        {"claim": "scope:designer:claim:bbbb", "target": "scope:designer:claim:3333",
+         "role": "rejected", "reason": "the cut arm never shows the object is the same",
+         "verified": "", "verified_by": ""},
+        {"claim": "scope:designer:claim:bbbb", "target": "scope:literature:claim:4444",
+         "role": "reason", "reason": "", "verified": "", "verified_by": ""},
+    ]
+    _attach_uses(details, rows)
+
+    assert "uses" not in details[2]
+    assert details[0]["uses"][0]["verified_by"] == "scope:designer:trace:t1"
+
+    text = MemoryResult(
+        session_id="s1", summary="A session", timestamp="2026-09-02T00:00:00",
+        tool="claude_code", project="thalamus", node_id="scope:designer:session:s1",
+        details=details,
+    ).format()
+    lines = text.splitlines()
+
+    assert "  - _uses:_ scope:literature:claim:1111 _[served]_" in lines
+    assert "  - _uses:_ scope:literature:chunk:2222-0003 _[not served]_" in lines
+    assert ("  - _rejected:_ scope:designer:claim:3333 — "
+            "the cut arm never shows the object is the same [scope:designer:claim:3333]") in lines
+    assert "  - _uses:_ scope:literature:claim:4444 _[unchecked]_" in lines
+
+    event = TraceEvent(
+        ts=datetime.now(timezone.utc), session_id="s", cwd="",
+        tool="memory_recall", tool_response=text,
+    )
+    assert event.returned_node_ids() == [
+        "scope:designer:session:s1",
+        "scope:designer:claim:aaaa",
+        "scope:designer:claim:bbbb",
+    ]
+
+
+def test_rejected_options_render_under_their_decision_and_outcome_kind_beside_its_solution():
+    """
+    Scenario: A session containing a decision, the alternative it rejected (a claim
+    of kind `designer/rejected`), and a solution that was reversed
+
+    Verifications:
+    - the rejected claim is not a detail of its own and is not counted by the
+      elision stub: it renders as the decision's `_rejected:_` line, with its text
+    - `outcome_kind` renders beside the solution like the other stored fields
+    - `anchors` is projected onto the detail, not rendered
+    """
+    from gremlin_python.process.traversal import T
+
+    from thalamus.substrate import reader
+
+    children = [
+        {T.id: "scope:designer:claim:d1", T.label: "Claim", "kind": ["decision"],
+         "description": ["Chose the carry arm"], "rationale": ["continuity"]},
+        {T.id: "scope:designer:claim:r1", T.label: "Claim", "kind": ["designer/rejected"],
+         "description": ["the cut arm"], "anchors": ["u1,u2"]},
+        {T.id: "scope:designer:claim:s1", T.label: "Claim", "kind": ["solution"],
+         "description": ["Widened the shutter"], "approach": ["edit"], "worked": ["false"],
+         "outcome_kind": ["reversed"], "anchors": ["u3"]},
+    ]
+    uses = [
+        {"claim": "scope:designer:claim:d1", "target": "scope:designer:claim:r1",
+         "target_text": "the cut arm", "role": "rejected",
+         "reason": "never shows the object is the same", "verified": "", "verified_by": ""},
+    ]
+
+    class _Graph:
+        def V(self, *_a):
+            return self
+
+        def has_label(self, *_a):
+            return self
+
+        def has(self, *_a):
+            return self
+
+        def value_map(self, *_a):
+            return self
+
+        def out(self, *_a):
+            return self
+
+        def to_list(self):
+            return [{"session_id": ["s1"], "summary": ["A session"], "timestamp": ["t"],
+                     "tool": ["claude_code"], "project": ["thalamus"], "scope": ["designer"]}]
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(reader, "_uses_rows", lambda g, session_vid: uses)
+    graph = _Graph()
+    calls = {"n": 0}
+
+    def to_list():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _Graph().to_list()
+        return children
+
+    graph.to_list = to_list
+    try:
+        result = reader._load_session_result(graph, "s1", "", "designer", keywords=[])
+    finally:
+        monkeypatch.undo()
+
+    kinds = [d["kind"] for d in result.details]
+    assert kinds == ["decision", "solution"]
+    assert result.details[1]["anchors"] == "u3"
+    text = result.format()
+    lines = text.splitlines()
+    assert ("  - _rejected:_ the cut arm — never shows the object is the same "
+            "[scope:designer:claim:r1]") in lines
+    assert "  - _outcome_kind:_ reversed" in lines
+    assert "u3" not in text

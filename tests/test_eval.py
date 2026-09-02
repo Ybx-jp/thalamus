@@ -11,6 +11,8 @@ is what can silently rot, so it is what gets pinned here.
 import json
 from datetime import date, datetime, timezone
 
+import pytest
+
 from thalamus.eval.attribution import Verdict, attribute, outputs_after
 from thalamus.eval.cost import cost_report, load_pins, weighted_tokens
 from thalamus.eval.traces import TraceEvent, load_events
@@ -1479,3 +1481,62 @@ def load_events_one(**overrides) -> TraceEvent:
     events = load_events(directory, tools=None)
     assert len(events) == 1
     return events[0]
+
+
+def test_uses_verified_means_served_and_is_stamped_either_way():
+    """
+    Scenario: Sync stamps the USES edges of a session whose claims cite two knowledge
+    items — one a trace served into the session, one nothing ever served
+
+    Verifications:
+    - the served target is stamped verified=True with the serving trace
+    - the unserved target is stamped verified=False, not left absent: sync looked
+    - both carry the verifier version, so a later rule can tell what stamped them
+    - an edge stamped by an older verifier is counted as restamped
+    - a dry run counts and writes nothing
+
+    `verified` is served, never used (lab/067 §9.2): the used verdict stays the
+    attribution instrument's, on RETURNS, with its own measured κ.
+    """
+    from thalamus.eval import sync
+    from thalamus.eval.sync import USES_VERIFIER, SyncOutcome, UsesEdge, uses_stamp
+
+    claim = "scope:designer:claim:dddd"
+    served = "scope:literature:claim:aaaa"
+    unserved = "scope:literature:chunk:cccc-0001"
+    edges = [UsesEdge(claim, served, ""), UsesEdge(claim, unserved, "served-by-trace/0")]
+
+    written = []
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(sync, "_uses_edges", lambda g, session_vid: edges)
+    monkeypatch.setattr(
+        sync, "_served_into", lambda g, claim_vid: {served: "scope:designer:trace:t1"}
+    )
+    monkeypatch.setattr(
+        sync, "_ensure_edge", lambda g, f, t, label, props=None: written.append((f, t, label, props))
+    )
+    try:
+        outcome = SyncOutcome()
+        sync._stamp_uses(object(), "scope:designer:session:s1", True, outcome)
+
+        assert written == [
+            (claim, served, "USES", uses_stamp("scope:designer:trace:t1")),
+            (claim, unserved, "USES", uses_stamp(None)),
+        ]
+        assert uses_stamp("scope:designer:trace:t1") == {
+            "verified": True,
+            "verifier": USES_VERIFIER,
+            "verified_by": "scope:designer:trace:t1",
+        }
+        assert uses_stamp(None) == {"verified": False, "verifier": USES_VERIFIER, "verified_by": ""}
+        assert (outcome.uses_served, outcome.uses_unserved, outcome.uses_restamped) == (1, 1, 1)
+        assert "2 USES edges checked against traces: 1 served, 1 not served" in outcome.summary()
+        assert "1 restamped from an older verifier" in outcome.summary()
+
+        dry = SyncOutcome()
+        written.clear()
+        sync._stamp_uses(object(), "scope:designer:session:s1", False, dry)
+        assert written == []
+        assert (dry.uses_served, dry.uses_unserved) == (1, 1)
+    finally:
+        monkeypatch.undo()

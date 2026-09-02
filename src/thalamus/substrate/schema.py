@@ -227,10 +227,74 @@ class Claim(BaseModel):
         return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
+_REFERENCES_DESCRIPTION = (
+    "Vertex IDs of the knowledge items this claim reasoned with — a literature claim "
+    "or passage the session recalled and used as grounds. Each becomes a `USES` edge "
+    "with role `reason`; relationships are edges, never list-valued properties."
+)
+_ANCHORS_DESCRIPTION = (
+    "Message UUIDs in the session's Source that show the outcome — the same shape as "
+    "`TOUCHES.anchors`. Asked for on every `worked: false` and every `outcome_kind`, "
+    "never required: a required field raises the extraction drop rate on every "
+    "harness, and a missing anchor is a measurable gap rather than a lost claim."
+)
+
+REJECTED_KIND_LEAF = "rejected"
+
+
+def rejected_kind(scope: str) -> str:
+    """The kind a rejected alternative is written under: namespaced beneath its scope,
+    through the same mechanism that admits `literature/finding`, so it is never a core
+    kind and consumers that query the `Claim` label keep working."""
+    return f"{scope}/{REJECTED_KIND_LEAF}"
+
+
+def is_rejected_kind(kind: str) -> bool:
+    return kind.endswith(f"/{REJECTED_KIND_LEAF}")
+
+
+class OutcomeKind(str, Enum):
+    """How a solution that did not simply hold ended — the four buckets the Remotion
+    ledgers needed (lab/067 §9.3).
+
+    `unresolved` and `reversed` are the evidence-tracing survey's Contradict (did not
+    work) and Invalidate (worked, later undone). `rejected` is a write-authority fact
+    on a third axis — the operator refused it — kept in the same enum because nothing
+    measured yet makes the heavier design necessary. `residual` is a fix that held
+    with a known remaining defect. A bare `worked` boolean cannot tell these apart.
+    """
+
+    UNRESOLVED = "unresolved"
+    REVERSED = "reversed"
+    REJECTED = "rejected"
+    RESIDUAL = "residual"
+
+
+class Alternative(BaseModel):
+    """An option a decision considered and turned down, with the reason it lost.
+
+    A node rather than a property list on the decision, because the reason an option
+    lost is often itself a literature claim: the option becomes a Claim of kind
+    `<scope>/rejected`, reached from the decision by `USES {role: rejected, reason}`,
+    and can carry its own `references`. A refused option that never became an
+    attempted solution has nowhere else to live — `worked: false` on a SOLVED_BY
+    sibling cannot represent it.
+    """
+
+    description: str = Field(description="The option, stated as the claim it would have been")
+    reason: str = Field("", description="Why it lost")
+    references: list[str] = Field(default_factory=list, description=_REFERENCES_DESCRIPTION)
+    anchors: list[str] = Field(default_factory=list, description=_ANCHORS_DESCRIPTION)
+
+
 class Decision(Claim):
     kind: str = ClaimKind.DECISION.value
     rationale: str
     outcome: Optional[str] = None
+    references: list[str] = Field(default_factory=list, description=_REFERENCES_DESCRIPTION)
+    alternatives: list[Alternative] = Field(
+        default_factory=list, description="Options considered and turned down"
+    )
 
 
 class Problem(Claim):
@@ -242,7 +306,12 @@ class Solution(Claim):
     kind: str = ClaimKind.SOLUTION.value
     approach: str
     worked: bool = True
+    outcome_kind: Optional[OutcomeKind] = Field(
+        None, description="How it ended when it did not simply hold; see OutcomeKind"
+    )
+    anchors: list[str] = Field(default_factory=list, description=_ANCHORS_DESCRIPTION)
     problem_ref: Optional[int] = Field(None, description="Index into problems list")
+    references: list[str] = Field(default_factory=list, description=_REFERENCES_DESCRIPTION)
 
 
 class LiteratureClaim(Claim):

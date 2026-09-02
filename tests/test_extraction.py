@@ -661,3 +661,81 @@ def test_partition_valid_is_a_no_op_when_everything_validates():
     assert dropped == []
     assert kept["solutions"][0]["problem_ref"] == 0
     assert len(kept["problems"]) == 1
+
+
+def test_the_digest_tags_each_message_with_a_uuid_handle_the_extractor_can_cite():
+    """
+    Scenario: A Claude transcript whose records carry message UUIDs
+
+    Verifications:
+    - every rendered line opens with the first eight characters of its record's UUID
+    - a record without a UUID renders untagged rather than with an empty tag
+
+    The tag is what lets an outcome be anchored: without a handle in the digest the
+    extractor can only assert that a fix did not hold, never point at the message that
+    shows it.
+    """
+    records = _records()
+    records[0]["uuid"] = "a8202b5a-f026-4f5e-a654-7722b7f3cd22"
+
+    digest = extraction.render_digest(_payload(records))
+
+    assert "[a8202b5a] USER: the governor is clamping too early" in digest
+    assert "[] " not in digest
+
+
+def test_resolve_anchors_expands_digest_handles_and_drops_the_rest():
+    """
+    Scenario: An extraction cites two handles it saw, one it invented, and one that is
+    ambiguous between two messages
+
+    Verifications:
+    - a seen handle expands to the full message UUID, on solutions and on a
+      decision's alternatives alike
+    - an invented handle is dropped, not written as evidence
+    - an ambiguous prefix is dropped for the same reason
+    - the input dict is not modified
+    """
+    records = [
+        {"type": "user", "uuid": "a8202b5a-f026-4f5e-a654-7722b7f3cd22", "message": {"content": "x"}},
+        {"type": "user", "uuid": "348a1db3-0d87-4348-81d9-15a77c7907c6", "message": {"content": "y"}},
+        {"type": "user", "uuid": "348a1db3-ffff-4348-81d9-15a77c7907c6", "message": {"content": "z"}},
+    ]
+    data = {
+        "solutions": [{"description": "s", "anchors": ["[a8202b5a]", "deadbeef"]}],
+        "decisions": [
+            {
+                "description": "d",
+                "alternatives": [{"description": "a", "anchors": ["348a1db3", "a8202b5a"]}],
+            }
+        ],
+    }
+
+    resolved = extraction.resolve_anchors(data, _payload(records))
+
+    assert resolved["solutions"][0]["anchors"] == ["a8202b5a-f026-4f5e-a654-7722b7f3cd22"]
+    assert resolved["decisions"][0]["alternatives"][0]["anchors"] == [
+        "a8202b5a-f026-4f5e-a654-7722b7f3cd22"
+    ]
+    assert data["solutions"][0]["anchors"] == ["[a8202b5a]", "deadbeef"]
+
+
+def test_the_prompt_asks_for_outcomes_alternatives_and_references_symmetrically():
+    """
+    Scenario: The extraction prompt as built for any session
+
+    Verifications:
+    - the schema shows `alternatives` under decisions, `outcome_kind`, `anchors` and
+      `references` under solutions
+    - the literal `worked: true` example is gone: a default the model copies is not
+      a finding
+    - the four outcome kinds are named where the rule explains them
+    """
+    prompt = extraction.build_prompt("digest", project="p", title="t")
+
+    assert "alternatives:" in prompt
+    assert "outcome_kind:" in prompt
+    assert "references:" in prompt
+    assert "worked: true" not in prompt
+    for kind in ("unresolved", "reversed", "rejected", "residual"):
+        assert f"`{kind}`" in prompt

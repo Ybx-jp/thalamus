@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
-from gremlin_python.process.traversal import Order
+from gremlin_python.process.traversal import Order, T
 
 from thalamus.archive import read_archived
 from thalamus.eval import policy as policy_mod
@@ -49,6 +49,9 @@ class SyncOutcome:
     legacy: int = 0
     dangling: int = 0
     closes: int = 0
+    uses_served: int = 0
+    uses_unserved: int = 0
+    uses_restamped: int = 0
     pending: dict[str, int] = field(default_factory=dict)  # session_id -> trace count
 
     def summary(self) -> str:
@@ -68,6 +71,15 @@ class SyncOutcome:
             lines.append(f"{self.closes} consultation closes stamped with their answering context")
         if self.legacy:
             lines.append(f"{self.legacy} legacy traces skipped (pre-node-level rendering)")
+        checked = self.uses_served + self.uses_unserved
+        if checked:
+            line = (
+                f"{checked} USES edges checked against traces: {self.uses_served} served, "
+                f"{self.uses_unserved} not served"
+            )
+            if self.uses_restamped:
+                line += f", {self.uses_restamped} restamped from an older verifier"
+            lines.append(line)
         if self.pending:
             total = sum(self.pending.values())
             names = ", ".join(sid[:8] for sid in sorted(self.pending))
@@ -117,6 +129,7 @@ def sync(
                 g, event, session_vid, scope, transcript, write, outcome, ledger,
                 withheld, snapshot_hash,
             )
+        _stamp_uses(g, session_vid, write, outcome)
 
     return outcome
 
@@ -287,6 +300,117 @@ def _land_event(
         outcome.misses += 1
     if event.is_rejected():
         outcome.rejected += 1
+
+
+# The stamping rule's version, written beside every `USES.verified` so a stamp stays
+# readable as a record when the rule changes under it — the `judged_terms` argument,
+# applied to a verdict that is a set membership rather than a lexical match.
+USES_VERIFIER = "served-by-trace/1"
+
+
+@dataclass(frozen=True)
+class UsesEdge:
+    """One USES edge as sync reads it: where it leaves, where it lands, who stamped it."""
+
+    claim_vid: str
+    target_vid: str
+    verifier: str = ""
+
+
+def uses_stamp(served_by: str | None) -> dict[str, object]:
+    """The properties a USES edge carries once sync has looked.
+
+    `verified` means served — a trace put the target into a session containing the
+    claim — never used; the used verdict is the attribution instrument's, on RETURNS.
+    False is a finding in its own right (the claim cites something no retrieval ever
+    showed it), which is why the edge is stamped either way rather than only on a hit.
+    """
+    return {
+        "verified": served_by is not None,
+        "verifier": USES_VERIFIER,
+        "verified_by": served_by or "",
+    }
+
+
+def _stamp_uses(
+    g: GraphTraversalSource, session_vid: str, write: bool, outcome: SyncOutcome
+) -> None:
+    """Stamp `verified` on every USES edge leaving this session's claims.
+
+    Runs once per synced session, after its traces have landed, because the served set
+    is read back off the graph: Session -QUERIES-> Trace -RETURNS-> node, over *every*
+    session containing the claim. A content-addressed claim converges across sessions,
+    so the edge belongs to none of them in particular, and a target served to any of
+    its sessions verifies it — computed from the graph rather than from this session's
+    events so the answer is the same whichever session sync reached last.
+
+    A session that made no memory calls is never visited here, so its edges stay
+    unstamped: absent means sync has not looked, False means it looked and nothing
+    served the target.
+    """
+    edges = _uses_edges(g, session_vid)
+    if not edges:
+        return
+    served_cache: dict[str, dict[str, str]] = {}
+    for edge in edges:
+        if edge.claim_vid not in served_cache:
+            served_cache[edge.claim_vid] = _served_into(g, edge.claim_vid)
+        served_by = served_cache[edge.claim_vid].get(edge.target_vid)
+        stamp = uses_stamp(served_by)
+        if stamp["verified"]:
+            outcome.uses_served += 1
+        else:
+            outcome.uses_unserved += 1
+        if edge.verifier and edge.verifier != USES_VERIFIER:
+            outcome.uses_restamped += 1
+        if write:
+            _ensure_edge(g, edge.claim_vid, edge.target_vid, "USES", stamp)
+
+
+def _uses_edges(g: GraphTraversalSource, session_vid: str) -> list[UsesEdge]:
+    """Every USES edge leaving a claim this session contains."""
+    try:
+        rows = (
+            g.V(session_vid)
+            .out("CONTAINS")
+            .out_e("USES")
+            .project("claim", "target", "verifier")
+            .by(__.out_v().id_())
+            .by(__.in_v().id_())
+            .by(__.coalesce(__.values("verifier"), __.constant("")))
+            .to_list()
+        )
+    except Exception:
+        return []
+    return [
+        UsesEdge(str(row["claim"]), str(row["target"]), str(row.get("verifier") or ""))
+        for row in rows
+        if isinstance(row, dict)
+    ]
+
+
+def _served_into(g: GraphTraversalSource, claim_vid: str) -> dict[str, str]:
+    """Node vid -> the trace that served it, over every session containing the claim."""
+    try:
+        rows = (
+            g.V(claim_vid)
+            .in_("CONTAINS")
+            .out("QUERIES")
+            .as_("trace")
+            .out("RETURNS")
+            .as_("node")
+            .select("trace", "node")
+            .by(T.id)
+            .by(T.id)
+            .to_list()
+        )
+    except Exception:
+        return {}
+    served: dict[str, str] = {}
+    for row in rows:
+        if isinstance(row, dict) and row.get("node") is not None:
+            served.setdefault(str(row["node"]), str(row.get("trace") or ""))
+    return served
 
 
 def answering_context(agent_type: str | None, expert: str) -> str:
