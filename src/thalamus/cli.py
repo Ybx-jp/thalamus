@@ -27,6 +27,7 @@ from thalamus.contract.conformance import (
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.eval import snapshots
 from thalamus.eval.profile import DEFAULT_REPEAT as PROFILE_REPEAT
+from thalamus.eval.withholding import DRAWS as WITHHOLD_DRAWS
 from thalamus.harness import (
     agents,
     codex_transcripts,
@@ -667,6 +668,24 @@ def _main():
     eval_profile_parser.add_argument(
         "--repeat", type=int, default=None,
         help=f"Timed runs per query for --query/--corpus (default: {PROFILE_REPEAT})",
+    )
+
+    eval_withholding_parser = eval_sub.add_parser(
+        "withholding",
+        help="The randomized-withholding ledger as an outcome: do withheld nodes come back?",
+    )
+    eval_withholding_parser.add_argument(
+        "--url", default=DEFAULT_URL, help="Gremlin endpoint"
+    )
+    eval_withholding_parser.add_argument(
+        "--scope", default="main",
+        help="Scope to analyse (default: main, 80%% of the corpus). "
+             "Pass '' for the pooled exploratory read across every scope.",
+    )
+    eval_withholding_parser.add_argument(
+        "--draws", type=int, default=WITHHOLD_DRAWS,
+        help=f"Permutation draws (default: {WITHHOLD_DRAWS}); the attainable "
+             "two-sided p floor is 1/(draws+1)",
     )
 
     eval_conditioning_parser = eval_sub.add_parser(
@@ -3504,6 +3523,15 @@ def _cmd_eval(args, eval_parser):
             print(render_corpus(profile_corpus(args.url, repeat=repeat)))
         else:
             print(profile_report(base=args.profiles, top=args.top).render(top=args.top))
+    elif getattr(args, "eval_command", None) == "withholding":
+        from thalamus.eval.withholding import recurrence_report
+
+        graph = connect(args.url)
+        try:
+            print(recurrence_report(
+                graph, scope=args.scope, draws=args.draws).render())
+        finally:
+            close_connection(graph)
     elif getattr(args, "eval_command", None) == "conditioning":
         from thalamus.eval.conditioning import conditioning_report
 

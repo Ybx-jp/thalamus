@@ -183,6 +183,7 @@ thalamus eval report               # per-scope retrieval-utility numbers, priced
 thalamus eval cost                 # session and operation token-cost buckets
 thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
 thalamus eval conditioning         # per-firing behavioural join on injected reminders
+thalamus eval withholding          # the randomized-withholding ledger, read as an outcome
 thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
 thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only
 thalamus eval profile              # gremlin query cost: wall time per traversal shape
@@ -216,6 +217,35 @@ and the room-manipulation and diagram-legibility checks live in the private
 `legibility`, `randomize`, `rakes`, `rake-audit`, `gold`, `tasks`, `corpus`, `rescore`,
 `oracle`, `run`, `calibration`). They moved out because they run research campaigns and
 produce findings that inform future versions, not live-serving behavior.
+
+`eval withholding` is the one outcome measure here that rests on a real randomization
+rather than on a judge. With `THALAMUS_WITHHOLD` set, `memory_recall` suppresses each
+offered node independently at the policy rate and logs the draw; the command asks
+whether a suppressed node comes back — is re-surfaced by a later retrieval in the same
+session — against the kept nodes of the same event as its control. Kept and withheld
+came out of one offered set against one query, so under the null they recur alike, and
+the test is an exact within-event permutation with the event's withheld count held
+fixed. Three design predicates decide eligibility, none of them a function of the
+outcome: the offered set must be larger than one (a singleton offer's realized
+withholding probability is 0, not the nominal rate, because the policy never withholds
+everything), both arms must be non-empty, and the session must hold a later retrieval.
+
+The offered list comes from `~/.thalamus/policy/*.jsonl`, joined to the Trace by
+`policy_seed`. It is not reconstructible from the graph: `eval sync` lands
+`offered_count` and drops the ids, and a trace's `RETURNS` edges are a *superset* of
+what the draw covered, because a rendered response is assembled from more retrieval
+than the one call the policy sees.
+
+What it measures is the ranker re-surfacing a node, which is evidence the session
+returned to that ground — not evidence anyone noticed a gap. The report prints the
+effect the design could have detected at 80% power beside the p-value, so a null
+arrives with a magnitude attached.
+
+A null on this measure has a falsifier that has not been run. Recurrence needs the
+same node **id** back, which needs a later query whose terms match it — so a session
+that closes a gap by asking in different words scores as a miss in both arms, and the
+measure would read null whether or not withholding mattered. Settling it means scoring
+the withheld node's *text* against later retrievals instead of its id.
 
 `eval report` gives the used-vs-ignored rate one ranker window at a time and refuses to
 pool across a dial change, because a rate averaged over two settings measures neither.
@@ -384,3 +414,4 @@ the consulted expert's memory instead of the session's own scope.
 | `THALAMUS_ARCHIVE_DIR` | Where retained transcripts and their indexes live, instead of `~/.thalamus/archive`. The index follows the archive; it has no override of its own |
 | `THALAMUS_LOG_LEVEL` | Log level for the MCP server process (`thalamus-mcp`), default `WARNING`. Set it to `INFO` or `DEBUG` when a recall is returning something you cannot explain |
 | `THALAMUS_TMUX_SOCKET` | The tmux server the roster, `spawn`, `dispatch` and the console address (`tmux -L …`), default `thalamus`. Two checkouts on one box get separate control planes by setting it differently |
+| `THALAMUS_WITHHOLD` | The per-node suppression rate `memory_recall` applies, read at each call. Absent or unparseable means off, and an unrandomized session logs nothing — so the intervention leaves no trace when it is not running. Every draw appends to `~/.thalamus/policy/`; `thalamus eval withholding` reads them |
