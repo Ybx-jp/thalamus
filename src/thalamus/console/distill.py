@@ -77,6 +77,20 @@ FAIL_MARK = "✗"
 # widget exists to make visible.
 NO_TRANSCRIPT = "No session matching"
 
+# What SessionEnd writes when the transcript is not on disk: it checks before
+# launching `thalamus extract` and, for a session the pin ledger vouches for, records
+# the absence and stops.
+#
+# That absence is not a loss, and this is the measurement (2026-09-01, two pinned
+# `main` windows spawned for it). Claude Code creates the `.jsonl` at the first
+# interaction, not at session start: a window spawned and left alone has none. Typing
+# `/exit` is itself an interaction, so a window closed that way *does* leave a
+# transcript, and extract reads it and reports `no substantive exchange` — which is
+# why no console close reaches this line. Ending an untouched window by signal
+# instead reproduced it exactly. So the file's absence is the evidence that there was
+# no conversation, and the row belongs with the other clean ending below.
+HOOK_NO_TRANSCRIPT = "no transcript at "
+
 # The other clean ending, and the one that looks like a failure if you only know
 # about the summary line. A session with no substantive exchange is named, found and
 # deliberately not distilled — `cli.py:1767-1772` says so and exits 0 without ever
@@ -194,8 +208,12 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     if fail_line:
         return "error", fail_line
     # Checked before the stall clock: this job finished, it simply had nothing to
-    # write, so ageing it into a failure would report loss where there was none.
-    if NOTHING_TO_DISTILL in text:
+    # write, so ageing it into a failure would report loss where there was none. The
+    # hook's own line is the same ending reached one step earlier — a session with no
+    # interaction never had a transcript to read — and neither of them ever reaches a
+    # summary line, so the stall clock is the only thing that would otherwise judge
+    # them, and it would call both a process that died mid-flight.
+    if NOTHING_TO_DISTILL in text or HOOK_NO_TRANSCRIPT in text:
         return "done", ""
     if summary is None:
         idle = now - mtime
@@ -436,7 +454,13 @@ class DistillWatch:
 
                 if kind == "done":
                     continue
-                if runs <= dismissed.get(session, 0):
+                # Membership, not a zero default: a log that never reached the run
+                # mark — the no-transcript exit above is the whole of one — counts
+                # zero runs, and `0 <= 0` would file every one of them as already
+                # acknowledged. A row nobody dismissed would then be hidden by the
+                # dismissal machinery, which is this module's own defect wearing its
+                # own state file.
+                if session in dismissed and runs <= dismissed[session]:
                     continue
                 cwd = pin.get("cwd", "") or ""
                 text_detail, truncated = _detail(detail)
