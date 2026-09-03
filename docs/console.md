@@ -388,10 +388,16 @@ action as the smaller target is how a mis-tap happens.
   resolves to right now, so "follow distillation" is never the last word on screen. Set
   ingestion on its own to move the expensive pass without moving the cheap one. Models come
   from a closed list per CLI (`harness/agents.py`); `--model` on either command takes any
-  slug the vendor accepts if you need one the panel does not carry.
+  slug the vendor accepts if you need one the panel does not carry. `local`'s list is the
+  one configured model, because a local server serves whatever has been pulled onto the
+  box and there is no catalog command that is the same across llama.cpp, vLLM and ollama.
 
-  A CLI that is not on the box's PATH is shown and disabled rather than omitted, and
-  choosing one is refused: running a pass through a missing binary does not fail loudly —
+  An extractor that is not reachable is shown and disabled rather than omitted, and
+  choosing one is refused. Reachable means on PATH for a spawned CLI and answering for a
+  served model (`local`, an OpenAI-compatible endpoint rather than an editor); the second
+  is the stronger check, since an installed binary can still be unauthenticated while a
+  server that answers is serving. Running a pass through an extractor that is not there
+  does not fail loudly —
   distillation fails inside the detached job SessionEnd forks, and the session is simply
   never distilled. A choice whose CLI disappears later is kept, reported, and stepped back
   to whatever the pass would have done unset.

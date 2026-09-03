@@ -64,10 +64,26 @@ class TestLaunchArgv:
         with pytest.raises(ValueError, match="no launch shape"):
             launch_argv("no-such-harness", "qe")
 
-    def test_every_harness_in_the_registry_can_be_pinned(self):
-        from thalamus.harness.agents import HARNESSES
+    def test_every_launchable_harness_can_be_pinned(self):
+        from thalamus.harness.agents import LAUNCHABLE
 
-        assert set(LAUNCH_SHAPES) == set(HARNESSES)
+        assert set(LAUNCH_SHAPES) == set(LAUNCHABLE)
+
+    def test_a_row_that_declares_launch_blockers_has_no_launch_shape(self):
+        """The other half of the pairing, and the one that can rot silently.
+
+        `LAUNCHABLE` is derived from `launch_blockers`, so the assertion above
+        follows the registry wherever it goes — including into a state where a row
+        that cannot be pinned quietly acquires a launch shape anyway. This asserts
+        the direction that would let that through: a blocked row is spawnable
+        headlessly and must stay unpinnable, which is the asymmetry `launcher.py`
+        exists to make visible.
+        """
+        from thalamus.harness.agents import AGENT_CLIS
+
+        blocked = {h for h, cli in AGENT_CLIS.items() if cli.launch_blockers}
+        assert blocked, "the axis is untested if no row declares a launch blocker"
+        assert blocked.isdisjoint(LAUNCH_SHAPES)
 
 
 class TestPinRecord:

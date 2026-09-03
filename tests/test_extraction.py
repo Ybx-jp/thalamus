@@ -739,3 +739,188 @@ def test_the_prompt_asks_for_outcomes_alternatives_and_references_symmetrically(
     assert "worked: true" not in prompt
     for kind in ("unresolved", "reversed", "rejected", "residual"):
         assert f"`{kind}`" in prompt
+
+
+# ---------------------------------------------------------------------------
+# The HTTP transport — a model reached over the wire rather than spawned
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._body = json.dumps(payload).encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _fake_urlopen(recorder, *replies):
+    """Serve one reply per call, recording the decoded request body of each.
+
+    A list rather than one value because the transport makes two calls per
+    extraction — a pre-flight that prices the prompt, then the real one — and the
+    interesting failures are all about the first.
+    """
+    queue = list(replies)
+
+    def urlopen(request, timeout=None):
+        recorder.append(json.loads(request.data.decode()))
+        return _FakeResponse(queue.pop(0) if len(queue) > 1 else queue[0])
+
+    return urlopen
+
+
+def _completion(text, *, prompt_tokens, completion_tokens=7):
+    return {"choices": [{"message": {"content": text}}],
+            "usage": {"prompt_tokens": prompt_tokens,
+                      "completion_tokens": completion_tokens}}
+
+
+def test_a_served_model_distils_over_http_without_a_subprocess(monkeypatch):
+    """The whole point of the transport axis: no binary, no argv, no sandbox."""
+    calls = []
+    monkeypatch.setattr(extraction.urllib.request, "urlopen",
+                        _fake_urlopen(calls, _completion("yaml here", prompt_tokens=900)))
+
+    def refuse(*a, **k):
+        raise AssertionError("an HTTP row must not spawn anything")
+
+    monkeypatch.setattr(subprocess, "run", refuse)
+
+    run = extraction.run_extraction("prompt", harness="local")
+    assert run.text == "yaml here"
+    assert [c["messages"][0]["content"] for c in calls] == ["prompt", "prompt"]
+    # Sampling is off: a second run should differ because the transcript differs,
+    # not because the decoder rolled differently.
+    assert all(c["temperature"] == 0.0 for c in calls)
+
+
+def test_no_price_and_no_duration_stay_none_rather_than_zero(monkeypatch):
+    """The absent-is-not-zero rule, on the row where both are absent.
+
+    A local server charges nothing a rate table could read and reports no wall
+    time. Zeroes here would read as "this was free" and "this was instant", which
+    are claims about the run rather than about the instrumentation.
+    """
+    monkeypatch.setattr(extraction.urllib.request, "urlopen",
+                        _fake_urlopen([], _completion("y", prompt_tokens=10)))
+    run = extraction.run_extraction("prompt", harness="local")
+    assert run.cost_usd is None
+    assert run.duration_ms is None
+
+
+def test_the_prompt_count_comes_from_the_preflight_not_the_cached_call(monkeypatch):
+    """A cached prefill reports 0 prompt tokens, and 0 is not a prompt size.
+
+    The second call's prefill is served from the server's own cache — it is the
+    same prompt — so its `usage` says zero. Reading that would price every repeated
+    context at nothing, which is exactly backwards for a budget instrument.
+    """
+    monkeypatch.setattr(
+        extraction.urllib.request, "urlopen",
+        _fake_urlopen([], _completion("y", prompt_tokens=4321),
+                      _completion("y", prompt_tokens=0, completion_tokens=9)))
+    run = extraction.run_extraction("prompt", harness="local")
+    assert run.input_tokens == 4321
+    assert run.output_tokens == 9
+
+
+def test_a_silently_truncated_prompt_is_refused_not_distilled(monkeypatch):
+    """The failure the sentinel exists to catch, and why it is an equality test.
+
+    Past its window the server drops the overflow and reports a constant
+    `window // 2 + 2` — a number *below* the window, so the intuitive
+    `used > window` check passes on exactly the calls that are broken. Distilling
+    that call would write memory from a transcript with its tail missing, and
+    nothing in the result would say so.
+    """
+    window = extraction.cli_for("local").context_window
+    monkeypatch.setattr(
+        extraction.urllib.request, "urlopen",
+        _fake_urlopen([], _completion("y", prompt_tokens=window // 2 + 2)))
+    with pytest.raises(extraction.ExtractionError, match="truncated the prompt"):
+        extraction.run_extraction("prompt", harness="local")
+
+
+def test_a_prompt_that_fits_the_window_but_not_the_answer_is_refused(monkeypatch):
+    """A window is shared between the prompt and the completion.
+
+    Refused here rather than left to fail downstream: the symptom otherwise is a
+    YAML block cut off mid-claim, which surfaces as a parse error about the model's
+    output rather than as the budget problem it is.
+    """
+    window = extraction.cli_for("local").context_window
+    monkeypatch.setattr(
+        extraction.urllib.request, "urlopen",
+        _fake_urlopen([], _completion("y", prompt_tokens=window - 1)))
+    with pytest.raises(extraction.ExtractionError, match="reserved for the answer"):
+        extraction.run_extraction("prompt", harness="local")
+
+
+def test_an_unreachable_server_names_itself_and_the_harness(monkeypatch):
+    """The counterpart to the PATH failure on a spawned row.
+
+    Distillation runs detached from SessionEnd, so this message is read hours later
+    out of a per-session log by someone who has to work out what was not running.
+    """
+    def refuse(request, timeout=None):
+        raise OSError("Connection refused")
+
+    monkeypatch.setattr(extraction.urllib.request, "urlopen", refuse)
+    with pytest.raises(extraction.ExtractionError, match="unreachable"):
+        extraction.run_extraction("prompt", harness="local")
+
+
+# ---------------------------------------------------------------------------
+# The digest budget — sizing a transcript to the window that will read it
+# ---------------------------------------------------------------------------
+
+
+def test_an_unbounded_harness_keeps_the_frontier_budget():
+    assert extraction.digest_budget("claude") == extraction._DIGEST_BUDGET
+
+
+def test_a_bounded_window_shrinks_the_digest_below_the_frontier_budget():
+    """The defect this function exists to prevent.
+
+    Handing a 240k-char digest to a 16k-token server does not raise — the server
+    truncates and the pass distils a partial transcript into memory that reads as
+    complete.
+    """
+    budget = extraction.digest_budget("local")
+    assert budget < extraction._DIGEST_BUDGET
+    window = extraction.cli_for("local").context_window
+    # Everything the prompt costs has to come out of the window: the answer's
+    # reserve, and the template plus the interpolated threads and claims.
+    assert budget <= (window - extraction._ANSWER_RESERVE_TOKENS) * 4
+
+
+def test_the_budget_converts_at_a_measured_ratio_not_the_prose_one():
+    """~4 chars/token is right for prose and wrong for a rendered digest.
+
+    A digest is code, paths, JSON fragments and tool names. Measured against
+    qwen2.5-coder's own tokenizer the ratio runs 3.13-3.58, which is how a
+    44k-char digest arrived as 16,362 tokens against a 16,384 window with no room
+    left to answer in.
+    """
+    assert extraction._MEASURED_CHARS_PER_TOKEN < 4
+
+
+def test_a_window_too_small_to_distil_anything_refuses_rather_than_squeezing(monkeypatch):
+    """A configuration error the operator has to see.
+
+    An extraction over a few hundred characters of transcript returns an empty
+    claim list, which is indistinguishable from a session that contained nothing.
+    """
+    tiny = extraction.cli_for("local").__class__(
+        harness="tiny", binary="", default_model="m", reports_cost=False,
+        transport="http-openai", endpoint="http://127.0.0.1:1/v1", context_window=2048)
+    monkeypatch.setitem(extraction.AGENT_CLIS, "tiny", tiny)
+    with pytest.raises(extraction.ExtractionError, match="not enough to distil"):
+        extraction.digest_budget("tiny")

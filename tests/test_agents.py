@@ -63,13 +63,32 @@ class TestRegistryShape:
 
 class TestHeadlessPreconditions:
     def test_argv_carries_them(self):
+        # Over the spawned rows only. `argv` is a property of a command line, and a
+        # row reached over HTTP has none — asking it for one raises, which is the
+        # next test rather than an exemption from this one.
         for harness in agents.HARNESSES:
             cli = agents.cli_for(harness)
+            if cli.transport != "subprocess":
+                continue
             argv = cli.argv("some-model")
             assert argv[0] == cli.binary
             assert "--model" in argv and "some-model" in argv
             for flag in cli.headless_preconditions:
                 assert flag in argv
+
+    def test_argv_refuses_on_a_row_that_is_not_spawned(self):
+        """A caller that builds a command line must check `transport` first.
+
+        Returning something plausible — an empty list, or a line with an empty
+        binary — would let the caller run `'' -p --model x` and read the shell's
+        error rather than the declaration that answers it.
+        """
+        served = [h for h in agents.HARNESSES
+                  if agents.cli_for(h).transport != "subprocess"]
+        assert served, "the axis is untested if no row exercises it"
+        for harness in served:
+            with pytest.raises(agents.NoArgv):
+                agents.cli_for(harness).argv("some-model")
 
     def test_every_invocation_dialect_asks_for_machine_readable_output(self):
         """Whatever the dialect, the run must not come back as prose.
@@ -82,6 +101,8 @@ class TestHeadlessPreconditions:
         """
         for harness in agents.HARNESSES:
             cli = agents.cli_for(harness)
+            if cli.transport != "subprocess":
+                continue
             argv = cli.argv("some-model")
             if cli.invocation == "print":
                 assert argv[1] == "-p"
