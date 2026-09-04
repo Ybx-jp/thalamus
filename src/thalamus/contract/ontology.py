@@ -282,9 +282,14 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     # verification: an unverifiable reference is itself evidence of a mis-attributed
     # one, and a served-but-unmatched reference is not proof of fabrication.
     #
-    # May cross scope on the terms RETURNS does: the reader already serves tier-2
-    # knowledge from any expert into any session, and the edge records what that
-    # session then reasoned with, by ID, copying nothing.
+    # May cross scope on the terms RETURNS does, and the crossing is not confined to
+    # knowledge: the ambient reader fences another scope's episodic memory, but a
+    # consultation ticket deliberately opens it, so an expert's session-contained
+    # claim is a routine target. The edge records what the session then reasoned
+    # with, by ID, copying nothing. No write-time scope test stands behind that —
+    # legitimacy is provenance, which the writer cannot see, so `conformance.
+    # audit_edges` reports a cross-scope USES stamped `verified: false` as an
+    # advisory instead.
     EdgeType(
         "USES",
         may_cross_scope=True,

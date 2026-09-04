@@ -1973,6 +1973,11 @@ def _cmd_extract(args):
                 forked_from=forked_from,
             )
 
+            # The reference feed, read here rather than inside extraction: the
+            # served set comes from the eval tap, and the harness layer does not
+            # depend on eval. The orchestrator reads it and passes it down as data.
+            served = _served_nodes(graph, facts.session_id)
+
             if retained is None:
                 payload = read_archived(entry.content_hash, suffix=".jsonl")
                 digest = extraction.render_digest(payload, harness=args.harness)
@@ -1982,6 +1987,7 @@ def _cmd_extract(args):
                     title=facts.title or name,
                     open_threads=_open_threads(graph, args.scope, facts.project),
                     known_claims=_known_claims(graph, args.scope, facts.project),
+                    served_nodes=served,
                 )
 
             try:
@@ -2016,6 +2022,10 @@ def _cmd_extract(args):
                 # carries full message UUIDs, and a handle naming no message is
                 # dropped rather than written as evidence.
                 data = extraction.resolve_anchors(data, payload)
+                # References come back as handles from the served-memory list; the
+                # graph carries vertex IDs, and a handle naming nothing served is
+                # dropped rather than written as grounds.
+                data = extraction.resolve_references(data, [n["vid"] for n in served])
                 for note in dropped:
                     print(f"  ! {name}  dropped {note}")
                 if dropped:
@@ -3596,6 +3606,62 @@ def _known_claims(graph, scope: str, project: str, limit: int = 50) -> list[dict
         if len(claims) >= limit:
             break
     return claims
+
+
+def _served_nodes(graph, session_id: str, limit: int = 60) -> list[dict]:
+    """What this session's retrievals returned — the reference feed's candidate list.
+
+    Read from the eval tap rather than from Trace vertices, because at this point the
+    vertices do not exist: `session-end.sh` runs `extract` first and `eval sync
+    --write` afterwards, so a session's own traces land only after distillation. The
+    tap file already holds them.
+
+    Only Claim and Chunk targets are offered, since those are the only labels a `USES`
+    edge may land on. Capped and in the order the session met them: the feed exists so
+    a claim can name what it reasoned with, not to replay every recall of a long
+    session into the prompt. A reference to a node past the cap resolves to nothing
+    and is dropped, the same as any unmatched handle.
+    """
+    from thalamus.eval.traces import load_events
+
+    try:
+        events = [event for event in load_events() if event.session_id == session_id]
+    except Exception:
+        return []
+
+    ordered: dict[str, None] = {}
+    for event in events:
+        for node_id in event.returned_node_ids():
+            if ":claim:" in node_id or ":chunk:" in node_id:
+                ordered.setdefault(node_id)
+        if len(ordered) >= limit:
+            break
+    vids = list(ordered)[:limit]
+    if not vids:
+        return []
+
+    try:
+        rows = graph.V(*vids).element_map("scope", "kind", "description", "text").to_list()
+    except Exception:
+        return []
+
+    from gremlin_python.process.traversal import T
+
+    by_vid = {str(row[T.id]): row for row in rows if T.id in row}
+    served: list[dict] = []
+    for vid in vids:
+        row = by_vid.get(vid)
+        # A served node that has since been retired is not offered: the feed must
+        # name what the write path can still resolve.
+        if row is None:
+            continue
+        served.append({
+            "vid": vid,
+            "label": str(row.get("kind") or str(row.get(T.label, "node")).lower()),
+            "scope": str(row.get("scope") or ""),
+            "text": str(row.get("description") or row.get("text") or ""),
+        })
+    return served
 
 
 def _cmd_init(args):

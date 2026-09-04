@@ -144,6 +144,61 @@ def test_returns_may_cross_scope_because_the_tap_records_what_the_reader_served(
     assert audit_edges([served]) == []
 
 
+def test_a_cross_scope_uses_nothing_served_is_reported_as_an_advisory():
+    """
+    Scenario: four `USES` edges reaching another scope or not, stamped or not.
+
+    Verifications:
+    - a cross-scope edge sync stamped `verified: false` is reported
+    - the finding is advisory: `false` is also what a legitimate acquisition through
+      a channel the tap does not watch looks like
+    - a stamped-true edge and a same-scope edge are silent
+    - an *absent* stamp is silent: unexamined is not unverified, and sync's backlog
+      is not a set of findings
+    """
+    unverified = AuditEdge(label="USES",
+                           from_vid="scope:main:claim:c1", from_label="Claim",
+                           to_vid="scope:literature:claim:k1", to_label="Claim",
+                           properties={"role": "reason", "verified": False})
+    verified = AuditEdge(label="USES",
+                         from_vid="scope:main:claim:c2", from_label="Claim",
+                         to_vid="scope:literature:claim:k2", to_label="Claim",
+                         properties={"role": "reason", "verified": True})
+    same_scope = AuditEdge(label="USES",
+                           from_vid="scope:main:claim:c3", from_label="Claim",
+                           to_vid="scope:main:claim:k3", to_label="Claim",
+                           properties={"role": "rejected", "verified": False})
+    unstamped = AuditEdge(label="USES",
+                          from_vid="scope:main:claim:c4", from_label="Claim",
+                          to_vid="scope:literature:claim:k4", to_label="Claim",
+                          properties={"role": "reason"})
+
+    issues = audit_edges([unverified, verified, same_scope, unstamped])
+
+    assert len(issues) == 1
+    assert "Unverified cross-scope USES" in issues[0]
+    assert "scope:literature:claim:k1" in issues[0]
+    assert severity_of(issues[0]) == ADVISORY
+
+
+def test_a_uses_edge_onto_another_scopes_episodic_claim_is_legal():
+    """
+    Scenario: a main-scope claim `USES` an expert's *session-contained* claim — the
+    shape a consultation produces, since the ticket grant serves an expert's own
+    experience into the consulting session.
+
+    The audit sees edges, not containment, and must not acquire a shape rule here:
+    what separates a citation from a fabrication is provenance, which `verified`
+    carries. A served-and-stamped crossing is silent whatever the target contains.
+    """
+    episodic = AuditEdge(label="USES",
+                         from_vid="scope:main:claim:c1", from_label="Claim",
+                         to_vid="scope:architect:claim:e1", to_label="Claim",
+                         properties={"role": "reason", "verified": True})
+
+    assert audit_edges([episodic]) == []
+
+
 def test_supersedes_is_for_evidence_snapshots_only():
     wrong = AuditEdge(label="SUPERSEDES",
                       from_vid="scope:main:claim:a", from_label="Claim",
