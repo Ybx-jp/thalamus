@@ -3608,7 +3608,7 @@ def _known_claims(graph, scope: str, project: str, limit: int = 50) -> list[dict
     return claims
 
 
-def _served_nodes(graph, session_id: str, limit: int = 60) -> list[dict]:
+def _served_nodes(graph, session_id: str, limit: int = 120) -> list[dict]:
     """What this session's retrievals returned — the reference feed's candidate list.
 
     Read from the eval tap rather than from Trace vertices, because at this point the
@@ -3621,6 +3621,13 @@ def _served_nodes(graph, session_id: str, limit: int = 60) -> list[dict]:
     a claim can name what it reasoned with, not to replay every recall of a long
     session into the prompt. A reference to a node past the cap resolves to nothing
     and is dropped, the same as any unmatched handle.
+
+    The cap costs a long session its later recalls, and 120 was chosen against the
+    digest rather than against a measurement of which recalls get cited: at roughly
+    200 characters a line it is a tenth of `_DIGEST_BUDGET`, and the three heaviest
+    sessions in the tap on 2026-09-04 served 87, 95 and 120 retrievals with results.
+    Whether the bias toward early recalls costs real references is unmeasured, and
+    cannot be measured until `role=reason` edges exist to count.
     """
     from thalamus.eval.traces import load_events
 
