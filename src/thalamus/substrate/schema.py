@@ -228,9 +228,12 @@ class Claim(BaseModel):
 
 
 _REFERENCES_DESCRIPTION = (
-    "Vertex IDs of the knowledge items this claim reasoned with — a literature claim "
-    "or passage the session recalled and used as grounds. Each becomes a `USES` edge "
-    "with role `reason`; relationships are edges, never list-valued properties."
+    "What this claim reasoned with: anything the session recalled and used as "
+    "grounds — a literature claim or passage, or another scope's own experience, "
+    "which a consultation serves routinely. Carries the extractor's short handles "
+    "until `resolve_references` expands them to vertex IDs; each surviving ID "
+    "becomes a `USES` edge with role `reason`, since relationships are edges and "
+    "never list-valued properties."
 )
 _ANCHORS_DESCRIPTION = (
     "Message UUIDs in the session's Source that show the outcome — the same shape as "

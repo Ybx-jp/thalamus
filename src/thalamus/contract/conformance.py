@@ -324,7 +324,7 @@ _AUDIT_VERTEX_KEYS = (
 # The two edge property keys read by name: `basis` on an Agent's RESOLVES, `role` on
 # REFERENCES. The full edge property *vocabulary* is a separate question, asked as an
 # aggregate — see `edge_property_vocabulary`.
-_AUDIT_EDGE_KEYS = ("role", "basis")
+_AUDIT_EDGE_KEYS = ("role", "basis", "verified")
 
 
 @dataclass(frozen=True)
@@ -413,6 +413,29 @@ def audit_edges(edges: list[AuditEdge]) -> list[str]:
                 f"`{edge.to_vid}`. Consultation routes through a main-scope session, "
                 "never expert-to-expert"
             )
+
+        # A cross-scope `USES` nothing served is the only reading of a reference this
+        # audit can make. Not a rule on the target's shape: a session-contained claim
+        # in another scope is a legal, routine target — the ticket grant serves expert
+        # episodic memory into the consulting session, and a REFERENCES {citation}
+        # edge already points at 1,025 of them. What separates a citation from a
+        # fabrication is provenance, and `verified` is where sync records it.
+        #
+        # Advisory, and deliberately so. `verified: false` is also what a legitimate
+        # acquisition looks like when it arrived by a channel the tap does not watch —
+        # a file read, an issue body, the ambient injection at session start — so this
+        # says look, never fail. Absent is not false: an unsynced edge is unexamined,
+        # and reporting it would count sync's backlog as findings.
+        if (
+            edge.label == "USES"
+            and edge.properties.get("verified") is False
+            and edge_crosses_scope(edge.from_vid, edge.to_vid)
+        ):
+            issues.append(advisory(
+                f"Unverified cross-scope USES: `{edge.from_vid}` -[USES]-> "
+                f"`{edge.to_vid}` reaches another scope, and no trace served that "
+                "target into any session containing the claim"
+            ))
 
         # An Agent-written close carries its evidence in properties rather than in the
         # closer, so the safety property moves with it: the *basis* must be readable
@@ -1057,6 +1080,7 @@ def _fetch(g) -> tuple[list[AuditVertex], list[AuditEdge]]:
         .by(__.in_v().label())
         .by(__.coalesce(__.values("role"), __.constant("")))
         .by(__.coalesce(__.values("basis"), __.constant("")))
+        .by(__.coalesce(__.values("verified"), __.constant("")))
         .to_list()
     )
     for row in rows:
