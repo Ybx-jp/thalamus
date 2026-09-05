@@ -44,8 +44,9 @@ reaches the graph phases at all. The libvirt matrix in the operator's notes repo
 Ubuntu cells on real VMs and reads the same `spec.py` and `checks.py` out of this tree.
 
 The filename containment rule binds there too, and the `dev` extra does not: `spec.py`,
-`checks.py` and `verdict.py` are stdlib-only on purpose, because they are copied into
-boxes that have never seen this project.
+`checks.py` and `verdict.py` are stdlib-only on purpose, because the first two are
+copied into boxes that have never seen this project and the third generates the
+committer that runs there.
 
 ## Known-red, and why it is not a mute button
 
