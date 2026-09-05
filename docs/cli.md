@@ -44,6 +44,7 @@ thalamus extract                   # stage 2: Claims and Threads, via a model
 thalamus extract --harness cursor  # same, sweeping Cursor's sessionEnd log
 thalamus extract --harness codex   # same, sweeping $CODEX_HOME/sessions by session id
 thalamus extract --extract-with codex   # read Claude Code transcripts, pay codex for the pass
+thalamus extract --extract-with local   # ... or a model served on this box, over HTTP
 thalamus write session.yaml        # write a session graph from a file
 thalamus validate session.yaml     # check an extraction against the contract
 thalamus ingest <url|path> --scope <expert> --check   # verify the source, no model call
@@ -55,6 +56,31 @@ thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (d
 discovered. `--extract-with` says which CLI runs the extraction pass — a digest is plain
 text by the time a model reads it, so any CLI can read any harness's session. `ingest` has
 no transcript and so no source harness: its `--harness` is the extractor choice outright.
+
+**`local` is a model, not an editor.** The other three harnesses name a coding-agent
+CLI that Thalamus spawns; `local` names an OpenAI-compatible server it POSTs to —
+llama.cpp, vLLM, ollama, LM Studio. It is an extractor only. There is no interactive
+session to pin, no hooks to arm and no transcript on disk, so it is absent from
+`thalamus init --harness`, from `pin`/`spawn`, and from the console's spawn sheet, and
+it never appears as the `--harness` that *wrote* a transcript.
+
+Three environment variables configure it, defaulted to the ollama convention:
+
+| | | |
+|---|---|---|
+| `THALAMUS_LOCAL_ENDPOINT` | `http://127.0.0.1:11434/v1` | base URL, no trailing slash |
+| `THALAMUS_LOCAL_MODEL` | `qwen2.5-coder:14b` | the default `--model` |
+| `THALAMUS_LOCAL_WINDOW` | `16384` | tokens the server is actually serving |
+
+`THALAMUS_LOCAL_WINDOW` is the one that has to be right. It sizes the digest: a served
+window is usually one to two orders of magnitude smaller than a frontier one, so the
+transcript is elided down to fit it — in the middle, keeping the opening and the close
+— before the prompt is built. Set it larger than the truth and the server truncates
+instead, which is worse in a specific way: it drops the *tail* and reports success, so
+the session distils from a transcript missing its ending and nothing in the result says
+so. The transport refuses that call rather than storing it, by recognising the constant
+a server reports for `prompt_tokens` once a prompt has overflowed, but it can only do
+that after the pass has already been built and sent.
 
 **Two passes, two budgets.** Distillation is one model call per ended session, arriving at
 whatever rate you work at. Ingestion is one call *per chunk*, so a single paper can cost
@@ -68,7 +94,10 @@ until you ask for it. Every ingest prints the CLI and model it is about to bill.
 Only Claude Code prices its own headless run, and `thalamus eval cost` buckets both passes'
 spend by finding the sandbox's transcript under `~/.claude/projects/-tmp-thalamus-extract*`.
 Routing a pass to another CLI therefore does not shrink the extraction spend that report
-shows — it removes it from the report. Every change to either setting lands a row in
+shows — it removes it from the report. On `local` there is no price to route: the pass
+costs the box's own electricity and time, which no rate table reads. It reports its
+prompt and completion token counts and leaves cost and duration unset, because a zero
+there would read as "this was free" rather than "nobody priced it". Every change to either setting lands a row in
 `~/.thalamus/extractor/policy.jsonl`, which is the only record of which model produced a
 given week's claims: the graph stores the harness that *wrote* a session, not the one that
 extracted it, and a Source stores no extractor at all.

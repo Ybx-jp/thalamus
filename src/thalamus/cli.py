@@ -120,7 +120,7 @@ def _main():
         "codex, which are session-oriented and sweep every discovered session.",
     )
     bootstrap_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude",
+        "--harness", choices=agents.LAUNCHABLE, default="claude",
         help="Which harness wrote the transcripts (default: claude). `cursor` sweeps "
         "both discovery surfaces — the sessionEnd hook log and ~/.cursor/projects — "
         "so sessions predating the hooks are included. `codex` sweeps "
@@ -227,8 +227,14 @@ def _main():
     extract_parser.add_argument(
         "--model",
         default=None,
+        # `argv()` refuses on a row that is not spawned, so how a harness is reached
+        # is read from `transport` rather than from the head of a command line that
+        # does not exist for every row.
         help="Extraction model. Defaults per harness: " + ", ".join(
-            f"`{agents.default_model(h)}` via {' '.join(agents.cli_for(h).argv('…')[:2])}"
+            f"`{agents.default_model(h)}` via "
+            + (" ".join(agents.cli_for(h).argv("…")[:2])
+               if agents.cli_for(h).transport == "subprocess"
+               else agents.cli_for(h).endpoint)
             for h in agents.HARNESSES
         ) + ". The archive is immutable, so a better model can always re-extract later.",
     )
@@ -780,7 +786,7 @@ def _main():
     pin_parser.add_argument("scope", help="Expert scope (a config/experts manifest, or `main`)")
     pin_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     pin_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
+        "--harness", choices=agents.LAUNCHABLE, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
 
     spawn_parser = subparsers.add_parser(
@@ -796,7 +802,7 @@ def _main():
     )
     spawn_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
     spawn_parser.add_argument(
-        "--harness", choices=agents.HARNESSES, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
+        "--harness", choices=agents.LAUNCHABLE, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
 
     roster_parser = subparsers.add_parser(
@@ -1975,7 +1981,16 @@ def _cmd_extract(args):
 
             if retained is None:
                 payload = read_archived(entry.content_hash, suffix=".jsonl")
-                digest = extraction.render_digest(payload, harness=args.harness)
+                # Two harnesses, and they are not the same one. `args.harness`
+                # wrote the transcript and decides how it is *parsed*;
+                # `extractor.harness` will read the result and decides how much of
+                # it there is room for. Sizing the digest against the writer would
+                # hand a 16k-window extractor a digest built for a frontier one.
+                digest = extraction.render_digest(
+                    payload,
+                    budget=extraction.digest_budget(extractor.harness),
+                    harness=args.harness,
+                )
                 prompt = extraction.build_prompt(
                     digest,
                     project=facts.project,
@@ -3671,7 +3686,7 @@ def _cmd_roster(args):
             # pin asked for, and naming one binary sends an operator whose codex or
             # Cursor window died to check a CLI that was never involved.
             binaries = ", ".join(
-                f"`{agents.cli_for(h).binary} --version`" for h in agents.HARNESSES
+                f"`{agents.cli_for(h).binary} --version`" for h in agents.LAUNCHABLE
             )
             print(f"Check that the harness binary is on your PATH — {binaries}.",
                   file=sys.stderr)

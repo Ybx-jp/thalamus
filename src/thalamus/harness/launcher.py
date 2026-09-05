@@ -146,7 +146,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from thalamus.harness.agents import HARNESSES
+from thalamus.harness.agents import LAUNCHABLE
 
 
 # The permission mode every pinned Claude Code session launches under — room member
@@ -441,10 +441,12 @@ LAUNCH_SHAPES: dict[str, LaunchShape] = {
     ),
 }
 
-# One table, one list: a harness in the agent registry with no launch shape would be
-# spawnable headlessly and unpinnable interactively, which is the asymmetry this
-# module exists to make visible.
-assert set(LAUNCH_SHAPES) == set(HARNESSES), "every harness needs a launch shape"
+# One table, one list: a launchable harness with no launch shape would be spawnable
+# headlessly and unpinnable interactively, which is the asymmetry this module exists
+# to make visible. Keyed on `LAUNCHABLE` rather than the whole registry, because a
+# row that declares `launch_blockers` is stating it has no interactive session — a
+# launch shape for it would describe a window that cannot exist.
+assert set(LAUNCH_SHAPES) == set(LAUNCHABLE), "every launchable harness needs a launch shape"
 
 
 def settle_s(harness: str) -> float:

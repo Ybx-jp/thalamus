@@ -24,20 +24,35 @@ one binary for another everywhere and seeing what breaks — produces surfaces t
 run and report success while measuring nothing, which is the failure class this
 project has already paid for twice.
 
-**Two discriminators, because the two things vary independently.** `invocation`
-says how the CLI is asked, `envelope` says how its answer is read. Cursor is the
-proof they are separate axes: it shares Claude Code's argv shape exactly and still
-differs in what the envelope carries (tokens, no price). One field covering both
-would have to be a harness name in disguise, which is the fork this module exists
-to replace. Neither field holds a callable: a row holding a function is no longer
-data that can be listed, diffed or serialized (`contract/probes.py`), and the
-readers therefore live with `ExtractionRun` in `harness/extraction.py`.
+**Three discriminators, because the three things vary independently.**
+`transport` says how the model is reached, `invocation` says how a CLI is asked,
+`envelope` says how its answer is read. Cursor is the proof the last two are
+separate axes: it shares Claude Code's argv shape exactly and still differs in what
+the envelope carries (tokens, no price). `local` is the proof the first is a third:
+it is reached over HTTP, so `invocation` and `envelope` describe nothing about it
+and `binary` is empty. One field covering any two would have to be a harness name
+in disguise, which is the fork this module exists to replace. No field holds a
+callable: a row holding a function is no longer data that can be listed, diffed or
+serialized (`contract/probes.py`), and the readers therefore live with
+`ExtractionRun` in `harness/extraction.py`.
+
+**Not every row is a session an operator can be pinned into.** Until `local` there
+was one kind of entry — a CLI a human runs interactively and that also distills
+headlessly — and several surfaces read `HARNESSES` on that assumption:
+`launcher.py` asserts a launch shape per harness, `install.py` wires hooks and an
+MCP registration per harness, and `thalamus pin --harness` offers the list. A
+model served over HTTP has no TUI, no hook events and no transcript on disk, so it
+belongs to none of them. `launch_blockers` states that per row the way
+`arm_blockers` already states eligibility for eval arms, and `LAUNCHABLE` is what
+those surfaces read. `HARNESSES` stays the whole registry, because extraction and
+ingestion — the surfaces that only ever needed a model — can use every row.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import PurePath
 
@@ -174,6 +189,48 @@ class AgentCLI:
     # contents. Collapsing them would key the reader to the caller's flags, which is
     # true today by coincidence and not by anything either vendor promised.
     envelope: str = "object"
+    # How the model is reached at all.
+    #
+    #   "subprocess"  — spawn `binary` and hand it the prompt on stdin
+    #   "http-openai" — POST to `endpoint` + /chat/completions, OpenAI wire format
+    #
+    # The axis `invocation` and `envelope` both presuppose: they describe a CLI's
+    # argv and its stdout, and a row reached over HTTP has neither. Declared rather
+    # than inferred from an empty `binary`, because "no binary" is the *consequence*
+    # of the transport and reading it as the cause would make every future row that
+    # happens to omit a field look like an HTTP one.
+    transport: str = "subprocess"
+    # Base URL for `transport="http-openai"`, without a trailing slash. Empty on
+    # subprocess rows, where it would be a value nothing reads.
+    endpoint: str = ""
+    # The model's hard context ceiling in tokens, or 0 for "do not budget against
+    # this row". Not a fact about the vendor's largest model — a fact about what
+    # *this* row is configured to serve, which is the number a caller has to fit a
+    # prompt into. It exists because the digest budget was a module constant sized
+    # for a frontier window (240k chars ≈ 60k tokens): handing that to a 16k server
+    # does not fail, it truncates, and a truncated transcript distills into memory
+    # that is wrong rather than absent. `extraction.digest_budget` reads this.
+    context_window: int = 0
+    # Why this row cannot be an interactive session an operator is pinned into.
+    # Empty means it can. Same shape and same discipline as `arm_blockers`: one
+    # independently falsifiable claim per entry, retired by deletion when it stops
+    # being true.
+    launch_blockers: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def display(self) -> str:
+        """What to call this row when addressing the operator.
+
+        The binary, which is what an operator would type and what a PATH failure
+        will name — except on a row that has no binary, where the harness name is
+        the only handle there is. Prose that interpolated `binary` unconditionally
+        rendered an empty pair of backticks on the HTTP row.
+        """
+        return self.binary or self.harness
+
+    @property
+    def runs_interactive(self) -> bool:
+        return not self.launch_blockers
 
     def argv(self, model: str) -> list[str]:
         """The non-interactive invocation, plus whatever this CLI needs to run at all.
@@ -185,6 +242,12 @@ class AgentCLI:
         sandbox is a fresh `mkdtemp`, so without the flag every extraction fails
         having done no work — the same wall Cursor's `--trust` answers.
         """
+        if self.transport != "subprocess":
+            raise NoArgv(
+                f"`{self.harness}` is reached over {self.transport}, not spawned — "
+                f"it has no argv. Callers that build a command line must check "
+                f"`transport` first."
+            )
         if self.invocation == "exec":
             return [
                 self.binary, "exec", "--json", "--model", model,
@@ -201,16 +264,44 @@ class AgentCLI:
 
     @property
     def available(self) -> bool:
-        """Is this CLI's binary on PATH?
+        """Can this row actually be reached right now?
 
-        Asked because selecting an absent binary is not a failed setting — it is
+        Asked because selecting an absent extractor is not a failed setting — it is
         distillation that stops happening. `run_extraction` raises `ExtractionError`
         on `FileNotFoundError`, and the only caller is a detached SessionEnd job
         writing to a per-session log, so the loss surfaces as a widget row hours
         later and as nothing at all if the widget is not open. A surface that offers
         a harness therefore has to ask this first.
+
+        On a subprocess row that is a PATH lookup. On an HTTP row it is a connect to
+        `endpoint`, which is a stronger check than the PATH one and a slower one: an
+        installed binary can still be unauthenticated, while a server that answers is
+        serving. The timeout is short and the failure is "not available" rather than
+        an exception, because every caller here is deciding whether to *offer* a
+        row, not whether to run it.
         """
-        return shutil.which(self.binary) is not None
+        if self.transport == "subprocess":
+            return shutil.which(self.binary) is not None
+        try:
+            urllib.request.urlopen(f"{self.endpoint}/models", timeout=1.5).read(1)
+        except OSError:
+            return False
+        return True
+
+
+# A local OpenAI-compatible server — llama.cpp, vLLM, ollama, LM Studio. Unlike the
+# three vendor rows below, what this one points at is a property of the box rather
+# than of a product, so it reads three values from the environment and defaults them
+# to the ollama convention (port 11434, loopback only) that is the common case.
+#
+# `THALAMUS_LOCAL_WINDOW` has to match what the server is actually serving. It sizes
+# the digest, and a value larger than the truth does not error — the server truncates
+# and distils a partial transcript into memory that reads as complete. The transport's
+# own overflow guard is the backstop, not the primary control: it can only refuse a
+# prompt after the budget has already been spent building it.
+LOCAL_ENDPOINT = os.environ.get("THALAMUS_LOCAL_ENDPOINT") or "http://127.0.0.1:11434/v1"
+LOCAL_DEFAULT_MODEL = os.environ.get("THALAMUS_LOCAL_MODEL") or "qwen2.5-coder:14b"
+LOCAL_WINDOW = int(os.environ.get("THALAMUS_LOCAL_WINDOW") or 16384)
 
 
 AGENT_CLIS: dict[str, AgentCLI] = {
@@ -295,11 +386,55 @@ AGENT_CLIS: dict[str, AgentCLI] = {
             "error strings, which codex's event stream does not carry",
         ),
     ),
+    "local": AgentCLI(
+        harness="local",
+        # No binary, and the empty string is the honest value rather than a
+        # placeholder: this row is not spawned. `display` is what prose reads.
+        binary="",
+        default_model=LOCAL_DEFAULT_MODEL,
+        # No price to report, and no token accounting worth trusting either: the
+        # OpenAI `usage` block a local server returns counts a cached prefill as
+        # zero prompt tokens, so a repeated context prices at nothing. The transport
+        # counts the prompt itself and reports that instead.
+        reports_cost=False,
+        transport="http-openai",
+        endpoint=LOCAL_ENDPOINT,
+        context_window=LOCAL_WINDOW,
+        # Open by construction — a local server serves whatever has been pulled onto
+        # the box, and there is no catalog command that is the same on llama.cpp,
+        # vLLM and ollama. The closed-list surfaces get the configured default and
+        # `--model` remains the escape hatch it already is everywhere else.
+        models=(LOCAL_DEFAULT_MODEL,),
+        model_hint="the server's own model list, e.g. `ollama list`",
+        launch_blockers=(
+            "there is no interactive TUI to attach to a tmux pane, so a pin would "
+            "route to a window with nothing in it",
+            "no SessionStart/SessionEnd events fire, so a pinned session would "
+            "never arm the hooks that record the pin or distil the result",
+            "no transcript is written to disk, so transcripts.discover() has "
+            "nothing to hand a later extraction pass",
+        ),
+        arm_blockers=(
+            "credential staging copies ~/.claude.json and "
+            "~/.claude/.credentials.json into the arm HOME; a local server "
+            "authenticates nothing and reads none of it",
+            "there is no agentic loop here at all — one prompt in, one completion "
+            "out — so an arm has no turns to bound and none to count",
+            "the run envelope is read for num_turns, which a chat completion "
+            "does not carry",
+            "escape detection and session-fault classification read Claude Code's "
+            "error strings, which an OpenAI-shaped response does not carry",
+        ),
+    ),
 }
 
 
 class UnknownHarness(ValueError):
     pass
+
+
+class NoArgv(ValueError):
+    """A command line was asked of a row that is not spawned as one."""
 
 
 def cli_for(harness: str) -> AgentCLI:
@@ -317,3 +452,9 @@ def default_model(harness: str) -> str:
 
 
 HARNESSES = tuple(sorted(AGENT_CLIS))
+
+# The rows that are a session an operator can be pinned into. Read by every surface
+# that wires or launches one — `launcher.LAUNCH_SHAPES`, `install.HARNESSES`, the
+# `--harness` choices on `pin` and `spawn`. Extraction and ingestion read `HARNESSES`
+# instead, because a model is all they ever needed.
+LAUNCHABLE = tuple(h for h in HARNESSES if AGENT_CLIS[h].runs_interactive)

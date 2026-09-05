@@ -31,6 +31,8 @@ import json
 import re
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,6 +77,73 @@ DEFAULT_MODEL = CLAUDE_DEFAULT_MODEL
 # Character budgets for the rendered digest. ~4 chars/token, so 240k chars ≈ 60k tokens —
 # comfortably inside context while leaving room for instructions and output.
 _DIGEST_BUDGET = 240_000
+
+# What the prompt costs besides the digest — the instruction template, and the open
+# threads and known claims interpolated into it. `_PROMPT_TEMPLATE` renders to ~7,100
+# characters with both lists empty; the lists themselves routinely add as much again
+# on a project with history, so this is that measurement doubled and rounded up.
+_PROMPT_OVERHEAD = 16_000
+
+# Room for the model's own answer, in tokens. A window is shared between the prompt
+# and the completion, and a prompt sized to fill it leaves the extraction nowhere to
+# write. Observed completions on this prompt run 750-1,100 tokens; the reserve is
+# roughly double the top of that, because overshooting costs a slightly shorter digest
+# and undershooting costs a truncated YAML block that fails to parse.
+_ANSWER_RESERVE_TOKENS = 2_048
+
+# Characters per token for *this* prompt shape, measured rather than inherited.
+# `_DIGEST_BUDGET`'s own comment uses ~4, which is right for Claude on prose. Measured
+# 2026-09-03 on five real extraction prompts against qwen2.5-coder's tokenizer:
+#
+#     prompt chars    prompt tokens    chars/token
+#           42,932           11,986           3.58
+#           51,153           16,362           3.13
+#           24,743            7,901           3.13
+#           18,160            5,250           3.46
+#           18,334            5,838           3.14
+#
+# A rendered digest is code, paths, JSON fragments and tool names, none of which
+# tokenize like prose. Dividing by 4 here over-estimates what fits by about a quarter,
+# which is how a 44k-char digest arrived as 16,362 tokens against a 16,384 window with
+# no room left to answer in. 3.0 is below every ratio measured, so it under-estimates.
+_MEASURED_CHARS_PER_TOKEN = 3.0
+
+# Below this there is no transcript left worth distilling, only a header. A window too
+# small to hold a digest is a configuration error the operator has to see, not a budget
+# to squeeze — an extraction over a few hundred characters of transcript returns an
+# empty claim list and looks like a session that contained nothing.
+_MIN_DIGEST_BUDGET = 20_000
+
+
+def digest_budget(harness: str) -> int:
+    """How many characters of transcript this harness's model can actually be given.
+
+    The module constant assumes a frontier window. A row that declares a
+    `context_window` is stating a hard ceiling, and handing it a 240k-char digest does
+    not raise — the server truncates and the pass distils a partial transcript into
+    memory that reads as complete. So a bounded row gets its window converted at the
+    ratio measured for this prompt shape, less the answer's reserve and the rest of
+    the prompt.
+
+    Eliding here is the control; the transport's overflow guard is the backstop. They
+    are not interchangeable: `render_digest` elides the *middle*, keeping the opening
+    and the close, while a server that overflows drops the tail and says nothing.
+    """
+    window = cli_for(harness).context_window
+    if not window:
+        return _DIGEST_BUDGET
+    prompt_tokens = window - _ANSWER_RESERVE_TOKENS
+    budget = int(prompt_tokens * _MEASURED_CHARS_PER_TOKEN) - _PROMPT_OVERHEAD
+    if budget < _MIN_DIGEST_BUDGET:
+        raise ExtractionError(
+            f"harness `{harness}` serves a {window:,}-token window, which leaves "
+            f"{budget:,} characters for the transcript once the extraction prompt "
+            f"({_PROMPT_OVERHEAD:,} chars) and the answer "
+            f"({_ANSWER_RESERVE_TOKENS:,} tokens) are subtracted — not enough to "
+            f"distil anything from. Serve a larger window (THALAMUS_LOCAL_WINDOW must "
+            f"match what it serves) or extract with another harness."
+        )
+    return min(budget, _DIGEST_BUDGET)
 _TEXT_CAP = 2_000
 _TOOL_RESULT_CAP = 400
 _COMMAND_CAP = 300
@@ -684,6 +753,14 @@ def run_extraction(
         raise ExtractionError(str(exc)) from None
     model = model or cli.default_model
 
+    if cli.transport == "http-openai":
+        return _run_http_openai(cli, model, prompt, timeout)
+    if cli.transport != "subprocess":
+        raise ExtractionError(
+            f"no transport for `{cli.transport}` declared by harness `{cli.harness}`; "
+            f"known: http-openai, subprocess"
+        )
+
     with tempfile.TemporaryDirectory(prefix="thalamus-extract-") as workdir:
         try:
             proc = subprocess.run(
@@ -723,6 +800,120 @@ def run_extraction(
             f"harness `{cli.harness}`; known: {', '.join(sorted(_ENVELOPE_READERS))}"
         ) from None
     return reader(proc.stdout, cli)
+
+
+def _truncation_sentinel(window: int) -> int:
+    """What a server reports for `prompt_tokens` once the prompt has overflowed.
+
+    Measured against ollama 0.33.2 at a 16,384-token window, sweeping prompt size
+    across the boundary:
+
+        14,000 words -> reported 14,030 tokens
+        16,000 words -> reported 16,030
+        16,400 words -> reported  8,194
+        25,000 words -> reported  8,194
+
+    Below the window the count is exact. Past it the server drops the overflow and
+    reports a constant `window // 2 + 2`, identical for a prompt 1% over and one 50%
+    over, on the chat-completions `usage` block and on ollama's own
+    `prompt_eval_count` alike. There is no tokenize endpoint to ask instead.
+
+    That constant is the only evidence a caller gets that anything was dropped, and it
+    is why the check is an equality rather than `used > window`: an overflowed prompt
+    reports a number *below* the window, so the intuitive comparison passes on exactly
+    the calls that are broken.
+
+    Its one false positive is a prompt that genuinely costs this many tokens, which is
+    refused rather than run. That is the safe direction — a refusal costs a retry with
+    a smaller digest, and a silent truncation costs a session distilled from a
+    transcript with its tail missing and nothing in the result saying so.
+    """
+    return window // 2 + 2
+
+
+def _run_http_openai(cli, model: str, prompt: str, timeout: int) -> ExtractionRun:
+    """One completion from an OpenAI-compatible server.
+
+    No sandbox and no temp directory: unlike a headless CLI, this is not a session.
+    Nothing is written to disk, no hooks fire, and there is no transcript for a later
+    sweep to find and distil — so `sandbox_env`'s marker, which exists to stop
+    distillation distilling itself, has nothing here to mark.
+    """
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        # The extraction prompt asks for one YAML block. Sampling costs fidelity here
+        # and buys nothing — a second run should differ because the transcript differs,
+        # not because the decoder rolled differently.
+        "temperature": 0.0,
+    }
+
+    def post(payload: dict, deadline: int) -> dict:
+        request = urllib.request.Request(
+            f"{cli.endpoint}/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=deadline) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")[:500]
+            hint = (f" ({cli.model_hint})"
+                    if cli.model_hint and "model" in detail.lower() else "")
+            raise ExtractionError(
+                f"{cli.endpoint} returned {exc.code}{hint}: {detail}"
+            ) from None
+        except OSError as exc:
+            raise ExtractionError(
+                f"{cli.endpoint} unreachable — required to distil through "
+                f"`{cli.harness}`: {exc}"
+            ) from None
+
+    # Price the prompt before spending a full decode on it. One extra prefill, which
+    # the server's own prompt cache serves back on the real call.
+    used = None
+    if cli.context_window:
+        used = (post(dict(body, max_tokens=1), 120).get("usage") or {}).get("prompt_tokens")
+        if used == _truncation_sentinel(cli.context_window):
+            raise ExtractionError(
+                f"`{cli.harness}` truncated the prompt: it reported exactly {used:,} "
+                f"tokens, the figure it reports for anything past its "
+                f"{cli.context_window:,}-token window. The transcript this would have "
+                f"distilled is incomplete and the result would not say so."
+            )
+        room = cli.context_window - _ANSWER_RESERVE_TOKENS
+        if isinstance(used, int) and used > room:
+            raise ExtractionError(
+                f"prompt is {used:,} tokens against a {cli.context_window:,}-token "
+                f"window with {_ANSWER_RESERVE_TOKENS:,} reserved for the answer "
+                f"({room:,} usable) — over by {used - room:,}. A prompt that fits the "
+                f"window but not the answer produces a YAML block cut off mid-claim, "
+                f"which fails to parse rather than failing here."
+            )
+
+    data = post(body, timeout)
+    try:
+        text = data["choices"][0]["message"]["content"] or ""
+    except (KeyError, IndexError, TypeError):
+        raise ExtractionError(
+            f"{cli.endpoint} returned no completion: {json.dumps(data)[:500]}"
+        ) from None
+
+    # `prompt_tokens` comes from the pre-flight call, not this one: a server whose
+    # prefill is served from cache reports 0 here, and a 0 meaning "cached" is
+    # indistinguishable from one meaning "no prompt" — the same absent-is-not-zero
+    # rule the envelope readers already follow.
+    completion, = _usage_counts(data.get("usage"), "completion_tokens")
+    return ExtractionRun(
+        text=text,
+        # No price and no duration: a local server charges nothing a rate table could
+        # read, and reports no wall time. Both stay None rather than 0, which would
+        # read as "this was free" and "this was instant".
+        input_tokens=used,
+        output_tokens=completion,
+    )
 
 
 def _usage_counts(usage, *keys: str) -> list[int | None]:

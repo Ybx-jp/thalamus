@@ -148,7 +148,7 @@ DEFAULT_PASS = "distill"
 DROPS: dict[str, str] = {
     harness: (
         "" if AGENT_CLIS[harness].reports_cost else
-        f"the extraction spend, as a measurement — `{AGENT_CLIS[harness].binary}` "
+        f"the extraction spend, as a measurement — `{AGENT_CLIS[harness].display}` "
         "reports no price, and `thalamus eval cost` buckets both passes by reading the "
         "Claude Code sandbox's own transcript, so the pass stops appearing there at all"
     )
@@ -340,7 +340,9 @@ def describe(pass_: str = DEFAULT_PASS, *, store: Path | None = None) -> dict:
             # reading `agent` beside `claude` and `codex` would be the only place on
             # the surface where the operator has to know a binary to pick a vendor.
             "label": harness,
-            "note": "" if cli.binary == harness else f"runs as `{cli.binary}`",
+            "note": ("" if cli.binary == harness
+                     else f"served at {cli.endpoint}" if cli.transport != "subprocess"
+                     else f"runs as `{cli.binary}`"),
             "drops": DROPS.get(harness, ""),
             # Rendered as a disabled row rather than omitted: an operator who expected
             # codex here needs to be told it is missing, and an option that silently
@@ -413,14 +415,16 @@ def select(
             # indistinguishable from a live one at the moment of choosing, and the
             # failure it produces lands in a detached job's log.
             raise ExtractorRefused(
-                f"`{cli.binary}` is not on this box's PATH. Running a pass through a "
-                f"CLI that is not installed does not fail loudly — distillation fails "
-                f"inside the detached job SessionEnd forks, and the session is simply "
-                f"never distilled."
+                f"`{cli.display}` is not reachable from this box"
+                + (" — not on PATH." if cli.transport == "subprocess"
+                   else f" — nothing answering at {cli.endpoint}.")
+                + " Running a pass through an extractor that is not there does not "
+                "fail loudly: distillation fails inside the detached job SessionEnd "
+                "forks, and the session is simply never distilled."
             )
         if model and model not in cli.models:
             raise ExtractorRefused(
-                f"`{cli.binary}` does not offer `{model}` here "
+                f"`{cli.display}` does not offer `{model}` here "
                 f"({', '.join(cli.models)}). `--model` takes any slug the CLI accepts "
                 f"if you need one this panel does not carry."
             )

@@ -56,7 +56,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from thalamus.harness import agents
-from thalamus.harness.agents import HARNESSES as AGENT_HARNESSES
+from thalamus.harness.agents import LAUNCHABLE as AGENT_LAUNCHABLE
 from thalamus.contract.paths import PROJECT_ROOT
 from thalamus.harness.pin import (
     USER_AGENTS_DIR,
@@ -115,7 +115,13 @@ USER_CODEX_MCP = CODEX_HOME / "config.toml"
 # uninstallable. The sentinel for "every one of them" is `all`, not `both`: the word
 # stopped being true the moment there were three, and a flag whose name asserts a
 # count is a flag that has to be renamed each time the count moves.
-HARNESSES = AGENT_HARNESSES
+#
+# The list is `LAUNCHABLE`, not the whole registry, and the difference is not a
+# loosening of that rule. Everything this module installs — hook wiring, an MCP
+# registration, an editor's config root — exists to arm an interactive session. A row
+# that declares `launch_blockers` has no session to arm: there is nothing to wire, so
+# "uninstallable" is not a state it can be in.
+HARNESSES = AGENT_LAUNCHABLE
 ALL_HARNESSES = "all"
 
 # What to call each harness when addressing the operator. A dict rather than a
