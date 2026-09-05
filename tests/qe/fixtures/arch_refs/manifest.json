@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "Ground truth for the class-A reference recognizer (src/thalamus/arch/references.py),",
+    "written independently of tests/test_arch_references.py per issue #127 part 1 - the",
+    "author's own unit coverage is not the oracle that proves it correct.",
+    "",
+    "Each entry names one file under repo/code/refs_fixtures/, the single reference-shaped",
+    "token that file carries, and the disposition the recognizer must assign it:",
+    "  resolved        - a path/symbol the tree holds",
+    "  dangling        - a path/symbol the tree does not hold, and no sentence excuses it",
+    "  asserted-absent - a non-resolving name whose own sentence asserts it does not exist",
+    "  declined        - recognised (dotted-name form) and deliberately judged by nothing",
+    "  unconsumed      - matched the loose candidate net but no specific form consumed it",
+    "",
+    "`self_test` marks the one entry whose `expected` value is DELIBERATELY WRONG - see",
+    "arch_refs_ground_truth.py for what that buys."
+  ],
+  "fixtures": [
+    {
+      "id": "unconsumed_extension",
+      "file": "code/refs_fixtures/unconsumed_form.py",
+      "target": "docs/plan.txt",
+      "expected": "unconsumed",
+      "note": "issue #127 bullet 1 (oracle_parses_whole class): a backticked reference outside every recognised extension must be reported unconsumed, not silently dropped."
+    },
+    {
+      "id": "class_c_vendor_dotted",
+      "file": "code/refs_fixtures/class_c_decline.py",
+      "target": "botocore.__version__",
+      "expected": "declined",
+      "note": "issue #127 bullet 2: a class-C referent (a vendor release, shaped as a dotted name) must be recognised and explicitly declined, never judged."
+    },
+    {
+      "id": "asserted_absence",
+      "file": "code/refs_fixtures/asserted_absence.py",
+      "target": "mod/ghost.py",
+      "expected": "asserted-absent",
+      "note": "issue #127 bullet 3: a sentence asserting its own referent's absence must never become a finding."
+    },
+    {
+      "id": "quotation_negation_false_suppression",
+      "file": "code/refs_fixtures/quoted_negation.py",
+      "target": "mod/echo.py",
+      "expected": "dangling",
+      "note": "issue #127 bullet 4a: a negation inside a quotation must not suppress a real dangling reference."
+    },
+    {
+      "id": "previous_sentence_negation_false_suppression",
+      "file": "code/refs_fixtures/prev_sentence_negation.py",
+      "target": "mod/relay.py",
+      "expected": "dangling",
+      "note": "issue #127 bullet 4b: a negation belonging to the previous, already-terminated sentence must not suppress a reference that opens the next line."
+    },
+    {
+      "id": "unknown_recognizer_form",
+      "file": "code/refs_fixtures/unknown_form.py",
+      "target": "reader.py#L106",
+      "expected": "unconsumed",
+      "note": "issue #127 bullet 5: a GitHub-style line-anchor citation is a form the parser does not know, and must be reported rather than silently skipped."
+    },
+    {
+      "id": "resolved_baseline_wrong_on_purpose",
+      "file": "code/refs_fixtures/resolved_control.py",
+      "target": "mod/anchor.py",
+      "expected": "dangling",
+      "self_test": true,
+      "note": "Deliberately WRONG: mod/anchor.py exists in this fixture tree, so the real disposition is resolved. Permanent discrimination control - proves the comparison this case runs can actually tell right from wrong, on every run rather than once."
+    }
+  ]
+}
