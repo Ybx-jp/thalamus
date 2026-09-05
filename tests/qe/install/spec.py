@@ -529,7 +529,10 @@ TIMEOUTS: dict[str, int] = {
     "distill": 1200,
 }
 
-#: The per-cell hard ceiling, in seconds. Passed to virt-install as `--wait` in minutes.
+#: The per-cell hard ceiling, in seconds: what a cell's whole run may spend. The
+#: libvirt matrix hands it to the guest's own driver as the session's deadline and
+#: lets the host destroy the domain some way past it, so a cell that overruns still
+#: writes down what it reached.
 #: Must stay >= `worst_case_matrix_seconds()`, which is not a comment's arithmetic but
 #: a function over this file's own STEPS/TIMEOUTS/CONFIGS — read it, and
 #: `install_cell_ceiling.py` (tests/qe/cases), rather than this docstring, whenever the
@@ -541,8 +544,7 @@ TIMEOUTS: dict[str, int] = {
 #: thalamus-init 120 + console's graph-ready-bounded port poll 180 + wheel_phase's
 #: three subprocess calls at `wheel`=600 each 1800 + the wheel probe's two
 #: `wheel-probe`=300 calls 600 + distill's bounded poll 1200 + session-end.sh's
-#: hardcoded 30s return contract 30 = 6150s. Rounded up to a whole number of minutes,
-#: since `--wait` takes minutes: 103 min = 6180s.
+#: hardcoded 30s return contract 30 = 6150s, carried at 6180.
 #:
 #: NOT counted: several `checks.py` snapshot-time subprocess calls (`_dump` against
 #: `_VERIFY_DUMP`, `_CURSOR_HOOK_BLOCK_DUMP`, `_SCOPES_DUMP`, `_graph_answers`) inherit
@@ -652,8 +654,8 @@ def worst_case_cell_seconds(config: Config, timeouts: dict[str, int] | None = No
     t = TIMEOUTS if timeouts is None else timeouts
     steps = tuple(s for s in STEPS if s.phase not in config.skip_steps)
     total = sum(t[timeout_key(s)] for s in steps)
-    # The guest boot and the clone both happen before `drive.py` ever runs, but
-    # `virt-install --wait` wraps the whole guest, not only `drive.py`'s own steps.
+    # The guest boot and the clone both happen before `drive.py` ever runs, but the
+    # ceiling wraps the whole guest, not only `drive.py`'s own steps.
     total += t["boot"] + max(t["clone-local"], t["clone-https"])
     if Phase.GRAPH_STARTING not in config.skip_steps:
         # graph_ready_phase's bounded wait, run once strictly after CHECKED
