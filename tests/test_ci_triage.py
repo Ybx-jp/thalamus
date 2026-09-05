@@ -392,7 +392,68 @@ def test_an_honest_report_verifies_clean():
     assert ci_triage.verify_report({"one": "known-red", "two": "ok"}, ledger) == []
 
 
-# --- 5. Reading the ledger -----------------------------------------------------------
+# --- 5. What the loop hands back -----------------------------------------------------
+
+
+def _report(case="a-case", problem="p", fix="f", next_steps="n", pr=0):
+    return ci_triage.TriageReport(
+        at="2026-09-05T22:00:00+00:00", run_id="1", case=case,
+        problem=problem, fix=fix, next_steps=next_steps, pr=pr,
+    )
+
+
+def test_a_report_round_trips_and_reads_newest_first(tmp_path):
+    """
+    Scenario: two triages complete while the operator is away.
+
+    Verification: both come back, newest first. This file is the answer to "what did the
+    loop do overnight", and a reader that had to scroll to the bottom for the latest
+    would make the common case the expensive one.
+    """
+    path = tmp_path / "reports.jsonl"
+    ci_triage.record_report(_report(case="first"), path)
+    ci_triage.record_report(_report(case="second"), path)
+
+    back = ci_triage.recent_reports(10, path)
+
+    assert [item.case for item in back] == ["second", "first"]
+
+
+def test_the_report_line_carries_problem_fix_and_next():
+    """
+    Scenario: the line is read on a lock screen, or in `journalctl`.
+
+    Verification: all three parts survive into it. The whole point of the record is that
+    the operator does not have to open the session; a line that dropped the next step
+    would send him to the transcript for the one thing he most needs.
+    """
+    line = _report(problem="the guard failed open", fix="fenced the parse",
+                   next_steps="delete the expectation", pr=7).line()
+
+    assert "the guard failed open" in line
+    assert "fenced the parse" in line
+    assert "delete the expectation" in line
+    assert "#7" in line
+
+
+def test_a_corrupt_line_does_not_hide_the_reports_around_it(tmp_path):
+    """
+    Scenario: a partial or hand-mangled line sits in the middle of the log.
+
+    Verification: the readable reports still come back. This is a notification channel —
+    one bad line silencing the rest would lose exactly the reports the operator has not
+    seen yet.
+    """
+    path = tmp_path / "reports.jsonl"
+    ci_triage.record_report(_report(case="before"), path)
+    with path.open("a") as handle:
+        handle.write("{not json\n")
+    ci_triage.record_report(_report(case="after"), path)
+
+    assert [item.case for item in ci_triage.recent_reports(10, path)] == ["after", "before"]
+
+
+# --- 6. Reading the ledger -----------------------------------------------------------
 
 
 def test_only_the_newest_runs_rows_are_read(tmp_path):

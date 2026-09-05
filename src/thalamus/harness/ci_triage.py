@@ -45,17 +45,23 @@ an escalation; a large one compounds.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import subprocess
 import time
+from datetime import UTC, datetime
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 TRIAGE_DIR = Path.home() / ".thalamus" / "ci-triage"
 STATE_FILE = TRIAGE_DIR / "state.json"
+# What each finished triage hands back: problem, fix, next steps. Separate from the
+# state file because it is history rather than current position — the state answers
+# "may I dispatch now", this answers "what did the loop do while I was asleep".
+REPORTS_FILE = TRIAGE_DIR / "reports.jsonl"
 
 # Written by `tests/qe/ledger.py`, read here. The suite does not ship in the wheel — a
 # released package carrying known-red entries would hand every installer a working
@@ -399,6 +405,101 @@ def read_ledger(path: Path | None = None) -> list[dict]:
         return []
     newest = rows[-1].get("run_id")
     return [row for row in rows if row.get("run_id") == newest]
+
+
+@dataclass(frozen=True)
+class TriageReport:
+    """What a finished triage session hands back, in the shape it is read in.
+
+    Three fields, because three is what a notification can carry and what the operator
+    asked for: what was wrong, what was done about it, what is left. A session that
+    cannot fill all three has not finished triaging — "next" is allowed to be "nothing",
+    but it is not allowed to be missing, because an empty next step and an unconsidered
+    one are the distinction this record exists to keep.
+    """
+
+    at: str
+    run_id: str
+    case: str
+    problem: str
+    fix: str
+    next_steps: str
+    pr: int = 0
+
+    def line(self) -> str:
+        """One line for the journal and the lock screen."""
+        tail = f" · next: {self.next_steps}" if self.next_steps else ""
+        pr = f" (PR #{self.pr})" if self.pr else ""
+        return f"triage {self.case}{pr}: {self.problem} → {self.fix}{tail}"
+
+
+def new_report(
+    case: str, problem: str, fix: str, next_steps: str, run_id: str = "", pr: int = 0
+) -> TriageReport:
+    """Build a report, stamping the time here rather than at the call site.
+
+    The module owns its record's shape, timestamp included: a caller that minted its own
+    `at` would be free to mint any `at`, and this row's whole value is answering "what
+    happened while I was away" in order.
+    """
+    return TriageReport(
+        at=datetime.now(UTC).isoformat(), run_id=run_id, case=case,
+        problem=problem, fix=fix, next_steps=next_steps, pr=pr,
+    )
+
+
+def record_report(report: TriageReport, path: Path | None = None) -> TriageReport:
+    """Append one report, locked and synced.
+
+    An append log rather than the replaced file the state uses, because this one is
+    history and history is the thing a replaced file cannot keep. It therefore takes the
+    durability idiom the qe ledger already carries and the two `harness/` ledgers do not:
+    an exclusive `flock` around the write AND an `fsync` before the lock drops. #169 is
+    what the second half is for — an append that returns before it reaches the platter
+    can leave the partial line that swallows the *next* writer's row.
+    """
+    target = path or REPORTS_FILE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "at": report.at, "run_id": report.run_id, "case": report.case,
+        "problem": report.problem, "fix": report.fix,
+        "next_steps": report.next_steps, "pr": report.pr,
+    }
+    with target.open("a") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return report
+
+
+def recent_reports(limit: int = 10, path: Path | None = None) -> list[TriageReport]:
+    """The newest reports, newest first. Malformed lines are skipped, not fatal."""
+    target = path or REPORTS_FILE
+    if not target.is_file():
+        return []
+    out: list[TriageReport] = []
+    with target.open(errors="ignore") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict) or not row.get("case"):
+                continue
+            out.append(TriageReport(
+                at=str(row.get("at", "")), run_id=str(row.get("run_id", "")),
+                case=str(row.get("case", "")), problem=str(row.get("problem", "")),
+                fix=str(row.get("fix", "")), next_steps=str(row.get("next_steps", "")),
+                pr=int(row.get("pr", 0) or 0),
+            ))
+    return list(reversed(out))[:limit]
 
 
 def escalate(pr_number: int, message: str, repo: str | None = None) -> None:

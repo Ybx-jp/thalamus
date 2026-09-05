@@ -882,6 +882,28 @@ def _main():
     )
     ci_claim_parser.add_argument("--witness", default="", help="Witness, required with --done")
 
+    # What a finished triage hands back. The operator does not read the session; he
+    # reads this, so all three fields are required — an absent next step and a
+    # considered-and-empty one must not look the same.
+    ci_report_parser = ci_triage_sub.add_parser(
+        "report", help="Record what a finished triage found, did, and left"
+    )
+    ci_report_parser.add_argument("case", help="Case name as the ledger spells it")
+    ci_report_parser.add_argument("--problem", required=True, help="What was wrong")
+    ci_report_parser.add_argument("--fix", required=True, help="What was done about it")
+    ci_report_parser.add_argument(
+        "--next", dest="next_steps", required=True,
+        help="What is left, or 'nothing' — required so an unconsidered next step cannot "
+        "look like an empty one",
+    )
+    ci_report_parser.add_argument("--run", default="", help="CI run id this answers")
+    ci_report_parser.add_argument("--pr", type=int, default=0, help="Remediation PR, if any")
+
+    ci_reports_parser = ci_triage_sub.add_parser(
+        "reports", help="What the loop did while you were away, newest first"
+    )
+    ci_reports_parser.add_argument("--limit", type=int, default=10, help="How many (default 10)")
+
     ci_escalate_parser = ci_triage_sub.add_parser(
         "escalate", help="Say on the PR why the loop stopped, and stop"
     )
@@ -3944,6 +3966,24 @@ def _cmd_ci_triage(args, parser):
                 print("Give --pr <n> or --done.", file=sys.stderr)
                 sys.exit(2)
             state.save()
+
+        elif command == "report":
+            report = ci_triage.new_report(
+                case=args.case, problem=args.problem, fix=args.fix,
+                next_steps=args.next_steps, run_id=args.run, pr=args.pr,
+            )
+            ci_triage.record_report(report)
+            # Printed as well as stored: under systemd this line is the notification,
+            # and journald is where it lands.
+            print(report.line())
+
+        elif command == "reports":
+            reports = ci_triage.recent_reports(args.limit)
+            if not reports:
+                print("The loop has not reported a triage yet.")
+                return
+            for item in reports:
+                print(f"  {item.at[:16]}  {item.line()}")
 
         elif command == "escalate":
             ci_triage.escalate(args.pr, args.message, repo=args.repo)

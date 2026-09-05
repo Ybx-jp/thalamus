@@ -1334,3 +1334,101 @@ class TestMisArmedPinDetection:
             env={"THALAMUS_SCOPE": "qe", "CLAUDE_PROJECT_DIR": str(tmp_path)}))
 
         assert "MIS-ARMED" not in ctx
+
+
+class TestCITriageBrief:
+    """The brief a session gets when the CI triage watcher is the reason it exists.
+
+    `pin.spawn` carries a scope and a working directory and no channel for purpose, so
+    without this the spawned session is an ordinary `qe` session that happened to appear
+    — and the loop's reporting contract is documentation rather than mechanism.
+    """
+
+    def _state(self, home, run_id="900", age_s=0):
+        path = home / ".thalamus" / "ci-triage"
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "state.json").write_text(json.dumps({
+            "in_flight": {"run_id": run_id, "at": int(time.time()) - age_s},
+            "open_prs": {}, "attempts": {}, "seen_runs": [],
+        }), encoding="utf-8")
+
+    def test_a_qe_session_under_a_live_marker_is_told_why_it_exists(self, tmp_path):
+        """
+        Scenario: the watcher spawned this session and is holding its marker.
+
+        Verification: the brief arrives, names the run, and — the part the whole loop
+        turns on — names `ci-triage report`. The operator reads that line instead of the
+        session, so a triage that ends without it is one nobody hears about.
+        """
+        self._state(tmp_path)
+
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env={"THALAMUS_SCOPE": "qe", "CLAUDE_PROJECT_DIR": str(tmp_path)}))
+
+        assert "CI triage watcher" in ctx
+        assert "900" in ctx
+        assert "ci-triage report" in ctx
+
+    def test_no_marker_means_no_brief(self, tmp_path):
+        """
+        Scenario: an ordinary `qe` session, opened by hand, no triage in flight.
+
+        Verification: silent. A brief on every qe session would be wallpaper within a
+        week, and wallpaper is how an instruction stops being read.
+        """
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env={"THALAMUS_SCOPE": "qe", "CLAUDE_PROJECT_DIR": str(tmp_path)}))
+
+        assert "CI triage watcher" not in ctx
+
+    def test_a_stale_marker_briefs_nobody(self, tmp_path):
+        """
+        Scenario: the session holding the marker died hours ago and it aged out.
+
+        Verification: silent. Briefing a new session against a dead triage's run points
+        it at a failure somebody may already have fixed — the marker's age is the only
+        evidence available that its holder is gone.
+        """
+        self._state(tmp_path, age_s=7 * 60 * 60)
+
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env={"THALAMUS_SCOPE": "qe", "CLAUDE_PROJECT_DIR": str(tmp_path)}))
+
+        assert "CI triage watcher" not in ctx
+
+    def test_a_non_qe_scope_is_never_briefed(self, tmp_path):
+        """
+        Scenario: the watcher is holding a marker and a `main` session starts.
+
+        Verification: silent. The loop dispatches `qe` and only `qe` may act on the
+        oracle; briefing `main` would hand the triage to the scope the suite indicts.
+        """
+        self._state(tmp_path)
+
+        ctx = context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env={"CLAUDE_PROJECT_DIR": str(tmp_path)}))
+
+        assert "CI triage watcher" not in ctx
+
+    def test_an_unreadable_state_file_does_not_kill_the_hook(self, tmp_path):
+        """
+        Scenario: the state file is truncated or hand-mangled.
+
+        Verification: the hook still returns its ordinary context. `set -e` is on, and a
+        hook that dies here takes the whole session's context with it — the memory
+        priming, the standing authorization, all of it — over a file that is advisory.
+        """
+        path = tmp_path / ".thalamus" / "ci-triage"
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "state.json").write_text("{not json", encoding="utf-8")
+
+        result = run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env={"THALAMUS_SCOPE": "qe", "CLAUDE_PROJECT_DIR": str(tmp_path)})
+
+        assert result.returncode == 0
+        assert "memory_open_threads" in context_of(result)
