@@ -36,6 +36,14 @@ push rather than after CI tells you.
   so renaming one breaks extraction loudly — that is the intended failure, not a
   flake. node is optional; a checkout without it skips them.
 
+**`NEW_FAILURE` means untriaged red, nothing more.** It carries no claim about novelty
+and none about `src/` versus `tests/` — `expectations.py` defines it as "failed, and no
+expectation covers it", full stop. A regression in `src/` and the additions case's own
+self-referential red both route through exit 1 for the same reason: triage is
+well-defined for both, and exit 1 asks for it. Do not read a red `adversarial` as "a new
+defect appeared" and do not redesign the exit codes on that reading; the discrimination
+you want is in the ledger's per-case `verdict`, not in the exit code.
+
 **Built-but-never-used is the largest single defect class in this tracker.** When you
 add a code path, a config key, an ontology term or a declared capability, the same
 change wires it to something that reads it — or files the gap. `arch dead` catches the

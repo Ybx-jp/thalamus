@@ -164,6 +164,36 @@ thalamus quick targets             # which experts are forkable, and how warm ea
 thalamus quick delta               # what a fork contributed back
 ```
 
+### CI triage
+
+The consumer for a red master. `qe-fast` reports; this acts on the report. Everything
+here is host-local — it reads the forge through `gh` and keeps its state under
+`~/.thalamus/ci-triage/`, so nothing in CI can read it as authorization.
+
+```bash
+thalamus ci-triage watch                    # poll, and open one pinned qe session
+thalamus ci-triage watch --once --dry-run   # what it would dispatch for, spawning nothing
+thalamus ci-triage status                   # open remediation PRs, spent attempt budgets
+thalamus ci-triage plan                     # actionable cases, with any refusal to dispatch
+thalamus ci-triage verify <report.json>     # re-derive the report's verdicts from the ledger
+thalamus ci-triage attempt <case> --witness "<w>"   # claim one attempt; exit 1 if spent
+thalamus ci-triage claim <case> --pr <n>    # this case now has a remediation PR
+thalamus ci-triage claim <case> --done --witness "<w>"
+thalamus ci-triage escalate --pr <n> --message "<why it is stuck>"
+```
+
+`watch` dispatches only for a **failed run from a push to master** — never a
+`pull_request` run. Every gating workflow triggers on both events, so the loop's own
+remediation PR produces red runs of its own; without that filter the watcher feeds on its
+own output. It also dispatches at most once per run, and `plan` refuses a case that
+already has an open PR or has spent its attempt budget (`ESCALATE_AFTER`, currently 2 —
+an inferred bound, not a measured one).
+
+`verify` is what makes the loop's second reader real: it re-derives each case's verdict
+from the ledger rather than trusting the report, and exits 1 naming every disagreement.
+A report claiming a case is triaged while the ledger records `new-failure` for it is
+refused.
+
 ### Rooms
 
 A room is a private roster whose members see and message only each other.
