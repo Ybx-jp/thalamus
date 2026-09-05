@@ -86,6 +86,7 @@ CASE_MODULES = (
     "qe.cases.arch_refs_ground_truth",
     "qe.cases.mcp_tool_arg_sweep",
     "qe.cases.query_guard_evasion",
+    "qe.cases.console_teardown_kills_reused_window",
 )
 
 
