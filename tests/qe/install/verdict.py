@@ -1,18 +1,23 @@
 """The evidence channel between a cell and the host: framing, commit, and outcome.
 
-A cell writes its result to a raw scratch disk (`vdb`) that the host reads back with
-nothing more than `open()`. That channel was chosen because the alternatives do not
-work here, and the reasons are worth carrying:
+A cell commits its result to a file inside the one tree the host reads back off its
+stopped disk. Nothing is mounted and nothing is running when that read happens:
+`virt-copy-out` reads the filesystem out of the image directly, so it needs no root, no
+guest network and no healthy guest, which is the one channel that still works on a cell
+too broken to cooperate.
 
-  * `--serial file` and `--serial ...,log.file=` are recreated by libvirt as
-    `root:root 0600`, so the invoking user cannot read what was captured. A default
-    ACL on the parent directory does not rescue it: a file created 0600 gets an ACL
-    mask of `---`, which zeroes every named-user entry.
-  * `virt-copy-out` works and is used (see `provision.py`), but it is post-mortem and
-    reads a filesystem — it says nothing about a guest that panicked before the rootfs
-    mounted.
+The frame is what makes the file a commit rather than a partial write, and it is worth
+carrying for one reason the transport cannot supply: the host has to be able to tell a
+guest that died mid-write from a guest that committed a failing result, and collapsing
+those two is what makes a matrix unreadable three weeks later.
 
-The scratch disk needs no root, no mount, no libguestfs, and no guest network.
+WHAT THIS CHANNEL DOES NOT SURVIVE, stated rather than assumed. A cell's overlay is
+attached `cache=unsafe` — it is destroyed with the cell, so there is no durability to
+lose and it removes the flush storm a `docker pull` and a `uv sync` would otherwise
+cause. A cell the host has to destroy at its ceiling can therefore lose writes the guest
+believed were flushed, including a verdict committed just before a hang. The console log
+is written on the host side by qemu and survives that, which is why the PHASE markers
+are a cell's diagnosis rather than a decoration, and why `classify()` consults them.
 
 ## Why the header is written last
 
@@ -23,12 +28,7 @@ something that reads as a verdict.
 So the guest writes the payload first, flushes, then writes the header, then flushes
 again. The header's presence IS the commit. An absent header means the guest never
 reached the commit point, which is a different outcome from a guest that committed a
-failing result — and collapsing those two is what makes a matrix unreadable three weeks
-later.
-
-`conv=fsync` and the trailing `sync` are load-bearing on the guest side: the verdict
-disk is attached `cache=writeback`, so without them a verdict can still be sitting in
-the host's page cache when the harness gives up and destroys the domain.
+failing result.
 
 ## Layout
 
@@ -47,6 +47,8 @@ and no tooling beyond coreutils.
 
 from __future__ import annotations
 
+from __future__ import annotations
+
 import hashlib
 import json
 from dataclasses import dataclass
@@ -59,14 +61,15 @@ LEN_OFFSET, LEN_SIZE = 8, 16
 SHA_OFFSET, SHA_SIZE = 24, 64
 PAYLOAD_OFFSET = HEADER_SIZE
 
-# 32 MiB, sparse. Ample for a JSON verdict plus a gzipped tail of the guest's logs,
-# and it costs nothing on disk until written.
-DISK_BYTES = 32 * 1024 * 1024
-MAX_PAYLOAD = DISK_BYTES - HEADER_SIZE
+# 32 MiB. Ample for a JSON verdict plus a gzipped tail of the guest's logs, and the
+# ceiling a length field is checked against: a frame claiming more than this is a torn
+# header rather than a very large verdict.
+FRAME_LIMIT_BYTES = 32 * 1024 * 1024
+MAX_PAYLOAD = FRAME_LIMIT_BYTES - HEADER_SIZE
 
 
 class Frame(str, Enum):
-    """What the bytes on the scratch disk are, before asking what they say."""
+    """What the committed bytes are, before asking what they say."""
 
     OK = "ok"
     NO_COMMIT = "no-commit"        # no magic: the guest never reached the commit point
@@ -120,12 +123,12 @@ class Verdict:
 
 
 def read_frame(path: str | Path) -> tuple[bytes | None, Frame]:
-    """Read the scratch disk and say whether it carries a complete payload.
+    """Read the committed file and say whether it carries a complete payload.
 
-    Trusts the guest for nothing: not that it zeroed the disk, not that it wrote the
-    length it meant to, not that the payload it hashed is the payload it wrote. A disk
-    that was never written at all reads as `NO_COMMIT` rather than as an error, because
-    that is the ordinary state of a cell that crashed early.
+    Trusts the guest for nothing: not that it wrote the length it meant to, not that the
+    payload it hashed is the payload it wrote. A file that was never written at all —
+    or is not there — reads as `NO_COMMIT` rather than as an error, because that is the
+    ordinary state of a cell that crashed early.
     """
     try:
         with open(path, "rb") as fh:
@@ -155,7 +158,8 @@ def read_frame(path: str | Path) -> tuple[bytes | None, Frame]:
 
 def classify(path: str | Path, domstate: str, deadline_expired: bool,
              last_phase: str = "", post_mortem_found: bool = False) -> Verdict:
-    """Turn the disk, the domain state and the deadline into one of five outcomes.
+    """Turn the committed file, the domain state and the deadline into one of five
+    outcomes.
 
     The decision table:
 
@@ -177,7 +181,8 @@ def classify(path: str | Path, domstate: str, deadline_expired: bool,
 
     if frame in (Frame.TORN_HEADER, Frame.TORN_PAYLOAD):
         return Verdict(Outcome.TORN, frame, None,
-                       f"the scratch disk carries a {frame.value}; the guest died mid-commit")
+                       f"the committed file carries a {frame.value}; the guest died "
+                       "mid-commit")
 
     if frame is Frame.NO_COMMIT:
         if deadline_expired and domstate != "shut off":
@@ -232,14 +237,18 @@ def commit_script() -> str:
     on every cell, which reads as a guest fault and is not one.
     """
     return f"""#!/bin/bash
-# Commits a verdict payload to the scratch disk. Written by verdict.commit_script();
-# do not edit in the guest.
+# Commits a verdict payload. Written by verdict.commit_script(); do not edit in the
+# guest.
 #
 # Order is the commit protocol: payload, flush, header, flush. The header is written
 # last because its presence is what tells the host the payload is complete.
+#
+# The destination is named by the caller and has no default. A default would be a
+# second place the channel is defined, and a cell that committed to the wrong one
+# would look to the host exactly like a cell that committed nothing.
 set -euo pipefail
 P="$1"
-DEV="${{2:-/dev/vdb}}"
+DEST="${{2:?the destination the host reads back must be named}}"
 LEN=$(stat -c %s "$P")
 SHA=$(sha256sum "$P" | cut -d' ' -f1)
 
@@ -248,12 +257,12 @@ if [ "$LEN" -le 0 ] || [ "$LEN" -gt {MAX_PAYLOAD} ]; then
     exit 1
 fi
 
-dd if="$P" of="$DEV" bs={HEADER_SIZE} seek=1 conv=notrunc,fsync status=none
+dd if="$P" of="$DEST" bs={HEADER_SIZE} seek=1 conv=notrunc,fsync status=none
 sync
 
 printf '{MAGIC.decode()}%0{LEN_SIZE}d%s' "$LEN" "$SHA" > /tmp/qe-hdr
 truncate -s {HEADER_SIZE} /tmp/qe-hdr
-dd if=/tmp/qe-hdr of="$DEV" bs={HEADER_SIZE} count=1 conv=notrunc,fsync status=none
+dd if=/tmp/qe-hdr of="$DEST" bs={HEADER_SIZE} count=1 conv=notrunc,fsync status=none
 sync
 
 echo "PHASE verdict-committed $(date +%s) len=$LEN" > /dev/ttyS0 || true
@@ -261,8 +270,8 @@ echo "PHASE verdict-committed $(date +%s) len=$LEN" > /dev/ttyS0 || true
 
 
 def write_frame(path: str | Path, payload: bytes) -> None:
-    """Write a complete frame from the host. Used to build fixtures and the canary's
-    expected shape; the real path is the guest committer above."""
+    """Write a complete frame from the host. Used to build fixtures; the real path is
+    the guest committer above."""
     if not 0 < len(payload) <= MAX_PAYLOAD:
         raise ValueError(f"payload of {len(payload)} bytes is outside 1..{MAX_PAYLOAD}")
     header = bytearray(b"\0" * HEADER_SIZE)

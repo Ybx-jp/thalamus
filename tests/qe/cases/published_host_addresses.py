@@ -8,12 +8,12 @@ was pushed carrying the operator's LAN address and tailnet address in a Python m
 config. The branch was deleted from the remote thirteen minutes later and the harness
 now lives in a private repository.
 
-The instructive part is not the leak, it is what was already in place. `isolation_probe.sh`
-deliberately carried no addresses — its docstring says why, that a probe with one box's
-IPs baked in is wrong on every other machine and looks correct while testing nothing —
-and a passing check asserted exactly that about exactly that file. The rule was right,
-the check was real, and its scope was one file narrower than the rule it enforced. A
-check whose scope is narrower than its rule reads as coverage and is not.
+The instructive part is not the leak, it is what was already in place. The probe itself
+deliberately carried no addresses — a probe with one box's IPs baked in is wrong on every
+other machine and looks correct while testing nothing — and a passing check asserted
+exactly that about exactly that file. The rule was right, the check was real, and its
+scope was one file narrower than the rule it enforced. A check whose scope is narrower
+than its rule reads as coverage and is not.
 
 So this case is scoped to the rule instead of to a file class: **every** tracked file,
 whatever its type, whatever the surrounding syntax.

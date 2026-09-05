@@ -12,10 +12,12 @@ assertions over it, and a driver that runs both on whatever box it is executing 
 | `drive.py` | Runs the sequence on this box, snapshots at the phase boundaries, and judges the result. |
 | `lint.py` | Guards on the spec. No box needed. |
 
-The libvirt provisioner that boots Ubuntu cells — golden images, cloud-init seeds,
-the `qe-cell` network, the isolation probe and its host addresses — is a property of
-one machine and lives in the operator's notes repo. It reads `spec.py` and
-`checks.py` from here and copies them into each guest verbatim.
+The libvirt provisioner that boots Ubuntu cells — the golden image, the `qe-cell`
+network and the boundary around it, the two locked slots, and the host addresses a
+cell's boundary probe aims at — is a property of one machine and lives in the
+operator's notes repo, where it is one caller of a generic cell producer. It reads
+`spec.py` and `checks.py` from here and copies them into each guest verbatim, and
+commits its verdict in the frame `verdict.py` defines.
 
 ## Why the split is here and not one file further left
 
