@@ -189,6 +189,17 @@ _SCOPES_DUMP = (
     "print(json.dumps(available_scopes()))"
 )
 
+#: The source of truth for what `install_cursor()` writes into `~/.cursor/hooks.json`
+#: — dumped from the checkout's own venv rather than copied as a literal list of guard
+#: names, which would silently stop matching the day a fourth guard arrived.
+#: `CURSOR_GUARDS` (install.py) is itself derived from `CURSOR_HOOK_WIRING` for the
+#: same reason.
+_CURSOR_HOOK_BLOCK_DUMP = (
+    "import json;"
+    "from thalamus.harness.install import build_cursor_hook_block;"
+    "print(json.dumps(build_cursor_hook_block()))"
+)
+
 
 def _read_json(path: Path):
     try:
@@ -382,11 +393,23 @@ def snapshot(label: str) -> dict:
     }
     if label in ("installed", "reinstalled"):
         state["verify"] = _dump(_VERIFY_DUMP)
+    if label == "installed":
+        # The source of truth for what init writes into ~/.cursor/hooks.json,
+        # dumped from the checkout's own venv, beside the raw file init actually
+        # wrote — read directly, no thalamus import needed for that half.
+        state["cursor_hooks_desired"] = _dump(_CURSOR_HOOK_BLOCK_DUMP)
+        state["cursor_hooks_actual"] = _read_json(HOME / ".cursor" / "hooks.json")
     if label == "console":
         state["console"] = _console_probe()
     if label == "wheel":
         state["wheel"] = _wheel_probe()
-    if label == "graph-ready":
+    if label in ("graph-ready", "graph-readiness-window"):
+        # Two samples, deliberately: "graph-readiness-window" is taken the instant
+        # `docker compose up -d` returns, no wait, and is what #55 reads — a wait
+        # inserted ahead of it would silence the defect it exists to catch.
+        # "graph-ready" is taken later, after `drive.py` has waited (bounded) for the
+        # graph to actually answer, and is what #17 and the check below read. Same
+        # two fields either way; only the moment they were taken differs.
         state["port_open"] = tcp_open("127.0.0.1", GRAPH_PORT)
         state["query_ok"] = _graph_answers()
     if label == "scopes":
@@ -706,6 +729,11 @@ def check_graph_down_diagnosis() -> Result:
     # ran, which is issue #55's readiness window and a different finding entirely.
     # Without knowing the graph was answering, the two are indistinguishable and this
     # must not pick one.
+    #
+    # Reads the POST-readiness sample, not the early one #55 reads (issue #130): this
+    # is taken after `drive.py` has waited, bounded, for the graph to actually answer,
+    # which is what makes a printed diagnosis here mean something rather than racing
+    # the readiness window every time.
     ready = load_snapshot("graph-ready") or {}
     if not graph_down_config and not ready.get("query_ok"):
         return skip(
@@ -729,6 +757,35 @@ def check_graph_down_diagnosis() -> Result:
     return ok("no graph-down diagnosis is printed when the graph is up", control)
 
 
+def check_graph_ready_answers_queries() -> Result:
+    """GRAPH_READY: `docker compose up -d` must produce a graph that answers queries.
+
+    Before this check existed, nothing in the matrix asserted it at all —
+    `Phase.GRAPH_READY` carried zero entries in `spec.CHECKS` (issue #130). Reads the
+    post-readiness `graph-ready` sample `drive.py` takes after a bounded wait, which
+    is distinct from the early `graph-readiness-window` sample #55 reads: that one is
+    taken the instant `docker compose up -d` returns and is not evidence either way
+    about whether the graph ever becomes ready.
+    """
+    started_rc = step_rc("graph-starting")
+    if started_rc not in (0, None):
+        return skip(f"`docker compose up -d` exited {started_rc}, so there is no "
+                    "started container for the graph to become ready in")
+    ready = load_snapshot("graph-ready")
+    if ready is None:
+        return skip("no post-readiness graph-ready snapshot was taken")
+    port_open = ready.get("port_open")
+    if not port_open:
+        return skip("the graph's port was never open within the bounded wait, so a "
+                    "query failing to answer cannot be told apart from a container "
+                    "that never started")
+    control = "the graph's port was open when this sample was taken"
+    if not ready.get("query_ok"):
+        return bad("the graph's port opened but it never answered a query within "
+                   f"the {spec.TIMEOUTS['graph-ready']}s bounded wait", control)
+    return ok("the graph answers queries after `docker compose up -d`", control)
+
+
 def check_starting_graph_is_not_reported_as_absent() -> Result:
     """GRAPH_STARTING: in the readiness window, do not say the container is not running.
 
@@ -741,10 +798,16 @@ def check_starting_graph_is_not_reported_as_absent() -> Result:
     answered when it was first sampled, this cell never entered the window and proves
     nothing. Reporting that as a pass is exactly how an absence-assertion starts passing
     forever.
+
+    Reads `graph-readiness-window`, taken the instant `docker compose up -d` returns
+    with no wait at all — never `graph-ready`, which `drive.py` takes later after a
+    bounded wait for the graph to actually answer (issue #130). A wait ahead of THIS
+    sample would silence the defect it exists to catch.
     """
-    ready = load_snapshot("graph-ready")
+    ready = load_snapshot("graph-readiness-window")
     if ready is None:
-        return skip("no graph-ready snapshot was taken, so the window was never sampled")
+        return skip("no graph-readiness-window snapshot was taken, so the window was "
+                    "never sampled")
 
     port_open = ready.get("port_open")
     query_ok = ready.get("query_ok")
@@ -941,6 +1004,85 @@ def check_clean_clone_manifest_count() -> Result:
                    f"but the clone tracks {tracked} manifest(s)", control)
     return ok(f"the CLI resolves the {tracked} manifest(s) a clean clone tracks",
               control)
+
+
+def _flatten_cursor_hooks(block) -> dict[tuple[str, str], dict]:
+    """(event, command) -> entry, for every hook entry in a Cursor hooks block."""
+    out: dict[tuple[str, str], dict] = {}
+    for event, entries in (block or {}).items():
+        for entry in entries or []:
+            command = entry.get("command") if isinstance(entry, dict) else None
+            if command:
+                out[(event, command)] = entry
+    return out
+
+
+def check_cursor_guards_are_failclosed() -> Result:
+    """INSTALLED: every Cursor `beforeShellExecution` guard is wired `failClosed: true`.
+
+    `failClosed` is what issue #77 is about: it decides whether a guard that exits
+    without printing a verdict blocks the call or permits it. `verify_cursor()`'s own
+    checks (install.py) confirm the scripts are present, executable and wired at user
+    scope — none of them read the flag itself, so a build that dropped it, or wired
+    the guards to the wrong event, would pass every one of those and this suite too,
+    with nothing in `tests/qe/install/` ever having read `~/.cursor/hooks.json`
+    (issue #123's own evidence: a grep for the path over this tree returned nothing).
+
+    Read against `install.build_cursor_hook_block()`, dumped from the checkout's own
+    venv (`_CURSOR_HOOK_BLOCK_DUMP`), rather than a copied list of guard names — that
+    function is the one place the guard set and the flag are derived, matching
+    `CURSOR_GUARDS`'s own docstring reason for deriving rather than restating.
+
+    Repeat the red: after an `installed` snapshot exists, edit `snap-installed.json`
+    and drop `"failClosed": true` from one guard's entry under
+    `cursor_hooks_actual.hooks.beforeShellExecution`, then re-run
+    `checks.py evaluate` — the poisoned entry reports this check FAIL.
+    """
+    snap = load_snapshot("installed")
+    if snap is None:
+        return skip("no post-install snapshot, so nothing was captured about "
+                    "~/.cursor/hooks.json")
+    desired = snap.get("cursor_hooks_desired")
+    if desired is None:
+        return skip("build_cursor_hook_block() could not be read from the checkout's "
+                    "venv, so the desired wiring is unknown")
+    actual = snap.get("cursor_hooks_actual")
+    if not isinstance(actual, dict):
+        return skip("~/.cursor/hooks.json could not be read as JSON, so nothing was "
+                    "observed about what init wrote there")
+
+    desired_flat = _flatten_cursor_hooks(desired)
+    actual_flat = _flatten_cursor_hooks(actual.get("hooks"))
+    guard_keys = sorted(k for k, e in desired_flat.items() if e.get("failClosed") is True)
+    if not guard_keys:
+        return skip("build_cursor_hook_block() declares no `failClosed` entry at all, "
+                    "so there is no guard to check the flag on")
+
+    non_guard_ours = [k for k, e in actual_flat.items()
+                      if OUR_HOOK_MARKER in k[1] and e.get("failClosed") is not True]
+    if not non_guard_ours:
+        return skip("every one of our own entries in ~/.cursor/hooks.json carries "
+                    "`failClosed`, so this check cannot tell a guard that is "
+                    "correctly flagged from a file where every entry defaults to "
+                    "the flag")
+    control = (f"{len(non_guard_ours)} of our own non-guard entries in "
+               "~/.cursor/hooks.json carry no `failClosed` flag, so the file "
+               "distinguishes a guard from the rest rather than defaulting "
+               "everything to the flag")
+
+    missing = [k for k in guard_keys if k not in actual_flat]
+    if missing:
+        return bad(f"{len(missing)} guard command(s) declared by "
+                   "build_cursor_hook_block() are not wired into ~/.cursor/hooks.json "
+                   f"at all: {'; '.join(f'{e}:{c}' for e, c in missing[:4])}", control)
+
+    not_flagged = [k for k in guard_keys if actual_flat[k].get("failClosed") is not True]
+    if not_flagged:
+        return bad(f"{len(not_flagged)} guard command(s) are wired without "
+                   f"`failClosed: true`: "
+                   f"{'; '.join(f'{e}:{c}' for e, c in not_flagged[:4])}", control)
+    return ok(f"all {len(guard_keys)} Cursor guard command(s) carry `failClosed: true` "
+              "in ~/.cursor/hooks.json", control)
 
 
 def check_second_init_does_not_duplicate_wiring() -> Result:
@@ -1161,6 +1303,7 @@ EVALUATORS = {
         check_starting_graph_is_not_reported_as_absent,
     "cli-exists-after-sync": check_cli_exists_after_sync,
     "graph-down-diagnosis-reaches-the-user": check_graph_down_diagnosis,
+    "compose-up-produces-a-graph-that-answers-queries": check_graph_ready_answers_queries,
     "check-exits-zero-before-install": check_check_exits_zero_before_install,
     "no-failure-marker-beside-the-word-skipped": check_no_failure_marker_beside_skipped,
     "init-exits-zero-on-a-fresh-box": check_init_exits_zero_on_a_fresh_box,
@@ -1169,6 +1312,7 @@ EVALUATORS = {
     "skills-are-linked": check_skills_are_linked,
     "pending-items-name-a-command-that-can-clear-them": check_pending_items_are_clearable,
     "clean-clone-manifest-count-is-what-the-cli-sees": check_clean_clone_manifest_count,
+    "cursor-guards-are-failclosed": check_cursor_guards_are_failclosed,
     "second-init-does-not-duplicate-wiring": check_second_init_does_not_duplicate_wiring,
     "moved-checkout-is-named-not-denied": check_moved_checkout_is_named,
     "console-serves-its-shell": check_console_serves_its_shell,

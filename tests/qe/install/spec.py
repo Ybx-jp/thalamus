@@ -295,6 +295,17 @@ CHECKS: tuple[Check, ...] = (
                   "probe must NOT produce that diagnosis — otherwise the check "
                   "passes on a box that always prints it"),
 
+    # ---- the graph actually becomes ready -----------------------------------------
+    Check("compose-up-produces-a-graph-that-answers-queries", Phase.GRAPH_READY,
+          Severity.BLOCKS,
+          "After `docker compose up -d`, within a bounded wait the graph must "
+          "actually answer a query — not merely accept a TCP connection. Before this "
+          "check existed, Phase.GRAPH_READY carried zero entries in `spec.CHECKS` and "
+          "nothing in the matrix asserted this at all (issue #130).",
+          control="the port must have been open at all after `docker compose up -d` "
+                  "returned 0, or a query failing to answer cannot be told apart from "
+                  "a container that never started"),
+
     # ---- pre-install check ------------------------------------------------------
     Check("check-exits-zero-before-install", Phase.CHECKED, Severity.DEGRADES,
           "getting-started:127 promises --check is safe before installing and exits 0, "
@@ -351,6 +362,16 @@ CHECKS: tuple[Check, ...] = (
           control="the same probe under an explicitly-set THALAMUS_CONFIG_DIR must "
                   "resolve a DIFFERENT count, or it is not reading the override at "
                   "all and would report the same number either way"),
+    Check("cursor-guards-are-failclosed", Phase.INSTALLED, Severity.BLOCKS,
+          "Every Cursor `beforeShellExecution` guard script wired into "
+          "~/.cursor/hooks.json carries `failClosed: true`, the flag issue #77 is "
+          "about. Read against `install.build_cursor_hook_block()` — the one place "
+          "the guard set and the flag are derived — rather than a copied list of "
+          "guard names that would drift the moment a fourth guard arrived.",
+          issue=123, fixed=True,
+          control="the same file must carry at least one of our OWN non-guard "
+                  "entries with no `failClosed` flag at all, or the check cannot "
+                  "tell 'wired correctly' from 'every entry defaults to the flag'"),
 
     # ---- idempotency ------------------------------------------------------------
     Check("second-init-does-not-duplicate-wiring", Phase.REINSTALLED, Severity.BLOCKS,
@@ -435,7 +456,15 @@ TIMEOUTS: dict[str, int] = {
     "clone-local": 60,       # 8.51 MiB pack off the seed device
     "clone-https": 180,      # network-bound; a github hiccup is not a Thalamus defect
     "compose-up": 900,       # 600 MB image, 2 vCPU, weighted-down slice
-    "graph-ready": 180,      # JVM start on 2 vCPU
+    "graph-ready": 180,      # JVM start on 2 vCPU. Also the bound `drive.py` waits,
+                             # after the CHECKED step, before taking the real
+                             # post-readiness `graph-ready` snapshot (issue #130) —
+                             # unmeasured like `boot`: the five-green-cells
+                             # calibration rule this block documents cannot be
+                             # satisfied yet (thread
+                             # qe-install-matrix-timeout-calibration-broken), so this
+                             # stays the same reasoned guess rather than an invented
+                             # calibrated number
     "uv-sync": 300,          # measured at 2.1 s; the floor guards a resolver stall
     "thalamus-init": 120,    # two 60 s subprocess timeouts inside register_mcp
     "asserts": 180,
@@ -515,6 +544,23 @@ def configs_needing_a_graph() -> tuple[str, ...]:
     """
     return tuple(c.name for c in CONFIGS
                  if Phase.GRAPH_STARTING not in c.skip_steps)
+
+
+def configs_building_a_wheel() -> tuple[str, ...]:
+    """Configs whose cell must also run the wheel phase after the documented steps.
+
+    One function rather than a second inspection of `Config.builds_a_wheel`, for the
+    reason `configs_requiring_no_graph`/`configs_needing_a_graph` already state: a
+    hardcoded second copy of a config's own flag drifts, silently, from the flag
+    itself. That drift is exactly what issue #129 found — the libvirt guest-script
+    generator (`ops/qe-install-matrix/seed.py`, the operator's private notes repo)
+    never read `builds_a_wheel` at all, so `installed-wheel` ran there as a plain
+    duplicate of `baseline` and reproduced nothing. `drive.py`'s own gate is
+    `config.builds_a_wheel and Phase.WHEEL not in config.skip_steps`; this is that
+    same condition, named once, for any reader of the spec outside this file too.
+    """
+    return tuple(c.name for c in CONFIGS
+                 if c.builds_a_wheel and Phase.WHEEL not in c.skip_steps)
 
 
 def expected_reproductions(config: Config) -> frozenset[int]:

@@ -75,9 +75,15 @@ CONSOLE_PORT = int(os.environ.get("QE_CONSOLE_PORT", "8378"))
 #: step". The order mirrors `seed.py`'s generated cell script exactly, because most
 #: checks are differential and a snapshot in the wrong place is not a weaker
 #: observation — it is a different one wearing the same label.
+#: "graph-readiness-window" is taken the instant `docker compose up -d` returns, with
+#: no wait at all — that is what samples issue #55's window, and it is why it must
+#: never move. "graph-ready" is NOT taken here: it needs a bounded wait for the graph
+#: to actually answer, which would delay the CHECKED step if it ran this early and
+#: silence #55 in the process (see spec.py:152-154). `graph_ready_phase` takes it
+#: later instead, strictly after CHECKED has already run unwaited (issue #130).
 SNAPSHOTS_AFTER: dict[spec.Phase | None, tuple[str, ...]] = {
     None: ("preflight",),
-    spec.Phase.GRAPH_STARTING: ("graph-ready",),
+    spec.Phase.GRAPH_STARTING: ("graph-readiness-window",),
     spec.Phase.INSTALLED: ("installed", "scopes"),
     spec.Phase.REINSTALLED: ("reinstalled",),
     spec.Phase.UNINSTALLED: ("uninstalled",),
@@ -87,6 +93,7 @@ SNAPSHOTS_AFTER: dict[spec.Phase | None, tuple[str, ...]] = {
 #: snapshot with it rather than recording an empty one under a name a check trusts.
 SNAPSHOT_PHASE: dict[str, spec.Phase] = {
     "preflight": spec.Phase.PREFLIGHT,
+    "graph-readiness-window": spec.Phase.GRAPH_STARTING,
     "graph-ready": spec.Phase.GRAPH_READY,
     "installed": spec.Phase.INSTALLED,
     "scopes": spec.Phase.INSTALLED,
@@ -484,6 +491,43 @@ def wheel_phase(repo: Path, env: dict, artifacts: Path, recorder: Recorder) -> N
     snap("wheel", env, recorder)
 
 
+def graph_ready_phase(artifacts: Path, env: dict, recorder: Recorder) -> None:
+    """Wait, bounded, for the graph to answer a query, then snapshot the real state.
+
+    Runs strictly AFTER the CHECKED step, on purpose. `graph-readiness-window`
+    (`SNAPSHOTS_AFTER[Phase.GRAPH_STARTING]`) is taken the instant `docker compose up
+    -d` returns, with no wait at all — that is what samples the window issue #55 is
+    about, between the port accepting a connection and the server answering a query,
+    and a wait inserted ahead of it, or ahead of the `--check` step that reads it,
+    would silence the defect the early sample exists to catch (README.md,
+    spec.py:152-154). This wait sits after both, so `check_graph_down_diagnosis`
+    (#17) gets a sample that actually confirms the graph answers, without the driver
+    ever waiting politely before `--check` runs.
+
+    Bounded rather than polled to exhaustion: `spec.TIMEOUTS["graph-ready"]` is an
+    unmeasured 180s — spec.py's own note is that the five-green-cells calibration
+    rule this matrix documents cannot be satisfied yet. A cell whose graph never
+    becomes ready within it still gets a `graph-ready` snapshot, with `query_ok`
+    false, so `check_graph_ready_answers_queries` fails naming what it saw rather
+    than the driver hanging past its own budget.
+    """
+    timeout = spec.TIMEOUTS["graph-ready"]
+    recorder.note(f"phase graph-ready: waiting up to {timeout}s for the graph to answer")
+    deadline = time.time() + timeout
+    snap_path = artifacts / "snap-graph-ready.json"
+    ready = False
+    while time.time() < deadline:
+        snap("graph-ready", env, recorder)
+        try:
+            ready = bool(json.loads(snap_path.read_text()).get("query_ok"))
+        except (OSError, ValueError):
+            ready = False
+        if ready:
+            break
+        time.sleep(3)
+    recorder.note(f"phase graph-ready: query_ok={ready}")
+
+
 def console_phase(repo: Path, env: dict, artifacts: Path, recorder: Recorder) -> None:
     """Start the console, fetch its shell, stop it.
 
@@ -670,6 +714,9 @@ def main(argv: list[str]) -> int:
             for step in steps:
                 run_step(step, repo, env, artifacts, recorder)
                 snapshots_after(step.phase)
+                if step.phase is spec.Phase.CHECKED \
+                        and spec.Phase.GRAPH_STARTING not in config.skip_steps:
+                    graph_ready_phase(artifacts, env, recorder)
                 if step.phase is spec.Phase.REINSTALLED:
                     if spec.Phase.MOVED not in config.skip_steps:
                         moved_phase(repo, env, artifacts, recorder)
