@@ -13,13 +13,6 @@
   ],
   "expectations": [
     {
-      "case": "a-graceful-close-is-not-recorded-as-a-forced-kill",
-      "failure_class": "unenforced-signal",
-      "witness_contains": "close_window recorded 1 forced kill(s) ['close'] and kill-window ran=True",
-      "triaged_at_rev": "ea06c91",
-      "note": "Issue #151. close_window polls #{pane_dead} and discards it, so a pane that exited gracefully under remain-on-exit is waited out for the whole grace budget and then force-killed and recorded as never distilled. The pin names both halves of the current behaviour - the forced-kill record AND the kill-window - so a partial repair that stopped one and not the other drifts rather than staying triaged."
-    },
-    {
       "case": "typed-text-reaches-the-pane-as-data-not-as-tmux-arguments",
       "failure_class": "boundary-leak",
       "witness_contains": "'-t 0' (a chunk that retargets the send to a pane of its own choosing) -> pane held ''",
