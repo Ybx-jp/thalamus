@@ -871,6 +871,12 @@ Spawn again, then
 `tmux -L thalamus list-windows -a -F '#{window_index} #{pane_dead} #{pane_start_command}'`.
 A window with `pane_dead 1` never execed its command — almost always PATH.
 
+While this is on, closing a window from the console leaves the corpse behind rather
+than removing it — the close is recognised by `#{pane_dead}`, not by the window
+leaving the list, and killing the pane would destroy the thing the setting exists to
+preserve. The row stays in the roster marked `dead`. Unset it
+(`tmux -L thalamus set -wgu remain-on-exit`) when you are done diagnosing.
+
 **The phone disagrees with the server.** Rule the layers out in this order, because
 each one masks the next:
 

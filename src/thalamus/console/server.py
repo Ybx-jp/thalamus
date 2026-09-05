@@ -1062,10 +1062,28 @@ def recycle_window(cfg: Config, idx: int) -> None:
 
 
 def close_window(cfg: Config, idx: int) -> None:
-    """Graceful close: `/exit` fires SessionEnd, then the agent exits and tmux
-    removes the window on its own (no remain-on-exit, unlike recycle). Force
+    """Graceful close: `/exit` fires SessionEnd, then the agent exits. Force
     `kill-window` only if it outlives the grace budget — that path skips SessionEnd,
     the same tradeoff as a recycle timeout.
+
+    **A finished agent shows up as one of two different things, and the loop below has
+    to ask both questions.** With `remain-on-exit` off, tmux removes the window when
+    the pane exits, so the window leaves `list-windows` and `_window_gone` sees it.
+    With it on, the pane exits and the window stays behind as a corpse — still
+    enumerated, `#{pane_dead}` 1 — so `_window_gone` never fires. That setting is not
+    exotic: `docs/console.md` instructs turning it on globally
+    (`set -wg remain-on-exit on`) to diagnose a spawn that never execed, and never
+    instructs turning it back off, and `recycle_window` sets it per-window on a path
+    that does not unset it if it raises. `recycle_window` polls both. A loop here that
+    polled only `_window_gone` would burn the whole budget on a session that ran
+    `/exit`, fired SessionEnd and distilled normally, and then write a forced-kill
+    record — whose entire meaning is "SessionEnd never ran, nothing will ever distil
+    this session" — about a session that did (issue #151).
+
+    The corpse is left where it is rather than killed. The operator who turned
+    `remain-on-exit` on did it to read dead panes, and a close that removed the pane
+    it was set to preserve would defeat the setting it is running under; the window
+    list reports it as `dead` (:891) either way.
 
     `/exit` is a command on both harnesses (measured on Cursor 2026.08.11-e8db854),
     so this path is harness-neutral — but what SessionEnd *does* is not. Claude Code
@@ -1087,6 +1105,9 @@ def close_window(cfg: Config, idx: int) -> None:
         while time.time() < deadline:
             if _window_gone(cfg, wid):
                 return  # window already gone: claude exited and tmux closed it
+            r = tmux("display", "-p", "-t", target, "#{pane_dead}")
+            if r.stdout.strip() == "1":
+                return  # the agent exited; remain-on-exit is keeping the corpse
             time.sleep(1)
         # Hung past the grace budget. The kill skips SessionEnd, so nothing will
         # ever write a distillation log for this session — and a scan over logs
