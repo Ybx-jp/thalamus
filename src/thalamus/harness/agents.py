@@ -28,7 +28,7 @@ project has already paid for twice.
 `transport` says how the model is reached, `invocation` says how a CLI is asked,
 `envelope` says how its answer is read. Cursor is the proof the last two are
 separate axes: it shares Claude Code's argv shape exactly and still differs in what
-the envelope carries (tokens, no price). `ghoul` is the proof the first is a third:
+the envelope carries (tokens, no price). `local` is the proof the first is a third:
 it is reached over HTTP, so `invocation` and `envelope` describe nothing about it
 and `binary` is empty. One field covering any two would have to be a harness name
 in disguise, which is the fork this module exists to replace. No field holds a
@@ -36,7 +36,7 @@ callable: a row holding a function is no longer data that can be listed, diffed 
 serialized (`contract/probes.py`), and the readers therefore live with
 `ExtractionRun` in `harness/extraction.py`.
 
-**Not every row is a session an operator can be pinned into.** Until `ghoul` there
+**Not every row is a session an operator can be pinned into.** Until `local` there
 was one kind of entry — a CLI a human runs interactively and that also distills
 headlessly — and several surfaces read `HARNESSES` on that assumption:
 `launcher.py` asserts a launch shape per harness, `install.py` wires hooks and an
