@@ -15,6 +15,7 @@ from thalamus.contract.conformance import (
     VIOLATION,
     AuditEdge,
     AuditVertex,
+    audit_attribution,
     audit_content_addresses,
     audit_declarations,
     audit_edges,
@@ -181,22 +182,61 @@ def test_a_cross_scope_uses_nothing_served_is_reported_as_an_advisory():
     assert severity_of(issues[0]) == ADVISORY
 
 
-def test_a_uses_edge_onto_another_scopes_episodic_claim_is_legal():
+def test_attribution_may_not_reach_another_scopes_episodic_memory():
     """
-    Scenario: a main-scope claim `USES` an expert's *session-contained* claim — the
-    shape a consultation produces, since the ticket grant serves an expert's own
-    experience into the consulting session.
+    Scenario: four `USES` edges — onto another scope's session-contained claim, onto
+    another scope's session-less knowledge claim, onto a same-scope contained claim,
+    and a `rejected` option minted by the writing session itself.
 
-    The audit sees edges, not containment, and must not acquire a shape rule here:
-    what separates a citation from a fabrication is provenance, which `verified`
-    carries. A served-and-stamped crossing is silent whatever the target contains.
+    The rule is about what the edge represents, not about what a session may see: a
+    consultation ticket does serve an expert's own experience into the asking
+    session, and the resulting crossing is still not attributable, because a subgraph
+    compounding two scopes' experience is a wider representation than the one being
+    built.
+
+    Verifications:
+    - the cross-scope episodic target is a violation, not an advisory: the write path
+      drops it, so one in the graph means something wrote around the write path
+    - cross-scope *knowledge* is legal — the reader serves session-less claims to
+      every scope, so nothing is left unreadable
+    - a same-scope contained target is legal, contained or not
+    - `rejected` options, which are same-session by construction, are untouched
+    - containment is read off the CONTAINS edges in the same list
     """
-    episodic = AuditEdge(label="USES",
+    contains = [
+        AuditEdge(label="CONTAINS", from_vid="scope:architect:session:s1",
+                  from_label="Session", to_vid="scope:architect:claim:e1",
+                  to_label="Claim"),
+        AuditEdge(label="CONTAINS", from_vid="scope:main:session:s2",
+                  from_label="Session", to_vid="scope:main:claim:m1", to_label="Claim"),
+        AuditEdge(label="CONTAINS", from_vid="scope:main:session:s2",
+                  from_label="Session", to_vid="scope:main:claim:opt", to_label="Claim"),
+    ]
+    foreign_episodic = AuditEdge(label="USES",
+                                 from_vid="scope:main:claim:c1", from_label="Claim",
+                                 to_vid="scope:architect:claim:e1", to_label="Claim",
+                                 properties={"role": "reason"})
+    foreign_knowledge = AuditEdge(label="USES",
+                                  from_vid="scope:main:claim:c1", from_label="Claim",
+                                  to_vid="scope:literature:claim:k1", to_label="Claim",
+                                  properties={"role": "reason"})
+    own_episodic = AuditEdge(label="USES",
+                             from_vid="scope:main:claim:c1", from_label="Claim",
+                             to_vid="scope:main:claim:m1", to_label="Claim",
+                             properties={"role": "reason"})
+    rejected = AuditEdge(label="USES",
                          from_vid="scope:main:claim:c1", from_label="Claim",
-                         to_vid="scope:architect:claim:e1", to_label="Claim",
-                         properties={"role": "reason", "verified": True})
+                         to_vid="scope:main:claim:opt", to_label="Claim",
+                         properties={"role": "rejected"})
 
-    assert audit_edges([episodic]) == []
+    issues = audit_attribution(
+        [*contains, foreign_episodic, foreign_knowledge, own_episodic, rejected]
+    )
+
+    assert len(issues) == 1
+    assert "Attribution leaves its scope" in issues[0]
+    assert "scope:architect:claim:e1" in issues[0]
+    assert severity_of(issues[0]) == VIOLATION
 
 
 def test_supersedes_is_for_evidence_snapshots_only():

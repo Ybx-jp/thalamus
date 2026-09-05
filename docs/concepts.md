@@ -178,10 +178,17 @@ the exact messages, and `ANCHORS` puts a literature claim on the passage it quot
 
 **A claim records what it reasoned with.** A decision or solution that used
 something recalled as grounds carries a `USES` edge to it, with `role` saying how
-(`reason`, or `rejected` for an alternative the decision turned down). The target is
-whatever the session was actually served: a literature claim or passage, or another
-scope's own experience, which a consultation ticket serves into the consulting
-session as a matter of course.
+(`reason`, or `rejected` for an alternative the decision turned down).
+
+**Attribution is scope-closed.** The edge reaches the claim's own scope, or
+session-less knowledge in any scope — the reader serves those everywhere, so the
+scope segment on a literature claim says which expert ingested it, not who may read
+it. It does not reach another scope's episodic memory, even though a consultation
+ticket serves exactly that into the asking session. The subgraph these edges form is
+meant to compound one scope's experience and the knowledge it applied into a concept
+a later task can reuse; one spanning two scopes' experience is a wider thing, and
+not the thing being built. The write path drops such a target and `contract check`
+gates the graph on it.
 
 Distillation writes the edge from the extractor's references, which it names by
 8-character handles taken from the served-memory list in the prompt — the digest
@@ -194,8 +201,9 @@ served is dropped rather than written.
 when a retrieval actually served that target into a session containing the claim,
 false when sync looked and none did, absent when sync has not looked. Served is not
 used: the used verdict stays on the trace's `RETURNS` edge. Nothing gates the write
-on the stamp, and no write-time scope test stands behind the edge: legitimacy is
-provenance, which the write path cannot see, so `contract check` reports a
+on the stamp — whether a reference was *served* is provenance, which the write path
+cannot see, and an unverifiable reference is itself evidence rather than grounds to
+drop one — so `contract check` reports a
 cross-scope `USES` stamped false as an advisory instead. Recall renders each
 reference as one line under the claim, without a backticked ID, so the citation is
 never priced as a node the retrieval returned.

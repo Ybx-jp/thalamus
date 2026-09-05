@@ -430,11 +430,19 @@ class _StubTraversal:
         self.asked = vids
         return self
 
-    def element_map(self, *_keys):
+    def project(self, *_keys):
+        return self
+
+    def by(self, *_args):
         return self
 
     def to_list(self):
         return self._rows
+
+
+def _row(vid, label, scope, text, *, kind="", contained=0):
+    return {"id": vid, "label": label, "scope": scope, "kind": kind,
+            "text": text, "contained": contained}
 
 
 def test_the_reference_feed_offers_only_what_a_uses_edge_can_land_on(monkeypatch):
@@ -453,8 +461,6 @@ def test_the_reference_feed_offers_only_what_a_uses_edge_can_land_on(monkeypatch
     - a served node missing from the graph is dropped rather than offered
     - each entry carries the kind and text the prompt renders
     """
-    from gremlin_python.process.traversal import T
-
     claim = "scope:literature:claim:aaaa1111bbbb2222"
     chunk = "scope:literature:chunk:" + "f" * 64 + "-0007"
     retired = "scope:architect:claim:dddd4444eeee5555"
@@ -475,12 +481,11 @@ def test_the_reference_feed_offers_only_what_a_uses_edge_can_land_on(monkeypatch
     ]
     monkeypatch.setattr("thalamus.eval.traces.load_events", lambda *a, **k: events)
     graph = _StubTraversal([
-        {T.id: chunk, T.label: "Chunk", "scope": "literature", "text": "a passage"},
-        {T.id: claim, T.label: "Claim", "scope": "literature", "kind": "literature",
-         "description": "a recalled claim"},
+        _row(chunk, "Chunk", "literature", "a passage"),
+        _row(claim, "Claim", "literature", "a recalled claim", kind="literature"),
     ])
 
-    served = cli._served_nodes(graph, "s1")
+    served = cli._served_nodes(graph, "s1", "main")
 
     assert [node["vid"] for node in served] == [claim, chunk]
     assert claim in graph.asked and retired in graph.asked
@@ -488,3 +493,45 @@ def test_the_reference_feed_offers_only_what_a_uses_edge_can_land_on(monkeypatch
                          "text": "a recalled claim"}
     assert served[1]["label"] == "chunk"
     assert served[1]["text"] == "a passage"
+
+
+def test_the_reference_feed_withholds_another_scopes_episodic_memory(monkeypatch):
+    """
+    Scenario: a `main` session whose ticketed consultation recalls returned an
+    expert's session-contained claim alongside that expert's knowledge claim and a
+    contained claim of main's own
+
+    The expert's experience was legitimately served — a consultation ticket grants
+    exactly that — and is still not offered as a reference, because attribution is
+    scope-closed. Withholding the handle is the half that keeps the model from being
+    shown something it may not use; `writer._write_references` is the half that makes
+    it a guarantee.
+
+    Verifications:
+    - the foreign episodic claim is not offered
+    - foreign session-less knowledge is: the reader serves it to every scope
+    - a contained claim in the session's own scope is offered — containment alone
+      does not disqualify a target
+    """
+    foreign_episodic = "scope:architect:claim:eeee1111"
+    foreign_knowledge = "scope:literature:claim:aaaa2222"
+    own_episodic = "scope:main:claim:bbbb3333"
+    monkeypatch.setattr(
+        "thalamus.eval.traces.load_events",
+        lambda *a, **k: [SimpleNamespace(
+            session_id="s1",
+            returned_node_ids=lambda: [foreign_episodic, foreign_knowledge, own_episodic],
+        )],
+    )
+    graph = _StubTraversal([
+        _row(foreign_episodic, "Claim", "architect", "what the architect lived",
+             kind="decision", contained=1),
+        _row(foreign_knowledge, "Claim", "literature", "what a paper asserts",
+             kind="literature"),
+        _row(own_episodic, "Claim", "main", "what main decided",
+             kind="decision", contained=1),
+    ])
+
+    served = cli._served_nodes(graph, "s1", "main")
+
+    assert [node["vid"] for node in served] == [foreign_knowledge, own_episodic]

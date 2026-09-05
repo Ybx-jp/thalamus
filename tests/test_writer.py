@@ -399,11 +399,20 @@ class _VertexChain:
         self.fake = fake
         self.vid = vid
         self.bytecode = "fake-bytecode"
+        self._asking_containment = False
 
     def has_label(self, *_labels):
         return self
 
+    def in_e(self, label):
+        # `_write_references` asks containment this way; answer from the fake's own
+        # `contained` set rather than from `existing`, which means "the vertex is here".
+        self._asking_containment = label == "CONTAINS"
+        return self
+
     def has_next(self):
+        if self._asking_containment:
+            return self.vid in getattr(self.fake, "contained", set())
         return self.vid in self.fake.existing
 
     def property(self, key, value):
@@ -417,8 +426,9 @@ class _VertexChain:
 class _ThreadRefFake:
     """Just enough traversal source for _write_thread_refs: V() lookups and merge_e."""
 
-    def __init__(self, existing):
+    def __init__(self, existing, contained=()):
         self.existing = set(existing)
+        self.contained = set(contained)
         self.edges = []
         self.status_updates = []
 
@@ -925,12 +935,54 @@ def test_references_become_uses_edges_only_to_knowledge_items_that_exist():
     fake.existing.discard(session)
 
     _write_references(
-        fake, claim, [literature, chunk, "scope:literature:claim:invented", session, claim]
+        fake,
+        claim,
+        [literature, chunk, "scope:literature:claim:invented", session, claim],
+        "designer",
     )
 
     assert [(e[Direction.from_], e[Direction.to], e[T.label]) for e in fake.edges] == [
         (claim, literature, "USES"),
         (claim, chunk, "USES"),
+    ]
+
+
+def test_a_reference_into_another_scopes_episodic_memory_is_dropped():
+    """
+    Scenario: a `main` claim's references name an expert's session-contained claim,
+    that expert's session-less knowledge claim, and a contained claim of main's own
+
+    A consultation ticket serves an expert's own experience into the asking session,
+    so this is a reference the model can honestly make and the write still refuses
+    it: attribution is scope-closed, and a subgraph compounding two scopes'
+    experience is a wider representation than the one this edge builds.
+
+    Verifications:
+    - the foreign *episodic* target is dropped, with no edge written
+    - the foreign *knowledge* target is written: the reader serves session-less
+      claims to every scope, so nothing is left unreadable
+    - a contained target in the claim's own scope is written — containment alone is
+      not what disqualifies a target
+    """
+    from thalamus.substrate.writer import _write_references
+    from thalamus.contract.ontology import vid as make_vid
+
+    claim = make_vid("Claim", "dddd", "main")
+    foreign_episodic = make_vid("Claim", "eeee", "architect")
+    foreign_knowledge = make_vid("Claim", "aaaa", "literature")
+    own_episodic = make_vid("Claim", "bbbb", "main")
+    fake = _ThreadRefFake(
+        existing={foreign_episodic, foreign_knowledge, own_episodic},
+        contained={foreign_episodic, own_episodic},
+    )
+
+    _write_references(
+        fake, claim, [foreign_episodic, foreign_knowledge, own_episodic], "main"
+    )
+
+    assert [(e[Direction.from_], e[Direction.to]) for e in fake.edges] == [
+        (claim, foreign_knowledge),
+        (claim, own_episodic),
     ]
 
 
@@ -959,7 +1011,7 @@ def test_the_reference_write_carries_role_and_never_verified():
             return traversal
 
     fake = _Fake(existing={literature})
-    _write_references(fake, claim, [literature])
+    _write_references(fake, claim, [literature], "designer")
 
     [traversal] = fake.traversals
     assert traversal.options == [

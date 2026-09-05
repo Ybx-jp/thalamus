@@ -1976,7 +1976,7 @@ def _cmd_extract(args):
             # The reference feed, read here rather than inside extraction: the
             # served set comes from the eval tap, and the harness layer does not
             # depend on eval. The orchestrator reads it and passes it down as data.
-            served = _served_nodes(graph, facts.session_id)
+            served = _served_nodes(graph, facts.session_id, scope)
 
             if retained is None:
                 payload = read_archived(entry.content_hash, suffix=".jsonl")
@@ -3608,7 +3608,7 @@ def _known_claims(graph, scope: str, project: str, limit: int = 50) -> list[dict
     return claims
 
 
-def _served_nodes(graph, session_id: str, limit: int = 120) -> list[dict]:
+def _served_nodes(graph, session_id: str, scope: str, limit: int = 120) -> list[dict]:
     """What this session's retrievals returned — the reference feed's candidate list.
 
     Read from the eval tap rather than from Trace vertices, because at this point the
@@ -3617,10 +3617,18 @@ def _served_nodes(graph, session_id: str, limit: int = 120) -> list[dict]:
     tap file already holds them.
 
     Only Claim and Chunk targets are offered, since those are the only labels a `USES`
-    edge may land on. Capped and in the order the session met them: the feed exists so
-    a claim can name what it reasoned with, not to replay every recall of a long
-    session into the prompt. A reference to a node past the cap resolves to nothing
-    and is dropped, the same as any unmatched handle.
+    edge may land on, and only ones an attribution subgraph rooted in `scope` may
+    reach: this scope's own nodes, and session-less knowledge from any scope.
+    Another scope's episodic memory is served here — a consultation ticket puts an
+    expert's own experience into the asking session — and is deliberately not
+    offered, because attribution is scope-closed (`writer._write_references`). The
+    write path enforces the same rule; this filter keeps the model from being shown
+    a handle it may not use, which is the difference between a prompt and a promise.
+
+    Capped and in the order the session met them: the feed exists so a claim can name
+    what it reasoned with, not to replay every recall of a long session into the
+    prompt. A reference to a node past the cap resolves to nothing and is dropped,
+    the same as any unmatched handle.
 
     The cap costs a long session its later recalls, and 120 was chosen against the
     digest rather than against a measurement of which recalls get cited: at roughly
@@ -3647,14 +3655,25 @@ def _served_nodes(graph, session_id: str, limit: int = 120) -> list[dict]:
     if not vids:
         return []
 
+    from gremlin_python.process.graph_traversal import __
+    from gremlin_python.process.traversal import T
+
     try:
-        rows = graph.V(*vids).element_map("scope", "kind", "description", "text").to_list()
+        rows = (
+            graph.V(*vids)
+            .project("id", "label", "scope", "kind", "text", "contained")
+            .by(T.id)
+            .by(T.label)
+            .by(__.coalesce(__.values("scope"), __.constant("")))
+            .by(__.coalesce(__.values("kind"), __.constant("")))
+            .by(__.coalesce(__.values("description"), __.values("text"), __.constant("")))
+            .by(__.in_e("CONTAINS").count())
+            .to_list()
+        )
     except Exception:
         return []
 
-    from gremlin_python.process.traversal import T
-
-    by_vid = {str(row[T.id]): row for row in rows if T.id in row}
+    by_vid = {str(row["id"]): row for row in rows if isinstance(row, dict)}
     served: list[dict] = []
     for vid in vids:
         row = by_vid.get(vid)
@@ -3662,11 +3681,14 @@ def _served_nodes(graph, session_id: str, limit: int = 120) -> list[dict]:
         # name what the write path can still resolve.
         if row is None:
             continue
+        # Another scope's episodic memory: reachable, deliberately not attributable.
+        if str(row["scope"]) != scope and int(row["contained"] or 0) > 0:
+            continue
         served.append({
             "vid": vid,
-            "label": str(row.get("kind") or str(row.get(T.label, "node")).lower()),
-            "scope": str(row.get("scope") or ""),
-            "text": str(row.get("description") or row.get("text") or ""),
+            "label": str(row["kind"] or str(row["label"]).lower()),
+            "scope": str(row["scope"]),
+            "text": str(row["text"]),
         })
     return served
 

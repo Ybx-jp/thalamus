@@ -496,6 +496,43 @@ def _or_list(labels: tuple[str, ...]) -> str:
     return " or ".join(labels) if len(labels) < 3 else ", ".join(labels)
 
 
+def audit_attribution(edges: list[AuditEdge]) -> list[str]:
+    """Attribution is scope-closed: no `USES` reaches another scope's episodic memory.
+
+    The invariant behind the edge, not a security rule. An attribution subgraph exists
+    to compound one scope's own experience and the knowledge it applied into a concept
+    a later task can reuse, so every node it reaches has to be readable from the scope
+    that owns its root claim. Two targets are: a node in the same scope, and a
+    session-less knowledge node in any scope, which the reader serves to every scope
+    by construction. Another scope's episodic memory is neither — it is reachable
+    through a consultation ticket, and compounding across that boundary would mix two
+    scopes' experience into one generalisation.
+
+    Containment is read off the `CONTAINS` edges in this same list rather than from a
+    second graph query: the audit already holds every edge, and deriving the episodic
+    set from it keeps this a pure function over the rows.
+
+    A violation rather than an advisory. `_write_references` drops these before they
+    land, so one in the graph means something wrote around the write path, which is
+    the case a gate exists for — unlike an unverified reference, which is a finding
+    about a legitimate edge.
+    """
+    contained = {edge.to_vid for edge in edges if edge.label == "CONTAINS"}
+    issues: list[str] = []
+    for edge in edges:
+        if edge.label != "USES" or edge.to_vid not in contained:
+            continue
+        if not edge_crosses_scope(edge.from_vid, edge.to_vid):
+            continue
+        issues.append(
+            f"Attribution leaves its scope: `{edge.from_vid}` -[USES]-> "
+            f"`{edge.to_vid}` reaches scope `{scope_of(edge.to_vid)}`'s episodic "
+            "memory, which a reader confined to "
+            f"`{scope_of(edge.from_vid)}` cannot resolve"
+        )
+    return issues
+
+
 _EXCHANGE_STATUSES = frozenset({"open", "answered"})
 
 
@@ -989,6 +1026,7 @@ def check_graph(g, archive_base: Path | None = None) -> tuple[list[str], dict[st
     issues = [
         *audit_vertices(vertices),
         *audit_edges(edges),
+        *audit_attribution(edges),
         *audit_exchanges(vertices, edges),
         *audit_orphans(vertices, edges),
         *audit_evidence(vertices, archive_base),
