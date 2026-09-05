@@ -180,7 +180,15 @@ thalamus ci-triage attempt <case> --witness "<w>"   # claim one attempt; exit 1 
 thalamus ci-triage claim <case> --pr <n>    # this case now has a remediation PR
 thalamus ci-triage claim <case> --done --witness "<w>"
 thalamus ci-triage escalate --pr <n> --message "<why it is stuck>"
+thalamus ci-triage report <case> --problem "..." --fix "..." --next "..."
+thalamus ci-triage reports                  # what the loop did while you were away
 ```
+
+`report` is how a finished triage hands back what happened, and `reports` is what you
+read instead of the session. All three of `--problem`, `--fix` and `--next` are
+required: `--next nothing` is a considered answer, an omitted one is not, and the record
+exists so those cannot look alike. The line is printed as well as stored, so under
+systemd it lands in the journal as the notification.
 
 `watch` dispatches only for a **failed run from a push to master** — never a
 `pull_request` run. Every gating workflow triggers on both events, so the loop's own
