@@ -38,6 +38,7 @@ class Phase(str, Enum):
     GRAPH_READY = "graph-ready"      # once the graph answers a query
     CHECKED = "checked"              # after `thalamus init --check`, pre-install
     INSTALLED = "installed"          # after `thalamus init`
+    DISTILLED = "distilled"          # after a fixture session ends and is distilled
     REINSTALLED = "reinstalled"      # after a second `thalamus init`
     MOVED = "moved"                  # after the checkout is renamed
     CONSOLE = "console"              # with `thalamus console` serving
@@ -203,6 +204,15 @@ AGENT_CLIS: tuple[str, ...] = ("claude", "agent", "codex")
 #: it is the artifact under test.
 WHEEL_VENV_DIRNAME = ".qe-wheel-venv"
 
+#: Arms the one phase in this matrix that spends real model money: `Phase.DISTILLED`'s
+#: check (issue #131). Read identically by `drive.py` (whether to run the phase at
+#: all) and `checks.py` (why it reports not_evaluated when it did not), so neither can
+#: drift from the other about which cells this ran on. Unset on every hosted per-push
+#: runner by construction — qe-linux.yml and qe-macos.yml never set it — and set to
+#: "1" only by the libvirt scheduled run in the operator's private notes repo, where
+#: the model budget for #131 was granted on a schedule, never per-push.
+DEEP_TIER_ENV = "QE_DEEP_TIER"
+
 
 # --------------------------------------------------------------------------------------
 # Config variants. Each reproduces a filed defect's precondition.
@@ -216,7 +226,14 @@ CONFIGS: tuple[Config, ...] = (
            "`jq` off PATH — another vendor's binary that install does not provide. "
            "The absence must be reported as an advisory, the checks that need it as "
            "could-not-run, and `--check` must still exit 0 before install.",
-           issue=79, fixed=True, removes=("jq",)),
+           issue=79, fixed=True, removes=("jq",),
+           # `session-end.sh` exits 0 before doing anything when `jq` is missing
+           # (`thalamus_require_binaries jq uv || exit 0`), so the DISTILLED phase's
+           # fixture session would never be picked up at all. That is issue #79's
+           # premise re-observed, not a #131 finding, and skipping it here is what
+           # keeps the no-agent-cli cell — this check's own control — the one place
+           # an unchanged count means something.
+           skip_steps=(Phase.DISTILLED,)),
     Config("no-agent-cli",
            "No `claude` on PATH at init time. The MCP registration is SKIPPED into "
            "the actions list, verify() has no check for it, and init exits 0.",
@@ -228,7 +245,11 @@ CONFIGS: tuple[Config, ...] = (
     Config("graph-not-started",
            "`thalamus init` run before `docker compose up -d`. The readable "
            "diagnosis must reach the user rather than a transport error.",
-           issue=17, fixed=True, skip_steps=(Phase.GRAPH_STARTING, Phase.GRAPH_READY)),
+           issue=17, fixed=True,
+           # No graph ever runs in this cell, so the fixture session's extraction
+           # would fail to write for the same reason issue #17 does — a finding
+           # about a down graph, not about #131 — and DISTILLED skips with it.
+           skip_steps=(Phase.GRAPH_STARTING, Phase.GRAPH_READY, Phase.DISTILLED)),
     Config("moved-checkout",
            "The checkout is renamed after a successful init, which is what an "
            "ordinary upgrade looks like. Every later --check must name the "
@@ -373,6 +394,23 @@ CHECKS: tuple[Check, ...] = (
                   "entries with no `failClosed` flag at all, or the check cannot "
                   "tell 'wired correctly' from 'every entry defaults to the flag'"),
 
+    # ---- a session that ends is distilled ----------------------------------------
+    # Model-spending: gated on `DEEP_TIER_ENV`, never on a hosted per-push runner.
+    # No `issue=` tag — like `compose-up-produces-a-graph-that-answers-queries`
+    # above, this closes a coverage gap rather than reproducing a defect the tree is
+    # known to carry, so it is expected to PASS from the day it lands.
+    Check("a-session-that-ends-is-distilled", Phase.DISTILLED, Severity.BLOCKS,
+          "README.md:103 states the whole confirmation that memory works: the "
+          "session count `thalamus status` reports goes from 0 to 1 after a real "
+          "session ends. docs/getting-started.md:157-186 makes this documented step "
+          "6 of the first run. Every check above this one stops at whether the "
+          "wiring that writes it is armed; none reads a Session vertex, a claim, or "
+          "`thalamus status` itself (issue #131).",
+          control="the no-agent-cli cell — whose premise is a box with no CLI "
+                  "distillation can shell out to — must show the same fixture "
+                  "session end with the count UNCHANGED, or this check cannot tell "
+                  "a session that got distilled from one where nothing ran at all"),
+
     # ---- idempotency ------------------------------------------------------------
     Check("second-init-does-not-duplicate-wiring", Phase.REINSTALLED, Severity.BLOCKS,
           "Running init twice leaves one hook set, not two. The strip-then-write path "
@@ -480,6 +518,15 @@ TIMEOUTS: dict[str, int] = {
     # Two of these run in the wheel phase, so it also has to stay well inside
     # CELL_CEILING_S.
     "wheel-probe": 300,
+    # Bounds `distill_phase`'s poll for the fixture session to land (issue #131).
+    # `extraction.run_extraction`'s own subprocess ceiling is 900s
+    # (harness/extraction.py:661), and its docstring describes the ordinary case as
+    # "a minute or two"; this adds room for `uv run`'s own resolution and the
+    # chained `eval sync --write` session-end.sh runs after it. Unmeasured, like
+    # `graph-ready`: this phase is gated on `DEEP_TIER_ENV` and has never run
+    # against a real cell, so the five-green-cells calibration rule cannot be
+    # satisfied yet — a reasoned guess, not an invented calibrated number.
+    "distill": 1200,
 }
 
 #: The per-cell hard ceiling, in seconds. Passed to virt-install as `--wait` in minutes.

@@ -200,6 +200,18 @@ _CURSOR_HOOK_BLOCK_DUMP = (
     "print(json.dumps(build_cursor_hook_block()))"
 )
 
+#: `thalamus status`'s own reading (harness/status.py:86, `collect()`), dumped
+#: structurally rather than parsed off rendered text — the same reason `_VERIFY_DUMP`
+#: reads `verify()` directly. `newest` carries `session_id`, so the DISTILLED phase's
+#: check can confirm the fixture's OWN session landed rather than merely that some
+#: count moved (issue #131).
+_STATUS_DUMP = (
+    "import json;"
+    "from thalamus.harness.status import collect;"
+    "s = collect();"
+    "print(json.dumps({'sessions': s.sessions, 'newest': s.newest}))"
+)
+
 
 def _read_json(path: Path):
     try:
@@ -403,6 +415,16 @@ def snapshot(label: str) -> dict:
         state["console"] = _console_probe()
     if label == "wheel":
         state["wheel"] = _wheel_probe()
+    if label in ("distill-before", "distill-after"):
+        # `armed` and `session_id` are read back from the environment `drive.py`
+        # threads through to this subprocess, not recomputed here — one definition
+        # of "is this cell allowed to spend a model call" (spec.DEEP_TIER_ENV) and
+        # one definition of "which fixture session this run means" (drive.py mints
+        # it once), so this file cannot answer either question differently from the
+        # one that actually ran the phase.
+        state["armed"] = os.environ.get(spec.DEEP_TIER_ENV) == "1"
+        state["session_id"] = os.environ.get("QE_DISTILL_SESSION_ID", "")
+        state["status"] = _dump(_STATUS_DUMP)
     if label in ("graph-ready", "graph-readiness-window"):
         # Two samples, deliberately: "graph-readiness-window" is taken the instant
         # `docker compose up -d` returns, no wait, and is what #55 reads — a wait
@@ -1085,6 +1107,62 @@ def check_cursor_guards_are_failclosed() -> Result:
               "in ~/.cursor/hooks.json", control)
 
 
+def check_a_session_that_ends_is_distilled() -> Result:
+    """DISTILLED: README.md:103's promise — a session that ends moves the count.
+
+    Gated on `spec.DEEP_TIER_ENV` (issue #131's model budget, granted on a schedule
+    and never on a hosted per-push runner). Its positive control is built into the
+    matrix rather than bolted onto this one cell's own run: the `no-agent-cli` cell's
+    premise is a box with no CLI distillation can shell out to, so its fixture
+    session ending must NOT move the count — that direction is what proves this
+    check can go red at all, the same way `check_graph_down_diagnosis` reads the
+    `graph-not-started` cell as its own opposite-premise side.
+    """
+    if os.environ.get(spec.DEEP_TIER_ENV) != "1":
+        return skip(f"{spec.DEEP_TIER_ENV} was not set for this cell, so the "
+                    "model-spending distillation phase did not run — issue #131's "
+                    "budget is scheduled, never per-push")
+    before, after = load_snapshot("distill-before"), load_snapshot("distill-after")
+    if before is None or after is None:
+        return skip("a distill snapshot is missing on either side of the fixture "
+                    "session")
+    before_status, after_status = before.get("status"), after.get("status")
+    if before_status is None or after_status is None:
+        return skip("`thalamus status` could not be read structurally on one side "
+                    "of the mutation")
+    before_n, after_n = before_status.get("sessions"), after_status.get("sessions")
+    if before_n is None or after_n is None:
+        return skip("the status dump carried no session count on one side")
+
+    session_id = after.get("session_id") or ""
+    newest = after_status.get("newest") or {}
+    landed = bool(session_id) and newest.get("session_id") == session_id
+
+    if CONFIG_NAME == "no-agent-cli":
+        control = (f"this cell ran {CONFIG_NAME!r}, whose premise is a box with no "
+                   "CLI distillation can shell out to — the direction that proves "
+                   "this check can observe a session ending WITHOUT being distilled")
+        if landed or after_n > before_n:
+            return bad("a session was counted even though no agent CLI is on PATH "
+                       "to distill it, so this check cannot tell a working "
+                       "distillation from a probe that always reports one", control)
+        return ok("the no-agent-cli fixture session did not move the count, which "
+                  "is what proves this check can go red", control)
+
+    control = (f"under {CONFIG_NAME!r}, `thalamus status` read {before_n} session(s) "
+               f"before the fixture and {after_n} after; the no-agent-cli cell is "
+               "this check's own control and reads the count NOT moving")
+    if not landed or after_n != before_n + 1:
+        return bad(
+            f"a session ended (session_id={session_id[:8] or '?'}) and `thalamus "
+            f"status` read {before_n} session(s) before it and {after_n} after — "
+            f"README.md:103's promise did not hold (newest reported: "
+            f"{newest.get('session_id', '(none)')!r})", control)
+    return ok(f"the fixture session distilled: `thalamus status` moved "
+              f"{before_n} -> {after_n} and the newest Session is "
+              f"{session_id[:8]}", control)
+
+
 def check_second_init_does_not_duplicate_wiring() -> Result:
     first, second = load_snapshot("installed"), load_snapshot("reinstalled")
     if first is None or second is None:
@@ -1313,6 +1391,7 @@ EVALUATORS = {
     "pending-items-name-a-command-that-can-clear-them": check_pending_items_are_clearable,
     "clean-clone-manifest-count-is-what-the-cli-sees": check_clean_clone_manifest_count,
     "cursor-guards-are-failclosed": check_cursor_guards_are_failclosed,
+    "a-session-that-ends-is-distilled": check_a_session_that_ends_is_distilled,
     "second-init-does-not-duplicate-wiring": check_second_init_does_not_duplicate_wiring,
     "moved-checkout-is-named-not-denied": check_moved_checkout_is_named,
     "console-serves-its-shell": check_console_serves_its_shell,
