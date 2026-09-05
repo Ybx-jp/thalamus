@@ -1,9 +1,9 @@
 """A graceful close must be recognised as one, not waited out and then force-killed.
 
-Issue #151, open. Both teardown workers poll for the window's disappearance through
+Issue #151, fixed. Both teardown workers poll for the window's disappearance through
 `_window_gone` (`console/server.py:249`), which answers from `list-windows` — has this
 window id left the session's enumeration — and that is a *different* question from
-whether the pane inside has already exited. `recycle_window` (:1044) asks both:
+whether the pane inside has already exited. `recycle_window` (:1005) asks both:
 
     if _window_gone(cfg, wid):
         return  # window vanished entirely; roster sync recreates it
@@ -12,23 +12,22 @@ whether the pane inside has already exited. `recycle_window` (:1044) asks both:
         dead = True
         break
 
-`close_window` (:1086) asks only the first:
+`close_window` (:1064) asks both too:
 
     if _window_gone(cfg, wid):
         return  # window already gone: claude exited and tmux closed it
-    time.sleep(1)
+    r = tmux("display", "-p", "-t", target, "#{pane_dead}")
+    if r.stdout.strip() == "1":
+        return  # the agent exited; remain-on-exit is keeping the corpse
 
-So `close_window` has no path that reads `#{pane_dead}` at all. The consequence needs
-`remain-on-exit` to be on, which is the ordinary case rather than an exotic one:
-`docs/console.md:850` instructs setting it globally
+The check matters because `remain-on-exit` being on is the ordinary case rather than an
+exotic one: `docs/console.md:867` instructs setting it globally
 (`tmux -L thalamus set -wg remain-on-exit on`) to diagnose a spawn that never execed, and
 never instructs unsetting it. With it on, a pane that exits cleanly leaves a corpse —
-the window stays in `list-windows`, so `_window_gone` never fires — and the loop runs
-the whole `RECYCLE_GRACE_S = 240` budget before doing the two things reserved for a
-hang: `_record_forced_kill(who, "close")` and `kill-window`, to a session that ran
-`/exit`, fired SessionEnd, and distilled normally. `recycle_window`'s extra `display`
-poll is exactly the check that would have caught this, and `close_window` has no
-equivalent of it.
+the window stays in `list-windows`, so `_window_gone` never fires — and without the
+`#{pane_dead}` poll the loop would run the whole `RECYCLE_GRACE_S = 240` budget before
+doing the two things reserved for a hang: `_record_forced_kill(who, "close")` and
+`kill-window`, to a session that ran `/exit`, fired SessionEnd, and distilled normally.
 
 Measured against real tmux 3.4 on a private socket, 2026-08-31:
 
@@ -41,18 +40,18 @@ Measured against real tmux 3.4 on a private socket, 2026-08-31:
     0: sh[dead]* (1 panes) [80x24] @0 (active)
 
 The window is still in `list-windows` — `_window_gone` will not fire — while `display`
-already reports the pane dead. So the forced-kill record — whose whole meaning is
-"SessionEnd never ran, nothing will ever distil this session" — is written about
-sessions that distilled fine, and the band the operator reads on the phone
-(`app.js:1079`) is false for every one of them.
+already reports the pane dead. That is what makes the two questions genuinely
+different: a check on `_window_gone` alone cannot answer it, and getting it wrong writes
+a forced-kill record — whose whole meaning is "SessionEnd never ran, nothing will ever
+distil this session" — about a session that distilled fine, with the band the operator
+reads on the phone (`app.js:1079`) false for every one of them.
 
 **Nothing here executes tmux.** The stub answers `display` and `list-windows` from
 fixtures and records argv. `_record_forced_kill` is stubbed too, and that is not only
 for speed: the real one appends to the operator's live `distill-killed.jsonl`, so a
 case that let it through would forge exactly the false record it exists to report.
-`RECYCLE_GRACE_S` is shortened to keep the case under a few seconds; the defect is the
-missing check in `close_window`, and the size of the budget it burns is not the
-property.
+`RECYCLE_GRACE_S` is shortened to keep the case under a few seconds; the property under
+test is the check itself, not the size of the budget it would otherwise burn.
 
 **Three controls, all running.**
 
@@ -69,17 +68,8 @@ property.
    stub drifted.
 3. *The vanished-window control.* With `list-windows` no longer naming the window's id,
    the existing early return must fire: no force, no kill. This pins the one exit path
-   the function does have, so a repair that removed it in the course of adding the
-   missing check is caught.
-
-**Shown capable of going red** — it is red now, against the defect as it ships. To watch
-it go green, give `close_window` the extra check its sibling has:
-
-    r = tmux("display", "-p", "-t", target, "#{pane_dead}")
-    if r.stdout.strip() == "1":
-        return
-
-and re-run: control 1 keeps passing, control 2 keeps passing, and the finding clears.
+   the function had before the `#{pane_dead}` check existed, so a regression that
+   removed it while touching the new check would be caught.
 """
 
 from __future__ import annotations
@@ -241,7 +231,7 @@ def run() -> Finding | None:
                         f"{[op for _, op in forced]} and "
                         f"kill-window ran={stub.ran('kill-window')} — "
                         f"recycle_window on the identical fixture recorded none",
-                site="src/thalamus/console/server.py:1086",
+                site="src/thalamus/console/server.py:1064",
             )
     return None
 
@@ -255,4 +245,5 @@ CASE = Case(
             "so a pane that exited gracefully is not waited out and then force-killed",
     run=run,
     issue=151,
+    fixed=True,
 )
