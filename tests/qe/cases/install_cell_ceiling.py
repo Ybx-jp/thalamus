@@ -1,8 +1,7 @@
 """`CELL_CEILING_S` must stay at least as large as a cell may legitimately spend.
 
-`tests/qe/install/spec.py::CELL_CEILING_S` is a hard kill: `virt-install --wait`
-destroys the domain the instant the guest has run this long, wherever it is in the
-sequence. A ceiling smaller than the sum of the bounds a cell may legitimately spend
+`tests/qe/install/spec.py::CELL_CEILING_S` is a hard kill: the run ends the instant the
+guest has spent this long, wherever it is in the sequence. A ceiling smaller than the sum of the bounds a cell may legitimately spend
 does not fail the install faster — it turns a reported finding into lost evidence,
 because the domain dies mid-phase and the cell reports missing artifacts rather than
 whatever it was reproducing.
@@ -40,9 +39,9 @@ def _ceiling_covers_the_worst_cell() -> Finding | None:
         return Finding(
             failure_class=FailureClass.INVARIANT_FALSIFIED,
             summary="a cell in the matrix may legitimately spend more time than "
-                    "CELL_CEILING_S allows it, so virt-install's --wait would destroy "
-                    "the domain mid-phase and the cell would report missing "
-                    "artifacts rather than whatever it was reproducing",
+                    "CELL_CEILING_S allows it, so the run would be killed mid-phase "
+                    "and the cell would report missing artifacts rather than "
+                    "whatever it was reproducing",
             witness=f"worst_case_matrix_seconds()={worst}s > "
                     f"CELL_CEILING_S={spec.CELL_CEILING_S}s",
             site="tests/qe/install/spec.py CELL_CEILING_S",
