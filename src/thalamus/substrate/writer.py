@@ -15,7 +15,7 @@ from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
 from gremlin_python.process.traversal import Direction, Merge, P, T
 
-from thalamus.contract.ontology import vid
+from thalamus.contract.ontology import scope_of, vid
 from thalamus.contract.paths import PROJECT_ROOT
 from thalamus.substrate import spans
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
@@ -614,7 +614,7 @@ def _upsert_claim(
     for origin_vid in provenance.derived_from:
         _ensure_edge(g, claim_vid, origin_vid, "DERIVED_FROM")
 
-    _write_references(g, claim_vid, getattr(claim, "references", []))
+    _write_references(g, claim_vid, getattr(claim, "references", []), session.scope)
     return claim_vid
 
 
@@ -642,21 +642,39 @@ def _write_alternative(
     )
     extra = {"anchors": ",".join(alternative.anchors)} if alternative.anchors else None
     option_vid = _upsert_claim(g, session, session_vid, artifact_vids, option, extra)
-    _write_references(g, option_vid, alternative.references)
+    _write_references(g, option_vid, alternative.references, session.scope)
     qualification: dict[str, object] = {"role": "rejected"}
     if alternative.reason:
         qualification["reason"] = alternative.reason
     _ensure_edge(g, decision_vid, option_vid, "USES", qualification)
 
 
-def _write_references(g: GraphTraversalSource, claim_vid: str, references: list[str]) -> None:
-    """Claim -[USES {role: reason}]-> Claim | Chunk, one per knowledge item the claim
-    reasoned with.
+def _write_references(
+    g: GraphTraversalSource, claim_vid: str, references: list[str], scope: str
+) -> None:
+    """Claim -[USES {role: reason}]-> Claim | Chunk, one per item the claim reasoned with.
 
     Existence and label are checked first, on the thread_refs rule: an ID the model
     invented names no vertex, mergeE cannot create an edge to a missing one, and a
     reference to a Session or a Source is not a knowledge item. Dropping either loses
     nothing real. A claim naming itself is dropped the same way.
+
+    **Attribution is scope-closed**, which is the check after that. An attribution
+    subgraph exists to compound one scope's own experience and the knowledge it
+    applied into something a later task can reuse, so every node in it must be
+    readable from the scope that owns its root claim. Two targets satisfy that: a
+    node in the same scope, and a session-less knowledge node in any scope — the
+    reader serves those to every scope by construction (`reader.recall`'s knowledge
+    branch), so the scope segment on a literature claim records which expert ingested
+    it, not who may read it.
+
+    What that excludes is another scope's *episodic* memory. It is reachable — a
+    consultation ticket serves an expert's own experience into the asking session —
+    and it is deliberately not attributable. A generalisation compounded across that
+    boundary mixes two scopes' experience into one concept, which is a wider
+    representation than the one this edge is for, and an edge onto it would also be
+    the first reader traversal that leaves the caller's scope by following an edge
+    (`reader._uses_rows` applies no scope predicate to the target).
 
     `verified` is deliberately not written here. It is `eval sync`'s stamp, taken from
     the traces of the sessions containing this claim, and re-asserting the claim must
@@ -669,6 +687,16 @@ def _write_references(g: GraphTraversalSource, claim_vid: str, references: list[
         if not g.V(target_vid).has_label("Claim", "Chunk").has_next():
             logger.warning(
                 "reference %r on %s names no Claim or Chunk; dropping", target_vid, claim_vid
+            )
+            continue
+        if scope_of(target_vid) not in (None, scope) and g.V(target_vid).in_e(
+            "CONTAINS"
+        ).has_next():
+            logger.warning(
+                "reference %r on %s is another scope's episodic memory; dropping — "
+                "attribution is scope-closed",
+                target_vid,
+                claim_vid,
             )
             continue
         _ensure_edge(g, claim_vid, target_vid, "USES", {"role": "reason"})

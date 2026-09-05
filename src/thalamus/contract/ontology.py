@@ -282,9 +282,19 @@ CORE_EDGES: tuple[EdgeType, ...] = (
     # verification: an unverifiable reference is itself evidence of a mis-attributed
     # one, and a served-but-unmatched reference is not proof of fabrication.
     #
-    # May cross scope on the terms RETURNS does: the reader already serves tier-2
-    # knowledge from any expert into any session, and the edge records what that
-    # session then reasoned with, by ID, copying nothing.
+    # May cross scope only into knowledge. The reader serves session-less claims and
+    # chunks to every scope by construction, so the scope segment on a literature
+    # claim records which expert ingested it, not who may read it, and an edge onto
+    # one leaves nothing unreadable behind.
+    #
+    # Another scope's *episodic* memory is excluded, and that is a rule about what
+    # this edge represents rather than about what a session may see. A consultation
+    # ticket does serve an expert's own experience into the asking session, so the
+    # crossing is reachable and logged; attribution still stops at it, because the
+    # subgraph exists to compound one scope's experience into a concept a later task
+    # can reuse, and one spanning two scopes' experience is a wider representation
+    # than that. `writer._write_references` drops such a target and
+    # `conformance.audit_attribution` gates the graph on it.
     EdgeType(
         "USES",
         may_cross_scope=True,

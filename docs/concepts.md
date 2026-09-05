@@ -176,15 +176,37 @@ node type, different tier. It is the floor of the provenance chain: `DERIVED_FRO
 lands a belief on the evidence it came from, `TOUCHES` carries the `anchors` that name
 the exact messages, and `ANCHORS` puts a literature claim on the passage it quotes.
 
-**A claim records what it reasoned with.** A decision or solution that used a
-recalled literature claim or passage as grounds carries a `USES` edge to it, with
-`role` saying how (`reason`, or `rejected` for an alternative the decision turned
-down). Distillation writes the edge from the extractor's references; `thalamus eval
-sync` then stamps `verified` from the session's own traces — true when a retrieval
-actually served that target into a session containing the claim, false when none did.
-Served is not used: the used verdict stays on the trace's `RETURNS` edge. Recall
-renders each reference as one line under the claim, without a backticked ID, so the
-citation is never priced as a node the retrieval returned.
+**A claim records what it reasoned with.** A decision or solution that used
+something recalled as grounds carries a `USES` edge to it, with `role` saying how
+(`reason`, or `rejected` for an alternative the decision turned down).
+
+**Attribution is scope-closed.** The edge reaches the claim's own scope, or
+session-less knowledge in any scope — the reader serves those everywhere, so the
+scope segment on a literature claim says which expert ingested it, not who may read
+it. It does not reach another scope's episodic memory, even though a consultation
+ticket serves exactly that into the asking session. The subgraph these edges form is
+meant to compound one scope's experience and the knowledge it applied into a concept
+a later task can reuse; one spanning two scopes' experience is a wider thing, and
+not the thing being built. The write path drops such a target and `contract check`
+gates the graph on it.
+
+Distillation writes the edge from the extractor's references, which it names by
+8-character handles taken from the served-memory list in the prompt — the digest
+clips a tool result at 400 characters, so a vertex ID rendered inside a recall
+bundle is usually cut off, and a handle short enough to survive that is also
+short enough to copy without transcribing. A handle naming nothing the session was
+served is dropped rather than written.
+
+`thalamus eval sync` then stamps `verified` from the session's own traces — true
+when a retrieval actually served that target into a session containing the claim,
+false when sync looked and none did, absent when sync has not looked. Served is not
+used: the used verdict stays on the trace's `RETURNS` edge. Nothing gates the write
+on the stamp — whether a reference was *served* is provenance, which the write path
+cannot see, and an unverifiable reference is itself evidence rather than grounds to
+drop one — so `contract check` reports a
+cross-scope `USES` stamped false as an advisory instead. Recall renders each
+reference as one line under the claim, without a backticked ID, so the citation is
+never priced as a node the retrieval returned.
 
 The same edge carries what a decision turned down. An alternative the session
 considered and refused is written as a claim of kind `<scope>/rejected`, reached from

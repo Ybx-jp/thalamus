@@ -164,15 +164,20 @@ def test_fetch_builds_audit_edges_and_omits_absent_properties():
     """`coalesce` supplies "" for a property the edge lacks; `_fetch` must drop it.
 
     A rule testing `.get("role") == "citation"` is unharmed either way, but one testing
-    `"role" in properties` would see a key the edge does not carry.
+    `"role" in properties` would see a key the edge does not carry. `verified` is the
+    reason the filter tests against `""` rather than truthiness: `False` is a stamped
+    verdict and must survive, while an unstamped edge must carry no key at all — the
+    two are different facts, and the USES advisory reads them apart.
     """
     g = _FakeG(
         [],
         [
-            {"label": "REFERENCES", "from": "v1", "to": "v2",
-             "from_label": "Claim", "to_label": "Source", "role": "citation", "basis": ""},
-            {"label": "ABOUT", "from": "v3", "to": "v4",
-             "from_label": "Chunk", "to_label": "Entity", "role": "", "basis": ""},
+            {"label": "REFERENCES", "from": "v1", "to": "v2", "from_label": "Claim",
+             "to_label": "Source", "role": "citation", "basis": "", "verified": ""},
+            {"label": "ABOUT", "from": "v3", "to": "v4", "from_label": "Chunk",
+             "to_label": "Entity", "role": "", "basis": "", "verified": ""},
+            {"label": "USES", "from": "v5", "to": "v6", "from_label": "Claim",
+             "to_label": "Claim", "role": "reason", "basis": "", "verified": False},
         ],
     )
     _, edges = _fetch(g)
@@ -184,6 +189,11 @@ def test_fetch_builds_audit_edges_and_omits_absent_properties():
         AuditEdge(
             label="ABOUT", from_vid="v3", from_label="Chunk",
             to_vid="v4", to_label="Entity", properties={},
+        ),
+        AuditEdge(
+            label="USES", from_vid="v5", from_label="Claim",
+            to_vid="v6", to_label="Claim",
+            properties={"role": "reason", "verified": False},
         ),
     ]
 

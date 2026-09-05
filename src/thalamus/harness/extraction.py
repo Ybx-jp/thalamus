@@ -27,6 +27,7 @@ never needs Claude Code installed to turn its sessions into memory.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -457,6 +458,76 @@ def resolve_anchors(data: dict, payload: bytes) -> dict:
     return out
 
 
+# How many characters of a reference handle the served-memory list shows, and the
+# extractor copies back. Same length as an anchor handle and the same job.
+_REFERENCE_PREFIX = 8
+
+
+def reference_handle(vid: str) -> str:
+    """The short handle the extractor copies in place of a vertex ID.
+
+    A digest of the whole ID rather than a prefix of it, which is where this departs
+    from `_anchor_tag`: every passage of one document shares a single 64-character
+    source hash in its ID (`scope:x:chunk:<source>-0007`), so an 8-character prefix
+    would be identical across every chunk of that document and could name none of
+    them. Hashing the ID collides for nothing and costs the same eight characters.
+    """
+    return hashlib.sha256(vid.encode()).hexdigest()[:_REFERENCE_PREFIX]
+
+
+def resolve_references(data: dict, served: list[str]) -> dict:
+    """Expand every `references` handle to the vertex ID it names; drop what does not.
+
+    The counterpart of `resolve_anchors`, over the served-memory list instead of the
+    transcript. `served` is what this session's retrievals actually returned, so it is
+    also the set of legal references: a handle outside it was invented or mistyped,
+    and a fabricated reference is worse than none — it reads exactly like evidence,
+    and the write path would hang a `USES {role: reason}` edge off whatever it named.
+
+    A model that pastes a full vertex ID from the list instead of its handle is taken
+    at its word, since that ID is served too. Returns a new dict; `data` is unmodified.
+    """
+    by_handle = {reference_handle(vid): vid for vid in served}
+    known = set(served)
+
+    def resolve(references: object) -> list[str]:
+        if not isinstance(references, list):
+            return []
+        resolved: list[str] = []
+        for reference in references:
+            token = str(reference).strip().strip("[]`")
+            # Exact match on the handle, never a prefix: a handle is a digest, so a
+            # near-miss carries no evidence that it meant the entry it happens to
+            # share eight characters with.
+            target = token if token in known else by_handle.get(token)
+            if target is not None and target not in resolved:
+                resolved.append(target)
+        return resolved
+
+    out = dict(data)
+    solutions = data.get("solutions")
+    if isinstance(solutions, list):
+        out["solutions"] = [
+            {**s, "references": resolve(s.get("references"))} if isinstance(s, dict) else s
+            for s in solutions
+        ]
+    decisions = data.get("decisions")
+    if isinstance(decisions, list):
+        out["decisions"] = []
+        for decision in decisions:
+            if isinstance(decision, dict):
+                decision = {**decision, "references": resolve(decision.get("references"))}
+                if isinstance(decision.get("alternatives"), list):
+                    decision["alternatives"] = [
+                        {**a, "references": resolve(a.get("references"))}
+                        if isinstance(a, dict)
+                        else a
+                        for a in decision["alternatives"]
+                    ]
+            out["decisions"].append(decision)
+    return out
+
+
 def _tool_result_text(block: dict) -> str:
     content = block.get("content")
     if isinstance(content, str):
@@ -595,11 +666,12 @@ are stamped from the record.
 lived experience — it keeps third-party trust even when quoted first-hand. Claims about \
 what the agent DID with such content (edited a file, ran a command) stay first-party.
 11. **references** — when a decision, solution or rejected alternative rested on \
-something recalled from memory, list the vertex ids it used under `references`. A \
-memory result in the digest names its nodes as `scope:<expert>:claim:<hash>` or \
-`scope:<expert>:chunk:<hash>-<n>`; copy the id exactly as it appears. Only ids that \
-appear verbatim in the digest — never compose or shorten one. Leave `references` empty \
-when the reasoning drew on nothing recalled; an empty list is a true statement.
+something recalled from memory, name it under `references` by its **handle**: the \
+8-character code in brackets in "Memory served into this session" below. Copy the \
+handle, not the description and not a vertex id. Only handles from that list — it is \
+everything this session's retrievals actually returned, so a handle that is not in it \
+names nothing and is dropped. Leave `references` empty when the reasoning drew on \
+nothing recalled; an empty list is a true statement.
 
 ### Schema
 
@@ -612,11 +684,11 @@ decisions:
   - description: "<what was decided>"
     rationale: "<why>"
     outcome: "<what resulted, if known>"
-    references: ["<vertex id copied from a memory result, if any>"]
+    references: ["<handle from the served-memory list, if any>"]
     alternatives:
       - description: "<an option considered and turned down>"
         reason: "<why it lost>"
-        references: ["<vertex id, if the reason rested on one>"]
+        references: ["<handle, if the reason rested on one>"]
         anchors: ["<digest handle of the message that raised or refused it>"]
     artifacts: ["<identifiers>"]
     external: false
@@ -631,7 +703,7 @@ solutions:
     worked: "<true only if it held; false otherwise>"
     outcome_kind: "<unresolved|reversed|rejected|residual — omit when it simply held>"
     anchors: ["<digest handle of the message that shows the outcome>"]
-    references: ["<vertex id copied from a memory result, if any>"]
+    references: ["<handle from the served-memory list, if any>"]
     problem_ref: 0
     artifacts: ["<identifiers>"]
     external: false
@@ -653,6 +725,9 @@ thread_refs:
 ### Known claims in this project (re-assert by copying the description exactly)
 {known_claims}
 
+### Memory served into this session (cite one under `references` by its handle)
+{served_nodes}
+
 ### Session metadata
 Project: {project}
 Session title: {title}
@@ -669,6 +744,7 @@ def build_prompt(
     title: str,
     open_threads: list[dict] | None = None,
     known_claims: list[dict] | None = None,
+    served_nodes: list[dict] | None = None,
 ) -> str:
     if open_threads:
         rendered = "\n".join(
@@ -687,10 +763,38 @@ def build_prompt(
     return _PROMPT_TEMPLATE.format(
         open_threads=rendered,
         known_claims=rendered_claims,
+        served_nodes=render_served_nodes(served_nodes),
         project=project,
         title=title,
         digest=digest,
     )
+
+
+_SERVED_TEXT_CAP = 160
+
+
+def render_served_nodes(served_nodes: list[dict] | None) -> str:
+    """The reference feed: what this session's retrievals put in front of the model.
+
+    The digest cannot carry this. A tool result is clipped at 400 characters and a
+    recall renders its first node's ID some 150 characters in, so result #1's ID
+    survives and every later one is truncated away — asking the model to copy an ID
+    out of the digest asks for something that is usually not there. The feed names
+    the same nodes in one line each, by a handle short enough that no clip reaches it.
+
+    Ordered as the session met them, so the list reads like the session's own memory
+    of what it was told, and each entry is one line: handle, label, scope, and enough
+    text to tell two recalls apart.
+    """
+    if not served_nodes:
+        return "(nothing recalled)"
+    lines = []
+    for node in served_nodes:
+        scope = node.get("scope") or "?"
+        label = node.get("label") or "node"
+        text = _clip(str(node.get("text") or ""), _SERVED_TEXT_CAP)
+        lines.append(f"- [{reference_handle(node['vid'])}] {label} · {scope} — {text}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

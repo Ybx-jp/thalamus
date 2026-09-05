@@ -720,6 +720,91 @@ def test_resolve_anchors_expands_digest_handles_and_drops_the_rest():
     assert data["solutions"][0]["anchors"] == ["[a8202b5a]", "deadbeef"]
 
 
+def test_resolve_references_expands_served_handles_and_drops_the_rest():
+    """
+    Scenario: An extraction names four references — a handle it was served, the same
+    handle bracketed, a full vertex ID from the list, and one it invented
+
+    Verifications:
+    - a served handle expands to the vertex ID, on decisions, their alternatives and
+      solutions alike
+    - a full ID from the served list is taken at its word
+    - a handle naming nothing served is dropped rather than written as grounds
+    - the input dict is not modified
+    """
+    served = [
+        "scope:literature:claim:aaaa1111bbbb2222",
+        "scope:architect:claim:cccc3333dddd4444",
+    ]
+    first, second = (extraction.reference_handle(vid) for vid in served)
+    data = {
+        "solutions": [{"description": "s", "references": [f"[{first}]", "deadbeef"]}],
+        "decisions": [
+            {
+                "description": "d",
+                "references": [second, served[0]],
+                "alternatives": [{"description": "a", "references": [first]}],
+            }
+        ],
+    }
+
+    resolved = extraction.resolve_references(data, served)
+
+    assert resolved["solutions"][0]["references"] == [served[0]]
+    assert resolved["decisions"][0]["references"] == [served[1], served[0]]
+    assert resolved["decisions"][0]["alternatives"][0]["references"] == [served[0]]
+    assert data["solutions"][0]["references"] == [f"[{first}]", "deadbeef"]
+
+
+def test_reference_handles_separate_two_passages_of_one_document():
+    """
+    Scenario: two chunks of the same source, whose vertex IDs share a 64-character
+    source hash and differ only in the trailing ordinal
+
+    A handle is a digest of the whole ID precisely for this: a prefix of the ID would
+    be identical across every passage of a document, so a reference to one of them
+    would name all of them, and `resolve_references` would have to drop it.
+    """
+    source = "f" * 64
+    first = f"scope:literature:chunk:{source}-0007"
+    second = f"scope:literature:chunk:{source}-0012"
+
+    assert extraction.reference_handle(first) != extraction.reference_handle(second)
+
+    resolved = extraction.resolve_references(
+        {"solutions": [{"description": "s",
+                        "references": [extraction.reference_handle(second)]}]},
+        [first, second],
+    )
+
+    assert resolved["solutions"][0]["references"] == [second]
+
+
+def test_the_prompt_offers_served_memory_by_handle_rather_than_by_vertex_id():
+    """
+    Scenario: the extraction prompt for a session whose recalls returned two nodes,
+    and for one that recalled nothing
+
+    Verifications:
+    - each served node is one line carrying its handle, kind, scope and text
+    - the raw vertex ID is not what the model is asked to copy
+    - a session that recalled nothing says so rather than rendering an empty heading
+    """
+    served = [
+        {"vid": "scope:literature:claim:aaaa1111bbbb2222", "label": "literature",
+         "scope": "literature", "text": "Retrieval is necessary and not sufficient."},
+        {"vid": "scope:architect:claim:cccc3333dddd4444", "label": "decision",
+         "scope": "architect", "text": "Structural gate exit codes mirror qe/run.py."},
+    ]
+
+    prompt = extraction.build_prompt("digest", project="p", title="t", served_nodes=served)
+
+    handle = extraction.reference_handle(served[0]["vid"])
+    assert f"- [{handle}] literature · literature — Retrieval is necessary" in prompt
+    assert "copy the handle" in prompt.lower()
+    assert "(nothing recalled)" in extraction.build_prompt("d", project="p", title="t")
+
+
 def test_the_prompt_asks_for_outcomes_alternatives_and_references_symmetrically():
     """
     Scenario: The extraction prompt as built for any session

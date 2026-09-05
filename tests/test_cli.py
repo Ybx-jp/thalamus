@@ -417,3 +417,121 @@ def test_repeated_advisories_collapse_to_one_line_with_a_count():
     assert "×16" in collapsed
     assert "e.g. scope:main:trace:t0" in collapsed
     assert alone in lines
+
+
+class _StubTraversal:
+    """The two-call shape `_served_nodes` uses: `V(*ids).element_map(*keys).to_list()`."""
+
+    def __init__(self, rows: list[dict]):
+        self._rows = rows
+        self.asked: tuple = ()
+
+    def V(self, *vids):  # noqa: N802 — gremlin's own spelling
+        self.asked = vids
+        return self
+
+    def project(self, *_keys):
+        return self
+
+    def by(self, *_args):
+        return self
+
+    def to_list(self):
+        return self._rows
+
+
+def _row(vid, label, scope, text, *, kind="", contained=0):
+    return {"id": vid, "label": label, "scope": scope, "kind": kind,
+            "text": text, "contained": contained}
+
+
+def test_the_reference_feed_offers_only_what_a_uses_edge_can_land_on(monkeypatch):
+    """
+    Scenario: a session whose retrievals returned a claim, a chunk, an Exchange and a
+    Session, plus one claim that has since been retired from the graph
+
+    The measured failure this closes: the last extractions to emit `references` at all
+    named Exchange vertices for every one of them, because a clipped digest was the
+    only ID surface they had and an exchange id was the one class still visible in it.
+    `USES` may land on a Claim or a Chunk, so those are the only ids the feed offers.
+
+    Verifications:
+    - Exchange and Session ids are not offered
+    - the claim and the chunk are, in the order the session met them
+    - a served node missing from the graph is dropped rather than offered
+    - each entry carries the kind and text the prompt renders
+    """
+    claim = "scope:literature:claim:aaaa1111bbbb2222"
+    chunk = "scope:literature:chunk:" + "f" * 64 + "-0007"
+    retired = "scope:architect:claim:dddd4444eeee5555"
+    events = [
+        SimpleNamespace(
+            session_id="s1",
+            returned_node_ids=lambda: [
+                "scope:main:exchange:1f65ddba4a934df2",
+                claim,
+                "scope:main:session:s0",
+                chunk,
+                retired,
+            ],
+        ),
+        SimpleNamespace(
+            session_id="other", returned_node_ids=lambda: ["scope:qe:claim:zzzz1111"]
+        ),
+    ]
+    monkeypatch.setattr("thalamus.eval.traces.load_events", lambda *a, **k: events)
+    graph = _StubTraversal([
+        _row(chunk, "Chunk", "literature", "a passage"),
+        _row(claim, "Claim", "literature", "a recalled claim", kind="literature"),
+    ])
+
+    served = cli._served_nodes(graph, "s1", "main")
+
+    assert [node["vid"] for node in served] == [claim, chunk]
+    assert claim in graph.asked and retired in graph.asked
+    assert served[0] == {"vid": claim, "label": "literature", "scope": "literature",
+                         "text": "a recalled claim"}
+    assert served[1]["label"] == "chunk"
+    assert served[1]["text"] == "a passage"
+
+
+def test_the_reference_feed_withholds_another_scopes_episodic_memory(monkeypatch):
+    """
+    Scenario: a `main` session whose ticketed consultation recalls returned an
+    expert's session-contained claim alongside that expert's knowledge claim and a
+    contained claim of main's own
+
+    The expert's experience was legitimately served — a consultation ticket grants
+    exactly that — and is still not offered as a reference, because attribution is
+    scope-closed. Withholding the handle is the half that keeps the model from being
+    shown something it may not use; `writer._write_references` is the half that makes
+    it a guarantee.
+
+    Verifications:
+    - the foreign episodic claim is not offered
+    - foreign session-less knowledge is: the reader serves it to every scope
+    - a contained claim in the session's own scope is offered — containment alone
+      does not disqualify a target
+    """
+    foreign_episodic = "scope:architect:claim:eeee1111"
+    foreign_knowledge = "scope:literature:claim:aaaa2222"
+    own_episodic = "scope:main:claim:bbbb3333"
+    monkeypatch.setattr(
+        "thalamus.eval.traces.load_events",
+        lambda *a, **k: [SimpleNamespace(
+            session_id="s1",
+            returned_node_ids=lambda: [foreign_episodic, foreign_knowledge, own_episodic],
+        )],
+    )
+    graph = _StubTraversal([
+        _row(foreign_episodic, "Claim", "architect", "what the architect lived",
+             kind="decision", contained=1),
+        _row(foreign_knowledge, "Claim", "literature", "what a paper asserts",
+             kind="literature"),
+        _row(own_episodic, "Claim", "main", "what main decided",
+             kind="decision", contained=1),
+    ])
+
+    served = cli._served_nodes(graph, "s1", "main")
+
+    assert [node["vid"] for node in served] == [foreign_knowledge, own_episodic]
