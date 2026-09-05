@@ -190,6 +190,12 @@ required: `--next nothing` is a considered answer, an omitted one is not, and th
 exists so those cannot look alike. The line is printed as well as stored, so under
 systemd it lands in the journal as the notification.
 
+The spawned session is told to file one. `session-start.sh` injects a triage brief when
+the scope is `qe` and the watcher is holding its single-flight marker — naming the run,
+what this scope may do unilaterally, and the `report` call to finish with. It is silent
+on every other session and on a marker older than the six-hour hold, so it does not
+become wallpaper.
+
 `watch` dispatches only for a **failed run from a push to master** — never a
 `pull_request` run. Every gating workflow triggers on both events, so the loop's own
 remediation PR produces red runs of its own; without that filter the watcher feeds on its

@@ -220,6 +220,41 @@ if [ "$scope" != "main" ]; then
   context="This session is pinned to expert scope \`${scope}\` — all memory operations flow through that scope, enforced server-side; recall serves other experts' knowledge as tier-2 context, and their episodic memory is reachable only by consultation ticket. ${context}"
 fi
 
+# The brief for a session the CI triage watcher opened. `pin.spawn` carries a scope and
+# a working directory and nothing else — it has no channel for "here is why you exist" —
+# so without this the spawned session is an ordinary `qe` session that happens to have
+# appeared, and the reporting contract at the end of the loop is documentation rather
+# than mechanism. A triage that ends without `ci-triage report` is a triage the operator
+# never hears about, which is the failure the whole loop was built to stop.
+#
+# Fires only while the watcher holds its single-flight marker, so it is silent on every
+# ordinary `qe` session outside that window. Inside it, a session opened by hand for
+# something else would also see the paragraph, which is why the paragraph says so — the
+# marker records that a triage is in flight, not which session is doing it, and
+# `pin.spawn` returns no session id to match against.
+#
+# Every read here is guarded: `set -e` is on, the state file is absent on a box that has
+# never run the watcher, and a hook that dies takes the whole session's context with it.
+triage=""
+if [ "$scope" = "qe" ]; then
+  triage_state="${HOME}/.thalamus/ci-triage/state.json"
+  if [ -r "$triage_state" ]; then
+    triage_run=$(jq -r '.in_flight.run_id // empty' "$triage_state" 2>/dev/null || true)
+    triage_at=$(jq -r '.in_flight.at // 0' "$triage_state" 2>/dev/null || echo 0)
+    now=$(date -u +%s)
+    # Six hours, matching `ci_triage.IN_FLIGHT_STALE_S`. A stale marker means the
+    # session that held it died; briefing a new session against a dead triage's run
+    # would point it at a failure somebody may already have fixed.
+    if [ -n "$triage_run" ] && [ "$triage_at" -gt 0 ] 2>/dev/null \
+       && [ $((now - triage_at)) -lt 21600 ]; then
+      triage="You were opened by the CI triage watcher: a run failed on a push to master, and the watcher is holding its single-flight marker for run \`${triage_run}\` while you work. Triage it — run \`uv run python tests/qe/run.py --tier fast\`, read the ledger at ~/.thalamus/qe/runs.jsonl, and act only within what this scope may do unilaterally: delete an expectation whose case now passes, repair a malformed case. Adding an entry for a still-failing case buys silence and is not yours to decide alone. Do not push to master — open a PR and record it with \`thalamus ci-triage claim <case> --pr <n>\`, which also releases the marker. Claim your attempt budget first with \`thalamus ci-triage attempt <case> --witness \"<w>\"\`; if it refuses, escalate with \`thalamus ci-triage escalate\` rather than trying again. **Finish by running \`thalamus ci-triage report <case> --problem \"...\" --fix \"...\" --next \"...\"\`** — the operator reads that one line instead of this session, so a triage that ends without it is one nobody hears about. If you were opened for something else, ignore this paragraph and carry on."
+    fi
+  fi
+fi
+if [ -n "$triage" ]; then
+  context="${triage} ${context}"
+fi
+
 # A pin whose tooling did not arrive with it, said first and said plainly. Silent in
 # the ordinary case: the check only speaks for a scope that declares MCP servers, and
 # only when the process demonstrably lacks them (thalamus_mcp_arming_warning).
