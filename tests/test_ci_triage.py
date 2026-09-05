@@ -197,6 +197,69 @@ def test_one_red_run_is_dispatched_for_exactly_once(monkeypatch, tmp_path, state
     assert len(spawned) == 1
 
 
+def test_a_second_red_push_does_not_spawn_while_a_session_is_unclaimed(
+    monkeypatch, tmp_path, state_file
+):
+    """
+    Scenario: a session was dispatched minutes ago and has not called `ci-triage claim`
+    yet. A second push lands, breaks the same case again, and produces a NEW run id — so
+    the `seen_runs` check passes it.
+
+    Verification: no second spawn. The per-case guards cannot close this window because
+    the watcher does not know the case at dispatch time — which cases are red inside a
+    run is only established once the session runs the suite. The loop is single-flight
+    instead.
+    """
+    runs = [_run(run_id="200")]
+    monkeypatch.setattr(ci_triage, "_gh", lambda *a, **k: (0, json.dumps(runs)))
+    spawned = []
+    monkeypatch.setattr(ci_triage, "dispatch", lambda root, **k: spawned.append(root))
+
+    assert ci_triage.run_once(tmp_path, state_path=state_file) is not None
+    runs[:] = [_run(run_id="201")]
+    assert ci_triage.run_once(tmp_path, state_path=state_file) is None
+    assert len(spawned) == 1
+
+
+def test_claiming_a_pr_releases_the_loop(monkeypatch, tmp_path, state_file):
+    """
+    Scenario: the dispatched session opens its remediation PR and records it.
+
+    Verification: the watcher may dispatch again. From that point the per-case `open_prs`
+    check can refuse a duplicate on its own, so the coarse single-flight hold has done
+    its job and must get out of the way — a hold that never lifted would reduce the loop
+    to one failure ever.
+    """
+    runs = [_run(run_id="300")]
+    monkeypatch.setattr(ci_triage, "_gh", lambda *a, **k: (0, json.dumps(runs)))
+    spawned = []
+    monkeypatch.setattr(ci_triage, "dispatch", lambda root, **k: spawned.append(root))
+
+    ci_triage.run_once(tmp_path, state_path=state_file)
+    state = ci_triage.TriageState.load(state_file)
+    state.record_pr("some-case", 42)
+    state.save(state_file)
+
+    runs[:] = [_run(run_id="301")]
+    assert ci_triage.run_once(tmp_path, state_path=state_file) is not None
+    assert len(spawned) == 2
+
+
+def test_a_session_that_died_stops_holding_the_loop_forever():
+    """
+    Scenario: a triage session crashed between spawn and its first claim.
+
+    Verification: the hold expires. A permanent wedge is a worse failure than the
+    duplicate dispatch the marker prevents — it would leave every future red master
+    unattended, which is the state this whole loop exists to end.
+    """
+    state = ci_triage.TriageState()
+    state.hold("400")
+    state.in_flight["at"] = 0  # the epoch: older than any stale bound
+
+    assert ci_triage.in_flight_hold(state) == ""
+
+
 # --- 3. State survives the process ---------------------------------------------------
 
 
@@ -283,6 +346,38 @@ def test_a_report_about_a_case_the_ledger_never_ran_is_refused():
                                                                         "verdict": "ok"}])
 
     assert len(found) == 1 and found[0].ledger == "<absent>"
+
+
+def test_two_ledger_rows_for_one_case_refuse_rather_than_collapse():
+    """
+    Scenario: the ledger carries two rows naming one case with different verdicts —
+    a duplicate `Case.name` across two registered modules.
+
+    Verification: raises. Building the verdict index with a plain dict resolves this by
+    last-write-wins, which is exactly how `174b44c` shipped an expectations file that
+    read as eleven entries and parsed as ten. Here it would misattribute a verdict and
+    say nothing; a verifier that can be wrong in silence is not one.
+    """
+    ledger = [
+        {"case": "same-name", "verdict": "known-red"},
+        {"case": "same-name", "verdict": "new-failure"},
+    ]
+
+    with pytest.raises(ci_triage.TriageRefused):
+        ci_triage.verify_report({"same-name": "known-red"}, ledger)
+
+
+def test_duplicate_rows_that_agree_are_not_an_error():
+    """
+    Scenario: the same case appears twice with the same verdict.
+
+    Verification: no raise. The hazard is a silently-dropped *disagreement*; identical
+    rows drop nothing, and refusing them would make the guard fire on the benign case
+    while teaching nobody anything.
+    """
+    ledger = [{"case": "dup", "verdict": "ok"}, {"case": "dup", "verdict": "ok"}]
+
+    assert ci_triage.verify_report({"dup": "ok"}, ledger) == []
 
 
 def test_an_honest_report_verifies_clean():

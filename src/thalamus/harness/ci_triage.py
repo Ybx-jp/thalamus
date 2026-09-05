@@ -49,6 +49,7 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -69,6 +70,14 @@ WATCHED_EVENT = "push"
 # Consecutive dispatches against one (case, witness) before the loop stops trying and
 # says so. See the module docstring: inferred, not measured.
 ESCALATE_AFTER = 2
+
+# How long a dispatched-but-unclaimed session holds the loop before the marker is
+# ignored. A session that died between spawn and its first `ci-triage claim` would
+# otherwise wedge the watcher permanently, which is a worse failure than the duplicate
+# dispatch the marker exists to prevent. Inferred, like ESCALATE_AFTER: no distribution
+# of time-to-first-claim exists yet, and six hours is simply longer than any triage
+# session anyone has watched.
+IN_FLIGHT_STALE_S = 6 * 60 * 60
 
 # Ledger verdicts that mean a case is unresolved and worth a session. `fixed` is
 # deliberately included: exit 2 demands an expectation be deleted, and that deletion is
@@ -171,6 +180,9 @@ class TriageState:
     open_prs: dict[str, int] = field(default_factory=dict)
     attempts: dict[str, int] = field(default_factory=dict)
     seen_runs: list[str] = field(default_factory=list)
+    # {"run_id": ..., "at": <unix seconds>} for a session that has been spawned and has
+    # not yet claimed a PR. Empty when the loop holds nothing.
+    in_flight: dict = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path | None = None) -> TriageState:
@@ -190,6 +202,7 @@ class TriageState:
             open_prs={str(k): int(v) for k, v in (data.get("open_prs") or {}).items()},
             attempts={str(k): int(v) for k, v in (data.get("attempts") or {}).items()},
             seen_runs=[str(r) for r in (data.get("seen_runs") or [])][-200:],
+            in_flight=data.get("in_flight") if isinstance(data.get("in_flight"), dict) else {},
         )
 
     def save(self, path: Path | None = None) -> None:
@@ -201,6 +214,7 @@ class TriageState:
             "open_prs": self.open_prs,
             "attempts": self.attempts,
             "seen_runs": self.seen_runs[-200:],
+            "in_flight": self.in_flight,
         }
         with tmp.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, sort_keys=True)
@@ -217,8 +231,17 @@ class TriageState:
         if run_id and run_id not in self.seen_runs:
             self.seen_runs.append(run_id)
 
+    def hold(self, run_id: str) -> None:
+        self.in_flight = {"run_id": run_id, "at": int(time.time())}
+
+    def release(self) -> None:
+        self.in_flight = {}
+
     def record_pr(self, case: str, number: int) -> None:
         self.open_prs[case] = int(number)
+        # Claiming a PR is what ends the window this marker covers: from here the
+        # per-case `open_prs` check can refuse a duplicate on its own.
+        self.release()
 
     def clear_pr(self, case: str) -> None:
         self.open_prs.pop(case, None)
@@ -250,6 +273,37 @@ def refusal_for(case: str, witness: str, state: TriageState) -> str:
     return ""
 
 
+def in_flight_hold(state: TriageState) -> str:
+    """Why the watcher must not spawn right now, or "" if it may.
+
+    `open_prs` and the attempt budget are per-case, and the watcher does not know the
+    case: at dispatch time it holds a CI run, and which cases are red inside it is only
+    established once the session runs the suite. That leaves a window — spawn, then some
+    minutes before the session calls `ci-triage claim` — in which a second red push
+    produces a second run id, passes the `seen_runs` check, and spawns a second session
+    against the same unfixed case. The per-case guards cannot close it because they are
+    consulted after the thing they were meant to prevent.
+
+    So the loop is single-flight: one unattended triage session at a time, released when
+    that session claims a PR. Coarser than the per-case rule, and deliberately — the
+    conservative direction is the one to err in for a loop nobody is watching.
+    """
+    if not state.in_flight:
+        return ""
+    started = state.in_flight.get("at", 0)
+    try:
+        age = time.time() - float(started)
+    except (TypeError, ValueError):
+        return ""
+    if age > IN_FLIGHT_STALE_S:
+        return ""
+    run_id = state.in_flight.get("run_id", "?")
+    return (
+        f"a session dispatched for run {run_id} has not claimed a PR yet "
+        f"({int(age // 60)}m ago); the loop runs one session at a time"
+    )
+
+
 @dataclass(frozen=True)
 class Disagreement:
     """One case where a report and the ledger do not say the same thing."""
@@ -275,12 +329,27 @@ def verify_report(
 
     Returns every disagreement rather than the first, because a report is refused as a
     whole and the operator reading the refusal needs all of it.
+
+    Two rows naming one case raise rather than resolving by last-write-wins. That is the
+    collapse `oracle_parses_whole` exists to stop one level up: `174b44c` shipped an
+    expectations file that read as eleven entries and parsed as ten because a dict kept
+    the last of a duplicate pair in silence, and a verdict index built the same way
+    misattributes a verdict with no diagnostic. Dormant today — no two registered cases
+    share a name — which is exactly when it is cheap to close.
     """
     by_case: dict[str, str] = {}
     for row in ledger_rows:
         case = str(row.get("case", ""))
-        if case:
-            by_case[case] = str(row.get("verdict", ""))
+        if not case:
+            continue
+        verdict = str(row.get("verdict", ""))
+        if case in by_case and by_case[case] != verdict:
+            raise TriageRefused(
+                f"the ledger holds two rows for {case!r} with different verdicts "
+                f"({by_case[case]!r} and {verdict!r}) — one would silently replace the "
+                f"other, so no report can be verified against it"
+            )
+        by_case[case] = verdict
 
     out: list[Disagreement] = []
     for case, claimed in claims.items():
@@ -376,6 +445,9 @@ def run_once(
     preview, so the rehearsal would suppress the performance.
     """
     state = TriageState.load(state_path)
+    if spawn and in_flight_hold(state):
+        return None
+
     unseen = [run for run in red_master_runs(repo) if run.run_id not in state.seen_runs]
     if not unseen:
         return None
@@ -386,5 +458,6 @@ def run_once(
 
     dispatch(project_root)
     state.seen_runs.append(target.run_id)
+    state.hold(target.run_id)
     state.save(state_path)
     return target

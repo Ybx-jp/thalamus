@@ -841,6 +841,11 @@ def _main():
     ci_watch_parser.add_argument("--repo", default=None, help="owner/name (default: the cwd's)")
 
     ci_triage_sub.add_parser("status", help="Open remediation PRs and spent attempt budgets")
+    ci_triage_sub.add_parser(
+        "release",
+        help="Drop the single-flight hold so the watcher may dispatch again "
+        "(for a session that died before claiming a PR)",
+    )
 
     ci_plan_parser = ci_triage_sub.add_parser(
         "plan",
@@ -3858,7 +3863,8 @@ def _cmd_ci_triage(args, parser):
                     PROJECT_ROOT, repo=args.repo, spawn=not args.dry_run
                 )
                 if run is None:
-                    print("No new red run from a push to master.")
+                    held = ci_triage.in_flight_hold(ci_triage.TriageState.load())
+                    print(held or "No new red run from a push to master.")
                 else:
                     verb = "Would dispatch for" if args.dry_run else "Dispatched for"
                     print(f"{verb} {run.workflow} run {run.run_id} ({run.head_sha[:12]})")
@@ -3867,10 +3873,21 @@ def _cmd_ci_triage(args, parser):
                     return
                 time.sleep(max(30, args.interval))
 
+        elif command == "release":
+            state = ci_triage.TriageState.load()
+            held = ci_triage.in_flight_hold(state)
+            state.release()
+            state.save()
+            print(f"Released: {held}" if held else "Nothing was holding the loop.")
+
         elif command == "status":
             state = ci_triage.TriageState.load()
+            held = ci_triage.in_flight_hold(state)
+            if held:
+                print(f"  holding  {held}")
             if not state.open_prs and not state.attempts:
-                print("No open remediation PRs, no attempts spent.")
+                if not held:
+                    print("No open remediation PRs, no attempts spent.")
                 return
             for case, number in sorted(state.open_prs.items()):
                 print(f"  open PR #{number:<5} {case}")
