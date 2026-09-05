@@ -814,6 +814,76 @@ def _main():
     )
     roster_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
 
+    # The consumer for a red master. Everything here is host-local and reads the forge
+    # through `gh`; nothing in it runs in CI, which is the point — CI reports, this acts.
+    ci_triage_parser = subparsers.add_parser(
+        "ci-triage",
+        help="Watch for a red master and open one pinned `qe` session to triage it",
+    )
+    ci_triage_sub = ci_triage_parser.add_subparsers(dest="ci_triage_command")
+
+    ci_watch_parser = ci_triage_sub.add_parser(
+        "watch",
+        help="Poll for a failed run from a push to master, and dispatch one session",
+    )
+    ci_watch_parser.add_argument(
+        "--once", action="store_true",
+        help="Poll a single time and exit, instead of looping on --interval",
+    )
+    ci_watch_parser.add_argument(
+        "--interval", type=int, default=300,
+        help="Seconds between polls when looping (default: 300)",
+    )
+    ci_watch_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Report the run that would be dispatched for and start nothing",
+    )
+    ci_watch_parser.add_argument("--repo", default=None, help="owner/name (default: the cwd's)")
+
+    ci_triage_sub.add_parser("status", help="Open remediation PRs and spent attempt budgets")
+
+    ci_plan_parser = ci_triage_sub.add_parser(
+        "plan",
+        help="Actionable cases in the newest qe ledger run, with any refusal to dispatch",
+    )
+    ci_plan_parser.add_argument("--ledger", default=None, help="Ledger path (default: the qe one)")
+
+    ci_verify_parser = ci_triage_sub.add_parser(
+        "verify",
+        help="Re-derive a triage report's verdicts from the ledger; exit 1 on disagreement",
+    )
+    ci_verify_parser.add_argument("report", help="JSON file mapping case name -> claimed verdict")
+    ci_verify_parser.add_argument("--ledger", default=None, help="Ledger path (default: the qe one)")
+
+    # The permission check a triage session runs before it spends an attempt on a case.
+    # Separate from `plan` because `plan` only reports: this one commits the budget, and
+    # the loop's bound is worth nothing if the thing it bounds never records itself.
+    ci_attempt_parser = ci_triage_sub.add_parser(
+        "attempt",
+        help="Claim one attempt against a case; exits 1 if the budget is spent or a PR is open",
+    )
+    ci_attempt_parser.add_argument("case", help="Case name as the ledger spells it")
+    ci_attempt_parser.add_argument("--witness", default="", help="The case's witness text")
+    ci_attempt_parser.add_argument("--run", default="", help="CI run id this attempt answers")
+
+    ci_claim_parser = ci_triage_sub.add_parser(
+        "claim", help="Record that a case now has a remediation PR open, or that it is done"
+    )
+    ci_claim_parser.add_argument("case", help="Case name as the ledger spells it")
+    ci_claim_parser.add_argument("--pr", type=int, default=0, help="PR number now open for it")
+    ci_claim_parser.add_argument(
+        "--done", action="store_true",
+        help="Clear the case's open PR and attempt budget — its defect is gone",
+    )
+    ci_claim_parser.add_argument("--witness", default="", help="Witness, required with --done")
+
+    ci_escalate_parser = ci_triage_sub.add_parser(
+        "escalate", help="Say on the PR why the loop stopped, and stop"
+    )
+    ci_escalate_parser.add_argument("--pr", type=int, required=True, help="PR to comment on")
+    ci_escalate_parser.add_argument("--message", required=True, help="What is stuck, and why")
+    ci_escalate_parser.add_argument("--repo", default=None, help="owner/name (default: the cwd's)")
+
     quick_parser = subparsers.add_parser(
         "quick",
         help="The quick protocol: consult a live expert by forking its own session",
@@ -1271,6 +1341,8 @@ def _main():
         _cmd_spawn(args)
     elif args.command == "roster":
         _cmd_roster(args)
+    elif args.command == "ci-triage":
+        _cmd_ci_triage(args, ci_triage_parser)
     elif args.command == "quick":
         _cmd_quick(args, quick_parser)
     elif args.command == "room":
@@ -3762,6 +3834,109 @@ def _cmd_spawn(args):
               harness=args.harness)
     except (FileNotFoundError, ValueError, RuntimeError, subprocess.CalledProcessError) as e:
         print(f"Spawn failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_ci_triage(args, parser):
+    import time
+
+    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.harness import ci_triage
+
+    command = getattr(args, "ci_triage_command", None)
+    if not command:
+        parser.print_help()
+        sys.exit(2)
+
+    def _ledger():
+        return ci_triage.read_ledger(Path(args.ledger) if args.ledger else None)
+
+    try:
+        if command == "watch":
+            while True:
+                run = ci_triage.run_once(
+                    PROJECT_ROOT, repo=args.repo, spawn=not args.dry_run
+                )
+                if run is None:
+                    print("No new red run from a push to master.")
+                else:
+                    verb = "Would dispatch for" if args.dry_run else "Dispatched for"
+                    print(f"{verb} {run.workflow} run {run.run_id} ({run.head_sha[:12]})")
+                    print(f"  {run.url}")
+                if args.once:
+                    return
+                time.sleep(max(30, args.interval))
+
+        elif command == "status":
+            state = ci_triage.TriageState.load()
+            if not state.open_prs and not state.attempts:
+                print("No open remediation PRs, no attempts spent.")
+                return
+            for case, number in sorted(state.open_prs.items()):
+                print(f"  open PR #{number:<5} {case}")
+            for key, spent in sorted(state.attempts.items()):
+                mark = "!" if spent >= ci_triage.ESCALATE_AFTER else " "
+                print(f"  {mark} attempts={spent} {key}")
+
+        elif command == "plan":
+            state = ci_triage.TriageState.load()
+            cases = ci_triage.actionable_cases(_ledger())
+            if not cases:
+                print("Nothing actionable in the newest ledger run.")
+                return
+            for case, witness in cases:
+                refusal = ci_triage.refusal_for(case, witness, state)
+                print(f"  {'SKIP' if refusal else 'GO  '} {case}")
+                if refusal:
+                    print(f"         {refusal}")
+
+        elif command == "verify":
+            claims = json.loads(Path(args.report).read_text(encoding="utf-8"))
+            if not isinstance(claims, dict):
+                print("The report must be a JSON object of case -> verdict.", file=sys.stderr)
+                sys.exit(1)
+            disagreements = ci_triage.verify_report(claims, _ledger())
+            if disagreements:
+                print("Report refused — it does not match the ledger it describes:",
+                      file=sys.stderr)
+                for item in disagreements:
+                    print(f"  {item}", file=sys.stderr)
+                sys.exit(1)
+            print(f"Report agrees with the ledger on all {len(claims)} case(s).")
+
+        elif command == "attempt":
+            state = ci_triage.TriageState.load()
+            refusal = ci_triage.refusal_for(args.case, args.witness, state)
+            if refusal:
+                print(f"Refused: {refusal}", file=sys.stderr)
+                sys.exit(1)
+            state.record_dispatch(args.case, args.witness, run_id=args.run)
+            state.save()
+            spent = state.attempts_for(args.case, args.witness)
+            print(f"{args.case}: attempt {spent} of {ci_triage.ESCALATE_AFTER}")
+
+        elif command == "claim":
+            state = ci_triage.TriageState.load()
+            if args.done:
+                state.forget(args.case, args.witness)
+                print(f"Cleared {args.case}.")
+            elif args.pr:
+                state.record_pr(args.case, args.pr)
+                print(f"{args.case} -> PR #{args.pr}")
+            else:
+                print("Give --pr <n> or --done.", file=sys.stderr)
+                sys.exit(2)
+            state.save()
+
+        elif command == "escalate":
+            ci_triage.escalate(args.pr, args.message, repo=args.repo)
+            print(f"Commented on PR #{args.pr}.")
+
+    except ci_triage.TriageRefused as exc:
+        print(f"ci-triage: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ci-triage: {exc}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -224,3 +224,30 @@ jobs:
           name: linux-cell-${{ matrix.config }}
           path: ${{ runner.temp }}/qe-artifacts
           if-no-files-found: error
+
+  # A stable name for the whole matrix, so branch protection has something to require.
+  #
+  # The matrix legs are named `install-cell (baseline)`, `install-cell (no-jq)` and so
+  # on, derived from `spec.CONFIGS` at discover time. A required check is matched by
+  # name, so requiring those legs directly means the day someone adds or renames a
+  # config, protection waits forever on a check that will never report again and every
+  # merge wedges. Requiring this job instead keeps the gate pinned to a name that cannot
+  # drift while still failing whenever any leg does.
+  #
+  # `always()` is load-bearing: without it this job is skipped when a leg fails, and a
+  # skipped required check is not a passing one — the merge would block on a job that
+  # never ran rather than on the failure itself, which reports the wrong thing.
+  install-matrix:
+    needs: [discover, install-cell]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the matrix result
+        run: |
+          echo "discover:     ${{ needs.discover.result }}"
+          echo "install-cell: ${{ needs.install-cell.result }}"
+          if [ "${{ needs.discover.result }}" != "success" ] \
+          || [ "${{ needs.install-cell.result }}" != "success" ]; then
+            echo "::error::the linux install matrix did not pass"
+            exit 1
+          fi
