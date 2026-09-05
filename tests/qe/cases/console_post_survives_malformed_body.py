@@ -1,6 +1,8 @@
 """No console write route may drop the connection on a body it does not like.
 
-Issue #74, open — the console's 13 mutating POST routes had no adversarial coverage.
+Issue #175, open — `do_POST` guards the JSON parse and nothing after it. The
+corpus this case drives is the one issue #74 specified when it filed the coverage
+gap; the defect it found is #175.
 
 `do_POST` guards the *parse* and nothing after it (`console/server.py:1932`):
 
@@ -641,5 +643,5 @@ CASE = Case(
     summary="every console POST route must answer a malformed body instead of letting "
             "an unhandled exception kill the handler thread",
     run=run,
-    issue=74,
+    issue=175,
 )

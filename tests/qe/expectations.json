@@ -31,7 +31,7 @@
       "failure_class": "failed-open",
       "witness_contains": "45 of 54 probes dropped the connection",
       "triaged_at_rev": "ea06c91",
-      "note": "Issue #74. do_POST guards the JSON parse and nothing after it, so any body that parses to a non-object, and several wrong-typed fields, escape as unhandled exceptions and kill the handler thread. The count is the pin: it is a denominator over routes derived from the shipped dispatch (8 driven routes x 6 non-object/empty/oversized bodies, minus the one shape - an empty body - that never crashes, plus 5 type-confusion probes and 1 wrong-content-type probe that also don't crash), so fixing any route, or adding one, moves it and drifts. The caller_room, /frame/<name> traversal, and concurrent-close probes added alongside this corpus are asserted inline in the case, not pinned here, since none of them reproduce this defect."
+      "note": "Issue #175. do_POST guards the JSON parse and nothing after it, so any body that parses to a non-object, and several wrong-typed fields, escape as unhandled exceptions and kill the handler thread. The count is the pin: it is a denominator over routes derived from the shipped dispatch (8 driven routes x 6 non-object/empty/oversized bodies, minus the one shape - an empty body - that never crashes, plus 5 type-confusion probes and 1 wrong-content-type probe that also don't crash), so fixing any route, or adding one, moves it and drifts. The caller_room, /frame/<name> traversal, and concurrent-close probes added alongside this corpus are asserted inline in the case, not pinned here, since none of them reproduce this defect."
     },
     {
       "case": "policy-load-collapses-hash-collision",
@@ -43,7 +43,7 @@
     {
       "case": "artifact-repo-identity-splits-across-worktrees",
       "failure_class": "invariant-falsified",
-      "witness_contains": "relativize gave repo_main='repo-main' repo_secondary='repo-secondary' for the same relative path 'notes/plan.md' — two Artifact identities for one file",
+      "witness_contains": "relativize gave repo_main='repo-main' repo_secondary='repo-secondary' for the same relative path 'notes/plan.md' \u2014 two Artifact identities for one file",
       "triaged_at_rev": "d1ad70b",
       "note": "Issue #157. artifact_paths.relativize derives repo identity from the bare checkout directory name, so two worktrees of one repository mint two Artifact identities for one file. The pin is the two differing repo_main/repo_secondary values for one shared relative path; a fix that keys identity on git-common-dir (or an equivalent fold) makes them equal and this entry goes stale."
     },
@@ -71,9 +71,9 @@
     {
       "case": "blinded-install-reads-as-never-installed",
       "failure_class": "collapsed-sentinel",
-      "witness_contains": "blinded:  state=pending ok=False exit=0 detail='none of the 17 wirings are in <HOME>/.claude/settings.json yet — `thalamus init` writes them'\nnever:    state=pending ok=False exit=0 detail='none of the 17 wirings are in <HOME>/.claude/settings.json yet — `thalamus init` writes them'",
+      "witness_contains": "blinded:  state=pending ok=False exit=0 detail='none of the 17 wirings are in <HOME>/.claude/settings.json yet \u2014 `thalamus init` writes them'\nnever:    state=pending ok=False exit=0 detail='none of the 17 wirings are in <HOME>/.claude/settings.json yet \u2014 `thalamus init` writes them'",
       "triaged_at_rev": "d1ad70b",
-      "note": "Issue #125. verify_armed()'s all-missing branch reports pending (not fatal) for ANY HOME where none of the 17 declared wirings are armed, whether that HOME has never seen `thalamus init` or has a settings.json that exists, carries a foreign hook, and lost every one of ours. The pin is the two 'state=pending ... exit=0' rows reading identically (HOME path normalized to <HOME>, the only thing that legitimately varies); a fix that makes the blinded HOME read differently — a different state, a different exit code, or both — makes the two lines diverge and this entry goes stale. The partial-wiring control (16 of 17 armed staying fatal) is asserted in the case itself, not pinned here, since it is not the defect."
+      "note": "Issue #125. verify_armed()'s all-missing branch reports pending (not fatal) for ANY HOME where none of the 17 declared wirings are armed, whether that HOME has never seen `thalamus init` or has a settings.json that exists, carries a foreign hook, and lost every one of ours. The pin is the two 'state=pending ... exit=0' rows reading identically (HOME path normalized to <HOME>, the only thing that legitimately varies); a fix that makes the blinded HOME read differently \u2014 a different state, a different exit code, or both \u2014 makes the two lines diverge and this entry goes stale. The partial-wiring control (16 of 17 armed staying fatal) is asserted in the case itself, not pinned here, since it is not the defect."
     },
     {
       "case": "arch-refs-ground-truth",
