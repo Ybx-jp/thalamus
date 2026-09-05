@@ -530,7 +530,28 @@ TIMEOUTS: dict[str, int] = {
 }
 
 #: The per-cell hard ceiling, in seconds. Passed to virt-install as `--wait` in minutes.
-CELL_CEILING_S = 1800
+#: Must stay >= `worst_case_matrix_seconds()`, which is not a comment's arithmetic but
+#: a function over this file's own STEPS/TIMEOUTS/CONFIGS — read it, and
+#: `install_cell_ceiling.py` (tests/qe/cases), rather than this docstring, whenever the
+#: two disagree.
+#:
+#: 2026-09-04 derivation, `installed-wheel` (the config that skips no phase and also
+#: builds a wheel): STEPS 1680 (uv-sync 300 + compose-up 900 + thalamus-init x4 480) +
+#: boot 180 + clone-https 180 + the post-CHECKED graph-ready wait 180 + moved's
+#: thalamus-init 120 + console's graph-ready-bounded port poll 180 + wheel_phase's
+#: three subprocess calls at `wheel`=600 each 1800 + the wheel probe's two
+#: `wheel-probe`=300 calls 600 + distill's bounded poll 1200 + session-end.sh's
+#: hardcoded 30s return contract 30 = 6150s. Rounded up to a whole number of minutes,
+#: since `--wait` takes minutes: 103 min = 6180s.
+#:
+#: NOT counted: several `checks.py` snapshot-time subprocess calls (`_dump` against
+#: `_VERIFY_DUMP`, `_CURSOR_HOOK_BLOCK_DUMP`, `_SCOPES_DUMP`, `_graph_answers`) inherit
+#: `run()`'s hardcoded default of 180s each rather than a named `TIMEOUTS` entry, the
+#: way `wheel-probe` was carved out for `probe_entry_point`'s own 180s allowance
+#: (checks.py:529-532). Several of these fire inside the INSTALLED/scopes/reinstalled
+#: snapshots taken by `SNAPSHOTS_AFTER`, and are not part of this sum. Real budget for
+#: them, sourced from named constants the way `wheel-probe` is, is unbuilt.
+CELL_CEILING_S = 6180
 
 
 def timeout_key(step: Step) -> str:
@@ -608,6 +629,62 @@ def configs_building_a_wheel() -> tuple[str, ...]:
     """
     return tuple(c.name for c in CONFIGS
                  if c.builds_a_wheel and Phase.WHEEL not in c.skip_steps)
+
+
+def worst_case_cell_seconds(config: Config, timeouts: dict[str, int] | None = None) -> int:
+    """The most `config`'s cell may legitimately spend, phase by phase.
+
+    Mirrors `drive.py`'s `main()` bound for bound: which phases run is exactly the set
+    of conditions `main()` guards each phase with — `config.skip_steps` and
+    `configs_building_a_wheel()` — not a second copy of that logic re-typed here. A
+    bucket a single phase spends more than once is counted that many times, because
+    each spend is an independent `subprocess.run` that can legitimately consume its
+    own full bound: `wheel_phase` calls `stage()` three times (`uv build`, `uv venv`,
+    `uv pip install`, each bound to the SAME `wheel` timeout — drive.py:480-511), and
+    `checks.py`'s `_wheel_probe`, taken during that phase's own snapshot, runs two
+    `wheel-probe`-bound `init --check` calls (checks.py:536).
+
+    `timeouts` defaults to the real `TIMEOUTS` and exists so a caller can pass a
+    modified copy — that is the only way to show this function actually reads the
+    bucket it claims to, rather than returning a constant that happens to fit under
+    the ceiling (`install_cell_ceiling.py`'s control does exactly this).
+    """
+    t = TIMEOUTS if timeouts is None else timeouts
+    steps = tuple(s for s in STEPS if s.phase not in config.skip_steps)
+    total = sum(t[timeout_key(s)] for s in steps)
+    # The guest boot and the clone both happen before `drive.py` ever runs, but
+    # `virt-install --wait` wraps the whole guest, not only `drive.py`'s own steps.
+    total += t["boot"] + max(t["clone-local"], t["clone-https"])
+    if Phase.GRAPH_STARTING not in config.skip_steps:
+        # graph_ready_phase's bounded wait, run once strictly after CHECKED
+        # (drive.py:545).
+        total += t["graph-ready"]
+    if Phase.MOVED not in config.skip_steps:
+        # moved_phase's own `thalamus init --check`, after REINSTALLED (drive.py:431).
+        total += t["thalamus-init"]
+    if Phase.CONSOLE not in config.skip_steps:
+        # console_phase polls the port for up to `graph-ready` seconds waiting for the
+        # server to bind (drive.py:687).
+        total += t["graph-ready"]
+    if config.name in configs_building_a_wheel():
+        total += 3 * t["wheel"] + 2 * t["wheel-probe"]
+    if Phase.DISTILLED not in config.skip_steps:
+        # distill_phase's bounded poll, plus session-end.sh's own hardcoded 30s
+        # contract to return immediately and fork the rest detached (drive.py:626) —
+        # not in TIMEOUTS because it is not a documented step's budget, but it is still
+        # seconds the cell may legitimately spend before the poll even starts.
+        total += t["distill"] + 30
+    return total
+
+
+def worst_case_matrix_seconds(timeouts: dict[str, int] | None = None) -> int:
+    """The bound every cell in the matrix must fit under: the worst of all configs.
+
+    Whichever `Config` this lands on today, the point of taking the max over all of
+    them rather than naming one is that a future config carrying more phases becomes
+    the worst case automatically, with no second place to remember to update.
+    """
+    return max(worst_case_cell_seconds(c, timeouts) for c in CONFIGS)
 
 
 def expected_reproductions(config: Config) -> frozenset[int]:

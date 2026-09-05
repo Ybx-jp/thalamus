@@ -859,7 +859,7 @@ def main(argv: list[str]) -> int:
                         moved_phase(repo, env, artifacts, recorder)
                     if spec.Phase.CONSOLE not in config.skip_steps:
                         console_phase(repo, env, artifacts, recorder)
-            if config.builds_a_wheel and spec.Phase.WHEEL not in config.skip_steps:
+            if config.name in spec.configs_building_a_wheel():
                 wheel_phase(repo, env, artifacts, recorder)
             findings = evaluate(env, recorder)
     except GateRefused as exc:
