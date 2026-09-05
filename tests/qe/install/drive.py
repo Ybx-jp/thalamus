@@ -49,6 +49,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -75,9 +76,15 @@ CONSOLE_PORT = int(os.environ.get("QE_CONSOLE_PORT", "8378"))
 #: step". The order mirrors `seed.py`'s generated cell script exactly, because most
 #: checks are differential and a snapshot in the wrong place is not a weaker
 #: observation — it is a different one wearing the same label.
+#: "graph-readiness-window" is taken the instant `docker compose up -d` returns, with
+#: no wait at all — that is what samples issue #55's window, and it is why it must
+#: never move. "graph-ready" is NOT taken here: it needs a bounded wait for the graph
+#: to actually answer, which would delay the CHECKED step if it ran this early and
+#: silence #55 in the process (see spec.py:152-154). `graph_ready_phase` takes it
+#: later instead, strictly after CHECKED has already run unwaited (issue #130).
 SNAPSHOTS_AFTER: dict[spec.Phase | None, tuple[str, ...]] = {
     None: ("preflight",),
-    spec.Phase.GRAPH_STARTING: ("graph-ready",),
+    spec.Phase.GRAPH_STARTING: ("graph-readiness-window",),
     spec.Phase.INSTALLED: ("installed", "scopes"),
     spec.Phase.REINSTALLED: ("reinstalled",),
     spec.Phase.UNINSTALLED: ("uninstalled",),
@@ -87,6 +94,7 @@ SNAPSHOTS_AFTER: dict[spec.Phase | None, tuple[str, ...]] = {
 #: snapshot with it rather than recording an empty one under a name a check trusts.
 SNAPSHOT_PHASE: dict[str, spec.Phase] = {
     "preflight": spec.Phase.PREFLIGHT,
+    "graph-readiness-window": spec.Phase.GRAPH_STARTING,
     "graph-ready": spec.Phase.GRAPH_READY,
     "installed": spec.Phase.INSTALLED,
     "scopes": spec.Phase.INSTALLED,
@@ -94,7 +102,37 @@ SNAPSHOT_PHASE: dict[str, spec.Phase] = {
     "console": spec.Phase.CONSOLE,
     "uninstalled": spec.Phase.UNINSTALLED,
     "wheel": spec.Phase.WHEEL,
+    "distill-before": spec.Phase.DISTILLED,
+    "distill-after": spec.Phase.DISTILLED,
 }
+
+#: A minimal but substantive Claude Code transcript: one user turn and one tool call.
+#: That is what clears `transcripts.has_substance` (harness/transcripts.py:150) — a
+#: transcript with only slash commands or no turns at all is legitimately skipped as
+#: nothing to distill, and `distill_phase` must not be mistaken for that case going
+#: red. `__CWD__` is substituted for the real repo path when the fixture is written,
+#: which is also what lets `resolve_repo_root` (harness/transcripts.py) resolve a real
+#: project rather than nothing.
+_FIXTURE_TRANSCRIPT = "\n".join([
+    json.dumps({
+        "type": "user", "cwd": "__CWD__", "timestamp": "2026-01-01T00:00:00.000Z",
+        "message": {"role": "user", "content": "Say hello and nothing else."},
+    }),
+    json.dumps({
+        "type": "assistant", "timestamp": "2026-01-01T00:00:01.000Z",
+        "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_qe_distill_1", "name": "Bash",
+             "input": {"command": "echo hello"}},
+        ]},
+    }),
+]) + "\n"
+
+#: `_cmd_extract`'s own closing summary line (cli.py), captured in the per-session log
+#: `session-end.sh` redirects its whole detached block into. Its presence means the
+#: extraction attempt has already run to completion — with or without a write — so
+#: `distill_phase`'s poll can stop rather than spend its whole budget on a cell (like
+#: no-agent-cli) where nothing further will ever change.
+_DISTILL_DONE_RE = re.compile(r"\d+ extracted, \d+ skipped, \d+ failed")
 
 
 def _port_open(port: int, host: str = "127.0.0.1") -> bool:
@@ -484,6 +522,146 @@ def wheel_phase(repo: Path, env: dict, artifacts: Path, recorder: Recorder) -> N
     snap("wheel", env, recorder)
 
 
+def graph_ready_phase(artifacts: Path, env: dict, recorder: Recorder) -> None:
+    """Wait, bounded, for the graph to answer a query, then snapshot the real state.
+
+    Runs strictly AFTER the CHECKED step, on purpose. `graph-readiness-window`
+    (`SNAPSHOTS_AFTER[Phase.GRAPH_STARTING]`) is taken the instant `docker compose up
+    -d` returns, with no wait at all — that is what samples the window issue #55 is
+    about, between the port accepting a connection and the server answering a query,
+    and a wait inserted ahead of it, or ahead of the `--check` step that reads it,
+    would silence the defect the early sample exists to catch (README.md,
+    spec.py:152-154). This wait sits after both, so `check_graph_down_diagnosis`
+    (#17) gets a sample that actually confirms the graph answers, without the driver
+    ever waiting politely before `--check` runs.
+
+    Bounded rather than polled to exhaustion: `spec.TIMEOUTS["graph-ready"]` is an
+    unmeasured 180s — spec.py's own note is that the five-green-cells calibration
+    rule this matrix documents cannot be satisfied yet. A cell whose graph never
+    becomes ready within it still gets a `graph-ready` snapshot, with `query_ok`
+    false, so `check_graph_ready_answers_queries` fails naming what it saw rather
+    than the driver hanging past its own budget.
+    """
+    timeout = spec.TIMEOUTS["graph-ready"]
+    recorder.note(f"phase graph-ready: waiting up to {timeout}s for the graph to answer")
+    deadline = time.time() + timeout
+    snap_path = artifacts / "snap-graph-ready.json"
+    ready = False
+    while time.time() < deadline:
+        snap("graph-ready", env, recorder)
+        try:
+            ready = bool(json.loads(snap_path.read_text()).get("query_ok"))
+        except (OSError, ValueError):
+            ready = False
+        if ready:
+            break
+        time.sleep(3)
+    recorder.note(f"phase graph-ready: query_ok={ready}")
+
+
+def distill_phase(repo: Path, env: dict, artifacts: Path, recorder: Recorder) -> None:
+    """Prove README.md:103's promise (issue #131): a session that ends is distilled.
+
+    Gated on `spec.DEEP_TIER_ENV`. Absent — which is every hosted per-push runner by
+    construction, since neither qe-linux.yml nor qe-macos.yml sets it — this phase
+    reads the box's current session count for the record and stops there, spending no
+    model call. Armed only by the libvirt scheduled run in the operator's private
+    notes repo, where the model budget for #131 was granted on a schedule, never
+    per-push.
+
+    The mutation, once armed: a fixture `.jsonl` transcript is written where
+    `session-end.sh` derives its path from the payload's `transcript_path`, and a
+    synthetic SessionEnd payload naming it is piped into the real hook script —
+    exactly what `tests/test_claude_code_hooks.py:509-520` already does for the
+    wiring-only case, except `thalamus` is NOT stubbed here, so the detached block
+    runs a real `thalamus extract --write`, paying for one real model call. The hook
+    itself must return in seconds and fork the rest detached (its own comment: a
+    SessionEnd hook still running when the editor moves on is cancelled), so this
+    waits on the OUTCOME rather than on a subprocess: it polls `thalamus status`
+    through the same `distill-after` snapshot label `checks.py` reads, exactly as
+    `graph_ready_phase` polls `query_ok` above, and stops early once the per-session
+    log carries `_cmd_extract`'s own closing summary line — the point past which
+    nothing further will change on a cell (like no-agent-cli) where extraction never
+    had anywhere to write.
+
+    Never writes a Session directly, and never runs this against the operator's own
+    graph: this cell's graph is the one `docker compose up -d` started for it, which
+    is why the count read here must be near-zero before the mutation runs at all — a
+    fixture landing among the operator's real sessions could not tell "distillation
+    works" from "distillation worked once, months ago" any better than that box could
+    (issue #131, "Deliberately not to be done").
+    """
+    armed = os.environ.get(spec.DEEP_TIER_ENV) == "1"
+    recorder.mark("distill START")
+    recorder.note(f"phase distill: {spec.DEEP_TIER_ENV}="
+                  f"{'1' if armed else '(unset)'}")
+    session_id = f"qe-distill-{int(time.time())}"
+    phase_env = dict(env, QE_DISTILL_SESSION_ID=session_id)
+    snap("distill-before", phase_env, recorder)
+    if not armed:
+        recorder.note(
+            f"phase distill: not armed — no fixture written and no model call made. "
+            f"Set {spec.DEEP_TIER_ENV}=1 on the scheduled deep run to arm it "
+            "(issue #131)."
+        )
+        recorder.mark("distill END (not armed)")
+        return
+
+    project_dir_name = str(repo).replace("/", "-")
+    transcript = (Path(phase_env["QE_GUEST_HOME"]) / ".claude" / "projects"
+                 / project_dir_name / f"{session_id}.jsonl")
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_text(_FIXTURE_TRANSCRIPT.replace("__CWD__", str(repo)))
+
+    hook = (repo / "src" / "thalamus" / "harness" / "hooks" / "claude-code"
+            / "session-end.sh")
+    payload = json.dumps({
+        "session_id": session_id, "cwd": str(repo),
+        "transcript_path": str(transcript),
+        "hook_event_name": "SessionEnd", "reason": "exit",
+    })
+    recorder.note(f"phase distill: firing session-end.sh for {session_id}")
+    try:
+        proc = subprocess.run([str(hook)], input=payload, env=phase_env, cwd=repo,
+                              capture_output=True, text=True, timeout=30)
+        (artifacts / "step-distill-hook.log").write_text(proc.stdout + proc.stderr)
+        (artifacts / "step-distill-hook.rc").write_text(f"{proc.returncode}\n")
+        if proc.returncode != 0:
+            recorder.note(f"phase distill: session-end.sh itself exited "
+                          f"{proc.returncode} before forking anything detached")
+    except subprocess.TimeoutExpired:
+        recorder.note("phase distill: session-end.sh did not return within 30s; it "
+                      "must return immediately and fork the rest detached, per its "
+                      "own comment on hook cancellation")
+        recorder.mark("distill END (hook did not return)")
+        return
+
+    timeout = spec.TIMEOUTS["distill"]
+    log_path = (Path(phase_env["QE_GUEST_HOME"]) / ".thalamus" / "logs"
+               / f"session-end-{session_id[:8]}.log")
+    recorder.note(f"phase distill: waiting up to {timeout}s for {session_id[:8]} "
+                  "to land")
+    deadline = time.time() + timeout
+    snap_path = artifacts / "snap-distill-after.json"
+    landed = False
+    while time.time() < deadline:
+        snap("distill-after", phase_env, recorder)
+        try:
+            after = json.loads(snap_path.read_text())
+        except (OSError, ValueError):
+            after = {}
+        newest = ((after.get("status") or {}).get("newest") or {})
+        if newest.get("session_id") == session_id:
+            landed = True
+            break
+        log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
+        if _DISTILL_DONE_RE.search(log_text):
+            break
+        time.sleep(5)
+    recorder.note(f"phase distill: landed={landed}")
+    recorder.mark(f"distill END landed={landed}")
+
+
 def console_phase(repo: Path, env: dict, artifacts: Path, recorder: Recorder) -> None:
     """Start the console, fetch its shell, stop it.
 
@@ -670,6 +848,12 @@ def main(argv: list[str]) -> int:
             for step in steps:
                 run_step(step, repo, env, artifacts, recorder)
                 snapshots_after(step.phase)
+                if step.phase is spec.Phase.CHECKED \
+                        and spec.Phase.GRAPH_STARTING not in config.skip_steps:
+                    graph_ready_phase(artifacts, env, recorder)
+                if step.phase is spec.Phase.INSTALLED \
+                        and spec.Phase.DISTILLED not in config.skip_steps:
+                    distill_phase(repo, env, artifacts, recorder)
                 if step.phase is spec.Phase.REINSTALLED:
                     if spec.Phase.MOVED not in config.skip_steps:
                         moved_phase(repo, env, artifacts, recorder)

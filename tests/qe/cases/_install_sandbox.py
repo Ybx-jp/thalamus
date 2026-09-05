@@ -72,17 +72,35 @@ The child reports three snapshots of the home tree — before install, after ins
 after uninstall — plus the text `_confirm()` prints. `_confirm()` is called with a
 non-tty stdin, which declines: the probe wants the blast-radius text, not the consent,
 and `install()` is invoked directly afterwards rather than through the prompt.
+
+**Both callers are substrate-conditional through this file alone (#98).** Neither
+`install_consent` nor `uninstall_roundtrip` calls the graph directly; `install()` does,
+via `verify() -> verify_runtime() -> _probe_graph()`, and only when one answers does
+the span tap write `~/.thalamus/profiles/<YYYY-MM>.jsonl` into the redirected HOME
+before either case reads the tree. Both declare `Substrate.NEEDS_GRAPH` so they SKIP
+on a box with none rather than pass over a footprint narrower than the one they were
+written against. `_run` carries the matching control: it checks `Substrate.NEEDS_GRAPH`
+the same way `run.py` gates on it — the box's usual graph address, not wherever this
+particular run's `THALAMUS_GRAPH_URL` happens to point — and, if that substrate is
+available, requires at least one path matching `.thalamus/profiles/*.jsonl` in the
+footprint. A box whose declared substrate is present but whose footprint shows no such
+path is a narrower reproduction than a graph-backed run should give — whether because
+`THALAMUS_GRAPH_URL` redirected the child elsewhere or the span tap was disabled or
+broken — reported as a broken probe rather than folded into a quieter pass.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from ..model import Substrate, available
 
 _CHILD = r"""
 import io, json, os, sys
@@ -184,6 +202,17 @@ class Probe:
         return {k: v for k, v in self.after.items() if k not in self.before}
 
 
+# The substrate-conditional slice of the footprint (#98). `install()` -> `verify()` ->
+# `verify_runtime()` -> `_probe_graph()` reaches the graph, and only when one answers
+# does the span tap in `src/thalamus/substrate/spans.py` write
+# `~/.thalamus/profiles/<YYYY-MM>.jsonl` into the redirected HOME. Neither case that
+# shares this sandbox is itself graph-dependent, so a graph that goes unreachable
+# during one particular run narrows their shared footprint by exactly this shape
+# without emptying it — measured as 47 paths becoming 44 the one time it went
+# undetected. `COLLAPSED_SENTINEL`'s "no footprint at all" control does not fire on a
+# shrunken-but-nonempty footprint; `_run` below is what does.
+_GRAPH_FOOTPRINT = re.compile(r"^\.thalamus/profiles/[^/]+\.jsonl$")
+
 _CACHE: list[Probe | str] = []
 
 
@@ -251,6 +280,24 @@ def _run(timeout: float) -> Probe | str:
         if Path(data["home"]).resolve() != Path(fake_home).resolve():
             return (f"the probe did not adopt the redirected HOME "
                     f"(child reported {data['home']}, expected {fake_home})")
+
+        # CONTROL: the graph-dependent slice of the footprint must be present whenever
+        # this box has the substrate both cases declare (`Substrate.NEEDS_GRAPH`),
+        # checked the same way `run.py` gates on it — a live TCP connect to the graph's
+        # usual address, not to wherever this run's `THALAMUS_GRAPH_URL` happens to
+        # point. That is deliberate: the property under test is "the sandbox reproduces
+        # what the declared substrate implies", and a redirected `THALAMUS_GRAPH_URL`
+        # sending the child's `install()` to a dead port — or `THALAMUS_PROFILE=0`
+        # disabling the span tap outright — while the box's real graph answers is
+        # exactly the shape of silent narrowing #98 found: a declared substrate that is
+        # present while the coverage it should unlock never shows up.
+        created = {p for p in data["after"] if p not in data["before"]}
+        if available(Substrate.NEEDS_GRAPH) and not any(_GRAPH_FOOTPRINT.match(p) for p in created):
+            return (f"this box's graph substrate ({Substrate.NEEDS_GRAPH.value}) is "
+                    f"available but the sandbox's footprint has no path matching "
+                    f"{_GRAPH_FOOTPRINT.pattern!r} — the substrate-conditional slice of "
+                    f"the footprint narrowed silently (#98: measured as 47 paths "
+                    f"becoming 44 the first time this went undetected)")
 
         return Probe(
             home=data["home"], consent=data["consent"], named=data["named"],

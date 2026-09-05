@@ -11,5 +11,111 @@
     "Delete an entry in the same change that fixes its defect. A stale entry makes the suite",
     "exit 2, which is deliberate - a silently-fixed defect hides the next regression at that site."
   ],
-  "expectations": []
+  "expectations": [
+    {
+      "case": "a-graceful-close-is-not-recorded-as-a-forced-kill",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "close_window recorded 1 forced kill(s) ['close'] and kill-window ran=True",
+      "triaged_at_rev": "ea06c91",
+      "note": "Issue #151. close_window polls #{pane_dead} and discards it, so a pane that exited gracefully under remain-on-exit is waited out for the whole grace budget and then force-killed and recorded as never distilled. The pin names both halves of the current behaviour - the forced-kill record AND the kill-window - so a partial repair that stopped one and not the other drifts rather than staying triaged."
+    },
+    {
+      "case": "typed-text-reaches-the-pane-as-data-not-as-tmux-arguments",
+      "failure_class": "boundary-leak",
+      "witness_contains": "'-t 0' (a chunk that retargets the send to a pane of its own choosing) -> pane held ''",
+      "triaged_at_rev": "ea06c91",
+      "note": "Issue #152. Text posted to /api/send is read by tmux as arguments. The pin is the retarget payload rather than the dash-flag ones because it is the sharpest of the set: a repair that added `--` fixes every entry in the witness at once, and a repair that somehow left this one would drift here."
+    },
+    {
+      "case": "a-malformed-post-body-gets-a-response-not-a-dropped-connection",
+      "failure_class": "failed-open",
+      "witness_contains": "45 of 54 probes dropped the connection",
+      "triaged_at_rev": "ea06c91",
+      "note": "Issue #175. do_POST guards the JSON parse and nothing after it, so any body that parses to a non-object, and several wrong-typed fields, escape as unhandled exceptions and kill the handler thread. The count is the pin: it is a denominator over routes derived from the shipped dispatch (8 driven routes x 6 non-object/empty/oversized bodies, minus the one shape - an empty body - that never crashes, plus 5 type-confusion probes and 1 wrong-content-type probe that also don't crash), so fixing any route, or adding one, moves it and drifts. The caller_room, /frame/<name> traversal, and concurrent-close probes added alongside this corpus are asserted inline in the case, not pinned here, since none of them reproduce this defect."
+    },
+    {
+      "case": "policy-load-collapses-hash-collision",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "load() returned 1 record(s) for this hash; keying by (sha, ts) instead recovers 2",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #143. policy.load() keys the withholding ledger by response_sha256 alone. Two rows sharing one rendered response (the same recall answer served to two withholding decisions) collapse to whichever the dict keeps last. The pin is the 1-vs-2 record count for one hash, contrasted with keying by (sha, ts): a fix that dedupes by sha alone leaves the count at 1 and does not drift here; a fix that widens the key moves it."
+    },
+    {
+      "case": "artifact-repo-identity-splits-across-worktrees",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "relativize gave repo_main='repo-main' repo_secondary='repo-secondary' for the same relative path 'notes/plan.md' \u2014 two Artifact identities for one file",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #157. artifact_paths.relativize derives repo identity from the bare checkout directory name, so two worktrees of one repository mint two Artifact identities for one file. The pin is the two differing repo_main/repo_secondary values for one shared relative path; a fix that keys identity on git-common-dir (or an equivalent fold) makes them equal and this entry goes stale."
+    },
+    {
+      "case": "thread-approve-is-idempotent",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "approvals for ref after 1st approve(): 1; after 2nd approve(): 2",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #170. closes.approve() has no guard against re-invocation on an already-settled ref; find_proposal() matches the original PROPOSED row regardless of whether it was since approved, so a second approve() call appends a second APPROVED row. The pin is the 1-vs-2 row count for one ref; a fix that makes the second call a no-op or raise keeps the count at 1 and this entry goes stale."
+    },
+    {
+      "case": "ceremony-start-serializes-concurrent-opens",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "two concurrent start() calls both produced occasion_id=['qe-race-room:retrospective:1', 'qe-race-room:retrospective:1']",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #168. ceremonies.start() computes next_index() by reading the ledger before _append()'s lock is taken, so two concurrent opens of the same (room, kind) can both read the same count and claim the same occasion_id. The pin is the identical occasion_id from both threads under a forced read-then-append race; a fix that widens the lock (or otherwise serializes index assignment) makes the two ids differ and this entry goes stale."
+    },
+    {
+      "case": "ledger-append-survives-a-partial-write",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "expected ['pre-crash', 'post-crash'], recovered ['pre-crash']",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #169. _append() (harness/closes.py and harness/ceremonies.py, same shape) writes json.dumps(row) + \"\\n\" with no fencing against a prior partial write: a crash that leaves a trailing line with no newline causes the next writer's valid append to merge onto it, and read_rows() drops the merged line whole - losing the post-crash row, not just the in-flight one. The pin is the missing 'post-crash' thread_id; a fix that fences a dangling partial line (or writes the newline first) recovers it and this entry goes stale."
+    },
+    {
+      "case": "blinded-install-reads-as-never-installed",
+      "failure_class": "collapsed-sentinel",
+      "witness_contains": "blinded:  state=pending ok=False exit=0 detail='none of the 17 wirings are in <HOME>/.claude/settings.json yet \u2014 `thalamus init` writes them'\nnever:    state=pending ok=False exit=0 detail='none of the 17 wirings are in <HOME>/.claude/settings.json yet \u2014 `thalamus init` writes them'",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #125. verify_armed()'s all-missing branch reports pending (not fatal) for ANY HOME where none of the 17 declared wirings are armed, whether that HOME has never seen `thalamus init` or has a settings.json that exists, carries a foreign hook, and lost every one of ours. The pin is the two 'state=pending ... exit=0' rows reading identically (HOME path normalized to <HOME>, the only thing that legitimately varies); a fix that makes the blinded HOME read differently \u2014 a different state, a different exit code, or both \u2014 makes the two lines diverge and this entry goes stale. The partial-wiring control (16 of 17 armed staying fatal) is asserted in the case itself, not pinned here, since it is not the defect."
+    },
+    {
+      "case": "arch-refs-ground-truth",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "code/refs_fixtures_known_defect/vanishing_bare_reference.py cites 'routes.py' in plain prose with no backticks and no directory prefix; census finds it in none of references, dotted, or unconsumed",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #172. references.py's _CANDIDATE has two alternatives: a backticked span (any content) and a bare path that requires a '/'. A bare filename cited with neither backticks nor a directory component matches neither, so it is absent from report.references, report.dotted, and report.unconsumed alike, contradicting the module's own complement-shaped claim. The pin is the exact vanishing witness for the fixture's one citation; a fix that gives _CANDIDATE a bare-word-with-no-slash alternative moves this reference into one of the three buckets and this entry goes stale."
+    },
+    {
+      "case": "subagent-unticketed-recall-served-parent-scope",
+      "failure_class": "boundary-leak",
+      "witness_contains": "qe_subagent_call->scope='main'",
+      "triaged_at_rev": "5d10dec",
+      "note": "Issue #165. _granted_scope's only per-call parameter is `ticket`; an unticketed call carries nothing that names the caller, so a call shaped exactly like a thalamus-qe subagent's own memory_recall returns the same SCOPE as the main loop's own call. The pin is the subagent-shaped call's served scope reading 'main'; a fix that threads a per-call caller signal into the unticketed path (e.g. agent_type) and honors it makes this read 'qe' instead and this entry goes stale."
+    },
+    {
+      "case": "subagent-trace-stamped-with-parent-pin",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "_session_scope='main'; sync() would stamp the qe event's Trace with scope='main'",
+      "triaged_at_rev": "5d10dec",
+      "note": "Issue #163. _session_scope resolves one scope for an entire session_id and sync() stamps every trace of that session with it, discarding each event's own recorded `scope`. The pin is the qe-pinned event's Trace being stamped 'main' despite its own event.scope reading 'qe'; a fix that prefers the event's own recorded scope at the stamping call site (falling back to the batch resolution only when it is empty) makes this read 'qe' instead and this entry goes stale."
+    },
+    {
+      "case": "mcp-tool-argument-sweep",
+      "failure_class": "boundary-leak",
+      "witness_contains": "memory_query(query=none) raised AttributeError: 'NoneType' object has no attribute 'strip'",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #173. validate_query's first line is query.strip() with no isinstance check ahead of it, and memory_query passes its argument straight through. A non-string query (None, an int, a list) raises AttributeError instead of the same readable rejection every other malformed query gets. The pin is the None case's exact exception text; a fix that type-checks before the strip() call returns a string here instead and this entry goes stale."
+    },
+    {
+      "case": "query-guard-evasion-corpus",
+      "failure_class": "failed-open",
+      "witness_contains": "addv( via comment-injection",
+      "triaged_at_rev": "d1ad70b",
+      "note": "Issue #174. validate_query denies mutation steps by checking whether each appears as a literal substring in a whitespace-stripped, lowercased view of the query. A block comment, a zero-width space, a Cyrillic homoglyph, or a fullwidth paren inserted mid-token all survive that view unstripped and split the substring, so all 40 (10 denied steps x 4 techniques) generated variants are accepted. The pin is one representative bypass; a fix that normalizes the text (strips comments and zero-width characters, folds confusables) before matching closes all four techniques at once and every generated variant starts being rejected, at which point this entry goes stale."
+    },
+    {
+      "case": "a-stalled-teardown-does-not-force-kill-a-reused-index",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "kill-window target='qe-close-probe:0' resolves to='B'; recycle_window: forced=True naming 'session-A', respawn-window target='qe-close-probe:0' resolves to='B'",
+      "triaged_at_rev": "10c8fa5",
+      "note": "Issue #153, narrower than filed. The issue's quoted lines (unconditional index-addressing) no longer exist: close_window/recycle_window now open with wid = _window_id(cfg, idx); target = wid or f\"{cfg.session}:{idx}\", and the primary interleaving the issue describes does not reproduce when wid capture succeeds - _window_gone(cfg, wid) correctly notices a same-indexed replacement's arrival and returns before either function forces. The residual defect is the fallback: when _window_id's own capture fails at teardown start, target stays index-shaped for the whole grace budget AND _window_gone's `if not wid: return False` guard disables its early exit outright, so a same-indexed replacement is force-killed (or force-respawned) in the original session's place while the kill row still names the original. The pin is both functions' resolved-to='B' outcome under a failed wid capture; a fix that refuses to proceed past an empty wid (rather than falling back to idx-addressing) makes this branch unreachable and this entry goes stale."
+    }
+  ]
 }

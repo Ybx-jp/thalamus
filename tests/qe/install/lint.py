@@ -54,7 +54,7 @@ def findings() -> list[str]:
     # is one of the phases the runner synthesizes. A check pinned to a phase the
     # sequence never enters is a check that never runs, which reads as a pass.
     synthesized = {spec.Phase.PREFLIGHT, spec.Phase.GRAPH_READY, spec.Phase.MOVED,
-                   spec.Phase.CONSOLE}
+                   spec.Phase.CONSOLE, spec.Phase.DISTILLED}
     # WHEEL is synthesized as well, but only by a config that asks for it: `drive.py`
     # runs that phase where `builds_a_wheel` is set and nowhere else. A check pinned
     # there with no config building a wheel would report not_evaluated in every cell of

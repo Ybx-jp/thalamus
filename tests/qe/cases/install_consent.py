@@ -159,7 +159,12 @@ def run() -> Finding | None:
 CASE = Case(
     name="consent-names-every-path-install-writes",
     tier=Tier.FAST,
-    substrate=(Substrate.HERMETIC,),
+    # Not hermetic: `observe()` runs a real `install()`, whose `verify()` probes the
+    # graph and, if one answers, the span tap writes `~/.thalamus/profiles/*.jsonl`
+    # into the redirected HOME before this case ever reads the tree (#98). A box with
+    # no graph produces a footprint 3 paths narrower and this case cannot tell the
+    # difference from here, so it must SKIP rather than pass over the narrowed one.
+    substrate=(Substrate.NEEDS_GRAPH,),
     classes=(FailureClass.DOC_CODE_DRIFT, FailureClass.COLLAPSED_SENTINEL),
     summary="every path `thalamus init` creates under HOME must be one its consent "
             "prompt named before asking",

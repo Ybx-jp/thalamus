@@ -38,6 +38,7 @@ class Phase(str, Enum):
     GRAPH_READY = "graph-ready"      # once the graph answers a query
     CHECKED = "checked"              # after `thalamus init --check`, pre-install
     INSTALLED = "installed"          # after `thalamus init`
+    DISTILLED = "distilled"          # after a fixture session ends and is distilled
     REINSTALLED = "reinstalled"      # after a second `thalamus init`
     MOVED = "moved"                  # after the checkout is renamed
     CONSOLE = "console"              # with `thalamus console` serving
@@ -203,6 +204,15 @@ AGENT_CLIS: tuple[str, ...] = ("claude", "agent", "codex")
 #: it is the artifact under test.
 WHEEL_VENV_DIRNAME = ".qe-wheel-venv"
 
+#: Arms the one phase in this matrix that spends real model money: `Phase.DISTILLED`'s
+#: check (issue #131). Read identically by `drive.py` (whether to run the phase at
+#: all) and `checks.py` (why it reports not_evaluated when it did not), so neither can
+#: drift from the other about which cells this ran on. Unset on every hosted per-push
+#: runner by construction — qe-linux.yml and qe-macos.yml never set it — and set to
+#: "1" only by the libvirt scheduled run in the operator's private notes repo, where
+#: the model budget for #131 was granted on a schedule, never per-push.
+DEEP_TIER_ENV = "QE_DEEP_TIER"
+
 
 # --------------------------------------------------------------------------------------
 # Config variants. Each reproduces a filed defect's precondition.
@@ -216,7 +226,14 @@ CONFIGS: tuple[Config, ...] = (
            "`jq` off PATH — another vendor's binary that install does not provide. "
            "The absence must be reported as an advisory, the checks that need it as "
            "could-not-run, and `--check` must still exit 0 before install.",
-           issue=79, fixed=True, removes=("jq",)),
+           issue=79, fixed=True, removes=("jq",),
+           # `session-end.sh` exits 0 before doing anything when `jq` is missing
+           # (`thalamus_require_binaries jq uv || exit 0`), so the DISTILLED phase's
+           # fixture session would never be picked up at all. That is issue #79's
+           # premise re-observed, not a #131 finding, and skipping it here is what
+           # keeps the no-agent-cli cell — this check's own control — the one place
+           # an unchanged count means something.
+           skip_steps=(Phase.DISTILLED,)),
     Config("no-agent-cli",
            "No `claude` on PATH at init time. The MCP registration is SKIPPED into "
            "the actions list, verify() has no check for it, and init exits 0.",
@@ -228,7 +245,11 @@ CONFIGS: tuple[Config, ...] = (
     Config("graph-not-started",
            "`thalamus init` run before `docker compose up -d`. The readable "
            "diagnosis must reach the user rather than a transport error.",
-           issue=17, fixed=True, skip_steps=(Phase.GRAPH_STARTING, Phase.GRAPH_READY)),
+           issue=17, fixed=True,
+           # No graph ever runs in this cell, so the fixture session's extraction
+           # would fail to write for the same reason issue #17 does — a finding
+           # about a down graph, not about #131 — and DISTILLED skips with it.
+           skip_steps=(Phase.GRAPH_STARTING, Phase.GRAPH_READY, Phase.DISTILLED)),
     Config("moved-checkout",
            "The checkout is renamed after a successful init, which is what an "
            "ordinary upgrade looks like. Every later --check must name the "
@@ -295,6 +316,17 @@ CHECKS: tuple[Check, ...] = (
                   "probe must NOT produce that diagnosis — otherwise the check "
                   "passes on a box that always prints it"),
 
+    # ---- the graph actually becomes ready -----------------------------------------
+    Check("compose-up-produces-a-graph-that-answers-queries", Phase.GRAPH_READY,
+          Severity.BLOCKS,
+          "After `docker compose up -d`, within a bounded wait the graph must "
+          "actually answer a query — not merely accept a TCP connection. Before this "
+          "check existed, Phase.GRAPH_READY carried zero entries in `spec.CHECKS` and "
+          "nothing in the matrix asserted this at all (issue #130).",
+          control="the port must have been open at all after `docker compose up -d` "
+                  "returned 0, or a query failing to answer cannot be told apart from "
+                  "a container that never started"),
+
     # ---- pre-install check ------------------------------------------------------
     Check("check-exits-zero-before-install", Phase.CHECKED, Severity.DEGRADES,
           "getting-started:127 promises --check is safe before installing and exits 0, "
@@ -351,6 +383,33 @@ CHECKS: tuple[Check, ...] = (
           control="the same probe under an explicitly-set THALAMUS_CONFIG_DIR must "
                   "resolve a DIFFERENT count, or it is not reading the override at "
                   "all and would report the same number either way"),
+    Check("cursor-guards-are-failclosed", Phase.INSTALLED, Severity.BLOCKS,
+          "Every Cursor `beforeShellExecution` guard script wired into "
+          "~/.cursor/hooks.json carries `failClosed: true`, the flag issue #77 is "
+          "about. Read against `install.build_cursor_hook_block()` — the one place "
+          "the guard set and the flag are derived — rather than a copied list of "
+          "guard names that would drift the moment a fourth guard arrived.",
+          issue=123, fixed=True,
+          control="the same file must carry at least one of our OWN non-guard "
+                  "entries with no `failClosed` flag at all, or the check cannot "
+                  "tell 'wired correctly' from 'every entry defaults to the flag'"),
+
+    # ---- a session that ends is distilled ----------------------------------------
+    # Model-spending: gated on `DEEP_TIER_ENV`, never on a hosted per-push runner.
+    # No `issue=` tag — like `compose-up-produces-a-graph-that-answers-queries`
+    # above, this closes a coverage gap rather than reproducing a defect the tree is
+    # known to carry, so it is expected to PASS from the day it lands.
+    Check("a-session-that-ends-is-distilled", Phase.DISTILLED, Severity.BLOCKS,
+          "README.md:103 states the whole confirmation that memory works: the "
+          "session count `thalamus status` reports goes from 0 to 1 after a real "
+          "session ends. docs/getting-started.md:157-186 makes this documented step "
+          "6 of the first run. Every check above this one stops at whether the "
+          "wiring that writes it is armed; none reads a Session vertex, a claim, or "
+          "`thalamus status` itself (issue #131).",
+          control="the no-agent-cli cell — whose premise is a box with no CLI "
+                  "distillation can shell out to — must show the same fixture "
+                  "session end with the count UNCHANGED, or this check cannot tell "
+                  "a session that got distilled from one where nothing ran at all"),
 
     # ---- idempotency ------------------------------------------------------------
     Check("second-init-does-not-duplicate-wiring", Phase.REINSTALLED, Severity.BLOCKS,
@@ -435,7 +494,15 @@ TIMEOUTS: dict[str, int] = {
     "clone-local": 60,       # 8.51 MiB pack off the seed device
     "clone-https": 180,      # network-bound; a github hiccup is not a Thalamus defect
     "compose-up": 900,       # 600 MB image, 2 vCPU, weighted-down slice
-    "graph-ready": 180,      # JVM start on 2 vCPU
+    "graph-ready": 180,      # JVM start on 2 vCPU. Also the bound `drive.py` waits,
+                             # after the CHECKED step, before taking the real
+                             # post-readiness `graph-ready` snapshot (issue #130) —
+                             # unmeasured like `boot`: the five-green-cells
+                             # calibration rule this block documents cannot be
+                             # satisfied yet (thread
+                             # qe-install-matrix-timeout-calibration-broken), so this
+                             # stays the same reasoned guess rather than an invented
+                             # calibrated number
     "uv-sync": 300,          # measured at 2.1 s; the floor guards a resolver stall
     "thalamus-init": 120,    # two 60 s subprocess timeouts inside register_mcp
     "asserts": 180,
@@ -451,6 +518,15 @@ TIMEOUTS: dict[str, int] = {
     # Two of these run in the wheel phase, so it also has to stay well inside
     # CELL_CEILING_S.
     "wheel-probe": 300,
+    # Bounds `distill_phase`'s poll for the fixture session to land (issue #131).
+    # `extraction.run_extraction`'s own subprocess ceiling is 900s
+    # (harness/extraction.py:661), and its docstring describes the ordinary case as
+    # "a minute or two"; this adds room for `uv run`'s own resolution and the
+    # chained `eval sync --write` session-end.sh runs after it. Unmeasured, like
+    # `graph-ready`: this phase is gated on `DEEP_TIER_ENV` and has never run
+    # against a real cell, so the five-green-cells calibration rule cannot be
+    # satisfied yet — a reasoned guess, not an invented calibrated number.
+    "distill": 1200,
 }
 
 #: The per-cell hard ceiling, in seconds. Passed to virt-install as `--wait` in minutes.
@@ -515,6 +591,23 @@ def configs_needing_a_graph() -> tuple[str, ...]:
     """
     return tuple(c.name for c in CONFIGS
                  if Phase.GRAPH_STARTING not in c.skip_steps)
+
+
+def configs_building_a_wheel() -> tuple[str, ...]:
+    """Configs whose cell must also run the wheel phase after the documented steps.
+
+    One function rather than a second inspection of `Config.builds_a_wheel`, for the
+    reason `configs_requiring_no_graph`/`configs_needing_a_graph` already state: a
+    hardcoded second copy of a config's own flag drifts, silently, from the flag
+    itself. That drift is exactly what issue #129 found — the libvirt guest-script
+    generator (`ops/qe-install-matrix/seed.py`, the operator's private notes repo)
+    never read `builds_a_wheel` at all, so `installed-wheel` ran there as a plain
+    duplicate of `baseline` and reproduced nothing. `drive.py`'s own gate is
+    `config.builds_a_wheel and Phase.WHEEL not in config.skip_steps`; this is that
+    same condition, named once, for any reader of the spec outside this file too.
+    """
+    return tuple(c.name for c in CONFIGS
+                 if c.builds_a_wheel and Phase.WHEEL not in c.skip_steps)
 
 
 def expected_reproductions(config: Config) -> frozenset[int]:

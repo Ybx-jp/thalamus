@@ -159,7 +159,13 @@ def run() -> Finding | None:
 CASE = Case(
     name="uninstall-takes-back-what-install-wrote",
     tier=Tier.FAST,
-    substrate=(Substrate.HERMETIC,),
+    # Not hermetic, for the same reason as `install_consent`'s CASE: it shares
+    # `_install_sandbox.observe()`, whose real `install()` reaches the graph through
+    # `verify()` -> `verify_runtime()` -> `_probe_graph()`, and the span tap's
+    # `~/.thalamus/profiles/*.jsonl` is part of the footprint this case scans for
+    # residue (#98). SKIP visibly on a box with no graph rather than certify a
+    # narrower removal than the one a graph-backed box gets.
+    substrate=(Substrate.NEEDS_GRAPH,),
     classes=(FailureClass.INVARIANT_FALSIFIED, FailureClass.COLLAPSED_SENTINEL),
     summary="no Thalamus wiring written by a real `init` survives `init --uninstall`",
     run=run,
