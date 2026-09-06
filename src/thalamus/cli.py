@@ -333,7 +333,12 @@ def _main():
     )
     delegate_parser.add_argument(
         "--timeout", type=int, default=900,
-        help="Model-call timeout in seconds (default: 900)",
+        help="Budget in seconds for the whole call, pre-flight included (default: 900)",
+    )
+    delegate_parser.add_argument(
+        "--check", action="store_true",
+        help="Price the prompt against the executor's context window and stop. No "
+             "model call, no output file.",
     )
 
     # Contract command — the federation boundary, audited
@@ -2321,8 +2326,22 @@ def _report_preflight(args, ingest_mod):
 
 
 def _cmd_delegate(args):
-    from thalamus.harness.delegate import DelegationError, run
+    from thalamus.harness.delegate import DelegationError, plan, run
     from thalamus.harness.extraction import ExtractionError
+
+    failures = (DelegationError, ExtractionError, FileNotFoundError, ValueError)
+    if args.check:
+        try:
+            prepared = plan(
+                args.scope,
+                instructions_path=args.instructions,
+                input_paths=args.input,
+            )
+        except failures as exc:
+            print(f"delegate: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _report_delegation_plan(prepared)
+        sys.exit(0 if prepared.fits else 1)
 
     try:
         result = run(
@@ -2332,7 +2351,7 @@ def _cmd_delegate(args):
             output_path=args.output,
             timeout=args.timeout,
         )
-    except (DelegationError, ExtractionError, FileNotFoundError, ValueError) as exc:
+    except failures as exc:
         print(f"delegate: {exc}", file=sys.stderr)
         sys.exit(1)
     usage = result.usage
@@ -2341,6 +2360,29 @@ def _cmd_delegate(args):
         f"{usage.output_tokens if usage.output_tokens is not None else '?'} out"
     )
     print(f"{args.scope} -> {result.harness}/{result.model} ({counts}) -> {result.output}")
+
+def _report_delegation_plan(prepared) -> None:
+    """What `--check` says: the arithmetic, whoever it favours.
+
+    Printed identically whether the delegation fits or not — a check that only spoke
+    up on a refusal would leave the operator sizing the next slice by guesswork.
+    """
+    print(f"{prepared.scope} -> {prepared.harness}")
+    if prepared.budget is not None:
+        verdict = (
+            f"fits, {prepared.budget - prepared.chars:,} to spare"
+            if prepared.fits
+            else f"OVER by {prepared.chars - prepared.budget:,}"
+        )
+        ceiling = f"of a {prepared.budget:,}-char budget — {verdict}"
+    else:
+        ceiling = "against an executor that declares no context ceiling"
+    print(f"  prompt  {prepared.chars:,} chars (~{prepared.tokens:,} tokens) {ceiling}")
+    print("  inputs  " + ", ".join(
+        f"{path.name} {size:,}"
+        for path, size in sorted(prepared.sizes, key=lambda row: -row[1])
+    ))
+
 
 def _cmd_ingest(args):
     from urllib.parse import urlparse

@@ -32,6 +32,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -116,6 +117,43 @@ _MEASURED_CHARS_PER_TOKEN = 3.0
 _MIN_DIGEST_BUDGET = 20_000
 
 
+def prompt_char_budget(
+    harness: str, *, answer_tokens: int = _ANSWER_RESERVE_TOKENS
+) -> int | None:
+    """How many characters of prompt this harness's model can be handed at all.
+
+    None for a row that declares no `context_window` — "do not budget against this
+    one", which is a different answer from a number and must not collapse into one: a
+    row whose window is too small to answer in at all budgets zero characters, and
+    reading that as "unbounded" would wave through the prompt it exists to refuse.
+
+    Every caller that sizes a prompt against a served model reads this. `digest_budget`
+    subtracts the extraction template's own cost from it to say how much *transcript*
+    fits; a delegation spends the whole of it on the instructions and inputs it was
+    given.
+
+    The reserve is the caller's, because what a prompt has to leave room for is the
+    answer it asks for. Its default is extraction's, measured on that prompt's own
+    output shape.
+    """
+    window = cli_for(harness).context_window
+    if not window:
+        return None
+    return int((window - answer_tokens) * _MEASURED_CHARS_PER_TOKEN)
+
+
+def estimate_prompt_tokens(text: str) -> int:
+    """What this text will cost a served model, before one has been asked.
+
+    An estimate at the measured ratio, which is below every ratio measured for these
+    prompt shapes and therefore over-states the cost — a caller sizing against it
+    refuses slightly early rather than slightly late. The server's own count arrives
+    in the transport's pre-flight; this is the control that runs before anything has
+    been spent.
+    """
+    return int(len(text) / _MEASURED_CHARS_PER_TOKEN) + 1
+
+
 def digest_budget(harness: str) -> int:
     """How many characters of transcript this harness's model can actually be given.
 
@@ -133,8 +171,7 @@ def digest_budget(harness: str) -> int:
     window = cli_for(harness).context_window
     if not window:
         return _DIGEST_BUDGET
-    prompt_tokens = window - _ANSWER_RESERVE_TOKENS
-    budget = int(prompt_tokens * _MEASURED_CHARS_PER_TOKEN) - _PROMPT_OVERHEAD
+    budget = (prompt_char_budget(harness) or 0) - _PROMPT_OVERHEAD
     if budget < _MIN_DIGEST_BUDGET:
         raise ExtractionError(
             f"harness `{harness}` serves a {window:,}-token window, which leaves "
@@ -970,22 +1007,46 @@ def _run_http_openai(cli, model: str, prompt: str, timeout: int) -> ExtractionRu
                 f"{cli.endpoint} returned {exc.code}{hint}: {detail}"
             ) from None
         except OSError as exc:
+            # A read that ran out of time is not a server that is not there, and
+            # calling it one sends the reader to check whether the unit is up when
+            # the unit was up and working. `urlopen` surfaces the two the same way:
+            # a socket timeout as `TimeoutError`, a connect timeout wrapped in
+            # `URLError.reason`.
+            if isinstance(exc, TimeoutError) or isinstance(
+                getattr(exc, "reason", None), TimeoutError
+            ):
+                raise ExtractionError(
+                    f"`{cli.harness}` did not answer within the {timeout:,}s budget "
+                    f"for this call — it accepted the request and was still working "
+                    f"when the deadline expired. Raise the timeout, send a shorter "
+                    f"prompt, or check what else is queued on the server."
+                ) from None
             raise ExtractionError(
-                f"{cli.endpoint} unreachable — required to distil through "
-                f"`{cli.harness}`: {exc}"
+                f"{cli.endpoint} unreachable through `{cli.harness}`: {exc}"
             ) from None
+
+    # `timeout` bounds the call, not each request in it. Both posts share one
+    # deadline: a pre-flight that waited out the whole budget behind a busy server
+    # would otherwise leave the real call none, and two independent budgets mean the
+    # caller's number is not the one it waits.
+    expires = time.monotonic() + timeout
+
+    def remaining() -> int:
+        return max(1, int(expires - time.monotonic()))
 
     # Price the prompt before spending a full decode on it. One extra prefill, which
     # the server's own prompt cache serves back on the real call.
     used = None
     if cli.context_window:
-        used = (post(dict(body, max_tokens=1), 120).get("usage") or {}).get("prompt_tokens")
+        used = (post(dict(body, max_tokens=1), remaining()).get("usage") or {}).get(
+            "prompt_tokens"
+        )
         if used == _truncation_sentinel(cli.context_window):
             raise ExtractionError(
                 f"`{cli.harness}` truncated the prompt: it reported exactly {used:,} "
                 f"tokens, the figure it reports for anything past its "
-                f"{cli.context_window:,}-token window. The transcript this would have "
-                f"distilled is incomplete and the result would not say so."
+                f"{cli.context_window:,}-token window. The prompt it would have "
+                f"answered is incomplete and the answer would not say so."
             )
         room = cli.context_window - _ANSWER_RESERVE_TOKENS
         if isinstance(used, int) and used > room:
@@ -993,17 +1054,46 @@ def _run_http_openai(cli, model: str, prompt: str, timeout: int) -> ExtractionRu
                 f"prompt is {used:,} tokens against a {cli.context_window:,}-token "
                 f"window with {_ANSWER_RESERVE_TOKENS:,} reserved for the answer "
                 f"({room:,} usable) — over by {used - room:,}. A prompt that fits the "
-                f"window but not the answer produces a YAML block cut off mid-claim, "
-                f"which fails to parse rather than failing here."
+                f"window but not the answer produces an answer cut off mid-record, "
+                f"which fails downstream rather than failing here."
             )
 
-    data = post(body, timeout)
+    # Cap the completion at what is physically left of the window. Absent
+    # `max_tokens`, llama.cpp does not stop at the window — it shifts the context,
+    # discards the head of the prompt and generates on, so a model that has fallen
+    # into a repeat cannot end the request by itself and only the client's deadline
+    # ever stops it. Measured 2026-09-06 on qwen2.5-coder:14b at a 16,384-token
+    # window: a 6,348-token prompt generated 82,000+ tokens through 7 context shifts
+    # over 68 minutes, and a serial GPU served nothing else for the duration.
+    cap = None
+    if cli.context_window:
+        # The server's own count when it reported one, the estimate when it did not:
+        # a row that answers without a `usage` block is still a row with a ceiling,
+        # and leaving it uncapped is the case this guard exists for.
+        priced = used if isinstance(used, int) else estimate_prompt_tokens(prompt)
+        cap = max(1, cli.context_window - priced)
+        body = dict(body, max_tokens=cap)
+
+    data = post(body, remaining())
     try:
         text = data["choices"][0]["message"]["content"] or ""
     except (KeyError, IndexError, TypeError):
         raise ExtractionError(
             f"{cli.endpoint} returned no completion: {json.dumps(data)[:500]}"
         ) from None
+
+    # An answer that stopped at the cap stopped mid-sentence. Refused rather than
+    # returned, because the caller writes what comes back as the result: a truncated
+    # one is not a short answer, it is an answer whose end is missing with nothing in
+    # it saying so.
+    finish = (data.get("choices") or [{}])[0]
+    if isinstance(finish, dict) and finish.get("finish_reason") == "length" and cap:
+        raise ExtractionError(
+            f"`{cli.harness}` filled the window instead of finishing: the answer hit "
+            f"the {cap:,}-token cap that a {cli.context_window:,}-token window leaves "
+            f"this prompt, so it is cut off. Send less input or ask for a shorter "
+            f"answer."
+        )
 
     # `prompt_tokens` comes from the pre-flight call, not this one: a server whose
     # prefill is served from cache reports 0 here, and a 0 meaning "cached" is

@@ -1009,3 +1009,88 @@ def test_a_window_too_small_to_distil_anything_refuses_rather_than_squeezing(mon
     monkeypatch.setitem(extraction.AGENT_CLIS, "tiny", tiny)
     with pytest.raises(extraction.ExtractionError, match="not enough to distil"):
         extraction.digest_budget("tiny")
+
+
+def test_the_completion_is_capped_by_what_is_left_of_the_window(monkeypatch):
+    """Without a cap a served model does not stop at the window — it shifts past it.
+
+    llama.cpp discards the head of the prompt and generates on, so a model that has
+    fallen into a repeat cannot end the request itself and only the client's deadline
+    ever stops it. Measured 2026-09-06 on qwen2.5-coder:14b at a 16,384-token window:
+    a 6,348-token prompt generated 82,000+ tokens through 7 context shifts over 68
+    minutes, serving nothing else from the GPU for the duration.
+    """
+    calls = []
+    window = extraction.cli_for("local").context_window
+    monkeypatch.setattr(
+        extraction.urllib.request, "urlopen",
+        _fake_urlopen(calls, _completion("y", prompt_tokens=6348),
+                      _completion("records", prompt_tokens=0)))
+    extraction.run_extraction("prompt", harness="local")
+    # The pre-flight buys the price of the prompt for one token; the real call may
+    # have every token the prompt did not.
+    assert [c["max_tokens"] for c in calls] == [1, window - 6348]
+
+
+def test_an_answer_that_stopped_at_the_cap_is_refused_not_returned(monkeypatch):
+    """A truncated answer is not a short one, and the caller writes what comes back."""
+    monkeypatch.setattr(
+        extraction.urllib.request, "urlopen",
+        _fake_urlopen([], _completion("y", prompt_tokens=6000),
+                      {"choices": [{"message": {"content": "half a record"},
+                                    "finish_reason": "length"}],
+                       "usage": {"completion_tokens": 10036}}))
+    with pytest.raises(extraction.ExtractionError, match="filled the window"):
+        extraction.run_extraction("prompt", harness="local")
+
+
+def test_one_deadline_covers_the_preflight_and_the_call(monkeypatch):
+    """`timeout` is the budget for the call, not for each request inside it.
+
+    A pre-flight given its own copy of the budget can wait the whole of it behind a
+    busy server and leave the real call the same again, so the number the caller
+    passed is not the number it waits.
+    """
+    deadlines = []
+
+    def urlopen(request, timeout=None):
+        deadlines.append(timeout)
+        return _FakeResponse(_completion("y", prompt_tokens=10))
+
+    monkeypatch.setattr(extraction.urllib.request, "urlopen", urlopen)
+    extraction.run_extraction("prompt", harness="local", timeout=60)
+    assert len(deadlines) == 2
+    assert all(0 < d <= 60 for d in deadlines)
+    assert deadlines[1] <= deadlines[0]
+
+
+def test_a_deadline_that_expired_is_not_reported_as_an_outage(monkeypatch):
+    """A server that was working when time ran out was not a server that was absent.
+
+    Calling it unreachable sends the reader to check whether the unit is up, and the
+    unit was up - the batch that hit this spent two hours per slice looking like a
+    connection problem.
+    """
+    def stall(request, timeout=None):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(extraction.urllib.request, "urlopen", stall)
+    with pytest.raises(extraction.ExtractionError, match="did not answer within") as err:
+        extraction.run_extraction("prompt", harness="local", timeout=45)
+    assert "unreachable" not in str(err.value)
+
+
+def test_a_server_that_reports_no_usage_is_still_capped(monkeypatch):
+    """A row with a ceiling is capped whether or not it prices its own prompts.
+
+    The count from the pre-flight is better than the estimate and is used when it is
+    there. When it is absent the estimate is what stands between a repeat and a
+    request only the deadline can end.
+    """
+    calls = []
+    window = extraction.cli_for("local").context_window
+    monkeypatch.setattr(
+        extraction.urllib.request, "urlopen",
+        _fake_urlopen(calls, {"choices": [{"message": {"content": "y"}}]}))
+    extraction.run_extraction("prompt", harness="local")
+    assert calls[1]["max_tokens"] == window - extraction.estimate_prompt_tokens("prompt")
