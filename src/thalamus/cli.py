@@ -314,6 +314,28 @@ def _main():
         help="Write to the graph. Without it, extraction runs and is reported but not persisted.",
     )
 
+    delegate_parser = subparsers.add_parser(
+        "delegate",
+        help="Run bounded expert work through the executor fixed in its manifest",
+    )
+    delegate_parser.add_argument("scope", help="Expert scope with an executor declaration")
+    delegate_parser.add_argument(
+        "--instructions", type=Path, required=True,
+        help="Instruction file sent to the expert",
+    )
+    delegate_parser.add_argument(
+        "--input", type=Path, action="append", default=[],
+        help="Allowed input file, embedded in the prompt; repeat for multiple files",
+    )
+    delegate_parser.add_argument(
+        "--output", type=Path, required=True,
+        help="Write the expert's answer here atomically",
+    )
+    delegate_parser.add_argument(
+        "--timeout", type=int, default=900,
+        help="Model-call timeout in seconds (default: 900)",
+    )
+
     # Contract command — the federation boundary, audited
     contract_parser = subparsers.add_parser(
         "contract", help="Federation-contract operations against the live graph"
@@ -1338,6 +1360,8 @@ def _main():
         _cmd_extract(args)
     elif args.command == "ingest":
         _cmd_ingest(args)
+    elif args.command == "delegate":
+        _cmd_delegate(args)
     elif args.command == "contract":
         _cmd_contract(args, contract_parser)
     elif args.command == "backfill-chunks":
@@ -2294,6 +2318,29 @@ def _report_preflight(args, ingest_mod):
         "than asking again."
     )
 
+
+
+def _cmd_delegate(args):
+    from thalamus.harness.delegate import DelegationError, run
+    from thalamus.harness.extraction import ExtractionError
+
+    try:
+        result = run(
+            args.scope,
+            instructions_path=args.instructions,
+            input_paths=args.input,
+            output_path=args.output,
+            timeout=args.timeout,
+        )
+    except (DelegationError, ExtractionError, FileNotFoundError, ValueError) as exc:
+        print(f"delegate: {exc}", file=sys.stderr)
+        sys.exit(1)
+    usage = result.usage
+    counts = (
+        f"{usage.input_tokens if usage.input_tokens is not None else '?'} in, "
+        f"{usage.output_tokens if usage.output_tokens is not None else '?'} out"
+    )
+    print(f"{args.scope} -> {result.harness}/{result.model} ({counts}) -> {result.output}")
 
 def _cmd_ingest(args):
     from urllib.parse import urlparse

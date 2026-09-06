@@ -27,6 +27,7 @@ from thalamus.harness.pin import (
     spawn,
     write_agent,
     write_all_agents,
+    write_all_codex_profiles,
     write_codex_profile,
 )
 
@@ -956,3 +957,36 @@ def test_the_profile_lands_where_the_profile_flag_resolves_it(tmp_path):
     assert codex_profile_name("designer") == agent_name("designer"), (
         "one name across both harnesses, so a stale artifact is findable by one name"
     )
+
+
+def test_executor_bound_expert_has_no_interactive_agent_or_profile(tmp_path):
+    """A delegated scope must fail closed instead of inheriting the caller's model."""
+    base = tmp_path / "config"
+    experts = base / "experts"
+    experts.mkdir(parents=True)
+    (experts / "ghoul.yaml").write_text(
+        "scope: ghoul\n"
+        "name: Constrained reader\n"
+        "domain: bounded reading\n"
+        "executor: local\n"
+    )
+    manifest = load_manifest("ghoul", base)
+
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    stale_agent = agents / "thalamus-ghoul.md"
+    stale_agent.write_text("GENERATED from config/experts/ghoul.yaml\nmodel: inherit\n")
+    write_all_agents(agents, base)
+    assert not stale_agent.exists()
+
+    codex_home = tmp_path / "codex"
+    codex_home.mkdir()
+    stale_profile = codex_home / "thalamus-ghoul.config.toml"
+    stale_profile.write_text("GENERATED from config/experts/ghoul.yaml\n")
+    assert write_all_codex_profiles(codex_home, base) == []
+    assert not stale_profile.exists()
+
+    with pytest.raises(ValueError, match="delegated through `local`"):
+        write_agent(manifest, tmp_path, base=base)
+    with pytest.raises(ValueError, match="cannot be pinned or spawned"):
+        resolve("ghoul", base)
