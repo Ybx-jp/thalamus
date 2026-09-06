@@ -572,6 +572,35 @@ def test_a_bad_model_id_fails_loudly_and_says_how_to_find_the_right_one(monkeypa
         extraction.run_extraction("p", harness="cursor")
 
 
+def test_a_failure_carries_both_streams_when_both_spoke(monkeypatch):
+    """A progress banner on stderr must not bury the error on stdout.
+
+    Measured on a real distillation (session 7fc009ae, 2026-09-06): `codex exec
+    --json` exited 1 having written only `Reading prompt from stdin...` to stderr and
+    its actual error to stdout. Reporting the first non-empty stream sent the banner
+    to the operator and discarded the reason, so the console's failure row named a
+    lost distillation and said nothing about why it was lost.
+    """
+    monkeypatch.setattr(
+        subprocess, "run",
+        _fake_run([], stdout='{"type":"error","message":"rate limit"}',
+                  returncode=1, stderr="Reading prompt from stdin..."),
+    )
+    with pytest.raises(extraction.ExtractionError) as got:
+        extraction.run_extraction("p", harness="codex")
+    assert "rate limit" in str(got.value)
+    assert "Reading prompt from stdin" in str(got.value)
+
+
+def test_a_failure_names_its_own_truncation(monkeypatch):
+    monkeypatch.setattr(
+        subprocess, "run",
+        _fake_run([], stdout="", returncode=1, stderr="x" * (extraction.STREAM_MAX + 50)),
+    )
+    with pytest.raises(extraction.ExtractionError, match=r"\[…cut\]"):
+        extraction.run_extraction("p", harness="codex")
+
+
 def test_a_missing_cli_names_the_binary_it_wanted(monkeypatch):
     def boom(cmd, **kwargs):
         raise FileNotFoundError(cmd[0])

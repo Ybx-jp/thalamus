@@ -863,6 +863,37 @@ class ExtractionError(RuntimeError):
     pass
 
 
+# How much of each stream a failure message may carry. Per stream rather than
+# shared, so a chatty progress banner cannot spend the budget the error needed.
+STREAM_MAX = 400
+
+
+def _failure_detail(stdout: str, stderr: str) -> str:
+    """What a non-zero exit actually said, from whichever stream it said it on.
+
+    The CLIs do not agree on which stream carries the reason. `codex exec --json`
+    writes progress to stderr (`Reading prompt from stdin...`) and its error to
+    stdout as a JSON event; cursor writes a workspace-trust refusal to stdout with
+    stderr empty; claude uses stderr. Reading stderr and falling back to stdout only
+    when stderr was empty therefore reported codex's banner and threw the error
+    underneath it away — the operator was told a distillation had failed and nothing
+    about why, which leaves the same choice as no message at all: pay for a blind
+    retry, or drop the session.
+
+    Both streams go in when both have content, each labelled so the reader knows
+    which is which, and each cut with its cut named: a message trimmed silently is
+    indistinguishable from a complete one.
+    """
+    def _cut(text: str) -> str:
+        text = text.strip()
+        return text if len(text) <= STREAM_MAX else text[:STREAM_MAX] + " […cut]"
+
+    out, err = _cut(stdout), _cut(stderr)
+    if out and err:
+        return f"stderr: {err} | stdout: {out}"
+    return err or out
+
+
 def run_extraction(
     prompt: str,
     *,
@@ -922,15 +953,14 @@ def run_extraction(
             raise ExtractionError(f"extraction timed out after {timeout}s") from exc
 
     if proc.returncode != 0:
-        stderr = (proc.stderr.strip() or proc.stdout.strip())[:500]
+        detail = _failure_detail(proc.stdout, proc.stderr)
         # The model hint only applies to a failure about the model. Appending it to
         # every non-zero exit sent a workspace-trust refusal out advising
         # `agent --list-models`, which points the reader at the one thing that was
-        # not wrong. Cursor also writes this class of refusal to stdout rather than
-        # stderr, so an empty stderr must fall back rather than report nothing.
-        hint = f" ({cli.model_hint})" if cli.model_hint and "model" in stderr.lower() else ""
+        # not wrong.
+        hint = f" ({cli.model_hint})" if cli.model_hint and "model" in detail.lower() else ""
         raise ExtractionError(
-            f"{' '.join(cli.argv(model))} exited {proc.returncode}{hint}: {stderr}"
+            f"{' '.join(cli.argv(model))} exited {proc.returncode}{hint}: {detail}"
         )
 
     try:
