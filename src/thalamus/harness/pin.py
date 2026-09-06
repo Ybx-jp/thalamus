@@ -688,6 +688,11 @@ def write_agent(manifest: ExpertManifest, project_root: Path,
     `base` is the config root the scope's MCP declaration is read from, and it is
     threaded rather than defaulted per call site so a test tree's tooling never leaks
     into the operator's real agent files, and vice versa."""
+    if manifest.executor:
+        raise ValueError(
+            f"expert `{manifest.scope}` is delegated through "
+            f"`{manifest.executor}`; use `thalamus delegate {manifest.scope}`"
+        )
     agents_dir = agents_dir or (project_root / ".claude" / "agents")
     agents_dir.mkdir(parents=True, exist_ok=True)
     path = agents_dir / f"{agent_name(manifest.scope)}.md"
@@ -701,6 +706,13 @@ def write_all_agents(agents_dir: Path, base: Path | None = None) -> None:
     subagents for sibling experts (both are loaded per process from the agents dir)."""
     for scope in available_scopes(base):
         manifest = load_manifest(scope, base)
+        if manifest.executor:
+            stale = agents_dir / f"{agent_name(scope)}.md"
+            if stale.is_file() and (
+                f"GENERATED from config/experts/{scope}.yaml" in stale.read_text()
+            ):
+                stale.unlink()
+            continue
         write_agent(manifest, PROJECT_ROOT, agents_dir=agents_dir, base=base)
 
 
@@ -827,6 +839,11 @@ def write_codex_profile(manifest: ExpertManifest, home: Path | None = None,
     0.148.0). There is no failure for an operator to notice, so the only defence is
     that nothing ever names a profile this function has not just written.
     """
+    if manifest.executor:
+        raise ValueError(
+            f"expert `{manifest.scope}` is delegated through "
+            f"`{manifest.executor}`; use `thalamus delegate {manifest.scope}`"
+        )
     from thalamus.harness.codex_transcripts import codex_home
 
     home = home or codex_home()
@@ -847,7 +864,18 @@ def write_all_codex_profiles(home: Path | None = None, base: Path | None = None)
     """
     written = []
     for scope in available_scopes(base):
-        written.append(write_codex_profile(load_manifest(scope, base), home=home, base=base))
+        manifest = load_manifest(scope, base)
+        if manifest.executor:
+            from thalamus.harness.codex_transcripts import codex_home
+
+            target_home = home or codex_home()
+            stale = target_home / f"{codex_profile_name(scope)}.config.toml"
+            if stale.is_file() and (
+                f"GENERATED from config/experts/{scope}.yaml" in stale.read_text()
+            ):
+                stale.unlink()
+            continue
+        written.append(write_codex_profile(manifest, home=home, base=base))
     return written
 
 
@@ -855,7 +883,13 @@ def resolve(scope: str, base: Path | None = None) -> ExpertManifest | None:
     """The manifest behind a pinnable scope; None for main (it has none by design)."""
     if scope == MAIN_SCOPE:
         return None
-    return load_manifest(scope, base)  # raises with the available-scopes message
+    manifest = load_manifest(scope, base)  # raises with the available-scopes message
+    if manifest.executor:
+        raise ValueError(
+            f"expert `{scope}` is delegated through `{manifest.executor}` and cannot "
+            f"be pinned or spawned; use `thalamus delegate {scope}`"
+        )
+    return manifest
 
 
 def _unleak_session_env(target: str | None, room: str,

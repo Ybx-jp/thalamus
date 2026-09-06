@@ -16,6 +16,7 @@ import os
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
+from typing import Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -270,6 +271,13 @@ class ExpertManifest(BaseModel):
         default_factory=list,
         description="Host suffixes ingestion may fetch from. Local files bypass this — "
         "an operator hand-feeding a file IS the curation decision.",
+    )
+    executor: Literal["claude", "cursor", "codex", "local"] | None = Field(
+        None,
+        description="Harness that must execute delegated work for this expert. "
+        "Absent means the caller's interactive harness; present means generated "
+        "interactive agent/profile artifacts are forbidden so the declared route "
+        "cannot silently fall back to the parent model.",
     )
     write_boundary: WriteBoundary = Field(
         default_factory=WriteBoundary,

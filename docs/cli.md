@@ -82,6 +82,19 @@ so. The transport refuses that call rather than storing it, by recognising the c
 a server reports for `prompt_tokens` once a prompt has overflowed, but it can only do
 that after the pass has already been built and sent.
 
+**Executor-bound experts.** An expert manifest can set `executor: local` (or another
+registered harness) when delegated work must never inherit the caller's provider. Run it
+with:
+
+    thalamus delegate <scope> --instructions task.md --input source.md --output answer.md
+
+The command embeds the named inputs, invokes only the manifest's executor, and writes the
+answer atomically. It deliberately has no `--harness` option. `thalamus init` removes
+generated Claude agents and Codex profiles for executor-bound scopes, while `pin` and
+`spawn` refuse them; an accidental interactive launch therefore fails instead of
+silently spending against a different provider.
+
+
 **Two passes, two budgets.** Distillation is one model call per ended session, arriving at
 whatever rate you work at. Ingestion is one call *per chunk*, so a single paper can cost
 what a day of distillation does. They are therefore chosen separately, in the console
