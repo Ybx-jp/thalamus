@@ -94,6 +94,30 @@ generated Claude agents and Codex profiles for executor-bound scopes, while `pin
 `spawn` refuse them; an accidental interactive launch therefore fails instead of
 silently spending against a different provider.
 
+**A delegation is sized against its executor's window before it is sent.** `--check`
+prints the arithmetic and stops — the prompt's size, an estimate of its cost in tokens,
+the budget (the executor's window less the room an answer needs) and each input file by
+size, so a corpus can be sliced against a real number rather than a guess:
+
+    thalamus delegate ghoul --instructions task.md --input slice-04.md --output x.md --check
+    ghoul -> local
+      prompt  24,114 chars (~8,039 tokens) of a 43,008-char budget — fits, 18,894 to spare
+      inputs  slice-04.md 21,090, task.md 1,635
+
+A run does the same check and refuses an over-budget delegation before spending
+anything, naming the inputs by size. An executor that declares no `context_window` has
+no ceiling to fit and is not checked.
+
+**The answer is capped at what the window has left.** Absent a cap, a served model does
+not stop when it reaches the window: llama.cpp shifts the context, drops the head of the
+prompt and generates on, so a model that has fallen into a repeat cannot end the request
+itself and only the client's deadline stops it. Measured 2026-09-06 on qwen2.5-coder:14b
+at a 16,384-token window: a 6,348-token prompt generated 82,000+ tokens through seven
+context shifts over 68 minutes, and a serial GPU served nothing else meanwhile. The
+transport now asks for at most `window - prompt` tokens and refuses an answer that
+stopped at that cap rather than writing a truncated one as the result. `--timeout` is the
+budget for the whole call, pre-flight included.
+
 
 **Two passes, two budgets.** Distillation is one model call per ended session, arriving at
 whatever rate you work at. Ingestion is one call *per chunk*, so a single paper can cost
