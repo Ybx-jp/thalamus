@@ -38,14 +38,23 @@ that survive that strip are worth generating.
 **Hand-written half.** Case variation, whitespace injection, chained/aliased
 steps, and an anonymous-traversal wrapper are included as REJECTED assertions —
 already-mitigated techniques, kept here so a regression in the parts of the guard
-that already work shows up beside the parts that do not. `inject()` alone and a
-denylist word sitting in a string *value* (not a call) are ACCEPTED assertions —
-the discrimination controls: a guard that rejects everything would pass every
-REJECTED assertion above and reveal nothing, so these two must stay accepted for
-the REJECTED assertions to mean anything. A last well-formed, multi-clause
+that already work shows up beside the parts that do not. `inject()` alone, a
+denylist word sitting in a string *value* (not a call), and non-ASCII text
+inside a string value (Latin-1 and CJK) are ACCEPTED assertions — discrimination
+controls: a guard that rejects everything would pass every REJECTED assertion
+above and reveal nothing, so these must stay accepted for the REJECTED
+assertions to mean anything. The non-ASCII-in-literal pair specifically pins
+`_lexical_floor`'s deliberate exemption of string literals from its non-ASCII
+refusal — without it this case cannot distinguish "correctly strict" from
+"rejects everything non-ASCII, literal or not". A last well-formed, multi-clause
 traversal is the benign-input control the whole case would be unfalsifiable
 without: "everything was rejected" and "the mutations were rejected" render
-identically unless at least one legitimate read passes.
+identically unless at least one legitimate read passes. One further REJECTED
+control pins `_lexical_floor`'s own named uncertainty about its hand-rolled
+literal scanner: a literal ending in an escaped trailing backslash, followed
+immediately by a homoglyph outside it, must still see the homoglyph as code —
+a scanner that mis-tracks the escape and leaves the literal open would instead
+swallow the homoglyph as string data and accept the query.
 """
 
 from __future__ import annotations
@@ -145,6 +154,28 @@ _HAND_CORPUS: tuple[tuple[str, str, bool], ...] = (
     ("control: benign well-formed traversal",
      "g.V().hasLabel('Thread').has('scope','main').has('status','open')"
      ".valueMap('title')", False),
+    # #174's fix exempts string literals from the non-ASCII rule on purpose — the
+    # graph holds text in any script, and a query searching for it is ordinary.
+    # Without a control here, this case cannot tell "correctly strict" (rejects
+    # only hostile input) from "rejects everything" (also correctly rejects the
+    # hostile corpus above, but for the wrong reason). Two scripts, so a
+    # single-script coincidence isn't doing the work.
+    ("control: non-ASCII inside a string value (Latin-1 supplement)",
+     "g.V().has('title','Café')", False),
+    ("control: non-ASCII inside a string value (CJK)",
+     "g.V().hasLabel('Thread').has('title','日本語のタイトル')", False),
+    # `_lexical_floor`'s own docstring names its hand-rolled literal scanner's
+    # backslash handling as the one place it could disagree with the real
+    # gremlin-lang parser. This pins the scanner's actual behavior at that
+    # boundary: a literal ending in an escaped trailing backslash (`'a\\'`) must
+    # still close on the following quote, so the Cyrillic homoglyph sitting right
+    # after it is scanned as code — outside the literal — and rejected. A scanner
+    # that mis-tracks the escape and treats the backslash as leaving the string
+    # open would instead swallow the homoglyph as string data and accept the
+    # query, which is the bypass this pins against.
+    ("control: escaped trailing backslash in a literal, "
+     "then a homoglyph outside it",
+     "g.V().has('a\\\\', аddV('X'))", True),
 )
 
 
@@ -291,11 +322,12 @@ CASE = Case(
         "defeat rather than satisfy them"
     ),
     run=run,
-    # validate_query's denylist is a literal substring match over a
+    # validate_query's denylist used to be a literal substring match over a
     # whitespace-stripped, lowercased view; comment injection, a zero-width
-    # space, a Unicode homoglyph, and a fullwidth paren each defeat it generically,
-    # for every denied step. Filed rather than fixed — this scope may not write
-    # src/. See issue #174.
+    # space, a Unicode homoglyph, and a fullwidth paren each defeated it
+    # generically, for every denied step. `_lexical_floor` now refuses a comment,
+    # a backslash, or any non-ASCII character outside a string literal ahead of
+    # the denylist, which closes all four techniques at once. See issue #174.
     issue=174,
-    fixed=False,
+    fixed=True,
 )
