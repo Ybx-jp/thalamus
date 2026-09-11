@@ -216,7 +216,7 @@ jobs:
       # These are also the input the timeout calibration is waiting on. `verdict.json`
       # carries per-step start and end timestamps, and `spec.TIMEOUTS` is still the
       # provisional table nobody has derived from real green cells — five of these, on a
-      # tree where the last 0.1.0 defect is fixed, is that data.
+      # tree where the install-matrix defects are fixed, is that data.
       - name: Evidence
         if: always()
         uses: actions/upload-artifact@v4
