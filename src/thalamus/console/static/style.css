@@ -253,7 +253,7 @@ body[data-view="session"] .build-bar { display: none; }
 /* ---- Live screen ---- */
 .screen-wrap {
   flex: 1 1 auto;
-  min-width: 0;   /* the 80-col pane scrolls INSIDE here, not by widening the page */
+  min-width: 0;   /* the pane scrolls INSIDE here, not by widening the page */
   min-height: 0;
   overflow: auto;
   background: #0b0e12;

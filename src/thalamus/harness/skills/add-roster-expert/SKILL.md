@@ -156,9 +156,13 @@ another over HTTP.
 | 5 | Typing into a pane showing a modal *answers* the modal | Check the target's state first; never send a bare `Enter` to a pane that might be modal |
 | 6 | Everything a session spawns inherits its `TMUX_PANE` | A headless `claude -p` is a full session that would claim the window's join key; the SessionStart hook gates the claim on `CLAUDE_CODE_ENTRYPOINT=cli` |
 
-**The 60×200 geometry is load-bearing here specifically:** claude runs on the
-alternate screen, so `capture-pane` returns exactly the window height, and the phone
-fit assumes 60 columns. Don't "fix" window sizes.
+**Window geometry and renderer are set by `pin.py`, not by tmux.conf:** every
+roster window is `resize-window`d to `WINDOW_COLS × WINDOW_ROWS` (60×50) after
+creation, which also pins it `window-size manual` so an attaching terminal cannot
+resize it under the console, and claude is launched with
+`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` so tmux keeps the transcript in history
+for `capture-pane -S -1000` to return. Change the size in one place (the constants)
+and never as a global `window-size` (hazard above).
 
 ### Thalamus-specific hazards (each has bitten, or was caught in review)
 

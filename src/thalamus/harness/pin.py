@@ -439,8 +439,28 @@ def _room_clear(harness: str = "claude") -> list[str]:
     return ["env", "-u", "THALAMUS_ROOM", *config]
 
 
+# Claude Code's fullscreen renderer draws on the terminal's alternate screen, which
+# tmux keeps no history for: `capture-pane` returns exactly the viewport, the
+# console's pane view is WINDOW_ROWS lines with nothing above them, and reading
+# back means sending page keys into claude. The classic renderer leaves the
+# transcript in the normal screen, so tmux's history holds it, the console's
+# `capture-pane -S -1000` returns it, and a phone scrolls it like a page. Measured
+# 2026-09-10 on Claude Code 2.1.268 in tmux 3.4: with the variable set,
+# `alternate_on=0` and history grows with the transcript; without it,
+# `alternate_on=1` and history holds only what was printed before the TUI came up.
+# Roster windows only — the operator's own `tui` setting still governs a terminal
+# they sit at, and a harness not named here is launched as it comes.
+RENDER_ENV: dict[str, tuple[tuple[str, str], ...]] = {
+    "claude": (("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1"),),
+}
+
+
 def _with_room(argv: list[str], room: str, harness: str = "claude") -> list[str]:
     """Carry the room in the window's own argv, not only in its tmux env.
+
+    The renderer variable (RENDER_ENV) rides the same prefix for the same reason:
+    a recycle re-executes this argv, and a session that came back on the alternate
+    screen would be one the console could no longer scroll.
 
     tmux `-e` on `new-window` sets the initial process environment and is *not*
     stored in the session environment, so `respawn-window` — which is exactly what
@@ -453,10 +473,11 @@ def _with_room(argv: list[str], room: str, harness: str = "claude") -> list[str]
     member. `set-environment -g` is not the alternative: it reaches every window
     created without `-e`, which is the shape that has already misfired here once.
     """
+    render = [f"{k}={v}" for k, v in RENDER_ENV.get(harness, ())]
     pairs = _room_env(room, harness)
     if not pairs:
-        return [*_room_clear(harness), *argv]
-    return ["env", *(f"{k}={v}" for k, v in pairs), *argv]
+        return [*_room_clear(harness), *render, *argv]
+    return ["env", *(f"{k}={v}" for k, v in pairs), *render, *argv]
 
 
 def agent_name(scope: str) -> str:
@@ -1122,12 +1143,12 @@ def _pane_epitaph(window_id: str) -> str:
 
     `-S -` reaches into the history, and without it this returns nothing useful: when
     a pane dies, tmux pushes what it printed up out of the viewport and leaves the
-    banner alone on the visible screen. A pane pinned to `window-size manual` is 200
-    lines tall, so a program that printed three lines and exited has all three in
-    history and 200 blanks in view.
+    banner alone on the visible screen. A roster pane is WINDOW_ROWS lines tall, so
+    a program that printed three lines and exited has all three in history and the
+    rest of the viewport blank.
 
-    `-J` rejoins the lines tmux wrapped. A roster pane is 60 columns wide, so a
-    sentence of vendor English is three screen lines, and taking the last few
+    `-J` rejoins the lines tmux wrapped. A roster pane is WINDOW_COLS columns wide,
+    so a sentence of vendor English can span screen lines, and taking the last few
     without joining first quotes a fragment that starts mid-word.
     """
     out = subprocess.run(tmux.argv("capture-pane", "-p", "-J", "-S", "-",
@@ -1180,15 +1201,33 @@ def confirm_started(window_id: str, harness: str = "claude") -> None:
         time.sleep(min(0.05, remaining))
 
 
-def _pin_window_sizes(target: str | None) -> None:
-    """Set every roster window's LOCAL window-size to manual, post-creation.
+# Every roster window's geometry, columns by rows. One tmux window has one width
+# and every viewer — the console on a phone or a desktop, the /tty page, a desktop
+# `tmux attach` — reads the same window, so the width is set for the viewer the
+# console exists for: 60 columns is what a phone's auto-fit renders at a readable
+# size with no horizontal scroll. A desktop attach gets a 60-column box; the rows
+# and the history behind them are what a desktop was short of. Not read from
+# tmux's `default-size`: that is 80x24 on any box without a hand-written
+# tmux.conf, and this project ships none.
+WINDOW_COLS = 60
+WINDOW_ROWS = 50
 
-    The mobile console needs windows held at default-size (60 cols) even
-    while a desktop /tty client is attached — that's what `manual` does. It cannot
-    live in .tmux.conf as a global: tmux 3.4's server segfaults creating a window
-    while the global window-size is manual and no client is attached (measured
-    2026-07-17; it took down the whole roster). Creating first and pinning each
-    window's local option after is crash-free on the same version.
+
+def _pin_window_sizes(target: str | None) -> None:
+    """Hold every roster window at WINDOW_COLS x WINDOW_ROWS, post-creation.
+
+    `resize-window -x -y` sets the size and, as a side effect, the window's LOCAL
+    `window-size manual`, which is wanted: the console has no tmux client of its
+    own and reads whatever size the window has, so an attaching desktop or /tty
+    client must not resize the windows out from under it. Running over every window
+    in the session also corrects one created at the stock 80x24 by whichever unit
+    made the session first — `tmux new -A -s thalamus` carries the stock size, and
+    the roster is often spawned into a session it did not create.
+
+    Per window and after creation, never as a global: tmux 3.4's server segfaults
+    creating a window while the global window-size is manual and no client is
+    attached (measured 2026-07-17; it took down the whole roster). Resizing each
+    window once it exists is crash-free on the same version.
     """
     cmd = tmux.argv("list-windows", *(["-t", target] if target else []),
                     "-F", "#{window_id}")
@@ -1196,7 +1235,8 @@ def _pin_window_sizes(target: str | None) -> None:
     if out.returncode != 0:
         return
     for window_id in out.stdout.split():
-        subprocess.run(tmux.argv("set", "-w", "-t", window_id, "window-size", "manual"))
+        subprocess.run(tmux.argv("resize-window", "-t", window_id,
+                                 "-x", str(WINDOW_COLS), "-y", str(WINDOW_ROWS)))
 
 
 def _entered_room(room: str | None, harness: str = "claude") -> str:

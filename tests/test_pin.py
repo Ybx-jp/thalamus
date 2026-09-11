@@ -490,7 +490,8 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
     plain = [c for c in calls if "new-session" in c][0]
     after = plain[plain.index("--") + 1:]
     assert after[: after.index("claude")] == ["env", "-u", "THALAMUS_ROOM",
-                                              "-u", "CLAUDE_CONFIG_DIR"]
+                                              "-u", "CLAUDE_CONFIG_DIR",
+                                              "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1"]
     assert "--name" not in after
     assert not [a for a in plain if a.startswith("CLAUDE_CONFIG_DIR=")]
 
@@ -990,3 +991,69 @@ def test_executor_bound_expert_has_no_interactive_agent_or_profile(tmp_path):
         write_agent(manifest, tmp_path, base=base)
     with pytest.raises(ValueError, match="cannot be pinned or spawned"):
         resolve("ghoul", base)
+
+
+def test_every_roster_window_is_held_at_the_shipped_geometry(tmp_path, monkeypatch):
+    """
+    Scenario: spawn into a session that already has windows, one of them created at
+    tmux's stock 80x24 by `tmux new -A` before the roster ran
+
+    Verifications:
+    - every window tmux lists is resized to WINDOW_COLS x WINDOW_ROWS, not only the
+      one just made — the stock-sized window is the case that matters
+    - the size is set with `resize-window`, which pins `window-size manual` as a
+      side effect; nothing sets `manual` on its own, so nothing can hold a window at
+      a size the project did not choose (issue #186)
+    """
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *a, **kw):
+        calls.append(cmd)
+        stdout = "@7\n@9\n" if "list-windows" in cmd and "#{window_id}" in cmd else ""
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    _argv_only(monkeypatch)
+
+    spawn("literature", tmp_path, base=REPO_CONFIG)
+
+    resized = [c for c in calls if "resize-window" in c]
+    assert [c[c.index("-t") + 1] for c in resized] == ["@7", "@9"]
+    for c in resized:
+        assert c[c.index("-x") + 1] == str(pin.WINDOW_COLS)
+        assert c[c.index("-y") + 1] == str(pin.WINDOW_ROWS)
+    assert not [c for c in calls if "window-size" in c], \
+        "the size is the only thing pinned; `manual` comes with it"
+
+
+def test_a_roster_window_renders_in_the_normal_screen_so_tmux_keeps_its_history(
+        tmp_path, monkeypatch):
+    """
+    Scenario: a claude window is opened for the roster, in a room and outside one
+
+    Verifications:
+    - the argv prefix carries CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 either way, so
+      the transcript lands in tmux history and the console's capture can scroll it
+    - it rides the argv, not only `-e`, because a recycle re-executes the argv
+    - a harness with no renderer variable declared is launched as it comes
+
+    Measured 2026-09-10 (Claude Code 2.1.268, tmux 3.4): without the variable the
+    TUI takes the alternate screen and `capture-pane -S -1000` returns the viewport
+    and nothing else; with it, history grows with the transcript.
+    """
+    monkeypatch.delenv("THALAMUS_ROOM", raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+
+    plain = pin._with_room(["claude"], "", "claude")
+    assert plain[: plain.index("claude")][-1] == "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1"
+
+    roomed = pin._with_room(["claude"], "alpha", "claude")
+    prefix = roomed[: roomed.index("claude")]
+    assert prefix[0] == "env"
+    assert "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1" in prefix
+    assert "THALAMUS_ROOM=alpha" in prefix
+
+    other = pin._with_room(["codex"], "", "codex")
+    assert not [a for a in other if a.startswith("CLAUDE_CODE_")]
