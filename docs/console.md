@@ -273,10 +273,11 @@ until someone types into it. Send it a message and the feed starts.
 and the server opens a detached pinned window there. The scope decides which memory
 it reads and writes; the directory decides what the work is about. See
 [concepts.md](concepts.md#the-federation-contract) for what that pairing means.
-Starred directories come first; the ★/☆ beside each chip toggles its star, and the
-server keeps the set in `~/.thalamus/console/favorites.json`, so a star set from the
-phone is the one the desktop sees and it survives a restart. `--dir` seeds the list
-until the first star is toggled; after that the file is the whole list.
+Starred directories sort first. The `star` button at the right of the Directory
+heading toggles the star on the highlighted chip, and the server keeps the set in
+`~/.thalamus/console/favorites.json`, so a star set from the phone is the one the
+desktop sees and it survives a restart. `--dir` seeds the list until the first
+star is toggled; after that the file is the whole list.
 
 **The harness row is `LAUNCH_SHAPES`**, sent by `/api/spawn-options` rather than held
 by the client, because that table is also what a spawn request is validated against —
