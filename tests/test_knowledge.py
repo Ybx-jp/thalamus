@@ -147,10 +147,18 @@ class _KnowledgeRecorder:
     """Records merge_v/merge_e; the article-heads lookup chain is absent on purpose —
     write_knowledge must survive a graph that cannot answer it (first ingest)."""
 
+    # Declared before `property` below, which shadows the builtin for the rest of
+    # the class body once its `def` executes.
+    @property
+    def bytecode(self):
+        return "recording"
+
     def __init__(self):
         self.vertices = []
         self.edges = []
+        self.properties = []
         self._pending = None
+        self._addressed = None
 
     def merge_v(self, values):
         self._pending = {"match": values, "properties": {}}
@@ -168,7 +176,12 @@ class _KnowledgeRecorder:
             self._pending["properties"] = value
         return self
 
-    def V(self, *_args):
+    def V(self, *args):
+        self._addressed = args[0] if args else None
+        return self
+
+    def property(self, cardinality, key, value):
+        self.properties.append((self._addressed, cardinality, key, value))
         return self
 
     def has_label(self, *_args):
@@ -176,10 +189,6 @@ class _KnowledgeRecorder:
 
     def iterate(self):
         return self
-
-    @property
-    def bytecode(self):
-        return "recording"
 
 
 def test_written_knowledge_is_scoped_tier_2_and_derived_from_its_source():
@@ -223,8 +232,65 @@ def test_feed_identity_lands_on_the_source_and_only_the_source():
 
     write_knowledge(graph, batch)
 
+    from gremlin_python.process.traversal import Cardinality
+
+    # Not in the merge option map: an option map sets a property to one value, which is
+    # what overwrote the prior attribution on every re-ingest of identical bytes.
     by_id = {v["properties"][T.id]: v["properties"] for v in graph.vertices}
-    assert by_id["scope:literature:source:abc123"]["feed"] == "stepmania-chart-generator"
-    for node_id, properties in by_id.items():
-        if not node_id.startswith("scope:literature:source:"):
-            assert "feed" not in properties
+    assert "feed" not in by_id["scope:literature:source:abc123"]
+    for properties in by_id.values():
+        assert "feed" not in properties
+
+    assert graph.properties == [
+        (
+            "scope:literature:source:abc123",
+            Cardinality.set_,
+            "feed",
+            "stepmania-chart-generator",
+        )
+    ]
+
+
+def test_a_source_procured_twice_keeps_both_feeds():
+    """
+    Scenario: Identical bytes are re-ingested under a second feed — the ordinary
+    case when one document grounds two projects
+
+    Verifications:
+    - the second write adds its feed rather than displacing the first, so "what was
+      this procured for" keeps both answers
+    - set cardinality, so the `--check` then `--write` sequence re-stating one feed
+      is idempotent rather than accumulating duplicates
+    - the feed never rides in the merge option map, which is where the overwrite was
+    """
+    from gremlin_python.process.traversal import Cardinality
+
+    graph = _KnowledgeRecorder()
+    write_knowledge(graph, _batch(feed="corpus-pin-grounding"))
+    write_knowledge(graph, _batch(feed="room-lifecycle"))
+    write_knowledge(graph, _batch(feed="room-lifecycle"))
+
+    source_vid = "scope:literature:source:abc123"
+    assert graph.properties == [
+        (source_vid, Cardinality.set_, "feed", "corpus-pin-grounding"),
+        (source_vid, Cardinality.set_, "feed", "room-lifecycle"),
+        (source_vid, Cardinality.set_, "feed", "room-lifecycle"),
+    ]
+
+    for vertex in graph.vertices:
+        assert "feed" not in vertex["properties"]
+        assert "feed" not in vertex.get("match", {})
+
+
+def test_a_batch_with_no_feed_writes_no_feed_property():
+    """
+    Scenario: A batch carries an empty feed
+
+    Verifications:
+    - nothing is written rather than an empty string joining the set, which would
+      make "procured for nothing" indistinguishable from a real feed name
+    """
+    graph = _KnowledgeRecorder()
+    write_knowledge(graph, _batch(feed=""))
+
+    assert graph.properties == []
