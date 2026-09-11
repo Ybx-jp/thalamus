@@ -21,7 +21,19 @@ from thalamus.substrate.schema import (
     SourceKind,
     Tier,
 )
+from thalamus.contract.conformance import check_knowledge
 from thalamus.substrate.writer import write_knowledge
+
+
+def _passes_the_batch_checks(batch) -> None:
+    """The batch half of the contract, as the writer's gate.
+
+    The manifest half is not reachable here — these fixtures name a scope whose
+    manifest the test tree does not carry — so this is `check_knowledge` alone, which
+    is the same floor a scope with no usable manifest gets in production.
+    """
+    issues = check_knowledge(batch)
+    assert not issues, issues
 
 
 def _batch(**overrides) -> KnowledgeBatch:
@@ -194,7 +206,7 @@ def test_written_knowledge_is_scoped_tier_2_and_derived_from_its_source():
     graph = _KnowledgeRecorder()
     batch = _batch()
 
-    write_knowledge(graph, batch)
+    write_knowledge(graph, batch, gate=_passes_the_batch_checks)
 
     by_id = {v["properties"][T.id]: v["properties"] for v in graph.vertices}
     assert "scope:literature:source:abc123" in by_id
@@ -221,7 +233,7 @@ def test_feed_identity_lands_on_the_source_and_only_the_source():
     graph = _KnowledgeRecorder()
     batch = _batch(feed="stepmania-chart-generator")
 
-    write_knowledge(graph, batch)
+    write_knowledge(graph, batch, gate=_passes_the_batch_checks)
 
     by_id = {v["properties"][T.id]: v["properties"] for v in graph.vertices}
     assert by_id["scope:literature:source:abc123"]["feed"] == "stepmania-chart-generator"
