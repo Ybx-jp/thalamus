@@ -108,10 +108,12 @@ answers the other half — whether the wiring that writes it is armed.
 
 ## What this release is
 
-**0.1.0 runs from a checkout.** There is no `pip install thalamus` yet — several
-modules resolve paths from the repo root, and the expert manifests in `config/` live
-outside the package, so an installed wheel would look for paths that only exist in a
-clone. Installing without a clone is the 0.1.1 milestone.
+**Thalamus runs from a clone, and the clone is the distribution.** There is no
+`pip install thalamus`: several modules resolve paths from the repo root and the
+expert manifests in `config/` live outside the package, so a wheel would look for
+paths only a checkout has. `git pull` is the upgrade path. `pyproject.toml` carries
+`Private :: Do Not Upload`, which makes the closed index mechanical rather than a
+stated intention.
 
 One feature is **experimental and off by default**: frame themes, which render the
 pane inside artwork, behind `thalamus console --frames PATH`. Without the flag there
