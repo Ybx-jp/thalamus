@@ -2266,3 +2266,30 @@ def test_a_missing_or_broken_store_falls_back_to_the_seed(tmp_path):
     store.parent.mkdir(parents=True)
     store.write_text("{not json")
     assert server.effective_favorites(cfg) == [str(code / "alpha")]
+
+
+# ---- a POST is answered, whatever the body ----
+
+
+def test_a_post_body_that_is_not_an_object_is_refused_not_dropped(tmp_path):
+    """Every route reads fields off the body, so a body that parses to a list, a
+    string, a number or null used to crash the first `.get` and close the
+    connection with no status at all (issue #175). Refused once, before any route."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        for body in ([], "hello", 3, None):
+            status, answer = post("/api/key", body)
+            assert status == 400, body
+            assert "object" in answer["error"]
+
+
+def test_a_route_that_raises_answers_500_with_the_exception_named(tmp_path, monkeypatch):
+    """The wrapper `do_GET` has always had, on `do_POST`: a wrong-typed field that
+    escapes a route reaches the client as a status and a reason, and the journal as
+    a line, rather than as a closed connection."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        # `key` must be hashable for the allowlist lookup; a list is not.
+        status, answer = post("/api/key", {"index": 0, "key": []})
+    assert status == 500
+    assert "TypeError" in answer["error"]

@@ -1818,6 +1818,33 @@ class ConsoleServer(ThreadingHTTPServer):
     config: Config
 
 
+def _answered(verb: str):
+    """Answer a route's unhandled exception with a 500 rather than a dropped connection.
+
+    Every reader and writer below shells out to something — tmux, git, systemd — or
+    reads a body it did not write, and the environment differences and wrong-typed
+    fields that make one of them raise are not defects in the console. Unwrapped,
+    the exception kills the handler thread and the browser sees a connection that
+    closed, which is the least diagnosable failure the surface has (issue #175). The
+    message goes to stderr as well: `log_message` is silenced, so without it a
+    journal would hold nothing at all.
+    """
+    def wrap(route):
+        def method(self):
+            self._responded = False
+            try:
+                route(self)
+            except Exception as exc:  # noqa: BLE001 — the message is the product here
+                print(f"! {verb} {self.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+                if not self._responded:
+                    with contextlib.suppress(Exception):
+                        self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
+        method.__name__ = route.__name__
+        method.__doc__ = route.__doc__
+        return method
+    return wrap
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -1864,24 +1891,9 @@ class Handler(BaseHTTPRequestHandler):
         return key is not None and any(key == origin_key(allowed)
                                        for allowed in self.cfg.allowed_origins)
 
+    @_answered("GET")
     def do_GET(self):
-        """Route a GET, and answer with a 500 rather than a dropped connection.
-
-        Every reader below shells out to something — tmux, git, systemd — and the
-        environment differences that make one of them absent are not defects in the
-        console. Unwrapped, the exception kills the handler thread and the browser
-        sees a connection that closed, which is the least diagnosable failure the
-        surface has. The message goes to stderr as well: `log_message` is silenced,
-        so without it a journal would hold nothing at all.
-        """
-        self._responded = False
-        try:
-            self._route_get()
-        except Exception as exc:  # noqa: BLE001 — the message is the product here
-            print(f"! GET {self.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
-            if not self._responded:
-                with contextlib.suppress(Exception):
-                    self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
+        self._route_get()
 
     def _route_get(self):
         path, _, query = self.path.partition("?")
@@ -2026,7 +2038,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         return self._send(404, {"error": "not found"})
 
+    @_answered("POST")
     def do_POST(self):
+        # The routes stay in this method rather than moving behind the wrapper the
+        # way `_route_get` did: tests/qe reads `do_POST` by name to check that the
+        # origin gate precedes every route and that every route survives a
+        # malformed body, and a body moved elsewhere reads to it as no routes at all.
         path = self.path.split("?", 1)[0]
         if not self._origin_ok():
             # Refused before the body is read, so a rejected request costs nothing.
@@ -2035,6 +2052,11 @@ class Handler(BaseHTTPRequestHandler):
             data = self._body()
         except Exception:
             return self._send(400, {"error": "bad json"})
+        # Every route below reads fields off the body, so a body that parses to
+        # anything but an object is refused here once rather than crashing each
+        # route's first `.get`.
+        if not isinstance(data, dict):
+            return self._send(400, {"error": "body must be a JSON object"})
 
         if path == "/api/roster":
             ok, output = roster_sync(self.cfg)
