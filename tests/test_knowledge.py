@@ -21,7 +21,6 @@ from thalamus.substrate.schema import (
     SourceKind,
     Tier,
 )
-from thalamus.contract.conformance import check_knowledge
 from thalamus.substrate.writer import write_knowledge
 
 
