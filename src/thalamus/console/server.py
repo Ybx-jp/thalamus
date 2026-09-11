@@ -654,6 +654,11 @@ class Config:
     # `scan_roots` are globbed one level deep for git repos.
     favorites: list[Path] = field(default_factory=list)
     scan_roots: list[Path] = field(default_factory=list)
+    # Where a star toggled in the picker is kept. `favorites` above is the seed from
+    # the command line; once this file exists it is the whole list, so a star set
+    # from the phone outlives a restart and a `--dir` the operator has since
+    # unstarred does not come back with the next boot.
+    favorites_store: Path | str = ""
     # systemd --user units the admin sheet may restart. Empty (the default) hides
     # the section entirely — the console never invents units it might not own.
     services: list[str] = field(default_factory=list)
@@ -686,6 +691,8 @@ class Config:
             self.scan_roots = [self.project_root.parent]
         self.favorites = [Path(p).expanduser() for p in self.favorites]
         self.scan_roots = [Path(p).expanduser() for p in self.scan_roots]
+        self.favorites_store = (Path(self.favorites_store).expanduser()
+                                if self.favorites_store else FAVORITES_STORE)
         if self.frames_file:
             self.frames_file = Path(self.frames_file).expanduser()
 
@@ -1314,17 +1321,57 @@ def _contains_run(tokens: list[str], want: tuple[str, ...]) -> bool:
     return any(tuple(tokens[i:i + span]) == want for i in range(len(tokens) - span + 1))
 
 
+# Stars set from the picker. Beside the extractor policy's store under the same
+# root, and the same shape: a version and the fact, nothing derived.
+FAVORITES_STORE = Path.home() / ".thalamus" / "console" / "favorites.json"
+FAVORITES_VERSION = 1
+
+
+def effective_favorites(cfg: Config) -> list[str]:
+    """The starred directories, as resolved paths: the store when it exists, else
+    the `--dir` seed. The store is whole rather than merged with the seed — a merge
+    would make an unstarred `--dir` reappear on every restart, which is the one
+    thing a star toggled from the phone has to survive."""
+    try:
+        raw = json.loads(Path(cfg.favorites_store).read_text())
+        paths = raw.get("paths") if isinstance(raw, dict) else None
+    except (OSError, ValueError):
+        paths = None
+    if not isinstance(paths, list):
+        paths = [str(p) for p in cfg.favorites]
+    return [os.path.realpath(os.path.expanduser(str(p))) for p in paths
+            if isinstance(p, str)]
+
+
+def set_favorite(cfg: Config, path: str, favorite: bool) -> None:
+    """Star or unstar one directory and persist the whole list. Written whole and
+    replaced, so a poll that reads mid-write sees the old file, never half of one."""
+    real = os.path.realpath(path)
+    current = [p for p in effective_favorites(cfg) if p != real]
+    if favorite:
+        current.append(real)
+    store = Path(cfg.favorites_store)
+    store.parent.mkdir(parents=True, exist_ok=True)
+    tmp = store.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"version": FAVORITES_VERSION, "paths": current},
+                              indent=2) + "\n")
+    os.replace(tmp, store)
+
+
 def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
     """The directory picker: favorites first, then git repos one level under each
     scan root. Deduped by resolved path; the label defaults to the basename.
 
     Returns (dirs, allowed) — `allowed` is the whitelist a spawn request must fall
-    inside, so the client can never spawn an arbitrary path.
+    inside, so the client can never spawn an arbitrary path. A star is toggled on
+    that same list, so a directory reaches the store only by being offered first;
+    unstarring one that sits under no scan root drops it from the picker, and the
+    way back is `--dir`.
     """
     seen: set[str] = set()
     dirs: list[dict] = []
 
-    def add(path: Path, favorite: bool) -> None:
+    def add(path: Path | str, favorite: bool) -> None:
         real = os.path.realpath(os.path.expanduser(str(path)))
         if real in seen or not os.path.isdir(real):
             return
@@ -1332,7 +1379,7 @@ def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
         dirs.append({"label": os.path.basename(real) or real,
                      "path": real, "favorite": favorite})
 
-    for fav in cfg.favorites:
+    for fav in effective_favorites(cfg):
         add(fav, True)
     for root in cfg.scan_roots:
         try:
@@ -1771,6 +1818,33 @@ class ConsoleServer(ThreadingHTTPServer):
     config: Config
 
 
+def _answered(verb: str):
+    """Answer a route's unhandled exception with a 500 rather than a dropped connection.
+
+    Every reader and writer below shells out to something — tmux, git, systemd — or
+    reads a body it did not write, and the environment differences and wrong-typed
+    fields that make one of them raise are not defects in the console. Unwrapped,
+    the exception kills the handler thread and the browser sees a connection that
+    closed, which is the least diagnosable failure the surface has (issue #175). The
+    message goes to stderr as well: `log_message` is silenced, so without it a
+    journal would hold nothing at all.
+    """
+    def wrap(route):
+        def method(self):
+            self._responded = False
+            try:
+                route(self)
+            except Exception as exc:  # noqa: BLE001 — the message is the product here
+                print(f"! {verb} {self.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+                if not self._responded:
+                    with contextlib.suppress(Exception):
+                        self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
+        method.__name__ = route.__name__
+        method.__doc__ = route.__doc__
+        return method
+    return wrap
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -1817,24 +1891,9 @@ class Handler(BaseHTTPRequestHandler):
         return key is not None and any(key == origin_key(allowed)
                                        for allowed in self.cfg.allowed_origins)
 
+    @_answered("GET")
     def do_GET(self):
-        """Route a GET, and answer with a 500 rather than a dropped connection.
-
-        Every reader below shells out to something — tmux, git, systemd — and the
-        environment differences that make one of them absent are not defects in the
-        console. Unwrapped, the exception kills the handler thread and the browser
-        sees a connection that closed, which is the least diagnosable failure the
-        surface has. The message goes to stderr as well: `log_message` is silenced,
-        so without it a journal would hold nothing at all.
-        """
-        self._responded = False
-        try:
-            self._route_get()
-        except Exception as exc:  # noqa: BLE001 — the message is the product here
-            print(f"! GET {self.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
-            if not self._responded:
-                with contextlib.suppress(Exception):
-                    self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
+        self._route_get()
 
     def _route_get(self):
         path, _, query = self.path.partition("?")
@@ -1979,7 +2038,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         return self._send(404, {"error": "not found"})
 
+    @_answered("POST")
     def do_POST(self):
+        # The routes stay in this method rather than moving behind the wrapper the
+        # way `_route_get` did: tests/qe reads `do_POST` by name to check that the
+        # origin gate precedes every route and that every route survives a
+        # malformed body, and a body moved elsewhere reads to it as no routes at all.
         path = self.path.split("?", 1)[0]
         if not self._origin_ok():
             # Refused before the body is read, so a rejected request costs nothing.
@@ -1988,6 +2052,11 @@ class Handler(BaseHTTPRequestHandler):
             data = self._body()
         except Exception:
             return self._send(400, {"error": "bad json"})
+        # Every route below reads fields off the body, so a body that parses to
+        # anything but an object is refused here once rather than crashing each
+        # route's first `.get`.
+        if not isinstance(data, dict):
+            return self._send(400, {"error": "body must be a JSON object"})
 
         if path == "/api/roster":
             ok, output = roster_sync(self.cfg)
@@ -2062,6 +2131,22 @@ class Handler(BaseHTTPRequestHandler):
             ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)),
                                   room, harness)
             return self._send(200 if ok else 500, {"ok": ok, "output": output})
+
+        if path == "/api/favorite":
+            directory = data.get("path")
+            favorite = data.get("favorite")
+            # Same whitelist as a spawn, recomputed here: a star names a directory
+            # the picker offered, never one the request made up.
+            _, allowed = spawn_dirs(self.cfg)
+            if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
+                return self._send(400, {"error": "directory not in the allowed list"})
+            if not isinstance(favorite, bool):
+                return self._send(400, {"error": "favorite must be true or false"})
+            set_favorite(self.cfg, directory, favorite)
+            # The picker renders from this response rather than re-fetching, so it
+            # carries the list the next GET would.
+            dirs, _ = spawn_dirs(self.cfg)
+            return self._send(200, {"ok": True, "dirs": dirs})
 
         if path == "/api/dispatch":
             # Addressed to a *room*, so it is deliberately above the window-index gate

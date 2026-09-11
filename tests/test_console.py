@@ -2196,3 +2196,100 @@ def test_a_window_that_outlives_the_grace_budget_is_killed_by_id_not_by_index(
 
     assert [op for _, op in recorded] == ["close"]
     assert ("kill-window", "-t", "@7") in calls
+
+
+# ---- stars are set from the picker and kept by the server ----
+
+
+def test_a_star_toggled_from_the_phone_persists_and_replaces_the_seed(tmp_path):
+    """
+    Scenario: the picker seeded by `--dir alpha` has beta starred from the phone,
+    then alpha unstarred
+
+    Verifications:
+    - the POST's own response carries the re-ordered picker, since the sheet renders
+      from it rather than re-fetching
+    - a fresh read of the picker — what a restart or the desktop would do — agrees
+    - the store is the whole list once it exists: an unstarred `--dir` stays unstarred
+    """
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    _repo(code / "beta")
+    cfg = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "state" / "favorites.json")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/favorite", {"path": str(code / "beta"), "favorite": True})
+        assert status == 200 and body["ok"] is True
+        assert [(d["label"], d["favorite"]) for d in body["dirs"]] == \
+            [("alpha", True), ("beta", True)]
+
+        status, body = post("/api/favorite", {"path": str(code / "alpha"), "favorite": False})
+        assert status == 200
+        assert [(d["label"], d["favorite"]) for d in body["dirs"]] == \
+            [("beta", True), ("alpha", False)]
+        assert post.get("/api/spawn-options")["dirs"] == body["dirs"]
+
+    # A second Config over the same store — the console after a restart, with the
+    # same `--dir alpha` seed — reads the file, not the seed.
+    again = Config(project_root=code / "alpha", scan_roots=[code],
+                   favorites_store=tmp_path / "state" / "favorites.json")
+    assert server.effective_favorites(again) == [str(code / "beta")]
+
+
+def test_a_directory_the_picker_never_offered_cannot_be_starred(tmp_path):
+    """The star shares the spawn whitelist: a path the picker did not offer is refused,
+    and the store is not created for it."""
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    (tmp_path / "elsewhere").mkdir()
+    cfg = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "state" / "favorites.json")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/favorite",
+                            {"path": str(tmp_path / "elsewhere"), "favorite": True})
+        assert status == 400 and "allowed" in body["error"]
+        status, _ = post("/api/favorite", {"path": str(code / "alpha"), "favorite": "yes"})
+        assert status == 400
+
+    assert not (tmp_path / "state" / "favorites.json").exists()
+
+
+def test_a_missing_or_broken_store_falls_back_to_the_seed(tmp_path):
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    store = tmp_path / "state" / "favorites.json"
+    cfg = Config(project_root=code / "alpha", scan_roots=[code], favorites_store=store)
+    assert server.effective_favorites(cfg) == [str(code / "alpha")]
+
+    store.parent.mkdir(parents=True)
+    store.write_text("{not json")
+    assert server.effective_favorites(cfg) == [str(code / "alpha")]
+
+
+# ---- a POST is answered, whatever the body ----
+
+
+def test_a_post_body_that_is_not_an_object_is_refused_not_dropped(tmp_path):
+    """Every route reads fields off the body, so a body that parses to a list, a
+    string, a number or null used to crash the first `.get` and close the
+    connection with no status at all (issue #175). Refused once, before any route."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        for body in ([], "hello", 3, None):
+            status, answer = post("/api/key", body)
+            assert status == 400, body
+            assert "object" in answer["error"]
+
+
+def test_a_route_that_raises_answers_500_with_the_exception_named(tmp_path, monkeypatch):
+    """The wrapper `do_GET` has always had, on `do_POST`: a wrong-typed field that
+    escapes a route reaches the client as a status and a reason, and the journal as
+    a line, rather than as a closed connection."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        # `key` must be hashable for the allowlist lookup; a list is not.
+        status, answer = post("/api/key", {"index": 0, "key": []})
+    assert status == 500
+    assert "TypeError" in answer["error"]

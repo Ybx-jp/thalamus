@@ -904,6 +904,11 @@ textarea:focus { outline: none; border-color: var(--chan); }
   border-color: var(--tab, var(--chan));
 }
 .chips-dirs .chip { font-size: .64rem; }
+/* A section heading with one action at its right edge — the directory picker's
+   star, which acts on the highlighted chip. The heading keeps its own margin
+   rules; the row carries the spacing instead. */
+.sec-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 .35rem; }
+.sec-head h3 { margin: 0; }
 
 /* ---- Rooms ---- */
 /* The room filter sits in the same bar as the workspace filter but reads as its

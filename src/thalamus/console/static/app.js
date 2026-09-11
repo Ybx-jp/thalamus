@@ -84,6 +84,7 @@ const els = {
   spawnHarnessNote: document.getElementById("spawn-harness-note"),
   spawnRooms: document.getElementById("spawn-rooms"),
   spawnDirs: document.getElementById("spawn-dirs"),
+  spawnStar: document.getElementById("spawn-star"),
   spawnGo: document.getElementById("spawn-go"),
   spawnLog: document.getElementById("spawn-log"),
   dialogue: document.getElementById("dialogue"),
@@ -2000,6 +2001,13 @@ function renderSpawnChips() {
     els.spawnDirs.appendChild(
       chip(label, d.path === spawnDir, () => { spawnDir = d.path; renderSpawnChips(); }));
   }
+  // One star button for the section, acting on the highlighted directory. The
+  // server sorts starred directories first, so a toggle moves the chip; the
+  // highlight follows it because it is keyed on the path, not the position.
+  const picked = (spawnOpts.dirs || []).find((d) => d.path === spawnDir);
+  els.spawnStar.disabled = !picked;
+  els.spawnStar.textContent = picked && picked.favorite ? "★ unstar" : "☆ star";
+  els.spawnStar.setAttribute("aria-pressed", picked && picked.favorite ? "true" : "false");
   els.spawnRooms.innerHTML = "";
   const rooms = spawnRoomChoices(spawnOpts.rooms, windows, spawnRoom);
   els.spawnRooms.appendChild(
@@ -2028,6 +2036,17 @@ function newRoom() {
   }
   spawnRoom = name;
   renderSpawnChips();
+}
+// The server keeps the stars (`~/.thalamus/console/favorites.json`), so one set
+// from the phone is the same set the desktop sees. Rendered from the response
+// rather than re-fetched — the picker's only feedback is what it shows.
+async function toggleFavorite() {
+  const d = (spawnOpts && spawnOpts.dirs || []).find((x) => x.path === spawnDir);
+  if (!d) return;
+  els.spawnStar.disabled = true;
+  const { ok, data } = await postJson("api/favorite", { path: d.path, favorite: !d.favorite });
+  if (ok && data.ok && Array.isArray(data.dirs)) spawnOpts.dirs = data.dirs;
+  renderSpawnChips(); // re-enables the button from the list, changed or not
 }
 async function doSpawn() {
   if (!(spawnScope && spawnDir)) return;
@@ -2316,11 +2335,13 @@ function extractorModelOptions(state, harness) {
   const opt = (state.options || []).find((o) => o.value === harness);
   if (!opt || !opt.models || !opt.models.length) return [];
   const chosen = (state.value && state.value.model) || "";
+  // The lit chip is the only mark: with nothing chosen it is the CLI's default,
+  // because that is what will run. The default carries no mark of its own once
+  // something else is chosen — one highlight per row, nothing else to decode.
   return opt.models.map((m) => ({
     value: m,
     label: m,
     on: chosen ? m === chosen : m === opt.default_model,
-    isDefault: m === opt.default_model,
   }));
 }
 
@@ -2367,7 +2388,7 @@ function renderExtractorCard(state) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "chip" + (m.on ? " on" : "");
-      b.textContent = m.isDefault ? `${m.label} ✓` : m.label;
+      b.textContent = m.label;
       b.addEventListener("click",
                         () => setExtractorPolicy(state.pass, state.value.harness, m.value));
       row.appendChild(b);
@@ -2500,6 +2521,7 @@ document.getElementById("spawn-btn").addEventListener("click", () => {
 document.getElementById("spawn-x").addEventListener("click", () => { els.spawn.hidden = true; });
 document.getElementById("roster-btn").addEventListener("click", () => setView("roster"));
 els.spawnGo.addEventListener("click", doSpawn);
+els.spawnStar.addEventListener("click", toggleFavorite);
 document.getElementById("admin-restart-all").addEventListener("click", async () => {
   if (!windows.length) return;
   if (!confirm(restartAllPrompt(windows, lastDistill, activeIdx))) return;

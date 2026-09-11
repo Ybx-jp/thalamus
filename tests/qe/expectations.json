@@ -20,13 +20,6 @@
       "note": "Issue #152. Text posted to /api/send is read by tmux as arguments. The pin is the retarget payload rather than the dash-flag ones because it is the sharpest of the set: a repair that added `--` fixes every entry in the witness at once, and a repair that somehow left this one would drift here."
     },
     {
-      "case": "a-malformed-post-body-gets-a-response-not-a-dropped-connection",
-      "failure_class": "failed-open",
-      "witness_contains": "45 of 54 probes dropped the connection",
-      "triaged_at_rev": "ea06c91",
-      "note": "Issue #175. do_POST guards the JSON parse and nothing after it, so any body that parses to a non-object, and several wrong-typed fields, escape as unhandled exceptions and kill the handler thread. The count is the pin: it is a denominator over routes derived from the shipped dispatch (8 driven routes x 6 non-object/empty/oversized bodies, minus the one shape - an empty body - that never crashes, plus 5 type-confusion probes and 1 wrong-content-type probe that also don't crash), so fixing any route, or adding one, moves it and drifts. The caller_room, /frame/<name> traversal, and concurrent-close probes added alongside this corpus are asserted inline in the case, not pinned here, since none of them reproduce this defect."
-    },
-    {
       "case": "policy-load-collapses-hash-collision",
       "failure_class": "invariant-falsified",
       "witness_contains": "load() returned 1 record(s) for this hash; keying by (sha, ts) instead recovers 2",

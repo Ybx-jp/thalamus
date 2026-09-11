@@ -1,50 +1,45 @@
 """No console write route may drop the connection on a body it does not like.
 
-Issue #175, open — `do_POST` guards the JSON parse and nothing after it. The
-corpus this case drives is the one issue #74 specified when it filed the coverage
-gap; the defect it found is #175.
+Issue #175, fixed. The corpus this case drives is the one issue #74 specified when it
+filed the coverage gap.
 
-`do_POST` guards the *parse* and nothing after it (`console/server.py:1932`):
+`do_GET` and `do_POST` share one guard, `_answered(verb)` (`server.py:1821`): it wraps
+the route dispatch, and any exception that escapes it is caught, printed to stderr
+(`log_message` is silenced, so nothing else would reach a journal), and answered as
+`500 {"error": "<ExceptionType>: <message>"}` — never left to kill the handler thread
+and drop the connection, the least diagnosable failure the surface has.
 
-    try:
-        data = self._body()
-    except Exception:
-        return self._send(400, {"error": "bad json"})
+`do_POST` also refuses, before any route reads the body, a body that parsed but is not
+a JSON object (`server.py:2058`):
 
-`_body()` (:1743) is `json.loads(...)`, which succeeds on any JSON value. `[]`, `"x"`,
-`3` and `null` all parse, so the `except` never fires, and the first `data.get(...)`
-below raises `AttributeError` on a list. Nothing catches it: the exception leaves
-`do_POST`, the handler thread dies, and the client gets a closed connection with no
-response at all.
+    if not isinstance(data, dict):
+        return self._send(400, {"error": "body must be a JSON object"})
 
-`do_GET` does not have this hole, and says why (:1765):
+`_body()` (:1872) is `json.loads(...)`, which succeeds on any JSON value — `[]`, `"x"`,
+`3` and `null` all parse — so without that check the first `data.get(...)` inside a
+route would raise `AttributeError` on a non-dict. With it, every one of those shapes is
+refused uniformly at 400, before any route-specific logic runs.
 
-    # Unwrapped, the exception kills the handler thread and the browser sees a
-    # connection that closed, which is the least diagnosable failure the surface has.
+A well-formed object can still carry a wrong-typed field that a route's own validation
+does not reject before acting on it. `_answered` is what keeps that exception from
+dropping the connection — it still raises inside the route, and is now answered as 500
+naming it:
 
-The same sentence describes `do_POST`, which never got the wrapper. Measured against the
-real handler, tmux stubbed, 2026-08-31 — every one of these closed the connection without
-a response:
-
-    POST /api/key      []                          AttributeError: 'list' object …
-    POST /api/key      "hello" / 3 / null          same, on str / int / NoneType
-    POST /api/send     []                          same
-    POST /api/service  []                          same
-    POST /api/close    []                          same
     POST /api/key      {"key": []}                 TypeError: unhashable type: 'list'
     POST /api/key      {"count": Infinity}         OverflowError — `int()` raises it and
                                                    the `except (TypeError, ValueError)`
-                                                   at :2184 does not catch it
+                                                   at :2324 does not catch it
     POST /api/send     {"text": "a\\u0000b"}        ValueError: embedded null byte, from
                                                    subprocess, past the isinstance check
     POST /api/send     {"text": "\\ud800"}          UnicodeEncodeError on the argv encode
 
-`{"count": NaN}` is caught (ValueError) and `{"index": true}` is not a crash but is not
-right either: `bool` passes `isinstance(idx, int)` and `True == 1` matches window 1, then
-the f-string at :2128 renders the target as `<session>:True`, a pane name that cannot
-exist. tmux errors, the return code is unread, and the route answers `200 {"ok": true}`.
-That one is recorded here as a witness rather than asserted on — it is a distinct defect
-from the dropped connection and belongs to its own issue if it is to be fixed.
+`{"count": NaN}` is caught (ValueError) and answered on its own, ahead of `_answered`.
+`{"index": true}` is not a crash but is not right either: `bool` passes
+`isinstance(idx, int)` (:2266) and `True == 1` matches window 1, then the f-string at
+:2268 renders the target as `<session>:True`, a pane name that cannot exist. tmux
+errors, the return code is unread, and the route answers `200 {"ok": true}`. That one is
+recorded here as a witness rather than asserted on — it is a distinct defect from the
+dropped connection and belongs to its own issue if it is to be fixed.
 
 **Five routes are not driven live**, because they begin acting before they read `data`,
 so a malformed body does not stop them in time: `/api/roster`, `/api/deploy`,
@@ -92,7 +87,7 @@ covers, in the direction of coverage and in the direction of safety.
   that spoofs it is provably indistinguishable from one that omits it.
 - *Path traversal on `/frame/<name>`* is a GET, not one of the 13 POST routes, but #74
   names it and this is where the console's request-driven file surface is covered.
-  `frame_bytes` (:769) matches the requested name for *equality* against a list parsed
+  `frame_bytes` (:776) matches the requested name for *equality* against a list parsed
   from the frames file, and never builds a path from the request — traversal is not
   expressible by construction. Driven live against a real frames file with one legitimate
   entry, so the equality-only claim is pinned rather than read off the source.
@@ -106,7 +101,7 @@ starters and never a dropped connection. `RECYCLE_GRACE_S` is shrunk and
 handler's tmux stub, so the background workers would otherwise burn the real grace
 budget and (if a real distill watcher happened to be configured on the box) append to
 its kill ledger. `close_window`'s grace loop sleeps a hard `time.sleep(1)` per
-iteration that does not shrink with `RECYCLE_GRACE_S` (`server.py:1109`), so a
+iteration that does not shrink with `RECYCLE_GRACE_S` (`server.py:1118`), so a
 background thread already inside the loop can still be sleeping well past any
 budget-sized wait this probe might use instead — measured leaking into the operator's
 live ledger under a full-tier run, where the process outlives a lone-case run long
@@ -130,18 +125,20 @@ items above carry their own inline discrimination, noted where they are checked)
    coverage are the same clean result otherwise, and a refactor moving the dispatch out
    of `do_POST` would empty this half in silence.
 
-**Shown capable of going red** — it is red now, against the defect as it ships. The green
-direction is control 1 inverted: wrap `do_POST`'s body in the same `try/except` `do_GET`
-carries, and every probe below answers 500 instead of closing the socket, which is a
-response and passes. Note that the case asserts *a response*, not a status: which code a
-malformed body deserves is a design question, and pinning one here would make this the
-guardian of that choice rather than of the crash. To see the new pieces go red on their
-own: (a) make `do_POST` read `data.get("caller_room")` anywhere and pass it through —
-the structural check below fails on that alone, before any wire probe is needed; (b)
-change `frame_bytes` to build a path from the request instead of matching a parsed list
-— the traversal probe answers something other than 404; (c) move the `CLOSING_LOCK`
-acquisition to after the `idx in CLOSING` read — the concurrent-close probe then sees
-more than one `already: false`.
+**Shown capable of going red.** The defect predates `_answered` and the `isinstance`
+guard, so reproducing it needs a handler without either: point `_serving` at a
+subclass whose `do_POST` calls the undecorated route body directly, skipping both the
+wrapper and the dict check, and every probe in the driven sweep closes the connection
+instead of answering — `dropped` fills and the case reports FAILED_OPEN. Note that the
+case asserts *a response*, not a status: which code a malformed body deserves is a
+design question, and pinning one here would make this the guardian of that choice
+rather than of the crash. The three newer pieces go red independently of that
+reproduction: (a) make `do_POST` read `data.get("caller_room")` anywhere and pass it
+through — the structural check above fails on that alone, before any wire probe is
+needed; (b) change `frame_bytes` to build a path from the request instead of matching a
+parsed list — the traversal probe answers something other than 404; (c) move the
+`CLOSING_LOCK` acquisition to after the `idx in CLOSING` read — the concurrent-close
+probe then sees more than one `already: false`.
 """
 
 from __future__ import annotations
@@ -334,7 +331,7 @@ def _routes_and_drivability(body: list[ast.stmt]) -> list[tuple[str, bool]]:
 
     A route is drivable when the `AttributeError` is certain to fire before its body:
 
-    * the shared window gate (`idx = data.get("index")`, :2126) sits at `do_POST`'s top
+    * the shared window gate (`idx = data.get("index")`, :2265) sits at `do_POST`'s top
       level and every route below it is behind it — those are drivable by position; or
     * the route is above the gate and its own first statement reads `data`.
 
@@ -653,7 +650,7 @@ def run() -> Finding | None:
                         f"declared here: {sorted(_NOT_DRIVEN)}; "
                         f"newly undrivable: {sorted(undrivable - _NOT_DRIVEN)}; "
                         f"stale exemptions: {sorted(_NOT_DRIVEN - undrivable)}",
-                site="src/thalamus/console/server.py:1927",
+                site="src/thalamus/console/server.py::Handler.do_POST",
             )
 
         if dropped:
@@ -662,12 +659,12 @@ def run() -> Finding | None:
                 summary="a POST body that is valid JSON but not an object, or that "
                         "carries a wrong-typed field, escapes do_POST as an unhandled "
                         "exception and kills the handler thread — the client gets a "
-                        "closed connection and no response, which do_GET's own wrapper "
-                        "exists to prevent",
+                        "closed connection and no response, which `_answered` exists "
+                        "to prevent",
                 witness=f"{len(dropped)} of {total} probes "
                         f"dropped the connection: " + "; ".join(dropped[:6])
                         + (f"; …and {len(dropped) - 6} more" if len(dropped) > 6 else ""),
-                site="src/thalamus/console/server.py:1932",
+                site="src/thalamus/console/server.py::Handler.do_POST",
             )
     return None
 
@@ -682,4 +679,5 @@ CASE = Case(
             "an unhandled exception kill the handler thread",
     run=run,
     issue=175,
+    fixed=True,
 )
