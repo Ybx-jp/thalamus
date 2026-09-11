@@ -307,6 +307,12 @@ evidence-first, dry-run by default, `--write` to persist. The document is co-ind
 as `Chunk` vertices beside the claims drawn from it, so a claim can be traced back to
 the passage it came from.
 
+`--feed` names what the document was procured for, and the name lands on the `Source`
+— the ingestion event — rather than on the claims, which converge across feeds. A
+document procured for two projects keeps both names: the feed accumulates on
+re-ingest instead of replacing what was there, so "what was this brought in for" has
+every answer rather than the most recent one.
+
 The model pass is the only irreversible spend on the path, so everything that can be
 known before it is. `--check` runs the path and stops there, which is how a source is
 verified without paying for it; the allowlist gate sits ahead of both the archive and

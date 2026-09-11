@@ -13,7 +13,7 @@ from gremlin_python.driver.driver_remote_connection import DriverRemoteConnectio
 from gremlin_python.driver.protocol import GremlinServerError
 from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
-from gremlin_python.process.traversal import Direction, Merge, P, T
+from gremlin_python.process.traversal import Cardinality, Direction, Merge, P, T
 
 from thalamus.contract.ontology import scope_of, vid
 from thalamus.contract.paths import PROJECT_ROOT
@@ -218,6 +218,34 @@ _SOURCE_WRITE_ONCE = ("tier", "origin", "source")
 # Held at the first value once set. `tier` is not among them: it has its own rule below,
 # because trust must still be able to fall.
 _SOURCE_HELD_FIRST = ("origin", "source")
+
+
+def _accumulate_feed(g: GraphTraversalSource, source_vid: str, feed: str) -> None:
+    """Add this ingestion's feed to the Source without displacing the last one.
+
+    `feed` answers "what was this procured for" (docs/06-ingestion.md), and a document
+    procured for two projects has two answers. It was carried in the merge option map,
+    where `Merge.on_match` sets a property to one value — so every re-ingest of
+    identical bytes silently overwrote the prior attribution with no SUPERSEDES edge,
+    no version and no warning, and the original was unrecoverable.
+
+    Written with set cardinality rather than joined into a string: `value_map` already
+    hands every property back as a list, so a Source procured twice reads as
+    `{"feed": ["corpus-pin-grounding", "room-lifecycle"]}` with no delimiter for a feed
+    name to collide with. Set, not list, so re-ingesting under a feed the Source already
+    carries is idempotent — which the ordinary `--check` then `--write` sequence does
+    every time.
+
+    Kept out of `_source_on_match`, which returns a property map the merge applies
+    wholesale and so cannot express "add to what is there".
+    """
+    if not feed:
+        return
+    _iterate(
+        g.V(source_vid).property(Cardinality.set_, "feed", feed),
+        "accumulate Source feed",
+        source_vid,
+    )
 
 
 def _source_on_match(
@@ -802,11 +830,9 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         "origin": source.origin or "",
         "byte_size": source.byte_size,
         "scope": batch.scope,
-        # Feed identity lives on the Source (the ingestion event), not on claims or
-        # entities — those converge across feeds, and the feed that brought a document
-        # in is a fact about the document. The ingestion protocol requires it on every
-        # write; claims reach it by walking DERIVED_FROM.
-        "feed": batch.feed,
+        # `feed` is deliberately absent here — see `_accumulate_feed` below. Merge
+        # option maps set a property to one value, which is what destroyed the prior
+        # feed on every re-ingest.
         **_provenance_properties(source.provenance or provenance),
     }
     graph_traversal = (
@@ -815,6 +841,7 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         .option(Merge.on_match, _source_on_match(g, source_vid, properties))
     )
     _iterate(graph_traversal, "upsert Source", source_vid)
+    _accumulate_feed(g, source_vid, batch.feed)
 
     for head_vid in prior_heads:
         if head_vid != source_vid:
