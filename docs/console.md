@@ -28,6 +28,29 @@ Two things follow. A bare `tmux attach` on your desk will not find the roster; u
 And two checkouts on one box get separate control planes by setting
 `THALAMUS_TMUX_SOCKET` differently — nothing else has to change.
 
+### Window size and scrollback
+
+Every roster window is held at **120 columns by 50 rows** (`pin.WINDOW_COLS` /
+`WINDOW_ROWS`), set with `resize-window` after the window exists, which also pins
+its `window-size` to `manual`. The console has no tmux client of its own — it reads
+whatever size the window has — so an attaching desktop terminal or the `/tty` page
+must not resize the windows out from under it; that is what `manual` buys, and it
+is why a desktop `tmux -L thalamus attach` shows a fixed 120×50 box rather than
+filling the terminal. Nothing reads tmux's `default-size`: it is 80×24 on any box
+without a hand-written tmux.conf, and the project ships none. `thalamus roster` and
+every spawn resize every window in the session, so a session created at the stock
+size by `tmux new -A` is corrected the next time either runs.
+
+Roster windows launch Claude Code with `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`
+(`pin.RENDER_ENV`), the classic renderer. The fullscreen renderer draws on the
+alternate screen, which tmux keeps no history for, so a pane view would be 50 rows
+with nothing above them and reading back would mean paging claude itself. With the
+classic renderer the transcript stays in the normal screen, tmux's history holds it
+(`history-limit`, 2000 lines by default), `capture-pane -S -1000` returns it, and
+the pane view scrolls it like a page. The variable rides the window's argv, not
+only its tmux environment, so a recycle keeps it. It applies to roster windows
+only; a terminal you sit at follows your own `tui` setting.
+
 Installable to a home screen as a PWA, and it works in any browser without that.
 
 ---
@@ -185,8 +208,8 @@ the font off the auto-fit size, which is computed so a full pane line fits your
 screen without horizontal scrolling.
 
 **`read` switches to the transcript view.** The pane view mirrors a *rendering* of
-the session: an 80-column repaint, colours stripped by tmux, reflowing under you
-while a turn streams. The read view shows the session itself — Claude Code writes
+the session: a 120-column repaint, colours stripped by tmux, reflowing under you
+while a turn streams, with up to 1000 lines of the window's history above it. The read view shows the session itself — Claude Code writes
 every turn to a JSONL transcript, and the server projects that into flowing prose
 with each tool call collapsed to one tappable line, so a forty-line diff reads as
 `Edit docs/09-schema-and-federation.md`. Tap a line for its output; tap `term` to
