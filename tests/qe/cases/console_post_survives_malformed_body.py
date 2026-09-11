@@ -105,7 +105,16 @@ starters and never a dropped connection. `RECYCLE_GRACE_S` is shrunk and
 `console_close_reads_pane_death.py`: the window never actually resolves under this
 handler's tmux stub, so the background workers would otherwise burn the real grace
 budget and (if a real distill watcher happened to be configured on the box) append to
-its kill ledger.
+its kill ledger. `close_window`'s grace loop sleeps a hard `time.sleep(1)` per
+iteration that does not shrink with `RECYCLE_GRACE_S` (`server.py:1109`), so a
+background thread already inside the loop can still be sleeping well past any
+budget-sized wait this probe might use instead — measured leaking into the operator's
+live ledger under a full-tier run, where the process outlives a lone-case run long
+enough for that to matter. `_concurrent_close` therefore waits on the actual
+background threads finishing, not on a clock, and never hands `_record_forced_kill`
+back to the real function at all: it is the one global `close_window` reads at the
+very end of its run, after the unbounded part of the loop, so no wait over a thread
+this process does not fully control can be trusted to always win the race.
 
 **Three controls, all running** (for the core dropped-connection property; the four new
 items above carry their own inline discrimination, noted where they are checked).
@@ -380,18 +389,45 @@ def _hardcodes_empty_caller_room(body: list[ast.stmt]) -> bool:
     return False
 
 
+def _drain_new_threads(before: set[threading.Thread], timeout: float) -> None:
+    """Join every thread that appeared after `before` was captured, for real.
+
+    Not a sleep: `close_window`'s grace loop sleeps a hard `time.sleep(1)` per
+    iteration regardless of how small `RECYCLE_GRACE_S` is, so a background thread
+    that has already entered the loop can still be asleep well past any
+    budget-derived wait. This polls `threading.enumerate()` and joins whatever it
+    finds until nothing new is left alive, so the caller's own stubs are restored
+    only once the threads that depend on them have actually finished — never on a
+    guess about how long that takes. `timeout` is a generous backstop against a real
+    hang, not the mechanism the correctness of the wait relies on.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        spawned = [t for t in threading.enumerate() if t not in before and t.is_alive()]
+        if not spawned:
+            return
+        for t in spawned:
+            t.join(timeout=0.05)
+
+
 def _concurrent_close(console, cfg) -> tuple[list[str], list[dict | None]]:
     """Fire six concurrent `POST /api/close` for the same non-anchor window.
 
-    `RECYCLE_GRACE_S` is shrunk and the ledger/session lookups are stubbed so the
-    background `close_window` threads this spawns finish in a fraction of a second and
-    touch nothing real — the window never actually resolves under this handler's tmux
-    stub, so left at their real size they would burn the whole grace budget and, on a
-    box with a real distillation watcher configured, record a forced kill that never
-    happened.
+    `RECYCLE_GRACE_S` is shrunk and the session lookup is stubbed so the background
+    `close_window` threads this spawns resolve quickly and touch nothing real — the
+    window never actually resolves under this handler's tmux stub, so left at their
+    real size they would burn the whole grace budget and, on a box with a real
+    distillation watcher configured, record a forced kill that never happened.
+
+    `_record_forced_kill` is stubbed too, but is never handed back to the real
+    function: it is the one global `close_window` reads at the very end of its run,
+    well after the part of the loop `_drain_new_threads` waits out, so restoring it
+    is the one action here that would let a leaked thread reach the operator's live
+    ledger. No other qe case relies on `console._record_forced_kill` being the
+    production function — every case that cares stubs it itself before calling into
+    `close_window` or `recycle_window`.
     """
-    saved = (console.RECYCLE_GRACE_S, console._record_forced_kill,
-             console._pinned_session)
+    saved = (console.RECYCLE_GRACE_S, console._pinned_session)
     console.RECYCLE_GRACE_S = 0.15
     console._record_forced_kill = lambda who, op: None
     console._pinned_session = lambda cfg, idx: {"session": "qe000000", "scope": "qe",
@@ -399,6 +435,7 @@ def _concurrent_close(console, cfg) -> tuple[list[str], list[dict | None]]:
                                                 "repo_root": "/tmp"}
     console.CLOSING.pop(1, None)
     try:
+        before = set(threading.enumerate())
         with _serving(console, console.Handler, cfg) as port:
             results: list[tuple[str, dict | None]] = [("", None)] * 6
 
@@ -410,13 +447,14 @@ def _concurrent_close(console, cfg) -> tuple[list[str], list[dict | None]]:
                 t.start()
             for t in threads:
                 t.join(timeout=5)
-            # Give the (shrunk-budget) background closers time to finish before the
-            # stub they depend on gets restored underneath them.
-            time.sleep(console.RECYCLE_GRACE_S + 0.3)
+            # Wait for the background close_window thread(s) this spawned to
+            # actually finish — still inside `_serving`, so console.tmux is not
+            # swapped back to the real command runner while one might still be
+            # calling it.
+            _drain_new_threads(before, timeout=max(console.RECYCLE_GRACE_S * 20, 5.0))
         return [s for s, _ in results], [b for _, b in results]
     finally:
-        (console.RECYCLE_GRACE_S, console._record_forced_kill,
-         console._pinned_session) = saved
+        console.RECYCLE_GRACE_S, console._pinned_session = saved
         console.CLOSING.pop(1, None)
 
 
