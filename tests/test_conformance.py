@@ -196,7 +196,11 @@ def test_the_gated_write_path_passes_a_conforming_session_straight_through():
 
     calls = []
 
-    def _fake_writer(g, offered):
+    def _fake_writer(g, offered, *, gate):
+        # The gate arrives as an argument rather than being applied before the call:
+        # the door's job is to supply one, and the writer's job is to run it. Calling
+        # it here is what makes the assertion below about refusal, not about ordering.
+        gate(offered)
         calls.append((g, offered))
         return "scope:main:session:s1"
 
@@ -211,3 +215,58 @@ def test_the_gated_write_path_passes_a_conforming_session_straight_through():
 
     assert result == "scope:main:session:s1"
     assert calls == [("graph-handle", session)]
+
+
+def test_the_writer_will_not_write_without_being_handed_a_gate():
+    """
+    Scenario: A new write path calls the writer directly, the way the exchange
+    path did for 102 tier-1 vertices
+
+    Verifications:
+    - every door that writes a contract-bearing subgraph refuses the call itself
+      when no gate is named, rather than writing and leaving the check to an audit
+    - the omission is a TypeError at the call, not a silently ungated write
+    """
+    import inspect
+
+    from thalamus.substrate import writer as writer_module
+
+    for name in ("write_session", "write_knowledge", "write_exchange", "close_exchange"):
+        signature = inspect.signature(getattr(writer_module, name))
+        gate = signature.parameters.get("gate")
+        assert gate is not None, f"{name} takes no gate"
+        assert gate.kind is inspect.Parameter.KEYWORD_ONLY, name
+        assert gate.default is inspect.Parameter.empty, (
+            f"{name}'s gate has a default, so omitting it is silent again"
+        )
+
+
+def test_the_exchange_protocol_refuses_an_answer_that_cites_nothing():
+    """
+    Scenario: Something closes an exchange as `answered` without citations —
+    the write `audit_exchanges` indicts after the fact
+
+    Verifications:
+    - the refusal happens at the write, naming consult_answer as the only close path
+    - a status the protocol does not know is refused too
+    - the launcher's statusless updates (price, closed_by, fork_error) still pass:
+      they update an exchange without answering it
+    """
+    from thalamus.contract.ontology import (
+        ProtocolViolation,
+        refuse_unless_exchange_protocol_holds,
+    )
+
+    vertex = "scope:main:exchange:abc123"
+
+    with pytest.raises(ProtocolViolation) as answered_uncited:
+        refuse_unless_exchange_protocol_holds(vertex, {"status": "answered"}, [])
+    assert "consult_answer" in str(answered_uncited.value)
+
+    with pytest.raises(ProtocolViolation):
+        refuse_unless_exchange_protocol_holds(vertex, {"status": "closed"}, ["x"])
+
+    refuse_unless_exchange_protocol_holds(vertex, {"status": "answered"}, ["scope:x:claim:1"])
+    refuse_unless_exchange_protocol_holds(vertex, {"status": "open"}, [])
+    for statusless in ({"fork_error": "boom"}, {"closed_by": "launcher"}, {"cost_usd": 0.4}):
+        refuse_unless_exchange_protocol_holds(vertex, statusless, [])

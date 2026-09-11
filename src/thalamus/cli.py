@@ -2391,7 +2391,7 @@ def _cmd_ingest(args):
     from thalamus.contract.manifest import load_manifest
     from thalamus.harness import extraction as extraction_mod
     from thalamus.harness import ingest as ingest_mod
-    from thalamus.substrate.writer import write_knowledge
+    from thalamus.contract.conformance import write_knowledge_checked
 
     if args.check and args.write:
         print(
@@ -2599,7 +2599,7 @@ def _cmd_ingest(args):
 
     graph = connect(args.url)
     try:
-        source_vid = write_knowledge(graph, batch)
+        source_vid = write_knowledge_checked(graph, batch, manifest)
         _persist(graph)
         print(f"\nWritten into scope `{batch.scope}`: {source_vid}")
     finally:
