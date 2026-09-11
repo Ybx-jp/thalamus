@@ -12,7 +12,7 @@ const { extractorSummary, extractorModelOptions } =
 // The server's payload shape, abbreviated to the fields these two read.
 const OPTIONS = [
   { value: "claude", label: "claude", models: ["sonnet", "opus"], default_model: "sonnet" },
-  { value: "codex", label: "codex", models: ["gpt-5.6-terra", "gpt-5.4-mini"],
+  { value: "codex", label: "codex", models: ["gpt-5.6-terra", "gpt-5.6-luna"],
     default_model: "gpt-5.6-terra" },
 ];
 const DISTILL = {
@@ -27,7 +27,7 @@ const INGEST = {
   pass: "ingest",
   label: "ingestion",
   value: { harness: "", model: "" },
-  resolved: { harness: "codex", model: "gpt-5.4-mini" },
+  resolved: { harness: "codex", model: "gpt-5.6-luna" },
   options: [{ value: "", label: "follow distillation", models: [], default_model: "" },
             ...OPTIONS],
 };
@@ -45,7 +45,7 @@ check("distillation with no harness reads as following the session",
 check("a blank model shows the slug the CLI will use",
       extractorSummary(withValue(DISTILL, "codex", "")) === "codex · gpt-5.6-terra");
 check("a chosen model is the one shown",
-      extractorSummary(withValue(DISTILL, "codex", "gpt-5.4-mini")) === "codex · gpt-5.4-mini");
+      extractorSummary(withValue(DISTILL, "codex", "gpt-5.6-luna")) === "codex · gpt-5.6-luna");
 check("a harness the payload does not describe still names itself",
       extractorSummary(withValue(DISTILL, "cursor", "")) === "cursor");
 check("an empty payload says nothing", extractorSummary(null) === "");
@@ -54,7 +54,7 @@ check("an empty payload says nothing", extractorSummary(null) === "");
 // than out of this function — a client that spelled them itself would name the wrong
 // one the moment a third pass existed.
 check("ingestion says what it defers to, and what that resolves to",
-      extractorSummary(INGEST) === "follow distillation → codex · gpt-5.4-mini");
+      extractorSummary(INGEST) === "follow distillation → codex · gpt-5.6-luna");
 // Distillation is the case where there is genuinely no answer yet: no session has
 // ended. Inventing one would assert a fact about a run that has not happened.
 check("a pass with nothing to resolve to shows the rule alone",
@@ -68,13 +68,13 @@ suite("extractorModelOptions");
 
 const codex = extractorModelOptions(withValue(DISTILL, "codex", ""), "codex");
 check("the harness's declared slugs are the whole list",
-      codex.map((m) => m.value).join(",") === "gpt-5.6-terra,gpt-5.4-mini");
+      codex.map((m) => m.value).join(",") === "gpt-5.6-terra,gpt-5.6-luna");
 // With nothing chosen, the chip that lights up must be the one that will run. A card
 // showing no selection would imply the pass has no model.
 check("a blank selection lights the CLI's default",
       codex[0].on === true && codex[1].on === false);
 
-const chosen = extractorModelOptions(withValue(DISTILL, "codex", "gpt-5.4-mini"), "codex");
+const chosen = extractorModelOptions(withValue(DISTILL, "codex", "gpt-5.6-luna"), "codex");
 check("an explicit selection lights that chip instead",
       chosen[0].on === false && chosen[1].on === true);
 // The default stays marked even when it is not the selection, so stepping back to it
