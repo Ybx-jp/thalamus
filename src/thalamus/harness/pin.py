@@ -439,28 +439,8 @@ def _room_clear(harness: str = "claude") -> list[str]:
     return ["env", "-u", "THALAMUS_ROOM", *config]
 
 
-# Claude Code's fullscreen renderer draws on the terminal's alternate screen, which
-# tmux keeps no history for: `capture-pane` returns exactly the viewport, the
-# console's pane view is WINDOW_ROWS lines with nothing above them, and reading
-# back means sending page keys into claude. The classic renderer leaves the
-# transcript in the normal screen, so tmux's history holds it, the console's
-# `capture-pane -S -1000` returns it, and a phone scrolls it like a page. Measured
-# 2026-09-10 on Claude Code 2.1.268 in tmux 3.4: with the variable set,
-# `alternate_on=0` and history grows with the transcript; without it,
-# `alternate_on=1` and history holds only what was printed before the TUI came up.
-# Roster windows only — the operator's own `tui` setting still governs a terminal
-# they sit at, and a harness not named here is launched as it comes.
-RENDER_ENV: dict[str, tuple[tuple[str, str], ...]] = {
-    "claude": (("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1"),),
-}
-
-
 def _with_room(argv: list[str], room: str, harness: str = "claude") -> list[str]:
     """Carry the room in the window's own argv, not only in its tmux env.
-
-    The renderer variable (RENDER_ENV) rides the same prefix for the same reason:
-    a recycle re-executes this argv, and a session that came back on the alternate
-    screen would be one the console could no longer scroll.
 
     tmux `-e` on `new-window` sets the initial process environment and is *not*
     stored in the session environment, so `respawn-window` — which is exactly what
@@ -473,11 +453,10 @@ def _with_room(argv: list[str], room: str, harness: str = "claude") -> list[str]
     member. `set-environment -g` is not the alternative: it reaches every window
     created without `-e`, which is the shape that has already misfired here once.
     """
-    render = [f"{k}={v}" for k, v in RENDER_ENV.get(harness, ())]
     pairs = _room_env(room, harness)
     if not pairs:
-        return [*_room_clear(harness), *render, *argv]
-    return ["env", *(f"{k}={v}" for k, v in pairs), *render, *argv]
+        return [*_room_clear(harness), *argv]
+    return ["env", *(f"{k}={v}" for k, v in pairs), *argv]
 
 
 def agent_name(scope: str) -> str:

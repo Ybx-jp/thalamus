@@ -43,15 +43,16 @@ without a hand-written tmux.conf, and the project ships none. `thalamus roster` 
 every spawn resize every window in the session, so a session created at the stock
 size by `tmux new -A` is corrected the next time either runs.
 
-Roster windows launch Claude Code with `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`
-(`pin.RENDER_ENV`), the classic renderer. The fullscreen renderer draws on the
-alternate screen, which tmux keeps no history for, so a pane view would be 50 rows
-with nothing above them and reading back would mean paging claude itself. With the
-classic renderer the transcript stays in the normal screen, tmux's history holds it
-(`history-limit`, 2000 lines by default), `capture-pane -S -1000` returns it, and
-the pane view scrolls it like a page. The variable rides the window's argv, not
-only its tmux environment, so a recycle keeps it. It applies to roster windows
-only; a terminal you sit at follows your own `tui` setting.
+The pane view shows what the window has on screen. Claude Code draws on the
+terminal's alternate screen, which tmux keeps no history for, so the view is the
+50-row viewport and scrolling the transcript means paging claude itself: the
+keyboard bar's PageUp/PageDown keys are sent to the pane. Claude's classic
+renderer (`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`) would leave the transcript in
+tmux history, but it cannot erase what has scrolled out of the viewport: startup
+warnings stay on screen after the TUI loads, and a menu such as `/usage` prints
+twice and stays printed after it closes. Roster windows therefore launch with
+claude's default renderer, and a plain-shell window's scrollback is the only
+history the view holds.
 
 Installable to a home screen as a PWA, and it works in any browser without that.
 

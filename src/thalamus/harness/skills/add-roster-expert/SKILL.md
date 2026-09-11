@@ -159,10 +159,12 @@ another over HTTP.
 **Window geometry and renderer are set by `pin.py`, not by tmux.conf:** every
 roster window is `resize-window`d to `WINDOW_COLS × WINDOW_ROWS` (60×50) after
 creation, which also pins it `window-size manual` so an attaching terminal cannot
-resize it under the console, and claude is launched with
-`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` so tmux keeps the transcript in history
-for `capture-pane -S -1000` to return. Change the size in one place (the constants)
-and never as a global `window-size` (hazard above).
+resize it under the console. Claude runs on the alternate screen, so `capture-pane`
+returns exactly the viewport; the classic renderer
+(`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`) would leave history behind but cannot
+erase what scrolls off — startup warnings stay visible and `/usage` prints twice —
+so do not launch it. Change the size in one place (the constants) and never as a
+global `window-size` (hazard above).
 
 ### Thalamus-specific hazards (each has bitten, or was caught in review)
 
