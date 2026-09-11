@@ -30,13 +30,15 @@ And two checkouts on one box get separate control planes by setting
 
 ### Window size and scrollback
 
-Every roster window is held at **120 columns by 50 rows** (`pin.WINDOW_COLS` /
+Every roster window is held at **60 columns by 50 rows** (`pin.WINDOW_COLS` /
 `WINDOW_ROWS`), set with `resize-window` after the window exists, which also pins
-its `window-size` to `manual`. The console has no tmux client of its own — it reads
-whatever size the window has — so an attaching desktop terminal or the `/tty` page
-must not resize the windows out from under it; that is what `manual` buys, and it
-is why a desktop `tmux -L thalamus attach` shows a fixed 120×50 box rather than
-filling the terminal. Nothing reads tmux's `default-size`: it is 80×24 on any box
+its `window-size` to `manual`. One window has one width and every viewer reads the
+same window, so the width is chosen for the phone: 60 columns is what its auto-fit
+renders at a readable size with no horizontal scroll. The console has no tmux
+client of its own — it reads whatever size the window has — so an attaching
+desktop terminal or the `/tty` page must not resize the windows out from under it;
+that is what `manual` buys, and it is why a desktop `tmux -L thalamus attach`
+shows a fixed 60×50 box rather than filling the terminal. Nothing reads tmux's `default-size`: it is 80×24 on any box
 without a hand-written tmux.conf, and the project ships none. `thalamus roster` and
 every spawn resize every window in the session, so a session created at the stock
 size by `tmux new -A` is corrected the next time either runs.
@@ -208,7 +210,7 @@ the font off the auto-fit size, which is computed so a full pane line fits your
 screen without horizontal scrolling.
 
 **`read` switches to the transcript view.** The pane view mirrors a *rendering* of
-the session: a 120-column repaint, colours stripped by tmux, reflowing under you
+the session: a 60-column repaint, colours stripped by tmux, reflowing under you
 while a turn streams, with up to 1000 lines of the window's history above it. The read view shows the session itself — Claude Code writes
 every turn to a JSONL transcript, and the server projects that into flowing prose
 with each tool call collapsed to one tappable line, so a forty-line diff reads as

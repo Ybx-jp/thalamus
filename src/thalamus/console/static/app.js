@@ -895,7 +895,7 @@ function autosize() {
 // screen area — no horizontal scroll — then apply the user's A−/A+ nudge on top.
 function activeCols() {
   const w = windows.find((x) => x.index === activeIdx);
-  return (w && w.width) || 120;
+  return (w && w.width) || 60;
 }
 // Glyph advances don't scale linearly with font-size at small fractional sizes
 // (hinting/rounding), so measure a full line AT the candidate size and step down

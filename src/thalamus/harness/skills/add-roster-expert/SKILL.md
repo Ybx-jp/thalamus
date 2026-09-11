@@ -157,7 +157,7 @@ another over HTTP.
 | 6 | Everything a session spawns inherits its `TMUX_PANE` | A headless `claude -p` is a full session that would claim the window's join key; the SessionStart hook gates the claim on `CLAUDE_CODE_ENTRYPOINT=cli` |
 
 **Window geometry and renderer are set by `pin.py`, not by tmux.conf:** every
-roster window is `resize-window`d to `WINDOW_COLS × WINDOW_ROWS` (120×50) after
+roster window is `resize-window`d to `WINDOW_COLS × WINDOW_ROWS` (60×50) after
 creation, which also pins it `window-size manual` so an attaching terminal cannot
 resize it under the console, and claude is launched with
 `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` so tmux keeps the transcript in history

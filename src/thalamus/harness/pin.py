@@ -1201,13 +1201,15 @@ def confirm_started(window_id: str, harness: str = "claude") -> None:
         time.sleep(min(0.05, remaining))
 
 
-# Every roster window's geometry, columns by rows. One server-wide size serves a
-# desktop `tmux attach`, the /tty terminal and the console's phone and desktop
-# views, so it is a compromise: 120 columns reads on a desktop and 50 rows is twice
-# what tmux's stock size shows, at the cost of a smaller auto-fit font on a phone.
-# Not read from tmux's `default-size`: that is 80x24 on any box without a
-# hand-written tmux.conf, and this project ships none.
-WINDOW_COLS = 120
+# Every roster window's geometry, columns by rows. One tmux window has one width
+# and every viewer — the console on a phone or a desktop, the /tty page, a desktop
+# `tmux attach` — reads the same window, so the width is set for the viewer the
+# console exists for: 60 columns is what a phone's auto-fit renders at a readable
+# size with no horizontal scroll. A desktop attach gets a 60-column box; the rows
+# and the history behind them are what a desktop was short of. Not read from
+# tmux's `default-size`: that is 80x24 on any box without a hand-written
+# tmux.conf, and this project ships none.
+WINDOW_COLS = 60
 WINDOW_ROWS = 50
 
 
