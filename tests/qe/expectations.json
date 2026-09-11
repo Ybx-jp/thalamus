@@ -83,20 +83,6 @@
       "note": "Issue #163. _session_scope resolves one scope for an entire session_id and sync() stamps every trace of that session with it, discarding each event's own recorded `scope`. The pin is the qe-pinned event's Trace being stamped 'main' despite its own event.scope reading 'qe'; a fix that prefers the event's own recorded scope at the stamping call site (falling back to the batch resolution only when it is empty) makes this read 'qe' instead and this entry goes stale."
     },
     {
-      "case": "mcp-tool-argument-sweep",
-      "failure_class": "boundary-leak",
-      "witness_contains": "memory_query(query=none) raised AttributeError: 'NoneType' object has no attribute 'strip'",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #173. validate_query's first line is query.strip() with no isinstance check ahead of it, and memory_query passes its argument straight through. A non-string query (None, an int, a list) raises AttributeError instead of the same readable rejection every other malformed query gets. The pin is the None case's exact exception text; a fix that type-checks before the strip() call returns a string here instead and this entry goes stale."
-    },
-    {
-      "case": "query-guard-evasion-corpus",
-      "failure_class": "failed-open",
-      "witness_contains": "addv( via comment-injection",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #174. validate_query denies mutation steps by checking whether each appears as a literal substring in a whitespace-stripped, lowercased view of the query. A block comment, a zero-width space, a Cyrillic homoglyph, or a fullwidth paren inserted mid-token all survive that view unstripped and split the substring, so all 40 (10 denied steps x 4 techniques) generated variants are accepted. The pin is one representative bypass; a fix that normalizes the text (strips comments and zero-width characters, folds confusables) before matching closes all four techniques at once and every generated variant starts being rejected, at which point this entry goes stale."
-    },
-    {
       "case": "a-stalled-teardown-does-not-force-kill-a-reused-index",
       "failure_class": "invariant-falsified",
       "witness_contains": "kill-window target='qe-close-probe:0' resolves to='B'; recycle_window: forced=True naming 'session-A', respawn-window target='qe-close-probe:0' resolves to='B'",
