@@ -1499,11 +1499,11 @@ def test_choosing_an_extractor_from_the_phone_lands_and_reports_back(tmp_path, m
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         status, body = post("/api/extractor-policy",
                             {"pass": "distill", "harness": "codex",
-                             "model": "gpt-5.4-mini"})
+                             "model": "gpt-5.6-luna"})
 
     assert status == 200 and body["ok"] is True
     served = {p["pass"]: p for p in body["passes"]}
-    assert served["distill"]["value"] == {"harness": "codex", "model": "gpt-5.4-mini"}
+    assert served["distill"]["value"] == {"harness": "codex", "model": "gpt-5.6-luna"}
     assert body["change"]["to_harness"] == "codex" and body["change"]["pass"] == "distill"
     assert (tmp_path / "extractor.jsonl").exists(), "the change must be dateable later"
 
