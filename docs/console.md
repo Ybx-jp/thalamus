@@ -273,6 +273,10 @@ until someone types into it. Send it a message and the feed starts.
 and the server opens a detached pinned window there. The scope decides which memory
 it reads and writes; the directory decides what the work is about. See
 [concepts.md](concepts.md#the-federation-contract) for what that pairing means.
+Starred directories come first; the ★/☆ beside each chip toggles its star, and the
+server keeps the set in `~/.thalamus/console/favorites.json`, so a star set from the
+phone is the one the desktop sees and it survives a restart. `--dir` seeds the list
+until the first star is toggled; after that the file is the whole list.
 
 **The harness row is `LAUNCH_SHAPES`**, sent by `/api/spawn-options` rather than held
 by the client, because that table is also what a spawn request is validated against —
@@ -717,7 +721,7 @@ nothing about one operator's setup is baked into the code.
 | `--port` | `8378` | Port |
 | `--session` | `thalamus` | tmux session to drive |
 | `--project-root` | this checkout | Where roster sync runs |
-| `--dir PATH` | the project root | Star a directory in the spawn picker (repeatable) |
+| `--dir PATH` | the project root | Seed the spawn picker's starred directories (repeatable); stars toggled in the picker replace the seed |
 | `--scan ROOT` | the project root's parent | Offer every git repo one level under ROOT (repeatable) |
 | `--service UNIT` | none | A unit the admin sheet may restart — a systemd `--user` unit, or a launchd label on macOS (repeatable) |
 | `--frames PATH` | none | Frame-theme definitions for the desktop client (see "On a desktop browser") |

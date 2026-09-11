@@ -904,6 +904,13 @@ textarea:focus { outline: none; border-color: var(--chan); }
   border-color: var(--tab, var(--chan));
 }
 .chips-dirs .chip { font-size: .64rem; }
+/* A directory is a pair of targets: the chip picks it, the star keeps it at the
+   front of the list. Joined so the pair reads as one item; each half keeps the
+   chip's own colours, so no new pair is drawn. The star's min-width holds it at
+   the 24 px target floor (WCAG 2.2 SC 2.5.8) where one glyph would not. */
+.dir-pick { display: inline-flex; }
+.dir-pick .chip:first-child { border-radius: 7px 0 0 7px; border-right: 0; }
+.dir-pick .chip-star { border-radius: 0 7px 7px 0; min-width: 24px; padding-inline: .45rem; }
 
 /* ---- Rooms ---- */
 /* The room filter sits in the same bar as the workspace filter but reads as its

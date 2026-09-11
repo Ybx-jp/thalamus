@@ -654,6 +654,11 @@ class Config:
     # `scan_roots` are globbed one level deep for git repos.
     favorites: list[Path] = field(default_factory=list)
     scan_roots: list[Path] = field(default_factory=list)
+    # Where a star toggled in the picker is kept. `favorites` above is the seed from
+    # the command line; once this file exists it is the whole list, so a star set
+    # from the phone outlives a restart and a `--dir` the operator has since
+    # unstarred does not come back with the next boot.
+    favorites_store: Path | str = ""
     # systemd --user units the admin sheet may restart. Empty (the default) hides
     # the section entirely — the console never invents units it might not own.
     services: list[str] = field(default_factory=list)
@@ -686,6 +691,8 @@ class Config:
             self.scan_roots = [self.project_root.parent]
         self.favorites = [Path(p).expanduser() for p in self.favorites]
         self.scan_roots = [Path(p).expanduser() for p in self.scan_roots]
+        self.favorites_store = (Path(self.favorites_store).expanduser()
+                                if self.favorites_store else FAVORITES_STORE)
         if self.frames_file:
             self.frames_file = Path(self.frames_file).expanduser()
 
@@ -1314,17 +1321,57 @@ def _contains_run(tokens: list[str], want: tuple[str, ...]) -> bool:
     return any(tuple(tokens[i:i + span]) == want for i in range(len(tokens) - span + 1))
 
 
+# Stars set from the picker. Beside the extractor policy's store under the same
+# root, and the same shape: a version and the fact, nothing derived.
+FAVORITES_STORE = Path.home() / ".thalamus" / "console" / "favorites.json"
+FAVORITES_VERSION = 1
+
+
+def effective_favorites(cfg: Config) -> list[str]:
+    """The starred directories, as resolved paths: the store when it exists, else
+    the `--dir` seed. The store is whole rather than merged with the seed — a merge
+    would make an unstarred `--dir` reappear on every restart, which is the one
+    thing a star toggled from the phone has to survive."""
+    try:
+        raw = json.loads(Path(cfg.favorites_store).read_text())
+        paths = raw.get("paths") if isinstance(raw, dict) else None
+    except (OSError, ValueError):
+        paths = None
+    if not isinstance(paths, list):
+        paths = [str(p) for p in cfg.favorites]
+    return [os.path.realpath(os.path.expanduser(str(p))) for p in paths
+            if isinstance(p, str)]
+
+
+def set_favorite(cfg: Config, path: str, favorite: bool) -> None:
+    """Star or unstar one directory and persist the whole list. Written whole and
+    replaced, so a poll that reads mid-write sees the old file, never half of one."""
+    real = os.path.realpath(path)
+    current = [p for p in effective_favorites(cfg) if p != real]
+    if favorite:
+        current.append(real)
+    store = Path(cfg.favorites_store)
+    store.parent.mkdir(parents=True, exist_ok=True)
+    tmp = store.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"version": FAVORITES_VERSION, "paths": current},
+                              indent=2) + "\n")
+    os.replace(tmp, store)
+
+
 def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
     """The directory picker: favorites first, then git repos one level under each
     scan root. Deduped by resolved path; the label defaults to the basename.
 
     Returns (dirs, allowed) — `allowed` is the whitelist a spawn request must fall
-    inside, so the client can never spawn an arbitrary path.
+    inside, so the client can never spawn an arbitrary path. A star is toggled on
+    that same list, so a directory reaches the store only by being offered first;
+    unstarring one that sits under no scan root drops it from the picker, and the
+    way back is `--dir`.
     """
     seen: set[str] = set()
     dirs: list[dict] = []
 
-    def add(path: Path, favorite: bool) -> None:
+    def add(path: Path | str, favorite: bool) -> None:
         real = os.path.realpath(os.path.expanduser(str(path)))
         if real in seen or not os.path.isdir(real):
             return
@@ -1332,7 +1379,7 @@ def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
         dirs.append({"label": os.path.basename(real) or real,
                      "path": real, "favorite": favorite})
 
-    for fav in cfg.favorites:
+    for fav in effective_favorites(cfg):
         add(fav, True)
     for root in cfg.scan_roots:
         try:
@@ -2062,6 +2109,22 @@ class Handler(BaseHTTPRequestHandler):
             ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)),
                                   room, harness)
             return self._send(200 if ok else 500, {"ok": ok, "output": output})
+
+        if path == "/api/favorite":
+            directory = data.get("path")
+            favorite = data.get("favorite")
+            # Same whitelist as a spawn, recomputed here: a star names a directory
+            # the picker offered, never one the request made up.
+            _, allowed = spawn_dirs(self.cfg)
+            if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
+                return self._send(400, {"error": "directory not in the allowed list"})
+            if not isinstance(favorite, bool):
+                return self._send(400, {"error": "favorite must be true or false"})
+            set_favorite(self.cfg, directory, favorite)
+            # The picker renders from this response rather than re-fetching, so it
+            # carries the list the next GET would.
+            dirs, _ = spawn_dirs(self.cfg)
+            return self._send(200, {"ok": True, "dirs": dirs})
 
         if path == "/api/dispatch":
             # Addressed to a *room*, so it is deliberately above the window-index gate

@@ -77,10 +77,10 @@ check("a blank selection lights the CLI's default",
 const chosen = extractorModelOptions(withValue(DISTILL, "codex", "gpt-5.6-luna"), "codex");
 check("an explicit selection lights that chip instead",
       chosen[0].on === false && chosen[1].on === true);
-// The default stays marked even when it is not the selection, so stepping back to it
-// is a labelled act rather than a guess.
-check("the default stays identifiable when something else is chosen",
-      chosen[0].isDefault === true && chosen[1].isDefault === false);
+// One highlight per row is the whole signal: the default carries no second mark
+// once something else is chosen.
+check("nothing but the lit chip marks a model",
+      Object.keys(chosen[0]).sort().join(",") === "label,on,value");
 
 check("a deferring pass offers no models",
       extractorModelOptions(withValue(INGEST, "", ""), "").length === 0);

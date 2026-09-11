@@ -2196,3 +2196,73 @@ def test_a_window_that_outlives_the_grace_budget_is_killed_by_id_not_by_index(
 
     assert [op for _, op in recorded] == ["close"]
     assert ("kill-window", "-t", "@7") in calls
+
+
+# ---- stars are set from the picker and kept by the server ----
+
+
+def test_a_star_toggled_from_the_phone_persists_and_replaces_the_seed(tmp_path):
+    """
+    Scenario: the picker seeded by `--dir alpha` has beta starred from the phone,
+    then alpha unstarred
+
+    Verifications:
+    - the POST's own response carries the re-ordered picker, since the sheet renders
+      from it rather than re-fetching
+    - a fresh read of the picker — what a restart or the desktop would do — agrees
+    - the store is the whole list once it exists: an unstarred `--dir` stays unstarred
+    """
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    _repo(code / "beta")
+    cfg = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "state" / "favorites.json")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/favorite", {"path": str(code / "beta"), "favorite": True})
+        assert status == 200 and body["ok"] is True
+        assert [(d["label"], d["favorite"]) for d in body["dirs"]] == \
+            [("alpha", True), ("beta", True)]
+
+        status, body = post("/api/favorite", {"path": str(code / "alpha"), "favorite": False})
+        assert status == 200
+        assert [(d["label"], d["favorite"]) for d in body["dirs"]] == \
+            [("beta", True), ("alpha", False)]
+        assert post.get("/api/spawn-options")["dirs"] == body["dirs"]
+
+    # A second Config over the same store — the console after a restart, with the
+    # same `--dir alpha` seed — reads the file, not the seed.
+    again = Config(project_root=code / "alpha", scan_roots=[code],
+                   favorites_store=tmp_path / "state" / "favorites.json")
+    assert server.effective_favorites(again) == [str(code / "beta")]
+
+
+def test_a_directory_the_picker_never_offered_cannot_be_starred(tmp_path):
+    """The star shares the spawn whitelist: a path the picker did not offer is refused,
+    and the store is not created for it."""
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    (tmp_path / "elsewhere").mkdir()
+    cfg = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "state" / "favorites.json")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/favorite",
+                            {"path": str(tmp_path / "elsewhere"), "favorite": True})
+        assert status == 400 and "allowed" in body["error"]
+        status, _ = post("/api/favorite", {"path": str(code / "alpha"), "favorite": "yes"})
+        assert status == 400
+
+    assert not (tmp_path / "state" / "favorites.json").exists()
+
+
+def test_a_missing_or_broken_store_falls_back_to_the_seed(tmp_path):
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    store = tmp_path / "state" / "favorites.json"
+    cfg = Config(project_root=code / "alpha", scan_roots=[code], favorites_store=store)
+    assert server.effective_favorites(cfg) == [str(code / "alpha")]
+
+    store.parent.mkdir(parents=True)
+    store.write_text("{not json")
+    assert server.effective_favorites(cfg) == [str(code / "alpha")]

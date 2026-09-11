@@ -1996,9 +1996,20 @@ function renderSpawnChips() {
   els.spawnHarnessNote.hidden = !caveat;
   els.spawnDirs.innerHTML = "";
   for (const d of spawnOpts.dirs || []) {
-    const label = (d.favorite ? "★ " : "") + d.label;
-    els.spawnDirs.appendChild(
-      chip(label, d.path === spawnDir, () => { spawnDir = d.path; renderSpawnChips(); }));
+    // Two targets per directory: the chip picks it, the star beside it keeps it at
+    // the front of the list. The star is a glyph change (★/☆) and not only a
+    // colour, so the state reads without the hue.
+    const pair = document.createElement("span");
+    pair.className = "dir-pick";
+    pair.appendChild(
+      chip(d.label, d.path === spawnDir, () => { spawnDir = d.path; renderSpawnChips(); }));
+    const star = chip(d.favorite ? "★" : "☆", d.favorite, () => toggleFavorite(d));
+    star.classList.add("chip-star");
+    star.setAttribute("aria-pressed", d.favorite ? "true" : "false");
+    star.setAttribute("aria-label", `${d.favorite ? "unstar" : "star"} ${d.label}`);
+    star.title = d.favorite ? "unstar" : "star";
+    pair.appendChild(star);
+    els.spawnDirs.appendChild(pair);
   }
   els.spawnRooms.innerHTML = "";
   const rooms = spawnRoomChoices(spawnOpts.rooms, windows, spawnRoom);
@@ -2028,6 +2039,16 @@ function newRoom() {
   }
   spawnRoom = name;
   renderSpawnChips();
+}
+// The server keeps the stars (`~/.thalamus/console/favorites.json`), so one set
+// from the phone is the same set the desktop sees. Rendered from the response
+// rather than re-fetched — the picker's only feedback is what it shows.
+async function toggleFavorite(d) {
+  const { ok, data } = await postJson("api/favorite", { path: d.path, favorite: !d.favorite });
+  if (ok && data.ok && Array.isArray(data.dirs)) {
+    spawnOpts.dirs = data.dirs;
+    renderSpawnChips();
+  }
 }
 async function doSpawn() {
   if (!(spawnScope && spawnDir)) return;
@@ -2316,11 +2337,13 @@ function extractorModelOptions(state, harness) {
   const opt = (state.options || []).find((o) => o.value === harness);
   if (!opt || !opt.models || !opt.models.length) return [];
   const chosen = (state.value && state.value.model) || "";
+  // The lit chip is the only mark: with nothing chosen it is the CLI's default,
+  // because that is what will run. The default carries no mark of its own once
+  // something else is chosen — one highlight per row, nothing else to decode.
   return opt.models.map((m) => ({
     value: m,
     label: m,
     on: chosen ? m === chosen : m === opt.default_model,
-    isDefault: m === opt.default_model,
   }));
 }
 
@@ -2367,7 +2390,7 @@ function renderExtractorCard(state) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "chip" + (m.on ? " on" : "");
-      b.textContent = m.isDefault ? `${m.label} ✓` : m.label;
+      b.textContent = m.label;
       b.addEventListener("click",
                         () => setExtractorPolicy(state.pass, state.value.harness, m.value));
       row.appendChild(b);
