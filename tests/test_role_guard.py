@@ -421,6 +421,35 @@ class TestRoleGuardHook:
         assert blocked.returncode == 2
         assert "mcp__penpot__*" in blocked.stderr
 
+    def test_a_reason_larger_than_the_pipe_buffer_still_blocks(self, tmp_path):
+        """Scenario: the manifest's `reason` is longer than a pipe will hold at once
+
+        The guard lifts the matched pattern off the first line of the Python
+        verdict. Lifting it with `printf | head -n1` is a race: `head` exits at the
+        first newline and closes the pipe, the writer takes SIGPIPE, `pipefail`
+        makes the substitution 141 and `errexit` kills the guard with nothing on
+        stderr — the boundary does not fire and no surface says so.
+
+        Measured 2026-09-11: ~0.4% of calls at 250 concurrent invocations, which
+        reached CI as a flaky `test_an_mcp_tool_is_passed_through_untouched` in
+        tests/test_codex_hooks.py. A reason past the 64 KiB pipe buffer makes the
+        same failure happen every time, which is what this asserts against.
+        """
+        manifest = (
+            "scope: wordy\nname: Wordy\n"
+            "capability_boundary:\n"
+            '  deny_tools: ["mcp__penpot__*"]\n'
+            f'  reason: "{"why " * 30000}"\n'
+        )
+        config = _roster_config(tmp_path, {"wordy": manifest})
+        result = run_guard(
+            _mcp_tool_payload("mcp__penpot__create_shape"),
+            tmp_path,
+            {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-wordy"},
+        )
+        assert result.returncode == 2, result
+        assert "mcp__penpot__*" in result.stderr
+
     def test_it_governs_the_edit_tools_and_nothing_else(self, tmp_path):
         """Bash can still write, and that miss is deliberate — a miss is the cheaper
         error than a false positive. The guard must not pretend otherwise by firing

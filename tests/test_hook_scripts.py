@@ -192,3 +192,54 @@ def test_the_parse_check_fails_on_the_defect_it_was_written_for(tmp_path):
     )
     assert parsed.returncode != 0
     assert "unexpected" in parsed.stderr
+
+
+# ---- Partial readers on a pipe ----
+#
+# `printf '%s' "$v" | head -n1` under `set -euo pipefail` is a race, not an idiom.
+# `head` exits at the first newline and closes the read end; a writer that has not
+# finished takes SIGPIPE, `pipefail` makes the substitution 141, and `errexit` kills
+# the hook there with nothing on stderr. For a guard that is a boundary that did not
+# fire — the call is permitted and no surface says why.
+#
+# Measured 2026-09-11 on claude-code/role-guard.sh: ~0.4% of calls at 250 concurrent
+# invocations, and every call once the manifest's `reason` exceeded the 64 KiB pipe
+# buffer. It reached CI as a flaky `test_an_mcp_tool_is_passed_through_untouched`.
+# The first line of a variable is `${v%%$'\n'*}`, which forks nothing and cannot race.
+_PIPES_INTO_HEAD = re.compile(r"\|\s*head\b")
+
+
+def test_no_hook_pipes_into_a_partial_reader():
+    offenders = [
+        f"{path.parent.name}/{path.name}:{number}"
+        for path in sorted(HOOKS.glob("*/*.sh"))
+        for number, line in enumerate(path.read_text().splitlines(), start=1)
+        if _PIPES_INTO_HEAD.search(line) and not line.lstrip().startswith("#")
+    ]
+    assert not offenders, (
+        "`| head` closes the pipe early and SIGPIPEs the writer; under `set -euo "
+        f"pipefail` that kills the hook silently. Use ${{v%%$'\\n'*}}: {offenders}"
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+def test_the_partial_reader_race_is_real_and_the_expansion_is_not():
+    """The positive control, made deterministic by outgrowing the pipe buffer.
+
+    Under load the same failure happens with a short value — the writer is simply
+    descheduled between `head`'s exit and its own write — which is why the sweep
+    above bans the shape rather than the size.
+    """
+    preamble = "set -euo pipefail\nv=$(printf 'x%.0s' $(seq 1 200000))\nv=first$'\\n'$v\n"
+
+    piped = subprocess.run(
+        ["bash", "-c", preamble + "p=$(printf '%s' \"$v\" | head -n1)\necho reached"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert piped.returncode == 141 and "reached" not in piped.stdout, piped
+
+    expanded = subprocess.run(
+        ["bash", "-c", preamble + "p=${v%%$'\\n'*}\necho \"reached $p\""],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert expanded.returncode == 0 and expanded.stdout.strip() == "reached first"
