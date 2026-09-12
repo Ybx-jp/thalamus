@@ -291,6 +291,7 @@ whole of what `thalamus eval` runs.
 ```bash
 thalamus eval sync --write         # land retrieval traces and used-vs-ignored verdicts
 thalamus eval report               # per-scope retrieval-utility numbers, priced
+thalamus eval uses                 # attribution subgraphs: coverage, depth, stamp, targets
 thalamus eval cost                 # session and operation token-cost buckets
 thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
 thalamus eval conditioning         # per-firing behavioural join on injected reminders
@@ -399,6 +400,25 @@ uncorrelated session's output, which needs the transcript archive rather than th
 so it belongs to `thalamus-eval calibration`. Measured there on 2026-08-29 it was 69.2%
 (v3), 76.5% (v1) and 72.1% (v2) — high enough that a used rate is read as its distance
 above that window's null, never as a rate on its own.
+
+`eval uses` reads the other attribution record — the `USES` edges a distillation writes
+for what a claim reasoned with — and reports four things it will not pool into one. How
+many sessions that were offered handles cited any (the offered denominator is sessions
+with a landed Trace returning a Claim or Chunk, a proxy for the digest's own offer list,
+which is read from the trace tap and capped at 120). Whether attribution *compounds*: a
+graph whose longest chain is one hop is a citation log, not lineage. The `verified`
+stamp, split by role, because `served-by-trace/1` speaks about `role: reason` and cannot
+apply to a rejected alternative that the same extraction minted. And what gets cited —
+Claim or Chunk, own scope or another scope's knowledge.
+
+`--scope` narrows the *root* of a subgraph and never its reach, since an edge from a
+`main` claim into a literature claim is main's attribution; filtering on the target's
+scope would hide exactly the cross-scope citations the edge is allowed to make. On a
+lifetime window the coverage denominator holds sessions that ran before the edge
+existed, so the report names the earliest citing session and points at `--since`.
+
+None of it is a utility claim. A cited node is one the model named, which is weaker
+evidence than an ablation and stronger than the lexical overlap `eval report` scores.
 
 ## Repository analysis
 

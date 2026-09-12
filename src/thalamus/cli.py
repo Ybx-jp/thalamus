@@ -648,6 +648,31 @@ def _main():
         "covers the whole day",
     )
 
+    eval_uses_parser = eval_sub.add_parser(
+        "uses",
+        help="Attribution subgraphs: who cited what, whether it compounds, and what "
+        "the served stamp can speak about",
+    )
+    eval_uses_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    eval_uses_parser.add_argument(
+        "--scope",
+        default=None,
+        help="Narrow to subgraphs rooted in this scope (default: every scope — an "
+        "attribution subgraph may reach another scope's knowledge, and filtering by "
+        "the target would hide exactly those edges)",
+    )
+    eval_uses_parser.add_argument(
+        "--since",
+        default=None,
+        help="Only count sessions at or after this ISO date/datetime (UTC)",
+    )
+    eval_uses_parser.add_argument(
+        "--until",
+        default=None,
+        help="Only count sessions at or before this ISO date/datetime (UTC); a bare "
+        "date covers the whole day",
+    )
+
     eval_cost_parser = eval_sub.add_parser(
         "cost",
         help="Token-cost attribution from local records: interactive vs extract vs "
@@ -3759,6 +3784,21 @@ def _cmd_eval(args, eval_parser):
                     graph,
                     scope=args.scope,
                     top=args.top,
+                    since=args.since,
+                    until=args.until,
+                ).render()
+            )
+        finally:
+            close_connection(graph)
+    elif getattr(args, "eval_command", None) == "uses":
+        from thalamus.eval.uses import uses_report
+
+        graph = connect(args.url)
+        try:
+            print(
+                uses_report(
+                    graph,
+                    scope=args.scope,
                     since=args.since,
                     until=args.until,
                 ).render()
