@@ -243,8 +243,46 @@ def run_hook_raw(script, stdin, home, env=None):
                           text=True, env=full_env, timeout=30)
 
 
+class TestGraphGuard:
+    def test_a_pinned_session_is_confined_with_cursor_permission_json(self, tmp_path):
+        """The boundary binds wherever the pin does; the adapter's job is to say so
+        in Cursor's vocabulary, on both channels, and to log to the shared ledger."""
+        result = run_hook(
+            "graph-guard.sh",
+            {"command": "python -c \"from thalamus.substrate.writer import connect; "
+                        "connect()\"",
+             "cwd": "/w", "conversation_id": "c1"},
+            tmp_path,
+            env={"THALAMUS_SCOPE": "literature"},
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["permission"] == "deny"
+        assert "memory_recall" in out["agent_message"]
+        assert out["user_message"] == out["agent_message"]
+
+        events = read_jsonl(next((tmp_path / ".thalamus" / "guards").glob("*.jsonl")))
+        assert events[-1]["verdict"] == "block"
+        assert events[-1]["scope"] == "literature"
+        assert events[-1]["session_id"] == "c1"
+
+    def test_main_is_not_confined(self, tmp_path):
+        """The control: without it "deny" is indistinguishable from a guard that
+        denies everyone."""
+        result = run_hook(
+            "graph-guard.sh",
+            {"command": "python -c \"from thalamus.substrate.writer import connect; "
+                        "connect()\"",
+             "conversation_id": "c1"},
+            tmp_path,
+        )
+        assert json.loads(result.stdout) == {"permission": "allow"}
+        events = read_jsonl(next((tmp_path / ".thalamus" / "guards").glob("*.jsonl")))
+        assert events[-1]["verdict"] == "pass"
+
+
 class TestACursorGuardThatCannotReadItsPayload:
-    """All three deny, and say why.
+    """All four deny, and say why.
 
     Cursor's payload schema is Cursor's, versioned on their release cadence rather
     than this repo's, and the adapters had two ways past them. A field that moved left
@@ -254,11 +292,13 @@ class TestACursorGuardThatCannotReadItsPayload:
     `beforeShellExecution` hook that returns no verdict is not established anywhere
     here, which is the point: the guard stopped deciding and nothing said so.
 
-    Either way the write boundary, the gremlin terminal-step rule and the room-command
-    rule go quiet together, with exit 0 and no log line. The only signal is silence.
+    Either way the write boundary, the gremlin terminal-step rule, the room-command
+    rule and the graph boundary go quiet together, with exit 0 and no log line. The
+    only signal is silence.
     """
 
-    GUARDS = ("write-guard.sh", "gremlin-guard.sh", "room-command-guard.sh")
+    GUARDS = ("write-guard.sh", "gremlin-guard.sh", "room-command-guard.sh",
+              "graph-guard.sh")
 
     def _denied(self, result):
         assert result.returncode == 0, result.stderr

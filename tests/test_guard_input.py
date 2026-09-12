@@ -32,6 +32,7 @@ BLOCK_EXIT = 2
 # block a call over a record nobody was going to read.
 GUARDS = (
     "gremlin-guard.sh",
+    "graph-guard.sh",
     "role-guard.sh",
     "room-guard.sh",
     "room-command-guard.sh",

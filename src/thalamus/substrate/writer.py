@@ -98,6 +98,10 @@ def connect(url: str = DEFAULT_URL) -> GraphTraversalSource:
 
     The probe costs one localhost TCP connect and buys the difference between a
     guard that fires and one that cannot (see `GraphUnavailable`).
+
+    The source reaches the whole graph: scope confinement on a read belongs to the MCP
+    tools above this, not to the client a caller holds
+    (A0148-graph-connection-carries-no-scope-filter, cites-as-live).
     """
     down = probe_socket(url)
     if down is not None:

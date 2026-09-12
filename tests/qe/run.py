@@ -94,6 +94,7 @@ CASE_MODULES = (
     "qe.cases.reflex_budget_ceiling",
     "qe.cases.reflex_dedup_key_stability",
     "qe.cases.reflex_recall_scope_isolation",
+    "qe.cases.graph_guard_scope_boundary",
 )
 
 
