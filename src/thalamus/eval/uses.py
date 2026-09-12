@@ -146,14 +146,22 @@ class UsesReport:
                 "— narrow with `--since` to read coverage over the period the edge has "
                 "been writable"
             )
-        if self.by_scope:
+        offering = {
+            scope: counts for scope, counts in self.by_scope.items() if counts[1]
+        }
+        if offering:
             per = " · ".join(
                 f"{scope} {counts[0]}/{counts[1]}"
                 for scope, counts in sorted(
-                    self.by_scope.items(), key=lambda kv: (-kv[1][1], kv[0])
+                    offering.items(), key=lambda kv: (-kv[1][1], kv[0])
                 )
             )
             lines.append(f"    by scope (cited/offered): {per}")
+            silent = sorted(set(self.by_scope) - set(offering))
+            if silent:
+                lines.append(
+                    "    offered nothing in this window: " + ", ".join(silent)
+                )
 
         if self.reason_edges:
             per_root = self.reason_edges / self.roots if self.roots else 0.0
