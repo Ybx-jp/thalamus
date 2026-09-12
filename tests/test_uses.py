@@ -179,3 +179,26 @@ def test_render_never_prints_a_bare_coverage_percentage():
 def test_render_reports_an_empty_graph_without_dividing_by_it():
     rendered = UsesReport().render()
     assert "nothing has been cited yet" in rendered
+
+
+def test_a_window_keeps_the_edges_of_the_claims_it_holds(monkeypatch, rows):
+    """Edges are windowed by the sessions containing their root, not by the edge.
+
+    A `USES` edge carries no timestamp and its root claim carries none either — the
+    claim is content-addressed and can sit in several sessions. So the window is read
+    off the containing session, and an edge whose root is not in one of them is out.
+    """
+    rows["sessions"] = [
+        _session("s1", ts="2026-09-05T00:00:00+00:00", reason_edges=1, offered=1)
+    ]
+    rows["edges"] = [
+        _edge(root="scope:main:claim:kept"),
+        _edge(root="scope:main:claim:dropped"),
+    ]
+    monkeypatch.setattr(
+        uses_mod, "_claims_in_window", lambda g, dated: {"scope:main:claim:kept"}
+    )
+    report = uses_report(object(), since="2026-09-02")
+    assert report.reason_edges == 1
+    assert report.roots == 1
+    assert sum(report.stamps["reason"].values()) == 1
