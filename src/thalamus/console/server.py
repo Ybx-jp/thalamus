@@ -1022,12 +1022,48 @@ def list_commands(cfg: Config, idx: int | None = None) -> list[dict]:
             for n, d in sorted(cmds.items())]
 
 
-def capture(cfg: Config, idx: int) -> str:
-    # -S -1000: for a plain-shell window this pulls scrollback; for a full-screen
-    # TUI (claude uses the alternate screen, which has no history) it returns just
-    # the current viewport. Either way, no truncation beyond what the program
-    # itself keeps on screen.
-    r = tmux("capture-pane", "-p", "-S", "-1000", "-t", f"{cfg.session}:{idx}")
+def alternate_screens(cfg: Config) -> set[int]:
+    """Window indexes whose active pane is on the alternate screen.
+
+    One call for the whole session rather than one per window: `/api/panes`
+    captures every window on every poll, and a phone polls often.
+    """
+    r = tmux("list-windows", "-t", cfg.session, "-F",
+             "#{window_index}\t#{alternate_on}")
+    if r.returncode != 0:
+        return set()
+    out = set()
+    for line in r.stdout.splitlines():
+        i, _, alt = line.partition("\t")
+        if i.strip().isdigit() and alt.strip() == "1":
+            out.add(int(i.strip()))
+    return out
+
+
+def capture(cfg: Config, idx: int, scrollback: bool = False) -> str:
+    """One window's screen, as text.
+
+    `scrollback` is the whole of what a caller decides here, and it is decided by
+    whether the pane is on the alternate screen — *not* by what is running in it.
+
+    A pane that is NOT on the alternate screen is a scrolling terminal: a shell,
+    or a window whose agent has exited back to a prompt. Its history is what it
+    said, so `-S -1000` is the reading.
+
+    A pane that IS on the alternate screen — every TUI, `claude` and `htop`
+    alike — draws a viewport that owns the whole screen, and its history is a
+    *different* buffer: whatever the terminal printed before the TUI started.
+    tmux keeps that buffer and `-S` reads it, so asking for scrollback here
+    prepends text the program never drew and cannot erase. Pre-launch permission
+    warnings are the common case, and they outlive everything: the viewport
+    scrolls under them, the TUI's own header scrolls out of it, and the warnings
+    stay at the top of the console because they were never in the viewport to
+    scroll. The viewport alone is the only honest answer.
+    """
+    args = ["capture-pane", "-p"]
+    if scrollback:
+        args += ["-S", "-1000"]
+    r = tmux(*args, "-t", f"{cfg.session}:{idx}")
     return r.stdout if r.returncode == 0 else ""
 
 
@@ -1995,8 +2031,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"commands": list_commands(self.cfg, idx)})
         if path == "/api/panes":
             windows = list_windows(self.cfg)
+            alternate = alternate_screens(self.cfg)
             for w in windows:
-                text = capture(self.cfg, w["index"])
+                text = capture(self.cfg, w["index"],
+                               scrollback=w["index"] not in alternate)
                 w["lines"] = text
                 w["screen_rev"] = screen_rev(text)
             # The launch facts tmux cannot know: which project and repository this

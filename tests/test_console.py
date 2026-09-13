@@ -482,6 +482,98 @@ def test_screen_rev_moves_with_the_pane_text_and_only_with_it(tmp_path, monkeypa
         assert isinstance(row["screen_rev"], (str, int))
 
 
+
+# ---- what a capture is allowed to show ----
+#
+# A pane on the alternate screen has two buffers: the viewport the TUI draws, and
+# the scrolling buffer the terminal had before the TUI started. tmux keeps both and
+# `-S` reads the second one, which is how text the program never drew — and cannot
+# erase — ends up pinned above the live screen for the life of the window.
+
+ALT_WINDOW = ("3\tqe\t1\tclaude\t60\t50\t0\t/home/op/code/thalamus\tclaude\t%7\t4242")
+SHELL_PANE = ("4\tshell\t0\tbash\t60\t50\t0\t/home/op/code/thalamus\t\t%9\t4243")
+
+
+def _no_real_ledger(monkeypatch, tmp_path):
+    """Keep `/api/panes` off the operator's real pins while it joins launch facts."""
+    from thalamus.console import transcript as tr
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setattr(tr, "PINS", tmp_path / "pins.jsonl")
+    monkeypatch.setattr(server, "_LEDGER", None)
+    monkeypatch.setattr(server, "_FEEDS", None)
+
+
+def test_a_full_screen_session_is_captured_as_its_viewport_and_not_its_history(
+        tmp_path, monkeypatch):
+    """Scenario: a window whose agent printed startup warnings before it launched.
+
+    Those warnings are in the pane's scrolling buffer, not in the viewport the TUI
+    owns, so nothing the agent does afterwards can scroll them away: the viewport
+    scrolls under them and the console keeps showing them at the top, still there
+    long after the agent's own banner has left the screen. The viewport alone is
+    the only thing the running program is actually saying.
+    """
+    _no_real_ledger(monkeypatch, tmp_path)
+    cfg = Config(session="thalamus", project_root=tmp_path,
+                 scan_roots=[tmp_path])
+
+    with _serving(cfg, windows=ALT_WINDOW, alternate={3}) as post:
+        post.get("/api/panes")
+
+    (cap,) = [c for c in post.fake.calls if c[0] == "capture-pane"]
+    assert "-S" not in cap, "asked tmux for a buffer the running program cannot reach"
+    assert cap == ("capture-pane", "-p", "-t", "thalamus:3")
+
+
+def test_a_pane_that_is_not_a_full_screen_program_is_captured_with_its_scrollback(
+        tmp_path, monkeypatch):
+    """The other half, and the reason this is a per-pane decision rather than a
+    constant: a shell — or a window whose agent has exited back to a prompt — is a
+    scrolling terminal whose history is the whole of what it said. On a phone the
+    viewport is the last screenful, which for a command that printed more than that
+    is the end of the answer with the answer cut off."""
+    _no_real_ledger(monkeypatch, tmp_path)
+    cfg = Config(session="thalamus", project_root=tmp_path,
+                 scan_roots=[tmp_path])
+
+    with _serving(cfg, windows=SHELL_PANE, alternate=set()) as post:
+        post.get("/api/panes")
+
+    (cap,) = [c for c in post.fake.calls if c[0] == "capture-pane"]
+    assert cap == ("capture-pane", "-p", "-S", "-1000", "-t", "thalamus:4")
+
+
+def test_the_decision_is_made_per_window_in_one_query(tmp_path, monkeypatch):
+    """It is a fact about the pane, not about the roster: a session and a shell sit
+    in the same tmux session and are captured differently on the same poll. One
+    `list-windows` answers for all of them, because `/api/panes` captures every
+    window on every poll and a phone polls often."""
+    _no_real_ledger(monkeypatch, tmp_path)
+    cfg = Config(session="thalamus", project_root=tmp_path,
+                 scan_roots=[tmp_path])
+
+    with _serving(cfg, windows="\n".join([ALT_WINDOW, SHELL_PANE]),
+                  alternate={3}) as post:
+        post.get("/api/panes")
+
+    caps = {c[-1]: c for c in post.fake.calls if c[0] == "capture-pane"}
+    assert "-S" not in caps["thalamus:3"] and "-S" in caps["thalamus:4"]
+    asked = [c for c in post.fake.calls
+             if c[0] == "list-windows" and "alternate_on" in c[-1]]
+    assert len(asked) == 1
+
+
+def test_a_tmux_that_cannot_answer_leaves_every_pane_showing_its_viewport(monkeypatch):
+    """The failure this degrades into has to be the harmless one. An unknown answer
+    read as "scrolling" would put the stale buffer back on every window at once;
+    read as "full screen" it costs a shell its scrollback until the next poll."""
+    monkeypatch.setattr(server, "tmux",
+                        lambda *a: subprocess.CompletedProcess(a, 1, "", "no server"))
+
+    assert server.alternate_screens(Config(session="thalamus")) == set()
+
+
+
 def test_the_poll_join_is_by_pane_and_a_mismatch_does_not_borrow_a_row(tmp_path,
                                                                       monkeypatch):
     """The join key is the pane id, and a wrong one must yield nothing.
@@ -1474,18 +1566,34 @@ class _FakeTmux:
     would drive the operator's real roster.
     """
 
-    def __init__(self, windows: str = "", screens: dict[int, str] | None = None):
+    def __init__(self, windows: str = "", screens: dict[int, str] | None = None,
+                 alternate: set[int] | None = None):
         self.windows = windows
         # `capture-pane` answers from here, keyed by window index. Mutable, so a
         # test can move one window's screen between two polls.
         self.screens = screens if screens is not None else {}
+        # Which windows are on the alternate screen. Every window in the roster
+        # fixtures runs a TUI, so that is the default — and it is the answer that
+        # decides whether a capture asks for scrollback.
+        self.alternate = alternate
         self.calls: list[tuple[str, ...]] = []
+
+    def _alt_rows(self) -> str:
+        rows = []
+        for line in self.windows.splitlines():
+            i = line.partition("\t")[0]
+            if i.isdigit():
+                alt = 1 if self.alternate is None or int(i) in self.alternate else 0
+                rows.append(f"{i}\t{alt}")
+        return "\n".join(rows) + ("\n" if rows else "")
 
     def __call__(self, *args: str) -> subprocess.CompletedProcess:
         self.calls.append(args)
         out = ""
         if args and args[0] == "list-windows":
-            out = self.windows
+            # Two different queries share this verb, and they are told apart the
+            # only way tmux offers: by the format they asked for.
+            out = self._alt_rows() if "alternate_on" in args[-1] else self.windows
         elif args and args[0] == "capture-pane":
             target = args[-1].rpartition(":")[2]
             out = self.screens.get(int(target), "") if target.isdigit() else ""
@@ -1726,9 +1834,10 @@ class _serving:
     so they are exercised over real HTTP.
     """
 
-    def __init__(self, cfg: Config, windows: str = "", screens: dict[int, str] | None = None):
+    def __init__(self, cfg: Config, windows: str = "", screens: dict[int, str] | None = None,
+                 alternate: set[int] | None = None):
         self.cfg = cfg
-        self.fake = _FakeTmux(windows, screens)
+        self.fake = _FakeTmux(windows, screens, alternate)
 
     def __enter__(self):
         self._real_tmux = server.tmux
