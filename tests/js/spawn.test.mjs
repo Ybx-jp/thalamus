@@ -1,8 +1,12 @@
-// The spawn sheet's room and harness chips.
+// The spawn sheet: what kind of window it opens, and the room and harness chips.
 import { extractFunction, evaluate, suite, check, contains, done } from "./harness.mjs";
 
 const { spawnRoomChoices } = evaluate(extractFunction("spawnRoomChoices"),
                                       ["spawnRoomChoices"]);
+const kindSrc = ["spawnKindChoices", "pickKind", "spawnReady", "kindNote"]
+  .map((n) => extractFunction(n)).join("\n");
+const { spawnKindChoices, pickKind, spawnReady, kindNote } =
+  evaluate(kindSrc, ["spawnKindChoices", "pickKind", "spawnReady", "kindNote"]);
 const harnessSrc = ["spawnHarnessChoices", "pickHarness", "harnessCaveat"]
   .map((n) => extractFunction(n)).join("\n");
 const { spawnHarnessChoices, pickHarness, harnessCaveat } =
@@ -73,5 +77,37 @@ contains("...and says what the scope still does", caveat, "holds its boundary");
 contains("...and what it does not", caveat, "will not think like the expert");
 check("an unknown harness is not described",
       harnessCaveat(OFFERED, "no-such-harness") === "");
+
+suite("the kind row: one sheet opens two different things");
+
+// A shell chip whose POST would 404 is a button that does nothing, which is the
+// failure this console is least able to explain on a phone. `static/` is served off
+// disk while server.py is whatever the last restart loaded, so a client newer than
+// its server is the normal state for a while after every edit.
+check("a server that says it can open a shell is offered one",
+      spawnKindChoices({ shell: true }).join(",") === "session,shell");
+check("a server that has not restarted yet is not",
+      spawnKindChoices({ scopes: [] }).join(",") === "session");
+check("and neither is one that could not be asked at all",
+      spawnKindChoices(undefined).join(",") === "session");
+
+check("the first kind is the default", pickKind({ shell: true }, null) === "session");
+check("a chosen kind is kept", pickKind({ shell: true }, "shell") === "shell");
+check("a kind the server no longer offers falls back",
+      pickKind({}, "shell") === "session");
+
+// The two kinds share the directory picker and nothing else.
+check("a session needs its expert as well as somewhere to stand",
+      spawnReady("session", null, "/home/op/code/alpha") === false);
+check("...and is ready once it has both",
+      spawnReady("session", "architect", "/home/op/code/alpha") === true);
+check("a shell needs only somewhere to stand",
+      spawnReady("shell", null, "/home/op/code/alpha") === true);
+check("...and not even a shell can open nowhere",
+      spawnReady("shell", null, null) === false);
+
+contains("the shell note says there is no memory in it", kindNote("shell"), "no memory");
+contains("the session note still says the directory is the subject",
+         kindNote("session"), "distilled memory");
 
 done();
