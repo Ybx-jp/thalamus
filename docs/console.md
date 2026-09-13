@@ -43,16 +43,29 @@ without a hand-written tmux.conf, and the project ships none. `thalamus roster` 
 every spawn resize every window in the session, so a session created at the stock
 size by `tmux new -A` is corrected the next time either runs.
 
-The pane view shows what the window has on screen. Claude Code draws on the
-terminal's alternate screen, which tmux keeps no history for, so the view is the
-50-row viewport and scrolling the transcript means paging claude itself: the
-keyboard bar's PageUp/PageDown keys are sent to the pane. Claude's classic
-renderer (`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`) would leave the transcript in
-tmux history, but it cannot erase what has scrolled out of the viewport: startup
-warnings stay on screen after the TUI loads, and a menu such as `/usage` prints
-twice and stays printed after it closes. Roster windows therefore launch with
-claude's default renderer, and a plain-shell window's scrollback is the only
-history the view holds.
+The pane view shows what the window has on screen, and what "on screen" means
+depends on the pane. A full-screen program — Claude Code, `htop` — draws on the
+terminal's **alternate screen**: a viewport that owns the display, and a different
+buffer from the scrolling one the terminal had before the program started. tmux
+keeps that earlier buffer, and the console does not read it for such a pane. It is
+text the running program never drew and cannot erase, so reading it would pin
+whatever was printed before launch — a startup warning, say — above a viewport
+that scrolls underneath it for the life of the window, still there long after the
+session's own banner has left the screen. So the view is the 50-row viewport, and
+scrolling the transcript means paging claude itself: the keyboard bar's
+PageUp/PageDown keys are sent to the pane.
+
+A pane that is *not* on the alternate screen is an ordinary scrolling terminal — a
+shell window, or one whose agent has exited back to a prompt — and there the
+history is the whole of what it said, so the view carries up to 1000 lines of it
+above the viewport. The choice is made per pane on every poll, from tmux's own
+`alternate_on`, rather than from what the window is believed to be running.
+
+Claude's classic renderer (`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`) would leave
+the transcript in tmux history, but it cannot erase what has scrolled out of the
+viewport: startup warnings stay on screen after the TUI loads, and a menu such as
+`/usage` prints twice and stays printed after it closes. Roster windows therefore
+launch with claude's default renderer.
 
 Installable to a home screen as a PWA, and it works in any browser without that.
 
@@ -212,7 +225,7 @@ screen without horizontal scrolling.
 
 **`read` switches to the transcript view.** The pane view mirrors a *rendering* of
 the session: a 60-column repaint, colours stripped by tmux, reflowing under you
-while a turn streams, with up to 1000 lines of the window's history above it. The read view shows the session itself — Claude Code writes
+while a turn streams. The read view shows the session itself — Claude Code writes
 every turn to a JSONL transcript, and the server projects that into flowing prose
 with each tool call collapsed to one tappable line, so a forty-line diff reads as
 `Edit docs/09-schema-and-federation.md`. Tap a line for its output; tap `term` to
