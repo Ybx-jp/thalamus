@@ -1091,8 +1091,11 @@ body[data-view="session"] .roster { display: none; }
   color: var(--ink);
 }
 .grp-n { margin-left: auto; font-size: .69rem; color: var(--muted); }
+/* The room a second line needs. Layout only, and shared: a group can carry a `why`
+   without being a group we failed to read — the voice below is the separate claim. */
+.grp.unknown,
+.grp.shells { height: auto; padding: .5rem .9rem .35rem; flex-wrap: wrap; }
 /* "We were not told" is not a project name, so it does not speak in one's voice. */
-.grp.unknown { height: auto; padding: .5rem .9rem .35rem; flex-wrap: wrap; }
 .grp.unknown .grp-name {
   font-family: var(--ui);
   font-style: italic;

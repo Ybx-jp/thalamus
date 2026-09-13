@@ -270,7 +270,10 @@ and the view says so plainly rather than reporting the refusal above: Claude Cod
 creates the transcript on the first turn, so a freshly spawned window has none
 until someone types into it. Send it a message and the feed starts.
 
-**＋ spawns a session**: pick an expert scope, a harness, a directory, and a room,
+**＋ opens a window**, of one of two kinds. Pick the kind first; the directory
+picker is the only thing the two share.
+
+**A session**: pick an expert scope, a harness, a directory, and a room,
 and the server opens a detached pinned window there. The scope decides which memory
 it reads and writes; the directory decides what the work is about. See
 [concepts.md](concepts.md#the-federation-contract) for what that pairing means.
@@ -288,6 +291,29 @@ a Cursor window routes its memory and holds its boundary but never reads the exp
 charter, which is a different object from a Claude Code pin ([concepts.md](concepts.md))
 and is invisible once the window exists. A request that names no harness gets Claude
 Code — the endpoint is driven by hand over the tailnet too.
+
+**A shell**: a plain terminal — tmux's login shell, in the directory you pick, with
+no scope, no harness, no room and no agent in it. It is what the console is for when
+the thing you need is a command line: it appears on the roster like any other window,
+the composer types into it, and the terminal view shows what it prints. The window is
+created with **no command at all**, which is what keeps everything downstream from
+taking it for a session — there is no transcript to read, no permission mode to set,
+nothing to distil, and the roster files shells in their own group at the bottom
+rather than implying they are sessions missing a project.
+
+Its lifecycle buttons do something different, and they say so before they act.
+`restart` kills the shell and opens a fresh one in the same directory, immediately;
+`close` removes the window, immediately. Neither waits out the four-minute grace
+budget an agent gets, because that budget exists to let SessionEnd distil and a shell
+has no SessionEnd — typing `/exit` at a bash prompt only prints `command not found`.
+Anything running in the window stops.
+
+A shell needs a roster session to be opened in and will not create one: `new-session`
+would put the shell at the lowest window index, which is the anchor the console
+references and nothing can close. Bring the roster up first. The kind row itself
+appears only when the server advertises that it can open one, so a console whose
+Python has not been restarted since this shipped shows the sheet it always showed
+rather than a button that 404s.
 
 **Distillation is a state of a session, not a list of its own**, and it is drawn on
 that session's roster row. Ending a session and distilling it are not the same
@@ -732,7 +758,8 @@ nothing about one operator's setup is baked into the code.
 
 The spawn picker's directory list is also the **whitelist**: a spawn request is
 checked against the same computation that built the list, so the client can only
-ever open a session somewhere it was offered.
+ever open a session somewhere it was offered. A shell is checked against the same
+list, and for a sharper reason — that request hands the caller a shell.
 
 ### Running it without a checkout
 
@@ -744,9 +771,10 @@ tmux -L thalamus new -d -s thalamus -n main
 python3 -m thalamus.console.server      # or: python3 src/thalamus/console/server.py
 ```
 
-You get panes, input, keys, the composer and the whole client. What you don't get
-is the expert layer — the scope list is empty, and spawn, roster sync and rooms
-report themselves unavailable rather than failing to import. Nothing else changes.
+You get panes, input, keys, the composer and the whole client — and shells, which
+are tmux and nothing else. What you don't get is the expert layer — the scope list
+is empty, and spawn, roster sync and rooms report themselves unavailable rather than
+failing to import. Nothing else changes.
 
 This is not a supported-configuration matrix so much as a design constraint: one of
 this server's jobs is restarting the unit that hosts it, so the fewer moving parts

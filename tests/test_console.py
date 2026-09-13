@@ -617,7 +617,11 @@ def test_the_picker_offers_favorites_first_and_scans_for_repos(tmp_path):
     _repo(code / "beta")
     (code / "not-a-repo").mkdir()
 
-    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
+    # The store, too: left at its default this reads the operator's real
+    # `~/.thalamus/console/favorites.json`, and the test then asserts against
+    # whatever directories that box happens to have starred.
+    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code],
+                 favorites_store=tmp_path / "favorites.json")
     dirs, allowed = spawn_dirs(cfg)
 
     assert dirs[0]["favorite"] is True and dirs[0]["label"] == "alpha"
@@ -642,6 +646,165 @@ def test_a_directory_the_picker_never_offered_cannot_be_spawned_into(tmp_path):
             "/api/spawn", {"scope": "main", "dir": str(code / "alpha" / ".." / "elsewhere")}
         )
         assert status == 400 and "allowed list" in body["error"]
+
+
+# ---- a shell is a terminal, not a session ----
+#
+# The console opens plain tmux windows so the operator can run commands from the
+# phone. Everything under here is one claim: the lifecycle machinery built for an
+# agent must not be pointed at a window that has no agent in it. The expensive half
+# is silent — `/exit` at a bash prompt is `command not found`, so the pane never
+# dies and a close waits out its whole four-minute grace budget before force-killing
+# a shell that would have gone instantly.
+
+SHELL_WINDOW = ("2\tshell\t0\tbash\t120\t50\t0\t/home/op/code/thalamus\t\t%9\t1010")
+
+
+def test_a_console_opened_shell_window_is_marked_as_one():
+    """Both halves of the marker are required, and each one alone is wrong.
+
+    The name alone would hand the fast paths to any window an operator renamed by
+    hand; an empty harness alone covers every window running something we do not
+    recognise, including an agent launched by hand from a prompt.
+    """
+    (shell,) = parse_windows(SHELL_WINDOW)
+    assert shell["shell"] is True
+    assert shell["harness"] == ""
+
+    (agent,) = parse_windows(CLAUDE_START)
+    assert agent["shell"] is False
+
+    named_but_running_an_agent = SHELL_WINDOW.replace("\t\t%9", "\tclaude --agent x\t%9")
+    (impostor,) = parse_windows(named_but_running_an_agent)
+    assert impostor["shell"] is False
+
+
+def test_closing_a_shell_does_not_wait_out_a_sessionend_that_cannot_come(monkeypatch):
+    """`/exit` is an agent's word. A bash prompt answers `command not found` and
+    keeps running, so the graceful path can only end in the forced one — four
+    minutes later, on a window that had nothing to distil."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(server, "tmux", _tmux_stub(calls, ["@7"]))
+    monkeypatch.setattr(server, "_pinned_session", lambda cfg, idx: {})
+    recorded: list[tuple] = []
+    monkeypatch.setattr(server, "_record_forced_kill",
+                        lambda who, op: recorded.append((who, op)))
+
+    server.close_window(Config(session="thalamus"), 2, shell=True)
+
+    assert ("kill-window", "-t", "@7") in calls
+    assert not any(c[0] == "send-keys" for c in calls), "typed at a shell's prompt"
+    assert recorded == [], "a shell has no SessionEnd to have skipped"
+
+
+def test_restarting_a_shell_respawns_it_rather_than_typing_at_its_prompt(monkeypatch):
+    """`respawn-window -k` re-runs the window's creation command, which for a shell
+    window is no command at all — tmux starts a fresh login shell in the same
+    directory (measured, tmux 3.4)."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(server, "tmux", _tmux_stub(calls, ["@7"]))
+    monkeypatch.setattr(server, "_pinned_session", lambda cfg, idx: {})
+    recorded: list[tuple] = []
+    monkeypatch.setattr(server, "_record_forced_kill",
+                        lambda who, op: recorded.append((who, op)))
+
+    server.recycle_window(Config(session="thalamus"), 2, shell=True)
+
+    assert ("respawn-window", "-k", "-t", "@7") in calls
+    assert not any(c[0] == "send-keys" for c in calls)
+    assert recorded == []
+
+
+def test_a_shell_is_not_opened_where_there_is_no_roster_session_to_hold_it(monkeypatch):
+    """`new-session` would put the shell at the lowest window index — the anchor the
+    console references and nothing can close — where it would outrank every real
+    session for the life of the tmux server."""
+    def tmux(*args):
+        return subprocess.CompletedProcess(args, 1 if args[0] == "has-session" else 0, "", "")
+    monkeypatch.setattr(server, "tmux", tmux)
+
+    ok, output = server.open_shell(Config(session="thalamus"), Path("/home/op"))
+
+    assert ok is False and "no roster session" in output
+
+
+def test_a_shell_that_did_not_survive_being_opened_is_reported_as_a_failure(monkeypatch):
+    """tmux reports success once it has forked, and a window whose shell could not
+    start leaves no corpse behind with `remain-on-exit` off. Its absence is the only
+    report there is, and without this the phone shows a button that did nothing."""
+    def tmux(*args):
+        out = "@9" if args[0] == "new-window" else ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+    monkeypatch.setattr(server, "tmux", tmux)
+    monkeypatch.setattr(server.time, "sleep", lambda _s: None)
+
+    ok, output = server.open_shell(Config(session="thalamus"), Path("/home/op"))
+
+    assert ok is False and "exited immediately" in output
+
+
+def test_an_opened_shell_carries_no_scope_and_no_command(monkeypatch):
+    """What the window is *not* given is the whole design: no command (so tmux runs
+    the login shell and `pane_start_command` stays empty, which is what keeps every
+    reader downstream from taking it for an agent), and no `THALAMUS_SCOPE`."""
+    calls: list[tuple] = []
+
+    def tmux(*args):
+        calls.append(args)
+        out = "@9" if args[0] == "new-window" else ("@9" if args[0] == "list-windows" else "")
+        return subprocess.CompletedProcess(args, 0, out, "")
+    monkeypatch.setattr(server, "tmux", tmux)
+    monkeypatch.setattr(server.time, "sleep", lambda _s: None)
+
+    ok, output = server.open_shell(Config(session="thalamus"), Path("/home/op/code/alpha"))
+
+    (create,) = [c for c in calls if c[0] == "new-window"]
+    assert "--" not in create and not any("THALAMUS_SCOPE" in a for a in create)
+    assert "-n" in create and create[create.index("-n") + 1] == server.SHELL_WINDOW_NAME
+    assert create[create.index("-c") + 1] == "/home/op/code/alpha"
+    assert ok is True and "/home/op/code/alpha" in output
+
+
+def test_a_directory_the_picker_never_offered_cannot_be_opened_as_a_shell(tmp_path):
+    """The same whitelist as a spawn, and for a sharper reason: this endpoint hands
+    the caller a shell, so the directory it names is the one thing that must not be
+    arbitrary."""
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    secret = _repo(tmp_path / "elsewhere")
+    cfg = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "favorites.json")
+
+    with _serving(cfg) as post:
+        status, body = post("/api/shell", {"dir": str(secret)})
+        assert status == 400 and "allowed list" in body["error"]
+
+        status, body = post("/api/shell", {"dir": None})
+        assert status == 400
+
+
+def test_a_shell_window_is_offered_no_slash_commands(tmp_path, monkeypatch):
+    """`/clear` and `/model` are an agent's words. A hint strip that offers them over
+    a bash prompt is a list of commands that will all fail."""
+    monkeypatch.setattr(server, "list_windows",
+                        lambda cfg: parse_windows(SHELL_WINDOW + "\n" + CLAUDE_START))
+    cfg = Config(project_root=tmp_path)
+
+    assert server.list_commands(cfg, 2) == []
+    assert server.list_commands(cfg, 0), "an agent window still gets its commands"
+
+
+def test_the_read_view_tells_a_shell_apart_from_a_session_it_cannot_resolve(monkeypatch):
+    """`unresolved` tells the operator to restart the window and it will resolve. A
+    shell restarted a hundred times still has no transcript, so answering it with
+    that sentence is advice that cannot work."""
+    monkeypatch.setattr(server, "list_windows", lambda cfg: parse_windows(SHELL_WINDOW))
+    monkeypatch.setattr(server, "transcript_module", lambda: object())
+
+    window, feed, reason = server.read_feed(Config(session="thalamus"), 2)
+
+    assert reason == "shell" and feed is None and window is not None
+    assert reason in server.PERMISSION_MODE_READ
 
 
 def test_a_window_reports_the_room_it_was_created_in(tmp_path):
@@ -1880,14 +2043,15 @@ def _read_fixture(tmp_path, monkeypatch, *, ledger=True, transcript=None,
     monkeypatch.setattr(server, "_FEEDS", None)
 
 
-def test_the_read_status_field_names_exactly_four_values():
-    """The contracted vocabulary, written out, so a fifth value fails here.
+def test_the_read_status_field_names_exactly_the_values_the_client_draws():
+    """The contracted vocabulary, written out, so a new value fails here.
 
     A server-side addition that widens the set has to change this line, which is
-    the point: the client renders against these four and nothing else, and a value
-    it has never heard of is indistinguishable from a bug on its own side.
+    the point: the client renders against these and nothing else, and a value it has
+    never heard of is indistinguishable from a bug on its own side.
     """
-    assert server.PERMISSION_MODE_READ == ("ok", "unresolved", "pending", "no-package")
+    assert server.PERMISSION_MODE_READ == ("ok", "unresolved", "pending", "no-package",
+                                           "shell")
 
 
 def test_a_read_session_reports_its_mode_and_that_the_mode_was_read(tmp_path,
