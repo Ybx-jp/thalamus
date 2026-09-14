@@ -68,8 +68,15 @@ FAILURE_PATTERN = (
 # How many anchors one firing may query with, and how many candidates it may serve.
 # `recall()`'s match floor requires a node to hit two distinct anchors, so the anchor
 # cap bounds breadth, not precision; the candidate cap is the stopping rule the
-# design owes (retrieval past a moderate scale declines, `docs/14` §5).
-MAX_ANCHORS = 12
+# design owes (retrieval past a moderate scale declines).
+#
+# The anchor cap is the latency contract. `recall()` issues four scans per keyword and
+# the chunk scan is unindexed (#112), so wall time is linear in anchors: measured
+# 2026-09-13 on the live graph at 0.47 s per anchor (n=2 → 0.9 s, n=8 → 3.8 s,
+# n=12 → 5.6 s). The reflex is synchronous only while a firing stays under ~5 s, and
+# process start plus connect cost ~0.55 s on top, so six anchors land at ~3.4 s with
+# headroom for the graph to grow. Raising this is a decision about the contract.
+MAX_ANCHORS = 6
 MAX_CANDIDATES = 3
 
 # A firing needs this many unseen anchors before it retrieves. One new anchor would
@@ -129,7 +136,9 @@ def extract_anchors(text: str) -> list[str]:
     numeric, hash-shaped, or on the noise list is dropped. Lowercased before
     tokenising, so `AssertionError` is one token and never `assertion` + `error`.
     """
-    tokens = set(_tokens(text))
+    # A separator left dangling by the character that cut the token — `).read_text()`
+    # yields `.read_text` — is not part of the identifier.
+    tokens = {token.strip("./-_") for token in _tokens(text)} - {""}
     # A path's last two segments beside the whole path: a claim names a file the way
     # a session spoke of it, which is `harness/reflex.py` far more often than the
     # absolute spelling a traceback prints.
