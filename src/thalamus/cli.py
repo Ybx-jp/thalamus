@@ -341,6 +341,33 @@ def _main():
              "model call, no output file.",
     )
 
+    # Reflex command — the PostToolUse memory reflex's worker (harness/reflex.py)
+    reflex_parser = subparsers.add_parser(
+        "reflex",
+        help="Serve memory against a failed Bash result; the reflex.sh hook's worker. "
+        "Prints the envelope to inject, or nothing.",
+    )
+    reflex_parser.add_argument("--session-id", required=True, help="The session that ran the command")
+    reflex_parser.add_argument(
+        "--response-file", type=Path, required=True,
+        help="File holding the command's stdout then stderr, as the model saw them",
+    )
+    reflex_parser.add_argument(
+        "--scope", default=MAIN_SCOPE,
+        help="Scope to retrieve in — the pin, resolved by the hook (default: main)",
+    )
+    reflex_parser.add_argument(
+        "--agent-id", default="",
+        help="The subagent that ran the command, empty for the session itself; part "
+        "of the dedup key because subagents share their parent's session id",
+    )
+    reflex_parser.add_argument("--agent-type", default="", help="The subagent's type, recorded in the trace")
+    reflex_parser.add_argument("--cwd", default="", help="Working directory, recorded in the trace")
+    reflex_parser.add_argument(
+        "--tool-name", default="Bash", help="The tool whose result fired the reflex (default: Bash)"
+    )
+    reflex_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
     # Contract command — the federation boundary, audited
     contract_parser = subparsers.add_parser(
         "contract", help="Federation-contract operations against the live graph"
@@ -731,6 +758,23 @@ def _main():
     )
     eval_conditioning_parser.add_argument(
         "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
+    )
+
+    eval_reflex_parser = eval_sub.add_parser(
+        "reflex",
+        help="The memory reflex read by arm: qualifying failures, what was served, "
+        "and the lexical and citation used-verdicts on what landed",
+    )
+    eval_reflex_parser.add_argument(
+        "--reflex", type=Path, default=None,
+        help="Reflex ledger dir (default: ~/.thalamus/reflex)",
+    )
+    eval_reflex_parser.add_argument(
+        "--traces", type=Path, default=None, help="Trace tap dir (default: ~/.thalamus/traces)"
+    )
+    eval_reflex_parser.add_argument(
+        "--url", default=DEFAULT_URL,
+        help="Gremlin endpoint for the verdict half; the ledger half renders without it",
     )
 
     # Pin / roster commands — "the process is the pin"
@@ -1385,6 +1429,8 @@ def _main():
         _cmd_snapshot(args)
     elif args.command == "eval":
         _cmd_eval(args, eval_parser)
+    elif args.command == "reflex":
+        _cmd_reflex(args)
     elif args.command == "init":
         _cmd_init(args)
     elif args.command == "status":
@@ -2360,6 +2406,34 @@ def _cmd_delegate(args):
         f"{usage.output_tokens if usage.output_tokens is not None else '?'} out"
     )
     print(f"{args.scope} -> {result.harness}/{result.model} ({counts}) -> {result.output}")
+
+def _cmd_reflex(args):
+    """The hook's worker: everything it prints is injected, so it prints the envelope or nothing."""
+    from thalamus.harness.reflex import fire
+
+    try:
+        observed = args.response_file.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"reflex: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    graph = connect(args.url)
+    try:
+        envelope = fire(
+            graph,
+            session_id=args.session_id,
+            observed=observed,
+            scope=args.scope,
+            agent_id=args.agent_id,
+            agent_type=args.agent_type,
+            cwd=args.cwd,
+            tool_name=args.tool_name,
+        )
+    finally:
+        close_connection(graph)
+    if envelope:
+        print(envelope)
+
 
 def _report_delegation_plan(prepared) -> None:
     """What `--check` says: the arithmetic, whoever it favours.
@@ -3753,6 +3827,22 @@ def _cmd_eval(args, eval_parser):
                 conditioning_base=args.conditioning, traces_base=args.traces
             ).render()
         )
+    elif getattr(args, "eval_command", None) == "reflex":
+        from thalamus.eval.reflex import reflex_report
+
+        # The ledger half never needs the graph; the verdict half says so when it
+        # cannot have it, rather than turning a report into a connection error.
+        try:
+            graph = connect(args.url)
+        except GraphUnavailable:
+            graph = None
+        try:
+            print(reflex_report(
+                reflex_base=args.reflex, traces_base=args.traces, g=graph
+            ).render())
+        finally:
+            if graph is not None:
+                close_connection(graph)
     elif getattr(args, "eval_command", None) == "pins":
         from thalamus.contract.manifest import available_scopes
         from thalamus.eval.cost import load_engaged, load_pins

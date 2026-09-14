@@ -155,6 +155,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PreToolUse", "Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*", "role-guard.sh"),
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
+    ("PostToolUse", "Bash", "reflex.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
     ("PostToolUse", "Agent", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "conditioning.sh"),
@@ -216,6 +217,12 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # `tool_input.subagent_type` and `tool_input.description` — a Claude Code payload
 # shape. Wiring it before those fields are located in a live Cursor payload would
 # fire the branch on a `""` description, which the filter drops silently.
+#
+# No carrier: `reflex.sh`, the memory reflex. It injects from `PostToolUse` and
+# Cursor's `afterShellExecution` cannot inject — the same gap that makes
+# `conditioning.sh` deliver one tool call late through the spool. A reflex delivered
+# a call late is the deferred channel arm the design measures separately, not the
+# immediate one this script is, so it waits for that arm rather than shipping as it.
 CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("sessionStart", "session-start.sh"),
     ("sessionEnd", "session-end.sh"),
@@ -309,6 +316,13 @@ CURSOR_GUARDS: frozenset[str] = frozenset(
 #   surfaces have not been measured, and a matcher naming a tool nobody has observed
 #   is a guess that reads as enforcement. `apply_patch` is the measured editing tool,
 #   so the path half of the role boundary binds and the capability half does not.
+#
+#   `PostToolUse:Bash` for `reflex.sh`, the memory reflex. Its failure test reads
+#   `tool_response.stdout`/`.stderr`/`.interrupted`, and codex's shell result has
+#   been measured only on the input side — it arrives as one string, which the
+#   `gremlin-tap.sh` adapter reshapes onto the stdout leg — so a reflex here would
+#   build its trigger against a payload half nobody has read. Whether codex can carry
+#   one is open, not decided.
 CODEX_HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("SessionStart", None, "session-start.sh"),
     ("SessionEnd", None, "session-end.sh"),
@@ -403,11 +417,11 @@ class HookParity:
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    scripts={"claude": 13, "codex": 12, "cursor": 14},
+    scripts={"claude": 14, "codex": 12, "cursor": 14},
     shared=9,
     missing={
-        "codex": ("room-guard.sh",),
-        "cursor": ("post-tool-use.sh", "recipe-stage.sh", "role-guard.sh",
+        "codex": ("reflex.sh", "room-guard.sh"),
+        "cursor": ("post-tool-use.sh", "recipe-stage.sh", "reflex.sh", "role-guard.sh",
                    "room-guard.sh"),
     },
     extra={

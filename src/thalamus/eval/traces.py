@@ -52,6 +52,11 @@ RETRIEVAL_TOOLS = frozenset(
         # settled design prevents rework is exactly a used-vs-ignored question.
         "memory_exchanges",
         "bash_gremlin",
+        # The memory reflex's lexical arm (harness/reflex.py, reflex.sh): retrieval
+        # the harness initiated off a failed Bash result. Priced here like every
+        # other retrieval; `eval reflex` reads it by arm. Without this entry
+        # `load_events()`'s default filter drops every reflex line.
+        "reflex_lexical",
     }
 )
 
