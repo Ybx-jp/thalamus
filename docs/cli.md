@@ -16,6 +16,7 @@ thalamus init --dry-run            # report what would be written
 thalamus init --uninstall          # remove what it can prove it installed
 thalamus status                    # is memory being written? sessions, and the last distillation
 thalamus rescope <scope>           # redirect this session's distillation, before it distills
+thalamus reflex --session-id <id> --response-file <path>   # the reflex hook's worker (see The eval loop)
 ```
 
 `init --check` and `status` answer different questions and neither answers the
@@ -293,6 +294,7 @@ thalamus eval report               # per-scope retrieval-utility numbers, priced
 thalamus eval cost                 # session and operation token-cost buckets
 thalamus eval pins                 # per-expert routing signal: pinned vs consulted utility
 thalamus eval conditioning         # per-firing behavioural join on injected reminders
+thalamus eval reflex               # the memory reflex, read by arm: fired, served, used
 thalamus eval withholding          # the randomized-withholding ledger, read as an outcome
 thalamus eval gremlin              # gremlin fluency: guard rescue rate, rejection classes
 thalamus eval recipes              # smoke-run every stored gremlin recipe, read-only
@@ -356,6 +358,35 @@ same node **id** back, which needs a later query whose terms match it — so a s
 that closes a gap by asking in different words scores as a miss in both arms, and the
 measure would read null whether or not withholding mattered. Settling it means scoring
 the withheld node's *text* against later retrievals instead of its id.
+
+`eval reflex` reads the **memory reflex** — retrieval the harness initiates rather
+than the agent. The `reflex.sh` hook (`PostToolUse`, matcher `Bash`) fires when a
+command's result reads as a failure — a pytest `FAILED` line, a traceback, `command not
+found`, an exception line, or a call the harness interrupted — and hands the output to
+`thalamus reflex`, which extracts identifiers from it, recalls against them in the
+session's pinned scope, and injects what came back in an envelope labelled as
+unsolicited. Nothing is paraphrased: the blocks are the reader's own rendering, tier
+stamps and vertex ids included. The Bash result carries no exit status, so a command
+that fails silently never fires; that false-negative class is permanent and the
+report is read with it in mind.
+
+Three controls bound the cost. The same anchors do not refire for the same agent in
+the same session, so a rerun of a failing test is silent; a session has a
+24,000-character ceiling on what the reflex may inject over its life, refused with the
+arithmetic when crossed; and an empty answer is the ordinary one, since nothing is
+served unless at least two unseen anchors match. Every qualifying failure is written to
+`~/.thalamus/reflex/sessions/<session>.jsonl` with its outcome — served, empty, deduped,
+refused, no anchors — and every firing that retrieved is one line in the trace tap under
+`tool_name` `reflex_lexical`, priced by `eval sync` like any other retrieval.
+
+The report splits by arm. The ledger half needs no graph: qualifying failures, outcomes,
+served-per-failure, injected characters per session, and how many served blocks were
+phrased as instructions (quoted verbatim and named as records, never dropped). The
+verdict half reads the landed traces and reports two used-rates side by side: the
+lexical verdict, which carries ~4 points of discrimination over a ~59-point chance
+floor and is read as delivery, and the citation verdict — a backticked vertex id in the
+agent's later output — which is the unfakeable form and the one the reflex's next rung
+is gated on.
 
 `eval report` gives the used-vs-ignored rate one ranker window at a time and refuses to
 pool across a dial change, because a rate averaged over two settings measures neither.

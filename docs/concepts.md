@@ -436,7 +436,9 @@ Where all of this meets your editor.
 
 - **The MCP server** — the retrieval surface. Scope comes from the environment.
 - **Hooks** — session start (memory priming, pin ledger), session end (distillation),
-  and PreToolUse guards (the role boundary, the Gremlin guard, the room boundary).
+  PreToolUse guards (the role boundary, the Gremlin guard, the room boundary), and
+  PostToolUse taps and injections (the retrieval trace tap, conditioning reminders,
+  and the memory reflex, which recalls against a failed Bash result unasked).
 - **Skills** — procedures the agent loads when a task calls for them.
 
 **Claude Code**, **Cursor** and **codex** are supported. Their hook contracts differ,

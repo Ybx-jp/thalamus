@@ -100,8 +100,8 @@ CHECK_LINE = re.compile(r"^  ([" + "".join(MARKS) + r"]) ([^:]+): (.*)$")
 #: The substring install.py:623-626 uses to recognise its own hook entries.
 OUR_HOOK_MARKER = "thalamus/harness/hooks"
 
-#: install.py:131 declares 13 scripts across 17 entries in HOOK_WIRING.
-EXPECTED_HOOK_ENTRIES = 17
+#: install.py:145 declares 14 scripts across 18 entries in HOOK_WIRING.
+EXPECTED_HOOK_ENTRIES = 18
 
 #: The rendering a HEALTHY MCP registration produces: a backticked server name, the
 #: word `in`, one location, and nothing after it. Every unhealthy branch appends a

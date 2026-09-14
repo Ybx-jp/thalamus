@@ -1,15 +1,15 @@
 """A blinded install and a never-installed one must not read the same.
 
 Issue #125. `verify_armed()` (`src/thalamus/harness/install.py:1862`) returns three
-states over the 17 declared hook wirings: all present (ok), some missing (fatal), or
+states over the 18 declared hook wirings: all present (ok), some missing (fatal), or
 *all* missing (`pending=True`, `install.py:1899`-1905). `pending` is excluded from
 `failed` (`install.py:2294`-2295), so a HOME where every wiring is missing exits 0 —
 deliberately, because that is what a machine that has never run `thalamus init` looks
-like, and listing all 17 wirings at someone who has not installed yet would be a wall of
+like, and listing all 18 wirings at someone who has not installed yet would be a wall of
 text about a machine that is fine.
 
 The defect is that the same branch also fires for a HOME whose `.claude/settings.json`
-*exists*, carries a foreign hook, and has none of our 17 wirings — the shape produced by
+*exists*, carries a foreign hook, and has none of our 18 wirings — the shape produced by
 hand-editing the file, or by another tool replacing it. `armed_hooks()` only ever asks
 "is our wiring present"; it has no way to notice that the file it read was not empty.
 Both HOMEs report `pending`, both print the identical sentence, both exit 0. A user whose
@@ -27,9 +27,9 @@ different exit code, or both.
 Three synthetic HOMEs, none of them ever `~`:
 
 - blinded: `.claude/settings.json` present, one foreign `PreToolUse` hook, none of our
-  17 wirings.
+  18 wirings.
 - never-installed: nothing in HOME at all.
-- partial (the discrimination control): 16 of the 17 wirings present, one dropped. This
+- partial (the discrimination control): 17 of the 18 wirings present, one dropped. This
   is the case issue #125 says is already correct — fatal, not pending — and it is run
   here alongside the other two so that a fix which broke enforcement generally, rather
   than fixing the blinded/never split, could not pass this case by accident: if partial
@@ -168,7 +168,7 @@ def run() -> Finding | None:
             site="src/thalamus/harness/install.py::check_report",
         )
 
-    # CONTROL 1 — discrimination: the partial HOME (16 of 17 armed) must still be
+    # CONTROL 1 — discrimination: the partial HOME (17 of 18 armed) must still be
     # FATAL. Issue #125 says this half already works; if it stopped, "blinded reads
     # the same as never-installed" would mean nothing, because nothing would be
     # gating at all.
@@ -176,7 +176,7 @@ def run() -> Finding | None:
         return Finding(
             failure_class=FailureClass.COLLAPSED_SENTINEL,
             summary=(
-                "control failed: a HOME missing 1 of 17 declared wirings did not fail "
+                "control failed: a HOME missing 1 of 18 declared wirings did not fail "
                 "the run, so this case cannot tell 'the all-missing branch is too "
                 "permissive' from 'the whole check does nothing'"
             ),
@@ -218,7 +218,7 @@ def run() -> Finding | None:
             failure_class=FailureClass.COLLAPSED_SENTINEL,
             summary=(
                 "a HOME with .claude/settings.json present, carrying a foreign hook and "
-                "none of our 17 declared wirings, reports IDENTICALLY to a HOME with "
+                "none of our 18 declared wirings, reports IDENTICALLY to a HOME with "
                 "nothing installed at all — same state, same detail (modulo the HOME "
                 "path), same exit code. verify_armed()'s all-missing branch cannot "
                 "tell 'never touched' from 'installed then blinded'"
@@ -242,7 +242,7 @@ CASE = Case(
     tier=Tier.FAST,
     substrate=(Substrate.HERMETIC,),
     classes=(FailureClass.COLLAPSED_SENTINEL,),
-    summary="a HOME with all 17 wirings missing must be distinguishable from one whose "
+    summary="a HOME with all 18 wirings missing must be distinguishable from one whose "
             "settings file was replaced out from under it",
     run=run,
     issue=125,

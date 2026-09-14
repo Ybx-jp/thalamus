@@ -277,9 +277,9 @@ def test_a_source_procured_twice_keeps_both_feeds():
     from gremlin_python.process.traversal import Cardinality
 
     graph = _KnowledgeRecorder()
-    write_knowledge(graph, _batch(feed="corpus-pin-grounding"))
-    write_knowledge(graph, _batch(feed="room-lifecycle"))
-    write_knowledge(graph, _batch(feed="room-lifecycle"))
+    write_knowledge(graph, _batch(feed="corpus-pin-grounding"), gate=_passes_the_batch_checks)
+    write_knowledge(graph, _batch(feed="room-lifecycle"), gate=_passes_the_batch_checks)
+    write_knowledge(graph, _batch(feed="room-lifecycle"), gate=_passes_the_batch_checks)
 
     source_vid = "scope:literature:source:abc123"
     assert graph.properties == [
@@ -302,6 +302,6 @@ def test_a_batch_with_no_feed_writes_no_feed_property():
       make "procured for nothing" indistinguishable from a real feed name
     """
     graph = _KnowledgeRecorder()
-    write_knowledge(graph, _batch(feed=""))
+    write_knowledge(graph, _batch(feed=""), gate=_passes_the_batch_checks)
 
     assert graph.properties == []

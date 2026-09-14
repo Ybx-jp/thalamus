@@ -90,6 +90,10 @@ CASE_MODULES = (
     "qe.cases.install_cell_ceiling",
     "qe.cases.ci_triage_verify_report",
     "qe.cases.case_logic_erosion",
+    "qe.cases.reflex_envelope_voice",
+    "qe.cases.reflex_budget_ceiling",
+    "qe.cases.reflex_dedup_key_stability",
+    "qe.cases.reflex_recall_scope_isolation",
 )
 
 
