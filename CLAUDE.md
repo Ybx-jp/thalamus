@@ -50,7 +50,8 @@ push rather than after CI tells you.
   `tests/test_console_js.py`
   (A0127-js-suite-driven-by-test-console-js, cites-as-live). They lift functions out of
   `static/app.js` **by name**, so renaming one breaks extraction loudly — that is the
-  intended failure, not a flake. node is optional; a checkout without it skips them.
+  intended failure, not a flake. node is optional; a checkout without it skips them
+  (A0142-node-is-optional-and-its-absence-skips, cites-as-live).
 
 **`NEW_FAILURE` means untriaged red, nothing more.** It carries no claim about novelty
 and none about `src/` versus `tests/` — `expectations.py` defines it as "failed, and no
