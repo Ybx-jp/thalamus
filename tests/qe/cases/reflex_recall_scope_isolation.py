@@ -55,6 +55,7 @@ def _scratch_scope(label: str) -> str:
 
 
 def run() -> Finding | None:
+    from thalamus.contract.conformance import refuse_unless_conformant  # noqa: PLC0415
     from thalamus.contract.manifest import available_scopes  # noqa: PLC0415
     from thalamus.contract.ontology import MAIN_SCOPE, vid  # noqa: PLC0415
     from thalamus.harness.reflex import extract_anchors  # noqa: PLC0415
@@ -136,8 +137,8 @@ def run() -> Finding | None:
         )
         from thalamus.substrate.writer import write_session  # noqa: PLC0415
 
-        write_session(g, session_a)
-        write_session(g, session_b)
+        write_session(g, session_a, gate=refuse_unless_conformant)
+        write_session(g, session_b, gate=refuse_unless_conformant)
 
         vid_a = vid("Session", session_a.session_id, scope_a)
         vid_b = vid("Session", session_b.session_id, scope_b)
