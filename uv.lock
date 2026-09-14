@@ -393,6 +393,15 @@ wheels = [
 ]
 
 [[package]]
+name = "claims-ledger"
+version = "0.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/d5/5644acb9966f534af65fa4207340ba7b2a4bd54a0bca1794ea281a088e20/claims_ledger-0.0.1.tar.gz", hash = "sha256:a624d7dbe09c682238fbbf3debb68dd467e3a213dba220a605a9857aece2c685", size = 565336, upload-time = "2026-09-13T20:46:22.877Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/0f/176f6c2f3e2b37aef0514bc5a7413c140999252bbd11bc51caff021ffeec/claims_ledger-0.0.1-py3-none-any.whl", hash = "sha256:a82f0248c644d8bb917dcbe293dbf33648b560589922934d9fdc0891e9d9df4a", size = 452793, upload-time = "2026-09-13T20:46:21.373Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2945,6 +2954,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "claims-ledger" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2970,6 +2980,7 @@ pdf = [
 
 [package.metadata]
 requires-dist = [
+    { name = "claims-ledger", marker = "extra == 'dev'", specifier = ">=0.0.1" },
     { name = "fastapi", specifier = ">=0.139.0" },
     { name = "fastmcp", specifier = ">=3.4.0" },
     { name = "gremlinpython", specifier = ">=3.7,<3.8" },

@@ -1,0 +1,4 @@
+# Source bytes, keyed by sha256. The registry row is committed and
+# the bytes are not: they are regenerated from the row's url and extraction method.
+*
+!.gitignore

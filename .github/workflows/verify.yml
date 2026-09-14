@@ -24,7 +24,14 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      # The whole history, not the default single commit: `claims-ledger validate` holds
+      # the region above each entry's APPEND marker immutable and its verdicts
+      # append-only across every parent-child edge, and both are properties of the
+      # history rather than of the file. A shallow clone cannot answer that, and the
+      # checker reports a repository that cannot answer rather than reading it as clean.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v5
 
@@ -71,6 +78,14 @@ jobs:
       # the same mechanism the rule gate uses.
       - name: Structure — dead ends
         run: uv run thalamus arch dead --gate
+
+      # The prose, gated. `ledger/` pins each documented commitment to the section of
+      # source that keeps it true; the five checkers hold the entries to the schema, the
+      # grounds to the tree, and every citation in a document to the entry's current
+      # status. A section that moved under a pinned claim is a flag, and a document
+      # citing a fallen entry as live is a failure.
+      - name: Claims ledger
+        run: uv run claims-ledger check
 
       # Started before the contract check and waited on by the compose healthcheck the
       # file already declares — the graph accepts a TCP connection several seconds
