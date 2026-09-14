@@ -327,4 +327,46 @@ suite("rows: the index appears on collision and only on collision");
   check("a row nothing collides with stays clean", alone[0].showIndex === false);
 }
 
+suite("shells: a terminal is not a session, and the roster must not imply it is");
+{
+  const shell = { name: "shell", shell: true, command: "bash", observed: false,
+                  cwd: "/home/op/code/thalamus", cwd_label: "thalamus" };
+
+  // `not in reach` is the console reporting a blindness. There is nothing to be
+  // blind to here: a shell publishes no descriptor and never will, and the word
+  // would send the operator looking for a session that does not exist.
+  check("a shell says what it is running, not that it cannot be seen",
+    state(shell).text === "bash", state(shell).text);
+  check("...and says it as a state that was read, not as a non-observation",
+    state(shell).mono === true);
+  check("a shell with nothing to report still names itself",
+    state({ shell: true, observed: false }).text === "shell");
+  // Both are true of any window, and both outrank being a shell: a killed one has
+  // ended, and one the operator just asked to restart is restarting.
+  check("a dead shell has still ended", state({ shell: true, dead: true }).text === "ended");
+  check("a shell being restarted says so",
+    state({ shell: true, recycling: NOW - 5 }, null).text.startsWith("restarting"));
+
+  const groups = groupSessions([
+    { name: "main", project: "thalamus", repo_root: "/home/op/code/thalamus" },
+    { name: "shell", shell: true, cwd_label: "thalamus" },
+    { name: "old", project: "", repo_root: "" },
+  ], []);
+  const labels = groups.map((g) => g.label);
+  check("a shell is not filed under a project it does not have",
+    groups[0].rows.length === 1, JSON.stringify(labels));
+  // The no-project group's header states a reason — "started before the ledger
+  // carried one" — that is false about a window the ledger was never going to carry.
+  check("nor in the no-project group, whose header would be a false explanation",
+    labels.indexOf("shells") !== labels.indexOf(""), JSON.stringify(labels));
+  const shells = groups[groups.length - 1];
+  check("it trails the roster, after even the unknown group", shells.label === "shells",
+    JSON.stringify(labels));
+  check("and is named rather than unexplained", shells.shell === true &&
+    shells.known === false);
+  check("two shells share the one group",
+    groupSessions([{ name: "shell", shell: true }, { name: "shell", shell: true }], [])
+      .length === 1);
+}
+
 done();

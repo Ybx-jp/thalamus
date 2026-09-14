@@ -130,24 +130,34 @@
 
 <div class="admin" id="spawn" hidden>
   <div class="admin-head">
-    <span class="admin-title">SPAWN SESSION</span>
+    <span class="admin-title">OPEN A WINDOW</span>
     <button type="button" class="install-x" id="spawn-x" aria-label="Close">✕</button>
   </div>
   <section class="admin-sec">
-    <p class="admin-note">Open a pinned expert session on demand, in the project you
-      pick. Its work and its distilled memory scope to that expert; the directory sets
-      what it's about. Close it from its own row to end &amp; distill it.</p>
-    <h3>Expert</h3>
-    <div class="chips" id="spawn-scopes"></div>
-    <h3>Harness</h3>
-    <div class="chips" id="spawn-harnesses"></div>
-    <p class="admin-note" id="spawn-harness-note" hidden></p>
-    <h3>Directory</h3>
+    <div id="spawn-kind-sec" hidden>
+      <h3>Kind</h3>
+      <div class="chips" id="spawn-kinds"></div>
+    </div>
+    <p class="admin-note" id="spawn-kind-note"></p>
+    <div id="spawn-expert-sec">
+      <h3>Expert</h3>
+      <div class="chips" id="spawn-scopes"></div>
+      <h3>Harness</h3>
+      <div class="chips" id="spawn-harnesses"></div>
+      <p class="admin-note" id="spawn-harness-note" hidden></p>
+    </div>
+    <div class="sec-head">
+      <h3>Directory</h3>
+      <button type="button" class="admin-act" id="spawn-star" disabled
+              title="Star the highlighted directory; starred ones sort first">☆ star</button>
+    </div>
     <div class="chips chips-dirs" id="spawn-dirs"></div>
-    <h3>Room</h3>
-    <p class="admin-note">A room is a private roster: members can see and message
-      each other, and nobody else. Solo sessions see the ordinary roster.</p>
-    <div class="chips" id="spawn-rooms"></div>
+    <div id="spawn-room-sec">
+      <h3>Room</h3>
+      <p class="admin-note">A room is a private roster: members can see and message
+        each other, and nobody else. Solo sessions see the ordinary roster.</p>
+      <div class="chips" id="spawn-rooms"></div>
+    </div>
     <div class="admin-actions">
       <button type="button" class="admin-act primary" id="spawn-go" disabled>spawn</button>
     </div>

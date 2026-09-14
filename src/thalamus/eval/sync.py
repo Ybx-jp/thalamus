@@ -18,7 +18,7 @@ from gremlin_python.process.traversal import Order, T
 
 from thalamus.archive import read_archived
 from thalamus.eval import policy as policy_mod
-from thalamus.contract.ontology import NODES_BY_LABEL, vid
+from thalamus.contract.ontology import NODES_BY_LABEL, vid, refuse_unless_exchange_protocol_holds
 from thalamus.eval.attribution import (
     aligned_node_terms,
     attribute,
@@ -462,6 +462,7 @@ def _stamp_answering_context(
             "answered_by_agent_type": event.agent_type or "",
         },
         citation_refs=[],
+        gate=refuse_unless_exchange_protocol_holds,
     )
 
 

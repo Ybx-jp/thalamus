@@ -1478,11 +1478,11 @@ def test_ingestion_runs_on_its_own_setting_not_distillation_s(tmp_path, monkeypa
 
     _ingest_ready(tmp_path, monkeypatch)
     seen = _captured_extraction(monkeypatch)
-    ep.select("codex", "gpt-5.4-mini", pass_="ingest")
+    ep.select("codex", "gpt-5.6-luna", pass_="ingest")
 
     cli._cmd_ingest(_ingest_args())
 
-    assert seen and seen[0] == ("codex", "gpt-5.4-mini")
+    assert seen and seen[0] == ("codex", "gpt-5.6-luna")
     # The other pass is untouched: nothing was chosen for it, so it still follows the
     # session that ended.
     assert ep.effective("distill") == {}
@@ -1527,9 +1527,9 @@ def test_an_ingest_says_what_extracted_it(tmp_path, monkeypatch, capsys):
 
     _ingest_ready(tmp_path, monkeypatch)
     _captured_extraction(monkeypatch)
-    ep.select("codex", "gpt-5.4-mini", pass_="ingest")
+    ep.select("codex", "gpt-5.6-luna", pass_="ingest")
 
     cli._cmd_ingest(_ingest_args())
 
     out = capsys.readouterr().out
-    assert "Extractor: codex/gpt-5.4-mini — the ingestion setting" in out
+    assert "Extractor: codex/gpt-5.6-luna — the ingestion setting" in out

@@ -22,18 +22,25 @@ Session ends → distilled into the graph → next session opens with its thread
 
 **The graph is federated, not one pile.** Specialist knowledge lives in **expert
 subgraphs** — a curated domain graph plus its own episodic memory, one per scope.
-A session is *pinned* to exactly one scope and cannot widen its own view. Crossing
-between scopes is an explicit, recorded event rather than a lucky retrieval.
+A session is *pinned* to exactly one scope and cannot widen its own view
+(A0001-pinned-scope-is-resolved-once-at-process-start, cites-as-live). Crossing
+between scopes is an explicit, recorded event rather than a lucky retrieval
+(A0094-minting-the-ticket-is-the-write, cites-as-live).
 
 **One contract does three jobs.** The federation contract is simultaneously a data
 schema, a permission system, and a trust boundary. Orphans and violations are
-rejected when they are written, not filtered when they are read.
+rejected when they are written, not filtered when they are read
+(A0025-contract-enforced-at-write-time, cites-as-live).
 
 **Trust is structural.** Every node carries a tier, and `DERIVED_FROM` edges make a
-node's effective trust the *floor* over its whole derivation chain. A claim resting
+node's effective trust the *floor* over its whole derivation chain
+(A0051-trust-is-the-floor-over-derivation-chain, cites-as-live). A claim resting
 on a fetched web page cannot end up trusted like a claim you made yourself —
-distillation does not launder. Retrieved knowledge comes back blockquoted with its
-citation and tier: it informs, it never instructs.
+distillation does not launder
+(A0052-transcript-ingress-floor-down-tiers-fetched-content, cites-as-live). Retrieved
+knowledge
+comes back blockquoted with its citation and tier: it informs, it never instructs
+(A0054-tier-2-recall-informs-never-instructs, cites-as-live).
 
 **Memory builds itself.** You don't curate it. A session ends, a hook distills the
 retained transcript into claims and open threads, and the next session opens already
@@ -41,7 +48,8 @@ knowing where you left off.
 
 **You can audit all of it.** The main scope is dense and connective, referencing
 expert nodes by ID and copying nothing. `thalamus pulse` serves a live dashboard that
-prices what retrieval actually cost.
+prices what retrieval actually cost
+(A0085-pulse-prices-retrieval-cost, cites-as-live).
 
 ## Quick start
 
@@ -108,10 +116,12 @@ answers the other half — whether the wiring that writes it is armed.
 
 ## What this release is
 
-**0.1.0 runs from a checkout.** There is no `pip install thalamus` yet — several
-modules resolve paths from the repo root, and the expert manifests in `config/` live
-outside the package, so an installed wheel would look for paths that only exist in a
-clone. Installing without a clone is the 0.1.1 milestone.
+**Thalamus runs from a clone, and the clone is the distribution.** There is no
+`pip install thalamus`: several modules resolve paths from the repo root and the
+expert manifests in `config/` live outside the package, so a wheel would look for
+paths only a checkout has. `git pull` is the upgrade path. `pyproject.toml` carries
+`Private :: Do Not Upload`, which makes the closed index mechanical rather than a
+stated intention.
 
 One feature is **experimental and off by default**: frame themes, which render the
 pane inside artwork, behind `thalamus console --frames PATH`. Without the flag there
@@ -121,25 +131,36 @@ are no controls and no key bindings, and no artwork ships.
 
 - **The substrate** — a property graph (Apache TinkerPop / TinkerGraph) whose ten node
   kinds are `Session`, `Claim`, `Thread`, `Source`, `Artifact`, `Chunk`, `Entity`,
-  `Exchange`, `Trace` and `Agent` — every one carrying provenance and a scope. Orphans
+  `Exchange`, `Trace` and `Agent` — every one carrying provenance and a scope
+  (A0086-every-vertex-carries-provenance-and-scope, cites-as-live). Orphans
   and contract violations are rejected at write time.
 - **The evidence archive** — memory is bootstrapped from retained session transcripts,
-  held in an immutable content-addressed store outside the repo. The graph is a
+  held in an immutable content-addressed store outside the repo
+  (A0087-archive-is-immutable-content-addressed, cites-as-live). The graph is a
   materialized view over that log: re-extract, never migrate.
 - **Curated ingestion** — an expert subgraph's domain half is fed a document at a time.
   `thalamus ingest <url|path> --scope <expert>` refuses bytes whose serving origin the
-  scope's manifest does not allowlist, retains them in the archive as a `Source`, and
-  co-indexes the text as `Chunk` vertices beside the claims drawn from it. `--check`
-  verifies the source and reports the host that actually served it for no model spend;
-  nothing persists until `--write`.
+  scope's manifest does not allowlist
+  (A0088-ingest-refuses-unallowlisted-origins, cites-as-live), retains what survives the
+  gate in the archive, and on `--write` lands it as a `Source` with the text co-indexed
+  as `Chunk` vertices beside the claims drawn from it. `--check` runs that same path and
+  stops at the model call, reporting the host that actually served the bytes for no model
+  spend (A0089-check-stops-before-the-model-call, cites-as-live). The bytes are retained
+  either way; the graph is what `--write` gates.
 - **The expert roster** — each scope declared by a manifest in `config/experts/` and
-  nothing else. Five ship as examples; write a YAML file and you have a sixth.
+  nothing else
+  (A0004-manifest-is-the-whole-of-expert-registration, cites-as-live). Five ship as
+  examples;
+  write a YAML file and you have a sixth.
 - **Structural role boundaries** — where a scope is defined by what it must *not*
   produce, its manifest declares a `write_boundary` and a PreToolUse hook enforces it
-  against the file-editing tools. The shipped `qe` manifest is the worked example: it
-  holds the adversarial suite and is denied `src/`, so the scope that asserts against
-  an implementation cannot quietly repair it. The reverse denial is in the ownership
-  table, so no other scope can soften what it asserts either.
+  against the file-editing tools
+  (A0091-write-boundary-enforced-by-role-guard, cites-as-live). The shipped `qe`
+  manifest is the worked example: it holds the adversarial suite and is denied `src/`,
+  so the scope that asserts against an implementation cannot quietly repair it
+  (A0092-qe-is-denied-src, cites-as-live). The reverse denial is in the ownership
+  table, so no other scope can soften what it asserts either
+  (A0093-ownership-table-denies-main-tests-qe, cites-as-live).
 - **Session pinning** — one OS process, one immutable pin. `thalamus pin <scope>`
   launches a session into a scope; `thalamus roster` brings up the `main` anchor and
   experts are spawned on demand (`--all` opens one window per manifest). The MCP
@@ -151,15 +172,21 @@ are no controls and no key bindings, and no artwork ships.
   Installable as a PWA on a phone over a tailnet.
 - **The consultation protocol** — cross-expert questions ride single-use tickets where
   minting the ticket *is* writing the exchange record, and answers must cite nodes
-  inside the consulted scope. Beside it, `thalamus quick ask` forks an expert's live
-  session rather than cold-starting one.
+  inside the consulted scope
+  (A0094-minting-the-ticket-is-the-write, cites-as-live). Beside it, `thalamus quick
+  ask`
+  forks an expert's live session rather than cold-starting one
+  (A0063-quick-ask-forks-the-experts-live-session, cites-as-live).
 - **Rooms** — a private roster whose members see and message each other and nobody
-  else, enforced by a per-room config directory and an outbound guard.
+  else, enforced by a per-room config directory and an outbound guard
+  (A0096-rooms-partition-by-config-directory, cites-as-live).
 - **The eval loop** — every memory-tool call is trace-tapped, landed as `Trace` nodes,
   judged used-vs-ignored against the retained transcript, and priced in injected
-  tokens. Above it, a counterfactual harness runs one task memory-on / memory-off /
-  degraded in a confined worktree, graded by an oracle whose rungs are validated
-  against a mutant set before any run is scored.
+  tokens
+  (A0097-every-memory-call-is-trace-tapped, cites-as-live). Above it, a counterfactual
+  harness runs one task memory-on / memory-off / degraded in a confined worktree,
+  graded by an oracle whose rungs are validated against a mutant set before any run is
+  scored.
 - **Trust enforcement, first pass** — the transcript-ingress floor down-tiers distilled
   claims that rest on fetched web content.
 
@@ -204,6 +231,8 @@ src/thalamus/
   pulse/       live telemetry dashboard over the eval loop
 arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
+ledger/        the claims ledger — one entry per documented commitment, pinned by
+               digest to the section of source that keeps it true
 docs/          user documentation
 docker/        the confinement image a counterfactual arm runs inside
 tools/         frame-theme authoring scripts (`--extra frames`)

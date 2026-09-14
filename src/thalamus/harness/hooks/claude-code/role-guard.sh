@@ -177,7 +177,15 @@ PY
 )
   fi
 
-  case "$(printf '%s' "$ownership" | head -n1)" in
+  # Parameter expansion, not `printf | head -n1`: under `set -euo pipefail` that
+  # pipeline is a race. `head` exits at the first newline and closes the pipe, and
+  # when the writer has not finished — a long `reason`, or a descheduled subshell
+  # under load — it takes SIGPIPE, `pipefail` makes the substitution 141, and
+  # `errexit` kills the guard with no stderr at all. A hook that exits 141 silently
+  # is a boundary that did not fire. Measured: reproduced at ~0.4% per call under 250
+  # concurrent invocations, and every time when the manifest's reason exceeds the
+  # 64 KiB pipe buffer.
+  case "${ownership%%$'\n'*}" in
     PASS) : ;;
     DENY)
       glob=$(printf '%s' "$ownership" | sed -n '2p')
@@ -271,7 +279,9 @@ if [ -z "$verdict" ]; then
   exit 0
 fi
 
-pattern=$(printf '%s' "$verdict" | head -n1)
+# The same expansion, for the same reason as the ownership branch above. `tail -n +2`
+# stays a pipeline: it reads its input to the end, so it never closes the pipe early.
+pattern=${verdict%%$'\n'*}
 reason=$(printf '%s' "$verdict" | tail -n +2)
 log_event block "$pattern"
 

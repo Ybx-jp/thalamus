@@ -1,0 +1,18 @@
+# Expected verdicts for merge-guard.sh, one per line: <want><TAB><command>.
+# Committed alongside the guard for the same reason the corpus is committed alongside the
+# checkers — a guard whose behaviour is asserted rather than checked is a claim like any
+# other. The last three lines are the false positives that the anchor exists to prevent;
+# the eleventh is the one that actually fired, on the commit introducing the guard.
+DENY	gh pr merge 13 --squash
+DENY	gh pr merge --rebase
+DENY	gh pr merge -s 13
+DENY	git merge --squash feature
+DENY	git fetch && git merge --squash feature
+DENY	sudo gh pr merge --squash
+allow	gh pr merge 13 --merge
+allow	git merge --no-ff feature
+allow	git status
+allow	git rebase -i main
+allow	git commit -m "never gh pr merge --squash here"
+allow	grep -rn "git merge --squash" docs/
+allow	echo see `gh pr merge --squash` in the notes

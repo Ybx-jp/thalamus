@@ -68,12 +68,13 @@ CLAUDE_DEFAULT_MODEL = "sonnet"
 # and `MODEL_HINT` turns that failure into one command's worth of fixing.
 CURSOR_DEFAULT_MODEL = "composer-2.5"
 
-# Codex's mid-catalog frontier slug, on the same trade Cursor's pick was made on:
-# distillation is a batch sweep where nothing waits on the result, so quality beats
-# latency and cost beats the top tier. `gpt-5.6-sol` is the catalog default (priority
-# 1) and is the one being declined; both are real identifiers.
+# Codex's mid-catalog slug, on the same trade Cursor's pick was made on: distillation
+# is a batch sweep where nothing waits on the result, so quality beats latency and cost
+# beats the top tier. `gpt-6-astra` heads the catalog (priority 1, "most capable") and
+# `gpt-5.6-sol` is the workhorse above this one (priority 6); both are being declined,
+# and all three are real identifiers.
 #
-# Verified against a live `codex debug models` (2026-08-17, codex-cli 0.147.0), which
+# Verified against a live `codex debug models` (2026-09-10, codex-cli 0.154.0), which
 # renders the raw catalog as JSON and — unlike Cursor's — answers without auth.
 CODEX_DEFAULT_MODEL = "gpt-5.6-terra"
 
@@ -360,11 +361,11 @@ AGENT_CLIS: dict[str, AgentCLI] = {
         # not instrumentation.
         reports_cost=False,
         model_hint=CODEX_MODEL_HINT,
-        # The listed catalog's top three plus the cheap rung, by the vendor's own
-        # `priority` (2, 1, 3, 23). Verified live 2026-08-23, codex-cli 0.147.0.
-        # `codex-auto-review` is in the catalog and omitted: it ships
-        # `visibility: "hide"`, so it is not a model the vendor offers for selection.
-        models=("gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.4-mini"),
+        # Every model the catalog lists, in the vendor's own `priority` order (1, 6,
+        # 7, 8, 12). Verified live 2026-09-10, codex-cli 0.154.0. `gpt-reserve` and
+        # `codex-auto-review` are in the catalog and omitted: both ship
+        # `visibility: "hide"`, so they are not models the vendor offers for selection.
+        models=("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"),
         invocation="exec",
         envelope="jsonl-events",
         # `--skip-git-repo-check` answers the trust refusal and nothing else — the

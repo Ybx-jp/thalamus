@@ -1122,12 +1122,12 @@ def _pane_epitaph(window_id: str) -> str:
 
     `-S -` reaches into the history, and without it this returns nothing useful: when
     a pane dies, tmux pushes what it printed up out of the viewport and leaves the
-    banner alone on the visible screen. A pane pinned to `window-size manual` is 200
-    lines tall, so a program that printed three lines and exited has all three in
-    history and 200 blanks in view.
+    banner alone on the visible screen. A roster pane is WINDOW_ROWS lines tall, so
+    a program that printed three lines and exited has all three in history and the
+    rest of the viewport blank.
 
-    `-J` rejoins the lines tmux wrapped. A roster pane is 60 columns wide, so a
-    sentence of vendor English is three screen lines, and taking the last few
+    `-J` rejoins the lines tmux wrapped. A roster pane is WINDOW_COLS columns wide,
+    so a sentence of vendor English can span screen lines, and taking the last few
     without joining first quotes a fragment that starts mid-word.
     """
     out = subprocess.run(tmux.argv("capture-pane", "-p", "-J", "-S", "-",
@@ -1180,15 +1180,33 @@ def confirm_started(window_id: str, harness: str = "claude") -> None:
         time.sleep(min(0.05, remaining))
 
 
-def _pin_window_sizes(target: str | None) -> None:
-    """Set every roster window's LOCAL window-size to manual, post-creation.
+# Every roster window's geometry, columns by rows. One tmux window has one width
+# and every viewer — the console on a phone or a desktop, the /tty page, a desktop
+# `tmux attach` — reads the same window, so the width is set for the viewer the
+# console exists for: 60 columns is what a phone's auto-fit renders at a readable
+# size with no horizontal scroll. A desktop attach gets a 60-column box; the rows
+# and the history behind them are what a desktop was short of. Not read from
+# tmux's `default-size`: that is 80x24 on any box without a hand-written
+# tmux.conf, and this project ships none.
+WINDOW_COLS = 60
+WINDOW_ROWS = 50
 
-    The mobile console needs windows held at default-size (60 cols) even
-    while a desktop /tty client is attached — that's what `manual` does. It cannot
-    live in .tmux.conf as a global: tmux 3.4's server segfaults creating a window
-    while the global window-size is manual and no client is attached (measured
-    2026-07-17; it took down the whole roster). Creating first and pinning each
-    window's local option after is crash-free on the same version.
+
+def _pin_window_sizes(target: str | None) -> None:
+    """Hold every roster window at WINDOW_COLS x WINDOW_ROWS, post-creation.
+
+    `resize-window -x -y` sets the size and, as a side effect, the window's LOCAL
+    `window-size manual`, which is wanted: the console has no tmux client of its
+    own and reads whatever size the window has, so an attaching desktop or /tty
+    client must not resize the windows out from under it. Running over every window
+    in the session also corrects one created at the stock 80x24 by whichever unit
+    made the session first — `tmux new -A -s thalamus` carries the stock size, and
+    the roster is often spawned into a session it did not create.
+
+    Per window and after creation, never as a global: tmux 3.4's server segfaults
+    creating a window while the global window-size is manual and no client is
+    attached (measured 2026-07-17; it took down the whole roster). Resizing each
+    window once it exists is crash-free on the same version.
     """
     cmd = tmux.argv("list-windows", *(["-t", target] if target else []),
                     "-F", "#{window_id}")
@@ -1196,7 +1214,8 @@ def _pin_window_sizes(target: str | None) -> None:
     if out.returncode != 0:
         return
     for window_id in out.stdout.split():
-        subprocess.run(tmux.argv("set", "-w", "-t", window_id, "window-size", "manual"))
+        subprocess.run(tmux.argv("resize-window", "-t", window_id,
+                                 "-x", str(WINDOW_COLS), "-y", str(WINDOW_ROWS)))
 
 
 def _entered_room(room: str | None, harness: str = "claude") -> str:

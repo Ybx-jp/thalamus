@@ -116,8 +116,8 @@ class TestChoosingAnExtractor:
         assert distilled(store).model == agents.default_model("codex")
 
     def test_a_chosen_model_is_used(self, store, ledger, all_installed):
-        pick(store, ledger, "codex", "gpt-5.4-mini")
-        assert distilled(store).model == "gpt-5.4-mini"
+        pick(store, ledger, "codex", "gpt-5.6-luna")
+        assert distilled(store).model == "gpt-5.6-luna"
 
     def test_choosing_the_default_again_is_a_real_choice(self, store, ledger, all_installed):
         pick(store, ledger, "codex")
@@ -142,7 +142,7 @@ class TestChoosingAnExtractor:
         assert ingested(store, harness="codex").reason == "--harness"
 
     def test_an_explicit_model_outranks_the_policy_s(self, store, ledger, all_installed):
-        pick(store, ledger, "codex", "gpt-5.4-mini")
+        pick(store, ledger, "codex", "gpt-5.6-luna")
         assert distilled(store, model="gpt-5.6-sol").model == "gpt-5.6-sol"
 
 
@@ -150,9 +150,9 @@ class TestTheTwoPassesAreTwoBudgets:
     """The split this module exists for: one model call per session, one per chunk."""
 
     def test_ingestion_follows_distillation_until_it_is_set(self, store, ledger, all_installed):
-        pick(store, ledger, "codex", "gpt-5.4-mini")
+        pick(store, ledger, "codex", "gpt-5.6-luna")
         got = ingested(store)
-        assert (got.harness, got.model) == ("codex", "gpt-5.4-mini")
+        assert (got.harness, got.model) == ("codex", "gpt-5.6-luna")
         assert got.reason == "the distillation setting"
 
     def test_ingestion_can_be_moved_without_moving_distillation(
@@ -252,10 +252,10 @@ class TestAnExtractorThatDisappears:
 class TestTheLedger:
     def test_every_change_lands_a_row(self, store, ledger, all_installed):
         pick(store, ledger, "codex")
-        pick(store, ledger, "codex", "gpt-5.4-mini")
+        pick(store, ledger, "codex", "gpt-5.6-luna")
         rows = [json.loads(line) for line in ledger.read_text().splitlines()]
         assert [(r["from_harness"], r["to_harness"], r["to_model"]) for r in rows] == [
-            ("", "codex", ""), ("codex", "codex", "gpt-5.4-mini"),
+            ("", "codex", ""), ("codex", "codex", "gpt-5.6-luna"),
         ]
         assert all(r["actor"] == "console" for r in rows)
 
@@ -271,10 +271,10 @@ class TestTheLedger:
     def test_a_change_to_one_pass_leaves_the_other_alone_on_disk(
         self, store, ledger, all_installed
     ):
-        pick(store, ledger, "codex", "gpt-5.4-mini", pass_="distill")
+        pick(store, ledger, "codex", "gpt-5.6-luna", pass_="distill")
         pick(store, ledger, "cursor", pass_="ingest")
         held = json.loads(store.read_text())["passes"]
-        assert held["distill"] == {"harness": "codex", "model": "gpt-5.4-mini"}
+        assert held["distill"] == {"harness": "codex", "model": "gpt-5.6-luna"}
         assert held["ingest"] == {"harness": "cursor", "model": ""}
 
     def test_a_refused_change_lands_no_row(self, store, ledger, all_installed):
@@ -319,11 +319,11 @@ class TestWhatThePanelIsTold:
     ):
         """The label alone names a rule, not an outcome, and the outcome is the whole
         question — an operator weighing his allowance cannot act on "follow distillation"."""
-        pick(store, ledger, "codex", "gpt-5.4-mini", pass_="distill")
+        pick(store, ledger, "codex", "gpt-5.6-luna", pass_="distill")
         view = ep.describe("ingest", store=store)
         assert view["value"]["harness"] == ""
         assert view["resolved"]["harness"] == "codex"
-        assert view["resolved"]["model"] == "gpt-5.4-mini"
+        assert view["resolved"]["model"] == "gpt-5.6-luna"
 
     def test_a_deferring_distill_card_resolves_to_nothing_because_there_is_nothing(
         self, store, all_installed

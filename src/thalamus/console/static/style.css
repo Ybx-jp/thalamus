@@ -253,7 +253,7 @@ body[data-view="session"] .build-bar { display: none; }
 /* ---- Live screen ---- */
 .screen-wrap {
   flex: 1 1 auto;
-  min-width: 0;   /* the 80-col pane scrolls INSIDE here, not by widening the page */
+  min-width: 0;   /* the pane scrolls INSIDE here, not by widening the page */
   min-height: 0;
   overflow: auto;
   background: #0b0e12;
@@ -904,6 +904,11 @@ textarea:focus { outline: none; border-color: var(--chan); }
   border-color: var(--tab, var(--chan));
 }
 .chips-dirs .chip { font-size: .64rem; }
+/* A section heading with one action at its right edge — the directory picker's
+   star, which acts on the highlighted chip. The heading keeps its own margin
+   rules; the row carries the spacing instead. */
+.sec-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 .35rem; }
+.sec-head h3 { margin: 0; }
 
 /* ---- Rooms ---- */
 /* The room filter sits in the same bar as the workspace filter but reads as its
@@ -1086,8 +1091,11 @@ body[data-view="session"] .roster { display: none; }
   color: var(--ink);
 }
 .grp-n { margin-left: auto; font-size: .69rem; color: var(--muted); }
+/* The room a second line needs. Layout only, and shared: a group can carry a `why`
+   without being a group we failed to read — the voice below is the separate claim. */
+.grp.unknown,
+.grp.shells { height: auto; padding: .5rem .9rem .35rem; flex-wrap: wrap; }
 /* "We were not told" is not a project name, so it does not speak in one's voice. */
-.grp.unknown { height: auto; padding: .5rem .9rem .35rem; flex-wrap: wrap; }
 .grp.unknown .grp-name {
   font-family: var(--ui);
   font-style: italic;

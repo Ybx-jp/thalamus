@@ -48,6 +48,7 @@ from thalamus.contract.ontology import (
     CORE_EDGES,
     CORE_NODES,
     EDGES_BY_LABEL,
+    EXCHANGE_STATUSES,
     MAIN_SCOPE,
     NODES_BY_LABEL,
     edge_crosses_scope,
@@ -190,15 +191,28 @@ class ContractViolation(RuntimeError):
         )
 
 
+def refuse_unless_conformant(session: SessionGraph) -> None:
+    """The federation contract as a `substrate.writer.Gate`. Raises, or returns None.
+
+    The gate cannot be *implemented* in `substrate/writer.py`, which is where it would
+    most obviously belong: the substrate sits *below* the contract — it knows nodes and
+    edges, not scopes, tiers or federation — and importing `conformance` there would
+    invert the layering the whole boundary rests on. So the writer declares the
+    obligation as a required argument and this discharges it. That is the one
+    arrangement that puts the check on the write path without putting the contract
+    underneath it.
+    """
+    issues = [issue for issue in check_session(session) if severity_of(issue) != ADVISORY]
+    if issues:
+        raise ContractViolation(session.session_id, issues)
+
+
 def write_session_checked(g, session: SessionGraph) -> str:
     """Check the contract, then write. The gated entry point to `write_session`.
 
-    The gate cannot live in `substrate/writer.py`, which is where it would most
-    obviously belong: the substrate sits *below* the contract — it knows nodes and
-    edges, not scopes, tiers or federation — and importing `conformance` there would
-    invert the layering the whole boundary rests on. So the gate sits here, one level
-    up, and the obligation on callers changes from "remember to check" to "use this
-    door".
+    The obligation on callers is "use this door". `write_session` now takes its gate as
+    a required argument, so a caller that goes around the door has to name what it
+    passed instead — the omission is no longer silent.
 
     That obligation was previously discharged by convention and unevenly: of the three
     `write_session` call sites, two checked and `thalamus write` — the one that takes
@@ -210,10 +224,33 @@ def write_session_checked(g, session: SessionGraph) -> str:
     """
     from thalamus.substrate.writer import write_session
 
-    issues = [issue for issue in check_session(session) if severity_of(issue) != ADVISORY]
-    if issues:
-        raise ContractViolation(session.session_id, issues)
-    return write_session(g, session)
+    return write_session(g, session, gate=refuse_unless_conformant)
+
+
+def write_knowledge_checked(g, batch, manifest=None) -> str:
+    """Check the batch, then write. The gated entry point to `write_knowledge`.
+
+    An ingestion batch answers to more than a session does: the consulted scope's
+    manifest triages claim kinds against a declared vocabulary, and a batch carrying an
+    undeclared kind is refused entire rather than written partially. Pass the manifest
+    the caller already loaded; a caller with none gets `check_knowledge` alone, which is
+    the same floor a scope with no usable manifest has always had.
+
+    `thalamus ingest` still runs both checks ahead of this to report every issue at once
+    and exit non-zero with the archive-is-kept advice — this gate is the backstop that
+    makes the refusal a property of the write rather than of that one command.
+    """
+    from thalamus.substrate.writer import write_knowledge
+
+    def gate(candidate) -> None:
+        issues = list(check_knowledge(candidate))
+        if manifest is not None:
+            issues += manifest.check_batch(candidate)
+        issues = [issue for issue in issues if severity_of(issue) != ADVISORY]
+        if issues:
+            raise ContractViolation(candidate.source.content_hash, issues)
+
+    return write_knowledge(g, batch, gate=gate)
 
 
 def prune_orphan_artifacts(session: SessionGraph) -> SessionGraph:
@@ -533,9 +570,6 @@ def audit_attribution(edges: list[AuditEdge]) -> list[str]:
     return issues
 
 
-_EXCHANGE_STATUSES = frozenset({"open", "answered"})
-
-
 def audit_exchanges(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list[str]:
     """Exchange-record obligations — the ticket protocol's contract half.
 
@@ -553,10 +587,10 @@ def audit_exchanges(vertices: list[AuditVertex], edges: list[AuditEdge]) -> list
         if vertex.label != "Exchange":
             continue
         status = str(vertex.properties.get("status") or "")
-        if status not in _EXCHANGE_STATUSES:
+        if status not in EXCHANGE_STATUSES:
             issues.append(
                 f"Exchange `{vertex.vid}` has status `{status or '(none)'}` — "
-                f"the protocol knows {', '.join(sorted(_EXCHANGE_STATUSES))}"
+                f"the protocol knows {', '.join(sorted(EXCHANGE_STATUSES))}"
             )
         if status == "answered" and vertex.vid not in cited:
             issues.append(

@@ -20,13 +20,6 @@
       "note": "Issue #152. Text posted to /api/send is read by tmux as arguments. The pin is the retarget payload rather than the dash-flag ones because it is the sharpest of the set: a repair that added `--` fixes every entry in the witness at once, and a repair that somehow left this one would drift here."
     },
     {
-      "case": "a-malformed-post-body-gets-a-response-not-a-dropped-connection",
-      "failure_class": "failed-open",
-      "witness_contains": "45 of 54 probes dropped the connection",
-      "triaged_at_rev": "ea06c91",
-      "note": "Issue #175. do_POST guards the JSON parse and nothing after it, so any body that parses to a non-object, and several wrong-typed fields, escape as unhandled exceptions and kill the handler thread. The count is the pin: it is a denominator over routes derived from the shipped dispatch (8 driven routes x 6 non-object/empty/oversized bodies, minus the one shape - an empty body - that never crashes, plus 5 type-confusion probes and 1 wrong-content-type probe that also don't crash), so fixing any route, or adding one, moves it and drifts. The caller_room, /frame/<name> traversal, and concurrent-close probes added alongside this corpus are asserted inline in the case, not pinned here, since none of them reproduce this defect."
-    },
-    {
       "case": "policy-load-collapses-hash-collision",
       "failure_class": "invariant-falsified",
       "witness_contains": "load() returned 1 record(s) for this hash; keying by (sha, ts) instead recovers 2",
@@ -88,20 +81,6 @@
       "witness_contains": "_session_scope='main'; sync() would stamp the qe event's Trace with scope='main'",
       "triaged_at_rev": "5d10dec",
       "note": "Issue #163. _session_scope resolves one scope for an entire session_id and sync() stamps every trace of that session with it, discarding each event's own recorded `scope`. The pin is the qe-pinned event's Trace being stamped 'main' despite its own event.scope reading 'qe'; a fix that prefers the event's own recorded scope at the stamping call site (falling back to the batch resolution only when it is empty) makes this read 'qe' instead and this entry goes stale."
-    },
-    {
-      "case": "mcp-tool-argument-sweep",
-      "failure_class": "boundary-leak",
-      "witness_contains": "memory_query(query=none) raised AttributeError: 'NoneType' object has no attribute 'strip'",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #173. validate_query's first line is query.strip() with no isinstance check ahead of it, and memory_query passes its argument straight through. A non-string query (None, an int, a list) raises AttributeError instead of the same readable rejection every other malformed query gets. The pin is the None case's exact exception text; a fix that type-checks before the strip() call returns a string here instead and this entry goes stale."
-    },
-    {
-      "case": "query-guard-evasion-corpus",
-      "failure_class": "failed-open",
-      "witness_contains": "addv( via comment-injection",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #174. validate_query denies mutation steps by checking whether each appears as a literal substring in a whitespace-stripped, lowercased view of the query. A block comment, a zero-width space, a Cyrillic homoglyph, or a fullwidth paren inserted mid-token all survive that view unstripped and split the substring, so all 40 (10 denied steps x 4 techniques) generated variants are accepted. The pin is one representative bypass; a fix that normalizes the text (strips comments and zero-width characters, folds confusables) before matching closes all four techniques at once and every generated variant starts being rejected, at which point this entry goes stale."
     },
     {
       "case": "a-stalled-teardown-does-not-force-kill-a-reused-index",

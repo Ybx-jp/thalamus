@@ -26,6 +26,7 @@ from thalamus.substrate.schema import (
     Tier,
     Tool,
 )
+from thalamus.contract.conformance import refuse_unless_conformant
 from thalamus.substrate.writer import (
     GraphUnavailable,
     GraphWriteError,
@@ -62,6 +63,17 @@ class FakeGraphTraversalSource:
     def merge_v(self, _values):
         return self.graph_traversal
 
+
+
+def _substrate_only(_session) -> None:
+    """A gate that refuses nothing, for the three tests below the contract.
+
+    These exercise the artifact projection directly and hand the writer a session
+    carrying an artifact no claim references — which the federation contract refuses,
+    correctly, and which no production path would ever offer. Naming the weak gate is
+    the point of the seam: a write that goes around the contract has to say so, and a
+    reviewer greps `gate=` to find every one that did.
+    """
 
 def test_session_upsert_uses_merge_enum_tokens():
     """
@@ -221,7 +233,7 @@ def test_every_written_node_carries_a_provenance_envelope():
     )
 
     graph = RecordingGraph()
-    write_session(graph, session)
+    write_session(graph, session, gate=refuse_unless_conformant)
 
     # Verifies: session + artifact + claim + thread — nothing written without provenance
     assert len(graph.vertices) == 4
@@ -251,7 +263,7 @@ def test_artifacts_are_written_unscoped_and_everything_else_scoped():
     )
 
     graph = RecordingGraph()
-    write_session(graph, session)
+    write_session(graph, session, gate=refuse_unless_conformant)
 
     ids = {vertex["properties"][T.id] for vertex in graph.vertices}
 
@@ -293,7 +305,7 @@ def test_two_spellings_of_one_file_are_written_onto_one_projection():
     )
 
     graph = RecordingGraph(sessions=[{"root": "/home/u/code/thalamus", "evidence": "cwd"}])
-    write_session(graph, session)
+    write_session(graph, session, gate=_substrate_only)
 
     absolute = _artifact_properties(graph, "/home/u/code/thalamus/src/a.py")
     relative = _artifact_properties(graph, "src/a.py")
@@ -341,7 +353,7 @@ def test_the_write_anchors_on_every_proven_checkout_and_yields_to_disagreement()
         ],
         artifacts=[{"identifier": "src/a.py", "repo": "thalamus", "path": "src/a.py"}],
     )
-    write_session(graph, session)
+    write_session(graph, session, gate=_substrate_only)
 
     foreign = _artifact_properties(graph, "/home/u/code/thalamus/src/a.py")
     contested = _artifact_properties(graph, "src/a.py")
@@ -383,7 +395,7 @@ def test_a_graph_that_cannot_serve_the_projection_still_writes_the_artifact():
     )
 
     graph = _UnreadableGraph()
-    write_session(graph, session)
+    write_session(graph, session, gate=_substrate_only)
 
     properties = _artifact_properties(graph, "src/a.py")
 
@@ -856,7 +868,7 @@ def test_written_at_lands_on_every_node_whose_text_can_change():
     )
 
     graph = RecordingGraph()
-    write_session(graph, session)
+    write_session(graph, session, gate=refuse_unless_conformant)
 
     by_label = {}
     for entry in graph.vertices:

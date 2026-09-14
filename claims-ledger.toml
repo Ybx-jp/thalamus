@@ -1,0 +1,70 @@
+# The claims ledger: one entry per commitment this repository's prose makes about its
+# own code, pinned to the span that keeps it true. `uv run claims-ledger check` is gated
+# in CI beside the other verification commands; see CLAUDE.md and CONTRIBUTING.md.
+[tool.claims-ledger]
+ledger = "ledger"
+
+# The documents that may cite an entry. Named surface by surface rather than as `**/*.md`
+# so that nothing under `tests/` is checked: `tests/qe/` carries fixture prose and corpus
+# text, and an excluded document loses every citation rule rather than the one intended.
+# `src/thalamus/**/*.py` is here because a docstring states a commitment in the same voice
+# a doc does, and an entry written as a session passes through a module cites it there.
+documents = [
+    "README.md",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "docs/*.md",
+    "pyproject.toml",
+    "src/thalamus/**/*.py",
+    "src/thalamus/harness/hooks/*/*.sh",
+    "src/thalamus/harness/skills/*/SKILL.md",
+]
+
+# What an entry may rest on. Every ground here names a span of tracked source: this
+# repository's claims are about its own code, so there is no plain evidence type and no
+# `lab`/`experiment` pointer — a measurement whose ground is a lab record belongs to the
+# private bridging ledger (Ybx-jp/thalamus-notes#4), and in this repository such a
+# sentence can only be `argued`.
+evidence-sectioned = ["code", "toml", "toml-key", "yaml"]
+evidence-plain = []
+
+# Who may write a verdict, and the name the machinery writes under. Scope names are added
+# as a scope first writes one; `ledger/` deliberately has no row in
+# `contract/ownership.PATH_OWNERSHIP`, because that table reserves a tree *for* one scope
+# and denies every other, and the ledger is cross-scope by construction — a claim about
+# `tests/qe/` and a claim about `substrate/` are neighbours in the same directory. Who may
+# speak is the allowlist below; where they may write is not the question the ledger asks.
+verdict-authors = ["main", "propagation"]
+propagation-author = "propagation"
+
+# No id series is quarantined: this is the repository's first ledger.
+archived-prefixes = []
+
+# One pattern decides both ends of a section: the section runs from the line matching the
+# pattern with its own name to the next line matching it with the name widened.
+[tool.claims-ledger.section-patterns]
+# A top-level `def`, `class` or assignment, with its decorators, running to the next one.
+#
+# Three clauses earn their place. The leading decorator group is what puts `@property`,
+# `@mcp.tool` and `@dataclass(frozen=True)` inside the definition they modify: a pattern
+# anchored on the `def` line leaves every decorator above it in the *previous* section,
+# so an edit to one flags a claim about the definition before it and the decorator's own
+# behaviour is unpinnable. Measured here before it was added: 7 of 95 grounds carried a
+# decorator belonging to the definition below them (Ybx-jp/claims-ledger#31). The
+# negative lookahead keeps a nested definition or a local assignment from ending a
+# function at its first indented line. The annotation clause lets a ground name
+# `PINS_FILE` where the source writes `PINS_FILE: Path = ...`.
+#
+# It spans lines, which the upstream README's "matched line by line" reads as ruling out:
+# `section_header_re` compiles with re.MULTILINE and `section_span` runs `finditer` over
+# the whole text, so a multi-line pattern is matched as written. Alternation is
+# leftmost-first at each start position, which is why the decorator branch wins over the
+# assignment branch on a line like `@dataclass(frozen=True)` — without it, the widened
+# form matches that line's own `=` and ends the preceding section there.
+code = '^(?:@[^\n]*\n)*(?![ \t])(?:(?:async[ \t]+)?(?:def|class)[ \t]+{name}\b|{name}[ \t]*(?::[^=\n]+)?=)'
+# A whole TOML table, and one key of one. A claim about a single setting rests on the
+# key so that an unrelated key beside it does not move the ground.
+toml = '^\[{name}\]'
+toml-key = '^{name} = '
+# A top-level YAML key and everything nested under it, running to the next top-level key.
+yaml = '^{name}:'

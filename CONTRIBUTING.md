@@ -39,6 +39,7 @@ uv run thalamus arch rules --gate  # dependencies against the declared layers
 uv run thalamus arch scan --check  # the committed structural model must be current
 uv run thalamus arch dead --gate   # definitions nothing outside tests/ refers to
 uv run thalamus contract check     # after any change to a live write path
+uv run claims-ledger check         # documented commitments against the code that keeps them
 ```
 
 Every one of these runs in CI on each push (`.github/workflows/verify.yml`). Run them
@@ -54,6 +55,59 @@ finished.
 dependency here. It is pre-1.0 and its inference changes between releases, so a
 floating spec turns a green tree red on someone else's schedule. Raise the pin
 deliberately, in a change that also fixes whatever the new release reports.
+
+### The claims ledger
+
+`ledger/` holds one entry per commitment this repository's prose makes about its own
+code, each pinned by digest to the section of source that keeps it true — a top-level
+function, class or assignment, a TOML table or key, a top-level YAML key. The sentence
+that states the commitment cites the entry inline:
+
+```markdown
+A session is *pinned* to exactly one scope and cannot widen its own view
+(A0001-pinned-scope-is-resolved-once-at-process-start, cites-as-live).
+```
+
+`claims-ledger check` runs five checkers over that: the entries against the schema, the
+grounds against the working tree, the citations against each entry's current status, and
+the entry region above each `APPEND` marker against history. A pinned section that has
+moved is a flag; a document citing a fallen entry as live is a failure. The commitment
+and the code are then edited together or the build says they were not.
+
+**The seed is small and the rest is written as you go.** The ledger starts with the
+sentences a stranger acts on — `README.md`'s "What makes it different" and architecture
+summary, `CLAUDE.md`'s verification, memory and hygiene rules, and `docs/concepts.md`.
+Every other entry is written when a change edits the file that states the promise: if you
+are editing a sentence that says what the code does, that sentence earns an entry in the
+same change.
+
+**When a pin is flagged**, read the assertion against the section as it now stands.
+Three outcomes, and the tool only writes the first step of any of them:
+
+- The artifact moved and the claim did not — a rename, a reformat, a comment. Append a
+  corroborating verdict naming the section as it now stands; the entry keeps its id.
+- The claim still holds on different evidence. Supersede it: grounds are frozen above the
+  `APPEND` marker, so re-pinning is a new entry.
+- The claim is no longer true. Append a refuted verdict and rewrite the sentence. Never
+  repair a citation failure by deleting the citation — the citation is the link the
+  ledger exists to keep.
+
+`claims-ledger freshness --write` writes the machine-authored contested verdict and
+`claims-ledger sha --write` fills a `=?` anchor with the digest of the section as the
+tree has it, so an entry, its citation and the code it rests on all land in one commit.
+The procedure in full is
+[docs/OPERATING.md](https://github.com/Ybx-jp/claims-ledger/blob/main/docs/OPERATING.md)
+and the schema is
+[docs/SCHEMA.md](https://github.com/Ybx-jp/claims-ledger/blob/main/docs/SCHEMA.md).
+
+**Do not run `claims-ledger hook --install` here.** The pre-commit hook it writes lands
+in the shared `.git/hooks` and names its interpreter by absolute path, so in a checkout
+that runs concurrent sessions in worktrees it would point every worktree at one
+worktree's virtualenv — and at nothing at all once that worktree is removed. The CI gate
+and the edit-time `pin-guard.sh` are what cover this repository instead.
+
+The ledger is standalone: it reads no graph and writes none, and a feature that would
+need the graph is a Thalamus feature rather than a ledger one.
 
 ### The structural gates, and the exception list
 
@@ -105,6 +159,8 @@ src/thalamus/
   pulse/       live telemetry dashboard
 arch/          model.yaml — the committed architecture model the gates check against
 config/        expert manifests
+ledger/        the claims ledger — one entry per documented commitment, pinned to the
+               section of source that keeps it true
 docs/          user documentation
 docker/        the confinement image a counterfactual arm runs inside
 tools/         frame-theme authoring scripts (`--extra frames`)
@@ -168,6 +224,14 @@ The exception is narrow: a hazard that still bites is knowledge, not history. "A
 bare-port target 404s because serve strips the mount path" earns its place because a
 reader acts on it. The test is whether someone needs it to act correctly *now*.
 
+For a sentence that carries a ledger citation, the first rule is mechanically checked: a
+document may not cite an entry that has been refuted or superseded as live, so a doc
+that
+still describes the old behaviour fails the build rather than waiting to be noticed. The
+ledger's own entries under `ledger/` are the exception to the second rule — they are
+history by construction, they are not docs, and a superseded entry stays exactly as it
+was written.
+
 ## Issues and pull requests
 
 **Describe the change and its impact.** A commit message and a PR body are technical
@@ -227,6 +291,19 @@ red there afterwards means the repair came undone.
 Commit by path. `git add -A` in a checkout that may have concurrent work sweeps
 somebody else's half-finished file into your commit — check `git status` and name the
 files you changed.
+
+Merge commits are the only merge strategy on this repository; squash and rebase merges
+are turned off at the source. A ledger ground that names a commit rather than a digest
+has that commit as the whole of its reproducibility, and a rewrite removes it with no
+repair short of superseding the entry. Every ground here is written by digest, so the
+setting is a guard rather than a dependency — but it is cheaper to keep than to discover
+you needed.
+
+One further scheduling rule, and it is upstream of any checker: **only one branch at a
+time appends a verdict to a given entry.** Verdicts are lines in one file and the
+append-only comparison holds each parent's list to be a prefix of its child's, so two
+branches that both append to the same entry have no merge resolution that passes. Merge
+`master` into the branch first, then append.
 
 ## Grounding new design
 

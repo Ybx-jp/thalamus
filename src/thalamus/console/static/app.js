@@ -79,11 +79,17 @@ const els = {
   adminLog: document.getElementById("admin-log"),
   recycleNote: document.getElementById("recycle-note"),
   spawn: document.getElementById("spawn"),
+  spawnKindSec: document.getElementById("spawn-kind-sec"),
+  spawnKinds: document.getElementById("spawn-kinds"),
+  spawnKindNote: document.getElementById("spawn-kind-note"),
+  spawnExpertSec: document.getElementById("spawn-expert-sec"),
+  spawnRoomSec: document.getElementById("spawn-room-sec"),
   spawnScopes: document.getElementById("spawn-scopes"),
   spawnHarnesses: document.getElementById("spawn-harnesses"),
   spawnHarnessNote: document.getElementById("spawn-harness-note"),
   spawnRooms: document.getElementById("spawn-rooms"),
   spawnDirs: document.getElementById("spawn-dirs"),
+  spawnStar: document.getElementById("spawn-star"),
   spawnGo: document.getElementById("spawn-go"),
   spawnLog: document.getElementById("spawn-log"),
   dialogue: document.getElementById("dialogue"),
@@ -701,6 +707,8 @@ function renderRead(idx) {
         ? "The read view needs the thalamus package alongside the console; this one is running as a bare tmux bridge."
       : st.reason === "pending"
         ? "Nothing written yet — this session hasn't taken its first turn. Send it a message and the transcript starts here."
+      : st.reason === "shell"
+        ? "This is a shell, not a session: there is no transcript to read. The terminal view beside this one is the whole of what it says."
       : "Can't tell which session is in this window yet. Sessions started before the console learned to record it resolve on their next restart (INFRA → restart).";
     readShownIdx = null;
     return;
@@ -1138,6 +1146,13 @@ function rowState(w, d, now, graceS) {
     return slot(w.blocked_since ? `stopped ${fmtDur(now - w.blocked_since)} ago` : "",
                 { pill: "needs you", tone: "blocked" });
   }
+  // A terminal, not a session: there is no descriptor to observe and there never
+  // will be one, so `not in reach` below would report a blindness that is really an
+  // absence. What a shell has instead is its foreground command, which is a state
+  // that was genuinely read — `bash` at a prompt, `htop` while one is running.
+  // Ranked under `dead` and the in-flight operations, which are true of any window,
+  // and above every liveness word, none of which is true of this one.
+  if (w.shell) return slot(w.command || "shell");
   // Branch on `observed` first: `blocked === null` is "we cannot know", which is not
   // the same claim as "not stuck" and must not render as one.
   if (!w.observed) return slot("not in reach", { mono: false });
@@ -1193,6 +1208,12 @@ function tildePath(path, home) {
  * is worse than none because it is indistinguishable from a real one.
  */
 function groupSessions(windows, distill) {
+  // The group key shells sort under — a literal no project can produce, since a
+  // project name cannot contain a NUL. Local because the tests lift this function
+  // out of the file by name and evaluate it alone: a module-scope constant it closed
+  // over would be undefined there, and on a branch nothing exercised yet the hole
+  // would sit latent until a shell row first reached it.
+  const SHELL_GROUP = "\u0000shell";
   const byId = new Map();
   for (const d of distill || []) byId.set(d.session, d);
 
@@ -1213,10 +1234,16 @@ function groupSessions(windows, distill) {
     const src = r.w || r.d || {};
     const project = src.project || "";
     const repoRoot = src.repo_root || "";
-    const key = project || repoRoot || "";
+    // A shell is not a session and has no project to be grouped by. Left to the
+    // fallback it would land in the no-project group, whose header states a reason —
+    // "these sessions started before the ledger carried one" — that is false about a
+    // window the ledger was never going to carry. Its own group states the truth
+    // once, at the header, instead of implying a wrong one per row.
+    const shell = !!src.shell;
+    const key = shell ? SHELL_GROUP : (project || repoRoot || "");
     if (!groups.has(key)) {
       groups.set(key, {
-        key, rows: [], repoRoot,
+        key, rows: [], repoRoot: shell ? "" : repoRoot, shell,
         // B2 heads the group with the path, not the basename. The row never repeats
         // it, so the header is the only place the operator learns where a session is
         // rooted, and two checkouts of one project stop reading as the same group.
@@ -1229,8 +1256,10 @@ function groupSessions(windows, distill) {
         // renames the header of a group whose membership never changed. The project
         // name is the fallback for a record that outlived the window that knew its
         // path.
-        label: tildePath(repoRoot, home) || project,
-        known: !!key,
+        label: shell ? "shells" : (tildePath(repoRoot, home) || project),
+        // `known` is a claim about a project, and a shell group makes none — it is
+        // named, which is a different thing, and `shell` is what says so.
+        known: !shell && !!key,
       });
     }
     groups.get(key).rows.push(r);
@@ -1239,9 +1268,11 @@ function groupSessions(windows, distill) {
   const out = Array.from(groups.values());
   for (const g of out) annotateCollisions(g.rows, g.repoRoot);
   // The no-project group trails, and is self-liquidating: every restarted session
-  // leaves it, and when it empties it disappears.
-  out.sort((a, b) =>
-    a.known !== b.known ? (a.known ? -1 : 1) : a.label.localeCompare(b.label));
+  // leaves it, and when it empties it disappears. Shells trail even that: they are
+  // the only group that is not sessions at all, so they are the one an operator
+  // scanning the roster for work should reach last.
+  const rank = (g) => (g.shell ? 2 : g.known ? 0 : 1);
+  out.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
   return out;
 }
 
@@ -1348,12 +1379,15 @@ function rosterSummary(groups, now, graceS) {
 
 function groupHeader(g) {
   const head = document.createElement("div");
-  head.className = "grp" + (g.known ? "" : " unknown");
+  // `shells` is a name we chose, not a fact we failed to read, so it keeps the
+  // ordinary voice even though it heads a group with no project. It still needs the
+  // room the second line takes, which is why that is a class of its own.
+  head.className = "grp" + (g.known || g.shell ? "" : " unknown") + (g.shell ? " shells" : "");
   const name = document.createElement("span");
   name.className = "grp-name";
   // "we were not told" is not a project name and must not sit in the same voice as
   // one, so it takes the non-observation treatment the row uses for the same reason.
-  name.textContent = g.known ? g.label : "no project recorded";
+  name.textContent = g.known || g.shell ? g.label : "no project recorded";
   head.appendChild(name);
   const n = document.createElement("span");
   n.className = "grp-n";
@@ -1362,7 +1396,9 @@ function groupHeader(g) {
   if (!g.known) {
     const why = document.createElement("span");
     why.className = "grp-why";
-    why.textContent = "these sessions started before the ledger carried one";
+    why.textContent = g.shell
+      ? "terminals — no agent, no memory, nothing to distil"
+      : "these sessions started before the ledger carried one";
     head.appendChild(why);
   }
   return head;
@@ -1468,7 +1504,10 @@ function sessionRow(r, now, graceS) {
     });
     line1.appendChild(more);
     if (open) {
-      row.appendChild(modeControl(w));
+      // A shell has no permission mode, and no transcript for one to be read from:
+      // the block would say `cannot read this session's mode` about a window that is
+      // not a session, which reads as a fault instead of an absence.
+      if (!w.shell) row.appendChild(modeControl(w));
       row.appendChild(rowControls(w));
     }
   }
@@ -1855,7 +1894,13 @@ async function recycle(w, quiet) {
   // can't know which window "you" are in beyond the one you're viewing, so the
   // viewed window gets the sharp warning.
   if (!quiet) {
-    const msg = w.index === activeIdx
+    // A shell gets its own sentence because the agent one is false about it in every
+    // clause: there is no conversation, no /exit, nothing distils, and the server
+    // does not wait out a grace budget — the shell is killed and started again in
+    // the same directory, now.
+    const msg = w.shell
+      ? `Restart ${wlabel(w)}? The shell is killed immediately — anything running in it stops — and a fresh one opens in the same directory.`
+      : w.index === activeIdx
       ? `⚠ ${wlabel(w)} is the session you're viewing right now. Restarting ENDS the conversation in it — it /exits and distills cleanly, then respawns fresh. Restart anyway?`
       : `Restart ${wlabel(w)}? Sends /exit (distills), then respawns; force-kills only after 4 min.`;
     if (!confirm(msg)) return;
@@ -1867,7 +1912,9 @@ async function recycle(w, quiet) {
 async function closeWin(w) {
   // Close = end the session and distill it (SessionEnd → thalamus extract), then the
   // window is removed. Same self-termination hazard as recycle for the viewed window.
-  const msg = w.index === activeIdx
+  const msg = w.shell
+    ? `Close ${wlabel(w)}? The window is removed immediately and anything running in it stops. Nothing is distilled — a shell has no memory.`
+    : w.index === activeIdx
     ? `⚠ ${wlabel(w)} is the session you're viewing. Closing ENDS it — it /exits, distills to memory, and the tab disappears. Close it?`
     : `Close ${wlabel(w)}? Sends /exit (distills to memory), then removes the window. Force-kills only after 4 min.`;
   if (!confirm(msg)) return;
@@ -1908,6 +1955,44 @@ let spawnHarness = "claude";
 // naming it IS creating it, since the launcher provisions the config dir on the way
 // in. There is no separate create step to forget from a phone.
 let spawnRoom = "";
+// What the sheet opens. A session is an agent pinned to a scope; a shell is a plain
+// terminal — tmux's login shell in a directory, with no scope, no harness, no room
+// and no memory. They share the directory picker and nothing else, which is why this
+// is one sheet with a kind rather than two sheets.
+let spawnKind = "session";
+
+// The kinds this server can actually open. A shell is offered only when the server
+// says so: `static/` is served off disk while server.py is whatever the last restart
+// loaded, so a client newer than its server is the normal state for a while after
+// every edit — and a chip whose POST would 404 is a button that does nothing, which
+// is the failure this console is least able to explain on a phone.
+function spawnKindChoices(opts) {
+  return opts && opts.shell ? ["session", "shell"] : ["session"];
+}
+
+// A chosen kind the server no longer offers falls back, for the same reason
+// `pickHarness` does: the alternative is a lit chip whose spawn is refused.
+function pickKind(opts, chosen) {
+  const kinds = spawnKindChoices(opts);
+  return kinds.includes(chosen) ? chosen : kinds[0];
+}
+
+// What each kind needs before it can be opened. A shell needs only somewhere to
+// stand; a session needs the expert it is pinned to as well.
+function spawnReady(kind, scope, dir) {
+  return kind === "shell" ? !!dir : !!(scope && dir);
+}
+
+function kindNote(kind) {
+  return kind === "shell"
+    ? "A plain terminal: the login shell, in the directory you pick. No agent, no " +
+      "scope, no memory — type commands and read what they print. Close it from its " +
+      "own row when you're done."
+    : "Open a pinned expert session on demand, in the project you pick. Its work and " +
+      "its distilled memory scope to that expert; the directory sets what it's " +
+      "about. Close it from its own row to end & distill it.";
+}
+
 async function openSpawn() {
   els.spawn.hidden = false;
   els.admin.hidden = true;
@@ -1978,6 +2063,23 @@ function harnessCaveat(offered, chosen) {
          `and holds its boundary, but it will not think like the expert.`;
 }
 function renderSpawnChips() {
+  const kinds = spawnKindChoices(spawnOpts);
+  spawnKind = pickKind(spawnOpts, spawnKind);
+  els.spawnKinds.innerHTML = "";
+  for (const k of kinds) {
+    els.spawnKinds.appendChild(
+      chip(k, k === spawnKind, () => { spawnKind = k; renderSpawnChips(); }));
+  }
+  // One kind is not a choice, and a row of one chip reads as one: a console whose
+  // server cannot open a shell shows the sheet it always showed.
+  els.spawnKindSec.hidden = kinds.length < 2;
+  els.spawnKindNote.textContent = kindNote(spawnKind);
+  const shellKind = spawnKind === "shell";
+  // Hidden rather than disabled: a scope, a harness and a room are not weaker
+  // choices for a shell, they are choices that do not exist for one, and a greyed
+  // row invites the operator to wonder what would unlock it.
+  els.spawnExpertSec.hidden = shellKind;
+  els.spawnRoomSec.hidden = shellKind;
   els.spawnScopes.innerHTML = "";
   for (const s of spawnOpts.scopes || []) {
     const c = chip(s, s === spawnScope, () => { spawnScope = s; renderSpawnChips(); });
@@ -2000,6 +2102,13 @@ function renderSpawnChips() {
     els.spawnDirs.appendChild(
       chip(label, d.path === spawnDir, () => { spawnDir = d.path; renderSpawnChips(); }));
   }
+  // One star button for the section, acting on the highlighted directory. The
+  // server sorts starred directories first, so a toggle moves the chip; the
+  // highlight follows it because it is keyed on the path, not the position.
+  const picked = (spawnOpts.dirs || []).find((d) => d.path === spawnDir);
+  els.spawnStar.disabled = !picked;
+  els.spawnStar.textContent = picked && picked.favorite ? "★ unstar" : "☆ star";
+  els.spawnStar.setAttribute("aria-pressed", picked && picked.favorite ? "true" : "false");
   els.spawnRooms.innerHTML = "";
   const rooms = spawnRoomChoices(spawnOpts.rooms, windows, spawnRoom);
   els.spawnRooms.appendChild(
@@ -2012,7 +2121,8 @@ function renderSpawnChips() {
     els.spawnRooms.appendChild(c);
   }
   els.spawnRooms.appendChild(chip("+ new", false, newRoom));
-  els.spawnGo.disabled = !(spawnScope && spawnDir);
+  els.spawnGo.textContent = shellKind ? "open shell" : "spawn";
+  els.spawnGo.disabled = !spawnReady(spawnKind, spawnScope, spawnDir);
 }
 // A prompt, not an inline field: it is the rarest action on the sheet, and a
 // text input in the chip row would take the tap target every other choice needs
@@ -2029,20 +2139,37 @@ function newRoom() {
   spawnRoom = name;
   renderSpawnChips();
 }
+// The server keeps the stars (`~/.thalamus/console/favorites.json`), so one set
+// from the phone is the same set the desktop sees. Rendered from the response
+// rather than re-fetched — the picker's only feedback is what it shows.
+async function toggleFavorite() {
+  const d = (spawnOpts && spawnOpts.dirs || []).find((x) => x.path === spawnDir);
+  if (!d) return;
+  els.spawnStar.disabled = true;
+  const { ok, data } = await postJson("api/favorite", { path: d.path, favorite: !d.favorite });
+  if (ok && data.ok && Array.isArray(data.dirs)) spawnOpts.dirs = data.dirs;
+  renderSpawnChips(); // re-enables the button from the list, changed or not
+}
 async function doSpawn() {
-  if (!(spawnScope && spawnDir)) return;
+  if (!spawnReady(spawnKind, spawnScope, spawnDir)) return;
+  const shellKind = spawnKind === "shell";
   els.spawnGo.disabled = true;
   els.spawnLog.hidden = false;
-  els.spawnLog.textContent = `spawning ${spawnScope} on ${spawnHarness} in ${spawnDir}` +
-    (spawnRoom ? ` — room ${spawnRoom}` : "") + "…";
-  const { ok, data } = await postJson("api/spawn",
-    { scope: spawnScope, dir: spawnDir, room: spawnRoom, harness: spawnHarness });
+  els.spawnLog.textContent = shellKind
+    ? `opening a shell in ${spawnDir}…`
+    : `spawning ${spawnScope} on ${spawnHarness} in ${spawnDir}` +
+      (spawnRoom ? ` — room ${spawnRoom}` : "") + "…";
+  const { ok, data } = shellKind
+    ? await postJson("api/shell", { dir: spawnDir })
+    : await postJson("api/spawn",
+        { scope: spawnScope, dir: spawnDir, room: spawnRoom, harness: spawnHarness });
   if (ok && data.ok) {
-    els.spawnLog.textContent = data.output || "spawned.";
+    els.spawnLog.textContent = data.output || (shellKind ? "opened." : "spawned.");
     selectNewestOnNextPoll = true;
     setTimeout(() => { els.spawn.hidden = true; poll(); }, 700);
   } else {
-    els.spawnLog.textContent = "spawn failed:\n" + (data.output || "unknown error");
+    els.spawnLog.textContent = (shellKind ? "could not open a shell:\n" : "spawn failed:\n")
+      + (data.output || data.error || "unknown error");
     els.spawnGo.disabled = false;
   }
 }
@@ -2316,11 +2443,13 @@ function extractorModelOptions(state, harness) {
   const opt = (state.options || []).find((o) => o.value === harness);
   if (!opt || !opt.models || !opt.models.length) return [];
   const chosen = (state.value && state.value.model) || "";
+  // The lit chip is the only mark: with nothing chosen it is the CLI's default,
+  // because that is what will run. The default carries no mark of its own once
+  // something else is chosen — one highlight per row, nothing else to decode.
   return opt.models.map((m) => ({
     value: m,
     label: m,
     on: chosen ? m === chosen : m === opt.default_model,
-    isDefault: m === opt.default_model,
   }));
 }
 
@@ -2367,7 +2496,7 @@ function renderExtractorCard(state) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "chip" + (m.on ? " on" : "");
-      b.textContent = m.isDefault ? `${m.label} ✓` : m.label;
+      b.textContent = m.label;
       b.addEventListener("click",
                         () => setExtractorPolicy(state.pass, state.value.harness, m.value));
       row.appendChild(b);
@@ -2500,6 +2629,7 @@ document.getElementById("spawn-btn").addEventListener("click", () => {
 document.getElementById("spawn-x").addEventListener("click", () => { els.spawn.hidden = true; });
 document.getElementById("roster-btn").addEventListener("click", () => setView("roster"));
 els.spawnGo.addEventListener("click", doSpawn);
+els.spawnStar.addEventListener("click", toggleFavorite);
 document.getElementById("admin-restart-all").addEventListener("click", async () => {
   if (!windows.length) return;
   if (!confirm(restartAllPrompt(windows, lastDistill, activeIdx))) return;

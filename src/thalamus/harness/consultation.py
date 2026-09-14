@@ -31,7 +31,13 @@ from datetime import datetime, timezone
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 
 from thalamus.contract.manifest import available_scopes, load_manifest
-from thalamus.contract.ontology import CORE_NODES, MAIN_SCOPE, scope_of, vid
+from thalamus.contract.ontology import (
+    CORE_NODES,
+    MAIN_SCOPE,
+    refuse_unless_exchange_protocol_holds,
+    scope_of,
+    vid,
+)
 from thalamus.substrate.reader import (
     load_exchange,
     recall,
@@ -315,6 +321,7 @@ def open_exchange(
             **(extra or {}),
         },
         brief_refs=brief_refs,
+        gate=refuse_unless_exchange_protocol_holds,
     )
     return ticket, vertex_id
 
@@ -505,6 +512,7 @@ def consult_answer(
             "answered_at": datetime.now(timezone.utc).isoformat(),
         },
         citation_refs=in_scope,
+        gate=refuse_unless_exchange_protocol_holds,
     )
     return (
         f"Exchange `{exchange_vid(ticket)}` closed: answer recorded with "

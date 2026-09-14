@@ -62,7 +62,11 @@ if [ -z "$transcript_path" ]; then
   # `|| true`: no match is the ordinary case for a session that completed no turn, and
   # under `pipefail` the failing glob would otherwise abort the hook with its own exit
   # code — turning "nothing to distill" into a hook that looks broken.
-  transcript_path=$(ls "$HOME"/.cursor/projects/*/agent-transcripts/"$session_id"/"$session_id".jsonl 2>/dev/null | head -1 || true)
+  # First match by parameter expansion rather than `| head -1`: head closes the pipe
+  # at the first newline, and a writer still mid-write takes SIGPIPE (the race that
+  # silently killed `role-guard.sh`).
+  transcript_path=$(ls "$HOME"/.cursor/projects/*/agent-transcripts/"$session_id"/"$session_id".jsonl 2>/dev/null || true)
+  transcript_path=${transcript_path%%$'\n'*}
 fi
 # A session that completed no turn has no transcript and never will. Exiting quietly is
 # correct: `session-end.sh` has already logged the pointer row, so the session is on

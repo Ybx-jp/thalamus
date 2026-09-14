@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import socket
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
@@ -13,7 +13,7 @@ from gremlin_python.driver.driver_remote_connection import DriverRemoteConnectio
 from gremlin_python.driver.protocol import GremlinServerError
 from gremlin_python.process.anonymous_traversal import traversal
 from gremlin_python.process.graph_traversal import GraphTraversalSource, __
-from gremlin_python.process.traversal import Direction, Merge, P, T
+from gremlin_python.process.traversal import Cardinality, Direction, Merge, P, T
 
 from thalamus.contract.ontology import scope_of, vid
 from thalamus.contract.paths import PROJECT_ROOT
@@ -123,11 +123,32 @@ def close_connection(g: GraphTraversalSource) -> None:
     spans.maybe_flush()
 
 
-def write_session(g: GraphTraversalSource, session: SessionGraph) -> str:
+# ---- The gate seam ----
+#
+# The substrate sits below the contract: it knows nodes and edges, not scopes, tiers
+# or federation, and an import of `contract/` here would invert the layering the whole
+# boundary rests on. So the obligation is inverted instead. Every door that writes a
+# contract-bearing subgraph takes a `gate` it must call first, and takes it as a
+# required keyword argument — a caller cannot reach the write without naming what
+# checks it, and a reviewer greps one word to find every write that named a weak one.
+#
+# This is a seam, not a lock. `gate=lambda *_: None` still writes. What it removes is
+# the *silent* omission: before this, forgetting the check looked exactly like not
+# needing one, and the contract gate was a convention four call sites happened to keep.
+# `contract/conformance.py` supplies the real gates and the doors that pass them.
+Gate = Callable[..., None]
+
+
+def write_session(g: GraphTraversalSource, session: SessionGraph, *, gate: Gate) -> str:
     """Write a session subgraph to the graph. Idempotent on session_id.
+
+    `gate` is called with the session before anything is written and must raise to
+    refuse; see `contract.conformance.write_session_checked` for the door that
+    supplies the federation contract's own.
 
     Returns the session vertex ID.
     """
+    gate(session)
     session_vid = _upsert_session_vertex(g, session)
     _write_sources(g, session, session_vid)
     artifact_vids = _upsert_artifacts(g, session)
@@ -218,6 +239,34 @@ _SOURCE_WRITE_ONCE = ("tier", "origin", "source")
 # Held at the first value once set. `tier` is not among them: it has its own rule below,
 # because trust must still be able to fall.
 _SOURCE_HELD_FIRST = ("origin", "source")
+
+
+def _accumulate_feed(g: GraphTraversalSource, source_vid: str, feed: str) -> None:
+    """Add this ingestion's feed to the Source without displacing the last one.
+
+    `feed` answers "what was this procured for" (docs/06-ingestion.md), and a document
+    procured for two projects has two answers. It was carried in the merge option map,
+    where `Merge.on_match` sets a property to one value — so every re-ingest of
+    identical bytes silently overwrote the prior attribution with no SUPERSEDES edge,
+    no version and no warning, and the original was unrecoverable.
+
+    Written with set cardinality rather than joined into a string: `value_map` already
+    hands every property back as a list, so a Source procured twice reads as
+    `{"feed": ["corpus-pin-grounding", "room-lifecycle"]}` with no delimiter for a feed
+    name to collide with. Set, not list, so re-ingesting under a feed the Source already
+    carries is idempotent — which the ordinary `--check` then `--write` sequence does
+    every time.
+
+    Kept out of `_source_on_match`, which returns a property map the merge applies
+    wholesale and so cannot express "add to what is there".
+    """
+    if not feed:
+        return
+    _iterate(
+        g.V(source_vid).property(Cardinality.set_, "feed", feed),
+        "accumulate Source feed",
+        source_vid,
+    )
 
 
 def _source_on_match(
@@ -780,14 +829,21 @@ def _write_thread_refs(
             _ensure_edge(g, session_vid, thread_vid, "CONTINUES")
 
 
-def write_knowledge(g: GraphTraversalSource, batch) -> str:
+def write_knowledge(g: GraphTraversalSource, batch, *, gate: Gate) -> str:
     """Write one ingestion event into an expert's knowledge subgraph.
 
     Source (the retained article) -> Claims (DERIVED_FROM it) -> Entities (ABOUT).
     Re-ingesting a changed article creates a new Source that SUPERSEDES the previous
     head for the same origin — versioning stays visible to the eval loop.
+
+    `gate` is called with the batch before anything is written and must raise to
+    refuse; ingestion batches carry obligations beyond a session's (the scope's
+    manifest triages claim kinds), so the door that supplies it is
+    `contract.conformance.write_knowledge_checked`.
+
     Returns the Source vertex ID.
     """
+    gate(batch)
     provenance = batch.default_provenance()
     source = batch.source
     source_vid = vid("Source", source.content_hash, batch.scope)
@@ -802,11 +858,9 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         "origin": source.origin or "",
         "byte_size": source.byte_size,
         "scope": batch.scope,
-        # Feed identity lives on the Source (the ingestion event), not on claims or
-        # entities — those converge across feeds, and the feed that brought a document
-        # in is a fact about the document. The ingestion protocol requires it on every
-        # write; claims reach it by walking DERIVED_FROM.
-        "feed": batch.feed,
+        # `feed` is deliberately absent here — see `_accumulate_feed` below. Merge
+        # option maps set a property to one value, which is what destroyed the prior
+        # feed on every re-ingest.
         **_provenance_properties(source.provenance or provenance),
     }
     graph_traversal = (
@@ -815,6 +869,7 @@ def write_knowledge(g: GraphTraversalSource, batch) -> str:
         .option(Merge.on_match, _source_on_match(g, source_vid, properties))
     )
     _iterate(graph_traversal, "upsert Source", source_vid)
+    _accumulate_feed(g, source_vid, batch.feed)
 
     for head_vid in prior_heads:
         if head_vid != source_vid:
@@ -964,6 +1019,8 @@ def write_exchange(
     exchange_vid: str,
     properties: dict[str, object],
     brief_refs: list[str] | None = None,
+    *,
+    gate: Gate,
 ) -> None:
     """Open one consultation exchange record — the mint IS the write.
 
@@ -972,7 +1029,13 @@ def write_exchange(
     consulted scope's nodes the server assembled into the expert brief; each gets an
     Exchange -[REFERENCES {role: brief}]-> node edge — the consulted expert's record
     of what it served, by ID, never copied.
+
+    `gate` is called with `(exchange_vid, properties, brief_refs)` before the write and
+    must raise to refuse. The exchange-record protocol was audit-only until now, which
+    is why it could be written around; see
+    `contract.conformance.write_exchange_checked`.
     """
+    gate(exchange_vid, properties, brief_refs or [])
     graph_traversal = (
         g.merge_v({T.id: exchange_vid, T.label: "Exchange"})
         .option(Merge.on_create, {T.id: exchange_vid, **properties})
@@ -989,6 +1052,8 @@ def close_exchange(
     exchange_vid: str,
     properties: dict[str, object],
     citation_refs: list[str],
+    *,
+    gate: Gate,
 ) -> None:
     """Close an exchange with its validated answer, burning the ticket.
 
@@ -997,7 +1062,13 @@ def close_exchange(
     node edge — the answer's evidence-support record. The status flip to `answered`
     rides in `properties`, and it is what makes the ticket single-use: an answered
     exchange refuses further answers and grants no further retrieval.
+
+    `gate` is called with `(exchange_vid, properties, citation_refs)` before the write
+    and must raise to refuse. This is the call the protocol's own obligation is about —
+    an answered exchange that cites nothing was closed around the protocol — and until
+    now that was only ever discovered by `contract check`, after the fact.
     """
+    gate(exchange_vid, properties, citation_refs)
     graph_traversal = g.V(exchange_vid).has_label("Exchange")
     for key, value in properties.items():
         graph_traversal = graph_traversal.property(key, value)

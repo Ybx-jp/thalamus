@@ -259,9 +259,9 @@ CASE = Case(
         "traceback, and must not accept a scope parameter"
     ),
     run=run,
-    # memory_query(query=<non-str>) raises AttributeError from validate_query's
-    # unguarded `query.strip()`. Filed rather than fixed — this scope may not write
-    # src/. See issue #173.
+    # memory_query(query=<non-str>) used to raise AttributeError from
+    # validate_query's unguarded `query.strip()`. validate_query now type-checks
+    # its argument first and returns a readable rejection instead. See issue #173.
     issue=173,
-    fixed=False,
+    fixed=True,
 )

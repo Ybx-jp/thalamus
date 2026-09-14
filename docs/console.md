@@ -28,6 +28,45 @@ Two things follow. A bare `tmux attach` on your desk will not find the roster; u
 And two checkouts on one box get separate control planes by setting
 `THALAMUS_TMUX_SOCKET` differently — nothing else has to change.
 
+### Window size and scrollback
+
+Every roster window is held at **60 columns by 50 rows** (`pin.WINDOW_COLS` /
+`WINDOW_ROWS`), set with `resize-window` after the window exists, which also pins
+its `window-size` to `manual`. One window has one width and every viewer reads the
+same window, so the width is chosen for the phone: 60 columns is what its auto-fit
+renders at a readable size with no horizontal scroll. The console has no tmux
+client of its own — it reads whatever size the window has — so an attaching
+desktop terminal or the `/tty` page must not resize the windows out from under it;
+that is what `manual` buys, and it is why a desktop `tmux -L thalamus attach`
+shows a fixed 60×50 box rather than filling the terminal. Nothing reads tmux's `default-size`: it is 80×24 on any box
+without a hand-written tmux.conf, and the project ships none. `thalamus roster` and
+every spawn resize every window in the session, so a session created at the stock
+size by `tmux new -A` is corrected the next time either runs.
+
+The pane view shows what the window has on screen, and what "on screen" means
+depends on the pane. A full-screen program — Claude Code, `htop` — draws on the
+terminal's **alternate screen**: a viewport that owns the display, and a different
+buffer from the scrolling one the terminal had before the program started. tmux
+keeps that earlier buffer, and the console does not read it for such a pane. It is
+text the running program never drew and cannot erase, so reading it would pin
+whatever was printed before launch — a startup warning, say — above a viewport
+that scrolls underneath it for the life of the window, still there long after the
+session's own banner has left the screen. So the view is the 50-row viewport, and
+scrolling the transcript means paging claude itself: the keyboard bar's
+PageUp/PageDown keys are sent to the pane.
+
+A pane that is *not* on the alternate screen is an ordinary scrolling terminal — a
+shell window, or one whose agent has exited back to a prompt — and there the
+history is the whole of what it said, so the view carries up to 1000 lines of it
+above the viewport. The choice is made per pane on every poll, from tmux's own
+`alternate_on`, rather than from what the window is believed to be running.
+
+Claude's classic renderer (`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`) would leave
+the transcript in tmux history, but it cannot erase what has scrolled out of the
+viewport: startup warnings stay on screen after the TUI loads, and a menu such as
+`/usage` prints twice and stays printed after it closes. Roster windows therefore
+launch with claude's default renderer.
+
 Installable to a home screen as a PWA, and it works in any browser without that.
 
 ---
@@ -185,7 +224,7 @@ the font off the auto-fit size, which is computed so a full pane line fits your
 screen without horizontal scrolling.
 
 **`read` switches to the transcript view.** The pane view mirrors a *rendering* of
-the session: an 80-column repaint, colours stripped by tmux, reflowing under you
+the session: a 60-column repaint, colours stripped by tmux, reflowing under you
 while a turn streams. The read view shows the session itself — Claude Code writes
 every turn to a JSONL transcript, and the server projects that into flowing prose
 with each tool call collapsed to one tappable line, so a forty-line diff reads as
@@ -244,10 +283,18 @@ and the view says so plainly rather than reporting the refusal above: Claude Cod
 creates the transcript on the first turn, so a freshly spawned window has none
 until someone types into it. Send it a message and the feed starts.
 
-**＋ spawns a session**: pick an expert scope, a harness, a directory, and a room,
+**＋ opens a window**, of one of two kinds. Pick the kind first; the directory
+picker is the only thing the two share.
+
+**A session**: pick an expert scope, a harness, a directory, and a room,
 and the server opens a detached pinned window there. The scope decides which memory
 it reads and writes; the directory decides what the work is about. See
 [concepts.md](concepts.md#the-federation-contract) for what that pairing means.
+Starred directories sort first. The `star` button at the right of the Directory
+heading toggles the star on the highlighted chip, and the server keeps the set in
+`~/.thalamus/console/favorites.json`, so a star set from the phone is the one the
+desktop sees and it survives a restart. `--dir` seeds the list until the first
+star is toggled; after that the file is the whole list.
 
 **The harness row is `LAUNCH_SHAPES`**, sent by `/api/spawn-options` rather than held
 by the client, because that table is also what a spawn request is validated against —
@@ -257,6 +304,29 @@ a Cursor window routes its memory and holds its boundary but never reads the exp
 charter, which is a different object from a Claude Code pin ([concepts.md](concepts.md))
 and is invisible once the window exists. A request that names no harness gets Claude
 Code — the endpoint is driven by hand over the tailnet too.
+
+**A shell**: a plain terminal — tmux's login shell, in the directory you pick, with
+no scope, no harness, no room and no agent in it. It is what the console is for when
+the thing you need is a command line: it appears on the roster like any other window,
+the composer types into it, and the terminal view shows what it prints. The window is
+created with **no command at all**, which is what keeps everything downstream from
+taking it for a session — there is no transcript to read, no permission mode to set,
+nothing to distil, and the roster files shells in their own group at the bottom
+rather than implying they are sessions missing a project.
+
+Its lifecycle buttons do something different, and they say so before they act.
+`restart` kills the shell and opens a fresh one in the same directory, immediately;
+`close` removes the window, immediately. Neither waits out the four-minute grace
+budget an agent gets, because that budget exists to let SessionEnd distil and a shell
+has no SessionEnd — typing `/exit` at a bash prompt only prints `command not found`.
+Anything running in the window stops.
+
+A shell needs a roster session to be opened in and will not create one: `new-session`
+would put the shell at the lowest window index, which is the anchor the console
+references and nothing can close. Bring the roster up first. The kind row itself
+appears only when the server advertises that it can open one, so a console whose
+Python has not been restarted since this shipped shows the sheet it always showed
+rather than a button that 404s.
 
 **Distillation is a state of a session, not a list of its own**, and it is drawn on
 that session's roster row. Ending a session and distilling it are not the same
@@ -692,7 +762,7 @@ nothing about one operator's setup is baked into the code.
 | `--port` | `8378` | Port |
 | `--session` | `thalamus` | tmux session to drive |
 | `--project-root` | this checkout | Where roster sync runs |
-| `--dir PATH` | the project root | Star a directory in the spawn picker (repeatable) |
+| `--dir PATH` | the project root | Seed the spawn picker's starred directories (repeatable); stars toggled in the picker replace the seed |
 | `--scan ROOT` | the project root's parent | Offer every git repo one level under ROOT (repeatable) |
 | `--service UNIT` | none | A unit the admin sheet may restart — a systemd `--user` unit, or a launchd label on macOS (repeatable) |
 | `--frames PATH` | none | Frame-theme definitions for the desktop client (see "On a desktop browser") |
@@ -701,7 +771,8 @@ nothing about one operator's setup is baked into the code.
 
 The spawn picker's directory list is also the **whitelist**: a spawn request is
 checked against the same computation that built the list, so the client can only
-ever open a session somewhere it was offered.
+ever open a session somewhere it was offered. A shell is checked against the same
+list, and for a sharper reason — that request hands the caller a shell.
 
 ### Running it without a checkout
 
@@ -713,9 +784,10 @@ tmux -L thalamus new -d -s thalamus -n main
 python3 -m thalamus.console.server      # or: python3 src/thalamus/console/server.py
 ```
 
-You get panes, input, keys, the composer and the whole client. What you don't get
-is the expert layer — the scope list is empty, and spawn, roster sync and rooms
-report themselves unavailable rather than failing to import. Nothing else changes.
+You get panes, input, keys, the composer and the whole client — and shells, which
+are tmux and nothing else. What you don't get is the expert layer — the scope list
+is empty, and spawn, roster sync and rooms report themselves unavailable rather than
+failing to import. Nothing else changes.
 
 This is not a supported-configuration matrix so much as a design constraint: one of
 this server's jobs is restarting the unit that hosts it, so the fewer moving parts

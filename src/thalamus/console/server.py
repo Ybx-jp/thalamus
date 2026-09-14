@@ -492,7 +492,7 @@ def attach_blocked(windows: list[dict]) -> None:
 # facts. `permission_mode` is `""` for the first and absent for the second, and a
 # client with only that field would have to read absence as a mode to tell them
 # apart — the one thing it must never do.
-PERMISSION_MODE_READ = ("ok", "unresolved", "pending", "no-package")
+PERMISSION_MODE_READ = ("ok", "unresolved", "pending", "no-package", "shell")
 
 
 def read_feed(cfg: Config, idx: int):
@@ -500,14 +500,22 @@ def read_feed(cfg: Config, idx: int):
 
     `reason` is None when a feed came back, and otherwise names which failure it
     was: `unresolved` (cannot tell which session is here), `pending` (we know
-    exactly which session, it has not written its first turn), or `no-package`
-    (this console has no transcript parser at all). They read very differently to
-    whoever is holding the phone, and each is a value of `PERMISSION_MODE_READ`.
+    exactly which session, it has not written its first turn), `no-package`
+    (this console has no transcript parser at all), or `shell` (this window is a
+    terminal, so there is no session and never will be). They read very differently
+    to whoever is holding the phone, and each is a value of `PERMISSION_MODE_READ`.
+
+    `shell` is separated from `unresolved` because the two ask for opposite things.
+    `unresolved` tells the operator to restart the window and it will resolve; a
+    shell restarted a hundred times still has no transcript, so answering it with
+    that sentence is advice that cannot work.
     """
     tr = transcript_module()
     window = next((w for w in list_windows(cfg) if w["index"] == idx), None)
     if tr is None or window is None:
         return window, None, "no-package" if window is not None else "unresolved"
+    if window["shell"]:
+        return window, None, "shell"
     global _LEDGER, _FEEDS
     with READ_LOCK:
         if _LEDGER is None or _FEEDS is None:
@@ -557,6 +565,25 @@ RECYCLE_GRACE_S = 240
 # not exist would both find it missing and both try to create it; serializing is
 # cheaper than reasoning about which one won.
 SPAWN_LOCK = threading.Lock()
+
+# The name every console-opened shell window carries, and — with the harness field
+# empty — the whole of how a shell row is told from an agent row. A shell is
+# deliberately not a session: it is created with no command (tmux runs the login
+# shell), no `THALAMUS_SCOPE`, and no pin, so nothing downstream reads it as an
+# agent. That leaves the window *name* as the only durable marker, and it is one
+# that survives a respawn because tmux keeps the name across `respawn-window`.
+SHELL_WINDOW_NAME = "shell"
+
+# What opening a shell reports when there is no roster session to open it in. The
+# console does NOT create the session here, and that is deliberate: `new-session`
+# would put the shell at the lowest window index, which is the anchor — the window
+# roster sync references and nothing can close (`pin.spawn` documents the same
+# hazard). A shell anchor would outrank every real session for the life of the tmux
+# server.
+NO_ROSTER_SESSION = (
+    "there is no roster session to open a shell in. Bring one up first — "
+    "`thalamus roster` on the box, or spawn a session from this sheet."
+)
 
 # Appended when a spawned window died without saying anything the operator can act
 # on. The overwhelmingly likely cause is that the window's command could not be
@@ -654,6 +681,11 @@ class Config:
     # `scan_roots` are globbed one level deep for git repos.
     favorites: list[Path] = field(default_factory=list)
     scan_roots: list[Path] = field(default_factory=list)
+    # Where a star toggled in the picker is kept. `favorites` above is the seed from
+    # the command line; once this file exists it is the whole list, so a star set
+    # from the phone outlives a restart and a `--dir` the operator has since
+    # unstarred does not come back with the next boot.
+    favorites_store: Path | str = ""
     # systemd --user units the admin sheet may restart. Empty (the default) hides
     # the section entirely — the console never invents units it might not own.
     services: list[str] = field(default_factory=list)
@@ -686,6 +718,8 @@ class Config:
             self.scan_roots = [self.project_root.parent]
         self.favorites = [Path(p).expanduser() for p in self.favorites]
         self.scan_roots = [Path(p).expanduser() for p in self.scan_roots]
+        self.favorites_store = (Path(self.favorites_store).expanduser()
+                                if self.favorites_store else FAVORITES_STORE)
         if self.frames_file:
             self.frames_file = Path(self.frames_file).expanduser()
 
@@ -910,6 +944,14 @@ def parse_windows(raw: str, expected: dict[str, tuple[str, ...]] | None = None) 
             # same reason: `pane_current_command` shows whatever is in the foreground,
             # so a window shelling out reads as `bash` for as long as that lasts.
             "harness": harness,
+            # A plain terminal, opened from the sheet for typing shell commands from
+            # the phone. Reduced here rather than left to the client, because it
+            # changes what the lifecycle buttons *do*: a shell has no SessionEnd to
+            # fire, so `/exit` at its prompt is a `command not found` and a close
+            # that waits for one burns the whole grace budget before force-killing.
+            # Both halves of the pair are required — the name alone would let a
+            # window someone renamed by hand claim the fast paths.
+            "shell": name == SHELL_WINDOW_NAME and not harness,
             # A launch flag rides the argv, and the argv is fixed when the window is
             # created — `respawn-window` re-executes the *creation* command. So a posture
             # change cannot reach a running session, and without this the divergence is
@@ -956,7 +998,14 @@ def read_skill_meta(skill_dir: str) -> tuple[str, str] | None:
 def list_commands(cfg: Config, idx: int | None = None) -> list[dict]:
     """Slash commands a pinned session understands: CLI built-ins + user skills +
     the project skills of THAT window's cwd. Windows sit in different directories,
-    so the hint strip is per-window, not global."""
+    so the hint strip is per-window, not global.
+
+    A shell window gets none: `/clear` and `/model` are an agent's words, and a strip
+    that offers them over a bash prompt is a list of commands that will all fail.
+    """
+    if idx is not None and any(w["index"] == idx and w["shell"]
+                               for w in list_windows(cfg)):
+        return []
     cmds = dict(BUILTIN_COMMANDS)
     project = window_path(cfg, idx)
     roots = [os.path.expanduser("~/.claude/skills")]
@@ -973,12 +1022,48 @@ def list_commands(cfg: Config, idx: int | None = None) -> list[dict]:
             for n, d in sorted(cmds.items())]
 
 
-def capture(cfg: Config, idx: int) -> str:
-    # -S -1000: for a plain-shell window this pulls scrollback; for a full-screen
-    # TUI (claude uses the alternate screen, which has no history) it returns just
-    # the current viewport. Either way, no truncation beyond what the program
-    # itself keeps on screen.
-    r = tmux("capture-pane", "-p", "-S", "-1000", "-t", f"{cfg.session}:{idx}")
+def alternate_screens(cfg: Config) -> set[int]:
+    """Window indexes whose active pane is on the alternate screen.
+
+    One call for the whole session rather than one per window: `/api/panes`
+    captures every window on every poll, and a phone polls often.
+    """
+    r = tmux("list-windows", "-t", cfg.session, "-F",
+             "#{window_index}\t#{alternate_on}")
+    if r.returncode != 0:
+        return set()
+    out = set()
+    for line in r.stdout.splitlines():
+        i, _, alt = line.partition("\t")
+        if i.strip().isdigit() and alt.strip() == "1":
+            out.add(int(i.strip()))
+    return out
+
+
+def capture(cfg: Config, idx: int, scrollback: bool = False) -> str:
+    """One window's screen, as text.
+
+    `scrollback` is the whole of what a caller decides here, and it is decided by
+    whether the pane is on the alternate screen — *not* by what is running in it.
+
+    A pane that is NOT on the alternate screen is a scrolling terminal: a shell,
+    or a window whose agent has exited back to a prompt. Its history is what it
+    said, so `-S -1000` is the reading.
+
+    A pane that IS on the alternate screen — every TUI, `claude` and `htop`
+    alike — draws a viewport that owns the whole screen, and its history is a
+    *different* buffer: whatever the terminal printed before the TUI started.
+    tmux keeps that buffer and `-S` reads it, so asking for scrollback here
+    prepends text the program never drew and cannot erase. Pre-launch permission
+    warnings are the common case, and they outlive everything: the viewport
+    scrolls under them, the TUI's own header scrolls out of it, and the warnings
+    stay at the top of the console because they were never in the viewport to
+    scroll. The viewport alone is the only honest answer.
+    """
+    args = ["capture-pane", "-p"]
+    if scrollback:
+        args += ["-S", "-1000"]
+    r = tmux(*args, "-t", f"{cfg.session}:{idx}")
     return r.stdout if r.returncode == 0 else ""
 
 
@@ -1002,7 +1087,7 @@ def screen_rev(text: str) -> str:
 # ---- Admin actions ----
 
 
-def recycle_window(cfg: Config, idx: int) -> None:
+def recycle_window(cfg: Config, idx: int, shell: bool = False) -> None:
     """Restart the pinned claude process in a window — the MCP/hook re-arm.
 
     The MCP server and hooks arm per *process*, so wiring
@@ -1034,6 +1119,15 @@ def recycle_window(cfg: Config, idx: int) -> None:
     wid = _window_id(cfg, idx)
     target = wid or f"{cfg.session}:{idx}"
     try:
+        if shell:
+            # Nothing to distil and no command to quit, so the graceful half of this
+            # function has nothing to do: `respawn-window -k` kills the shell and
+            # re-runs the window's creation command, which for a shell window is no
+            # command at all — tmux starts a fresh login shell in the same directory
+            # (measured, tmux 3.4). No forced-kill record: that record means "SessionEnd
+            # never ran", and here there was never one to run.
+            tmux("respawn-window", "-k", "-t", target)
+            return
         tmux("set", "-w", "-t", target, "remain-on-exit", "on")
         tmux("send-keys", "-t", target, "Escape")
         time.sleep(0.3)
@@ -1061,7 +1155,7 @@ def recycle_window(cfg: Config, idx: int) -> None:
             RECYCLING.pop(idx, None)
 
 
-def close_window(cfg: Config, idx: int) -> None:
+def close_window(cfg: Config, idx: int, shell: bool = False) -> None:
     """Graceful close: `/exit` fires SessionEnd, then the agent exits. Force
     `kill-window` only if it outlives the grace budget — that path skips SessionEnd,
     the same tradeoff as a recycle timeout.
@@ -1096,6 +1190,13 @@ def close_window(cfg: Config, idx: int) -> None:
     wid = _window_id(cfg, idx)
     target = wid or f"{cfg.session}:{idx}"
     try:
+        if shell:
+            # Closing a terminal is `kill-window`, and it is instant. The grace budget
+            # below exists to let SessionEnd distil; a shell has no SessionEnd, so
+            # waiting four minutes for a prompt to answer a word it does not know
+            # would be the whole cost of the wait and none of the benefit.
+            tmux("kill-window", "-t", target)
+            return
         tmux("send-keys", "-t", target, "Escape")
         time.sleep(0.3)
         tmux("send-keys", "-t", target, "C-u")
@@ -1191,6 +1292,39 @@ def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "",
         if isinstance(error, pin.WindowDied):
             return False, "\n\n".join(x for x in (output, SPAWN_FAILED_HINT) if x)
         return False, output
+
+
+def open_shell(cfg: Config, directory: Path) -> tuple[bool, str]:
+    """Open one plain-shell window — a terminal, not a session.
+
+    The whole point is what this does *not* do. No harness, no scope, no persona, no
+    room, no pin ledger row: the window is created with no command at all, so tmux
+    starts the operator's login shell, and `pane_start_command` stays empty — which is
+    what keeps `harness_of` from reading it as an agent and every downstream reader
+    from treating it as one. It needs nothing from the expert layer either, so a
+    console running as a bare tmux bridge (no package importable) can still open one.
+
+    A clean return from `new-window` is not evidence a shell is running, for the same
+    reason it is not evidence of an agent: tmux reports success once it has forked. A
+    shell whose window has already vanished is the phone's worst failure — a button
+    that does nothing — so the window is confirmed to still exist before this reports
+    success.
+    """
+    if tmux("has-session", "-t", cfg.session).returncode != 0:
+        return False, NO_ROSTER_SESSION
+    r = tmux("new-window", "-d", "-t", cfg.session, "-P", "-F", "#{window_id}",
+             "-n", SHELL_WINDOW_NAME, "-c", str(directory))
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout).strip() or "tmux would not open the window"
+    wid = r.stdout.strip()
+    # Long enough for a shell that cannot exec to be gone, short enough that the sheet
+    # still feels like a button. With `remain-on-exit` off (the default) such a window
+    # leaves no corpse to read, so its absence is the only report there is.
+    time.sleep(0.4)
+    if _window_gone(cfg, wid):
+        return False, ("the shell exited immediately. Check that this box's login "
+                       "shell starts cleanly in " + str(directory) + ".")
+    return True, f"Opened a shell in {directory}"
 
 
 def known_scopes() -> list[str]:
@@ -1314,17 +1448,57 @@ def _contains_run(tokens: list[str], want: tuple[str, ...]) -> bool:
     return any(tuple(tokens[i:i + span]) == want for i in range(len(tokens) - span + 1))
 
 
+# Stars set from the picker. Beside the extractor policy's store under the same
+# root, and the same shape: a version and the fact, nothing derived.
+FAVORITES_STORE = Path.home() / ".thalamus" / "console" / "favorites.json"
+FAVORITES_VERSION = 1
+
+
+def effective_favorites(cfg: Config) -> list[str]:
+    """The starred directories, as resolved paths: the store when it exists, else
+    the `--dir` seed. The store is whole rather than merged with the seed — a merge
+    would make an unstarred `--dir` reappear on every restart, which is the one
+    thing a star toggled from the phone has to survive."""
+    try:
+        raw = json.loads(Path(cfg.favorites_store).read_text())
+        paths = raw.get("paths") if isinstance(raw, dict) else None
+    except (OSError, ValueError):
+        paths = None
+    if not isinstance(paths, list):
+        paths = [str(p) for p in cfg.favorites]
+    return [os.path.realpath(os.path.expanduser(str(p))) for p in paths
+            if isinstance(p, str)]
+
+
+def set_favorite(cfg: Config, path: str, favorite: bool) -> None:
+    """Star or unstar one directory and persist the whole list. Written whole and
+    replaced, so a poll that reads mid-write sees the old file, never half of one."""
+    real = os.path.realpath(path)
+    current = [p for p in effective_favorites(cfg) if p != real]
+    if favorite:
+        current.append(real)
+    store = Path(cfg.favorites_store)
+    store.parent.mkdir(parents=True, exist_ok=True)
+    tmp = store.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"version": FAVORITES_VERSION, "paths": current},
+                              indent=2) + "\n")
+    os.replace(tmp, store)
+
+
 def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
     """The directory picker: favorites first, then git repos one level under each
     scan root. Deduped by resolved path; the label defaults to the basename.
 
     Returns (dirs, allowed) — `allowed` is the whitelist a spawn request must fall
-    inside, so the client can never spawn an arbitrary path.
+    inside, so the client can never spawn an arbitrary path. A star is toggled on
+    that same list, so a directory reaches the store only by being offered first;
+    unstarring one that sits under no scan root drops it from the picker, and the
+    way back is `--dir`.
     """
     seen: set[str] = set()
     dirs: list[dict] = []
 
-    def add(path: Path, favorite: bool) -> None:
+    def add(path: Path | str, favorite: bool) -> None:
         real = os.path.realpath(os.path.expanduser(str(path)))
         if real in seen or not os.path.isdir(real):
             return
@@ -1332,7 +1506,7 @@ def spawn_dirs(cfg: Config) -> tuple[list[dict], set[str]]:
         dirs.append({"label": os.path.basename(real) or real,
                      "path": real, "favorite": favorite})
 
-    for fav in cfg.favorites:
+    for fav in effective_favorites(cfg):
         add(fav, True)
     for root in cfg.scan_roots:
         try:
@@ -1771,6 +1945,33 @@ class ConsoleServer(ThreadingHTTPServer):
     config: Config
 
 
+def _answered(verb: str):
+    """Answer a route's unhandled exception with a 500 rather than a dropped connection.
+
+    Every reader and writer below shells out to something — tmux, git, systemd — or
+    reads a body it did not write, and the environment differences and wrong-typed
+    fields that make one of them raise are not defects in the console. Unwrapped,
+    the exception kills the handler thread and the browser sees a connection that
+    closed, which is the least diagnosable failure the surface has (issue #175). The
+    message goes to stderr as well: `log_message` is silenced, so without it a
+    journal would hold nothing at all.
+    """
+    def wrap(route):
+        def method(self):
+            self._responded = False
+            try:
+                route(self)
+            except Exception as exc:  # noqa: BLE001 — the message is the product here
+                print(f"! {verb} {self.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+                if not self._responded:
+                    with contextlib.suppress(Exception):
+                        self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
+        method.__name__ = route.__name__
+        method.__doc__ = route.__doc__
+        return method
+    return wrap
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -1817,24 +2018,9 @@ class Handler(BaseHTTPRequestHandler):
         return key is not None and any(key == origin_key(allowed)
                                        for allowed in self.cfg.allowed_origins)
 
+    @_answered("GET")
     def do_GET(self):
-        """Route a GET, and answer with a 500 rather than a dropped connection.
-
-        Every reader below shells out to something — tmux, git, systemd — and the
-        environment differences that make one of them absent are not defects in the
-        console. Unwrapped, the exception kills the handler thread and the browser
-        sees a connection that closed, which is the least diagnosable failure the
-        surface has. The message goes to stderr as well: `log_message` is silenced,
-        so without it a journal would hold nothing at all.
-        """
-        self._responded = False
-        try:
-            self._route_get()
-        except Exception as exc:  # noqa: BLE001 — the message is the product here
-            print(f"! GET {self.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
-            if not self._responded:
-                with contextlib.suppress(Exception):
-                    self._send(500, {"error": f"{type(exc).__name__}: {exc}"})
+        self._route_get()
 
     def _route_get(self):
         path, _, query = self.path.partition("?")
@@ -1845,8 +2031,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"commands": list_commands(self.cfg, idx)})
         if path == "/api/panes":
             windows = list_windows(self.cfg)
+            alternate = alternate_screens(self.cfg)
             for w in windows:
-                text = capture(self.cfg, w["index"])
+                text = capture(self.cfg, w["index"],
+                               scrollback=w["index"] not in alternate)
                 w["lines"] = text
                 w["screen_rev"] = screen_rev(text)
             # The launch facts tmux cannot know: which project and repository this
@@ -1959,6 +2147,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"scopes": known_scopes(), "dirs": dirs,
                                     "rooms": pin.rooms() if pin else [],
                                     "harnesses": spawn_harnesses(),
+                                    # Advertised rather than assumed by the client.
+                                    # `static/` is served off disk and the Python is
+                                    # whatever the last restart loaded, so a client
+                                    # newer than its server is the normal state for a
+                                    # while after every edit — and a shell chip whose
+                                    # POST would 404 is a button that does nothing.
+                                    "shell": True,
                                     "experts": pin is not None})
         if path == "/api/frames":
             # Absolute paths stay server-side; the client addresses a frame by name.
@@ -1979,7 +2174,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         return self._send(404, {"error": "not found"})
 
+    @_answered("POST")
     def do_POST(self):
+        # The routes stay in this method rather than moving behind the wrapper the
+        # way `_route_get` did: tests/qe reads `do_POST` by name to check that the
+        # origin gate precedes every route and that every route survives a
+        # malformed body, and a body moved elsewhere reads to it as no routes at all.
         path = self.path.split("?", 1)[0]
         if not self._origin_ok():
             # Refused before the body is read, so a rejected request costs nothing.
@@ -1988,6 +2188,11 @@ class Handler(BaseHTTPRequestHandler):
             data = self._body()
         except Exception:
             return self._send(400, {"error": "bad json"})
+        # Every route below reads fields off the body, so a body that parses to
+        # anything but an object is refused here once rather than crashing each
+        # route's first `.get`.
+        if not isinstance(data, dict):
+            return self._send(400, {"error": "body must be a JSON object"})
 
         if path == "/api/roster":
             ok, output = roster_sync(self.cfg)
@@ -2062,6 +2267,36 @@ class Handler(BaseHTTPRequestHandler):
             ok, output = do_spawn(self.cfg, scope, Path(os.path.realpath(directory)),
                                   room, harness)
             return self._send(200 if ok else 500, {"ok": ok, "output": output})
+
+        if path == "/api/shell":
+            # Deliberately not behind `pin_module()`, unlike every neighbour on this
+            # path: a shell is tmux and nothing else, so the bridge can open one on a
+            # box where the package does not import.
+            directory = data.get("dir")
+            # Same whitelist as a spawn, recomputed here rather than trusted from the
+            # request: this endpoint hands the caller a shell, so the directory it
+            # names is the one thing that must not be arbitrary.
+            _, allowed = spawn_dirs(self.cfg)
+            if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
+                return self._send(400, {"error": "directory not in the allowed list"})
+            ok, output = open_shell(self.cfg, Path(os.path.realpath(directory)))
+            return self._send(200 if ok else 500, {"ok": ok, "output": output})
+
+        if path == "/api/favorite":
+            directory = data.get("path")
+            favorite = data.get("favorite")
+            # Same whitelist as a spawn, recomputed here: a star names a directory
+            # the picker offered, never one the request made up.
+            _, allowed = spawn_dirs(self.cfg)
+            if not isinstance(directory, str) or os.path.realpath(directory) not in allowed:
+                return self._send(400, {"error": "directory not in the allowed list"})
+            if not isinstance(favorite, bool):
+                return self._send(400, {"error": "favorite must be true or false"})
+            set_favorite(self.cfg, directory, favorite)
+            # The picker renders from this response rather than re-fetching, so it
+            # carries the list the next GET would.
+            dirs, _ = spawn_dirs(self.cfg)
+            return self._send(200, {"ok": True, "dirs": dirs})
 
         if path == "/api/dispatch":
             # Addressed to a *room*, so it is deliberately above the window-index gate
@@ -2189,7 +2424,9 @@ class Handler(BaseHTTPRequestHandler):
                 # in flight must not reset the clock the operator is reading.
                 RECYCLING.setdefault(idx, time.time())
             if not already:
+                win = next((w for w in windows if w["index"] == idx), None)
                 threading.Thread(target=recycle_window, args=(self.cfg, idx),
+                                 kwargs={"shell": bool(win and win["shell"])},
                                  daemon=True).start()
             return self._send(200, {"ok": True, "already": already})
 
@@ -2202,6 +2439,7 @@ class Handler(BaseHTTPRequestHandler):
                 CLOSING.setdefault(idx, time.time())
             if not already:
                 threading.Thread(target=close_window, args=(self.cfg, idx),
+                                 kwargs={"shell": bool(win and win["shell"])},
                                  daemon=True).start()
             return self._send(200, {"ok": True, "already": already})
 

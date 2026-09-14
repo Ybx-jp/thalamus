@@ -482,6 +482,98 @@ def test_screen_rev_moves_with_the_pane_text_and_only_with_it(tmp_path, monkeypa
         assert isinstance(row["screen_rev"], (str, int))
 
 
+
+# ---- what a capture is allowed to show ----
+#
+# A pane on the alternate screen has two buffers: the viewport the TUI draws, and
+# the scrolling buffer the terminal had before the TUI started. tmux keeps both and
+# `-S` reads the second one, which is how text the program never drew — and cannot
+# erase — ends up pinned above the live screen for the life of the window.
+
+ALT_WINDOW = ("3\tqe\t1\tclaude\t60\t50\t0\t/home/op/code/thalamus\tclaude\t%7\t4242")
+SHELL_PANE = ("4\tshell\t0\tbash\t60\t50\t0\t/home/op/code/thalamus\t\t%9\t4243")
+
+
+def _no_real_ledger(monkeypatch, tmp_path):
+    """Keep `/api/panes` off the operator's real pins while it joins launch facts."""
+    from thalamus.console import transcript as tr
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setattr(tr, "PINS", tmp_path / "pins.jsonl")
+    monkeypatch.setattr(server, "_LEDGER", None)
+    monkeypatch.setattr(server, "_FEEDS", None)
+
+
+def test_a_full_screen_session_is_captured_as_its_viewport_and_not_its_history(
+        tmp_path, monkeypatch):
+    """Scenario: a window whose agent printed startup warnings before it launched.
+
+    Those warnings are in the pane's scrolling buffer, not in the viewport the TUI
+    owns, so nothing the agent does afterwards can scroll them away: the viewport
+    scrolls under them and the console keeps showing them at the top, still there
+    long after the agent's own banner has left the screen. The viewport alone is
+    the only thing the running program is actually saying.
+    """
+    _no_real_ledger(monkeypatch, tmp_path)
+    cfg = Config(session="thalamus", project_root=tmp_path,
+                 scan_roots=[tmp_path])
+
+    with _serving(cfg, windows=ALT_WINDOW, alternate={3}) as post:
+        post.get("/api/panes")
+
+    (cap,) = [c for c in post.fake.calls if c[0] == "capture-pane"]
+    assert "-S" not in cap, "asked tmux for a buffer the running program cannot reach"
+    assert cap == ("capture-pane", "-p", "-t", "thalamus:3")
+
+
+def test_a_pane_that_is_not_a_full_screen_program_is_captured_with_its_scrollback(
+        tmp_path, monkeypatch):
+    """The other half, and the reason this is a per-pane decision rather than a
+    constant: a shell — or a window whose agent has exited back to a prompt — is a
+    scrolling terminal whose history is the whole of what it said. On a phone the
+    viewport is the last screenful, which for a command that printed more than that
+    is the end of the answer with the answer cut off."""
+    _no_real_ledger(monkeypatch, tmp_path)
+    cfg = Config(session="thalamus", project_root=tmp_path,
+                 scan_roots=[tmp_path])
+
+    with _serving(cfg, windows=SHELL_PANE, alternate=set()) as post:
+        post.get("/api/panes")
+
+    (cap,) = [c for c in post.fake.calls if c[0] == "capture-pane"]
+    assert cap == ("capture-pane", "-p", "-S", "-1000", "-t", "thalamus:4")
+
+
+def test_the_decision_is_made_per_window_in_one_query(tmp_path, monkeypatch):
+    """It is a fact about the pane, not about the roster: a session and a shell sit
+    in the same tmux session and are captured differently on the same poll. One
+    `list-windows` answers for all of them, because `/api/panes` captures every
+    window on every poll and a phone polls often."""
+    _no_real_ledger(monkeypatch, tmp_path)
+    cfg = Config(session="thalamus", project_root=tmp_path,
+                 scan_roots=[tmp_path])
+
+    with _serving(cfg, windows="\n".join([ALT_WINDOW, SHELL_PANE]),
+                  alternate={3}) as post:
+        post.get("/api/panes")
+
+    caps = {c[-1]: c for c in post.fake.calls if c[0] == "capture-pane"}
+    assert "-S" not in caps["thalamus:3"] and "-S" in caps["thalamus:4"]
+    asked = [c for c in post.fake.calls
+             if c[0] == "list-windows" and "alternate_on" in c[-1]]
+    assert len(asked) == 1
+
+
+def test_a_tmux_that_cannot_answer_leaves_every_pane_showing_its_viewport(monkeypatch):
+    """The failure this degrades into has to be the harmless one. An unknown answer
+    read as "scrolling" would put the stale buffer back on every window at once;
+    read as "full screen" it costs a shell its scrollback until the next poll."""
+    monkeypatch.setattr(server, "tmux",
+                        lambda *a: subprocess.CompletedProcess(a, 1, "", "no server"))
+
+    assert server.alternate_screens(Config(session="thalamus")) == set()
+
+
+
 def test_the_poll_join_is_by_pane_and_a_mismatch_does_not_borrow_a_row(tmp_path,
                                                                       monkeypatch):
     """The join key is the pane id, and a wrong one must yield nothing.
@@ -617,7 +709,11 @@ def test_the_picker_offers_favorites_first_and_scans_for_repos(tmp_path):
     _repo(code / "beta")
     (code / "not-a-repo").mkdir()
 
-    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
+    # The store, too: left at its default this reads the operator's real
+    # `~/.thalamus/console/favorites.json`, and the test then asserts against
+    # whatever directories that box happens to have starred.
+    cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code],
+                 favorites_store=tmp_path / "favorites.json")
     dirs, allowed = spawn_dirs(cfg)
 
     assert dirs[0]["favorite"] is True and dirs[0]["label"] == "alpha"
@@ -642,6 +738,165 @@ def test_a_directory_the_picker_never_offered_cannot_be_spawned_into(tmp_path):
             "/api/spawn", {"scope": "main", "dir": str(code / "alpha" / ".." / "elsewhere")}
         )
         assert status == 400 and "allowed list" in body["error"]
+
+
+# ---- a shell is a terminal, not a session ----
+#
+# The console opens plain tmux windows so the operator can run commands from the
+# phone. Everything under here is one claim: the lifecycle machinery built for an
+# agent must not be pointed at a window that has no agent in it. The expensive half
+# is silent — `/exit` at a bash prompt is `command not found`, so the pane never
+# dies and a close waits out its whole four-minute grace budget before force-killing
+# a shell that would have gone instantly.
+
+SHELL_WINDOW = ("2\tshell\t0\tbash\t120\t50\t0\t/home/op/code/thalamus\t\t%9\t1010")
+
+
+def test_a_console_opened_shell_window_is_marked_as_one():
+    """Both halves of the marker are required, and each one alone is wrong.
+
+    The name alone would hand the fast paths to any window an operator renamed by
+    hand; an empty harness alone covers every window running something we do not
+    recognise, including an agent launched by hand from a prompt.
+    """
+    (shell,) = parse_windows(SHELL_WINDOW)
+    assert shell["shell"] is True
+    assert shell["harness"] == ""
+
+    (agent,) = parse_windows(CLAUDE_START)
+    assert agent["shell"] is False
+
+    named_but_running_an_agent = SHELL_WINDOW.replace("\t\t%9", "\tclaude --agent x\t%9")
+    (impostor,) = parse_windows(named_but_running_an_agent)
+    assert impostor["shell"] is False
+
+
+def test_closing_a_shell_does_not_wait_out_a_sessionend_that_cannot_come(monkeypatch):
+    """`/exit` is an agent's word. A bash prompt answers `command not found` and
+    keeps running, so the graceful path can only end in the forced one — four
+    minutes later, on a window that had nothing to distil."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(server, "tmux", _tmux_stub(calls, ["@7"]))
+    monkeypatch.setattr(server, "_pinned_session", lambda cfg, idx: {})
+    recorded: list[tuple] = []
+    monkeypatch.setattr(server, "_record_forced_kill",
+                        lambda who, op: recorded.append((who, op)))
+
+    server.close_window(Config(session="thalamus"), 2, shell=True)
+
+    assert ("kill-window", "-t", "@7") in calls
+    assert not any(c[0] == "send-keys" for c in calls), "typed at a shell's prompt"
+    assert recorded == [], "a shell has no SessionEnd to have skipped"
+
+
+def test_restarting_a_shell_respawns_it_rather_than_typing_at_its_prompt(monkeypatch):
+    """`respawn-window -k` re-runs the window's creation command, which for a shell
+    window is no command at all — tmux starts a fresh login shell in the same
+    directory (measured, tmux 3.4)."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(server, "tmux", _tmux_stub(calls, ["@7"]))
+    monkeypatch.setattr(server, "_pinned_session", lambda cfg, idx: {})
+    recorded: list[tuple] = []
+    monkeypatch.setattr(server, "_record_forced_kill",
+                        lambda who, op: recorded.append((who, op)))
+
+    server.recycle_window(Config(session="thalamus"), 2, shell=True)
+
+    assert ("respawn-window", "-k", "-t", "@7") in calls
+    assert not any(c[0] == "send-keys" for c in calls)
+    assert recorded == []
+
+
+def test_a_shell_is_not_opened_where_there_is_no_roster_session_to_hold_it(monkeypatch):
+    """`new-session` would put the shell at the lowest window index — the anchor the
+    console references and nothing can close — where it would outrank every real
+    session for the life of the tmux server."""
+    def tmux(*args):
+        return subprocess.CompletedProcess(args, 1 if args[0] == "has-session" else 0, "", "")
+    monkeypatch.setattr(server, "tmux", tmux)
+
+    ok, output = server.open_shell(Config(session="thalamus"), Path("/home/op"))
+
+    assert ok is False and "no roster session" in output
+
+
+def test_a_shell_that_did_not_survive_being_opened_is_reported_as_a_failure(monkeypatch):
+    """tmux reports success once it has forked, and a window whose shell could not
+    start leaves no corpse behind with `remain-on-exit` off. Its absence is the only
+    report there is, and without this the phone shows a button that did nothing."""
+    def tmux(*args):
+        out = "@9" if args[0] == "new-window" else ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+    monkeypatch.setattr(server, "tmux", tmux)
+    monkeypatch.setattr(server.time, "sleep", lambda _s: None)
+
+    ok, output = server.open_shell(Config(session="thalamus"), Path("/home/op"))
+
+    assert ok is False and "exited immediately" in output
+
+
+def test_an_opened_shell_carries_no_scope_and_no_command(monkeypatch):
+    """What the window is *not* given is the whole design: no command (so tmux runs
+    the login shell and `pane_start_command` stays empty, which is what keeps every
+    reader downstream from taking it for an agent), and no `THALAMUS_SCOPE`."""
+    calls: list[tuple] = []
+
+    def tmux(*args):
+        calls.append(args)
+        out = "@9" if args[0] == "new-window" else ("@9" if args[0] == "list-windows" else "")
+        return subprocess.CompletedProcess(args, 0, out, "")
+    monkeypatch.setattr(server, "tmux", tmux)
+    monkeypatch.setattr(server.time, "sleep", lambda _s: None)
+
+    ok, output = server.open_shell(Config(session="thalamus"), Path("/home/op/code/alpha"))
+
+    (create,) = [c for c in calls if c[0] == "new-window"]
+    assert "--" not in create and not any("THALAMUS_SCOPE" in a for a in create)
+    assert "-n" in create and create[create.index("-n") + 1] == server.SHELL_WINDOW_NAME
+    assert create[create.index("-c") + 1] == "/home/op/code/alpha"
+    assert ok is True and "/home/op/code/alpha" in output
+
+
+def test_a_directory_the_picker_never_offered_cannot_be_opened_as_a_shell(tmp_path):
+    """The same whitelist as a spawn, and for a sharper reason: this endpoint hands
+    the caller a shell, so the directory it names is the one thing that must not be
+    arbitrary."""
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    secret = _repo(tmp_path / "elsewhere")
+    cfg = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "favorites.json")
+
+    with _serving(cfg) as post:
+        status, body = post("/api/shell", {"dir": str(secret)})
+        assert status == 400 and "allowed list" in body["error"]
+
+        status, body = post("/api/shell", {"dir": None})
+        assert status == 400
+
+
+def test_a_shell_window_is_offered_no_slash_commands(tmp_path, monkeypatch):
+    """`/clear` and `/model` are an agent's words. A hint strip that offers them over
+    a bash prompt is a list of commands that will all fail."""
+    monkeypatch.setattr(server, "list_windows",
+                        lambda cfg: parse_windows(SHELL_WINDOW + "\n" + CLAUDE_START))
+    cfg = Config(project_root=tmp_path)
+
+    assert server.list_commands(cfg, 2) == []
+    assert server.list_commands(cfg, 0), "an agent window still gets its commands"
+
+
+def test_the_read_view_tells_a_shell_apart_from_a_session_it_cannot_resolve(monkeypatch):
+    """`unresolved` tells the operator to restart the window and it will resolve. A
+    shell restarted a hundred times still has no transcript, so answering it with
+    that sentence is advice that cannot work."""
+    monkeypatch.setattr(server, "list_windows", lambda cfg: parse_windows(SHELL_WINDOW))
+    monkeypatch.setattr(server, "transcript_module", lambda: object())
+
+    window, feed, reason = server.read_feed(Config(session="thalamus"), 2)
+
+    assert reason == "shell" and feed is None and window is not None
+    assert reason in server.PERMISSION_MODE_READ
 
 
 def test_a_window_reports_the_room_it_was_created_in(tmp_path):
@@ -1311,18 +1566,34 @@ class _FakeTmux:
     would drive the operator's real roster.
     """
 
-    def __init__(self, windows: str = "", screens: dict[int, str] | None = None):
+    def __init__(self, windows: str = "", screens: dict[int, str] | None = None,
+                 alternate: set[int] | None = None):
         self.windows = windows
         # `capture-pane` answers from here, keyed by window index. Mutable, so a
         # test can move one window's screen between two polls.
         self.screens = screens if screens is not None else {}
+        # Which windows are on the alternate screen. Every window in the roster
+        # fixtures runs a TUI, so that is the default — and it is the answer that
+        # decides whether a capture asks for scrollback.
+        self.alternate = alternate
         self.calls: list[tuple[str, ...]] = []
+
+    def _alt_rows(self) -> str:
+        rows = []
+        for line in self.windows.splitlines():
+            i = line.partition("\t")[0]
+            if i.isdigit():
+                alt = 1 if self.alternate is None or int(i) in self.alternate else 0
+                rows.append(f"{i}\t{alt}")
+        return "\n".join(rows) + ("\n" if rows else "")
 
     def __call__(self, *args: str) -> subprocess.CompletedProcess:
         self.calls.append(args)
         out = ""
         if args and args[0] == "list-windows":
-            out = self.windows
+            # Two different queries share this verb, and they are told apart the
+            # only way tmux offers: by the format they asked for.
+            out = self._alt_rows() if "alternate_on" in args[-1] else self.windows
         elif args and args[0] == "capture-pane":
             target = args[-1].rpartition(":")[2]
             out = self.screens.get(int(target), "") if target.isdigit() else ""
@@ -1499,11 +1770,11 @@ def test_choosing_an_extractor_from_the_phone_lands_and_reports_back(tmp_path, m
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         status, body = post("/api/extractor-policy",
                             {"pass": "distill", "harness": "codex",
-                             "model": "gpt-5.4-mini"})
+                             "model": "gpt-5.6-luna"})
 
     assert status == 200 and body["ok"] is True
     served = {p["pass"]: p for p in body["passes"]}
-    assert served["distill"]["value"] == {"harness": "codex", "model": "gpt-5.4-mini"}
+    assert served["distill"]["value"] == {"harness": "codex", "model": "gpt-5.6-luna"}
     assert body["change"]["to_harness"] == "codex" and body["change"]["pass"] == "distill"
     assert (tmp_path / "extractor.jsonl").exists(), "the change must be dateable later"
 
@@ -1563,9 +1834,10 @@ class _serving:
     so they are exercised over real HTTP.
     """
 
-    def __init__(self, cfg: Config, windows: str = "", screens: dict[int, str] | None = None):
+    def __init__(self, cfg: Config, windows: str = "", screens: dict[int, str] | None = None,
+                 alternate: set[int] | None = None):
         self.cfg = cfg
-        self.fake = _FakeTmux(windows, screens)
+        self.fake = _FakeTmux(windows, screens, alternate)
 
     def __enter__(self):
         self._real_tmux = server.tmux
@@ -1880,14 +2152,15 @@ def _read_fixture(tmp_path, monkeypatch, *, ledger=True, transcript=None,
     monkeypatch.setattr(server, "_FEEDS", None)
 
 
-def test_the_read_status_field_names_exactly_four_values():
-    """The contracted vocabulary, written out, so a fifth value fails here.
+def test_the_read_status_field_names_exactly_the_values_the_client_draws():
+    """The contracted vocabulary, written out, so a new value fails here.
 
     A server-side addition that widens the set has to change this line, which is
-    the point: the client renders against these four and nothing else, and a value
-    it has never heard of is indistinguishable from a bug on its own side.
+    the point: the client renders against these and nothing else, and a value it has
+    never heard of is indistinguishable from a bug on its own side.
     """
-    assert server.PERMISSION_MODE_READ == ("ok", "unresolved", "pending", "no-package")
+    assert server.PERMISSION_MODE_READ == ("ok", "unresolved", "pending", "no-package",
+                                           "shell")
 
 
 def test_a_read_session_reports_its_mode_and_that_the_mode_was_read(tmp_path,
@@ -2196,3 +2469,100 @@ def test_a_window_that_outlives_the_grace_budget_is_killed_by_id_not_by_index(
 
     assert [op for _, op in recorded] == ["close"]
     assert ("kill-window", "-t", "@7") in calls
+
+
+# ---- stars are set from the picker and kept by the server ----
+
+
+def test_a_star_toggled_from_the_phone_persists_and_replaces_the_seed(tmp_path):
+    """
+    Scenario: the picker seeded by `--dir alpha` has beta starred from the phone,
+    then alpha unstarred
+
+    Verifications:
+    - the POST's own response carries the re-ordered picker, since the sheet renders
+      from it rather than re-fetching
+    - a fresh read of the picker — what a restart or the desktop would do — agrees
+    - the store is the whole list once it exists: an unstarred `--dir` stays unstarred
+    """
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    _repo(code / "beta")
+    cfg = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "state" / "favorites.json")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/favorite", {"path": str(code / "beta"), "favorite": True})
+        assert status == 200 and body["ok"] is True
+        assert [(d["label"], d["favorite"]) for d in body["dirs"]] == \
+            [("alpha", True), ("beta", True)]
+
+        status, body = post("/api/favorite", {"path": str(code / "alpha"), "favorite": False})
+        assert status == 200
+        assert [(d["label"], d["favorite"]) for d in body["dirs"]] == \
+            [("beta", True), ("alpha", False)]
+        assert post.get("/api/spawn-options")["dirs"] == body["dirs"]
+
+    # A second Config over the same store — the console after a restart, with the
+    # same `--dir alpha` seed — reads the file, not the seed.
+    again = Config(project_root=code / "alpha", scan_roots=[code],
+                   favorites_store=tmp_path / "state" / "favorites.json")
+    assert server.effective_favorites(again) == [str(code / "beta")]
+
+
+def test_a_directory_the_picker_never_offered_cannot_be_starred(tmp_path):
+    """The star shares the spawn whitelist: a path the picker did not offer is refused,
+    and the store is not created for it."""
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    (tmp_path / "elsewhere").mkdir()
+    cfg = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "state" / "favorites.json")
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/favorite",
+                            {"path": str(tmp_path / "elsewhere"), "favorite": True})
+        assert status == 400 and "allowed" in body["error"]
+        status, _ = post("/api/favorite", {"path": str(code / "alpha"), "favorite": "yes"})
+        assert status == 400
+
+    assert not (tmp_path / "state" / "favorites.json").exists()
+
+
+def test_a_missing_or_broken_store_falls_back_to_the_seed(tmp_path):
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    store = tmp_path / "state" / "favorites.json"
+    cfg = Config(project_root=code / "alpha", scan_roots=[code], favorites_store=store)
+    assert server.effective_favorites(cfg) == [str(code / "alpha")]
+
+    store.parent.mkdir(parents=True)
+    store.write_text("{not json")
+    assert server.effective_favorites(cfg) == [str(code / "alpha")]
+
+
+# ---- a POST is answered, whatever the body ----
+
+
+def test_a_post_body_that_is_not_an_object_is_refused_not_dropped(tmp_path):
+    """Every route reads fields off the body, so a body that parses to a list, a
+    string, a number or null used to crash the first `.get` and close the
+    connection with no status at all (issue #175). Refused once, before any route."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        for body in ([], "hello", 3, None):
+            status, answer = post("/api/key", body)
+            assert status == 400, body
+            assert "object" in answer["error"]
+
+
+def test_a_route_that_raises_answers_500_with_the_exception_named(tmp_path, monkeypatch):
+    """The wrapper `do_GET` has always had, on `do_POST`: a wrong-typed field that
+    escapes a route reaches the client as a status and a reason, and the journal as
+    a line, rather than as a closed connection."""
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        # `key` must be hashable for the allowlist lookup; a list is not.
+        status, answer = post("/api/key", {"index": 0, "key": []})
+    assert status == 500
+    assert "TypeError" in answer["error"]
