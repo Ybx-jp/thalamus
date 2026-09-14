@@ -73,9 +73,9 @@ FAILURE_PATTERN = (
 # The anchor cap is the latency contract. `recall()` issues four scans per keyword and
 # the chunk scan is unindexed (#112), so wall time is linear in anchors: measured
 # 2026-09-13 on the live graph at 0.47 s per anchor (n=2 → 0.9 s, n=8 → 3.8 s,
-# n=12 → 5.6 s). The reflex is synchronous only while a firing stays under ~5 s, and
-# process start plus connect cost ~0.55 s on top, so six anchors land at ~3.4 s with
-# headroom for the graph to grow. Raising this is a decision about the contract.
+# n=12 → 5.6 s). This rung is the synchronous arm — the agent waits on every firing —
+# and process start plus connect cost ~0.55 s on top, so six anchors land at ~3.4 s.
+# Raising this is a decision about how long a failed command may stall the session.
 MAX_ANCHORS = 6
 MAX_CANDIDATES = 3
 
