@@ -296,6 +296,17 @@ CHECKS: tuple[Check, ...] = (
     Check("cli-exists-after-sync", Phase.SYNCED, Severity.BLOCKS,
           "`.venv/bin/thalamus` exists and answers `--help`. getting-started:46 "
           "states the CLI is here and not on PATH."),
+    Check("ty-check-verdict-depends-on-pdf-extra", Phase.SYNCED, Severity.DEGRADES,
+          "`uv run ty check src` passes or fails depending on whether the optional "
+          "`pdf` extra (pyproject.toml:91) is synced, on unchanged source. The "
+          "suppression on harness/ingest.py's `from pypdf import PdfReader` "
+          "(:292, :358) is correct only while pypdf is absent, and is itself a "
+          "diagnostic once it is present.",
+          issue=167,
+          control="the same command, synced with the `dev` extra alone — the state "
+                  "the SYNCED step already produced — must report no diagnostics, or "
+                  "a later diagnostic cannot be attributed to the pdf extra rather "
+                  "than to the tree itself"),
 
     # ---- the readiness window ---------------------------------------------------
     Check("starting-graph-is-not-reported-as-absent", Phase.GRAPH_STARTING,
