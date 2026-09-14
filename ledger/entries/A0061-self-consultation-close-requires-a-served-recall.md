@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-14T10:30:34-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/consultation.py § "consult_answer" =sha256:cbdf5f0ea8341003e30f2439b10cc5c9b06d86b8aa401841cb19d53a03e185c7
+  artifact: sha256:6fcaed8d40fa583d9bffe700bc4849e4b31c5172b6d4db18f433f59cb3eaeb90
+  note: propagated from a moved ground
+- 2026-09-14T10:30:53-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/consultation.py § "consult_answer" =sha256:6fcaed8d40fa583d9bffe700bc4849e4b31c5172b6d4db18f433f59cb3eaeb90
+  note: Read at the current revision. The write-gate change (7de0d95) added gate=refuse_unless_exchange_protocol_holds to the close_exchange call; the ticketed_recalls-is-zero-and-expert-is-from_scope gate is unchanged.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

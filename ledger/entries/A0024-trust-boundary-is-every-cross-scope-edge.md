@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-14T10:30:34-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/ontology.py § "edge_crosses_scope" =sha256:1db04b44268a415af02d3104ade97328133601a73720e78339ead4f4e975ca1d
+  artifact: sha256:ebc48f3b625be9c68a6b135bc5aeda68c77abfcb9aad4f513aebe3dcf37c728a
+  note: propagated from a moved ground
+- 2026-09-14T10:30:53-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/ontology.py § "edge_crosses_scope" =sha256:ebc48f3b625be9c68a6b135bc5aeda68c77abfcb9aad4f513aebe3dcf37c728a
+  note: Read at the current revision. edge_crosses_scope was the last definition in the module, so the exchange-record protocol appended below it by the write-gate change (7de0d95) fell inside its section and moved the digest; the predicate's own body is untouched and the crossing test it decides is unchanged.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-14T10:30:34-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/conformance.py § "write_session_checked" =sha256:c5541e0050b4261aff9aef3cfd344951997725070f876dafa737562272c26351
+  artifact: sha256:e7b8abb2f4c3bdc995ce60f22983570d5afd9d3f0c6a074976efe6f7e5af88ad
+  note: propagated from a moved ground
+- 2026-09-14T10:30:53-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/conformance.py § "write_session_checked" =sha256:e7b8abb2f4c3bdc995ce60f22983570d5afd9d3f0c6a074976efe6f7e5af88ad
+  note: Read at the current revision. The write-gate change (7de0d95) moved the issue-raising body out to refuse_unless_conformant and write_session_checked now supplies it as write_session's required gate argument; the door every session write passes through, and its rejection of an orphan or violation before the write lands, are unchanged.
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live
