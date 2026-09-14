@@ -16,7 +16,12 @@ Security model, in layers:
    with a token recognition error). This layer is the server's, not ours.
 2. **The lexical guard enforces read-only.** Mutation and side-effect steps are
    legal gremlin-lang, so they are denied here, token-wise, against a
-   whitespace-stripped lowercase view (nested `__.addV(...)` included).
+   whitespace-stripped lowercase view (nested `__.addV(...)` included). That
+   view is only as good as what it can read, so a floor runs ahead of it and
+   refuses the three ways a step name hides from a literal match — a comment
+   opened mid-token, a non-ASCII lookalike letter or paren, a zero-width
+   character between two letters. Refused rather than normalized: matching
+   against canonicalised hostile input moves the target to the canonicaliser.
 3. **The pin gates the surface.** Free-form traversals can reach any scope, so
    the tool serves only main-pinned sessions — the master plane is where
    cross-scope inspection lives. An expert pin gets a refusal naming
@@ -47,7 +52,9 @@ _MAX_QUERY_CHARS = 2_000
 _MAX_VALUE_CHARS = 400
 
 # Steps that mutate the graph or smuggle side effects. gremlin-lang has no eval,
-# so denying these step names (as called tokens) is denying the write path.
+# so denying these step names (as called tokens) is denying the write path —
+# but only over text a literal match can actually see. `_lexical_floor` below is
+# what makes that true; without it these ten entries are advisory.
 _DENIED_STEPS = (
     "addv(",
     "adde(",
@@ -109,13 +116,120 @@ _SCOPED_PREFIXES = "|".join(
 _BARE_VID_RE = re.compile(rf"(?<!`)(scope:[^:`'\"\s]+:(?:{_SCOPED_PREFIXES}):[^`'\"\s,}}\]]+)")
 
 
+def _lexical_floor(text: str) -> str | None:
+    """Refuse text the denylist below cannot read. A rejection reason, or None.
+
+    `_DENIED_STEPS` matches step names literally, against a view that only
+    strips whitespace and folds case. Three kinds of character survive that view
+    while still spelling the step to a reader: a comment opened inside a token
+    (`a/**/ddV(`), a non-ASCII lookalike for an ASCII letter or paren (Cyrillic
+    `а` U+0430, fullwidth `（` U+FF08), and a zero-width character between two
+    letters (U+200B, which Unicode marks White_Space=No). Each defeats all ten
+    entries at once, and would defeat an eleventh, so the class is closed here
+    rather than by widening the list.
+
+    Refused, not normalized, and that is the whole of the design. Filtering text
+    that has not been canonicalised is CWE-181 (Validate Before Filter) and its
+    sibling CWE-180 (Validate Before Canonicalize); the prescribed fix is to
+    canonicalise first, but canonicalising *hostile* input only moves the target
+    to the canonicaliser — a single non-recursive comment strip reconstitutes a
+    denied token out of two adjacent fragments, which is CWE-181's own `.~.`
+    exemplar wearing different clothes. Refusing is the ordering with no second
+    machine to defeat. Not folding confusables also sidesteps UTS #39's skeleton
+    algorithm, whose table changes between Unicode versions; ASCII does not.
+
+    Restricting to ASCII outside literals is UTS #39's own strictest rung — the
+    ASCII-Only Identifier Restriction Level (Davis & Suignard, *Unicode Security
+    Mechanisms*), which also states why a per-character denylist cannot work here:
+    "even a single restricted character can be deliberately excluded to evade
+    detection." Boucher & Anderson, *Trojan Source: Invisible Vulnerabilities*
+    (arXiv:2111.00169) is the precedent for treating invisible and lookalike
+    characters in machine-read text as a class, and for rejecting at the parser
+    rather than repairing.
+
+    String literals are exempt from the non-ASCII rule, and from that rule only.
+    The graph holds text in any script and a query searching for it is ordinary,
+    so `has('title','Café')` runs. Comments and backslashes outside a literal are
+    refused outright; inside one a backslash escapes the next character.
+
+    Two limits, stated because they are the ones that would bite:
+
+    - This scan recognises literals itself instead of driving the server's lexer,
+      which is the parser-differential class Sassaman et al. document in
+      *Security Applications of Formal Language Theory* (2011) — a validator and
+      a parser disagreeing about where a string ends (CVE-2006-2313/2314). It is
+      mitigated by refusing rather than guessing on every ambiguity: an
+      unterminated quote and a trailing backslash are rejections, not repairs.
+      The ceiling is Dejector's approach, driving the target's own grammar;
+      whether TinkerPop ships a reusable `Gremlin.g4` for that is not established.
+    - gremlin-lang's exact string-escape grammar is not verified against
+      TinkerPop's grammar source, so "backslash escapes the next character" is
+      this scan's rule and is assumed to be the server's.
+
+    This is layer 2's own floor and it claims nothing about layer 1: the server's
+    GremlinLangScriptEngine may well reject these strings at parse time too. That
+    is untested from here and #60 is the seam that would let it be tested.
+    """
+    quote = ""
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if quote:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+            index += 1
+            continue
+        if char in "'\"":
+            quote = char
+            index += 1
+            continue
+        if text.startswith("/*", index) or text.startswith("//", index):
+            return (
+                "Rejected: a comment outside a string literal. A comment can be opened "
+                "inside a step name, which hides the step from the read-only check "
+                "without changing what the step does. Write the traversal without one."
+            )
+        if char == "\\":
+            return (
+                "Rejected: a backslash outside a string literal. Escapes belong inside "
+                "quotes; outside them there is nothing legal for one to escape here."
+            )
+        if not char.isascii():
+            return (
+                f"Rejected: non-ASCII character {char!r} (U+{ord(char):04X}) outside a "
+                "string literal. Step names and vertex IDs on this surface are ASCII, "
+                "and a lookalike letter or a zero-width character between two letters "
+                "reads as a step name while defeating the read-only check. Non-ASCII "
+                "inside quotes is fine — searching the graph for text in any script works."
+            )
+        index += 1
+    if quote:
+        return (
+            f"Rejected: unterminated {quote} string literal. Where a literal ends decides "
+            "what is code and what is data, so a query this check cannot resolve is not run."
+        )
+    return None
+
+
 def validate_query(query: str) -> str | None:
     """The read-only floor. Returns a rejection reason, or None to run."""
+    if not isinstance(query, str):
+        return (
+            f"Query must be a string; got {type(query).__name__}. This surface takes one "
+            "gremlin-lang traversal as text (e.g. g.V().hasLabel('Thread').valueMap())."
+        )
     text = query.strip()
     if not text.startswith("g."):
         return "Query must be a traversal rooted at `g.` (e.g. g.V().hasLabel('Thread')...)."
     if len(text) > _MAX_QUERY_CHARS:
         return f"Query exceeds {_MAX_QUERY_CHARS} characters."
+    unreadable = _lexical_floor(text)
+    if unreadable is not None:
+        return unreadable
     compact = re.sub(r"\s+", "", text).lower()
     for step in _DENIED_STEPS:
         if step in compact:
