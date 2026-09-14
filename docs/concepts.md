@@ -386,15 +386,21 @@ convention. Sessions are launched into a room with `--room`.
 
 Deliberately the smallest component in the system. `thalamus ingest <url> --scope
 <expert>` feeds one document into one expert's subgraph: allowlist-gated,
-evidence-first, dry-run by default, `--write` to persist. The document is co-indexed
-as `Chunk` vertices beside the claims drawn from it, so a claim can be traced back to
-the passage it came from.
+evidence-first, and nothing reaches the graph without `--write`. The document is
+co-indexed as `Chunk` vertices beside the claims drawn from it, so a claim can be traced
+back to the passage it came from.
 
 The model pass is the only irreversible spend on the path, so everything that can be
-known before it is. `--check` runs the path and stops there, which is how a source is
+known before it is. `--check` runs the path and stops at the model call
+(A0089-check-stops-before-the-model-call, cites-as-live), which is how a source is
 verified without paying for it; the allowlist gate sits ahead of both the archive and
 the model; and the contract refuses a batch one claim at a time, so a single mistyped
 claim costs itself rather than the extraction it arrived in.
+
+Leaving `--write` off is not the same thing as `--check`. The bytes are retained on
+every pass, and a run without `--check` calls the model whether or not it goes on to
+write (A0138-ingest-always-spends-a-model-pass, cites-as-live) — so a bare run used as a
+check bills the model twice for one source.
 
 Feeding a document *is* the curation decision. There is no crawler racing ahead of
 demand.

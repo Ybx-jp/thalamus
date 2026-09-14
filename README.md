@@ -141,12 +141,12 @@ are no controls and no key bindings, and no artwork ships.
 - **Curated ingestion** — an expert subgraph's domain half is fed a document at a time.
   `thalamus ingest <url|path> --scope <expert>` refuses bytes whose serving origin the
   scope's manifest does not allowlist
-  (A0088-ingest-refuses-unallowlisted-origins, cites-as-live), retains them in the
-  archive as a `Source`, and co-indexes the text as `Chunk` vertices beside the claims
-  drawn from it. `--check`
-  verifies the source and reports the host that actually served it for no model spend;
-  nothing persists until `--write`
-  (A0089-check-stops-before-the-model-call, cites-as-live).
+  (A0088-ingest-refuses-unallowlisted-origins, cites-as-live), retains what survives the
+  gate in the archive, and on `--write` lands it as a `Source` with the text co-indexed
+  as `Chunk` vertices beside the claims drawn from it. `--check` runs that same path and
+  stops at the model call, reporting the host that actually served the bytes for no model
+  spend (A0089-check-stops-before-the-model-call, cites-as-live). The bytes are retained
+  either way; the graph is what `--write` gates.
 - **The expert roster** — each scope declared by a manifest in `config/experts/` and
   nothing else
   (A0004-manifest-is-the-whole-of-expert-registration, cites-as-live). Five ship as

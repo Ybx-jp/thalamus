@@ -37,3 +37,4 @@ none
 ## References
 
 - CLAUDE.md · standing · cites-as-live
+- docs/concepts.md · standing · cites-as-live
