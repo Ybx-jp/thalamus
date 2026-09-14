@@ -58,6 +58,10 @@ dev = [
     # tree go red on someone else's schedule with no change of ours. Raise it
     # deliberately, with the diagnostics that come with it fixed in the same change.
     "ty==0.0.74",
+    # The claims ledger under `ledger/` and its five checkers. A dev dependency
+    # because nothing the package runs reads it: it gates the prose, in the
+    # pre-commit pass and in CI, and never at runtime.
+    "claims-ledger>=0.0.1",
 ]
 # The entailment judge — the eval loop's fast attribution path. Optional because it
 # pulls a multi-gigabyte torch build and only the attribution instrument itself needs
