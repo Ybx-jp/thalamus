@@ -73,7 +73,13 @@ _STAMP_CAVEAT = (
 
 @dataclass
 class UsesReport:
-    """The attribution surface for one scope, or for every scope at once."""
+    """The attribution surface for one scope, or for every scope at once.
+
+    The verified stamp is held per role and rendered per role rather than pooled:
+    `served-by-trace/1` governs `role: reason`, and a rejected alternative was minted
+    by the extraction that turned it down, so no trace ever served it
+    (A0146-served-stamp-rendered-per-role, cites-as-live).
+    """
 
     scope: str | None = None
     since: datetime | None = None
@@ -311,7 +317,9 @@ def _session_rows(g: GraphTraversalSource, scope: str | None) -> list[dict]:
 
     `offered` is capped at one by `limit(1)`: the question is whether the session had
     a handle at all, and counting every returned node would walk the whole RETURNS
-    population to answer a boolean.
+    population to answer a boolean. The offer is reconstructed from landed traces
+    rather than read off the digest's own list, which is what makes the denominator a
+    proxy for what was offered (A0145-offered-is-a-landed-trace-proxy, cites-as-live).
     """
     traversal = g.V().has_label("Session")
     if scope:
@@ -331,7 +339,12 @@ def _session_rows(g: GraphTraversalSource, scope: str | None) -> list[dict]:
 
 
 def _edge_rows(g: GraphTraversalSource, scope: str | None) -> list[dict]:
-    """Every `USES` edge, with what the report needs to place its target."""
+    """Every `USES` edge, with what the report needs to place its target.
+
+    The scope filter tests the root and never the target, so an edge from a `main`
+    claim into a literature claim stays in main's attribution
+    (A0144-scope-narrows-subgraph-root-not-target, cites-as-live).
+    """
     traversal = g.E().has_label("USES")
     try:
         rows = (
@@ -421,7 +434,8 @@ def _longest_chain(pairs: list[tuple[str, str]]) -> int:
 
     Returns -1 when the relation has a cycle, which has no longest path. A cycle is
     possible in principle — two claims each citing the other across sessions — and
-    saying so beats reporting a number computed over an arbitrary cut of it.
+    saying so beats reporting a number computed over an arbitrary cut of it
+    (A0147-a-cycle-has-no-longest-chain, cites-as-live).
     """
     outgoing: dict[str, list[str]] = defaultdict(list)
     indegree: Counter = Counter()
