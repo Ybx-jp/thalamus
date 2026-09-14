@@ -670,6 +670,60 @@ def check_cli_exists_after_sync() -> Result:
               "so the probe distinguishes a working CLI from a missing one")
 
 
+def check_ty_diagnostics_depend_on_pdf_extra() -> Result:
+    """SYNCED: does `ty check src`'s verdict depend on the synced extras (issue #167)?
+
+    Shaped as one more subprocess in the SYNCED phase's own venv rather than as a new
+    `Config`: the perturbation is a second, additive `uv sync` — pure Python, no
+    native build (pyproject.toml:90) — so it costs one call in a venv this cell
+    already has, not a second golden-image partition in `qe-linux.yml`/`qe-macos.yml`
+    for a property that needs neither Docker nor a graph to observe. It runs at
+    `evaluate()` time, after every other phase, so nothing downstream reads the venv
+    while the pdf extra is in it, and the sync back to `dev` alone at the end leaves
+    the venv the way SYNCED produced it for a `drive.py` run against a real checkout.
+    """
+    rc = step_rc("synced")
+    if rc is None:
+        return skip("the synced step recorded no exit code")
+    ty = REPO / ".venv" / "bin" / "ty"
+    if not ty.exists():
+        return skip(f"{ty} does not exist, so the dev extra this check depends on "
+                    "was not synced")
+
+    base_rc, base_out = run([str(ty), "check", "src"], timeout=120, cwd=REPO)
+    if base_rc != 0 or "diagnostic" in base_out.lower():
+        return skip("the dev-only baseline itself reported diagnostics "
+                    f"(rc={base_rc}): {base_out.strip()[:200]} — so a later "
+                    "diagnostic could not be attributed to the pdf extra rather "
+                    "than to the tree")
+    control = ("`ty check src` synced with `--extra dev` alone exited "
+               f"{base_rc} reporting no diagnostics ({base_out.strip()[:80]!r})")
+
+    sync_rc, sync_out = run(["uv", "sync", "--extra", "dev", "--extra", "pdf"],
+                            timeout=spec.TIMEOUTS["uv-sync"], cwd=REPO)
+    if sync_rc != 0:
+        return skip("`uv sync --extra dev --extra pdf` exited "
+                    f"{sync_rc}: {sync_out.strip()[:200]} — so the perturbation "
+                    "this check depends on never took effect")
+
+    pdf_rc, pdf_out = run([str(ty), "check", "src"], timeout=120, cwd=REPO)
+
+    # Restore the venv to what SYNCED left, regardless of the outcome above — see the
+    # docstring.
+    run(["uv", "sync", "--extra", "dev"], timeout=spec.TIMEOUTS["uv-sync"], cwd=REPO)
+
+    if "unused-ignore-comment" not in pdf_out:
+        return ok("`ty check src` reports no diagnostics with the pdf extra synced "
+                  "either", control + f"; the same command after `uv sync --extra "
+                  f"dev --extra pdf` also exited {pdf_rc} reporting none "
+                  f"({pdf_out.strip()[:80]!r})")
+    return bad(
+        "`ty check src` reports `unused-ignore-comment` on the pypdf import in "
+        "harness/ingest.py once the pdf extra is synced, on the same source that "
+        f"just reported clean: {pdf_out.strip()[:400]}",
+        control)
+
+
 def check_check_exits_zero_before_install() -> Result:
     """CHECKED: getting-started:127 promises --check is safe before installing.
 
@@ -1380,6 +1434,7 @@ EVALUATORS = {
     "starting-graph-is-not-reported-as-absent":
         check_starting_graph_is_not_reported_as_absent,
     "cli-exists-after-sync": check_cli_exists_after_sync,
+    "ty-check-verdict-depends-on-pdf-extra": check_ty_diagnostics_depend_on_pdf_extra,
     "graph-down-diagnosis-reaches-the-user": check_graph_down_diagnosis,
     "compose-up-produces-a-graph-that-answers-queries": check_graph_ready_answers_queries,
     "check-exits-zero-before-install": check_check_exits_zero_before_install,
