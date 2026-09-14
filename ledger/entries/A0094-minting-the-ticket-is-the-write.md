@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-14T10:30:34-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/consultation.py § "open_exchange" =sha256:e66086788582ab08550041e1fbca8da0061ead40074451400128dff6f7be461f
+  artifact: sha256:95b2e82afa1eb493ba271163ecdefc54741a75faf0665a4e4b76518eb97e7d91
+  note: propagated from a moved ground
+- 2026-09-14T10:30:53-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/consultation.py § "open_exchange" =sha256:95b2e82afa1eb493ba271163ecdefc54741a75faf0665a4e4b76518eb97e7d91
+  note: Read at the current revision. The write-gate change (7de0d95) added gate=refuse_unless_exchange_protocol_holds to the write_exchange call; mint_ticket and write_exchange are still performed in the one call before returning, so the single-act mint-and-write is unaffected.
+
 ## References
 
 - README.md · standing · cites-as-live
