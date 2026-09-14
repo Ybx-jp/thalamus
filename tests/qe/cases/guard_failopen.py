@@ -73,24 +73,25 @@ codex stay a no-op.
 
 ## Shown capable of going red
 
-The table is 69 cells over 12 guard scripts, and all 69 are green on this tree — so it
+The table is 87 cells over 15 guard scripts, and all 87 are green on this tree — so it
 was driven red four ways instead, each against a copy of the hook tree with
 `_HOOKS_ROOT` pointed at it. Repeat any of them the same way; none of them needs the
-real hooks touched. Measured 2026-08-26:
+real hooks touched. Measured 2026-08-26, re-measured 2026-09-11 after `graph-guard.sh`
+(issue #204) joined the table:
 
 1. `claude-code/resolve-scope.sh`, `thalamus_refuse_unreadable` body replaced with
-   `exit 0` — 31 rows leak, every claude-code and codex row. The Cursor rows survive,
+   `exit 0` — 39 rows leak, every claude-code and codex row. The Cursor rows survive,
    because their refusal is minted in the Cursor mirror of that function.
 2. `cursor/resolve-scope.sh`, the same function printing `{"permission": "allow"}`
-   instead of the deny object — the 12 Cursor rows leak and nothing else does.
+   instead of the deny object — the 16 Cursor rows leak and nothing else does.
 3. `thalamus_read_guard_command` (claude-code) reverted to `[ -n "$command" ] || exit
-   0` — exactly 4 rows leak: the drifted-key cells of gremlin-guard and
+   0` — exactly 6 rows leak: the drifted-key cells of gremlin-guard, graph-guard and
    room-command-guard on claude-code and codex. Malformed, empty and no-jq stay green,
    which is the discrimination the drifted-key row exists for. `write-guard.sh` also
    stays green there and legitimately so: it does not use that helper's value, it falls
    back to searching the RAW payload, and the drifted key leaves the command text in
    the haystack.
-4. The Cursor twin of (3) — the 3 Cursor drifted-key cells leak as NO_VERDICT rather
+4. The Cursor twin of (3) — the 4 Cursor drifted-key cells leak as NO_VERDICT rather
    than ALLOW, because that mutant ends the adapter before it prints anything. An
    exit-code reader cannot tell that from the deny path, which also exits 0.
 """
@@ -138,6 +139,17 @@ _LAZY_TRAVERSAL = (
 
 #: A command every shell guard is documented to leave alone. The negative control.
 _PERMITTED_COMMAND = "ls -la /tmp"
+
+#: graph-guard.sh's own refusable subject — the documented `connect()` idiom,
+#: marker and interpreter invocation both present (issue #204). Its verdict depends
+#: on scope, unlike every other guard in this table, so its row pins the scope this
+#: probe runs as via `env` rather than trusting the `THALAMUS_SCOPE=main` every other
+#: row is invoked under (see `_invoke`) — `architect` is a real roster scope, not a
+#: name invented for this probe.
+_CONNECT = (
+    'python -c "from thalamus.substrate.writer import connect; '
+    "g = connect(); print(g.V().count().next())\""
+)
 
 
 # ------------------------------------------------------------------------------------
@@ -247,6 +259,9 @@ _GUARDS: tuple[_Guard, ...] = (
            permitted=_PERMITTED_COMMAND),
     _Guard("gremlin-guard.sh", ("claude-code", "cursor", "codex"), _shell_payload,
            refusable=_LAZY_TRAVERSAL, permitted=_PERMITTED_COMMAND),
+    _Guard("graph-guard.sh", ("claude-code", "cursor", "codex"), _shell_payload,
+           refusable=_CONNECT, permitted=_PERMITTED_COMMAND,
+           env={"THALAMUS_SCOPE": "architect"}),
     _Guard("room-command-guard.sh", ("claude-code", "cursor", "codex"), _shell_payload,
            refusable='tmux send-keys -t other-session "hello" Enter',
            permitted=_PERMITTED_COMMAND,

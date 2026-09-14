@@ -165,7 +165,10 @@ are no controls and no key bindings, and no artwork ships.
   launches a session into a scope; `thalamus roster` brings up the `main` anchor and
   experts are spawned on demand (`--all` opens one window per manifest). The MCP
   server reads the scope from its environment at startup and no tool accepts a scope
-  argument, so a model cannot widen its own view by asking.
+  argument, so a model cannot widen its own view by asking. Nor by shelling out: the
+  graph client reaches the whole graph
+  (A0148-graph-connection-carries-no-scope-filter, cites-as-live), so a PreToolUse
+  guard keeps a pinned session off it and on the tools that confine a read to the pin.
 - **The console** — because a pin is a process in a tmux window, the whole roster is
   addressable from one place. `thalamus console` serves it to a browser: a tab per
   window, the live pane, a composer, and one tap to spawn an expert in a project.

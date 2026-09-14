@@ -381,6 +381,24 @@ class TestShellSurface:
         assert result.returncode == 2
         assert "writes memory from inside a session" in result.stderr
 
+    def test_the_graph_guard_confines_a_pinned_codex_session(self, tmp_path):
+        """The boundary is a decision about the graph, so it binds wherever the pin
+        does — a codex session reaches `connect()` exactly as a Claude Code one."""
+        result = run_hook(
+            "graph-guard.sh",
+            {"hook_event_name": "PreToolUse", "tool_name": "Bash",
+             "tool_input": {"command": "python -c \"from thalamus.substrate.writer "
+                                       "import connect; connect()\""},
+             "session_id": "cx-9", "cwd": "/w"},
+            tmp_path,
+            env={"THALAMUS_SCOPE": "qe"},
+        )
+        assert result.returncode == 2
+        assert "reads\nthe graph through the MCP tools" in result.stderr
+        events = read_jsonl(next((tmp_path / ".thalamus" / "guards").glob("*.jsonl")))
+        assert events[-1]["verdict"] == "block"
+        assert events[-1]["scope"] == "qe"
+
     def test_a_single_output_string_lands_on_the_stdout_leg_of_the_trace(self, tmp_path):
         """
         Scenario: an executed inline gremlin command, with codex's shell result.

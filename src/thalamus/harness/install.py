@@ -150,6 +150,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("UserPromptSubmit", None, "pin-engaged.sh"),
     ("PreToolUse", "Bash", "gremlin-guard.sh"),
     ("PreToolUse", "Bash", "write-guard.sh"),
+    ("PreToolUse", "Bash", "graph-guard.sh"),
     ("PreToolUse", "SendMessage", "room-guard.sh"),
     ("PreToolUse", "Bash", "room-command-guard.sh"),
     ("PreToolUse", "Edit|Write|NotebookEdit|Skill|Artifact|mcp__penpot__.*", "role-guard.sh"),
@@ -239,6 +240,9 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     # PreToolUse-on-Bash guards, and the boundary this one enforces is a decision about
     # the graph, which does not care which harness ran the command.
     ("beforeShellExecution", "write-guard.sh"),
+    # And the third, on the same reasoning: `graph-guard.sh` confines a pin's reads to
+    # its own scope, which is a property of the graph rather than of the editor.
+    ("beforeShellExecution", "graph-guard.sh"),
     # The room boundary's only possible shape on this harness: `room-guard.sh` matches
     # the `SendMessage` tool name and Cursor has no such tool, so peer traffic is a
     # shell command or it is nothing.
@@ -331,6 +335,7 @@ CODEX_HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("UserPromptSubmit", None, "pin-engaged.sh"),
     ("PreToolUse", "Bash", "gremlin-guard.sh"),
     ("PreToolUse", "Bash", "write-guard.sh"),
+    ("PreToolUse", "Bash", "graph-guard.sh"),
     ("PreToolUse", "Bash", "room-command-guard.sh"),
     # `mcp__penpot__.*` rides along on measured grounds rather than by analogy: codex
     # registers an MCP tool as `mcp__<server>__<tool>` (observed for `thalamus`), so
@@ -417,8 +422,8 @@ class HookParity:
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    scripts={"claude": 14, "codex": 12, "cursor": 14},
-    shared=9,
+    scripts={"claude": 15, "codex": 13, "cursor": 15},
+    shared=10,
     missing={
         "codex": ("reflex.sh", "room-guard.sh"),
         "cursor": ("post-tool-use.sh", "recipe-stage.sh", "reflex.sh", "role-guard.sh",

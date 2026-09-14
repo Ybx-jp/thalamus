@@ -321,7 +321,8 @@ class TestCodexWiring:
         bash_pre = {h["command"].rsplit("/", 1)[1]
                     for g in block["PreToolUse"] if g.get("matcher") == "Bash"
                     for h in g["hooks"]}
-        assert {"gremlin-guard.sh", "write-guard.sh", "room-command-guard.sh"} == bash_pre
+        assert {"gremlin-guard.sh", "write-guard.sh", "graph-guard.sh",
+                "room-command-guard.sh"} == bash_pre
 
     def test_the_editing_matcher_is_apply_patch_and_nothing_unmeasured(self):
         """`apply_patch` is codex's editing tool, and `Skill`/`Artifact` are not in

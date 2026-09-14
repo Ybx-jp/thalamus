@@ -14,11 +14,35 @@ Most doomed queries are one dialect written on the other surface.
 | Step names | camelCase: `hasLabel`, `outE`, `valueMap` | snake_case: `has_label`, `out_e`, `value_map` |
 | Terminal step | **None — the server iterates** | **Required — nothing runs without one** |
 | Keyword clashes | none | underscore-suffixed: `as_`, `in_`, `not_`, … |
-| Guard | lexical guard in `substrate/query.py` rejects mutation *and* python dialect | `gremlin-guard.sh` PreToolUse hook blocks inline traversals with no terminal step |
+| Guard | lexical guard in `substrate/query.py` rejects mutation *and* python dialect | `gremlin-guard.sh` blocks inline traversals with no terminal step; `graph-guard.sh` blocks the connection itself outside `main` |
+| Who may use it | `main` only — an expert pin gets a refusal | `main` only — see Rule 0 |
 
 For `memory_query` strategy (when to use it at all, cost discipline), see the
 `recall-strategy` skill. This skill is the *authoring* reference, and its rules
 below are gremlin-python's.
+
+## Rule 0 — both surfaces are `main`'s; a pin reads through the confined tools
+
+`connect()` hands back a source over the whole graph, so a traversal sees `main`'s
+episodic memory and every expert's
+(A0148-graph-connection-carries-no-scope-filter, cites-as-live). Confinement is a
+property of the MCP surface rather than of the client: `memory_recall` filters
+Sessions and session-contained Claims to the caller's scope, and `memory_query`
+refuses an expert pin outright because a free-form traversal cannot be confined
+(A0149-memory-query-refuses-a-pinned-session, cites-as-live).
+
+So outside `main` this skill's code is not the surface to use, and
+`graph-guard.sh` blocks a command that carries a graph-client marker — on its own
+line, or in a `.py` file it names that exists
+(A0150-graph-guard-fires-on-client-markers, cites-as-live). Read through
+`memory_recall` / `memory_recall_by_project` / `memory_recall_recent` /
+`memory_recall_by_artifact`, `memory_open_threads` / `memory_open_problems` /
+`memory_thread`, and `memory_exchanges` / `memory_consultations` — all confined to
+the pin. A question that genuinely needs a traversal is a consultation
+(`consult_request`) or an operator's run from a `main` session.
+
+The rest of this skill is the authoring reference for the sessions that do hold
+the surface: `main`, and the repo's own lab and eval code.
 
 ## Rule 1 — every traversal ends in a terminal step
 
