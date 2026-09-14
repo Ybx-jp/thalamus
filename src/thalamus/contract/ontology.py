@@ -383,3 +383,63 @@ def edge_crosses_scope(source_id: str, target_id: str) -> bool:
     if source_scope is None or target_scope is None:
         return False  # a global endpoint: shared vocabulary, not a channel
     return source_scope != target_scope
+
+
+# ---- The exchange-record protocol ----
+#
+# What status an Exchange may carry, and what an answered one owes, are statements
+# about the graph's vocabulary in the same sense as the node kinds and edge labels
+# above — which is why they live here and not one layer up in `conformance`. The
+# placement is load-bearing rather than tidy: the harness mints and closes exchanges,
+# `substrate/writer.py` writes them, and neither may depend on `conformance`. A rule
+# both of them have to satisfy has to sit where both of them can already see it.
+EXCHANGE_STATUSES = frozenset({"open", "answered"})
+
+
+class ProtocolViolation(RuntimeError):
+    """An exchange write that the ticket protocol does not permit."""
+
+    def __init__(self, exchange_vid: str, issues: list[str]) -> None:
+        self.exchange_vid = exchange_vid
+        self.issues = list(issues)
+        detail = "\n".join(f"  - {issue}" for issue in self.issues)
+        super().__init__(f"Exchange {exchange_vid} breaks the record protocol:\n{detail}")
+
+
+def refuse_unless_exchange_protocol_holds(
+    exchange_vid: str, properties: dict[str, object], refs: list[str]
+) -> None:
+    """The exchange-record protocol as a `substrate.writer.Gate`. Raises, or returns None.
+
+    Two obligations, both computable from what is being written and neither needing a
+    graph read: the status must be one the protocol knows, and a flip to `answered` must
+    arrive carrying at least one citation. `consult_answer` is the only close path and it
+    validates citations before calling, so an answered-but-uncited close is something
+    writing around the protocol.
+
+    This is the rule `conformance.audit_exchanges` applies over the whole graph, moved to
+    the write. The audit is not made redundant by it: the audit sees exchanges answered
+    before this gate existed, and it sees a citation edge that was written and later
+    removed — neither of which a write-time check can reach.
+
+    A write carrying no status is not an answer and is not asked for citations. The
+    launcher's price row, its `closed_by` row, and the `fork_error` left by a fork that
+    died all update an exchange without answering it.
+    """
+    status = str(properties.get("status") or "")
+    if status and status not in EXCHANGE_STATUSES:
+        raise ProtocolViolation(
+            exchange_vid,
+            [
+                f"status `{status}` is not one the protocol knows "
+                f"({', '.join(sorted(EXCHANGE_STATUSES))})"
+            ],
+        )
+    if status == "answered" and not refs:
+        raise ProtocolViolation(
+            exchange_vid,
+            [
+                "answered with no citations — consult_answer is the only close path and "
+                "it validates citations first, so this is a close around the protocol"
+            ],
+        )

@@ -764,6 +764,7 @@ def consult(
     """
     from thalamus.harness import consultation
     from thalamus.substrate.reader import load_exchange
+    from thalamus.contract.ontology import refuse_unless_exchange_protocol_holds
     from thalamus.substrate.writer import close_exchange
 
     refused = consultation.refuse_reason(expert, question, from_scope)
@@ -835,7 +836,7 @@ def consult(
         # open exchange either way. What it must not leave is an *unexplained* one:
         # "never answered" and "answered by a login notice" are the same row
         # otherwise, and only one of them is a bug in the launcher.
-        close_exchange(g, vertex_id, {"fork_error": str(exc)}, citation_refs=[])
+        close_exchange(g, vertex_id, {"fork_error": str(exc)}, citation_refs=[], gate=refuse_unless_exchange_protocol_holds)
         raise
 
     # The delta is read here for the same reason it is distilled later: the fork's
@@ -857,7 +858,7 @@ def consult(
     price["fork_session"] = result.run.session_id
     if result.ledger_issues:
         price["ledger_assert"] = "; ".join(result.ledger_issues)
-    close_exchange(g, vertex_id, price, citation_refs=[])
+    close_exchange(g, vertex_id, price, citation_refs=[], gate=refuse_unless_exchange_protocol_holds)
 
     if result.ledger_issues:
         result.close_report = (
@@ -878,12 +879,12 @@ def consult(
             "The fork closed the exchange itself through consult_answer, ahead of the "
             "launcher's ledger check. Citations validated; the ordering did not."
         )
-        close_exchange(g, vertex_id, {"closed_by": "fork"}, citation_refs=[])
+        close_exchange(g, vertex_id, {"closed_by": "fork"}, citation_refs=[], gate=refuse_unless_exchange_protocol_holds)
         return result
 
     report = consultation.consult_answer(g, ticket, result.run.result)
     result.close_report = report
     result.accepted = not report.startswith("Rejected")
     if result.accepted:
-        close_exchange(g, vertex_id, {"closed_by": "launcher"}, citation_refs=[])
+        close_exchange(g, vertex_id, {"closed_by": "launcher"}, citation_refs=[], gate=refuse_unless_exchange_protocol_holds)
     return result

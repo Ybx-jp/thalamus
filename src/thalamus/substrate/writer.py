@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import socket
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 
@@ -123,11 +123,32 @@ def close_connection(g: GraphTraversalSource) -> None:
     spans.maybe_flush()
 
 
-def write_session(g: GraphTraversalSource, session: SessionGraph) -> str:
+# ---- The gate seam ----
+#
+# The substrate sits below the contract: it knows nodes and edges, not scopes, tiers
+# or federation, and an import of `contract/` here would invert the layering the whole
+# boundary rests on. So the obligation is inverted instead. Every door that writes a
+# contract-bearing subgraph takes a `gate` it must call first, and takes it as a
+# required keyword argument — a caller cannot reach the write without naming what
+# checks it, and a reviewer greps one word to find every write that named a weak one.
+#
+# This is a seam, not a lock. `gate=lambda *_: None` still writes. What it removes is
+# the *silent* omission: before this, forgetting the check looked exactly like not
+# needing one, and the contract gate was a convention four call sites happened to keep.
+# `contract/conformance.py` supplies the real gates and the doors that pass them.
+Gate = Callable[..., None]
+
+
+def write_session(g: GraphTraversalSource, session: SessionGraph, *, gate: Gate) -> str:
     """Write a session subgraph to the graph. Idempotent on session_id.
+
+    `gate` is called with the session before anything is written and must raise to
+    refuse; see `contract.conformance.write_session_checked` for the door that
+    supplies the federation contract's own.
 
     Returns the session vertex ID.
     """
+    gate(session)
     session_vid = _upsert_session_vertex(g, session)
     _write_sources(g, session, session_vid)
     artifact_vids = _upsert_artifacts(g, session)
@@ -780,14 +801,21 @@ def _write_thread_refs(
             _ensure_edge(g, session_vid, thread_vid, "CONTINUES")
 
 
-def write_knowledge(g: GraphTraversalSource, batch) -> str:
+def write_knowledge(g: GraphTraversalSource, batch, *, gate: Gate) -> str:
     """Write one ingestion event into an expert's knowledge subgraph.
 
     Source (the retained article) -> Claims (DERIVED_FROM it) -> Entities (ABOUT).
     Re-ingesting a changed article creates a new Source that SUPERSEDES the previous
     head for the same origin — versioning stays visible to the eval loop.
+
+    `gate` is called with the batch before anything is written and must raise to
+    refuse; ingestion batches carry obligations beyond a session's (the scope's
+    manifest triages claim kinds), so the door that supplies it is
+    `contract.conformance.write_knowledge_checked`.
+
     Returns the Source vertex ID.
     """
+    gate(batch)
     provenance = batch.default_provenance()
     source = batch.source
     source_vid = vid("Source", source.content_hash, batch.scope)
@@ -964,6 +992,8 @@ def write_exchange(
     exchange_vid: str,
     properties: dict[str, object],
     brief_refs: list[str] | None = None,
+    *,
+    gate: Gate,
 ) -> None:
     """Open one consultation exchange record — the mint IS the write.
 
@@ -972,7 +1002,13 @@ def write_exchange(
     consulted scope's nodes the server assembled into the expert brief; each gets an
     Exchange -[REFERENCES {role: brief}]-> node edge — the consulted expert's record
     of what it served, by ID, never copied.
+
+    `gate` is called with `(exchange_vid, properties, brief_refs)` before the write and
+    must raise to refuse. The exchange-record protocol was audit-only until now, which
+    is why it could be written around; see
+    `contract.conformance.write_exchange_checked`.
     """
+    gate(exchange_vid, properties, brief_refs or [])
     graph_traversal = (
         g.merge_v({T.id: exchange_vid, T.label: "Exchange"})
         .option(Merge.on_create, {T.id: exchange_vid, **properties})
@@ -989,6 +1025,8 @@ def close_exchange(
     exchange_vid: str,
     properties: dict[str, object],
     citation_refs: list[str],
+    *,
+    gate: Gate,
 ) -> None:
     """Close an exchange with its validated answer, burning the ticket.
 
@@ -997,7 +1035,13 @@ def close_exchange(
     node edge — the answer's evidence-support record. The status flip to `answered`
     rides in `properties`, and it is what makes the ticket single-use: an answered
     exchange refuses further answers and grants no further retrieval.
+
+    `gate` is called with `(exchange_vid, properties, citation_refs)` before the write
+    and must raise to refuse. This is the call the protocol's own obligation is about —
+    an answered exchange that cites nothing was closed around the protocol — and until
+    now that was only ever discovered by `contract check`, after the fact.
     """
+    gate(exchange_vid, properties, citation_refs)
     graph_traversal = g.V(exchange_vid).has_label("Exchange")
     for key, value in properties.items():
         graph_traversal = graph_traversal.property(key, value)
