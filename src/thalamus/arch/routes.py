@@ -211,16 +211,64 @@ class RouteGraph:
         return found
 
 
+_GLOB_META = re.compile(r"[*?\[]")
+
+
+def _nameable(pattern: str) -> bool:
+    """Does this pattern name one file, so a stat can answer it without a walk?
+
+    Two things disqualify it, and both are about staying inside what the walk reaches.
+    A glob metacharacter means the pattern describes a set. An absolute or upward path
+    leaves the repository, and the walk yields only paths under it, so `fnmatch` could
+    never have matched one — resolving it by stat would answer a question the walk
+    answers `no`.
+
+    A dot-leading segment is *not* disqualifying. `Path.glob` yields entries whose name
+    begins with a dot — it is `glob.glob` that skips them — so a declared
+    `.claude/app.js` is inside the walked set and the stat has to agree.
+    """
+    if _GLOB_META.search(pattern) or pattern.startswith("/"):
+        return False
+    return ".." not in pattern.split("/")
+
+
+def _walk(repo: Path) -> list[str]:
+    """Every repo-relative posix path of a file under `repo`, walked once.
+
+    The repository is resolved first so that each globbed path is guaranteed to carry
+    the root as a literal prefix, which is what makes the slice below a slice rather
+    than a path computation.
+    """
+    root = repo.resolve()
+    cut = len(root.as_posix().rstrip("/")) + 1
+    return [path.as_posix()[cut:] for path in root.glob("**/*") if path.is_file()]
+
+
 def _matching(repo: Path, patterns: tuple[str, ...]) -> list[str]:
-    """Repo-relative paths of existing files matching any declared glob."""
+    """Repo-relative paths of existing files matching any declared glob.
+
+    A pattern that names one file is answered by one stat, and selects what matching it
+    against every walked path would have selected
+    (A0143-route-pattern-selection-is-walk-equivalent, cites-as-live). The walk happens
+    at most once for the whole call, and only if some pattern actually describes a set —
+    not once per pattern — and it slices the root off each path rather than calling
+    `Path.relative_to`, which CPython 3.12 implements as `path in self.parents` and so
+    builds a `Path` per ancestor per entry.
+
+    Measured 2026-09-14 over this repository's 57,808-entry tree at its three declared
+    patterns, same process, old implementation against new: `thalamus arch scan` 14.00 s
+    to 0.67 s (#211).
+    """
     found: set[str] = set()
+    walked: list[str] | None = None
     for pattern in patterns:
-        for path in repo.glob("**/*"):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(repo).as_posix()
-            if fnmatch.fnmatch(relative, pattern):
-                found.add(relative)
+        if _nameable(pattern):
+            if (repo / pattern).is_file():
+                found.add(pattern)
+            continue
+        if walked is None:
+            walked = _walk(repo)
+        found.update(relative for relative in walked if fnmatch.fnmatch(relative, pattern))
     return sorted(found)
 
 

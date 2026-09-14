@@ -43,6 +43,11 @@ def _policy(**kwargs) -> RoutePolicy:
     )
 
 
+def _clients(*patterns: str) -> RoutePolicy:
+    """The same policy with the client patterns named, for the selection tests."""
+    return RoutePolicy(enabled=True, clients=patterns, servers=("src/api.py",))
+
+
 def test_route_literals_collapse_to_a_single_edge(tmp_path):
     repo = _repo(
         tmp_path,
@@ -285,3 +290,52 @@ def test_the_route_policy_digest_moves_with_the_policy_but_not_with_its_spelling
     assert RoutePolicy(enabled=True).digest() == base.digest()
     assert RoutePolicy(enabled=True, servers=("src/other.py",)).digest() != base.digest()
     assert RoutePolicy.from_block(base.block()).digest() == base.digest()
+
+
+def test_a_declared_path_that_names_no_file_selects_nothing(tmp_path):
+    """A pattern naming one file is answered by a stat rather than by a walk. The
+    answer for a file that is not there has to stay the same answer."""
+    repo = _repo(tmp_path, client="req(`api/alpha`);", server='if path == "/api/alpha": pass\n')
+    routes = extract_routes(repo, _clients("src/ui/absent.js"))
+
+    assert routes.clients == {}
+    assert routes.edges() == []
+
+
+def test_a_dot_leading_path_is_inside_the_scanned_set(tmp_path):
+    """`Path.glob` yields entries whose name begins with a dot — it is `glob.glob` that
+    skips them — so a declared client under `.claude/` is selected. Resolving a named
+    path by stat instead of by walking must not narrow that."""
+    hidden = tmp_path / ".claude"
+    hidden.mkdir()
+    (hidden / "app.js").write_text("req(`api/alpha`);", encoding="utf-8")
+    repo = _repo(tmp_path, client="", server='if path == "/api/alpha": pass\n')
+    routes = extract_routes(repo, _clients(".claude/app.js"))
+
+    assert set(routes.clients) == {".claude/app.js"}
+    assert routes.called() == {"/api/alpha"}
+
+
+def test_a_path_leaving_the_repository_selects_nothing(tmp_path):
+    """The walk yields only paths under the repository, so an upward or absolute
+    pattern matched nothing. A stat would answer for a file outside it."""
+    outside = tmp_path.parent / "outside.js"
+    outside.write_text("req(`api/alpha`);", encoding="utf-8")
+    repo = _repo(tmp_path, client="", server='if path == "/api/alpha": pass\n')
+
+    assert extract_routes(repo, _clients("../outside.js")).clients == {}
+    assert extract_routes(repo, _clients(outside.as_posix())).clients == {}
+
+
+def test_literal_and_glob_patterns_select_the_same_files_together(tmp_path):
+    """The two branches — stat and walk — are one selection. A policy mixing them
+    resolves both halves, and a file reached twice is entered once."""
+    repo = _repo(
+        tmp_path,
+        client="req(`api/alpha`);",
+        server='if path == "/api/alpha": pass\n',
+        extra={"src/ui/other.js": "req(`api/beta`);"},
+    )
+    routes = extract_routes(repo, _clients(CLIENT, "src/ui/*.js"))
+
+    assert set(routes.clients) == {CLIENT, "src/ui/other.js"}
