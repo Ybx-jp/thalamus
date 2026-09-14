@@ -668,7 +668,11 @@ class Config:
     """Everything about one operator's machine, in one object.
 
     Nothing here is hardcoded elsewhere in the module: the console is the same
-    program on every box, and this is the whole of what differs between them.
+    program on every box, and this is the whole of what differs between them. A
+    path this object did not receive is a path it does not have — `thalamus
+    console` names the machine-global favorites store, and a Config built without
+    one reads its own seed
+    (A0151-favorites-store-is-named-not-defaulted, cites-as-live).
     """
 
     # Both default from `pin` when the package is importable, and to a bare tmux
@@ -685,7 +689,16 @@ class Config:
     # the command line; once this file exists it is the whole list, so a star set
     # from the phone outlives a restart and a `--dir` the operator has since
     # unstarred does not come back with the next boot.
-    favorites_store: Path | str = ""
+    #
+    # None — the default — means no store, and the picker is then the seed alone:
+    # starring answers 409 rather than writing somewhere nobody named. Opt-in for
+    # the reason `frames_file` is, and a stronger one. A path defaulted in here is a
+    # path on *this* box, so a Config that did not ask for one would inherit `$HOME`
+    # and share one operator's starred list with every other Config in the process —
+    # and since the store is the whole list rather than a merge, a star toggled in
+    # one replaces the list in the others. `thalamus console` names FAVORITES_STORE
+    # at its own call site, which is where a machine-global path belongs.
+    favorites_store: Path | None = None
     # systemd --user units the admin sheet may restart. Empty (the default) hides
     # the section entirely — the console never invents units it might not own.
     services: list[str] = field(default_factory=list)
@@ -718,8 +731,8 @@ class Config:
             self.scan_roots = [self.project_root.parent]
         self.favorites = [Path(p).expanduser() for p in self.favorites]
         self.scan_roots = [Path(p).expanduser() for p in self.scan_roots]
-        self.favorites_store = (Path(self.favorites_store).expanduser()
-                                if self.favorites_store else FAVORITES_STORE)
+        if self.favorites_store:
+            self.favorites_store = Path(self.favorites_store).expanduser()
         if self.frames_file:
             self.frames_file = Path(self.frames_file).expanduser()
 
@@ -1454,16 +1467,26 @@ FAVORITES_STORE = Path.home() / ".thalamus" / "console" / "favorites.json"
 FAVORITES_VERSION = 1
 
 
+class NoFavoritesStore(RuntimeError):
+    """A star was toggled on a Config that names no store to keep it in."""
+
+
 def effective_favorites(cfg: Config) -> list[str]:
     """The starred directories, as resolved paths: the store when it exists, else
     the `--dir` seed. The store is whole rather than merged with the seed — a merge
     would make an unstarred `--dir` reappear on every restart, which is the one
-    thing a star toggled from the phone has to survive."""
-    try:
-        raw = json.loads(Path(cfg.favorites_store).read_text())
-        paths = raw.get("paths") if isinstance(raw, dict) else None
-    except (OSError, ValueError):
-        paths = None
+    thing a star toggled from the phone has to survive.
+
+    A Config that names no store reads the seed and nothing else, which is what
+    keeps two Configs in one process from sharing one starred list
+    (A0151-favorites-store-is-named-not-defaulted, cites-as-live)."""
+    paths = None
+    if cfg.favorites_store:
+        try:
+            raw = json.loads(Path(cfg.favorites_store).read_text())
+            paths = raw.get("paths") if isinstance(raw, dict) else None
+        except (OSError, ValueError):
+            paths = None
     if not isinstance(paths, list):
         paths = [str(p) for p in cfg.favorites]
     return [os.path.realpath(os.path.expanduser(str(p))) for p in paths
@@ -1472,7 +1495,15 @@ def effective_favorites(cfg: Config) -> list[str]:
 
 def set_favorite(cfg: Config, path: str, favorite: bool) -> None:
     """Star or unstar one directory and persist the whole list. Written whole and
-    replaced, so a poll that reads mid-write sees the old file, never half of one."""
+    replaced, so a poll that reads mid-write sees the old file, never half of one.
+
+    Raises `NoFavoritesStore` when the Config names none. Picking a path here would
+    be picking one on this machine, which is the caller's to name.
+    """
+    if not cfg.favorites_store:
+        raise NoFavoritesStore(
+            "this console has no favorites store, so a star cannot be kept — "
+            "start it with `thalamus console`, which names one")
     real = os.path.realpath(path)
     current = [p for p in effective_favorites(cfg) if p != real]
     if favorite:
@@ -2292,7 +2323,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "directory not in the allowed list"})
             if not isinstance(favorite, bool):
                 return self._send(400, {"error": "favorite must be true or false"})
-            set_favorite(self.cfg, directory, favorite)
+            try:
+                set_favorite(self.cfg, directory, favorite)
+            except NoFavoritesStore as e:
+                return self._send(409, {"error": str(e)})
             # The picker renders from this response rather than re-fetching, so it
             # carries the list the next GET would.
             dirs, _ = spawn_dirs(self.cfg)

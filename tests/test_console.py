@@ -2529,6 +2529,72 @@ def test_a_directory_the_picker_never_offered_cannot_be_starred(tmp_path):
     assert not (tmp_path / "state" / "favorites.json").exists()
 
 
+def test_a_config_that_names_no_store_does_not_inherit_the_machine_global_one(
+        tmp_path, monkeypatch):
+    """The regression control for #197. `FAVORITES_STORE` is pointed at a populated
+    file — standing in for the operator's real one — and a Config that did not ask
+    for a store still reads its own seed. Before the fix the same Config read that
+    file, which is what made the picker test assert against whatever the box had
+    starred."""
+    elsewhere = tmp_path / "elsewhere"
+    _repo(elsewhere)
+    machine_global = tmp_path / "home" / ".thalamus" / "console" / "favorites.json"
+    machine_global.parent.mkdir(parents=True)
+    machine_global.write_text(json.dumps({"version": 1, "paths": [str(elsewhere)]}))
+    monkeypatch.setattr(server, "FAVORITES_STORE", machine_global)
+
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    cfg = Config(project_root=code / "alpha", scan_roots=[code])
+
+    assert cfg.favorites_store is None
+    assert server.effective_favorites(cfg) == [str(code / "alpha")]
+    assert [d["label"] for d in server.spawn_dirs(cfg)[0]] == ["alpha"]
+
+
+def test_two_configs_with_their_own_stores_do_not_share_a_starred_list(tmp_path):
+    """The store is the whole list rather than a merge, so a shared one does not add
+    an entry — it replaces the other's list. Each Config naming its own is what keeps
+    the toggle local to the console that made it."""
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    _repo(code / "beta")
+    one = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "one.json")
+    two = Config(project_root=code / "alpha", scan_roots=[code],
+                 favorites_store=tmp_path / "two.json")
+
+    server.set_favorite(one, str(code / "beta"), True)
+
+    assert server.effective_favorites(one) == [str(code / "alpha"), str(code / "beta")]
+    assert server.effective_favorites(two) == [str(code / "alpha")]
+
+
+def test_starring_without_a_store_is_refused_rather_than_written_somewhere(tmp_path):
+    """A star needs a path on this machine, and a Config that named none is not
+    given one behind its back."""
+    code = tmp_path / "code"
+    _repo(code / "alpha")
+    cfg = Config(project_root=code / "alpha", scan_roots=[code])
+
+    with pytest.raises(server.NoFavoritesStore):
+        server.set_favorite(cfg, str(code / "alpha"), True)
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/favorite",
+                            {"path": str(code / "alpha"), "favorite": True})
+        assert status == 409 and "favorites store" in body["error"]
+
+
+def test_the_console_command_names_the_machine_global_store(tmp_path):
+    """`thalamus console` is what knows it serves this box, so it is what names the
+    store. The Config it builds carries FAVORITES_STORE; the dataclass does not."""
+    source = (Path(server.__file__).parent.parent / "cli.py").read_text()
+    call = source[source.index("cfg = Config("):]
+    call = call[:call.index(")\n")]
+    assert "favorites_store=FAVORITES_STORE" in call
+
+
 def test_a_missing_or_broken_store_falls_back_to_the_seed(tmp_path):
     code = tmp_path / "code"
     _repo(code / "alpha")

@@ -4739,7 +4739,7 @@ def _cmd_console(args):
     import shutil
     import subprocess
 
-    from thalamus.console.server import Config, PortInUse, serve
+    from thalamus.console.server import FAVORITES_STORE, Config, PortInUse, serve
     from thalamus.harness import tmux
     from thalamus.contract.paths import PROJECT_ROOT
 
@@ -4753,6 +4753,10 @@ def _cmd_console(args):
         project_root=args.project_root or PROJECT_ROOT,
         favorites=args.dir,
         scan_roots=args.scan,
+        # Named here rather than defaulted inside Config: this is a path on this
+        # operator's box, and it is `thalamus console` that knows it is serving that
+        # box (A0151-favorites-store-is-named-not-defaulted, cites-as-live).
+        favorites_store=FAVORITES_STORE,
         services=args.service,
         frames_file=args.frames,
         fetch_interval_s=max(0.0, args.fetch_interval) * 60,
