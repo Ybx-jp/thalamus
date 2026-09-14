@@ -100,6 +100,12 @@ The procedure in full is
 and the schema is
 [docs/SCHEMA.md](https://github.com/Ybx-jp/claims-ledger/blob/main/docs/SCHEMA.md).
 
+**Do not run `claims-ledger hook --install` here.** The pre-commit hook it writes lands
+in the shared `.git/hooks` and names its interpreter by absolute path, so in a checkout
+that runs concurrent sessions in worktrees it would point every worktree at one
+worktree's virtualenv — and at nothing at all once that worktree is removed. The CI gate
+and the edit-time `pin-guard.sh` are what cover this repository instead.
+
 The ledger is standalone: it reads no graph and writes none, and a feature that would
 need the graph is a Thalamus feature rather than a ledger one.
 
