@@ -37,6 +37,7 @@ from thalamus.substrate.writer import (
     probe_socket,
     split_ws,
     write_session,
+    write_trace,
 )
 
 
@@ -84,6 +85,12 @@ def test_session_upsert_uses_merge_enum_tokens():
 
     Verifications:
     - on-create and on-match options use Gremlin Merge tokens, not strings
+    - both options carry the session's properties, and on-create additionally sets the
+      vertex id
+
+    The payloads are asserted and not only the tokens. Two correctly-tokenized options
+    with an empty `on_match` is a writer that creates a session once and never updates
+    it again, and the tokens alone cannot tell that from a working upsert (#225).
     """
     graph_traversal = FakeTraversal()
     g = FakeGraphTraversalSource(graph_traversal)
@@ -95,13 +102,31 @@ def test_session_upsert_uses_merge_enum_tokens():
         summary="Regression test",
     )
 
-    _upsert_session_vertex(g, session)
+    session_vid = _upsert_session_vertex(g, session)
 
     # Verifies: on-create and on-match options use Gremlin Merge tokens, not strings
     assert [key for key, _ in graph_traversal.options] == [
         Merge.on_create,
         Merge.on_match,
     ]
+
+    payloads = dict(graph_traversal.options)
+    on_create, on_match = payloads[Merge.on_create], payloads[Merge.on_match]
+
+    assert on_match, "a re-written session would update nothing"
+    assert on_match["session_id"] == "test-session"
+    assert on_match["summary"] == "Regression test"
+    assert on_match["tool"] == Tool.CURSOR.value
+
+    # The id is what a merge matches on, so it belongs on create and nowhere else:
+    # an id in `on_match` would ask the server to rewrite the identity of a vertex it
+    # just found by that identity.
+    assert on_create[T.id] == session_vid
+    assert T.id not in on_match
+
+    # Everything else is the same content on both paths. A session's properties do not
+    # depend on whether this write is the first one.
+    assert {k: v for k, v in on_create.items() if k is not T.id} == on_match
 
 
 def test_iterate_reports_operation_target_and_server_details():
@@ -148,7 +173,8 @@ class RecordingGraph:
     def __init__(self, sessions=(), artifacts=()):
         self.vertices: list[dict] = []
         self.edges: list[dict] = []
-        self._pending: dict | None = None
+        self.edge_options: list[tuple] = []
+        self._pending: dict | None = None  # {"match", "properties", "on_match"}
         # Rows the two reads answer with, keyed by the label each one starts from.
         self._rows = {"Session": list(sessions), "Artifact": list(artifacts)}
         self._reading: str | None = None
@@ -161,11 +187,18 @@ class RecordingGraph:
 
     def merge_e(self, values):
         self.edges.append(values)
+        self._pending = None          # options after this belong to the edge
         return self
 
     def option(self, key, value):
-        if key is Merge.on_create and self._pending is not None:
-            self._pending["properties"] = value
+        # Both halves, and edges as well as vertices. Recording only `on_create`, and
+        # only on a vertex, made every update path invisible to the tests built on this
+        # fake: a writer that created correctly and updated with an empty payload
+        # looked identical to one that did both (#225).
+        if self._pending is not None:
+            self._pending["properties" if key is Merge.on_create else "on_match"] = value
+        else:
+            self.edge_options.append((key, value))
         return self
 
     def V(self, *_args):
@@ -1115,3 +1148,65 @@ def test_a_rejected_alternative_becomes_a_claim_the_decision_uses_with_its_reaso
     assert solution_props["outcome_kind"] == "reversed"
     assert solution_props["anchors"] == "u3"
     assert solution_props["worked"] is False
+
+
+# ---- write_trace ----
+#
+# Its one call site in `test_eval.py` monkeypatches it out, so nothing exercised the
+# write itself (#225). The idempotency its docstring promises is what `eval sync` and
+# re-attribution both rest on: a re-synced trace must re-assert the same vertex, and a
+# re-attributed one must update the verdict in place rather than accumulate edges.
+
+
+def _trace(graph, returns=None, **properties):
+    write_trace(
+        graph,
+        "scope:main:trace:t1",
+        {"query": "lexical anchors", "injected_chars": 412, **properties},
+        "scope:main:session:s1",
+        returns if returns is not None else {"scope:main:decision:d1": {"used": True}},
+    )
+
+
+def test_a_trace_writes_its_vertex_the_queries_edge_and_one_returns_edge_per_result():
+    graph = RecordingGraph()
+
+    _trace(graph, returns={"scope:main:decision:d1": {"used": True},
+                           "scope:main:solution:x1": {"used": False}})
+
+    (vertex,) = graph.vertices
+    assert vertex["match"][T.label] == "Trace"
+    assert vertex["properties"]["query"] == "lexical anchors"
+
+    labelled = [(e[T.label], e[Direction.from_], e[Direction.to]) for e in graph.edges]
+    assert ("QUERIES", "scope:main:session:s1", "scope:main:trace:t1") in labelled
+    assert ("RETURNS", "scope:main:trace:t1", "scope:main:decision:d1") in labelled
+    assert ("RETURNS", "scope:main:trace:t1", "scope:main:solution:x1") in labelled
+
+
+def test_re_syncing_a_trace_re_asserts_it_rather_than_writing_a_second():
+    """`eval sync` runs over the whole tap each time, so most of what it writes has
+    been written before. A trace that accumulated on re-sync would inflate every count
+    read off the tap by however many times sync had run."""
+    first, second = RecordingGraph(), RecordingGraph()
+
+    _trace(first)
+    _trace(second)
+
+    assert first.vertices == second.vertices
+    assert first.edges == second.edges
+    assert first.vertices[0]["on_match"], "a re-synced trace would update nothing"
+
+
+def test_re_attributing_a_trace_updates_the_verdict_on_the_edge_it_already_has():
+    """The verdict is a fact about this retrieval of the node, not about the node, so
+    it lives on the RETURNS edge — and attribution runs after the trace is already
+    written. Both merge options have to carry it or the second pass writes nothing."""
+    graph = RecordingGraph()
+
+    _trace(graph, returns={"scope:main:decision:d1": {"used": False, "evidence": "none"}})
+
+    (edge,) = [e for e in graph.edges if e[T.label] == "RETURNS"]
+    assert edge[Direction.to] == "scope:main:decision:d1"
+    assert [key for key, _ in graph.edge_options] == [Merge.on_create, Merge.on_match]
+    assert dict(graph.edge_options)[Merge.on_match] == {"used": False, "evidence": "none"}

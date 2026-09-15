@@ -17,6 +17,7 @@ still appending.
 
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -38,6 +39,35 @@ def run(payload: dict, home: Path, env: dict | None = None) -> subprocess.Comple
 
 def logs(home: Path) -> list[Path]:
     return sorted((home / ".thalamus" / "logs").glob("cursor-distill-*.log"))
+
+
+def _stub_uv(tmp_path: Path, records: Path, counting: Path | None = None) -> str:
+    """A `uv` on PATH that records the handoff instead of running an extraction.
+
+    The detached shell execs `uv` the instant its settle loop breaks, so this is where
+    the loop's decision becomes observable from a test. It writes its own argv, or —
+    given `counting` — the line count of that file at the moment it ran, which is what
+    the extractor would have been reading.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "uv"
+    body = (f'wc -l < "{counting}" | tr -d " \\n" > "{records}"'
+            if counting else f'echo "$@" > "{records}"')
+    stub.write_text(f"#!/bin/sh\n{body}\nexit 0\n")
+    stub.chmod(0o755)
+    return f"{bin_dir}:{os.environ['PATH']}"
+
+
+def _wait_for(path: Path, timeout: float) -> None:
+    """Block until the detached shell has written `path`. Fails loudly rather than
+    letting a test that observed nothing read as a test that observed success."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.exists() and path.read_text().strip():
+            return
+        time.sleep(0.2)
+    raise AssertionError(f"{path.name} was never written — the handoff never happened")
 
 
 @pytest.fixture
@@ -95,41 +125,68 @@ class TestItWaitsForTheTranscript:
         assert written[0].name == "cursor-distill-sess-abc.log"
         assert "waiting for" in written[0].read_text()
 
-    def test_the_settle_loop_outlasts_a_writer_still_appending(self, tmp_path):
+    def test_the_settle_loop_outlasts_a_writer_still_appending(self, home, tmp_path):
         """The property the whole design rests on. A transcript still being written
         must not be read until it stops changing — reading early yields a truncated
-        session, which is worse than no session because nothing can detect it.
+        session, which is a corrupted memory rather than a missing one, and nothing
+        downstream can tell the difference.
 
-        The loop is exercised directly rather than through the hook: the hook hands
-        it to a detached shell whose completion nothing observes, and a test that
-        waited on that would be testing `nohup`.
+        The hook's own loop is what runs. Waiting on `nohup` is not the obstacle it
+        looks like: the detached shell's handoff is observable, because the very next
+        thing it does is exec `uv`. A stub `uv` on PATH records how much of the
+        transcript existed at that moment, which is the property stated directly —
+        not "the loop waited about long enough" but "what the extractor was handed
+        was whole" (#224).
         """
         target = tmp_path / "settling.jsonl"
         target.write_text('{"n":0}\n')
+        handoff = tmp_path / "handoff"
+        path = _stub_uv(tmp_path, records=handoff, counting=target)
+
         writer = subprocess.Popen(
             ["sh", "-c",
              f"for i in 1 2 3 4; do sleep 1; echo '{{\"n\":1}}' >> {target}; done"],
         )
         try:
-            loop = subprocess.run(
-                ["sh", "-c", f'''
-                  last=''; stable=0; waited=0
-                  while [ $waited -lt 60 ]; do
-                    now=$(stat -c '%s:%Y' '{target}' 2>/dev/null || echo gone)
-                    if [ "$now" = "$last" ]; then
-                      stable=$((stable + 1)); [ $stable -ge 3 ] && break
-                    else stable=0; fi
-                    last="$now"; sleep 1; waited=$((waited + 1))
-                  done
-                  echo "$waited"
-                '''],
-                capture_output=True, text=True, timeout=90,
-            )
+            result = run({"session_id": "sess-settling", "transcript_path": str(target)},
+                         home, env={"PATH": path})
+            assert result.returncode == 0
+            _wait_for(handoff, timeout=60)
         finally:
             writer.wait(timeout=30)
 
-        waited = int(loop.stdout.strip())
+        assert target.read_text().count("\n") == 5, "the writer did not finish"
+        assert handoff.read_text().strip() == "5", (
+            "the extractor was handed a transcript that was still being written")
+
+        (log,) = logs(home)
+        settled = re.search(r"settled after (\d+)s", log.read_text())
+        assert settled, f"the loop never reported settling: {log.read_text()!r}"
         # It must not have stopped while the writer was still going, and it must not
         # have run to the cap either — a loop that never settles is a hang, not a wait.
-        assert 4 <= waited < 60, f"settled after {waited}s"
-        assert target.read_text().count("\n") == 5, "the loop settled on a partial file"
+        assert 4 <= int(settled.group(1)) < 120
+
+    def test_the_extractor_is_launched_with_the_session_and_scope_the_hook_resolved(
+            self, home, tmp_path):
+        """The control for the test above, and the handoff itself.
+
+        "The transcript was whole when `uv` ran" says nothing if `uv` runs for some
+        other reason, or with arguments that name a different session. A settle loop
+        that ended in no extraction at all would satisfy every timing assertion there
+        and distil nothing.
+        """
+        target = tmp_path / "quiet.jsonl"
+        target.write_text('{"n":0}\n')
+        argv = tmp_path / "argv"
+        path = _stub_uv(tmp_path, records=argv)
+
+        run({"session_id": "sess-abcdefgh", "transcript_path": str(target)},
+            home, env={"PATH": path, "THALAMUS_SCOPE": "homelab"})
+        _wait_for(argv, timeout=60)
+
+        launched = argv.read_text()
+        assert "thalamus extract" in launched
+        assert "--harness cursor" in launched
+        assert "--session sess-abcdefgh" in launched
+        assert "--scope homelab" in launched
+        assert "--write" in launched

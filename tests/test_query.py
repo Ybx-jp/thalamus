@@ -8,6 +8,7 @@ tap, caps honored). The server's own gremlin-lang sandbox is layer 1 and not
 testable here; these tests pin layer 2.
 """
 
+from thalamus.substrate import query as query_mod
 from thalamus.substrate.query import (
     MAX_RESULTS,
     render_rows,
@@ -189,7 +190,33 @@ def test_rendering_backticks_vertex_ids_and_honors_caps():
     assert render_rows([]) == "Query returned no results."
 
 
-def test_schema_summary_derives_from_the_ontology():
+def test_schema_summary_derives_from_the_ontology(monkeypatch):
+    """The name says *derives*, so the ontology has to be what moves the output.
+
+    Six known labels appearing in the rendered text is also what a hardcoded string
+    produces, and a summary that stopped deriving would go on describing a graph the
+    writer had left behind — the one thing a schema summary must not do (#244).
+    """
     summary = schema_summary()
     for label in ("Session", "Claim", "Thread", "Trace", "RETURNS", "DERIVED_FROM"):
         assert label in summary
+
+    # Every node and edge the ontology declares, not a sample: a summary that rendered
+    # most of them would pass the loop above and still leave a label undocumented for
+    # whoever is writing a query against it.
+    for node in query_mod.CORE_NODES:
+        assert node.label in summary
+    for edge in query_mod.CORE_EDGES:
+        assert edge.label in summary
+
+    # And the derivation itself. Dropping a node from the ontology must drop it from
+    # the summary; if it does not, the summary is a copy that happens to agree today.
+    dropped = query_mod.CORE_NODES[-1]
+    monkeypatch.setattr(query_mod, "CORE_NODES", query_mod.CORE_NODES[:-1])
+
+    narrowed = schema_summary()
+
+    assert dropped.label not in narrowed, (
+        f"`{dropped.label}` survived being removed from the ontology, so the summary "
+        f"is not derived from it")
+    assert all(n.label in narrowed for n in query_mod.CORE_NODES), "it dropped more"
