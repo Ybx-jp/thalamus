@@ -2065,7 +2065,51 @@ def install(dry_run: bool = False,
     return actions, verify(harnesses) + relaunch_checks(env_drift)
 
 
-def _confirm() -> bool:
+def _consent_lines(harnesses: tuple[str, ...]) -> list[str]:
+    """The write targets of exactly this selection, in the order `install()` reaches them.
+
+    A harness's targets are named when that harness is in the selection, and the targets
+    outside the gate are named whatever the selection is
+    (A0152-consent-radius-is-the-selections, cites-as-live).
+
+    Conditioned on `harnesses` because the prompt is the consent mechanism and consent
+    is given for a radius. `install()` gates its cursor and codex legs on membership in
+    this same tuple, so a list that did not read the selection would name, on a
+    `--harness <one>` run, four paths of the two editors that run never opens — and an
+    operator could not use it to tell what a narrowed install does.
+
+    `link_skills()` and `write_all_agents()` are outside the gate and run on every
+    selection, so their two lines are unconditional here as well; the pairing is
+    asserted in `tests/test_install.py` rather than left to this docstring.
+    """
+    lines: list[str] = []
+    if "claude" in harnesses:
+        lines += [
+            f"{USER_SETTINGS} — registers {len(HOOK_WIRING)} hook entries for Claude Code",
+            "~/.claude.json — registers the `thalamus` MCP server (via `claude mcp add`)",
+        ]
+    if "cursor" in harnesses:
+        lines += [
+            f"{USER_CURSOR_HOOKS} — registers {len(CURSOR_HOOK_WIRING)} hook entries "
+            "for Cursor",
+            f"{USER_CURSOR_MCP} — registers the `thalamus` MCP server for Cursor",
+        ]
+    if "codex" in harnesses:
+        lines += [
+            f"{USER_CODEX_HOOKS} — registers {len(CODEX_HOOK_WIRING)} hook entries for codex",
+            f"{USER_CODEX_MCP} — registers the `thalamus` MCP server (via `codex mcp add`)",
+            f"{CODEX_HOME} — writes one derived codex profile per expert",
+        ]
+    lines += [
+        f"{USER_SKILLS_DIR} — symlinks the shipped skills",
+        f"{USER_AGENTS_DIR} — writes one derived agent per expert",
+        "~/.thalamus/profiles/ — appends this run's own query-cost rows "
+        "(`THALAMUS_PROFILE=0` disables the tap)",
+    ]
+    return lines
+
+
+def _confirm(harnesses: tuple[str, ...]) -> bool:
     """Name the blast radius, then ask. Declining is the default on anything odd.
 
     This writes outside the checkout — into files two editors read in *every*
@@ -2074,23 +2118,15 @@ def _confirm() -> bool:
     unreasonable thing to discover afterwards, so it is stated before it happens
     rather than described in a README the installer never opened.
 
+    The radius named is the selection's, not the union of every selection
+    (`_consent_lines`). `run()` therefore resolves `harnesses` before asking.
+
     A non-interactive stdin answers no: a script that meant to install can pass
     `--yes`, and one that did not mean to should not be silently taken as
     consenting. `--dry-run` shows the same actions without reaching this at all.
     """
     print("`thalamus init` writes outside this checkout:")
-    for line in (
-        f"{USER_SETTINGS} — registers {len(HOOK_WIRING)} hook entries",
-        f"{USER_CURSOR_HOOKS} and {USER_CURSOR_MCP} — the same for Cursor",
-        f"{USER_CODEX_HOOKS} — registers {len(CODEX_HOOK_WIRING)} hook entries for codex",
-        f"{USER_CODEX_MCP} — registers the `thalamus` MCP server (via `codex mcp add`)",
-        "~/.claude.json — registers the `thalamus` MCP server (via `claude mcp add`)",
-        f"{USER_SKILLS_DIR} — symlinks the shipped skills",
-        f"{USER_AGENTS_DIR} — writes one derived agent per expert",
-        f"{CODEX_HOME} — writes one derived codex profile per expert",
-        "~/.thalamus/profiles/ — appends this run's own query-cost rows "
-        "(`THALAMUS_PROFILE=0` disables the tap)",
-    ):
+    for line in _consent_lines(harnesses):
         print(f"  - {line}")
     print("\nThose hooks then run in every session on this box, in every directory,\n"
           "until you remove them with `thalamus init --uninstall`.\n"
@@ -2276,11 +2312,11 @@ def run(dry_run: bool = False, check_only: bool = False,
               "Sessions already open keep the old wiring until the editor is relaunched.")
         return 0
 
-    if not (dry_run or check_only or assume_yes) and not _confirm():
+    harnesses = HARNESSES if harness == ALL_HARNESSES else (harness,)
+    if not (dry_run or check_only or assume_yes) and not _confirm(harnesses):
         print("Nothing written.")
         return 1
 
-    harnesses = HARNESSES if harness == ALL_HARNESSES else (harness,)
     if check_only:
         actions, checks = [], verify(harnesses)
     else:

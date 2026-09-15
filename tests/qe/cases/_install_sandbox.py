@@ -145,7 +145,10 @@ _stdin = sys.stdin
 sys.stdin = _NotATty()
 try:
     with redirect_stdout(buf):
-        install._confirm()
+        # This probe wants the ALL_HARNESSES radius, matching `install()`'s own
+        # bare-call default two lines down (#220 conditioned the prompt on the
+        # selection; it did not change what a selection-free call means).
+        install._confirm(install.HARNESSES)
 finally:
     sys.stdin = _stdin
 

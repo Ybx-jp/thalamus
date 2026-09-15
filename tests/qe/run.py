@@ -62,6 +62,7 @@ CASE_MODULES = (
     "qe.cases.arch_route_channel",
     "qe.cases.expectation_additions",
     "qe.cases.install_consent",
+    "qe.cases.install_consent_scoping",
     "qe.cases.uninstall_roundtrip",
     "qe.cases.suite_containment",
     "qe.cases.published_config",
