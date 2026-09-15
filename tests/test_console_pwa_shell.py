@@ -1,5 +1,5 @@
 """
-The console's shell: what `serve()` boots, and what the shipped client asks for.
+The console PWA shell: what `serve()` boots, and what the shipped client precaches.
 
 Interfaces: thalamus.console.server.serve and its STATIC table, against the files
 under thalamus/console/static/.

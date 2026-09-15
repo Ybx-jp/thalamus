@@ -266,15 +266,57 @@ def test_the_settle_window_is_per_harness_and_no_harness_gets_less():
                                               for s in LAUNCH_SHAPES.values())
 
 
-def test_pin_owns_the_confirmation_so_every_surface_gets_the_same_verdict():
-    """The console is not the only spawner: `thalamus spawn` and `thalamus pin` are
-    the same launch from a terminal, and a window that died is a failure there too.
+def test_the_confirmation_is_called_from_pin_and_not_copied_into_the_console():
+    """Where the check lives, which is a different claim from whether it runs.
 
-    Asserted over the module rather than by launching, because the point is *where*
-    the check lives — a second copy in the console is how the CLI kept reporting a
-    success the console had already learned to doubt.
+    A second copy in the console is how the CLI kept reporting a success the console
+    had already learned to doubt, so the console must hold no settle constant of its
+    own and all three pin entry points must reach the one implementation.
+
+    This is a structural assertion and nothing more — it stays green for a `spawn`
+    that calls `confirm_started` inside a `try` that swallows `WindowDied` (#226). The
+    behaviour is asserted separately: `spawn` and `roster` by the real-tmux cases above,
+    and `launch` by the case below, which had no behavioural test at all.
     """
     assert "confirm_started" in pin.spawn.__code__.co_names
     assert "confirm_started" in pin.launch.__code__.co_names
     assert "confirm_started" in pin.roster.__code__.co_names
     assert not hasattr(server, "SPAWN_SETTLE_S")
+
+
+def test_a_pinned_launch_inside_tmux_propagates_a_window_that_died(monkeypatch, tmp_path):
+    """`thalamus pin` from inside tmux opens a window and confirms it, like every other
+    surface — and a death there has to reach the operator's exit code.
+
+    Driven with a fake tmux rather than the private server the cases above use: what is
+    under test is that `launch` does not swallow the verdict, and the verdict is
+    injected directly. The real-tmux cases are what establish that the verdict itself
+    is trustworthy.
+    """
+    monkeypatch.setenv("TMUX", "/tmp/fake,1,0")
+    monkeypatch.setattr(pin.subprocess, "run", lambda cmd, *a, **kw: subprocess.CompletedProcess(
+        cmd, 0, stdout="@9", stderr=""))
+    monkeypatch.setattr(pin, "confirm_started", _dies)
+
+    with pytest.raises(pin.WindowDied, match="claude: not found"):
+        pin.launch("main", tmp_path)
+
+
+def test_a_pinned_launch_inside_tmux_reports_a_window_that_lived(monkeypatch, tmp_path,
+                                                                 capsys):
+    """The control. "It raised" is also what a `launch` that is broken in some other
+    way does, so the same path with a surviving window has to report the pin."""
+    monkeypatch.setenv("TMUX", "/tmp/fake,1,0")
+    monkeypatch.setattr(pin.subprocess, "run", lambda cmd, *a, **kw: subprocess.CompletedProcess(
+        cmd, 0, stdout="@9", stderr=""))
+    monkeypatch.setattr(pin, "confirm_started", lambda *a, **kw: None)
+
+    pin.launch("main", tmp_path)
+
+    assert "Pinned window `main`" in capsys.readouterr().out
+
+
+def _dies(*_args, **_kwargs):
+    raise pin.WindowDied("the window was created and its command exited (exit 127) "
+                         "before it could be called started — it printed: "
+                         "claude: not found")

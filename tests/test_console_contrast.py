@@ -189,6 +189,21 @@ def _literals() -> set[str]:
 APP = CSS.parent / "app.js"
 
 
+def _function_source(name: str) -> str:
+    """The body of one top-level function in `app.js`, by name.
+
+    A file-wide search answers "does this word appear anywhere in the client", which is
+    a weaker question than any of these tests mean to ask. Slicing to the next
+    column-zero `function` is enough for this file — every top-level definition sits at
+    column zero — and a rename raises here rather than quietly widening the search back
+    to the whole file.
+    """
+    src = APP.read_text()
+    start = src.index(f"\nfunction {name}(") + 1
+    end = src.find("\nfunction ", start)
+    return src[start:end if end != -1 else len(src)]
+
+
 def _palette() -> dict[str, str]:
     """The identity hues, read from the client that owns them.
 
@@ -414,7 +429,11 @@ def test_the_disabled_exemption_is_still_earned():
     redundancy claim, and a redundancy claim is assertable even when the thing it
     licenses is not.
     """
-    app = APP.read_text()
+    # Scoped to `rowState`, not to app.js at large. The claim is that the row's own
+    # renderer emits the word; the word surviving somewhere else in the client — a
+    # comment, a log line, an unrelated panel — would keep a file-wide search green
+    # while the redundancy the exemption rests on had moved out of the row (#244).
+    app = _function_source("rowState")
     for word in ("restarting", "closing"):
         assert re.search(rf'`{word} \$\{{|"{word}"|`{word} ', app), (
             f"`{word}` is no longer rendered as text by the client, so the disabled "
