@@ -251,10 +251,21 @@ def test_the_endpoint_answers_before_it_restarts(tmp_path, checkout: Path,
 
     assert status == 200 and body["ok"] is True
     assert body["restarting"] == "thalamus-console.service"
-    assert restarted == ["thalamus-console.service"]
     assert elapsed < 3, (
         f"the response waited {elapsed:.1f}s on the restart; a client cannot tell "
         "that apart from the box going down")
+
+    # Waited for, not read once. The restart runs after `_send`, in the server's own
+    # handler thread, so the client is back before that line is reached — and on a
+    # loaded runner the thread can be descheduled in between. Reading `restarted`
+    # immediately asserts a scheduling order nothing establishes, which is the whole
+    # of why this test failed in CI while passing locally.
+    deadline = time.monotonic() + 10
+    while not restarted and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    assert restarted == ["thalamus-console.service"], (
+        "the response promised a restart that never started")
 
 
 def test_a_current_tree_still_calls_for_a_restart(checkout: Path,
