@@ -22,18 +22,34 @@ export function readApp() {
   return fs.readFileSync(APP_JS, "utf8");
 }
 
-// Brace matching that steps over comments and string literals, so a `}` inside a
-// message or a URL cannot end a function early. Regex literals are not tracked:
-// the `{n,m}` quantifiers this file uses are balanced, and an unbalanced brace
-// inside a regex would show up immediately as an extraction failure.
+// A `/` here is a regex literal rather than division when the last significant
+// character before it cannot end an expression. Division follows a value — an
+// identifier, a literal, `)` or `]` — and everything else leaves an operand position
+// open. Written as the complement of that short list so a character nobody thought of
+// reads as a regex, which fails loudly at extraction rather than silently mis-scanning.
+const ENDS_A_VALUE = /[\w$)\]]/;
+
+// Brace matching that steps over comments, string literals and regex literals, so a
+// `}` inside a message, a URL or a character class cannot end a function early. A
+// regex has to be tracked for its *quotes*, not only its braces: `/[&<>"']/g` holds an
+// unpaired `"` and an unpaired `'`, and reading either as the start of a string
+// swallows every brace after it (#222).
 function matchBraces(src, from) {
   let depth = 0, i = src.indexOf("{", from);
   if (i < 0) throw new Error("no block found");
-  let quote = null, comment = null;
+  let quote = null, comment = null, regex = false, charClass = false, prev = "";
   for (; i < src.length; i++) {
     const c = src[i], next = src[i + 1];
     if (comment === "line") { if (c === "\n") comment = null; continue; }
     if (comment === "block") { if (c === "*" && next === "/") { comment = null; i++; } continue; }
+    if (regex) {
+      // `/` closes a regex only outside a character class: `/[/]/` is one literal.
+      if (c === "\\") { i++; continue; }
+      if (c === "[") charClass = true;
+      else if (c === "]") charClass = false;
+      else if (c === "/" && !charClass) { regex = false; prev = "/"; }
+      continue;
+    }
     if (quote) {
       if (c === "\\") { i++; continue; }
       if (c === quote) quote = null;
@@ -41,9 +57,11 @@ function matchBraces(src, from) {
     }
     if (c === "/" && next === "/") { comment = "line"; i++; continue; }
     if (c === "/" && next === "*") { comment = "block"; i++; continue; }
-    if (c === '"' || c === "'" || c === "`") { quote = c; continue; }
+    if (c === "/" && !ENDS_A_VALUE.test(prev)) { regex = true; charClass = false; continue; }
+    if (c === '"' || c === "'" || c === "`") { quote = c; prev = c; continue; }
     if (c === "{") depth++;
     else if (c === "}" && --depth === 0) return i + 1;
+    if (!/\s/.test(c)) prev = c;
   }
   throw new Error("unbalanced braces");
 }
@@ -75,11 +93,6 @@ export function evaluate(source, exportNames, globals = {}) {
   const body = `${source}\nreturn {${exportNames.join(",")}};`;
   return new Function(...keys, body)(...keys.map((k) => globals[k]));
 }
-
-// The console's own escapeHtml, which the extracted renderers close over.
-export const escapeHtml = (s) =>
-  String(s).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // ---- a very small runner ----
 
