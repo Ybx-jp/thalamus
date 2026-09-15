@@ -5,13 +5,18 @@
 // typed.
 
 import {
-  readApp, extractFunction, extractRegion, evaluate, escapeHtml,
+  readApp, extractFunction, extractRegion, evaluate,
   suite, check, contains, lacks, done,
 } from "./harness.mjs";
 
 const src = readApp();
+// `escapeHtml` is extracted like every other renderer here rather than supplied as a
+// closure global. A copy of it living in the test harness is a copy that can drift, and
+// a copy that has drifted asserts a behaviour the console does not have — the escaping
+// these tests are about would then be untested by construction (#222).
 const parts = [
   extractRegion("const MD_FENCE", "\nfunction renderMarkdown", src),
+  extractFunction("escapeHtml", src),
   extractFunction("renderMarkdown", src),
   extractFunction("mdCode", src),
   extractFunction("mdCells", src),
@@ -20,7 +25,7 @@ const parts = [
   extractFunction("mdBlocks", src),
   extractFunction("mdInline", src),
 ].join("\n");
-const { renderMarkdown: md } = evaluate(parts, ["renderMarkdown"], { escapeHtml });
+const { renderMarkdown: md } = evaluate(parts, ["renderMarkdown"]);
 
 suite("markdown — block rendering");
 contains("fenced code carries its language", md("```python\nx = 1\n```"),
