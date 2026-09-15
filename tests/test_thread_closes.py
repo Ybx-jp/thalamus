@@ -13,6 +13,7 @@ activity pattern: ascribe to the agent when the generating activity is irrelevan
 """
 
 import pytest
+from gremlin_python.process.traversal import Direction, Merge, T
 
 from thalamus.harness import closes
 from thalamus.substrate.schema import CloseDisposition, ThreadClose, ThreadStatus
@@ -203,3 +204,133 @@ def test_closing_a_thread_that_does_not_exist_is_an_error_not_a_no_op():
     # Verifies: named, refused, and it says which thread
     with pytest.raises(ValueError, match="ghost"):
         write_thread_close(MissingThread(), close)
+
+
+class _PresentThread:
+    """A graph that holds the thread, recording the three writes a close performs.
+
+    Purpose-built rather than reusing `test_writer.RecordingGraph`: that one keeps the
+    merge tokens and drops the payloads, and every claim below is about a payload — the
+    Agent's identity, the RESOLVES edge's basis, and the status the Thread lands on.
+
+    Every step returns `self` and records, so the traversal chains the writer builds are
+    captured whole. `iterate()` is the terminal step; nothing here is lazy.
+    """
+
+    # `property` below is the Gremlin step, which shadows the builtin decorator for the
+    # rest of the class body — so the debug-logging attribute `_iterate` reads is set
+    # here rather than defined as one.
+    bytecode = "<recorded>"
+
+    def __init__(self):
+        self.merged_vertices: list[dict] = []
+        self.merged_edges: list[dict] = []
+        self.on_create: list[dict] = []
+        self.on_match: list[dict] = []
+        self.properties: list[tuple[str, object]] = []
+
+    # -- the existence probe the writer runs first --
+    def V(self, *_):
+        return self
+
+    def has_label(self, *_):
+        return self
+
+    def has_next(self):
+        return True
+
+    # -- the writes --
+    def merge_v(self, spec):
+        self.merged_vertices.append(dict(spec))
+        return self
+
+    def merge_e(self, spec):
+        self.merged_edges.append(dict(spec))
+        return self
+
+    def option(self, merge, payload):
+        target = self.on_create if merge is Merge.on_create else self.on_match
+        target.append(dict(payload))
+        return self
+
+    def property(self, key, value):
+        self.properties.append((key, value))
+        return self
+
+    def iterate(self):
+        return self
+
+
+def _close(**overrides) -> ThreadClose:
+    return ThreadClose(**{
+        "thread_id": "t1", "scope": "homelab",
+        "disposition": CloseDisposition.DONE,
+        "basis": "scope:homelab:session:s9",
+        "surface": "cli", "approval_ref": "r", "approver_evidence": "cli:tty",
+        "closed_at": "2026-08-11T00:00:00Z",
+        **overrides,
+    })
+
+
+def test_a_close_writes_the_agent_the_resolves_edge_and_the_status():
+    """
+    Scenario: the operator approves a close naming a thread the graph holds
+
+    Verifications:
+    - the Agent the close is attributed to is upserted
+    - a RESOLVES edge runs Agent -> Thread carrying the close's basis
+    - the Thread's status lands on the disposition's status
+    - the Agent's vertex id comes back
+
+    Only the refusal path had a test (#231). The three writes are what a close *is*, and
+    an operator approving one remotely has nothing but the return value to read.
+    """
+    from thalamus.substrate.writer import write_thread_close
+
+    graph = _PresentThread()
+    close = _close()
+
+    returned = write_thread_close(graph, close)
+
+    agents = [v for v in graph.merged_vertices if v.get(T.label) == "Agent"]
+    assert agents, "the close was attributed to no Agent"
+    agent_vid = agents[0][T.id]
+    assert returned == agent_vid, "the caller is handed the closer's identity"
+
+    edges = [e for e in graph.merged_edges if e.get(T.label) == "RESOLVES"]
+    assert edges, "the thread was marked closed with no edge saying who closed it"
+    assert edges[0][Direction.from_] == agent_vid, "an Agent closes, never a Session"
+    assert edges[0][Direction.to] != agent_vid
+    assert close.basis in str(graph.on_create), "the edge carries the basis it cites"
+
+    assert ("status", close.status.value) in graph.properties
+
+
+def test_a_close_does_not_write_a_session():
+    """The control on the test above. `Agent -[RESOLVES]-> Thread` is the shape because
+    a close has no activity behind it; a Session vertex appearing here would make the
+    close look like distillation found it, which is the one thing it must not claim."""
+    from thalamus.substrate.writer import write_thread_close
+
+    graph = _PresentThread()
+
+    write_thread_close(graph, _close())
+
+    assert not [v for v in graph.merged_vertices if v.get(T.label) == "Session"]
+
+
+def test_re_closing_the_same_thread_writes_the_same_edge():
+    """Idempotence, which is what makes a retried approval safe.
+
+    The ledger row is written before the graph write, so an approval that fails partway
+    is re-run against a thread that may already be closed. Both passes must land the
+    same edge rather than a second one.
+    """
+    from thalamus.substrate.writer import write_thread_close
+
+    close = _close()
+    first, second = _PresentThread(), _PresentThread()
+
+    assert write_thread_close(first, close) == write_thread_close(second, close)
+    assert first.merged_edges == second.merged_edges
+    assert first.properties == second.properties

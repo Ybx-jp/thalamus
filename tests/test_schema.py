@@ -8,12 +8,20 @@ Scope: stable claim IDs and tier-1-by-construction provenance
 
 from datetime import datetime
 
+import pytest
+from pydantic import ValidationError
+
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.substrate.schema import (
+    Artifact,
+    ArtifactType,
     Decision,
     Problem,
     ProblemCategory,
+    Provenance,
     SessionGraph,
+    Solution,
+    Thread,
     Tier,
     Tool,
 )
@@ -195,3 +203,68 @@ def test_a_solution_says_how_it_ended_and_a_decision_what_it_turned_down():
     assert is_rejected_kind("designer/rejected")
     assert not is_rejected_kind(ClaimKind.DECISION.value)
     assert "designer/rejected" not in {k.value for k in ClaimKind}
+
+
+# ---- What the models refuse ----
+#
+# Every test above builds a valid model and asserts on what comes out. That leaves the
+# rejections unpinned (#242): a required field loosened to optional, or an enum widened
+# to a plain string, passes all of them — and the schema is what the write path
+# validates against, so a loosening here reaches the graph rather than failing at it.
+#
+# Parametrized over (model, kwargs, the field expected in the complaint) so the error
+# has to name the field a reader would go and fix, not merely be raised.
+
+_REQUIRED_FIELD_OMISSIONS = [
+    (Decision, dict(rationale="why"), "description"),
+    (Decision, dict(description="what"), "rationale"),
+    (Problem, dict(category=ProblemCategory.BUG), "description"),
+    (Problem, dict(description="what"), "category"),
+    (Solution, dict(approach="how"), "description"),
+    (Solution, dict(description="what"), "approach"),
+    (Artifact, dict(type=ArtifactType.FILE), "identifier"),
+    (Artifact, dict(identifier="x.py"), "type"),
+    (Thread, dict(title="t", description="d"), "id"),
+    (Provenance, dict(tier=Tier.CURATED), "source"),
+    (SessionGraph, dict(tool=Tool.CLAUDE_CODE, summary="s"), "session_id"),
+    (SessionGraph, dict(session_id="s1", summary="s"), "tool"),
+    (SessionGraph, dict(session_id="s1", tool=Tool.CLAUDE_CODE), "summary"),
+]
+
+
+@pytest.mark.parametrize("model,kwargs,missing", _REQUIRED_FIELD_OMISSIONS,
+                         ids=lambda v: v if isinstance(v, str) else "")
+def test_a_required_field_left_out_is_refused(model, kwargs, missing):
+    with pytest.raises(ValidationError) as refusal:
+        model(**kwargs)
+
+    assert missing in str(refusal.value), (
+        f"{model.__name__} refused the model without naming `{missing}`")
+
+
+_BAD_ENUM_VALUES = [
+    (Problem, dict(description="what", category="not-a-category")),
+    (Artifact, dict(identifier="x.py", type="not-a-type")),
+    (SessionGraph, dict(session_id="s1", tool="not-a-tool", summary="s")),
+]
+
+
+@pytest.mark.parametrize("model,kwargs", _BAD_ENUM_VALUES,
+                         ids=lambda v: getattr(v, "__name__", ""))
+def test_a_value_outside_an_enum_is_refused(model, kwargs):
+    """An enum widened to a bare string takes the vocabulary with it: the ontology stops
+    being the set of terms a writer may use and becomes whatever a caller passed."""
+    with pytest.raises(ValidationError):
+        model(**kwargs)
+
+
+def test_the_refusals_above_are_refusals_and_not_the_constructor_failing():
+    """The control. Every case above would also pass if these models rejected
+    everything, so one well-formed instance of each has to construct."""
+    assert Decision(description="what", rationale="why").description == "what"
+    assert Problem(description="what", category=ProblemCategory.BUG).category
+    assert Solution(description="what", approach="how").approach == "how"
+    assert Artifact(identifier="x.py", type=ArtifactType.FILE).identifier == "x.py"
+    assert Thread(id="t1", title="t", description="d").id == "t1"
+    assert Provenance(source="operator").source == "operator"
+    assert _session().session_id == "s1"

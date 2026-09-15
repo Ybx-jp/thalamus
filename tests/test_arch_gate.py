@@ -11,6 +11,7 @@ a build. Both halves have to hold at once.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from thalamus.arch.extractor import DependencyEdge, DependencyGraph
 from thalamus.arch.model import Accepted, ArchModel, Layer, Rule, load, render
@@ -145,3 +146,120 @@ def test_every_accepted_entry_states_a_reason():
     for entry in model.accepted:
         assert entry.reason.strip(), f"{entry.key} is accepted with no reason"
         assert len(entry.reason.split()) >= 10, f"{entry.key} reason is too thin to act on"
+
+
+# ---- The dead-end gate's own exit codes ----
+#
+# `ArchModel.gate()` above is one implementation of the exit-1-versus-exit-2 rule.
+# `cli._arch_dead` is a second, written out longhand against a `DeadEndReport`, and
+# CI invokes that one. Nothing exercised it (#228 is the sibling gap; this is #229),
+# so the rule CLAUDE.md cites as live — exit 2 means an acceptance has stopped firing
+# — rested on the copy that CI does not call.
+#
+# The census is not under test here and is stubbed: what these pin is the sorting of a
+# report into an exit code, which is the part that had no test.
+
+
+def _dead_report(**kwargs):
+    from thalamus.arch import deadends as arch_deadends
+
+    return arch_deadends.DeadEndReport(**kwargs)
+
+
+def _definition(name="orphaned_helper", path="src/thalamus/x.py"):
+    from thalamus.arch import deadends as arch_deadends
+
+    return arch_deadends.Definition(
+        name=name, qualname=name, path=path, line=12, kind="function")
+
+
+def _run_dead_gate(monkeypatch, report, exemptions=()):
+    """Drive `_arch_dead --gate` over a given report, and hand back its exit code.
+
+    `None` means it returned rather than exiting, which is the green path — a gate that
+    printed a verdict and fell through would be indistinguishable from a passing one if
+    this returned 0 for both.
+    """
+    from thalamus import cli
+    from thalamus.arch import deadends as arch_deadends
+
+    policy = arch_deadends.DeadEndPolicy(enabled=True, exemptions=tuple(exemptions))
+    monkeypatch.setattr(cli, "_dead_policy", lambda repo: policy)
+    monkeypatch.setattr(arch_deadends, "scan", lambda *a, **k: report)
+
+    args = SimpleNamespace(gate=True, limits=False)
+    try:
+        cli._arch_dead(args, Path("."), object())
+    except SystemExit as exit_:
+        return exit_.code
+    return None
+
+
+def test_a_clean_dead_end_census_does_not_exit(monkeypatch):
+    assert _run_dead_gate(monkeypatch, _dead_report()) is None
+
+
+def test_a_test_only_definition_exits_one(monkeypatch):
+    report = _dead_report(test_only=[_definition()])
+    assert _run_dead_gate(monkeypatch, report) == 1
+
+
+def test_an_orphan_module_exits_one(monkeypatch):
+    report = _dead_report(orphans=["src/thalamus/unreached.py"])
+    assert _run_dead_gate(monkeypatch, report) == 1
+
+
+def test_an_exemption_that_matches_nothing_exits_two(monkeypatch):
+    """The mirror of `test_acceptance_that_no_longer_happens_exits_two`, on the other
+    implementation. A symbol that got wired up, or deleted, leaves its exemption behind
+    describing a tree that moved; collapsing that into green lets the list only grow."""
+    from thalamus.arch import deadends as arch_deadends
+
+    stale = arch_deadends.Exemption(
+        reason="a reason long enough to be actionable by the next reader",
+        path="src/thalamus/gone.py", symbol="vanished")
+
+    assert _run_dead_gate(monkeypatch, _dead_report(), [stale]) == 2
+
+
+def test_an_exemption_that_still_fires_does_not_exit(monkeypatch):
+    """The control for the test above: matching is what separates a live exemption from
+    a stale one, so an exemption the report records as used must not reach exit 2."""
+    from thalamus.arch import deadends as arch_deadends
+
+    definition = _definition()
+    live = arch_deadends.Exemption(
+        reason="a reason long enough to be actionable by the next reader",
+        path=definition.path, symbol=definition.qualname)
+    report = _dead_report(exempted=[
+        arch_deadends.Exempted(definition=definition, rule=arch_deadends.RULE_DECLARED)])
+
+    assert _run_dead_gate(monkeypatch, report, [live]) is None
+
+
+def test_a_finding_outranks_a_stale_exemption(monkeypatch):
+    """Both conditions at once resolve to 1, the same precedence `ArchModel.gate` gives
+    a new violation over a stale acceptance. Exit 2 asks for a tidy-up; exit 1 says the
+    build is broken, and a reader who sees 2 would tidy and move on."""
+    from thalamus.arch import deadends as arch_deadends
+
+    stale = arch_deadends.Exemption(
+        reason="a reason long enough to be actionable by the next reader",
+        path="src/thalamus/gone.py", symbol="vanished")
+    report = _dead_report(test_only=[_definition()])
+
+    assert _run_dead_gate(monkeypatch, report, [stale]) == 1
+
+
+def test_without_the_gate_flag_nothing_exits(monkeypatch):
+    """`arch dead` is a report by default. The verdict is what `--gate` adds, and a
+    report that exited non-zero would make the two indistinguishable in CI."""
+    from thalamus import cli
+    from thalamus.arch import deadends as arch_deadends
+
+    policy = arch_deadends.DeadEndPolicy(enabled=True)
+    monkeypatch.setattr(cli, "_dead_policy", lambda repo: policy)
+    monkeypatch.setattr(
+        arch_deadends, "scan", lambda *a, **k: _dead_report(test_only=[_definition()]))
+
+    cli._arch_dead(SimpleNamespace(gate=False, limits=False), Path("."), object())

@@ -8,6 +8,7 @@ verified live — a launcher can only be tested by the process
 it launches, which is exactly where the boundary falls.
 """
 
+import itertools
 import json
 import subprocess
 from pathlib import Path
@@ -181,6 +182,86 @@ def test_roster_confirms_every_window_it_opens(tmp_path, monkeypatch, capsys):
 
     assert confirmed == [f"@{n}" for n in range(1, len(scopes) + 1)]
     assert "Roster running in tmux session `fake-roster`" in capsys.readouterr().out
+
+
+def _fake_tmux_holding(monkeypatch, ids, present):
+    """`_fake_tmux`, but with `list-windows` reporting `present` already open.
+
+    Two `list-windows` calls with different `-F` formats sit behind roster's
+    idempotency — `_tmux_windows` asks for names, `window_room` asks for start commands
+    — so the fake answers on the format rather than the subcommand. Neither window is
+    in a room: a bare start command puts every index at room "".
+    """
+    calls: list[list[str]] = []
+    # Ids keep coming after `ids` runs out. A fake that raises StopIteration on the
+    # window it did not expect reports an exhausted iterator where the finding is
+    # "a window was opened that should not have been" — the assertion below says that.
+    handout = itertools.chain(ids, (f"@extra-{n}" for n in itertools.count(1)))
+
+    def fake_run(cmd, *a, **kw):
+        calls.append(cmd)
+        stdout = ""
+        if "new-window" in cmd:
+            stdout = next(handout)
+        elif "list-windows" in cmd:
+            wants_names = "window_name" in cmd[cmd.index("-F") + 1]
+            stdout = "".join(f"{i}\t{name if wants_names else 'claude'}\n"
+                             for i, name in enumerate(present))
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    monkeypatch.delenv("TMUX", raising=False)
+    monkeypatch.delenv("THALAMUS_ROOM", raising=False)
+    return calls
+
+
+def test_roster_leaves_a_scope_that_already_has_a_window_alone(
+        tmp_path, monkeypatch, capsys):
+    """
+    Scenario: the full roster is brought up against a session already holding two scopes
+
+    Verifications:
+    - no window is opened for a scope that is already present
+    - the scopes that are not present are still opened
+    - the skip is printed rather than silent
+
+    The idempotency the roster docstring promises is what makes `thalamus roster` safe
+    to re-run — the console re-runs it on every bring-up. Without the skip, a second run
+    opens a duplicate window per scope and the plane shows two of each (#230).
+    """
+    scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
+    already, expected_new = scopes[:2], scopes[2:]
+    calls = _fake_tmux_holding(
+        monkeypatch, [f"@{n}" for n in range(1, len(expected_new) + 1)], already)
+    monkeypatch.setattr("thalamus.harness.pin.confirm_started", lambda *a, **kw: None)
+
+    pin.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+
+    printed = capsys.readouterr().out
+    opened = [c[c.index("-n") + 1] for c in calls if "new-window" in c]
+
+    assert opened == expected_new
+    for scope in already:
+        assert f"`{scope}` already has a window — skipped" in printed
+
+
+def test_roster_opens_every_scope_when_the_session_holds_none(tmp_path, monkeypatch):
+    """The control for the test above, through the same fake.
+
+    "Nothing was opened for these two" is also what a fake that silently answers no
+    window at all produces. Driving the identical path with an empty session must open
+    every scope, or the skip test is measuring the stub rather than the skip.
+    """
+    scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
+    calls = _fake_tmux_holding(
+        monkeypatch, [f"@{n}" for n in range(1, len(scopes) + 1)], present=[])
+    monkeypatch.setattr("thalamus.harness.pin.confirm_started", lambda *a, **kw: None)
+
+    pin.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+
+    opened = [c[c.index("-n") + 1] for c in calls if "new-window" in c]
+    assert opened == scopes
 
 
 def test_one_dead_roster_window_does_not_abort_the_others(tmp_path, monkeypatch, capsys):
