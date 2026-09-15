@@ -1727,3 +1727,77 @@ class TestTheCheckAsData:
         report = json.loads(capsys.readouterr().out)
         assert code == 1
         assert report["states"] == {"failed": 1}
+
+
+class TestConsentNamesTheSelectionsRadius:
+    """The prompt is the consent mechanism, so the radius it names is the one that lands.
+
+    `install()` gates its cursor and codex legs on the `harnesses` tuple, so a list that
+    does not read the selection overstates a `--harness <one>` run by every other
+    harness's targets (#220). These assert the pairing in both directions — nothing
+    gated appears for a selection that excludes it, and everything ungated appears for
+    every selection — because a prompt that has drifted either way still reads complete.
+    """
+
+    # The paths `install()` writes only under a matching `harnesses` membership, by the
+    # harness that gates them. Spelled out rather than derived from `_consent_lines`,
+    # which would compare the function against itself.
+    GATED = {
+        "cursor": ("USER_CURSOR_HOOKS", "USER_CURSOR_MCP"),
+        "codex": ("USER_CODEX_HOOKS", "USER_CODEX_MCP", "CODEX_HOME"),
+        "claude": ("USER_SETTINGS",),
+    }
+
+    def _text(self, harnesses):
+        return "\n".join(install._consent_lines(harnesses))
+
+    @pytest.mark.parametrize("selected", sorted(install.HARNESSES))
+    def test_a_narrowed_run_names_no_other_harnesss_targets(self, selected, sandbox):
+        text = self._text((selected,))
+        for harness, names in self.GATED.items():
+            if harness == selected:
+                continue
+            for name in names:
+                assert str(getattr(install, name)) not in text, (
+                    f"--harness {selected} asks consent for {name}, which its "
+                    f"install() leg never reaches")
+
+    @pytest.mark.parametrize("selected", sorted(install.HARNESSES))
+    def test_a_narrowed_run_names_its_own_targets(self, selected, sandbox):
+        """The containment has to bite in the other direction too: a line dropped from
+        the wrong branch would pass the test above and under-disclose instead."""
+        text = self._text((selected,))
+        for name in self.GATED[selected]:
+            assert str(getattr(install, name)) in text
+
+    @pytest.mark.parametrize("selected", sorted(install.HARNESSES))
+    def test_the_ungated_targets_are_named_whatever_is_selected(self, selected, sandbox):
+        """`link_skills()` and `write_all_agents()` sit outside the gate in `install()`,
+        so every selection writes them and every prompt must say so."""
+        text = self._text((selected,))
+        assert str(install.USER_SKILLS_DIR) in text
+        assert str(install.USER_AGENTS_DIR) in text
+        assert "~/.thalamus/profiles/" in text
+
+    def test_the_full_selection_is_the_union_of_the_narrow_ones(self, sandbox):
+        every = set(install._consent_lines(install.HARNESSES))
+        union = set().union(*(set(install._consent_lines((h,)))
+                              for h in install.HARNESSES))
+        assert every == union, (
+            "a line reachable only from the all-harness list is one no narrowed run "
+            "discloses, and one no narrowed run can be held to")
+
+    def test_run_resolves_the_selection_before_asking(self, sandbox, monkeypatch):
+        """Ordering is the precondition for all of the above: a `_confirm()` reached
+        before `harnesses` is resolved can condition on nothing, however its text is
+        written. So the tuple `run()` hands the prompt is the one it installs with."""
+        seen = []
+
+        def capture(harnesses):
+            seen.append(harnesses)
+            return False
+
+        monkeypatch.setattr(install, "_confirm", capture)
+
+        assert install.run(harness="claude") == 1
+        assert seen == [("claude",)]

@@ -63,9 +63,11 @@ uv run thalamus init
 
 This installs at **user scope** — `~/.claude/`, `~/.cursor/` and `~/.codex/`, not the checkout — so
 the harness arms in every directory you work in, not only here. Because it writes
-outside the repo, it lists the full blast radius and asks first.
+outside the repo, it lists its blast radius and asks first — the radius of the editors
+you selected, so a `--harness claude` run names the `~/.claude` targets and the two
+below that every selection writes, and nothing under `~/.cursor` or `~/.codex`.
 
-What it writes:
+What it writes, wiring all three:
 
 | Target | What |
 |---|---|
@@ -74,8 +76,8 @@ What it writes:
 | `~/.cursor/hooks.json`, `~/.cursor/mcp.json` | the Cursor hook suite and the same MCP server |
 | `~/.codex/hooks.json` | the codex hook suite, in Claude Code's own hook format |
 | `~/.codex/config.toml` | the same MCP server, registered via `codex mcp add` |
-| `~/.claude/skills/` | symlinks to the shipped skills |
-| `~/.claude/agents/` | one derived agent per expert manifest |
+| `~/.claude/skills/` | symlinks to the shipped skills — written whatever you select |
+| `~/.claude/agents/` | one derived agent per expert manifest — written whatever you select |
 | `~/.codex/thalamus-<scope>.config.toml` | one derived codex profile per expert manifest |
 
 Useful flags: `--dry-run` (report, write nothing), `--harness claude`,
