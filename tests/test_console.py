@@ -2404,37 +2404,40 @@ def test_the_module_serves_when_run_as_a_module(tmp_path):
 # ---- Closing a window without slandering the session that was in it ----
 
 
-def _tmux_stub(calls, present):
-    """A tmux that reproduces the one behaviour this close path has to survive.
+def _tmux_stub(calls, present, pane_dead="0"):
+    """A tmux that reproduces the two behaviours this close path has to survive.
 
     `display -p -t <session>:<idx>` for an index that no longer exists resolves to
     the session's *active* window and exits 0 — measured on tmux 3.4, and it is why
     an index-keyed existence check can never fire. `list-windows` enumerates instead
     of resolving a target, so it is the surface that can say a window is gone.
+
+    `pane_dead` is the second one, and it is a parameter because the close path asks
+    two questions and only one of them is `list-windows`. Under `remain-on-exit on`
+    the window stays enumerated after its pane exits and `_window_gone` never fires —
+    a stub that answered `0` here could only ever drive the branch where the agent is
+    still running, which left the fix for #151 unreachable from this file (#223).
     """
     def tmux(*args):
         calls.append(args)
         out = ""
         if args[0] == "display":
-            out = "@7" if args[-1] == "#{window_id}" else "0"
+            out = "@7" if args[-1] == "#{window_id}" else pane_dead
         elif args[0] == "list-windows":
             out = "\n".join(present) + ("\n" if present else "")
         return subprocess.CompletedProcess(args, 0, out, "")
     return tmux
 
 
-def test_a_graceful_close_is_not_recorded_as_a_kill_that_skipped_sessionend(
-        monkeypatch):
-    """The record has to be an observation, not the elapsing of a timer.
+def _close_fixtures(monkeypatch, calls, present, pane_dead="0", grace=3):
+    """Wire `tmux`, the pin lookup and the forced-kill recorder; hand back the record.
 
-    `/exit` fires SessionEnd, the agent distills, and tmux removes the window. A
-    close path that cannot see that waits out the whole grace budget and then writes
-    a row saying this session never distilled — a failure invented for a session
-    that succeeded, on the one surface that exists to report the real ones.
+    `grace` is shortened from the real budget so that a close which *fails* to read its
+    exit signal fails this file in seconds rather than blocking it for four minutes. A
+    path that reads the signal returns on the first poll and never reaches it.
     """
-    present: list[str] = []          # the window is already gone when polling starts
-    calls: list[tuple] = []
-    monkeypatch.setattr(server, "tmux", _tmux_stub(calls, present))
+    monkeypatch.setattr(server, "RECYCLE_GRACE_S", grace)
+    monkeypatch.setattr(server, "tmux", _tmux_stub(calls, present, pane_dead))
     monkeypatch.setattr(server, "_pinned_session",
                         lambda cfg, idx: {"session": "abcd1234", "scope": "main",
                                           "cwd": "/home/op", "project": "thalamus",
@@ -2442,11 +2445,92 @@ def test_a_graceful_close_is_not_recorded_as_a_kill_that_skipped_sessionend(
     recorded: list[tuple] = []
     monkeypatch.setattr(server, "_record_forced_kill",
                         lambda who, op: recorded.append((who, op)))
+    return recorded
+
+
+def test_a_window_tmux_removed_is_not_recorded_as_a_kill_that_skipped_sessionend(
+        monkeypatch):
+    """The record has to be an observation, not the elapsing of a timer.
+
+    `/exit` fires SessionEnd, the agent distills, and with `remain-on-exit` off tmux
+    removes the window — so `list-windows` stops enumerating it. This is the half of
+    "graceful" that `_window_gone` can see; the corpse half is the case below.
+    """
+    present: list[str] = []          # the window is already gone when polling starts
+    calls: list[tuple] = []
+    recorded = _close_fixtures(monkeypatch, calls, present)
 
     server.close_window(Config(session="thalamus"), 3)
 
     assert recorded == [], "a window that left on its own was reported as force-killed"
     assert not any(c[0] == "kill-window" for c in calls)
+
+
+def test_a_dead_pane_the_window_list_still_enumerates_ends_the_close(monkeypatch):
+    """The branch #151 was filed for, and the one `_window_gone` cannot reach.
+
+    With `remain-on-exit on` — which `docs/console.md` instructs setting globally and
+    never instructs unsetting, and which `recycle_window` sets per window — the pane
+    exits and the window stays behind as a corpse. It is still in `list-windows`, so a
+    loop asking only that question burns the whole grace budget on a session that ran
+    `/exit`, fired SessionEnd and distilled normally, then writes a row whose entire
+    meaning is that none of that happened.
+    """
+    calls: list[tuple] = []
+    recorded = _close_fixtures(monkeypatch, calls, ["@7"], pane_dead="1")
+
+    server.close_window(Config(session="thalamus"), 3)
+
+    assert recorded == [], "a session that distilled was reported as force-killed"
+    assert not any(c[0] == "kill-window" for c in calls)
+
+
+def test_a_dead_pane_is_left_where_the_operator_can_read_it(monkeypatch):
+    """The corpse is not cleaned up on the way out.
+
+    Whoever turned `remain-on-exit` on did it to read dead panes, so a close that
+    removed the pane the setting exists to preserve would defeat the setting it is
+    running under.
+    """
+    calls: list[tuple] = []
+    _close_fixtures(monkeypatch, calls, ["@7"], pane_dead="1")
+
+    server.close_window(Config(session="thalamus"), 3)
+
+    assert not any(c[0] in ("kill-window", "respawn-window") for c in calls)
+
+
+def test_a_recycle_reads_the_dead_pane_rather_than_forcing_the_respawn(monkeypatch):
+    """`recycle_window` polls the same two questions and has the same corpse branch.
+
+    It sets `remain-on-exit on` itself, so it is the path most likely to meet one — and
+    the distinction it draws on the answer is `respawn-window` against
+    `respawn-window -k`, plus whether a forced-kill row is written at all.
+    """
+    calls: list[tuple] = []
+    recorded = _close_fixtures(monkeypatch, calls, ["@7"], pane_dead="1")
+
+    server.recycle_window(Config(session="thalamus"), 3)
+
+    assert recorded == [], "a session that distilled was reported as force-killed"
+    assert ("respawn-window", "-t", "@7") in calls, "the respawn is unforced"
+    assert ("respawn-window", "-k", "-t", "@7") not in calls
+
+
+def test_a_recycle_that_outlives_the_grace_budget_forces_and_records(monkeypatch):
+    """The control for the test above, through the same fixture.
+
+    Both cases end in a `respawn-window` on the same target; only the `-k` and the
+    record tell them apart, so the forced case has to be driven too or "no `-k` was
+    passed" is a claim about a path that was never taken.
+    """
+    calls: list[tuple] = []
+    recorded = _close_fixtures(monkeypatch, calls, ["@7"], pane_dead="0", grace=0)
+
+    server.recycle_window(Config(session="thalamus"), 3)
+
+    assert [op for _, op in recorded] == ["recycle"]
+    assert ("respawn-window", "-k", "-t", "@7") in calls
 
 
 def test_a_window_that_outlives_the_grace_budget_is_killed_by_id_not_by_index(
