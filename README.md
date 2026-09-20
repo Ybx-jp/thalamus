@@ -50,9 +50,6 @@ expert nodes by ID and copying nothing. `thalamus pulse` serves a live dashboard
 prices what retrieval actually
 cost.<!-- (A0085-pulse-prices-retrieval-cost, cites-as-live) -->
 
-*The source of this page carries claim-ledger markers, hidden from the rendered
-README; `ledger/` holds the entry each one names.*
-
 ## Quick start
 
 **Your graph starts empty and stays yours.** Thalamus ships no seed graph, no export
