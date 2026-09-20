@@ -68,6 +68,23 @@ A session is *pinned* to exactly one scope and cannot widen its own view
 (A0001-pinned-scope-is-resolved-once-at-process-start, cites-as-live).
 ```
 
+**In a page people read rendered, the marker goes in an HTML comment.** `README.md` is
+the case that matters: twenty visible markers interrupt a reader who cannot act on any of
+them. Nothing parses a document — the pattern runs over the file's text — so a marker in
+a comment is read exactly as one in prose, and it has moved neither away from the sentence
+nor out of the span its entry pins:
+
+```markdown
+A session is *pinned* to exactly one scope and cannot widen its own
+view.<!-- (A0001-pinned-scope-is-resolved-once-at-process-start, cites-as-live) -->
+```
+
+Two rules keep that working. **It fits on one line**: whitespace after the comma may span
+a newline, but a `#` or a `//` from a wrapped comment lands inside the parenthesis and the
+citation is then silently not one — what reports it is the entry's References row naming a
+document that does not cite it. **It does not start its own line**: a line beginning
+`<!--` interrupts the paragraph and renders the prose around it as two.
+
 `claims-ledger check` runs five checkers over that: the entries against the schema, the
 grounds against the working tree, the citations against each entry's current status, and
 the entry region above each `APPEND` marker against history. A pinned section that has
