@@ -24,17 +24,15 @@ below are gremlin-python's.
 ## Rule 0 — both surfaces are `main`'s; a pin reads through the confined tools
 
 `connect()` hands back a source over the whole graph, so a traversal sees `main`'s
-episodic memory and every
-expert's.<!-- (A0148-graph-connection-carries-no-scope-filter, cites-as-live) -->
+episodic memory and every expert's.<!-- (A0148, cites-as-live) -->
 Confinement is a property of the MCP surface rather than of the client: `memory_recall`
 filters Sessions and session-contained Claims to the caller's scope, and `memory_query`
 refuses an expert pin outright because a free-form traversal cannot be
-confined.<!-- (A0149-memory-query-refuses-a-pinned-session, cites-as-live) -->
+confined.<!-- (A0149, cites-as-live) -->
 
 So outside `main` this skill's code is not the surface to use, and `graph-guard.sh`
 blocks a command that carries a graph-client marker — on its own line, or in a `.py`
-file it names that
-exists.<!-- (A0150-graph-guard-fires-on-client-markers, cites-as-live) -->
+file it names that exists.<!-- (A0150, cites-as-live) -->
 Read through `memory_recall` / `memory_recall_by_project` / `memory_recall_recent` /
 `memory_recall_by_artifact`, `memory_open_threads` / `memory_open_problems` /
 `memory_thread`, and `memory_exchanges` / `memory_consultations` — all confined to the

@@ -294,7 +294,7 @@ directories sort first. The `star` button at the right of the Directory heading 
 the star on the highlighted chip, and the server keeps the set in the file
 `thalamus console` names — `~/.thalamus/console/favorites.json` — so a star set from the
 phone is the one the desktop sees and it survives a
-restart.<!-- (A0151-favorites-store-is-named-not-defaulted, cites-as-live) -->
+restart.<!-- (A0151, cites-as-live) -->
 `--dir` seeds the list until the first star is toggled; after that the file is the whole
 list.
 

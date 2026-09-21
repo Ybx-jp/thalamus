@@ -61,23 +61,29 @@ deliberately, in a change that also fixes whatever the new release reports.
 `ledger/` holds one entry per commitment this repository's prose makes about its own
 code, each pinned by digest to the section of source that keeps it true — a top-level
 function, class or assignment, a TOML table or key, a top-level YAML key. The sentence
-that states the commitment cites the entry inline, inside the span that entry pins:
+that states the commitment cites the entry inline, inside the span that entry pins. Every
+surface this repository writes may carry one: the Python and the shell, the console's
+client, the compose file, the workflows, the expert manifests and the Markdown. `tests/`
+is the exception, and `.claude/skills/` with it, because three of those directories are
+written by `claims-ledger harness install` and their examples are illustrations.
 
 ```python
     The source reaches the whole graph: scope confinement on a read belongs to the MCP
     tools above this, not to the client a caller holds (A0001, cites-as-live).
 ```
 
-**In a source file the marker is the id alone.** `claims-ledger.toml` forbids the slug
-over `**/*.py` and `**/*.sh`, and `claims-ledger references` fails a marker there that
-carries one.<!-- (A0153-markers-in-source-name-the-id-alone, cites-as-live) -->
-Whoever reads that marker is already looking at the code the claim is about, and
-`claims-ledger show` prints the prose; a fifty-character title wrapped into a docstring
-costs the width and tells them nothing they cannot already see. Everywhere else either
-spelling is legal, and the documents write the title out, because a reader of a document
-has nothing in front of them but the sentence.
+**A marker is the id alone, everywhere.** `claims-ledger.toml` sets `citation-slug` to
+`forbid` with no paths, so the rule reaches every configured document, and
+`claims-ledger references` fails a marker that carries the entry's
+slug.<!-- (A0154, cites-as-live) -->
+Nobody here reads a marker without the file around it: in source it sits inside the span
+its entry pins, in front of someone already looking at the code, and in Markdown it sits
+inside an HTML comment that the rendered page never shows. Both of them have
+`claims-ledger show A####`, and the id resolves to the same entry with or without the
+title. One rule over every surface also means a sentence keeps its marker unchanged when
+it moves from a docstring to a doc.
 
-**In a document the marker goes in an HTML comment.** The Markdown here is read
+**In Markdown the marker goes in an HTML comment.** The Markdown here is read
 rendered — `README.md` on the forge, `docs/` beside it — and a visible marker interrupts
 a reader who cannot act on it. Nothing parses a document — the pattern runs over the
 file's text — so a marker in a comment is read exactly as one in prose, and it has moved
@@ -85,7 +91,7 @@ neither away from the sentence nor out of the span its entry pins:
 
 ```markdown
 A session is *pinned* to exactly one scope and cannot widen its own
-view.<!-- (A0001-pinned-scope-is-resolved-once-at-process-start, cites-as-live) -->
+view.<!-- (A0001, cites-as-live) -->
 ```
 
 Two rules keep that working. **It fits on one line**: whitespace after the comma may span

@@ -34,7 +34,8 @@ none
 
 ## Verdicts
 
-## References
+- 2026-09-20T21:05:23-07:00 · superseded · grade: argued · author: main
+  evidence: entry: A0154-markers-name-the-id-alone-in-every-document · supersedes
+  note: the rule no longer stops at Python and shell files — `citation-slug` is now a bare `forbid` governing every configured document, so the clause leaving every other document free to write either spelling is false. What the two entries say about a source file is the same.
 
-- claims-ledger.toml · standing · cites-as-live
-- CONTRIBUTING.md · standing · cites-as-live
+## References

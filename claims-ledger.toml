@@ -4,13 +4,18 @@
 [tool.claims-ledger]
 ledger = "ledger"
 
-# The documents that may cite an entry. Named surface by surface rather than as `**/*.md`
-# so that nothing under `tests/` is checked: `tests/qe/` carries fixture prose and corpus
-# text, and an excluded document loses every citation rule rather than the one intended.
-# `src/thalamus/**/*.py` is here because a docstring states a commitment in the same voice
-# a doc does, and an entry written as a session passes through a module cites it there.
-# This file is here for the same reason: a claim about how the ledger is configured rests
-# on a key below, and its citation has to be somewhere a checker reads.
+# The documents that may cite an entry: every surface this repository writes, named one by
+# one rather than as `**` so that nothing under `tests/` is checked — `tests/qe/` carries
+# fixture prose and corpus text, and an excluded document loses every citation rule rather
+# than the one intended. `.claude/skills/` is out for the same reason from the other side:
+# three of those directories are written by `claims-ledger harness install` and carry
+# worked examples that are illustrations, not citations.
+#
+# A surface is here when a commitment can be stated on it, which is not only prose. A
+# docstring states one in the same voice a doc does; so does a comment in the console's
+# client, in the compose file, in a workflow, or in an expert manifest, and a claim about
+# any of them is cited where the reader of that file will meet it. This file is here
+# because a claim about how the ledger is configured rests on a key below.
 documents = [
     "README.md",
     "CLAUDE.md",
@@ -21,20 +26,34 @@ documents = [
     "src/thalamus/**/*.py",
     "src/thalamus/harness/hooks/*/*.sh",
     "src/thalamus/harness/skills/*/SKILL.md",
+    "src/thalamus/console/static/*.js",
+    "src/thalamus/console/static/*.css",
+    "src/thalamus/console/static/*.html",
+    "src/thalamus/pulse/static/*.html",
+    "docker-compose.yml",
+    "docker/*.Dockerfile",
+    ".github/workflows/*.yml",
+    ".github/workflows/*.mjs",
+    "arch/model.yaml",
+    "config/**/*.yaml",
+    "config/*.groovy",
+    "config/*.properties",
 ]
 
-# What a marker carries between the id and the act. In a document the slug is the claim's
-# own title and earns the width: a reader meets the sentence and the thing it is
-# answerable for in one parenthesis, without opening `ledger/`. In a source file it does
-# not. The citation already sits inside the span its entry pins, in front of a reader who
-# is looking at the code, and a fifty-character title wrapped into a docstring buys that
-# reader nothing it does not already have — `claims-ledger show` prints the prose, and the
-# id alone resolves to the same entry. So code names the entry by its number; every other
-# document is asked nothing and may write either spelling.
-citation-slug = [{ paths = ["**/*.py", "**/*.sh"], slug = "forbid" }]
+# What a marker carries between the id and the act: nowhere, in any document. A slug is
+# the entry's own title, and the argument for carrying it was that a reader meets the
+# claim without opening `ledger/` — but no reader of this repository meets one. In source
+# the marker sits inside the span its entry pins, in front of someone already looking at
+# the code it is about; in Markdown it sits inside an HTML comment, invisible to the
+# rendered page and read only by someone editing the file. Both of them have
+# `claims-ledger show A####` and the id resolves to the same entry either way, so the
+# title is fifty characters of wrap in a docstring and of line length in a comment. One
+# rule, every surface, so that a marker does not change shape when a sentence moves
+# between files.
+citation-slug = "forbid"
 # Cited below the assignment and not above it: a `toml-key` section starts at its own
 # line, so a marker written over the key would sit in the section before this one
-# (A0153-markers-in-source-name-the-id-alone, cites-as-live).
+# (A0154, cites-as-live).
 
 # What an entry may rest on. Every ground here names a span of tracked source: this
 # repository's claims are about its own code, so there is no plain evidence type and no
