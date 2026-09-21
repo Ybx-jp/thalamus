@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-20T20:37:07-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/uses.py § "UsesReport" =sha256:3deee41b9668035e58ddac85d063107ef99fd66c62c85a81d98ea0c304471d70
+  artifact: sha256:f608e78d4fe59a1864ee2494e32cf2db2dfe2064cf23f8c278accbb8c42b8aff
+  note: propagated from a moved ground
+
+- 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/uses.py § "UsesReport" =sha256:f608e78d4fe59a1864ee2494e32cf2db2dfe2064cf23f8c278accbb8c42b8aff
+  note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the docstring was rewrapped. The assertion is unaffected.
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

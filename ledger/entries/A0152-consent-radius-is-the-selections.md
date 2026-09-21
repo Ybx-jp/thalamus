@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-20T20:37:07-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:83b4a9cd6c2d11f1e992515ba4d5719f2c7e7d7b7e5f9078fdf587c8e379449a
+  artifact: sha256:d3826e654bfd232338d3f54777aacf0090c959b8b5b68fa1cc261ed97ab3133b
+  note: propagated from a moved ground
+
+- 2026-09-20T20:37:29-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:d3826e654bfd232338d3f54777aacf0090c959b8b5b68fa1cc261ed97ab3133b
+  note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the docstring line holding it was rejoined. The assertion is unaffected.
+
 ## References
 
 - src/thalamus/harness/install.py · standing · cites-as-live

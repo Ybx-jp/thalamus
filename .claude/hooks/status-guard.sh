@@ -29,6 +29,20 @@
 
 set -uo pipefail
 
+# `timeout` is GNU coreutils and macOS ships none, so a hook written with it bare behaves
+# differently on the two platforms this package tests on: this guard denied every merge with
+# `line 140: timeout: command not found`, and the three guards that append `|| true` went
+# the other way and reported nothing at all — a drift check that is silent on a whole
+# platform. Where the utility is absent the command is run unbounded, which is the same
+# answer one moment later rather than a different answer immediately; the walks it wraps are
+# bounded by the package's own git timeout in any case.
+if command -v timeout >/dev/null 2>&1; then
+  bounded() { timeout 20 "$@"; }
+else
+  bounded() { "$@"; }
+fi
+
+
 command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat) || exit 0
 
@@ -114,7 +128,7 @@ remember() { mkdir -p "$state_dir" 2>/dev/null && printf '%s\n' "$1" >> "$state_
 # Read-only. Whether an act is legal against a status is `references`' question and is
 # asked of the package rather than reimplemented here; a hook that restated ACT_ALLOWS
 # would drift from the checker it serves.
-finding=$(cd "$root" && timeout 20 "$python" -m claims_ledger references 2>&1) || true
+finding=$(cd "$root" && bounded "$python" -m claims_ledger references 2>&1) || true
 [ -n "$finding" ] || exit 0
 
 # Two act shapes, and no others. Every remaining `references` failure — a dangling id, a

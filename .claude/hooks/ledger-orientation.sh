@@ -14,6 +14,20 @@
 
 set -uo pipefail
 
+# `timeout` is GNU coreutils and macOS ships none, so a hook written with it bare behaves
+# differently on the two platforms this package tests on: this guard denied every merge with
+# `line 140: timeout: command not found`, and the three guards that append `|| true` went
+# the other way and reported nothing at all — a drift check that is silent on a whole
+# platform. Where the utility is absent the command is run unbounded, which is the same
+# answer one moment later rather than a different answer immediately; the walks it wraps are
+# bounded by the package's own git timeout in any case.
+if command -v timeout >/dev/null 2>&1; then
+  bounded() { timeout 20 "$@"; }
+else
+  bounded() { "$@"; }
+fi
+
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 # The payload is read for one thing only: which harness is calling. Claude Code and codex
@@ -62,12 +76,12 @@ for candidate in "$root/.venv/bin/python" "$root/venv/bin/python" "$(command -v 
 done
 [ -n "$python" ] || exit 0
 
-counts=$(cd "$root" && timeout 20 "$python" -m claims_ledger status 2>/dev/null | tail -1) || true
+counts=$(cd "$root" && bounded "$python" -m claims_ledger status 2>/dev/null | tail -1) || true
 [ -n "$counts" ] || counts="a ledger under ledger/entries"
 
 # What a claim may rest on is per project, so it is asked rather than assumed. A ledger
 # over source configures different types from one over papers or design documents.
-kinds=$(cd "$root" && timeout 20 "$python" -c \
+kinds=$(cd "$root" && bounded "$python" -c \
   'from claims_ledger import open_ledger; print(", ".join(open_ledger().config.evidence_types))' 2>/dev/null) || true
 [ -n "$kinds" ] || kinds="see the project configuration"
 

@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-20T20:37:07-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/mcp_server.py § "memory_query" =sha256:8f8a438ce029247cc5d956008335391abba6a730d33fa43f996bc35dbbbacf35
+  artifact: sha256:2efd48e89d4df4d442710611f4c3c4360c279b7716ca05a2f34d275db5a0e275
+  note: propagated from a moved ground
+
+- 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/mcp_server.py § "memory_query" =sha256:2efd48e89d4df4d442710611f4c3c4360c279b7716ca05a2f34d275db5a0e275
+  note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files. The assertion is unaffected.
+
 ## References
 
 - src/thalamus/harness/skills/gremlin-python/SKILL.md · standing · cites-as-live

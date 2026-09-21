@@ -667,12 +667,11 @@ STATIC = {
 class Config:
     """Everything about one operator's machine, in one object.
 
-    Nothing here is hardcoded elsewhere in the module: the console is the same
-    program on every box, and this is the whole of what differs between them. A
-    path this object did not receive is a path it does not have — `thalamus
-    console` names the machine-global favorites store, and a Config built without
-    one reads its own seed
-    (A0151-favorites-store-is-named-not-defaulted, cites-as-live).
+    Nothing here is hardcoded elsewhere in the module: the console is the same program
+    on every box, and this is the whole of what differs between them. A path this object
+    did not receive is a path it does not have — `thalamus console` names the
+    machine-global favorites store, and a Config built without one reads its own seed
+    (A0151, cites-as-live).
     """
 
     # Both default from `pin` when the package is importable, and to a bare tmux
@@ -1479,7 +1478,7 @@ def effective_favorites(cfg: Config) -> list[str]:
 
     A Config that names no store reads the seed and nothing else, which is what
     keeps two Configs in one process from sharing one starred list
-    (A0151-favorites-store-is-named-not-defaulted, cites-as-live)."""
+    (A0151, cites-as-live)."""
     paths = None
     if cfg.favorites_store:
         try:

@@ -2069,8 +2069,7 @@ def _consent_lines(harnesses: tuple[str, ...]) -> list[str]:
     """The write targets of exactly this selection, in the order `install()` reaches them.
 
     A harness's targets are named when that harness is in the selection, and the targets
-    outside the gate are named whatever the selection is
-    (A0152-consent-radius-is-the-selections, cites-as-live).
+    outside the gate are named whatever the selection is (A0152, cites-as-live).
 
     Conditioned on `harnesses` because the prompt is the consent mechanism and consent
     is given for a radius. `install()` gates its cursor and codex legs on membership in

@@ -405,19 +405,19 @@ above that window's null, never as a rate on its own.
 for what a claim reasoned with — and reports four things it will not pool into one. How
 many sessions that were offered handles cited any (the offered denominator is sessions
 with a landed Trace returning a Claim or Chunk, a proxy for the digest's own offer list,
-which is read from the trace tap and capped at 120)
-(A0145-offered-is-a-landed-trace-proxy, cites-as-live). Whether attribution *compounds*: a
-graph whose longest chain is one hop is a citation log, not lineage. The `verified`
-stamp, split by role, because `served-by-trace/1` speaks about `role: reason` and cannot
-apply to a rejected alternative that the same extraction minted
-(A0146-served-stamp-rendered-per-role, cites-as-live). And what gets cited —
-Claim or Chunk, own scope or another scope's knowledge.
+which is read from the trace tap and capped at
+120).<!-- (A0145-offered-is-a-landed-trace-proxy, cites-as-live) -->
+Whether attribution *compounds*: a graph whose longest chain is one hop is a citation
+log, not lineage. The `verified` stamp, split by role, because `served-by-trace/1`
+speaks about `role: reason` and cannot apply to a rejected alternative that the same
+extraction minted.<!-- (A0146-served-stamp-rendered-per-role, cites-as-live) -->
+And what gets cited — Claim or Chunk, own scope or another scope's knowledge.
 
 `--scope` narrows the *root* of a subgraph and never its reach, since an edge from a
 `main` claim into a literature claim is main's attribution; filtering on the target's
-scope would hide exactly the cross-scope citations the edge is allowed to make
-(A0144-scope-narrows-subgraph-root-not-target, cites-as-live). On a
-lifetime window the coverage denominator holds sessions that ran before the edge
+scope would hide exactly the cross-scope citations the edge is allowed to
+make.<!-- (A0144-scope-narrows-subgraph-root-not-target, cites-as-live) -->
+On a lifetime window the coverage denominator holds sessions that ran before the edge
 existed, so the report names the earliest citing session and points at `--since`.
 
 None of it is a utility claim. A cited node is one the model named, which is weaker

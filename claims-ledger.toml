@@ -9,16 +9,32 @@ ledger = "ledger"
 # text, and an excluded document loses every citation rule rather than the one intended.
 # `src/thalamus/**/*.py` is here because a docstring states a commitment in the same voice
 # a doc does, and an entry written as a session passes through a module cites it there.
+# This file is here for the same reason: a claim about how the ledger is configured rests
+# on a key below, and its citation has to be somewhere a checker reads.
 documents = [
     "README.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",
+    "claims-ledger.toml",
     "docs/*.md",
     "pyproject.toml",
     "src/thalamus/**/*.py",
     "src/thalamus/harness/hooks/*/*.sh",
     "src/thalamus/harness/skills/*/SKILL.md",
 ]
+
+# What a marker carries between the id and the act. In a document the slug is the claim's
+# own title and earns the width: a reader meets the sentence and the thing it is
+# answerable for in one parenthesis, without opening `ledger/`. In a source file it does
+# not. The citation already sits inside the span its entry pins, in front of a reader who
+# is looking at the code, and a fifty-character title wrapped into a docstring buys that
+# reader nothing it does not already have — `claims-ledger show` prints the prose, and the
+# id alone resolves to the same entry. So code names the entry by its number; every other
+# document is asked nothing and may write either spelling.
+citation-slug = [{ paths = ["**/*.py", "**/*.sh"], slug = "forbid" }]
+# Cited below the assignment and not above it: a `toml-key` section starts at its own
+# line, so a marker written over the key would sit in the section before this one
+# (A0153-markers-in-source-name-the-id-alone, cites-as-live).
 
 # What an entry may rest on. Every ground here names a span of tracked source: this
 # repository's claims are about its own code, so there is no plain evidence type and no

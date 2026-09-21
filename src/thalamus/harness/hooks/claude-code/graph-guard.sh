@@ -6,9 +6,9 @@
 # caller's own scope (substrate/reader.py:677, :692), and `memory_query` refuses an
 # expert pin outright, on the stated rationale that a free-form traversal cannot be
 # scope-confined (harness/mcp_server.py:402)
-# (A0149-memory-query-refuses-a-pinned-session, cites-as-live).
+# (A0149, cites-as-live).
 # `substrate.writer.connect()` hands back a source over the whole graph
-# (A0148-graph-connection-carries-no-scope-filter, cites-as-live),
+# (A0148, cites-as-live),
 # and `Bash` is not in `ROSTER_CAPABILITY_DEFAULT.deny_tools`
 # (contract/manifest.py:241) — so a pin that can run a shell reads every vertex and edge
 # in the graph, including `main`'s episodic memory and every other expert's. The
@@ -84,7 +84,7 @@ else
   # Only `.py` arguments that resolve to a real file, and no recursion into what they
   # import: this answers "does the thing being run reach the graph", not "could
   # anything downstream of it".
-  # (A0150-graph-guard-fires-on-client-markers, cites-as-live)
+  # (A0150, cites-as-live)
   # `set -f` because the split below is deliberate and glob expansion of an argument
   # is not.
   case "$command" in *.py*) ;; *) exit 0 ;; esac

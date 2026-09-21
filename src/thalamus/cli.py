@@ -4755,7 +4755,7 @@ def _cmd_console(args):
         scan_roots=args.scan,
         # Named here rather than defaulted inside Config: this is a path on this
         # operator's box, and it is `thalamus console` that knows it is serving that
-        # box (A0151-favorites-store-is-named-not-defaulted, cites-as-live).
+        # box (A0151, cites-as-live).
         favorites_store=FAVORITES_STORE,
         services=args.service,
         frames_file=args.frames,

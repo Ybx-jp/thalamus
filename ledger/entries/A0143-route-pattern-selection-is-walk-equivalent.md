@@ -35,6 +35,15 @@ none
 
 ## Verdicts
 
+- 2026-09-20T20:37:07-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/arch/routes.py § "_matching" =sha256:34c33798e9153c5c636219c83434623dfdfc502a624364c35f92dd0909190435
+  artifact: sha256:f3345b5f3da64cc18f6b3f1793763a012af0301fbcc141d5615b1d3c04143662
+  note: propagated from a moved ground
+
+- 2026-09-20T20:37:29-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/arch/routes.py § "_matching" =sha256:f3345b5f3da64cc18f6b3f1793763a012af0301fbcc141d5615b1d3c04143662
+  note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the paragraph holding it was rewrapped. The assertion is unaffected.
+
 ## References
 
 - src/thalamus/arch/routes.py · standing · cites-as-live

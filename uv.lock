@@ -394,11 +394,11 @@ wheels = [
 
 [[package]]
 name = "claims-ledger"
-version = "0.0.1"
+version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a6/d5/5644acb9966f534af65fa4207340ba7b2a4bd54a0bca1794ea281a088e20/claims_ledger-0.0.1.tar.gz", hash = "sha256:a624d7dbe09c682238fbbf3debb68dd467e3a213dba220a605a9857aece2c685", size = 565336, upload-time = "2026-09-13T20:46:22.877Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/74/ba77d59afef42e8691c6dfeac708cb07371ec9adba195cbfd01ef5531903/claims_ledger-0.0.4.tar.gz", hash = "sha256:8d4b6301418da4bcf6c9541d52d6bcb4f0505fce065bb3438fa0b8718636d3da", size = 688196, upload-time = "2026-09-21T03:04:23.914Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e0/0f/176f6c2f3e2b37aef0514bc5a7413c140999252bbd11bc51caff021ffeec/claims_ledger-0.0.1-py3-none-any.whl", hash = "sha256:a82f0248c644d8bb917dcbe293dbf33648b560589922934d9fdc0891e9d9df4a", size = 452793, upload-time = "2026-09-13T20:46:21.373Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/16/35971d63b082e8f54f764d3d00cd32f80fd114ebe7f8d48833e54227158a/claims_ledger-0.0.4-py3-none-any.whl", hash = "sha256:83678760ccc9c079d532487fc6025fcb617894bb578451f2dc4aade0a964fa0b", size = 686593, upload-time = "2026-09-21T03:04:22.317Z" },
 ]
 
 [[package]]
@@ -2980,7 +2980,7 @@ pdf = [
 
 [package.metadata]
 requires-dist = [
-    { name = "claims-ledger", marker = "extra == 'dev'", specifier = ">=0.0.1" },
+    { name = "claims-ledger", marker = "extra == 'dev'", specifier = ">=0.0.4" },
     { name = "fastapi", specifier = ">=0.139.0" },
     { name = "fastmcp", specifier = ">=3.4.0" },
     { name = "gremlinpython", specifier = ">=3.7,<3.8" },
