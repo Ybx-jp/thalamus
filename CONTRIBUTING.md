@@ -60,12 +60,29 @@ deliberately, in a change that also fixes whatever the new release reports.
 
 `ledger/` holds one entry per commitment this repository's prose makes about its own
 code, each pinned by digest to the section of source that keeps it true — a top-level
-function, class or assignment, a TOML table or key, a top-level YAML key. The sentence
+Python definition or assignment with its decorators, a top-level JavaScript declaration
+with the JSDoc block over it, a TOML table or key, a top-level YAML key. The sentence
 that states the commitment cites the entry inline, inside the span that entry pins. Every
 surface this repository writes may carry one: the Python and the shell, the console's
 client, the compose file, the workflows, the expert manifests and the Markdown. `tests/`
 is the exception, and `.claude/skills/` with it, because three of those directories are
 written by `claims-ledger harness install` and their examples are illustrations.
+
+**A section starts at its own line**, so a comment written *above* a Python `NAME = ...`
+belongs to whatever was defined before it, and a citation parked there sits outside the
+span it is about while looking adjacent. Put it below the assignment, or inside the
+literal. JavaScript is the one place this does not bite: the JSDoc block is part of the
+declaration's section, so a marker inside it is inside the span. Check rather than
+assume — the span is a command away:
+
+```bash
+python -c "from claims_ledger import open_ledger
+from claims_ledger.schema import section_span, read_document
+k = open_ledger().config
+body, _ = read_document('src/thalamus/console/static/sw.js')
+s, e = section_span(body, k, 'js', 'fetch')
+print(body[s:e])"
+```
 
 ```python
     The source reaches the whole graph: scope confinement on a read belongs to the MCP

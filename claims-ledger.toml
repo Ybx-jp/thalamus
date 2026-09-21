@@ -60,7 +60,7 @@ citation-slug = "forbid"
 # `lab`/`experiment` pointer — a measurement whose ground is a lab record belongs to the
 # private bridging ledger (Ybx-jp/thalamus-notes#4), and in this repository such a
 # sentence can only be `argued`.
-evidence-sectioned = ["code", "toml", "toml-key", "yaml"]
+evidence-sectioned = ["code", "js", "toml", "toml-key", "yaml"]
 evidence-plain = []
 
 # Who may write a verdict, and the name the machinery writes under. Scope names are added
@@ -97,6 +97,31 @@ archived-prefixes = []
 # assignment branch on a line like `@dataclass(frozen=True)` — without it, the widened
 # form matches that line's own `=` and ends the preceding section there.
 code = '^(?:@[^\n]*\n)*(?![ \t])(?:(?:async[ \t]+)?(?:def|class)[ \t]+{name}\b|{name}[ \t]*(?::[^=\n]+)?=)'
+# A top-level JavaScript declaration, with the JSDoc block above it, running to the next
+# one. The console's client is the only JavaScript this repository ships, and it is not a
+# module: `tests/js/*.test.mjs` lift its functions out by name, which is the same thing
+# this pattern does.
+#
+# The leading JSDoc group is what the decorator group is above. JavaScript has no
+# docstring, so a function's prose lives in the `/** … */` block over it, and a pattern
+# anchored on the `function` line would leave that block — and any citation written into
+# it — in the section of whatever was declared before. The group cannot run past a `*/`,
+# so a comment that is not followed by a declaration matches nothing rather than reaching
+# forward to a later one. The left-margin lookahead keeps a nested function or a local
+# `const` from ending its parent at its first indented line.
+#
+# `self.addEventListener` is a declaration in a service worker: `sw.js` is three handlers
+# and two constants, and without the branch `SHELL` runs to the end of the file. It is
+# restricted to `self` on purpose. The client's own DOM wiring is written on `document`,
+# `window` and `els`, where one event name is bound many times over — `click` and
+# `keydown` each appear more than once at the top level — and a section name that
+# resolves to whichever came first is not a name. Those lines fall inside the declaration
+# above them, as top-level statements do in Python.
+#
+# Measured over the two files as they stand: 227 sections in `app.js`, none of them
+# sharing a name, 23 of them opening at a JSDoc block, and 100% of the file after its
+# header inside one; 5 in `sw.js`, the widest 20 lines.
+js = '^(?:/\*\*(?:[^*]|\*(?!/))*\*/[ \t]*\n)*(?![ \t])(?:(?:async[ \t]+)?function[ \t]+{name}\b|class[ \t]+{name}\b|(?:const|let|var)[ \t]+{name}\b|self\.addEventListener\("{name}")'
 # A whole TOML table, and one key of one. A claim about a single setting rests on the
 # key so that an unrelated key beside it does not move the ground.
 toml = '^\[{name}\]'
