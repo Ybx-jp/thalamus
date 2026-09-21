@@ -16,3 +16,14 @@ allow	git rebase -i main
 allow	git commit -m "never gh pr merge --squash here"
 allow	grep -rn "git merge --squash" docs/
 allow	echo see `gh pr merge --squash` in the notes
+# An ordinary merge reaches the collision question, which asks the package about the
+# branch being merged. A branch this checkout does not have is not the guard's business
+# and comes back allowed, which is what keeps the question off every unrelated merge.
+allow	git merge feature-that-is-not-a-branch-here
+allow	git merge origin/main
+# A merge carrying a message. The branch is the first non-option token, not the last:
+# reading the last one takes the message for the branch, and a branch nobody has is
+# answered with an allow — so the guard went quiet on every merge that carries one.
+allow	git merge topic-that-is-not-a-branch-here -m "a message"
+allow	git merge -s ours other-branch-not-here
+

@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-20T20:37:07-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/substrate/writer.py § "connect" =sha256:d548f05b359efc17a85663eef589308e78deb34eaf2bd85a3d277fad4c486e08
+  artifact: sha256:d90f6abc1f9e91af6c2c387e7dd8f030b7c16572b8c9319584d0b9e3fb9bc6fd
+  note: propagated from a moved ground
+
+- 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/substrate/writer.py § "connect" =sha256:d90f6abc1f9e91af6c2c387e7dd8f030b7c16572b8c9319584d0b9e3fb9bc6fd
+  note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the docstring was rewrapped. The assertion is unaffected.
+
 ## References
 
 - README.md · standing · cites-as-live

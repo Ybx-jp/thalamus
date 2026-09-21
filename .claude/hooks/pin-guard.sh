@@ -23,6 +23,20 @@
 
 set -uo pipefail
 
+# `timeout` is GNU coreutils and macOS ships none, so a hook written with it bare behaves
+# differently on the two platforms this package tests on: this guard denied every merge with
+# `line 140: timeout: command not found`, and the three guards that append `|| true` went
+# the other way and reported nothing at all — a drift check that is silent on a whole
+# platform. Where the utility is absent the command is run unbounded, which is the same
+# answer one moment later rather than a different answer immediately; the walks it wraps are
+# bounded by the package's own git timeout in any case.
+if command -v timeout >/dev/null 2>&1; then
+  bounded() { timeout 20 "$@"; }
+else
+  bounded() { "$@"; }
+fi
+
+
 command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat) || exit 0
 
@@ -111,7 +125,7 @@ emit() {
 # not a document at all, since documents are the prose scanned for citations and grounds
 # are the evidence. `--write` is a judgement about the ledger and belongs to the session,
 # never to a hook firing behind the author's back.
-finding=$(cd "$root" && timeout 20 "$python" -m claims_ledger freshness 2>&1) || true
+finding=$(cd "$root" && bounded "$python" -m claims_ledger freshness 2>&1) || true
 if [ -n "$finding" ] && ! printf '%s' "$finding" | grep -q '0 failure(s), 0 flag(s)'; then
   key="drift:$(printf '%s' "$finding" | cksum | tr -d ' ')"
   if ! fired "$key"; then
@@ -134,7 +148,7 @@ fi
 # reimplemented any of that would drift from the checker it is meant to serve. Anything
 # unreadable means silence, not a guess.
 [ -n "$rel" ] || exit 0
-is_document=$(cd "$root" && timeout 20 "$python" - "$rel" <<'PY' 2>/dev/null
+is_document=$(cd "$root" && bounded "$python" - "$rel" <<'PY' 2>/dev/null
 import sys
 try:
     from claims_ledger import open_ledger

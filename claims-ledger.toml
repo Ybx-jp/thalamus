@@ -4,28 +4,63 @@
 [tool.claims-ledger]
 ledger = "ledger"
 
-# The documents that may cite an entry. Named surface by surface rather than as `**/*.md`
-# so that nothing under `tests/` is checked: `tests/qe/` carries fixture prose and corpus
-# text, and an excluded document loses every citation rule rather than the one intended.
-# `src/thalamus/**/*.py` is here because a docstring states a commitment in the same voice
-# a doc does, and an entry written as a session passes through a module cites it there.
+# The documents that may cite an entry: every surface this repository writes, named one by
+# one rather than as `**` so that nothing under `tests/` is checked — `tests/qe/` carries
+# fixture prose and corpus text, and an excluded document loses every citation rule rather
+# than the one intended. `.claude/skills/` is out for the same reason from the other side:
+# three of those directories are written by `claims-ledger harness install` and carry
+# worked examples that are illustrations, not citations.
+#
+# A surface is here when a commitment can be stated on it, which is not only prose. A
+# docstring states one in the same voice a doc does; so does a comment in the console's
+# client, in the compose file, in a workflow, or in an expert manifest, and a claim about
+# any of them is cited where the reader of that file will meet it. This file is here
+# because a claim about how the ledger is configured rests on a key below.
 documents = [
     "README.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",
+    "claims-ledger.toml",
     "docs/*.md",
     "pyproject.toml",
     "src/thalamus/**/*.py",
     "src/thalamus/harness/hooks/*/*.sh",
     "src/thalamus/harness/skills/*/SKILL.md",
+    "src/thalamus/console/static/*.js",
+    "src/thalamus/console/static/*.css",
+    "src/thalamus/console/static/*.html",
+    "src/thalamus/pulse/static/*.html",
+    "docker-compose.yml",
+    "docker/*.Dockerfile",
+    ".github/workflows/*.yml",
+    ".github/workflows/*.mjs",
+    "arch/model.yaml",
+    "config/**/*.yaml",
+    "config/*.groovy",
+    "config/*.properties",
 ]
+
+# What a marker carries between the id and the act: nowhere, in any document. A slug is
+# the entry's own title, and the argument for carrying it was that a reader meets the
+# claim without opening `ledger/` — but no reader of this repository meets one. In source
+# the marker sits inside the span its entry pins, in front of someone already looking at
+# the code it is about; in Markdown it sits inside an HTML comment, invisible to the
+# rendered page and read only by someone editing the file. Both of them have
+# `claims-ledger show A####` and the id resolves to the same entry either way, so the
+# title is fifty characters of wrap in a docstring and of line length in a comment. One
+# rule, every surface, so that a marker does not change shape when a sentence moves
+# between files.
+citation-slug = "forbid"
+# Cited below the assignment and not above it: a `toml-key` section starts at its own
+# line, so a marker written over the key would sit in the section before this one
+# (A0154, cites-as-live).
 
 # What an entry may rest on. Every ground here names a span of tracked source: this
 # repository's claims are about its own code, so there is no plain evidence type and no
 # `lab`/`experiment` pointer — a measurement whose ground is a lab record belongs to the
 # private bridging ledger (Ybx-jp/thalamus-notes#4), and in this repository such a
 # sentence can only be `argued`.
-evidence-sectioned = ["code", "toml", "toml-key", "yaml"]
+evidence-sectioned = ["code", "js", "toml", "toml-key", "yaml"]
 evidence-plain = []
 
 # Who may write a verdict, and the name the machinery writes under. Scope names are added
@@ -62,6 +97,31 @@ archived-prefixes = []
 # assignment branch on a line like `@dataclass(frozen=True)` — without it, the widened
 # form matches that line's own `=` and ends the preceding section there.
 code = '^(?:@[^\n]*\n)*(?![ \t])(?:(?:async[ \t]+)?(?:def|class)[ \t]+{name}\b|{name}[ \t]*(?::[^=\n]+)?=)'
+# A top-level JavaScript declaration, with the JSDoc block above it, running to the next
+# one. The console's client is the only JavaScript this repository ships, and it is not a
+# module: `tests/js/*.test.mjs` lift its functions out by name, which is the same thing
+# this pattern does.
+#
+# The leading JSDoc group is what the decorator group is above. JavaScript has no
+# docstring, so a function's prose lives in the `/** … */` block over it, and a pattern
+# anchored on the `function` line would leave that block — and any citation written into
+# it — in the section of whatever was declared before. The group cannot run past a `*/`,
+# so a comment that is not followed by a declaration matches nothing rather than reaching
+# forward to a later one. The left-margin lookahead keeps a nested function or a local
+# `const` from ending its parent at its first indented line.
+#
+# `self.addEventListener` is a declaration in a service worker: `sw.js` is three handlers
+# and two constants, and without the branch `SHELL` runs to the end of the file. It is
+# restricted to `self` on purpose. The client's own DOM wiring is written on `document`,
+# `window` and `els`, where one event name is bound many times over — `click` and
+# `keydown` each appear more than once at the top level — and a section name that
+# resolves to whichever came first is not a name. Those lines fall inside the declaration
+# above them, as top-level statements do in Python.
+#
+# Measured over the two files as they stand: 227 sections in `app.js`, none of them
+# sharing a name, 23 of them opening at a JSDoc block, and 100% of the file after its
+# header inside one; 5 in `sw.js`, the widest 20 lines.
+js = '^(?:/\*\*(?:[^*]|\*(?!/))*\*/[ \t]*\n)*(?![ \t])(?:(?:async[ \t]+)?function[ \t]+{name}\b|class[ \t]+{name}\b|(?:const|let|var)[ \t]+{name}\b|self\.addEventListener\("{name}")'
 # A whole TOML table, and one key of one. A claim about a single setting rests on the
 # key so that an unrelated key beside it does not move the ground.
 toml = '^\[{name}\]'

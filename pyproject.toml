@@ -60,8 +60,10 @@ dev = [
     "ty==0.0.74",
     # The claims ledger under `ledger/` and its five checkers. A dev dependency
     # because nothing the package runs reads it: it gates the prose, in the
-    # pre-commit pass and in CI, and never at runtime.
-    "claims-ledger>=0.0.1",
+    # pre-commit pass and in CI, and never at runtime. The floor is 0.0.4 because
+    # `claims-ledger.toml` sets `citation-slug`, and a release that does not know the
+    # key refuses the whole configuration rather than ignoring it.
+    "claims-ledger>=0.0.4",
 ]
 # The entailment judge — the eval loop's fast attribution path. Optional because it
 # pulls a multi-gigabyte torch build and only the attribution instrument itself needs

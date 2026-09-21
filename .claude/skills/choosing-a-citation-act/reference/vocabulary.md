@@ -51,6 +51,14 @@ acts, which is what a document may write inline as `(A0007-a-slug, cites-as-live
 what an entry's `## References` rows carry. `ENTRY_ACTS` is what an `entry:` ground may
 carry, and it is the citation acts plus `distinguishes`.
 
+A marker may also name the id alone, `(A0007, cites-as-live)`: the slug is the entry's
+title in its filename and the number is what identifies it, so both spellings reach the
+same entry — while a slug that is not that entry's reaches none, which is what catches a
+marker left behind by a rename. Which spelling a given file may use is the project's
+`citation-slug` setting, and it can differ per path, so read the configuration rather than
+copying the nearest marker: `claims-ledger references` names the spelling a document wants
+when a marker uses the other one.
+
 `claims-ledger references` states the allowed set in its own findings, which is the
 authority when this table and the installed version disagree.
 

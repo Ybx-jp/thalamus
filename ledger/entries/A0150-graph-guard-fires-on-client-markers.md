@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-20T20:37:07-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/graph-guard.sh § "marked" =sha256:ba301c2e2606f014f2a8a570bbbe92048e961993ea3cc56595dedb23639a1201
+  artifact: sha256:28654d05d79b659a9d3cf7ca2d255f5aeb0a61af0e9f274ac6236452748cb1c7
+  note: propagated from a moved ground
+
+- 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/hooks/claude-code/graph-guard.sh § "marked" =sha256:28654d05d79b659a9d3cf7ca2d255f5aeb0a61af0e9f274ac6236452748cb1c7
+  note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files. The assertion is unaffected.
+
 ## References
 
 - src/thalamus/harness/skills/gremlin-python/SKILL.md · standing · cites-as-live

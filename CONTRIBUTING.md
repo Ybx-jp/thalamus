@@ -60,13 +60,62 @@ deliberately, in a change that also fixes whatever the new release reports.
 
 `ledger/` holds one entry per commitment this repository's prose makes about its own
 code, each pinned by digest to the section of source that keeps it true — a top-level
-function, class or assignment, a TOML table or key, a top-level YAML key. The sentence
-that states the commitment cites the entry inline:
+Python definition or assignment with its decorators, a top-level JavaScript declaration
+with the JSDoc block over it, a TOML table or key, a top-level YAML key. The sentence
+that states the commitment cites the entry inline, inside the span that entry pins. Every
+surface this repository writes may carry one: the Python and the shell, the console's
+client, the compose file, the workflows, the expert manifests and the Markdown. `tests/`
+is the exception, and `.claude/skills/` with it, because three of those directories are
+written by `claims-ledger harness install` and their examples are illustrations.
+
+**A section starts at its own line**, so a comment written *above* a Python `NAME = ...`
+belongs to whatever was defined before it, and a citation parked there sits outside the
+span it is about while looking adjacent. Put it below the assignment, or inside the
+literal. JavaScript is the one place this does not bite: the JSDoc block is part of the
+declaration's section, so a marker inside it is inside the span. Check rather than
+assume — the span is a command away:
+
+```bash
+python -c "from claims_ledger import open_ledger
+from claims_ledger.schema import section_span, read_document
+k = open_ledger().config
+body, _ = read_document('src/thalamus/console/static/sw.js')
+s, e = section_span(body, k, 'js', 'fetch')
+print(body[s:e])"
+```
+
+```python
+    The source reaches the whole graph: scope confinement on a read belongs to the MCP
+    tools above this, not to the client a caller holds (A0001, cites-as-live).
+```
+
+**A marker is the id alone, everywhere.** `claims-ledger.toml` sets `citation-slug` to
+`forbid` with no paths, so the rule reaches every configured document, and
+`claims-ledger references` fails a marker that carries the entry's
+slug.<!-- (A0154, cites-as-live) -->
+Nobody here reads a marker without the file around it: in source it sits inside the span
+its entry pins, in front of someone already looking at the code, and in Markdown it sits
+inside an HTML comment that the rendered page never shows. Both of them have
+`claims-ledger show A####`, and the id resolves to the same entry with or without the
+title. One rule over every surface also means a sentence keeps its marker unchanged when
+it moves from a docstring to a doc.
+
+**In Markdown the marker goes in an HTML comment.** The Markdown here is read
+rendered — `README.md` on the forge, `docs/` beside it — and a visible marker interrupts
+a reader who cannot act on it. Nothing parses a document — the pattern runs over the
+file's text — so a marker in a comment is read exactly as one in prose, and it has moved
+neither away from the sentence nor out of the span its entry pins:
 
 ```markdown
-A session is *pinned* to exactly one scope and cannot widen its own view
-(A0001-pinned-scope-is-resolved-once-at-process-start, cites-as-live).
+A session is *pinned* to exactly one scope and cannot widen its own
+view.<!-- (A0001, cites-as-live) -->
 ```
+
+Two rules keep that working. **It fits on one line**: whitespace after the comma may span
+a newline, but a `#` or a `//` from a wrapped comment lands inside the parenthesis and the
+citation is then silently not one — what reports it is the entry's References row naming a
+document that does not cite it. **It does not start its own line**: a line beginning
+`<!--` interrupts the paragraph and renders the prose around it as two.
 
 `claims-ledger check` runs five checkers over that: the entries against the schema, the
 grounds against the working tree, the citations against each entry's current status, and

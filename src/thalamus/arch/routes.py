@@ -248,12 +248,11 @@ def _matching(repo: Path, patterns: tuple[str, ...]) -> list[str]:
     """Repo-relative paths of existing files matching any declared glob.
 
     A pattern that names one file is answered by one stat, and selects what matching it
-    against every walked path would have selected
-    (A0143-route-pattern-selection-is-walk-equivalent, cites-as-live). The walk happens
-    at most once for the whole call, and only if some pattern actually describes a set —
-    not once per pattern — and it slices the root off each path rather than calling
-    `Path.relative_to`, which CPython 3.12 implements as `path in self.parents` and so
-    builds a `Path` per ancestor per entry.
+    against every walked path would have selected (A0143, cites-as-live). The walk
+    happens at most once for the whole call, and only if some pattern actually describes
+    a set — not once per pattern — and it slices the root off each path rather than
+    calling `Path.relative_to`, which CPython 3.12 implements as `path in self.parents`
+    and so builds a `Path` per ancestor per entry.
 
     Measured 2026-09-14 over this repository's 57,808-entry tree at its three declared
     patterns, same process, old implementation against new: `thalamus arch scan` 14.00 s

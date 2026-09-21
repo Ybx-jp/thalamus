@@ -24,6 +24,20 @@
 
 set -uo pipefail
 
+# `timeout` is GNU coreutils and macOS ships none, so a hook written with it bare behaves
+# differently on the two platforms this package tests on: this guard denied every merge with
+# `line 140: timeout: command not found`, and the three guards that append `|| true` went
+# the other way and reported nothing at all — a drift check that is silent on a whole
+# platform. Where the utility is absent the command is run unbounded, which is the same
+# answer one moment later rather than a different answer immediately; the walks it wraps are
+# bounded by the package's own git timeout in any case.
+if command -v timeout >/dev/null 2>&1; then
+  bounded() { timeout 20 "$@"; }
+else
+  bounded() { "$@"; }
+fi
+
+
 command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat) || exit 0
 
@@ -66,6 +80,81 @@ opts="(-[cC][[:space:]]+[^[:space:]]+[[:space:]]+|--[a-z-]+=[^[:space:]]+[[:spac
 if printf '%s' "$cmd" | grep -qE \
   "${at}(sudo[[:space:]]+)?git[[:space:]]+${opts}merge\b[^|;&]*--squash"; then
   deny "$reason"
+fi
+
+# A merge that would land two entries answering to one number. Nothing reported that until
+# `validate` learned to, and the repair — rewriting the branch being merged so its entries
+# are created under the ids they will keep — has to happen BEFORE the merge: measured on
+# git 2.43.0, a conflicted merge fires no hook at all, its resolution commit fires
+# `pre-commit`, and a clean auto-merge fires `post-merge`, so every hook a merge has fires
+# once the merge has already happened.
+#
+# What to do about it is the project's to configure rather than this script's to decide.
+# `--on-merge` is the package reading `merge-renumber`: `off` says nothing, `refuse` exits
+# non-zero with the repair named, and `rewrite` renumbers the branch and lets the merge
+# proceed. A branch this checkout cannot plan — a merge of something that is not a branch
+# here, a project with no ledger — exits zero, because a guard is asked about every merge
+# and most of them are not its business.
+#
+# `git merge <branch>` only. `gh pr merge` merges on the server, where nothing local can
+# rewrite the branch first and the branch has been pushed by then anyway.
+if printf '%s' "$cmd" | grep -qE "${at}(sudo[[:space:]]+)?git[[:space:]]+${opts}merge\b"; then
+  # The FIRST thing after `merge` that is not an option and is not an option's value.
+  # Taking the last one reads `git merge topic -m "a message"` as a merge of `msg`, and a
+  # branch nobody has is answered with an allow — so the guard went quiet on exactly the
+  # merges that carry a message.
+  incoming=$(printf '%s' "$cmd" \
+    | sed -E 's/.*[[:space:]]merge[[:space:]]+//; s/[|;&].*//' \
+    | tr ' \t' '\n\n' \
+    | awk '
+        skip { skip = 0; next }
+        $0 == "" { next }
+        /^-/ {
+          if ($0 == "-m" || $0 == "-s" || $0 == "-X" || $0 == "-F" || $0 == "--message" ||
+              $0 == "--strategy" || $0 == "--strategy-option" || $0 == "--file" ||
+              $0 == "--into-name") { skip = 1 }
+          next
+        }
+        { print; exit }')
+
+  # Derived from this script's own location rather than from `cwd`, so a copy living in a
+  # scratch worktree guards that worktree.
+  here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || exit 0
+
+  # The project root, asked rather than counted: an installed copy of this script and the
+  # one inside the package sit at different depths, so a fixed number of `..` would guard
+  # the wrong tree from one of them.
+  project_root() {
+    local dir=$1
+    for named in "${CLAIMS_LEDGER_PROJECT_DIR:-}" "${CLAUDE_PROJECT_DIR:-}"; do
+      if [ -n "$named" ] && [ -d "$named" ]; then (cd -- "$named" && pwd) && return 0; fi
+    done
+    while [ "$dir" != "/" ] && [ -n "$dir" ]; do
+      for marker in claims-ledger.toml pyproject.toml .git; do
+        [ -e "$dir/$marker" ] && { printf '%s\n' "$dir"; return 0; }
+      done
+      dir=$(dirname -- "$dir")
+    done
+    (cd -- "$1/../.." && pwd)
+  }
+  root=$(project_root "$here") || exit 0
+
+  # An interpreter plus `-m`, never the `claims-ledger` console script: a console script in
+  # a virtualenv that is not active is not on PATH, and the hook would fail on every firing.
+  python=""
+  for candidate in "$root/.venv/bin/python" "$root/venv/bin/python" "$(command -v python3 2>/dev/null)"; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+    if "$candidate" -c 'import claims_ledger' >/dev/null 2>&1; then python="$candidate"; break; fi
+  done
+
+  if [ -n "$incoming" ] && [ -n "$python" ]; then
+    receiving=$(cd "$root" && git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -n "$receiving" ] && [ "$receiving" != "HEAD" ]; then
+      finding=$(cd "$root" && bounded "$python" -m claims_ledger renumber \
+        --onto "$receiving" --branch "$incoming" --on-merge 2>&1)
+      [ $? -eq 0 ] || deny "$finding"
+    fi
+  fi
 fi
 
 exit 0
