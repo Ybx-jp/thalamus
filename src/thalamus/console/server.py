@@ -2262,8 +2262,19 @@ class Handler(BaseHTTPRequestHandler):
             if watch is None:
                 return self._send(503, {"error": "no distillation watcher on this "
                                                  "console — see /api/panes"})
-            if not isinstance(session, str) or not re.fullmatch(r"[0-9a-f]{8}", session):
-                return self._send(400, {"error": "session must be an 8-hex-digit id"})
+            # Bounded and free of path separators, not hex-shaped. The id is
+            # whatever wrote the row: the killed-window ledger carries the first
+            # eight characters of whatever session id the console was handed, and a
+            # probe or an older build can put a non-hex one there. A guard that
+            # insists on hex makes exactly those rows the ones that can never be
+            # cleared — the button is drawn, the tap 400s, and the row stays for
+            # good — so what is checked is the only thing that can do harm: the
+            # value is interpolated into `session-end-<id>.log`, and must not be
+            # able to name a file outside the log directory.
+            if (not isinstance(session, str) or not session or len(session) > 64
+                    or not re.fullmatch(r"[A-Za-z0-9._-]+", session)):
+                return self._send(400, {"error": "session must be a short id with "
+                                                 "no path separators"})
             return self._send(200, {"ok": watch.dismiss(session)})
 
         if path == "/api/spawn":
