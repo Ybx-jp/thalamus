@@ -369,4 +369,35 @@ suite("shells: a terminal is not a session, and the roster must not imply it is"
       .length === 1);
 }
 
+suite("dismissing a row: a refusal is never silent");
+{
+  // The row is rebuilt off the next poll whatever happens, so a refusal that logged
+  // nothing is a control that visibly does nothing — and the operator's next move is
+  // to stop believing the button rather than to read the reason.
+  let reply = { ok: true, data: { ok: true } };
+  const logged = [];
+  let polls = 0;
+  const { dismissDistill } = evaluate(
+    extractFunction("dismissDistill", src), ["dismissDistill"],
+    { postJson: async () => reply, adminLog: (line) => logged.push(line),
+      poll: () => { polls++; } });
+
+  await dismissDistill("aaaa1111");
+  check("a dismissal that took says nothing", logged.length === 0, logged.join(" | "));
+  check("and repolls the roster", polls === 1, String(polls));
+
+  reply = { ok: false, data: { error: "session must be a short id with no path separators" } };
+  await dismissDistill("../x");
+  check("a refusal reaches the log in the server's own words",
+    logged.length === 1 && logged[0].includes("path separators"), logged.join(" | "));
+
+  // 200 with `ok: false` — the watcher found nothing to hide, which is not an error
+  // and still not a success the operator should have to infer from an unchanged row.
+  reply = { ok: true, data: { ok: false } };
+  await dismissDistill("qe000000");
+  check("a dismissal that hid nothing names the row it was asked about",
+    logged.length === 2 && logged[1].includes("qe000000"), logged.join(" | "));
+  check("and every one of them still repolls", polls === 3, String(polls));
+}
+
 done();

@@ -179,6 +179,34 @@ def record_kill(session: str, scope: str, cwd: str, op: str,
         pass
 
 
+# The three verdicts a log with no summary line passes through. They are a function
+# of the clock and of nothing in the file, which is what makes them the one group
+# that cannot be cached against the log's (mtime, size): a stalled log is by
+# definition one nothing is writing to, so its cache entry stays valid for as long as
+# the console runs — and the console runs as a systemd unit, so that is weeks. Read
+# together here so the scan and the classifier cannot age a row differently.
+CLOCK_STATES = frozenset({"active", "stalled", "abandoned"})
+
+
+def _by_clock(idle: float) -> tuple[str, str]:
+    """(state, detail) for a job that has written nothing for `idle` seconds."""
+    if idle < STALL_AFTER_S:
+        return "active", ""
+    # Distinct from `error`, because the operator's next move differs: an error
+    # is terminal and the answer is to rerun, while a stall is a process that is
+    # still nominally running and may yet finish. Collapsing a live process into
+    # a terminal word is the same defect this module's killed-window row exists
+    # to fix, one state along.
+    if idle < ABANDON_AFTER_S:
+        return "stalled", "stalled — the extract process stopped without finishing"
+    # "May yet finish" is true at half an hour and false at six days. Past the
+    # abandonment threshold the row is a permanent steady state that reads as
+    # work in progress, which is the meaningless silence this module exists to
+    # remove, wearing a state word. Extraction is minutes of work: a process
+    # silent for hours and then resuming is not a case worth encoding for.
+    return "abandoned", "nothing has moved since the extract process went quiet"
+
+
 def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     """(state, detail) for one log body.
 
@@ -216,22 +244,7 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     if NOTHING_TO_DISTILL in text or HOOK_NO_TRANSCRIPT in text:
         return "done", ""
     if summary is None:
-        idle = now - mtime
-        if idle < STALL_AFTER_S:
-            return "active", ""
-        # Distinct from `error`, because the operator's next move differs: an error
-        # is terminal and the answer is to rerun, while a stall is a process that is
-        # still nominally running and may yet finish. Collapsing a live process into
-        # a terminal word is the same defect this module's killed-window row exists
-        # to fix, one state along.
-        if idle < ABANDON_AFTER_S:
-            return "stalled", "stalled — the extract process stopped without finishing"
-        # "May yet finish" is true at half an hour and false at six days. Past the
-        # abandonment threshold the row is a permanent steady state that reads as
-        # work in progress, which is the meaningless silence this module exists to
-        # remove, wearing a state word. Extraction is minutes of work: a process
-        # silent for hours and then resuming is not a case worth encoding for.
-        return "abandoned", "nothing has moved since the extract process went quiet"
+        return _by_clock(now - mtime)
     if int(summary.group(3)) or fail_line:
         return "error", fail_line or f"{summary.group(3)} failed"
     return "done", ""
@@ -427,13 +440,20 @@ class DistillWatch:
                 cached = self._logs_cache.get(name)
                 if cached and cached[0] == st.st_mtime and cached[1] == st.st_size:
                     kind, detail, runs = cached[2], cached[3], cached[4]
-                    # 'active' is the one verdict that expires on the clock
-                    # rather than on a write, so it is re-derived every scan.
-                    if kind == "active" and now - st.st_mtime >= STALL_AFTER_S:
-                        kind, detail = "stalled", ("stalled — the extract process "
-                                                   "stopped without finishing")
-                        self._logs_cache[name] = (st.st_mtime, st.st_size,
-                                                  kind, detail, runs)
+                    # The clock-derived verdicts expire on the clock rather than on a
+                    # write, so they are re-derived every scan — all three of them,
+                    # not just the first. Re-deriving only `active` froze a stalled
+                    # row at `stalled` for the life of the process: the log it is
+                    # derived from is one nothing is writing to, so the cache entry
+                    # never invalidates, and `stalled` is the one state the roster
+                    # draws without a dismiss control. A row that can never age and
+                    # can never be cleared is the silence this module exists to
+                    # break, wearing a state word.<!-- (A0155, cites-as-live) -->
+                    if kind in CLOCK_STATES:
+                        kind, detail = _by_clock(now - st.st_mtime)
+                        if kind != cached[2]:
+                            self._logs_cache[name] = (st.st_mtime, st.st_size,
+                                                      kind, detail, runs)
                 else:
                     try:
                         text = (self.logs / name).read_text(errors="replace")

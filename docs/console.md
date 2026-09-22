@@ -342,7 +342,9 @@ window, and a row then renders from the record alone.
 - **stalled** — past twenty minutes with nothing written. It keeps the ordinary row
   geometry because the process may still finish.
 - **abandoned** — past an hour, three times the stall clock. It cannot still be
-  running, so the row takes the terminal band.
+  running, so the row takes the terminal band. Both promotions are derived from the
+  log's last write on every scan, so a console that has been up for weeks ages a row
+  exactly as a freshly started one does.<!-- (A0155, cites-as-live) -->
 - **failed** — the band, with the reason from the extract log verbatim. This is the
   case worth having: a failed extraction exits *zero*, so nothing else on the box
   would ever mention that a conversation was not recorded.
