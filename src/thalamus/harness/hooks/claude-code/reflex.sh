@@ -14,16 +14,20 @@
 # harness/reflex.py, which is where the logic is measured and typed. On no match this
 # exits before paying for a `uv run` at all.
 #
-# The failure test is lexical over the command's output, OR the payload's interruption
-# flag, and it is the same test on both events this script is wired to. A Bash call
-# that exits 0 reaches `PostToolUse`, whose `tool_response` carries `stdout`, `stderr`
-# and `interrupted`; one that exits non-zero reaches `PostToolUseFailure` instead, whose
-# `error` opens with an `Exit code N` line followed by the command's output, stdout and
-# stderr interleaved, beside `is_interrupt` (A0160, cites-as-live). A non-zero exit
-# alone does not qualify — `grep` finding nothing exits 1 too — so a firing on either
-# event means the output read as a failure, and the two events feed one population
-# (A0165, cites-as-live). The regex is harness/reflex.py's FAILURE_PATTERN verbatim; tests/test_reflex.py
-# holds the two equal.
+# Two events, one payload shape each. Claude Code sends a Bash call that exits 0 to
+# `PostToolUse`, with the output in `tool_response.stdout`/`.stderr` and the flag in
+# `.interrupted`; it sends one that exits non-zero to `PostToolUseFailure`, with the
+# output in `error` — an `Exit code N` line, then stdout and stderr interleaved — and
+# the flag in `is_interrupt` (A0160, cites-as-live).
+#
+# The exit status decides which event runs this script, and nothing else. Whether the
+# reflex fires is decided the same way on both: the output contains a failure line
+# (FAILURE_PATTERN), or the call was interrupted. So a non-zero exit with ordinary
+# output — `grep` finding no match, `test -f` on a missing file, `diff` finding a
+# difference — reaches this script and exits here, and a pytest run that exits 0
+# behind `| tail` but prints `FAILED` fires (A0165, cites-as-live). The regex is
+# harness/reflex.py's FAILURE_PATTERN verbatim; tests/test_reflex.py holds the two
+# equal.
 #
 # Bulk content travels by file, resolved fields as flags — `extract --transcript` and
 # `delegate --input`'s idiom. A 40-failure pytest dump on argv is what ARG_MAX exists
@@ -87,7 +91,7 @@ mkdir -p "$log_dir"
 context=$(uv run --project "$(thalamus_repo_root)" thalamus reflex \
   --session-id "$session" --scope "$scope" \
   --agent-id "$agent_id" --agent-type "$agent_type" \
-  --cwd "$cwd" --tool-name "$tool_name" \
+  --cwd "$cwd" --tool-name "$tool_name" --event "$event" \
   --response-file "$response" 2>>"$log_dir/reflex.log") || context=""
 rm -f "$response"
 

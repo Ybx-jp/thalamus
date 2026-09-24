@@ -366,6 +366,11 @@ def _main():
     reflex_parser.add_argument(
         "--tool-name", default="Bash", help="The tool whose result fired the reflex (default: Bash)"
     )
+    reflex_parser.add_argument(
+        "--event", default="",
+        help="The hook event that ran the reflex — PostToolUse (exit 0) or "
+        "PostToolUseFailure (non-zero exit) — recorded in the ledger and the trace",
+    )
     reflex_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Contract command — the federation boundary, audited
@@ -2453,6 +2458,7 @@ def _cmd_reflex(args):
             agent_type=args.agent_type,
             cwd=args.cwd,
             tool_name=args.tool_name,
+            event=args.event,
         )
     finally:
         close_connection(graph)

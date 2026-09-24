@@ -275,6 +275,11 @@ class Firing:
     detail: str = ""
     # On a served firing: the pointer file's stem, which is also its handles' prefix.
     firing_id: str = ""
+    # The hook event that ran the reflex, which is how the exit status reaches here:
+    # `PostToolUse` for a command that exited 0, `PostToolUseFailure` for one that did
+    # not. Set on every row and copied into the trace; empty on rows written before
+    # the hook passed it (A0166, cites-as-live).
+    event: str = ""
 
     def to_json(self) -> str:
         return json.dumps(self.__dict__, sort_keys=True, separators=(",", ":"))
@@ -484,6 +489,7 @@ def fire(
     agent_type: str = "",
     cwd: str = "",
     tool_name: str = "Bash",
+    event: str = "",
     now: datetime | None = None,
     reflex_base: Path | None = None,
     traces_base: Path | None = None,
@@ -503,7 +509,8 @@ def fire(
 
     def record(outcome: str, **fields) -> Firing:
         firing = Firing(
-            ts=stamp, session_id=session_id, agent_id=agent_id, outcome=outcome, **fields
+            ts=stamp, session_id=session_id, agent_id=agent_id, outcome=outcome,
+            event=event, **fields
         )
         _append_firing(firing, reflex_base)
         return firing
@@ -536,7 +543,8 @@ def fire(
     # reflex's own record of why this firing asked what it asked, and on a served
     # firing what it handed over.
     tool_input: dict[str, object] = {
-        "query": query, "trigger": tool_name, "anchors": fresh, "keys": keys,
+        "query": query, "trigger": tool_name, "event": event, "anchors": fresh,
+        "keys": keys,
     }
     trace = {
         "ts": stamp,

@@ -367,11 +367,16 @@ than the agent. The `reflex.sh` hook (matcher `Bash`, on both `PostToolUse` and
 harness interrupted — and hands the output to `thalamus reflex`, which extracts
 identifiers from it and recalls against them in the session's pinned scope. Claude Code
 sends a command that exits 0 to the first event and one that exits non-zero to the
-second; the failure test is the same on both, so a non-zero exit whose output reads
-clean, such as `grep` finding nothing, does not fire.<!-- (A0165, cites-as-live) -->
-Firings recorded before 2026-09-24 came from `PostToolUse` alone, so they count only
-failures whose exit status a pipe or wrapper swallowed (`pytest … | tail`); a report
-spanning that date mixes the two populations.
+second. The exit status only picks the event: on both, the reflex fires when the output
+contains a failure line or the call was interrupted. A non-zero exit with ordinary
+output, such as `grep` finding no match, does not fire; a `pytest … | tail` that exits
+0 but prints `FAILED` does.<!-- (A0165, cites-as-live) -->
+
+Each firing records the event that ran it, and the report splits qualifying and served
+firings by event: `PostToolUse (exit 0)`, `PostToolUseFailure (non-zero exit)`, and
+`unrecorded` for rows written before the event was recorded. Those came from
+`PostToolUse` alone, when the reflex was wired on no other event, so they count only
+failures whose exit status a pipe or wrapper swallowed.<!-- (A0166, cites-as-live) -->
 
 What the agent receives is a digest labelled as unsolicited: one line per record —
 a short handle such as `R3.1`, its kind, tier stamp, date, its own first sentence, and

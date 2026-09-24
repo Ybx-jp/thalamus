@@ -462,6 +462,36 @@ def test_the_report_reads_the_ledger_and_the_tap_by_arm(tmp_path, served, monkey
     assert "graph not read" in rendered
 
 
+def test_the_event_is_recorded_on_every_firing_and_the_report_splits_by_it(
+    tmp_path, served, monkeypatch
+):
+    """
+    Verifications:
+    - the event reaches the ledger row on a served firing and on one that retrieved
+      nothing, and the trace line of a firing that retrieved
+    - a row with no event (written before it was recorded) is its own population,
+      never folded into either event
+    """
+    _fire(tmp_path, event="PostToolUseFailure")
+    monkeypatch.setattr(reflex, "recall", _fake_recall([]))
+    _fire(tmp_path, session_id="s2", event="PostToolUse")
+    _fire(tmp_path, session_id="s3")
+
+    assert [row.event for row in load_firings("s1", tmp_path / "reflex")] == [
+        "PostToolUseFailure"]
+    assert [line["tool_input"]["event"] for line in _tap_lines(tmp_path)
+            if line["tool_name"] == ARM_LEXICAL] == ["PostToolUseFailure", "PostToolUse", ""]
+
+    report = reflex_report(reflex_base=tmp_path / "reflex", traces_base=tmp_path / "traces")
+    rendered = report.render()
+
+    assert report.by_event == {"PostToolUseFailure": 1, "PostToolUse": 1, "": 1}
+    assert report.served_by_event == {"PostToolUseFailure": 1}
+    assert "PostToolUseFailure (non-zero exit): 1 / 1" in rendered
+    assert "PostToolUse (exit 0): 0 / 1" in rendered
+    assert "unrecorded (exit 0 only; written before the event was recorded): 0 / 1" in rendered
+
+
 def test_the_report_says_so_when_nothing_has_fired(tmp_path):
     assert "No reflex firings yet" in reflex_report(
         reflex_base=tmp_path / "none", traces_base=tmp_path / "none"
@@ -551,7 +581,7 @@ class TestTheHook:
         checkout = str(HOOK.parents[5])
         assert f"run --project {checkout} thalamus reflex" in argv
         assert "--session-id cc-1" in argv and "--scope main" in argv
-        assert "--cwd /w" in argv and "--tool-name Bash" in argv
+        assert "--cwd /w" in argv and "--tool-name Bash --event PostToolUse " in argv
         assert "--response-file " in argv
         # `$(jq …)` strips a trailing newline; the hook puts one back between and after.
         assert seen.read_text() == PYTEST_FAILURE.rstrip("\n") + "\nwarning: slow\n"
@@ -612,7 +642,7 @@ class TestTheHook:
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["hookSpecificOutput"] == {
             "hookEventName": "PostToolUseFailure", "additionalContext": "ctx"}
-        assert "--tool-name Bash" in argv_log.read_text()
+        assert "--tool-name Bash --event PostToolUseFailure " in argv_log.read_text()
         assert seen.read_text() == error + "\n"
 
     def test_a_nonzero_exit_with_nothing_legible_does_not_fire(self, tmp_path):

@@ -54,6 +54,18 @@ ARM_PREFIX = "reflex_"
 SPILL_CHARS = 10_000
 
 
+# How the report names each hook event: the event is the exit status, which is what a
+# reader splitting the population wants to see. A row with no event predates the hook
+# recording it, and every such row came from `PostToolUse` alone — the only event the
+# reflex was wired on then — so it counts only failures whose exit status a pipe or
+# wrapper swallowed (A0166, cites-as-live).
+EVENT_LABELS = {
+    "PostToolUse": "PostToolUse (exit 0)",
+    "PostToolUseFailure": "PostToolUseFailure (non-zero exit)",
+    "": "unrecorded (exit 0 only; written before the event was recorded)",
+}
+
+
 def _is_arm(tool: str) -> bool:
     return tool.startswith(ARM_PREFIX) and tool != POINTER_OPEN
 
@@ -63,6 +75,10 @@ class ReflexReport:
     firings: int = 0
     sessions: int = 0
     outcomes: Counter = field(default_factory=Counter)
+    # Qualifying failures and served firings by the hook event that ran the reflex;
+    # "" is a row written before the hook recorded it.
+    by_event: Counter = field(default_factory=Counter)
+    served_by_event: Counter = field(default_factory=Counter)
     # Rendered chars served, per session that was served anything.
     injected_by_session: dict[str, int] = field(default_factory=dict)
     voiced: int = 0
@@ -94,6 +110,12 @@ class ReflexReport:
         ]
         for outcome in ("served", "empty", "deduped", "refused", "no_anchors"):
             lines.append(f"  {outcome}: {self.outcomes.get(outcome, 0)}")
+        lines.append("by the event that ran the hook (served / qualifying):")
+        for event in sorted(self.by_event):
+            label = EVENT_LABELS.get(event, event)
+            lines.append(
+                f"  {label}: {self.served_by_event.get(event, 0)} / {self.by_event[event]}"
+            )
         lines.append(
             Rate(
                 label="served per qualifying failure",
@@ -192,7 +214,9 @@ def reflex_report(
     report.sessions = len({row.session_id for row in firings})
     for row in firings:
         report.outcomes[row.outcome] += 1
+        report.by_event[row.event] += 1
         if row.outcome == "served":
+            report.served_by_event[row.event] += 1
             report.injected_by_session[row.session_id] = (
                 report.injected_by_session.get(row.session_id, 0) + row.injected_chars
             )
