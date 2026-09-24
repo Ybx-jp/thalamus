@@ -220,6 +220,13 @@ if [ "$scope" != "main" ]; then
   context="This session is pinned to expert scope \`${scope}\` — all memory operations flow through that scope, enforced server-side; recall serves other experts' knowledge as tier-2 context, and their episodic memory is reachable only by consultation ticket. ${context}"
 fi
 
+# Skills this scope holds alone (resolve-scope.sh:thalamus_scope_skills). Appended:
+# a skill is procedure for a task that may come, not a condition on starting one.
+scope_skills="$(thalamus_scope_skills "$scope")"
+if [ -n "$scope_skills" ]; then
+  context="${context} ${scope_skills}"
+fi
+
 # The brief for a session the CI triage watcher opened. `pin.spawn` carries a scope and
 # a working directory and nothing else — it has no channel for "here is why you exist" —
 # so without this the spawned session is an ordinary `qe` session that happens to have

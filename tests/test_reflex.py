@@ -569,9 +569,10 @@ def _stub_uv(tmp_path, prints="", copy_response=True):
         f'printf "%s\\n" "$*" >> "{argv_log}"',
     ]
     if copy_response:
+        # Copied then renamed, so a detached run's reader sees the whole file or none.
         body.append(
             'while [ $# -gt 0 ]; do [ "$1" = "--response-file" ] && cp "$2" '
-            f'"{seen}"; shift; done'
+            f'"{seen}.part" && mv "{seen}.part" "{seen}"; shift; done'
         )
     if prints:
         body.append(f"printf '%s' {json.dumps(prints)}")
@@ -671,6 +672,8 @@ class TestTheHook:
         argv = _await_argv(argv_log)
         assert "thalamus reflex --shadow" in argv
         assert "--event PostToolUse " in argv and "--scope" not in argv
+        # The stub logs argv before it copies the response, and it runs detached.
+        _await(seen.exists)
         assert seen.read_text() == "3 passed in 0.2s\n"
         response = argv.split("--response-file ")[1].split()[0]
         _await(lambda: not Path(response).exists())
