@@ -1,17 +1,18 @@
 """A blinded install and a never-installed one must not read the same.
 
 Issue #125. `verify_armed()` (`src/thalamus/harness/install.py:1862`) returns three
-states over the 18 declared hook wirings: all present (ok), some missing (fatal), or
-*all* missing (`pending=True`, `install.py:1899`-1905). `pending` is excluded from
-`failed` (`install.py:2294`-2295), so a HOME where every wiring is missing exits 0 —
-deliberately, because that is what a machine that has never run `thalamus init` looks
-like, and listing all 18 wirings at someone who has not installed yet would be a wall of
-text about a machine that is fine.
+states over the declared hook wirings (`HOOK_WIRING`, currently 20 entries): all
+present (ok), some missing (fatal), or *all* missing (`pending=True`,
+`install.py:1899`-1905). `pending` is excluded from `failed` (`install.py:2294`-2295),
+so a HOME where every wiring is missing exits 0 — deliberately, because that is what a
+machine that has never run `thalamus init` looks like, and listing every wiring at
+someone who has not installed yet would be a wall of text about a machine that is fine.
 
 The defect is that the same branch also fires for a HOME whose `.claude/settings.json`
-*exists*, carries a foreign hook, and has none of our 18 wirings — the shape produced by
-hand-editing the file, or by another tool replacing it. `armed_hooks()` only ever asks
-"is our wiring present"; it has no way to notice that the file it read was not empty.
+*exists*, carries a foreign hook, and has none of our declared wirings — the shape
+produced by hand-editing the file, or by another tool replacing it. `armed_hooks()`
+only ever asks "is our wiring present"; it has no way to notice that the file it read
+was not empty.
 Both HOMEs report `pending`, both print the identical sentence, both exit 0. A user whose
 settings file was silently replaced gets a passing `--check` on a box where distillation,
 the guards and the eval taps are all inert — the exact incident `verify_armed` was
@@ -27,12 +28,13 @@ different exit code, or both.
 Three synthetic HOMEs, none of them ever `~`:
 
 - blinded: `.claude/settings.json` present, one foreign `PreToolUse` hook, none of our
-  18 wirings.
+  declared wirings.
 - never-installed: nothing in HOME at all.
-- partial (the discrimination control): 17 of the 18 wirings present, one dropped. This
-  is the case issue #125 says is already correct — fatal, not pending — and it is run
-  here alongside the other two so that a fix which broke enforcement generally, rather
-  than fixing the blinded/never split, could not pass this case by accident: if partial
+- partial (the discrimination control): all but one of the declared wirings present,
+  one dropped. This is the case issue #125 says is already correct — fatal, not
+  pending — and it is run here alongside the other two so that a fix which broke
+  enforcement generally, rather than fixing the blinded/never split, could not pass
+  this case by accident: if partial
   ever stopped being fatal, "blinded == never-installed" would just be the shape "the
   whole check does nothing" and this case would be answering the wrong question.
 
@@ -168,16 +170,16 @@ def run() -> Finding | None:
             site="src/thalamus/harness/install.py::check_report",
         )
 
-    # CONTROL 1 — discrimination: the partial HOME (17 of 18 armed) must still be
-    # FATAL. Issue #125 says this half already works; if it stopped, "blinded reads
-    # the same as never-installed" would mean nothing, because nothing would be
-    # gating at all.
+    # CONTROL 1 — discrimination: the partial HOME (all but one declared wiring armed)
+    # must still be FATAL. Issue #125 says this half already works; if it stopped,
+    # "blinded reads the same as never-installed" would mean nothing, because nothing
+    # would be gating at all.
     if row_partial["state"] != "failed" or rc_partial == 0:
         return Finding(
             failure_class=FailureClass.COLLAPSED_SENTINEL,
             summary=(
-                "control failed: a HOME missing 1 of 18 declared wirings did not fail "
-                "the run, so this case cannot tell 'the all-missing branch is too "
+                "control failed: a HOME missing one of the declared wirings did not "
+                "fail the run, so this case cannot tell 'the all-missing branch is too "
                 "permissive' from 'the whole check does nothing'"
             ),
             witness=(f"partial HOME (dropped {dropped}): state={row_partial['state']} "
@@ -186,11 +188,19 @@ def run() -> Finding | None:
             site="src/thalamus/harness/install.py:verify_armed (partial branch)",
         )
 
-    def normalize(detail: str, home: Path) -> str:
-        return detail.replace(str(home), "<HOME>")
+    def normalize(detail: str, home: Path, count: int) -> str:
+        # The HOME path and the declared-wiring count are the only two things that
+        # legitimately vary run to run — the path because it is a fresh temp dir each
+        # time, the count because `HOOK_WIRING` grows as hooks are added. Folding both
+        # to fixed placeholders keeps the pinned witness (expectations.json) tracking
+        # the defect rather than either number.
+        return (
+            detail.replace(str(home), "<HOME>")
+            .replace(f"none of the {count} wirings", "none of the <N> wirings")
+        )
 
-    detail_blinded = normalize(row_blinded["detail"], home_blinded)
-    detail_never = normalize(row_never["detail"], home_never)
+    detail_blinded = normalize(row_blinded["detail"], home_blinded, len(wiring))
+    detail_never = normalize(row_never["detail"], home_never, len(wiring))
 
     # CONTROL 2 — the comparator can see a difference. Run it against a deliberately
     # mutated copy of one row before trusting a "no difference" verdict below.
@@ -218,10 +228,11 @@ def run() -> Finding | None:
             failure_class=FailureClass.COLLAPSED_SENTINEL,
             summary=(
                 "a HOME with .claude/settings.json present, carrying a foreign hook and "
-                "none of our 18 declared wirings, reports IDENTICALLY to a HOME with "
+                "none of our declared wirings, reports IDENTICALLY to a HOME with "
                 "nothing installed at all — same state, same detail (modulo the HOME "
-                "path), same exit code. verify_armed()'s all-missing branch cannot "
-                "tell 'never touched' from 'installed then blinded'"
+                "path and the wiring count), same exit code. verify_armed()'s "
+                "all-missing branch cannot tell 'never touched' from 'installed then "
+                "blinded'"
             ),
             witness=(
                 f"blinded:  state={row_blinded['state']} ok={row_blinded['ok']} "
@@ -242,8 +253,8 @@ CASE = Case(
     tier=Tier.FAST,
     substrate=(Substrate.HERMETIC,),
     classes=(FailureClass.COLLAPSED_SENTINEL,),
-    summary="a HOME with all 18 wirings missing must be distinguishable from one whose "
-            "settings file was replaced out from under it",
+    summary="a HOME with every declared wiring missing must be distinguishable from "
+            "one whose settings file was replaced out from under it",
     run=run,
     issue=125,
     fixed=False,

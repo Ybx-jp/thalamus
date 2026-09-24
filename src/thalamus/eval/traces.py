@@ -57,6 +57,9 @@ RETRIEVAL_TOOLS = frozenset(
         # other retrieval; `eval reflex` reads it by arm. Without this entry
         # `load_events()`'s default filter drops every reflex line.
         "reflex_lexical",
+        # A read of a reflex pointer file (reflex-pointer-tap.sh): the file's records
+        # entering context when the agent opens them, priced like any retrieval.
+        "reflex_pointer_open",
     }
 )
 
@@ -145,6 +148,25 @@ class TraceEvent:
         for match in _VID_RE.findall(self.tool_response):
             seen.setdefault(match)
         return list(seen)
+
+    def injected_chars(self) -> int:
+        """Characters this retrieval put into the agent's context.
+
+        The rendered response, except where the tap names a smaller delivered part:
+        a reflex firing's response is its pointer file, read for its vertex ids, and
+        only the digest (`tool_input.delivered_chars`) entered context.
+        """
+        delivered = self.tool_input.get("delivered_chars")
+        if isinstance(delivered, int) and not isinstance(delivered, bool) and delivered >= 0:
+            return delivered
+        return len(self.tool_response)
+
+    def handles(self) -> dict[str, str]:
+        """Short handles the agent was shown in place of vertex ids, mapped to them."""
+        handles = self.tool_input.get("handles")
+        if not isinstance(handles, dict):
+            return {}
+        return {str(key): str(value) for key, value in handles.items() if value}
 
     def is_miss(self) -> bool:
         return bool(_MISS_RE.match(self.tool_response.strip()))

@@ -246,16 +246,19 @@ def attribute(
     terms_from: str = "aligned",
     ratio: float = MIN_MATCHED_RATIO,
     ratio_cap: int | None = None,
+    handles: dict[str, str] | None = None,
 ) -> list[Verdict]:
     """Judge each returned node against the session's subsequent outputs.
 
     `returned` maps vertex ID -> the node's retrievable text (summary, description,
-    title — whatever the graph holds for it).
+    title — whatever the graph holds for it). `handles` maps a short handle the agent
+    was shown in place of the id (the reflex digest's `R3.1`) to the vertex id it
+    stands for; the retrieval records it, so it is an input, not a judging dial.
     """
     output_lower, output_tokens = prepare(outputs)
     return attribute_prepared(
         returned, output_lower, output_tokens,
-        terms_from=terms_from, ratio=ratio, ratio_cap=ratio_cap,
+        terms_from=terms_from, ratio=ratio, ratio_cap=ratio_cap, handles=handles,
     )
 
 
@@ -268,9 +271,13 @@ def attribute_prepared(
     terms_from: str = "aligned",
     ratio: float = MIN_MATCHED_RATIO,
     ratio_cap: int | None = None,
+    handles: dict[str, str] | None = None,
 ) -> list[Verdict]:
     """`attribute` with the window — and optionally the nodes' terms — precomputed."""
     extract = TERM_EXTRACTORS[terms_from]
+    shown_as: dict[str, list[str]] = {}
+    for handle, node_id in (handles or {}).items():
+        shown_as.setdefault(node_id, []).append(handle)
     return [
         _judge(
             node_id,
@@ -281,9 +288,16 @@ def attribute_prepared(
             extract=extract,
             ratio=ratio,
             ratio_cap=ratio_cap,
+            handles=shown_as.get(node_id, ()),
         )
         for node_id, content in returned.items()
     ]
+
+
+def cites_handle(handle: str, output_lower: str) -> bool:
+    """Whether `handle` appears as itself: `R3.1` must not match inside `R3.10` or `XR3.1`."""
+    pattern = rf"(?<![a-z0-9]){re.escape(handle.lower())}(?![0-9a-z])"
+    return re.search(pattern, output_lower) is not None
 
 
 def _judge(
@@ -295,11 +309,18 @@ def _judge(
     extract=aligned_node_terms,
     ratio: float = MIN_MATCHED_RATIO,
     ratio_cap: int | None = None,
+    handles: tuple[str, ...] | list[str] = (),
 ) -> Verdict:
     # Strongest signal first: the agent quoted the node's identity itself. The reader
     # renders vertex IDs precisely so this becomes possible.
     if node_id.lower() in output_lower:
         return Verdict(node_id, True, "cited by vertex ID")
+
+    # The same act through a short handle, where the agent was shown one instead of
+    # the id: the reflex digest lists `R3.1` and keeps the id in its pointer file.
+    for handle in handles:
+        if cites_handle(handle, output_lower):
+            return Verdict(node_id, True, f"cited by handle {handle}")
 
     # Threads have human-legible slugs the agent tends to repeat verbatim.
     local_id = node_id.rsplit(":", 1)[-1].lower()

@@ -3,7 +3,8 @@
 #
 # Retrieval triggered by the observation stream rather than by the agent. When a
 # Bash result reads as a failure, the harness retrieves against the identifiers in it
-# and injects what the graph holds, labelled as unsolicited. The agent did not ask;
+# and injects a digest of what the graph holds, labelled as unsolicited, naming the
+# file that holds the records verbatim. The agent did not ask;
 # that is the point — the failure it prevents is a session re-deriving over an hour
 # what one recall would have served, at the moment it did not know to recall.
 #
