@@ -76,6 +76,9 @@ layers:
   # ownership.py declares which paths belong to which scope and imports nothing but
   # stdlib. A leaf that everything may read is what this layer is.
   - src/thalamus/contract/ownership.py
+  # capabilities.py declares dimensions and their variants, read by manifest.py (which
+  # validates a scope's selection) and by every harness renderer that projects one.
+  - src/thalamus/contract/capabilities.py
   # paths.py holds PROJECT_ROOT and imports nothing but stdlib. The checkout root is
   # read from three layers at once, so any home inside one of them is a boundary
   # crossing for the other two.

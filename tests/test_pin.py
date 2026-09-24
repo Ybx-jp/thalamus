@@ -1106,3 +1106,33 @@ def test_every_roster_window_is_held_at_the_shipped_geometry(tmp_path, monkeypat
         assert c[c.index("-y") + 1] == str(pin.WINDOW_ROWS)
     assert not [c for c in calls if "window-size" in c], \
         "the size is the only thing pinned; `manual` comes with it"
+
+
+def test_a_scope_that_selects_no_cost_keeps_inherit_and_writes_no_effort():
+    """Declaring the dimension must not change any shipped launch: a manifest with no
+    `cost:` renders exactly the frontmatter it rendered before the field existed."""
+    rendered = render_agent(load_manifest("literature", REPO_CONFIG))
+
+    assert "model: inherit" in rendered
+    assert "effort:" not in rendered
+
+
+@pytest.mark.parametrize("variant, model, effort", [
+    ("frugal", "sonnet", "low"),
+    ("balanced", "opus", "medium"),
+    ("max", "fable", "high"),
+])
+def test_a_cost_variant_lands_in_the_agent_frontmatter(variant, model, effort):
+    """
+    Scenario: an operator sets `cost:` on a manifest. The generated agent file is the
+    carrier for both a `--agent` pin and a subagent spawned by name, so the variant's
+    class and effort must reach its frontmatter — and only the frontmatter.
+    """
+    manifest = load_manifest("literature", REPO_CONFIG).model_copy(update={"cost": variant})
+
+    rendered = render_agent(manifest)
+    frontmatter = rendered.split("---")[1]
+
+    assert f"\nmodel: {model}\n" in frontmatter
+    assert f"\neffort: {effort}\n" in frontmatter
+    assert "model: inherit" not in rendered

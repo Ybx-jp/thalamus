@@ -20,8 +20,9 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from thalamus.contract.capabilities import COST, Variant
 from thalamus.contract.paths import PROJECT_ROOT
 
 # Local-first project; THALAMUS_CONFIG_DIR overrides for anything fancier.
@@ -284,6 +285,13 @@ class ExpertManifest(BaseModel):
         description="Paths this scope's sessions may not edit. Absent means "
         "unbounded — the honest default for a scope whose role is to write code.",
     )
+    cost: str = Field(
+        COST.default,
+        description="The `cost` variant this scope's sessions run on — a model class and "
+        "an effort level, projected by each harness's renderer. Absent means `inherit`: "
+        "the caller's model and effort, which is what every scope ran on before the "
+        "field existed.",
+    )
     capability_boundary: CapabilityBoundary | None = Field(
         None,
         description="Tools and skills this scope may not invoke. Absent means "
@@ -291,6 +299,16 @@ class ExpertManifest(BaseModel):
         "because this decision was made once for the whole roster rather than per scope. "
         "An explicit empty block is the opt-out.",
     )
+
+    @field_validator("cost")
+    @classmethod
+    def _cost_is_a_variant(cls, value: str) -> str:
+        COST.variant(value)
+        return value
+
+    @property
+    def cost_variant(self) -> Variant:
+        return COST.variant(self.cost)
 
     @property
     def effective_capability_boundary(self) -> CapabilityBoundary:

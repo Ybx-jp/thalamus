@@ -658,6 +658,32 @@ ambient memory.
 {selfcheck}"""
 
 
+# Claude Code's projection of a model class: the alias for the latest model of each
+# tier, so a release bump moves every scope without a manifest edit.
+CLAUDE_MODEL_ALIASES = {
+    "light": "haiku",
+    "standard": "sonnet",
+    "strong": "opus",
+    "frontier": "fable",
+}
+
+
+def _cost_frontmatter(manifest: ExpertManifest) -> str:
+    """The scope's `cost` variant as agent frontmatter.
+
+    Frontmatter is the one carrier that reaches both ways this file is used: a
+    `--agent` pin applies the agent's `model` to the main session, and a subagent
+    spawned by name resolves its model from the same field. `effort:` is omitted when
+    the variant sets none, since the key has no `inherit` value to write.
+    """
+    sets = manifest.cost_variant.sets
+    model = CLAUDE_MODEL_ALIASES[sets["model_class"]] if "model_class" in sets else "inherit"
+    lines = f"model: {model}\n"
+    if "effort" in sets:
+        lines += f"effort: {sets['effort']}\n"
+    return lines
+
+
 def render_agent(manifest: ExpertManifest, servers: dict[str, dict] | None = None) -> str:
     """The derived agent definition for a pinned expert session.
 
@@ -673,8 +699,7 @@ def render_agent(manifest: ExpertManifest, servers: dict[str, dict] | None = Non
     return f"""---
 name: {agent_name(manifest.scope)}
 description: Pinned Thalamus session for the {manifest.name} expert (scope `{manifest.scope}`). GENERATED from config/experts/{manifest.scope}.yaml — edit the manifest, not this file.
-model: inherit
-{_mcp_frontmatter(servers)}---
+{_cost_frontmatter(manifest)}{_mcp_frontmatter(servers)}---
 
 {_charter(manifest, selfcheck)}"""
 

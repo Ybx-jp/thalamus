@@ -69,6 +69,12 @@ A manifest can also declare:
   would otherwise trip a broad language deny.<!-- (A0005, cites-as-live) -->
 - **`capability_boundary`** — which skills and tools the scope may
   reach.<!-- (A0006, cites-as-live) -->
+- **`cost`** — the model class and effort level the scope's sessions run on, as one
+  variant of the `cost` dimension: `inherit` (the default: the caller's model and
+  effort), `frugal`, `balanced` or `max`. On Claude Code it is written into the
+  generated agent file's `model:` and `effort:`, which bind both a `--agent` pin and a
+  subagent spawned by name.<!-- (A0158, cites-as-live) -->
+  Cursor and Codex sessions do not receive it yet.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
   `designer` is the worked example.
