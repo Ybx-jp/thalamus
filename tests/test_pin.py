@@ -1169,3 +1169,41 @@ def test_an_inherit_scope_leaves_codex_model_and_effort_to_codexs_own_config():
 
     assert "model" not in profile
     assert "model_reasoning_effort" not in profile
+
+
+def test_a_budget_preset_lands_in_the_agent_frontmatter_as_max_turns(tmp_path):
+    """
+    Scenario: an operator caps a scope's turns. `maxTurns:` is the carrier Claude Code
+    applies to a subagent spawned from the file — the voiced expert of a consultation —
+    so the preset's count must reach the frontmatter under exactly that name; Claude
+    Code ignores a field it does not recognise without an error.
+    """
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "literature.yaml").read_text()
+    (tmp_path / "experts" / "literature.yaml").write_text(source + "\nbudget: short\n")
+    (tmp_path / "presets" / "budget.yaml").write_text("short:\n  max_turns: 25\n")
+
+    frontmatter = render_agent(load_manifest("literature", tmp_path)).split("---")[1]
+
+    assert "\nmaxTurns: 25\n" in frontmatter
+
+
+def test_a_scope_that_selects_no_budget_writes_no_turn_cap():
+    assert "maxTurns" not in render_agent(load_manifest("literature", REPO_CONFIG))
+
+
+def test_a_budget_preset_does_not_reach_the_codex_profile(tmp_path):
+    """Codex has no profile key that caps a run's turns, so the budget has nothing to
+    render there; a key written anyway would be one codex ignores."""
+    import tomllib
+
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "literature.yaml").read_text()
+    (tmp_path / "experts" / "literature.yaml").write_text(source + "\nbudget: short\n")
+    (tmp_path / "presets" / "budget.yaml").write_text("short:\n  max_turns: 25\n")
+
+    profile = tomllib.loads(render_codex_profile(load_manifest("literature", tmp_path)))
+
+    assert not any("turn" in key for key in profile)
