@@ -79,6 +79,20 @@ that
 sentence earns an entry in the same change. The procedure and the three repairs for a
 flagged pin are in CONTRIBUTING.md §"The claims ledger".
 
+**A claim about a harness is measured before anything rests on it.** A sentence saying
+what Claude Code, codex or Cursor does — which hook event fires, what a payload carries,
+whose context hook output reaches — is a claim about code this repository does not
+control, and no gate here fails when it stops being true. Before code or docs rest on
+one, measure it on the installed version with a control that differs in the one
+variable, pin it in the ledger (the vendor's reference as a registered source, and this
+repository's dependence on it grounded in the code that relies on it), and cite the
+dependence from every sentence that states it. The procedure and a hook-event probe are
+the `probe-harness-behaviour` skill; `.claude/repo-hooks/harness-fact-reminder.sh` flags
+an edit that adds an uncited harness fact. An absence — "is not in the payload", "never
+fires" — is the case to distrust most: the reflex was wired to the wrong event for nine
+days on "the Bash result carries no exit status", when a failing call never reaches that
+event at all (#262).<!-- (A0161, cites-as-live) -->
+
 ## Docs
 
 Whenever a task changes behaviour, design, or state that a doc in `docs/` describes,
@@ -252,7 +266,8 @@ the thing in ordinary words, and cut what he did not ask about.
   with the scripts in `.claude/hooks/`, are **written by another package** —
   `uv run claims-ledger harness install --agent claude --force` regenerates them from
   the installed `claims-ledger`. Edit those upstream, not here, and re-run the install
-  after raising the pin.
+  after raising the pin. Hooks this repository writes for its own sessions live in
+  `.claude/repo-hooks/`, wired from `.claude/settings.json` beside the package's.
 - `substrate/` sits below the contract: it knows nodes and edges, not experts or trust
   tiers.<!-- (A0141, cites-as-live) -->
   An import of `contract/` into `substrate/` means the change belongs elsewhere.

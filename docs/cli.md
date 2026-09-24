@@ -365,9 +365,11 @@ than the agent. The `reflex.sh` hook (`PostToolUse`, matcher `Bash`) fires when 
 command's result reads as a failure — a pytest `FAILED` line, a traceback, `command not
 found`, an exception line, or a call the harness interrupted — and hands the output to
 `thalamus reflex`, which extracts identifiers from it and recalls against them in the
-session's pinned scope. The Bash result carries no exit status, so a command that fails
-silently never fires; that false-negative class is permanent and the report is read
-with it in mind.
+session's pinned scope. The hook runs on `PostToolUse`, which Claude Code reaches only
+for a call that exited 0; a command that exits non-zero goes to `PostToolUseFailure`,
+where the reflex is not wired, so today it fires only on failures whose exit status a
+pipe or wrapper swallowed (`pytest … | tail`), and the report counts that subset
+(#262).<!-- (A0161, cites-as-live) -->
 
 What the agent receives is a digest labelled as unsolicited: one line per record —
 a short handle such as `R3.1`, its kind, tier stamp, date, its own first sentence, and

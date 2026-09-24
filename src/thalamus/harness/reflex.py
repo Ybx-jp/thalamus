@@ -61,12 +61,12 @@ POINTER_OPEN = "reflex_pointer_open"
 
 # The failure test, as one POSIX ERE. `reflex.sh` greps `stdout` then `stderr` with
 # this exact string and `tests/test_reflex.py` reads it back out of the script, so the
-# hook and this module cannot drift apart silently. Exit status is not in the hook
-# payload under any name (Claude Code's Bash result is `{stdout, stderr, interrupted,
-# isImage}`), so "non-zero exit" is necessarily a lexical proxy with a permanent
-# false-negative class: a command that fails and prints nothing recognisable never
-# fires, at any rung. `tool_response.interrupted` is the one exact signal and is read
-# separately by the hook.
+# hook and this module cannot drift apart silently. The hook reads the `PostToolUse`
+# Bash result, `{stdout, stderr, interrupted, isImage}`, which carries no exit status
+# because only a call that exited 0 reaches that event: a command that exits non-zero
+# goes to `PostToolUseFailure`, which does not run the reflex, so the failures this
+# pattern sees are the ones whose status a pipe or wrapper swallowed (#262)
+# (A0161, cites-as-live). `tool_response.interrupted` is read separately by the hook.
 #
 # Line-anchored where the shape allows it. `FAILED`/`ERROR` are pytest's short-summary
 # prefixes; `E ` is its assertion-detail gutter; the exception line covers

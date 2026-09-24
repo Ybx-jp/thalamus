@@ -31,6 +31,10 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/status-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/repo-hooks/harness-fact-reminder.sh"
           }
         ],
         "matcher": "Edit|Write|MultiEdit|apply_patch"
