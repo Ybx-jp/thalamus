@@ -53,6 +53,7 @@ from __future__ import annotations
 import os
 import shutil
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import PurePath
 
@@ -157,6 +158,10 @@ class AgentCLI:
     # here is still reachable through `--model`, which is the escape hatch that keeps
     # this list a curation rather than a gate.
     models: tuple[str, ...] = ()
+    # Where a vendor publishes its catalog, the live list that replaces `models`.
+    # Returns () when the catalog cannot be read, and `models` stands in — so `models`
+    # is the list as of the day it was pinned and the fallback, never the ceiling.
+    live_models: Callable[[], tuple[str, ...]] | None = None
     # Flags this CLI needs before it will run non-interactively in a directory it
     # has never seen. Not a preference: Cursor refuses an untrusted workspace with
     # exit 1 and a human-readable prompt *instead of* the JSON envelope, so every
@@ -217,6 +222,12 @@ class AgentCLI:
     # independently falsifiable claim per entry, retired by deletion when it stops
     # being true.
     launch_blockers: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def offered_models(self) -> tuple[str, ...]:
+        """The models to offer now: the vendor's live catalog, else the pinned list."""
+        live = self.live_models() if self.live_models else ()
+        return live or self.models
 
     @property
     def display(self) -> str:
@@ -305,6 +316,14 @@ LOCAL_DEFAULT_MODEL = os.environ.get("THALAMUS_LOCAL_MODEL") or "qwen2.5-coder:1
 LOCAL_WINDOW = int(os.environ.get("THALAMUS_LOCAL_WINDOW") or 16384)
 
 
+
+def _codex_live_models() -> tuple[str, ...]:
+    # Imported here: codex_models reaches codex_home through the transcript readers,
+    # which import this module.
+    from thalamus.harness.codex_models import live_offered
+
+    return live_offered()
+
 AGENT_CLIS: dict[str, AgentCLI] = {
     "claude": AgentCLI(
         harness="claude",
@@ -366,6 +385,7 @@ AGENT_CLIS: dict[str, AgentCLI] = {
         # `codex-auto-review` are in the catalog and omitted: both ship
         # `visibility: "hide"`, so they are not models the vendor offers for selection.
         models=("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"),
+        live_models=_codex_live_models,
         invocation="exec",
         envelope="jsonl-events",
         # `--skip-git-repo-check` answers the trust refusal and nothing else — the

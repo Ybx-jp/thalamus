@@ -821,8 +821,12 @@ def codex_profile_name(scope: str) -> str:
 # Codex's projection of a model class, from `codex debug models` on codex-cli 0.154.0
 # (2026-09-23), matched on each listed model's own description: astra "frontier
 # intelligence", sol "for complex work", terra "balanced", luna "fast and efficient".
-# Slugs, not aliases — codex has none — so a release that retires one needs this table
-# edited. All four accept every effort in `capabilities.EFFORTS`.
+# Slugs, not aliases — codex has none. A slug the live catalog marks with an `upgrade`
+# is replaced by the model it names when the profile is rendered
+# (`codex_models.current`); one the catalog drops entirely is left as written and
+# reported by `thalamus preset list`, since the catalog says nothing about which
+# remaining model would serve the class. All four accept every effort in
+# `capabilities.EFFORTS`.
 CODEX_MODELS = {
     "light": "gpt-5.6-luna",
     "standard": "gpt-5.6-terra",
@@ -841,7 +845,10 @@ def _codex_cost_keys(manifest: ExpertManifest) -> str:
     sets = manifest.cost_preset.sets
     keys = ""
     if "model_class" in sets:
-        keys += f"model = {_toml_str(CODEX_MODELS[sets['model_class']])}\n"
+        from thalamus.harness.codex_models import catalog, current
+
+        slug = current(CODEX_MODELS[sets["model_class"]], catalog())
+        keys += f"model = {_toml_str(slug)}\n"
     if "effort" in sets:
         keys += f"model_reasoning_effort = {_toml_str(sets['effort'])}\n"
     return keys
