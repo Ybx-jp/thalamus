@@ -45,6 +45,13 @@ none
 - 2026-09-24T00:58:27-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:627349e2564b752496c1e7584c8a5d52ed0e3352638604527d0037ed97702238
   note: reflex_report gained a loop over the shadow log ahead of the trace loop; the per-event counts of qualifying and served firings are unchanged and still keyed on the row's event, so the assertion is unaffected
+- 2026-09-24T02:01:23-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:f0168e6f19e987d8fb9b657eef399eed0741f60ed3298a684e62292fea1c62b3
+  artifact: sha256:b41054b9bcaa266119387f8ebfe45e795e60eeec87ffe8224ac523cdb8e336b5
+  note: propagated from a moved ground
+- 2026-09-24T02:01:40-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:b41054b9bcaa266119387f8ebfe45e795e60eeec87ffe8224ac523cdb8e336b5
+  note: fire now retrieves through a retrieval-compiler job and adds calls and nodes to the trace's tool_input; every Firing it appends still carries the event through record(), and tool_input still carries it, so the assertion is unaffected
 
 ## References
 

@@ -27,7 +27,7 @@ import pytest
 from thalamus.eval import traces as trace_mod
 from thalamus.eval.attribution import attribute, cites_handle
 from thalamus.eval.reflex import reflex_report
-from thalamus.harness import reflex
+from thalamus.harness import reflex, retrieval
 from thalamus.harness.reflex import (
     ARM_LEXICAL,
     FAILURE_PATTERN,
@@ -93,7 +93,7 @@ def _fake_recall(results):
 def served(monkeypatch):
     """`recall` answering with one first-party memory; scopes read from nowhere."""
     fake = _fake_recall([_memory()])
-    monkeypatch.setattr(reflex, "recall", fake)
+    monkeypatch.setattr(retrieval, "recall", fake)
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main", "qe"])
     return fake
 
@@ -236,7 +236,7 @@ def test_a_knowledge_block_keeps_its_tier_stamp(tmp_path, monkeypatch):
         node_id="scope:literature:claim:deadbeef", description="A-Mem plateaus then declines",
         kind="finding", tier=int(Tier.CURATED), citation="arXiv 2502.12110",
     )
-    monkeypatch.setattr(reflex, "recall", _fake_recall([claim]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([claim]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     digest = _fire(tmp_path)
@@ -265,7 +265,7 @@ def test_the_digest_is_sized_in_characters_and_lists_the_strongest_last(
         _memory(node_id=f"scope:main:session:m{index}", summary=f"memory {index} " + "w" * 150)
         for index in range(1, 41)
     ]
-    monkeypatch.setattr(reflex, "recall", _fake_recall(many))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall(many))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     digest = _fire(tmp_path)
@@ -286,7 +286,7 @@ def test_the_digest_is_sized_in_characters_and_lists_the_strongest_last(
 def test_a_second_firing_in_the_session_takes_the_next_handle_prefix(tmp_path, monkeypatch):
     """Handles are unique within a session, across its agents: a cited `R2.1` must
     name one node. A subagent shares its parent's session id and so its numbering."""
-    monkeypatch.setattr(reflex, "recall", _fake_recall([_memory()]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([_memory()]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     first = _fire(tmp_path)
@@ -392,7 +392,7 @@ def test_an_empty_recall_is_a_miss_priced_at_nothing(tmp_path, monkeypatch):
       the trigger — with an empty response, so `injected_chars` prices what the
       agent saw (nothing) and `returned_count == 0` reads as the miss
     """
-    monkeypatch.setattr(reflex, "recall", _fake_recall([]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     assert _fire(tmp_path) == ""
@@ -425,7 +425,7 @@ def test_the_scaffolding_never_instructs_and_the_detector_would_know(tmp_path, m
     assert imperative_voice("- Fix the budget first.") == ["- Fix"]
 
     voiced = _memory(node_id="scope:main:session:v1", summary="Do not use bare git stash here")
-    monkeypatch.setattr(reflex, "recall", _fake_recall([voiced, _memory()]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([voiced, _memory()]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     digest = _fire(tmp_path)
@@ -448,7 +448,7 @@ def test_the_tap_directory_is_the_one_the_eval_loop_reads():
 def test_the_report_reads_the_ledger_and_the_tap_by_arm(tmp_path, served, monkeypatch):
     _fire(tmp_path)
     _fire(tmp_path)  # deduped
-    monkeypatch.setattr(reflex, "recall", _fake_recall([]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([]))
     _fire(tmp_path, session_id="s2")  # empty
 
     report = reflex_report(reflex_base=tmp_path / "reflex", traces_base=tmp_path / "traces")
@@ -474,7 +474,7 @@ def test_the_event_is_recorded_on_every_firing_and_the_report_splits_by_it(
       never folded into either event
     """
     _fire(tmp_path, event="PostToolUseFailure")
-    monkeypatch.setattr(reflex, "recall", _fake_recall([]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([]))
     _fire(tmp_path, session_id="s2", event="PostToolUse")
     _fire(tmp_path, session_id="s3")
 
@@ -506,7 +506,7 @@ def test_a_shadowed_call_records_its_anchors_and_never_touches_the_graph(
     def no_recall(*_args, **_kwargs):
         raise AssertionError("shadow must not retrieve")
 
-    monkeypatch.setattr(reflex, "recall", no_recall)
+    monkeypatch.setattr(retrieval, "recall", no_recall)
     observed = "src/thalamus/harness/reflex.py: MIN_NEW_ANCHORS SESSION_CHAR_BUDGET\n"
 
     fresh = reflex.shadow(session_id="s1", observed=observed, event="PostToolUse",
@@ -672,9 +672,9 @@ class TestTheHook:
         argv = _await_argv(argv_log)
         assert "thalamus reflex --shadow" in argv
         assert "--event PostToolUse " in argv and "--scope" not in argv
-        # The stub logs argv before it copies the response, and it runs detached.
-        _await(seen.exists)
-        assert seen.read_text() == "3 passed in 0.2s\n"
+        # The stub logs argv before it copies the response, and it runs detached; the
+        # file can exist before `cp` has finished writing it, so wait on the content.
+        _await(lambda: seen.exists() and seen.read_text() == "3 passed in 0.2s\n")
         response = argv.split("--response-file ")[1].split()[0]
         _await(lambda: not Path(response).exists())
 

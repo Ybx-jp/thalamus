@@ -55,13 +55,13 @@ def _load_fixture():
 
 
 def run() -> Finding | None:
-    from thalamus.harness import reflex  # noqa: PLC0415
+    from thalamus.harness import reflex, retrieval  # noqa: PLC0415
 
     tr = _load_fixture()
-    original_recall = reflex.recall
+    original_recall = retrieval.recall
     original_scopes = reflex.available_scopes
     try:
-        reflex.recall = tr._fake_recall([tr._memory()])
+        retrieval.recall = tr._fake_recall([tr._memory()])
         reflex.available_scopes = lambda: ["main", "qe"]
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,7 +111,7 @@ def run() -> Finding | None:
                 site="src/thalamus/harness/reflex.py::fire",
             )
     finally:
-        reflex.recall = original_recall
+        retrieval.recall = original_recall
         reflex.available_scopes = original_scopes
 
 
