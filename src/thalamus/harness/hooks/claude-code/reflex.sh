@@ -15,9 +15,10 @@
 # exits before paying for a `uv run` at all.
 #
 # The failure test is lexical over stdout and stderr, OR `tool_response.interrupted`.
-# The Bash result carries no exit status under any name, so a command that fails and
-# prints nothing recognisable never fires — a permanent false-negative class the
-# instrument reports rather than hides. The regex is harness/reflex.py's
+# It reads the `PostToolUse` payload, which only a call that exited 0 reaches: a Bash
+# command that exits non-zero goes to `PostToolUseFailure`, where nothing runs this
+# script, so the reflex sees a failure only when its output arrives with status 0, as
+# through a pipe (#262) (A0161, cites-as-live). The regex is harness/reflex.py's
 # FAILURE_PATTERN verbatim; tests/test_reflex.py holds the two equal.
 #
 # Bulk content travels by file, resolved fields as flags — `extract --transcript` and
