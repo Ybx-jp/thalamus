@@ -101,20 +101,9 @@ def advisory(message: str) -> Issue:
     return Issue(message, ADVISORY)
 
 
-def referenced_artifacts(session: SessionGraph) -> set[str]:
-    """Artifact identifiers that at least one node in the session points at.
-
-    Includes `touched` — a session that edited a file has a direct TOUCHES edge to it, so
-    the artifact is reachable even before any claim is extracted. This is what lets the
-    deterministic bootstrap satisfy the connectivity invariant with no model in
-    the loop.
-    """
-    return session.referenced_artifact_ids()
-
-
 def validate_connectivity(session: SessionGraph) -> list[str]:
     """Check that all nodes have at least one edge. Returns a list of issues."""
-    referenced = referenced_artifacts(session)
+    referenced = session.referenced_artifact_ids()
     return [
         f"Orphan artifact: '{artifact.identifier}' has no edges — "
         "reference it from a claim, thread, or the session's touched list, or remove it"
@@ -255,7 +244,7 @@ def write_knowledge_checked(g, batch, manifest=None) -> str:
 
 def prune_orphan_artifacts(session: SessionGraph) -> SessionGraph:
     """Return a copy of the session with unreachable artifacts removed."""
-    referenced = referenced_artifacts(session)
+    referenced = session.referenced_artifact_ids()
     pruned = [a for a in session.artifacts if a.identifier in referenced]
     if len(pruned) == len(session.artifacts):
         return session

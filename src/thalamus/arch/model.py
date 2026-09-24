@@ -276,10 +276,6 @@ def root_commit(repo: Path) -> str:
     return _git(repo, "rev-list", "--max-parents=0", "HEAD").split("\n")[0]
 
 
-def head_commit(repo: Path) -> str:
-    return _git(repo, "rev-parse", "HEAD")
-
-
 def _git(repo: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", "-C", str(repo), *args],
@@ -309,15 +305,11 @@ def dirty_paths(repo: Path, policy: ExtractorPolicy) -> list[str]:
             path = path.split(" -> ")[-1]
         if not path.endswith(".py"):
             continue
-        if any(path.startswith(f"{root}/") for root in policy.roots) and not _excluded_path(
-            path, policy
-        ):
+        if any(path.startswith(f"{root}/") for root in policy.roots) and not policy.excludes(path):
             changed.append(path)
     return sorted(changed)
 
 
-def _excluded_path(path: str, policy: ExtractorPolicy) -> bool:
-    return any(fnmatch.fnmatch(path, pattern) for pattern in policy.exclude)
 
 
 def scan_id(
@@ -451,7 +443,7 @@ def build(repo: Path, graph: DependencyGraph, model: ArchModel | None = None) ->
     deciding to persist — the dry-run half of the CLI's `--write` split.
     """
     model = model or ArchModel()
-    commit = head_commit(repo)
+    commit = _git(repo, "rev-parse", "HEAD")
     # Resolved, because `Path(".").name` is the empty string and an empty slug would
     # silently mint `arch:scan::<sha>:<digest>` — a scan id naming no repo.
     slug = model.repo or repo.resolve().name

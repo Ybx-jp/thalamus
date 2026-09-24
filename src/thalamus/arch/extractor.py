@@ -90,6 +90,10 @@ class ExtractorPolicy:
         ".venv/**",
     )
 
+    def excludes(self, path: str) -> bool:
+        """Whether a repo-relative path matches one of the `exclude` patterns."""
+        return any(fnmatch.fnmatch(path, pattern) for pattern in self.exclude)
+
     def block(self) -> dict[str, object]:
         """The policy as it appears in `arch/model.yaml`, without its own digest."""
         return {
@@ -198,10 +202,6 @@ class DependencyGraph:
         return out
 
 
-def _excluded(relative: str, policy: ExtractorPolicy) -> bool:
-    return any(fnmatch.fnmatch(relative, pattern) for pattern in policy.exclude)
-
-
 def _module_name(relative: PurePosixPath) -> str:
     """Dotted module name for a repo-relative path, with the source root stripped.
 
@@ -232,7 +232,7 @@ def _collect_modules(repo: Path, policy: ExtractorPolicy) -> dict[str, str]:
             continue
         for path in sorted(root_dir.rglob("*.py")):
             relative = PurePosixPath(path.relative_to(repo).as_posix())
-            if _excluded(str(relative), policy):
+            if policy.excludes(str(relative)):
                 continue
             # Strip the declared root prefix; what remains is the importable name.
             importable = PurePosixPath(*relative.parts[len(PurePosixPath(root).parts) :])

@@ -27,6 +27,7 @@ from __future__ import annotations
 import html as html_lib
 import io
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -632,8 +633,8 @@ def build_batch(
     )
 
 
-def build_chunks(text: str, claims: list, entity_names: list[str]) -> list[Chunk]:
-    """Slice the source text into co-indexable chunks and anchor claims into them.
+def build_chunks(text: str, entity_names: list[str]) -> list[Chunk]:
+    """Slice the source text into co-indexable chunks; `anchor_citations` places claims.
 
     Fixed width, reusing the extraction chunker so a chunk boundary is a boundary
     either way. Semantic segmentation is declined: an extra full-corpus LLM pass has a
@@ -668,8 +669,10 @@ def build_chunks(text: str, claims: list, entity_names: list[str]) -> list[Chunk
     return chunks
 
 
-def anchor_citations(chunks: list[Chunk], claims: list) -> dict[int, int]:
+def anchor_citations(chunks: list[Chunk], citations: Sequence[str | None]) -> dict[int, int]:
     """Map claim index -> chunk ordinal, by locating each claim's verbatim citation.
+
+    `citations` is index-aligned with the claims the anchors will be read against.
 
     A citation is a quote lifted from the document, so it is findable by string search;
     when it is not (the model paraphrased, or the quote straddles a chunk boundary) the
@@ -678,8 +681,8 @@ def anchor_citations(chunks: list[Chunk], claims: list) -> dict[int, int]:
     came from.
     """
     anchors: dict[int, int] = {}
-    for index, claim in enumerate(claims):
-        citation = (getattr(claim, "citation", "") or "").strip()
+    for index, raw in enumerate(citations):
+        citation = (raw or "").strip()
         if len(citation) < 24:
             continue
         needle = citation[:60].lower()
@@ -1019,11 +1022,11 @@ def ingest(
     # before that filtering would point at the wrong claim. Only `ingest` reaches here
     # — session transcripts distil through `extract` — so every ingested document is
     # chunked in whatever scope it lands in, and no transcript ever is.
-    source_chunks = build_chunks(text, batch.claims, [e.name for e in batch.entities])
+    source_chunks = build_chunks(text, [e.name for e in batch.entities])
     batch = batch.model_copy(
         update={
             "chunks": source_chunks,
-            "anchors": anchor_citations(source_chunks, batch.claims),
+            "anchors": anchor_citations(source_chunks, [c.citation for c in batch.claims]),
         }
     )
 
