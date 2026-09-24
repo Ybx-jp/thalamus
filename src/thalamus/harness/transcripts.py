@@ -528,6 +528,72 @@ def _summary(facts: TranscriptFacts) -> str:
     return title
 
 
+def excerpt_for_job(
+    path: Path, trigger_tool_use_id: str, *, subagent: bool = False, max_chars: int = 12_000
+) -> str:
+    """What a retriever job is told about the moment it was fired from.
+
+    The agent's own turns and the trigger, and nothing else verbatim: user prompts, the
+    agent's text, its tool calls, and the result of the call that fired the job. Every
+    other tool result enters as a label naming its tool, because a tool's output is the
+    part of a transcript a third party can write, and the retriever plans its queries
+    from what it reads here. Harness scaffolding — reminders, hook context, earlier
+    reflex digests — is not the user speaking and is left out.
+
+    Records after the trigger's result are not read, so the excerpt is the moment of the
+    trigger even when the transcript has moved on. The oldest lines go first when it
+    runs past `max_chars`: the job needs the trigger and what led to it.
+
+    `subagent` reads a subagent's own transcript (`<session>/subagents/agent-<id>.jsonl`),
+    where every record is a sidechain record; `parse()` skips those as another episode,
+    and here they are the episode.
+    """
+    names: dict[str, str] = {}
+    lines: list[str] = []
+    for record in _records(path):
+        record_type = record.get("type")
+        if record_type not in ("user", "assistant") or record.get("isMeta"):
+            continue
+        if record.get("isSidechain") and not subagent:
+            continue
+        content = (record.get("message") or {}).get("content")
+
+        if record_type == "user":
+            if isinstance(content, str):
+                stripped = content.strip()
+                if stripped and not stripped.startswith("<"):
+                    lines.append(f"USER: {stripped}")
+                continue
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                use_id = block.get("tool_use_id")
+                name = names.get(str(use_id), "tool")
+                if use_id == trigger_tool_use_id:
+                    lines.append(f"TRIGGER RESULT ({name}): {tool_result_text(block)}")
+                    return _tail("\n".join(lines), max_chars)
+                lines.append(f"[tool_result: {name}]")
+            continue
+
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text" and str(block.get("text", "")).strip():
+                lines.append(f"ASSISTANT: {block['text'].strip()}")
+            elif block.get("type") == "tool_use":
+                names[str(block.get("id"))] = str(block.get("name") or "tool")
+                call = json.dumps(block.get("input") or {}, sort_keys=True)
+                lines.append(f"TOOL CALL {block.get('name')}: {call}")
+    return _tail("\n".join(lines), max_chars)
+
+
+def _tail(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    cut = text[-max_chars:]
+    return cut[cut.find("\n") + 1:] if "\n" in cut else cut
+
+
 def _records(path: Path):
     with path.open(errors="ignore") as handle:
         for line in handle:
