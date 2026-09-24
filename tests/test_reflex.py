@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -492,6 +493,61 @@ def test_the_event_is_recorded_on_every_firing_and_the_report_splits_by_it(
     assert "unrecorded (exit 0 only; written before the event was recorded): 0 / 1" in rendered
 
 
+def test_a_shadowed_call_records_its_anchors_and_never_touches_the_graph(
+    tmp_path, monkeypatch
+):
+    """
+    Verifications:
+    - the row carries the anchors `fire` would have extracted, the event, and whether
+      they clear the query gate against this agent's live firings
+    - keys a live firing already spent count as seen; another agent's do not
+    - nothing is recalled, served, or written to the trace tap
+    """
+    def no_recall(*_args, **_kwargs):
+        raise AssertionError("shadow must not retrieve")
+
+    monkeypatch.setattr(reflex, "recall", no_recall)
+    observed = "src/thalamus/harness/reflex.py: MIN_NEW_ANCHORS SESSION_CHAR_BUDGET\n"
+
+    fresh = reflex.shadow(session_id="s1", observed=observed, event="PostToolUse",
+                          now=_NOW, reflex_base=tmp_path / "reflex")
+    assert fresh.anchors == extract_anchors(observed) and len(fresh.anchors) >= 2
+    assert fresh.fresh == len(fresh.anchors) and fresh.would_query
+    assert fresh.output_chars == len(observed)
+
+    # A live firing by the same agent spends the keys; the shadow row then sees them.
+    spent = Firing(ts="t", session_id="s1", agent_id="", outcome="served",
+                   keys=fresh.keys)
+    reflex._append_firing(spent, tmp_path / "reflex")
+    again = reflex.shadow(session_id="s1", observed=observed, event="PostToolUse",
+                          now=_NOW, reflex_base=tmp_path / "reflex")
+    other = reflex.shadow(session_id="s1", observed=observed, agent_id="a-9",
+                          event="PostToolUse", now=_NOW, reflex_base=tmp_path / "reflex")
+
+    assert again.fresh == 0 and not again.would_query
+    assert other.would_query
+    assert len(reflex.load_shadow(tmp_path / "reflex")) == 3
+    assert not (tmp_path / "traces").exists()
+
+
+def test_the_report_counts_the_shadowed_population_by_event(tmp_path):
+    base = tmp_path / "reflex"
+    reflex.shadow(session_id="s1", observed="MIN_NEW_ANCHORS SESSION_CHAR_BUDGET\n",
+                  event="PostToolUse", now=_NOW, reflex_base=base)
+    reflex.shadow(session_id="s1", observed="3 passed in 0.2s\n",
+                  event="PostToolUse", now=_NOW, reflex_base=base)
+    reflex.shadow(session_id="s2", observed="Exit code 1\n",
+                  event="PostToolUseFailure", now=_NOW, reflex_base=base)
+
+    report = reflex_report(reflex_base=base, traces_base=tmp_path / "traces")
+    rendered = report.render()
+
+    assert report.shadowed == {"PostToolUse": 2, "PostToolUseFailure": 1}
+    assert report.shadow_would_query == {"PostToolUse": 1}
+    assert "PostToolUse (exit 0): 2 / 1 / 1" in rendered
+    assert "PostToolUseFailure (non-zero exit): 1 / 0 / 0" in rendered
+
+
 def test_the_report_says_so_when_nothing_has_fired(tmp_path):
     assert "No reflex firings yet" in reflex_report(
         reflex_base=tmp_path / "none", traces_base=tmp_path / "none"
@@ -531,6 +587,19 @@ def _run_hook(payload, home, bin_dir, **env):
         capture_output=True, text=True, timeout=30,
         env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin", **env},
     )
+
+
+def _await(condition, timeout=10.0):
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out waiting on the detached shadow run"
+        time.sleep(0.02)
+
+
+def _await_argv(argv_log):
+    """The detached shadow child's argv, once it has written it."""
+    _await(lambda: argv_log.exists() and argv_log.read_text().endswith("\n"))
+    return argv_log.read_text()
 
 
 def _bash_call(stdout="", stderr="", interrupted=False, **overrides):
@@ -586,13 +655,25 @@ class TestTheHook:
         # `$(jq …)` strips a trailing newline; the hook puts one back between and after.
         assert seen.read_text() == PYTEST_FAILURE.rstrip("\n") + "\nwarning: slow\n"
 
-    def test_clean_output_never_pays_for_the_worker(self, tmp_path):
-        bin_dir, argv_log, _ = _stub_uv(tmp_path, prints="should not appear")
+    def test_clean_output_is_shadow_logged_off_the_agents_path(self, tmp_path):
+        """
+        Verifications:
+        - the hook injects nothing and hands the output to `--shadow`, never to a
+          retrieving worker
+        - the shadow run is detached: the hook has returned before it finishes, and
+          the child removes the response file itself
+        """
+        bin_dir, argv_log, seen = _stub_uv(tmp_path, prints="should not appear")
 
         result = _run_hook(_bash_call(stdout="3 passed in 0.2s\n"), tmp_path, bin_dir)
 
         assert result.returncode == 0 and result.stdout == ""
-        assert not argv_log.exists()
+        argv = _await_argv(argv_log)
+        assert "thalamus reflex --shadow" in argv
+        assert "--event PostToolUse " in argv and "--scope" not in argv
+        assert seen.read_text() == "3 passed in 0.2s\n"
+        response = argv.split("--response-file ")[1].split()[0]
+        _await(lambda: not Path(response).exists())
 
     def test_an_interrupted_call_fires_with_nothing_legible_printed(self, tmp_path):
         """The one exact signal in the payload: a hard kill flushes no traceback."""
@@ -653,7 +734,8 @@ class TestTheHook:
         result = _run_hook(_failed_bash_call("Exit code 1\n"), tmp_path, bin_dir)
 
         assert result.returncode == 0 and result.stdout == ""
-        assert not argv_log.exists()
+        argv = _await_argv(argv_log)
+        assert "--shadow" in argv and "--event PostToolUseFailure " in argv
 
     def test_an_aborted_call_on_the_failure_event_fires(self, tmp_path):
         bin_dir, argv_log, _ = _stub_uv(tmp_path, prints="ctx")

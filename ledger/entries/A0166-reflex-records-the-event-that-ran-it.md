@@ -38,6 +38,14 @@ none
 
 ## Verdicts
 
+- 2026-09-24T00:58:13-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:e42de74eecc0e8ac0729f56734b32b73ae8f736a6196012a8c1e85c29dc08259
+  artifact: sha256:627349e2564b752496c1e7584c8a5d52ed0e3352638604527d0037ed97702238
+  note: propagated from a moved ground
+- 2026-09-24T00:58:27-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:627349e2564b752496c1e7584c8a5d52ed0e3352638604527d0037ed97702238
+  note: reflex_report gained a loop over the shadow log ahead of the trace loop; the per-event counts of qualifying and served firings are unchanged and still keyed on the row's event, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

@@ -37,6 +37,7 @@ from thalamus.harness.reflex import (
     POINTER_OPEN,
     Firing,
     load_firings,
+    load_shadow,
     reflex_dir,
 )
 
@@ -79,6 +80,11 @@ class ReflexReport:
     # "" is a row written before the hook recorded it.
     by_event: Counter = field(default_factory=Counter)
     served_by_event: Counter = field(default_factory=Counter)
+    # Calls the failure test passed over, by event, from the shadow log: all of them,
+    # those with any anchor, and those that would have cleared `fire`'s query gate.
+    shadowed: Counter = field(default_factory=Counter)
+    shadow_anchored: Counter = field(default_factory=Counter)
+    shadow_would_query: Counter = field(default_factory=Counter)
     # Rendered chars served, per session that was served anything.
     injected_by_session: dict[str, int] = field(default_factory=dict)
     voiced: int = 0
@@ -101,7 +107,7 @@ class ReflexReport:
     cited: Counter = field(default_factory=Counter)
 
     def render(self) -> str:
-        if not self.firings:
+        if not self.firings and not self.shadowed:
             return "No reflex firings yet — the hook has not seen a qualifying failure."
         lines = [
             "Memory reflex report (read by arm; docs/cli.md, The eval loop)",
@@ -116,6 +122,16 @@ class ReflexReport:
             lines.append(
                 f"  {label}: {self.served_by_event.get(event, 0)} / {self.by_event[event]}"
             )
+        if self.shadowed:
+            lines.append(
+                "passed over by the failure test (shadow log; nothing retrieved) — "
+                "calls / with anchors / would have queried:"
+            )
+            for event in sorted(self.shadowed):
+                lines.append(
+                    f"  {EVENT_LABELS.get(event, event)}: {self.shadowed[event]} / "
+                    f"{self.shadow_anchored[event]} / {self.shadow_would_query[event]}"
+                )
         lines.append(
             Rate(
                 label="served per qualifying failure",
@@ -221,6 +237,13 @@ def reflex_report(
                 report.injected_by_session.get(row.session_id, 0) + row.injected_chars
             )
             report.voiced += row.voiced
+
+    for shadow_row in load_shadow(reflex_base):
+        report.shadowed[shadow_row.event] += 1
+        if shadow_row.anchors:
+            report.shadow_anchored[shadow_row.event] += 1
+        if shadow_row.would_query:
+            report.shadow_would_query[shadow_row.event] += 1
 
     for event in load_events(traces_base):
         pointer = str(event.tool_input.get("pointer") or "")

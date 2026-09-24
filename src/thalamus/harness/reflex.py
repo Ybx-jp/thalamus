@@ -611,3 +611,89 @@ def fire(
         firing_id=firing_id,
     )
     return digest
+
+
+@dataclass
+class ShadowRow:
+    """One Bash call the failure test passed over, and what the reflex would have had.
+
+    Shadow logging measures the population the trigger excludes — a command whose
+    output did not read as a failure, on either event — without retrieving or
+    injecting anything. One line per call in `~/.thalamus/reflex/shadow/<session>.jsonl`.
+    `would_query` is the gate `fire` applies before it touches the graph: at least
+    `MIN_NEW_ANCHORS` anchors this agent's live firings have not already spent. Shadow
+    rows spend no keys, so two shadowed calls on the same identifiers both count
+    (A0167, cites-as-live).
+    """
+
+    ts: str
+    session_id: str
+    agent_id: str
+    event: str
+    output_chars: int
+    anchors: list[str] = field(default_factory=list)
+    keys: list[str] = field(default_factory=list)
+    fresh: int = 0
+    would_query: bool = False
+
+    def to_json(self) -> str:
+        return json.dumps(self.__dict__, sort_keys=True, separators=(",", ":"))
+
+
+def shadow_dir(base: Path | None = None) -> Path:
+    return reflex_dir(base) / "shadow"
+
+
+def shadow(
+    *,
+    session_id: str,
+    observed: str,
+    agent_id: str = "",
+    event: str = "",
+    now: datetime | None = None,
+    reflex_base: Path | None = None,
+) -> ShadowRow:
+    """Record what a call the failure test passed over would have anchored on.
+
+    No graph, no trace line, no output: `reflex.sh` runs this detached, off the
+    agent's path, so nothing it does can reach the session.
+    """
+    ts = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    seen = {
+        key for row in load_firings(session_id, reflex_base)
+        if row.agent_id == agent_id for key in row.keys
+    }
+    anchors = extract_anchors(observed)
+    keys = sorted({anchor_key(anchor) for anchor in anchors})
+    fresh = sum(1 for anchor in anchors if anchor_key(anchor) not in seen)
+    row = ShadowRow(
+        ts=ts, session_id=session_id, agent_id=agent_id, event=event,
+        output_chars=len(observed), anchors=anchors, keys=keys, fresh=fresh,
+        would_query=fresh >= MIN_NEW_ANCHORS,
+    )
+    path = shadow_dir(reflex_base) / f"{session_id}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as handle:
+        handle.write(row.to_json() + "\n")
+    return row
+
+
+def load_shadow(base: Path | None = None) -> list[ShadowRow]:
+    """Every shadow row across sessions, oldest first; unreadable lines skipped."""
+    directory = shadow_dir(base)
+    if not directory.is_dir():
+        return []
+    rows: list[ShadowRow] = []
+    for path in sorted(directory.glob("*.jsonl")):
+        with path.open(errors="ignore") as handle:
+            for line in handle:
+                try:
+                    record = json.loads(line)
+                    rows.append(ShadowRow(**{
+                        key: record[key] for key in ShadowRow.__dataclass_fields__
+                        if key in record
+                    }))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+    rows.sort(key=lambda row: row.ts)
+    return rows

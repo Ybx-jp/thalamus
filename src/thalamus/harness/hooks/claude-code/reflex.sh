@@ -11,8 +11,8 @@
 # A matcher only. The cheap preconditions run here in bash — sandbox guard, the
 # failure test on the tool result, scope from the pin — and everything that costs
 # anything (anchor extraction, a graph round trip, rendering) is `thalamus reflex` in
-# harness/reflex.py, which is where the logic is measured and typed. On no match this
-# exits before paying for a `uv run` at all.
+# harness/reflex.py, which is where the logic is measured and typed. On no match the
+# agent pays for no `uv run`: the shadow record below runs detached.
 #
 # Two events, one payload shape each. Claude Code sends a Bash call that exits 0 to
 # `PostToolUse`, with the output in `tool_response.stdout`/`.stderr` and the flag in
@@ -67,21 +67,33 @@ fi
 
 failure_re='^(FAILED|ERROR) |^Traceback \(most recent call last\)|: command not found|^[A-Za-z_.]*(Error|Exception): |^error(\[[A-Za-z0-9_-]+\])?: |^E {2,}'
 
-if [ "$interrupted" != "true" ] \
-  && ! printf '%s\n' "$output" | grep -qE "$failure_re"; then
-  exit 0
-fi
-
-scope="$(thalamus_scope_from_payload "$input")"
 agent_id=$(printf '%s' "$input" | jq -r '.agent_id // ""')
-agent_type=$(printf '%s' "$input" | jq -r '.agent_type // ""')
-cwd=$(printf '%s' "$input" | jq -r '.cwd // ""')
 
 response=$(mktemp "${TMPDIR:-/tmp}/thalamus-reflex.XXXXXX")
 printf '%s\n' "$output" >"$response"
 
 log_dir="$HOME/.thalamus/logs"
 mkdir -p "$log_dir"
+
+# A call the failure test passes over is shadow-logged: `thalamus reflex --shadow`
+# records what it would have anchored on and retrieves nothing. Detached, with every
+# stream closed, so the hook returns at once and the agent never waits on a `uv run`
+# for a call that was not a failure; the child removes the response file itself
+# (A0167, cites-as-live).
+if [ "$interrupted" != "true" ] \
+  && ! printf '%s\n' "$output" | grep -qE "$failure_re"; then
+  nohup sh -c '
+    uv run --project "$1" thalamus reflex --shadow \
+      --session-id "$2" --agent-id "$3" --event "$4" --response-file "$5"
+    rm -f "$5"
+  ' shadow "$(thalamus_repo_root)" "$session" "$agent_id" "$event" "$response" \
+    </dev/null >/dev/null 2>>"$log_dir/reflex.log" &
+  exit 0
+fi
+
+scope="$(thalamus_scope_from_payload "$input")"
+agent_type=$(printf '%s' "$input" | jq -r '.agent_type // ""')
+cwd=$(printf '%s' "$input" | jq -r '.cwd // ""')
 
 # `--project <checkout>`, not the session's cwd: a session pinned into another repo
 # has a cwd that is not a uv project with thalamus in it (session-end.sh's reason).

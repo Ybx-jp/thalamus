@@ -378,6 +378,15 @@ firings by event: `PostToolUse (exit 0)`, `PostToolUseFailure (non-zero exit)`, 
 `PostToolUse` alone, when the reflex was wired on no other event, so they count only
 failures whose exit status a pipe or wrapper swallowed.<!-- (A0166, cites-as-live) -->
 
+A Bash call the failure test passes over, on either event, is **shadow-logged**: the
+hook starts `thalamus reflex --shadow` detached and returns at once, and it writes one
+row to `~/.thalamus/reflex/shadow/<session>.jsonl` with the anchors the output would
+have given, how many this agent's live firings have not already spent, and whether that
+clears the two-new-anchor gate a firing needs before it queries. Nothing is retrieved or
+injected. The report lists the shadowed calls per event as calls / with anchors / would
+have queried: the size of the population the failure trigger excludes, and how much of
+it a success trigger would have sent to the graph.<!-- (A0167, cites-as-live) -->
+
 What the agent receives is a digest labelled as unsolicited: one line per record —
 a short handle such as `R3.1`, its kind, tier stamp, date, its own first sentence, and
 the identifiers it matched — and the path of a pointer file,

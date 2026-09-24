@@ -371,6 +371,11 @@ def _main():
         help="The hook event that ran the reflex — PostToolUse (exit 0) or "
         "PostToolUseFailure (non-zero exit) — recorded in the ledger and the trace",
     )
+    reflex_parser.add_argument(
+        "--shadow", action="store_true",
+        help="The output did not read as a failure: record what it would have anchored "
+        "on under ~/.thalamus/reflex/shadow/, with no graph read and no output",
+    )
     reflex_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Contract command — the federation boundary, audited
@@ -2439,13 +2444,18 @@ def _cmd_delegate(args):
 
 def _cmd_reflex(args):
     """The hook's worker: everything it prints is injected, so it prints the digest or nothing."""
-    from thalamus.harness.reflex import fire
+    from thalamus.harness.reflex import fire, shadow
 
     try:
         observed = args.response_file.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         print(f"reflex: {exc}", file=sys.stderr)
         sys.exit(1)
+
+    if args.shadow:
+        shadow(session_id=args.session_id, observed=observed,
+               agent_id=args.agent_id, event=args.event)
+        return
 
     graph = connect(args.url)
     try:
