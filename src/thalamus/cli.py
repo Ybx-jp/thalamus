@@ -366,6 +366,16 @@ def _main():
     reflex_parser.add_argument(
         "--tool-name", default="Bash", help="The tool whose result fired the reflex (default: Bash)"
     )
+    reflex_parser.add_argument(
+        "--event", default="",
+        help="The hook event that ran the reflex — PostToolUse (exit 0) or "
+        "PostToolUseFailure (non-zero exit) — recorded in the ledger and the trace",
+    )
+    reflex_parser.add_argument(
+        "--shadow", action="store_true",
+        help="The output did not read as a failure: record what it would have anchored "
+        "on under ~/.thalamus/reflex/shadow/, with no graph read and no output",
+    )
     reflex_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Contract command — the federation boundary, audited
@@ -1083,11 +1093,11 @@ def _main():
     preset_set = preset_sub.add_parser(
         "set", help="Define a preset, or replace one of the same name"
     )
-    preset_set.add_argument("dimension", help="The dimension, e.g. `cost`")
+    preset_set.add_argument("dimension", help="The dimension: `cost` or `budget`")
     preset_set.add_argument("name", help="Preset name: lowercase letters, digits, hyphens")
     preset_set.add_argument(
         "settings", nargs="*", metavar="KEY=VALUE",
-        help="What it sets, e.g. model_class=strong effort=high. "
+        help="What it sets, e.g. model_class=strong effort=high, or max_turns=30. "
              "`thalamus preset list` shows the keys and values a dimension accepts",
     )
     preset_remove = preset_sub.add_parser(
@@ -2460,13 +2470,18 @@ def _cmd_delegate(args):
 
 def _cmd_reflex(args):
     """The hook's worker: everything it prints is injected, so it prints the digest or nothing."""
-    from thalamus.harness.reflex import fire
+    from thalamus.harness.reflex import fire, shadow
 
     try:
         observed = args.response_file.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         print(f"reflex: {exc}", file=sys.stderr)
         sys.exit(1)
+
+    if args.shadow:
+        shadow(session_id=args.session_id, observed=observed,
+               agent_id=args.agent_id, event=args.event)
+        return
 
     graph = connect(args.url)
     try:
@@ -2479,6 +2494,7 @@ def _cmd_reflex(args):
             agent_type=args.agent_type,
             cwd=args.cwd,
             tool_name=args.tool_name,
+            event=args.event,
         )
     finally:
         close_connection(graph)
@@ -4463,7 +4479,13 @@ def _cmd_preset(args, parser):
     names a preset the file lacks fails to load — so `remove` refuses while any
     manifest still selects the preset, rather than leaving that scope unloadable.
     """
-    from thalamus.contract.capabilities import DIMENSIONS, INHERIT, read_presets, write_presets
+    from thalamus.contract.capabilities import (
+        DIMENSIONS,
+        INHERIT,
+        describe,
+        read_presets,
+        write_presets,
+    )
     from thalamus.contract.manifest import available_scopes, experts_dir, presets_file
 
     command = getattr(args, "preset_command", None)
@@ -4498,7 +4520,7 @@ def _cmd_preset(args, parser):
             for name in sorted(set(chosen) - set(presets)):
                 print(f"  {name:<16} UNDEFINED — selected by: {', '.join(chosen[name])}")
             print("  settings: " + "; ".join(
-                f"{k} = {'|'.join(v)}" for k, v in dimension.settings.items()))
+                f"{k} = {describe(v)}" for k, v in dimension.settings.items()))
             if dimension.key == "cost":
                 _print_codex_projection()
         return

@@ -43,6 +43,14 @@ none
 - 2026-09-24T00:40:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/pin.py § "_codex_cost_keys" =sha256:d67ac3f84b5a6e662081f44a21360cad7801970b8f7b925d5dc3885bfb0d25fb
   note: the model key now takes the CODEX_MODELS slug through codex_models.current, which follows the live catalog's upgrade chain (A0164); it is still written only when the preset sets a model class, as a top-level key, and model_reasoning_effort is unchanged
+- 2026-09-24T02:18:04-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/pin.py § "_codex_cost_keys" =sha256:d67ac3f84b5a6e662081f44a21360cad7801970b8f7b925d5dc3885bfb0d25fb
+  artifact: sha256:ca48db6b2a6fd17c22a6c8adb3c010828119f6c386744a0706c8047d91501c22
+  note: propagated from a moved ground
+
+- 2026-09-24T02:40:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/pin.py § "_codex_cost_keys" =sha256:204ad63767a038651c44e5b22aae230284be4ea5d6e08d1e8ddc838eed735c82
+  note: _codex_cost_keys also writes the budget preset's tool_output_token_limit after the cost keys; model and model_reasoning_effort are written as before, so the assertion is unaffected
 
 ## References
 

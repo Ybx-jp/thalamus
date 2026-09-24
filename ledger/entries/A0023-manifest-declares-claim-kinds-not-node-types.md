@@ -50,6 +50,14 @@ none
 - 2026-09-23T23:50:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:ab6bc12a7bf2285b36feb97fabff64355c98812fdb9b984b87f94b7aaec23930
   note: the cost field now names an operator-defined preset and resolves it through a private attribute; still no node type declared, so the assertion is unaffected
+- 2026-09-24T01:03:34-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:ab6bc12a7bf2285b36feb97fabff64355c98812fdb9b984b87f94b7aaec23930
+  artifact: sha256:8f19ee8fefce8dcc7641297cc9e4e97debf5bf635830bcf61bb8de42a332a8b4
+  note: propagated from a moved ground
+
+- 2026-09-24T01:10:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:8f19ee8fefce8dcc7641297cc9e4e97debf5bf635830bcf61bb8de42a332a8b4
+  note: a budget field joins cost, and presets resolve per dimension through one private mapping; still no node type declared, so the assertion is unaffected
 
 ## References
 
