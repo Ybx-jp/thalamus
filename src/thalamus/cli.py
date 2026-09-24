@@ -85,7 +85,7 @@ def _main():
         description="Thalamus — federated graph memory for coding agents",
         epilog="One-shot graph repairs (backfill-chunks, audit-artifacts, "
                "repair-projects, derive-artifact-paths, retire-scans, "
-               "repair-claim-addresses) are not listed here: they migrate an "
+               "retire-sources, repair-claim-addresses) are not listed here: they migrate an "
                "existing graph and a new one can never need them. Each answers "
                "--help, and docs/cli.md documents them under Maintenance.",
     )
@@ -550,6 +550,20 @@ def _main():
     )
     retire_scans_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     retire_scans_parser.add_argument(
+        "--write", action="store_true",
+        help="Apply the plan. Without this, nothing is removed.",
+    )
+
+    retire_sources_parser = subparsers.add_parser(
+        "retire-sources",
+        description="Remove named Source vertices with the Claims, Chunks and Entities "
+        "that rest only on them. Dry-run unless --write.",
+    )
+    retire_sources_parser.add_argument(
+        "sources", nargs="+", metavar="SOURCE_VID", help="Source vertex id(s) to retire"
+    )
+    retire_sources_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    retire_sources_parser.add_argument(
         "--write", action="store_true",
         help="Apply the plan. Without this, nothing is removed.",
     )
@@ -1476,6 +1490,8 @@ def _main():
         _cmd_derive_artifact_paths(args)
     elif args.command == "retire-scans":
         _cmd_retire_scans(args)
+    elif args.command == "retire-sources":
+        _cmd_retire_sources(args)
     elif args.command == "repair-claim-addresses":
         _cmd_repair_claim_addresses(args)
     elif args.command == "snapshot":
@@ -2827,6 +2843,63 @@ def _cmd_retire_scans(args):
 
         removed = retire(graph, retirement)
         print(f"\nRemoved {removed} vertices.")
+        _persist(graph)
+        print("Run `thalamus contract check` to confirm the graph is still whole.")
+    finally:
+        close_connection(graph)
+
+
+def _cmd_retire_sources(args):
+    """Remove named Sources and what rests only on them. See substrate.source_retirement.
+
+    Dry-run by default. The plan prints what it keeps and the edges it will drop from
+    surviving vertices, because both are part of deciding whether to run it.
+    """
+    from thalamus.substrate.source_retirement import plan, retire
+
+    graph = connect(args.url)
+    try:
+        try:
+            retirement = plan(graph, args.sources)
+        except ValueError as exc:
+            print(f"Refused: {exc}. Nothing was removed.")
+            raise SystemExit(2) from exc
+
+        for heading, rows in (
+            ("Source(s)", retirement.sources),
+            ("Claim(s) resting only on them", retirement.claims),
+            ("Chunk(s)", retirement.chunks),
+            ("Entit(ies) left with no other edge", retirement.entities),
+        ):
+            print(f"{len(rows)} {heading}:")
+            for doomed in rows:
+                print(f"  {doomed.detail}")
+            print()
+        if retirement.kept_claims:
+            print(f"{len(retirement.kept_claims)} Claim(s) kept — also derived elsewhere:")
+            for claim_vid, survivors in retirement.kept_claims:
+                print(f"  {survivors} other Source(s)  {claim_vid}")
+            print()
+        if retirement.kept_entities:
+            print(f"{len(retirement.kept_entities)} Entit(ies) kept — still referenced:")
+            for name, survivors in retirement.kept_entities[:12]:
+                print(f"  {survivors:3d} other edge(s)  {name}")
+            if len(retirement.kept_entities) > 12:
+                print(f"  … and {len(retirement.kept_entities) - 12} more")
+            print()
+        if retirement.lost_edges:
+            print("Edges from surviving vertices that go with them (recall and "
+                  "consultation history):")
+            for label, count in sorted(retirement.lost_edges.items()):
+                print(f"  {count:4d}  {label}")
+            print()
+
+        if not args.write:
+            print(f"Dry run. Re-run with --write to remove {retirement.total()} vertices.")
+            return
+
+        removed = retire(graph, retirement)
+        print(f"Removed {removed} vertices.")
         _persist(graph)
         print("Run `thalamus contract check` to confirm the graph is still whole.")
     finally:

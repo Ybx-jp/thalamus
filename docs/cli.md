@@ -562,8 +562,18 @@ thalamus audit-artifacts           # measure how fragmented Artifact identity is
 thalamus repair-projects           # re-anchor project values that named a directory, not a repo
 thalamus derive-artifact-paths     # project Artifact identifiers onto (repo, path)
 thalamus retire-scans              # remove graph records of architecture scans
+thalamus retire-sources <vid>...   # remove named Sources and what rests only on them
 thalamus repair-claim-addresses    # move Claims back to the address their content produces
 ```
+
+`retire-sources` takes Source vertex ids and refuses any id that is not one. A Claim
+or Chunk goes with them only when every `DERIVED_FROM` edge it has lands on a retiring
+Source, and an Entity only when every vertex adjacent to it is going, so a statement
+another document also supports, or a concept another claim mentions, stays. The dry
+run counts the edges that surviving vertices lose (a Trace's `RETURNS`, a
+consultation's citation) by label, because that history goes with the
+vertex.<!-- (A0173, cites-as-live) -->
+Archived bytes are not touched.
 
 `repair-claim-addresses` is the repair half of `contract check`'s content-address
 audit, and it treats the audit's two groups differently. A stale duplicate — one whose
