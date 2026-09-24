@@ -530,10 +530,16 @@ def launch_argv(
     argv += list(shape.always)
     argv += capability_argv(harness, selections)
 
+    from thalamus.contract.manifest import config_root
+    from thalamus.harness.budget import launch_env
+
+    # The scope's tool-result caps, on the argv for the recycle trap's reason: a
+    # window's `-e` environment is gone after `respawn-window`, and the caps with it.
+    env = [f"{k}={v}" for k, v in launch_env(harness, scope, config_root()).items()]
     if not shape.persona_flag_carries_scope:
         # Nothing on this argv *names the scope to the hooks*, so a `respawn-window`
         # would re-exec it with the window's `-e` environment gone. The prefix is the
         # carrier. Codex takes it despite having a persona flag: `--profile` restores
         # the charter on a recycle but tells `resolve-scope.sh` nothing.
-        return ["env", f"THALAMUS_SCOPE={scope}", *argv]
-    return argv
+        env.insert(0, f"THALAMUS_SCOPE={scope}")
+    return ["env", *env, *argv] if env else argv

@@ -836,7 +836,8 @@ CODEX_MODELS = {
 
 
 def _codex_cost_keys(manifest: ExpertManifest) -> str:
-    """The scope's `cost` preset as top-level profile keys.
+    """The scope's `cost` preset, and its budget's tool-result cap, as top-level
+    profile keys.
 
     Written before the `[mcp_servers.*]` tables, since a bare key after a table header
     belongs to that table. Nothing is written for a key the preset does not set, which
@@ -851,6 +852,11 @@ def _codex_cost_keys(manifest: ExpertManifest) -> str:
         keys += f"model = {_toml_str(slug)}\n"
     if "effort" in sets:
         keys += f"model_reasoning_effort = {_toml_str(sets['effort'])}\n"
+    budget = manifest.budget_preset.sets
+    if "max_tool_output_tokens" in budget:
+        # The one budget key codex carries itself (A0172, cites-as-live); the rest are
+        # counted by budget.sh.
+        keys += f"tool_output_token_limit = {int(budget['max_tool_output_tokens'])}\n"
     return keys
 
 

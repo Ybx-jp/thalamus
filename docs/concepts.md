@@ -85,6 +85,20 @@ A manifest can also declare:
   replacement its catalog names; `thalamus preset list` shows each class's Codex model
   against the live catalog.<!-- (A0164, cites-as-live) -->
   Cursor sessions do not receive it yet.
+- **`budget`** — the name of a preset capping what the scope's sessions may spend,
+  defined the same way in `presets/budget.yaml`; `inherit` sets no cap. Four keys, each
+  an integer: `max_turns` and `max_tool_calls` per prompt, reset by the next prompt;
+  `max_tokens` for the whole session; `max_tool_output_tokens` for one tool result.
+  `budget.sh` counts the first three from the tool hooks. Past a cap, on Claude
+  Code it denies the call and stops the prompt — the stop reason is shown, and the
+  session takes a new prompt; on Codex it denies every further tool call and does not
+  count turns. A subagent spawned as an expert is counted as that expert, on its own
+  count.<!-- (A0171, cites-as-live) -->
+  `THALAMUS_MAX_TURNS`, `THALAMUS_MAX_TOOL_CALLS` and `THALAMUS_MAX_TOKENS` in the
+  environment override the preset for the process and everything it spawns. The output
+  cap rides the pin's launch environment on Claude Code and the scope's profile on
+  Codex.<!-- (A0172, cites-as-live) -->
+  Cursor sessions are not budgeted.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
   `designer` is the worked example.

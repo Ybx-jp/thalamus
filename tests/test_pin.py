@@ -1169,3 +1169,24 @@ def test_an_inherit_scope_leaves_codex_model_and_effort_to_codexs_own_config():
 
     assert "model" not in profile
     assert "model_reasoning_effort" not in profile
+
+
+def test_a_budget_output_cap_lands_in_the_codex_profile_and_nothing_else_does(tmp_path):
+    """Codex carries a tool-result cap as a profile key; the turn, tool-call and token
+    caps have no key there and are counted by budget.sh instead."""
+    import tomllib
+
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "literature.yaml").read_text()
+    (tmp_path / "experts" / "literature.yaml").write_text(source + "\nbudget: short\n")
+    (tmp_path / "presets" / "budget.yaml").write_text(
+        "short:\n  max_turns: 25\n  max_tool_output_tokens: 4000\n"
+    )
+    manifest = load_manifest("literature", tmp_path)
+
+    profile = tomllib.loads(render_codex_profile(manifest))
+
+    assert profile["tool_output_token_limit"] == 4000
+    assert not any("turn" in key for key in profile)
+    assert "maxTurns" not in render_agent(manifest)
