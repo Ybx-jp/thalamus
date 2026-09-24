@@ -18,7 +18,7 @@ from thalamus.contract.capabilities import (
     write_presets,
 )
 from thalamus.contract.manifest import ExpertManifest, load_manifest, presets_file
-from thalamus.harness.pin import CLAUDE_MODEL_ALIASES
+from thalamus.harness.pin import CLAUDE_MODEL_ALIASES, CODEX_MODELS
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
 
@@ -33,10 +33,11 @@ def _config(tmp_path, presets: str | None, cost: str | None) -> Path:
     return tmp_path
 
 
-def test_every_model_class_has_a_claude_projection():
+def test_every_model_class_has_a_projection_on_every_harness_that_reads_cost():
     """A class with no alias would raise at render time for whichever scope first
     selected a preset that asks for it — far from the table that forgot it."""
     assert set(CLAUDE_MODEL_ALIASES) == set(MODEL_CLASSES)
+    assert set(CODEX_MODELS) == set(MODEL_CLASSES)
 
 
 def test_inherit_is_built_in_sets_nothing_and_cannot_be_redefined():

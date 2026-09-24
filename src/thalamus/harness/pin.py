@@ -818,6 +818,35 @@ def codex_profile_name(scope: str) -> str:
     return agent_name(scope)
 
 
+# Codex's projection of a model class, from `codex debug models` on codex-cli 0.154.0
+# (2026-09-23), matched on each listed model's own description: astra "frontier
+# intelligence", sol "for complex work", terra "balanced", luna "fast and efficient".
+# Slugs, not aliases — codex has none — so a release that retires one needs this table
+# edited. All four accept every effort in `capabilities.EFFORTS`.
+CODEX_MODELS = {
+    "light": "gpt-5.6-luna",
+    "standard": "gpt-5.6-terra",
+    "strong": "gpt-5.6-sol",
+    "frontier": "gpt-6-astra",
+}
+
+
+def _codex_cost_keys(manifest: ExpertManifest) -> str:
+    """The scope's `cost` preset as top-level profile keys.
+
+    Written before the `[mcp_servers.*]` tables, since a bare key after a table header
+    belongs to that table. Nothing is written for a key the preset does not set, which
+    leaves `~/.codex/config.toml` governing it — codex's own `inherit`.
+    """
+    sets = manifest.cost_preset.sets
+    keys = ""
+    if "model_class" in sets:
+        keys += f"model = {_toml_str(CODEX_MODELS[sets['model_class']])}\n"
+    if "effort" in sets:
+        keys += f"model_reasoning_effort = {_toml_str(sets['effort'])}\n"
+    return keys
+
+
 def render_codex_profile(manifest: ExpertManifest,
                          servers: dict[str, dict] | None = None) -> str:
     """The generated profile file for a pinned codex session.
@@ -850,6 +879,7 @@ def render_codex_profile(manifest: ExpertManifest,
         f"# Pinned Thalamus session for the {manifest.name} expert "
         f"(scope `{manifest.scope}`).\n"
         f"developer_instructions = {_toml_str(charter)}\n"
+        f"{_codex_cost_keys(manifest)}"
         f"{_codex_mcp_tables(servers)}"
     )
 
