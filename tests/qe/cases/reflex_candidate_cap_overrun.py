@@ -44,7 +44,7 @@ raises. Never written under `main` or a real expert scope, and never left behind
 **The experiment.** Both the two chunks' `text` and all three sessions' `summary` carry
 the same anchors `extract_anchors()` pulls from one nonce-bearing synthetic failure —
 the identical query `reflex.fire()` will itself derive from that failure text — so a
-real firing has something in both windows to match. `reflex.recall` is wrapped (not
+real firing has something in both windows to match. `retrieval.recall` is wrapped (not
 replaced) to record what the real `substrate.reader.recall` returned, so the controls
 below reason about the same list `fire()` turned into digest lines and pointer-file
 records, without needing to re-split the rendered digest's prose back into anything.
@@ -108,7 +108,7 @@ def run() -> Finding | None:
     )
     from thalamus.contract.manifest import available_scopes  # noqa: PLC0415
     from thalamus.contract.ontology import MAIN_SCOPE, vid  # noqa: PLC0415
-    from thalamus.harness import reflex  # noqa: PLC0415
+    from thalamus.harness import reflex, retrieval  # noqa: PLC0415
     from thalamus.harness.reflex import (  # noqa: PLC0415
         DIGEST_CHAR_CAP,
         MAX_CANDIDATES,
@@ -224,7 +224,7 @@ def run() -> Finding | None:
         }
         expected_session_vids = {vid("Session", sid, scope) for sid in session_ids}
 
-        original_recall = reflex.recall
+        original_recall = retrieval.recall
         captured: list[list] = []
 
         def _counting_recall(*args, **kwargs):
@@ -232,7 +232,7 @@ def run() -> Finding | None:
             captured.append(results)
             return results
 
-        reflex.recall = _counting_recall
+        retrieval.recall = _counting_recall
         probe_session_id = f"qe-chunkcap-probe-session-{nonce}"
         try:
             with tempfile.TemporaryDirectory() as tmp:
@@ -255,7 +255,7 @@ def run() -> Finding | None:
                 if pointer_files:
                     records = pointer_files[0].read_text(encoding="utf-8")
         finally:
-            reflex.recall = original_recall
+            retrieval.recall = original_recall
 
         results = captured[-1] if captured else []
         ids = {getattr(result, "node_id", "") for result in results}
