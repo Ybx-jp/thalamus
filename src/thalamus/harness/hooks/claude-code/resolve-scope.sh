@@ -305,3 +305,34 @@ thalamus_mcp_arming_warning() {
   printf 'MIS-ARMED SESSION — READ THIS FIRST. `config/mcp/%s.json` declares MCP servers (%s) that `%s` does not carry in its frontmatter, so this process never armed them. The generated agent file is stale. Report this to the operator and stop rather than working around the missing tools; `thalamus pin %s` regenerates the file, and the servers arm only in a new process.' \
     "$scope" "${missing# }" "$agent_file" "$scope"
 }
+
+# The skills this scope holds alone, as one paragraph for the SessionStart context, or
+# nothing when it holds none. Always succeeds, for the same reason as the check above.
+#
+# A scope skill lives at `config/skills/<scope>/<name>/SKILL.md`, beside
+# `config/mcp/<scope>.json`, and deliberately not under a skills directory the harness
+# scans: everything there is listed to every session, which is the property a scope
+# skill exists not to have. The harness therefore never loads it, and this paragraph is
+# the whole of its discovery — name, description and path, the first stage of the
+# Agent Skills format, with the body read on demand from the path.
+thalamus_scope_skills() {
+  local scope="${1:-main}" dir skill_md name description listing=""
+  dir="$(thalamus_config_root)/skills/$scope"
+  [ -d "$dir" ] || return 0
+  for skill_md in "$dir"/*/SKILL.md; do
+    [ -f "$skill_md" ] || continue          # no glob match: the literal pattern
+    name=$(thalamus_frontmatter_field "$skill_md" name)
+    description=$(thalamus_frontmatter_field "$skill_md" description)
+    [ -n "$name" ] || name="$(basename "$(dirname "$skill_md")")"
+    listing="$listing \`${name}\` (${skill_md}): ${description:-no description given}"
+  done
+  [ -n "$listing" ] || return 0
+  printf 'Skills held by scope `%s` alone. They are not in the Skill tool'"'"'s list and cannot be invoked through it: when a task matches one, Read its SKILL.md at the path given before starting and follow it; any file it names sits beside it.%s' \
+    "$scope" "$listing"
+}
+
+# One single-line field from a Markdown file's YAML frontmatter, or nothing.
+thalamus_frontmatter_field() {
+  awk -v key="$2" 'NR==1 && $0=="---"{inside=1; next} inside && $0=="---"{exit}
+    inside && index($0, key ":")==1 {sub("^" key ":[[:space:]]*", ""); print; exit}' "$1"
+}
