@@ -20,9 +20,9 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, PrivateAttr
 
-from thalamus.contract.capabilities import COST, Variant
+from thalamus.contract.capabilities import COST, INHERIT, Dimension, Preset, read_presets
 from thalamus.contract.paths import PROJECT_ROOT
 
 # Local-first project; THALAMUS_CONFIG_DIR overrides for anything fancier.
@@ -286,11 +286,11 @@ class ExpertManifest(BaseModel):
         "unbounded — the honest default for a scope whose role is to write code.",
     )
     cost: str = Field(
-        COST.default,
-        description="The `cost` variant this scope's sessions run on — a model class and "
-        "an effort level, projected by each harness's renderer. Absent means `inherit`: "
-        "the caller's model and effort, which is what every scope ran on before the "
-        "field existed.",
+        INHERIT,
+        description="The name of the `cost` preset this scope's sessions run on — a "
+        "model class and an effort level, defined in the config root's "
+        "`presets/cost.yaml` and projected by each harness's renderer. Absent means "
+        "`inherit`: the caller's model and effort.",
     )
     capability_boundary: CapabilityBoundary | None = Field(
         None,
@@ -300,15 +300,16 @@ class ExpertManifest(BaseModel):
         "An explicit empty block is the opt-out.",
     )
 
-    @field_validator("cost")
-    @classmethod
-    def _cost_is_a_variant(cls, value: str) -> str:
-        COST.variant(value)
-        return value
+    # The selected preset, resolved against the config root the manifest was loaded
+    # from. A preset is defined beside the manifests rather than inside them, so the
+    # name cannot be checked by the model alone.
+    _cost: Preset | None = PrivateAttr(None)
 
     @property
-    def cost_variant(self) -> Variant:
-        return COST.variant(self.cost)
+    def cost_preset(self) -> Preset:
+        if self._cost is None:
+            self._cost = resolve_preset(COST, self.cost)
+        return self._cost
 
     @property
     def effective_capability_boundary(self) -> CapabilityBoundary:
@@ -481,7 +482,23 @@ def load_manifest(scope: str, base: Path | None = None) -> ExpertManifest:
     manifest = ExpertManifest(**yaml.safe_load(path.read_text()))
     if manifest.scope != scope:
         raise ValueError(f"{path} declares scope `{manifest.scope}`, not `{scope}`")
+    try:
+        manifest._cost = resolve_preset(COST, manifest.cost, base)
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from exc
     return manifest
+
+
+def presets_file(dimension: Dimension, base: Path | None = None) -> Path:
+    return config_root(base) / "presets" / f"{dimension.key}.yaml"
+
+
+def resolve_preset(dimension: Dimension, name: str, base: Path | None = None) -> Preset:
+    """The named preset of `dimension`, from the presets file under the config root.
+
+    The file is read even for `inherit`, so a bad preset fails the first manifest load
+    after it is written rather than waiting for a scope to select it."""
+    return dimension.resolve(name, read_presets(dimension, presets_file(dimension, base)))
 
 
 def available_scopes(base: Path | None = None) -> list[str]:

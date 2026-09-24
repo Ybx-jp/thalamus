@@ -669,14 +669,14 @@ CLAUDE_MODEL_ALIASES = {
 
 
 def _cost_frontmatter(manifest: ExpertManifest) -> str:
-    """The scope's `cost` variant as agent frontmatter.
+    """The scope's `cost` preset as agent frontmatter.
 
     Frontmatter is the one carrier that reaches both ways this file is used: a
     `--agent` pin applies the agent's `model` to the main session, and a subagent
     spawned by name resolves its model from the same field. `effort:` is omitted when
-    the variant sets none, since the key has no `inherit` value to write.
+    the preset sets none, since the key has no `inherit` value to write.
     """
-    sets = manifest.cost_variant.sets
+    sets = manifest.cost_preset.sets
     model = CLAUDE_MODEL_ALIASES[sets["model_class"]] if "model_class" in sets else "inherit"
     lines = f"model: {model}\n"
     if "effort" in sets:

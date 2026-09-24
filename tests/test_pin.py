@@ -1117,22 +1117,22 @@ def test_a_scope_that_selects_no_cost_keeps_inherit_and_writes_no_effort():
     assert "effort:" not in rendered
 
 
-@pytest.mark.parametrize("variant, model, effort", [
-    ("frugal", "sonnet", "low"),
-    ("balanced", "opus", "medium"),
-    ("max", "fable", "high"),
-])
-def test_a_cost_variant_lands_in_the_agent_frontmatter(variant, model, effort):
-    """
-    Scenario: an operator sets `cost:` on a manifest. The generated agent file is the
-    carrier for both a `--agent` pin and a subagent spawned by name, so the variant's
-    class and effort must reach its frontmatter — and only the frontmatter.
-    """
-    manifest = load_manifest("literature", REPO_CONFIG).model_copy(update={"cost": variant})
 
-    rendered = render_agent(manifest)
-    frontmatter = rendered.split("---")[1]
+def test_a_cost_preset_lands_in_the_agent_frontmatter(tmp_path):
+    """
+    Scenario: an operator defines a preset and selects it from a manifest. The
+    generated agent file is the carrier for both a `--agent` pin and a subagent spawned
+    by name, so the preset's class and effort must reach its frontmatter.
+    """
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "literature.yaml").read_text()
+    (tmp_path / "experts" / "literature.yaml").write_text(source + "\ncost: deep-review\n")
+    (tmp_path / "presets" / "cost.yaml").write_text(
+        "deep-review:\n  model_class: frontier\n  effort: max\n"
+    )
 
-    assert f"\nmodel: {model}\n" in frontmatter
-    assert f"\neffort: {effort}\n" in frontmatter
-    assert "model: inherit" not in rendered
+    frontmatter = render_agent(load_manifest("literature", tmp_path)).split("---")[1]
+
+    assert "\nmodel: fable\n" in frontmatter
+    assert "\neffort: max\n" in frontmatter
