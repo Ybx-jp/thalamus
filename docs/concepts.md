@@ -78,7 +78,10 @@ A manifest can also declare:
   On Claude Code the preset is written into the generated agent file's `model:` and
   `effort:`, which bind both a `--agent` pin and a subagent spawned by
   name.<!-- (A0158, cites-as-live) -->
-  Cursor and Codex sessions do not receive it yet.
+  On Codex it is written into the scope's generated profile as `model` and
+  `model_reasoning_effort`, so it binds a `--profile` pin; a preset that sets neither
+  leaves `~/.codex/config.toml` governing.<!-- (A0162, cites-as-live) -->
+  Cursor sessions do not receive it yet.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
   `designer` is the worked example.

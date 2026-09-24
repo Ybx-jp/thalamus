@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-23T23:48:59-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/pin.py § "codex_profile_name" =sha256:1767368ca35b7eda3b37c60232106fb1fafa0b26f814dd3638a9f4808e4c81a0
+  artifact: sha256:c5a2218c0a5168efbd1b52f70a1525a471512bafc609fab66664899c7a370c32
+  note: propagated from a moved ground
+
+- 2026-09-24T00:05:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/pin.py § "codex_profile_name" =sha256:c5a2218c0a5168efbd1b52f70a1525a471512bafc609fab66664899c7a370c32
+  note: the comment block introducing CODEX_MODELS now follows codex_profile_name and is read into its section; the function and the profile path are unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live
