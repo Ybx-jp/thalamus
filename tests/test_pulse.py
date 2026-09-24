@@ -9,6 +9,10 @@ by the data layer, so that is what gets pinned here.
 """
 
 import json
+import re
+import shutil
+import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -23,6 +27,7 @@ from thalamus.pulse.metrics import (
     report_snapshot,
 )
 from thalamus.eval.pins import VerdictRow
+from thalamus.eval.traces import TraceEvent
 from thalamus.pulse.web import create_pulse_app
 
 
@@ -122,10 +127,7 @@ def test_live_snapshot_is_cost_only_and_flags_the_guardrail(tmp_path):
     - the pinned scope from the ledger reaches the feed rows
     """
     ledgers = _ledgers(tmp_path)
-    # Both are report-side; the 5s feed reads neither the span tap nor a transcript.
-    ledgers.pop("profiles_base")
-    ledgers.pop("projects_base")
-    live = live_snapshot(**ledgers)
+    live = live_snapshot(traces_base=ledgers["traces_base"], pins_file=ledgers["pins_file"])
 
     assert [e["ts"] for e in live["feed"]] == sorted(
         (e["ts"] for e in live["feed"]), reverse=True
@@ -135,7 +137,8 @@ def test_live_snapshot_is_cost_only_and_flags_the_guardrail(tmp_path):
     assert big["fanout"] == 21 and big["over_guardrail"] is True
     assert live["feed"][1]["miss"] is True and live["feed"][1]["fanout"] == 0
     assert live["feed"][2]["scope"] == "homelab"
-    assert live["guards"][0]["verdict"] == "pass"
+    # The guard ledger is a rate on the report, never a feed of `pass` rows here.
+    assert set(live) == {"generated_at", "feed", "fanout_guardrail"}
 
 
 def test_report_without_graph_is_tap_only_not_empty(tmp_path):
@@ -155,12 +158,23 @@ def test_report_without_graph_is_tap_only_not_empty(tmp_path):
     )
 
     assert report["graph_ok"] is False
-    assert report["scopes"] == {} and report["pins"] is None and report["trend"] == []
+    assert report["scopes"] == {} and report["trend"] == [] and "pins" not in report
     assert report["gremlin"]["passes"] == 1
     assert report["gremlin"]["rescue_rate"] is None  # zero blocks: undefined, never 0
     assert report["conditioning"]["measured"] is False
-    assert any("dial" in d or "≥2 terms" in d for d in report["disclosures"]["dials"])
-    assert "layer 1" in report["disclosures"]["standing"]
+    assert "48 h stuck line" in report["disclosures"]["dials"]
+    assert "15-node guardrail" in report["disclosures"]["dials"]
+
+    # The graph being down is a failed check with an act-now item of its own; the
+    # sync tile cannot tell landed from not without it, and says so in a neutral
+    # word rather than a red one — the one red is the graph's.
+    checks = {c["name"]: c for c in report["health"]["checks"]}
+    assert checks["Graph"]["state"] == "failed"
+    assert checks["Sync"]["state"] == "count" and checks["Sync"]["word"] == "NOT READ"
+    assert [i["title"] for i in report["health"]["needs_you"]] == ["The graph is unreachable"]
+    assert report["pending"] is None
+    # No build recorded is unknown, never "0 behind".
+    assert report["build"]["behind"] is None
 
     # Query cost is span-ledger side: it survives the graph being down, and it
     # arrives with the spread and its own measured overhead rather than a mean.
@@ -223,28 +237,205 @@ def test_trend_and_sessions_price_verdicts_with_absolutes(tmp_path):
     assert len(row["recalls"]) == 2
 
 
-def test_pending_names_undistilled_sessions(tmp_path):
+_NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+_S_FRESH = "11111111-1111-4111-8111-111111111111"
+_S_LONG = "22222222-2222-4222-8222-222222222222"
+_S_OLD = "33333333-3333-4333-8333-333333333333"
+
+
+def _event(session_id: str, hours_ago: float, tool: str = "memory_recall") -> TraceEvent:
+    return TraceEvent(
+        ts=_NOW - timedelta(hours=hours_ago),
+        session_id=session_id,
+        cwd="/home/op/code/thalamus",
+        tool=tool,
+        tool_input={"query": f"{session_id} {hours_ago}"},
+        tool_response="",  # an empty response is a miss, never legacy
+    )
+
+
+def _pending_events() -> list[TraceEvent]:
+    return [
+        _event(_S_FRESH, 2),
+        # Started 70 h ago, last active 10 h ago: in flight. The line is measured
+        # from the newest event, so a long session is not stuck for its start.
+        _event(_S_LONG, 70),
+        _event(_S_LONG, 10),
+        # Newest event 49 h old, nothing landed: stuck.
+        _event(_S_OLD, 60),
+        _event(_S_OLD, 49),
+        # A fixture id that leaked into the operator's tap.
+        _event("test-123", 900),
+    ]
+
+
+def test_pending_splits_stuck_from_in_flight_at_48h_since_newest_event():
     """
-    Scenario: the tap holds three events; only one has landed as a Trace node
+    Scenario: three UUID sessions with no landed Trace, one fixture id, one event landed
 
     Verifications:
-    - pending counts tap events whose trace_id has no landed Trace
-    - pending is grouped per session with the oldest timestamp (stuck detection)
+    - a session is stuck only when its NEWEST event is past the 48 h line
+    - a landed event drops out of pending and out of the counts
+    - a non-UUID session id is not pending at all (fixture leak, not a stuck session)
     """
-    ledgers = _ledgers(tmp_path)
-    from thalamus.eval.traces import load_events
-
-    events = load_events(ledgers["traces_base"])
+    events = _pending_events()
     landed = _TimedTrace(
-        vid=f"scope:main:trace:{events[0].trace_id()}",
-        scope="main", session_id="sess-1", ts="2026-07-15T10:00:00Z",
+        vid=f"scope:main:trace:{events[0].trace_id()}", scope="main", session_id=_S_FRESH,
     )
-    pending = metrics._pending(
-        _GraphRead(traces=[landed]), traces_base=ledgers["traces_base"]
-    )
+    pending = metrics._pending(_GraphRead(traces=[landed]), events, _NOW)
 
-    assert pending["total"] == 2
-    assert {row["session"] for row in pending["sessions"]} == {"sess-1", "sess-2"}
+    assert pending["stuck_after_hours"] == 48
+    assert [r["session"] for r in pending["in_flight"]["sessions"]] == [_S_LONG[:8]]
+    assert pending["in_flight"]["events"] == 2
+    assert [r["session"] for r in pending["stuck"]["sessions"]] == [_S_OLD[:8]]
+    assert pending["stuck"]["events"] == 2
+    every = pending["in_flight"]["sessions"] + pending["stuck"]["sessions"]
+    assert "test-123" not in {r["session"] for r in every}
+
+
+def test_health_names_the_stuck_sessions_and_keeps_sync_in_flight():
+    """
+    Scenario: a report with the pending split above and a reachable graph
+
+    Verifications:
+    - stuck sessions are a needs-you item carrying the command that lands them —
+      with --write, since a bare `eval sync` is a dry run
+    - the Sync tile reports the in-flight sessions and points at the stuck ones
+    - count tiles never go red, whatever they read
+    """
+    pending = metrics._pending(_GraphRead(), _pending_events(), _NOW)
+    out = {
+        "graph_ok": True,
+        "pending": pending,
+        "cost": {"buckets": [{"name": "extract", "weighted": 0,
+                              "blind": metrics._blind_spot("extract", 0)}]},
+        "gremlin": {"blocks": 46, "passes": 884, "rescued": 6,
+                    "memory_query": {"total": 303, "server_failed": 2, "dialect_rejected": 12}},
+        "build": metrics._build_dict(None),
+    }
+    health = metrics._health(out, _pending_events(), 14, _NOW)
+
+    [item] = health["needs_you"]
+    assert item["kind"] == "stuck" and item["word"] == "STUCK"
+    assert item["title"] == "1 session never synced"
+    assert item["command"] == "thalamus eval sync --write"
+    assert "2 recalls have no verdict" in item["detail"]
+
+    checks = {c["name"]: c for c in health["checks"]}
+    assert set(checks) == {"Graph", "Tap", "Sync", "Cost scan", "memory_query", "Gremlin guard"}
+    assert checks["Sync"]["state"] == "in_flight"
+    assert checks["Sync"]["lines"] == ["2 sessions · 3 events", "+ 1 stuck, above"]
+    assert checks["Cost scan"]["lines"][1] == "extract not measured"
+    assert checks["Gremlin guard"]["state"] == "count"
+    assert checks["Gremlin guard"]["lines"][0] == "46 blocks in 930 (4.9%)"
+    assert checks["memory_query"]["state"] == "count"
+    assert all("needs_you" not in c for c in health["checks"])
+
+
+def test_zero_cost_buckets_the_scan_cannot_see_carry_a_chip_not_a_zero():
+    """
+    Verifications:
+    - extract at 0 is NOT MEASURED; a pinned expert at 0 is 0 · UNVERIFIED
+    - a bucket that read something, or `interactive` at 0, carries no chip
+    """
+    assert metrics._blind_spot("extract", 0)["chip"] == "NOT MEASURED"
+    assert metrics._blind_spot("expert:literature", 0)["chip"] == "0 · UNVERIFIED"
+    assert metrics._blind_spot("expert:designer", 5) is None
+    assert metrics._blind_spot("extract", 5) is None
+    assert metrics._blind_spot("interactive", 0) is None
+
+
+def _vcs(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_build_reports_how_far_the_checkout_moved_since_boot(tmp_path):
+    """
+    Scenario: pulse records its build, then two commits land — one touching pulse
+
+    Verifications:
+    - behind counts commits since the recorded sha; touching counts those that
+      change pulse or the eval code it reads
+    - behind > 0 is a STALE BUILD needs-you item naming the branch and the restart
+    - a directory that is no checkout reports behind None (unknown), never 0
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _vcs(repo, "init", "-q", "-b", "master")
+    (repo / "README").write_text("a")
+    _vcs(repo, "add", "README")
+    _vcs(repo, "commit", "-qm", "one")
+    build = metrics.record_build(repo)
+    assert build["sha"] == _vcs(repo, "rev-parse", "HEAD")
+    assert metrics._build_dict(build)["behind"] == 0
+
+    (repo / "README").write_text("b")
+    _vcs(repo, "commit", "-qam", "two")
+    (repo / "src/thalamus/pulse").mkdir(parents=True)
+    (repo / "src/thalamus/pulse/web.py").write_text("")
+    _vcs(repo, "add", "src")
+    _vcs(repo, "commit", "-qm", "three")
+
+    now = metrics._build_dict(build)
+    assert now["behind"] == 2 and now["touching"] == 1 and now["branch"] == "master"
+    health = metrics._health(
+        {"graph_ok": True, "pending": None, "cost": {"buckets": []}, "gremlin": None,
+         "build": now},
+        [], 14, _NOW,
+    )
+    stale = [i for i in health["needs_you"] if i["kind"] == "stale_build"]
+    assert len(stale) == 1
+    assert stale[0]["command"] == "systemctl --user restart thalamus-pulse"
+    assert stale[0]["detail"].startswith("2 commits behind master; 1 of them change pulse")
+
+    nowhere = tmp_path / "not-a-checkout"
+    nowhere.mkdir()
+    assert metrics._build_dict(metrics.record_build(nowhere))["behind"] is None
+
+
+_CONSOLE = Path(metrics.__file__).parents[1] / "console" / "static"
+_PULSE = Path(metrics.__file__).parent / "static"
+
+
+def _root_tokens(css: str) -> dict[str, str]:
+    match = re.search(r":root\s*\{(.*?)\n\}", css, re.S)
+    assert match, "no :root block"
+    root = re.sub(r"/\*.*?\*/", "", match.group(1), flags=re.S)
+    return dict(re.findall(r"(--[\w-]+):\s*([^;]+);", root))
+
+
+def test_pulse_uses_the_console_tokens_and_identity_hues_verbatim():
+    """
+    Pulse joins the console's system rather than keeping a palette of its own, so a
+    drift between the two is a defect. Every token both declare must hold one value,
+    the spec's list must be present, and the identity hash must be the same code
+    over the same palette — otherwise a scope is one hue on the console and another
+    on the dashboard.
+    """
+    page = (_PULSE / "index.html").read_text()
+    pulse_tokens = _root_tokens(page)
+    console_tokens = _root_tokens((_CONSOLE / "style.css").read_text())
+    required = {"--bg", "--panel", "--panel-hi", "--hair", "--ink", "--muted", "--faint",
+                "--danger", "--danger-text", "--warn", "--ok", "--pending", "--accent",
+                "--mono", "--ui"}
+    assert required <= set(pulse_tokens)
+    for name in set(pulse_tokens) & set(console_tokens):
+        assert pulse_tokens[name].strip() == console_tokens[name].strip(), name
+
+    console_js = (_CONSOLE / "app.js").read_text()
+    for pattern in (r'const MAIN_HUE = "[^"]+"', r"const PALETTE = \[[^\]]+\]",
+                    r"function hashHue\(name\) \{.*?\n\}"):
+        match = re.search(pattern, console_js, re.S)
+        assert match and match.group(0) in page, pattern
+
+    # The faces are pulse's own copies, byte-identical to the console's subsets.
+    for face in ("plex-mono-400", "plex-mono-600", "plex-sans-400", "plex-sans-600"):
+        name = f"{face}.woff2"
+        assert (_PULSE / name).read_bytes() == (_CONSOLE / name).read_bytes(), name
 
 
 def test_web_app_serves_dashboard_and_degrades_without_graph(tmp_path, monkeypatch):
@@ -269,7 +460,9 @@ def test_web_app_serves_dashboard_and_degrades_without_graph(tmp_path, monkeypat
 
     report = client.get("/api/report").json()
     assert report["graph_ok"] is False
-    assert report["disclosures"]["standing"].startswith("layer 1")
+    assert [c["name"] for c in report["health"]["checks"]][0] == "Graph"
+    # The page is one file, revalidated on every load: see web.py for why.
+    assert page.headers["cache-control"] == "no-cache"
 
 
 def test_web_app_serves_the_pwa_install_surface(tmp_path, monkeypatch):
@@ -299,6 +492,12 @@ def test_web_app_serves_the_pwa_install_surface(tmp_path, monkeypatch):
         r = client.get(f"/{icon}")
         assert r.status_code == 200 and r.headers["content-type"] == "image/png"
         assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    for face in ("plex-mono-400", "plex-mono-600", "plex-sans-400", "plex-sans-600"):
+        r = client.get(f"/{face}.woff2")
+        assert r.status_code == 200 and r.headers["content-type"] == "font/woff2"
+        assert f'url("{face}.woff2")' in client.get("/").text
+    assert client.get("/PLEX-OFL.txt").status_code == 200
 
     assert client.get("/no-such-file").status_code == 404
     assert client.get("/../pyproject.toml").status_code == 404

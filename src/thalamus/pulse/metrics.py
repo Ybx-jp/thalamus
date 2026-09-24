@@ -6,12 +6,16 @@ verdicts in the graph. No new telemetry, no writes, no panel-local metrics —
 one priced surface; the dashboard renders it, it never
 mints its own.
 
-The honesty states the frontend renders are produced here, not styled there:
-- `graph_ok: false` → graph-dependent panels stamp TAP-ONLY;
-- `pending` → tap events whose session has not distilled (a trace can only
-  land after its session distills — sync.py);
-- pins carry their floor verdicts verbatim (`insufficient data …` is a state,
-  never a zero);
+The states the frontend renders are produced here, not styled there — the page
+prints what the payload says and never decides whether something is stuck or stale:
+- `health.needs_you` → the act-now items, each with the command that fixes it;
+  `health.checks` → one tile per subsystem, its state word composed here;
+- `pending` → tap events whose session has not landed a Trace, split at
+  `STUCK_AFTER_HOURS` since the session's newest event into in-flight and stuck
+  (a trace can only land after its session distills — sync.py);
+- `build` → the commit this process loaded at start, and how far the checkout
+  has moved since;
+- cost buckets the transcript scan cannot see carry a `blind` chip, never a zero;
 - query cost is wall time from the span tap, so it carries its own measured tap
   overhead and never a mean without the spread beside it.
 """
@@ -20,20 +24,18 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import subprocess
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from thalamus.contract.manifest import available_scopes
 from thalamus.eval.conditioning import conditioning_report
-from thalamus.eval.cost import PINS_FILE, cost_report, load_engaged, load_pins
-from thalamus.eval.gremlin import gremlin_report, load_guard_events
+from thalamus.eval.cost import PINS_FILE, cost_report, load_pins
+from thalamus.eval.gremlin import gremlin_report
 from thalamus.eval.profile import profile_report, to_json as profile_json
-from thalamus.eval.pins import (
-    TraceRow,
-    VerdictRow,
-    build_pin_report,
-)
+from thalamus.eval.pins import TraceRow, VerdictRow
 from thalamus.eval.report import scope_report
 from thalamus.eval.traces import load_events
 
@@ -42,14 +44,31 @@ logger = logging.getLogger(__name__)
 MAIN_SCOPE = "main"
 _CHARS_PER_TOKEN = 4
 
-# The prediction: waste share should land at or below this, with used%
-# not falling. Rendered as the target band on the waste trend — a dial on
-# display, disclosed as such, never a measured claim.
-WASTE_TARGET_PCT = 30.0
-
 # The fan-out guardrail: recalls returning more nodes than this measured
 # 28-40% use vs 66-80% for 3-5 node recalls.
 FANOUT_GUARDRAIL = 15
+
+# A session whose newest tap event is older than this, with no Trace landed, is
+# stuck rather than in flight. A dial, disclosed on the plate: argued from the
+# 2026-09-24 gap, when four pending sessions were hours old and fourteen were
+# 2.4-46 days old with nothing between.
+STUCK_AFTER_HOURS = 48
+
+# Harness session ids are UUIDs (Claude Code, codex and Cursor alike). Anything
+# else in the tap is a fixture that leaked into the operator's ledger
+# (`test-123`), and counting it as a stuck session would ask him to fix nothing.
+_SESSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
+# Where the fixes live. Commands are printed for the operator to run; pulse
+# never runs them.
+SYNC_COMMAND = "thalamus eval sync --write"
+RESTART_COMMAND = "systemctl --user restart thalamus-pulse"
+GRAPH_COMMAND = "docker compose up -d"
+LOG_COMMAND = "journalctl --user -u thalamus-pulse -n 50"
+
+# The paths whose commits change what this page shows: pulse itself and the eval
+# reports it projects.
+_BUILD_PATHS = ("src/thalamus/pulse", "src/thalamus/eval")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -65,8 +84,6 @@ def _iso(ts: datetime) -> str:
 
 def live_snapshot(
     traces_base: Path | None = None,
-    guards_base: Path | None = None,
-    conditioning_base: Path | None = None,
     pins_file: Path | None = None,
     limit: int = 40,
 ) -> dict:
@@ -75,7 +92,9 @@ def live_snapshot(
     A per-turn used% would be fabricated — verdicts exist only after the
     session distills and sync attributes (eval-methodology consultation
     a9bb9f26049a4176). This snapshot therefore carries injection cost,
-    fan-out, and event class; the utility numbers live in report_snapshot.
+    fan-out, and event class. The guard and reminder ledgers are read by
+    report_snapshot as rates with their n: a feed of guard `pass` rows says
+    nothing (consultation c5dcecc212ba4f77).
     """
     events = load_events(base=traces_base)
     pins = _read_pins(pins_file or PINS_FILE)
@@ -99,39 +118,9 @@ def live_snapshot(
         )
     feed.reverse()  # newest first
 
-    guards = [
-        {
-            "ts": _iso(g.ts),
-            "session": g.session_id[:8],
-            "guard": "terminal-step" + (f" ({g.branch})" if g.branch else ""),
-            "verdict": g.verdict,
-        }
-        for g in load_guard_events(guards_base)[-10:]
-    ][::-1]
-
-    conditioning = conditioning_report(conditioning_base, traces_base)
-    firings = [
-        {"ts": _iso(f.ts), "session": f.session_id[:8], "cls": f.cls, "followed": f.followed}
-        for f in conditioning.firings[-10:]
-    ][::-1]
-
-    today = datetime.now(timezone.utc).date()
-    today_events = [e for e in events if e.ts.astimezone(timezone.utc).date() == today]
-    current_session = events[-1].session_id if events else ""
-
     return {
         "generated_at": _iso(datetime.now(timezone.utc)),
         "feed": feed,
-        "guards": guards,
-        "conditioning": firings,
-        "current_session": current_session[:8],
-        "current_scope": pins.get(current_session, ""),
-        "today": {
-            "retrievals": len(today_events),
-            "injected_tokens": sum(e.injected_chars() for e in today_events)
-            // _CHARS_PER_TOKEN,
-            "misses": sum(1 for e in today_events if e.is_miss()),
-        },
         "fanout_guardrail": FANOUT_GUARDRAIL,
     }
 
@@ -151,7 +140,7 @@ def _read_pins(path: Path) -> dict[str, str]:
 
 @dataclass
 class _TimedTrace(TraceRow):
-    """TraceRow plus the timestamp the trend needs; feeds build_pin_report as-is."""
+    """TraceRow plus the timestamp and tool the trend and session rows need."""
 
     ts: str = ""
     tool: str = ""
@@ -208,8 +197,14 @@ def report_snapshot(
     projects_base: Path | None = None,
     since_days: int = 14,
     top: int = 8,
+    build: dict | None = None,
+    now: datetime | None = None,
 ) -> dict:
-    """Session- and lifetime-level view: verdicts, trends, routing signal, cost.
+    """Session- and lifetime-level view: health, verdicts, cost.
+
+    The pins comparison is not projected: until each side has its own permutation
+    null the pair is not comparable (consultation c5dcecc212ba4f77), and the page
+    carries it as dated copy rather than as a live number.
 
     `g` may be None (graph unreachable): the ledger-side reports still render
     and `graph_ok` states it — TAP-ONLY is an explicit condition, not a blank.
@@ -219,17 +214,24 @@ def report_snapshot(
     resolves the operator's own `~/.claude/projects`, so a caller that means to
     report on a fixture reads his archive instead and its numbers are a function
     of what he ran this week.
+
+    `build` is what `record_build` returned when the process started; None reports
+    no build. `now` is a parameter for the same reason the bases are: the stuck
+    line is an age, and a test reading the wall clock would change verdict as its
+    fixture aged.
     """
+    now = now or datetime.now(timezone.utc)
     pins = _read_pins(pins_file or PINS_FILE)
     scopes = [MAIN_SCOPE, *available_scopes()]
+    events = load_events(base=traces_base)
     out: dict = {
-        "generated_at": _iso(datetime.now(timezone.utc)),
+        "generated_at": _iso(now),
         "graph_ok": g is not None,
         "scopes": {},
-        "pins": None,
         "trend": [],
         "sessions": [],
         "pending": None,
+        "build": _build_dict(build),
         "disclosures": _disclosures(),
     }
 
@@ -238,15 +240,9 @@ def report_snapshot(
             for scope in scopes:
                 out["scopes"][scope] = _scope_dict(scope_report(g, scope=scope, top=top))
             read = _read_graph(g)
-            out["pins"] = _pins_dict(
-                build_pin_report(
-                    list(read.traces), read.verdicts, pins, available_scopes(),
-                    engaged=load_engaged(pins_file or PINS_FILE),
-                )
-            )
             out["trend"] = _daily_trend(read)
             out["sessions"] = _session_utilities(read, pins)
-            out["pending"] = _pending(read, traces_base)
+            out["pending"] = _pending(read, events, now)
         except Exception:  # noqa: BLE001 — a graph hiccup degrades to tap-only, honestly
             logger.exception("Graph read failed; serving tap-only report")
             out["graph_ok"] = False
@@ -267,14 +263,15 @@ def report_snapshot(
     except Exception:  # noqa: BLE001 — transcripts move; cost must not take the page down
         logger.exception("Cost scan failed")
         out["cost"] = None
+    out["health"] = _health(out, events, since_days, now)
     return out
 
 
 def _daily_trend(read: _GraphRead) -> list[dict]:
     """Per-day earned/wasted tokens over attributed verdicts — the waste trend.
 
-    Rates mislead without absolutes (25% of ~731 tok vs 50% of ~43.6K differ
-    ~60x in absolute waste), so each point carries both.
+    Rates mislead without absolutes (25% of ~731 tok wastes ~183 and 50% of
+    ~43.6K wastes ~21,800 — ~119x apart), so each point carries both.
     """
     by_vid = {t.vid: t for t in read.traces}
     days: dict[str, dict[str, int]] = {}
@@ -372,52 +369,319 @@ def _session_utilities(read: _GraphRead, pins: dict[str, str]) -> list[dict]:
     return ordered[:20]
 
 
-def _pending(read: _GraphRead, traces_base: Path | None) -> dict:
-    """Tap events not yet landed as Trace nodes — the honesty badge's data.
+def _pending(read: _GraphRead, events: list, now: datetime) -> dict:
+    """Tap events not yet landed as Trace nodes, split into in flight and stuck.
 
-    A trace can only land after its session distills; until then it exists in
-    the tap alone. Pending can also be *stuck* (session distilled long ago but
-    never synced) — the age says which.
+    A trace can only land after its session distills; until then it exists in the
+    tap alone, and a session hours old is simply in flight. One whose newest tap
+    event is more than `STUCK_AFTER_HOURS` old has had every chance to distill and
+    sync, so it is stuck. The line is measured from the *newest* event, not the
+    oldest: a long session is not stuck for having started two days ago.
     """
     landed_ids = {t.vid.rsplit(":", 1)[-1] for t in read.traces}
     pending: dict[str, dict] = {}
-    for event in load_events(base=traces_base):
+    for event in events:
         if event.is_legacy() or event.trace_id() in landed_ids:
             continue
+        if not _SESSION_ID.fullmatch(event.session_id):
+            continue
+        ts = _iso(event.ts)
         row = pending.setdefault(
-            event.session_id, {"session": event.session_id[:8], "events": 0, "oldest": _iso(event.ts)}
+            event.session_id,
+            {"session": event.session_id[:8], "events": 0, "oldest": ts, "newest": ts},
         )
         row["events"] += 1
-        row["oldest"] = min(row["oldest"], _iso(event.ts))
+        row["oldest"] = min(row["oldest"], ts)
+        row["newest"] = max(row["newest"], ts)
+    line = now - timedelta(hours=STUCK_AFTER_HOURS)
+    stuck = [r for r in pending.values() if _parse_iso(r["newest"]) < line]
+    in_flight = [r for r in pending.values() if _parse_iso(r["newest"]) >= line]
     return {
-        "sessions": sorted(pending.values(), key=lambda r: r["oldest"]),
-        "total": sum(r["events"] for r in pending.values()),
+        "stuck_after_hours": STUCK_AFTER_HOURS,
+        "stuck": _pending_group(stuck),
+        "in_flight": _pending_group(in_flight),
+    }
+
+
+def _pending_group(rows: list[dict]) -> dict:
+    return {
+        "sessions": sorted(rows, key=lambda r: r["oldest"]),
+        "events": sum(r["events"] for r in rows),
+    }
+
+
+def _parse_iso(ts: str) -> datetime:
+    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+# ---------------------------------------------------------------------------
+# Build — what this process loaded, against what the checkout holds now.
+# ---------------------------------------------------------------------------
+
+
+def _git(root: Path, *args: str) -> str | None:
+    """Stripped stdout of a successful `git -C root <args>`, else None."""
+    try:
+        proc = subprocess.run(
+            ("git", "-C", str(root), *args), capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def _checkout_root() -> Path | None:
+    """The checkout this module was imported from, or None.
+
+    The toplevel must hold *this* file: a wheel installed into a virtualenv that
+    sits inside some checkout would otherwise report that checkout's HEAD as the
+    code pulse is running.
+    """
+    here = Path(__file__).resolve()
+    top = _git(here.parent, "rev-parse", "--show-toplevel")
+    if not top:
+        return None
+    root = Path(top)
+    return root if (root / "src/thalamus/pulse/metrics.py").resolve() == here else None
+
+
+def record_build(root: Path | None = None) -> dict:
+    """The commit this process is running and when it started. Call once, at boot.
+
+    The Python is loaded once and frozen; the checkout under it moves. Recording
+    HEAD here is what lets a later report say how far behind the process is.
+    """
+    root = root if root is not None else _checkout_root()
+    sha = _git(root, "rev-parse", "HEAD") if root is not None else None
+    committed = _git(root, "show", "-s", "--format=%cI", sha) if root and sha else None
+    return {
+        "root": str(root) if sha else None,
+        "sha": sha,
+        "started_at": _iso(datetime.now(timezone.utc)),
+        "committed_at": committed,
+    }
+
+
+def _build_dict(build: dict | None) -> dict:
+    """The recorded build plus how far the checkout has moved since, read now.
+
+    `behind` is None when there is no checkout to be behind (a wheel install, or
+    no build recorded) — unknown, never 0. `touching` counts the commits among
+    those that change pulse or the eval reports it projects.
+    """
+    build = build or {}
+    sha, root = build.get("sha"), build.get("root")
+    out = {
+        "sha": sha[:7] if sha else None,
+        "started_at": build.get("started_at"),
+        "committed_at": build.get("committed_at"),
+        "branch": None,
+        "behind": None,
+        "touching": None,
+    }
+    if not (sha and root):
+        return out
+    behind = _git(Path(root), "rev-list", "--count", f"{sha}..HEAD")
+    touching = _git(Path(root), "rev-list", "--count", f"{sha}..HEAD", "--", *_BUILD_PATHS)
+    out["branch"] = _git(Path(root), "rev-parse", "--abbrev-ref", "HEAD")
+    out["behind"] = int(behind) if behind and behind.isdigit() else None
+    out["touching"] = int(touching) if touching and touching.isdigit() else None
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Health — the Status page's first two sections, composed here.
+# ---------------------------------------------------------------------------
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _hhmm(ts: datetime) -> str:
+    """Server-local wall time. Pulse and the operator share a machine."""
+    return ts.astimezone().strftime("%H:%M")
+
+
+def _health(out: dict, events: list, since_days: int, now: datetime) -> dict:
+    """Act-now items and check tiles, from the report already assembled.
+
+    State words mean one thing each: `failed` is act now and always has a
+    needs-you item of its own; `in_flight` is moving and needs nothing; `ok` is
+    checked and fine; `count` is a number with no grounded threshold, so it never
+    turns red whatever it reads.
+    """
+    checks = [
+        _graph_check(out["graph_ok"], now),
+        _tap_check(events, now),
+        _sync_check(out.get("pending")),
+        _cost_check(out.get("cost"), since_days),
+        _memory_query_check(out.get("gremlin")),
+        _guard_check(out.get("gremlin")),
+    ]
+    needs_you = [item for c in checks if (item := c.pop("needs_you", None))]
+    stuck = (out.get("pending") or {}).get("stuck") or {}
+    if stuck.get("sessions"):
+        needs_you.append(_stuck_item(stuck, now))
+    build = out.get("build") or {}
+    if build.get("behind"):
+        needs_you.append(_stale_build_item(build))
+    return {"needs_you": needs_you, "checks": checks}
+
+
+def _check(name: str, state: str, word: str, lines: list[str], short: str, **extra) -> dict:
+    """One tile. `short` is the one-line body the phone layout has room for."""
+    return {"name": name, "state": state, "word": word, "lines": lines, "short": short, **extra}
+
+
+def _graph_check(graph_ok: bool, now: datetime) -> dict:
+    if graph_ok:
+        return _check("Graph", "ok", "OK", ["reachable", f"verdicts as of {_hhmm(now)}"],
+                      "reachable")
+    return _check(
+        "Graph", "failed", "FAILED", ["unreachable", "tap-only: no new verdicts"], "unreachable",
+        needs_you={
+            "kind": "failed", "word": "FAILED",
+            "title": "The graph is unreachable",
+            "detail": "Pulse is serving tap-only data: no new verdicts and no sync state.\n"
+                      "The tap keeps recording, so nothing is lost while it is down.",
+            "command": GRAPH_COMMAND,
+        },
+    )
+
+
+def _tap_check(events: list, now: datetime) -> dict:
+    if not events:
+        return _check("Tap", "count", "COUNT", ["no events recorded", "fills as memory tools run"],
+                      "no events yet")
+    today = now.astimezone().date()
+    n_today = sum(1 for e in events if e.ts.astimezone().date() == today)
+    last = _hhmm(max(e.ts for e in events))
+    return _check("Tap", "ok", "OK", [f"last event {last}", f"{n_today} recalls today"],
+                  f"{last} · {n_today} today")
+
+
+def _sync_check(pending: dict | None) -> dict:
+    """In flight is what the tile reports; stuck has a needs-you item of its own."""
+    if pending is None:
+        return _check("Sync", "count", "NOT READ", ["needs the graph", "to tell landed from not"],
+                      "needs the graph")
+    hours = pending["stuck_after_hours"]
+    flight, stuck = pending["in_flight"], pending["stuck"]
+    n_flight, n_stuck = len(flight["sessions"]), len(stuck["sessions"])
+    if n_flight:
+        second = f"+ {n_stuck} stuck, above" if n_stuck else f"all younger than {hours} h"
+        return _check(
+            "Sync", "in_flight", "IN FLIGHT",
+            [f"{_plural(n_flight, 'session')} · {_plural(flight['events'], 'event')}", second],
+            f"{_plural(n_flight, 'session')} · < {hours} h",
+        )
+    if n_stuck:
+        return _check("Sync", "failed", "STUCK",
+                      [f"{_plural(n_stuck, 'session')} stuck", "none in flight"],
+                      f"{n_stuck} stuck")
+    return _check("Sync", "ok", "OK", ["every tap event landed", "nothing in flight"],
+                  "all landed")
+
+
+def _cost_check(cost: dict | None, since_days: int) -> dict:
+    if cost is None:
+        return _check(
+            "Cost scan", "failed", "FAILED", ["scan failed", "see the server log"], "scan failed",
+            needs_you={
+                "kind": "failed", "word": "FAILED",
+                "title": "The cost scan failed",
+                "detail": "The transcript scan raised, so the cost section is empty.\n"
+                          "The traceback is in the server log.",
+                "command": LOG_COMMAND,
+            },
+        )
+    extract_blind = any(b["name"] == "extract" and b.get("blind") for b in cost["buckets"])
+    second = "extract not measured" if extract_blind else "every bucket read"
+    return _check("Cost scan", "ok", "OK", [f"{since_days} days read", second], second)
+
+
+def _memory_query_check(gremlin: dict | None) -> dict:
+    mq = (gremlin or {}).get("memory_query") or {}
+    total, failed = mq.get("total", 0), mq.get("server_failed", 0)
+    return _check(
+        "memory_query", "count", "COUNT",
+        [f"{_plural(total, 'call')} · {failed} failed",
+         f"{mq.get('dialect_rejected', 0)} dialect rejects"],
+        f"{failed} failed of {total}",
+    )
+
+
+def _guard_check(gremlin: dict | None) -> dict:
+    g = gremlin or {}
+    blocks = g.get("blocks", 0)
+    seen = blocks + g.get("passes", 0)
+    rate = f" ({100 * blocks / seen:.1f}%)" if seen else ""
+    return _check(
+        "Gremlin guard", "count", "COUNT",
+        [f"{blocks} blocks in {seen}{rate}", f"{g.get('rescued', 0)} rescued in-session"],
+        f"{blocks} of {seen} blocked",
+    )
+
+
+def _stuck_item(stuck: dict, now: datetime) -> dict:
+    sessions = stuck["sessions"]
+    oldest = _parse_iso(min(r["oldest"] for r in sessions))
+    days = (now - oldest).days
+    return {
+        "kind": "stuck", "word": "STUCK",
+        "title": f"{_plural(len(sessions), 'session')} never synced",
+        "detail": f"{stuck['events']} recalls have no verdict. Oldest from "
+                  f"{oldest.astimezone().date().isoformat()} — {_plural(days, 'day')}.\n"
+                  f"Older than {STUCK_AFTER_HOURS} h with tap events but no Trace = stuck, "
+                  "not lagging.",
+        "command": SYNC_COMMAND,
+    }
+
+
+def _stale_build_item(build: dict) -> dict:
+    committed = build.get("committed_at")
+    since = _parse_iso(committed).astimezone().date().isoformat() if committed else build["sha"]
+    branch = build.get("branch")
+    against = branch if branch and branch != "HEAD" else "this checkout's HEAD"
+    count = f"{_plural(build['behind'], 'commit')} behind {against}"
+    if build.get("touching") is not None:
+        count += f"; {build['touching']} of them change pulse or the eval code it reads"
+    return {
+        "kind": "stale_build", "word": "STALE BUILD",
+        "title": f"Pulse is serving code from {since}",
+        "detail": f"{count}.\nThe server loaded its code at start and is not running them.",
+        "command": RESTART_COMMAND,
     }
 
 
 def _disclosures() -> dict:
-    """The calibration plate: dials and blind spots, rendered verbatim.
+    """The footer plate: dials and blind spots, rendered verbatim.
 
     Dials are dials — display them as settings, never as metrics.
     """
     return {
-        "standing": "layer 1 — instrumented, measuring. No utility claims before layer-2 counterfactuals.",
         "dials": [
-            "attribution: lexical, ≥2 terms and ≥30% overlap (crude by design; the grader is itself unvalidated)",
-            "pricing: 4 chars/token; even per-node share of each trace's rendered response",
-            "cost proxy: weighted tokens — input 1.0 / cache-create 1.25 / cache-read 0.1 / output 5.0",
-            f"waste target band: ≤{WASTE_TARGET_PCT:.0f}% is a prediction, not a measurement",
-            f"fan-out guardrail: {FANOUT_GUARDRAIL} nodes",
-            "pin signal floor: ≥10 attributed nodes per side",
+            f"{_CHARS_PER_TOKEN} chars/token",
+            "weighted-token ratios",
+            f"{FANOUT_GUARDRAIL}-node guardrail",
+            f"{STUCK_AFTER_HOURS} h stuck line",
         ],
-        "surfaces": "priced: recall tools, memory_query (incl. rejections), bash_gremlin via tap. Blind: gremlin in script files.",
+        "blind": ["gremlin in script files", "extraction runs"],
+        "note": (
+            "Retrieval quality (used vs ignored) lives on How it works, with its caveat "
+            "attached — it is not an ops signal."
+        ),
+        "cost_proxy": (
+            "weighted-token proxy — API price ratios (input 1 · cache write 1.25 · "
+            "cache read 0.1 · output 5). Not dollars."
+        ),
         "query_cost": (
             "wall time per traversal shape, one machine, unrepeated — p50/p95/max, "
             "never a bare mean; the tap reports its own measured overhead. Step-level "
             "cost is on demand only (`thalamus eval profile --query`), because "
             "profiling distorts the traversal it measures."
         ),
-        "attribution_lag": "verdicts exist only after a session distills and sync runs; the NOW column is cost-only by design.",
     }
 
 
@@ -448,35 +712,6 @@ def _scope_dict(report) -> dict:
             }
             for vid, count, wasted, text in report.most_ignored
         ],
-    }
-
-
-def _utility_dict(u) -> dict:
-    return {
-        "returns": u.returns,
-        "attributed": u.attributed,
-        "used": u.used,
-        "used_pct": u.used_pct,
-        "earned_tokens": u.used_chars // _CHARS_PER_TOKEN,
-        "wasted_tokens": u.ignored_chars // _CHARS_PER_TOKEN,
-    }
-
-
-def _pins_dict(report) -> dict:
-    return {
-        "experts": [
-            {
-                "scope": e.scope,
-                "pinned": _utility_dict(e.pinned),
-                "consulted": _utility_dict(e.consulted),
-                "ledger_only": e.ledger_only,
-                "idle_spawns": e.idle_spawns,
-                "pinned_sessions": len(e.pinned_sessions),
-                "signal": e.signal(),
-                "floor_met": "insufficient data" not in e.signal(),
-            }
-            for e in report.experts
-        ]
     }
 
 
@@ -517,6 +752,24 @@ def _conditioning_dict(report) -> dict:
     }
 
 
+# Buckets the transcript scan reads as zero because it cannot see them, not
+# because nothing ran. Neither is probed yet: extraction runs in a temp-dir
+# subprocess the scan likely does not walk, and a consult subagent may share its
+# caller's transcript (consultation c5dcecc212ba4f77).
+_EXTRACT_BLIND = {"chip": "NOT MEASURED", "why": "distillation runs outside the scan"}
+_EXPERT_BLIND = {"chip": "0 · UNVERIFIED", "why": "consult subagents may share the caller’s transcript"}
+
+
+def _blind_spot(name: str, weighted: int) -> dict | None:
+    if weighted:
+        return None
+    if name == "extract":
+        return _EXTRACT_BLIND
+    if name.startswith("expert:"):
+        return _EXPERT_BLIND
+    return None
+
+
 def _cost_dict(report, since: date) -> dict:
     return {
         "since": since.isoformat(),
@@ -526,6 +779,7 @@ def _cost_dict(report, since: date) -> dict:
                 "weighted": b.weighted,
                 "calls": b.calls,
                 "sessions": len(b.sessions),
+                "blind": _blind_spot(name, b.weighted),
             }
             for name, b in sorted(report.buckets.items(), key=lambda kv: -kv[1].weighted)
         ],
