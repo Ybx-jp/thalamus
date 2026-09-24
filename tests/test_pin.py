@@ -1136,3 +1136,36 @@ def test_a_cost_preset_lands_in_the_agent_frontmatter(tmp_path):
 
     assert "\nmodel: fable\n" in frontmatter
     assert "\neffort: max\n" in frontmatter
+
+
+def test_a_cost_preset_lands_in_the_codex_profile_as_top_level_keys(tmp_path):
+    """
+    Scenario: the same preset reaches a codex pin. The keys have to be top-level —
+    written after an `[mcp_servers.*]` header they would belong to that table and codex
+    would never read them — so this parses the profile rather than grepping it.
+    """
+    import tomllib
+
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "designer.yaml").read_text()
+    (tmp_path / "experts" / "designer.yaml").write_text(source + "\ncost: quick\n")
+    (tmp_path / "presets" / "cost.yaml").write_text(
+        "quick:\n  model_class: light\n  effort: low\n"
+    )
+    servers = {"penpot": {"type": "http", "url": "http://localhost:4401/mcp"}}
+
+    profile = tomllib.loads(render_codex_profile(load_manifest("designer", tmp_path), servers))
+
+    assert profile["model"] == "gpt-5.6-luna"
+    assert profile["model_reasoning_effort"] == "low"
+    assert "model" not in profile["mcp_servers"]["penpot"]
+
+
+def test_an_inherit_scope_leaves_codex_model_and_effort_to_codexs_own_config():
+    import tomllib
+
+    profile = tomllib.loads(render_codex_profile(load_manifest("literature", REPO_CONFIG)))
+
+    assert "model" not in profile
+    assert "model_reasoning_effort" not in profile
