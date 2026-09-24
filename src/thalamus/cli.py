@@ -4429,6 +4429,33 @@ def _cmd_room(args, parser):
     parser.parse_args(["room", "--help"])
 
 
+def _print_codex_projection() -> None:
+    """How each model class reaches codex today, against its live catalog.
+
+    The class table is pinned; the catalog moves. A class whose slug the vendor has
+    retired in favour of another is followed at render time and shown here with the
+    arrow, and one whose slug has left the catalog altogether needs the table edited.
+    """
+    from thalamus.harness.codex_models import catalog, current
+    from thalamus.harness.pin import CODEX_MODELS
+
+    models = catalog()
+    if models is None:
+        print("  codex: catalog unreadable (codex not installed?); pinned table in use")
+        return
+    listed = {m.slug for m in models}
+    rows = []
+    for cls, slug in CODEX_MODELS.items():
+        now = current(slug, models)
+        if now != slug:
+            rows.append(f"{cls} {slug} → {now}")
+        elif slug not in listed:
+            rows.append(f"{cls} {slug} (NOT IN CATALOG — edit pin.CODEX_MODELS)")
+        else:
+            rows.append(f"{cls} {slug}")
+    print("  codex: " + "; ".join(rows))
+
+
 def _cmd_preset(args, parser):
     """List, define and remove the presets a manifest selects by name.
 
@@ -4472,6 +4499,8 @@ def _cmd_preset(args, parser):
                 print(f"  {name:<16} UNDEFINED — selected by: {', '.join(chosen[name])}")
             print("  settings: " + "; ".join(
                 f"{k} = {'|'.join(v)}" for k, v in dimension.settings.items()))
+            if dimension.key == "cost":
+                _print_codex_projection()
         return
 
     dimension = dimension_named(args.dimension)
