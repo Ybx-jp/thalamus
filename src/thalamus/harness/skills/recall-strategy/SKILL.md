@@ -64,6 +64,14 @@ Pass the artifact path you actually hold — absolute is fine. The lookup resolv
 it to the file's derived `(repo, path)` and returns every spelling's sessions, so
 there is nothing to gain by re-asking with the path rewritten another way.
 
+Holding a vertex id from any result, the row tools walk from it one line per node:
+`memory_resolve` opens it in full (the rest of an elided session's claims, the
+decision the digest named), `memory_expand` takes one hop — `same_file`,
+`same_entity`, `same_episode`, `resolved_by`, `uses`, `threads` — and
+`memory_session_claims` / `memory_source_chunks` list a session's claims or the
+passages behind a knowledge claim. When you know the *kind* you want — the decisions
+about X, not the sessions — `memory_search_kind` is L1 narrowed to one kind.
+
 **L3 — `memory_query`** (main pin only) for **relational questions lexical
 recall cannot answer**. One read-only Gremlin traversal; the canonical schema is
 in the tool's own description. Recipes below are tested against the live graph.
