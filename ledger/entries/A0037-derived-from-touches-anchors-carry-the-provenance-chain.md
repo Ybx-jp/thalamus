@@ -36,6 +36,14 @@ none
 
 ## Verdicts
 
+- 2026-09-24T01:14:53-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/ingest.py § "anchor_citations" =sha256:250a85e5aab835c3113d5b9fcbfe4089f1d5f3ef369f105740995f9482b27498
+  artifact: sha256:38a3116f8bd9a4417d7a03fdd061acaa72699b9819673e6e1ec2b84f468df974
+  note: propagated from a moved ground
+- 2026-09-24T01:16:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/ingest.py § "anchor_citations" =sha256:38a3116f8bd9a4417d7a03fdd061acaa72699b9819673e6e1ec2b84f468df974
+  note: anchor_citations now takes the index-aligned citation strings instead of claim objects; it still resolves each claim's ANCHORS target chunk by its verbatim citation, so the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

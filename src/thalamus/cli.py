@@ -3041,12 +3041,8 @@ def _cmd_backfill_chunks(args):
                 .values("name").to_list()
             ]
 
-            class _Cited:
-                def __init__(self, citation):
-                    self.citation = citation
-
-            cited = [_Cited(str(c.get("citation") or "")) for c in claims]
-            chunks = build_chunks(text, cited, entity_names)
+            cited = [str(c.get("citation") or "") for c in claims]
+            chunks = build_chunks(text, entity_names)
             anchored = anchor_citations(chunks, cited)
             planned += len(chunks)
             print(f"  {row['title'][:52]:<54} {len(chunks):>4} chunks  "

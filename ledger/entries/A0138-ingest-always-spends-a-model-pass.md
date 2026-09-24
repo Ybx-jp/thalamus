@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-24T01:14:53-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/ingest.py § "ingest" =sha256:0f4103b5dfc79231f5ac10a5394d329fd8e0f636dae749c2f7f62e82a5e5079f
+  artifact: sha256:0cd38c5a1abe29a5d5b4e56ae067ebd54f3f140abc2cba44854cd623b3f8697c
+  note: propagated from a moved ground
+- 2026-09-24T01:16:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/ingest.py § "ingest" =sha256:0cd38c5a1abe29a5d5b4e56ae067ebd54f3f140abc2cba44854cd623b3f8697c
+  note: Only the arguments to build_chunks and anchor_citations changed; preflight and the unconditional extraction pass are untouched, so the assertion is unaffected.
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live
