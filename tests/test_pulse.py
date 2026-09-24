@@ -141,6 +141,36 @@ def test_live_snapshot_is_cost_only_and_flags_the_guardrail(tmp_path):
     assert set(live) == {"generated_at", "feed", "fanout_guardrail"}
 
 
+def test_live_feed_folds_runs_of_calls_that_served_nothing():
+    """
+    Scenario: newest first — three reflex checks that injected nothing (two scopes),
+    a recall that did, then one more empty check
+
+    Verifications:
+    - a consecutive run of one tool's zero-injection rows is one row, with the
+      run's newest time, its count, and every scope in it
+    - a row that injected anything is never folded, and breaks the run
+    - a run of one is folded too, so every quiet row reads the same way
+    """
+    def row(ts, tool, scope, tokens=0, fanout=0):
+        return {"ts": ts, "tool": tool, "scope": scope, "tokens": tokens, "fanout": fanout,
+                "rejected": False, "miss": False, "over_guardrail": False, "query": ""}
+
+    feed = metrics._collapse_quiet([
+        row("09:05", "reflex_lexical", "frontend"),
+        row("09:04", "reflex_lexical", "main"),
+        row("09:03", "reflex_lexical", "frontend"),
+        row("09:02", "memory_recall", "main", tokens=900, fanout=4),
+        row("09:01", "reflex_lexical", "architect"),
+    ])
+
+    assert [r["ts"] for r in feed] == ["09:05", "09:02", "09:01"]
+    assert feed[0]["collapsed"] == 3 and feed[0]["scopes"] == ["frontend", "main"]
+    assert feed[0]["summary"] == "3 checks, nothing served"
+    assert "collapsed" not in feed[1]
+    assert feed[2]["summary"] == "1 check, nothing served"
+
+
 def test_report_without_graph_is_tap_only_not_empty(tmp_path):
     """
     Scenario: the graph is unreachable (g=None)

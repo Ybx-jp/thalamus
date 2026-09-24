@@ -33,8 +33,15 @@
   --mono: "Plex Mono", ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   --ui: "Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   /* Pulse's two additions, both non-text fills (handoff spec §3). */
-  --deemph: #3a4350;      /* the placebo bar, below-n bars, unfilled squares */
-  --danger-hair: #4a2a29; /* the border of a needs-you card */
+  /* The placebo bar, below-n bars, unfilled squares. A fill that must be seen
+     against its ground, so it clears the 3:1 non-text floor on both it sits on:
+     3.20:1 on --panel, 3.50:1 on --bg. Against --accent it stays 1.61:1, which is
+     what keeps it reading as subordinate to the bar it sits beside. */
+  --deemph: #606b7a;
+  /* The border of a needs-you card, 1.36:1 on --panel and decorative on purpose:
+     the card is identified by its chip and its 4px --danger edge (4.11:1), so no
+     meaning rests on this line and WCAG 1.4.11 does not bind it. */
+  --danger-hair: #4a2a29;
   /* The ink a filled danger chip carries: 4.59:1 on --danger. */
   --chip-ink: #0b0e12;
 }
@@ -180,6 +187,8 @@ table.rows .num { text-align: right; }
 .live .num { text-align: right; }
 .live .t { color: var(--muted); }
 .live .scope { display: flex; align-items: center; gap: 8px; }
+.live td.wrap { white-space: normal; }
+.live .scopes-cell { display: flex; flex-wrap: wrap; gap: 2px 14px; }
 .live .over { color: var(--pending); }
 .live .dim { color: var(--muted); }
 .live .foot { font: 11px var(--mono); color: var(--faint); padding: 6px 8px 0; }
@@ -935,19 +944,24 @@ function renderLive(live) {
   if (!live.feed.length) { el.innerHTML = `<div class="empty">no tap events yet</div>`; return; }
   const nodes = e => e.rejected ? "rejected" : e.miss ? "empty" : e.fanout + (e.over_guardrail ? " ▲" : "");
   const cls = e => e.over_guardrail ? "over" : "dim";
+  /* A folded row (the server's `collapsed`) is a run of calls that served nothing:
+     it prints the server's summary in place of nodes and tokens, and names every
+     scope in the run, each beside its dot. */
+  const scopesOf = e => e.collapsed ? e.scopes : [e.scope];
+  const scopeCell = e => scopesOf(e).map(s => `<span class="scope"><span class="dot" style="background:${scopeHue(s)}"></span>${esc(s || "main")}</span>`).join("");
   const desk = live.feed.slice(0, 8).map(e => `<tr title="${esc(e.query)}">
       <td class="t">${hhmm(e.ts)}</td>
-      <td><span class="scope"><span class="dot" style="background:${scopeHue(e.scope)}"></span>${esc(e.scope || "main")}</span></td>
-      <td>${esc(e.tool)}</td>
-      <td class="num ${cls(e)}">${nodes(e)}</td>
-      <td class="num dim">~${K(e.tokens)}</td></tr>`).join("");
+      <td class="wrap"><span class="scopes-cell">${scopeCell(e)}</span></td>
+      ${e.collapsed
+        ? `<td colspan="3" class="dim">${esc(e.tool)} · ${esc(e.summary)}</td>`
+        : `<td>${esc(e.tool)}</td><td class="num ${cls(e)}">${nodes(e)}</td><td class="num dim">~${K(e.tokens)}</td>`}</tr>`).join("");
   /* Phone: the comp drops the scope name, but hue is never the only carrier (spec
      §3), so the name rides a second line under the tool. */
   const mob = live.feed.slice(0, 5).map(e => `<div class="r" title="${esc(e.query)}">
-      <span class="dot" style="background:${scopeHue(e.scope)}"></span>
+      ${scopesOf(e).length === 1 ? `<span class="dot" style="background:${scopeHue(scopesOf(e)[0])}"></span>` : "<span></span>"}
       <span class="t">${hhmm(e.ts)}</span><span>${esc(e.tool)}</span>
-      <span class="fr ${e.over_guardrail ? "over" : ""}">${e.rejected ? "rejected" : e.miss ? "empty" : e.fanout + "n" + (e.over_guardrail ? " ▲" : "")}  ~${K(e.tokens)}</span>
-      <span></span><span></span><span class="sc">${esc(e.scope || "main")}</span></div>`).join("");
+      <span class="fr ${e.over_guardrail ? "over" : ""}">${e.collapsed ? "" : (e.rejected ? "rejected" : e.miss ? "empty" : e.fanout + "n" + (e.over_guardrail ? " ▲" : "")) + "  ~" + K(e.tokens)}</span>
+      <span></span><span></span><span class="sc">${e.collapsed ? esc(e.summary) + " · " : ""}${esc(scopesOf(e).map(s => s || "main").join(" · "))}</span></div>`).join("");
   el.innerHTML = `<div class="live-d"><table>
       <thead><tr><th>time</th><th>scope</th><th>tool</th><th class="num">nodes</th><th class="num">tokens</th></tr></thead>
       <tbody>${desk}</tbody></table>

@@ -120,9 +120,37 @@ def live_snapshot(
 
     return {
         "generated_at": _iso(datetime.now(timezone.utc)),
-        "feed": feed,
+        "feed": _collapse_quiet(feed),
         "fanout_guardrail": FANOUT_GUARDRAIL,
     }
+
+
+def _collapse_quiet(feed: list[dict]) -> list[dict]:
+    """Fold each consecutive run of one tool's zero-injection calls into one row.
+
+    A reflex check that served nothing costs nothing and returns nothing, and a
+    run of them pushed every recall that did inject off the eight rows the page
+    shows. The folded row keeps the run's newest time, its count and every scope
+    in it, and carries `summary` — the words the page prints instead of nodes
+    and tokens. A run of one is folded too, so a quiet row reads one way.
+    """
+    out: list[dict] = []
+    for row in feed:
+        quiet = row["tokens"] == 0 and row["fanout"] == 0 and not row["rejected"]
+        if not quiet:
+            out.append(row)
+            continue
+        last = out[-1] if out else None
+        if last is not None and last.get("collapsed") and last["tool"] == row["tool"]:
+            last["collapsed"] += 1
+            if row["scope"] not in last["scopes"]:
+                last["scopes"].append(row["scope"])
+        else:
+            last = {**row, "collapsed": 1, "scopes": [row["scope"]]}
+            out.append(last)
+        noun = "check" if row["tool"].startswith("reflex_") else "call"
+        last["summary"] = f"{_plural(last['collapsed'], noun)}, nothing served"
+    return out
 
 
 def _read_pins(path: Path) -> dict[str, str]:
