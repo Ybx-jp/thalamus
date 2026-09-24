@@ -364,30 +364,44 @@ the withheld node's *text* against later retrievals instead of its id.
 than the agent. The `reflex.sh` hook (`PostToolUse`, matcher `Bash`) fires when a
 command's result reads as a failure — a pytest `FAILED` line, a traceback, `command not
 found`, an exception line, or a call the harness interrupted — and hands the output to
-`thalamus reflex`, which extracts identifiers from it, recalls against them in the
-session's pinned scope, and injects what came back in an envelope labelled as
-unsolicited. Nothing is paraphrased: the blocks are the reader's own rendering, tier
-stamps and vertex ids included. The Bash result carries no exit status, so a command
-that fails silently never fires; that false-negative class is permanent and the
-report is read with it in mind.
+`thalamus reflex`, which extracts identifiers from it and recalls against them in the
+session's pinned scope. The Bash result carries no exit status, so a command that fails
+silently never fires; that false-negative class is permanent and the report is read
+with it in mind.
+
+What the agent receives is a digest labelled as unsolicited: one line per record —
+a short handle such as `R3.1`, its kind, tier stamp, date, its own first sentence, and
+the identifiers it matched — and the path of a pointer file,
+`~/.thalamus/reflex/pointers/<session>/R<n>.md`, holding the records verbatim with their
+vertex ids and the handle each was shown under. Nothing is paraphrased: the records are
+the reader's own rendering. The digest is sized in characters, under 4,000 however many
+records the recall returned, so it never reaches Claude Code's 10,000-character line
+past which a hook's output reaches the agent as a 2,000-character preview; a record that
+does not fit is counted in the digest and kept in the file.<!-- (A0157, cites-as-live) -->
 
 Three controls bound the cost. The same anchors do not refire for the same agent in
 the same session, so a rerun of a failing test is silent; a session has a
-24,000-character ceiling on what the reflex may inject over its life, refused with the
-arithmetic when crossed; and an empty answer is the ordinary one, since nothing is
-served unless at least two unseen anchors match. Every qualifying failure is written to
-`~/.thalamus/reflex/sessions/<session>.jsonl` with its outcome — served, empty, deduped,
-refused, no anchors — and every firing that retrieved is one line in the trace tap under
-`tool_name` `reflex_lexical`, priced by `eval sync` like any other retrieval.
+24,000-character ceiling on the digests the reflex may inject over its life, refused
+with the arithmetic when crossed; and an empty answer is the ordinary one, since nothing
+is served unless at least two unseen anchors match. Every qualifying failure is written
+to `~/.thalamus/reflex/sessions/<session>.jsonl` with its outcome — served, empty,
+deduped, refused, no anchors — and every firing that retrieved is one line in the trace
+tap under `tool_name` `reflex_lexical`, priced by `eval sync` like any other retrieval:
+its response is the pointer file, so the vertex ids are read from it, its injected
+characters are the digest's, and it carries the handle map. A read of a pointer file —
+by `Read`, `Grep` or a shell command naming its path — is recorded by
+`reflex-pointer-tap.sh` (`PostToolUse`, all tools) as a `reflex_pointer_open` line.
 
 The report splits by arm. The ledger half needs no graph: qualifying failures, outcomes,
-served-per-failure, injected characters per session, and how many served blocks were
-phrased as instructions (quoted verbatim and named as records, never dropped). The
-verdict half reads the landed traces and reports two used-rates side by side: the
-lexical verdict, which carries ~4 points of discrimination over a ~59-point chance
-floor and is read as delivery, and the citation verdict — a backticked vertex id in the
-agent's later output — which is the unfakeable form and the one the reflex's next rung
-is gated on.
+served-per-failure, injected characters per session, how many served records were
+phrased as instructions (quoted verbatim and named as records, never dropped), how many
+digests crossed the spill line, and how many served pointer files the agent opened — a
+secondary signal, since an open says the agent looked, not that the record changed
+what it did. The verdict half reads the landed traces and reports two used-rates side by
+side: the lexical verdict, which carries ~4 points of discrimination over a ~59-point
+chance floor and is read as delivery, and the citation verdict — a vertex id, or the
+handle the digest showed for it, in the agent's later output — which is the unfakeable
+form and the primary use signal.
 
 `eval report` gives the used-vs-ignored rate one ranker window at a time and refuses to
 pool across a dial change, because a rate averaged over two settings measures neither.

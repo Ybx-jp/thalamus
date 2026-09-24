@@ -425,7 +425,7 @@ def cost_report(
         if event.ts.date() < since:
             continue
         calls, chars = report.injection.get(event.tool, (0, 0))
-        report.injection[event.tool] = (calls + 1, chars + len(event.tool_response))
+        report.injection[event.tool] = (calls + 1, chars + event.injected_chars())
 
     return report
 

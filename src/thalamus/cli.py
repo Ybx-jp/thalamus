@@ -345,7 +345,7 @@ def _main():
     reflex_parser = subparsers.add_parser(
         "reflex",
         help="Serve memory against a failed Bash result; the reflex.sh hook's worker. "
-        "Prints the envelope to inject, or nothing.",
+        "Prints the digest to inject, or nothing.",
     )
     reflex_parser.add_argument("--session-id", required=True, help="The session that ran the command")
     reflex_parser.add_argument(
@@ -2433,7 +2433,7 @@ def _cmd_delegate(args):
     print(f"{args.scope} -> {result.harness}/{result.model} ({counts}) -> {result.output}")
 
 def _cmd_reflex(args):
-    """The hook's worker: everything it prints is injected, so it prints the envelope or nothing."""
+    """The hook's worker: everything it prints is injected, so it prints the digest or nothing."""
     from thalamus.harness.reflex import fire
 
     try:
@@ -2444,7 +2444,7 @@ def _cmd_reflex(args):
 
     graph = connect(args.url)
     try:
-        envelope = fire(
+        digest = fire(
             graph,
             session_id=args.session_id,
             observed=observed,
@@ -2456,8 +2456,8 @@ def _cmd_reflex(args):
         )
     finally:
         close_connection(graph)
-    if envelope:
-        print(envelope)
+    if digest:
+        print(digest)
 
 
 def _report_delegation_plan(prepared) -> None:
