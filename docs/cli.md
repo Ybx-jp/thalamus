@@ -361,15 +361,17 @@ measure would read null whether or not withholding mattered. Settling it means s
 the withheld node's *text* against later retrievals instead of its id.
 
 `eval reflex` reads the **memory reflex** — retrieval the harness initiates rather
-than the agent. The `reflex.sh` hook (`PostToolUse`, matcher `Bash`) fires when a
-command's result reads as a failure — a pytest `FAILED` line, a traceback, `command not
-found`, an exception line, or a call the harness interrupted — and hands the output to
-`thalamus reflex`, which extracts identifiers from it and recalls against them in the
-session's pinned scope. The hook runs on `PostToolUse`, which Claude Code reaches only
-for a call that exited 0; a command that exits non-zero goes to `PostToolUseFailure`,
-where the reflex is not wired, so today it fires only on failures whose exit status a
-pipe or wrapper swallowed (`pytest … | tail`), and the report counts that subset
-(#262).<!-- (A0161, cites-as-live) -->
+than the agent. The `reflex.sh` hook (matcher `Bash`, on both `PostToolUse` and
+`PostToolUseFailure`) fires when a command's output reads as a failure — a pytest
+`FAILED` line, a traceback, `command not found`, an exception line, or a call the
+harness interrupted — and hands the output to `thalamus reflex`, which extracts
+identifiers from it and recalls against them in the session's pinned scope. Claude Code
+sends a command that exits 0 to the first event and one that exits non-zero to the
+second; the failure test is the same on both, so a non-zero exit whose output reads
+clean, such as `grep` finding nothing, does not fire.<!-- (A0165, cites-as-live) -->
+Firings recorded before 2026-09-24 came from `PostToolUse` alone, so they count only
+failures whose exit status a pipe or wrapper swallowed (`pytest … | tail`); a report
+spanning that date mixes the two populations.
 
 What the agent receives is a digest labelled as unsolicited: one line per record —
 a short handle such as `R3.1`, its kind, tier stamp, date, its own first sentence, and

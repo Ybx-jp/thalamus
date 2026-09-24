@@ -515,6 +515,19 @@ def _bash_call(stdout="", stderr="", interrupted=False, **overrides):
     return payload
 
 
+def _failed_bash_call(error, is_interrupt=False, **overrides):
+    """A `PostToolUseFailure` payload as Claude Code 2.1.281 delivered it for
+    `python3 -c '…; sys.exit(3)'`: no `tool_response`, the output in `error`."""
+    payload = {
+        "hook_event_name": "PostToolUseFailure", "session_id": "cc-1", "cwd": "/w",
+        "tool_name": "Bash", "tool_input": {"command": "uv run pytest"},
+        "tool_use_id": "toolu_1", "error": error, "is_interrupt": is_interrupt,
+        "duration_ms": 60,
+    }
+    payload.update(overrides)
+    return payload
+
+
 class TestTheHook:
     def test_a_failure_is_handed_to_the_worker_and_its_answer_injected(self, tmp_path):
         """
@@ -584,6 +597,42 @@ class TestTheHook:
                            THALAMUS_SANDBOX="1")
 
         assert result.stdout == "" and not argv_log.exists()
+
+    def test_a_nonzero_exit_fires_on_the_failure_event_and_answers_on_it(self, tmp_path):
+        """
+        Verifications:
+        - the `error` string is the output the failure test reads and the worker gets
+        - the answer is addressed to the event that ran the hook, not `PostToolUse`
+        """
+        bin_dir, argv_log, seen = _stub_uv(tmp_path, prints="ctx")
+        error = "Exit code 1\n" + PYTEST_FAILURE.rstrip("\n")
+
+        result = _run_hook(_failed_bash_call(error), tmp_path, bin_dir)
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["hookSpecificOutput"] == {
+            "hookEventName": "PostToolUseFailure", "additionalContext": "ctx"}
+        assert "--tool-name Bash" in argv_log.read_text()
+        assert seen.read_text() == error + "\n"
+
+    def test_a_nonzero_exit_with_nothing_legible_does_not_fire(self, tmp_path):
+        """The exit status alone is not the failure test: `grep` finding nothing is
+        exit 1. Control for the test above — same event, output that reads clean."""
+        bin_dir, argv_log, _ = _stub_uv(tmp_path, prints="ctx")
+
+        result = _run_hook(_failed_bash_call("Exit code 1\n"), tmp_path, bin_dir)
+
+        assert result.returncode == 0 and result.stdout == ""
+        assert not argv_log.exists()
+
+    def test_an_aborted_call_on_the_failure_event_fires(self, tmp_path):
+        bin_dir, argv_log, _ = _stub_uv(tmp_path, prints="ctx")
+
+        result = _run_hook(_failed_bash_call("Exit code 137\n", is_interrupt=True),
+                           tmp_path, bin_dir)
+
+        assert json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"] == "ctx"
+        assert argv_log.exists()
 
     def test_other_tools_are_not_the_surface(self, tmp_path):
         bin_dir, argv_log, _ = _stub_uv(tmp_path, prints="ctx")
