@@ -421,6 +421,19 @@ chance floor and is read as delivery, and the citation verdict — a vertex id, 
 handle the digest showed for it, in the agent's later output — which is the unfakeable
 form and the primary use signal.
 
+The reflex's retrieval runs through a compiler (`harness/retrieval.py`): a planner
+names a tool of the retrieval vocabulary and its arguments, and the compiler checks
+both, supplies the scope itself, resolves the handles it showed the planner back to
+vertex ids — a planner can name no node it was not shown — and caps each job at 12
+calls, 40 distinct nodes, 8,000 characters of rows and 30 seconds, refusing the call
+that would cross one.<!-- (A0172, cites-as-live) --> Word match is one such job today,
+and each `reflex_lexical` trace carries the calls it issued and the nodes it returned.
+`eval vocabulary` measures what those caps are set against: it replays the newest real
+anchor sets from the reflex ledger and the shadow log (`--limit`, default 40) through
+every tool — every kind searched, every relation walked from the top node of each — and
+reports per call the rows, characters and milliseconds each tool returned, and per
+anchor set the totals of the whole sweep, which no planner should reach.
+
 `eval report` gives the used-vs-ignored rate one ranker window at a time and refuses to
 pool across a dial change, because a rate averaged over two settings measures neither.
 Each window's interval resamples **sessions** rather than verdicts — verdicts inside one
@@ -588,6 +601,11 @@ box to one expert.
 | `memory_recall_recent` | `limit` | Most recent sessions |
 | `memory_open_problems` | `project`, `limit` | Problems with no recorded solution, recurrence-ranked |
 | `memory_thread` | `thread_id` | Full context on one thread |
+| `memory_search_kind` | `query`, `kind`, `limit` | Keyword search over one kind of node — `session`, `decision`, `problem`, `solution`, `thread`, `chunk` or `external` — as one row per node |
+| `memory_expand` | `node`, `relation`, `limit` | One hop from a node over `same_file`, `same_entity`, `same_episode`, `resolved_by`, `uses` or `threads` |
+| `memory_session_claims` | `session`, `kinds`, `limit` | A session's decisions, problems and solutions |
+| `memory_source_chunks` | `node`, `limit` | The verbatim passages behind a knowledge claim, or either side of a passage |
+| `memory_resolve` | `node` | One node in full by its vertex id; nothing for an id the scope may not read |
 | `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
 | `memory_consultations` | `limit` | This expert's own answered consultations |
 | `memory_exchanges` | `query`, `limit`, `read_ticket` | Consultations this scope asked or answered, by topic |
@@ -598,6 +616,15 @@ Recall tools also accept a `ticket` argument: under a consultation ticket they s
 the consulted expert's memory instead of the session's own scope.
 
 **No tool accepts a scope argument.** The server decides what the session can see.
+
+The five tools above `memory_query` are the retrieval vocabulary
+(`substrate/vocabulary.py`) — the same primitives the memory reflex's compiler lets a
+planner compose. They return rows (`node · kind · tier · date · first sentence`)
+rather than renderings, and walk from any vertex id another result printed. A walk
+through a file or an entity reaches nodes of every scope, so what comes back is
+filtered, not only where the walk starts: a session, a thread or a session-held claim
+only from the session's own scope, a knowledge claim or passage from it or from the
+expert subgraphs the server grants.<!-- (A0171, cites-as-live) -->
 
 ## Environment
 

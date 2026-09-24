@@ -8,8 +8,9 @@ line) or one the harness interrupted, and hands the observed output here through
 `thalamus reflex`. This module turns it into anchors, retrieves against them, and
 renders what came back as a digest that says it arrived unsolicited.
 
-This is the word-match plan — `recall()` fed with extracted anchors. No model is in
-the loop: candidates are never paraphrased, so nothing here can re-voice a recorded
+This is the word-match plan — `recall()` fed with extracted anchors, run as one job of
+the retrieval compiler (`harness/retrieval.py`), which mints the handles and counts
+what the plan did. No model is in the loop: candidates are never paraphrased, so nothing here can re-voice a recorded
 decision into an instruction for the reader. What enters the agent's context is a
 digest: one line per candidate — a short handle (`R3.1`), its kind, tier, date, its
 own first sentence and the anchors it matched — sized in characters under
@@ -48,7 +49,8 @@ from pathlib import Path
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.harness.extraction import _tokens
-from thalamus.substrate.reader import STOPWORDS, recall
+from thalamus.harness.retrieval import Job
+from thalamus.substrate.reader import STOPWORDS
 
 # The arm this rung writes into `tool_name`. Reading by arm is the whole instrument:
 # `eval report` and `eval reflex` split on this string and enumerate nothing.
@@ -535,7 +537,14 @@ def fire(
 
     query = " ".join(fresh)
     knowledge = [s for s in available_scopes() if s != scope]
-    results = recall(g, query, limit=MAX_CANDIDATES, scope=scope, knowledge_scopes=knowledge)
+    # The pointer's id is the job's handle prefix, so it is claimed before the job runs
+    # and released if nothing comes back.
+    firing_id, pointer = _allocate_pointer(session_id, reflex_base)
+    job = Job(g, scope=scope, knowledge_scopes=knowledge, prefix=firing_id)
+    results = [
+        result for result in job.word_match(query, MAX_CANDIDATES)
+        if getattr(result, "node_id", "")
+    ]
     blocks = [result.format() for result in results]
     keys = sorted({anchor_key(anchor) for anchor in fresh})
 
@@ -545,6 +554,8 @@ def fire(
     tool_input: dict[str, object] = {
         "query": query, "trigger": tool_name, "event": event, "anchors": fresh,
         "keys": keys,
+        # The manipulation check: what this plan actually did, per firing.
+        "calls": job.calls, "nodes": len(job.handles),
     }
     trace = {
         "ts": stamp,
@@ -563,16 +574,13 @@ def fire(
         # the trigger — and nothing was injected, so the response is empty rather than
         # the recall tools' miss sentence: `injected_chars` must price what the agent
         # saw, and `eval report` reads `returned_count == 0` as the miss.
+        pointer.unlink(missing_ok=True)
         _append_trace(trace, ts, traces_base)
         record("empty", anchors=fresh, keys=keys)
         return ""
 
     voiced = sum(1 for block in blocks if imperative_voice(block))
-    firing_id, pointer = _allocate_pointer(session_id, reflex_base)
-    handles = {
-        f"{firing_id}.{index}": str(getattr(result, "node_id", "") or "")
-        for index, result in enumerate(results, start=1)
-    }
+    handles = dict(job.handles)
     lines = [
         digest_line(handle, result, block, fresh)
         for handle, result, block in zip(handles, results, blocks, strict=True)

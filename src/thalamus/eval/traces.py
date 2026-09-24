@@ -51,6 +51,13 @@ RETRIEVAL_TOOLS = frozenset(
         # fixed list and rank-orders nothing. Whether pointing a session at a
         # settled design prevents rework is exactly a used-vs-ignored question.
         "memory_exchanges",
+        # The retrieval vocabulary's MCP surface (substrate/vocabulary.py): rows and
+        # one full rendering, each carrying the backticked ids the tap reads.
+        "memory_search_kind",
+        "memory_expand",
+        "memory_session_claims",
+        "memory_source_chunks",
+        "memory_resolve",
         "bash_gremlin",
         # The memory reflex's lexical arm (harness/reflex.py, reflex.sh): retrieval
         # the harness initiated off a failed Bash result. Priced here like every

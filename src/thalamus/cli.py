@@ -812,6 +812,24 @@ def _main():
         help="Gremlin endpoint for the verdict half; the ledger half renders without it",
     )
 
+    eval_vocabulary_parser = eval_sub.add_parser(
+        "vocabulary",
+        help="Replay real reflex anchor sets through every retrieval-vocabulary tool "
+        "and report what each returns: rows, characters and time per call, and per "
+        "anchor set the totals a job cap has to sit under",
+    )
+    eval_vocabulary_parser.add_argument(
+        "--reflex", type=Path, default=None,
+        help="Reflex ledger dir the anchor sets come from (default: ~/.thalamus/reflex)",
+    )
+    eval_vocabulary_parser.add_argument(
+        "--limit", type=int, default=40, help="Most recent distinct anchor sets to replay"
+    )
+    eval_vocabulary_parser.add_argument(
+        "--scope", default=MAIN_SCOPE, help="Scope to retrieve in (default: main)"
+    )
+    eval_vocabulary_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+
     # Pin / roster commands — "the process is the pin"
     init_parser = subparsers.add_parser(
         "init", help="Install the harness at user scope so it arms in any directory"
@@ -3899,6 +3917,17 @@ def _cmd_eval(args, eval_parser):
         finally:
             if graph is not None:
                 close_connection(graph)
+    elif getattr(args, "eval_command", None) == "vocabulary":
+        from thalamus.contract.manifest import available_scopes
+        from thalamus.eval.vocabulary import anchor_sets, measure
+
+        sets = anchor_sets(args.reflex, args.limit)
+        graph = connect(args.url)
+        try:
+            knowledge = [s for s in available_scopes() if s != args.scope]
+            print(measure(graph, sets, args.scope, knowledge).render())
+        finally:
+            close_connection(graph)
     elif getattr(args, "eval_command", None) == "pins":
         from thalamus.contract.manifest import available_scopes
         from thalamus.eval.cost import load_engaged, load_pins
