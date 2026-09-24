@@ -1106,3 +1106,33 @@ def test_every_roster_window_is_held_at_the_shipped_geometry(tmp_path, monkeypat
         assert c[c.index("-y") + 1] == str(pin.WINDOW_ROWS)
     assert not [c for c in calls if "window-size" in c], \
         "the size is the only thing pinned; `manual` comes with it"
+
+
+def test_a_scope_that_selects_no_cost_keeps_inherit_and_writes_no_effort():
+    """Declaring the dimension must not change any shipped launch: a manifest with no
+    `cost:` renders exactly the frontmatter it rendered before the field existed."""
+    rendered = render_agent(load_manifest("literature", REPO_CONFIG))
+
+    assert "model: inherit" in rendered
+    assert "effort:" not in rendered
+
+
+
+def test_a_cost_preset_lands_in_the_agent_frontmatter(tmp_path):
+    """
+    Scenario: an operator defines a preset and selects it from a manifest. The
+    generated agent file is the carrier for both a `--agent` pin and a subagent spawned
+    by name, so the preset's class and effort must reach its frontmatter.
+    """
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "literature.yaml").read_text()
+    (tmp_path / "experts" / "literature.yaml").write_text(source + "\ncost: deep-review\n")
+    (tmp_path / "presets" / "cost.yaml").write_text(
+        "deep-review:\n  model_class: frontier\n  effort: max\n"
+    )
+
+    frontmatter = render_agent(load_manifest("literature", tmp_path)).split("---")[1]
+
+    assert "\nmodel: fable\n" in frontmatter
+    assert "\neffort: max\n" in frontmatter

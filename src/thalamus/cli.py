@@ -1072,6 +1072,30 @@ def _main():
     # writes the row and then the edge. The split is the whole mechanism: an agent may
     # propose, only the operator approves, and a pending proposal never becomes a vertex
     # that the next session's brief has to read past.
+    preset_parser = subparsers.add_parser(
+        "preset", help="Define the named presets an expert manifest selects per dimension"
+    )
+    preset_sub = preset_parser.add_subparsers(dest="preset_command")
+    preset_list = preset_sub.add_parser(
+        "list", help="Every preset, what it sets, and which scopes select it"
+    )
+    preset_list.add_argument("dimension", nargs="?", help="One dimension (default: all)")
+    preset_set = preset_sub.add_parser(
+        "set", help="Define a preset, or replace one of the same name"
+    )
+    preset_set.add_argument("dimension", help="The dimension, e.g. `cost`")
+    preset_set.add_argument("name", help="Preset name: lowercase letters, digits, hyphens")
+    preset_set.add_argument(
+        "settings", nargs="*", metavar="KEY=VALUE",
+        help="What it sets, e.g. model_class=strong effort=high. "
+             "`thalamus preset list` shows the keys and values a dimension accepts",
+    )
+    preset_remove = preset_sub.add_parser(
+        "remove", help="Delete a preset. Refused while any manifest selects it"
+    )
+    preset_remove.add_argument("dimension")
+    preset_remove.add_argument("name")
+
     thread_parser = subparsers.add_parser(
         "thread", help="Close threads: propose, approve, and audit the close ledger"
     )
@@ -1474,6 +1498,8 @@ def _main():
         _cmd_quick(args, quick_parser)
     elif args.command == "room":
         _cmd_room(args, parser)
+    elif args.command == "preset":
+        _cmd_preset(args, preset_parser)
     elif args.command == "thread":
         _cmd_thread(args, thread_parser)
     elif args.command == "ceremony":
@@ -4401,6 +4427,87 @@ def _cmd_room(args, parser):
         return
 
     parser.parse_args(["room", "--help"])
+
+
+def _cmd_preset(args, parser):
+    """List, define and remove the presets a manifest selects by name.
+
+    The presets file is tier-0 configuration beside the manifests, and a manifest that
+    names a preset the file lacks fails to load — so `remove` refuses while any
+    manifest still selects the preset, rather than leaving that scope unloadable.
+    """
+    from thalamus.contract.capabilities import DIMENSIONS, INHERIT, read_presets, write_presets
+    from thalamus.contract.manifest import available_scopes, experts_dir, presets_file
+
+    command = getattr(args, "preset_command", None)
+    if command is None:
+        parser.print_help()
+        return
+
+    def dimension_named(key):
+        if key not in DIMENSIONS:
+            sys.exit(f"No dimension `{key}`. Dimensions: {', '.join(DIMENSIONS)}")
+        return DIMENSIONS[key]
+
+    def selectors(dimension):
+        by_preset: dict[str, list[str]] = {}
+        for scope in available_scopes():
+            raw = yaml.safe_load((experts_dir() / f"{scope}.yaml").read_text()) or {}
+            by_preset.setdefault(raw.get(dimension.key, INHERIT), []).append(scope)
+        return by_preset
+
+    if command == "list":
+        keys = [args.dimension] if args.dimension else list(DIMENSIONS)
+        for key in keys:
+            dimension = dimension_named(key)
+            path = presets_file(dimension)
+            presets = dimension.presets(read_presets(dimension, path))
+            chosen = selectors(dimension)
+            print(f"{dimension.key} — {path}")
+            for name, preset in presets.items():
+                sets = " ".join(f"{k}={v}" for k, v in preset.sets.items()) or "(sets nothing)"
+                scopes = ", ".join(chosen.get(name, [])) or "-"
+                print(f"  {name:<16} {sets:<40} selected by: {scopes}")
+            for name in sorted(set(chosen) - set(presets)):
+                print(f"  {name:<16} UNDEFINED — selected by: {', '.join(chosen[name])}")
+            print("  settings: " + "; ".join(
+                f"{k} = {'|'.join(v)}" for k, v in dimension.settings.items()))
+        return
+
+    dimension = dimension_named(args.dimension)
+    path = presets_file(dimension)
+    declared = read_presets(dimension, path)
+
+    if command == "set":
+        sets = {}
+        for pair in args.settings:
+            key, sep, value = pair.partition("=")
+            if not sep:
+                sys.exit(f"`{pair}` is not KEY=VALUE")
+            sets[key] = value
+        replacing = args.name in declared
+        declared[args.name] = sets
+        try:
+            write_presets(dimension, declared, path)
+        except ValueError as exc:
+            sys.exit(str(exc))
+        verb = "replaced" if replacing else "defined"
+        print(f"{verb} {dimension.key} preset `{args.name}` in {path}")
+        print("Generated agent files pick it up at the next `thalamus init`, pin or roster.")
+        return
+
+    if command == "remove":
+        if args.name not in declared:
+            sys.exit(f"No {dimension.key} preset `{args.name}` in {path}")
+        scopes = selectors(dimension).get(args.name, [])
+        if scopes:
+            sys.exit(
+                f"`{args.name}` is selected by {', '.join(scopes)}; change their "
+                f"`{dimension.key}:` first"
+            )
+        del declared[args.name]
+        write_presets(dimension, declared, path)
+        print(f"removed {dimension.key} preset `{args.name}` from {path}")
 
 
 def _cmd_thread(args, parser):

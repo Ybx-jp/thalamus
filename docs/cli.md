@@ -202,6 +202,15 @@ thalamus quick targets             # which experts are forkable, and how warm ea
 thalamus quick delta               # what a fork contributed back
 ```
 
+Presets name the settings a manifest selects per dimension. The only dimension is
+`cost` (model class and effort); `inherit` is built in.
+
+```bash
+thalamus preset list                                       # presets, settings, who selects them
+thalamus preset set cost deep model_class=frontier effort=max
+thalamus preset remove cost deep                           # refused while a manifest selects it
+```
+
 ### CI triage
 
 The consumer for a red master. `qe-fast` reports; this acts on the report. Everything
