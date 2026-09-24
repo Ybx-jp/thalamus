@@ -1,5 +1,6 @@
-"""A firing whose anchors match both chunks and sessions must still keep the digest
-the agent receives under `DIGEST_CHAR_CAP` — regression guard for issue #251.
+"""A firing whose anchors match both chunks and sessions must select exactly the
+documented candidate count and keep the digest the agent receives under
+`DIGEST_CHAR_CAP` — regression guard for issue #251.
 
 `harness/reflex.py` used to document `MAX_CANDIDATES = 3` as "how many candidates it
 may serve" and pass it straight through as `recall(..., limit=MAX_CANDIDATES, ...)`.
@@ -17,11 +18,14 @@ per-firing bound is now a character cap on the digest — `DIGEST_CHAR_CAP` — 
 than a block count, and the chunk tier stays in the candidate set: `recall()` still
 returns up to `MAX_CANDIDATES + _CHUNK_WINDOW_CAP` results, `fire()` still writes all
 of them to the pointer file, and only how much of their index the digest can afford is
-now bounded. This case now asserts that settled invariant directly: however many
-candidates a firing selects, the digest that reaches the agent's context stays under
-`DIGEST_CHAR_CAP` — and so well under Claude Code's 10,000-char spill line (#258) —
-while every selected candidate is still written to the pointer file, none dropped to
-make the digest fit.
+now bounded. `harness/reflex.py`'s comment above `MAX_ANCHORS`/`MAX_CANDIDATES` states
+this composition directly: a firing selects up to `MAX_CANDIDATES + 2` candidates,
+the `2` being `substrate/reader.py`'s `_CHUNK_WINDOW_CAP`. This case now asserts that
+selection count against the documentation that describes it, and asserts the settled
+digest invariant on top: however many candidates a firing selects, the digest that
+reaches the agent's context stays under `DIGEST_CHAR_CAP` — and so well under Claude
+Code's 10,000-char spill line (#258) — while every selected candidate is still written
+to the pointer file, none dropped to make the digest fit.
 
 **Why this needs a real graph and cannot be hermetic.** The defect this guards against
 is in how `recall()` composes two independently-capped windows over a live traversal,
@@ -58,12 +62,23 @@ issue #251 was filed against might simply not have reproduced, and a digest buil
 3 or fewer short records stays under the cap for a reason that has nothing to do with
 the invariant this case exists to guard.
 
-**Regression guard, not an open defect.** Tagged `issue=251, fixed=True`. Before this
-delivery-layer change, this case reported `blocks_served=5` against a documented cap of
-3 (`FailureClass.DOC_CODE_DRIFT`); with the digest in place, the two extra candidates
-still arrive — Positive control 2 shows that — but bounded in the digest by character
-count rather than excluded from selection, matching the settled decision that the
-chunk tier stays in the candidate set.
+**The doc/code drift check still fires — pointed at the corrected documentation.**
+Before this delivery-layer change, this case reported `blocks_served=5` against a
+documented cap of 3 (`FailureClass.DOC_CODE_DRIFT`), because the old comment called
+`MAX_CANDIDATES` the whole of what a firing may serve. That drift is settled — the
+comment now states the sum directly — but the same class stays live against the new
+statement: this fixture seeds exactly `_CHUNK_WINDOW_CAP` matching chunks and
+`MAX_CANDIDATES` matching sessions, so a correct firing selects exactly
+`MAX_CANDIDATES + _CHUNK_WINDOW_CAP` candidates, and a firing that selects a different
+count — whether the composition regresses back to one shared limit, or drifts some
+other way — is still `FailureClass.DOC_CODE_DRIFT` against the comment that now
+describes it correctly.
+
+**Regression guard, not an open defect.** Tagged `issue=251, fixed=True`. With the
+digest in place, the two extra candidates still arrive — Positive control 2 shows
+that — but are bounded in the digest by character count rather than excluded from
+selection, matching the settled decision that the chunk tier stays in the candidate
+set.
 
 `qe` does not write `src/thalamus/harness/` or `src/thalamus/substrate/`, so no fix is
 carried in this case even now: if this guard goes red, the operator's open decision is
@@ -100,6 +115,7 @@ def run() -> Finding | None:
         extract_anchors,
         pointers_dir,
     )
+    from thalamus.substrate.reader import _CHUNK_WINDOW_CAP  # noqa: PLC0415
     from thalamus.substrate.schema import (  # noqa: PLC0415
         Chunk,
         KnowledgeBatch,
@@ -282,6 +298,36 @@ def run() -> Finding | None:
                 site=_SITE,
             )
 
+        # DOC/CODE DRIFT CHECK: the comment above MAX_ANCHORS/MAX_CANDIDATES in
+        # harness/reflex.py documents a firing selecting "up to MAX_CANDIDATES + 2
+        # candidates" because the chunk tier is ranked in a window of its own
+        # (`_CHUNK_WINDOW_CAP` in substrate/reader.py) and appended outside
+        # `recall()`'s `limit` before the mixed session/knowledge window is
+        # consulted. This fixture seeds exactly `_CHUNK_WINDOW_CAP` matching chunks
+        # and `MAX_CANDIDATES` matching sessions — the same calibration positive
+        # control 1 already confirmed both windows reached — so a firing that
+        # composes the two windows as documented selects exactly
+        # `MAX_CANDIDATES + _CHUNK_WINDOW_CAP` candidates, no more and no fewer.
+        documented_max = MAX_CANDIDATES + _CHUNK_WINDOW_CAP
+        if len(results) != documented_max:
+            return Finding(
+                failure_class=FailureClass.DOC_CODE_DRIFT,
+                summary=(
+                    "reflex.fire()'s recall() call selected a candidate count that "
+                    "disagrees with what harness/reflex.py's own comment documents: "
+                    "the chunk tier's _CHUNK_WINDOW_CAP is supposed to be appended "
+                    "outside the mixed window's MAX_CANDIDATES limit, so a firing "
+                    "whose anchors match exactly _CHUNK_WINDOW_CAP chunks and "
+                    "MAX_CANDIDATES sessions should select exactly their sum"
+                ),
+                witness=(
+                    f"selected={len(results)} "
+                    f"documented_max=MAX_CANDIDATES({MAX_CANDIDATES})"
+                    f"+_CHUNK_WINDOW_CAP({_CHUNK_WINDOW_CAP})={documented_max}"
+                ),
+                site="src/thalamus/harness/reflex.py (comment above MAX_ANCHORS)",
+            )
+
         if digest == "":
             return Finding(
                 failure_class=FailureClass.INVARIANT_FALSIFIED,
@@ -343,10 +389,15 @@ CASE = Case(
     name="reflex-candidate-cap-overrun-with-matching-chunks",
     tier=Tier.DEEP,
     substrate=(Substrate.NEEDS_GRAPH,),
-    classes=(FailureClass.INVARIANT_FALSIFIED, FailureClass.COLLAPSED_SENTINEL),
+    classes=(
+        FailureClass.DOC_CODE_DRIFT,
+        FailureClass.INVARIANT_FALSIFIED,
+        FailureClass.COLLAPSED_SENTINEL,
+    ),
     summary=(
-        "a firing whose anchors match both chunks and sessions must keep its digest "
-        "under DIGEST_CHAR_CAP while keeping every selected candidate in the pointer file"
+        "a firing whose anchors match both chunks and sessions must select exactly "
+        "MAX_CANDIDATES + _CHUNK_WINDOW_CAP candidates as documented, keep its digest "
+        "under DIGEST_CHAR_CAP, and keep every selected candidate in the pointer file"
     ),
     run=run,
     # Settled 2026-09-23 (issue #251; architect `17fd7b29a8a344d4`): the per-firing
