@@ -577,7 +577,13 @@ class SessionGraph(BaseModel):
         return [*self.decisions, *self.problems, *self.solutions]
 
     def referenced_artifact_ids(self) -> set[str]:
-        """Artifact identifiers something in this session points at."""
+        """Artifact identifiers that at least one node in the session points at.
+
+        Includes `touched` — a session that edited a file has a direct TOUCHES edge to
+        it, so the artifact is reachable even before any claim is extracted. This is what
+        lets the deterministic bootstrap satisfy the connectivity invariant with no model
+        in the loop.
+        """
         referenced = {touch.identifier for touch in self.touched}
         for claim in self.claims():
             referenced.update(claim.artifacts)
