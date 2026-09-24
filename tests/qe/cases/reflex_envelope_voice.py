@@ -1,17 +1,19 @@
-"""The reflex envelope's own prose must never address the reader as an instruction.
+"""The reflex digest's own scaffolding prose must never address the reader as an
+instruction.
 
 `harness/reflex.py`'s module docstring states the design's whole claim to safety: the
 reflex fires off a Bash result the agent did not run, in order to summon memory nobody
 asked for, and the one thing that keeps that from reading as a command is that the
 scaffolding *says* it is unsolicited and never itself speaks in the imperative — only a
-quoted, tier-stamped block may, and a voiced block is counted and named in the header
-rather than dropped or rewritten (`render_envelope`'s docstring, `reflex.py:296-319`).
+quoted, tier-stamped record may, sitting in the pointer file rather than the digest
+itself, and a voiced record is counted and named in the digest's header rather than
+dropped or rewritten (`render_envelope`'s docstring, `src/thalamus/harness/reflex.py`).
 
 That is a UNIVERSAL over the scaffolding text `render_envelope` emits regardless of what
-it is fed — no anchor list, no voiced count, and no served block can make the wrapper's
-own three sentences read as "you should now do X". `imperative_voice` is the detector
-`reflex.fire` already trusts to decide whether to append the "N of the blocks are phrased
-as instructions" line (`reflex.py:403,313-318`), so this case drives the same regex
+it is fed — no anchor list, no voiced count, no pointer path, and no served item can make
+the wrapper's own sentences read as "you should now do X". `imperative_voice` is the
+detector `reflex.fire` already trusts to decide whether to append the "N of the records
+are phrased as instructions" line, so this case drives the same regex
 `tests/test_reflex.py::test_the_scaffolding_never_instructs_and_the_detector_would_know`
 exercises, but as its own qe entry: dev's suite can be skipped locally or drift out of
 CI's required-checks list, and this property — informs-never-instructs holding at the
@@ -24,10 +26,10 @@ report the scaffolding as silent for the wrong reason, and every real regression
 
 **Shown capable of going red.** Add an imperative sentence to `render_envelope`'s own
 `lines` list in `src/thalamus/harness/reflex.py` (e.g. append `"Now fix the anchors
-above."` to the list built at `reflex.py:306`) and rerun this case: it reports
-`INVARIANT_FALSIFIED` with the added sentence as its witness. `qe` does not write
-`src/thalamus/harness/`, so the mutation is not carried in the case; this is the
-repeatable check for the next reader instead.
+above."` to the list the function builds before joining it into the digest) and rerun
+this case: it reports `INVARIANT_FALSIFIED` with the added sentence as its witness.
+`qe` does not write `src/thalamus/harness/`, so the mutation is not carried in the
+case; this is the repeatable check for the next reader instead.
 """
 
 from __future__ import annotations
@@ -54,8 +56,13 @@ def run() -> Finding | None:
             site="tests/qe/cases/reflex_envelope_voice.py::run",
         )
 
-    envelope = render_envelope([], ["reflex-scaffolding-anchor-a", "reflex-scaffolding-anchor-b"])
-    hits = imperative_voice(envelope)
+    anchors = ["reflex-scaffolding-anchor-a", "reflex-scaffolding-anchor-b"]
+    bare = render_envelope([], anchors)
+    with_pointer = render_envelope(
+        ["R1.1 · session · tier 1 · 2026-09-23 · a served record's gist"],
+        anchors, voiced=1, pointer="/home/qe/.thalamus/reflex/pointers/s1/R1.md",
+    )
+    hits = imperative_voice(bare) + imperative_voice(with_pointer)
     if not hits:
         return None
 
@@ -64,11 +71,11 @@ def run() -> Finding | None:
         summary=(
             "render_envelope's own scaffolding prose reads as an instruction to the "
             "agent, contradicting reflex.py's contract that the wrapper never "
-            "addresses the reader in the imperative — only a quoted served block "
-            "may, and it is counted and named, never authored, by the scaffolding "
-            "itself"
+            "addresses the reader in the imperative — only a quoted served record, "
+            "sitting in the pointer file, may, and it is counted and named, never "
+            "authored, by the scaffolding itself"
         ),
-        witness=f"imperative_voice(render_envelope([], anchors)) = {hits!r}",
+        witness=f"imperative_voice(render_envelope(...)) = {hits!r}",
         site="src/thalamus/harness/reflex.py::render_envelope",
     )
 

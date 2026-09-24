@@ -92,7 +92,7 @@ def live_snapshot(
                 "query": event.query_text()[:120],
                 "fanout": fanout,
                 "over_guardrail": fanout > FANOUT_GUARDRAIL,
-                "tokens": len(event.tool_response) // _CHARS_PER_TOKEN,
+                "tokens": event.injected_chars() // _CHARS_PER_TOKEN,
                 "miss": event.is_miss(),
                 "rejected": event.is_rejected(),
             }
@@ -128,7 +128,7 @@ def live_snapshot(
         "current_scope": pins.get(current_session, ""),
         "today": {
             "retrievals": len(today_events),
-            "injected_tokens": sum(len(e.tool_response) for e in today_events)
+            "injected_tokens": sum(e.injected_chars() for e in today_events)
             // _CHARS_PER_TOKEN,
             "misses": sum(1 for e in today_events if e.is_miss()),
         },

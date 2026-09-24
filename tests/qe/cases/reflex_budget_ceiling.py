@@ -1,13 +1,17 @@
 """A firing must never inject past the session's char budget, and must say why not.
 
-`reflex.fire` (`harness/reflex.py:369-372`) checks the cheap half of the budget before
-ever asking the graph: a session whose recorded spend already meets
-`SESSION_CHAR_BUDGET` is refused with the arithmetic and nothing is queried. That is the
-control the design's own grounding leans on — an unsolicited injection past the ceiling
-"costs more than it returns" (module docstring, `reflex.py:19-23`) — and it is a
-UNIVERSAL over what got the session there: this case drives it directly by preloading
-one ledger row at exactly the ceiling, the boundary the check has to get exactly right
-rather than approximately.
+`reflex.fire` checks the cheap half of the budget before ever asking the graph: a
+session whose recorded spend already meets `SESSION_CHAR_BUDGET` is refused with the
+arithmetic and nothing is queried — the graph is never touched, `recall()` is never
+called, and no pointer file is written. That is the control the design's own
+grounding leans on — an unsolicited injection past the ceiling "costs more than it
+returns" (`fire`'s own docstring) — and it is a UNIVERSAL over what got the session
+there: this case drives it directly by preloading one ledger row at exactly the
+ceiling, the boundary the check has to get exactly right rather than approximately.
+The second, expensive half of the budget check — the one that prices the rendered
+digest itself, after `recall()` has already run — is a live-graph case
+(`reflex_candidate_cap_overrun.py`), because it needs real retrieval to produce
+something to price.
 
 **Positive control.** `ReflexBudget(spent=SESSION_CHAR_BUDGET - 1, cost=1).fits` must be
 `True` — the row one character under the ceiling has to fit, or the boundary itself
@@ -15,10 +19,10 @@ cannot be trusted to separate "at or over" from "under", and a refusal at the ce
 would say nothing about precision, only about the check firing on everything.
 
 **Shown capable of going red.** Comment out the `if spent >= SESSION_CHAR_BUDGET:` guard
-at `reflex.py:369-372` and rerun: `fire()` proceeds to call `recall` and, given any
-matching content, returns a non-empty envelope past the ceiling; this case then reports
-`INVARIANT_FALSIFIED` with that envelope's length as the witness. `qe` does not write
-`src/thalamus/harness/`, so the mutation is not carried in the case.
+in `src/thalamus/harness/reflex.py::fire` and rerun: `fire()` proceeds to call `recall`
+and, given any matching content, returns a non-empty digest past the ceiling; this case
+then reports `INVARIANT_FALSIFIED` with that digest's length as the witness. `qe` does
+not write `src/thalamus/harness/`, so the mutation is not carried in the case.
 """
 
 from __future__ import annotations
@@ -75,15 +79,21 @@ def run() -> Finding | None:
             ).to_json() + "\n"
         )
 
-        envelope = fire(
+        digest = fire(
             object(), session_id="s1", observed=_OBSERVED, scope="main", agent_id="",
             agent_type="", cwd="/qe-budget-ceiling-probe", now=_NOW,
             reflex_base=tmp_path / "reflex", traces_base=tmp_path / "traces",
         )
         rows = load_firings("s1", tmp_path / "reflex")
         last = rows[-1] if rows else None
+        # `fire(object(), ...)` passes a dummy graph deliberately: the cheap budget
+        # check must refuse before `recall(g, ...)` is ever called, so a `g` that
+        # would blow up on first use is itself part of the assertion. A pointer file
+        # under this refusal would mean the same thing happened one step too late.
+        pointers = list((tmp_path / "reflex" / "pointers" / "s1").glob("*.md")) \
+            if (tmp_path / "reflex" / "pointers" / "s1").is_dir() else []
 
-        if envelope == "" and last is not None and last.outcome == "refused":
+        if digest == "" and last is not None and last.outcome == "refused" and not pointers:
             has_arithmetic = (
                 f"{SESSION_CHAR_BUDGET:,}-char budget" in last.detail and "over by" in last.detail
             )
@@ -104,11 +114,15 @@ def run() -> Finding | None:
             failure_class=FailureClass.INVARIANT_FALSIFIED,
             summary=(
                 "a firing whose session had already spent its full char budget was "
-                "not refused before the graph was asked: fire() returned an "
-                f"envelope or a ledger outcome other than 'refused' "
-                f"(outcome={last.outcome if last else '<no row written>'!r})"
+                "not refused before the graph was asked: fire() returned a digest, "
+                "left a ledger outcome other than 'refused', or left a pointer file "
+                "behind despite the refusal"
+                f" (outcome={last.outcome if last else '<no row written>'!r})"
             ),
-            witness=f"envelope_len={len(envelope)} outcome={last.outcome if last else None!r}",
+            witness=(
+                f"digest_len={len(digest)} outcome={last.outcome if last else None!r} "
+                f"pointers={[str(p) for p in pointers]!r}"
+            ),
             site="src/thalamus/harness/reflex.py::fire",
         )
 
