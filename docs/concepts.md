@@ -81,6 +81,9 @@ A manifest can also declare:
   On Codex it is written into the scope's generated profile as `model` and
   `model_reasoning_effort`, so it binds a `--profile` pin; a preset that sets neither
   leaves `~/.codex/config.toml` governing.<!-- (A0162, cites-as-live) -->
+  A class whose Codex model the vendor retires in favour of another renders as the
+  replacement its catalog names; `thalamus preset list` shows each class's Codex model
+  against the live catalog.<!-- (A0164, cites-as-live) -->
   Cursor sessions do not receive it yet.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
