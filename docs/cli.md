@@ -202,12 +202,13 @@ thalamus quick targets             # which experts are forkable, and how warm ea
 thalamus quick delta               # what a fork contributed back
 ```
 
-Presets name the settings a manifest selects per dimension. The only dimension is
-`cost` (model class and effort); `inherit` is built in.
+Presets name the settings a manifest selects per dimension: `cost` (model class and
+effort) and `budget` (turn, tool-call, token and tool-output caps); `inherit` is built in.
 
 ```bash
 thalamus preset list                                       # presets, settings, who selects them
 thalamus preset set cost deep model_class=frontier effort=max
+thalamus preset set budget short max_turns=30 max_tool_calls=60 max_tokens=2000000
 thalamus preset remove cost deep                           # refused while a manifest selects it
 ```
 

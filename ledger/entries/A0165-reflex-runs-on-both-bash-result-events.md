@@ -37,6 +37,15 @@ none
 
 ## Verdicts
 
+- 2026-09-24T02:18:04-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:0f2a4371797f96fbb432d5b98a1d58d0f76a8393960bdb6fd17f7bbd219dc4c8
+  artifact: sha256:054f782a32fcb07b8204a35b7a6471d1106cb0837bcd2dda7cca63c6eeb861ca
+  note: propagated from a moved ground
+
+- 2026-09-24T02:40:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:d96c8cf3a9dcb537fecdcf0e63d1ee1a6f91006a65ed8cde66386bab5d0a5909
+  note: HOOK_WIRING gained budget.sh on PreToolUse and PostToolBatch; the reflex rows on PostToolUse and PostToolUseFailure are unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

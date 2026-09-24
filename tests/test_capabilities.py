@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from thalamus.contract.capabilities import (
+    BUDGET,
     COST,
     INHERIT,
     MODEL_CLASSES,
@@ -149,3 +150,40 @@ def test_preset_set_refuses_a_bad_setting_without_writing(monkeypatch, tmp_path)
 
 def test_a_manifest_constructed_directly_resolves_inherit_without_a_config():
     assert ExpertManifest(scope="s", name="S").cost_preset.sets == {}
+
+
+@pytest.mark.parametrize("value", ["0", "-3", "thirty", "2.5"])
+def test_a_turn_budget_admits_only_a_positive_integer(value):
+    with pytest.raises(ValueError, match="an integer ≥ 1"):
+        BUDGET.preset("x", {"max_turns": value})
+
+
+def test_a_turn_budget_set_from_the_command_line_is_written_as_a_number(monkeypatch, tmp_path):
+    """`preset set` hands every value over as a string; the file an operator edits by
+    hand should hold the count as the number it is."""
+    _config(tmp_path, None, None)
+
+    assert _preset(monkeypatch, tmp_path, "set", "budget", "short", "max_turns=30") is None
+
+    path = tmp_path / "presets" / "budget.yaml"
+    assert "max_turns: 30\n" in path.read_text()
+    assert read_presets(BUDGET, path) == {"short": {"max_turns": 30}}
+
+
+def test_a_manifest_resolves_each_dimension_against_its_own_presets_file(tmp_path):
+    base = _config(tmp_path, "cheap:\n  effort: low\n", "cheap")
+    (base / "experts" / "s.yaml").write_text("scope: s\nname: S\ncost: cheap\nbudget: short\n")
+    (base / "presets" / "budget.yaml").write_text("short:\n  max_turns: 12\n")
+
+    manifest = load_manifest("s", base)
+
+    assert manifest.cost_preset.sets == {"effort": "low"}
+    assert manifest.budget_preset.sets == {"max_turns": "12"}
+
+
+def test_a_manifest_naming_an_undefined_budget_fails_to_load(tmp_path):
+    base = _config(tmp_path, None, None)
+    (base / "experts" / "s.yaml").write_text("scope: s\nname: S\nbudget: short\n")
+
+    with pytest.raises(ValueError, match="s.yaml.*not a `budget` preset"):
+        load_manifest("s", base)
