@@ -35,6 +35,15 @@ none
 
 ## Verdicts
 
+- 2026-09-24T00:17:03-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/pin.py § "_codex_cost_keys" =sha256:15ae491e853349edc3c3a0f3969379142d65833e9478548aedea3f95f98b6bd0
+  artifact: sha256:d67ac3f84b5a6e662081f44a21360cad7801970b8f7b925d5dc3885bfb0d25fb
+  note: propagated from a moved ground
+
+- 2026-09-24T00:40:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/pin.py § "_codex_cost_keys" =sha256:d67ac3f84b5a6e662081f44a21360cad7801970b8f7b925d5dc3885bfb0d25fb
+  note: the model key now takes the CODEX_MODELS slug through codex_models.current, which follows the live catalog's upgrade chain (A0164); it is still written only when the preset sets a model class, as a top-level key, and model_reasoning_effort is unchanged
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

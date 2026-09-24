@@ -7,7 +7,7 @@ stamped with the `client_version` that fetched it. Measured on codex-cli 0.154.0
 (2026-09-24): `codex debug models` refreshed that file's `fetched_at` and printed the
 same models it holds, while `codex debug models --bundled` left the file untouched and
 printed the binary's own copy, which already disagreed with the live one on priorities
-and on which models exist.
+and on which models exist. (A0164, cites-as-live)
 
 So the read is: the cache file when it was written by the installed version, else one
 `codex debug models`, which also refreshes the file for the next read. That covers a
