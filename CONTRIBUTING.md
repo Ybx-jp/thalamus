@@ -191,7 +191,7 @@ So before code or docs rest on a harness fact:
 
 An absence — "is not in the payload", "never fires", "cannot be observed" — is the kind
 to distrust most, and the ledger refuses one without a `search:` ground.
-`.claude/repo-hooks/harness-fact-reminder.sh` runs after every edit in this checkout and
+`.claude/hooks/harness-fact-reminder.sh` runs after every edit in this checkout and
 flags a change to a repo surface that adds a line naming a harness beside a behaviour
 word and cites no entry; it reminds and never blocks.
 
@@ -280,10 +280,11 @@ tools. If you are working with an agent, pin it rather than working around the g
 - **Real directories** — project-scope skills for working *on* this repo. They arm
   only in this checkout and are not installed for users.
 
-Hooks follow the same split. `.claude/hooks/` is written by `claims-ledger harness
-install`; hooks this repository writes for its own sessions live in `.claude/repo-hooks/`
-and are wired from `.claude/settings.json`. Neither is installed for users — the
-product's hooks are under `src/thalamus/harness/hooks/`.
+`.claude/hooks/` holds the hooks for developing this repository, wired from
+`.claude/settings.json`. `ledger-orientation.sh`, `merge-guard.sh`, `pin-guard.sh` and
+`status-guard.sh` are written by `claims-ledger harness install`, which writes only its
+own file names, so a hook this repository writes sits beside them. None of them is
+installed for users — the product's hooks are under `src/thalamus/harness/hooks/`.
 
 A skill is procedure and knowledge, nothing else. It is read in order to *do*
 something, so a paragraph about what the procedure used to be is pure cost at the

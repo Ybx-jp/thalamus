@@ -1,7 +1,7 @@
 """
-Project-scope hooks for working on this repository (`.claude/repo-hooks/`).
+Project-scope hooks for working on this repository (`.claude/hooks/`).
 
-Interfaces: .claude/repo-hooks/harness-fact-reminder.sh, driven live (bash) with a
+Interfaces: .claude/hooks/harness-fact-reminder.sh, driven live (bash) with a
             synthetic PostToolUse payload; .claude/settings.json's wiring of it
 Infrastructure: tmp_path as TMPDIR; jq on PATH
 Scope: when the reminder speaks and when it stays silent. Whether a flagged sentence is
@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-HOOK = ROOT / ".claude" / "repo-hooks" / "harness-fact-reminder.sh"
+HOOK = ROOT / ".claude" / "hooks" / "harness-fact-reminder.sh"
 
 pytestmark = pytest.mark.skipif(shutil.which("jq") is None, reason="the hook needs jq")
 
@@ -80,4 +80,4 @@ def test_the_project_settings_wire_it_after_every_edit():
         if hook["command"].endswith("harness-fact-reminder.sh")
     ]
     assert wired == [("Edit|Write|MultiEdit|apply_patch",
-                      "$CLAUDE_PROJECT_DIR/.claude/repo-hooks/harness-fact-reminder.sh")]
+                      "$CLAUDE_PROJECT_DIR/.claude/hooks/harness-fact-reminder.sh")]

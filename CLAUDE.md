@@ -87,7 +87,7 @@ one, measure it on the installed version with a control that differs in the one
 variable, pin it in the ledger (the vendor's reference as a registered source, and this
 repository's dependence on it grounded in the code that relies on it), and cite the
 dependence from every sentence that states it. The procedure and a hook-event probe are
-the `probe-harness-behaviour` skill; `.claude/repo-hooks/harness-fact-reminder.sh` flags
+the `probe-harness-behaviour` skill; `.claude/hooks/harness-fact-reminder.sh` flags
 an edit that adds an uncited harness fact. An absence — "is not in the payload", "never
 fires" — is the case to distrust most: the reflex was wired to the wrong event for nine
 days on "the Bash result carries no exit status", when a failing call never reaches that
@@ -263,11 +263,13 @@ the thing in ordinary words, and cut what he did not ask about.
   skills for working on this repo; they arm only in this checkout and are not installed
   for users.<!-- (A0140, cites-as-live) -->
   And `choosing-a-citation-act`, `repair-a-drifted-pin` and `tagging-prose-with-claims`,
-  with the scripts in `.claude/hooks/`, are **written by another package** —
+  with `.claude/hooks/`'s `ledger-orientation.sh`, `merge-guard.sh`, `pin-guard.sh`,
+  `status-guard.sh` and their `README.md`, are **written by another package** —
   `uv run claims-ledger harness install --agent claude --force` regenerates them from
   the installed `claims-ledger`. Edit those upstream, not here, and re-run the install
-  after raising the pin. Hooks this repository writes for its own sessions live in
-  `.claude/repo-hooks/`, wired from `.claude/settings.json` beside the package's.
+  after raising the pin. The install writes only its own file names, so the hooks this
+  repository writes for its own development sit beside them in `.claude/hooks/`, all
+  wired from `.claude/settings.json`.
 - `substrate/` sits below the contract: it knows nodes and edges, not experts or trust
   tiers.<!-- (A0141, cites-as-live) -->
   An import of `contract/` into `substrate/` means the change belongs elsewhere.
