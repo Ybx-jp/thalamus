@@ -1093,11 +1093,11 @@ def _main():
     preset_set = preset_sub.add_parser(
         "set", help="Define a preset, or replace one of the same name"
     )
-    preset_set.add_argument("dimension", help="The dimension, e.g. `cost`")
+    preset_set.add_argument("dimension", help="The dimension: `cost` or `budget`")
     preset_set.add_argument("name", help="Preset name: lowercase letters, digits, hyphens")
     preset_set.add_argument(
         "settings", nargs="*", metavar="KEY=VALUE",
-        help="What it sets, e.g. model_class=strong effort=high. "
+        help="What it sets, e.g. model_class=strong effort=high, or max_turns=30. "
              "`thalamus preset list` shows the keys and values a dimension accepts",
     )
     preset_remove = preset_sub.add_parser(
@@ -4479,7 +4479,13 @@ def _cmd_preset(args, parser):
     names a preset the file lacks fails to load — so `remove` refuses while any
     manifest still selects the preset, rather than leaving that scope unloadable.
     """
-    from thalamus.contract.capabilities import DIMENSIONS, INHERIT, read_presets, write_presets
+    from thalamus.contract.capabilities import (
+        DIMENSIONS,
+        INHERIT,
+        describe,
+        read_presets,
+        write_presets,
+    )
     from thalamus.contract.manifest import available_scopes, experts_dir, presets_file
 
     command = getattr(args, "preset_command", None)
@@ -4514,7 +4520,7 @@ def _cmd_preset(args, parser):
             for name in sorted(set(chosen) - set(presets)):
                 print(f"  {name:<16} UNDEFINED — selected by: {', '.join(chosen[name])}")
             print("  settings: " + "; ".join(
-                f"{k} = {'|'.join(v)}" for k, v in dimension.settings.items()))
+                f"{k} = {describe(v)}" for k, v in dimension.settings.items()))
             if dimension.key == "cost":
                 _print_codex_projection()
         return

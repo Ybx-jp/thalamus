@@ -48,6 +48,22 @@ none
 - 2026-09-23T23:50:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/pin.py § "_cost_frontmatter" =sha256:2fcb127371fe0651d24517b9e34a06a5d06a9b1848f83dd73b7eb2d31cba44ab
   note: the cost dimension's variants became operator-defined named presets (inherit stays built in and the default); _cost_frontmatter reads the resolved preset's model_class and effort into the same frontmatter lines, so the assertion holds with "variant" read as "preset"
+- 2026-09-24T01:03:35-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/capabilities.py § "COST" =sha256:62d1693c076884bc47ece1278049b74af705fa7701d836d2eae665d93b4e917c
+  artifact: sha256:d6979869d3fe6c0f7ad7edc67719943d613bad9b4eedc9a65d0146f8ded51bfc
+  note: propagated from a moved ground
+
+- 2026-09-24T01:10:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/capabilities.py § "COST" =sha256:d6979869d3fe6c0f7ad7edc67719943d613bad9b4eedc9a65d0146f8ded51bfc
+  note: COST's section now ends at the BUDGET declaration and carries its preamble comment; COST itself and _cost_frontmatter are unchanged, so the assertion is unaffected
+- 2026-09-24T02:18:04-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/capabilities.py § "COST" =sha256:d6979869d3fe6c0f7ad7edc67719943d613bad9b4eedc9a65d0146f8ded51bfc
+  artifact: sha256:6eb26e034c33670bf4ddd32319426b225e25e3a9085ccdc37519541682463825
+  note: propagated from a moved ground
+
+- 2026-09-24T02:40:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/capabilities.py § "COST" =sha256:6eb26e034c33670bf4ddd32319426b225e25e3a9085ccdc37519541682463825
+  note: COST's section now carries the preamble comment of the BUDGET declaration after it, which lists four settings; COST and _cost_frontmatter are unchanged, so the assertion is unaffected
 
 ## References
 
