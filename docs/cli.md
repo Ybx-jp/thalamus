@@ -361,15 +361,31 @@ measure would read null whether or not withholding mattered. Settling it means s
 the withheld node's *text* against later retrievals instead of its id.
 
 `eval reflex` reads the **memory reflex** — retrieval the harness initiates rather
-than the agent. The `reflex.sh` hook (`PostToolUse`, matcher `Bash`) fires when a
-command's result reads as a failure — a pytest `FAILED` line, a traceback, `command not
-found`, an exception line, or a call the harness interrupted — and hands the output to
-`thalamus reflex`, which extracts identifiers from it and recalls against them in the
-session's pinned scope. The hook runs on `PostToolUse`, which Claude Code reaches only
-for a call that exited 0; a command that exits non-zero goes to `PostToolUseFailure`,
-where the reflex is not wired, so today it fires only on failures whose exit status a
-pipe or wrapper swallowed (`pytest … | tail`), and the report counts that subset
-(#262).<!-- (A0161, cites-as-live) -->
+than the agent. The `reflex.sh` hook (matcher `Bash`, on both `PostToolUse` and
+`PostToolUseFailure`) fires when a command's output reads as a failure — a pytest
+`FAILED` line, a traceback, `command not found`, an exception line, or a call the
+harness interrupted — and hands the output to `thalamus reflex`, which extracts
+identifiers from it and recalls against them in the session's pinned scope. Claude Code
+sends a command that exits 0 to the first event and one that exits non-zero to the
+second. The exit status only picks the event: on both, the reflex fires when the output
+contains a failure line or the call was interrupted. A non-zero exit with ordinary
+output, such as `grep` finding no match, does not fire; a `pytest … | tail` that exits
+0 but prints `FAILED` does.<!-- (A0165, cites-as-live) -->
+
+Each firing records the event that ran it, and the report splits qualifying and served
+firings by event: `PostToolUse (exit 0)`, `PostToolUseFailure (non-zero exit)`, and
+`unrecorded` for rows written before the event was recorded. Those came from
+`PostToolUse` alone, when the reflex was wired on no other event, so they count only
+failures whose exit status a pipe or wrapper swallowed.<!-- (A0166, cites-as-live) -->
+
+A Bash call the failure test passes over, on either event, is **shadow-logged**: the
+hook starts `thalamus reflex --shadow` detached and returns at once, and it writes one
+row to `~/.thalamus/reflex/shadow/<session>.jsonl` with the anchors the output would
+have given, how many this agent's live firings have not already spent, and whether that
+clears the two-new-anchor gate a firing needs before it queries. Nothing is retrieved or
+injected. The report lists the shadowed calls per event as calls / with anchors / would
+have queried: the size of the population the failure trigger excludes, and how much of
+it a success trigger would have sent to the graph.<!-- (A0167, cites-as-live) -->
 
 What the agent receives is a digest labelled as unsolicited: one line per record —
 a short handle such as `R3.1`, its kind, tier stamp, date, its own first sentence, and

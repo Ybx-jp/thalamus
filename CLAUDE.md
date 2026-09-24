@@ -91,7 +91,7 @@ the `probe-harness-behaviour` skill; `.claude/hooks/harness-fact-reminder.sh` fl
 an edit that adds an uncited harness fact. An absence — "is not in the payload", "never
 fires" — is the case to distrust most: the reflex was wired to the wrong event for nine
 days on "the Bash result carries no exit status", when a failing call never reaches that
-event at all (#262).<!-- (A0161, cites-as-live) -->
+event at all (#262).<!-- (A0161, cites-as-fallen) -->
 
 ## Docs
 

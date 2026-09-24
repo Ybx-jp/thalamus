@@ -36,10 +36,11 @@ none
 
 ## Verdicts
 
+- 2026-09-24T00:30:00-07:00 · superseded · grade: measured · author: main
+  evidence: entry: A0165-reflex-runs-on-both-bash-result-events · supersedes
+  note: HOOK_WIRING now names reflex.sh under PostToolUseFailure as well, so a non-zero exit reaches the hook; the harness routing this rested on (A0160) is unchanged
+
 ## References
 
-- CLAUDE.md · standing · cites-as-live
-- CONTRIBUTING.md · standing · cites-as-live
-- docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/hooks/claude-code/reflex.sh · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live
+- CLAUDE.md · standing · cites-as-fallen
+- CONTRIBUTING.md · standing · cites-as-fallen

@@ -168,7 +168,7 @@ and never measured, it shapes the design around it silently: the memory reflex w
 on `PostToolUse` for nine days on the belief that "the Bash result carries no exit
 status", when a Bash call that exits non-zero never reaches `PostToolUse` at all — Claude
 Code routes it to `PostToolUseFailure`, which carries the exit status — and every number
-the reflex reported counted only failures a pipe had swallowed (#262).<!-- (A0161, cites-as-live) -->
+the reflex reported counted only failures a pipe had swallowed (#262).<!-- (A0161, cites-as-fallen) -->
 
 So before code or docs rest on a harness fact:
 
