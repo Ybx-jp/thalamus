@@ -158,6 +158,43 @@ and the edit-time `pin-guard.sh` are what cover this repository instead.
 The ledger is standalone: it reads no graph and writes none, and a feature that would
 need the graph is a Thalamus feature rather than a ledger one.
 
+### Claims about a harness
+
+Thalamus runs inside harnesses it does not control, and a sentence about what one of
+them does — which hook event fires, what a payload carries, whose context hook output
+reaches, what a CLI flag does — is a claim about someone else's code. Nothing in this
+repository keeps it true, and no gate fails when a release changes it. Written as a fact
+and never measured, it shapes the design around it silently: the memory reflex was wired
+on `PostToolUse` for nine days on the belief that "the Bash result carries no exit
+status", when a Bash call that exits non-zero never reaches `PostToolUse` at all — Claude
+Code routes it to `PostToolUseFailure`, which carries the exit status — and every number
+the reflex reported counted only failures a pipe had swallowed (#262).<!-- (A0161, cites-as-live) -->
+
+So before code or docs rest on a harness fact:
+
+- **Measure it on the installed version**, with a control that differs in the one
+  variable under test — the same command with and without `; true`, the same hook sync
+  and async — and record the version. The `probe-harness-behaviour` skill carries the
+  procedure and `probe-claude-hooks.sh`, which wires logging hooks through a `--settings`
+  overlay in a scratch directory and reports what each event received and whose
+  transcript its output reached. Run it from your own shell: an agent session's
+  classifier refuses a nested `claude` that spawns agents.
+- **Pin it in two entries.** The harness fact is `argued`, grounded in the vendor's
+  reference registered as a source; the section that decides it is committed under
+  `ledger/sources/` with `--keep-path`, because the ledger's cache is not committed and
+  CI resolves quotations against the bytes. This repository's dependence on it is
+  `measured`, grounded in the code that relies on it and citing the harness entry, so
+  editing that code flags every sentence that cites the dependence. A0160 and A0161 are
+  the worked pair.
+- **Cite the dependence** from every sentence that states the behaviour, and file the
+  defect when the code was built on the wrong belief.
+
+An absence — "is not in the payload", "never fires", "cannot be observed" — is the kind
+to distrust most, and the ledger refuses one without a `search:` ground.
+`.claude/hooks/harness-fact-reminder.sh` runs after every edit in this checkout and
+flags a change to a repo surface that adds a line naming a harness beside a behaviour
+word and cites no entry; it reminds and never blocks.
+
 ### The structural gates, and the exception list
 
 `arch rules --gate` checks measured dependencies against the layer rules declared in
@@ -242,6 +279,12 @@ tools. If you are working with an agent, pin it rather than working around the g
   but `git add` on that path fails; stage the real path under `src/`.
 - **Real directories** — project-scope skills for working *on* this repo. They arm
   only in this checkout and are not installed for users.
+
+`.claude/hooks/` holds the hooks for developing this repository, wired from
+`.claude/settings.json`. `ledger-orientation.sh`, `merge-guard.sh`, `pin-guard.sh` and
+`status-guard.sh` are written by `claims-ledger harness install`, which writes only its
+own file names, so a hook this repository writes sits beside them. None of them is
+installed for users — the product's hooks are under `src/thalamus/harness/hooks/`.
 
 A skill is procedure and knowledge, nothing else. It is read in order to *do*
 something, so a paragraph about what the procedure used to be is pure cost at the

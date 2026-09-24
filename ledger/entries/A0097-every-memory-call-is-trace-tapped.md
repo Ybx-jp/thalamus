@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-23T21:46:16-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/traces.py § "TraceEvent" =sha256:ac79ce0914dc51e3628f2a29d894c55d31106bf47f70e26a2350de65079105e3
+  artifact: sha256:4dbf86bdc84c3c7df37611e92a959172ad111b2582e7081d39e8b0d2d46ac389
+  note: propagated from a moved ground
+
+- 2026-09-23T21:50:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/traces.py § "TraceEvent" =sha256:4dbf86bdc84c3c7df37611e92a959172ad111b2582e7081d39e8b0d2d46ac389
+  note: TraceEvent gained injected_chars() and handles(), readers over the recorded tool_input; the fields the tap records are unchanged, so the assertion is unaffected
+
 ## References
 
 - README.md · standing · cites-as-live

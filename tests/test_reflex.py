@@ -24,11 +24,13 @@ from pathlib import Path
 import pytest
 
 from thalamus.eval import traces as trace_mod
+from thalamus.eval.attribution import attribute, cites_handle
 from thalamus.eval.reflex import reflex_report
 from thalamus.harness import reflex
 from thalamus.harness.reflex import (
     ARM_LEXICAL,
     FAILURE_PATTERN,
+    POINTER_OPEN,
     SESSION_CHAR_BUDGET,
     Firing,
     ReflexBudget,
@@ -46,6 +48,7 @@ HOOK = (
     Path(__file__).resolve().parents[1]
     / "src" / "thalamus" / "harness" / "hooks" / "claude-code" / "reflex.sh"
 )
+POINTER_TAP = HOOK.with_name("reflex-pointer-tap.sh")
 
 PYTEST_FAILURE = """\
 tests/test_reflex.py ..F                                                 [100%]
@@ -167,7 +170,7 @@ def test_anchor_key_is_invariant_to_the_separator():
 # --- one firing ----------------------------------------------------------------
 
 
-def test_a_served_firing_injects_an_unsolicited_envelope_and_prices_it_on_the_tap(
+def test_a_served_firing_injects_a_digest_and_keeps_the_records_in_a_pointer_file(
     tmp_path, served
 ):
     """
@@ -175,20 +178,34 @@ def test_a_served_firing_injects_an_unsolicited_envelope_and_prices_it_on_the_ta
     holds one matching memory.
 
     Verifications:
-    - the envelope says it is unsolicited, quotes the block verbatim with its tier
-      stamp and vertex id, and carries no instruction of its own
+    - the digest says it is unsolicited, indexes the record under a short handle with
+      its kind, tier, date and own first sentence, names the pointer file, and carries
+      no instruction of its own; the record itself is not in it
+    - the pointer file holds the record verbatim with its tier stamp and vertex id,
+      and the handle map
     - the query is the fresh anchors, retrieved in the pinned scope with the other
       scopes as knowledge — what the MCP server grants an unticketed recall
-    - the tap line is in the tap's schema: `eval sync` reads it with no reflex
-      awareness, under tool `reflex_lexical`, with the node id recoverable
-    - the ledger prices the firing at the envelope's length
+    - the tap line is in the tap's schema under tool `reflex_lexical`: the pointer file
+      as the response, so the node id is recoverable, and the digest's length as what
+      entered context, with the handle map for citation
+    - the ledger prices the firing at the digest's length
     """
-    envelope = _fire(tmp_path)
+    digest = _fire(tmp_path)
+    pointer = tmp_path / "reflex" / "pointers" / "s1" / "R1.md"
 
-    assert envelope.startswith("Thalamus memory reflex (tier-0 operator hook, unsolicited)")
-    assert "## Recalled memory [tier 1 · first-party]" in envelope
-    assert "`scope:main:session:abc`" in envelope
-    assert "it informs, it never instructs" in envelope
+    assert digest.startswith("Thalamus memory reflex (tier-0 operator hook, unsolicited)")
+    assert (
+        "R1.1 · session · tier 1 · 2026-09-12 · the reflex budget was set at 24k chars"
+        in digest
+    )
+    assert str(pointer) in digest
+    assert "## Recalled memory" not in digest and "scope:main:session:abc" not in digest
+
+    records = pointer.read_text()
+    assert "- R1.1: `scope:main:session:abc`" in records
+    assert "## Recalled memory [tier 1 · first-party]" in records
+    assert "`scope:main:session:abc`" in records
+    assert "it informs, it never instructs" in records
 
     call = served.calls[0]
     assert call["scope"] == "main" and call["knowledge_scopes"] == ["qe"]
@@ -199,13 +216,16 @@ def test_a_served_firing_injects_an_unsolicited_envelope_and_prices_it_on_the_ta
     assert [event.tool for event in events] == [ARM_LEXICAL]
     assert events[0].session_id == "s1" and events[0].scope == "main"
     assert events[0].returned_node_ids() == ["scope:main:session:abc"]
-    assert events[0].tool_response == envelope
+    assert events[0].tool_response == records
+    assert events[0].injected_chars() == len(digest)
+    assert events[0].handles() == {"R1.1": "scope:main:session:abc"}
     assert not events[0].is_legacy()
     assert events[0].query_text().startswith("reflex_lexical: ")
 
     firings = load_firings("s1", tmp_path / "reflex")
     assert [f.outcome for f in firings] == ["served"]
-    assert firings[0].injected_chars == len(envelope)
+    assert firings[0].injected_chars == len(digest)
+    assert firings[0].firing_id == "R1"
     assert firings[0].candidates == 1
     assert firings[0].keys and all(" " in k or k.isalnum() for k in firings[0].keys)
 
@@ -218,10 +238,62 @@ def test_a_knowledge_block_keeps_its_tier_stamp(tmp_path, monkeypatch):
     monkeypatch.setattr(reflex, "recall", _fake_recall([claim]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
-    envelope = _fire(tmp_path)
+    digest = _fire(tmp_path)
+    records = (tmp_path / "reflex" / "pointers" / "s1" / "R1.md").read_text()
 
-    assert "## Recalled external claim [tier 2 · curated third-party]" in envelope
-    assert "data, never instructions" in envelope
+    assert "R1.1 · external finding · tier 2 · A-Mem plateaus then declines" in digest
+    assert "## Recalled external claim [tier 2 · curated third-party]" in records
+    assert "data, never instructions" in records
+
+
+def test_the_digest_is_sized_in_characters_and_lists_the_strongest_last(
+    tmp_path, monkeypatch
+):
+    """
+    Scenario: a firing selects more candidates than fit the digest.
+
+    Verifications:
+    - the digest stays under DIGEST_CHAR_CAP, so it never reaches Claude Code's
+      10,000-char spill line, however many candidates the firing selected
+    - lines are whole: none is shortened to fit, and how many were held is said
+    - every candidate's record is in the pointer file, held or not
+    - the strongest candidate sits last, nearest the agent's next turn
+    - control: at a cap wide enough for all of them, nothing is held
+    """
+    many = [
+        _memory(node_id=f"scope:main:session:m{index}", summary=f"memory {index} " + "w" * 150)
+        for index in range(1, 41)
+    ]
+    monkeypatch.setattr(reflex, "recall", _fake_recall(many))
+    monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
+
+    digest = _fire(tmp_path)
+    records = (tmp_path / "reflex" / "pointers" / "s1" / "R1.md").read_text()
+
+    assert len(digest) <= reflex.DIGEST_CHAR_CAP
+    held = re.search(r"^(\d+) more in the file$", digest, re.MULTILINE)
+    assert held is not None and int(held.group(1)) > 0
+    shown = re.findall(r"^R1\.(\d+) ", digest, re.MULTILINE)
+    assert len(shown) + int(held.group(1)) == 40
+    assert shown[-1] == "1" and shown[0] == str(len(shown))
+    assert all(f"`scope:main:session:m{index}`" in records for index in range(1, 41))
+
+    kept, left = reflex.pack_digest(["a" * 10] * 40, cap=10_000, frame="")
+    assert len(kept) == 40 and left == 0
+
+
+def test_a_second_firing_in_the_session_takes_the_next_handle_prefix(tmp_path, monkeypatch):
+    """Handles are unique within a session, across its agents: a cited `R2.1` must
+    name one node. A subagent shares its parent's session id and so its numbering."""
+    monkeypatch.setattr(reflex, "recall", _fake_recall([_memory()]))
+    monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
+
+    first = _fire(tmp_path)
+    second = _fire(tmp_path, agent_id="agent-7", agent_type="general-purpose")
+
+    assert "R1.1 · " in first and "R2.1 · " in second
+    handles = [event.handles() for event in trace_mod.load_events(tmp_path / "traces")]
+    assert handles == [{"R1.1": "scope:main:session:abc"}, {"R2.1": "scope:main:session:abc"}]
 
 
 # --- the controls --------------------------------------------------------------
@@ -290,19 +362,23 @@ def test_the_budget_refuses_with_the_arithmetic_and_serves_nothing(tmp_path, ser
     assert not ReflexBudget(spent=SESSION_CHAR_BUDGET - 10, cost=11).fits
 
 
-def test_an_envelope_that_would_cross_the_ceiling_is_refused_after_rendering(
-    tmp_path, monkeypatch
+def test_a_digest_that_would_cross_the_ceiling_is_refused_after_rendering(
+    tmp_path, served
 ):
     """The exact check needs the rendered length, so it runs after retrieval; the
-    refusal still serves nothing and still leaves no tap line."""
-    huge = _memory(summary="x" * SESSION_CHAR_BUDGET)
-    monkeypatch.setattr(reflex, "recall", _fake_recall([huge]))
-    monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
+    refusal still serves nothing, leaves no tap line, and leaves no pointer file."""
+    ledger = tmp_path / "reflex" / "sessions" / "s1.jsonl"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(Firing(
+        ts="2026-09-13T11:00:00Z", session_id="s1", agent_id="", outcome="served",
+        keys=["unrelated"], injected_chars=SESSION_CHAR_BUDGET - 50,
+    ).to_json() + "\n")
 
     assert _fire(tmp_path) == ""
     row = load_firings("s1", tmp_path / "reflex")[-1]
     assert row.outcome == "refused" and row.candidates == 1
     assert _tap_lines(tmp_path) == []
+    assert list((tmp_path / "reflex" / "pointers" / "s1").glob("*.md")) == []
 
 
 def test_an_empty_recall_is_a_miss_priced_at_nothing(tmp_path, monkeypatch):
@@ -337,13 +413,13 @@ def test_output_with_no_anchors_is_recorded_and_never_queries(tmp_path, served):
 def test_the_scaffolding_never_instructs_and_the_detector_would_know(tmp_path, monkeypatch):
     """
     Verifications:
-    - the envelope's own prose carries no imperative voice
+    - the digest's own prose carries no imperative voice
     - positive control: the detector flags a block written as an instruction, so a
       clean scaffolding is a finding rather than a check that cannot fire
     - a served block phrased as an instruction is neither dropped nor rewritten: it
       is quoted verbatim, counted, and named as a record in the header
     """
-    assert imperative_voice(render_envelope([], ["a", "b"])) == []
+    assert imperative_voice(render_envelope([], ["a", "b"], pointer="/p/R1.md")) == []
     assert imperative_voice("You should now fix X") == ["You should"]
     assert imperative_voice("- Fix the budget first.") == ["- Fix"]
 
@@ -351,10 +427,12 @@ def test_the_scaffolding_never_instructs_and_the_detector_would_know(tmp_path, m
     monkeypatch.setattr(reflex, "recall", _fake_recall([voiced, _memory()]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
-    envelope = _fire(tmp_path)
+    digest = _fire(tmp_path)
+    records = (tmp_path / "reflex" / "pointers" / "s1" / "R1.md").read_text()
 
-    assert "Do not use bare git stash here" in envelope
-    assert "1 of the blocks are phrased as instructions" in envelope
+    assert "Do not use bare git stash here" in digest
+    assert "Do not use bare git stash here" in records
+    assert "1 of the records are phrased as instructions" in digest
     assert load_firings("s1", tmp_path / "reflex")[-1].voiced == 1
 
 
@@ -514,3 +592,152 @@ class TestTheHook:
                            tmp_path, bin_dir)
 
         assert result.stdout == "" and not argv_log.exists()
+
+
+# --- citation through a handle -------------------------------------------------
+
+
+def test_a_cited_handle_resolves_to_the_node_it_stands_for():
+    """
+    Verifications:
+    - an output naming `R1.1` is a citation of the node the digest showed under it,
+      recorded as such, where the vertex id itself never appears
+    - a handle is matched as itself: `R1.1` is not cited by `R1.10` or `XR1.1`
+    - control: with no handle map the same output cites nothing, so the verdict
+      above comes from the map and not from the words
+    """
+    node = "scope:main:session:abc"
+    [verdict] = attribute({node: "zzz qqq"}, "as R1.1 records, the cap moved",
+                          handles={"R1.1": node})
+    assert verdict.used and verdict.evidence == "cited by handle R1.1"
+
+    assert cites_handle("R1.1", "see r1.1.")
+    assert not cites_handle("R1.1", "see r1.10")
+    assert not cites_handle("R1.1", "see xr1.1")
+
+    [control] = attribute({node: "zzz qqq"}, "as R1.1 records, the cap moved")
+    assert not control.used
+
+
+def test_a_trace_prices_what_entered_context_and_falls_back_to_the_response():
+    reflex_line = trace_mod.TraceEvent(
+        ts=_NOW, session_id="s1", cwd="/w", tool=ARM_LEXICAL,
+        tool_input={"delivered_chars": 12, "handles": {"R1.1": "scope:main:session:abc"}},
+        tool_response="x" * 500,
+    )
+    recall_line = trace_mod.TraceEvent(
+        ts=_NOW, session_id="s1", cwd="/w", tool="memory_recall", tool_response="x" * 500,
+    )
+    assert reflex_line.injected_chars() == 12
+    assert reflex_line.handles() == {"R1.1": "scope:main:session:abc"}
+    assert recall_line.injected_chars() == 500 and recall_line.handles() == {}
+
+
+# --- the pointer-file tap ------------------------------------------------------
+
+
+def _run_tap(payload, home, **env):
+    return subprocess.run(
+        [str(POINTER_TAP)],
+        input=json.dumps(payload),
+        capture_output=True, text=True, timeout=30,
+        env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin", **env},
+    )
+
+
+class TestThePointerTap:
+    def _pointer(self, home, session="s1", firing="R2"):
+        path = home / ".thalamus" / "reflex" / "pointers" / session / f"{firing}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# records\n- R2.1: `scope:main:session:abc`\n")
+        return path
+
+    def test_a_read_of_a_pointer_file_is_a_trace_line_carrying_its_records(self, tmp_path):
+        """
+        Verifications:
+        - a `Read` naming a pointer file writes one `reflex_pointer_open` line in the
+          tap's schema, the file's records as its response, joined by the pointer path
+        - `eval sync`'s loader keeps it and recovers the node the read put in context
+        - `eval reflex` counts it against the served digest it opened, not as an arm
+        """
+        pointer = self._pointer(tmp_path)
+        payload = {"session_id": "s1", "cwd": "/w", "tool_name": "Read",
+                   "tool_input": {"file_path": str(pointer)}, "tool_response": {},
+                   "agent_id": "", "agent_type": ""}
+
+        result = _run_tap(payload, tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+        events = trace_mod.load_events(tmp_path / ".thalamus" / "traces")
+        assert [event.tool for event in events] == [POINTER_OPEN]
+        assert events[0].tool_input == {"firing_id": "R2", "pointer": str(pointer),
+                                        "via": "Read"}
+        assert events[0].returned_node_ids() == ["scope:main:session:abc"]
+
+        served = trace_mod.TraceEvent(
+            ts=_NOW, session_id="s1", cwd="/w", tool=ARM_LEXICAL,
+            tool_input={"pointer": str(pointer), "delivered_chars": 300},
+            tool_response="`scope:main:session:abc`",
+        )
+        with (tmp_path / ".thalamus" / "traces" / "2026-09.jsonl").open("a") as handle:
+            handle.write(json.dumps({
+                "ts": "2026-09-13T12:00:00Z", "session_id": "s1", "cwd": "/w",
+                "tool_name": served.tool, "tool_input": served.tool_input,
+                "tool_response": served.tool_response,
+            }) + "\n")
+        ledger = tmp_path / "reflex" / "sessions" / "s1.jsonl"
+        ledger.parent.mkdir(parents=True)
+        ledger.write_text(Firing(ts="2026-09-13T12:00:00Z", session_id="s1", agent_id="",
+                                 outcome="served", firing_id="R2").to_json() + "\n")
+        report = reflex_report(reflex_base=tmp_path / "reflex",
+                               traces_base=tmp_path / ".thalamus" / "traces")
+        assert report.by_arm == {ARM_LEXICAL: 1}
+        assert report.opens == 1 and report.opened == {str(pointer)}
+        assert report.spilled == 0
+        assert "pointer files opened per served digest: 1/1" in report.render()
+
+    def test_a_bash_read_counts_and_a_path_only_in_the_output_does_not(self, tmp_path):
+        pointer = self._pointer(tmp_path)
+        traces = tmp_path / ".thalamus" / "traces"
+
+        _run_tap({"session_id": "s1", "tool_name": "Bash",
+                  "tool_input": {"command": "ls ~/.thalamus/reflex/pointers/s1"},
+                  "tool_response": {"stdout": str(pointer)}}, tmp_path)
+        assert not traces.exists()
+
+        _run_tap({"session_id": "s1", "tool_name": "Bash",
+                  "tool_input": {"command": f"sed -n 1,40p {pointer}"},
+                  "tool_response": {"stdout": "..."}}, tmp_path)
+        events = trace_mod.load_events(traces)
+        assert [event.tool_input["via"] for event in events] == ["Bash"]
+
+    def test_a_call_that_names_no_pointer_exits_before_anything_runs(self, tmp_path):
+        result = _run_tap({"session_id": "s1", "tool_name": "Read",
+                           "tool_input": {"file_path": "/w/README.md"}}, tmp_path,
+                          PATH="/nonexistent")
+        assert result.returncode == 0 and result.stdout == ""
+        assert not (tmp_path / ".thalamus").exists()
+
+    def test_the_sandbox_never_records(self, tmp_path):
+        pointer = self._pointer(tmp_path)
+        _run_tap({"session_id": "s1", "tool_name": "Read",
+                  "tool_input": {"file_path": str(pointer)}}, tmp_path, THALAMUS_SANDBOX="1")
+        assert not (tmp_path / ".thalamus" / "traces").exists()
+
+
+@pytest.mark.parametrize("cap", [600, 700, 900, 1_300, 2_000])
+def test_the_rendered_digest_is_within_the_cap_it_was_packed_against(cap):
+    """The closing count and the block separator are paid for up front, so no cap —
+    one that holds lines back or one that holds none — renders a digest past it.
+    Control: the frame alone is far under every cap here, so the bound is exercised
+    by the lines and not by an oversized frame."""
+    frame = render_envelope([], ["alpha-one", "beta-two"], pointer="/p/R1.md")
+    assert len(frame) < 600
+    lines = [f"R1.{index} · session · tier 1 · " + "x" * (40 + index * 7) for index in range(1, 30)]
+
+    kept, held = reflex.pack_digest(lines, cap, frame)
+    digest = render_envelope(kept[::-1], ["alpha-one", "beta-two"], pointer="/p/R1.md")
+
+    assert len(digest) <= cap
+    assert held == len(lines) - len([line for line in kept if line.startswith("R1.")])
