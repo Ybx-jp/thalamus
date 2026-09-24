@@ -671,7 +671,9 @@ class TestTheHook:
         argv = _await_argv(argv_log)
         assert "thalamus reflex --shadow" in argv
         assert "--event PostToolUse " in argv and "--scope" not in argv
-        assert seen.read_text() == "3 passed in 0.2s\n"
+        # The stub logs its argv before it copies the response file, so the argv
+        # appearing says nothing about the copy having landed.
+        _await(lambda: seen.exists() and seen.read_text() == "3 passed in 0.2s\n")
         response = argv.split("--response-file ")[1].split()[0]
         _await(lambda: not Path(response).exists())
 
