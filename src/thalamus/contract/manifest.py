@@ -22,7 +22,15 @@ from urllib.parse import urlparse
 import yaml
 from pydantic import BaseModel, Field, PrivateAttr
 
-from thalamus.contract.capabilities import COST, INHERIT, Dimension, Preset, read_presets
+from thalamus.contract.capabilities import (
+    BUDGET,
+    COST,
+    DIMENSIONS,
+    INHERIT,
+    Dimension,
+    Preset,
+    read_presets,
+)
 from thalamus.contract.paths import PROJECT_ROOT
 
 # Local-first project; THALAMUS_CONFIG_DIR overrides for anything fancier.
@@ -292,6 +300,12 @@ class ExpertManifest(BaseModel):
         "`presets/cost.yaml` and projected by each harness's renderer. Absent means "
         "`inherit`: the caller's model and effort.",
     )
+    budget: str = Field(
+        INHERIT,
+        description="The name of the `budget` preset this scope's sessions run under — "
+        "a cap on agentic turns, defined in the config root's `presets/budget.yaml`. "
+        "Absent means `inherit`: no cap beyond the harness's own.",
+    )
     capability_boundary: CapabilityBoundary | None = Field(
         None,
         description="Tools and skills this scope may not invoke. Absent means "
@@ -300,16 +314,25 @@ class ExpertManifest(BaseModel):
         "An explicit empty block is the opt-out.",
     )
 
-    # The selected preset, resolved against the config root the manifest was loaded
-    # from. A preset is defined beside the manifests rather than inside them, so the
-    # name cannot be checked by the model alone.
-    _cost: Preset | None = PrivateAttr(None)
+    # The selected preset per dimension, resolved against the config root the manifest
+    # was loaded from. A preset is defined beside the manifests rather than inside
+    # them, so the name cannot be checked by the model alone.
+    _presets: dict[str, Preset] = PrivateAttr(default_factory=dict)
+
+    def preset(self, dimension: Dimension) -> Preset:
+        if dimension.key not in self._presets:
+            self._presets[dimension.key] = resolve_preset(
+                dimension, getattr(self, dimension.key)
+            )
+        return self._presets[dimension.key]
 
     @property
     def cost_preset(self) -> Preset:
-        if self._cost is None:
-            self._cost = resolve_preset(COST, self.cost)
-        return self._cost
+        return self.preset(COST)
+
+    @property
+    def budget_preset(self) -> Preset:
+        return self.preset(BUDGET)
 
     @property
     def effective_capability_boundary(self) -> CapabilityBoundary:
@@ -482,10 +505,13 @@ def load_manifest(scope: str, base: Path | None = None) -> ExpertManifest:
     manifest = ExpertManifest(**yaml.safe_load(path.read_text()))
     if manifest.scope != scope:
         raise ValueError(f"{path} declares scope `{manifest.scope}`, not `{scope}`")
-    try:
-        manifest._cost = resolve_preset(COST, manifest.cost, base)
-    except ValueError as exc:
-        raise ValueError(f"{path}: {exc}") from exc
+    for dimension in DIMENSIONS.values():
+        try:
+            manifest._presets[dimension.key] = resolve_preset(
+                dimension, getattr(manifest, dimension.key), base
+            )
+        except ValueError as exc:
+            raise ValueError(f"{path}: {exc}") from exc
     return manifest
 
 

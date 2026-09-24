@@ -85,6 +85,13 @@ A manifest can also declare:
   replacement its catalog names; `thalamus preset list` shows each class's Codex model
   against the live catalog.<!-- (A0164, cites-as-live) -->
   Cursor sessions do not receive it yet.
+- **`budget`** — the name of a preset capping how many agentic turns one run of the
+  scope may take (`max_turns`, an integer), defined the same way in
+  `presets/budget.yaml`; `inherit` sets no cap. On Claude Code it is written into the
+  generated agent file as `maxTurns:`, which caps the expert when it is spawned as a
+  subagent — a consultation's voiced expert — and returns a partial answer the caller can
+  resume. A `--agent` pin is not capped by it, and Codex and Cursor sessions do not
+  receive it.<!-- (A0169, cites-as-live) -->
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
   `designer` is the worked example.

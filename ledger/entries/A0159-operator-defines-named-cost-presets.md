@@ -36,6 +36,24 @@ none
 
 ## Verdicts
 
+- 2026-09-24T01:03:35-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/capabilities.py § "Dimension" =sha256:ded60f797071bfb98eab98aa7e41d275cd02cc005c0c16081e28dfcf5d9259ee
+  artifact: sha256:1a82509173a51271590c447733193450a823400034583d60762eb8a38ea2583b
+  note: propagated from a moved ground
+
+- 2026-09-24T01:03:35-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:31535bb70ed2d7be5fba0aa35300825fd5905fadaddfbb5b2ebe1cecd24c3fbe
+  artifact: sha256:b125f2424b186f292bc9cc0f19ef4fa48cbbe28a4870796a70d2b22b42671401
+  note: propagated from a moved ground
+
+- 2026-09-24T01:10:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/capabilities.py § "Dimension" =sha256:1a82509173a51271590c447733193450a823400034583d60762eb8a38ea2583b
+  note: Dimension admits an integer-range setting beside the closed lists; inherit, the refusal to redefine it and the refusal of an undefined name are unchanged
+
+- 2026-09-24T01:10:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:b125f2424b186f292bc9cc0f19ef4fa48cbbe28a4870796a70d2b22b42671401
+  note: load_manifest resolves every dimension's selection in a loop instead of cost alone, re-raising with the manifest's path as before; an undefined cost preset still fails the load
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live
