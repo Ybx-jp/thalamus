@@ -157,6 +157,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
     ("PostToolUse", "Bash", "reflex.sh"),
+    ("PostToolUseFailure", "Bash", "reflex.sh"),
     ("PostToolUse", None, "reflex-pointer-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
     ("PostToolUse", "Agent", "conditioning.sh"),
@@ -326,7 +327,8 @@ CURSOR_GUARDS: frozenset[str] = frozenset(
 #   so the path half of the role boundary binds and the capability half does not.
 #
 #   `PostToolUse:Bash` for `reflex.sh`, the memory reflex. Its failure test reads
-#   `tool_response.stdout`/`.stderr`/`.interrupted`, and codex's shell result has
+#   Claude Code's `tool_response.stdout`/`.stderr`/`.interrupted`, or a failure's
+#   `error`/`is_interrupt`, and codex's shell result has
 #   been measured only on the input side — it arrives as one string, which the
 #   `gremlin-tap.sh` adapter reshapes onto the stdout leg — so a reflex here would
 #   build its trigger against a payload half nobody has read. Whether codex can carry
