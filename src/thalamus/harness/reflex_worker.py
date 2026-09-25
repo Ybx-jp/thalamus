@@ -38,7 +38,7 @@ from pathlib import Path
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 
 from thalamus.contract.manifest import available_scopes
-from thalamus.harness import agentic, quick, reflex_queue
+from thalamus.harness import agentic, quick, reflex_note, reflex_queue
 from thalamus.harness.agents import cli_for
 from thalamus.harness.extraction import ExtractionError
 from thalamus.harness.reflex import (
@@ -355,12 +355,19 @@ def run_job(
     ]
     voiced = sum(1 for block in blocks if imperative_voice(block))
     trigger_ts = str(lines[-1].get("ts") or first.get("ts") or "")
+    # The note may cite only what this digest serves, and one that passes is delivered
+    # or withheld by its own balanced assignment, over the same records either way.
+    note_check = reflex_note.check_note(result.note, set(handles))
+    note_arm = (
+        reflex_note.assign_note_arm(root, session_id, firing_id) if note_check.valid else ""
+    )
+    shown_note = result.note if note_arm == reflex_note.SHOWN else ""
     frame = render_envelope([], anchors, voiced=voiced, pointer=str(pointer),
-                            trigger=trigger_ts)
+                            trigger=trigger_ts, note=shown_note)
     kept, _held = pack_digest(digest_lines, DIGEST_CHAR_CAP, frame)
     # Strongest last, nearest the agent's next turn.
     digest = render_envelope(kept[::-1], anchors, voiced=voiced, pointer=str(pointer),
-                             trigger=trigger_ts)
+                             trigger=trigger_ts, note=shown_note)
     ready_ts = now()
     pointer.write_text(render_pointer(firing_id, trigger_ts, handles, blocks),
                        encoding="utf-8")
@@ -376,6 +383,10 @@ def run_job(
         "transcript": str(transcript or ""), "sidechain": sidechain,
         "ready_ts": _stamp(ready_ts), "voiced": voiced,
         "outcome": "timeout" if timed_out else "served",
+        # The note as written, whether or not it was delivered: a withheld note is the
+        # comparison the shown one is read against.
+        "note": result.note, "note_status": note_check.status, "note_arm": note_arm,
+        "note_cited": note_check.cited,
         **{key: value for key, value in row.items() if key not in ("session_id", "agent_id")},
         **effort,
     }
@@ -473,7 +484,8 @@ def deliver(
                 "ready_ts": data.get("ready_ts", ""), "outcome": data.get("outcome", ""),
                 **{key: data.get(key) for key in (
                     "triggers", "queued_ms", "calls", "nodes", "turns", "ms",
-                    "load_ms", "slot_wait_ms", "stop",
+                    "load_ms", "slot_wait_ms", "stop", "note", "note_status", "note_arm",
+                    "note_cited",
                 )},
             }
             _append_trace({
@@ -488,7 +500,9 @@ def deliver(
             })
             append_outcome(root, {**base, "outcome": "delivered", "depth": depth,
                                   "stopped": (data.get("stop") or {}).get("stopped", ""),
-                                  "served_as": data.get("outcome", "")}, now=ts)
+                                  "served_as": data.get("outcome", ""),
+                                  "note_status": data.get("note_status", ""),
+                                  "note_arm": data.get("note_arm", "")}, now=ts)
             path.rename(delivered / path.name)
             digests.append(str(data.get("digest") or ""))
     return "\n\n".join(d for d in digests if d)
