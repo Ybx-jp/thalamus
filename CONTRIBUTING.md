@@ -155,6 +155,14 @@ that runs concurrent sessions in worktrees it would point every worktree at one
 worktree's virtualenv — and at nothing at all once that worktree is removed. The CI gate
 and the edit-time `pin-guard.sh` are what cover this repository instead.
 
+**An entry id is allocated, never chosen.** `claims-ledger new` takes the next free id,
+and when two unmerged branches mint the same ones, the branch that merges second runs
+`claims-ledger renumber --onto <branch> --write`, which rewrites its commits so each
+entry is created with the id it will keep. A hand-picked `--id` leaves gaps and guesses
+where the other branch will stop, so `.claude/hooks/ledger-id-guard.py` refuses
+`claims-ledger new --id` in an agent session; `source add --id`, which names a source,
+is unaffected.<!-- (A0202, cites-as-live) -->
+
 The ledger is standalone: it reads no graph and writes none, and a feature that would
 need the graph is a Thalamus feature rather than a ledger one.
 
