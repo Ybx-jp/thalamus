@@ -37,6 +37,13 @@ CRASHED = ("distilling session {sid} into scope {scope}\n"
            "ValueError: Archive corruption: /home/op/.thalamus/archive/17/17e7.jsonl "
            "hashes to c7b3, not 17e7. Retained evidence is supposed to be immutable.\n"
            "extract exited 1 — not running eval sync against a half-written episode\n")
+# `eval sync` dying after a clean extract: the hook ran it because extract exited 0,
+# and it wrote its traceback into the same log with no exit line of its own.
+SYNC_CRASHED = ("Traceback (most recent call last):\n"
+                '  File "/home/op/code/thalamus/src/thalamus/eval/sync.py", line 125, in sync\n'
+                "    transcript, snapshot_hash = _retained_snapshot(g, session_vid)\n"
+                "ValueError: Archive corruption: /home/op/.thalamus/archive/2b/2beb.jsonl "
+                "hashes to 5671, not 2beb. Retained evidence is supposed to be immutable.\n")
 NO_TX = ("distilling session {sid} into scope {scope}\n"
          "No session matching {sid}-a157-47ff-b8b2-f5ab under -home — nothing distilled.\n")
 # What SessionEnd writes when the transcript is missing before extract is ever
@@ -356,6 +363,30 @@ def test_a_crash_after_a_clean_run_is_not_hidden_by_it(box):
     (row,) = box.watch.rows()
     assert row["state"] == "error"
     assert "Archive corruption" in row["detail"]
+
+
+def test_a_sync_crash_after_a_clean_extract_says_the_session_was_distilled(box):
+    """The hook chains `eval sync` after extract, and its output lands in the same
+    log. A sync that dies leaves a traceback below a clean summary — the session was
+    distilled, and a row reading like `CRASHED` sends the operator to re-distill work
+    that landed. Taken from the real thing (2026-09-25, session fa0838e4): sync read
+    an archived transcript whose bytes failed their hash on that one read."""
+    box.pin("ccccdddd")
+    box.log("ccccdddd", DONE + SYNC_CRASHED)
+    (row,) = box.watch.rows()
+    assert row["state"] == "error"
+    assert row["detail"].startswith("distilled; eval sync failed — ValueError: Archive")
+
+
+def test_a_traceback_under_a_failed_summary_is_still_the_extract_failure(box):
+    """Only a clean summary vouches for the distillation. A summary counting a failure
+    already made the row an error on extract's account, and a sync crash below it
+    must not relabel that as a distilled session."""
+    box.pin("cccceeee")
+    box.log("cccceeee", FAILED + SYNC_CRASHED)
+    (row,) = box.watch.rows()
+    assert row["state"] == "error"
+    assert "distilled" not in row["detail"]
 
 
 def test_a_crashed_run_is_named_by_its_exception_not_its_frames(box):

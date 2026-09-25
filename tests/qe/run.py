@@ -104,6 +104,7 @@ CASE_MODULES = (
     "qe.cases.reflex_worker_session_end_no_model_call",
     "qe.cases.reflex_worker_deadline_interrupts_blocking_call",
     "qe.cases.reflex_carrier_single_posttooluse_group",
+    "qe.cases.codex_scope_not_forwarded",
 )
 
 

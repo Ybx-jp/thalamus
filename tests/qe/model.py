@@ -47,6 +47,7 @@ class Substrate(str, Enum):
     NEEDS_MODEL = "needs-model"
     NEEDS_NODE = "needs-node"
     NEEDS_JQ = "needs-jq"
+    NEEDS_CODEX = "needs-codex"
 
 
 class Tier(str, Enum):
@@ -188,6 +189,12 @@ def available(substrate: Substrate) -> bool:
         # the binary is the declarable precondition, auth state is a runtime fact the
         # case itself has to report on.
         return shutil.which("claude") is not None
+    if substrate is Substrate.NEEDS_CODEX:
+        # Same reasoning as NEEDS_MODEL, for the other CLI: the binary is the
+        # declarable precondition. A case against `codex exec` reaches the MCP
+        # server's env before any model call resolves, so it needs no credentials
+        # either — auth state is not this substrate's business.
+        return shutil.which("codex") is not None
     return False
 
 

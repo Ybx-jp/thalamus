@@ -13,7 +13,9 @@
 # installed for users.
 set -euo pipefail
 
-input=$(</dev/stdin)
+# `cat`, not `$(</dev/stdin)`: the hook's stdin is a socket, which cannot be reopened by
+# path (A0204).
+input=$(cat)
 command -v jq >/dev/null 2>&1 || exit 0
 
 path=$(jq -r '.tool_input.file_path // empty' <<< "$input")

@@ -243,3 +243,60 @@ def test_the_partial_reader_race_is_real_and_the_expansion_is_not():
         capture_output=True, text=True, timeout=60,
     )
     assert expanded.returncode == 0 and expanded.stdout.strip() == "reached first"
+
+
+# ---- Stdin reopened by path ----
+#
+# Claude Code hands a command hook its input on a socket, not a pipe, and a socket
+# cannot be reopened through `/dev/stdin` (`/proc/self/fd/0`): the open fails with
+# ENXIO, and under `set -e` the hook exits 1 before it reads a byte. `cat` reads the
+# inherited descriptor and works on either. The suite's own drivers hand hooks a pipe,
+# where the path reopen succeeds, so no behavioural test here could see it.
+#
+# Measured 2026-09-25 over the operator's transcripts on Claude Code 2.1.281–2.1.282:
+# reflex-pointer-tap.sh, reading `$(</dev/stdin)`, failed on all 2,448 of its PostToolUse
+# and PostToolUseFailure runs, while reflex.sh, reading `$(cat)` on the same Bash calls,
+# ran. The reflex carrier had delivered no agentic digest and the pointer tap had
+# recorded no open.
+REPO_HOOKS = Path(__file__).resolve().parents[1] / ".claude" / "hooks"
+_REOPENS_STDIN = re.compile(r"/dev/stdin|/dev/fd/0|/proc/self/fd/0")
+
+
+def test_no_hook_reopens_its_stdin_by_path():
+    scripts = sorted(HOOKS.glob("*/*.sh")) + sorted(REPO_HOOKS.glob("*.sh"))
+    assert len(scripts) > 20, scripts
+    offenders = [
+        f"{path.relative_to(path.parents[1])}:{number}"
+        for path in scripts
+        for number, line in enumerate(path.read_text().splitlines(), start=1)
+        if _REOPENS_STDIN.search(line) and not line.lstrip().startswith("#")
+    ]
+    assert not offenders, (
+        "a hook's stdin is a socket, which cannot be reopened by path; read it with "
+        f"$(cat): {offenders}"
+    )
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+def test_a_socket_stdin_refuses_the_path_reopen_and_serves_cat():
+    """The positive control: the sweep above bans a shape that fails only on a socket."""
+    import socket
+
+    payload = b'{"session_id": "s1"}'
+
+    def run(read: str, *, over_socket: bool) -> subprocess.CompletedProcess:
+        script = f"set -euo pipefail\n{read}\nprintf '%s' \"$input\""
+        if not over_socket:
+            return subprocess.run(["bash", "-c", script], input=payload,
+                                  capture_output=True, timeout=30)
+        ours, theirs = socket.socketpair()
+        with ours, theirs:
+            ours.sendall(payload)
+            ours.shutdown(socket.SHUT_WR)
+            return subprocess.run(["bash", "-c", script], stdin=theirs.fileno(),
+                                  capture_output=True, timeout=30)
+
+    assert run("input=$(</dev/stdin)", over_socket=False).stdout == payload
+    reopened = run("input=$(</dev/stdin)", over_socket=True)
+    assert reopened.returncode == 1 and b"No such device or address" in reopened.stderr
+    assert run("input=$(cat)", over_socket=True).stdout == payload
