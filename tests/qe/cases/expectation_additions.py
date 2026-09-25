@@ -34,8 +34,11 @@ hermetic check could verify:
 
 An `approved: true` key, or an `--i-checked` env var, would therefore be a rubber stamp
 with a schema. What is left that an adding agent genuinely cannot mint is the **base**:
-the prior server-side tip of the pushed ref, which GitHub writes into the event payload
-after the push has already happened. So the guarantee this case actually delivers is
+the prior server-side state of the target ref, which GitHub writes into the event
+payload after the push has already happened -- the pushed ref's own prior tip for a
+`push`, the merge target's tip for a `pull_request` (see `_from_event_payload`'s
+docstring for how the two are told apart, and "Measured against a real run" below for
+why the fields differ per event). So the guarantee this case actually delivers is
 narrow and worth stating exactly:
 
 > An addition costs the adding agent a red CI run on the commit that introduces it,
@@ -58,6 +61,43 @@ a gate a reproduction PR can never pass, since the case is *designed* to go red 
 moment a legitimate addition lands. What a required check cannot do, an unrequired one
 still does: it names the entry, on the introducing commit, for a reader who is not the
 agent that wrote it.
+
+## Measured against a real run
+
+The claim that `pull_request` `opened` carries no top-level `before`/`after` while
+`synchronize` does, and that `pull_request.base.sha` names the merge target on both, is
+a claim about GitHub's webhook payloads -- code this repo does not control -- so it
+rests on more than the schema:
+
+- octokit/webhooks' payload schemas (mirrored from GitHub's own reference), in
+  `payload-schemas/api.github.com/pull_request/`: `opened.schema.json` has no
+  `before`/`after` property at all; `synchronize.schema.json` adds both as required
+  top-level strings naming the PR branch's own previous and new head. `common/
+  pull-request.schema.json` declares `base` as an object with a required `sha` string
+  on every action.
+- A real run: PR #300 (`qe/issue-299-pr-base` -> `master`, the fix for this issue)
+  fired a `pull_request` `opened` event on its first push and a `synchronize` event on
+  its second, both handled without raising.
+- The positive control this issue asked for: scratch PR #302
+  (`scratch/qe-299-base-control`, base `qe/issue-299-pr-base`) added one known-red-style
+  entry on its first commit and made a trivial second commit. `mute-review` named the
+  added entry on **both** the `opened` run and the `synchronize` run that followed the
+  second push -- runs 36XXXXXXX and 36XXXXXXX. Under the pre-fix code, the synchronize
+  run would have read its own top-level `before` (the first commit, already carrying
+  the added entry) as "base" and reported clean, the same failure mode #299 reported on
+  PR #284. The fix instead re-reads `pull_request.base.sha` on both runs, so it stayed
+  red. The scratch PR and branch were closed and deleted once the runs completed.
+
+`git merge-base HEAD <base ref>`, recomputing the base from checked-out history instead
+of trusting `pull_request.base.sha`, was considered and not taken. `actions/checkout`'s
+default ref for a `pull_request` event is the ephemeral `refs/pull/<n>/merge` commit,
+not the PR head, so `HEAD` in this workflow already carries an old snapshot of the base
+branch as one of its two parents; merge-base against that `HEAD` converges on that same
+snapshot rather than anything fresher, so the swap would not change what this case reads
+even in the scenario that motivates it -- the base branch advancing after the PR's last
+push. `pull_request.base.sha` is also the field GitHub's own schema names for exactly
+this purpose, and the existing merge-base fallback in `_base()` already covers the case
+where the payload does not resolve to a commit this checkout has.
 
 ## Why the collapse paths raise instead of returning a Finding
 
@@ -174,10 +214,23 @@ def _is_commit(rev: str) -> bool:
 def _from_event_payload() -> tuple[str, str] | None:
     """The base GitHub computed server-side, which is the part an agent cannot mint.
 
-    `before` is the pushed ref's prior tip and `pull_request.base.sha` is the merge
-    target; both are written into the event payload by the forge after the push landed,
-    so an addition is measured against a state that existed before the adding agent
-    could touch it.
+    Two event shapes, told apart by the payload's own `pull_request` key rather than by
+    trying both candidates in a fixed order regardless of shape (#299):
+
+    - A `pull_request` event (`opened`, `synchronize`, `reopened`, ...) carries
+      `pull_request.base.sha` -- the merge target, requeried by GitHub at the time of
+      that action. Measured against octokit/webhooks' payload schemas and a real run
+      (this module's docstring, "Measured against a real run"): `opened` has no
+      top-level `before`/`after` at all, so nothing else is available on that action
+      anyway; `synchronize` *does* add a top-level `before`/`after` pair, but those name
+      the PR branch's own previous and new head commit, not the base -- reading them as
+      "base" on this event was the #299 bug. `base.sha` is a required string field of
+      `pull_request.base` on every action, so checking for the `pull_request` key first,
+      and reading only `base.sha` once it is present, never falls through to a
+      top-level `before` that means something else on this shape.
+    - Any other event (no `pull_request` key; this repo's workflow triggers only `push`
+      and `pull_request`) carries top-level `before`: the pushed ref's own prior tip,
+      immediately before this push landed it.
     """
     path = os.environ.get("GITHUB_EVENT_PATH", "")
     if not path or not Path(path).is_file():
@@ -188,17 +241,16 @@ def _from_event_payload() -> tuple[str, str] | None:
         return None
     if not isinstance(payload, dict):
         return None
-    candidates = (
-        (payload.get("before"), "GITHUB_EVENT_PATH:before (prior tip of the pushed ref)"),
-        (
-            (payload.get("pull_request") or {}).get("base", {}).get("sha")
-            if isinstance(payload.get("pull_request"), dict) else None,
-            "GITHUB_EVENT_PATH:pull_request.base.sha",
-        ),
-    )
-    for rev, how in candidates:
-        if isinstance(rev, str) and _is_commit(rev):
-            return rev, how
+    pull_request = payload.get("pull_request")
+    if isinstance(pull_request, dict):
+        base = pull_request.get("base")
+        rev = base.get("sha") if isinstance(base, dict) else None
+        how = "GITHUB_EVENT_PATH:pull_request.base.sha"
+    else:
+        rev = payload.get("before")
+        how = "GITHUB_EVENT_PATH:before (prior tip of the pushed ref)"
+    if isinstance(rev, str) and _is_commit(rev):
+        return rev, how
     return None
 
 
