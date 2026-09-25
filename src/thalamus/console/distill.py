@@ -270,14 +270,16 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     text = _last_run(text)
     lines = text.splitlines()
     summary = None
+    summary_at = -1
     fail_line = ""
     exited = 0
-    for raw in lines:
+    for i, raw in enumerate(lines):
         line = raw.strip()
         got = SUMMARY_RE.match(line)
         got_exit = EXIT_RE.match(line)
         if got:
             summary = got            # last one wins: a re-distill appends
+            summary_at = i
         elif got_exit:
             exited = int(got_exit.group(1))
         elif line.startswith(FAIL_MARK) and not fail_line:
@@ -301,6 +303,18 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     # then names the exception instead of ageing into "nothing has moved"
     # (A0178, cites-as-live).
     if exited or TRACEBACK_MARK in text:
+        # A traceback below a clean summary is not extract's: extract printed its
+        # summary and exited 0, and the hook then ran `eval sync`, which died. The
+        # session *was* distilled, and a row reading as if it was not sends the
+        # operator to re-distill work that landed. Still an error — what sync died on
+        # is worth the band (an archive read that failed its hash, 2026-09-25) — but
+        # one that says which half failed (A0205, cites-as-live).
+        trace_at = max((i for i, line in enumerate(lines)
+                        if line.startswith(TRACEBACK_MARK)), default=-1)
+        if not exited and summary is not None and not int(summary.group(3)) \
+                and trace_at > summary_at:
+            return "error", ("distilled; eval sync failed — "
+                             + (_crash_detail(lines) or "traceback"))
         return "error", (_crash_detail(lines)
                          or f"extract exited {exited or 1} without distilling")
     # Checked before the stall clock: this job finished, it simply had nothing to
