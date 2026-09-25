@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-25T02:56:53-07:00 · contested · grade: argued · author: propagation
+  evidence: yaml: .github/workflows/qe-fast.yml § "jobs" =sha256:31d9430f44b068186410d7ecc88458e0cf5e67b439951f03c391cf0ace3f1ffe
+  artifact: sha256:e50d0538e4ec550b2b7349789304f4fce91dfd6a357baf2745cafb2999286b25
+  note: propagated from a moved ground
+- 2026-09-25T02:57:00-07:00 · corroborated · grade: argued · author: main
+  evidence: yaml: .github/workflows/qe-fast.yml § "jobs" =sha256:e50d0538e4ec550b2b7349789304f4fce91dfd6a357baf2745cafb2999286b25
+  note: the yaml section pattern now opens and ends sections only at top-level keys (#300), so the ground spans the key's whole block where it spanned the key line; read against that block, adversarial runs the fast tier with --exclude expectation-additions-are-never-silent and mute-review runs --only that case, so the assertion holds
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live
