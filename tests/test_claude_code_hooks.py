@@ -666,7 +666,11 @@ class TestAFailedExtractionIsWrittenDown:
         _session_end(tmp_path, tmp_path, "broke-sess-3", bin_dir)
 
         record = tmp_path / self.FAILURE_LOG
-        _wait_for_text(record, "eval sync")
+        line = _wait_for_text(record, "eval sync").strip()
+        # Extract succeeded before sync ran, so the session was distilled. A record
+        # saying otherwise sends the operator to re-distill work that landed.
+        assert "not distilled" not in line, line
+        assert "was distilled" in line and "not synced" in line, line
 
     def test_a_clean_run_writes_no_record(self, tmp_path):
         """The record has to stay rare enough to read; a line per session is noise."""

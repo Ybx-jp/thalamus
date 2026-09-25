@@ -43,6 +43,9 @@ Run them before you push rather than after CI tells you.
   document — and in Markdown it goes inside an HTML comment, hidden from the rendered
   page and read all the same. See CONTRIBUTING.md §"The claims ledger" for both, and for
   the three repairs; never clear a citation failure by deleting the citation.
+  An entry id is allocated by `claims-ledger new`, never chosen: `new --id` is refused
+  by a hook, and two branches that minted the same ids are reconciled with
+  `claims-ledger renumber` on the one that merges second.<!-- (A0202, cites-as-live) -->
 
 - `tests/js/*.test.mjs` run under node as part of the same pytest run, driven by
   `tests/test_console_js.py`.<!-- (A0127, cites-as-live) -->
@@ -56,6 +59,11 @@ expectation covers it", full stop.<!-- (A0128, cites-as-live) -->
 A regression in `src/` and the additions case's own self-referential red both route
 through exit 1 for the same reason: triage is well-defined for both, and exit 1 asks for
 it.<!-- (A0129, cites-as-live) -->
+In CI they are separate checks: the additions case runs alone as `mute-review`, and
+`adversarial` runs every other case, so a qe reproduction PR that adds a known-red entry
+shows a red `mute-review` naming the entry and can still
+merge.<!-- (A0206, cites-as-live) -->
+Read that red before merging; it is the only report the addition gets.
 Do not read a red `adversarial` as "a new defect appeared" and do not redesign the exit
 codes on that reading; the discrimination you want is in the qe ledger's per-case
 `verdict`, not in the exit code.<!-- (A0130, cites-as-live) -->

@@ -20,6 +20,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import socket
 import subprocess
 import time
 from datetime import datetime, timedelta, timezone
@@ -465,10 +466,16 @@ def _stub_uv(tmp_path, prints):
 
 
 def _run_tap(payload, home, bin_dir):
-    return subprocess.run(
-        [str(TAP)], input=json.dumps(payload), capture_output=True, text=True, timeout=30,
-        env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin"},
-    )
+    """Run the carrier on a socket stdin, as Claude Code runs it: a pipe would pass a
+    hook that reopens `/dev/stdin`, which fails on every real call (A0203)."""
+    ours, theirs = socket.socketpair()
+    with ours, theirs:
+        ours.sendall(json.dumps(payload).encode())
+        ours.shutdown(socket.SHUT_WR)
+        return subprocess.run(
+            [str(TAP)], stdin=theirs.fileno(), capture_output=True, text=True, timeout=30,
+            env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/local/bin"},
+        )
 
 
 def test_the_carrier_delivers_a_ready_result_to_the_agent_whose_key_it_is(tmp_path):

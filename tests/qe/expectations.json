@@ -116,6 +116,20 @@
       "witness_contains": "codex shape -> miss=False legacy=True",
       "triaged_at_rev": "4a42972",
       "note": "Issue #306. codex records a thalamus MCP result as {content, structuredContent, isError, _meta}; _parse_line JSON-dumps it and unwraps only a top-level {result}, so the rendered text stays in JSON and a miss reads as legacy. Goes stale when a dict response's content text (or structuredContent.result) is unwrapped."
+    },
+    {
+      "case": "manifest-tier-not-enforced-by-ingest",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "manifest declares tier=3 (WILD); batch provenance tier(s) written=[2] (CURATED=2)",
+      "triaged_at_rev": "4a42972",
+      "note": "Issue #283. ExpertManifest.tier (contract/manifest.py:275) is parsed from every config/experts/*.yaml manifest and read by nothing; build_batch() (harness/ingest.py:572-576) stamps every claim's and entity's Provenance with a hardcoded Tier.CURATED regardless of scope. A manifest declaring tier: 3 (Tier.WILD) has its ingested content written at tier 2 instead, so the operator's downgrade never reaches the graph or the floor-over-derived_from computation. The pin is the declared-3-vs-written-2 pair; a fix that has build_batch (or its caller) read the scope's manifest tier and use it (floored so a feed cannot declare itself above CURATED) makes the written tier equal 3 and this entry goes stale."
+    },
+    {
+      "case": "codex-mcp-server-does-not-receive-thalamus-scope",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "THALAMUS_SCOPE=None); control (env_vars whitelisted) delivered THALAMUS_SCOPE='qe'",
+      "triaged_at_rev": "3abe533",
+      "note": "Issue #289. register_codex_mcp() registers the thalamus MCP server through `codex mcp add --env THALAMUS_GRAPH_URL=<url>` and sets no `mcp_servers.thalamus.env_vars` whitelist entry, so codex does not forward THALAMUS_SCOPE from the parent process to the server's own environment and mcp_server.SCOPE resolves to `main`. The pin is the primary run's dump carrying no THALAMUS_SCOPE against the identical launch's control (env_vars=[\"THALAMUS_SCOPE\"]) delivering it; a fix that adds env_vars to the registration (a profile layer or a `-c` override, per the issue's open decision) makes the primary dump carry THALAMUS_SCOPE too and this entry goes stale."
     }
   ]
 }

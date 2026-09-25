@@ -77,6 +77,12 @@ check, and a field an agent fills in for itself is a rubber stamp. What it buys 
 addition costs a red run on the commit that introduces it. See docs/13, *The oracle's own
 protection*, for what that does and does not cover.
 
+That case runs as its own CI status check (`mute-review` in `.github/workflows/qe-fast.yml`),
+not inside `adversarial`, and is not in the repo ruleset's required-checks list. A
+reproduction PR that adds a known-red entry therefore shows red on `mute-review` and
+green on `adversarial` and the rest of the required checks — the addition is reported,
+not blocked, and the merge decision is the operator reading that report.
+
 ## Adding a case
 
 A case returns `None` to pass or a `Finding` to fail, and must not raise — a raised

@@ -857,6 +857,11 @@ keeps that true.
   Either one decides, and the row carries the exception line rather than the frames,
   which are this repo's own paths and name nothing on a
   phone.<!-- (A0178, cites-as-live) -->
+  A traceback *below* a clean summary line is the chained `eval sync` dying after
+  extract finished, so the session was distilled; the row stays in the band and
+  reads `distilled; eval sync failed — <exception>`. Nothing needs re-distilling —
+  the next session end's sync sweeps the backlog — but what sync died on is still
+  worth seeing.<!-- (A0205, cites-as-live) -->
   **The last run mark in a log decides the row.** A log holds one attempt per
   distillation rather than one state, so a re-distill that succeeds clears the crash
   above it, and one that crashes is not laundered by the summary above

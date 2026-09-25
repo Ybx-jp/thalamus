@@ -47,6 +47,18 @@ than a privilege policy, as docs/13 §Prior work records. It is a *detection* bo
 not a *prevention* one; the prevention boundary needs branch protection with required
 review on the default branch, which lives in repo settings and not in this tree.
 
+## Where this runs
+
+This case executes as its own CI status check (`mute-review` in `qe-fast.yml`),
+deliberately excluded from the `fast` tier's `adversarial` job and deliberately absent
+from the repo ruleset's required-checks list. `adversarial` gates every other FAST case
+and blocks a merge on its own red; this one cannot, on the same reasoning as the
+authorization field above — a required check that this case could fail forever would be
+a gate a reproduction PR can never pass, since the case is *designed* to go red the
+moment a legitimate addition lands. What a required check cannot do, an unrequired one
+still does: it names the entry, on the introducing commit, for a reader who is not the
+agent that wrote it.
+
 ## Why the collapse paths raise instead of returning a Finding
 
 `reconcile()` checks MALFORMED first and lets no expectation absorb it, so a raise is the
