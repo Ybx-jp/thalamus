@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import socket
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -985,12 +987,17 @@ def test_a_trace_prices_what_entered_context_and_falls_back_to_the_response():
 
 
 def _run_tap(payload, home, **env):
-    return subprocess.run(
-        [str(POINTER_TAP)],
-        input=json.dumps(payload),
-        capture_output=True, text=True, timeout=30,
-        env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin", **env},
-    )
+    """Run the tap on a socket stdin, as Claude Code runs it: a pipe would pass a hook
+    that reopens `/dev/stdin`, which fails on every real call (A0203)."""
+    ours, theirs = socket.socketpair()
+    with ours, theirs:
+        ours.sendall(json.dumps(payload).encode())
+        ours.shutdown(socket.SHUT_WR)
+        return subprocess.run(
+            [str(POINTER_TAP)], stdin=theirs.fileno(),
+            capture_output=True, text=True, timeout=30,
+            env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin", **env},
+        )
 
 
 class TestThePointerTap:
@@ -1060,10 +1067,13 @@ class TestThePointerTap:
         events = trace_mod.load_events(traces)
         assert [event.tool_input["via"] for event in events] == ["Bash"]
 
-    def test_a_call_that_names_no_pointer_exits_before_anything_runs(self, tmp_path):
+    def test_a_call_that_names_no_pointer_exits_after_reading_its_input(self, tmp_path):
+        only_cat = tmp_path / "bin"
+        only_cat.mkdir()
+        (only_cat / "cat").symlink_to(shutil.which("cat") or "/bin/cat")
         result = _run_tap({"session_id": "s1", "tool_name": "Read",
                            "tool_input": {"file_path": "/w/README.md"}}, tmp_path,
-                          PATH="/nonexistent")
+                          PATH=str(only_cat))
         assert result.returncode == 0 and result.stdout == ""
         assert not (tmp_path / ".thalamus").exists()
 
