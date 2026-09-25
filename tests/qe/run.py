@@ -102,7 +102,7 @@ CASE_MODULES = (
     "qe.cases.reflex_queue_append_survives_a_concurrent_claim",
     "qe.cases.reflex_worker_session_end_no_model_call",
     "qe.cases.reflex_worker_deadline_interrupts_blocking_call",
-    "qe.cases.reflex_carrier_single_posttooluse_group",
+    "qe.cases.reflex_carrier_wired_on_every_bash_result_event",
 )
 
 
