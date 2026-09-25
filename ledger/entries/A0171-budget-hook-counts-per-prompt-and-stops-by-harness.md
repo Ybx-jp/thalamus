@@ -38,6 +38,14 @@ none
 
 ## Verdicts
 
+- 2026-09-24T18:04:05-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/budget.py § "decide" =sha256:37113b8deb7cbd73f942247bae58f5c1e3134781e2d83a46d3959164ac4e8916
+  artifact: sha256:1a19031c5a6c63837c4c2ca7a75101f1a6e2c88741961067a8acb44ed1323957
+  note: propagated from a moved ground
+- 2026-09-24T18:06:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/budget.py § "decide" =sha256:1a19031c5a6c63837c4c2ca7a75101f1a6e2c88741961067a8acb44ed1323957
+  note: decide now also reads a Claude Code subagent's tokens, from the subagent's own transcript, on the subagent's own count (A0175); what it counts for the main session and each prompt, and what it returns past a cap on each harness, is unchanged
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

@@ -27,10 +27,11 @@ Tokens are the model requests' input (cached or not) plus output — codex's own
 `total_tokens`, and on Claude Code the four `usage` fields summed over the transcript,
 once per message id, since the transcript repeats one message's usage on every content
 block it writes. Both transcripts are written behind the hook, so the count lags by up
-to one model request and a stop lands at most one turn late. Tokens are counted for
-the main session only; which transcript a subagent's payload names has not been
-measured, and reading the launcher's would charge the session's spend to the
-subagent.
+to one model request and a stop lands at most one turn late. Tokens are counted per
+agent, as turns and tool calls are: a subagent's tool events name the launcher's
+transcript, and its own spend is only in `<session>/subagents/agent-<agent_id>.jsonl`
+beside it, so that is the file its count reads (A0175, cites-as-live). A codex
+subagent's tokens are not counted; where they are written has not been measured.
 
 Limits come from the scope's manifest (`budget:` → `presets/budget.yaml`), and a
 `THALAMUS_MAX_*` variable in the environment overrides the preset key it names — for
@@ -169,11 +170,23 @@ def _codex_tokens(transcript: Path, seen: dict) -> int:
     return total
 
 
+def _token_transcript(payload: Mapping, harness: str, agent: str) -> Path | None:
+    """The transcript `agent`'s own model requests are written to, or None."""
+    transcript = payload.get("transcript_path")
+    if not transcript:
+        return None
+    if agent == "main":
+        return Path(transcript)
+    if harness == "codex" or "/" in agent:
+        return None
+    return Path(transcript).with_suffix("") / "subagents" / f"agent-{agent}.jsonl"
+
+
 def decide(payload: Mapping, harness: str, caps: Mapping[str, int], state: dict) -> dict | None:
     """Count this event against `caps`, updating `state`; the hook's output, or None.
 
     `state` is the session's record: per agent, the prompt being counted and its
-    turns and tool calls, and for the main session the token reading.
+    turns and tool calls, and the agent's token reading.
     """
     event = payload.get("hook_event_name")
     prompt = payload.get("prompt_id") or payload.get("turn_id")
@@ -198,12 +211,14 @@ def decide(payload: Mapping, harness: str, caps: Mapping[str, int], state: dict)
             over = f"{cap} turns for this prompt"
 
     cap = caps.get("max_tokens")
-    transcript = payload.get("transcript_path")
-    if over is None and cap is not None and agent == "main" and transcript:
+    transcript = _token_transcript(payload, harness, agent)
+    if over is None and cap is not None and transcript:
         read = _codex_tokens if harness == "codex" else _claude_tokens
-        spent = read(Path(transcript), state.setdefault("tokens", {}))
+        key = "tokens" if agent == "main" else f"tokens:{agent}"
+        spent = read(transcript, state.setdefault(key, {}))
         if spent >= cap:
-            over = f"{cap:,} tokens for this session ({spent:,} spent)"
+            whose = "this session" if agent == "main" else "this subagent"
+            over = f"{cap:,} tokens for {whose} ({spent:,} spent)"
 
     if over is None:
         return None
