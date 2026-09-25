@@ -35,6 +35,7 @@ from thalamus.harness import (
     reflex_note,
     reflex_queue,
     reflex_worker,
+    retrieval,
 )
 from thalamus.harness.agents import cli_for
 from thalamus.harness.extraction import StopLoop, run_tool_loop
@@ -226,6 +227,25 @@ def test_the_plan_keeps_the_models_handles_in_order_and_records_the_stop(monkeyp
     # `missing` is the stop log's, never an argument the compiler sees; commas are spacing.
     assert job.seen == [("lexical_by_kind", {"query": "reflex budget", "kind": "decision"})]
     assert result.hops[0].missing == "the budget decision"
+
+
+def test_an_empty_word_search_tells_the_model_to_change_its_words(monkeypatch):
+    """Only an empty `lexical_by_kind` says it; another tool's empty answer is left as is."""
+
+    class EmptyJob(_Job):
+        def call(self, name, args):
+            super().call(name, args)
+            return retrieval.NO_RESULTS
+
+    sent = _script(monkeypatch, [
+        _reply(("lexical_by_kind", {"missing": "m", "query": "a b", "kind": "session"})),
+        _reply(("by_path", {"missing": "m", "path": "x"})),
+        _reply(("stop", {"keep": [], "reason": "none"})),
+    ])
+    agentic.run(EmptyJob({}), cli=cli_for("local"), model="m", anchors=[], excerpt="",
+                deadline=time.monotonic() + 30)
+    replies = [m["content"] for m in sent[-1]["messages"] if m["role"] == "tool"]
+    assert replies == [agentic.EMPTY_SEARCH, retrieval.NO_RESULTS]
 
 
 def test_a_loop_the_caps_end_packs_what_it_returned_and_one_with_no_selection_packs_nothing(monkeypatch):

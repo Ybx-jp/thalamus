@@ -678,7 +678,7 @@ box to one expert.
 | `memory_recall_recent` | `limit` | Most recent sessions |
 | `memory_open_problems` | `project`, `limit` | Problems with no recorded solution, recurrence-ranked |
 | `memory_thread` | `thread_id` | Full context on one thread |
-| `memory_search_kind` | `query`, `kind`, `limit` | Keyword search over one kind of node — `session`, `decision`, `problem`, `solution`, `thread`, `chunk` or `external` — as one row per node |
+| `memory_search_kind` | `query`, `kind`, `limit` | Keyword search over one kind of node — `session`, `decision`, `problem`, `solution`, `thread`, `chunk` or `external` — as one row per node; a compound identifier that matches nothing whole is searched as its parts<!-- (A0207, cites-as-live) --> |
 | `memory_expand` | `node`, `relation`, `limit` | One hop from a node over `same_file`, `same_entity`, `same_episode`, `resolved_by`, `uses` or `threads` |
 | `memory_session_claims` | `session`, `kinds`, `limit` | A session's decisions, problems and solutions |
 | `memory_source_chunks` | `node`, `limit` | The verbatim passages behind a knowledge claim, or either side of a passage |

@@ -36,6 +36,7 @@ from gremlin_python.process.traversal import Order, P, T
 from thalamus.contract.ontology import MAIN_SCOPE, scope_of
 from thalamus.substrate.reader import (
     _MATCH_FLOOR,
+    STOPWORDS,
     _extract_keywords,
     _first,
     _first_int,
@@ -189,6 +190,68 @@ def _row(node_id: str, record: dict, scope: str, readable_knowledge: set[str]) -
     )
 
 
+_COMPOUND = re.compile(r"[_./:-]|[a-z0-9][A-Z]")
+_SEPARATORS = re.compile(r"[_./:-]+")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+# Parts that sit in every test name and say nothing about which test.
+_CODE_NOISE = frozenset({"test", "tests"})
+# The most terms a call grows to by splitting. Each term is one scan of the kind, and a
+# chunk scan costs seconds (`harness/retrieval.py`), so a query of long identifiers
+# does not become a dozen scans.
+MAX_TERMS = 8
+
+
+def identifier_parts(token: str) -> list[str]:
+    """The words a compound identifier is made of, lowercased, in order; [] for a word.
+
+    A compound identifier — snake_case, camelCase, a dotted, slashed or hyphenated name
+    — is how a failure names a thing and seldom how a record does: records are prose
+    summaries, which say "the renumber fingerprint tests" where the failure says
+    `test_a_fingerprint_the_substitution_moved_is_recomputed`. Splitting on the naming
+    convention's own separators is the de-facto heuristic, and it leaves an
+    all-lowercase compound such as `theinstallmatrix` whole (Markovtsev et al. 2018,
+    arXiv:1805.11651). A part too short or too common to discriminate is dropped under
+    the rule `recall()` applies to a query's words.
+    """
+    if not _COMPOUND.search(token):
+        return []
+    parts: list[str] = []
+    for piece in _SEPARATORS.split(token):
+        for word in _CAMEL_BOUNDARY.split(piece):
+            word = word.lower()
+            if (len(word) > 2 and word not in STOPWORDS and word not in _CODE_NOISE
+                    and word not in parts):
+                parts.append(word)
+    return parts
+
+
+def _kind_walk(g: GraphTraversalSource, kind: str, keyword: str, scope: str,
+               claim_scopes: list[str]):
+    """The nodes of one kind whose text contains one keyword, as an unterminated walk."""
+    predicate = _keyword_predicate(keyword)
+    if kind == "session":
+        return g.V().has_label("Session").has("scope", scope).has("summary", predicate)
+    if kind in EPISODIC_CLAIM_KINDS:
+        return (
+            g.V().has_label("Claim").has("scope", scope).has("kind", kind)
+            .has("description", predicate).where(__.in_e("CONTAINS"))
+        )
+    if kind == "thread":
+        return (
+            g.V().has_label("Thread").has("scope", scope)
+            .or_(__.has("title", predicate), __.has("description", predicate))
+        )
+    if kind == "chunk":
+        return (
+            g.V().has_label("Chunk").has("scope", P.within(claim_scopes))
+            .has("text", predicate)
+        )
+    return (
+        g.V().has_label("Claim").has("scope", P.within(claim_scopes))
+        .has("description", predicate).not_(__.in_e("CONTAINS"))
+    )
+
+
 def lexical_by_kind(
     g: GraphTraversalSource,
     query: str,
@@ -197,46 +260,52 @@ def lexical_by_kind(
     scope: str = MAIN_SCOPE,
     knowledge_scopes: list[str] | None = None,
 ) -> list[Row]:
-    """Nodes of one kind ranked by keyword hits, under `recall()`'s predicate and floor."""
+    """Nodes of one kind ranked by keyword hits, under `recall()`'s predicate and floor.
+
+    A compound identifier that matches nothing of this kind whole is searched again as
+    its parts, which then count as terms of their own toward the floor. One that
+    matches whole is never split, so `settings.json` does not become a search for
+    `json`.
+    """
     if kind not in KINDS:
         raise ValueError(f"unknown kind {kind!r}; one of {', '.join(KINDS)}")
     keywords = _extract_keywords(query)
     if not keywords:
         return []
+    parts_of = {token.lower(): identifier_parts(token) for token in query.split()}
     claim_scopes = [scope, *(s for s in knowledge_scopes or [] if s != scope)]
 
     scores: dict[str, float] = {}
     hits: dict[str, set[str]] = {}
-    for keyword in keywords:
-        predicate = _keyword_predicate(keyword)
-        if kind == "session":
-            walk = g.V().has_label("Session").has("scope", scope).has("summary", predicate)
-        elif kind in EPISODIC_CLAIM_KINDS:
-            walk = (
-                g.V().has_label("Claim").has("scope", scope).has("kind", kind)
-                .has("description", predicate).where(__.in_e("CONTAINS"))
-            )
-        elif kind == "thread":
-            walk = (
-                g.V().has_label("Thread").has("scope", scope)
-                .or_(__.has("title", predicate), __.has("description", predicate))
-            )
-        elif kind == "chunk":
-            walk = (
-                g.V().has_label("Chunk").has("scope", P.within(claim_scopes))
-                .has("text", predicate)
-            )
-        else:
-            walk = (
-                g.V().has_label("Claim").has("scope", P.within(claim_scopes))
-                .has("description", predicate).not_(__.in_e("CONTAINS"))
-            )
-        for node_id in walk.id_().to_list():
+    searched: set[str] = set()
+
+    def search(term: str) -> bool:
+        searched.add(term)
+        found = _kind_walk(g, kind, term, scope, claim_scopes).id_().to_list()
+        for node_id in found:
             key = str(node_id)
             scores[key] = scores.get(key, 0) + 1
-            hits.setdefault(key, set()).add(keyword)
+            hits.setdefault(key, set()).add(term)
+        return bool(found)
 
-    floor = min(_MATCH_FLOOR, len(keywords))
+    terms: list[str] = []
+    for keyword in keywords:
+        if keyword in searched:
+            continue
+        if search(keyword):
+            terms.append(keyword)
+            continue
+        parts = [p for p in parts_of.get(keyword, []) if p not in searched]
+        if not parts:
+            # A word, or an identifier with no usable part: a term that matched nothing.
+            terms.append(keyword)
+        for part in parts:
+            if len(terms) >= MAX_TERMS:
+                break
+            terms.append(part)
+            search(part)
+
+    floor = min(_MATCH_FLOOR, len(terms))
     ranked = [node_id for node_id, _ in _ranked(scores, hits, floor, query)]
     return rows_for(g, ranked[: limit * 2], scope, knowledge_scopes)[:limit]
 
