@@ -14,11 +14,18 @@ still shows something else.
 | surface | source | build | tests |
 |---|---|---|---|
 | console PWA | `src/thalamus/console/static/` | **none** — files served as written | `tests/js/*.test.mjs` under node, driven by `tests/test_console_js.py` |
-| pulse | `src/thalamus/pulse/static/index.html` | none — one file | none |
+| pulse | `src/thalamus/pulse/static/index.html` | none — one page, plus copies of the console's Plex faces | no JS suite; `tests/test_pulse.py` pins its tokens, `hashHue` and fonts to the console's |
 
 The console is dependency-free on purpose: one of the server's jobs is restarting
 the systemd unit that hosts it, so the fewer moving parts between a tap and a tmux
 call the better. Do not add a bundler, a framework, or a package to it.
+
+**Pulse's page stays one file.** Its static files are read per request while its
+Python is loaded once, so after a pull the page is new and the server is not. One
+file still loads on the old server and says the server is stale (a report with no
+`health` block); a page split into files the old server's asset list does not name
+loads blank. The page's tokens are the console's, verbatim — change the console's
+and the test fails until pulse's match.
 
 ## The ladder — run in this order
 

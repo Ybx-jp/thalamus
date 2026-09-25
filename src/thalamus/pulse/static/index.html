@@ -4,659 +4,1147 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thalamus Pulse</title>
-<meta name="theme-color" content="#0d0d0d">
+<meta name="theme-color" content="#0e1116">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
-/* ---------- tokens (reference palette; light + dark both validated) ---------- */
+/* Pulse — the console's tokens, verbatim (console/static/style.css :root), so the two
+   surfaces on one tailnet read as one product. tests/test_pulse.py asserts every shared
+   value still equals the console's; change them there, then here. Dark only, as the
+   console is. */
 :root {
-  color-scheme: light;
-  --page: #f9f9f7; --surface: #fcfcfb;
-  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-  --grid: #e1e0d9; --baseline: #c3c2b7; --ring: rgba(11,11,11,0.10);
-  --s1: #2a78d6; --s2: #008300; --s3: #e87ba4; --s4: #eda100; --s5: #1baf7a;
-  --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --critical: #d03b3b;
-  --deemph: #c6c5be;
-  --wash: rgba(42,120,214,0.10);
+  color-scheme: dark;
+  --bg: #0e1116;
+  --panel: #161b22;
+  --panel-hi: #1c232c;
+  --hair: #2a323d;
+  --ink: #cdd8e4;
+  --muted: #8b95a3;
+  --faint: #768494;
+  --danger: #c55b50;
+  --danger-text: #e0685c;
+  --warn: #c18c4e;
+  --ok: #54c5b3;
+  --pending: #e8b44a;
+  --accent: #8b7cf0;
+  --mono: "Plex Mono", ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --ui: "Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  /* Pulse's two additions, both non-text fills (handoff spec §3). */
+  /* The placebo bar, below-n bars, unfilled squares. A fill that must be seen
+     against its ground, so it clears the 3:1 non-text floor on both it sits on:
+     3.20:1 on --panel, 3.50:1 on --bg. Against --accent it stays 1.61:1, which is
+     what keeps it reading as subordinate to the bar it sits beside. */
+  --deemph: #606b7a;
+  /* The border of a needs-you card, 1.36:1 on --panel and decorative on purpose:
+     the card is identified by its chip and its 4px --danger edge (4.11:1), so no
+     meaning rests on this line and WCAG 1.4.11 does not bind it. */
+  --danger-hair: #4a2a29;
+  /* The ink a filled danger chip carries: 4.59:1 on --danger. */
+  --chip-ink: #0b0e12;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --page: #0d0d0d; --surface: #1a1a19;
-    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
-    --grid: #2c2c2a; --baseline: #383835; --ring: rgba(255,255,255,0.10);
-    --s1: #3987e5; --s2: #008300; --s3: #d55181; --s4: #c98500; --s5: #199e70;
-    --deemph: #45443f;
-    --wash: rgba(57,135,229,0.12);
-  }
-}
-* { box-sizing: border-box; margin: 0; }
-html { height: 100%; }
+
+/* IBM Plex, SIL OFL 1.1 — licence served alongside at `PLEX-OFL.txt`. Pulse's own
+   copies of the console's subsets. The symbol glyphs this page draws (◉ ▲ ·) are not
+   all in the subset and fall through to the system face. */
+@font-face { font-family: "Plex Mono"; src: url("plex-mono-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Plex Mono"; src: url("plex-mono-600.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Plex Sans"; src: url("plex-sans-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Plex Sans"; src: url("plex-sans-600.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--bg); }
 body {
-  min-height: 100%;
-  background: var(--page); color: var(--ink);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-  padding: 12px 14px 20px;
+  background: var(--bg); color: var(--ink);
+  font: 14px/1.45 var(--ui);
+  font-variant-numeric: tabular-nums;
+  overflow-x: clip;
 }
-.mono, code { font-family: ui-monospace, "Cascadia Mono", Menlo, monospace; }
-a { color: var(--s1); }
+.mono { font-family: var(--mono); }
+code { font-family: var(--mono); font-size: .92em; }
+a { color: var(--accent); }
+[hidden] { display: none !important; }
 
 /* ---------- header ---------- */
-header {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px;
-  padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--grid);
+.top {
+  display: flex; align-items: center; gap: 0 48px; height: 64px; padding: 0 32px;
+  border-bottom: 1px solid var(--hair);
 }
-header h1 {
-  font-size: 15px; font-weight: 650; letter-spacing: .14em; text-transform: uppercase;
-  font-family: ui-monospace, Menlo, monospace;
+.brand { font: 600 15px/1 var(--mono); letter-spacing: 2.5px; white-space: nowrap; }
+.tabs { display: flex; gap: 32px; align-self: stretch; }
+.tabs a {
+  display: flex; align-items: center; color: var(--muted); text-decoration: none;
+  font: 400 14px/1 var(--ui); border-bottom: 2px solid transparent; padding-top: 2px;
 }
-header h1::before { content: "◉ "; color: var(--s1); }
-.standing { font-size: 12px; color: var(--muted); }
-.hdr-right { margin-left: auto; display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
-.hdr-stat { font-size: 12px; color: var(--ink-2); }
-.hdr-stat b { font-size: 14px; color: var(--ink); font-weight: 600; }
+.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+.meta { margin-left: auto; font: 12px/1 var(--mono); color: var(--faint); white-space: nowrap; }
 
-/* ---------- stamps (the honesty chips) ---------- */
-.stamp {
-  display: inline-block; font-family: ui-monospace, Menlo, monospace;
-  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
-  padding: 1px 7px; border: 1px solid var(--baseline); border-radius: 3px;
-  color: var(--ink-2); vertical-align: 1px; white-space: nowrap;
+#offline {
+  display: none; margin: 16px 32px 0; padding: 10px 14px; border: 1px solid var(--danger);
+  border-left-width: 4px; border-radius: 6px; font-size: 13px; color: var(--ink); background: var(--panel);
 }
-.stamp.live { border-color: var(--s1); color: var(--s1); }
-.stamp.pending { border-color: var(--warn); color: var(--warn); }
-.stamp.pending::before { content: "◌ "; }
-.stamp.warn { border-color: var(--warn); color: var(--warn); }
-.stamp.bad { border-color: var(--critical); color: var(--critical); }
-.stamp.ok { border-color: var(--good); color: var(--good); }
-.stamp.ok::before { content: "✓ "; }
-.stamp.bad::before, .stamp.warn::before { content: "△ "; }
-
-/* ---------- layout ---------- */
-.grid { display: grid; grid-template-columns: 330px minmax(0,1fr) minmax(0,1.25fr); gap: 12px; align-items: start; }
-.pin-row { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; flex-wrap: wrap; }
-.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.panel {
-  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px;
-  padding: 10px 12px 12px; min-width: 0;
-}
-.panel h2 {
-  font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--muted); display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-}
-.panel h2 .stamp { margin-left: auto; }
-.empty { color: var(--muted); font-size: 12.5px; padding: 4px 0; }
-
-/* ---------- stat tiles ---------- */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
-.tile .lbl { font-size: 11.5px; color: var(--muted); }
-.tile .val { font-size: 26px; font-weight: 600; }
-.tile .sub { font-size: 11.5px; color: var(--ink-2); }
-.hero { font-size: 48px; font-weight: 600; line-height: 1.1; }
-
-/* ---------- live feed ---------- */
-.feed { list-style: none; max-height: 62vh; overflow-y: auto; font-size: 12px; }
-.feed li {
-  display: flex; gap: 7px; align-items: baseline; padding: 3px 0;
-  border-bottom: 1px solid var(--grid); font-family: ui-monospace, Menlo, monospace;
-}
-.feed li:last-child { border-bottom: 0; }
-.feed .t { color: var(--muted); flex: none; }
-.feed .tool { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.feed .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; align-self: center;
-  box-shadow: 0 0 0 2px var(--surface); }
-.feed .tok { margin-left: auto; color: var(--ink-2); flex: none; font-variant-numeric: tabular-nums; }
-.feed .fan { flex: none; color: var(--ink-2); }
-.feed .fan.over { color: var(--warn); }
-.feed .fan.over::after { content: " △"; }
-.feed .cls { color: var(--muted); flex: none; }
-.evrows { font-size: 12px; font-family: ui-monospace, Menlo, monospace; }
-.evrows div { display: flex; gap: 8px; padding: 2px 0; color: var(--ink-2); }
-.evrows .t { color: var(--muted); white-space: nowrap; flex: none; }
-.evrows .right { margin-left: auto; }
-
-/* ---------- meters & bars ---------- */
-.meter { height: 8px; border-radius: 4px; background: var(--wash); overflow: hidden; margin: 4px 0 2px; }
-.meter > i { display: block; height: 100%; background: var(--s1); border-radius: 4px 0 0 4px; }
-.pair { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 2px 0; }
-.pair .k { width: 84px; flex: none; color: var(--ink-2); }
-.pair .bar { flex: 1; height: 12px; background: none; position: relative; }
-.pair .bar i { position: absolute; inset: 2px auto 2px 0; border-radius: 0 4px 4px 0; }
-.pair .v { width: 130px; flex: none; text-align: right; color: var(--ink-2);
-  font-variant-numeric: tabular-nums; font-size: 11.5px; }
-.key { display: flex; gap: 14px; font-size: 11.5px; color: var(--ink-2); margin: 6px 0 2px; flex-wrap: wrap; }
-.key span::before { content: "●"; margin-right: 5px; }
-.key .k1::before { color: var(--s1); } .key .k2::before { color: var(--s2); }
-.key .k3::before { color: var(--s3); } .key .k4::before { color: var(--s4); }
-.key .k5::before { color: var(--s5); } .key .kg::before { color: var(--deemph); }
-
-/* ---------- lists ---------- */
-.rows { font-size: 12.5px; }
-.rows .row { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--grid); }
-.rows .row:last-child { border-bottom: 0; }
-.rows .id { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
-.rows .txt { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.rows .num { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; color: var(--ink); }
-.toggle { font-size: 11px; border: 1px solid var(--baseline); background: none; color: var(--ink-2);
-  border-radius: 3px; padding: 1px 8px; cursor: pointer; font-family: inherit; }
-.toggle[aria-pressed="true"] { border-color: var(--s1); color: var(--s1); }
-
-/* ---------- sessions ---------- */
-.sess { border-bottom: 1px solid var(--grid); padding: 6px 0; }
-.sess:last-child { border-bottom: 0; }
-.sess summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; list-style: none; font-size: 12.5px; }
-.sess summary::-webkit-details-marker { display: none; }
-.sess .sid { font-family: ui-monospace, Menlo, monospace; color: var(--ink); }
-.sess .scope-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
-.sess .u { margin-left: auto; font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.recalls { margin: 6px 0 2px; font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; color: var(--ink-2); }
-.recalls div { display: flex; gap: 8px; padding: 1px 0; }
-.recalls .right { margin-left: auto; }
-
-/* ---------- query cost ---------- */
-.qc .shape { display: flex; gap: 8px; align-items: baseline; padding: 5px 0 0; }
-.qc .shape .s { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
-  color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.qc .shape .n { margin-left: auto; flex: none; font-size: 11.5px; color: var(--ink-2);
-  font-variant-numeric: tabular-nums; }
-.qc .meter { margin: 3px 0 7px; }
-.qc-origins { font-size: 11.5px; color: var(--ink-2); margin-bottom: 4px; }
-
-/* ---------- svg charts ---------- */
-svg { display: block; width: 100%; height: auto; }
-.axis { font-size: 10px; fill: var(--muted); font-family: ui-monospace, Menlo, monospace; }
-.gridline { stroke: var(--grid); stroke-width: 1; }
-.chart-note { font-size: 11px; color: var(--muted); margin-top: 4px; }
-
-/* ---------- footer calibration plate ---------- */
-footer {
-  margin-top: 14px; border: 1px solid var(--baseline); border-radius: 8px;
-  padding: 10px 14px; font-family: ui-monospace, Menlo, monospace; font-size: 11px;
-  color: var(--ink-2); background: var(--surface);
-}
-footer h2 { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
-footer ul { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 2px 24px; }
-footer li::before { content: "· "; color: var(--muted); }
-footer .standing-line { margin-top: 6px; color: var(--ink); }
-
-/* ---------- tooltip ---------- */
-#tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--page);
-  font: 11px/1.4 ui-monospace, Menlo, monospace; padding: 4px 8px; border-radius: 4px;
-  opacity: 0; transition: opacity .08s; z-index: 10; max-width: 320px; }
-
-/* ---------- states ---------- */
-.stale { opacity: .55; transition: opacity .3s; }
-#offline { display: none; margin-bottom: 10px; padding: 6px 10px; border: 1px solid var(--critical);
-  color: var(--critical); border-radius: 6px; font-size: 12.5px; }
 body.offline #offline { display: block; }
 
-/* ---------- mobile gist ---------- */
-.desktop-only { display: block; }
-@media (max-width: 900px) {
-  body { overflow-x: clip; }
-  .grid { grid-template-columns: minmax(0, 1fr); }
-  .stamp { white-space: normal; }
-  .pair .v { width: 92px; }
-  .rows .id { max-width: 120px; }
-  .sess summary { flex-wrap: wrap; }
-  .sess .u { margin-left: 16px; }
-  .col-now { order: 3; } .col-session { order: 2; } .col-life { order: 1; }
-  .feed { max-height: 34vh; }
-  .desktop-only { display: none; }
-  .tile .val { font-size: 22px; } .hero { font-size: 36px; }
-  footer ul { grid-template-columns: 1fr; }
+main { padding: 0 32px 40px; }
+.page { max-width: 1376px; margin: 0 auto; }
+
+/* ---------- shared pieces ---------- */
+.label {
+  display: flex; align-items: baseline; gap: 8px 24px; flex-wrap: wrap;
+  font: 600 11px/1.3 var(--mono); letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--muted); margin: 32px 0 14px;
+}
+.label .note { font: 400 12px/1.3 var(--mono); letter-spacing: 0; text-transform: none; color: var(--faint); }
+.panel { background: var(--panel); border: 1px solid var(--hair); border-radius: 10px; }
+
+/* Chip: the word is always present; colour only reinforces (spec §4). */
+.chip {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 3px;
+  font: 600 10.5px/1 var(--mono); letter-spacing: .6px; white-space: nowrap;
+  border: 1px solid var(--hair); color: var(--muted);
+}
+.chip.s-failed, .chip.danger { background: var(--danger); border-color: var(--danger); color: var(--chip-ink); }
+.chip.s-ok { border-color: var(--ok); color: var(--ok); }
+.chip.s-in_flight, .chip.pending { border-color: var(--pending); color: var(--pending); }
+.chip.s-count, .chip.neutral { border-color: var(--hair); color: var(--muted); }
+
+/* Desktop and phone copy differ in places (the board's copy is final for each). The
+   hidden variant is `display: none`; the shown one keeps its element's own display. */
+.m-only { display: none; }
+.empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* ---------- 1 · needs you ---------- */
+.verdict { font: 600 30px/1.2 var(--ui); margin-top: 32px; }
+.verdict-sub { color: var(--muted); margin-top: 8px; }
+.needs { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 16px; margin-top: 26px; }
+.need {
+  position: relative; background: var(--panel); border: 1px solid var(--danger-hair);
+  border-radius: 10px; padding: 18px 24px 16px 24px; overflow: hidden;
+}
+.need::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--danger); }
+.need h3 { font: 600 18px/1.3 var(--ui); margin: 10px 0 6px; }
+.need p { color: var(--muted); font-size: 13px; line-height: 1.4; white-space: pre-line; }
+.cmd {
+  display: inline-block; margin-top: 10px; background: var(--panel-hi); border: 1px solid var(--hair);
+  border-radius: 5px; padding: 3px 12px; font: 12px/1.5 var(--mono); color: var(--ink);
+  user-select: all; -webkit-user-select: all; max-width: 100%; overflow-wrap: anywhere;
+}
+.cmd::before { content: "$ "; user-select: none; -webkit-user-select: none; }
+
+/* ---------- 2 · checks ---------- */
+.checks { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+.tile { padding: 14px 16px 16px; min-height: 104px; }
+.tile .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tile .name { font: 600 13px/1.3 var(--ui); }
+.tile .body { font: 12px/1.45 var(--mono); color: var(--muted); margin-top: 16px; }
+
+/* ---------- 3 · cost ---------- */
+.cost { padding: 20px 24px 22px; }
+.heads { display: flex; flex-wrap: wrap; gap: 16px 64px; }
+.head-n .k { font-size: 12px; color: var(--muted); }
+.head-n .v { font: 600 30px/1.25 var(--ui); margin: 2px 0 2px; }
+.head-n .s { font-size: 12px; color: var(--faint); }
+.cost-body { display: grid; grid-template-columns: minmax(0, 1fr) 464px; gap: 24px 40px; margin-top: 26px; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.axis { font: 11px var(--mono); fill: var(--faint); }
+.spike { font: 11px var(--mono); fill: var(--ink); }
+.chart-foot { font: 11px/1.4 var(--mono); color: var(--faint); margin-top: 8px; }
+.table-toggle summary { cursor: pointer; font: 11px var(--mono); color: var(--faint); margin-top: 6px; }
+.table-toggle table { margin-top: 6px; }
+table.rows { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+table.rows th { font-weight: 400; color: var(--faint); text-align: left; font-size: 11px; padding: 6px 8px 8px 0; }
+table.rows td { padding: 7px 8px 7px 0; border-top: 1px solid var(--hair); vertical-align: baseline; }
+table.rows .num { text-align: right; }
+.went h4 { font: 600 13px/1.3 var(--ui); margin-bottom: 8px; }
+.went .row { display: grid; grid-template-columns: 10px 170px minmax(0, 1fr) 84px; align-items: center; gap: 8px; height: 24px; font: 12px var(--mono); }
+.went .sw { width: 10px; height: 10px; border-radius: 2px; }
+.went .bar { height: 8px; border-radius: 2px; }
+.went .v { text-align: right; }
+.went .more { display: none; }
+.went .blind-rule { height: 1px; background: var(--hair); margin: 8px 0 12px; }
+.went .blind { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; margin: 0 0 12px 18px; }
+.went .blind .n { font: 12px var(--mono); color: var(--muted); }
+.went .blind .why { font-size: 11px; color: var(--faint); grid-column: 1; }
+.went .blind .chip { grid-row: 1; grid-column: 2; align-self: start; }
+
+/* ---------- 4 · footprint + 5 · live ---------- */
+.duo { display: grid; grid-template-columns: 560fr 784fr; gap: 0 32px; }
+.inj { padding: 18px 24px 20px; }
+.inj h4 { font: 600 14px/1.3 var(--ui); }
+.inj .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.inj .rows { margin-top: 24px; }
+.inj .row { display: grid; grid-template-columns: 186px minmax(0, 1fr) 108px; gap: 8px; align-items: center; height: 30px; font: 12px var(--mono); }
+.inj .bar { height: 8px; border-radius: 2px; background: var(--accent); }
+.inj .v { text-align: right; color: var(--muted); }
+.inj .foot { font: 11px var(--mono); color: var(--faint); margin-top: 20px; }
+.live { padding: 10px 16px 14px; }
+.live table { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+.live th { font-weight: 400; font-size: 11px; color: var(--faint); text-align: left; padding: 6px 8px; }
+.live td { padding: 8px 8px; border-top: 1px solid var(--hair); white-space: nowrap; }
+.live .num { text-align: right; }
+.live .t { color: var(--muted); }
+.live .scope { display: flex; align-items: center; gap: 8px; }
+.live td.wrap { white-space: normal; }
+.live .scopes-cell { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.live .over { color: var(--pending); }
+.live .dim { color: var(--muted); }
+.live .foot { font: 11px var(--mono); color: var(--faint); padding: 6px 8px 0; }
+.live-m { display: none; }
+
+/* ---------- 6 · plate ---------- */
+.plate {
+  margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--hair);
+  font: 12px/1.5 var(--mono); color: var(--faint);
+}
+
+/* ---------- 7 · detail (desktop only, collapsed) ---------- */
+.detail { margin-top: 32px; }
+.detail > summary {
+  cursor: pointer; font: 600 11px/1.3 var(--mono); letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--muted); list-style: none;
+}
+.detail > summary::-webkit-details-marker { display: none; }
+.detail > summary::before { content: "▸ "; }
+.detail[open] > summary::before { content: "▾ "; }
+.detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 14px; align-items: start; }
+.detail .panel { padding: 14px 16px; }
+.detail h4 { font: 600 13px/1.3 var(--ui); margin-bottom: 8px; display: flex; gap: 8px; align-items: center; }
+.detail h4 .chip, .detail h4 button { margin-left: auto; }
+.list { font-size: 12.5px; }
+.list .row { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--hair); }
+.list .row:first-child { border-top: 0; }
+.list .txt { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.list .num { margin-left: auto; flex: none; font-family: var(--mono); font-size: 12px; }
+.sess { border-top: 1px solid var(--hair); padding: 6px 0; }
+.sess:first-child { border-top: 0; }
+.sess summary { cursor: pointer; display: flex; gap: 8px; align-items: center; list-style: none; font-size: 12.5px; }
+.sess summary::-webkit-details-marker { display: none; }
+.sess .sid { font-family: var(--mono); }
+.sess .sc { color: var(--muted); font-size: 11.5px; }
+.sess .u { margin-left: auto; font: 11.5px var(--mono); color: var(--muted); }
+.recalls { margin: 6px 0 2px 16px; font: 11.5px var(--mono); color: var(--muted); }
+.recalls div { display: flex; gap: 8px; padding: 1px 0; }
+.recalls .right { margin-left: auto; }
+.meter { height: 6px; border-radius: 3px; background: var(--panel-hi); overflow: hidden; margin: 3px 0 7px; }
+.meter > i { display: block; height: 100%; background: var(--accent); }
+.qc .shape { display: flex; gap: 8px; align-items: baseline; padding-top: 5px; font: 11.5px var(--mono); }
+.qc .shape .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.qc .shape .n { flex: none; color: var(--muted); }
+.qc-stats { display: flex; gap: 24px; margin-bottom: 8px; }
+.qc-stats .v { font: 600 20px/1.2 var(--ui); }
+.qc-stats .k { font-size: 11.5px; color: var(--muted); }
+.note-s { font: 11px/1.45 var(--mono); color: var(--faint); margin-top: 8px; }
+.toggle {
+  font: 11px var(--mono); border: 1px solid var(--hair); background: none; color: var(--muted);
+  border-radius: 3px; padding: 2px 8px; cursor: pointer; min-height: 24px;
+}
+.toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--ink); }
+
+/* ================= How it works ================= */
+.how { max-width: 1312px; margin: 0 auto; padding-top: 48px; }
+.how .eyebrow { font: 600 11px/1.3 var(--mono); letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent); }
+.how h1 { font: 600 48px/1.12 var(--ui); margin-top: 14px; }
+.how .lede { font-size: 17px; line-height: 1.5; color: var(--muted); max-width: 900px; margin-top: 24px; }
+.stats { display: flex; gap: 16px 0; margin-top: 44px; flex-wrap: wrap; }
+.stats > div { width: 230px; }
+.stats .v { font: 600 34px/1.2 var(--ui); }
+.stats .k { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.stats-note { font: 12px var(--mono); color: var(--faint); margin-top: 14px; }
+.sec { margin-top: 72px; }
+.sec h2 { font: 600 26px/1.25 var(--ui); margin-top: 8px; }
+.sec .sec-lede { font-size: 15px; line-height: 1.5; color: var(--muted); max-width: 860px; margin-top: 14px; }
+
+/* The loop: four boxes in a row, the return path over them, attribution under 04. */
+.loop { position: relative; display: grid; grid-template-columns: 1fr 44px 1fr 44px 1fr 44px 1fr; margin-top: 76px; }
+.box { background: var(--panel); border: 1px solid var(--hair); border-radius: 10px; padding: 16px 18px 18px; min-height: 130px; }
+.box.now { border-color: var(--accent); }
+.box.later { border-color: var(--pending); min-height: 120px; }
+.box .n { font: 600 11px/1.3 var(--mono); letter-spacing: 1.2px; color: var(--faint); }
+.box h3 { font: 600 16px/1.3 var(--ui); margin-top: 6px; }
+.box p { font-size: 12.5px; line-height: 1.4; color: var(--muted); margin-top: 8px; }
+.arrow-r { align-self: center; justify-self: center; width: 32px; height: 10px; }
+.back {
+  position: absolute; top: -36px; height: 30px;
+  left: calc((100% - 132px) / 8); right: calc((100% - 132px) / 8);
+  border: 1.5px solid var(--muted); border-bottom: 0;
+}
+.back::after { /* arrowhead into box 01 */
+  content: ""; position: absolute; left: -5.75px; bottom: -2px;
+  border: 5px solid transparent; border-top: 8px solid var(--muted); border-bottom: 0;
+}
+.back-label {
+  position: absolute; top: -58px; left: 0; right: 0; text-align: center;
+  font: 12px var(--mono); color: var(--muted);
+}
+.loop-row2 { display: grid; grid-template-columns: 1fr 44px 1fr 44px 1fr 44px 1fr; }
+.lag { grid-column: 1 / 6; padding-top: 80px; max-width: 900px; }
+.lag h3 { font: 600 16px/1.3 var(--ui); }
+.lag p { font-size: 14px; line-height: 1.55; color: var(--muted); margin-top: 10px; }
+.down { grid-column: 7; position: relative; height: 64px; }
+.down::before { content: ""; position: absolute; left: 50%; top: 6px; bottom: 8px; border-left: 1.5px solid var(--pending); }
+.down::after {
+  content: ""; position: absolute; left: calc(50% - 4.25px); bottom: 2px;
+  border: 5px solid transparent; border-top: 8px solid var(--pending); border-bottom: 0;
+}
+.down span { position: absolute; right: calc(50% + 14px); top: 20px; font: 12px var(--mono); color: var(--pending); white-space: nowrap; }
+.row2-box { grid-column: 7; }
+.loop-m { display: none; }
+
+.scopes { display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column; grid-template-rows: repeat(var(--rows, 6), 34px); gap: 0 64px; margin-top: 36px; }
+.scope-row { display: grid; grid-template-columns: 20px 170px minmax(0, 1fr); align-items: center; }
+.scope-row .nm { font: 13px var(--mono); }
+.scope-row .track { display: flex; align-items: center; gap: 10px; }
+.scope-row .bar { height: 10px; border-radius: 2px; }
+.scope-row .v { font: 12px var(--mono); color: var(--muted); }
+.scopes-note { font: 12px var(--mono); color: var(--faint); margin-top: 12px; }
+
+.honest { display: grid; grid-template-columns: 820fr 468fr; gap: 24px; margin-top: 40px; }
+.hp { padding: 30px 32px 28px; }
+.hbar { margin-bottom: 30px; }
+.hbar .t { font-size: 14px; }
+.hbar .line { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.hbar .track { position: relative; flex: 1; height: 22px; border-radius: 4px; background: var(--bg); }
+.hbar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; }
+.hbar .v { font: 600 16px var(--mono); width: 64px; }
+.gapwrap { position: relative; }
+.gapband { position: absolute; top: 34px; bottom: 34px; background: rgba(232, 180, 74, .18); border-right: 1.5px solid var(--pending); pointer-events: none; }
+.gap-t { font: 12px var(--mono); color: var(--pending); margin: -14px 0 0; }
+.hp-foot { font-size: 13px; line-height: 1.5; color: var(--muted); margin-top: 24px; }
+.dated { font: 11px var(--mono); color: var(--faint); margin-top: 10px; }
+.cc .k { font: 12px var(--mono); color: var(--muted); }
+.cc .big { font: 600 56px/1.2 var(--ui); margin-top: 6px; }
+.cc .t { font-size: 16px; margin-top: 4px; }
+.cc p { font-size: 13px; line-height: 1.5; color: var(--muted); margin-top: 14px; }
+.cc .chip { margin-top: 20px; }
+.cc .next { font: 12px var(--mono); color: var(--faint); margin-top: 8px; }
+
+.sizes { display: grid; grid-template-columns: 440px minmax(0, 1fr); gap: 32px; margin-top: 36px; align-items: start; }
+.squares { display: flex; gap: 60px; align-items: flex-end; }
+.squares .sq { background: var(--danger); border-radius: 3px; }
+.squares .cap { font: 13px/1.45 var(--mono); margin-top: 12px; white-space: pre-line; }
+.sizes p { font-size: 15px; line-height: 1.55; color: var(--muted); max-width: 820px; padding-top: 6px; }
+
+.finds { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 36px; }
+.find { padding: 26px 28px; }
+.find h3 { font: 600 17px/1.3 var(--ui); }
+.find .sub { font-size: 13px; color: var(--muted); margin-top: 8px; }
+.find .cap { font-size: 12.5px; line-height: 1.5; color: var(--muted); margin-top: 22px; }
+.rem { display: grid; grid-template-columns: 110px minmax(0, 330px) auto; gap: 14px; align-items: center; height: 36px; font: 13px var(--mono); }
+.rem .track { height: 12px; border-radius: 3px; background: var(--bg); position: relative; }
+.rem .fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.rem .v.small { color: var(--muted); }
+.recipe { display: grid; grid-template-columns: 110px 150px auto; align-items: end; margin-top: 22px; }
+.recipe .k { font-size: 14px; grid-column: 1 / -1; }
+.recipe .pct { font: 600 40px/1.1 var(--ui); }
+.recipe .of { font: 13px var(--mono); color: var(--muted); padding-bottom: 8px; }
+.strip { display: flex; gap: 5px; padding-bottom: 10px; }
+.strip i { width: 11px; height: 11px; border-radius: 2px; background: var(--deemph); }
+.strip i.on { background: var(--accent); }
+.grid-sq { display: grid; grid-template-columns: repeat(31, 13px); gap: 6px; margin-top: 24px; }
+.grid-sq i { width: 13px; height: 13px; border-radius: 2px; background: var(--deemph); }
+.grid-sq i.on { background: var(--danger); }
+.guard-v { font: 13px var(--mono); margin-top: 18px; }
+.route { display: grid; grid-template-columns: 172px minmax(0, 300px) auto; gap: 12px; align-items: center; height: 44px; font: 13px var(--mono); }
+.route .track { height: 14px; border-radius: 3px; background: var(--bg); position: relative; }
+.route .fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--muted); min-width: 3px; }
+
+/* ================= responsive ================= */
+@media (max-width: 1240px) {
+  .checks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cost-body { grid-template-columns: minmax(0, 1fr); }
+  .duo { grid-template-columns: minmax(0, 1fr); }
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .honest { grid-template-columns: minmax(0, 1fr); }
+  .sizes { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1000px) {
+  .needs { grid-template-columns: minmax(0, 1fr); }
+  .finds { grid-template-columns: minmax(0, 1fr); }
+  .scopes { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-flow: row; }
+  .scopes .scope-row { height: 30px; }
+}
+@media (max-width: 760px) {
+  /* Phone: the same content, one column (spec §2). */
+  .d-only { display: none !important; }
+  .m-only { display: revert; }
+  .top { display: grid; grid-template-columns: 1fr auto; grid-template-rows: 54px 42px; height: auto; padding: 0 16px; gap: 0; }
+  .brand { font-size: 14px; letter-spacing: 2.2px; }
+  .meta { grid-column: 2; grid-row: 1; font-size: 11px; }
+  .meta .d-only { display: none; }
+  .tabs { grid-column: 1 / -1; grid-row: 2; gap: 36px; }
+  .tabs a { font-size: 15px; border-bottom-width: 3px; }
+  #offline { margin: 12px 16px 0; }
+  main { padding: 0 16px 32px; }
+  .verdict { font-size: 26px; margin-top: 24px; }
+  .needs { gap: 16px; margin-top: 22px; }
+  .need { padding: 16px 20px 16px; }
+  .need h3 { font-size: 17px; }
+  .need p { white-space: normal; }
+  .cmd { display: block; margin-top: 16px; padding: 6px 12px; }
+  .label { margin: 28px 0 12px; }
+  .label .note { flex-basis: 100%; font-size: 11px; }
+  .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tile { min-height: 86px; padding: 14px; }
+  .tile .head { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .tile .body { margin-top: 6px; font-size: 11px; }
+  .cost { padding: 16px; }
+  .heads { gap: 12px 28px; }
+  .head-n .k { font-size: 11px; }
+  .head-n .v { font-size: 24px; }
+  .head-n .s { display: none; }
+  .cost-body { margin-top: 20px; }
+  .axis, .spike { font-size: 10px; }
+  .went h4 { display: none; }
+  .went .row { grid-template-columns: 9px minmax(0, 1fr) 100px; }
+  .went .row .bar { display: none; }
+  .went .row.extra { display: none; }
+  .went .more { display: block; font: 12px var(--mono); color: var(--muted); margin: 4px 0 0 17px; }
+  .went .blind { margin-left: 0; }
+  .duo { gap: 0; }
+  .inj { padding: 14px 16px 16px; }
+  .inj .rows { margin-top: 14px; }
+  .inj .row { grid-template-columns: 140px minmax(0, 1fr) 64px; }
+  .inj .row.extra { display: none; }
+  .live { padding: 4px 12px 8px; }
+  .live-d { display: none; }
+  .live-m { display: block; }
+  .live-m .r { display: grid; grid-template-columns: 8px 44px minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; padding: 10px 4px; border-top: 1px solid var(--hair); font: 12px var(--mono); }
+  .live-m .r:first-child { border-top: 0; }
+  .live-m .sc { grid-column: 3 / -1; font-size: 11px; color: var(--faint); }
+  .live-m .t { color: var(--muted); }
+  .live-m .fr { text-align: right; color: var(--muted); }
+  .live-m .fr.over { color: var(--pending); }
+  .detail { display: none; }
+
+  .how { padding-top: 28px; }
+  .how h1 { font-size: 34px; }
+  .how .lede { font-size: 15px; margin-top: 18px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 0; margin-top: 28px; }
+  .stats > div { width: auto; }
+  .stats .v { font-size: 28px; }
+  .stats .k { font-size: 12px; }
+  .stats-note { display: none; }
+  .sec { margin-top: 44px; }
+  .sec h2 { font-size: 22px; line-height: 1.2; }
+  .sec .sec-lede { font-size: 14px; }
+  .loop, .loop-row2 { display: none; }
+  .loop-m { display: block; margin-top: 24px; }
+  .loop-m .box { min-height: 100px; padding: 14px 16px; }
+  .loop-m .box h3 { font-size: 15px; }
+  .loop-m .v-arrow { height: 30px; position: relative; }
+  .loop-m .v-arrow::before { content: ""; position: absolute; left: 50%; top: 4px; bottom: 8px; border-left: 1.5px solid var(--muted); }
+  .loop-m .v-arrow::after { content: ""; position: absolute; left: calc(50% - 4.25px); bottom: 2px; border: 5px solid transparent; border-top: 8px solid var(--muted); border-bottom: 0; }
+  .loop-m .v-arrow.later::before { border-left-color: var(--pending); }
+  .loop-m .v-arrow.later::after { border-top-color: var(--pending); }
+  .loop-m .back-m { font: 12px var(--mono); color: var(--muted); margin-top: 18px; }
+  .loop-m .lag-m { font-size: 14px; line-height: 1.5; color: var(--muted); margin-top: 22px; }
+  .scopes { margin-top: 20px; }
+  .scopes .scope-row { grid-template-columns: 16px 154px minmax(0, 1fr); height: 26px; }
+  .scope-row .nm { font-size: 12px; }
+  .scope-row .bar { height: 8px; }
+  .scope-row .v { font-size: 11px; }
+  .scopes-note { font-size: 11px; }
+  .honest { gap: 16px; margin-top: 24px; }
+  .hp { padding: 18px 16px; }
+  .hbar { margin-bottom: 20px; }
+  .hbar .t { font-size: 13px; }
+  .hbar .v { font-size: 13px; width: 52px; }
+  .gapband { display: none; }
+  .gap-t { margin: 0; font-size: 13px; line-height: 1.4; }
+  .hp-foot { font-size: 12.5px; margin-top: 12px; }
+  .cc .big { font-size: 44px; }
+  .cc .t { font-size: 14px; }
+  .cc p { font-size: 12.5px; }
+  .squares { gap: 60px; }
+  .squares .cap { font-size: 12px; }
+  .sizes p { font-size: 14px; }
+  .finds { margin-top: 24px; }
+  .find { padding: 16px; }
+  .find h3 { font-size: 15px; }
+  .rem { grid-template-columns: 86px minmax(0, 1fr) 92px; gap: 8px; height: 28px; font-size: 12px; }
+  .rem .track { height: 10px; background: none; }
+  .rem .v { font-size: 11px; }
+  .recipe { grid-template-columns: 74px 80px auto; align-items: baseline; margin-top: 14px; }
+  .recipe .k { grid-column: 1; font: 12px var(--mono); color: var(--muted); }
+  .recipe .pct { font-size: 26px; }
+  .recipe .of { font-size: 12px; padding: 0; }
+  .strip { display: none; }
+  .grid-sq { grid-template-columns: repeat(16, 13px); gap: 5px; }
+  .route { grid-template-columns: 144px minmax(0, 1fr) 40px; height: 32px; font-size: 12px; }
+  .route .track { height: 10px; background: none; }
 }
 </style>
 </head>
 <body>
-<div id="tip" role="status"></div>
-<header>
-  <h1>Thalamus Pulse</h1>
-  <span class="standing" id="standing">layer 1 — instrumented, measuring</span>
-  <div class="hdr-right">
-    <span class="hdr-stat">session <b id="h-session" class="mono">—</b></span>
-    <span class="hdr-stat">today <b id="h-today">—</b></span>
-    <span id="h-graph" class="stamp">connecting…</span>
-    <span id="h-pending" class="stamp" hidden></span>
-  </div>
+<header class="top">
+  <div class="brand">◉ PULSE</div>
+  <nav class="tabs" aria-label="Pages">
+    <a href="#status" id="tab-status">Status</a>
+    <a href="#how" id="tab-how">How it works</a>
+  </nav>
+  <div class="meta"><span id="updated">connecting…</span><span class="d-only"> · report rebuilt 60 s · live 5 s</span></div>
 </header>
-<div id="offline">pulse server unreachable — showing the last data it served. Restart with <code>systemctl --user restart thalamus-pulse</code>.</div>
+<div id="offline">The pulse server is unreachable — this is the last data it served. Restart it with
+  <code>systemctl --user restart thalamus-pulse</code>.</div>
 
-<div class="grid">
-  <!-- ============ NOW ============ -->
-  <div class="col col-now">
-    <section class="panel">
-      <h2>Now — the tap <span class="stamp live" title="Injection cost and fan-out only. Verdicts exist after distillation; a per-turn used% would be fabricated.">cost only</span></h2>
-      <ul class="feed" id="feed"><li class="empty">no tap events yet</li></ul>
-    </section>
-    <section class="panel desktop-only">
-      <h2>Guard &amp; conditioning <span class="stamp" id="gc-stamp">events</span></h2>
-      <div class="evrows" id="gc-rows"><div class="empty">no events yet</div></div>
-    </section>
+<main>
+<!-- ======================= A · Status ======================= -->
+<div class="page" id="page-status">
+  <h1 class="verdict" id="verdict">Reading…</h1>
+  <p class="verdict-sub" id="verdict-sub"></p>
+  <div class="needs" id="needs"></div>
+
+  <h2 class="label">Checks <span class="note d-only">quiet when well · a word first, colour second</span></h2>
+  <div class="checks" id="checks"></div>
+
+  <h2 class="label"><span class="d-only">Cost&nbsp;&nbsp;·&nbsp;&nbsp;last 14 days</span><span class="m-only">Cost&nbsp;&nbsp;·&nbsp;&nbsp;14 days</span>
+    <span class="note d-only" id="cost-proxy"></span><span class="note m-only">weighted-token proxy · not dollars</span></h2>
+  <div class="panel cost" id="cost"><div class="empty">waiting for the report…</div></div>
+
+  <div class="duo">
+    <div>
+      <h2 class="label">Memory’s own footprint</h2>
+      <div class="panel inj" id="inj"><div class="empty">waiting for the report…</div></div>
+    </div>
+    <div>
+      <h2 class="label">Live — the tap <span class="note d-only">cost and fan-out only; verdicts arrive after a session distills</span></h2>
+      <div class="panel live" id="live"><div class="empty">no tap events yet</div></div>
+    </div>
   </div>
 
-  <!-- ============ SESSION ============ -->
-  <div class="col col-session">
-    <section class="panel">
-      <h2>Sessions <span class="stamp" id="sess-stamp">—</span></h2>
-      <div id="sessions"><div class="empty">waiting for the graph report…</div></div>
-    </section>
-  </div>
+  <!-- Spec §2.7: not drawn on the board, desktop only, collapsed by default. For
+       curation and debugging, not for the glance. Placed above the plate so the
+       plate stays the page's foot. -->
+  <details class="detail" id="detail">
+    <summary>Detail — sessions, decay candidates, query cost</summary>
+    <div class="detail-grid">
+      <section class="panel"><h4>Sessions <span class="chip neutral" id="sess-chip">—</span></h4><div id="sessions"></div></section>
+      <section class="panel"><h4>Decay candidates <button class="toggle" id="rank-toggle" aria-pressed="false">rank by count</button></h4>
+        <div class="list" id="decay"></div>
+        <div class="note-s">main scope · ranked by absolute wasted tokens, since a rate hides a ~119× gap in size</div></section>
+      <section class="panel"><h4>Query cost — traversal wall time</h4><div id="querycost"></div></section>
+    </div>
+  </details>
 
-  <!-- ============ LIFETIME ============ -->
-  <div class="col col-life">
-    <section class="panel">
-      <h2>Main scope — used vs wasted <span class="stamp" id="head-stamp">—</span></h2>
-      <div class="tiles" id="headline"></div>
-    </section>
-    <section class="panel">
-      <h2>Waste trend <span class="stamp desktop-only" title="The band is a prediction (≤30% with used% not falling), not a measurement.">target = dial</span></h2>
-      <div id="trend"><div class="empty">no attributed days yet</div></div>
-    </section>
-    <section class="panel">
-      <h2>Routing signal — pins <span class="stamp" id="pins-stamp">—</span></h2>
-      <div id="pins"></div>
-    </section>
-    <section class="panel desktop-only">
-      <h2>Decay candidates
-        <button class="toggle" id="rank-toggle" aria-pressed="false">rank by count</button>
-        <span class="stamp" title="Ranked by absolute wasted tokens — rates bury a 60x absolute difference.">waste rank</span>
-      </h2>
-      <div class="rows" id="decay"><div class="empty">—</div></div>
-    </section>
-    <section class="panel desktop-only">
-      <h2>Cost — weighted-token proxy <span class="stamp" id="cost-stamp">—</span></h2>
-      <div id="cost"></div>
-    </section>
-    <section class="panel desktop-only">
-      <h2>Conditioning <span class="stamp" id="cond-stamp">—</span></h2>
-      <div id="conditioning"></div>
-    </section>
-    <section class="panel desktop-only">
-      <h2>Query cost — traversal wall time <span class="stamp" id="qc-stamp">—</span></h2>
-      <div id="querycost"></div>
-    </section>
-    <section class="panel desktop-only">
-      <h2>Gremlin fluency <span class="stamp" id="grem-stamp">—</span></h2>
-      <div id="gremlin"></div>
-    </section>
-  </div>
+  <footer class="plate" id="plate"></footer>
 </div>
 
-<footer id="plate" hidden>
-  <h2>Calibration plate — dials &amp; blind spots</h2>
-  <ul id="plate-dials"></ul>
-  <div id="plate-surfaces"></div>
-  <div id="plate-querycost"></div>
-  <div class="standing-line" id="plate-standing"></div>
-</footer>
+<!-- ======================= B · How it works ======================= -->
+<div class="how" id="page-how" hidden>
+  <div class="eyebrow"><span class="d-only">Thalamus&nbsp;&nbsp;·&nbsp;&nbsp;</span>Memory for coding agents</div>
+  <h1>Every session ends.<br>What it learned shouldn’t.</h1>
+  <p class="lede d-only">Thalamus distills each coding-agent session into a graph of claims — decisions, problems,
+    solutions — and serves them to the next session that needs them. This page shows how that
+    loop runs, what it costs, and what we can and cannot yet claim about it.</p>
+  <p class="lede m-only">Thalamus distills each coding-agent session into a graph of claims and serves them to
+    the next session that needs them. Here is how that loop runs, what it costs, and what
+    we can and cannot yet claim about it.</p>
+  <div class="stats">
+    <div><div class="v" id="st-recalls">—</div><div class="k">recalls served</div></div>
+    <div><div class="v" id="st-sessions">—</div><div class="k">sessions</div></div>
+    <div><div class="v" id="st-scopes">—</div><div class="k">memory scopes</div></div>
+    <div><div class="v" id="st-days">—</div><div class="k">days measured</div></div>
+  </div>
+  <div class="stats-note" id="st-note"></div>
+
+  <section class="sec">
+    <div class="label" style="margin:0">The loop</div>
+    <h2><span class="d-only">Memory is written after the fact, and judged after the fact</span><span class="m-only">Written after the fact,<br>judged after the fact</span></h2>
+    <div class="loop">
+      <div class="back-label">…and that session is the next one to work</div>
+      <div class="back" aria-hidden="true"></div>
+      <div class="box"><div class="n">01</div><h3>A session works</h3><p>An agent in Claude Code, codex or Cursor does a task, calling memory tools as it goes.</p></div>
+      <svg class="arrow-r" viewBox="0 0 32 10" aria-hidden="true"><path d="M0 5H24" stroke="var(--muted)" stroke-width="1.5"/><path d="M32 5L23 1V9Z" fill="var(--muted)"/></svg>
+      <div class="box"><div class="n">02</div><h3>It ends and is distilled</h3><p>A model reads the transcript and writes claims: what was decided, what broke, what fixed it.</p></div>
+      <svg class="arrow-r" viewBox="0 0 32 10" aria-hidden="true"><path d="M0 5H24" stroke="var(--muted)" stroke-width="1.5"/><path d="M32 5L23 1V9Z" fill="var(--muted)"/></svg>
+      <div class="box"><div class="n">03</div><h3>The graph keeps it</h3><p>Claims, open threads and sources, each with provenance — which session, which scope.</p></div>
+      <svg class="arrow-r" viewBox="0 0 32 10" aria-hidden="true"><path d="M0 5H24" stroke="var(--muted)" stroke-width="1.5"/><path d="M32 5L23 1V9Z" fill="var(--muted)"/></svg>
+      <div class="box now"><div class="n">04</div><h3>The next session recalls</h3><p>Relevant claims are served into context. The tap records every injection and its size.</p></div>
+    </div>
+    <div class="loop-row2">
+      <div class="lag">
+        <h3>Why the Status page shows cost now and quality later</h3>
+        <p>The tap sees a recall the moment it happens — how many claims, how many tokens.
+          Whether any of it helped can only be judged once the session is over and distilled, so a
+          recall made this morning has no verdict until tonight. Pulse keeps those two clocks apart
+          rather than inventing a per-turn score.</p>
+      </div>
+      <div style="grid-column:7">
+        <div class="down"><span>only after that session ends</span></div>
+        <div class="box later"><div class="n">05</div><h3>Attribution</h3><p>Was each recalled claim reflected in what the agent then did? Used, or ignored.</p></div>
+      </div>
+    </div>
+    <div class="loop-m">
+      <div class="box"><div class="n">01</div><h3>A session works</h3><p>An agent does a task, calling memory tools as it goes.</p></div>
+      <div class="v-arrow"></div>
+      <div class="box"><div class="n">02</div><h3>It ends and is distilled</h3><p>A model reads the transcript and writes claims: decided, broke, fixed.</p></div>
+      <div class="v-arrow"></div>
+      <div class="box"><div class="n">03</div><h3>The graph keeps it</h3><p>Claims, threads and sources, each with provenance.</p></div>
+      <div class="v-arrow"></div>
+      <div class="box now"><div class="n">04</div><h3>The next session recalls</h3><p>Claims are served into context; the tap records each injection and its size.</p></div>
+      <div class="v-arrow later"></div>
+      <div class="box later"><div class="n">05</div><h3>Attribution</h3><p>Only after that session ends: was each recalled claim used, or ignored?</p></div>
+      <div class="back-m">Step 04’s session becomes the next 01.</div>
+      <p class="lag-m">The tap sees a recall the moment it happens. Whether it helped can only be judged once the
+        session is over, so Status shows cost now and quality later — never a per-turn score.</p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="label" style="margin:0">Experts</div>
+    <h2 id="experts-h">Not one memory</h2>
+    <p class="sec-lede d-only">Each expert has its own scope. A session pinned to one reads and writes only there; other
+      experts’ knowledge reaches it as cited, labelled context, or by asking — a consultation ticket.
+      This page was designed that way: the designer scope asked eval-methodology what may honestly be shown.</p>
+    <p class="sec-lede m-only">Each expert keeps its own scope. Others’ knowledge arrives cited and labelled, or by
+      a consultation ticket — this page was designed through one.</p>
+    <div class="scopes" id="scopes"><div class="empty">waiting for the report…</div></div>
+    <div class="scopes-note"><span class="d-only">recalls served per scope · log scale · colour is assigned by hashing the scope’s name, so it identifies and never grades</span><span class="m-only">recalls per scope · log scale · hue = name, not grade</span></div>
+  </section>
+
+  <section class="sec">
+    <div class="label" style="margin:0">The honest part</div>
+    <h2><span class="d-only">Did the memory help? Mostly we can’t say yet — and here is why</span><span class="m-only">Did the memory help?<br>Mostly we can’t say yet</span></h2>
+    <p class="sec-lede d-only">A judge checks whether a recalled claim shows up in what the agent did next. The obvious
+      number is how often it says yes. The useful number is how often it says yes by accident.</p>
+    <div class="honest">
+      <div class="panel hp">
+        <div class="gapwrap">
+          <div class="hbar"><div class="t"><span class="d-only">Judge says the recalled claim was used</span><span class="m-only">Judge says used</span></div>
+            <div class="line"><div class="track"><div class="fill" style="width:61.4%;background:var(--accent)"></div></div><div class="v">61.4%</div></div></div>
+          <div class="hbar"><div class="t" style="color:var(--muted)"><span class="d-only">Same judge, claims shuffled across sessions (placebo)</span><span class="m-only">Same judge, shuffled (placebo)</span></div>
+            <div class="line"><div class="track"><div class="fill" style="width:57.7%;background:var(--deemph)"></div></div><div class="v">57.7%</div></div></div>
+          <div class="gapband" id="gapband" aria-hidden="true"></div>
+        </div>
+        <p class="gap-t"><span class="d-only">+3.7 points — the part topic alone doesn’t explain</span><span class="m-only">+3.7 points is what the link adds;<br>the rest is topic overlap.</span></p>
+        <p class="hp-foot"><span class="d-only">Most of the raw rate is the claim and the session being about the same thing.<br>
+          The placebo keeps the topics and breaks the link, so the gap is what the link adds.</span><span class="m-only">The placebo keeps topics, breaks the link.</span></p>
+        <div class="dated">measured 2026-08</div>
+      </div>
+      <div class="panel hp cc">
+        <div class="k">chance-corrected</div>
+        <div class="big">~17.5%</div>
+        <div class="t">of injected tokens are demonstrably earned</div>
+        <p><span class="d-only">The same judge, uncorrected, calls 66% of injected tokens used (95% CI 59.5–72.8).
+          The placebo says most of that is topic overlap.</span><span class="m-only">Uncorrected, the same judge says 66% (95% CI 59.5–72.8).</span></p>
+        <span class="chip pending">NOT YET VALIDATED</span>
+        <div class="next">next: ~100 human-labelled pairs</div>
+        <div class="dated">measured 2026-08</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="label" style="margin:0">Reading the numbers</div>
+    <h2><span class="d-only">A waste rate means nothing without its size</span><span class="m-only">A waste rate means nothing<br>without its size</span></h2>
+    <div class="sizes">
+      <div class="squares" role="img" aria-label="Two squares, areas in proportion: about 21,800 tokens wasted against about 183.">
+        <div><div class="sq" id="sq-big"></div><div class="cap"><span class="d-only">50% of ~43.6K tokens
+= ~21,800 wasted</span><span class="m-only">50% of ~43.6K
+~21,800 wasted</span></div></div>
+        <div><div class="sq" id="sq-small"></div><div class="cap"><span class="d-only">25% of ~731
+= ~183 wasted</span><span class="m-only">25% of ~731
+~183 wasted</span></div></div>
+      </div>
+      <p><span class="d-only">Two sessions. One wasted a quarter of what it recalled, the other half.
+        By rate the first looks twice as good. By size the second wasted about
+        120 times as much. Pulse never shows a rate without the tokens beside it.</span><span class="m-only">The first looks twice as bad by rate and
+        wasted ~120× as much by size. Pulse never shows a rate without its tokens.</span></p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="label" style="margin:0">From the logs</div>
+    <h2><span class="d-only">Things the system has noticed about itself</span><span class="m-only">Things the system has<br>noticed about itself</span></h2>
+    <div class="finds">
+      <div class="panel find" id="find-reminders"></div>
+      <div class="panel find" id="find-recipes"></div>
+      <div class="panel find" id="find-guard"></div>
+      <div class="panel find">
+        <h3><span class="d-only">Is a pinned expert better than asking one? Not answerable yet</span><span class="m-only">Pinned vs consulted expert?<br>Not answerable yet</span></h3>
+        <p class="sub d-only">The judge agrees far more often inside one project than across two:</p>
+        <div style="margin-top:14px">
+          <div class="route"><span>within a project</span><div class="track"><div class="fill" style="width:63%"></div></div><span>~63%</span></div>
+          <div class="route"><span>across projects</span><div class="track"><div class="fill" style="width:5%"></div></div><span>~5%</span></div>
+        </div>
+        <p class="cap"><span class="d-only">A pinned session is judged within its scope; a consultation, across. Comparing
+          the two would measure the judge, not the expert. Each side needs its own
+          placebo first — until then every expert reads “not comparable yet”.</span><span class="m-only">Judge agreement differs 12× between the two; comparing them measures the judge.</span></p>
+        <div style="margin-top:14px"><span class="chip neutral">NOT COMPARABLE YET</span></div>
+        <div class="dated">measured 2026-08</div>
+      </div>
+    </div>
+  </section>
+</div>
+</main>
 
 <script>
 "use strict";
-/* Thalamus Pulse — renders the eval loop's measurements. No panel-local math
-   beyond formatting: every number arrives shaped by pulse/metrics.py. */
+/* Thalamus Pulse. The server reduces, the client renders: every state word, every
+   stuck/stale verdict and every blind-spot chip arrives composed from pulse/metrics.py.
+   What happens here is layout, formatting and arithmetic for display — sums, shares,
+   scales. */
 
-const SCOPE_SLOT = { main: "--s1", literature: "--s2", "eval-methodology": "--s5", architect: "--s4" };
-const BUCKET_ORDER = ["interactive", "expert:literature", "extract", "expert:architect", "expert:eval-methodology"];
-const BUCKET_SLOT = { interactive: "--s1", "expert:literature": "--s2", extract: "--s3",
-                      "expert:architect": "--s4", "expert:eval-methodology": "--s5" };
-const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const scopeColor = s => css(SCOPE_SLOT[s] || "--deemph");
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
-const tok = n => n >= 1e6 ? (n/1e6).toFixed(1)+"M" : n >= 1e4 ? Math.round(n/1e3)+"K" : n >= 1e3 ? (n/1e3).toFixed(1)+"K" : String(n);
-const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const ms = v => v === null || v === undefined ? "—"
-  : v >= 1000 ? (v / 1000).toFixed(2) + "s" : v >= 10 ? v.toFixed(0) + "ms" : v.toFixed(1) + "ms";
+/* Identity colour — the console's hashHue (console/static/app.js), verbatim, so a
+   scope is the same hue on both surfaces. `main` is fixed; every other name hashes
+   into the six-hue palette, so a new scope colours itself. Five current scopes share
+   a hue, so a coloured mark always has its name beside it. tests/test_pulse.py
+   asserts these literals match the console's. */
+const MAIN_HUE = "#9a8cff";                                        // violet
+const PALETTE = ["#e0a45c", "#4db6a6", "#6db3f2", "#e07a9c",       // amber, teal, sky, rose
+                 "#8fce6b", "#c79bf0"];                            // moss, orchid
+function hashHue(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (Math.imul(h, 31) + name.charCodeAt(i)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+}
+const scopeHue = s => (!s || s === "main") ? MAIN_HUE : hashHue(s);
+/* A cost bucket's hue: `interactive` is main's work, `expert:<scope>` is that scope's.
+   Any other bucket (extract) hashes its own name — an identity, never a status. */
+const bucketHue = n => n === "interactive" ? MAIN_HUE : hashHue(n.startsWith("expert:") ? n.slice(7) : n);
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const M1 = v => (v / 1e6).toFixed(1) + "M";
+const M0 = v => Math.round(v / 1e6) + "M";
+const K = v => v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 1 : 2) + "M" : v >= 1e3 ? Math.round(v / 1e3) + "K" : String(v);
+const tok = n => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e4 ? Math.round(n / 1e3) + "K" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(n);
+const hhmm = iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+const ms = v => v === null || v === undefined ? "—" : v >= 1000 ? (v / 1000).toFixed(2) + "s" : v >= 10 ? v.toFixed(0) + "ms" : v.toFixed(1) + "ms";
 const secs = v => v >= 60000 ? (v / 60000).toFixed(1) + "m" : (v / 1000).toFixed(1) + "s";
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const WORDS = ["none", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+               "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+const word = n => WORDS[n] || String(n);
+const isPhone = () => matchMedia("(max-width: 760px)").matches;
+const $ = id => document.getElementById(id);
 
-let lastReport = null, rankByCount = false;
+let lastReport = null, lastLive = null, rankByCount = false;
 
-/* ---------- tooltip (enhances, never gates: all values are also in text) ---------- */
-const tip = document.getElementById("tip");
-document.addEventListener("mouseover", e => {
-  const el = e.target.closest("[data-tip]");
-  if (!el) { tip.style.opacity = 0; return; }
-  tip.textContent = el.dataset.tip;
-  tip.style.opacity = 1;
-});
-document.addEventListener("mousemove", e => {
-  if (tip.style.opacity === "1") {
-    tip.style.left = Math.min(e.clientX + 12, innerWidth - 330) + "px";
-    tip.style.top = (e.clientY + 14) + "px";
-  }
-});
+/* ---------- routing: the tab lives in the hash so a link opens either page ---------- */
+function route() {
+  const how = location.hash === "#how";
+  $("page-status").hidden = how;
+  $("page-how").hidden = !how;
+  $(how ? "tab-how" : "tab-status").setAttribute("aria-current", "page");
+  $(how ? "tab-status" : "tab-how").removeAttribute("aria-current");
+  if (lastReport) renderHow(lastReport);
+}
+addEventListener("hashchange", () => { route(); scrollTo(0, 0); });
 
-/* ---------- live (5s) ---------- */
+/* ---------- polling: a fresh AbortController per request, so a hung fetch cannot wedge ---------- */
+function req(url) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 15000);
+  return fetch(url, { signal: ctl.signal, cache: "no-store" }).finally(() => clearTimeout(timer));
+}
 async function pollLive() {
   try {
-    const live = await (await fetch("api/live")).json();
+    const r = await req("api/live");
+    if (!r.ok) throw new Error(r.status);
+    lastLive = await r.json();
     document.body.classList.remove("offline");
-    renderLive(live);
-  } catch { document.body.classList.add("offline"); }
+    renderLive(lastLive);
+  } catch (e) { document.body.classList.add("offline"); }
+}
+async function pollReport() {
+  try {
+    const r = await req("api/report");
+    if (!r.ok) throw new Error(r.status);
+    const rpt = await r.json();
+    if (rpt && !rpt.building) { lastReport = rpt; renderReport(rpt); }
+  } catch (e) { /* the live poll owns the offline banner */ }
+}
+
+/* ======================= Status ======================= */
+function renderReport(rpt) {
+  $("updated").textContent = "updated " + (rpt.generated_at ? hhmm(rpt.generated_at) : "—");
+  renderHealth(rpt);
+  renderCost(rpt.cost, rpt.generated_at, rpt.disclosures);
+  renderInjection(rpt.cost);
+  renderPlate(rpt);
+  renderSessions(rpt);
+  renderDecay(rpt);
+  renderQueryCost(rpt.query_cost);
+  if (location.hash === "#how") renderHow(rpt);
+}
+
+function chip(word, cls) { return `<span class="chip ${cls}">${esc(word)}</span>`; }
+
+function renderHealth(rpt) {
+  let health = rpt.health;
+  if (!health) {
+    /* The page is read from disk per request and the server's Python is loaded once:
+       a report with no `health` comes from a server older than this file. The one
+       thing the page can say is that. */
+    health = { checks: [], needs_you: [{
+      kind: "stale_build", word: "STALE BUILD", title: "Pulse’s server is older than this page",
+      detail: "The page was updated on disk; the running server predates it and sends no checks.\nRestart the service to load the matching server.",
+      command: "systemctl --user restart thalamus-pulse" }] };
+  }
+  const n = health.needs_you.length;
+  $("verdict").textContent = n ? `${n} thing${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you` : "Nothing needs you";
+  $("verdict-sub").innerHTML = n
+    ? `<span class="d-only">Everything else is inside its normal range. Red on this page only ever means: do something.</span><span class="m-only">Red here only ever means: do something.</span>`
+    : `<span class="d-only">Red on this page only ever means: do something.</span><span class="m-only">Red here only ever means: do something.</span>`;
+  $("needs").innerHTML = health.needs_you.map(item => `<article class="need">
+      ${chip(item.word, "danger")}
+      <h3>${esc(item.title)}</h3>
+      <p>${esc(item.detail)}</p>
+      ${item.command ? `<code class="cmd">${esc(item.command)}</code>` : ""}
+    </article>`).join("");
+  $("checks").innerHTML = health.checks.map(c => `<div class="panel tile">
+      <div class="head"><span class="name">${esc(c.name)}</span>${chip(c.word, "s-" + c.state)}</div>
+      <div class="body"><span class="d-only">${c.lines.map(esc).join("<br>")}</span><span class="m-only">${esc(c.short)}</span></div>
+    </div>`).join("");
+}
+
+function dayRange(since, until) {
+  const out = [];
+  const d = new Date(since + "T00:00:00Z"), end = new Date(until + "T00:00:00Z");
+  for (; d <= end; d.setUTCDate(d.getUTCDate() + 1)) out.push(d.toISOString().slice(0, 10));
+  return out;
+}
+
+function renderCost(cost, generatedAt, disclosures) {
+  if (disclosures && disclosures.cost_proxy) $("cost-proxy").textContent = disclosures.cost_proxy;
+  const el = $("cost");
+  if (!cost) { el.innerHTML = `<div class="empty">The transcript scan failed — the checks above say so, and the server log has the traceback.</div>`; return; }
+  const buckets = cost.buckets.filter(b => b.name !== "other");
+  const other = (cost.buckets.find(b => b.name === "other") || { weighted: 0 }).weighted;
+  const thal = buckets.reduce((a, b) => a + b.weighted, 0);
+  const share = thal + other ? Math.round(100 * thal / (thal + other)) : 0;
+  const heads = `<div class="heads">
+      <div class="head-n"><div class="k"><span class="d-only">Thalamus work</span><span class="m-only">Thalamus</span></div><div class="v">${M0(thal)}</div><div class="s">interactive + pinned experts</div></div>
+      <div class="head-n"><div class="k">Everything else</div><div class="v">${M0(other)}</div><div class="s">other projects — the denominator</div></div>
+      <div class="head-n"><div class="k"><span class="d-only">Thalamus share</span><span class="m-only">Share</span></div><div class="v">${share}%</div><div class="s">of ${M0(thal + other)} weighted tokens</div></div>
+    </div>`;
+  const seen = buckets.filter(b => b.weighted > 0);
+  const max = seen.length ? seen[0].weighted : 1;
+  const rows = seen.map((b, i) => `<div class="row${i >= 4 ? " extra" : ""}">
+      <span class="sw" style="background:${bucketHue(b.name)}"></span><span>${esc(b.name)}</span>
+      <span class="bar" style="width:${Math.max(2, 170 * b.weighted / max)}px;max-width:100%;background:${bucketHue(b.name)}"></span>
+      <span class="v">${M1(b.weighted)}</span></div>`).join("");
+  const rest = seen.slice(4);
+  const more = rest.length ? `<div class="more">+ ${rest.length} more ${rest.every(b => b.name.startsWith("expert:")) ? "experts" : "buckets"} · ${M1(rest.reduce((a, b) => a + b.weighted, 0))}</div>` : "";
+  // Blind spots: grouped by the chip the server composed, one row per chip.
+  const groups = [];
+  for (const b of buckets.filter(b => b.blind)) {
+    let g = groups.find(x => x.chip === b.blind.chip);
+    if (!g) groups.push(g = { chip: b.blind.chip, why: b.blind.why, names: [] });
+    g.names.push(b.name.replace(/^expert:/, ""));
+  }
+  const blind = groups.length ? `<div class="blind-rule"></div>` + groups.map(g => `<div class="blind">
+      <span class="n">${esc(g.names.join(" · "))}</span>${chip(g.chip, "neutral")}
+      <span class="why">${esc(g.why)}</span></div>`).join("") : "";
+  el.innerHTML = heads + `<div class="cost-body">
+      <div class="chart"><div id="cost-svg"></div>
+        <div class="chart-foot">per day, thalamus buckets only · ‘everything else’ is a total, not a daily series</div>
+        ${costTable(cost, buckets)}</div>
+      <div class="went"><h4>Where it went</h4>${rows}${more}${blind}</div>
+    </div>`;
+  drawCostChart();
+}
+
+/* The chart's text equivalent (spec §8): every day, every bucket, collapsed. */
+function costTable(cost, buckets) {
+  const names = buckets.filter(b => b.weighted > 0).map(b => b.name);
+  if (!cost.by_day.length) return "";
+  return `<details class="table-toggle"><summary>per-day table</summary>
+    <table class="rows"><thead><tr><th>day</th>${names.map(n => `<th class="num">${esc(n.replace("expert:", ""))}</th>`).join("")}</tr></thead>
+    <tbody>${cost.by_day.map(d => `<tr><td>${d.day.slice(5)}</td>${names.map(n => `<td class="num">${d.buckets[n] ? M1(d.buckets[n]) : "·"}</td>`).join("")}</tr>`).join("")}</tbody></table></details>`;
+}
+
+/* Fixed cap at 50M so a single spike cannot flatten every other day (spec §4). A day
+   whose stack crosses the cap draws the crossing segment to the top plus 18 px, broken
+   by two panel-coloured strokes, and labelled with its value and bucket. Segments
+   stacked above a crossing one cannot be drawn to scale; the label names them. */
+const CAP = 50e6;
+function drawCostChart() {
+  const host = $("cost-svg");
+  if (!host || !lastReport || !lastReport.cost) return;
+  const cost = lastReport.cost;
+  const phone = isPhone();
+  const W = Math.max(280, host.clientWidth || 780);
+  const L = phone ? 36 : 44, R = 2, TOP = phone ? 22 : 34, CH = phone ? 170 : 250, B = 24;
+  const H = TOP + CH + B, y0 = TOP + CH;
+  const until = (lastReport.generated_at || new Date().toISOString()).slice(0, 10);
+  const days = dayRange(cost.since, until);
+  const byDay = Object.fromEntries(cost.by_day.map(d => [d.day, d.buckets]));
+  const order = cost.buckets.filter(b => b.name !== "other").map(b => b.name);
+  const stack = ["interactive", ...order.filter(n => n !== "interactive")];
+  const slot = (W - L - R) / days.length, bw = Math.min(phone ? 14 : 30, slot - 2);
+  const totals = Object.fromEntries(cost.buckets.map(b => [b.name, b.weighted]));
+  let svg = "";
+  for (const v of [0, 25e6, 50e6]) {
+    const y = y0 - v / CAP * CH;
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--hair)" stroke-width="1"/>
+      <text class="axis" x="${L - 8}" y="${y + 4}" text-anchor="end">${v / 1e6}M</text>`;
+  }
+  days.forEach((d, i) => {
+    const x = L + i * slot + (slot - bw) / 2;
+    const segs = stack.filter(n => (byDay[d] || {})[n] > 0);
+    let yb = y0, cum = 0, off = null;
+    const hidden = [];
+    for (const n of segs) {
+      const v = byDay[d][n];
+      if (off) { hidden.push(n); continue; }
+      let h;
+      if (cum + v > CAP) { h = yb - (TOP - 18); off = { n, v }; }
+      else h = Math.max(2, v / CAP * CH);
+      svg += `<rect x="${x}" y="${yb - h}" width="${bw}" height="${Math.max(1, h - 1.5)}" rx="2" fill="${bucketHue(n)}"><title>${d} ${esc(n)}: ${v.toLocaleString()} weighted</title></rect>`;
+      yb -= h; cum += v;
+    }
+    if (!segs.length) svg += `<text class="axis" x="${x + bw / 2}" y="${y0 - 6}" text-anchor="middle">·</text>`;
+    if (!phone || i % 2 === 0) svg += `<text class="axis" x="${x + bw / 2}" y="${y0 + 17}" text-anchor="middle">${d.slice(8)}</text>`;
+    if (off) {
+      const top = TOP - 18;
+      svg += `<path d="M${x - 3} ${top + 12}L${x + bw + 3} ${top + 4}" stroke="var(--panel)" stroke-width="${phone ? 3 : 4}"/>`;
+      if (!phone) svg += `<path d="M${x - 3} ${top + 20}L${x + bw + 3} ${top + 12}" stroke="var(--panel)" stroke-width="4"/>`;
+      const who = off.n.replace("expert:", "");
+      const lines = [`${M1(off.v)} ${who} ▲ off scale`];
+      if (!phone && totals[off.n]) lines.push(`one day = ${Math.round(100 * off.v / totals[off.n])}% of ${who}’s ${days.length - 1} days`);
+      if (hidden.length) lines.push(`+ ${hidden.map(h => h.replace("expert:", "")).join(", ")} above`);
+      // Beside the bar, on the side with room; left first, as on the board.
+      const need = Math.max(...lines.map(t => t.length)) * (phone ? 6.1 : 6.7);
+      const left = x - 8 > need || x + bw + 8 + need > W;
+      svg += `<text class="spike" x="${left ? x - 8 : x + bw + 8}" y="${TOP + 2}" text-anchor="${left ? "end" : "start"}">` +
+        lines.map((t, j) => `<tspan x="${left ? x - 8 : x + bw + 8}" dy="${j ? 15 : 0}">${esc(t)}</tspan>`).join("") + `</text>`;
+    }
+  });
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
+    aria-label="Weighted-token proxy per day, thalamus buckets stacked; the per-day table below carries every value">${svg}</svg>`;
+}
+
+function renderInjection(cost) {
+  const el = $("inj");
+  if (!cost) { el.innerHTML = `<div class="empty">no cost scan — see the checks above</div>`; return; }
+  const inj = cost.injection || [];
+  if (!inj.length) { el.innerHTML = `<div class="empty">no memory tool injected anything in this window</div>`; return; }
+  const total = inj.reduce((a, t) => a + t.tokens, 0), calls = inj.reduce((a, t) => a + t.calls, 0);
+  const top = inj.slice(0, 5), rest = inj.slice(5);
+  const rows = top.map(t => ({ name: t.tool, tokens: t.tokens, calls: t.calls }));
+  if (rest.length) rows.push({ name: `${rest.length} other tools`, tokens: rest.reduce((a, t) => a + t.tokens, 0), calls: rest.reduce((a, t) => a + t.calls, 0) });
+  const max = rows[0].tokens || 1;
+  const days = Math.round((Date.parse((lastReport.generated_at || "").slice(0, 10)) - Date.parse(cost.since)) / 864e5);
+  const perCall = top.filter(t => t.calls).map(t => ({ n: t.tool.replace(/^memory_/, ""), v: t.tokens / t.calls }))
+    .sort((a, b) => b.v - a.v).slice(0, 3);
+  el.innerHTML = `<h4><span class="d-only">Tokens memory tools put into context</span><span class="m-only">${K(total)} tokens injected · ${calls} calls</span></h4>
+    <div class="sub d-only">raw tokens, ${days} days · ${K(total)} total across ${calls} calls</div>
+    <div class="rows">${rows.map((r, i) => `<div class="row${i >= 3 ? " extra" : ""}"><span>${esc(r.name)}</span>
+      <span class="bar" style="width:${Math.max(2, 100 * r.tokens / max)}%"></span>
+      <span class="v">${K(r.tokens)}<span class="d-only"> · ${r.calls}×</span></span></div>`).join("")}</div>
+    <div class="foot d-only">per call: ${perCall.map(p => `${esc(p.n)} ${tok(Math.round(p.v))}`).join(" · ")}</div>`;
 }
 
 function renderLive(live) {
-  document.getElementById("h-session").textContent =
-    (live.current_session || "—") + (live.current_scope ? " · " + live.current_scope : "");
-  document.getElementById("h-today").textContent =
-    `${live.today.retrievals} recalls · ~${tok(live.today.injected_tokens)} tok injected`;
-
-  const feed = document.getElementById("feed");
-  if (live.feed.length) {
-    feed.innerHTML = live.feed.map(e => {
-      const cls = e.rejected ? "rejected" : e.miss ? "empty result" : "";
-      return `<li data-tip="${esc(e.query)}">
-        <span class="dot" style="background:${scopeColor(e.scope)}"></span>
-        <span class="t">${hhmm(e.ts)}</span>
-        <span class="tool">${esc(e.tool)}</span>
-        ${cls ? `<span class="cls">${cls}</span>` : `<span class="fan${e.over_guardrail ? " over" : ""}"
-          data-tip="${e.fanout} nodes returned${e.over_guardrail ? ` — over the ${live.fanout_guardrail}-node guardrail` : ""}">${e.fanout}n</span>`}
-        <span class="tok">~${tok(e.tokens)}t</span>
-      </li>`;
-    }).join("");
-  }
-
-  const rows = [];
-  for (const g of live.guards) rows.push({ ts: g.ts, txt: `guard ${esc(g.guard)}`, right: g.verdict });
-  for (const c of live.conditioning) rows.push({ ts: c.ts, txt: `conditioning ${esc(c.cls)}`, right: c.followed ? "followed" : "wallpaper" });
-  rows.sort((a, b) => b.ts.localeCompare(a.ts));
-  document.getElementById("gc-rows").innerHTML = rows.length
-    ? rows.slice(0, 12).map(r => `<div><span class="t">${hhmm(r.ts)}</span> ${r.txt} <span class="right">${r.right}</span></div>`).join("")
-    : `<div class="empty">no events yet</div>`;
+  const el = $("live");
+  if (!live.feed.length) { el.innerHTML = `<div class="empty">no tap events yet</div>`; return; }
+  const nodes = e => e.rejected ? "rejected" : e.miss ? "empty" : e.fanout + (e.over_guardrail ? " ▲" : "");
+  const cls = e => e.over_guardrail ? "over" : "dim";
+  /* A folded row (the server's `collapsed`) is a run of calls that served nothing:
+     it prints the server's summary in place of nodes and tokens, and names every
+     scope in the run, each beside its dot. */
+  const scopesOf = e => e.collapsed ? e.scopes : [e.scope];
+  const scopeCell = e => scopesOf(e).map(s => `<span class="scope"><span class="dot" style="background:${scopeHue(s)}"></span>${esc(s || "main")}</span>`).join("");
+  const desk = live.feed.slice(0, 8).map(e => `<tr title="${esc(e.query)}">
+      <td class="t">${hhmm(e.ts)}</td>
+      <td class="wrap"><span class="scopes-cell">${scopeCell(e)}</span></td>
+      ${e.collapsed
+        ? `<td colspan="3" class="dim">${esc(e.tool)} · ${esc(e.summary)}</td>`
+        : `<td>${esc(e.tool)}</td><td class="num ${cls(e)}">${nodes(e)}</td><td class="num dim">~${K(e.tokens)}</td>`}</tr>`).join("");
+  /* Phone: the comp drops the scope name, but hue is never the only carrier (spec
+     §3), so the name rides a second line under the tool. */
+  const mob = live.feed.slice(0, 5).map(e => `<div class="r" title="${esc(e.query)}">
+      ${scopesOf(e).length === 1 ? `<span class="dot" style="background:${scopeHue(scopesOf(e)[0])}"></span>` : "<span></span>"}
+      <span class="t">${hhmm(e.ts)}</span><span>${esc(e.tool)}</span>
+      <span class="fr ${e.over_guardrail ? "over" : ""}">${e.collapsed ? "" : (e.rejected ? "rejected" : e.miss ? "empty" : e.fanout + "n" + (e.over_guardrail ? " ▲" : "")) + "  ~" + K(e.tokens)}</span>
+      <span></span><span></span><span class="sc">${e.collapsed ? esc(e.summary) + " · " : ""}${esc(scopesOf(e).map(s => s || "main").join(" · "))}</span></div>`).join("");
+  el.innerHTML = `<div class="live-d"><table>
+      <thead><tr><th>time</th><th>scope</th><th>tool</th><th class="num">nodes</th><th class="num">tokens</th></tr></thead>
+      <tbody>${desk}</tbody></table>
+      <div class="foot">▲ over the ${live.fanout_guardrail}-node fan-out guardrail</div></div>
+    <div class="live-m">${mob}</div>`;
 }
 
-/* ---------- report (60s) ---------- */
-async function pollReport() {
-  try {
-    const rpt = await (await fetch("api/report")).json();
-    if (rpt && !rpt.building) { lastReport = rpt; renderReport(rpt); }
-  } catch { /* offline banner handled by live poll */ }
+function renderPlate(rpt) {
+  const d = rpt.disclosures, b = rpt.build || {};
+  if (!d || !d.dials) { $("plate").textContent = ""; return; }
+  const build = b.sha ? `Serving ${b.sha}, started ${b.started_at ? hhmm(b.started_at) + " " + b.started_at.slice(0, 10) : "—"}.` : "Serving a build with no checkout behind it.";
+  $("plate").innerHTML = `<div>Dials, not measurements: ${d.dials.map(esc).join(" · ")}.&nbsp;&nbsp; Blind: ${d.blind.map(esc).join(", ")}.</div>
+    <div>${esc(d.note)}</div><div>${esc(build)}</div>`;
 }
 
-function stamp(el, ok, textOk, textBad, cls) {
-  el.textContent = ok ? textOk : textBad;
-  el.className = "stamp " + (ok ? (cls || "") : "warn");
-}
-
-function renderReport(rpt) {
-  const graphStamp = document.getElementById("h-graph");
-  stamp(graphStamp, rpt.graph_ok, "graph", "tap-only", "ok");
-  graphStamp.title = rpt.graph_ok ? "verdicts current as of " + hhmm(rpt.generated_at)
-    : "graph unreachable — utility panels show the last landed verdicts; the tap keeps recording";
-
-  const pend = document.getElementById("h-pending");
-  if (rpt.pending && rpt.pending.total) {
-    pend.hidden = false; pend.className = "stamp pending";
-    pend.textContent = `${rpt.pending.total} traces pending sync`;
-    pend.title = rpt.pending.sessions.map(s => `${s.session}: ${s.events} (oldest ${s.oldest.slice(0,10)})`).join("\n");
-  } else pend.hidden = !rpt.pending; if (rpt.pending && !rpt.pending.total) { pend.hidden = false; pend.className = "stamp ok"; pend.textContent = "tap fully landed"; }
-
-  renderHeadline(rpt); renderTrend(rpt.trend); renderSessions(rpt); renderPins(rpt.pins);
-  renderDecay(rpt); renderCost(rpt.cost); renderConditioning(rpt.conditioning); renderGremlin(rpt.gremlin);
-  renderQueryCost(rpt.query_cost);
-  renderPlate(rpt.disclosures);
-}
-
-/* Headline: the joint signal — used% must render beside absolute waste (consultation a9bb9f26). */
-function renderHeadline(rpt) {
-  const main = rpt.scopes && rpt.scopes.main;
-  stamp(document.getElementById("head-stamp"), !!main, "measured", "tap-only");
-  const el = document.getElementById("headline");
-  if (!main) { el.innerHTML = `<div class="empty">graph unreachable — no landed verdicts to show</div>`; return; }
-  const usedPct = main.attributed ? Math.round(100 * main.used / main.attributed) : null;
-  el.innerHTML = `
-    <div class="tile"><div class="lbl">attributed use</div>
-      <div class="hero">${usedPct === null ? "—" : usedPct + "%"}</div>
-      <div class="sub">${main.used}/${main.attributed} nodes used</div>
-      <div class="meter" data-tip="share of attributed retrieved nodes reflected in what the agent did"><i style="width:${usedPct || 0}%"></i></div></div>
-    <div class="tile"><div class="lbl">earned</div><div class="val">~${tok(main.earned_tokens)}</div><div class="sub">tokens, used nodes</div></div>
-    <div class="tile"><div class="lbl">wasted</div><div class="val">~${tok(main.wasted_tokens)}</div><div class="sub">tokens, ignored nodes</div></div>
-    <div class="tile"><div class="lbl">retrievals</div><div class="val">${main.traces}</div><div class="sub">${main.sessions} sessions · ${main.misses} empty</div></div>`;
-}
-
-/* Waste trend: single series + the prediction band. One axis, %. */
-function renderTrend(trend) {
-  const el = document.getElementById("trend");
-  const pts = (trend || []).filter(d => d.waste_pct !== null);
-  if (pts.length < 2) { el.innerHTML = `<div class="empty">fewer than two attributed days — no trend to draw yet</div>`; return; }
-  const W = 520, H = 150, L = 34, R = 8, T = 10, B = 22;
-  const x = i => L + i * (W - L - R) / (pts.length - 1);
-  const y = v => T + (100 - v) * (H - T - B) / 100;
-  const line = pts.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d.waste_pct).toFixed(1)}`).join("");
-  const grid = [0, 30, 50, 100].map(v =>
-    `<line class="gridline" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/>
-     <text class="axis" x="${L-5}" y="${y(v)+3}" text-anchor="end">${v}</text>`).join("");
-  const band = `<rect x="${L}" y="${y(30)}" width="${W-L-R}" height="${y(0)-y(30)}" fill="${css("--s2")}" opacity="0.07"/>`;
-  const dots = pts.map((d, i) =>
-    `<circle cx="${x(i)}" cy="${y(d.waste_pct)}" r="4" fill="${css("--s1")}" stroke="${css("--surface")}" stroke-width="2"
-       data-tip="${d.day}: ${Math.round(d.waste_pct)}% wasted · ~${tok(d.wasted_tokens)} tok wasted / ~${tok(d.earned_tokens)} earned · used% ${Math.round(d.used_pct)} (${d.attributed} attributed)"/>`).join("");
-  const last = pts[pts.length - 1];
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="wasted share of priced retrieval tokens per day">
-    ${grid}${band}<path d="${line}" fill="none" stroke="${css("--s1")}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}
-    <text class="axis" x="${L}" y="${H-6}">${pts[0].day.slice(5)}</text>
-    <text class="axis" x="${W-R}" y="${H-6}" text-anchor="end">${last.day.slice(5)}</text>
-    <text class="axis" x="${W-R}" y="${Math.max(y(last.waste_pct)-8, T+10)}" text-anchor="end">${Math.round(last.waste_pct)}% wasted</text>
-  </svg>
-  <div class="chart-note">wasted share of priced tokens per day · green band = target ≤30% — a prediction, valid only if used% holds</div>
-  <details><summary class="chart-note" style="cursor:pointer">data table</summary>
-    <div class="rows">${pts.map(d => `<div class="row"><span class="txt mono">${d.day}</span>
-      <span class="num" style="font-size:12px">${Math.round(d.waste_pct)}% wasted · ~${tok(d.wasted_tokens)}/${tok(d.earned_tokens)} tok · used% ${Math.round(d.used_pct)} · n=${d.attributed}</span></div>`).join("")}
-    </div></details>`;
-}
-
+/* ---------- Detail: sessions, decay candidates, query cost ---------- */
 function renderSessions(rpt) {
-  const el = document.getElementById("sessions");
-  stamp(document.getElementById("sess-stamp"), rpt.graph_ok, "landed", "tap-only");
+  const el = $("sessions");
+  $("sess-chip").textContent = rpt.graph_ok ? "LANDED" : "TAP-ONLY";
   const sessions = rpt.sessions || [];
   if (!sessions.length) { el.innerHTML = `<div class="empty">no landed sessions yet — traces land after their session distills</div>`; return; }
   el.innerHTML = sessions.map(s => {
     const pct = s.attributed ? Math.round(100 * s.used / s.attributed) : null;
-    const util = s.attributed
-      ? `${pct}% used · ~${tok(s.earned_tokens)}/${tok(s.wasted_tokens)} tok`
-      : `${s.returns} returned, none attributed`;
+    const util = s.attributed ? `${pct}% used · ~${tok(s.earned_tokens)}/${tok(s.wasted_tokens)} tok` : `${s.returns} returned, none attributed`;
     return `<details class="sess"><summary>
-      <span class="scope-dot" style="background:${scopeColor(s.scope)}"></span>
-      <span class="sid">${esc(s.session)}</span>
-      <span style="color:var(--muted);font-size:11.5px">${esc(s.scope || "main")} · ${s.traces} recalls</span>
+      <span class="dot" style="background:${scopeHue(s.scope)}"></span>
+      <span class="sid">${esc(s.session)}</span><span class="sc">${esc(s.scope || "main")} · ${s.traces} recalls</span>
       <span class="u">${util}</span></summary>
       ${s.attributed ? `<div class="meter"><i style="width:${pct}%"></i></div>` : ""}
-      <div class="recalls">${s.recalls.map(r => {
-        const use = r.attributed ? `${Math.round(100 * r.used / r.attributed)}%` : "·";
-        return `<div><span>${r.ts ? hhmm(r.ts) : ""}</span><span>${esc(r.tool)}</span>
-          <span>${r.fanout}n</span><span class="right">~${tok(r.tokens)}t · ${use}</span></div>`;
-      }).join("")}</div>
+      <div class="recalls">${s.recalls.map(r => `<div><span>${r.ts ? hhmm(r.ts) : ""}</span><span>${esc(r.tool)}</span>
+        <span>${r.fanout}n</span><span class="right">~${tok(r.tokens)}t · ${r.attributed ? Math.round(100 * r.used / r.attributed) + "%" : "·"}</span></div>`).join("")}</div>
     </details>`;
   }).join("");
 }
 
-/* Pins: paired bars, floor states verbatim. Below the floor the verdict line IS the data. */
-function renderPins(pins) {
-  const el = document.getElementById("pins");
-  const stampEl = document.getElementById("pins-stamp");
-  if (!pins || !pins.experts || !pins.experts.length) {
-    stamp(stampEl, false, "", "tap-only"); el.innerHTML = `<div class="empty">no expert scopes visible</div>`; return;
-  }
-  const anyVerdict = pins.experts.some(e => e.floor_met);
-  stampEl.className = "stamp"; stampEl.textContent = anyVerdict ? "verdicts live" : "below floor";
-  el.innerHTML = `<div class="key"><span class="k1">pinned used%</span><span class="k2">consulted used%</span></div>` +
-    pins.experts.map(e => {
-      const bar = (u, slot) => {
-        const w = u.attributed ? Math.max(2, u.used_pct) : 0;
-        return `<div class="bar" data-tip="${u.attributed} attributed · ${u.used} used · ~${tok(u.earned_tokens)} earned / ~${tok(u.wasted_tokens)} wasted">
-          <i style="width:${w}%;background:${css(slot)}"></i></div>`;
-      };
-      const fmt = u => u.attributed ? `${Math.round(u.used_pct)}% of ${u.attributed}` : `0 of ${u.returns} attributed`;
-      const sig = e.floor_met
-        ? `<span class="stamp ${/healthy/.test(e.signal) ? "ok" : "bad"}">${esc(e.signal.split(" — ")[0])}</span>`
-        : `<span class="stamp">insufficient · pinned ${e.pinned.attributed}/10 · consulted ${e.consulted.attributed}/10</span>`;
-      return `<div style="padding:5px 0">
-        <div class="pin-row">
-          <b class="mono">${esc(e.scope)}</b>${sig}
-          ${e.ledger_only ? `<span style="color:var(--muted);font-size:11px">+${e.ledger_only} engaged, no traces</span>` : ""}
-          ${e.idle_spawns ? `<span style="color:var(--deemph);font-size:11px" title="ledger entries with no user prompt — roster bring-up, excluded from the routing signal">· ${e.idle_spawns} idle spawn${e.idle_spawns > 1 ? "s" : ""} excluded</span>` : ""}</div>
-        <div class="pair"><span class="k">pinned</span>${bar(e.pinned, "--s1")}<span class="v">${fmt(e.pinned)}</span></div>
-        <div class="pair"><span class="k">consulted</span>${bar(e.consulted, "--s2")}<span class="v">${fmt(e.consulted)}</span></div>
-      </div>`;
-    }).join("");
-}
-
 function renderDecay(rpt) {
-  const el = document.getElementById("decay");
+  const el = $("decay");
   const main = rpt.scopes && rpt.scopes.main;
   if (!main || !main.most_ignored.length) { el.innerHTML = `<div class="empty">no retrieved-but-ignored nodes landed</div>`; return; }
   const rows = [...main.most_ignored];
   if (rankByCount) rows.sort((a, b) => b.count - a.count || b.wasted_tokens - a.wasted_tokens);
   el.innerHTML = rows.map(r => `<div class="row">
     <span class="num" style="margin:0;min-width:64px">${rankByCount ? r.count + "×" : "~" + tok(r.wasted_tokens) + "t"}</span>
-    <span class="txt" data-tip="${esc(r.vid)}">${esc(r.text || r.vid)}</span>
-    <span class="num" style="color:var(--muted);font-size:11px">${rankByCount ? "~" + tok(r.wasted_tokens) + "t" : r.count + "×"}</span>
-  </div>`).join("");
+    <span class="txt" title="${esc(r.vid)}">${esc(r.text || r.vid)}</span>
+    <span class="num" style="color:var(--muted)">${rankByCount ? "~" + tok(r.wasted_tokens) + "t" : r.count + "×"}</span></div>`).join("");
 }
 
-/* Cost: stacked per-day columns, thalamus buckets colored, "other" is the gray denominator. */
-function renderCost(cost) {
-  const el = document.getElementById("cost");
-  stamp(document.getElementById("cost-stamp"), !!cost, `since ${cost ? cost.since : ""}`, "scan failed");
-  if (!cost) { el.innerHTML = `<div class="empty">transcript scan failed — see server log</div>`; return; }
-  const days = cost.by_day || [];
-  const bucketTotal = n => { const b = cost.buckets.find(x => x.name === n); return b ? b.weighted : 0; };
-  const memory = cost.buckets.filter(b => b.name !== "interactive" && b.name !== "other")
-    .reduce((a, b) => a + b.weighted, 0);
-  const interactive = bucketTotal("interactive");
-  let chart = "";
-  if (days.length) {
-    const W = 520, H = 130, L = 40, R = 8, T = 8, B = 20;
-    const max = Math.max(...days.map(d => Object.values(d.buckets).reduce((a, v) => a + v, 0)));
-    const bw = Math.min(24, (W - L - R) / days.length - 2);
-    chart = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="weighted tokens per day by operation">
-      <line class="gridline" x1="${L}" x2="${W-R}" y1="${H-B}" y2="${H-B}"/>` +
-      days.map((d, i) => {
-        const cx = L + (i + .5) * (W - L - R) / days.length;
-        let yTop = H - B, segs = "";
-        for (const name of BUCKET_ORDER) {
-          const v = d.buckets[name] || 0; if (!v) continue;
-          const h = Math.max(1, v / max * (H - T - B));
-          yTop -= h;
-          segs += `<rect x="${cx - bw/2}" y="${yTop + 1}" width="${bw}" height="${Math.max(0, h - 2)}" rx="2"
-            fill="${css(BUCKET_SLOT[name])}" data-tip="${d.day} ${name}: ${v.toLocaleString()} weighted"/>`;
-          yTop -= 0; }
-        return segs + `<text class="axis" x="${cx}" y="${H-6}" text-anchor="middle">${d.day.slice(8)}</text>`;
-      }).join("") +
-      `<text class="axis" x="${L-4}" y="${T+8}" text-anchor="end">${tok(max)}</text></svg>`;
-  }
-  el.innerHTML = chart +
-    `<div class="key">${BUCKET_ORDER.filter(n => cost.buckets.some(b => b.name === n && b.weighted))
-      .map(n => `<span class="${{ "--s1":"k1","--s2":"k2","--s3":"k3","--s4":"k4","--s5":"k5" }[BUCKET_SLOT[n]]}">${n}</span>`).join("")}</div>
-    <div class="rows">${cost.buckets.map(b => `<div class="row"><span class="txt">${esc(b.name)}</span>
-      <span class="num">${b.weighted.toLocaleString()} <span style="color:var(--muted);font-size:11px">· ${b.sessions} sess</span></span></div>`).join("")}
-    </div>
-    <div class="chart-note">memory ops (extract + experts) = ~${tok(memory)} weighted vs ~${tok(interactive)} interactive —
-      session length dominates burn; memory's marginal cost ≈ one extract per session (standing finding)</div>`;
-}
-
-/* Conditioning: followed vs wallpaper — effectiveness, never firing counts alone. */
-function renderConditioning(cond) {
-  const el = document.getElementById("conditioning");
-  stamp(document.getElementById("cond-stamp"), cond && cond.measured, "per-firing join", "unmeasured");
-  if (!cond || !cond.measured) { el.innerHTML = `<div class="empty">no firings yet — instrumentation pending, unmeasured</div>`; return; }
-  el.innerHTML = `<div class="key"><span class="k1">followed</span><span class="kg">wallpaper</span></div>` +
-    cond.classes.map(c => {
-      const fw = c.firings ? 100 * c.followed / c.firings : 0;
-      return `<div class="pair"><span class="k mono">${esc(c.cls)}</span>
-        <div class="bar" data-tip="${c.followed} of ${c.firings} firings followed by the expected thalamus call">
-          <i style="width:${fw}%;background:${css("--s1")}"></i>
-          <i style="left:${fw}%;width:${100-fw}%;background:${css("--deemph")};border-radius:0 4px 4px 0"></i></div>
-        <span class="v">${c.followed}/${c.firings} followed</span></div>`;
-    }).join("");
-}
-
-/* Query cost: wall time per traversal shape from the span tap. Ranked by total time,
-   because a 2 ms shape run 4,000 times is the cost, not the 400 ms one run twice. Every
-   row carries its own n and its p50/p95 — a mean here would hide exactly the tail the
-   panel exists to show, and the bar length is share-of-total only, never a verdict. */
+/* Wall time per traversal shape, ranked by total time: a 2 ms shape run 4,000 times is
+   the cost, not the 400 ms one run twice. Every row carries its n and its p50/p95; a
+   mean would hide the tail the panel exists to show. */
 function renderQueryCost(q) {
-  const el = document.getElementById("querycost");
-  const any = q && q.calls;
-  stamp(document.getElementById("qc-stamp"), !!any, "measured", "no spans yet");
-  if (!any) {
-    el.innerHTML = `<div class="empty">no traversals timed yet — the span tap fills as the
-      system is used, and each process flushes on exit</div>`;
-    return;
-  }
-  const overhead = q.tap_overhead_pct === null || q.tap_overhead_pct === undefined
-    ? "unmeasured" : q.tap_overhead_pct.toFixed(3) + "%";
-  const origins = (q.origins || []).map(o =>
-    `${esc(o.origin)} ${o.calls.toLocaleString()} (${secs(o.total_ms)})`).join(" · ");
+  const el = $("querycost");
+  if (!q || !q.calls) { el.innerHTML = `<div class="empty">no traversals timed yet — the span tap fills as the system is used, and each process flushes on exit</div>`; return; }
+  const overhead = q.tap_overhead_pct === null || q.tap_overhead_pct === undefined ? "unmeasured" : q.tap_overhead_pct.toFixed(3) + "%";
   const worst = q.shapes && q.shapes.length ? q.shapes[0].total_ms : 0;
-  const shapes = (q.shapes || []).map(s => {
-    const truncated = s.sampled < s.calls ? `, p over ${s.sampled}` : "";
-    return `<div class="shape">
-      <span class="s" data-tip="${esc(s.shape)} · surface ${esc(s.surface)}">${esc(s.shape)}</span>
-      <span class="n">${s.calls.toLocaleString()}x &middot; p50 ${ms(s.p50)} &middot; p95 ${ms(s.p95)} &middot; max ${ms(s.max)}${truncated}</span>
-    </div>
-    <div class="meter"><i style="width:${worst ? Math.max(2, 100 * s.total_ms / worst) : 0}%"></i></div>`;
-  }).join("");
-  el.innerHTML = `
-    <div class="tiles">
-      <div class="tile"><div class="lbl">traversals</div><div class="val">${tok(q.calls)}</div>
-        <div class="sub">${q.rows} flushed bucket(s)</div></div>
-      <div class="tile"><div class="lbl">wall time</div><div class="val">${secs(q.total_ms)}</div>
-        <div class="sub">summed round trips</div></div>
-      <div class="tile"><div class="lbl">tap overhead</div><div class="val">${overhead}</div>
-        <div class="sub">measured, not assumed</div></div>
-    </div>
-    <div class="qc-origins" style="margin-top:10px">by origin: ${origins || "—"}</div>
-    <div class="qc">${shapes}</div>
-    <div class="chart-note">wall time on one machine, unrepeated &mdash; read the spread, not a
-      single figure. Bars are share of the costliest shape's total time. Step-level cost is on
-      demand only: <code>thalamus eval profile --query</code>, because profiling distorts the
-      traversal it measures.</div>`;
+  el.innerHTML = `<div class="qc-stats">
+      <div><div class="v">${tok(q.calls)}</div><div class="k">traversals</div></div>
+      <div><div class="v">${secs(q.total_ms)}</div><div class="k">summed wall time</div></div>
+      <div><div class="v">${overhead}</div><div class="k">tap overhead, measured</div></div></div>
+    <div class="note-s" style="margin:0 0 6px">by origin: ${(q.origins || []).map(o => `${esc(o.origin)} ${o.calls.toLocaleString()} (${secs(o.total_ms)})`).join(" · ") || "—"}</div>
+    <div class="qc">${(q.shapes || []).map(s => `<div class="shape"><span class="s" title="${esc(s.shape)} · surface ${esc(s.surface)}">${esc(s.shape)}</span>
+      <span class="n">${s.calls.toLocaleString()}× · p50 ${ms(s.p50)} · p95 ${ms(s.p95)} · max ${ms(s.max)}${s.sampled < s.calls ? `, p over ${s.sampled}` : ""}</span></div>
+      <div class="meter"><i style="width:${worst ? Math.max(2, 100 * s.total_ms / worst) : 0}%"></i></div>`).join("")}</div>
+    <div class="note-s">${esc((lastReport.disclosures || {}).query_cost || "")}</div>`;
 }
 
-/* Gremlin: rescue rate only with a real denominator; blocks are context, not achievement. */
-function renderGremlin(g) {
-  const el = document.getElementById("gremlin");
-  const any = g && (g.blocks || g.passes || g.memory_query.total || g.bash.total);
-  stamp(document.getElementById("grem-stamp"), !!any, "measured", "unmeasured");
-  if (!any) { el.innerHTML = `<div class="empty">no gremlin events yet — instrumentation pending, unmeasured</div>`; return; }
-  const mq = g.memory_query;
-  const rescue = g.rescue_rate === null ? "no blocks yet — rescue rate undefined"
-    : `${g.rescued}/${g.blocks} blocks rescued in-session · ${g.repeat_blocks} repeat (friction)`;
-  const arms = ["recipe-derived", "from-scratch"].map(a => {
-    const s = g.reuse && g.reuse[a];
-    return s && s.n ? `${a} ${s.ok}/${s.n} first-shot` : null;
-  }).filter(Boolean).join(" · ");
-  el.innerHTML = `<div class="rows">
-    <div class="row"><span class="txt">guard (terminal-step)</span><span class="num">${g.blocks} blocks · ${g.passes} passes</span></div>
-    <div class="row"><span class="txt">rescue</span><span class="num" style="font-size:12px">${rescue}</span></div>
-    <div class="row"><span class="txt">memory_query</span><span class="num" style="font-size:12px">${mq.ok} data · ${mq.empty} empty · ${mq.dialect_rejected + mq.mutation_rejected} rejected · ${mq.server_failed} failed</span></div>
-    <div class="row"><span class="txt">bash_gremlin</span><span class="num">${g.bash.total} runs · ${g.bash.errored} errored</span></div>
-    ${arms ? `<div class="row"><span class="txt">reuse arms</span><span class="num" style="font-size:12px">${arms}</span></div>` : ""}
-  </div>`;
-}
-
-function renderPlate(d) {
-  if (!d) return;
-  const plate = document.getElementById("plate");
-  plate.hidden = false;
-  document.getElementById("plate-dials").innerHTML = d.dials.map(x => `<li>${esc(x)}</li>`).join("");
-  document.getElementById("plate-surfaces").textContent = d.surfaces + " · " + d.attribution_lag;
-  document.getElementById("plate-querycost").textContent = d.query_cost || "";
-  document.getElementById("plate-standing").textContent = d.standing;
-  document.getElementById("standing").textContent = d.standing.split(".")[0];
-}
-
-document.getElementById("rank-toggle").addEventListener("click", e => {
+$("rank-toggle").addEventListener("click", e => {
   rankByCount = !rankByCount;
   e.currentTarget.setAttribute("aria-pressed", String(rankByCount));
   e.currentTarget.textContent = rankByCount ? "rank by waste" : "rank by count";
   if (lastReport) renderDecay(lastReport);
 });
 
+/* ======================= How it works ======================= */
+function renderHow(rpt) {
+  const scopes = Object.values(rpt.scopes || {});
+  const fmt = n => n.toLocaleString("en-US");
+  if (scopes.length) {
+    $("st-recalls").textContent = fmt(scopes.reduce((a, s) => a + s.traces, 0));
+    $("st-sessions").textContent = fmt(scopes.reduce((a, s) => a + s.sessions, 0));
+    $("st-scopes").textContent = scopes.length;
+    $("experts-h").textContent = `Not one memory — ${word(scopes.length)}`;
+  }
+  const first = (rpt.trend || [])[0], today = (rpt.generated_at || "").slice(0, 10);
+  if (first && today) {
+    $("st-days").textContent = Math.round((Date.parse(today) - Date.parse(first.day)) / 864e5);
+    $("st-note").textContent = `live counts from this machine, ${first.day} → ${today}`;
+  } else if (!rpt.graph_ok) $("st-note").textContent = "the graph is unreachable — live counts return when it does";
+
+  // Per-scope recalls, log scale, sorted; identity hue from the name.
+  const sorted = scopes.slice().sort((a, b) => b.traces - a.traces);
+  const top = Math.log10((sorted[0] ? sorted[0].traces : 1) + 1) || 1;
+  const el = $("scopes");
+  el.style.setProperty("--rows", Math.ceil(sorted.length / 2));
+  el.innerHTML = sorted.length ? sorted.map(s => {
+    const w = s.traces ? Math.max(1, 100 * Math.log10(s.traces + 1) / top) : 0;
+    return `<div class="scope-row"><span class="dot" style="width:10px;height:10px;background:${scopeHue(s.scope)}"></span>
+      <span class="nm">${esc(s.scope)}</span>
+      <span class="track"><span class="bar" style="width:${w * .8}%;background:${scopeHue(s.scope)}"></span><span class="v">${fmt(s.traces)}</span></span></div>`;
+  }).join("") : `<div class="empty">the graph is unreachable — per-scope counts need it</div>`;
+
+  // The gap band over the two bars sits between 57.7% and 61.4% of the track.
+  const band = $("gapband");
+  const track = document.querySelector(".hbar .track");
+  if (band && track) {
+    const box = track.getBoundingClientRect(), host = band.parentElement.getBoundingClientRect();
+    band.style.left = (box.left - host.left + box.width * .577) + "px";
+    band.style.width = (box.width * .037) + "px";
+  }
+  const S = isPhone() ? 120 : 150;
+  $("sq-big").style.cssText = `width:${S}px;height:${S}px`;
+  const s = S * Math.sqrt(183 / 21800);
+  $("sq-small").style.cssText = `width:${s}px;height:${s}px`;
+
+  renderReminders(rpt.conditioning);
+  renderRecipes(rpt.gremlin);
+  renderGuard(rpt.gremlin);
+}
+
+const FLOOR_N = 20;  // spec §5: reminder bars under n=20 are drawn in --deemph
+function renderReminders(cond) {
+  const el = $("find-reminders");
+  const head = `<h3><span class="d-only">Some reminders get followed. One mostly doesn’t.</span><span class="m-only">Some reminders get followed.<br>One mostly doesn’t.</span></h3>
+    <p class="sub d-only">Hooks nudge the agent at set moments. Share followed by the memory call they ask for:</p>`;
+  if (!cond || !cond.measured) { el.innerHTML = head + `<div class="empty">no reminder firings recorded yet</div>`; return; }
+  const rows = cond.classes.map(c => ({ ...c, p: c.firings ? c.followed / c.firings : 0 })).sort((a, b) => b.p - a.p);
+  const read = rows.filter(r => r.firings >= FLOOR_N), small = rows.filter(r => r.firings < FLOOR_N);
+  const worst = read.length ? read[read.length - 1] : null;
+  const smallTxt = small.map(r => `${esc(r.cls)} (n=${r.firings})`).join(", ");
+  const capD = (worst && worst.p < .5 ? `The ${esc(worst.cls)} reminder has fired ${worst.firings} times and been followed ${worst.followed}. A nudge that is
+      mostly ignored is wallpaper — the next move is to change it, not repeat it. ` : "") +
+    `Followed means the expected call came next; it does not prove the nudge caused it.` +
+    (small.length ? ` ${smallTxt} ${small.length === 1 ? "is" : "are"} too small to read.` : "");
+  const capM = (worst && worst.p < .5 ? `${esc(worst.cls[0].toUpperCase() + worst.cls.slice(1))} fired ${worst.firings} times, followed ${worst.followed}. ` : "") +
+    `Followed ≠ caused.` + (small.length ? ` ${small.map(r => `${esc(r.cls)} n=${r.firings}`).join(", ")}.` : "");
+  el.innerHTML = head + `<div style="margin-top:22px">${rows.map(r => {
+      const ok = r.firings >= FLOOR_N;
+      return `<div class="rem"><span>${esc(r.cls)}</span>
+        <span class="track"><span class="fill" style="width:${100 * r.p}%;background:${ok ? "var(--accent)" : "var(--deemph)"}"></span></span>
+        <span class="v${ok ? "" : " small"}">${Math.round(100 * r.p)}%&nbsp;&nbsp;${r.followed}/${r.firings}</span></div>`;
+    }).join("")}</div>
+    <p class="cap"><span class="d-only">${capD}</span><span class="m-only">${capM}</span></p>`;
+}
+
+function renderRecipes(g) {
+  const el = $("find-recipes");
+  const head = `<h3><span class="d-only">Tested query recipes did not beat writing from scratch</span><span class="m-only">Query recipes did not beat<br>writing from scratch</span></h3>
+    <p class="sub d-only">Graph queries that ran correctly on the first try:</p>`;
+  const arms = [["from a recipe", "recipe", "recipe-derived"], ["from scratch", "scratch", "from-scratch"]]
+    .map(([d, m, k]) => ({ d, m, s: (g && g.reuse && g.reuse[k]) || null })).filter(a => a.s && a.s.n);
+  if (arms.length < 2) { el.innerHTML = head + `<div class="empty">not enough recipe runs recorded to compare</div>`; return; }
+  const n = arms[0].s.n;
+  el.innerHTML = head + arms.map(a => {
+    const on = Math.round(20 * a.s.ok / a.s.n);
+    return `<div class="recipe"><span class="k"><span class="d-only">${a.d}</span><span class="m-only">${a.m}</span></span>
+      <span class="pct">${Math.round(100 * a.s.ok / a.s.n)}%</span><span class="of">${a.s.ok} of ${a.s.n}</span>
+      <span class="strip" aria-hidden="true">${Array.from({ length: 20 }, (_, k) => `<i class="${k < on ? "on" : ""}"></i>`).join("")}</span></div>`;
+  }).join("") + `<p class="cap"><span class="d-only">An honest null. With ${n} recipe runs the interval is wide, and recipes may be
+      reached for on the harder queries — so this says “no sign they help yet”,
+      not “they hurt”. It is on this page because a system that only reports its wins
+      isn’t reporting.</span><span class="m-only">n=${n}: “no sign they help yet”, not “they hurt”.</span></p>`;
+}
+
+function renderGuard(g) {
+  const el = $("find-guard");
+  const head = `<h3>A guard catches queries that would silently do nothing</h3>
+    <p class="sub">A graph query without a terminal step builds a plan and never runs it — no error,
+      no result. A hook checks every agent-written query before it runs.</p>`;
+  const seen = g ? g.blocks + g.passes : 0;
+  if (!seen) { el.innerHTML = head + `<div class="empty">no guarded queries recorded yet</div>`; return; }
+  const sq = Math.max(1, Math.round(seen / 10)), red = Math.round(g.blocks / 10);
+  el.innerHTML = head + `<div class="grid-sq" aria-hidden="true">${Array.from({ length: sq }, (_, k) => `<i class="${k < red ? "on" : ""}"></i>`).join("")}</div>
+    <div class="guard-v">${g.blocks} of ${seen} queries blocked (${(100 * g.blocks / seen).toFixed(1)}%) · each square ≈ 10 queries</div>
+    <p class="cap" style="margin-top:8px">${g.rescued} of the ${g.blocks} were fixed and re-run in the same session.</p>`;
+}
+
+/* ---------- boot ---------- */
+let resizeTimer = 0;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (lastReport) { renderReport(lastReport); } if (lastLive) renderLive(lastLive); }, 120);
+});
+route();
 pollLive(); pollReport();
 setInterval(pollLive, 5000);
 setInterval(pollReport, 60000);
