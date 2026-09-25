@@ -30,7 +30,7 @@ import time
 from dataclasses import dataclass, field
 
 from thalamus.harness.extraction import StopLoop, run_tool_loop
-from thalamus.harness.retrieval import TOOLS, Caps, Job
+from thalamus.harness.retrieval import NO_RESULTS, TOOLS, Caps, Job
 
 # The most records the plan hands over, the most word match's `recall()` returns for
 # the reflex (#251), so a digest's size does not depend on which plan a firing drew.
@@ -45,8 +45,8 @@ MAX_TURNS = CAPS.calls + 2
 
 _DESCRIPTIONS = {
     "lexical_by_kind": (
-        "Search one kind of record by words. `query` is a few identifiers or words "
-        "from the failure; `kind` is session, decision, problem, solution, thread, "
+        "Search one kind of record by words. `query` is a few words naming what "
+        "failed; `kind` is session, decision, problem, solution, thread, "
         "chunk (a passage of an ingested source) or external (a claim from a source)."
     ),
     "expand_one_hop": (
@@ -66,8 +66,11 @@ _DESCRIPTIONS = {
 }
 
 _PARAM_TEXT = {
-    "query": ("Two to six identifiers or words, separated by spaces. A record matches "
-              "when it contains at least two of them."),
+    "query": ("Two to six words, separated by spaces: the error's own words, the tool, "
+              "the module or file, the subject of the task. A record matches when it "
+              "contains at least two of them. Records are prose summaries, so a whole "
+              "test or function name rarely appears in one; a name that matches "
+              "nothing whole is searched as its parts."),
     "kind": "Which kind of record.",
     "handle": "A handle from an earlier result, such as R4.2.",
     "relation": "Which relation to follow.",
@@ -78,6 +81,17 @@ _PARAM_TEXT = {
 }
 
 _SEPARATORS = re.compile(r"[,;]+\s*")
+
+# What the model reads back from a word search that found nothing. The plan's first
+# live jobs (2026-09-25) answered an empty search by sending the same words under the
+# next kind, four to six times, and stopped with nothing: every one of those queries
+# matched no record of any kind. A failed search followed by a *reformulated* one is
+# what ReZero rewards in training (Dao & Le 2025, arXiv:2504.11001); this model is not
+# trained for it, so the reply says so.
+EMPTY_SEARCH = (
+    "no results: no record of this kind holds two of these words. Try other words "
+    "before another kind: the error's own, the tool's, the task's."
+)
 
 _JSON_TYPES: dict[type, str] = {str: "string", int: "integer", list: "array"}
 
@@ -91,7 +105,11 @@ SYSTEM_PROMPT = (
     "Look for records that bear on this failure: a decision about the code involved, "
     "an earlier occurrence of the same problem and how it was solved, the thread the "
     "work belongs to. Sessions hold most of what the graph knows, so a search over "
-    "sessions is usually the first call. When you have them, or when the graph has nothing relevant, "
+    "sessions is usually the first call. Records are short prose written after each "
+    "session: they say what was done and what went wrong in ordinary words, so search "
+    "with the words of the error and of the task rather than with names copied from "
+    "the output. When a search finds nothing, change the words before changing the "
+    "kind. When you have them, or when the graph has nothing relevant, "
     f"call `stop` with the handles to keep, strongest first, at most {MAX_KEEP}. An "
     "empty `keep` is a correct answer when nothing relevant was found; keep nothing "
     "you would not bet on.\n\n"
@@ -232,6 +250,8 @@ def run(
             if isinstance(args.get(key), str):
                 args[key] = _SEPARATORS.sub(" ", args[key]).strip()
         rendered = job.call(name, args)
+        if name == "lexical_by_kind" and rendered == NO_RESULTS:
+            rendered = EMPTY_SEARCH
         result.hops.append(Hop(
             tool=name, missing=missing, args=args, nodes=len(job.handles),
             refused=rendered.startswith("refused:"),

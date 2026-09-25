@@ -94,6 +94,79 @@ def test_a_summary_is_the_first_sentence_cut_short():
     assert len(long) == 160 and long.endswith("…")
 
 
+# --- word search over identifiers ----------------------------------------------
+
+
+@pytest.mark.parametrize("token, parts", [
+    ("test_a_fingerprint_the_substitution_moved_is_recomputed",
+     ["fingerprint", "substitution", "moved", "recomputed"]),
+    ("pytest_cmdline_parse", ["pytest", "cmdline", "parse"]),
+    ("tool_input.command", ["tool", "input", "command"]),
+    ("reach-past-the-checkout", ["reach", "past", "checkout"]),
+    ("buildCursorHookBlock", ["build", "cursor", "hook", "block"]),
+    ("src/thalamus/harness/reflex.py", ["src", "thalamus", "harness", "reflex"]),
+    # An all-lowercase compound carries no boundary to split on.
+    ("theinstallmatrixcountsthesamewiring", []),
+    ("assertionerror", []),
+])
+def test_an_identifier_splits_on_its_own_separators(token, parts):
+    assert vocabulary.identifier_parts(token) == parts
+
+
+@pytest.fixture
+def kind_walk(monkeypatch):
+    """`_kind_walk` answered from a table of term -> node ids, recording each term."""
+    searched = []
+    index: dict[str, list[str]] = {}
+
+    class Walk:
+        def __init__(self, found):
+            self.found = found
+
+        def id_(self):
+            return self
+
+        def to_list(self):
+            return self.found
+
+    def walk(g, kind, keyword, scope, claim_scopes):
+        searched.append(keyword)
+        return Walk(index.get(keyword, []))
+
+    monkeypatch.setattr(vocabulary, "_kind_walk", walk)
+    monkeypatch.setattr(vocabulary, "rows_for",
+                        lambda g, ids, scope, knowledge_scopes=None: _rows(*ids))
+    return searched, index
+
+
+def test_an_identifier_that_matches_nothing_whole_is_searched_as_its_parts(kind_walk):
+    searched, index = kind_walk
+    index.update({"fingerprint": ["n1", "n2"], "recomputed": ["n1"]})
+    rows = vocabulary.lexical_by_kind(
+        object(), "test_a_fingerprint_the_substitution_moved_is_recomputed", "problem")
+    assert searched == ["test_a_fingerprint_the_substitution_moved_is_recomputed",
+                        "fingerprint", "substitution", "moved", "recomputed"]
+    # Two parts of one identifier meet the floor; one part alone does not.
+    assert [row.vid for row in rows] == ["n1"]
+
+
+def test_an_identifier_that_matches_whole_is_not_split(kind_walk):
+    """Control: `settings.json` found as written is never widened to `json`."""
+    searched, index = kind_walk
+    index.update({"settings.json": ["n1"], "permission": ["n1"], "json": ["n2", "n3"]})
+    rows = vocabulary.lexical_by_kind(object(), "permission settings.json", "problem")
+    assert searched == ["permission", "settings.json"]
+    assert [row.vid for row in rows] == ["n1"]
+
+
+def test_splitting_stops_at_the_term_cap(kind_walk):
+    searched, _ = kind_walk
+    vocabulary.lexical_by_kind(
+        object(), "alpha_bravo_charlie_delta_echo foxtrot_golf_hotel_india_juliet", "session")
+    parts = [term for term in searched if "_" not in term]
+    assert len(parts) == vocabulary.MAX_TERMS
+
+
 # --- the compiler --------------------------------------------------------------
 
 
