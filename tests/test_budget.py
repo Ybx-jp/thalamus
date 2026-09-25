@@ -62,9 +62,9 @@ def test_a_bad_override_is_refused_rather_than_read_as_zero(tmp_path):
         limits("s", _config(tmp_path, preset=None), {"THALAMUS_MAX_TURNS": "0"})
 
 
-def test_the_call_past_the_cap_is_denied_and_stops_the_prompt_on_claude_code():
-    """Deny alone lets the prompt run on; `continue: false` alone runs the call first.
-    The call past the cap needs both."""
+def test_the_call_past_the_cap_is_denied_and_the_model_told_to_answer():
+    """A stop would leave a subagent with no reply for its launcher; the deny alone
+    lets the model answer."""
     state: dict = {}
     caps = {"max_tool_calls": 2}
 
@@ -72,9 +72,9 @@ def test_the_call_past_the_cap_is_denied_and_stops_the_prompt_on_claude_code():
     assert decide(_pre(), "claude", caps, state) is None
     out = decide(_pre(), "claude", caps, state)
 
-    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert out["continue"] is False
-    assert "2 tool calls" in out["stopReason"]
+    reason = _denied(out)
+    assert "2 tool calls" in reason and "Answer now" in reason and "not run" in reason
+    assert "continue" not in out
 
 
 def test_codex_gets_the_deny_without_continue_false():
@@ -97,15 +97,21 @@ def test_a_new_prompt_resets_turns_and_tool_calls():
     assert decide(_pre("p2"), "claude", caps, state) is None
 
 
-def test_the_turn_cap_stops_the_prompt_at_the_batch_that_reaches_it():
+def test_the_turn_cap_asks_for_an_answer_at_the_batch_that_reaches_it():
+    """The batch has no deny; its context reaches the model before its next request,
+    and the calls that request makes anyway are denied."""
     state: dict = {}
     caps = {"max_turns": 2}
 
     assert decide(_batch(), "claude", caps, state) is None
     out = decide(_batch(), "claude", caps, state)
 
-    assert out == {"continue": False, "stopReason": out["stopReason"]}
-    assert "2 turns" in out["stopReason"]
+    assert out == {"hookSpecificOutput": {"hookEventName": "PostToolBatch",
+                                          "additionalContext": out["hookSpecificOutput"][
+                                              "additionalContext"]}}
+    assert "2 turns" in out["hookSpecificOutput"]["additionalContext"]
+    assert "2 turns" in _denied(decide(_pre(), "claude", caps, state))
+    assert decide(_batch(), "claude", caps, state) is None
 
 
 def test_each_subagent_counts_on_its_own_and_not_against_the_session():
@@ -186,11 +192,12 @@ def test_a_model_that_keeps_calling_tools_past_the_cap_is_stopped(tmp_path):
                   state).get("continue") is None
 
 
-def test_the_count_caps_still_stop_the_prompt(tmp_path):
+def test_a_spent_cap_denies_every_further_call_in_the_prompt():
     state: dict = {}
     decide(_pre(), "claude", {"max_tool_calls": 1}, state)
+    first = _denied(decide(_pre(), "claude", {"max_tool_calls": 1}, state))
 
-    assert decide(_pre(), "claude", {"max_tool_calls": 1}, state)["continue"] is False
+    assert _denied(decide(_pre(), "claude", {"max_tool_calls": 1}, state)) == first
 
 
 def test_tokens_are_not_counted_at_the_batch(tmp_path):
@@ -329,7 +336,7 @@ def test_the_hook_denies_the_call_past_the_cap_end_to_end(tmp_path, harness_dir)
     out = _hook(harness_dir, payload, tmp_path, env)
 
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert ("continue" in out) == (harness_dir == "claude-code")
+    assert "continue" not in out
 
 
 def test_the_hook_does_not_start_python_for_a_scope_with_no_budget(tmp_path):

@@ -1,19 +1,20 @@
 """Budget guard — a scope's `budget` preset, enforced from the hooks.
 
-The counting is done here, from the tool hooks Claude Code and codex both fire, and
-the stop is whatever lever the harness gives a hook:
+The counting is done here, from the tool hooks Claude Code and codex both fire. Past a
+cap the model is told to answer, and every further tool call in the prompt is denied:
 
 | key | counted at | Claude Code | codex |
 |---|---|---|---|
-| `max_turns` | `PostToolBatch` | `continue: false` stops the prompt | not enforced: no batch event |
-| `max_tool_calls` | `PreToolUse` | the call denied and the prompt stopped | the call denied |
-| `max_tokens` | `PreToolUse` | the call denied, the model told to answer | the call denied |
-| `max_subagent_tokens` | `PreToolUse` | the call denied, the subagent told to answer | not enforced |
+| `max_turns` | `PostToolBatch` | told to answer before its next request | not enforced: no batch event |
+| `max_tool_calls` | `PreToolUse` | the call denied, told to answer | the same |
+| `max_tokens` | `PreToolUse` | the call denied, told to answer | the same |
+| `max_subagent_tokens` | `PreToolUse` | the call denied, told to answer | not enforced |
 | `max_tool_output_tokens` | launch | env vars on the pin's argv | `tool_output_token_limit` in the profile |
 
-A codex hook has no stop: a `PreToolUse` hook returning `continue: false` is marked
-failed and the call goes ahead, so past a cap every further tool call is denied and
-the model, told why, ends its turn (A0187, cites-as-live).
+A model that keeps calling tools after it was told is stopped after
+`FORCED_ANSWER_DENIALS` more denials on Claude Code. A codex hook has no stop — a
+`PreToolUse` hook returning `continue: false` is marked failed and the call goes ahead
+— so there every further call is denied and nothing more (A0179, cites-as-live).
 
 **Turns and tool calls reset with each prompt; tokens do not.** A stop ends the prompt,
 not the session — the operator can type again — so a lifetime turn counter would stop
@@ -22,7 +23,7 @@ codex's `turn_id`; a payload with neither (Cursor running this script off Claude
 Code's settings file) is not counted, since a counter that never resets is a session
 that can no longer act. Counters are per agent as well: a subagent's calls carry the
 launcher's `session_id` and their own `agent_id`, so each spawned run has its own
-count and does not spend the session's (A0187, cites-as-live).
+count and does not spend the session's (A0179, cites-as-live).
 
 Tokens are the model requests' input (cached or not) plus output — codex's own
 `total_tokens`, and on Claude Code the four `usage` fields summed over the transcript,
@@ -42,16 +43,14 @@ different spends (A0186, cites-as-live):
 A codex session's total is its own rollout; where codex writes a subagent's spend has
 not been measured, so codex subagents are neither added nor capped.
 
-**A spent token cap forces an answer rather than cutting the run off.** A stop leaves a
+**A spent cap forces an answer rather than cutting the run off.** A stop leaves a
 subagent with no reply for its launcher and a session with no account of where it got
-to, and the cap exists to bound spend, not to lose the work. So past a token cap the
-tool call is denied and the reason tells the model to answer now with what is done and
-what is left; a model that answers makes no further request, and one that keeps
-calling tools is stopped after `FORCED_ANSWER_DENIALS` more denials, where the harness
-has a stop. smolagents does the same at its step limit, asking the model for a final
-answer rather than raising (`MultiStepAgent.provide_final_answer`). The count caps
-still stop: a turn or call count is the operator's bound on a prompt's length, and the
-prompt is what it ends (A0187, cites-as-live).
+to, and a cap exists to bound spend, not to lose the work. So past a tool-call or token
+cap the call is denied with a reason saying it was not run and asking for an answer
+now, and past the turn cap `PostToolBatch` injects the same request before the next
+model call (A0188, cites-as-live); a model that answers makes no further request.
+smolagents does the same at its step limit, asking the model for a final answer rather
+than raising (`MultiStepAgent.provide_final_answer`) (A0179, cites-as-live).
 
 Limits come from the scope's manifest (`budget:` → `presets/budget.yaml`), and a
 `THALAMUS_MAX_*` variable in the environment overrides the preset key it names — for
@@ -231,8 +230,8 @@ def decide(payload: Mapping, harness: str, caps: Mapping[str, int], state: dict)
     """Count this event against `caps`, updating `state`; the hook's output, or None.
 
     `state` is the session's record: per agent, the prompt being counted, its turns
-    and tool calls and the denials past a token cap; per transcript, the reading so
-    far; and the session's own token cap once its hook has read it.
+    and tool calls, the cap it has spent and the denials since; per transcript, the
+    reading so far; and the session's own token cap once its hook has read it.
     """
     event = payload.get("hook_event_name")
     prompt = payload.get("prompt_id") or payload.get("turn_id")
@@ -244,51 +243,49 @@ def decide(payload: Mapping, harness: str, caps: Mapping[str, int], state: dict)
         counts.clear()
         counts["prompt"] = prompt
 
-    over: str | None = None
-    forced = False
-    if event == "PreToolUse":
-        counts["tool_calls"] = counts.get("tool_calls", 0) + 1
-        cap = caps.get("max_tool_calls")
-        if cap is not None and counts["tool_calls"] > cap:
-            over = f"{cap} tool calls for this prompt"
-        else:
-            over = _spent(payload, harness, agent, caps, state)
-            forced = over is not None
-    else:
+    if event == "PostToolBatch":
         counts["turns"] = counts.get("turns", 0) + 1
         cap = caps.get("max_turns")
-        if cap is not None and counts["turns"] >= cap:
-            over = f"{cap} turns for this prompt"
+        if counts.get("spent") or cap is None or counts["turns"] < cap:
+            return None
+        counts["spent"] = f"{cap} turns for this prompt"
+        return {"hookSpecificOutput": {
+            "hookEventName": "PostToolBatch",
+            "additionalContext": _answer_now(counts["spent"]),
+        }}
 
+    counts["tool_calls"] = counts.get("tool_calls", 0) + 1
+    over = counts.get("spent")
+    cap = caps.get("max_tool_calls")
+    if over is None and cap is not None and counts["tool_calls"] > cap:
+        over = f"{cap} tool calls for this prompt"
+    if over is None:
+        over = _spent(payload, harness, agent, caps, state)
     if over is None:
         return None
-    if event == "PostToolBatch":
-        return {"continue": False, "stopReason": _stop_reason(over)}
-    stop = harness != "codex"
-    if forced:
-        counts["denied"] = counts.get("denied", 0) + 1
-        stop = stop and counts["denied"] > FORCED_ANSWER_DENIALS
-        # "Not run" is said outright: told only to answer, a model reported the output
-        # of the very call this denied.
-        reason = (f"Thalamus budget reached: {over}. This tool call was not run. Do not "
-                  f"call another tool. Answer now with what is done and what is left.")
-    else:
-        reason = _stop_reason(over)
+    counts["spent"] = over
+    counts["denied"] = counts.get("denied", 0) + 1
+    # "Not run" is said outright: told only to answer, a model reported the output of
+    # the very call this denied.
+    reason = f"{_answer_now(over)} This tool call was not run."
     decision: dict = {"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
         "permissionDecisionReason": reason,
     }}
-    if stop:
+    if harness != "codex" and counts["denied"] > FORCED_ANSWER_DENIALS:
         # Deny alone blocks the call and lets the prompt run on; `continue: false`
         # alone stops the prompt only after the call has run. Both are needed.
-        decision.update({"continue": False, "stopReason": reason})
+        decision.update({"continue": False, "stopReason": (
+            f"Thalamus budget reached: {over}, and the model kept calling tools after "
+            f"it was told to answer. The operator can raise the budget or send a new "
+            f"prompt.")})
     return decision
 
 
-def _stop_reason(over: str) -> str:
-    return (f"Thalamus budget reached: {over}. Stop here and report what is done and "
-            f"what is left; the operator can raise the budget or send a new prompt.")
+def _answer_now(over: str) -> str:
+    return (f"Thalamus budget reached: {over}. Do not call another tool. Answer now "
+            f"with what is done and what is left.")
 
 
 def main(argv: list[str]) -> int:

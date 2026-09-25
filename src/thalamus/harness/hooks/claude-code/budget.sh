@@ -2,7 +2,7 @@
 # Thalamus PreToolUse + PostToolBatch hook — the scope's budget (Claude Code).
 #
 # Counts the prompt's tool calls and turns and the session's tokens against the
-# scope's `budget` preset, and stops the prompt when one is spent. The counting and
+# scope's `budget` preset, and tells the model to answer when one is spent. The counting and
 # the decision are harness/budget.py; this is the matcher in front of it, and its job
 # is to cost nothing for a scope with no budget — every tool call runs it.
 #
