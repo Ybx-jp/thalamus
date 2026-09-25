@@ -36,10 +36,14 @@
 
 set -euo pipefail
 
-input=$(</dev/stdin)
+# Read with `cat`, never by reopening `/dev/stdin`: Claude Code hands a command hook its
+# stdin as a socket, which cannot be reopened by path, so `$(</dev/stdin)` fails with
+# ENXIO and, under `set -e`, ends every call before either job runs
+# (A0204, cites-as-live). `read -d ''` works on a socket but takes it a byte at a time.
+input=$(cat)
 
-# Everything before the two tests below is bash builtins: most calls end here, and a
-# call that ends here has run no process.
+# After `cat`, everything before the two tests below is bash builtins: most calls end
+# here, and a call that ends here has run one process.
 #
 # `session_id` is the payload's first field; a later match inside a tool's input or
 # output is escaped and does not match this pattern.
