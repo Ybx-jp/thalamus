@@ -249,13 +249,10 @@ class TriageState:
         # per-case `open_prs` check can refuse a duplicate on its own.
         self.release()
 
-    def clear_pr(self, case: str) -> None:
-        self.open_prs.pop(case, None)
-
     def forget(self, case: str, witness: str) -> None:
         """Drop a case's attempt budget once its defect is actually gone."""
         self.attempts.pop(witness_key(case, witness), None)
-        self.clear_pr(case)
+        self.open_prs.pop(case, None)
 
 
 def refusal_for(case: str, witness: str, state: TriageState) -> str:

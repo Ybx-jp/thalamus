@@ -17,6 +17,9 @@ thalamus init --uninstall          # remove what it can prove it installed
 thalamus status                    # is memory being written? sessions, and the last distillation
 thalamus rescope <scope>           # redirect this session's distillation, before it distills
 thalamus reflex --session-id <id> --response-file <path>   # the reflex hook's worker (see The eval loop)
+thalamus reflex --work                # run the agentic plan's queued jobs; the trigger starts it detached
+thalamus reflex --deliver --session-id <id> [--agent-id <id>]   # the carrier: print ready digests
+thalamus reflex --sweep               # record and clear queue state nothing will reach
 ```
 
 `init --check` and `status` answer different questions and neither answers the
@@ -413,15 +416,21 @@ the same session, so a rerun of a failing test is silent; a session has a
 with the arithmetic when crossed; and an empty answer is the ordinary one, since nothing
 is served unless at least two unseen anchors match. Every qualifying failure is written
 to `~/.thalamus/reflex/sessions/<session>.jsonl` with its outcome — served, empty,
-deduped, refused, no anchors — and every firing that retrieved is one line in the trace
-tap under `tool_name` `reflex_lexical`, priced by `eval sync` like any other retrieval:
+deduped, refused, no anchors, or queued for the agentic plan — and the plan it ran, and
+every firing that retrieved is one line in the trace tap under its plan's `tool_name`,
+`reflex_lexical`, `reflex_propagation` or `reflex_agentic`, priced by `eval sync` like
+any other retrieval:
 its response is the pointer file, so the vertex ids are read from it, its injected
 characters are the digest's, and it carries the handle map. A read of a pointer file —
 by `Read`, `Grep` or a shell command naming its path — is recorded by
-`reflex-pointer-tap.sh` (`PostToolUse`, all tools) as a `reflex_pointer_open` line.
+`reflex-pointer-tap.sh` (`PostToolUse`, all tools) as a `reflex_pointer_open` line; the
+same hook is the agentic plan's carrier.
 
 The report splits by arm. The ledger half needs no graph: qualifying failures, outcomes,
-served-per-failure, injected characters per session, how many served records were
+the outcomes of each plan over the firings that took one, served-per-failure, what each
+arm did per firing — calls, nodes returned, milliseconds, records served and, for
+propagation, how many of them the spread reached — injected characters per session, how
+many served records were
 phrased as instructions (quoted verbatim and named as records, never dropped), how many
 digests crossed the spill line, and how many served pointer files the agent opened — a
 secondary signal, since an open says the agent looked, not that the record changed
@@ -430,6 +439,55 @@ side: the lexical verdict, which carries ~4 points of discrimination over a ~59-
 chance floor and is read as delivery, and the citation verdict — a vertex id, or the
 handle the digest showed for it, in the agent's later output — which is the unfakeable
 form and the primary use signal.
+
+The reflex's retrieval runs through a compiler (`harness/retrieval.py`): a planner
+names a tool of the retrieval vocabulary and its arguments, and the compiler checks
+both, supplies the scope itself, resolves the handles it showed the planner back to
+vertex ids — a planner can name no node it was not shown — and by default caps each
+job at 12 calls, 40 distinct nodes, 8,000 characters of rows and 30 seconds, refusing
+the call that would cross one.<!-- (A0172, cites-as-live) --> Each firing runs one of
+three plans as one such job. A firing past the checks that need no graph takes the next
+slot of its session's blocks, each block holding the three plans once in an order drawn
+from the session id, so a session's firings split between them to within
+one.<!-- (A0180, cites-as-live) --> *Word match* is `recall()` over the anchors.
+*Propagation* serves what word match would, then at most three records a two-hop spread
+from those hits over the graph's relations reached, strongest first, each on a line
+ending `via <relation> from <handle>`; a reached record that does not fit the digest is
+not served, and is not in the pointer file.<!-- (A0177, cites-as-live) --> The spread
+is a truncated Personalized PageRank from the hits: each node passes half its
+activation on, split evenly across the relations that reached anything from it and then
+across each relation's neighbours, every hit is expanded on the first hop and the three
+strongest new nodes on the second. Its job runs under wider caps than the default,
+since its rows reach no model: 49 calls, every node they can return, and 8 seconds. On
+six replayed firings it added 0.25–0.55 s to the 2–3 s word match took. Each trace
+carries the calls, nodes and milliseconds its plan used, and propagation's its hops too.
+
+*Agentic* is the local model (`THALAMUS_LOCAL_MODEL`, served by ollama) driving the
+vocabulary through ollama's `/api/chat` tool calls. It is handed the firing's anchors
+and an excerpt of the session — the user's prompts, the agent's prose and tool calls,
+and the failing result, with every other tool result reduced to a label naming its
+tool — and every call it makes carries a statement of what it still needs, logged with
+the call. It ends by naming the handles it keeps, at most five, or none; a loop the caps
+end instead serves what its calls returned. The hook does not wait for it: the firing is
+queued under `~/.thalamus/reflex/queue/<session>/<agent>/`, where a trigger arriving
+while a job waits joins it, and the hook starts `thalamus reflex --work` detached unless
+a worker holds the global lock. The worker runs jobs oldest first, one at a time, and
+leaves each digest ready; `reflex-pointer-tap.sh` delivers it on that agent's next
+successful tool call, and the trace line is written then, timestamped at delivery and
+carrying the number of tool calls the agent made after the failure, and the digest's
+characters are charged to the session's budget at that point.<!-- (A0181, cites-as-live) -->
+A job whose session is no longer live makes no model call, one that runs past 120
+seconds is recorded as a timeout rather than an empty answer, and every job that is
+not delivered is recorded in `~/.thalamus/reflex/jobs/<month>.jsonl` with the reason:
+empty, timeout, died, session_end, budget, undelivered or
+error.<!-- (A0182, cites-as-live) --> `eval reflex` reports those outcomes beside the
+plans, with the delivery depth and the wait from trigger to claim.
+
+`eval vocabulary` measures what those caps are set against: it replays the newest real
+anchor sets from the reflex ledger and the shadow log (`--limit`, default 40) through
+every tool — every kind searched, every relation walked from the top node of each — and
+reports per call the rows, characters and milliseconds each tool returned, and per
+anchor set the totals of the whole sweep, which no planner should reach.
 
 `eval report` gives the used-vs-ignored rate one ranker window at a time and refuses to
 pool across a dial change, because a rate averaged over two settings measures neither.
@@ -559,8 +617,18 @@ thalamus audit-artifacts           # measure how fragmented Artifact identity is
 thalamus repair-projects           # re-anchor project values that named a directory, not a repo
 thalamus derive-artifact-paths     # project Artifact identifiers onto (repo, path)
 thalamus retire-scans              # remove graph records of architecture scans
+thalamus retire-sources <vid>...   # remove named Sources and what rests only on them
 thalamus repair-claim-addresses    # move Claims back to the address their content produces
 ```
+
+`retire-sources` takes Source vertex ids and refuses any id that is not one. A Claim
+or Chunk goes with them only when every `DERIVED_FROM` edge it has lands on a retiring
+Source, and an Entity only when every vertex adjacent to it is going, so a statement
+another document also supports, or a concept another claim mentions, stays. The dry
+run counts the edges that surviving vertices lose (a Trace's `RETURNS`, a
+consultation's citation) by label, because that history goes with the
+vertex.<!-- (A0173, cites-as-live) -->
+Archived bytes are not touched.
 
 `repair-claim-addresses` is the repair half of `contract check`'s content-address
 audit, and it treats the audit's two groups differently. A stale duplicate — one whose
@@ -598,6 +666,11 @@ box to one expert.
 | `memory_recall_recent` | `limit` | Most recent sessions |
 | `memory_open_problems` | `project`, `limit` | Problems with no recorded solution, recurrence-ranked |
 | `memory_thread` | `thread_id` | Full context on one thread |
+| `memory_search_kind` | `query`, `kind`, `limit` | Keyword search over one kind of node — `session`, `decision`, `problem`, `solution`, `thread`, `chunk` or `external` — as one row per node |
+| `memory_expand` | `node`, `relation`, `limit` | One hop from a node over `same_file`, `same_entity`, `same_episode`, `resolved_by`, `uses` or `threads` |
+| `memory_session_claims` | `session`, `kinds`, `limit` | A session's decisions, problems and solutions |
+| `memory_source_chunks` | `node`, `limit` | The verbatim passages behind a knowledge claim, or either side of a passage |
+| `memory_resolve` | `node` | One node in full by its vertex id; nothing for an id the scope may not read |
 | `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
 | `memory_consultations` | `limit` | This expert's own answered consultations |
 | `memory_exchanges` | `query`, `limit`, `read_ticket` | Consultations this scope asked or answered, by topic |
@@ -608,6 +681,15 @@ Recall tools also accept a `ticket` argument: under a consultation ticket they s
 the consulted expert's memory instead of the session's own scope.
 
 **No tool accepts a scope argument.** The server decides what the session can see.
+
+The five tools above `memory_query` are the retrieval vocabulary
+(`substrate/vocabulary.py`) — the same primitives the memory reflex's compiler lets a
+planner compose. They return rows (`node · kind · tier · date · first sentence`)
+rather than renderings, and walk from any vertex id another result printed. A walk
+through a file or an entity reaches nodes of every scope, so what comes back is
+filtered, not only where the walk starts: a session, a thread or a session-held claim
+only from the session's own scope, a knowledge claim or passage from it or from the
+expert subgraphs the server grants.<!-- (A0171, cites-as-live) -->
 
 ## Environment
 

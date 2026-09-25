@@ -1336,6 +1336,53 @@ class TestMisArmedPinDetection:
         assert "MIS-ARMED" not in ctx
 
 
+class TestScopeSkills:
+    """
+    Skills one scope holds alone (resolve-scope.sh:thalamus_scope_skills).
+
+    They live under `config/skills/<scope>/`, outside every directory the harness
+    scans, so the SessionStart paragraph is their only discovery. The property under
+    test is the scoping: a scope sees its own skills and no other scope's.
+    """
+
+    def _config(self, tmp_path, scope="architect", name="find-weak-wrappers",
+                frontmatter=True):
+        skill = tmp_path / "config" / "skills" / scope / name
+        skill.mkdir(parents=True)
+        head = (f"---\nname: {name}\ndescription: Hunt pass-through wrappers.\n---\n"
+                if frontmatter else "")
+        (skill / "SKILL.md").write_text(head + "# body text that is never listed\n")
+        return tmp_path / "config"
+
+    def _ctx(self, tmp_path, config, scope):
+        return context_of(run_hook(
+            session_start_payload(cwd=str(tmp_path)), tmp_path,
+            env={"THALAMUS_SCOPE": scope, "THALAMUS_CONFIG_DIR": str(config),
+                 "CLAUDE_PROJECT_DIR": str(tmp_path)}))
+
+    def test_the_owning_scope_is_told_name_description_and_path(self, tmp_path):
+        config = self._config(tmp_path)
+        ctx = self._ctx(tmp_path, config, "architect")
+
+        path = config / "skills" / "architect" / "find-weak-wrappers" / "SKILL.md"
+        assert "Skills held by scope `architect` alone" in ctx
+        assert f"`find-weak-wrappers` ({path}): Hunt pass-through wrappers." in ctx
+        assert "never listed" not in ctx, "the body is read on demand, not injected"
+
+    def test_another_scope_is_told_nothing(self, tmp_path):
+        config = self._config(tmp_path)
+        for scope in ("qe", "main"):
+            ctx = self._ctx(tmp_path, config, scope)
+            assert "find-weak-wrappers" not in ctx and "Skills held" not in ctx
+
+    def test_a_skill_without_frontmatter_is_listed_by_its_directory(self, tmp_path):
+        config = self._config(tmp_path, frontmatter=False)
+        ctx = self._ctx(tmp_path, config, "architect")
+
+        assert "`find-weak-wrappers` (" in ctx
+        assert "no description given" in ctx
+
+
 class TestCITriageBrief:
     """The brief a session gets when the CI triage watcher is the reason it exists.
 

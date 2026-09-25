@@ -85,7 +85,7 @@ def _main():
         description="Thalamus — federated graph memory for coding agents",
         epilog="One-shot graph repairs (backfill-chunks, audit-artifacts, "
                "repair-projects, derive-artifact-paths, retire-scans, "
-               "repair-claim-addresses) are not listed here: they migrate an "
+               "retire-sources, repair-claim-addresses) are not listed here: they migrate an "
                "existing graph and a new one can never need them. Each answers "
                "--help, and docs/cli.md documents them under Maintenance.",
     )
@@ -347,10 +347,44 @@ def _main():
         help="Serve memory against a failed Bash result; the reflex.sh hook's worker. "
         "Prints the digest to inject, or nothing.",
     )
-    reflex_parser.add_argument("--session-id", required=True, help="The session that ran the command")
     reflex_parser.add_argument(
-        "--response-file", type=Path, required=True,
-        help="File holding the command's stdout then stderr, as the model saw them",
+        "--session-id", default="",
+        help="The session that ran the command (required except with --work/--sweep)",
+    )
+    reflex_parser.add_argument(
+        "--response-file", type=Path, default=None,
+        help="File holding the command's stdout then stderr, as the model saw them "
+        "(required to fire or shadow)",
+    )
+    reflex_parser.add_argument(
+        "--transcript", default="",
+        help="The session's transcript path, from the hook payload; an agentic job "
+        "builds its excerpt from it",
+    )
+    reflex_parser.add_argument(
+        "--tool-use-id", default="",
+        help="The id of the call that fired, from the hook payload; an agentic job "
+        "keeps that call's result in its excerpt and measures delivery depth from it",
+    )
+    reflex_parser.add_argument(
+        "--work", action="store_true",
+        help="Run the agentic plan's queued jobs and exit when none remain — the "
+        "detached worker the trigger starts (harness/reflex_worker.py)",
+    )
+    reflex_parser.add_argument(
+        "--deliver", action="store_true",
+        help="Print the digests ready for this session and agent, oldest first, and "
+        "record their delivery — the carrier's delivery half",
+    )
+    reflex_parser.add_argument(
+        "--reflex-dir", type=Path, default=None,
+        help="Reflex ledger and queue dir for --work, --deliver and --sweep "
+        "(default: ~/.thalamus/reflex)",
+    )
+    reflex_parser.add_argument(
+        "--sweep", action="store_true",
+        help="Record and clear queue state no worker or carrier will reach: jobs of a "
+        "dead worker, results and jobs of ended sessions",
     )
     reflex_parser.add_argument(
         "--scope", default=MAIN_SCOPE,
@@ -550,6 +584,20 @@ def _main():
     )
     retire_scans_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
     retire_scans_parser.add_argument(
+        "--write", action="store_true",
+        help="Apply the plan. Without this, nothing is removed.",
+    )
+
+    retire_sources_parser = subparsers.add_parser(
+        "retire-sources",
+        description="Remove named Source vertices with the Claims, Chunks and Entities "
+        "that rest only on them. Dry-run unless --write.",
+    )
+    retire_sources_parser.add_argument(
+        "sources", nargs="+", metavar="SOURCE_VID", help="Source vertex id(s) to retire"
+    )
+    retire_sources_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
+    retire_sources_parser.add_argument(
         "--write", action="store_true",
         help="Apply the plan. Without this, nothing is removed.",
     )
@@ -811,6 +859,24 @@ def _main():
         "--url", default=DEFAULT_URL,
         help="Gremlin endpoint for the verdict half; the ledger half renders without it",
     )
+
+    eval_vocabulary_parser = eval_sub.add_parser(
+        "vocabulary",
+        help="Replay real reflex anchor sets through every retrieval-vocabulary tool "
+        "and report what each returns: rows, characters and time per call, and per "
+        "anchor set the totals a job cap has to sit under",
+    )
+    eval_vocabulary_parser.add_argument(
+        "--reflex", type=Path, default=None,
+        help="Reflex ledger dir the anchor sets come from (default: ~/.thalamus/reflex)",
+    )
+    eval_vocabulary_parser.add_argument(
+        "--limit", type=int, default=40, help="Most recent distinct anchor sets to replay"
+    )
+    eval_vocabulary_parser.add_argument(
+        "--scope", default=MAIN_SCOPE, help="Scope to retrieve in (default: main)"
+    )
+    eval_vocabulary_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Pin / roster commands — "the process is the pin"
     init_parser = subparsers.add_parser(
@@ -1482,6 +1548,8 @@ def _main():
         _cmd_derive_artifact_paths(args)
     elif args.command == "retire-scans":
         _cmd_retire_scans(args)
+    elif args.command == "retire-sources":
+        _cmd_retire_sources(args)
     elif args.command == "repair-claim-addresses":
         _cmd_repair_claim_addresses(args)
     elif args.command == "snapshot":
@@ -2470,8 +2538,34 @@ def _cmd_delegate(args):
 
 def _cmd_reflex(args):
     """The hook's worker: everything it prints is injected, so it prints the digest or nothing."""
-    from thalamus.harness.reflex import fire, shadow
+    from thalamus.harness import reflex_worker
+    from thalamus.harness.reflex import fire, reflex_dir, shadow
 
+    if args.work:
+        reflex_worker.work(
+            reflex_dir(args.reflex_dir),
+            connect_graph=lambda: connect(args.url),
+            close_graph=close_connection,
+        )
+        return
+    if args.sweep:
+        counts = reflex_worker.sweep(reflex_dir(args.reflex_dir))
+        print(", ".join(f"{count} {outcome}" for outcome, count in counts.items()))
+        return
+    if not args.session_id:
+        print("reflex: --session-id is required", file=sys.stderr)
+        sys.exit(2)
+    if args.deliver:
+        digest = reflex_worker.deliver(
+            reflex_dir(args.reflex_dir), session_id=args.session_id, agent_id=args.agent_id,
+            event=args.event,
+        )
+        if digest:
+            print(digest)
+        return
+    if args.response_file is None:
+        print("reflex: --response-file is required", file=sys.stderr)
+        sys.exit(2)
     try:
         observed = args.response_file.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -2495,6 +2589,9 @@ def _cmd_reflex(args):
             cwd=args.cwd,
             tool_name=args.tool_name,
             event=args.event,
+            transcript=args.transcript,
+            tool_use_id=args.tool_use_id,
+            worker_url=args.url if args.url != DEFAULT_URL else "",
         )
     finally:
         close_connection(graph)
@@ -2841,6 +2938,63 @@ def _cmd_retire_scans(args):
         close_connection(graph)
 
 
+def _cmd_retire_sources(args):
+    """Remove named Sources and what rests only on them. See substrate.source_retirement.
+
+    Dry-run by default. The plan prints what it keeps and the edges it will drop from
+    surviving vertices, because both are part of deciding whether to run it.
+    """
+    from thalamus.substrate.source_retirement import plan, retire
+
+    graph = connect(args.url)
+    try:
+        try:
+            retirement = plan(graph, args.sources)
+        except ValueError as exc:
+            print(f"Refused: {exc}. Nothing was removed.")
+            raise SystemExit(2) from exc
+
+        for heading, rows in (
+            ("Source(s)", retirement.sources),
+            ("Claim(s) resting only on them", retirement.claims),
+            ("Chunk(s)", retirement.chunks),
+            ("Entit(ies) left with no other edge", retirement.entities),
+        ):
+            print(f"{len(rows)} {heading}:")
+            for doomed in rows:
+                print(f"  {doomed.detail}")
+            print()
+        if retirement.kept_claims:
+            print(f"{len(retirement.kept_claims)} Claim(s) kept — also derived elsewhere:")
+            for claim_vid, survivors in retirement.kept_claims:
+                print(f"  {survivors} other Source(s)  {claim_vid}")
+            print()
+        if retirement.kept_entities:
+            print(f"{len(retirement.kept_entities)} Entit(ies) kept — still referenced:")
+            for name, survivors in retirement.kept_entities[:12]:
+                print(f"  {survivors:3d} other edge(s)  {name}")
+            if len(retirement.kept_entities) > 12:
+                print(f"  … and {len(retirement.kept_entities) - 12} more")
+            print()
+        if retirement.lost_edges:
+            print("Edges from surviving vertices that go with them (recall and "
+                  "consultation history):")
+            for label, count in sorted(retirement.lost_edges.items()):
+                print(f"  {count:4d}  {label}")
+            print()
+
+        if not args.write:
+            print(f"Dry run. Re-run with --write to remove {retirement.total()} vertices.")
+            return
+
+        removed = retire(graph, retirement)
+        print(f"Removed {removed} vertices.")
+        _persist(graph)
+        print("Run `thalamus contract check` to confirm the graph is still whole.")
+    finally:
+        close_connection(graph)
+
+
 def _cmd_repair_claim_addresses(args):
     """Move Claims back to the address their own `(kind, description)` produces.
 
@@ -3067,12 +3221,8 @@ def _cmd_backfill_chunks(args):
                 .values("name").to_list()
             ]
 
-            class _Cited:
-                def __init__(self, citation):
-                    self.citation = citation
-
-            cited = [_Cited(str(c.get("citation") or "")) for c in claims]
-            chunks = build_chunks(text, cited, entity_names)
+            cited = [str(c.get("citation") or "") for c in claims]
+            chunks = build_chunks(text, entity_names)
             anchored = anchor_citations(chunks, cited)
             planned += len(chunks)
             print(f"  {row['title'][:52]:<54} {len(chunks):>4} chunks  "
@@ -3925,6 +4075,17 @@ def _cmd_eval(args, eval_parser):
         finally:
             if graph is not None:
                 close_connection(graph)
+    elif getattr(args, "eval_command", None) == "vocabulary":
+        from thalamus.contract.manifest import available_scopes
+        from thalamus.eval.vocabulary import anchor_sets, measure
+
+        sets = anchor_sets(args.reflex, args.limit)
+        graph = connect(args.url)
+        try:
+            knowledge = [s for s in available_scopes() if s != args.scope]
+            print(measure(graph, sets, args.scope, knowledge).render())
+        finally:
+            close_connection(graph)
     elif getattr(args, "eval_command", None) == "pins":
         from thalamus.contract.manifest import available_scopes
         from thalamus.eval.cost import load_engaged, load_pins

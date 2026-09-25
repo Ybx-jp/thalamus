@@ -24,6 +24,19 @@ FAILED = ("distilling session {sid} into scope {scope}\n"
           "  ✗ {sid}  extraction failed: 3 validation errors for SessionGraph\n"
           "0 extracted, 0 skipped, 1 failed; model cost $0.00\n")
 RUNNING = "distilling session {sid} into scope {scope}\n"
+# An exception escaping `thalamus extract`. It marks no `✗`, prints no summary and
+# writes no per-session line at all — a traceback, and then the hook's own record of
+# the exit status. Taken from the real thing (2026-09-21, session e5c2b26d): a bit
+# flip in a 34MB archive write, caught by the archive's own hash check.
+CRASHED = ("distilling session {sid} into scope {scope}\n"
+           "1 sessions to extract (extractor: codex/gpt-5.6-sol)\n"
+           "Traceback (most recent call last):\n"
+           '  File "/home/op/code/thalamus/.venv/bin/thalamus", line 10, in <module>\n'
+           "    sys.exit(main())\n"
+           "           ^^^^^^\n"
+           "ValueError: Archive corruption: /home/op/.thalamus/archive/17/17e7.jsonl "
+           "hashes to c7b3, not 17e7. Retained evidence is supposed to be immutable.\n"
+           "extract exited 1 — not running eval sync against a half-written episode\n")
 NO_TX = ("distilling session {sid} into scope {scope}\n"
          "No session matching {sid}-a157-47ff-b8b2-f5ab under -home — nothing distilled.\n")
 # What SessionEnd writes when the transcript is missing before extract is ever
@@ -284,6 +297,73 @@ def test_a_session_whose_transcript_was_never_found_is_an_error(box):
     (row,) = box.watch.rows()
     assert row["state"] == "error"
     assert "no transcript" in row["detail"]
+
+
+def test_a_crashed_extract_is_an_error_rather_than_a_slow_one(box):
+    """A crash and a slow run are the same log to a clock, and the clock is wrong.
+
+    `extract` dying on an exception writes no `✗` and no summary, so the only thing
+    judging it was the stall clock — which waits twenty minutes and then reports a
+    process that died in its first seconds as one that went quiet, in the calm
+    geometry `stalled` earns by promising it may yet finish. Measured: all four
+    crashed runs in this box's log directory read that way, and the newest of them had
+    aged on to `abandoned` while the exception naming the fault sat in the log.
+    """
+    box.pin("cccc7777")
+    box.log("cccc7777", CRASHED, age_s=STALL_AFTER_S + 600)
+    (row,) = box.watch.rows()
+    assert row["state"] == "error"
+    assert "Archive corruption" in row["detail"]
+
+
+def test_a_crash_the_hook_did_not_grade_is_still_an_error(box):
+    """The codex hook runs extract with no status check, so it writes no exit line.
+    The traceback alone has to decide, or a whole harness's crashes read as stalls."""
+    box.pin("cccc8888")
+    body = "".join(line + "\n" for line in CRASHED.splitlines()
+                   if not line.startswith("extract exited"))
+    box.log("cccc8888", body, age_s=STALL_AFTER_S + 600)
+    (row,) = box.watch.rows()
+    assert row["state"] == "error"
+    assert "Archive corruption" in row["detail"]
+
+
+def test_a_re_distill_that_succeeds_clears_the_crash_before_it(box):
+    """The repair for a crash is to run it again, and the row has to be able to say
+    so. Read over the whole log body a superseded traceback outlives the run that
+    fixed it, leaving a red row on work that succeeded — which dismissal can hide but
+    never correct, because the failure is still what the log says."""
+    box.pin("cccc9999")
+    path = box.log("cccc9999", CRASHED)
+    assert [r["state"] for r in box.watch.rows()] == ["error"]
+
+    with path.open("a") as fh:
+        fh.write(DONE.format(sid="cccc9999", scope="homelab"))
+    box.watch._scanned_at = 0.0
+    assert box.watch.rows() == []
+
+
+def test_a_crash_after_a_clean_run_is_not_hidden_by_it(box):
+    """The same rule in the other direction: the latest attempt decides, so a
+    re-extraction that crashes is not laundered by the summary line above it."""
+    box.pin("ccccaaaa")
+    path = box.log("ccccaaaa", DONE)
+    assert box.watch.rows() == []
+
+    with path.open("a") as fh:
+        fh.write(CRASHED.format(sid="ccccaaaa", scope="homelab"))
+    box.watch._scanned_at = 0.0
+    (row,) = box.watch.rows()
+    assert row["state"] == "error"
+    assert "Archive corruption" in row["detail"]
+
+
+def test_a_crashed_run_is_named_by_its_exception_not_its_frames(box):
+    """The detail is read on a phone. This repo's own file paths are not the fault."""
+    box.pin("ccccbbbb")
+    box.log("ccccbbbb", CRASHED)
+    (row,) = box.watch.rows()
+    assert row["detail"].startswith("ValueError: Archive corruption")
 
 
 def test_a_distillation_that_went_quiet_is_stalled_not_a_forever_spinner(box):

@@ -37,6 +37,22 @@ none
 
 ## Verdicts
 
+- 2026-09-24T18:02:04-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:627349e2564b752496c1e7584c8a5d52ed0e3352638604527d0037ed97702238
+  artifact: sha256:6dacbee7c02af7c68613d11798cbb06a9a5a9a3f57763f537802b4ba58da358c
+  note: propagated from a moved ground
+- 2026-09-24T18:02:30-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:6dacbee7c02af7c68613d11798cbb06a9a5a9a3f57763f537802b4ba58da358c
+  note: reflex_report gained per-plan outcome counts and per-arm trace numbers; the shadow-row loop and its three per-event counts are unchanged, so the assertion is unaffected
+- 2026-09-24T20:35:18-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:6dacbee7c02af7c68613d11798cbb06a9a5a9a3f57763f537802b4ba58da358c
+  artifact: sha256:261d36075e7a26a59affe64959ccd47ffd4313827d87e1f46950a373cb845688
+  note: propagated from a moved ground
+- 2026-09-24T20:37:18-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:261d36075e7a26a59affe64959ccd47ffd4313827d87e1f46950a373cb845688
+  note: reflex_report gained a loop over the queue's job ledger ahead of the shadow loop; the shadow loop and its per-event counts are unchanged, so the assertion is unaffected
+
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

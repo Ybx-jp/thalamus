@@ -778,7 +778,7 @@ def test_chunks_carry_their_location_and_anchor_only_on_a_real_quote():
         LiteratureClaim(description="No citation at all", citation=None),
     ]
 
-    chunks = build_chunks(text, claims, ["Omega"])
+    chunks = build_chunks(text, ["Omega"])
     assert len(chunks) > 1
     assert all(c.end > c.start for c in chunks)
     assert [c.ordinal for c in chunks] == list(range(len(chunks)))
@@ -788,7 +788,7 @@ def test_chunks_carry_their_location_and_anchor_only_on_a_real_quote():
     # `about` is literal-occurrence over declared names only.
     assert any("Omega" in c.about for c in chunks)
 
-    anchors = anchor_citations(chunks, claims)
+    anchors = anchor_citations(chunks, [c.citation for c in claims])
     assert 0 in anchors                      # the verbatim quote anchors
     assert 1 not in anchors and 2 not in anchors  # paraphrase and absence do not
     assert anchors[0] in {c.ordinal for c in chunks}

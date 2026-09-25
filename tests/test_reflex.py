@@ -27,23 +27,28 @@ import pytest
 from thalamus.eval import traces as trace_mod
 from thalamus.eval.attribution import attribute, cites_handle
 from thalamus.eval.reflex import reflex_report
-from thalamus.harness import reflex
+from thalamus.harness import reflex, retrieval
 from thalamus.harness.reflex import (
     ARM_LEXICAL,
+    ARM_PROPAGATION,
     FAILURE_PATTERN,
+    PLANS,
     POINTER_OPEN,
     SESSION_CHAR_BUDGET,
     Firing,
     ReflexBudget,
     anchor_key,
+    assign_plan,
     extract_anchors,
     fire,
     imperative_voice,
     load_firings,
     render_envelope,
 )
+from thalamus.substrate import vocabulary
 from thalamus.substrate.reader import KnowledgeResult, MemoryResult
 from thalamus.substrate.schema import Tier
+from thalamus.substrate.vocabulary import Row
 
 HOOK = (
     Path(__file__).resolve().parents[1]
@@ -93,7 +98,7 @@ def _fake_recall(results):
 def served(monkeypatch):
     """`recall` answering with one first-party memory; scopes read from nowhere."""
     fake = _fake_recall([_memory()])
-    monkeypatch.setattr(reflex, "recall", fake)
+    monkeypatch.setattr(retrieval, "recall", fake)
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main", "qe"])
     return fake
 
@@ -102,6 +107,7 @@ def _fire(tmp_path, observed=PYTEST_FAILURE, **overrides):
     kwargs = dict(
         session_id="s1", observed=observed, scope="main", agent_id="", agent_type="",
         cwd="/w", now=_NOW, reflex_base=tmp_path / "reflex", traces_base=tmp_path / "traces",
+        plan=ARM_LEXICAL,
     )
     kwargs.update(overrides)
     return fire(object(), **kwargs)
@@ -236,7 +242,7 @@ def test_a_knowledge_block_keeps_its_tier_stamp(tmp_path, monkeypatch):
         node_id="scope:literature:claim:deadbeef", description="A-Mem plateaus then declines",
         kind="finding", tier=int(Tier.CURATED), citation="arXiv 2502.12110",
     )
-    monkeypatch.setattr(reflex, "recall", _fake_recall([claim]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([claim]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     digest = _fire(tmp_path)
@@ -265,7 +271,7 @@ def test_the_digest_is_sized_in_characters_and_lists_the_strongest_last(
         _memory(node_id=f"scope:main:session:m{index}", summary=f"memory {index} " + "w" * 150)
         for index in range(1, 41)
     ]
-    monkeypatch.setattr(reflex, "recall", _fake_recall(many))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall(many))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     digest = _fire(tmp_path)
@@ -286,7 +292,7 @@ def test_the_digest_is_sized_in_characters_and_lists_the_strongest_last(
 def test_a_second_firing_in_the_session_takes_the_next_handle_prefix(tmp_path, monkeypatch):
     """Handles are unique within a session, across its agents: a cited `R2.1` must
     name one node. A subagent shares its parent's session id and so its numbering."""
-    monkeypatch.setattr(reflex, "recall", _fake_recall([_memory()]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([_memory()]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     first = _fire(tmp_path)
@@ -295,6 +301,159 @@ def test_a_second_firing_in_the_session_takes_the_next_handle_prefix(tmp_path, m
     assert "R1.1 · " in first and "R2.1 · " in second
     handles = [event.handles() for event in trace_mod.load_events(tmp_path / "traces")]
     assert handles == [{"R1.1": "scope:main:session:abc"}, {"R2.1": "scope:main:session:abc"}]
+
+
+# --- the plans -----------------------------------------------------------------
+
+
+@pytest.fixture
+def spread(served, monkeypatch):
+    """Word match answering with one session; `expand_one_hop` answering from
+    `edges[(node, relation)]`, and `resolve` rendering any node as a session."""
+    edges: dict[tuple[str, str], list[Row]] = {}
+
+    def expand(g, node_id, relation, limit=5, scope="main", knowledge_scopes=None):
+        return edges.get((node_id, relation), [])[:limit]
+
+    tool = retrieval.TOOLS["expand_one_hop"]
+    monkeypatch.setitem(retrieval.TOOLS, "expand_one_hop",
+                        retrieval.Tool(tool.params, expand, knowledge=tool.knowledge))
+    monkeypatch.setattr(
+        vocabulary, "resolve",
+        lambda g, node, scope, knowledge: _memory(node_id=node, summary=f"record {node}"),
+    )
+    return edges
+
+
+def _decision(node_id, summary="the budget stays at 24k"):
+    return Row(node_id, "decision", 1, "2026-09-20", summary)
+
+
+def test_propagation_serves_the_word_match_hits_then_what_the_spread_reached(
+    tmp_path, spread
+):
+    """
+    Scenario: word match finds one session, and a decision shares a file with it.
+
+    Verifications:
+    - the digest is word match's line for the hit, then the reached decision's line
+      naming the edge and the handle it came from; the hit sits last, nearest the
+      agent's next turn, and the envelope says what a `via` line is
+    - the pointer file holds both records and both handles
+    - the trace is the propagation arm's, with the handle map covering both, how many
+      records the spread added, and what the plan did
+    - control: the same failure under word match serves the hit alone, with no `via`
+      sentence in the envelope
+    """
+    spread[("scope:main:session:abc", "same_file")] = [_decision("scope:main:claim:d1")]
+
+    digest = _fire(tmp_path, plan=ARM_PROPAGATION)
+    records = (tmp_path / "reflex" / "pointers" / "s1" / "R1.md").read_text()
+
+    linked = ("R1.2 · decision · tier 1 · 2026-09-20 · the budget stays at 24k"
+              " · via same_file from R1.1")
+    assert linked in digest
+    assert digest.index(linked) < digest.index("R1.1 · session")
+    assert "`via <relation> from <handle>`" in digest
+    assert "- R1.1: `scope:main:session:abc`" in records
+    assert "- R1.2: `scope:main:claim:d1`" in records
+
+    (line,) = _tap_lines(tmp_path)
+    assert line["tool_name"] == ARM_PROPAGATION
+    assert line["tool_input"]["handles"] == {
+        "R1.1": "scope:main:session:abc", "R1.2": "scope:main:claim:d1"}
+    assert line["tool_input"]["linked"] == 1 and line["tool_input"]["hops"] == 2
+    assert line["tool_input"]["calls"] > 1 and "ms" in line["tool_input"]
+    (firing,) = load_firings("s1", tmp_path / "reflex")
+    assert firing.arm == ARM_PROPAGATION and firing.candidates == 2
+
+    control = _fire(tmp_path, session_id="s2")
+    assert "R1.1 · session" in control and " · via " not in control
+    assert "`via <relation>" not in control
+
+
+def test_a_reached_record_that_does_not_fit_is_not_served(tmp_path, spread):
+    """
+    Verifications:
+    - the spread adds at most MAX_CANDIDATES records, whatever it reached
+    - they fill the room the hits leave, and the digest stays under the cap
+    - one that does not fit is neither counted as held nor written to the pointer
+      file: the file holds exactly the records the digest lists
+    - control: at a size that fits, MAX_CANDIDATES of them are served
+    """
+    def reach(size):
+        spread.clear()
+        spread[("scope:main:session:abc", "same_file")] = [
+            _decision(f"scope:main:claim:d{i}", summary=f"decision {i} " + "w" * size)
+            for i in range(5)
+        ]
+        spread[("scope:main:claim:d0", "same_file")] = [
+            _decision(f"scope:main:claim:f{i}", summary=f"further {i} " + "w" * size)
+            for i in range(5)
+        ]
+
+    reach(1_200)
+    digest = _fire(tmp_path, plan=ARM_PROPAGATION)
+    records = (tmp_path / "reflex" / "pointers" / "s1" / "R1.md").read_text()
+
+    assert len(digest) <= reflex.DIGEST_CHAR_CAP
+    assert "more in the file" not in digest
+    shown = set(re.findall(r"^(R1\.\d+) ", digest, re.MULTILINE))
+    in_file = set(re.findall(r"^- (R1\.\d+): ", records, re.MULTILINE))
+    assert shown == in_file
+    (line,) = _tap_lines(tmp_path)
+    assert line["tool_input"]["reached"] == 10
+    assert 0 < line["tool_input"]["linked"] == len(shown) - 1 < reflex.MAX_CANDIDATES
+
+    reach(150)
+    _fire(tmp_path, session_id="s2", plan=ARM_PROPAGATION)
+    assert _tap_lines(tmp_path)[-1]["tool_input"]["linked"] == reflex.MAX_CANDIDATES
+
+
+def test_a_hit_with_nothing_linked_is_served_as_word_match_serves_it(tmp_path, spread):
+    digest = _fire(tmp_path, plan=ARM_PROPAGATION)
+    control = _fire(tmp_path, session_id="s2")
+
+    assert digest.replace("/s1/", "/s2/") == control
+
+
+def test_plans_are_assigned_in_balanced_blocks_drawn_per_session():
+    """
+    Verifications:
+    - every block of len(PLANS) assigned firings holds each plan once
+    - the order is drawn per session and block, so it is recomputable from the ledger
+      and differs between sessions
+    - a firing stopped before assignment, or written with no plan, takes no slot
+    """
+    def run(session_id, count):
+        history: list[Firing] = []
+        for _ in range(count):
+            arm = assign_plan(session_id, history)
+            history.append(Firing(ts="", session_id=session_id, agent_id="",
+                                  outcome="served", arm=arm))
+            history.append(Firing(ts="", session_id=session_id, agent_id="",
+                                  outcome="deduped"))
+        return [row.arm for row in history if row.arm]
+
+    size = len(PLANS)
+    arms = run("s1", 10 * size)
+    for block in range(10):
+        assert sorted(arms[size * block: size * block + size]) == sorted(PLANS)
+    assert run("s1", 10 * size) == arms
+    orders = {tuple(run(f"s{n}", size)) for n in range(40)}
+    assert len(orders) > 1
+
+
+def test_an_unpinned_firing_records_its_plan_and_a_stopped_one_none(tmp_path, spread):
+    _fire(tmp_path, plan="")
+    _fire(tmp_path, plan="")  # deduped: no plan
+
+    rows = load_firings("s1", tmp_path / "reflex")
+    assert [(row.outcome, row.arm in PLANS) for row in rows] == [
+        ("served", True), ("deduped", False)]
+    assert rows[1].arm == ""
+    (line,) = _tap_lines(tmp_path)
+    assert line["tool_name"] == rows[0].arm
 
 
 # --- the controls --------------------------------------------------------------
@@ -392,7 +551,7 @@ def test_an_empty_recall_is_a_miss_priced_at_nothing(tmp_path, monkeypatch):
       the trigger — with an empty response, so `injected_chars` prices what the
       agent saw (nothing) and `returned_count == 0` reads as the miss
     """
-    monkeypatch.setattr(reflex, "recall", _fake_recall([]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     assert _fire(tmp_path) == ""
@@ -425,7 +584,7 @@ def test_the_scaffolding_never_instructs_and_the_detector_would_know(tmp_path, m
     assert imperative_voice("- Fix the budget first.") == ["- Fix"]
 
     voiced = _memory(node_id="scope:main:session:v1", summary="Do not use bare git stash here")
-    monkeypatch.setattr(reflex, "recall", _fake_recall([voiced, _memory()]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([voiced, _memory()]))
     monkeypatch.setattr(reflex, "available_scopes", lambda: ["main"])
 
     digest = _fire(tmp_path)
@@ -448,7 +607,7 @@ def test_the_tap_directory_is_the_one_the_eval_loop_reads():
 def test_the_report_reads_the_ledger_and_the_tap_by_arm(tmp_path, served, monkeypatch):
     _fire(tmp_path)
     _fire(tmp_path)  # deduped
-    monkeypatch.setattr(reflex, "recall", _fake_recall([]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([]))
     _fire(tmp_path, session_id="s2")  # empty
 
     report = reflex_report(reflex_base=tmp_path / "reflex", traces_base=tmp_path / "traces")
@@ -463,6 +622,31 @@ def test_the_report_reads_the_ledger_and_the_tap_by_arm(tmp_path, served, monkey
     assert "graph not read" in rendered
 
 
+def test_the_report_gives_each_plan_its_own_denominators_and_effort(tmp_path, spread):
+    """
+    Verifications:
+    - outcomes are counted per plan over the firings that took one; a deduped firing
+      belongs to none
+    - each arm's trace numbers — calls, nodes, wall time, records served — are read per
+      arm, and records the spread reached only for the arm that spreads
+    """
+    spread[("scope:main:session:abc", "same_file")] = [_decision("scope:main:claim:d1")]
+    _fire(tmp_path, plan=ARM_PROPAGATION)
+    _fire(tmp_path, plan=ARM_PROPAGATION)  # deduped
+    _fire(tmp_path, session_id="s2")
+
+    report = reflex_report(reflex_base=tmp_path / "reflex", traces_base=tmp_path / "traces")
+    rendered = report.render()
+
+    assert report.by_plan == {ARM_PROPAGATION: {"served": 1}, ARM_LEXICAL: {"served": 1}}
+    assert report.effort[ARM_PROPAGATION]["records"] == [2]
+    assert report.effort[ARM_PROPAGATION]["linked"] == [1]
+    assert report.effort[ARM_LEXICAL]["records"] == [1]
+    assert "linked" not in report.effort[ARM_LEXICAL]
+    assert "  reflex_propagation: 1 served / 0 empty / 0 refused" in rendered
+    assert "records served 2/2/2 (n=1); of them reached by the spread 1/1/1 (n=1)" in rendered
+
+
 def test_the_event_is_recorded_on_every_firing_and_the_report_splits_by_it(
     tmp_path, served, monkeypatch
 ):
@@ -474,7 +658,7 @@ def test_the_event_is_recorded_on_every_firing_and_the_report_splits_by_it(
       never folded into either event
     """
     _fire(tmp_path, event="PostToolUseFailure")
-    monkeypatch.setattr(reflex, "recall", _fake_recall([]))
+    monkeypatch.setattr(retrieval, "recall", _fake_recall([]))
     _fire(tmp_path, session_id="s2", event="PostToolUse")
     _fire(tmp_path, session_id="s3")
 
@@ -506,7 +690,7 @@ def test_a_shadowed_call_records_its_anchors_and_never_touches_the_graph(
     def no_recall(*_args, **_kwargs):
         raise AssertionError("shadow must not retrieve")
 
-    monkeypatch.setattr(reflex, "recall", no_recall)
+    monkeypatch.setattr(retrieval, "recall", no_recall)
     observed = "src/thalamus/harness/reflex.py: MIN_NEW_ANCHORS SESSION_CHAR_BUDGET\n"
 
     fresh = reflex.shadow(session_id="s1", observed=observed, event="PostToolUse",
@@ -569,9 +753,10 @@ def _stub_uv(tmp_path, prints="", copy_response=True):
         f'printf "%s\\n" "$*" >> "{argv_log}"',
     ]
     if copy_response:
+        # Copied then renamed, so a detached run's reader sees the whole file or none.
         body.append(
             'while [ $# -gt 0 ]; do [ "$1" = "--response-file" ] && cp "$2" '
-            f'"{seen}"; shift; done'
+            f'"{seen}.part" && mv "{seen}.part" "{seen}"; shift; done'
         )
     if prints:
         body.append(f"printf '%s' {json.dumps(prints)}")
@@ -671,7 +856,9 @@ class TestTheHook:
         argv = _await_argv(argv_log)
         assert "thalamus reflex --shadow" in argv
         assert "--event PostToolUse " in argv and "--scope" not in argv
-        assert seen.read_text() == "3 passed in 0.2s\n"
+        # The stub logs argv before it copies the response, and it runs detached; the
+        # file can exist before `cp` has finished writing it, so wait on the content.
+        _await(lambda: seen.exists() and seen.read_text() == "3 passed in 0.2s\n")
         response = argv.split("--response-file ")[1].split()[0]
         _await(lambda: not Path(response).exists())
 

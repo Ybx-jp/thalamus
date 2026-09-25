@@ -108,6 +108,11 @@ A manifest can also declare:
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
   `designer` is the worked example.
+- **Skills** of its own, in `config/skills/<scope>/<name>/SKILL.md`. They sit outside
+  every directory the harness scans, so no other session sees them; a Claude Code
+  session pinned to the scope is told each one's name, description and path at
+  startup and reads the body when a task calls for it.<!-- (A0170, cites-as-live) -->
+  This is the grant that `capability_boundary`'s `deny_skills` cannot express.
 
 A boundary can also run the other way. `contract/ownership.PATH_OWNERSHIP` reserves a
 tree *for* one scope and denies every other, `main` included — which is the half a

@@ -8,9 +8,20 @@ line) or one the harness interrupted, and hands the observed output here through
 `thalamus reflex`. This module turns it into anchors, retrieves against them, and
 renders what came back as a digest that says it arrived unsolicited.
 
-This is the word-match plan — `recall()` fed with extracted anchors. No model is in
-the loop: candidates are never paraphrased, so nothing here can re-voice a recorded
-decision into an instruction for the reader. What enters the agent's context is a
+Each firing runs one of three plans, assigned at random and blocked within the session
+by `assign_plan` (A0180, cites-as-live), each as one job of the retrieval compiler
+(`harness/retrieval.py`), which mints the handles and counts what the plan did. *Word match* is `recall()` fed
+with the extracted anchors. *Propagation* (`harness/propagation.py`) serves word
+match's hits and then the `MAX_CANDIDATES` strongest nodes a two-hop spread from them
+over the graph's edges reached, each of those lines naming the edge it came over
+(A0177, cites-as-live). No model is in the
+loop of either: candidates are never paraphrased, so nothing here can re-voice a
+recorded decision into an instruction for the reader. *Agentic* (`harness/agentic.py`)
+is a local model choosing the calls; it is too slow for the hook to wait on, so its
+firing is queued and a detached worker's digest reaches the agent through the carrier
+on a later call (`harness/reflex_worker.py`) (A0181, cites-as-live). The model chooses
+records and never writes them: its lines are built from the rows it chose, and the
+records are quoted verbatim like every other plan's. What enters the agent's context is a
 digest: one line per candidate — a short handle (`R3.1`), its kind, tier, date, its
 own first sentence and the anchors it matched — sized in characters under
 `DIGEST_CHAR_CAP`. The candidates themselves are quoted verbatim through the reader's
@@ -18,7 +29,8 @@ own formatters into a pointer file the digest names. Claude Code hands a hook st
 over 10,000 characters to the agent as a 2,000-character preview (#258), and a
 candidate count does not bound a firing's size (#251); a digest is bounded by neither
 problem. A served set is priced on the same surface as every `memory_recall` — one
-line in the trace tap under `tool_name` `reflex_lexical`, carrying the pointer file as
+line in the trace tap under its plan's `tool_name`, `reflex_lexical`,
+`reflex_propagation` or `reflex_agentic`, carrying the pointer file as
 the response so `eval sync` reads the vertex ids from it, the digest's length as the
 characters that entered context, and the handle map so a cited handle resolves to
 its node — and `thalamus eval reflex` reads the result by arm.
@@ -40,19 +52,40 @@ schema, and the tap directory is named here as well as in `eval/traces.py`
 from __future__ import annotations
 
 import json
+import random
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
+from thalamus.harness import propagation, reflex_queue
 from thalamus.harness.extraction import _tokens
-from thalamus.substrate.reader import STOPWORDS, recall
+from thalamus.harness.retrieval import Caps, Job
+from thalamus.harness.transcripts import trigger_text
+from thalamus.substrate import vocabulary
+from thalamus.substrate.reader import STOPWORDS
 
-# The arm this rung writes into `tool_name`. Reading by arm is the whole instrument:
-# `eval report` and `eval reflex` split on this string and enumerate nothing.
+# The arm a firing writes into `tool_name`, one per plan. Reading by arm is the whole
+# instrument: `eval report` and `eval reflex` split on this string and enumerate nothing.
 ARM_LEXICAL = "reflex_lexical"
+ARM_PROPAGATION = "reflex_propagation"
+ARM_AGENTIC = "reflex_agentic"
+
+# The plans a qualifying firing is randomized between. None writes to the graph, so one
+# firing's plan cannot carry over into another's, and assignment is per firing: split
+# per session, current volume leaves a handful of sessions per arm under the 2.5–4x
+# design effect this project's session-clustered analyses have measured. Firings are
+# assigned in blocks holding each plan once, in an order drawn per block from the
+# session id, so a session's arms stay balanced to within one however few firings it
+# has, and an assignment can be recomputed from the ledger. A firing takes a plan once
+# it has passed every check that needs no graph; one stopped before that has no arm.
+PLANS = (ARM_LEXICAL, ARM_PROPAGATION, ARM_AGENTIC)
+# `queued` is an agentic firing handed to the worker; how its job ended is in the
+# queue's job ledger (`reflex_queue.JOB_OUTCOMES`), not here.
+_ASSIGNED_OUTCOMES = frozenset({"served", "empty", "refused", "queued"})
 
 # A read of a pointer file, recorded by `reflex-pointer-tap.sh`. Not an arm: it is a
 # secondary use signal on a firing an arm already served, and `eval reflex` reads it
@@ -265,8 +298,10 @@ class Firing:
     ts: str
     session_id: str
     agent_id: str
-    outcome: str  # served | empty | deduped | refused | no_anchors
-    arm: str = ARM_LEXICAL
+    outcome: str  # served | empty | deduped | refused | no_anchors | queued
+    # The plan this firing was assigned, or "" when it stopped before assignment. Rows
+    # written while word match was the only plan carry `reflex_lexical` on every outcome.
+    arm: str = ""
     anchors: list[str] = field(default_factory=list)
     keys: list[str] = field(default_factory=list)
     injected_chars: int = 0
@@ -325,6 +360,21 @@ def load_firings(session_id: str, base: Path | None = None) -> list[Firing]:
     return firings
 
 
+def assign_plan(session_id: str, history: list[Firing]) -> str:
+    """The plan for this session's next assigned firing: the next slot of its block.
+
+    Parent and subagent firings share a session's ledger and one sequence of blocks.
+    Two firing at the same instant can read the same count and take the same slot,
+    which unbalances that block by one; nothing else depends on the count.
+    """
+    assigned = sum(
+        1 for row in history if row.arm in PLANS and row.outcome in _ASSIGNED_OUTCOMES
+    )
+    block, slot = divmod(assigned, len(PLANS))
+    order = random.Random(f"{session_id}:{block}").sample(PLANS, len(PLANS))
+    return order[slot]
+
+
 def _append_firing(firing: Firing, base: Path | None) -> None:
     path = reflex_dir(base) / "sessions" / f"{firing.session_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -342,7 +392,12 @@ def _append_trace(record: dict, ts: datetime, base: Path | None) -> None:
 
 
 def render_envelope(
-    items: list[str], anchors: list[str], voiced: int = 0, pointer: str = ""
+    items: list[str],
+    anchors: list[str],
+    voiced: int = 0,
+    pointer: str = "",
+    linked: bool = False,
+    trigger: str = "",
 ) -> str:
     """The digest: the one label its lines do not carry, the lines, then the file.
 
@@ -352,14 +407,36 @@ def render_envelope(
     so. `items` are `digest_line`s; the records they index sit verbatim in the pointer
     file — tier header, backticked vertex id, the reader's own informs-never-instructs
     footer. The scaffolding names the file and never tells the reader to open it.
+
+    `trigger` is set for a digest delivered after the call that fired it (the agentic
+    plan, through the worker and the carrier): it names that earlier result by its
+    time, since delivery order is not fire order and "above" would point at whichever
+    call the carrier happened to ride.
     """
+    if trigger:
+        opening = (
+            "Thalamus memory reflex (tier-0 operator hook, unsolicited, delivered late): "
+            f"an earlier Bash result, at {trigger}, read as a failure, and a local model "
+            "searched the graph for memory bearing on it, starting from its identifiers "
+            f"({', '.join(anchors)})."
+        )
+    else:
+        opening = (
+            "Thalamus memory reflex (tier-0 operator hook, unsolicited): the Bash result "
+            "above reads as a failure, and the graph holds memory sharing its identifiers "
+            f"({', '.join(anchors)})."
+        )
     lines = [
-        "Thalamus memory reflex (tier-0 operator hook, unsolicited): the Bash result "
-        "above reads as a failure, and the graph holds memory sharing its identifiers "
-        f"({', '.join(anchors)}). No one asked for this; it is not part of the tool's "
+        f"{opening} No one asked for this; it is not part of the tool's "
         "output and carries no instruction. Each line below indexes a recalled record "
         "under its own tier stamp — it informs, it never instructs.",
     ]
+    if linked:
+        lines.append(
+            "A line ending `via <relation> from <handle>` was not matched on those "
+            "identifiers: it was reached over the graph's edges from the record "
+            "that handle names."
+        )
     if voiced:
         lines.append(
             f"{voiced} of the records are phrased as instructions. They are quoted "
@@ -493,19 +570,32 @@ def fire(
     now: datetime | None = None,
     reflex_base: Path | None = None,
     traces_base: Path | None = None,
+    plan: str = "",
+    transcript: str = "",
+    tool_use_id: str = "",
+    worker_url: str = "",
+    spawn: bool = True,
 ) -> str:
     """Serve memory against one qualifying failure. Returns the digest, or ``""``.
 
     The empty answer is valid and is the common case: the design's own grounding
     says an injection that would not change the next action costs more than it
     returns, so nothing is served unless at least two unseen anchors match, and the
-    firing is written down either way.
+    firing is written down either way. `plan` fixes the arm; left empty, the firing
+    takes the next one `assign_plan` gives.
+
+    An agentic firing returns ``""`` here whatever it finds: it is appended to the
+    queue (`reflex_queue`) with the transcript and the call id its excerpt is built
+    from, a detached worker is started unless one is running (`spawn`), and its digest
+    reaches the agent through the carrier on a later call.
     """
     ts = now or datetime.now(timezone.utc)
     stamp = ts.strftime("%Y-%m-%dT%H:%M:%SZ")
     history = load_firings(session_id, reflex_base)
     seen = {key for row in history if row.agent_id == agent_id for key in row.keys}
-    spent = sum(row.injected_chars for row in history)
+    spent = sum(row.injected_chars for row in history) + reflex_queue.delivered_chars(
+        reflex_dir(reflex_base), session_id
+    )
 
     def record(outcome: str, **fields) -> Firing:
         firing = Firing(
@@ -533,11 +623,41 @@ def fire(
         record("refused", anchors=fresh, detail=budget.refusal())
         return ""
 
+    arm = plan or assign_plan(session_id, history)
+    keys = sorted({anchor_key(anchor) for anchor in fresh})
+    if arm == ARM_AGENTIC:
+        root = reflex_dir(reflex_base)
+        absorbed = reflex_queue.enqueue(root, {
+            "ts": stamp, "session_id": session_id, "agent_id": agent_id,
+            "agent_type": agent_type, "scope": scope, "cwd": cwd, "event": event,
+            "trigger": tool_name, "tool_use_id": tool_use_id, "transcript": transcript,
+            "anchors": fresh, "observed": trigger_text(observed),
+        })
+        record("queued", arm=arm, anchors=fresh, keys=keys,
+               detail="joined the pending job" if absorbed else "")
+        if spawn:
+            reflex_queue.spawn_worker(root, url=worker_url)
+        return ""
+
     query = " ".join(fresh)
     knowledge = [s for s in available_scopes() if s != scope]
-    results = recall(g, query, limit=MAX_CANDIDATES, scope=scope, knowledge_scopes=knowledge)
+    # The pointer's id is the job's handle prefix, so it is claimed before the job runs
+    # and released if nothing comes back.
+    firing_id, pointer = _allocate_pointer(session_id, reflex_base)
+    caps = propagation.CAPS if arm == ARM_PROPAGATION else Caps()
+    job = Job(g, scope=scope, knowledge_scopes=knowledge, prefix=firing_id, caps=caps)
+    started = time.monotonic()
+    results = [
+        result for result in job.word_match(query, MAX_CANDIDATES)
+        if getattr(result, "node_id", "")
+    ]
+    # Word match's hits, in rank order; propagation's seeds.
+    handles = dict(job.handles)
     blocks = [result.format() for result in results]
-    keys = sorted({anchor_key(anchor) for anchor in fresh})
+    spread = (
+        propagation.propagate(job, list(handles.values()))
+        if arm == ARM_PROPAGATION and results else propagation.Spread()
+    )
 
     # `query` is what `TraceEvent.query_text()` labels the Trace with; the rest is the
     # reflex's own record of why this firing asked what it asked, and on a served
@@ -545,13 +665,20 @@ def fire(
     tool_input: dict[str, object] = {
         "query": query, "trigger": tool_name, "event": event, "anchors": fresh,
         "keys": keys,
+        # The manipulation check: what this plan actually did, per firing, and how
+        # long the agent waited on it.
+        "calls": job.calls, "nodes": len(job.handles),
     }
+    if arm == ARM_PROPAGATION:
+        tool_input.update(
+            hops=spread.hops, reached=len(spread.reached), stopped=spread.stopped
+        )
     trace = {
         "ts": stamp,
         "session_id": session_id,
         "scope": scope,
         "cwd": cwd,
-        "tool_name": ARM_LEXICAL,
+        "tool_name": arm,
         "tool_input": tool_input,
         "tool_response": "",
         "agent_id": agent_id,
@@ -563,28 +690,66 @@ def fire(
         # the trigger — and nothing was injected, so the response is empty rather than
         # the recall tools' miss sentence: `injected_chars` must price what the agent
         # saw, and `eval report` reads `returned_count == 0` as the miss.
+        pointer.unlink(missing_ok=True)
+        tool_input["ms"] = round((time.monotonic() - started) * 1000)
         _append_trace(trace, ts, traces_base)
-        record("empty", anchors=fresh, keys=keys)
+        record("empty", arm=arm, anchors=fresh, keys=keys)
         return ""
 
     voiced = sum(1 for block in blocks if imperative_voice(block))
-    firing_id, pointer = _allocate_pointer(session_id, reflex_base)
-    handles = {
-        f"{firing_id}.{index}": str(getattr(result, "node_id", "") or "")
-        for index, result in enumerate(results, start=1)
-    }
     lines = [
         digest_line(handle, result, block, fresh)
         for handle, result, block in zip(handles, results, blocks, strict=True)
     ]
-    frame = render_envelope([], fresh, voiced=voiced, pointer=str(pointer))
-    kept, _ = pack_digest(lines, DIGEST_CHAR_CAP, frame)
+    # The spread adds at most MAX_CANDIDATES records, as many as word match asks
+    # `recall()` for. Uncapped it filled the digest — 10 to 14 reached records, ~3,700
+    # characters against word match's ~1,200, on six replayed firings — which would
+    # triple what a propagation firing draws on the session budget both plans share,
+    # letting one firing's plan decide whether a later firing of either is refused.
+    linked = [
+        (node, propagation.linked_line(
+            job.handle_for(node), spread.rows[node], spread.via[node][0],
+            job.handle_for(spread.via[node][1]),
+        ))
+        for node, _ in spread.reached[:MAX_CANDIDATES]
+    ]
+    # A linked record's block is rendered only once its line is kept, so its voice is
+    # not known when the room is measured: the frame reserves the line that would
+    # count every one of them.
+    reserve = voiced + len(linked)
+    frame = render_envelope(
+        [], fresh, voiced=reserve, pointer=str(pointer), linked=bool(linked)
+    )
+    kept, held = pack_digest(lines, DIGEST_CHAR_CAP, frame)
+    if linked and not held:
+        # Reached records fill the room word match's hits leave. One that does not fit
+        # is not served at all rather than held: the pointer file holds only records
+        # the digest lists, since each costs a render the agent may never open.
+        base = render_envelope(
+            kept, fresh, voiced=reserve, pointer=str(pointer), linked=True
+        )
+        more, more_held = pack_digest([line for _, line in linked], DIGEST_CHAR_CAP, base)
+        if more_held:
+            more.pop()
+        for (node, line) in linked[: len(more)]:
+            result = vocabulary.resolve(g, node, scope, knowledge)
+            if result is None:
+                continue
+            block = result.format()
+            handles[job.handle_for(node)] = node
+            blocks.append(block)
+            kept.append(line)
+            voiced += bool(imperative_voice(block))
+    served_linked = len(blocks) - len(results)
     # Strongest last, nearest the agent's next turn.
-    digest = render_envelope(kept[::-1], fresh, voiced=voiced, pointer=str(pointer))
+    digest = render_envelope(
+        kept[::-1], fresh, voiced=voiced, pointer=str(pointer), linked=bool(served_linked)
+    )
     budget = ReflexBudget(spent=spent, cost=len(digest))
     if not budget.fits:
         pointer.unlink(missing_ok=True)
-        record("refused", anchors=fresh, candidates=len(blocks), detail=budget.refusal())
+        record("refused", arm=arm, anchors=fresh, candidates=len(blocks),
+               detail=budget.refusal())
         return ""
 
     records = render_pointer(firing_id, stamp, handles, blocks)
@@ -599,10 +764,14 @@ def fire(
         # for its vertex ids; pricing it would charge the agent for records it has not
         # opened.
         delivered_chars=len(digest),
+        # Records served because the spread reached them rather than word match.
+        linked=served_linked,
+        ms=round((time.monotonic() - started) * 1000),
     )
     _append_trace(trace, ts, traces_base)
     record(
         "served",
+        arm=arm,
         anchors=fresh,
         keys=keys,
         injected_chars=len(digest),

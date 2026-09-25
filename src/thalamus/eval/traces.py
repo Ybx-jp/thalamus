@@ -51,12 +51,23 @@ RETRIEVAL_TOOLS = frozenset(
         # fixed list and rank-orders nothing. Whether pointing a session at a
         # settled design prevents rework is exactly a used-vs-ignored question.
         "memory_exchanges",
+        # The retrieval vocabulary's MCP surface (substrate/vocabulary.py): rows and
+        # one full rendering, each carrying the backticked ids the tap reads.
+        "memory_search_kind",
+        "memory_expand",
+        "memory_session_claims",
+        "memory_source_chunks",
+        "memory_resolve",
         "bash_gremlin",
-        # The memory reflex's lexical arm (harness/reflex.py, reflex.sh): retrieval
-        # the harness initiated off a failed Bash result. Priced here like every
-        # other retrieval; `eval reflex` reads it by arm. Without this entry
-        # `load_events()`'s default filter drops every reflex line.
+        # The memory reflex's arms, one per plan (harness/reflex.py, reflex.sh):
+        # retrieval the harness initiated off a failed Bash result. Priced here like
+        # every other retrieval; `eval reflex` reads them by arm. Without an arm's
+        # entry `load_events()`'s default filter drops every line it writes.
         "reflex_lexical",
+        "reflex_propagation",
+        # Written by the carrier when it delivers the worker's result
+        # (harness/reflex_worker.py), not when the firing happened.
+        "reflex_agentic",
         # A read of a reflex pointer file (reflex-pointer-tap.sh): the file's records
         # entering context when the agent opens them, priced like any retrieval.
         "reflex_pointer_open",

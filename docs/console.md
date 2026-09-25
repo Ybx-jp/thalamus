@@ -347,7 +347,11 @@ window, and a row then renders from the record alone.
   exactly as a freshly started one does.<!-- (A0155, cites-as-live) -->
 - **failed** — the band, with the reason from the extract log verbatim. This is the
   case worth having: a failed extraction exits *zero*, so nothing else on the box
-  would ever mention that a conversation was not recorded.
+  would ever mention that a conversation was not recorded. A crash — an exception
+  escaping `extract` — reads the same band and is named by the exception it died on,
+  rather than being left to the stall clock, which would wait twenty minutes and then
+  report a process that died in its first seconds as one that had gone
+  quiet.<!-- (A0178, cites-as-live) -->
 - **never distilled** — the band, for a window killed before SessionEnd could run.
   Only a close or a restart that outlives the four-minute grace budget writes one.
   The window is identified by its tmux `@N` for the whole of that wait, because an
@@ -836,8 +840,8 @@ keeps that true.
   pin ledger to drop subagent residue (two thirds of the logs on a working box).
   It rides the poll the client already runs rather than getting a loop of its own,
   and is cached against (mtime, size) so a steady-state poll opens no file. States
-  are `active`, `stalled`, `error` and `unknown`; a clean `done` deletes its row,
-  because success is silent.
+  are `active`, `stalled`, `abandoned`, `error` and `unknown`; a clean `done` deletes
+  its row, because success is silent.
   **`extract` has two clean endings and both must be recognised.** The summary line
   (`N extracted, M skipped, K failed`) is one; the other is a session with no
   substantive exchange, which is named, found, deliberately not distilled, and exits
@@ -845,6 +849,18 @@ keeps that true.
   summary line will be read as a stall — measured, that miss put two false rows on a
   four-row list. A `✗` failure marker is decided on its own for the same reason: a
   job that records a failure and then dies has failed, not hung.
+  **A crash is read from the exit status, or from the traceback.** An exception
+  escaping `extract` writes no ✗ and no summary at all, so the stall clock was the
+  only thing judging it — and on this box it had judged every crash there ever was.
+  `session-end.sh` records the non-zero status both in the log and in
+  `hook-failures.log`; the codex hook checks no status and leaves only the traceback.
+  Either one decides, and the row carries the exception line rather than the frames,
+  which are this repo's own paths and name nothing on a
+  phone.<!-- (A0178, cites-as-live) -->
+  **The last run mark in a log decides the row.** A log holds one attempt per
+  distillation rather than one state, so a re-distill that succeeds clears the crash
+  above it, and one that crashes is not laundered by the summary above
+  it.<!-- (A0156, cites-as-live) -->
   **A forced close or recycle kills the window before SessionEnd runs**, so
   `thalamus extract` never starts and no log is ever created — and a state machine
   whose only input is the artifact cannot report the artifact's absence. The console

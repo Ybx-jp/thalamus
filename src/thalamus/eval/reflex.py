@@ -40,6 +40,7 @@ from thalamus.harness.reflex import (
     load_shadow,
     reflex_dir,
 )
+from thalamus.harness.reflex_queue import JOB_OUTCOMES, load_outcomes
 
 # The evidence `attribution._judge` writes when the agent quoted the node's id or the
 # handle it was shown for it: "cited by vertex ID", "cited by handle R3.1".
@@ -71,6 +72,21 @@ def _is_arm(tool: str) -> bool:
     return tool.startswith(ARM_PREFIX) and tool != POINTER_OPEN
 
 
+def _spread(values: list[int]) -> str:
+    ordered = sorted(values)
+    p90 = ordered[min(len(ordered) - 1, int(0.9 * len(ordered)))]
+    return f"{median(ordered):g}/{p90:g}/{ordered[-1]:g}"
+
+
+# The per-firing numbers each arm's trace carries, as the report names them. `records`
+# is served firings only; a firing that found nothing served none.
+_EFFORT_LABELS = (
+    ("calls", "calls"), ("nodes", "nodes returned"), ("ms", "ms"),
+    ("records", "records served"), ("linked", "of them reached by the spread"),
+    ("turns", "model turns"), ("depth", "tool calls before delivery"),
+)
+
+
 @dataclass
 class ReflexReport:
     firings: int = 0
@@ -88,9 +104,20 @@ class ReflexReport:
     # Rendered chars served, per session that was served anything.
     injected_by_session: dict[str, int] = field(default_factory=dict)
     voiced: int = 0
+    # Outcomes of the firings that took a plan, per plan: the denominators every
+    # conditional-on-served rate of a plan sits over.
+    by_plan: dict[str, Counter] = field(default_factory=dict)
     # Firings that retrieved, by arm, from the tap.
     by_arm: Counter = field(default_factory=Counter)
+    # What each arm did per firing, from the tap: calls issued, distinct nodes returned,
+    # wall milliseconds, records served and, of those, records the spread reached.
+    effort: dict[str, dict[str, list[int]]] = field(default_factory=dict)
     tap_misses: Counter = field(default_factory=Counter)
+    # The agentic plan's jobs, from the queue's job ledger: how each ended, and for
+    # those that reached the agent, the delivery depth and the queue wait.
+    jobs: Counter = field(default_factory=Counter)
+    job_depth: list[int] = field(default_factory=list)
+    job_queued_ms: list[int] = field(default_factory=list)
     # Digests that went over Claude Code's 10,000-char spill line, from the tap.
     spilled: int = 0
     # Served firings whose pointer file the agent later named in a tool call, keyed
@@ -114,7 +141,7 @@ class ReflexReport:
             "",
             f"qualifying failures: {self.firings} over {self.sessions} session(s)",
         ]
-        for outcome in ("served", "empty", "deduped", "refused", "no_anchors"):
+        for outcome in ("served", "empty", "deduped", "refused", "no_anchors", "queued"):
             lines.append(f"  {outcome}: {self.outcomes.get(outcome, 0)}")
         lines.append("by the event that ran the hook (served / qualifying):")
         for event in sorted(self.by_event):
@@ -153,10 +180,44 @@ class ReflexReport:
                 f"served blocks phrased as instructions: {self.voiced} "
                 "(quoted verbatim and named as records in the envelope)"
             )
+        if self.by_plan:
+            lines += ["", "by plan, firings that took one (ledger):"]
+            for arm, outcomes in sorted(self.by_plan.items()):
+                lines.append(
+                    f"  {arm}: " + " / ".join(
+                        f"{outcomes.get(outcome, 0)} {outcome}"
+                        for outcome in ("served", "empty", "refused", "queued")
+                        if outcome != "queued" or outcomes.get(outcome)
+                    )
+                )
+        if self.jobs:
+            lines += ["", "agentic jobs, by how they ended (queue ledger):"]
+            lines.append("  " + " / ".join(
+                f"{self.jobs.get(outcome, 0)} {outcome}" for outcome in JOB_OUTCOMES
+            ))
+            if self.job_depth:
+                lines.append(
+                    f"  delivery depth, tool calls after the trigger, p50/p90/max: "
+                    f"{_spread(self.job_depth)} (n={len(self.job_depth)})"
+                )
+            if self.job_queued_ms:
+                lines.append(
+                    f"  queued ms, trigger to claim, p50/p90/max: "
+                    f"{_spread(self.job_queued_ms)} (n={len(self.job_queued_ms)})"
+                )
         if self.by_arm:
             lines += ["", "retrieved, by arm (trace tap):"]
             for arm, count in sorted(self.by_arm.items()):
                 lines.append(f"  {arm}: {count} ({self.tap_misses.get(arm, 0)} misses)")
+                effort = self.effort.get(arm, {})
+                # Each number has its own n: older traces predate some fields, and
+                # only a served firing has records.
+                shown = [
+                    f"{label} {_spread(effort[key])} (n={len(effort[key])})"
+                    for key, label in _EFFORT_LABELS if effort.get(key)
+                ]
+                if shown:
+                    lines.append("    per firing, p50/p90/max: " + "; ".join(shown))
             lines.append(
                 f"  over the 10,000-char spill line: {self.spilled} "
                 "(reached the agent as a 2,000-char preview)"
@@ -231,12 +292,22 @@ def reflex_report(
     for row in firings:
         report.outcomes[row.outcome] += 1
         report.by_event[row.event] += 1
+        if row.arm and row.outcome in ("served", "empty", "refused", "queued"):
+            report.by_plan.setdefault(row.arm, Counter())[row.outcome] += 1
         if row.outcome == "served":
             report.served_by_event[row.event] += 1
             report.injected_by_session[row.session_id] = (
                 report.injected_by_session.get(row.session_id, 0) + row.injected_chars
             )
             report.voiced += row.voiced
+
+    for job in load_outcomes(reflex_dir(reflex_base)):
+        outcome = str(job.get("outcome") or "")
+        report.jobs[outcome] += 1
+        if outcome == "delivered" and isinstance(job.get("depth"), int):
+            report.job_depth.append(job["depth"])
+        if outcome == "delivered" and isinstance(job.get("queued_ms"), int):
+            report.job_queued_ms.append(job["queued_ms"])
 
     for shadow_row in load_shadow(reflex_base):
         report.shadowed[shadow_row.event] += 1
@@ -261,6 +332,17 @@ def reflex_report(
             report.spilled += 1
         if pointer:
             report.pointers_served.add(pointer)
+        effort = report.effort.setdefault(event.tool, {})
+        # `hops` marks a plan that spreads; only there is `linked` a measurement.
+        spreads = "hops" in event.tool_input
+        for key in ("calls", "nodes", "ms", "linked", "turns", "depth"):
+            value = event.tool_input.get(key)
+            if key == "linked" and not spreads:
+                continue
+            if isinstance(value, int) and not isinstance(value, bool):
+                effort.setdefault(key, []).append(value)
+        if event.handles():
+            effort.setdefault("records", []).append(len(event.handles()))
 
     if g is not None:
         report.graph_read = True
