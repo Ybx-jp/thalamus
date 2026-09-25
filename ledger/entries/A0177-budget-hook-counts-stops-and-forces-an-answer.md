@@ -38,10 +38,8 @@ none
 <!-- APPEND BELOW THIS LINE ONLY -->
 
 ## Verdicts
+- 2026-09-24T19:40:00-07:00 · superseded · grade: measured · author: main
+  evidence: entry: A0179-every-budget-cap-forces-an-answer · supersedes
+  note: the turn and tool-call caps now ask for an answer the way the token caps do, the turn cap through PostToolBatch additionalContext; the codex behaviour is unchanged
 
 ## References
-
-- docs/concepts.md · standing · cites-as-live
-- src/thalamus/harness/budget.py · standing · cites-as-live
-- src/thalamus/harness/hooks/codex/budget.sh · standing · cites-as-live
-- src/thalamus/harness/install.py · standing · cites-as-live

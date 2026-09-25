@@ -92,14 +92,14 @@ A manifest can also declare:
   `max_subagent_tokens` for one subagent's run on its own — Codex counts only the
   session's own spend and caps no subagent;<!-- (A0176, cites-as-live) -->
   `max_tool_output_tokens` for one tool result.
-  `budget.sh` counts the first four from the tool hooks. Past a turn or tool-call cap,
-  on Claude Code it denies the call and stops the prompt — the stop reason is shown, and
-  the session takes a new prompt. Past a token cap it denies the call and tells the
-  model to answer now with what is done and what is left, so a subagent still returns a
-  reply; a model that keeps calling tools is stopped after three more denials. On Codex
-  every cap denies each further tool call, and turns are not counted. A subagent
+  `budget.sh` counts the first four from the tool hooks. Past any of them the model is
+  told to answer now with what is done and what is left, and every further tool call in
+  the prompt is denied, so a subagent still returns a reply to its launcher. On Claude
+  Code a model that keeps calling tools is stopped after three more denials — the stop
+  reason is shown, and the session takes a new prompt. On Codex every further call is
+  denied and turns are not counted. A subagent
   spawned as an expert is counted as that expert, on its own count, and is still held
-  to its session's total.<!-- (A0177, cites-as-live) -->
+  to its session's total.<!-- (A0179, cites-as-live) -->
   `THALAMUS_MAX_TURNS`, `THALAMUS_MAX_TOOL_CALLS`, `THALAMUS_MAX_TOKENS` and
   `THALAMUS_MAX_SUBAGENT_TOKENS` in the environment override the preset for the process and everything it spawns. The output
   cap rides the pin's launch environment on Claude Code and the scope's profile on
