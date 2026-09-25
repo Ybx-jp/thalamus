@@ -17,7 +17,7 @@
       "failure_class": "invariant-falsified",
       "witness_contains": "scratch entry for issue #299's real-run positive control; this branch and PR are deleted after the runs complete",
       "triaged_at_rev": "0000000",
-      "note": "Not a real triage. Planted only to give expectation-additions-are-never-silent an addition to detect on a scratch PR's first and second push. This branch is never merged."
+      "note": "Not a real triage. Planted only to give expectation-additions-are-never-silent an addition to detect on a scratch PR's first and second push. This branch is never merged. (Trivial second commit for #299's synchronize-event control.)"
     },
     {
       "case": "typed-text-reaches-the-pane-as-data-not-as-tmux-arguments",
