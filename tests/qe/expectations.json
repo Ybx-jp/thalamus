@@ -88,6 +88,13 @@
       "witness_contains": "kill-window target='qe-close-probe:0' resolves to='B'; recycle_window: forced=True naming 'session-A', respawn-window target='qe-close-probe:0' resolves to='B'",
       "triaged_at_rev": "10c8fa5",
       "note": "Issue #153, narrower than filed. The issue's quoted lines (unconditional index-addressing) no longer exist: close_window/recycle_window now open with wid = _window_id(cfg, idx); target = wid or f\"{cfg.session}:{idx}\", and the primary interleaving the issue describes does not reproduce when wid capture succeeds - _window_gone(cfg, wid) correctly notices a same-indexed replacement's arrival and returns before either function forces. The residual defect is the fallback: when _window_id's own capture fails at teardown start, target stays index-shaped for the whole grace budget AND _window_gone's `if not wid: return False` guard disables its early exit outright, so a same-indexed replacement is force-killed (or force-respawned) in the original session's place while the kill row still names the original. The pin is both functions' resolved-to='B' outcome under a failed wid capture; a fix that refuses to proceed past an empty wid (rather than falling back to idx-addressing) makes this branch unreachable and this entry goes stale."
+    },
+    {
+      "case": "codex-mcp-server-does-not-receive-thalamus-scope",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "THALAMUS_SCOPE=None); control (env_vars whitelisted) delivered THALAMUS_SCOPE='qe'",
+      "triaged_at_rev": "3abe533",
+      "note": "Issue #289. register_codex_mcp() registers the thalamus MCP server through `codex mcp add --env THALAMUS_GRAPH_URL=<url>` and sets no `mcp_servers.thalamus.env_vars` whitelist entry, so codex does not forward THALAMUS_SCOPE from the parent process to the server's own environment and mcp_server.SCOPE resolves to `main`. The pin is the primary run's dump carrying no THALAMUS_SCOPE against the identical launch's control (env_vars=[\"THALAMUS_SCOPE\"]) delivering it; a fix that adds env_vars to the registration (a profile layer or a `-c` override, per the issue's open decision) makes the primary dump carry THALAMUS_SCOPE too and this entry goes stale."
     }
   ]
 }
