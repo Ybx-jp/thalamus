@@ -33,6 +33,7 @@ from gremlin_python.process.traversal import Direction, T, TextP
 from thalamus.eval.rates import Rate
 from thalamus.eval.traces import load_events
 from thalamus.harness.reflex import (
+    ARM_AGENTIC,
     ARM_LEXICAL,
     POINTER_OPEN,
     Firing,
@@ -40,6 +41,7 @@ from thalamus.harness.reflex import (
     load_shadow,
     reflex_dir,
 )
+from thalamus.harness.reflex_note import NOTE_ARMS
 from thalamus.harness.reflex_queue import JOB_OUTCOMES, load_outcomes
 
 # The evidence `attribution._judge` writes when the agent quoted the node's id or the
@@ -118,6 +120,10 @@ class ReflexReport:
     jobs: Counter = field(default_factory=Counter)
     job_depth: list[int] = field(default_factory=list)
     job_queued_ms: list[int] = field(default_factory=list)
+    # The agentic plan's note on delivered jobs: how each note fared at the check
+    # (valid, absent, too_long, …) and, of the valid ones, which arm it drew.
+    note_status: Counter = field(default_factory=Counter)
+    note_arm: Counter = field(default_factory=Counter)
     # Digests that went over Claude Code's 10,000-char spill line, from the tap.
     spilled: int = 0
     # Served firings whose pointer file the agent later named in a tool call, keyed
@@ -200,6 +206,13 @@ class ReflexReport:
                     f"  delivery depth, tool calls after the trigger, p50/p90/max: "
                     f"{_spread(self.job_depth)} (n={len(self.job_depth)})"
                 )
+            if self.note_status:
+                lines.append("  notes on delivered jobs, by check: " + ", ".join(
+                    f"{count} {status}" for status, count in sorted(self.note_status.items())
+                ))
+                lines.append("  valid notes, by arm: " + ", ".join(
+                    f"{self.note_arm.get(arm, 0)} {arm}" for arm in NOTE_ARMS
+                ))
             if self.job_queued_ms:
                 lines.append(
                     f"  queued ms, trigger to claim, p50/p90/max: "
@@ -308,6 +321,10 @@ def reflex_report(
             report.job_depth.append(job["depth"])
         if outcome == "delivered" and isinstance(job.get("queued_ms"), int):
             report.job_queued_ms.append(job["queued_ms"])
+        if outcome == "delivered" and job.get("note_status"):
+            report.note_status[str(job["note_status"])] += 1
+            if job.get("note_arm"):
+                report.note_arm[str(job["note_arm"])] += 1
 
     for shadow_row in load_shadow(reflex_base):
         report.shadowed[shadow_row.event] += 1
@@ -316,7 +333,12 @@ def reflex_report(
         if shadow_row.would_query:
             report.shadow_would_query[shadow_row.event] += 1
 
+    # A delivered agentic trace's note arm, by trace id, so the verdicts on the graph
+    # can be read with and without the note over the same kind of firing.
+    note_arms: dict[str, str] = {}
     for event in load_events(traces_base):
+        if event.tool == ARM_AGENTIC and event.tool_input.get("note_arm"):
+            note_arms[event.trace_id()] = str(event.tool_input["note_arm"])
         pointer = str(event.tool_input.get("pointer") or "")
         if event.tool == POINTER_OPEN:
             report.opens += 1
@@ -346,12 +368,18 @@ def reflex_report(
 
     if g is not None:
         report.graph_read = True
-        _read_verdicts(g, report)
+        _read_verdicts(g, report, note_arms)
     return report
 
 
-def _read_verdicts(g: GraphTraversalSource, report: ReflexReport) -> None:
+def _read_verdicts(
+    g: GraphTraversalSource, report: ReflexReport, note_arms: dict[str, str] | None = None
+) -> None:
     """Landed reflex traces and the verdicts on their RETURNS edges, by arm.
+
+    An agentic trace whose note passed its check is read under its note arm as well —
+    `reflex_agentic (note shown)` or `(note withheld)` — from `note_arms`, keyed by the
+    trace id that ends the Trace vertex's id.
 
     Reads every scope: a reflex fires in whichever scope the session was pinned to,
     and the arm — not the scope — is the axis the ladder compares on.
@@ -369,7 +397,11 @@ def _read_verdicts(g: GraphTraversalSource, report: ReflexReport) -> None:
     arms: dict[str, str] = {}
     for row in rows:
         if isinstance(row, dict) and row.get("id") is not None:
-            arms[str(row["id"])] = str(row.get("tool") or ARM_LEXICAL)
+            arm = str(row.get("tool") or ARM_LEXICAL)
+            note_arm = (note_arms or {}).get(str(row["id"]).rsplit(":", 1)[-1])
+            if arm == ARM_AGENTIC and note_arm:
+                arm = f"{arm} (note {note_arm})"
+            arms[str(row["id"])] = arm
     for arm in arms.values():
         report.landed[arm] += 1
     if not arms:

@@ -27,7 +27,14 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.harness import agentic, extraction, reflex, reflex_queue, reflex_worker
+from thalamus.harness import (
+    agentic,
+    extraction,
+    reflex,
+    reflex_note,
+    reflex_queue,
+    reflex_worker,
+)
 from thalamus.harness.agents import cli_for
 from thalamus.harness.extraction import StopLoop, run_tool_loop
 from thalamus.harness.reflex import ARM_AGENTIC, SESSION_CHAR_BUDGET, Firing, load_firings
@@ -206,11 +213,13 @@ def test_the_plan_keeps_the_models_handles_in_order_and_records_the_stop(monkeyp
     _script(monkeypatch, [
         _reply(("lexical_by_kind", {"missing": "the budget decision",
                                     "query": "reflex, budget", "kind": "decision"})),
-        _reply(("stop", {"keep": ["R1.2", "R1.1", "R1.2", "R9.9"], "reason": "both bear"})),
+        _reply(("stop", {"keep": ["R1.2", "R1.1", "R1.2", "R9.9"], "reason": "both bear",
+                         "note": " The budget was set at 24k [R1.2]. "})),
     ])
     result = agentic.run(job, cli=cli_for("local"), model="m", anchors=["reflex_budget"],
                          excerpt="x", deadline=time.monotonic() + 30)
     assert result.stopped == "stop_tool" and result.reason == "both bear"
+    assert result.note == "The budget was set at 24k [R1.2]."
     assert result.kept == ["v2", "v1"]
     assert result.unknown_kept == ["R9.9"]
     # `missing` is the stop log's, never an argument the compiler sees; commas are spacing.
@@ -328,7 +337,7 @@ def graph_reads(monkeypatch):
     )
 
 
-def _plan(kept=(), stopped="stop_tool", sleep=0.0):
+def _plan(kept=(), stopped="stop_tool", sleep=0.0, note=""):
     def run(job, *, result, **kwargs):
         for node in kept:
             job.handle_for(node)
@@ -336,6 +345,7 @@ def _plan(kept=(), stopped="stop_tool", sleep=0.0):
             time.sleep(sleep)
         result.stopped = stopped
         result.kept = list(kept)
+        result.note = note
         return result
     return run
 
@@ -512,3 +522,68 @@ def test_a_job_that_raises_is_recorded_as_error_and_the_worker_runs_the_next(tmp
     assert row["outcome"] == "error" and "graph client wedged" in row["detail"]
     assert len(closed) == 2  # the wedged client, then the fresh one at exit
     assert not list(tmp_path.glob("queue/*/*/pending*"))
+
+
+# --- the note (step 6) -------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("note, status", [
+    ("The budget was set at 24k [R1.1]. It was raised once [R1.1, R1.2].", "valid"),
+    ("", "absent"),
+    ("x [R1.1]. " * 60, "too_long"),
+    ("The budget was set at 24k [R1.1]. It was raised once.", "uncited_sentence"),
+    ("The budget was set at 24k [R1.9].", "unknown_handle"),
+    ("Fix the budget test using [R1.1].", "imperative"),
+])
+def test_a_note_is_delivered_only_when_every_sentence_cites_a_served_record_and_none_instructs(
+        note, status):
+    """Each refusal has a passing twin: the first row differs from each failing row in
+    the one property that row breaks."""
+    assert reflex_note.check_note(note, {"R1.1", "R1.2"}).status == status
+
+
+def test_valid_notes_split_between_shown_and_withheld_in_balanced_blocks(tmp_path):
+    arms = [reflex_note.assign_note_arm(tmp_path, "s1", f"R{n}") for n in range(10)]
+    for block in range(5):
+        assert sorted(arms[2 * block: 2 * block + 2]) == sorted(reflex_note.NOTE_ARMS)
+    again = [reflex_note.assign_note_arm(tmp_path / "other", "s1", f"R{n}") for n in range(10)]
+    assert again == arms
+
+
+def _ready_file(tmp_path):
+    return json.loads(next(tmp_path.glob("queue/s1/session/ready/*.json")).read_text())
+
+
+def test_a_shown_note_is_in_the_digest_and_a_withheld_one_only_in_the_record(
+        tmp_path, monkeypatch, graph_reads):
+    note = "The reflex budget was set at 24k chars [R1.1]."
+    monkeypatch.setattr(reflex_note, "assign_note_arm",
+                        lambda root, session, firing: reflex_note.SHOWN)
+    monkeypatch.setattr(agentic, "run", _plan(kept=["scope:main:claim:a"], note=note))
+    _run(tmp_path, _claim(tmp_path))
+    ready = _ready_file(tmp_path)
+    assert note in ready["digest"] and "written by the local model" in ready["digest"]
+    assert ready["note_arm"] == "shown" and ready["note_status"] == "valid"
+    assert ready["chars"] <= reflex.DIGEST_CHAR_CAP
+    next(tmp_path.glob("queue/s1/session/ready/*.json")).unlink()
+
+    # The second job's handles are R2.n: its note cites what it serves.
+    note = "The reflex budget was set at 24k chars [R2.1]."
+    monkeypatch.setattr(reflex_note, "assign_note_arm",
+                        lambda root, session, firing: reflex_note.WITHHELD)
+    monkeypatch.setattr(agentic, "run", _plan(kept=["scope:main:claim:a"], note=note))
+    _run(tmp_path, _claim(tmp_path, use_id="t2"))
+    ready = _ready_file(tmp_path)
+    assert note not in ready["digest"] and ready["note"] == note
+    assert ready["note_arm"] == "withheld"
+
+
+def test_a_refused_note_draws_no_arm_and_the_records_still_go_out(
+        tmp_path, monkeypatch, graph_reads):
+    monkeypatch.setattr(agentic, "run", _plan(kept=["scope:main:claim:a"],
+                                              note="Always rerun the suite [R1.1]."))
+    assert _run(tmp_path, _claim(tmp_path)) == "ready"
+    ready = _ready_file(tmp_path)
+    assert ready["note_status"] == "imperative" and ready["note_arm"] == ""
+    assert "Always rerun" not in ready["digest"] and "R1.1 · decision" in ready["digest"]
+    assert not (tmp_path / "note_arms").exists()
