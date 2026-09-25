@@ -36,7 +36,9 @@ none
 
 ## Verdicts
 
+- 2026-09-24T22:06:05-07:00 · superseded · grade: measured · author: main
+  evidence: entry: A0189-reflex-agentic-digests-ride-the-next-call-on-either-event · supersedes
+  note: the carrier is now wired on PostToolUseFailure as well, so delivery rides the next call whether it succeeded or failed; the queueing, the trace line and the budget charge are unchanged
+
 ## References
 
-- docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live

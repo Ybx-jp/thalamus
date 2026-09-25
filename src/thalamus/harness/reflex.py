@@ -19,7 +19,7 @@ loop of either: candidates are never paraphrased, so nothing here can re-voice a
 recorded decision into an instruction for the reader. *Agentic* (`harness/agentic.py`)
 is a local model choosing the calls; it is too slow for the hook to wait on, so its
 firing is queued and a detached worker's digest reaches the agent through the carrier
-on a later call (`harness/reflex_worker.py`) (A0181, cites-as-live). The model chooses
+on a later call (`harness/reflex_worker.py`) (A0189, cites-as-live). The model chooses
 records and never writes them: its lines are built from the rows it chose, and the
 records are quoted verbatim like every other plan's. What enters the agent's context is a
 digest: one line per candidate — a short handle (`R3.1`), its kind, tier, date, its

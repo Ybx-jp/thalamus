@@ -37,6 +37,14 @@ none
 
 ## Verdicts
 
+- 2026-09-24T22:06:21-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:0f2a4371797f96fbb432d5b98a1d58d0f76a8393960bdb6fd17f7bbd219dc4c8
+  artifact: sha256:73b3ffc79b79be95f953eff1db9691a4ca6be8fbc98fa746f13983b5e27df4c7
+  note: propagated from a moved ground
+- 2026-09-24T22:07:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:73b3ffc79b79be95f953eff1db9691a4ca6be8fbc98fa746f13983b5e27df4c7
+  note: HOOK_WIRING gained a PostToolUseFailure row for reflex-pointer-tap.sh with no matcher; reflex.sh's rows on PostToolUse and PostToolUseFailure with matcher Bash are unchanged, so the assertion is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

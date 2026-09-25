@@ -478,6 +478,20 @@ def test_the_carrier_delivers_a_ready_result_to_the_agent_whose_key_it_is(tmp_pa
     assert "--deliver --session-id s1 --agent-id sub" in log.read_text()
 
 
+def test_the_carrier_delivers_on_a_failed_call_under_that_event(tmp_path):
+    bin_dir, log = _stub_uv(tmp_path, "DIGEST")
+    ready = tmp_path / ".thalamus" / "reflex" / "queue" / "s1" / "session" / "ready" / "R1.json"
+    ready.parent.mkdir(parents=True)
+    ready.write_text("{}")
+    result = _run_tap({"session_id": "s1", "tool_name": "Bash",
+                       "hook_event_name": "PostToolUseFailure",
+                       "tool_input": {"command": "pytest"}, "error": "Exit code 1"},
+                      tmp_path, bin_dir)
+    assert json.loads(result.stdout)["hookSpecificOutput"] == {
+        "hookEventName": "PostToolUseFailure", "additionalContext": "DIGEST"}
+    assert "--event PostToolUseFailure" in log.read_text()
+
+
 def test_the_carrier_runs_nothing_when_no_result_is_ready(tmp_path):
     bin_dir, log = _stub_uv(tmp_path, "DIGEST")
     result = _run_tap({"session_id": "s1", "tool_name": "Read", "tool_input": {}},
