@@ -364,11 +364,9 @@ class TestCodexInstall:
         assert sandbox["codex_mcp_calls"] == [False], "codex MCP goes through `codex mcp add`"
 
     def test_there_is_no_project_scope_to_strip(self, sandbox):
-        """Measured: `$CODEX_HOME/hooks.json` is the only file codex loads hooks from
-        — a project-level `./.codex/hooks.json` is not discovered and hooks in
-        `config.toml` do not fire. So the mutual-exclusion problem the other two legs
-        solve by removing a second definition cannot arise, and the installer must not
-        invent a second place to look."""
+        """The installer writes codex's hooks to `$CODEX_HOME/hooks.json` and to no
+        project layer. codex runs the hooks of every layer side by side (A0200), so a
+        second place written here would fire every hook twice."""
         assert not any(name.startswith("PROJECT_CODEX") for name in dir(install))
 
     def test_config_toml_is_never_written_by_us(self, sandbox):
