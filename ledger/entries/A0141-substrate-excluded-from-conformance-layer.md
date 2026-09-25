@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-25T02:56:53-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "rules" =sha256:3de9d845afcc5a08180ea1bdee33f4932a424b2a997ed6e9d1982acab308266a
+  artifact: sha256:32bbd0bb1fe636fb04ab9969ec1abafcc804ae1bdf017406a2da3f1d90535432
+  note: propagated from a moved ground
+- 2026-09-25T02:57:00-07:00 · corroborated · grade: measured · author: main
+  evidence: yaml: arch/model.yaml § "rules" =sha256:32bbd0bb1fe636fb04ab9969ec1abafcc804ae1bdf017406a2da3f1d90535432
+  note: the yaml section pattern now opens and ends sections only at top-level keys (#300), so the ground spans the key's whole block where it spanned the key line; read against that block, substrate may depend on vocabulary and archive only, and conformance is not among them, so the assertion holds
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

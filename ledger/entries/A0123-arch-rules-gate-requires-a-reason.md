@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-25T02:56:53-07:00 · contested · grade: measured · author: propagation
+  evidence: yaml: arch/model.yaml § "accepted" =sha256:d25cd73c382e24c3c09efd927448278d11bbfdbd2f2c2d5469153db30ce05815
+  artifact: sha256:bfc4dca40e053cb410679f40ec472425d376da9db29292702c586ea1e4b8ac8b
+  note: propagated from a moved ground
+- 2026-09-25T02:57:00-07:00 · corroborated · grade: measured · author: main
+  evidence: yaml: arch/model.yaml § "accepted" =sha256:bfc4dca40e053cb410679f40ec472425d376da9db29292702c586ea1e4b8ac8b
+  note: the yaml section pattern now opens and ends sections only at top-level keys (#300), so the ground spans the key's whole block where it spanned the key line; read against that block, each accepted edge carries a reason, so the assertion holds
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

@@ -128,4 +128,11 @@ js = '^(?:/\*\*(?:[^*]|\*(?!/))*\*/[ \t]*\n)*(?![ \t])(?:(?:async[ \t]+)?functio
 toml = '^\[{name}\]'
 toml-key = '^{name} = '
 # A top-level YAML key and everything nested under it, running to the next top-level key.
-yaml = '^{name}:'
+#
+# The lookahead is what makes it top-level. A section ends where the pattern matches
+# again with the name widened to any text, and without the lookahead that is any line
+# holding a colon: every nested key ended its parent, and a ground on `jobs` spanned the
+# six bytes `jobs:\n`. An indent, a comment and a list item or document marker cannot
+# start a top-level key, so none of them opens or ends a section. Measured over the
+# five yaml grounds: each now spans its key's whole block and no other top-level key.
+yaml ='^(?![ \t#-]){name}:'
