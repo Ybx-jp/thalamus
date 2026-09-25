@@ -88,7 +88,9 @@ A manifest can also declare:
 - **`budget`** — the name of a preset capping what the scope's sessions may spend,
   defined the same way in `presets/budget.yaml`; `inherit` sets no cap. Four keys, each
   an integer: `max_turns` and `max_tool_calls` per prompt, reset by the next prompt;
-  `max_tokens` for the whole session; `max_tool_output_tokens` for one tool result.
+  `max_tokens` for the whole session, and on Claude Code for each subagent's run on its
+  own;<!-- (A0175, cites-as-live) -->
+  `max_tool_output_tokens` for one tool result.
   `budget.sh` counts the first three from the tool hooks. Past a cap, on Claude
   Code it denies the call and stops the prompt — the stop reason is shown, and the
   session takes a new prompt; on Codex it denies every further tool call and does not
