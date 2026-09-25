@@ -43,6 +43,9 @@ Run them before you push rather than after CI tells you.
   document — and in Markdown it goes inside an HTML comment, hidden from the rendered
   page and read all the same. See CONTRIBUTING.md §"The claims ledger" for both, and for
   the three repairs; never clear a citation failure by deleting the citation.
+  An entry id is allocated by `claims-ledger new`, never chosen: `new --id` is refused
+  by a hook, and two branches that minted the same ids are reconciled with
+  `claims-ledger renumber` on the one that merges second.<!-- (A0202, cites-as-live) -->
 
 - `tests/js/*.test.mjs` run under node as part of the same pytest run, driven by
   `tests/test_console_js.py`.<!-- (A0127, cites-as-live) -->

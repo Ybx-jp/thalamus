@@ -11,6 +11,16 @@
 #
 # `continue-on-error` is deliberately absent. The whole point of the expectations file
 # is that known defects exit 0 on their own, so anything red here is genuinely new.
+#
+# Two jobs, not one, because one case cannot be made to fit the same gate as the rest.
+# `expectation-additions-are-never-silent` (tests/qe/cases/expectation_additions.py) is
+# *designed* to go red the moment a reproduction PR adds a known-red entry for a real,
+# unfixed defect — that red is the report, not a defect in the PR. `adversarial` is a
+# required status check with no bypass in the repo ruleset, so a case that must go red
+# on every legitimate addition cannot live inside it without making every such PR
+# permanently unmergeable. `mute-review` runs that one case alone, is not required, and
+# carries no `continue-on-error` either — its own red is exactly as loud, it simply does
+# not block. See the case's docstring, §"Where this runs".
 name: qe-fast
 
 on:
@@ -23,14 +33,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # The suite stamps the revision into every ledger row and reads it via
-          # `git rev-parse`, which needs real history rather than a shallow clone.
-          # `expectation-additions-are-never-silent` needs more than that: it diffs
-          # expectations.json against the pushed ref's prior tip (or the PR base), and a
-          # base it cannot resolve is MALFORMED — exit 3, never a silent pass. Shallow
-          # this and the oracle's own guard goes red, correctly.
-          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v5
 
@@ -52,8 +54,41 @@ jobs:
           jq --version
           uv run python -c "import pytest; print(pytest.__version__)"
 
+      # Every FAST case except the one `mute-review` runs. Loading `run.py` still
+      # imports every case module named in `CASE_MODULES`, so an unloadable case
+      # anywhere in the suite is still reported here (MALFORMED), and orphan or
+      # mistagged expectations are still checked against the full case set.
       - name: Run the fast tier
-        run: uv run python tests/qe/run.py --tier fast
+        run: uv run python tests/qe/run.py --tier fast --exclude expectation-additions-are-never-silent
+
+      - name: Ledger
+        if: always()
+        run: cat ~/.thalamus/qe/runs.jsonl || echo "no ledger written"
+
+  # Deliberately not in the repo ruleset's required-checks list — see the job-level
+  # comment above and the case's own docstring.
+  mute-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The suite stamps the revision into every ledger row and reads it via
+          # `git rev-parse`, which needs real history rather than a shallow clone.
+          # `expectation-additions-are-never-silent` needs more than that: it diffs
+          # expectations.json against the pushed ref's prior tip (or the PR base), and a
+          # base it cannot resolve is MALFORMED — exit 3, never a silent pass. Shallow
+          # this and the oracle's own guard goes red, correctly.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      # Same reason as `adversarial`: loading any case module needs the `dev` extra,
+      # even though this job runs only one of them.
+      - name: Install
+        run: uv sync --extra dev
+
+      - name: Run the addition gate alone
+        run: uv run python tests/qe/run.py --only expectation-additions-are-never-silent
 
       - name: Ledger
         if: always()
