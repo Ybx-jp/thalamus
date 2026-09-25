@@ -20,7 +20,7 @@ import pytest
 
 from thalamus.eval import vocabulary as measure_mod
 from thalamus.harness import mcp_server, reflex, retrieval
-from thalamus.harness.retrieval import Caps, Job, Tool
+from thalamus.harness.retrieval import Caps, Job, Refused, Tool
 from thalamus.substrate import vocabulary
 from thalamus.substrate.vocabulary import Row, _row, _summary
 
@@ -231,6 +231,26 @@ def test_the_row_character_cap_drops_rows_and_says_so(tools):
 
     assert len(lines) == 3 and lines[-1].startswith("cap: ")
     assert job.row_chars <= 2 * one_row
+
+
+def test_rows_is_call_without_the_rendering(tools):
+    """
+    Verifications:
+    - `rows`, which a deterministic plan reads, mints handles as `call` does and is
+      capped on nodes the same way, but charges no characters: no model reads it
+    - a call `call` would refuse raises `Refused` with the same reason
+    """
+    _, answers = tools
+    answers["lexical_by_kind"] = _rows(*(f"scope:main:claim:{i}" for i in range(5)))
+    job = _job(nodes=3)
+
+    rows = job.rows("lexical_by_kind", {"query": "q w", "kind": "decision"})
+
+    assert [row.vid for row in rows] == [f"scope:main:claim:{i}" for i in range(3)]
+    assert list(job.handles) == ["R4.1", "R4.2", "R4.3"]
+    assert job.row_chars == 0 and job.calls == 1
+    with pytest.raises(Refused, match="not a handle this job returned"):
+        job.rows("expand_one_hop", {"handle": "R9.9", "relation": "uses"})
 
 
 def test_word_match_is_one_call_whose_results_get_handles_in_rank_order(monkeypatch):

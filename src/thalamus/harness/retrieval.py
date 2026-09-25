@@ -156,8 +156,7 @@ class Job:
             return "no results"
         lines = []
         for row in rows:
-            new = row.vid not in self._handle_of
-            if new and len(self.handles) >= self.caps.nodes:
+            if self._past_node_cap(row.vid):
                 lines.append(f"cap: {self.caps.nodes} distinct nodes returned; the rest dropped")
                 break
             line = row.line(self.handle_for(row.vid))
@@ -167,6 +166,22 @@ class Job:
             self.row_chars += len(line) + 1
             lines.append(line)
         return "\n".join(lines)
+
+    def rows(self, name: str, args: dict) -> list[Row]:
+        """Run one call and return its rows with their handles minted — the form a
+        deterministic plan reads, where `call`'s rendering is for a model.
+
+        Validated and charged exactly as `call` is, and raises `Refused` where `call`
+        would say it. Rows past the node cap are dropped; no characters are charged,
+        since nothing here enters a planner's context.
+        """
+        kept = []
+        for row in self._run(name, args):
+            if self._past_node_cap(row.vid):
+                break
+            self.handle_for(row.vid)
+            kept.append(row)
+        return kept
 
     def word_match(self, query: str, limit: int) -> list:
         """The word-match plan: `recall()` over the anchors, one call, handles minted
@@ -181,6 +196,9 @@ class Job:
             if node_id:
                 self.handle_for(node_id)
         return results
+
+    def _past_node_cap(self, node_id: str) -> bool:
+        return node_id not in self._handle_of and len(self.handles) >= self.caps.nodes
 
     def _charge(self) -> None:
         if self.calls >= self.caps.calls:

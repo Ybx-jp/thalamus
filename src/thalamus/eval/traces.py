@@ -59,11 +59,12 @@ RETRIEVAL_TOOLS = frozenset(
         "memory_source_chunks",
         "memory_resolve",
         "bash_gremlin",
-        # The memory reflex's lexical arm (harness/reflex.py, reflex.sh): retrieval
-        # the harness initiated off a failed Bash result. Priced here like every
-        # other retrieval; `eval reflex` reads it by arm. Without this entry
-        # `load_events()`'s default filter drops every reflex line.
+        # The memory reflex's arms, one per plan (harness/reflex.py, reflex.sh):
+        # retrieval the harness initiated off a failed Bash result. Priced here like
+        # every other retrieval; `eval reflex` reads them by arm. Without an arm's
+        # entry `load_events()`'s default filter drops every line it writes.
         "reflex_lexical",
+        "reflex_propagation",
         # A read of a reflex pointer file (reflex-pointer-tap.sh): the file's records
         # entering context when the agent opens them, priced like any retrieval.
         "reflex_pointer_open",

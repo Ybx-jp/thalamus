@@ -403,15 +403,19 @@ the same session, so a rerun of a failing test is silent; a session has a
 with the arithmetic when crossed; and an empty answer is the ordinary one, since nothing
 is served unless at least two unseen anchors match. Every qualifying failure is written
 to `~/.thalamus/reflex/sessions/<session>.jsonl` with its outcome — served, empty,
-deduped, refused, no anchors — and every firing that retrieved is one line in the trace
-tap under `tool_name` `reflex_lexical`, priced by `eval sync` like any other retrieval:
+deduped, refused, no anchors — and the plan it ran, and every firing that retrieved is
+one line in the trace tap under its plan's `tool_name`, `reflex_lexical` or
+`reflex_propagation`, priced by `eval sync` like any other retrieval:
 its response is the pointer file, so the vertex ids are read from it, its injected
 characters are the digest's, and it carries the handle map. A read of a pointer file —
 by `Read`, `Grep` or a shell command naming its path — is recorded by
 `reflex-pointer-tap.sh` (`PostToolUse`, all tools) as a `reflex_pointer_open` line.
 
 The report splits by arm. The ledger half needs no graph: qualifying failures, outcomes,
-served-per-failure, injected characters per session, how many served records were
+the outcomes of each plan over the firings that took one, served-per-failure, what each
+arm did per firing — calls, nodes returned, milliseconds, records served and, for
+propagation, how many of them the spread reached — injected characters per session, how
+many served records were
 phrased as instructions (quoted verbatim and named as records, never dropped), how many
 digests crossed the spill line, and how many served pointer files the agent opened — a
 secondary signal, since an open says the agent looked, not that the record changed
@@ -424,10 +428,25 @@ form and the primary use signal.
 The reflex's retrieval runs through a compiler (`harness/retrieval.py`): a planner
 names a tool of the retrieval vocabulary and its arguments, and the compiler checks
 both, supplies the scope itself, resolves the handles it showed the planner back to
-vertex ids — a planner can name no node it was not shown — and caps each job at 12
-calls, 40 distinct nodes, 8,000 characters of rows and 30 seconds, refusing the call
-that would cross one.<!-- (A0172, cites-as-live) --> Word match is one such job today,
-and each `reflex_lexical` trace carries the calls it issued and the nodes it returned.
+vertex ids — a planner can name no node it was not shown — and by default caps each
+job at 12 calls, 40 distinct nodes, 8,000 characters of rows and 30 seconds, refusing
+the call that would cross one.<!-- (A0172, cites-as-live) --> Each firing runs one of
+two plans as one such job. A firing past the checks that need no graph takes the next
+slot of its session's blocks, each block holding the two plans once in an order drawn
+from the session id, so a session's firings split between them to within
+one.<!-- (A0176, cites-as-live) --> *Word match* is `recall()` over the anchors.
+*Propagation* serves what word match would, then at most three records a two-hop spread
+from those hits over the graph's relations reached, strongest first, each on a line
+ending `via <relation> from <handle>`; a reached record that does not fit the digest is
+not served, and is not in the pointer file.<!-- (A0177, cites-as-live) --> The spread
+is a truncated Personalized PageRank from the hits: each node passes half its
+activation on, split evenly across the relations that reached anything from it and then
+across each relation's neighbours, every hit is expanded on the first hop and the three
+strongest new nodes on the second. Its job runs under wider caps than the default,
+since its rows reach no model: 49 calls, every node they can return, and 8 seconds. On
+six replayed firings it added 0.25–0.55 s to the 2–3 s word match took. Each trace
+carries the calls, nodes and milliseconds its plan used, and propagation's its hops too.
+
 `eval vocabulary` measures what those caps are set against: it replays the newest real
 anchor sets from the reflex ledger and the shadow log (`--limit`, default 40) through
 every tool — every kind searched, every relation walked from the top node of each — and

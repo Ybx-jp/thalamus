@@ -7,8 +7,8 @@ every route is root-relative and the frontend fetches relative URLs.
 Two cadences, matching what the data can honestly say:
 - /api/live — ledger files only, cheap, polled every few seconds;
 - /api/report — graph + transcript scan, TTL-cached, rebuilt at most once a
-  minute. Graph unreachable degrades to tap-only with `graph_ok: false`; the
-  frontend stamps the affected panels rather than blanking them.
+  minute. Graph unreachable degrades to tap-only with `graph_ok: false`, and
+  the report's `health` block names it as a failed check the page prints.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).with_name("static")
 REPORT_TTL_SECONDS = 60
+_REVALIDATE = {"Cache-Control": "no-cache"}
 
 
 class _ReportCache:
@@ -77,6 +78,9 @@ def create_pulse_app(
     projects_base: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Thalamus Pulse", docs_url=None, redoc_url=None)
+    # Recorded once, here: the app is created at process start, and this is the
+    # commit whose Python the process goes on running whatever the checkout does.
+    build = metrics.record_build()
 
     def build_report() -> dict:
         g = _try_connect(url)
@@ -90,6 +94,7 @@ def create_pulse_app(
                 pins_file=pins_file,
                 profiles_base=profiles_base,
                 projects_base=projects_base,
+                build=build,
             )
         finally:
             if g is not None:
@@ -104,38 +109,45 @@ def create_pulse_app(
     @app.get("/api/live")
     def live() -> JSONResponse:
         return JSONResponse(
-            metrics.live_snapshot(
-                traces_base=traces_base,
-                guards_base=guards_base,
-                conditioning_base=conditioning_base,
-                pins_file=pins_file,
-            )
+            metrics.live_snapshot(traces_base=traces_base, pins_file=pins_file)
         )
 
     @app.get("/api/report")
     def report() -> JSONResponse:
         return JSONResponse(cache.get())
 
+    # The page is one file on purpose. Static files are read per request while the
+    # Python is loaded once, so after a pull the page is new and the server is not;
+    # a page split across files the old server does not know how to serve would load
+    # blank, where one file loads and says the server is stale. `no-cache` makes the
+    # browser revalidate every load rather than guess at freshness.
     @app.get("/")
     @app.get("/index.html")
     def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers=_REVALIDATE)
 
-    # PWA install surface. No service worker by design: Chrome installs from
-    # manifest alone, and the plane's stale-shell incident is a whole bug class
-    # this dashboard opts out of. Relative URLs throughout — the page lives
-    # behind `tailscale serve --set-path /pulse`, which strips the prefix;
-    # only the manifest names /pulse/ absolutely (id/scope/start_url).
-    _pwa_assets = {
+    # PWA install surface and the Plex faces. No service worker by design: Chrome
+    # installs from manifest alone, and the plane's stale-shell incident is a whole
+    # bug class this dashboard opts out of. Relative URLs throughout — the page
+    # lives behind `tailscale serve --set-path /pulse`, which strips the prefix;
+    # only the manifest names /pulse/ absolutely (id/scope/start_url). The fonts are
+    # pulse's own copies of the console's subsets, so neither surface's static dir
+    # reaches into the other's; a missing face falls back to the system stack.
+    _assets = {
         "manifest.webmanifest": "application/manifest+json",
         "icon-192.png": "image/png",
         "icon-512.png": "image/png",
         "icon.svg": "image/svg+xml",
+        "plex-mono-400.woff2": "font/woff2",
+        "plex-mono-600.woff2": "font/woff2",
+        "plex-sans-400.woff2": "font/woff2",
+        "plex-sans-600.woff2": "font/woff2",
+        "PLEX-OFL.txt": "text/plain; charset=utf-8",
     }
 
     @app.get("/{asset}")
-    def pwa_asset(asset: str) -> FileResponse:
-        media_type = _pwa_assets.get(asset)
+    def static_asset(asset: str) -> FileResponse:
+        media_type = _assets.get(asset)
         if media_type is None:
             raise HTTPException(status_code=404)
         return FileResponse(STATIC_DIR / asset, media_type=media_type)
