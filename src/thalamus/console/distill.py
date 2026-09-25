@@ -299,7 +299,7 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     # that died in two seconds as one that may yet finish. The exit status the hook
     # recorded settles it, or the traceback where the hook records none, and the row
     # then names the exception instead of ageing into "nothing has moved"
-    # (A0155, cites-as-live).
+    # (A0178, cites-as-live).
     if exited or TRACEBACK_MARK in text:
         return "error", (_crash_detail(lines)
                          or f"extract exited {exited or 1} without distilling")

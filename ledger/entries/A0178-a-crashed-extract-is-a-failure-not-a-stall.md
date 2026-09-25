@@ -1,5 +1,5 @@
 ---
-id: A0155-a-crashed-extract-is-a-failure-not-a-stall
+id: A0178-a-crashed-extract-is-a-failure-not-a-stall
 kind: claim
 stated: 2026-09-21T13:40:37-07:00
 author: main
@@ -20,7 +20,7 @@ condition: a crash that reached the log — either as the non-zero exit status `
 
 ## Grounds
 
-- code: src/thalamus/console/distill.py § "_classify" =sha256:f4631f9094cc9b6415903d33b4a85d55c9e2b3b11575545cac5928eecc7fe1e2
+- code: src/thalamus/console/distill.py § "_classify" =sha256:19f622f2e6e10b6bd5eb56ecf58c5c08f693860dbf12c2ecda561500bce9c552
 
 ## Warrant
 

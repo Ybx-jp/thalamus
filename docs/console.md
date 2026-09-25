@@ -351,7 +351,7 @@ window, and a row then renders from the record alone.
   escaping `extract` — reads the same band and is named by the exception it died on,
   rather than being left to the stall clock, which would wait twenty minutes and then
   report a process that died in its first seconds as one that had gone
-  quiet.<!-- (A0155, cites-as-live) -->
+  quiet.<!-- (A0178, cites-as-live) -->
 - **never distilled** — the band, for a window killed before SessionEnd could run.
   Only a close or a restart that outlives the four-minute grace budget writes one.
   The window is identified by its tmux `@N` for the whole of that wait, because an
@@ -852,7 +852,7 @@ keeps that true.
   `hook-failures.log`; the codex hook checks no status and leaves only the traceback.
   Either one decides, and the row carries the exception line rather than the frames,
   which are this repo's own paths and name nothing on a
-  phone.<!-- (A0155, cites-as-live) -->
+  phone.<!-- (A0178, cites-as-live) -->
   **The last run mark in a log decides the row.** A log holds one attempt per
   distillation rather than one state, so a re-distill that succeeds clears the crash
   above it, and one that crashes is not laundered by the summary above
