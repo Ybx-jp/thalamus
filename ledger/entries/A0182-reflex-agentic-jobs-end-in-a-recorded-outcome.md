@@ -37,6 +37,15 @@ none
 
 ## Verdicts
 
+- 2026-09-24T23:02:47-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:0878ccf71844ae76c24d5c9ca870dead33a4681b4563f3f025dabef1309758a0
+  artifact: sha256:3b2136909ca337ce278103163738aa0efd8e48fb51e2508b2deeea37b56cdeb7
+  note: propagated from a moved ground
+- 2026-09-24T23:02:59-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:3b2136909ca337ce278103163738aa0efd8e48fb51e2508b2deeea37b56cdeb7
+  note: run_job now checks the note and assigns its arm before packing a served job; every outcome path and the deadline are unchanged, so the assertion is unaffected
+
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

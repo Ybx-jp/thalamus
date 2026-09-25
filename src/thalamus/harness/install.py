@@ -94,12 +94,13 @@ PROJECT_CURSOR_MCP = PROJECT_ROOT / ".cursor" / "mcp.json"
 
 CODEX_HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "codex"
 
-# Codex's config root, and the one file that arms its hooks. Measured 2026-08-17
-# (codex-cli 0.147.0): `$CODEX_HOME/hooks.json` is the **only** path that works — a
-# project-level `./.codex/hooks.json` is not discovered, and hooks declared in
-# `config.toml` do not fire. So codex has no project scope at all, and the
-# strip-the-project-duplicate half of the Cursor and Claude Code legs has nothing to
-# mirror here: there is exactly one definition because there is exactly one place.
+# Codex's config root, and the file this installer arms codex's hooks in. codex loads
+# hooks from every active config layer — a hooks.json or inline `[hooks]` tables in
+# config.toml, under CODEX_HOME and in a trusted project's `.codex/` — and runs all of
+# them. (A0200, cites-as-live) This installer writes `$CODEX_HOME/hooks.json` and no
+# project layer, so unlike the Cursor and Claude Code legs it has no second definition
+# of its own to strip; a copy of these hooks placed in another layer runs beside this
+# one, twice per event.
 #
 # CODEX_HOME is read at import, which is what makes a room's or a test's throwaway
 # home reachable — the same seam `CLAUDE_CONFIG_DIR` gives the Claude Code leg.
@@ -159,6 +160,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "Bash", "reflex.sh"),
     ("PostToolUseFailure", "Bash", "reflex.sh"),
     ("PostToolUse", None, "reflex-pointer-tap.sh"),
+    ("PostToolUseFailure", None, "reflex-pointer-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
     ("PostToolUse", "Agent", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "conditioning.sh"),
@@ -991,13 +993,12 @@ def codex_mcp_registration() -> str:
 
 
 def install_codex(dry_run: bool = False) -> list[str]:
-    """Wire codex at its config root. There is no project scope to strip.
+    """Wire codex at its config root, and nowhere else.
 
-    Measured 2026-08-17: `$CODEX_HOME/hooks.json` is the only file codex loads hooks
-    from — a project-level `./.codex/hooks.json` is not discovered, and hooks declared
-    in `config.toml` do not fire. So the mutual-exclusion problem the other two legs
-    solve by removing a second definition does not arise: there is one place, and this
-    writes it.
+    codex runs the hooks of every active config layer, a trusted project's `.codex/`
+    included, side by side. (A0200, cites-as-live) This writes only
+    `$CODEX_HOME/hooks.json`, so there is no second definition of its own for it to
+    strip the way the other two legs do.
 
     Codex also does not read `~/.claude/settings.json` (measured — three codex
     sessions ran with the Claude Code suite installed at user scope and left no

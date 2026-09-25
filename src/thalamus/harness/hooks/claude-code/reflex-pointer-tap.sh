@@ -1,5 +1,6 @@
 #!/bin/bash
-# Thalamus PostToolUse hook — memory reflex carrier and pointer-file tap (Claude Code).
+# Thalamus PostToolUse / PostToolUseFailure hook — memory reflex carrier and
+# pointer-file tap (Claude Code).
 #
 # Two jobs on every tool call, each behind a test that costs no process when it fails.
 #
@@ -23,13 +24,15 @@
 # the position bias of whatever listing prompted it.
 #
 # Matched on every tool, because a file is read through `Read`, `Grep` and `Bash`
-# (`cat`, `sed`, `head`) alike. Wired on `PostToolUse` only, so a call that fails
-# delivers nothing and the digest waits for the next call that succeeds; the script
-# reads `hook_event_name` and answers under whichever event ran it.
+# (`cat`, `sed`, `head`) alike, and wired on both events a call can end on, so a digest
+# waiting for the agent does not wait longer because its next call failed. Both events
+# carry `tool_input` and accept `additionalContext`; the script reads `hook_event_name`
+# and answers under whichever event ran it.
 #
-# Install (project .claude/settings.json):
+# Install (project .claude/settings.json), the same group under each event:
 #   {"hooks": {"PostToolUse": [{"hooks": [{"type": "command",
-#     "command": "$CLAUDE_PROJECT_DIR/src/thalamus/harness/hooks/claude-code/reflex-pointer-tap.sh"}]}]}}
+#     "command": "$CLAUDE_PROJECT_DIR/src/thalamus/harness/hooks/claude-code/reflex-pointer-tap.sh"}]}],
+#     "PostToolUseFailure": [ …the same group… ]}}
 
 set -euo pipefail
 

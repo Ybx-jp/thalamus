@@ -106,6 +106,13 @@ none
 - 2026-09-24T20:37:18-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:261d36075e7a26a59affe64959ccd47ffd4313827d87e1f46950a373cb845688
   note: reflex_report gained a loop over the queue's job ledger and counts queued rows per plan; the per-event counts of qualifying and served firings are unchanged and still keyed on the row's event, so the assertion is unaffected
+- 2026-09-24T23:02:47-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:261d36075e7a26a59affe64959ccd47ffd4313827d87e1f46950a373cb845688
+  artifact: sha256:9de704c817af205a374ef45b30893a7b7df6259a58b34c438ae5734801789bb6
+  note: propagated from a moved ground
+- 2026-09-24T23:02:59-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:9de704c817af205a374ef45b30893a7b7df6259a58b34c438ae5734801789bb6
+  note: reflex_report gained note counts from the job ledger and a map of agentic traces to their note arm; the per-event counts of qualifying and served firings are unchanged and still keyed on the row's event, so the assertion is unaffected
 
 
 ## References

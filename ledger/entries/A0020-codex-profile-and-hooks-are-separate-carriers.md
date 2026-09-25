@@ -37,3 +37,4 @@ none
 ## References
 
 - docs/concepts.md · standing · cites-as-live
+- docs/design/launch-templates.md · standing · cites-as-live

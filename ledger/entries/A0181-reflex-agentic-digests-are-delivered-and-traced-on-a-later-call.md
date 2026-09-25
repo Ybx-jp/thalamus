@@ -36,7 +36,17 @@ none
 
 ## Verdicts
 
+- 2026-09-24T23:02:47-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "deliver" =sha256:79995a9ad820d2ba7e4defc60408ddae05b1e634012ad54ea1a6621a970a64de
+  artifact: sha256:c2c0b7f978e3343c50ec47e695c8592c6b7ee13f41392842b410f2f641ee22b3
+  note: propagated from a moved ground
+- 2026-09-24T23:02:59-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex_worker.py § "deliver" =sha256:c2c0b7f978e3343c50ec47e695c8592c6b7ee13f41392842b410f2f641ee22b3
+  note: deliver now copies the note, its check, its arm and its cited handles into the trace's tool_input and the outcome row; the trace's ts, tool_name, response and depth and the budget charge are unchanged, so the assertion is unaffected
+- 2026-09-24T23:06:54-07:00 · superseded · grade: measured · author: main
+  evidence: entry: A0191-reflex-agentic-digests-ride-the-next-call-on-either-event · supersedes
+  note: the carrier is now wired on PostToolUseFailure as well, so delivery rides the next call whether it succeeded or failed; the queueing, the trace line and the budget charge are unchanged
+
+
 ## References
 
-- docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live

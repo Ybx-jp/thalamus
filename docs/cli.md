@@ -423,7 +423,7 @@ any other retrieval:
 its response is the pointer file, so the vertex ids are read from it, its injected
 characters are the digest's, and it carries the handle map. A read of a pointer file —
 by `Read`, `Grep` or a shell command naming its path — is recorded by
-`reflex-pointer-tap.sh` (`PostToolUse`, all tools) as a `reflex_pointer_open` line; the
+`reflex-pointer-tap.sh` (`PostToolUse` and `PostToolUseFailure`, all tools) as a `reflex_pointer_open` line; the
 same hook is the agentic plan's carrier.
 
 The report splits by arm. The ledger half needs no graph: qualifying failures, outcomes,
@@ -473,15 +473,27 @@ queued under `~/.thalamus/reflex/queue/<session>/<agent>/`, where a trigger arri
 while a job waits joins it, and the hook starts `thalamus reflex --work` detached unless
 a worker holds the global lock. The worker runs jobs oldest first, one at a time, and
 leaves each digest ready; `reflex-pointer-tap.sh` delivers it on that agent's next
-successful tool call, and the trace line is written then, timestamped at delivery and
+tool call, whether it succeeded or failed, and the trace line is written then, timestamped at delivery and
 carrying the number of tool calls the agent made after the failure, and the digest's
-characters are charged to the session's budget at that point.<!-- (A0181, cites-as-live) -->
+characters are charged to the session's budget at that point.<!-- (A0191, cites-as-live) -->
 A job whose session is no longer live makes no model call, one that runs past 120
 seconds is recorded as a timeout rather than an empty answer, and every job that is
 not delivered is recorded in `~/.thalamus/reflex/jobs/<month>.jsonl` with the reason:
 empty, timeout, died, session_end, budget, undelivered or
 error.<!-- (A0182, cites-as-live) --> `eval reflex` reports those outcomes beside the
 plans, with the delivery depth and the wait from trigger to claim.
+
+The agentic plan's `stop` call also carries a **note**: one to three sentences, written
+by the model from the records it kept, on what they establish about the failure. It is
+the only model-written text the reflex can deliver, so it is checked first: at most 500
+characters, every sentence citing a handle, every cited handle one the digest serves,
+nothing phrased as an instruction. A note that fails is not delivered and the records go
+out without it. A note that passes is shown in the digest or withheld from it, split in
+balanced blocks within the session, so the note's effect is read over the same kind of
+records rather than confounded with which records were kept; the note's text, check and
+arm are in the trace either way.<!-- (A0190, cites-as-live) --> `eval reflex` counts
+delivered notes by check and by arm, and reads the verdicts on agentic traces separately
+as `reflex_agentic (note shown)` and `(note withheld)`.
 
 `eval vocabulary` measures what those caps are set against: it replays the newest real
 anchor sets from the reflex ledger and the shadow log (`--limit`, default 40) through

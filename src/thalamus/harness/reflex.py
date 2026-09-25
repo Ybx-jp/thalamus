@@ -19,9 +19,11 @@ loop of either: candidates are never paraphrased, so nothing here can re-voice a
 recorded decision into an instruction for the reader. *Agentic* (`harness/agentic.py`)
 is a local model choosing the calls; it is too slow for the hook to wait on, so its
 firing is queued and a detached worker's digest reaches the agent through the carrier
-on a later call (`harness/reflex_worker.py`) (A0181, cites-as-live). The model chooses
-records and never writes them: its lines are built from the rows it chose, and the
-records are quoted verbatim like every other plan's. What enters the agent's context is a
+on a later call (`harness/reflex_worker.py`) (A0191, cites-as-live). The model chooses
+records and never rewrites them: its lines are built from the rows it chose, and the
+records are quoted verbatim like every other plan's. Its one piece of its own prose, a
+note on what the kept records establish, is checked and delivered as an arm of its own
+(`harness/reflex_note.py`). What enters the agent's context is a
 digest: one line per candidate — a short handle (`R3.1`), its kind, tier, date, its
 own first sentence and the anchors it matched — sized in characters under
 `DIGEST_CHAR_CAP`. The candidates themselves are quoted verbatim through the reader's
@@ -398,6 +400,7 @@ def render_envelope(
     pointer: str = "",
     linked: bool = False,
     trigger: str = "",
+    note: str = "",
 ) -> str:
     """The digest: the one label its lines do not carry, the lines, then the file.
 
@@ -411,7 +414,9 @@ def render_envelope(
     `trigger` is set for a digest delivered after the call that fired it (the agentic
     plan, through the worker and the carrier): it names that earlier result by its
     time, since delivery order is not fire order and "above" would point at whichever
-    call the carrier happened to ride.
+    call the carrier happened to ride. `note` is the agentic plan's checked note
+    (`reflex_note`), set only on a digest whose firing drew the shown arm; it sits
+    after the lines it cites, labelled as model-written.
     """
     if trigger:
         opening = (
@@ -445,6 +450,11 @@ def render_envelope(
         )
     if items:
         lines.append("\n".join(items))
+    if note:
+        lines.append(
+            "Note (written by the local model from the records above, not recalled; "
+            f"each sentence cites the records it rests on): {note}"
+        )
     if pointer:
         lines.append(f"The records, verbatim, with their vertex ids: {pointer}")
     return "\n\n".join(lines)

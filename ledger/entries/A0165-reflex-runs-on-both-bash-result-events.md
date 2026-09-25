@@ -59,6 +59,14 @@ none
 - 2026-09-24T19:20:13-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:2240b5ea6b948770b72f725456548972aa00dc990a8e81fa8352d257e360ce2d
   note: the budget.sh comment in HOOK_WIRING now describes the turn cap's context injection and cites A0179; the reflex wiring is unchanged
+- 2026-09-24T23:06:43-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:2240b5ea6b948770b72f725456548972aa00dc990a8e81fa8352d257e360ce2d
+  artifact: sha256:55e36f47f67e88eeedc9235d80601a79a2c9f128e744eaeb4c87b16e0194b106
+  note: propagated from a moved ground
+- 2026-09-24T23:06:54-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:55e36f47f67e88eeedc9235d80601a79a2c9f128e744eaeb4c87b16e0194b106
+  note: HOOK_WIRING gained a PostToolUseFailure row for reflex-pointer-tap.sh with no matcher; reflex.sh's rows on PostToolUse and PostToolUseFailure with matcher Bash are unchanged, so the assertion is unaffected
+
 
 ## References
 
