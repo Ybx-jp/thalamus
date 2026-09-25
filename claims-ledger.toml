@@ -20,6 +20,7 @@ documents = [
     "README.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",
+    ".claude/hooks/ledger-id-guard.py",
     "claims-ledger.toml",
     "docs/**/*.md",
     "pyproject.toml",
