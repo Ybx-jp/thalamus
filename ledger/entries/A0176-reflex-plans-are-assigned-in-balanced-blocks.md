@@ -36,7 +36,19 @@ none
 
 ## Verdicts
 
+- 2026-09-24T20:35:18-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "PLANS" =sha256:637c8afa57319b80578fa9228ae31197ea651b5a32e7543635fddbc4fe572249
+  artifact: sha256:b4cf29d99104d2a403f256a6a5c5dbfa3cb9c90f1335009f6ac75d52114c325f
+  note: propagated from a moved ground
+
+- 2026-09-24T20:35:18-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "_ASSIGNED_OUTCOMES" =sha256:bf579da76a06ec4a4f5fb305f2445f50f3f0a7cdcc05357b8a0c1fbaa9589c3b
+  artifact: sha256:0b272149f49bd66110a807a870d42915b5e95782a846067419557cb7a3571151
+  note: propagated from a moved ground
+- 2026-09-24T20:37:18-07:00 · superseded · grade: measured · author: main
+  evidence: entry: A0180-reflex-plans-are-assigned-in-balanced-blocks-of-three · supersedes
+  note: PLANS gained the agentic plan and _ASSIGNED_OUTCOMES gained queued; the block mechanism is unchanged and now permutes three plans
+
+
 ## References
 
-- docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/reflex.py · standing · cites-as-live

@@ -40,6 +40,7 @@ from thalamus.harness.reflex import (
     load_shadow,
     reflex_dir,
 )
+from thalamus.harness.reflex_queue import JOB_OUTCOMES, load_outcomes
 
 # The evidence `attribution._judge` writes when the agent quoted the node's id or the
 # handle it was shown for it: "cited by vertex ID", "cited by handle R3.1".
@@ -82,6 +83,7 @@ def _spread(values: list[int]) -> str:
 _EFFORT_LABELS = (
     ("calls", "calls"), ("nodes", "nodes returned"), ("ms", "ms"),
     ("records", "records served"), ("linked", "of them reached by the spread"),
+    ("turns", "model turns"), ("depth", "tool calls before delivery"),
 )
 
 
@@ -111,6 +113,11 @@ class ReflexReport:
     # wall milliseconds, records served and, of those, records the spread reached.
     effort: dict[str, dict[str, list[int]]] = field(default_factory=dict)
     tap_misses: Counter = field(default_factory=Counter)
+    # The agentic plan's jobs, from the queue's job ledger: how each ended, and for
+    # those that reached the agent, the delivery depth and the queue wait.
+    jobs: Counter = field(default_factory=Counter)
+    job_depth: list[int] = field(default_factory=list)
+    job_queued_ms: list[int] = field(default_factory=list)
     # Digests that went over Claude Code's 10,000-char spill line, from the tap.
     spilled: int = 0
     # Served firings whose pointer file the agent later named in a tool call, keyed
@@ -134,7 +141,7 @@ class ReflexReport:
             "",
             f"qualifying failures: {self.firings} over {self.sessions} session(s)",
         ]
-        for outcome in ("served", "empty", "deduped", "refused", "no_anchors"):
+        for outcome in ("served", "empty", "deduped", "refused", "no_anchors", "queued"):
             lines.append(f"  {outcome}: {self.outcomes.get(outcome, 0)}")
         lines.append("by the event that ran the hook (served / qualifying):")
         for event in sorted(self.by_event):
@@ -179,8 +186,24 @@ class ReflexReport:
                 lines.append(
                     f"  {arm}: " + " / ".join(
                         f"{outcomes.get(outcome, 0)} {outcome}"
-                        for outcome in ("served", "empty", "refused")
+                        for outcome in ("served", "empty", "refused", "queued")
+                        if outcome != "queued" or outcomes.get(outcome)
                     )
+                )
+        if self.jobs:
+            lines += ["", "agentic jobs, by how they ended (queue ledger):"]
+            lines.append("  " + " / ".join(
+                f"{self.jobs.get(outcome, 0)} {outcome}" for outcome in JOB_OUTCOMES
+            ))
+            if self.job_depth:
+                lines.append(
+                    f"  delivery depth, tool calls after the trigger, p50/p90/max: "
+                    f"{_spread(self.job_depth)} (n={len(self.job_depth)})"
+                )
+            if self.job_queued_ms:
+                lines.append(
+                    f"  queued ms, trigger to claim, p50/p90/max: "
+                    f"{_spread(self.job_queued_ms)} (n={len(self.job_queued_ms)})"
                 )
         if self.by_arm:
             lines += ["", "retrieved, by arm (trace tap):"]
@@ -269,7 +292,7 @@ def reflex_report(
     for row in firings:
         report.outcomes[row.outcome] += 1
         report.by_event[row.event] += 1
-        if row.arm and row.outcome in ("served", "empty", "refused"):
+        if row.arm and row.outcome in ("served", "empty", "refused", "queued"):
             report.by_plan.setdefault(row.arm, Counter())[row.outcome] += 1
         if row.outcome == "served":
             report.served_by_event[row.event] += 1
@@ -277,6 +300,14 @@ def reflex_report(
                 report.injected_by_session.get(row.session_id, 0) + row.injected_chars
             )
             report.voiced += row.voiced
+
+    for job in load_outcomes(reflex_dir(reflex_base)):
+        outcome = str(job.get("outcome") or "")
+        report.jobs[outcome] += 1
+        if outcome == "delivered" and isinstance(job.get("depth"), int):
+            report.job_depth.append(job["depth"])
+        if outcome == "delivered" and isinstance(job.get("queued_ms"), int):
+            report.job_queued_ms.append(job["queued_ms"])
 
     for shadow_row in load_shadow(reflex_base):
         report.shadowed[shadow_row.event] += 1
@@ -304,7 +335,7 @@ def reflex_report(
         effort = report.effort.setdefault(event.tool, {})
         # `hops` marks a plan that spreads; only there is `linked` a measurement.
         spreads = "hops" in event.tool_input
-        for key in ("calls", "nodes", "ms", "linked"):
+        for key in ("calls", "nodes", "ms", "linked", "turns", "depth"):
             value = event.tool_input.get(key)
             if key == "linked" and not spreads:
                 continue

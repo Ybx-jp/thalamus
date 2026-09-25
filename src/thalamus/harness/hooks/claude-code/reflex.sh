@@ -94,6 +94,11 @@ fi
 scope="$(thalamus_scope_from_payload "$input")"
 agent_type=$(printf '%s' "$input" | jq -r '.agent_type // ""')
 cwd=$(printf '%s' "$input" | jq -r '.cwd // ""')
+# An agentic firing is queued rather than served here: its worker builds an excerpt
+# of the session from the transcript, keeping this call's result by its id, and the
+# carrier measures delivery depth from the same id.
+transcript=$(printf '%s' "$input" | jq -r '.transcript_path // ""')
+tool_use_id=$(printf '%s' "$input" | jq -r '.tool_use_id // ""')
 
 # `--project <checkout>`, not the session's cwd: a session pinned into another repo
 # has a cwd that is not a uv project with thalamus in it (session-end.sh's reason).
@@ -104,6 +109,7 @@ context=$(uv run --project "$(thalamus_repo_root)" thalamus reflex \
   --session-id "$session" --scope "$scope" \
   --agent-id "$agent_id" --agent-type "$agent_type" \
   --cwd "$cwd" --tool-name "$tool_name" --event "$event" \
+  --transcript "$transcript" --tool-use-id "$tool_use_id" \
   --response-file "$response" 2>>"$log_dir/reflex.log") || context=""
 rm -f "$response"
 

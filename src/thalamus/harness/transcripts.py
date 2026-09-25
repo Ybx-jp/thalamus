@@ -528,6 +528,146 @@ def _summary(facts: TranscriptFacts) -> str:
     return title
 
 
+# What one item of a retrieval job's excerpt may carry, per kind. A pasted document
+# in a prompt or a long tool input would otherwise spend the planner's window on one
+# turn; the triggering result keeps its head and its tail, where a test runner prints
+# the failure and its summary.
+_EXCERPT_PROMPT_CHARS = 2_000
+_EXCERPT_TEXT_CHARS = 1_500
+_EXCERPT_INPUT_CHARS = 400
+_EXCERPT_TRIGGER_HEAD = 1_000
+_EXCERPT_TRIGGER_TAIL = 3_000
+
+
+@dataclass
+class Excerpt:
+    """A retrieval job's view of the session that fired it."""
+
+    text: str
+    # The triggers whose results the transcript held. One it did not hold yet — the
+    # file is written asynchronously and can lag the call that fired — is the job's to
+    # supply from the output the hook handed over.
+    found: set[str] = field(default_factory=set)
+
+
+def _cut(text: str, limit: int) -> str:
+    text = text.strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def trigger_text(text: str) -> str:
+    """A triggering result as an excerpt carries it: whole, or its head and tail."""
+    text = text.strip()
+    if len(text) <= _EXCERPT_TRIGGER_HEAD + _EXCERPT_TRIGGER_TAIL:
+        return text
+    dropped = len(text) - _EXCERPT_TRIGGER_HEAD - _EXCERPT_TRIGGER_TAIL
+    return (f"{text[:_EXCERPT_TRIGGER_HEAD]}\n[… {dropped:,} characters …]\n"
+            f"{text[-_EXCERPT_TRIGGER_TAIL:]}")
+
+
+def excerpt_for_job(
+    path: Path,
+    triggers: set[str],
+    *,
+    sidechain: bool = False,
+    max_chars: int = 16_000,
+) -> Excerpt:
+    """The agent's own turns and the triggering results, for a retrieval job.
+
+    User prompts, the agent's prose and its tool calls are kept; the `tool_result` of
+    each id in `triggers` is kept through `tool_result_text`; every other result is a
+    label, `[tool_result: <tool>]`, so a document the agent read enters the planner's
+    context as the fact that it was read and not as its contents. Walks the file as it
+    stands when the job is claimed, so a job that absorbed several triggers sees all of
+    them. When the whole exceeds `max_chars` the oldest items go first.
+
+    `sidechain` is set for a subagent's own file (`<session>/subagents/agent-<id>.jsonl`),
+    where every record is a sidechain record; in the parent's file those records are
+    the subagents' episodes and are skipped, as `parse()` skips them.
+    """
+    items: list[str] = []
+    found: set[str] = set()
+    names: dict[str, str] = {}
+    if not path.is_file():
+        return Excerpt(text="", found=found)
+    for record in _records(path):
+        if record.get("type") not in ("user", "assistant") or record.get("isMeta"):
+            continue
+        if record.get("isSidechain") and not sidechain:
+            continue
+        content = (record.get("message") or {}).get("content")
+        if record["type"] == "user":
+            if isinstance(content, str):
+                stripped = content.lstrip()
+                if stripped and not stripped.startswith("<"):
+                    items.append(f"[user] {_cut(content, _EXCERPT_PROMPT_CHARS)}")
+                continue
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "text" and block.get("text", "").strip():
+                    text = block["text"]
+                    if not text.lstrip().startswith("<"):
+                        items.append(f"[user] {_cut(text, _EXCERPT_PROMPT_CHARS)}")
+                elif block.get("type") == "tool_result":
+                    use_id = block.get("tool_use_id", "")
+                    name = names.get(use_id, "tool")
+                    if use_id in triggers:
+                        found.add(use_id)
+                        items.append(
+                            f"[tool_result: {name}, the result that fired this job]\n"
+                            + trigger_text(tool_result_text(block))
+                        )
+                    else:
+                        items.append(f"[tool_result: {name}]")
+            continue
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text" and block.get("text", "").strip():
+                items.append(f"[assistant] {_cut(block['text'], _EXCERPT_TEXT_CHARS)}")
+            elif block.get("type") == "tool_use":
+                name = str(block.get("name") or "tool")
+                if block.get("id"):
+                    names[block["id"]] = name
+                rendered = json.dumps(block.get("input") or {}, ensure_ascii=False)
+                items.append(f"[tool_use: {name}] {_cut(rendered, _EXCERPT_INPUT_CHARS)}")
+    kept: list[str] = []
+    room = max_chars
+    for item in reversed(items):
+        if len(item) + 1 > room:
+            break
+        kept.append(item)
+        room -= len(item) + 1
+    return Excerpt(text="\n".join(reversed(kept)), found=found)
+
+
+def tool_calls_after(path: Path, tool_use_id: str, *, sidechain: bool = False) -> int | None:
+    """How many tool calls the transcript records after the one with `tool_use_id`.
+
+    None when that call is not in the file. The delivery depth of a reflex digest: a
+    digest delivered on the call that fired it is at depth 0.
+    """
+    if not path.is_file():
+        return None
+    seen = False
+    count = 0
+    for record in _records(path):
+        if record.get("type") != "assistant":
+            continue
+        if record.get("isSidechain") and not sidechain:
+            continue
+        content = (record.get("message") or {}).get("content")
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            if seen:
+                count += 1
+            elif block.get("id") == tool_use_id:
+                seen = True
+    return count if seen else None
+
+
 def _records(path: Path):
     with path.open(errors="ignore") as handle:
         for line in handle:

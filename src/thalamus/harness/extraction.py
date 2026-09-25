@@ -36,6 +36,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 import yaml
@@ -1152,6 +1153,145 @@ def _usage_counts(usage, *keys: str) -> list[int | None]:
         int(usage[key]) if isinstance(usage.get(key), (int, float)) else None
         for key in keys
     ]
+
+
+class StopLoop(Exception):
+    """Raised by a tool loop's executor when the model called its stop tool."""
+
+
+@dataclass
+class LoopTurn:
+    """One model call of a tool loop, as the server reported it."""
+
+    # ollama's own figures, in milliseconds: `load` is the model load this call paid,
+    # `total` the server's time on it. `wall - total` is the time the request waited
+    # for the server's one slot.
+    wall_ms: int
+    load_ms: int | None
+    total_ms: int | None
+    prompt_tokens: int | None
+    output_tokens: int | None
+    tool_calls: int
+
+
+@dataclass
+class ToolLoopRun:
+    messages: list[dict]
+    turns: list[LoopTurn]
+    # stop_tool | no_tool_calls | max_turns | deadline | session_end
+    stopped: str
+
+
+# The most one turn of a tool loop may generate. A turn is one tool call or a short
+# stop statement; the cap is what ends a model that has fallen into a repeat, which
+# nothing else inside the request would (the 2026-09-06 measurement on
+# `_run_http_openai`).
+LOOP_TURN_TOKENS = 512
+
+
+def run_tool_loop(
+    cli,
+    model: str,
+    tools: list[dict],
+    messages: list[dict],
+    *,
+    execute: Callable[[str, dict], str],
+    deadline: float,
+    max_turns: int,
+    alive: Callable[[], bool] | None = None,
+    turns: list[LoopTurn] | None = None,
+) -> ToolLoopRun:
+    """Drive a local model through tool calls until it stops, a cap trips or time runs out.
+
+    Against ollama's native `/api/chat`, not the OpenAI surface `_run_http_openai`
+    uses: it takes `tools` and returns `message.tool_calls` with arguments already
+    parsed, honours `think: false`, and reports `load_duration` and `total_duration`
+    per call. `execute` runs one call and returns what the model is shown; it raises
+    `StopLoop` for the model's stop tool. `deadline` is a `time.monotonic()` instant
+    that bounds every request's socket; the caller holds the job's own wall clock
+    around the whole loop. `alive`, checked before every turn, ends the loop as
+    `session_end` once the session the work is for has gone. `turns`, when given, is
+    the list each turn is appended to as it completes, so a caller that aborts the
+    loop from outside still holds the turns that finished.
+    """
+    base = cli.endpoint.rstrip("/").removesuffix("/v1")
+    turns = turns if turns is not None else []
+    messages = list(messages)
+    for _ in range(max_turns):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return ToolLoopRun(messages, turns, "deadline")
+        if alive is not None and not alive():
+            return ToolLoopRun(messages, turns, "session_end")
+        body = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+            "think": False,
+            "options": {
+                "temperature": 0.0,
+                "num_predict": LOOP_TURN_TOKENS,
+                **({"num_ctx": cli.context_window} if cli.context_window else {}),
+            },
+        }
+        request = urllib.request.Request(
+            f"{base}/api/chat",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(request, timeout=max(1.0, remaining)) as response:
+                data = json.load(response)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode(errors="replace")[:500]
+            raise ExtractionError(f"{base}/api/chat returned {exc.code}: {detail}") from None
+        except OSError as exc:
+            if isinstance(exc, TimeoutError) or isinstance(
+                getattr(exc, "reason", None), TimeoutError
+            ):
+                return ToolLoopRun(messages, turns, "deadline")
+            raise ExtractionError(f"{base}/api/chat unreachable: {exc}") from None
+        message = data.get("message") or {}
+        calls = [
+            call.get("function") or {}
+            for call in message.get("tool_calls") or []
+            if isinstance(call, dict)
+        ]
+        turns.append(LoopTurn(
+            wall_ms=round((time.monotonic() - started) * 1000),
+            load_ms=_nanos_to_ms(data.get("load_duration")),
+            total_ms=_nanos_to_ms(data.get("total_duration")),
+            prompt_tokens=data.get("prompt_eval_count"),
+            output_tokens=data.get("eval_count"),
+            tool_calls=len(calls),
+        ))
+        messages.append({
+            "role": "assistant",
+            "content": message.get("content") or "",
+            **({"tool_calls": message["tool_calls"]} if calls else {}),
+        })
+        if not calls:
+            return ToolLoopRun(messages, turns, "no_tool_calls")
+        for call in calls:
+            name = str(call.get("name") or "")
+            args = call.get("arguments")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = None
+            try:
+                content = execute(name, args if isinstance(args, dict) else {})
+            except StopLoop:
+                return ToolLoopRun(messages, turns, "stop_tool")
+            messages.append({"role": "tool", "tool_name": name, "content": content})
+    return ToolLoopRun(messages, turns, "max_turns")
+
+
+def _nanos_to_ms(value) -> int | None:
+    return round(value / 1_000_000) if isinstance(value, (int, float)) else None
 
 
 def _read_object_envelope(stdout: str, cli) -> ExtractionRun:

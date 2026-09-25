@@ -36,6 +36,15 @@ none
 
 ## Verdicts
 
+- 2026-09-24T20:35:18-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:67e341a6f38d701f26d8a7433c8abd9e34f331bb934860473aaff010acd8a64a
+  artifact: sha256:031232e668301a6cd9d47a992888bbbe633a568074e272b3920d5a212d60daa8
+  note: propagated from a moved ground
+- 2026-09-24T20:37:18-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:031232e668301a6cd9d47a992888bbbe633a568074e272b3920d5a212d60daa8
+  note: fire gained an agentic branch that returns before any retrieval, and keys is computed before it; the propagation path — word match's lines, at most three reached records by activation, the unfitted record neither served nor written to the pointer file — is unchanged, so the assertion is unaffected
+
+
 ## References
 
 - docs/cli.md · standing · cites-as-live
