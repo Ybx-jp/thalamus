@@ -69,6 +69,42 @@ A manifest can also declare:
   would otherwise trip a broad language deny.<!-- (A0005, cites-as-live) -->
 - **`capability_boundary`** — which skills and tools the scope may
   reach.<!-- (A0006, cites-as-live) -->
+- **`cost`** — the name of a preset the scope's sessions run on: a model class
+  (`light`, `standard`, `strong`, `frontier`) and an effort level. Presets are the
+  operator's, defined and named in `presets/cost.yaml` beside `experts/` (`thalamus
+  preset set cost <name> model_class=… effort=…`); `inherit`, the default, is built in
+  and sets nothing. A manifest naming an undefined preset fails to
+  load.<!-- (A0159, cites-as-live) -->
+  On Claude Code the preset is written into the generated agent file's `model:` and
+  `effort:`, which bind both a `--agent` pin and a subagent spawned by
+  name.<!-- (A0158, cites-as-live) -->
+  On Codex it is written into the scope's generated profile as `model` and
+  `model_reasoning_effort`, so it binds a `--profile` pin; a preset that sets neither
+  leaves `~/.codex/config.toml` governing.<!-- (A0162, cites-as-live) -->
+  A class whose Codex model the vendor retires in favour of another renders as the
+  replacement its catalog names; `thalamus preset list` shows each class's Codex model
+  against the live catalog.<!-- (A0164, cites-as-live) -->
+  Cursor sessions do not receive it yet.
+- **`budget`** — the name of a preset capping what the scope's sessions may spend,
+  defined the same way in `presets/budget.yaml`; `inherit` sets no cap. Five keys, each
+  an integer: `max_turns` and `max_tool_calls` per prompt, reset by the next prompt;
+  `max_tokens` for the session's total, its subagents' spend included, and
+  `max_subagent_tokens` for one subagent's run on its own — Codex counts only the
+  session's own spend and caps no subagent;<!-- (A0186, cites-as-live) -->
+  `max_tool_output_tokens` for one tool result.
+  `budget.sh` counts the first four from the tool hooks. Past any of them the model is
+  told to answer now with what is done and what is left, and every further tool call in
+  the prompt is denied, so a subagent still returns a reply to its launcher. On Claude
+  Code a model that keeps calling tools is stopped after three more denials — the stop
+  reason is shown, and the session takes a new prompt. On Codex every further call is
+  denied and turns are not counted. A subagent
+  spawned as an expert is counted as that expert, on its own count, and is still held
+  to its session's total.<!-- (A0179, cites-as-live) -->
+  `THALAMUS_MAX_TURNS`, `THALAMUS_MAX_TOOL_CALLS`, `THALAMUS_MAX_TOKENS` and
+  `THALAMUS_MAX_SUBAGENT_TOKENS` in the environment override the preset for the process and everything it spawns. The output
+  cap rides the pin's launch environment on Claude Code and the scope's profile on
+  Codex.<!-- (A0185, cites-as-live) -->
+  Cursor sessions are not budgeted.
 - **MCP servers** of its own, in `config/mcp/<scope>.json`, giving a scope tools no
   other scope has.<!-- (A0007, cites-as-live) -->
   `designer` is the worked example.
