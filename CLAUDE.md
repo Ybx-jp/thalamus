@@ -59,6 +59,11 @@ expectation covers it", full stop.<!-- (A0128, cites-as-live) -->
 A regression in `src/` and the additions case's own self-referential red both route
 through exit 1 for the same reason: triage is well-defined for both, and exit 1 asks for
 it.<!-- (A0129, cites-as-live) -->
+In CI they are separate checks: the additions case runs alone as `mute-review`, and
+`adversarial` runs every other case, so a qe reproduction PR that adds a known-red entry
+shows a red `mute-review` naming the entry and can still
+merge.<!-- (A0206, cites-as-live) -->
+Read that red before merging; it is the only report the addition gets.
 Do not read a red `adversarial` as "a new defect appeared" and do not redesign the exit
 codes on that reading; the discrimination you want is in the qe ledger's per-case
 `verdict`, not in the exit code.<!-- (A0130, cites-as-live) -->
