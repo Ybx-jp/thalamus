@@ -106,6 +106,7 @@ CASE_MODULES = (
     "qe.cases.manifest_unknown_key",
     "qe.cases.write_guard_ledger",
     "qe.cases.codex_filechange_touches",
+    "qe.cases.codex_trace_envelope",
 )
 
 

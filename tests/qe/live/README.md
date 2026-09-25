@@ -50,7 +50,7 @@ Every cell also runs `thalamus contract check` against its graph and checks that
 dangles.
 
 A check that reproduces a filed defect carries the issue on its session (`known=` in
-`matrix.py`) and reports `known_red`, not `fail`: #294, #302, #303, #304 as of this
+`matrix.py`) and reports `known_red`, not `fail`: #294, #302, #303, #304, #306 as of this
 writing. Remove the tag in the change that fixes the issue.
 
 A codex patch naming several files is refused whole when one of them is denied, so a

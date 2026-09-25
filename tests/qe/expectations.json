@@ -109,6 +109,13 @@
       "witness_contains": "FileChange changes=['/work/project/notes/codex.md'] -> touched={}",
       "triaged_at_rev": "4a42972",
       "note": "Issue #302. codex_transcripts reads item_completed for UserMessage/AgentMessage/CommandExecution/Reasoning/Extension but not FileChange, which is how codex-cli 0.154.0 records a patch; the written path never reaches touched. Goes stale when FileChange's changes map is read the way patch_apply_end's is."
+    },
+    {
+      "case": "codex-trace-envelope-parses",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "codex shape -> miss=False legacy=True",
+      "triaged_at_rev": "4a42972",
+      "note": "Issue #306. codex records a thalamus MCP result as {content, structuredContent, isError, _meta}; _parse_line JSON-dumps it and unwraps only a top-level {result}, so the rendered text stays in JSON and a miss reads as legacy. Goes stale when a dict response's content text (or structuredContent.result) is unwrapped."
     }
   ]
 }
