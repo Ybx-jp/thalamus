@@ -228,8 +228,8 @@ nohup sh -c "
   record_failure() {
     mkdir -p '$log_dir' 2>/dev/null || return 0
     now=\$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
-    printf '%s session-end.sh: %s exited %s for session %s — this session was not distilled. See %s.\n' \
-      \"\$now\" \"\$1\" \"\$2\" '${session_id:0:8}' '$log' \
+    printf '%s session-end.sh: %s exited %s for session %s — %s. See %s.\n' \
+      \"\$now\" \"\$1\" \"\$2\" '${session_id:0:8}' \"\$3\" '$log' \
       >>'$log_dir/hook-failures.log' 2>/dev/null || true
   }
   uv run --project '$repo_root' thalamus extract --harness claude \
@@ -237,12 +237,12 @@ nohup sh -c "
     --forked-from '$forked_from' \$projects_arg --force --write -- '$project_dir'
   status=\$?
   if [ \$status -ne 0 ]; then
-    record_failure 'thalamus extract' \$status
+    record_failure 'thalamus extract' \$status 'this session was not distilled'
     echo \"extract exited \$status — not running eval sync against a half-written episode\"
     exit \$status
   fi
   uv run --project '$repo_root' thalamus eval sync --write \
-    || record_failure 'thalamus eval sync' \$?
+    || record_failure 'thalamus eval sync' \$? 'this session was distilled; its traces were not synced'
 " >>"$log" 2>&1 </dev/null &
 
 exit 0

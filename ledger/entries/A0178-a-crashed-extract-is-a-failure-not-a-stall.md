@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-25T01:40:56-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:19f622f2e6e10b6bd5eb56ecf58c5c08f693860dbf12c2ecda561500bce9c552
+  artifact: sha256:a5906bdbd52910d271a666e19443cf1c2c393f34a13f8a61d984a210dfe48ab2
+  note: propagated from a moved ground
+- 2026-09-25T01:45:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:a5906bdbd52910d271a666e19443cf1c2c393f34a13f8a61d984a210dfe48ab2
+  note: the section gained a branch for a traceback below a zero-failure summary (the chained eval sync crashing, A0205); that row is still `error` and still names the exception, prefixed with which half failed, and an extract crash with no summary above it is decided exactly as before — the assertion is unaffected
+
 ## References
 
 - src/thalamus/console/distill.py · standing · cites-as-live
