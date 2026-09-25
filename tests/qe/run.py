@@ -174,13 +174,39 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tier", choices=[t.value for t in Tier], default=Tier.FAST.value)
     parser.add_argument("--all-tiers", action="store_true", help="run every tier")
     parser.add_argument("--no-ledger", action="store_true", help="do not append a run row")
+    parser.add_argument(
+        "--only", action="append", default=[], metavar="CASE",
+        help="run exactly these cases by name, overriding --tier/--all-tiers "
+             "(repeatable). Every case is still loaded, so orphan-expectation and "
+             "mistagging checks still see the full set",
+    )
+    parser.add_argument(
+        "--exclude", action="append", default=[], metavar="CASE",
+        help="drop a case by name from the --tier/--all-tiers selection (repeatable). "
+             "Ignored when --only is given",
+    )
     args = parser.parse_args(argv)
 
     cases, broken = load_cases()
-    if args.all_tiers:
+    known_names = {c.name for c in cases}
+    unknown = sorted((set(args.only) | set(args.exclude)) - known_names)
+    if unknown:
+        # A misspelled or renamed case here is the same hazard as an orphan expectation
+        # below: a selection flag that silently matches nothing would run a shrunken
+        # suite that still reports clean. Loud and MALFORMED, before anything executes.
+        for name in unknown:
+            print(f"  ! {name} [{exp_mod.MALFORMED}]\n      named in --only/--exclude "
+                  f"but is not a known case name")
+        return 3
+
+    if args.only:
+        selected = [c for c in cases if c.name in set(args.only)]
+    elif args.all_tiers:
         selected = cases
     else:
         selected = [c for c in cases if c.tier.value == args.tier]
+        if args.exclude:
+            selected = [c for c in selected if c.name not in set(args.exclude)]
 
     try:
         expectations, exp_sha = exp_mod.load()
@@ -190,8 +216,14 @@ def main(argv: list[str] | None = None) -> int:
         # the failure this whole file exists to prevent.
         print(f"  ! <expectations> [{exp_mod.MALFORMED}]\n      {exc}")
         return 3
+    if args.only:
+        tier_label = "only:" + ",".join(sorted(args.only))
+    elif args.all_tiers:
+        tier_label = "all"
+    else:
+        tier_label = args.tier
     header = ledger_mod.new_header(
-        tier="all" if args.all_tiers else args.tier,
+        tier=tier_label,
         rev=ledger_mod.repo_rev(REPO_ROOT),
         tree_dirty=ledger_mod.dirty(REPO_ROOT),
         expectations_sha=exp_sha,
