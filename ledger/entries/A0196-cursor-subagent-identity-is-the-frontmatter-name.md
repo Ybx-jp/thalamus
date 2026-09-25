@@ -41,3 +41,5 @@ The file locations table lists .claude/agents among the project subagent folders
 ## Verdicts
 
 ## References
+
+- docs/design/launch-templates.md · standing · cites-as-live

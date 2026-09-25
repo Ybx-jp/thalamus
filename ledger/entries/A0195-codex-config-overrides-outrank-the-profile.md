@@ -40,3 +40,5 @@ The precedence list ranks CLI flags and --config overrides first and profile fil
 ## Verdicts
 
 ## References
+
+- docs/design/launch-templates.md · standing · cites-as-live

@@ -37,3 +37,5 @@ The STDIO servers section gives a server two environment fields, env for variabl
 ## Verdicts
 
 ## References
+
+- docs/design/launch-templates.md · standing · cites-as-live

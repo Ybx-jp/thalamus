@@ -38,3 +38,4 @@ none
 ## References
 
 - src/thalamus/harness/hooks/claude-code/resolve-scope.sh · standing · cites-as-live
+- docs/design/launch-templates.md · standing · cites-as-live

@@ -42,3 +42,5 @@ The common input fields say subagent hooks use the parent session id, so the ses
 ## Verdicts
 
 ## References
+
+- docs/design/launch-templates.md · standing · cites-as-live

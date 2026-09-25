@@ -21,7 +21,7 @@ documents = [
     "CLAUDE.md",
     "CONTRIBUTING.md",
     "claims-ledger.toml",
-    "docs/*.md",
+    "docs/**/*.md",
     "pyproject.toml",
     "src/thalamus/**/*.py",
     "src/thalamus/harness/hooks/*/*.sh",

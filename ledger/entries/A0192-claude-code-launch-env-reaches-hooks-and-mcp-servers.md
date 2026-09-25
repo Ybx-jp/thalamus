@@ -41,3 +41,5 @@ The hooks reference says a hook process inherits the parent environment apart fr
 ## Verdicts
 
 ## References
+
+- docs/design/launch-templates.md · standing · cites-as-live
