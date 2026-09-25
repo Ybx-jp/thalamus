@@ -36,6 +36,14 @@ none
 
 ## Verdicts
 
+- 2026-09-24T18:02:04-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/retrieval.py § "Job" =sha256:db7435b5207c3d7dad25786b2fb0b0ba70bc4fa1bca5535cd64584cb92860017
+  artifact: sha256:6bca52d6c7e18c2d4ec72da98c6b529cc22a69addf794ecdeafc209f09ce1941
+  note: propagated from a moved ground
+- 2026-09-24T18:02:30-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/retrieval.py § "Job" =sha256:6bca52d6c7e18c2d4ec72da98c6b529cc22a69addf794ecdeafc209f09ce1941
+  note: Job gained rows(), the form the propagation plan reads, which passes through the same _run validation and _charge caps and the same node-cap check (now the shared _past_node_cap) and charges no row characters; Job.call and Job.word_match are unchanged in what they validate and cap, and Caps still holds the defaults, so the assertion over its stated cohort is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live
