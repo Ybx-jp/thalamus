@@ -88,6 +88,13 @@
       "witness_contains": "kill-window target='qe-close-probe:0' resolves to='B'; recycle_window: forced=True naming 'session-A', respawn-window target='qe-close-probe:0' resolves to='B'",
       "triaged_at_rev": "10c8fa5",
       "note": "Issue #153, narrower than filed. The issue's quoted lines (unconditional index-addressing) no longer exist: close_window/recycle_window now open with wid = _window_id(cfg, idx); target = wid or f\"{cfg.session}:{idx}\", and the primary interleaving the issue describes does not reproduce when wid capture succeeds - _window_gone(cfg, wid) correctly notices a same-indexed replacement's arrival and returns before either function forces. The residual defect is the fallback: when _window_id's own capture fails at teardown start, target stays index-shaped for the whole grace budget AND _window_gone's `if not wid: return False` guard disables its early exit outright, so a same-indexed replacement is force-killed (or force-respawned) in the original session's place while the kill row still names the original. The pin is both functions' resolved-to='B' outcome under a failed wid capture; a fix that refuses to proceed past an empty wid (rather than falling back to idx-addressing) makes this branch unreachable and this entry goes stale."
+    },
+    {
+      "case": "manifest-tier-not-enforced-by-ingest",
+      "failure_class": "unenforced-signal",
+      "witness_contains": "manifest declares tier=3 (WILD); batch provenance tier(s) written=[2] (CURATED=2)",
+      "triaged_at_rev": "4a42972",
+      "note": "Issue #283. ExpertManifest.tier (contract/manifest.py:275) is parsed from every config/experts/*.yaml manifest and read by nothing; build_batch() (harness/ingest.py:572-576) stamps every claim's and entity's Provenance with a hardcoded Tier.CURATED regardless of scope. A manifest declaring tier: 3 (Tier.WILD) has its ingested content written at tier 2 instead, so the operator's downgrade never reaches the graph or the floor-over-derived_from computation. The pin is the declared-3-vs-written-2 pair; a fix that has build_batch (or its caller) read the scope's manifest tier and use it (floored so a feed cannot declare itself above CURATED) makes the written tier equal 3 and this entry goes stale."
     }
   ]
 }

@@ -97,6 +97,7 @@ CASE_MODULES = (
     "qe.cases.reflex_recall_scope_isolation",
     "qe.cases.graph_guard_scope_boundary",
     "qe.cases.reflex_candidate_cap_overrun",
+    "qe.cases.manifest_tier_ignored",
 )
 
 
