@@ -198,6 +198,9 @@ thalamus_resolve_forked_from() {
 thalamus_resolve_scope() {
   local config scope candidate
   config="$(thalamus_config_root)"
+  # agent_type first: inside a subagent the whole environment is still the session's,
+  # CLAUDE_CODE_AGENT included, and only the payload names the subagent.
+  # (A0201, cites-as-live)
   for candidate in "${1:-}" "${CLAUDE_CODE_AGENT:-}"; do
     [ -n "$candidate" ] || continue
     [ "${candidate#thalamus-}" != "$candidate" ] || continue
