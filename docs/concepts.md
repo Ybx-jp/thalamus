@@ -86,18 +86,22 @@ A manifest can also declare:
   against the live catalog.<!-- (A0164, cites-as-live) -->
   Cursor sessions do not receive it yet.
 - **`budget`** — the name of a preset capping what the scope's sessions may spend,
-  defined the same way in `presets/budget.yaml`; `inherit` sets no cap. Four keys, each
+  defined the same way in `presets/budget.yaml`; `inherit` sets no cap. Five keys, each
   an integer: `max_turns` and `max_tool_calls` per prompt, reset by the next prompt;
-  `max_tokens` for the whole session, and on Claude Code for each subagent's run on its
-  own;<!-- (A0175, cites-as-live) -->
+  `max_tokens` for the session's total, its subagents' spend included, and
+  `max_subagent_tokens` for one subagent's run on its own — Codex counts only the
+  session's own spend and caps no subagent;<!-- (A0176, cites-as-live) -->
   `max_tool_output_tokens` for one tool result.
-  `budget.sh` counts the first three from the tool hooks. Past a cap, on Claude
-  Code it denies the call and stops the prompt — the stop reason is shown, and the
-  session takes a new prompt; on Codex it denies every further tool call and does not
-  count turns. A subagent spawned as an expert is counted as that expert, on its own
-  count.<!-- (A0171, cites-as-live) -->
-  `THALAMUS_MAX_TURNS`, `THALAMUS_MAX_TOOL_CALLS` and `THALAMUS_MAX_TOKENS` in the
-  environment override the preset for the process and everything it spawns. The output
+  `budget.sh` counts the first four from the tool hooks. Past a turn or tool-call cap,
+  on Claude Code it denies the call and stops the prompt — the stop reason is shown, and
+  the session takes a new prompt. Past a token cap it denies the call and tells the
+  model to answer now with what is done and what is left, so a subagent still returns a
+  reply; a model that keeps calling tools is stopped after three more denials. On Codex
+  every cap denies each further tool call, and turns are not counted. A subagent
+  spawned as an expert is counted as that expert, on its own count, and is still held
+  to its session's total.<!-- (A0177, cites-as-live) -->
+  `THALAMUS_MAX_TURNS`, `THALAMUS_MAX_TOOL_CALLS`, `THALAMUS_MAX_TOKENS` and
+  `THALAMUS_MAX_SUBAGENT_TOKENS` in the environment override the preset for the process and everything it spawns. The output
   cap rides the pin's launch environment on Claude Code and the scope's profile on
   Codex.<!-- (A0172, cites-as-live) -->
   Cursor sessions are not budgeted.

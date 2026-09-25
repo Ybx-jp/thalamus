@@ -34,8 +34,8 @@ none
 <!-- APPEND BELOW THIS LINE ONLY -->
 
 ## Verdicts
+- 2026-09-24T19:10:00-07:00 · superseded · grade: argued · author: main
+  evidence: entry: A0176-budget-session-total-and-subagent-token-caps · supersedes
+  note: max_tokens is now the session's total including every subagent, and a subagent's own run is capped by max_subagent_tokens; the subagent transcript path is unchanged
 
 ## References
-
-- docs/concepts.md · standing · cites-as-live
-- src/thalamus/harness/budget.py · standing · cites-as-live

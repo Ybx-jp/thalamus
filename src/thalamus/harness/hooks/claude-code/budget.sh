@@ -6,10 +6,12 @@
 # the decision are harness/budget.py; this is the matcher in front of it, and its job
 # is to cost nothing for a scope with no budget — every tool call runs it.
 #
-# The fast path: no `THALAMUS_MAX_*` override in the environment and no `budget:` key
-# in the resolved scope's manifest means there is nothing to count, and the hook exits
-# before starting Python. Scope comes from resolve-scope.sh, so a subagent is budgeted
-# as the expert it is (its payload's `agent_type`) rather than as its launcher.
+# The fast path: no `THALAMUS_MAX_*` override in the environment, no `budget:` key in
+# the resolved scope's manifest and no count already kept for this session means there
+# is nothing to count, and the hook exits before starting Python. Scope comes from
+# resolve-scope.sh, so a subagent is budgeted as the expert it is (its payload's
+# `agent_type`) rather than as its launcher — and the session's count is checked too,
+# since its total binds every subagent in it.
 #
 # A budget is a cost control, not a boundary: when the interpreter or the config
 # cannot be read, it lets the call through. It does not read its payload through
@@ -33,8 +35,10 @@ input=$(cat)
 scope="$(thalamus_scope_from_payload "$input")"
 config="$(thalamus_config_root)"
 
-if [ -z "${THALAMUS_MAX_TURNS:-}${THALAMUS_MAX_TOOL_CALLS:-}${THALAMUS_MAX_TOKENS:-}" ] \
-  && ! grep -q '^budget:' "$config/experts/$scope.yaml" 2>/dev/null; then
+session="$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null || true)"
+if [ -z "${THALAMUS_MAX_TURNS:-}${THALAMUS_MAX_TOOL_CALLS:-}${THALAMUS_MAX_TOKENS:-}${THALAMUS_MAX_SUBAGENT_TOKENS:-}" ] \
+  && ! grep -q '^budget:' "$config/experts/$scope.yaml" 2>/dev/null \
+  && ! { [ -n "$session" ] && [ -f "$HOME/.thalamus/budget/$session.json" ]; }; then
   exit 0
 fi
 

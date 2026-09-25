@@ -7,12 +7,13 @@ the stop is whatever lever the harness gives a hook:
 |---|---|---|---|
 | `max_turns` | `PostToolBatch` | `continue: false` stops the prompt | not enforced: no batch event |
 | `max_tool_calls` | `PreToolUse` | the call denied and the prompt stopped | the call denied |
-| `max_tokens` | both | stopped | calls denied |
+| `max_tokens` | `PreToolUse` | the call denied, the model told to answer | the call denied |
+| `max_subagent_tokens` | `PreToolUse` | the call denied, the subagent told to answer | not enforced |
 | `max_tool_output_tokens` | launch | env vars on the pin's argv | `tool_output_token_limit` in the profile |
 
 A codex hook has no stop: a `PreToolUse` hook returning `continue: false` is marked
 failed and the call goes ahead, so past a cap every further tool call is denied and
-the model, told why, ends its turn (A0171, cites-as-live).
+the model, told why, ends its turn (A0177, cites-as-live).
 
 **Turns and tool calls reset with each prompt; tokens do not.** A stop ends the prompt,
 not the session — the operator can type again — so a lifetime turn counter would stop
@@ -21,17 +22,36 @@ codex's `turn_id`; a payload with neither (Cursor running this script off Claude
 Code's settings file) is not counted, since a counter that never resets is a session
 that can no longer act. Counters are per agent as well: a subagent's calls carry the
 launcher's `session_id` and their own `agent_id`, so each spawned run has its own
-count and does not spend the session's (A0171, cites-as-live).
+count and does not spend the session's (A0177, cites-as-live).
 
 Tokens are the model requests' input (cached or not) plus output — codex's own
 `total_tokens`, and on Claude Code the four `usage` fields summed over the transcript,
 once per message id, since the transcript repeats one message's usage on every content
 block it writes. Both transcripts are written behind the hook, so the count lags by up
-to one model request and a stop lands at most one turn late. Tokens are counted per
-agent, as turns and tool calls are: a subagent's tool events name the launcher's
-transcript, and its own spend is only in `<session>/subagents/agent-<agent_id>.jsonl`
-beside it, so that is the file its count reads (A0175, cites-as-live). A codex
-subagent's tokens are not counted; where they are written has not been measured.
+to one model request. Two token caps, because a session and one of its subagents are
+different spends (A0176, cites-as-live):
+
+- `max_tokens` is the session's total: the session's own transcript plus every
+  subagent's. A subagent's tool events name the launcher's transcript, and its own
+  spend is only in `<session>/subagents/agent-<agent_id>.jsonl` beside it (A0174,
+  cites-as-live), so the total is that transcript and every file in that folder. The
+  cap is recorded the first time the session's own hook reads it, and binds a subagent
+  spawned as another expert whose preset has none.
+- `max_subagent_tokens` is one subagent run's own spend, its file alone.
+
+A codex session's total is its own rollout; where codex writes a subagent's spend has
+not been measured, so codex subagents are neither added nor capped.
+
+**A spent token cap forces an answer rather than cutting the run off.** A stop leaves a
+subagent with no reply for its launcher and a session with no account of where it got
+to, and the cap exists to bound spend, not to lose the work. So past a token cap the
+tool call is denied and the reason tells the model to answer now with what is done and
+what is left; a model that answers makes no further request, and one that keeps
+calling tools is stopped after `FORCED_ANSWER_DENIALS` more denials, where the harness
+has a stop. smolagents does the same at its step limit, asking the model for a final
+answer rather than raising (`MultiStepAgent.provide_final_answer`). The count caps
+still stop: a turn or call count is the operator's bound on a prompt's length, and the
+prompt is what it ends (A0177, cites-as-live).
 
 Limits come from the scope's manifest (`budget:` → `presets/budget.yaml`), and a
 `THALAMUS_MAX_*` variable in the environment overrides the preset key it names — for
@@ -60,7 +80,12 @@ ENV_OVERRIDES = {
     "max_turns": "THALAMUS_MAX_TURNS",
     "max_tool_calls": "THALAMUS_MAX_TOOL_CALLS",
     "max_tokens": "THALAMUS_MAX_TOKENS",
+    "max_subagent_tokens": "THALAMUS_MAX_SUBAGENT_TOKENS",
 }
+
+# Denials past a token cap before the prompt is stopped outright: the room a model gets
+# to answer after being told to, before a stop takes it.
+FORCED_ANSWER_DENIALS = 3
 
 # Claude Code reads a tool result's size cap from three variables, one per tool
 # family, and the Bash one counts characters. Four characters a token is the
@@ -170,23 +195,44 @@ def _codex_tokens(transcript: Path, seen: dict) -> int:
     return total
 
 
-def _token_transcript(payload: Mapping, harness: str, agent: str) -> Path | None:
-    """The transcript `agent`'s own model requests are written to, or None."""
+def _claude_session_tokens(transcript: Path, reads: dict) -> int:
+    """The session's total: its own transcript and every subagent's beside it."""
+    files = [transcript, *sorted((transcript.with_suffix("") / "subagents").glob("agent-*.jsonl"))]
+    return sum(_claude_tokens(f, reads.setdefault(f.name, {})) for f in files)
+
+
+def _spent(payload: Mapping, harness: str, agent: str, caps: Mapping[str, int],
+           state: dict) -> str | None:
+    """The token cap this event is past, described, or None."""
     transcript = payload.get("transcript_path")
     if not transcript:
         return None
-    if agent == "main":
-        return Path(transcript)
-    if harness == "codex" or "/" in agent:
-        return None
-    return Path(transcript).with_suffix("") / "subagents" / f"agent-{agent}.jsonl"
+    transcript = Path(transcript)
+    reads = state.setdefault("reads", {})
+    if agent == "main" and "max_tokens" in caps:
+        state["session_cap"] = caps["max_tokens"]
+    session_caps = [c for c in (caps.get("max_tokens"), state.get("session_cap")) if c]
+    if session_caps:
+        cap = min(session_caps)
+        spent = (_codex_tokens(transcript, reads.setdefault(transcript.name, {}))
+                 if harness == "codex" else _claude_session_tokens(transcript, reads))
+        if spent >= cap:
+            return f"{cap:,} tokens for this session ({spent:,} spent)"
+    cap = caps.get("max_subagent_tokens")
+    if cap and agent != "main" and harness != "codex" and "/" not in agent:
+        own = transcript.with_suffix("") / "subagents" / f"agent-{agent}.jsonl"
+        spent = _claude_tokens(own, reads.setdefault(own.name, {}))
+        if spent >= cap:
+            return f"{cap:,} tokens for this subagent ({spent:,} spent)"
+    return None
 
 
 def decide(payload: Mapping, harness: str, caps: Mapping[str, int], state: dict) -> dict | None:
     """Count this event against `caps`, updating `state`; the hook's output, or None.
 
-    `state` is the session's record: per agent, the prompt being counted and its
-    turns and tool calls, and the agent's token reading.
+    `state` is the session's record: per agent, the prompt being counted, its turns
+    and tool calls and the denials past a token cap; per transcript, the reading so
+    far; and the session's own token cap once its hook has read it.
     """
     event = payload.get("hook_event_name")
     prompt = payload.get("prompt_id") or payload.get("turn_id")
@@ -199,43 +245,50 @@ def decide(payload: Mapping, harness: str, caps: Mapping[str, int], state: dict)
         counts["prompt"] = prompt
 
     over: str | None = None
+    forced = False
     if event == "PreToolUse":
         counts["tool_calls"] = counts.get("tool_calls", 0) + 1
         cap = caps.get("max_tool_calls")
         if cap is not None and counts["tool_calls"] > cap:
             over = f"{cap} tool calls for this prompt"
+        else:
+            over = _spent(payload, harness, agent, caps, state)
+            forced = over is not None
     else:
         counts["turns"] = counts.get("turns", 0) + 1
         cap = caps.get("max_turns")
         if cap is not None and counts["turns"] >= cap:
             over = f"{cap} turns for this prompt"
 
-    cap = caps.get("max_tokens")
-    transcript = _token_transcript(payload, harness, agent)
-    if over is None and cap is not None and transcript:
-        read = _codex_tokens if harness == "codex" else _claude_tokens
-        key = "tokens" if agent == "main" else f"tokens:{agent}"
-        spent = read(transcript, state.setdefault(key, {}))
-        if spent >= cap:
-            whose = "this session" if agent == "main" else "this subagent"
-            over = f"{cap:,} tokens for {whose} ({spent:,} spent)"
-
     if over is None:
         return None
-    reason = (f"Thalamus budget reached: {over}. Stop here and report what is done and "
-              f"what is left; the operator can raise the budget or send a new prompt.")
     if event == "PostToolBatch":
-        return {"continue": False, "stopReason": reason}
-    decision = {"hookSpecificOutput": {
+        return {"continue": False, "stopReason": _stop_reason(over)}
+    stop = harness != "codex"
+    if forced:
+        counts["denied"] = counts.get("denied", 0) + 1
+        stop = stop and counts["denied"] > FORCED_ANSWER_DENIALS
+        # "Not run" is said outright: told only to answer, a model reported the output
+        # of the very call this denied.
+        reason = (f"Thalamus budget reached: {over}. This tool call was not run. Do not "
+                  f"call another tool. Answer now with what is done and what is left.")
+    else:
+        reason = _stop_reason(over)
+    decision: dict = {"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
         "permissionDecisionReason": reason,
     }}
-    if harness != "codex":
+    if stop:
         # Deny alone blocks the call and lets the prompt run on; `continue: false`
         # alone stops the prompt only after the call has run. Both are needed.
         decision.update({"continue": False, "stopReason": reason})
     return decision
+
+
+def _stop_reason(over: str) -> str:
+    return (f"Thalamus budget reached: {over}. Stop here and report what is done and "
+            f"what is left; the operator can raise the budget or send a new prompt.")
 
 
 def main(argv: list[str]) -> int:
@@ -248,13 +301,15 @@ def main(argv: list[str]) -> int:
     except Exception as exc:  # a budget fails open; see the module docstring
         print(f"thalamus budget: not enforced ({exc})", file=sys.stderr)
         return 0
-    if not caps:
-        return 0
     session = str(payload.get("session_id") or "")
     if not session or "/" in session:
         return 0
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
     path = STATE_DIR / f"{session}.json"
+    # A scope with no caps of its own is still held to its session's total, which the
+    # session's own hook recorded in this file.
+    if not caps and not path.is_file():
+        return 0
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
     with open(path, "a+") as f:
         # Parallel tool calls fire PreToolUse concurrently; the lock is what makes the
         # count a count.
