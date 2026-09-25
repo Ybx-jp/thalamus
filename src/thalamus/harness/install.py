@@ -159,6 +159,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "Bash", "reflex.sh"),
     ("PostToolUseFailure", "Bash", "reflex.sh"),
     ("PostToolUse", None, "reflex-pointer-tap.sh"),
+    ("PostToolUseFailure", None, "reflex-pointer-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
     ("PostToolUse", "Agent", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "conditioning.sh"),
