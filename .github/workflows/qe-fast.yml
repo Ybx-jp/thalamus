@@ -33,6 +33,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The suite stamps the revision into every ledger row and reads it via
+          # `git rev-parse`, which needs real history rather than a shallow clone.
+          # `case-erosion-is-never-silent` (tests/qe/cases/case_logic_erosion.py) needs
+          # more than that: like the case `mute-review` runs alone, it diffs against the
+          # pushed ref's prior tip (or the PR base) and reports MALFORMED — exit 3 — when
+          # neither the event payload nor `origin/master`/`origin/HEAD` resolves. Shallow
+          # this and that guard goes red for the wrong reason.
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v5
 
