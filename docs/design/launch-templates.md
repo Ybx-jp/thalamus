@@ -75,11 +75,11 @@ on **every** launch (`pin.py:1094`, `:1101`, `:1387`). The write is a plain
 | Consumer | Carrier |
 |---|---|
 | Launch argv | `launch_argv` resolves the template and adds `THALAMUS_TEMPLATE=<name>` to the `env K=V` prefix that already carries `THALAMUS_SCOPE` and the output caps (`launcher.py:531-541`). The prefix is on the argv, so it survives `respawn-window` and `/api/recycle`. |
-| Claude agent file | Written as `thalamus-<scope>--<template>.md`, temp-and-rename; the pin launches with `--agent thalamus-<scope>--<template>`. |
-| Codex profile | Written as `thalamus-<scope>--<template>.config.toml` and launched with `--profile`, unless `-c` overrides can carry the keys (to measure). |
-| Hooks (`budget.sh`, `role-guard.sh`, …) | Read `THALAMUS_TEMPLATE` from the environment and pass it to `ExpertManifest.preset` — the pattern `THALAMUS_MAX_*` already uses to override the manifest. |
-| Subagents | Nothing to carry: an expert spawned as a subagent uses its own manifest (rule 6). Its hooks run under the parent's process and inherit `THALAMUS_TEMPLATE`, so a hook fired inside a subagent — the payload carries an `agent_id` (A0174) — ignores the variable. |
-| MCP server | Reads `THALAMUS_TEMPLATE` at start, next to where it resolves the scope (`mcp_server.py:75`), if it needs it. |
+| Claude agent file | A templated definition named `thalamus-<scope>--<template>`, selected with `--agent`. It cannot be written into `.claude/agents` or `~/.claude/agents`: Cursor reads those folders as subagents and identifies a file by its frontmatter `name`<!-- (A0196, cites-as-live) -->, and Claude Code loads the same folders as subagents (which `write_all_agents` relies on). Either way the file becomes a subagent any session in the workspace can call, which rule 6 forbids, and a file reusing the name `thalamus-<scope>` would replace the default for Cursor. Where the definition lives instead is open (below). |
+| Codex profile | No per-template file. The launch keeps `--profile thalamus-<scope>` and adds `-c` overrides for the keys the template changes (`model`, `model_reasoning_effort`, `tool_output_token_limit`); a `-c` value outranks the profile's<!-- (A0195, cites-as-live) -->. |
+| Hooks (`budget.sh`, `role-guard.sh`, …) | Read `THALAMUS_TEMPLATE` from the environment and pass it to `ExpertManifest.preset` — the pattern `THALAMUS_MAX_*` already uses to override the manifest. The argv prefix reaches the hooks on Claude Code<!-- (A0192, cites-as-live) --> and on codex<!-- (A0020, cites-as-live) -->. |
+| Subagents | Nothing to carry: an expert spawned as a subagent uses its own manifest (rule 6). Its hooks inherit `THALAMUS_TEMPLATE` from the parent, so a hook that sees an `agent_id` in its payload ignores the variable. The payload carries one inside a subagent on Claude Code (A0174)<!-- (A0192, cites-as-live) --> and on codex, where the PreToolUse field is undocumented and measured on 0.154.0<!-- (A0194, cites-as-live) -->. |
+| MCP server | Reads `THALAMUS_TEMPLATE` at start, next to where it resolves the scope (`mcp_server.py:75`), if it needs it. On Claude Code every stdio server inherits the prefix, including one declared in a subagent's frontmatter<!-- (A0192, cites-as-live) -->, so a server armed for a subagent expert starts with the parent's template in its environment and, unlike a hook, receives no payload naming the subagent. On codex a stdio server gets only an allowlist plus the variables its `env_vars` names<!-- (A0193, cites-as-live) -->; the launch has to add `-c 'mcp_servers.thalamus.env_vars=[…]'`, and today `THALAMUS_SCOPE` does not reach it either (#289). |
 
 ### Permission posture
 
@@ -107,19 +107,47 @@ than launch silently without it.
   managed by `thalamus template list | set | remove`, the same shape as
   `thalamus preset`.
 
-## Measure before building
+## Measured (2026-09-25)
 
-1. Whether hook subprocesses and MCP servers see a variable added to the argv `env`
-   prefix. `THALAMUS_MAX_*` and `THALAMUS_SCOPE` show this works for hooks on Claude
-   Code; the MCP server and codex are not measured.
-2. Whether a subagent's hooks inherit the parent's environment (they run under the
-   same harness process on Claude Code), and whether a codex subagent's payload carries
-   an `agent_id` the hook can use to ignore the inherited template.
-3. Whether codex `-c key=value` overrides can replace per-template profile files.
-4. Whether Cursor finds a subagent file by filename, so a `--<template>` filename is
-   visible to it.
-5. How often concurrent same-scope launches overwrite the shared agent file today (the
-   write is not atomic: `pin.py:707-724`).
+Claude Code 2.1.282, codex-cli 0.154.0, cursor-agent 2026.08.11. Each probe ran against
+a control differing in the one variable; the table above states the results.
+
+1. **The argv `env` prefix reaches hooks everywhere and MCP servers on Claude Code
+   only.** Claude Code: hooks and every stdio MCP server, subagent-declared ones
+   included.<!-- (A0192, cites-as-live) -->
+   codex: hooks yes; a stdio MCP server only through `env_vars`.<!-- (A0193, cites-as-live) -->
+2. **Subagent hooks inherit the parent's environment and can tell they are in a
+   subagent**, by `agent_id`, on both harnesses.<!-- (A0194, cites-as-live) -->
+3. **`-c` overrides replace per-template codex profile files** for the scalar keys a
+   template changes.<!-- (A0195, cites-as-live) -->
+   Per-template `[mcp_servers.*]` tables through `-c` were not measured.
+4. **Cursor knows a subagent by its frontmatter `name`**, and reads `.claude/agents`, so
+   a templated file there is live to it under whatever name it
+   carries.<!-- (A0196, cites-as-live) -->
+5. **Concurrent same-scope launches are rare today.** In the pin ledger from 2026-08-09
+   to 2026-09-25, 142 pinned-window sessions started on expert scopes; one pair of the
+   same scope started within 10 seconds of each other, from a probe in a scratch
+   directory. The six pairs of any two expert scopes within 2 seconds were room
+   bring-ups. `spawn` rewrites every scope's agent file (`write_all_agents`), so a room
+   brought up by `spawn` rewrites files other members are starting from. Today those
+   bytes are identical, and the hazard is only the moment between truncate and write.
+   A template would make them differ, which is why rule 5 keeps templated launches off
+   the shared files. codex sessions are not in this count: their `SessionStart` fires at
+   the first submitted turn, not at launch.
+
+## Open
+
+- **Where the templated Claude definition lives.** It needs a location `--agent`
+  resolves and no harness scans for subagents (item 4). `claude --agents <json>`
+  defines an agent for one session without a file. Whether it carries `mcpServers`
+  and survives `respawn-window` has not been measured, and a charter on the argv would
+  sit in `ps` and in tmux's `pane_start_command`, which `panes.py` parses.
+- **Scope resolution from a templated agent name.** `pin.resolve_pin` takes the scope
+  from `CLAUDE_CODE_AGENT` only when the name after `thalamus-` is a manifest.
+  `thalamus-<scope>--<template>` is not one, so resolution falls back to
+  `THALAMUS_SCOPE`, and a Claude launch's argv does not carry that
+  (`persona_flag_carries_scope`). The resolver, and `resolve-scope.sh` beside it, has
+  to strip the `--<template>` suffix.
 
 ## Prior work
 
