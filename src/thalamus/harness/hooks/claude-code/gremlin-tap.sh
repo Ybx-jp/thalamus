@@ -31,8 +31,9 @@ tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty')
 command=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
 [ -n "$command" ] || exit 0
 
-printf '%s' "$command" | grep -qE \
+grep -qE \
   'gremlin_python|with_remote\(|DriverRemoteConnection|substrate\.writer import|from thalamus\.substrate' \
+  <<< "$command" \
   || exit 0
 
 trace_dir="$HOME/.thalamus/traces"

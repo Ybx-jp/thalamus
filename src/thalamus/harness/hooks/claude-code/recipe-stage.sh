@@ -43,8 +43,9 @@ case "$tool_name" in
     # Same marker heuristic as gremlin-guard.sh and gremlin-tap.sh: only Bash
     # that inlines gremlin-python is a graph query. Script files are invisible
     # here exactly as they are to the guard — a known, named residual.
-    printf '%s' "$query" | grep -qE \
+    grep -qE \
       'gremlin_python|with_remote\(|DriverRemoteConnection|substrate\.writer import|from thalamus\.substrate' \
+      <<< "$query" \
       || exit 0
     response=$(printf '%s' "$input" | jq -r '(.tool_response.stdout // "")')
     ;;
@@ -57,14 +58,16 @@ esac
 
 # Did it actually answer? An empty or error-shaped response is not a validation.
 [ -n "${response//[[:space:]]/}" ] || exit 0
-printf '%s' "$response" | grep -qiE \
+grep -qiE \
   'Traceback|GremlinServerError|^error:|is a master-plane instrument|No results|returned nothing' \
+  <<< "$response" \
   && exit 0
 
 # A GraphTraversal repr means the traversal was never iterated — the single most
 # common gremlin mistake this project has, and the opposite of a proven recipe.
-printf '%s' "$response" | grep -qE \
+grep -qE \
   'GraphTraversal object at|<gremlin_python' \
+  <<< "$response" \
   && exit 0
 
 stage_dir="$HOME/.thalamus/recipes"

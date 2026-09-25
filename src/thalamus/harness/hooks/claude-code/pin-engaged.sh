@@ -29,7 +29,7 @@ if [ -n "$session_id" ]; then
   ledger="$HOME/.thalamus/pins/pins.jsonl"
   mkdir -p "$(dirname "$ledger")"
   touch "$ledger"
-  if ! grep -F "\"$session_id\"" "$ledger" | grep -qF '"event":"engaged"'; then
+  if ! grep -F "\"$session_id\"" "$ledger" | grep -F '"event":"engaged"' >/dev/null; then
     jq -cn --arg sid "$session_id" --arg scope "$(thalamus_resolve_scope)" \
       --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       '{event: "engaged", session_id: $sid, scope: $scope, ts: $ts}' >> "$ledger"

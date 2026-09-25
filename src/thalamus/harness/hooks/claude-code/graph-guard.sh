@@ -73,7 +73,7 @@ command="$thalamus_guard_command"
 MARKERS='thalamus\.substrate|gremlin_python|DriverRemoteConnection|with_remote\(|:8182'
 
 marked=""
-if printf '%s' "$command" | grep -qE "$MARKERS"; then
+if grep -qE "$MARKERS" <<< "$command"; then
   marked=command
 else
   # A script file carries the connection where the command line does not, and writing
@@ -168,8 +168,9 @@ residual=$(printf '%s' "$command" | sed -E \
 # `THALAMUS_SCOPE=main python -c '...'` is an invocation, and an anchor that only knows
 # the bare name lets one through. Anchoring at all is what keeps a commit message out
 # of this branch — prose says `python` mid-sentence, never after a `;`.
-if ! printf '%s' "$residual" | grep -qE \
-  '(^|[;&|] |[$]\()([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([A-Za-z0-9_.~/-]*/)?(python[0-9.]*|ipython|uv|uvx|poetry|curl|wget|nc|ncat|websocat|wscat)[[:space:]]'
+if ! grep -qE \
+  '(^|[;&|] |[$]\()([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([A-Za-z0-9_.~/-]*/)?(python[0-9.]*|ipython|uv|uvx|poetry|curl|wget|nc|ncat|websocat|wscat)[[:space:]]' \
+  <<< "$residual"
 then
   if [ "$residual" != "$command" ]; then
     log_event pass entrypoint

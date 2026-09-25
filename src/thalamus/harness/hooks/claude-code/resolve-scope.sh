@@ -301,7 +301,7 @@ thalamus_mcp_arming_warning() {
   frontmatter=$(awk 'NR==1 && $0=="---"{inside=1; next} inside && $0=="---"{exit} inside' "$agent_file")
   while IFS= read -r name; do
     [ -n "$name" ] || continue
-    printf '%s' "$frontmatter" | grep -qE "^[[:space:]]*-[[:space:]]*${name}:" || missing="$missing $name"
+    grep -qE "^[[:space:]]*-[[:space:]]*${name}:" <<< "$frontmatter" || missing="$missing $name"
   done <<< "$servers"
 
   [ -n "$missing" ] || return 0
