@@ -580,7 +580,7 @@ class TestInstall:
         settings = json.loads(sandbox["user"].read_text())
         assert set(settings["hooks"]) == {
             "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
-            "PostToolUseFailure"}
+            "PostToolUseFailure", "PostToolBatch"}
         assert sandbox["mcp_calls"] == [False], "MCP goes through `claude mcp add`"
 
     def test_removes_the_project_scope_mcp_server(self, sandbox):

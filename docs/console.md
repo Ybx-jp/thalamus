@@ -465,8 +465,12 @@ action as the smaller target is how a mis-tap happens.
   that wrote it. Ingestion defaults to `follow distillation`, and the card names what that
   resolves to right now, so "follow distillation" is never the last word on screen. Set
   ingestion on its own to move the expensive pass without moving the cheap one. Models come
-  from a closed list per CLI (`harness/agents.py`); `--model` on either command takes any
-  slug the vendor accepts if you need one the panel does not carry. `local`'s list is the
+  from a closed list per CLI (`harness/agents.py`). Codex's is its live catalog — the
+  models it lists for selection, in its own priority order, minus any past their
+  retirement date — re-read when codex is updated or re-fetches the catalog, with the
+  pinned list standing in when codex is absent.<!-- (A0164, cites-as-live) -->
+  `--model` on either command takes any slug the vendor accepts if you need one the panel
+  does not carry. `local`'s list is the
   one configured model, because a local server serves whatever has been pulled onto the
   box and there is no catalog command that is the same across llama.cpp, vLLM and ollama.
 

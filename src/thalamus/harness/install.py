@@ -164,6 +164,12 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "mcp__thalamus__memory_query", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "recipe-stage.sh"),
     ("PostToolUse", "Bash", "recipe-stage.sh"),
+    # The scope's `budget` preset (harness/budget.py): every tool call counts against
+    # the prompt's tool-call cap, and every tool-using turn against its turn cap, which
+    # is counted on `PostToolBatch` because that fires once per model turn and context
+    # returned there reaches the model before its next request (A0179, cites-as-live).
+    ("PreToolUse", None, "budget.sh"),
+    ("PostToolBatch", None, "budget.sh"),
 ]
 
 # The Cursor wiring, as (event, script). Event names and their I/O shapes were
@@ -353,6 +359,10 @@ CODEX_HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "recipe-stage.sh"),
     ("PostToolUse", "Bash", "recipe-stage.sh"),
+    # The budget guard on `PreToolUse` only: codex has no batch event, so its turn cap
+    # has nowhere to be counted, and a codex hook cannot stop a turn — past a cap it
+    # denies each call instead (A0179, cites-as-live).
+    ("PreToolUse", None, "budget.sh"),
 ]
 
 
@@ -429,12 +439,12 @@ class HookParity:
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    scripts={"claude": 16, "codex": 13, "cursor": 15},
+    scripts={"claude": 17, "codex": 14, "cursor": 15},
     shared=10,
     missing={
         "codex": ("reflex-pointer-tap.sh", "reflex.sh", "room-guard.sh"),
-        "cursor": ("post-tool-use.sh", "recipe-stage.sh", "reflex-pointer-tap.sh",
-                   "reflex.sh", "role-guard.sh", "room-guard.sh"),
+        "cursor": ("budget.sh", "post-tool-use.sh", "recipe-stage.sh",
+                   "reflex-pointer-tap.sh", "reflex.sh", "role-guard.sh", "room-guard.sh"),
     },
     extra={
         # Codex needs no script Claude Code does not have: its payloads are Claude

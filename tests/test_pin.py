@@ -1106,3 +1106,87 @@ def test_every_roster_window_is_held_at_the_shipped_geometry(tmp_path, monkeypat
         assert c[c.index("-y") + 1] == str(pin.WINDOW_ROWS)
     assert not [c for c in calls if "window-size" in c], \
         "the size is the only thing pinned; `manual` comes with it"
+
+
+def test_a_scope_that_selects_no_cost_keeps_inherit_and_writes_no_effort():
+    """Declaring the dimension must not change any shipped launch: a manifest with no
+    `cost:` renders exactly the frontmatter it rendered before the field existed."""
+    rendered = render_agent(load_manifest("literature", REPO_CONFIG))
+
+    assert "model: inherit" in rendered
+    assert "effort:" not in rendered
+
+
+
+def test_a_cost_preset_lands_in_the_agent_frontmatter(tmp_path):
+    """
+    Scenario: an operator defines a preset and selects it from a manifest. The
+    generated agent file is the carrier for both a `--agent` pin and a subagent spawned
+    by name, so the preset's class and effort must reach its frontmatter.
+    """
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "literature.yaml").read_text()
+    (tmp_path / "experts" / "literature.yaml").write_text(source + "\ncost: deep-review\n")
+    (tmp_path / "presets" / "cost.yaml").write_text(
+        "deep-review:\n  model_class: frontier\n  effort: max\n"
+    )
+
+    frontmatter = render_agent(load_manifest("literature", tmp_path)).split("---")[1]
+
+    assert "\nmodel: fable\n" in frontmatter
+    assert "\neffort: max\n" in frontmatter
+
+
+def test_a_cost_preset_lands_in_the_codex_profile_as_top_level_keys(tmp_path):
+    """
+    Scenario: the same preset reaches a codex pin. The keys have to be top-level —
+    written after an `[mcp_servers.*]` header they would belong to that table and codex
+    would never read them — so this parses the profile rather than grepping it.
+    """
+    import tomllib
+
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "designer.yaml").read_text()
+    (tmp_path / "experts" / "designer.yaml").write_text(source + "\ncost: quick\n")
+    (tmp_path / "presets" / "cost.yaml").write_text(
+        "quick:\n  model_class: light\n  effort: low\n"
+    )
+    servers = {"penpot": {"type": "http", "url": "http://localhost:4401/mcp"}}
+
+    profile = tomllib.loads(render_codex_profile(load_manifest("designer", tmp_path), servers))
+
+    assert profile["model"] == "gpt-5.6-luna"
+    assert profile["model_reasoning_effort"] == "low"
+    assert "model" not in profile["mcp_servers"]["penpot"]
+
+
+def test_an_inherit_scope_leaves_codex_model_and_effort_to_codexs_own_config():
+    import tomllib
+
+    profile = tomllib.loads(render_codex_profile(load_manifest("literature", REPO_CONFIG)))
+
+    assert "model" not in profile
+    assert "model_reasoning_effort" not in profile
+
+
+def test_a_budget_output_cap_lands_in_the_codex_profile_and_nothing_else_does(tmp_path):
+    """Codex carries a tool-result cap as a profile key; the turn, tool-call and token
+    caps have no key there and are counted by budget.sh instead."""
+    import tomllib
+
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "presets").mkdir()
+    source = (REPO_CONFIG / "experts" / "literature.yaml").read_text()
+    (tmp_path / "experts" / "literature.yaml").write_text(source + "\nbudget: short\n")
+    (tmp_path / "presets" / "budget.yaml").write_text(
+        "short:\n  max_turns: 25\n  max_tool_output_tokens: 4000\n"
+    )
+    manifest = load_manifest("literature", tmp_path)
+
+    profile = tomllib.loads(render_codex_profile(manifest))
+
+    assert profile["tool_output_token_limit"] == 4000
+    assert not any("turn" in key for key in profile)
+    assert "maxTurns" not in render_agent(manifest)

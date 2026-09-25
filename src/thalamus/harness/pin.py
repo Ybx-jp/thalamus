@@ -658,6 +658,32 @@ ambient memory.
 {selfcheck}"""
 
 
+# Claude Code's projection of a model class: the alias for the latest model of each
+# tier, so a release bump moves every scope without a manifest edit.
+CLAUDE_MODEL_ALIASES = {
+    "light": "haiku",
+    "standard": "sonnet",
+    "strong": "opus",
+    "frontier": "fable",
+}
+
+
+def _cost_frontmatter(manifest: ExpertManifest) -> str:
+    """The scope's `cost` preset as agent frontmatter.
+
+    Frontmatter is the one carrier that reaches both ways this file is used: a
+    `--agent` pin applies the agent's `model` to the main session, and a subagent
+    spawned by name resolves its model from the same field. `effort:` is omitted when
+    the preset sets none, since the key has no `inherit` value to write.
+    """
+    sets = manifest.cost_preset.sets
+    model = CLAUDE_MODEL_ALIASES[sets["model_class"]] if "model_class" in sets else "inherit"
+    lines = f"model: {model}\n"
+    if "effort" in sets:
+        lines += f"effort: {sets['effort']}\n"
+    return lines
+
+
 def render_agent(manifest: ExpertManifest, servers: dict[str, dict] | None = None) -> str:
     """The derived agent definition for a pinned expert session.
 
@@ -673,8 +699,7 @@ def render_agent(manifest: ExpertManifest, servers: dict[str, dict] | None = Non
     return f"""---
 name: {agent_name(manifest.scope)}
 description: Pinned Thalamus session for the {manifest.name} expert (scope `{manifest.scope}`). GENERATED from config/experts/{manifest.scope}.yaml — edit the manifest, not this file.
-model: inherit
-{_mcp_frontmatter(servers)}---
+{_cost_frontmatter(manifest)}{_mcp_frontmatter(servers)}---
 
 {_charter(manifest, selfcheck)}"""
 
@@ -793,6 +818,48 @@ def codex_profile_name(scope: str) -> str:
     return agent_name(scope)
 
 
+# Codex's projection of a model class, from `codex debug models` on codex-cli 0.154.0
+# (2026-09-23), matched on each listed model's own description: astra "frontier
+# intelligence", sol "for complex work", terra "balanced", luna "fast and efficient".
+# Slugs, not aliases — codex has none. A slug the live catalog marks with an `upgrade`
+# is replaced by the model it names when the profile is rendered
+# (`codex_models.current`); one the catalog drops entirely is left as written and
+# reported by `thalamus preset list`, since the catalog says nothing about which
+# remaining model would serve the class. All four accept every effort in
+# `capabilities.EFFORTS`.
+CODEX_MODELS = {
+    "light": "gpt-5.6-luna",
+    "standard": "gpt-5.6-terra",
+    "strong": "gpt-5.6-sol",
+    "frontier": "gpt-6-astra",
+}
+
+
+def _codex_cost_keys(manifest: ExpertManifest) -> str:
+    """The scope's `cost` preset, and its budget's tool-result cap, as top-level
+    profile keys.
+
+    Written before the `[mcp_servers.*]` tables, since a bare key after a table header
+    belongs to that table. Nothing is written for a key the preset does not set, which
+    leaves `~/.codex/config.toml` governing it — codex's own `inherit`.
+    """
+    sets = manifest.cost_preset.sets
+    keys = ""
+    if "model_class" in sets:
+        from thalamus.harness.codex_models import catalog, current
+
+        slug = current(CODEX_MODELS[sets["model_class"]], catalog())
+        keys += f"model = {_toml_str(slug)}\n"
+    if "effort" in sets:
+        keys += f"model_reasoning_effort = {_toml_str(sets['effort'])}\n"
+    budget = manifest.budget_preset.sets
+    if "max_tool_output_tokens" in budget:
+        # The one budget key codex carries itself (A0185, cites-as-live); the rest are
+        # counted by budget.sh.
+        keys += f"tool_output_token_limit = {int(budget['max_tool_output_tokens'])}\n"
+    return keys
+
+
 def render_codex_profile(manifest: ExpertManifest,
                          servers: dict[str, dict] | None = None) -> str:
     """The generated profile file for a pinned codex session.
@@ -825,6 +892,7 @@ def render_codex_profile(manifest: ExpertManifest,
         f"# Pinned Thalamus session for the {manifest.name} expert "
         f"(scope `{manifest.scope}`).\n"
         f"developer_instructions = {_toml_str(charter)}\n"
+        f"{_codex_cost_keys(manifest)}"
         f"{_codex_mcp_tables(servers)}"
     )
 

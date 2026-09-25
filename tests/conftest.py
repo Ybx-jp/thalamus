@@ -73,6 +73,21 @@ SESSION_ENV = ("THALAMUS_ROOM", "THALAMUS_SCOPE")
 
 
 @pytest.fixture(autouse=True)
+def _isolate_codex_catalog(request, monkeypatch):
+    """Serve no live codex catalog unless a test asks for one.
+
+    `AgentCLI.offered_models` and the codex profile renderer read the installed codex's
+    catalog, which the vendor re-fetches between releases. A test asserting on a model
+    list would otherwise pass or fail by what OpenAI served this box today, and CI —
+    which has no codex — would never see the case the operator's box does. Tests of the
+    catalog itself mark themselves `live_codex_catalog` and drive a fake binary.
+    """
+    if request.node.get_closest_marker("live_codex_catalog"):
+        return
+    monkeypatch.setattr("thalamus.harness.codex_models.catalog", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_session_env(monkeypatch):
     """Unset the launching session's own room and scope for every test.
 

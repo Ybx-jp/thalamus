@@ -243,7 +243,7 @@ def unusable(pass_: str = DEFAULT_PASS, *, store: Path | None = None) -> str:
             f"setting is kept — it takes effect again once the CLI is installed."
         )
     model = held.get("model", "")
-    if model and cli.models and model not in cli.models:
+    if model and cli.offered_models and model not in cli.offered_models:
         return (
             f"`{model}` is no longer a model `{cli.binary}` offers, so the pass would "
             f"use `{cli.default_model}`."
@@ -348,7 +348,7 @@ def describe(pass_: str = DEFAULT_PASS, *, store: Path | None = None) -> dict:
             # codex here needs to be told it is missing, and an option that silently
             # is not offered says nothing at all.
             "available": cli.available,
-            "models": list(cli.models),
+            "models": list(cli.offered_models),
             "default_model": cli.default_model,
         })
     resolved: dict[str, str] = {}
@@ -422,10 +422,10 @@ def select(
                 "fail loudly: distillation fails inside the detached job SessionEnd "
                 "forks, and the session is simply never distilled."
             )
-        if model and model not in cli.models:
+        if model and model not in cli.offered_models:
             raise ExtractorRefused(
                 f"`{cli.display}` does not offer `{model}` here "
-                f"({', '.join(cli.models)}). `--model` takes any slug the CLI accepts "
+                f"({', '.join(cli.offered_models)}). `--model` takes any slug the CLI accepts "
                 f"if you need one this panel does not carry."
             )
 

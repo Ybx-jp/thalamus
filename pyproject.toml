@@ -149,3 +149,6 @@ testpaths = ["tests"]
 # one file measured 1.9s serial against 4.9s at `-n 16`. Pass `-n 0` when iterating
 # on a single file.
 addopts = "-n 16"
+markers = [
+    "live_codex_catalog: read codex's model catalog instead of the suite-wide stub (tests/conftest.py)",
+]
