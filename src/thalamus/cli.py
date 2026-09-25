@@ -347,10 +347,44 @@ def _main():
         help="Serve memory against a failed Bash result; the reflex.sh hook's worker. "
         "Prints the digest to inject, or nothing.",
     )
-    reflex_parser.add_argument("--session-id", required=True, help="The session that ran the command")
     reflex_parser.add_argument(
-        "--response-file", type=Path, required=True,
-        help="File holding the command's stdout then stderr, as the model saw them",
+        "--session-id", default="",
+        help="The session that ran the command (required except with --work/--sweep)",
+    )
+    reflex_parser.add_argument(
+        "--response-file", type=Path, default=None,
+        help="File holding the command's stdout then stderr, as the model saw them "
+        "(required to fire or shadow)",
+    )
+    reflex_parser.add_argument(
+        "--transcript", default="",
+        help="The session's transcript path, from the hook payload; an agentic job "
+        "builds its excerpt from it",
+    )
+    reflex_parser.add_argument(
+        "--tool-use-id", default="",
+        help="The id of the call that fired, from the hook payload; an agentic job "
+        "keeps that call's result in its excerpt and measures delivery depth from it",
+    )
+    reflex_parser.add_argument(
+        "--work", action="store_true",
+        help="Run the agentic plan's queued jobs and exit when none remain — the "
+        "detached worker the trigger starts (harness/reflex_worker.py)",
+    )
+    reflex_parser.add_argument(
+        "--deliver", action="store_true",
+        help="Print the digests ready for this session and agent, oldest first, and "
+        "record their delivery — the carrier's delivery half",
+    )
+    reflex_parser.add_argument(
+        "--reflex-dir", type=Path, default=None,
+        help="Reflex ledger and queue dir for --work, --deliver and --sweep "
+        "(default: ~/.thalamus/reflex)",
+    )
+    reflex_parser.add_argument(
+        "--sweep", action="store_true",
+        help="Record and clear queue state no worker or carrier will reach: jobs of a "
+        "dead worker, results and jobs of ended sessions",
     )
     reflex_parser.add_argument(
         "--scope", default=MAIN_SCOPE,
@@ -2478,8 +2512,34 @@ def _cmd_delegate(args):
 
 def _cmd_reflex(args):
     """The hook's worker: everything it prints is injected, so it prints the digest or nothing."""
-    from thalamus.harness.reflex import fire, shadow
+    from thalamus.harness import reflex_worker
+    from thalamus.harness.reflex import fire, reflex_dir, shadow
 
+    if args.work:
+        reflex_worker.work(
+            reflex_dir(args.reflex_dir),
+            connect_graph=lambda: connect(args.url),
+            close_graph=close_connection,
+        )
+        return
+    if args.sweep:
+        counts = reflex_worker.sweep(reflex_dir(args.reflex_dir))
+        print(", ".join(f"{count} {outcome}" for outcome, count in counts.items()))
+        return
+    if not args.session_id:
+        print("reflex: --session-id is required", file=sys.stderr)
+        sys.exit(2)
+    if args.deliver:
+        digest = reflex_worker.deliver(
+            reflex_dir(args.reflex_dir), session_id=args.session_id, agent_id=args.agent_id,
+            event=args.event,
+        )
+        if digest:
+            print(digest)
+        return
+    if args.response_file is None:
+        print("reflex: --response-file is required", file=sys.stderr)
+        sys.exit(2)
     try:
         observed = args.response_file.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -2503,6 +2563,9 @@ def _cmd_reflex(args):
             cwd=args.cwd,
             tool_name=args.tool_name,
             event=args.event,
+            transcript=args.transcript,
+            tool_use_id=args.tool_use_id,
+            worker_url=args.url if args.url != DEFAULT_URL else "",
         )
     finally:
         close_connection(graph)

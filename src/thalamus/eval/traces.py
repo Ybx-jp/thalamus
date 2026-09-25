@@ -65,6 +65,9 @@ RETRIEVAL_TOOLS = frozenset(
         # entry `load_events()`'s default filter drops every line it writes.
         "reflex_lexical",
         "reflex_propagation",
+        # Written by the carrier when it delivers the worker's result
+        # (harness/reflex_worker.py), not when the firing happened.
+        "reflex_agentic",
         # A read of a reflex pointer file (reflex-pointer-tap.sh): the file's records
         # entering context when the agent opens them, priced like any retrieval.
         "reflex_pointer_open",

@@ -435,12 +435,13 @@ def test_plans_are_assigned_in_balanced_blocks_drawn_per_session():
                                   outcome="deduped"))
         return [row.arm for row in history if row.arm]
 
-    arms = run("s1", 20)
+    size = len(PLANS)
+    arms = run("s1", 10 * size)
     for block in range(10):
-        assert sorted(arms[2 * block: 2 * block + 2]) == sorted(PLANS)
-    assert run("s1", 20) == arms
-    orders = {tuple(run(f"s{n}", 2)) for n in range(20)}
-    assert len(orders) == 2
+        assert sorted(arms[size * block: size * block + size]) == sorted(PLANS)
+    assert run("s1", 10 * size) == arms
+    orders = {tuple(run(f"s{n}", size)) for n in range(40)}
+    assert len(orders) > 1
 
 
 def test_an_unpinned_firing_records_its_plan_and_a_stopped_one_none(tmp_path, spread):
