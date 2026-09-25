@@ -75,18 +75,21 @@ rests on more than the schema:
   top-level strings naming the PR branch's own previous and new head. `common/
   pull-request.schema.json` declares `base` as an object with a required `sha` string
   on every action.
-- A real run: PR #300 (`qe/issue-299-pr-base` -> `master`, the fix for this issue)
+- A real run: PR #309 (`qe/issue-299-pr-base` -> `master`, the fix for this issue)
   fired a `pull_request` `opened` event on its first push and a `synchronize` event on
-  its second, both handled without raising.
-- The positive control this issue asked for: scratch PR #302
+  a later push, both handled without raising -- expected, since this PR plants no
+  expectations.json entry, so neither run has anything to detect.
+- The positive control this issue asked for: scratch PR #310
   (`scratch/qe-299-base-control`, base `qe/issue-299-pr-base`) added one known-red-style
   entry on its first commit and made a trivial second commit. `mute-review` named the
-  added entry on **both** the `opened` run and the `synchronize` run that followed the
-  second push -- runs 36XXXXXXX and 36XXXXXXX. Under the pre-fix code, the synchronize
-  run would have read its own top-level `before` (the first commit, already carrying
-  the added entry) as "base" and reported clean, the same failure mode #299 reported on
-  PR #284. The fix instead re-reads `pull_request.base.sha` on both runs, so it stayed
-  red. The scratch PR and branch were closed and deleted once the runs completed.
+  added entry on **both** the `opened` run (36122392392, job 108030674104, `base=
+  42ea350e8550 via GITHUB_EVENT_PATH:pull_request.base.sha`) and the `synchronize` run
+  that followed the second push (36122562958, job 108031224443, same base and `how`).
+  Under the pre-fix code, the synchronize run would have read its own top-level
+  `before` (the first commit, already carrying the added entry) as "base" and reported
+  clean -- the same failure mode #299 reported on PR #284. The fix instead re-reads
+  `pull_request.base.sha` on both runs, so it stayed red both times. The scratch PR and
+  branch were closed and deleted once the runs completed.
 
 `git merge-base HEAD <base ref>`, recomputing the base from checked-out history instead
 of trusting `pull_request.base.sha`, was considered and not taken. `actions/checkout`'s
