@@ -11,7 +11,11 @@ machine, and this module reads it as one:
     no summary line yet, recently touched   → distilling
     "N extracted, M skipped, 0 failed"      → done, drop it
     a ✗ line, "K failed", or no transcript  → error
-    no summary line, log gone quiet         → error (the job died mid-flight)
+    a traceback, or a non-zero exit status  → error, naming the exception
+    no summary line, log gone quiet         → stalled, then abandoned
+
+A log holds one attempt per run mark and the last of them decides the row, so a
+re-distill that succeeds clears a crash rather than inheriting it.
 
 **Only ledger-backed sessions count.** Subagents fire SessionEnd too, and each
 one leaves a log that always ends in `No session matching …` because a subagent
@@ -131,6 +135,55 @@ def _runs(text: str) -> int:
     return sum(1 for line in text.splitlines() if line.startswith(RUN_MARK))
 
 
+# What a crash leaves behind, and it is not a `✗`. `_cmd_extract` marks the failures it
+# handles itself, but an exception escaping the command marks nothing and prints no
+# summary: it writes a traceback and exits non-zero. session-end.sh checks that status
+# and records it twice — a row in hook-failures.log, and this line in the log — so the
+# log does say what happened. Nothing here read it. Measured on this box: all four
+# crashed runs in the log directory were left to the stall clock, which called a
+# process that died in its first seconds one that had gone quiet, then abandoned it.
+# The codex hook runs extract with no status check and writes no such line, so the
+# traceback is the only signal there; either one decides.
+EXIT_RE = re.compile(r"^extract exited (\d+)\b")
+TRACEBACK_MARK = "Traceback (most recent call last):"
+
+
+def _last_run(text: str) -> str:
+    """The log from its most recent run mark on.
+
+    A log is a sequence of attempts rather than one state, so the attempt that decides
+    the row is the latest one. Reading the whole body instead lets a failure that has
+    since been superseded outlive the run that fixed it, and the dismissal machinery
+    can only hide such a row, never correct it (A0156, cites-as-live).
+    """
+    lines = text.splitlines()
+    cut = -1
+    for i, line in enumerate(lines):
+        if line.startswith(RUN_MARK):
+            cut = i
+    return text if cut < 0 else "\n".join(lines[cut:])
+
+
+def _crash_detail(lines: list[str]) -> str:
+    """The exception a traceback ended on — the whole of what a crash has to say.
+
+    The frames in between are this repo's own file paths and say nothing on a phone.
+    The last unindented line is the exception type and its message, which is what
+    names the fault, and it is the last rather than the first because a chained
+    traceback re-raises: the final exception is the one that reached the top.
+    """
+    starts = [i for i, line in enumerate(lines) if line.startswith(TRACEBACK_MARK)]
+    if not starts:
+        return ""
+    last = ""
+    for line in lines[starts[-1] + 1:]:
+        if EXIT_RE.match(line):
+            break
+        if line and not line[0].isspace():
+            last = line.strip()
+    return last
+
+
 # A `detail` is a log line and a log line has no length contract — a contract
 # rejection or a write failure can run long. It reaches the operator verbatim, so
 # the only safe way to bound it is to cut it and *say* that it was cut: a silently
@@ -214,13 +267,19 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     reaches a client — a successful distillation is dropped rather than served, so
     the absence of a record is what says it worked.
     """
+    text = _last_run(text)
+    lines = text.splitlines()
     summary = None
     fail_line = ""
-    for line in text.splitlines():
-        line = line.strip()
+    exited = 0
+    for raw in lines:
+        line = raw.strip()
         got = SUMMARY_RE.match(line)
+        got_exit = EXIT_RE.match(line)
         if got:
             summary = got            # last one wins: a re-distill appends
+        elif got_exit:
+            exited = int(got_exit.group(1))
         elif line.startswith(FAIL_MARK) and not fail_line:
             # `✗ <sid8>  extraction failed: …` — the row already names the
             # session, so only the reason is worth the width on a phone.
@@ -235,6 +294,15 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     # and letting the stall clock reach it first would call that a hang.
     if fail_line:
         return "error", fail_line
+    # Also before the stall clock, and for a sharper version of the same reason: a
+    # crash and a slow run are the same log to a clock, and the clock reads a process
+    # that died in two seconds as one that may yet finish. The exit status the hook
+    # recorded settles it, or the traceback where the hook records none, and the row
+    # then names the exception instead of ageing into "nothing has moved"
+    # (A0178, cites-as-live).
+    if exited or TRACEBACK_MARK in text:
+        return "error", (_crash_detail(lines)
+                         or f"extract exited {exited or 1} without distilling")
     # Checked before the stall clock: this job finished, it simply had nothing to
     # write, so ageing it into a failure would report loss where there was none. The
     # hook's own line is the same ending reached one step earlier — a session with no
