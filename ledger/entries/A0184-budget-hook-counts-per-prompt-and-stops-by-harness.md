@@ -45,10 +45,8 @@ none
 - 2026-09-24T18:06:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/budget.py § "decide" =sha256:1a19031c5a6c63837c4c2ca7a75101f1a6e2c88741961067a8acb44ed1323957
   note: decide now also reads a Claude Code subagent's tokens, from the subagent's own transcript, on the subagent's own count (A0175); what it counts for the main session and each prompt, and what it returns past a cap on each harness, is unchanged
+- 2026-09-24T19:10:00-07:00 · superseded · grade: measured · author: main
+  evidence: entry: A0187-budget-hook-counts-stops-and-forces-an-answer · supersedes
+  note: a spent token cap now denies the call and asks for an answer rather than stopping the prompt, and tokens are counted at PreToolUse only; the count caps and the codex behaviour are unchanged
 
 ## References
-
-- docs/concepts.md · standing · cites-as-live
-- src/thalamus/harness/budget.py · standing · cites-as-live
-- src/thalamus/harness/hooks/codex/budget.sh · standing · cites-as-live
-- src/thalamus/harness/install.py · standing · cites-as-live

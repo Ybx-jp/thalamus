@@ -167,7 +167,7 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     # The scope's `budget` preset (harness/budget.py): every tool call counts against
     # the prompt's tool-call cap, and every tool-using turn against its turn cap, which
     # is counted on `PostToolBatch` because that fires once per model turn and a stop
-    # returned there lands before the next model request (A0184, cites-as-live).
+    # returned there lands before the next model request (A0187, cites-as-live).
     ("PreToolUse", None, "budget.sh"),
     ("PostToolBatch", None, "budget.sh"),
 ]
@@ -361,7 +361,7 @@ CODEX_HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "Bash", "recipe-stage.sh"),
     # The budget guard on `PreToolUse` only: codex has no batch event, so its turn cap
     # has nowhere to be counted, and a codex hook cannot stop a turn — past a cap it
-    # denies each call instead (A0184, cites-as-live).
+    # denies each call instead (A0187, cites-as-live).
     ("PreToolUse", None, "budget.sh"),
 ]
 

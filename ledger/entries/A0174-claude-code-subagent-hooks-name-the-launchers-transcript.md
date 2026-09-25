@@ -41,3 +41,5 @@ The hooks-in-subagents paragraph says a subagent's tool events fire the configur
 ## Verdicts
 
 ## References
+
+- src/thalamus/harness/budget.py · standing · cites-as-live

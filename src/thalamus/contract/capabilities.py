@@ -147,12 +147,13 @@ COST = Dimension(
 
 # How much an expert's session may spend before it is stopped. The harnesses offer
 # almost none of this as a setting a profile can carry, so `harness/budget.py` enforces
-# it from the hooks; the keys are the four quantities those hooks can observe:
+# it from the hooks; the keys are the quantities those hooks can observe:
 #
 #   max_turns       tool-using model turns per prompt, reset by the next prompt
 #   max_tool_calls  tool calls per prompt, reset by the next prompt
 #   max_tokens      tokens the session's model requests processed, input (cached or
-#                   not) plus output, over the whole session
+#                   not) plus output, over the whole session and its subagents
+#   max_subagent_tokens  the same, for one subagent run on its own
 #   max_tool_output_tokens  the size one tool result may reach the model at
 #
 # The first two are the unit every agent loop that caps a run counts in (the Claude
@@ -166,6 +167,7 @@ BUDGET = Dimension(
         "max_turns": IntRange(1),
         "max_tool_calls": IntRange(1),
         "max_tokens": IntRange(1),
+        "max_subagent_tokens": IntRange(1),
         "max_tool_output_tokens": IntRange(1),
     },
 )
