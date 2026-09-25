@@ -52,6 +52,29 @@ none
 - 2026-09-24T02:01:40-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:b41054b9bcaa266119387f8ebfe45e795e60eeec87ffe8224ac523cdb8e336b5
   note: fire now retrieves through a retrieval-compiler job and adds calls and nodes to the trace's tool_input; every Firing it appends still carries the event through record(), and tool_input still carries it, so the assertion is unaffected
+- 2026-09-24T18:02:04-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "Firing" =sha256:8156a5b8bd7e90a97c5a9effdab7c7129b29527ebf4fc29430223259f9410b35
+  artifact: sha256:0697411f4e42b01b659c0e9f27acc56db65fe12fd75ce77d670a1b4db47a141b
+  note: propagated from a moved ground
+
+- 2026-09-24T18:02:04-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:b41054b9bcaa266119387f8ebfe45e795e60eeec87ffe8224ac523cdb8e336b5
+  artifact: sha256:67e341a6f38d701f26d8a7433c8abd9e34f331bb934860473aaff010acd8a64a
+  note: propagated from a moved ground
+
+- 2026-09-24T18:02:04-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:627349e2564b752496c1e7584c8a5d52ed0e3352638604527d0037ed97702238
+  artifact: sha256:6dacbee7c02af7c68613d11798cbb06a9a5a9a3f57763f537802b4ba58da358c
+  note: propagated from a moved ground
+- 2026-09-24T18:02:30-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex.py § "Firing" =sha256:0697411f4e42b01b659c0e9f27acc56db65fe12fd75ce77d670a1b4db47a141b
+  note: Firing's arm field now defaults to empty for a firing stopped before a plan was assigned; the event field and its comment are unchanged, so the assertion is unaffected
+- 2026-09-24T18:02:30-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:67e341a6f38d701f26d8a7433c8abd9e34f331bb934860473aaff010acd8a64a
+  note: fire now assigns a plan and runs the propagation plan on half the firings; every Firing it appends still carries the event through record(), and tool_input still carries it on both arms' traces, so the assertion is unaffected
+- 2026-09-24T18:02:30-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:6dacbee7c02af7c68613d11798cbb06a9a5a9a3f57763f537802b4ba58da358c
+  note: reflex_report gained per-plan outcome counts and per-arm trace numbers; the per-event counts of qualifying and served firings are unchanged and still keyed on the row's event, so the assertion is unaffected
 
 ## References
 
