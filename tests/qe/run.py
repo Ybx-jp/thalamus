@@ -97,6 +97,12 @@ CASE_MODULES = (
     "qe.cases.reflex_recall_scope_isolation",
     "qe.cases.graph_guard_scope_boundary",
     "qe.cases.reflex_candidate_cap_overrun",
+    "qe.cases.reflex_worker_digest_and_budget_drop_whole",
+    "qe.cases.reflex_worker_lock_reclaimed_after_death",
+    "qe.cases.reflex_queue_append_survives_a_concurrent_claim",
+    "qe.cases.reflex_worker_session_end_no_model_call",
+    "qe.cases.reflex_worker_deadline_interrupts_blocking_call",
+    "qe.cases.reflex_carrier_single_posttooluse_group",
 )
 
 
