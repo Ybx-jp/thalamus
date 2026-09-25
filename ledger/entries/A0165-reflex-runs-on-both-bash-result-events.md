@@ -45,6 +45,20 @@ none
 - 2026-09-24T02:40:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:d96c8cf3a9dcb537fecdcf0e63d1ee1a6f91006a65ed8cde66386bab5d0a5909
   note: HOOK_WIRING gained budget.sh on PreToolUse and PostToolBatch; the reflex rows on PostToolUse and PostToolUseFailure are unchanged, so the assertion is unaffected
+- 2026-09-24T18:58:50-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:d96c8cf3a9dcb537fecdcf0e63d1ee1a6f91006a65ed8cde66386bab5d0a5909
+  artifact: sha256:b48f40f7442f0c734bb61a2cf21b1ee786ffaad2520924ac28b9751cd87b4689
+  note: propagated from a moved ground
+- 2026-09-24T19:20:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:b48f40f7442f0c734bb61a2cf21b1ee786ffaad2520924ac28b9751cd87b4689
+  note: the budget.sh comment in HOOK_WIRING now cites A0187 in place of A0184; the reflex wiring is unchanged
+- 2026-09-24T19:20:13-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:b48f40f7442f0c734bb61a2cf21b1ee786ffaad2520924ac28b9751cd87b4689
+  artifact: sha256:2240b5ea6b948770b72f725456548972aa00dc990a8e81fa8352d257e360ce2d
+  note: propagated from a moved ground
+- 2026-09-24T19:20:13-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/install.py § "HOOK_WIRING" =sha256:2240b5ea6b948770b72f725456548972aa00dc990a8e81fa8352d257e360ce2d
+  note: the budget.sh comment in HOOK_WIRING now describes the turn cap's context injection and cites A0179; the reflex wiring is unchanged
 
 ## References
 

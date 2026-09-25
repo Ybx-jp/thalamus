@@ -64,6 +64,13 @@ none
 - 2026-09-24T02:40:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/capabilities.py § "COST" =sha256:6eb26e034c33670bf4ddd32319426b225e25e3a9085ccdc37519541682463825
   note: COST's section now carries the preamble comment of the BUDGET declaration after it, which lists four settings; COST and _cost_frontmatter are unchanged, so the assertion is unaffected
+- 2026-09-24T18:58:50-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/capabilities.py § "COST" =sha256:6eb26e034c33670bf4ddd32319426b225e25e3a9085ccdc37519541682463825
+  artifact: sha256:444ad92efb07535b6e9df3085adb624f30c14305b9c53d1655dc0caeff08edf1
+  note: propagated from a moved ground
+- 2026-09-24T19:20:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/capabilities.py § "COST" =sha256:444ad92efb07535b6e9df3085adb624f30c14305b9c53d1655dc0caeff08edf1
+  note: the section's span takes in the BUDGET comment below COST, which now lists max_subagent_tokens; COST and the renderer's projection are unchanged
 
 ## References
 

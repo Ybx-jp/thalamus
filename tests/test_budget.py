@@ -62,9 +62,9 @@ def test_a_bad_override_is_refused_rather_than_read_as_zero(tmp_path):
         limits("s", _config(tmp_path, preset=None), {"THALAMUS_MAX_TURNS": "0"})
 
 
-def test_the_call_past_the_cap_is_denied_and_stops_the_prompt_on_claude_code():
-    """Deny alone lets the prompt run on; `continue: false` alone runs the call first.
-    The call past the cap needs both."""
+def test_the_call_past_the_cap_is_denied_and_the_model_told_to_answer():
+    """A stop would leave a subagent with no reply for its launcher; the deny alone
+    lets the model answer."""
     state: dict = {}
     caps = {"max_tool_calls": 2}
 
@@ -72,9 +72,9 @@ def test_the_call_past_the_cap_is_denied_and_stops_the_prompt_on_claude_code():
     assert decide(_pre(), "claude", caps, state) is None
     out = decide(_pre(), "claude", caps, state)
 
-    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert out["continue"] is False
-    assert "2 tool calls" in out["stopReason"]
+    reason = _denied(out)
+    assert "2 tool calls" in reason and "Answer now" in reason and "not run" in reason
+    assert "continue" not in out
 
 
 def test_codex_gets_the_deny_without_continue_false():
@@ -97,15 +97,21 @@ def test_a_new_prompt_resets_turns_and_tool_calls():
     assert decide(_pre("p2"), "claude", caps, state) is None
 
 
-def test_the_turn_cap_stops_the_prompt_at_the_batch_that_reaches_it():
+def test_the_turn_cap_asks_for_an_answer_at_the_batch_that_reaches_it():
+    """The batch has no deny; its context reaches the model before its next request,
+    and the calls that request makes anyway are denied."""
     state: dict = {}
     caps = {"max_turns": 2}
 
     assert decide(_batch(), "claude", caps, state) is None
     out = decide(_batch(), "claude", caps, state)
 
-    assert out == {"continue": False, "stopReason": out["stopReason"]}
-    assert "2 turns" in out["stopReason"]
+    assert out == {"hookSpecificOutput": {"hookEventName": "PostToolBatch",
+                                          "additionalContext": out["hookSpecificOutput"][
+                                              "additionalContext"]}}
+    assert "2 turns" in out["hookSpecificOutput"]["additionalContext"]
+    assert "2 turns" in _denied(decide(_pre(), "claude", caps, state))
+    assert decide(_batch(), "claude", caps, state) is None
 
 
 def test_each_subagent_counts_on_its_own_and_not_against_the_session():
@@ -136,6 +142,11 @@ def _claude_transcript(path: Path, messages) -> Path:
     return path
 
 
+def _denied(out) -> str:
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    return out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
 def test_claude_tokens_are_summed_once_per_message_across_calls(tmp_path):
     usage = {"input_tokens": 10, "cache_creation_input_tokens": 100,
              "cache_read_input_tokens": 1000, "output_tokens": 5}
@@ -143,16 +154,58 @@ def test_claude_tokens_are_summed_once_per_message_across_calls(tmp_path):
     state: dict = {}
     caps = {"max_tokens": 2000}
 
-    assert decide(_batch(transcript_path=str(transcript)), "claude", caps, state) is None
-    assert state["tokens"]["total"] == 1115
+    assert decide(_pre(transcript_path=str(transcript)), "claude", caps, state) is None
+    assert state["reads"]["t.jsonl"]["total"] == 1115
 
     with transcript.open("a") as f:
         for _ in range(2):
             f.write(json.dumps({"message": {"id": "m2", "usage": usage}}) + "\n")
-    out = decide(_batch(transcript_path=str(transcript)), "claude", caps, state)
+    out = decide(_pre(transcript_path=str(transcript)), "claude", caps, state)
 
-    assert state["tokens"]["total"] == 2230
-    assert "2,000 tokens" in out["stopReason"]
+    assert state["reads"]["t.jsonl"]["total"] == 2230
+    assert "2,000 tokens for this session" in _denied(out)
+
+
+def test_a_spent_token_cap_denies_the_call_and_asks_for_an_answer(tmp_path):
+    """A stop would leave the session with no account of where it got to; the deny
+    alone lets the model answer."""
+    transcript = _claude_transcript(tmp_path / "t.jsonl", [("m1", {"output_tokens": 50})])
+
+    out = decide(_pre(transcript_path=str(transcript)), "claude", {"max_tokens": 10}, {})
+
+    assert "Answer now" in _denied(out)
+    assert "continue" not in out
+
+
+def test_a_model_that_keeps_calling_tools_past_the_cap_is_stopped(tmp_path):
+    transcript = _claude_transcript(tmp_path / "t.jsonl", [("m1", {"output_tokens": 50})])
+    state: dict = {}
+    caps = {"max_tokens": 10}
+    for _ in range(budget.FORCED_ANSWER_DENIALS):
+        assert "continue" not in decide(_pre(transcript_path=str(transcript)), "claude",
+                                        caps, state)
+
+    out = decide(_pre(transcript_path=str(transcript)), "claude", caps, state)
+
+    assert out["continue"] is False
+    assert decide(_pre("p2", transcript_path=str(transcript)), "claude", caps,
+                  state).get("continue") is None
+
+
+def test_a_spent_cap_denies_every_further_call_in_the_prompt():
+    state: dict = {}
+    decide(_pre(), "claude", {"max_tool_calls": 1}, state)
+    first = _denied(decide(_pre(), "claude", {"max_tool_calls": 1}, state))
+
+    assert _denied(decide(_pre(), "claude", {"max_tool_calls": 1}, state)) == first
+
+
+def test_tokens_are_not_counted_at_the_batch(tmp_path):
+    """The batch has no deny, only a stop; the next call is where the answer is asked for."""
+    transcript = _claude_transcript(tmp_path / "t.jsonl", [("m1", {"output_tokens": 50})])
+
+    assert decide(_batch(transcript_path=str(transcript)), "claude",
+                  {"max_tokens": 10}, {}) is None
 
 
 def test_codex_tokens_are_its_own_running_total(tmp_path):
@@ -164,47 +217,60 @@ def test_codex_tokens_are_its_own_running_total(tmp_path):
     out = decide(_pre(prompt=None, turn_id="t", transcript_path=str(rollout)), "codex",
                  {"max_tokens": 20000}, {})
 
-    assert "24,013 spent" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "24,013 spent" in _denied(out)
+    assert "continue" not in out
 
 
 def _subagent_transcript(session: Path, agent: str, messages) -> Path:
     # Where Claude Code writes a subagent's own requests: beside the session's
     # transcript, under its stem (A0174).
     path = session.with_suffix("") / "subagents" / f"agent-{agent}.jsonl"
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     return _claude_transcript(path, messages)
 
 
-def test_a_subagents_tokens_are_read_from_its_own_transcript(tmp_path):
+def test_the_session_total_adds_every_subagents_spend(tmp_path):
+    session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 30})])
+    _subagent_transcript(session, "a1", [("s1", {"output_tokens": 30})])
+    _subagent_transcript(session, "a2", [("s2", {"output_tokens": 30})])
+
+    out = decide(_pre(transcript_path=str(session)), "claude", {"max_tokens": 80}, {})
+
+    assert "80 tokens for this session (90 spent)" in _denied(out)
+
+
+def test_the_session_total_binds_a_subagent_whose_scope_has_no_cap(tmp_path):
+    """An expert spawned as a subagent resolves its own scope's preset; the session it
+    runs in is still held to the total its own hook recorded."""
     session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 5})])
-    _subagent_transcript(session, "a1", [("s1", {"output_tokens": 50})])
     state: dict = {}
-
-    out = decide(_pre(agent="a1", transcript_path=str(session)), "claude",
-                 {"max_tokens": 40}, state)
-
-    assert "40 tokens for this subagent (50 spent)" in out["stopReason"]
-    assert state["tokens:a1"]["total"] == 50
-    assert "tokens" not in state
-
-
-def test_a_subagents_spend_is_not_charged_to_the_session(tmp_path):
-    session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 5})])
+    decide(_pre(transcript_path=str(session)), "claude", {"max_tokens": 40}, state)
     _subagent_transcript(session, "a1", [("s1", {"output_tokens": 50})])
+
+    out = decide(_pre(agent="a1", transcript_path=str(session)), "claude", {}, state)
+
+    assert "40 tokens for this session (55 spent)" in _denied(out)
+
+
+def test_a_subagent_cap_reads_that_subagents_transcript_alone(tmp_path):
+    session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 500})])
+    _subagent_transcript(session, "a1", [("s1", {"output_tokens": 50})])
+    _subagent_transcript(session, "a2", [("s2", {"output_tokens": 5})])
     state: dict = {}
-    caps = {"max_tokens": 40}
+    caps = {"max_subagent_tokens": 40}
 
-    decide(_pre(agent="a1", transcript_path=str(session)), "claude", caps, state)
-
+    assert "40 tokens for this subagent (50 spent)" in _denied(
+        decide(_pre(agent="a1", transcript_path=str(session)), "claude", caps, state))
+    assert decide(_pre(agent="a2", transcript_path=str(session)), "claude", caps,
+                  state) is None
     assert decide(_pre(transcript_path=str(session)), "claude", caps, state) is None
-    assert state["tokens"]["total"] == 5
 
 
 def test_a_subagent_with_no_transcript_yet_is_not_stopped(tmp_path):
     session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 50})])
 
     assert decide(_pre(agent="a1", transcript_path=str(session)), "claude",
-                  {"max_tokens": 10}, {}) is None
+                  {"max_subagent_tokens": 10}, {}) is None
 
 
 def test_a_codex_subagents_tokens_are_not_read(tmp_path):
@@ -215,7 +281,7 @@ def test_a_codex_subagents_tokens_are_not_read(tmp_path):
         "type": "token_count", "info": {"total_token_usage": {"total_tokens": 999}}}}) + "\n")
 
     assert decide(_pre(prompt=None, turn_id="t", agent="a1", transcript_path=str(rollout)),
-                  "codex", {"max_tokens": 10}, {}) is None
+                  "codex", {"max_subagent_tokens": 10}, {}) is None
 
 
 def test_the_tool_output_cap_projects_onto_claude_codes_three_variables():
@@ -270,7 +336,7 @@ def test_the_hook_denies_the_call_past_the_cap_end_to_end(tmp_path, harness_dir)
     out = _hook(harness_dir, payload, tmp_path, env)
 
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert ("continue" in out) == (harness_dir == "claude-code")
+    assert "continue" not in out
 
 
 def test_the_hook_does_not_start_python_for_a_scope_with_no_budget(tmp_path):
@@ -283,6 +349,20 @@ def test_the_hook_does_not_start_python_for_a_scope_with_no_budget(tmp_path):
 
     assert _hook("claude-code", _pre(), tmp_path, env) is None
     assert not (tmp_path / ".thalamus" / "logs" / "budget.log").exists()
+
+
+def test_the_hook_holds_an_uncapped_scope_to_its_sessions_recorded_total(tmp_path):
+    """The fast path must not skip a subagent whose scope has no budget when its
+    session's hook has recorded a total to hold it to."""
+    root = _config(tmp_path, preset=None)
+    session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 50})])
+    state_dir = tmp_path / ".thalamus" / "budget"
+    state_dir.mkdir(parents=True)
+    (state_dir / "e2e-total.json").write_text(json.dumps({"session_cap": 10}))
+    env = {"THALAMUS_CONFIG_DIR": str(root), "THALAMUS_SCOPE": "s"}
+    payload = _pre(agent="a1", transcript_path=str(session)) | {"session_id": "e2e-total"}
+
+    assert "10 tokens for this session" in _denied(_hook("claude-code", payload, tmp_path, env))
 
 
 def test_a_config_the_hook_cannot_read_lets_the_call_through(tmp_path):
