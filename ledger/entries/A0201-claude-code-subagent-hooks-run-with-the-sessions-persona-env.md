@@ -35,6 +35,14 @@ none
 
 ## Verdicts
 
+- 2026-09-25T03:32:56-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:35b5128e1a17a6dfbb743179cd5b16e5b45e990b9f8d5c66427842d3a549df94
+  artifact: sha256:e22238e970e4ac56ecec1ec0097ef58fca8247a192bd74f9b62bc528cf44505f
+  note: propagated from a moved ground
+- 2026-09-25T03:32:56-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/hooks/claude-code/resolve-scope.sh § "thalamus_guard_command" =sha256:e22238e970e4ac56ecec1ec0097ef58fca8247a192bd74f9b62bc528cf44505f
+  note: the frontmatter check in the section now reads from a here-string instead of a pipe (#312); thalamus_resolve_scope still tries the payload's agent_type before CLAUDE_CODE_AGENT, so the assertion is unaffected
+
 ## References
 
 - src/thalamus/harness/hooks/claude-code/resolve-scope.sh · standing · cites-as-live

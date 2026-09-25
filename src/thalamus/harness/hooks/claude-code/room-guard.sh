@@ -87,14 +87,14 @@ if [ "$target" = "main" ]; then
 fi
 
 # A raw agentId (the spawn result's `a<hex>` form) is an in-process subagent.
-if printf '%s' "$target" | grep -qE '^a[0-9a-f]{8,}$'; then
+if grep -qE '^a[0-9a-f]{8,}$' <<< "$target"; then
   log_event pass subagent-id
   exit 0
 fi
 
 # A room-mate: `<room>-<scope>`, or the room's own anchor. The optional
 # " [ref]" disambiguator SendMessage appends is tolerated.
-if printf '%s' "$target" | grep -qE "^${room}(-[^ ]+)?( \[[0-9a-f]+\])?$"; then
+if grep -qE "^${room}(-[^ ]+)?( \[[0-9a-f]+\])?$" <<< "$target"; then
   log_event pass roommate
   exit 0
 fi

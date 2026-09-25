@@ -42,6 +42,13 @@ none
 - 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/hooks/claude-code/graph-guard.sh § "marked" =sha256:28654d05d79b659a9d3cf7ca2d255f5aeb0a61af0e9f274ac6236452748cb1c7
   note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files. The assertion is unaffected.
+- 2026-09-25T03:32:56-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/graph-guard.sh § "marked" =sha256:28654d05d79b659a9d3cf7ca2d255f5aeb0a61af0e9f274ac6236452748cb1c7
+  artifact: sha256:988feedcf24370fb3f841835c9b5d73e94bdd8f0f7bfe5864b2d7d719f8402ba
+  note: propagated from a moved ground
+- 2026-09-25T03:32:56-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/hooks/claude-code/graph-guard.sh § "marked" =sha256:988feedcf24370fb3f841835c9b5d73e94bdd8f0f7bfe5864b2d7d719f8402ba
+  note: the marker test now reads the command from a here-string instead of a pipe (#312); it still matches MARKERS against the command line and then the named .py file one level deep, so the assertion is unaffected
 
 ## References
 

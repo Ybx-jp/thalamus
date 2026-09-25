@@ -93,7 +93,7 @@ fired_already() {
   [ -f "$log_file" ] || return 1
   grep -F "\"session_id\":\"$session\"" "$log_file" 2>/dev/null \
     | grep -F "\"agent\":\"$agent\"" \
-    | grep -qF "\"class\":\"$1\""
+    | grep -F "\"class\":\"$1\"" >/dev/null
 }
 
 emit() {  # $1 = class, $2 = message
@@ -118,8 +118,9 @@ case "$event" in
     prompt=$(printf '%s' "$input" | jq -r '.prompt // empty')
     [ -n "$prompt" ] || exit 0
 
-    if printf '%s' "$prompt" | grep -qiE \
+    if grep -qiE \
       "\b(design|architect|propose|new (feature|component|skill|hook|expert|metric|schema)|should we (build|add|write|create)|let'?s (build|add|write|create|implement|enhance))\b" \
+      <<< "$prompt" \
       && ! fired_already design; then
       others="$(thalamus_roster "$scope")"
       if [ "$scope" = "main" ]; then
@@ -131,8 +132,9 @@ case "$event" in
       exit 0
     fi
 
-    if printf '%s' "$prompt" | grep -qiE \
+    if grep -qiE \
       "\b(why did|what happened|(last|previous|prior|earlier) session|did (we|it|that) (already|ever|actually)|history of|how did .* (end|go|resolve))\b" \
+      <<< "$prompt" \
       && ! fired_already retrospect; then
       emit retrospect "Thalamus conditioning (tier-0 operator hook, fires once/session): this prompt asks about past work. memory_recall FIRST (recall-strategy L1) — the graph may already hold the answer; transcript/archive archaeology is the expensive second resort (measured: the orphan-cleanup story was one recall away while an hour was spent grepping transcripts)."
       exit 0
@@ -167,8 +169,8 @@ case "$event" in
         desc=$(printf '%s' "$input" | jq -r '.tool_input.description // ""')
         if [ "$scope" != "main" ] \
           && [ "${spawned#thalamus-}" = "$spawned" ] \
-          && printf '%s' "$desc" | grep -qiE "\b(design|architect|propose|proposal|critique|review|assess|evaluate|spec|plan)\b" \
-          && ! printf '%s' "$desc" | grep -qiE "^[[:space:]]*(survey|map|trace|find|search|extract|check|read|list|probe|mine|locate|grep|inventory)\b" \
+          && grep -qiE "\b(design|architect|propose|proposal|critique|review|assess|evaluate|spec|plan)\b" <<< "$desc" \
+          && ! grep -qiE "^[[:space:]]*(survey|map|trace|find|search|extract|check|read|list|probe|mine|locate|grep|inventory)\b" <<< "$desc" \
           && ! fired_already selfticket; then
           emit selfticket "Thalamus conditioning (tier-0 operator hook, fires once/session): you are pinned to \`$scope\` and spawned a plain subagent for judgement work inside your own domain (\"$desc\"). The instrument for that is \`consult_request(expert=\"$scope\")\` — a self-ticket, which is allowed and buys what the spawn does not: a brief assembled against the question, a close the server refuses unless reads happened under the ticket, and an exchange record a later session and the eval loop can find. It grants no reach you do not already have and corroborates nothing — one memory agreeing with itself is not a second source — so mint it for the independent pass, not for confirmation, and voice it with a subagent like any other ticket. Surveys, searches and mechanical work are not this class; keep spawning those. Procedure: the consult-an-expert skill."
           exit 0
