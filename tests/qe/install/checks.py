@@ -100,8 +100,11 @@ CHECK_LINE = re.compile(r"^  ([" + "".join(MARKS) + r"]) ([^:]+): (.*)$")
 #: The substring install.py:623-626 uses to recognise its own hook entries.
 OUR_HOOK_MARKER = "thalamus/harness/hooks"
 
-#: install.py:145 declares 16 scripts across 21 entries in HOOK_WIRING.
-EXPECTED_HOOK_ENTRIES = 21
+#: install.py:145 declares 16 scripts across 22 entries in HOOK_WIRING — the reflex
+#: carrier (reflex-pointer-tap.sh) gets a second, PostToolUseFailure row alongside its
+#: PostToolUse one (docs/14-memory-reflex.md §4, "The carrier"), so main can land it in
+#: the same HOOK_WIRING no other change here waits on.
+EXPECTED_HOOK_ENTRIES = 22
 
 #: The rendering a HEALTHY MCP registration produces: a backticked server name, the
 #: word `in`, one location, and nothing after it. Every unhealthy branch appends a
