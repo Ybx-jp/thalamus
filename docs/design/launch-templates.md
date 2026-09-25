@@ -103,11 +103,9 @@ than launch silently without it.
   list.
 - Experts always take their manifest unless the launch adds CLI arguments; a template
   does not pass to subagents.
-
-## Open decisions
-
-- **Template file location and CLI verbs.** `templates/<name>.yaml` beside `presets/`,
-  managed by `thalamus template list|set|remove` like `thalamus preset`.
+- Templates live in `<config_root>/templates/<name>.yaml`, beside `presets/`, and are
+  managed by `thalamus template list | set | remove`, the same shape as
+  `thalamus preset`.
 
 ## Measure before building
 
