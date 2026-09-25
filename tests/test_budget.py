@@ -167,13 +167,55 @@ def test_codex_tokens_are_its_own_running_total(tmp_path):
     assert "24,013 spent" in out["hookSpecificOutput"]["permissionDecisionReason"]
 
 
-def test_tokens_are_not_read_for_a_subagent(tmp_path):
-    """Which transcript a subagent's payload names is unmeasured; reading the
-    launcher's would charge the session's spend to the subagent."""
-    transcript = _claude_transcript(tmp_path / "t.jsonl", [("m1", {"output_tokens": 50})])
+def _subagent_transcript(session: Path, agent: str, messages) -> Path:
+    # Where Claude Code writes a subagent's own requests: beside the session's
+    # transcript, under its stem (A0174).
+    path = session.with_suffix("") / "subagents" / f"agent-{agent}.jsonl"
+    path.parent.mkdir(parents=True)
+    return _claude_transcript(path, messages)
 
-    assert decide(_pre(agent="a1", transcript_path=str(transcript)), "claude",
+
+def test_a_subagents_tokens_are_read_from_its_own_transcript(tmp_path):
+    session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 5})])
+    _subagent_transcript(session, "a1", [("s1", {"output_tokens": 50})])
+    state: dict = {}
+
+    out = decide(_pre(agent="a1", transcript_path=str(session)), "claude",
+                 {"max_tokens": 40}, state)
+
+    assert "40 tokens for this subagent (50 spent)" in out["stopReason"]
+    assert state["tokens:a1"]["total"] == 50
+    assert "tokens" not in state
+
+
+def test_a_subagents_spend_is_not_charged_to_the_session(tmp_path):
+    session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 5})])
+    _subagent_transcript(session, "a1", [("s1", {"output_tokens": 50})])
+    state: dict = {}
+    caps = {"max_tokens": 40}
+
+    decide(_pre(agent="a1", transcript_path=str(session)), "claude", caps, state)
+
+    assert decide(_pre(transcript_path=str(session)), "claude", caps, state) is None
+    assert state["tokens"]["total"] == 5
+
+
+def test_a_subagent_with_no_transcript_yet_is_not_stopped(tmp_path):
+    session = _claude_transcript(tmp_path / "sess.jsonl", [("m1", {"output_tokens": 50})])
+
+    assert decide(_pre(agent="a1", transcript_path=str(session)), "claude",
                   {"max_tokens": 10}, {}) is None
+
+
+def test_a_codex_subagents_tokens_are_not_read(tmp_path):
+    """Where codex writes a subagent's spend is unmeasured; reading the launcher's
+    rollout would charge the session's spend to the subagent."""
+    rollout = tmp_path / "rollout.jsonl"
+    rollout.write_text(json.dumps({"type": "event_msg", "payload": {
+        "type": "token_count", "info": {"total_token_usage": {"total_tokens": 999}}}}) + "\n")
+
+    assert decide(_pre(prompt=None, turn_id="t", agent="a1", transcript_path=str(rollout)),
+                  "codex", {"max_tokens": 10}, {}) is None
 
 
 def test_the_tool_output_cap_projects_onto_claude_codes_three_variables():
