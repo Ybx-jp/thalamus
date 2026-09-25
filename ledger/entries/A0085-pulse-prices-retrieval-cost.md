@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-23T21:46:16-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/eval/cost.py § "cost_report" =sha256:e5ee389bd7cad4ebb86e4ec6f3e4bb4398b1d2df58a6b8bd877e3b7f0e0807f8
+  artifact: sha256:965a2449d48702c8d6ac6f53c8b27ed5863a78b1f88ee747c9e907fbf9d4c63b
+  note: propagated from a moved ground
+
+- 2026-09-23T21:50:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/cost.py § "cost_report" =sha256:965a2449d48702c8d6ac6f53c8b27ed5863a78b1f88ee747c9e907fbf9d4c63b
+  note: cost_report now prices a trace's injection through TraceEvent.injected_chars(), which reads the digest length a reflex line records; it still assembles the report from recorded activity, so the assertion is unaffected
+
 ## References
 
 - README.md · standing · cites-as-live

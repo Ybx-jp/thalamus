@@ -492,7 +492,7 @@ def smoke_recipes(url: str, path: Path | None = None) -> list[SmokeResult]:
     results: list[SmokeResult] = []
     text = recipes_path.read_text() if recipes_path.is_file() else ""
     seen: set[str] = set()
-    for name, code in _python_blocks(text):
+    for name, code in _fenced(text, "python"):
         if name in seen or not name or name.lower().startswith(("gremlin recipe", "entry")):
             continue
         seen.add(name)
@@ -527,10 +527,6 @@ def render_smoke(results: list[SmokeResult]) -> str:
         mark = "OK " if result.ok else "FAIL"
         lines.append(f"  [{mark}] {result.name}" + (f" — {result.detail}" if result.detail else ""))
     return "\n".join(lines)
-
-
-def _python_blocks(markdown: str) -> list[tuple[str, str]]:
-    return _fenced(markdown, "python")
 
 
 def _lang_blocks(markdown: str) -> list[tuple[str, str]]:

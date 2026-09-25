@@ -880,6 +880,34 @@ def recall_by_artifact(
     if not spellings:
         return []
 
+    # The relevance line names what was actually searched. A result reached through a
+    # spelling the caller never typed is otherwise unexplainable from the output.
+    relevance = f"touches: {identifier}"
+    if len(spellings) > 1:
+        relevance += f" ({len(spellings)} spellings)"
+
+    return [
+        _load_session_result(g, session_id, relevance, scope)
+        for session_id in _session_ids_touching(g, spellings, limit, scope)
+    ]
+
+
+def sessions_touching(
+    g: GraphTraversalSource, identifier: str, limit: int = 5, scope: str = MAIN_SCOPE
+) -> list[str]:
+    """`recall_by_artifact`'s sessions as vertex ids, with nothing loaded."""
+    spellings = spellings_of(g, identifier)
+    if not spellings:
+        return []
+    return [
+        vid("Session", session_id, scope)
+        for session_id in _session_ids_touching(g, spellings, limit, scope)
+    ]
+
+
+def _session_ids_touching(
+    g: GraphTraversalSource, spellings: list[str], limit: int, scope: str
+) -> list[str]:
     sessions = (
         g.V()
         .has_label("Artifact")
@@ -895,17 +923,7 @@ def recall_by_artifact(
         .limit(limit)
         .to_list()
     )
-
-    # The relevance line names what was actually searched. A result reached through a
-    # spelling the caller never typed is otherwise unexplainable from the output.
-    relevance = f"touches: {identifier}"
-    if len(spellings) > 1:
-        relevance += f" ({len(spellings)} spellings)"
-
-    return [
-        _load_session_result(g, _first(s.get("session_id")), relevance, scope)
-        for s in sessions
-    ]
+    return [_first(s.get("session_id")) for s in sessions]
 
 
 def recall_by_project(
@@ -1283,8 +1301,9 @@ def _load_session_result(
     relevance: str,
     scope: str,
     keywords: list[str] | None = None,
+    claim_vid: str = "",
 ) -> MemoryResult:
-    """Load a session with the details the query earned."""
+    """Load a session with the details the query earned, or with one claim alone."""
     session_data = (
         g.V()
         .has_label("Session")
@@ -1349,7 +1368,10 @@ def _load_session_result(
             detail["worked"] = False
         details.append(detail)
 
-    details = _select_details(details, keywords or [])
+    if claim_vid:
+        details = [d for d in details if d["node_id"] == claim_vid]
+    else:
+        details = _select_details(details, keywords or [])
     if any(d.get("node_id") for d in details):
         _attach_uses(details, _uses_rows(g, session_vid))
     return _session_result(session_data[0], relevance=relevance, details=details)

@@ -69,7 +69,7 @@ evidence-plain = []
 # and denies every other, and the ledger is cross-scope by construction — a claim about
 # `tests/qe/` and a claim about `substrate/` are neighbours in the same directory. Who may
 # speak is the allowlist below; where they may write is not the question the ledger asks.
-verdict-authors = ["main", "propagation"]
+verdict-authors = ["main", "architect", "propagation"]
 propagation-author = "propagation"
 
 # No id series is quarantined: this is the repository's first ledger.

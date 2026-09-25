@@ -1,13 +1,12 @@
 """The reflex must not re-query the graph for a failure it already fired on.
 
 `reflex.fire` keys dedup on `(session, agent, normalised anchor)` — `seen` is built from
-every prior row's `keys` filtered to the *same* `agent_id`
-(`reflex.py:346`) — so a rerun of an unchanged test failure inside one session must not
-re-query the graph a second time, and a subagent sharing the session id must still be
-able to fire on its own first encounter. This is the strongest of the three controls the
-module's docstring names (`reflex.py:19-23`): "per-anchor dedup keyed on
-`(session, agent, normalised anchor)`, so the same failing test on a rerun does not
-refire." `tests/test_reflex.py::test_a_rerun_of_the_same_failure_does_not_refire_but_
+every prior row's `keys` filtered to the *same* `agent_id` — so a rerun of an unchanged
+test failure inside one session must not re-query the graph a second time, and a
+subagent sharing the session id must still be able to fire on its own first encounter.
+This is the strongest of the three controls the module's docstring names: "per-anchor
+dedup keyed on `(session, agent, normalised anchor)`, so the same failing test on a
+rerun does not refire." `tests/test_reflex.py::test_a_rerun_of_the_same_failure_does_not_refire_but_
 another_agent_does` covers this fixture once, in dev's own loop; this case drives the
 same property from `qe`'s side, which is not gated on dev's suite staying wired or
 green.
@@ -25,10 +24,10 @@ apart from "nothing in this session fires a second time no matter who asks", whi
 report a dead reflex as a working one.
 
 **Shown capable of going red.** Comment out the `if len(fresh) < MIN_NEW_ANCHORS:` guard
-(or empty the `seen` set unconditionally) at `reflex.py:361-365` and rerun: the second,
-identical firing re-queries the graph and returns a second envelope; this case then
-reports `INVARIANT_FALSIFIED` with that envelope as the witness. `qe` does not write
-`src/thalamus/harness/`, so the mutation is not carried in the case.
+(or empty the `seen` set unconditionally) in `src/thalamus/harness/reflex.py::fire` and
+rerun: the second, identical firing re-queries the graph and returns a second digest;
+this case then reports `INVARIANT_FALSIFIED` with that digest as the witness. `qe`
+does not write `src/thalamus/harness/`, so the mutation is not carried in the case.
 """
 
 from __future__ import annotations
@@ -56,13 +55,13 @@ def _load_fixture():
 
 
 def run() -> Finding | None:
-    from thalamus.harness import reflex  # noqa: PLC0415
+    from thalamus.harness import reflex, retrieval  # noqa: PLC0415
 
     tr = _load_fixture()
-    original_recall = reflex.recall
+    original_recall = retrieval.recall
     original_scopes = reflex.available_scopes
     try:
-        reflex.recall = tr._fake_recall([tr._memory()])
+        retrieval.recall = tr._fake_recall([tr._memory()])
         reflex.available_scopes = lambda: ["main", "qe"]
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -77,8 +76,8 @@ def run() -> Finding | None:
                 return Finding(
                     failure_class=FailureClass.COLLAPSED_SENTINEL,
                     summary=(
-                        "positive control failed: the first firing did not serve an "
-                        "envelope at all, so 'served then deduped' cannot be "
+                        "positive control failed: the first firing did not serve a "
+                        "digest at all, so 'served then deduped' cannot be "
                         "observed on the calls that follow it"
                     ),
                     witness=f"first_call_result={first!r}",
@@ -104,7 +103,7 @@ def run() -> Finding | None:
                 failure_class=FailureClass.INVARIANT_FALSIFIED,
                 summary=(
                     "firing the same session with identical failure output a second "
-                    "time re-served an envelope instead of deduping on the "
+                    "time re-served a digest instead of deduping on the "
                     "(session, agent, anchor) key — a rerun of an unchanged test "
                     "failure re-queries the graph on every retry"
                 ),
@@ -112,7 +111,7 @@ def run() -> Finding | None:
                 site="src/thalamus/harness/reflex.py::fire",
             )
     finally:
-        reflex.recall = original_recall
+        retrieval.recall = original_recall
         reflex.available_scopes = original_scopes
 
 

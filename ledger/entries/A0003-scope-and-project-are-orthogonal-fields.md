@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-24T01:14:53-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/substrate/schema.py § "SessionGraph" =sha256:2f55fe7cdcb01048203b89a126d756807bb5ef3d6bc7d516358c20d7a3b54e7e
+  artifact: sha256:39816ac9843eb35e21714e6f0c9cc24dd9302e5d43a567e5a8e0c4d7bb3a7ea9
+  note: propagated from a moved ground
+- 2026-09-24T01:16:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/substrate/schema.py § "SessionGraph" =sha256:39816ac9843eb35e21714e6f0c9cc24dd9302e5d43a567e5a8e0c4d7bb3a7ea9
+  note: The docstring of a removed conformance wrapper moved onto SessionGraph.referenced_artifact_ids; the scope and project field declarations are unchanged, so the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

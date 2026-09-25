@@ -50,6 +50,14 @@ from thalamus.substrate.reader import (
     read_exchange,
     search_exchanges,
 )
+from thalamus.harness.retrieval import MAX_LIMIT
+from thalamus.substrate.vocabulary import (
+    chunks_near_source,
+    expand_one_hop,
+    lexical_by_kind,
+    resolve,
+    session_claims,
+)
 from thalamus.substrate.query import run_query, schema_summary as query_schema_summary
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
@@ -280,6 +288,118 @@ def memory_thread(thread_id: str, ticket: str = "") -> str:
         _close(g)
 
 
+# The retrieval vocabulary (substrate/vocabulary.py), exposed with vertex ids where the
+# reflex's compiler uses handles: an MCP call keeps no job between calls, so the id a
+# row printed is what the next call takes. Scope comes from the pin or a ticket's
+# grant, as for every recall tool, and each primitive returns only nodes that scope may
+# read (A0171, cites-as-live).
+_ROWS_HEADER = (
+    "Rows: node · kind · tier · date · its first sentence. Open one in full with "
+    "memory_resolve; walk from one with memory_expand."
+)
+
+
+def _vocabulary_call(ticket: str, run, *, knowledge: bool = True, query: str, tool: str) -> str:
+    g = _connect()
+    if isinstance(g, str):
+        return g
+    try:
+        grant = _granted_scope(g, ticket)
+        if isinstance(grant, str):
+            return grant
+        scope, knowledge_scopes = grant
+        try:
+            rows = run(g, scope, knowledge_scopes if knowledge else None)
+        except ValueError as e:
+            return str(e)
+        return _format_rows(rows, query=query, tool=tool)
+    finally:
+        _close(g)
+
+
+@mcp.tool
+def memory_search_kind(query: str, kind: str, limit: int = 5, ticket: str = "") -> str:
+    """Search one kind of node by keyword: session, decision, problem, solution,
+    thread, chunk (a verbatim source passage) or external (a knowledge claim).
+    Narrower than memory_recall, which mixes kinds into one window: use it when you
+    know you want, say, the decisions about a topic rather than whole sessions.
+    Returns one row per node; drill in with memory_resolve or memory_expand.
+    """
+    return _vocabulary_call(
+        ticket,
+        lambda g, scope, ks: lexical_by_kind(g, query, kind, _bounded(limit), scope, ks),
+        query=query, tool="memory_search_kind",
+    )
+
+
+@mcp.tool
+def memory_expand(node: str, relation: str, limit: int = 5, ticket: str = "") -> str:
+    """Walk one hop from a node (a backticked vertex id from any recall result).
+    Relations: same_file (other records that touched the node's files), same_entity
+    (knowledge claims and passages about the same entities), same_episode (the session
+    and its other claims), resolved_by (a problem's solutions, or a solution's
+    problem), uses (what a claim reasoned with, or what reasoned with it), threads (a
+    session's threads, or a thread's sessions).
+    """
+    return _vocabulary_call(
+        ticket,
+        lambda g, scope, ks: expand_one_hop(g, node, relation, _bounded(limit), scope, ks),
+        query=f"{relation} {node}", tool="memory_expand",
+    )
+
+
+@mcp.tool
+def memory_session_claims(
+    session: str, kinds: list[str] | None = None, limit: int = 8, ticket: str = ""
+) -> str:
+    """The decisions, problems and solutions one session recorded, by its vertex id.
+    `kinds` narrows to any of decision, problem, solution.
+    """
+    return _vocabulary_call(
+        ticket,
+        lambda g, scope, _ks: session_claims(g, session, kinds, _bounded(limit), scope),
+        knowledge=False, query=session, tool="memory_session_claims",
+    )
+
+
+@mcp.tool
+def memory_source_chunks(node: str, limit: int = 3, ticket: str = "") -> str:
+    """The verbatim source passages behind a knowledge claim, or the passages either
+    side of a passage. Use to check what a source actually says.
+    """
+    return _vocabulary_call(
+        ticket,
+        lambda g, scope, ks: chunks_near_source(g, node, _bounded(limit), scope, ks),
+        query=node, tool="memory_source_chunks",
+    )
+
+
+@mcp.tool
+def memory_resolve(node: str, ticket: str = "") -> str:
+    """Open one node in full by its vertex id — a session with its claims, a claim in
+    its session, a knowledge claim with its citation, a passage with its source, or a
+    thread. Returns nothing for an id this session's scope may not read.
+    """
+    g = _connect()
+    if isinstance(g, str):
+        return g
+    try:
+        grant = _granted_scope(g, ticket)
+        if isinstance(grant, str):
+            return grant
+        scope, knowledge_scopes = grant
+        result = resolve(g, node, scope, knowledge_scopes)
+        if result is None:
+            return f"No node `{node}` that scope `{scope}` can read."
+        return _format_results([result], query=node, tool="memory_resolve")
+    finally:
+        _close(g)
+
+
+def _bounded(limit: int) -> int:
+    return max(1, min(limit, MAX_LIMIT))
+
+
 @mcp.tool
 def memory_exchanges(query: str = "", limit: int = 5, read_ticket: str = "") -> str:
     """Search consultations this scope took part in — asked OR answered — by topic.
@@ -457,6 +577,28 @@ def _format_results(results, *, query: str = "", tool: str = "") -> str:
             results = [r for r in results if not r.node_id or r.node_id in keep]
 
     rendered = "\n\n---\n\n".join(r.format() for r in results)
+    if record:
+        try:
+            withhold.log(record, rendered)
+        except OSError:
+            logger.warning("Could not record the withholding draw; retrieval unaffected")
+    return rendered
+
+
+def _format_rows(rows, *, query: str, tool: str) -> str:
+    """Render vocabulary rows, after the withholding policy has had its say."""
+    if not rows:
+        return "No matching memories found."
+    policy = WithholdPolicy.from_env()
+    record = None
+    if policy.active:
+        kept, record = withhold.apply(
+            [row.vid for row in rows], policy=policy, scope=SCOPE, tool=tool, query=query
+        )
+        if record:
+            keep = set(kept)
+            rows = [row for row in rows if row.vid in keep]
+    rendered = "\n".join([_ROWS_HEADER, *(row.line() for row in rows)])
     if record:
         try:
             withhold.log(record, rendered)

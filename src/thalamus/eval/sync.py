@@ -209,7 +209,7 @@ def _land_event(
             for node_id in contents:
                 returns[node_id] = {"unjudged": "no agent output after this retrieval"}
         else:
-            for verdict in attribute(contents, outputs):
+            for verdict in attribute(contents, outputs, handles=event.handles()):
                 returns[verdict.node_id] = {
                     "used": verdict.used,
                     "evidence": verdict.evidence,
@@ -249,9 +249,10 @@ def _land_event(
             "session_id": event.session_id,
             "scope": scope,
             "returned_count": len(returned_ids),
-            # The rendered response *is* this retrieval's context-injection cost;
-            # recorded per trace so report can price verdicts.
-            "injected_chars": len(event.tool_response),
+            # This retrieval's context-injection cost, recorded per trace so report
+            # can price verdicts: the rendered response, except where the tap names
+            # a smaller part of it as what entered context (`TraceEvent.injected_chars`).
+            "injected_chars": event.injected_chars(),
             # Which ranking dials served this row. Traces older than the ledger read
             # `unknown` — the ranker of that era was never recorded, and borrowing the
             # oldest known fingerprint would invent the very attribution this exists

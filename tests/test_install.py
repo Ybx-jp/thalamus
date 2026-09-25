@@ -524,6 +524,8 @@ class TestHookBlock:
             "TaskCreate",
             "Agent",
             "mcp__thalamus__memory_query",
+            # reflex-pointer-tap.sh: a pointer file is read through Read, Grep and Bash alike.
+            None,
         }
         assert all("matcher" not in g for g in block["SessionEnd"])
 
@@ -577,7 +579,8 @@ class TestInstall:
         install.install()
         settings = json.loads(sandbox["user"].read_text())
         assert set(settings["hooks"]) == {
-            "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse"}
+            "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+            "PostToolUseFailure"}
         assert sandbox["mcp_calls"] == [False], "MCP goes through `claude mcp add`"
 
     def test_removes_the_project_scope_mcp_server(self, sandbox):

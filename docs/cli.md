@@ -361,33 +361,78 @@ measure would read null whether or not withholding mattered. Settling it means s
 the withheld node's *text* against later retrievals instead of its id.
 
 `eval reflex` reads the **memory reflex** — retrieval the harness initiates rather
-than the agent. The `reflex.sh` hook (`PostToolUse`, matcher `Bash`) fires when a
-command's result reads as a failure — a pytest `FAILED` line, a traceback, `command not
-found`, an exception line, or a call the harness interrupted — and hands the output to
-`thalamus reflex`, which extracts identifiers from it, recalls against them in the
-session's pinned scope, and injects what came back in an envelope labelled as
-unsolicited. Nothing is paraphrased: the blocks are the reader's own rendering, tier
-stamps and vertex ids included. The Bash result carries no exit status, so a command
-that fails silently never fires; that false-negative class is permanent and the
-report is read with it in mind.
+than the agent. The `reflex.sh` hook (matcher `Bash`, on both `PostToolUse` and
+`PostToolUseFailure`) fires when a command's output reads as a failure — a pytest
+`FAILED` line, a traceback, `command not found`, an exception line, or a call the
+harness interrupted — and hands the output to `thalamus reflex`, which extracts
+identifiers from it and recalls against them in the session's pinned scope. Claude Code
+sends a command that exits 0 to the first event and one that exits non-zero to the
+second. The exit status only picks the event: on both, the reflex fires when the output
+contains a failure line or the call was interrupted. A non-zero exit with ordinary
+output, such as `grep` finding no match, does not fire; a `pytest … | tail` that exits
+0 but prints `FAILED` does.<!-- (A0165, cites-as-live) -->
+
+Each firing records the event that ran it, and the report splits qualifying and served
+firings by event: `PostToolUse (exit 0)`, `PostToolUseFailure (non-zero exit)`, and
+`unrecorded` for rows written before the event was recorded. Those came from
+`PostToolUse` alone, when the reflex was wired on no other event, so they count only
+failures whose exit status a pipe or wrapper swallowed.<!-- (A0166, cites-as-live) -->
+
+A Bash call the failure test passes over, on either event, is **shadow-logged**: the
+hook starts `thalamus reflex --shadow` detached and returns at once, and it writes one
+row to `~/.thalamus/reflex/shadow/<session>.jsonl` with the anchors the output would
+have given, how many this agent's live firings have not already spent, and whether that
+clears the two-new-anchor gate a firing needs before it queries. Nothing is retrieved or
+injected. The report lists the shadowed calls per event as calls / with anchors / would
+have queried: the size of the population the failure trigger excludes, and how much of
+it a success trigger would have sent to the graph.<!-- (A0167, cites-as-live) -->
+
+What the agent receives is a digest labelled as unsolicited: one line per record —
+a short handle such as `R3.1`, its kind, tier stamp, date, its own first sentence, and
+the identifiers it matched — and the path of a pointer file,
+`~/.thalamus/reflex/pointers/<session>/R<n>.md`, holding the records verbatim with their
+vertex ids and the handle each was shown under. Nothing is paraphrased: the records are
+the reader's own rendering. The digest is sized in characters, under 4,000 however many
+records the recall returned, so it never reaches Claude Code's 10,000-character line
+past which a hook's output reaches the agent as a 2,000-character preview; a record that
+does not fit is counted in the digest and kept in the file.<!-- (A0157, cites-as-live) -->
 
 Three controls bound the cost. The same anchors do not refire for the same agent in
 the same session, so a rerun of a failing test is silent; a session has a
-24,000-character ceiling on what the reflex may inject over its life, refused with the
-arithmetic when crossed; and an empty answer is the ordinary one, since nothing is
-served unless at least two unseen anchors match. Every qualifying failure is written to
-`~/.thalamus/reflex/sessions/<session>.jsonl` with its outcome — served, empty, deduped,
-refused, no anchors — and every firing that retrieved is one line in the trace tap under
-`tool_name` `reflex_lexical`, priced by `eval sync` like any other retrieval.
+24,000-character ceiling on the digests the reflex may inject over its life, refused
+with the arithmetic when crossed; and an empty answer is the ordinary one, since nothing
+is served unless at least two unseen anchors match. Every qualifying failure is written
+to `~/.thalamus/reflex/sessions/<session>.jsonl` with its outcome — served, empty,
+deduped, refused, no anchors — and every firing that retrieved is one line in the trace
+tap under `tool_name` `reflex_lexical`, priced by `eval sync` like any other retrieval:
+its response is the pointer file, so the vertex ids are read from it, its injected
+characters are the digest's, and it carries the handle map. A read of a pointer file —
+by `Read`, `Grep` or a shell command naming its path — is recorded by
+`reflex-pointer-tap.sh` (`PostToolUse`, all tools) as a `reflex_pointer_open` line.
 
 The report splits by arm. The ledger half needs no graph: qualifying failures, outcomes,
-served-per-failure, injected characters per session, and how many served blocks were
-phrased as instructions (quoted verbatim and named as records, never dropped). The
-verdict half reads the landed traces and reports two used-rates side by side: the
-lexical verdict, which carries ~4 points of discrimination over a ~59-point chance
-floor and is read as delivery, and the citation verdict — a backticked vertex id in the
-agent's later output — which is the unfakeable form and the one the reflex's next rung
-is gated on.
+served-per-failure, injected characters per session, how many served records were
+phrased as instructions (quoted verbatim and named as records, never dropped), how many
+digests crossed the spill line, and how many served pointer files the agent opened — a
+secondary signal, since an open says the agent looked, not that the record changed
+what it did. The verdict half reads the landed traces and reports two used-rates side by
+side: the lexical verdict, which carries ~4 points of discrimination over a ~59-point
+chance floor and is read as delivery, and the citation verdict — a vertex id, or the
+handle the digest showed for it, in the agent's later output — which is the unfakeable
+form and the primary use signal.
+
+The reflex's retrieval runs through a compiler (`harness/retrieval.py`): a planner
+names a tool of the retrieval vocabulary and its arguments, and the compiler checks
+both, supplies the scope itself, resolves the handles it showed the planner back to
+vertex ids — a planner can name no node it was not shown — and caps each job at 12
+calls, 40 distinct nodes, 8,000 characters of rows and 30 seconds, refusing the call
+that would cross one.<!-- (A0172, cites-as-live) --> Word match is one such job today,
+and each `reflex_lexical` trace carries the calls it issued and the nodes it returned.
+`eval vocabulary` measures what those caps are set against: it replays the newest real
+anchor sets from the reflex ledger and the shadow log (`--limit`, default 40) through
+every tool — every kind searched, every relation walked from the top node of each — and
+reports per call the rows, characters and milliseconds each tool returned, and per
+anchor set the totals of the whole sweep, which no planner should reach.
 
 `eval report` gives the used-vs-ignored rate one ranker window at a time and refuses to
 pool across a dial change, because a rate averaged over two settings measures neither.
@@ -556,6 +601,11 @@ box to one expert.
 | `memory_recall_recent` | `limit` | Most recent sessions |
 | `memory_open_problems` | `project`, `limit` | Problems with no recorded solution, recurrence-ranked |
 | `memory_thread` | `thread_id` | Full context on one thread |
+| `memory_search_kind` | `query`, `kind`, `limit` | Keyword search over one kind of node — `session`, `decision`, `problem`, `solution`, `thread`, `chunk` or `external` — as one row per node |
+| `memory_expand` | `node`, `relation`, `limit` | One hop from a node over `same_file`, `same_entity`, `same_episode`, `resolved_by`, `uses` or `threads` |
+| `memory_session_claims` | `session`, `kinds`, `limit` | A session's decisions, problems and solutions |
+| `memory_source_chunks` | `node`, `limit` | The verbatim passages behind a knowledge claim, or either side of a passage |
+| `memory_resolve` | `node` | One node in full by its vertex id; nothing for an id the scope may not read |
 | `memory_query` | `query` | One read-only Gremlin traversal (main scope only) |
 | `memory_consultations` | `limit` | This expert's own answered consultations |
 | `memory_exchanges` | `query`, `limit`, `read_ticket` | Consultations this scope asked or answered, by topic |
@@ -566,6 +616,15 @@ Recall tools also accept a `ticket` argument: under a consultation ticket they s
 the consulted expert's memory instead of the session's own scope.
 
 **No tool accepts a scope argument.** The server decides what the session can see.
+
+The five tools above `memory_query` are the retrieval vocabulary
+(`substrate/vocabulary.py`) — the same primitives the memory reflex's compiler lets a
+planner compose. They return rows (`node · kind · tier · date · first sentence`)
+rather than renderings, and walk from any vertex id another result printed. A walk
+through a file or an entity reaches nodes of every scope, so what comes back is
+filtered, not only where the walk starts: a session, a thread or a session-held claim
+only from the session's own scope, a knowledge claim or passage from it or from the
+expert subgraphs the server grants.<!-- (A0171, cites-as-live) -->
 
 ## Environment
 

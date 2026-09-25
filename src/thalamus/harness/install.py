@@ -157,6 +157,8 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("PostToolUse", "mcp__thalamus__.*", "post-tool-use.sh"),
     ("PostToolUse", "Bash", "gremlin-tap.sh"),
     ("PostToolUse", "Bash", "reflex.sh"),
+    ("PostToolUseFailure", "Bash", "reflex.sh"),
+    ("PostToolUse", None, "reflex-pointer-tap.sh"),
     ("PostToolUse", "TaskCreate", "conditioning.sh"),
     ("PostToolUse", "Agent", "conditioning.sh"),
     ("PostToolUse", "mcp__thalamus__memory_query", "conditioning.sh"),
@@ -224,6 +226,9 @@ HOOK_WIRING: list[tuple[str, str | None, str]] = [
 # `conditioning.sh` deliver one tool call late through the spool. A reflex delivered
 # a call late is the deferred channel arm the design measures separately, not the
 # immediate one this script is, so it waits for that arm rather than shipping as it.
+#
+# No carrier: `reflex-pointer-tap.sh`, which records the agent opening a reflex
+# pointer file. With no reflex on this harness there is no pointer file to open.
 CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("sessionStart", "session-start.sh"),
     ("sessionEnd", "session-end.sh"),
@@ -322,11 +327,13 @@ CURSOR_GUARDS: frozenset[str] = frozenset(
 #   so the path half of the role boundary binds and the capability half does not.
 #
 #   `PostToolUse:Bash` for `reflex.sh`, the memory reflex. Its failure test reads
-#   `tool_response.stdout`/`.stderr`/`.interrupted`, and codex's shell result has
+#   Claude Code's `tool_response.stdout`/`.stderr`/`.interrupted`, or a failure's
+#   `error`/`is_interrupt`, and codex's shell result has
 #   been measured only on the input side — it arrives as one string, which the
 #   `gremlin-tap.sh` adapter reshapes onto the stdout leg — so a reflex here would
 #   build its trigger against a payload half nobody has read. Whether codex can carry
-#   one is open, not decided.
+#   one is open, not decided. `reflex-pointer-tap.sh` goes with it: it records the
+#   agent opening a reflex pointer file, and without the reflex there is none.
 CODEX_HOOK_WIRING: list[tuple[str, str | None, str]] = [
     ("SessionStart", None, "session-start.sh"),
     ("SessionEnd", None, "session-end.sh"),
@@ -422,12 +429,12 @@ class HookParity:
 
 
 DECLARED_HOOK_PARITY = HookParity(
-    scripts={"claude": 15, "codex": 13, "cursor": 15},
+    scripts={"claude": 16, "codex": 13, "cursor": 15},
     shared=10,
     missing={
-        "codex": ("reflex.sh", "room-guard.sh"),
-        "cursor": ("post-tool-use.sh", "recipe-stage.sh", "reflex.sh", "role-guard.sh",
-                   "room-guard.sh"),
+        "codex": ("reflex-pointer-tap.sh", "reflex.sh", "room-guard.sh"),
+        "cursor": ("post-tool-use.sh", "recipe-stage.sh", "reflex-pointer-tap.sh",
+                   "reflex.sh", "role-guard.sh", "room-guard.sh"),
     },
     extra={
         # Codex needs no script Claude Code does not have: its payloads are Claude
@@ -1917,7 +1924,7 @@ def verify_armed() -> Check:
     about a machine that is fine.
     """
     declared = {(event, matcher, script) for event, matcher, script in HOOK_WIRING}
-    missing = sorted(declared - armed_hooks())
+    missing = sorted(declared - armed_hooks(), key=lambda w: (w[0], w[1] or "", w[2]))
     if not missing:
         return Check("declared hooks armed",
                      True, f"all {len(declared)} wirings present in {USER_SETTINGS}")

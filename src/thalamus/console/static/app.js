@@ -1940,7 +1940,14 @@ function shortAge(s) {
 }
 
 async function dismissDistill(session) {
-  await postJson("api/distill-dismiss", { session });
+  const { ok, data } = await postJson("api/distill-dismiss", { session });
+  // A dismissal that did not take has to say so. The row is rebuilt off the next
+  // poll either way, so a refusal that logged nothing reads as a control that does
+  // nothing at all — and the operator's only remaining move is to stop trusting the
+  // button, which is worse than the row it failed to clear.
+  if (!ok || !data.ok) {
+    adminLog(data.error || `dismiss ${session}: nothing on the server to clear`);
+  }
   rosterSig = "";         // force a rebuild off the next poll's fresh list
   poll();
 }

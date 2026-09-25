@@ -415,6 +415,39 @@ def test_a_stall_that_never_moves_again_stops_being_called_a_stall(box):
     assert [r["state"] for r in box.watch.rows() if r["session"] == "dddddddc"] == ["stalled"]
 
 
+def test_a_stall_ages_into_abandonment_while_the_console_stays_up(box, monkeypatch):
+    """The clock-derived verdicts are re-derived on every scan, not just the first.
+
+    A stalled log is by definition one nothing is writing to, so its `(mtime, size)`
+    cache entry never invalidates and the scan never re-reads it. Re-deriving only
+    `active` therefore pinned the row at `stalled` for the life of the process — and
+    the console is a systemd unit, so that is weeks — while `stalled` is the one
+    state the roster draws with no dismiss control. The row could neither age nor be
+    cleared, which is this module's own silence wearing a state word.
+
+    Nothing about the file changes here. Only the clock moves.
+    """
+    from thalamus.console import distill          # noqa: PLC0415
+
+    box.watch.state_path.write_text(json.dumps(
+        {"v": STATE_V, "seeded_at": time.time() - 10 * ABANDON_AFTER_S,
+         "dismissed": {}}))
+    box.watch._state = None
+
+    box.pin("cccccccc")
+    box.log("cccccccc", RUNNING, age_s=STALL_AFTER_S + 60)
+    assert [r["state"] for r in box.watch.rows()] == ["stalled"]
+
+    # The same scan again, an hour later, with the cache entry still valid: the log
+    # was not touched, so only a clock-derived verdict can have changed.
+    later = time.time() + ABANDON_AFTER_S
+    monkeypatch.setattr(distill.time, "time", lambda: later)
+    box.watch._scanned_at = 0.0
+
+    (row,) = box.watch.rows()
+    assert row["state"] == "abandoned"
+
+
 def test_a_subagents_log_is_not_a_session(box):
     """Subagents fire SessionEnd and always fail with 'No session matching' — they
     have no transcript of their own — but they never write a pin-ledger row. That

@@ -1827,6 +1827,58 @@ def test_an_uninstalled_extractor_reaches_the_phone_as_its_reason(tmp_path, monk
     assert status == 409 and "PATH" in body["error"]
 
 
+def _watching(tmp_path, monkeypatch):
+    """A `DistillWatch` over throwaway files, installed as the console's singleton."""
+    from thalamus.console.distill import STATE_V, DistillWatch     # noqa: PLC0415
+
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    state = tmp_path / "dismissed.json"
+    state.write_text(json.dumps({"v": STATE_V, "seeded_at": time.time() - 3600,
+                                 "dismissed": {}, "dismissed_kills": {}}))
+    watch = DistillWatch(logs=logs, pins=tmp_path / "pins.jsonl", state=state,
+                         kills=tmp_path / "killed.jsonl")
+    monkeypatch.setattr(server, "_distill_cache", watch)
+    return watch
+
+
+def test_a_row_whose_id_is_not_hex_is_still_dismissible(tmp_path, monkeypatch):
+    """Every row the widget serves carries a dismiss control, so every row it serves
+    has to be dismissible — and the id is whatever wrote the row, not a shape this
+    endpoint gets to assume. The killed-window ledger carries the first eight
+    characters of whatever session id the console was handed, and a probe or an older
+    build can leave a non-hex row in it: the qe suite's concurrent-close probe reached
+    the operator's live ledger with `qe000000` before it was fixed. Under a hex guard
+    those rows were the ones that could never be cleared — the button drawn, the tap
+    refused, the row permanent."""
+    from thalamus.console.distill import record_kill                # noqa: PLC0415
+
+    watch = _watching(tmp_path, monkeypatch)
+    record_kill("qe000000", "qe", "/tmp", "close", path=watch.kills)
+    assert [r["session"] for r in watch.rows()] == ["qe000000"]
+
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/distill-dismiss", {"session": "qe000000"})
+
+    assert (status, body["ok"]) == (200, True)
+    watch._scanned_at = 0.0
+    assert watch.rows() == []
+
+
+def test_a_dismissal_cannot_name_a_file_outside_the_log_directory(tmp_path, monkeypatch):
+    """The only thing the id can do harm with: it is interpolated into
+    `session-end-<id>.log` and read from the log directory. Path separators are what
+    the guard is for — the hex shape never was."""
+    _watching(tmp_path, monkeypatch)
+    cfg = Config(project_root=_repo(tmp_path / "alpha"))
+
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        status, body = post("/api/distill-dismiss", {"session": "../../../etc/passwd"})
+
+    assert status == 400 and "path separators" in body["error"]
+
+
 class _serving:
     """A live console on an ephemeral port, with tmux stubbed out.
 

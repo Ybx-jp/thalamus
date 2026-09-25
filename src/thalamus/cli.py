@@ -345,7 +345,7 @@ def _main():
     reflex_parser = subparsers.add_parser(
         "reflex",
         help="Serve memory against a failed Bash result; the reflex.sh hook's worker. "
-        "Prints the envelope to inject, or nothing.",
+        "Prints the digest to inject, or nothing.",
     )
     reflex_parser.add_argument("--session-id", required=True, help="The session that ran the command")
     reflex_parser.add_argument(
@@ -365,6 +365,16 @@ def _main():
     reflex_parser.add_argument("--cwd", default="", help="Working directory, recorded in the trace")
     reflex_parser.add_argument(
         "--tool-name", default="Bash", help="The tool whose result fired the reflex (default: Bash)"
+    )
+    reflex_parser.add_argument(
+        "--event", default="",
+        help="The hook event that ran the reflex — PostToolUse (exit 0) or "
+        "PostToolUseFailure (non-zero exit) — recorded in the ledger and the trace",
+    )
+    reflex_parser.add_argument(
+        "--shadow", action="store_true",
+        help="The output did not read as a failure: record what it would have anchored "
+        "on under ~/.thalamus/reflex/shadow/, with no graph read and no output",
     )
     reflex_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
@@ -801,6 +811,24 @@ def _main():
         "--url", default=DEFAULT_URL,
         help="Gremlin endpoint for the verdict half; the ledger half renders without it",
     )
+
+    eval_vocabulary_parser = eval_sub.add_parser(
+        "vocabulary",
+        help="Replay real reflex anchor sets through every retrieval-vocabulary tool "
+        "and report what each returns: rows, characters and time per call, and per "
+        "anchor set the totals a job cap has to sit under",
+    )
+    eval_vocabulary_parser.add_argument(
+        "--reflex", type=Path, default=None,
+        help="Reflex ledger dir the anchor sets come from (default: ~/.thalamus/reflex)",
+    )
+    eval_vocabulary_parser.add_argument(
+        "--limit", type=int, default=40, help="Most recent distinct anchor sets to replay"
+    )
+    eval_vocabulary_parser.add_argument(
+        "--scope", default=MAIN_SCOPE, help="Scope to retrieve in (default: main)"
+    )
+    eval_vocabulary_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
     # Pin / roster commands — "the process is the pin"
     init_parser = subparsers.add_parser(
@@ -2433,8 +2461,8 @@ def _cmd_delegate(args):
     print(f"{args.scope} -> {result.harness}/{result.model} ({counts}) -> {result.output}")
 
 def _cmd_reflex(args):
-    """The hook's worker: everything it prints is injected, so it prints the envelope or nothing."""
-    from thalamus.harness.reflex import fire
+    """The hook's worker: everything it prints is injected, so it prints the digest or nothing."""
+    from thalamus.harness.reflex import fire, shadow
 
     try:
         observed = args.response_file.read_text(encoding="utf-8", errors="replace")
@@ -2442,9 +2470,14 @@ def _cmd_reflex(args):
         print(f"reflex: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    if args.shadow:
+        shadow(session_id=args.session_id, observed=observed,
+               agent_id=args.agent_id, event=args.event)
+        return
+
     graph = connect(args.url)
     try:
-        envelope = fire(
+        digest = fire(
             graph,
             session_id=args.session_id,
             observed=observed,
@@ -2453,11 +2486,12 @@ def _cmd_reflex(args):
             agent_type=args.agent_type,
             cwd=args.cwd,
             tool_name=args.tool_name,
+            event=args.event,
         )
     finally:
         close_connection(graph)
-    if envelope:
-        print(envelope)
+    if digest:
+        print(digest)
 
 
 def _report_delegation_plan(prepared) -> None:
@@ -3025,12 +3059,8 @@ def _cmd_backfill_chunks(args):
                 .values("name").to_list()
             ]
 
-            class _Cited:
-                def __init__(self, citation):
-                    self.citation = citation
-
-            cited = [_Cited(str(c.get("citation") or "")) for c in claims]
-            chunks = build_chunks(text, cited, entity_names)
+            cited = [str(c.get("citation") or "") for c in claims]
+            chunks = build_chunks(text, entity_names)
             anchored = anchor_citations(chunks, cited)
             planned += len(chunks)
             print(f"  {row['title'][:52]:<54} {len(chunks):>4} chunks  "
@@ -3883,6 +3913,17 @@ def _cmd_eval(args, eval_parser):
         finally:
             if graph is not None:
                 close_connection(graph)
+    elif getattr(args, "eval_command", None) == "vocabulary":
+        from thalamus.contract.manifest import available_scopes
+        from thalamus.eval.vocabulary import anchor_sets, measure
+
+        sets = anchor_sets(args.reflex, args.limit)
+        graph = connect(args.url)
+        try:
+            knowledge = [s for s in available_scopes() if s != args.scope]
+            print(measure(graph, sets, args.scope, knowledge).render())
+        finally:
+            close_connection(graph)
     elif getattr(args, "eval_command", None) == "pins":
         from thalamus.contract.manifest import available_scopes
         from thalamus.eval.cost import load_engaged, load_pins
