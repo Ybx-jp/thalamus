@@ -103,6 +103,9 @@ CASE_MODULES = (
     "qe.cases.reflex_worker_session_end_no_model_call",
     "qe.cases.reflex_worker_deadline_interrupts_blocking_call",
     "qe.cases.reflex_carrier_single_posttooluse_group",
+    "qe.cases.manifest_unknown_key",
+    "qe.cases.write_guard_ledger",
+    "qe.cases.codex_filechange_touches",
 )
 
 

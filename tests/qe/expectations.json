@@ -88,6 +88,27 @@
       "witness_contains": "kill-window target='qe-close-probe:0' resolves to='B'; recycle_window: forced=True naming 'session-A', respawn-window target='qe-close-probe:0' resolves to='B'",
       "triaged_at_rev": "10c8fa5",
       "note": "Issue #153, narrower than filed. The issue's quoted lines (unconditional index-addressing) no longer exist: close_window/recycle_window now open with wid = _window_id(cfg, idx); target = wid or f\"{cfg.session}:{idx}\", and the primary interleaving the issue describes does not reproduce when wid capture succeeds - _window_gone(cfg, wid) correctly notices a same-indexed replacement's arrival and returns before either function forces. The residual defect is the fallback: when _window_id's own capture fails at teardown start, target stays index-shaped for the whole grace budget AND _window_gone's `if not wid: return False` guard disables its early exit outright, so a same-indexed replacement is force-killed (or force-respawned) in the original session's place while the kill row still names the original. The pin is both functions' resolved-to='B' outcome under a failed wid capture; a fix that refuses to proceed past an empty wid (rather than falling back to idx-addressing) makes this branch unreachable and this entry goes stale."
+    },
+    {
+      "case": "manifest-unknown-key-refuses-the-load",
+      "failure_class": "failed-open",
+      "witness_contains": "write_boundry: deny */src/* -> write_boundary=WriteBoundary(allow_globs=[], deny_globs=[]",
+      "triaged_at_rev": "4a42972",
+      "note": "Issue #294. ExpertManifest has no extra='forbid', so a misspelled boundary key is dropped and the scope loads with the empty default. Goes stale when the loader refuses unknown top-level keys."
+    },
+    {
+      "case": "write-guard-block-lands-a-ledger-row",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "exit 2, 0 new rows",
+      "triaged_at_rev": "4a42972",
+      "note": "Issue #295. write-guard.sh calls log_event, which only role-guard.sh and graph-guard.sh define for themselves; the block happens and no ledger row is written. Goes stale when write-guard's block lands a row."
+    },
+    {
+      "case": "codex-filechange-reaches-touched",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "FileChange changes=['/work/project/notes/codex.md'] -> touched={}",
+      "triaged_at_rev": "4a42972",
+      "note": "Issue #302. codex_transcripts reads item_completed for UserMessage/AgentMessage/CommandExecution/Reasoning/Extension but not FileChange, which is how codex-cli 0.154.0 records a patch; the written path never reaches touched. Goes stale when FileChange's changes map is read the way patch_apply_end's is."
     }
   ]
 }
