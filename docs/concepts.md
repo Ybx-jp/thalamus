@@ -296,13 +296,19 @@ them.<!-- (A0050, cites-as-live) -->
 
 ## Trust tiers
 
-Trust is not a label a writer chooses. It is the **floor** over a node's whole
-derivation chain, computed across `DERIVED_FROM` edges.<!-- (A0051, cites-as-live) -->
+Trust is not a label a writer chooses. The data model defines it as the **floor** over
+a node's whole derivation chain, across `DERIVED_FROM` edges.<!-- (A0051, cites-as-live) -->
+No code computes that closure yet; what is enforced today is the transcript ingress
+floor.
 
-The consequence that matters: a claim distilled from a session that read a fetched web
-page cannot come out trusted like a claim you reasoned to yourself. The transcript
-ingress floor down-tiers it.<!-- (A0052, cites-as-live) -->
-**Distillation does not launder.**
+The consequence that matters: a claim distilled from a session that fetched a page with
+the agent's web tools (`WebFetch`, `WebSearch`) cannot come out trusted like a claim you
+reasoned to yourself. The transcript ingress floor down-tiers
+it.<!-- (A0052, cites-as-live) -->
+**Distillation does not launder what came in through those tools.** Two channels are
+open: a page fetched through the shell (`curl` in a Bash call), and a claim that
+restates a page in words the page does not use, which the floor's lexical check cannot
+see.
 
 The floor reaches every extracted node that carries a tier — claims, threads and
 artifacts alike — so a thread opened out of a fetched page, or a dependency the page
