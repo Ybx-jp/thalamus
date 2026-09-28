@@ -48,6 +48,15 @@ The filename containment rule binds there too, and the `dev` extra does not: `sp
 copied into boxes that have never seen this project and the third generates the
 committer that runs there.
 
+## `live/` — real sessions under fixture expert configs
+
+`tests/qe/live/` runs real headless Claude Code and codex sessions pinned to fixture expert
+manifests inside a throwaway VM, lets the real SessionEnd hook distill them on
+`codex/gpt-5.6-luna` into the VM's own graph, and judges the whole graph, the guard ledger
+and the generated personas on the host. It spends model tokens and is run on demand. Its
+own README covers the configurations, the controls, and what it deliberately does not
+test; `python3 tests/qe/live/oracle_cases.py` is the oracle's hermetic self-check.
+
 ## Known-red, and why it is not a mute button
 
 `expectations.json` triages defects that are real and unfixed. A triaged case exits 0,
