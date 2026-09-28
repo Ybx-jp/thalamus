@@ -43,6 +43,13 @@ none
 - 2026-09-24T18:02:30-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/retrieval.py § "Job" =sha256:6bca52d6c7e18c2d4ec72da98c6b529cc22a69addf794ecdeafc209f09ce1941
   note: Job gained rows(), the form the propagation plan reads, which passes through the same _run validation and _charge caps and the same node-cap check (now the shared _past_node_cap) and charges no row characters; Job.call and Job.word_match are unchanged in what they validate and cap, and Caps still holds the defaults, so the assertion over its stated cohort is unaffected
+- 2026-09-25T02:18:42-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/retrieval.py § "Job" =sha256:6bca52d6c7e18c2d4ec72da98c6b529cc22a69addf794ecdeafc209f09ce1941
+  artifact: sha256:5cae7fd8228fdbf7627acb780e15ac607a3b7f3b5cf0cd757023c4179239936a
+  note: propagated from a moved ground
+- 2026-09-25T02:25:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/retrieval.py § "Job" =sha256:5cae7fd8228fdbf7627acb780e15ac607a3b7f3b5cf0cd757023c4179239936a
+  note: Job.call's empty-result string is now the module constant NO_RESULTS, with the same text; validation, scope supply and the four caps are unchanged, so the assertion is unaffected
 
 ## References
 

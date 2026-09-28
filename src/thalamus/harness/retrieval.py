@@ -108,6 +108,9 @@ TOOLS: dict[str, Tool] = {
 # The largest `limit` any call may ask for; the node cap bounds a job as a whole.
 MAX_LIMIT = 10
 
+# What `Job.call` renders for a call that ran and returned no rows.
+NO_RESULTS = "no results"
+
 
 class Refused(Exception):
     """A call the compiler will not run, with the reason the planner is shown."""
@@ -153,7 +156,7 @@ class Job:
         except Refused as refusal:
             return f"refused: {refusal}"
         if not rows:
-            return "no results"
+            return NO_RESULTS
         lines = []
         for row in rows:
             if self._past_node_cap(row.vid):

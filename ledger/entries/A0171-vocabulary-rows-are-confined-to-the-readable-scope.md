@@ -42,6 +42,14 @@ none
 
 ## Verdicts
 
+- 2026-09-25T02:18:42-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/substrate/vocabulary.py § "lexical_by_kind" =sha256:5ba2e41761ea4b7715e7b2297990def537c5c64d955de765fab3a6d259de61f7
+  artifact: sha256:7ed569bed86a93b1771f596ce9a5ec3e4f3b9f9d9a253f5a4b524fa6af0ceaa9
+  note: propagated from a moved ground
+- 2026-09-25T02:25:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/substrate/vocabulary.py § "lexical_by_kind" =sha256:7ed569bed86a93b1771f596ce9a5ec3e4f3b9f9d9a253f5a4b524fa6af0ceaa9
+  note: lexical_by_kind's per-kind walks moved unchanged into _kind_walk, and it now also searches an unmatched compound identifier's parts; every node it ranks still reaches the caller only through rows_for, so the confinement the assertion states is unaffected
+
 ## References
 
 - docs/cli.md · standing · cites-as-live

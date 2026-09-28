@@ -323,6 +323,8 @@ def memory_search_kind(query: str, kind: str, limit: int = 5, ticket: str = "") 
     thread, chunk (a verbatim source passage) or external (a knowledge claim).
     Narrower than memory_recall, which mixes kinds into one window: use it when you
     know you want, say, the decisions about a topic rather than whole sessions.
+    A compound identifier (snake_case, camelCase, a dotted or slashed name) that
+    matches nothing whole is searched as its parts.
     Returns one row per node; drill in with memory_resolve or memory_expand.
     """
     return _vocabulary_call(
