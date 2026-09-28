@@ -81,10 +81,10 @@ case "$command" in
   *thalamus*write*)
     # Narrow to the two real cases. `grep -E` rather than a case glob because the
     # subcommand and its flag can be separated by arbitrary arguments.
-    if printf '%s' "$command" | grep -Eq '(^|[^-[:alnum:]])thalamus[[:space:]]+write([[:space:]]|$)'; then
+    if grep -Eq '(^|[^-[:alnum:]])thalamus[[:space:]]+write([[:space:]]|$)' <<< "$command"; then
       is_self_write=1
       verb="thalamus write"
-    elif printf '%s' "$command" | grep -Eq '(^|[^-[:alnum:]])thalamus[[:space:]]+extract([[:space:]].*)?--write'; then
+    elif grep -Eq '(^|[^-[:alnum:]])thalamus[[:space:]]+extract([[:space:]].*)?--write' <<< "$command"; then
       is_self_write=1
       verb="thalamus extract --write"
     fi ;;

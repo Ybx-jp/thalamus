@@ -50,9 +50,12 @@ to check it would buy nothing a reviewer's own read would not already have.
 ## The base-revision mechanism
 
 Same mechanism as `expectation_additions.py`, duplicated in code rather than imported:
-`GITHUB_EVENT_PATH` first — the prior tip of the pushed ref, written into the event
-payload by the forge after the push already landed, which is the part an adding agent
-cannot mint — then `git merge-base` against `origin/master`. Duplicated because every
+`GITHUB_EVENT_PATH` first, branching on the payload's own `pull_request` key rather
+than trying a fixed field order regardless of shape — `pull_request.base.sha` when
+that key is present (the merge target, on every action including `synchronize`), else
+the top-level `before` (the pushed ref's own prior tip) — then `git merge-base` against
+`origin/master`. See `_from_event_payload`'s docstring for why the two shapes are told
+apart that way rather than by trying both candidates in order. Duplicated because every
 case in this suite is resolved and run independently by name, which is `run.py`'s own
 reason for resolving by name rather than holding a callable in data
 (`run.py:36-39`); a cross-case import would make this case's behavior depend on
@@ -119,6 +122,30 @@ def _is_commit(rev: str) -> bool:
 
 
 def _from_event_payload() -> tuple[str, str] | None:
+    """The base GitHub computed server-side, which is the part an agent cannot mint.
+
+    Two event shapes, told apart by the payload's own `pull_request` key rather than by
+    trying both candidates in a fixed order regardless of shape (#299, and the same bug
+    in this function, #311):
+
+    - A `pull_request` event (`opened`, `synchronize`, `reopened`, ...) carries
+      `pull_request.base.sha` -- the merge target, requeried by GitHub at the time of
+      that action. `synchronize` *also* adds a top-level `before`/`after` pair, but
+      those name the PR branch's own previous and new head commit, not the base --
+      reading them as "base" on this event was the #299/#311 bug. `base.sha` is a
+      required string field of `pull_request.base` on every action, so checking for the
+      `pull_request` key first, and reading only `base.sha` once it is present, never
+      falls through to a top-level `before` that means something else on this shape.
+    - Any other event (no `pull_request` key; this repo's workflow triggers only `push`
+      and `pull_request`) carries top-level `before`: the pushed ref's own prior tip,
+      immediately before this push landed it.
+
+    Measured against octokit/webhooks' payload schemas and real runs 36122392392
+    (`opened`) and 36122562958 (`synchronize`) -- `expectation_additions.py`'s own
+    `_from_event_payload`, "Measured against a real run" in that module's docstring --
+    rather than re-measured here: this function reads the same two payload shapes the
+    same way, so the same evidence applies.
+    """
     path = os.environ.get("GITHUB_EVENT_PATH", "")
     if not path or not Path(path).is_file():
         return None
@@ -128,17 +155,16 @@ def _from_event_payload() -> tuple[str, str] | None:
         return None
     if not isinstance(payload, dict):
         return None
-    candidates = (
-        (payload.get("before"), "GITHUB_EVENT_PATH:before (prior tip of the pushed ref)"),
-        (
-            (payload.get("pull_request") or {}).get("base", {}).get("sha")
-            if isinstance(payload.get("pull_request"), dict) else None,
-            "GITHUB_EVENT_PATH:pull_request.base.sha",
-        ),
-    )
-    for rev, how in candidates:
-        if isinstance(rev, str) and _is_commit(rev):
-            return rev, how
+    pull_request = payload.get("pull_request")
+    if isinstance(pull_request, dict):
+        base = pull_request.get("base")
+        rev = base.get("sha") if isinstance(base, dict) else None
+        how = "GITHUB_EVENT_PATH:pull_request.base.sha"
+    else:
+        rev = payload.get("before")
+        how = "GITHUB_EVENT_PATH:before (prior tip of the pushed ref)"
+    if isinstance(rev, str) and _is_commit(rev):
+        return rev, how
     return None
 
 

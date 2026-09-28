@@ -64,6 +64,20 @@ def test_a_session_may_not_write_its_own_memory(tmp_path):
         assert "thread propose" in result.stderr
 
 
+def test_a_command_past_the_pipe_buffer_is_still_blocked(tmp_path):
+    """
+    Scenario: the same write followed by 200 KB of further lines in the same command
+
+    The guard's match reads the command whole. A `grep -q` fed through a pipe under
+    pipefail exits at the first matching line, and when more than a pipe buffer's worth
+    follows it the writer's SIGPIPE read as no match, letting the write through (#312).
+    """
+    filler = ("# " + "x" * 98 + "\n") * 2_000
+    result = run_guard("uv run thalamus write /tmp/session.yaml\n" + filler, tmp_path)
+    assert result.returncode == BLOCK_EXIT
+    assert "writes memory from inside a session" in result.stderr
+
+
 def test_the_commands_that_merely_share_the_flag_are_untouched(tmp_path):
     """
     Scenario: maintenance commands taking `--write`, the ingest path, and the

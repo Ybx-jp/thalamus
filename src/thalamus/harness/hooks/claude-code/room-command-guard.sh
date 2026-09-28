@@ -73,7 +73,7 @@ log_event() {
 # allowed to name. A dispatch whose target cannot be confirmed as this room is
 # refused rather than assumed to be local.
 names_own_room() {
-  printf '%s' "$command" | grep -qE "(^|[^A-Za-z0-9_-])${room}([^A-Za-z0-9_-]|$)"
+  grep -qE "(^|[^A-Za-z0-9_-])${room}([^A-Za-z0-9_-]|$)" <<< "$command"
 }
 
 # 1. The raw transport. `tmux send-keys` is how dispatch itself delivers, so a member
@@ -85,7 +85,7 @@ names_own_room() {
 # `$TMUX_BIN`, or reached through an alias, and unlike the addressing rules below
 # there is no second line behind this one — a raw send never reaches `dispatch`, so
 # nothing else can refuse it. `paste-buffer` is the same capability by another route.
-if printf '%s' "$command" | grep -qE '(^|[^A-Za-z0-9_-])(send-keys|paste-buffer)([^A-Za-z0-9_-]|$)'; then
+if grep -qE '(^|[^A-Za-z0-9_-])(send-keys|paste-buffer)([^A-Za-z0-9_-]|$)' <<< "$command"; then
   log_event block raw-transport "tmux send-keys"
   cat >&2 <<EOF
 Blocked: this session is in room \`${room}\`, and \`tmux send-keys\` reaches any pane
@@ -127,8 +127,8 @@ INVOKES_ROOM_VERB='(^|[^A-Za-z0-9_-])thalamus[[:space:]]+(-[^[:space:]]+[[:space
 #    presence of the flag, so a `--help` inside a quoted message buys no exemption.
 HELP_SHAPE='thalamus[[:space:]]+(dispatch|spawn|pin|roster)[[:space:]]+(--help|-h)([^A-Za-z0-9_-]|$)'
 
-if printf '%s' "$command" | grep -qE "$INVOKES_ROOM_VERB"; then
-  if printf '%s' "$command" | grep -qE "$HELP_SHAPE"; then
+if grep -qE "$INVOKES_ROOM_VERB" <<< "$command"; then
+  if grep -qE "$HELP_SHAPE" <<< "$command"; then
     log_event pass help "$room"
     exit 0
   fi

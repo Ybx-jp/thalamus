@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-09-25T02:08:13-07:00 · contested · grade: measured · author: propagation
+  evidence: code: tests/qe/run.py § "main" =sha256:f0b3925c86452f11f5fa5bf133e684c5530900255b559c774f2a182c46155ff6
+  artifact: sha256:de1155de1adb3a22f5e64dc0676d071d41eec3d1fc1710b54185739de32ab783
+  note: propagated from a moved ground
+- 2026-09-25T02:10:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: tests/qe/run.py § "main" =sha256:de1155de1adb3a22f5e64dc0676d071d41eec3d1fc1710b54185739de32ab783
+  note: #298 added --only and --exclude case selection ahead of the exit-code decision; the decision still returns 1 for NEW_FAILURE or DRIFTED among the selected cases' verdicts without asking which case produced them, so the assertion is unaffected
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

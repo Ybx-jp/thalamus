@@ -81,7 +81,7 @@ mkdir -p "$log_dir"
 # for a call that was not a failure; the child removes the response file itself
 # (A0167, cites-as-live).
 if [ "$interrupted" != "true" ] \
-  && ! printf '%s\n' "$output" | grep -qE "$failure_re"; then
+  && ! grep -qE "$failure_re" <<< "$output"; then
   nohup sh -c '
     uv run --project "$1" thalamus reflex --shadow \
       --session-id "$2" --agent-id "$3" --event "$4" --response-file "$5"

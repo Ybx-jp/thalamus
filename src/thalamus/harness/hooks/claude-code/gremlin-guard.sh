@@ -46,8 +46,9 @@ thalamus_read_guard_command gremlin-guard.sh
 command="$thalamus_guard_command"
 
 # Only inline gremlin-python concerns this guard.
-printf '%s' "$command" | grep -qE \
+grep -qE \
   'gremlin_python|with_remote\(|DriverRemoteConnection|substrate\.writer import|from thalamus\.substrate' \
+  <<< "$command" \
   || exit 0
 
 # The event schema carries what the metrics need (verification consultation
@@ -68,7 +69,7 @@ log_event() {
     --arg branch "$branch" \
     --arg guard "terminal-step" \
     --arg hash "$(printf '%s' "$command" | sha256sum | cut -c1-16)" \
-    --arg fp "$(printf '%s' "$command" | grep -oE '\.[A-Za-z_]+\(' | tr -d '.(_' | tr 'A-Z' 'a-z' | paste -sd, - || true)" \
+    --arg fp "$(grep -oE '\.[A-Za-z_]+\(' <<< "$command" | tr -d '.(_' | tr 'A-Z' 'a-z' | paste -sd, - || true)" \
     '{ts: $ts,
       session_id: (.session_id // ""),
       scope: $scope,
@@ -93,7 +94,7 @@ log_event() {
 # (`exists,getsize,getmtime,…`) contains no graph step at all, and the session
 # routed around the guard rather than being rescued by it — the exact
 # route-around the v1 retrospective warned about.
-if ! printf '%s' "$command" | grep -qE '\.(V|E|addV|addE|inject)\('; then
+if ! grep -qE '\.(V|E|addV|addE|inject)\(' <<< "$command"; then
   log_event pass no-traversal
   exit 0
 fi
@@ -107,13 +108,14 @@ fi
 # retrospective baseline found every archive hit outside `terminal`
 # was a false positive, and false positives teach agents to route around the
 # guard.
-if printf '%s' "$command" | grep -qE \
-  '\.iterate\(|\.to_list\(|\.toList\(|next\(|\.has_next\(|list\(|\.result\(|for [A-Za-z_]+ in '
+if grep -qE \
+  '\.iterate\(|\.to_list\(|\.toList\(|next\(|\.has_next\(|list\(|\.result\(|for [A-Za-z_]+ in ' \
+  <<< "$command"
 then
   log_event pass terminal
   exit 0
 fi
-if printf '%s' "$command" | grep -qE 'run_query\(|recall\(|from thalamus\.eval'; then
+if grep -qE 'run_query\(|recall\(|from thalamus\.eval' <<< "$command"; then
   log_event pass wrapper
   exit 0
 fi
@@ -124,7 +126,7 @@ fi
 # negative (a doomed traversal chained after a commit) is accepted knowingly:
 # the standing trade is that a false positive costs more than a miss, because it
 # teaches route-around.
-if printf '%s' "$command" | grep -qE 're\.sub\(|read_text\(|write_text\(|(^|[;&| ])sed |(^|[;&| ])grep |(^|[;&| ])rg |(^|[;&| ])git (commit|tag|notes) '; then
+if grep -qE 're\.sub\(|read_text\(|write_text\(|(^|[;&| ])sed |(^|[;&| ])grep |(^|[;&| ])rg |(^|[;&| ])git (commit|tag|notes) ' <<< "$command"; then
   log_event pass textedit
   exit 0
 fi

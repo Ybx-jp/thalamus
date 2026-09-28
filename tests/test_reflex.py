@@ -873,6 +873,18 @@ class TestTheHook:
         assert json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"] == "ctx"
         assert "thalamus reflex" in argv_log.read_text()
 
+    def test_a_failure_past_the_pipe_buffer_is_still_served(self, tmp_path):
+        """The failure test reads the output whole: a `grep -q` fed through a pipe under
+        pipefail exits at its first match, and past the pipe buffer the writer's SIGPIPE
+        read as no match and sent a real failure down the shadow path (#312)."""
+        bin_dir, argv_log, _ = _stub_uv(tmp_path, prints="ctx")
+        output = PYTEST_FAILURE + "x" * 200_000 + "\n"
+
+        result = _run_hook(_bash_call(stdout=output), tmp_path, bin_dir)
+
+        assert json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"] == "ctx"
+        assert "--shadow" not in argv_log.read_text()
+
     def test_a_silent_worker_injects_nothing(self, tmp_path):
         bin_dir, argv_log, _ = _stub_uv(tmp_path, prints="")
 
