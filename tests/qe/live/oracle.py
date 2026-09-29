@@ -56,6 +56,7 @@ class Evidence:
         self.edges = graph.get("edges", [])
         self.contract = _json(ev / "contract_check.json", {})
         self.init_check = _json(ev / "init_check.json", {})
+        self.install_refusal = _json(ev / "install_refusal.json", {})
         self.project_files = _json(ev / "project_files.json", {})
         self.personas = _json(ev / "personas.json", {})
         self.transcripts = _json(ev / "transcripts.json", {})
@@ -357,6 +358,9 @@ def judge_config(config: matrix.Config, ev: Evidence) -> list[Result]:
                       PASS if contract_exit == 0 else FAIL,
                       f"exit {contract_exit}: {(ev.contract.get('stdout') or '')[-400:]}"))
 
+    if config.install_refuses:
+        out += judge_install_refusal(config, ev)
+
     for scope in config.manifests:
         persona = ev.personas.get(scope) or {}
         harnesses = {s.harness for s in config.sessions if s.scope == scope}
@@ -379,6 +383,35 @@ def judge_config(config: matrix.Config, ev: Evidence) -> list[Result]:
             out.append(Result("persona-arms-mcp", f"{scope} agent",
                               PASS if f"{server}:" in agent else FAIL,
                               f"looked for server `{server}` in the agent frontmatter"))
+    return out
+
+
+def judge_install_refusal(config: matrix.Config, ev: Evidence) -> list[Result]:
+    """A config whose manifest the install must refuse: nonzero, and saying why.
+
+    The refusal text is read for the file and the key rather than for the exit status
+    alone, because `thalamus init` also exits nonzero for a fixture that is broken for
+    some other reason; the correctly spelled twin (`write-boundary`) installing from
+    the same fixture shape is what says the refusal is the typo's.
+    """
+    subject = config.name
+    refusal = ev.install_refusal
+    if not refusal:
+        return [Result("install-refuses-unknown-key", subject, FAIL,
+                       "the driver recorded no install result")]
+    text = f"{refusal.get('stdout') or ''}{refusal.get('stderr') or ''}"
+    missing = [m for m in config.install_refuses if m not in text]
+    exit_code = refusal.get("exit")
+    ok = exit_code not in (0, None) and not missing
+    out = [Result("install-refuses-unknown-key", subject, PASS if ok else FAIL,
+                  f"init exit {exit_code}; refusal text missing {missing}; "
+                  f"tail: {text.strip()[-300:]}")]
+    for scope in config.manifests:
+        agent = (ev.personas.get(scope) or {}).get("agent")
+        out.append(Result("no-persona-for-refused-manifest", f"{scope} agent",
+                          PASS if not agent else FAIL,
+                          "no agent file generated" if not agent
+                          else "an agent file was generated from a manifest the install refused"))
     return out
 
 

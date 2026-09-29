@@ -39,3 +39,4 @@ The STDIO servers section gives a server two environment fields, env for variabl
 ## References
 
 - docs/design/launch-templates.md · standing · cites-as-live
+- src/thalamus/harness/pin.py · standing · cites-as-live

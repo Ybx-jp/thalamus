@@ -53,6 +53,14 @@ none
 - 2026-09-24T01:10:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:b125f2424b186f292bc9cc0f19ef4fa48cbbe28a4870796a70d2b22b42671401
   note: load_manifest resolves every dimension's selection in a loop instead of cost alone, re-raising with the manifest's path as before; an undefined cost preset still fails the load
+- 2026-09-29T00:31:25-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:b125f2424b186f292bc9cc0f19ef4fa48cbbe28a4870796a70d2b22b42671401
+  artifact: sha256:841f3a4e9bde3b515b489a6d4165d2dd3335f91be21f542e92aec8aa6cd2f2d7
+  note: propagated from a moved ground
+
+- 2026-09-29T00:31:35-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "load_manifest" =sha256:841f3a4e9bde3b515b489a6d4165d2dd3335f91be21f542e92aec8aa6cd2f2d7
+  note: load_manifest now re-raises a validation failure as a ValueError naming the file; preset resolution and the refusal of an undefined preset are unchanged, so the assertion is unaffected
 
 ## References
 

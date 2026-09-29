@@ -37,7 +37,7 @@ collected HOME back out, and run `cell.py`'s verbs in order can drive this tier.
 | `mcp-allowlist` | a scope's own MCP server armed in its generated agent; `deny_tools` with `allow_tools` carving `read_*` back |
 | `budget-cap` | a two-call `budget` preset against a session asked for five |
 | `codex-luna` | codex sessions through the generated profile: the `light` preset as `gpt-5.6-luna`, the boundary on `apply_patch`, codex's own SessionEnd, and whether a codex session can reach the thalamus MCP tools |
-| `misspelled-boundary` | an operator's one-letter typo in `write_boundary` (#294) |
+| `misspelled-boundary` | an operator's one-letter typo in `write_boundary` (#294): `thalamus init` must refuse the manifest, naming the file and the key, and generate no persona for it. Runs no session; the correctly spelled twin is `write-boundary` |
 
 Every armed session is also held to the same graph invariants:
 - a Session vertex with the pinned scope, deriving from exactly one Source;
@@ -50,7 +50,7 @@ Every cell also runs `thalamus contract check` against its graph and checks that
 dangles.
 
 A check that reproduces a filed defect carries the issue on its session (`known=` in
-`matrix.py`) and reports `known_red`, not `fail`: #294, #302, #303, #304, #306 as of this
+`matrix.py`) and reports `known_red`, not `fail`: #302, #303, #304, #306 as of this
 writing. Remove the tag in the change that fixes the issue.
 
 A codex patch naming several files is refused whole when one of them is denied, so a

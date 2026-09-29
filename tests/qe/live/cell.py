@@ -251,6 +251,14 @@ def cmd_install(name: str) -> int:
     for harness in config.harnesses:
         proc = sh(thalamus_argv("init", "--yes", "--harness", harness),
                   cwd=THALAMUS, timeout=600)
+        if config.install_refuses:
+            # The refusal is the thing under test: record it for the oracle rather
+            # than failing the step, which would end the cell before it judged.
+            EVIDENCE.mkdir(parents=True, exist_ok=True)
+            (EVIDENCE / "install_refusal.json").write_text(json.dumps(
+                {"exit": proc.returncode, "stdout": proc.stdout[-6000:],
+                 "stderr": proc.stderr[-6000:]}, indent=2))
+            return 0
         report[harness] = {"exit": proc.returncode, "stdout": proc.stdout[-3000:],
                            "stderr": proc.stderr[-3000:]}
         if proc.returncode:

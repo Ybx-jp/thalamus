@@ -20,7 +20,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError
 
 from thalamus.contract.capabilities import (
     BUDGET,
@@ -121,6 +121,8 @@ class WriteBoundary(BaseModel):
     exception: a deny that already matched has nothing left to exempt it. That makes
     an allow entry strictly widening, so it is written per scope and never defaulted.
     """
+    model_config = ConfigDict(extra="forbid")
+
 
     allow_globs: list[str] = Field(
         default_factory=list,
@@ -199,6 +201,8 @@ class CapabilityBoundary(BaseModel):
     consulted only once `deny_tools` has already matched, so it narrows a deny; it
     never grants a tool nothing else denies.
     """
+    model_config = ConfigDict(extra="forbid")
+
 
     deny_tools: list[str] = Field(
         default_factory=list,
@@ -268,6 +272,12 @@ ROSTER_CAPABILITY_DEFAULT = CapabilityBoundary(
 
 
 class ExpertManifest(BaseModel):
+    # An unknown key refuses the load, here and in both boundary models. Every
+    # dimension defaults to "no restriction" when absent, so a key the model dropped
+    # silently (`write_boundry:`) would run the scope unbounded while the file still
+    # reads as bounded. Omitting a key keeps its documented default (A0209, cites-as-live).
+    model_config = ConfigDict(extra="forbid")
+
     contract: str = "v0"
     scope: str
     name: str
@@ -502,7 +512,12 @@ def load_manifest(scope: str, base: Path | None = None) -> ExpertManifest:
         raise FileNotFoundError(
             f"No manifest for scope `{scope}` at {path}. Available: {available}"
         )
-    manifest = ExpertManifest(**yaml.safe_load(path.read_text()))
+    try:
+        manifest = ExpertManifest(**yaml.safe_load(path.read_text()))
+    except ValidationError as exc:
+        # Named, because every launch path loads every manifest (`write_all_agents`),
+        # so one scope's misspelled key stops them all and the message has to say where.
+        raise ValueError(f"{path}: {exc}") from exc
     if manifest.scope != scope:
         raise ValueError(f"{path} declares scope `{manifest.scope}`, not `{scope}`")
     for dimension in DIMENSIONS.values():

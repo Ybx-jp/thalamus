@@ -87,6 +87,8 @@ def materialize(ev: dict, home: Path) -> None:
     (out / "project_files.json").write_text(json.dumps(ev["project_files"]))
     (out / "personas.json").write_text(json.dumps(ev["personas"]))
     (out / "transcripts.json").write_text(json.dumps(ev["transcripts"]))
+    if ev.get("install_refusal") is not None:
+        (out / "install_refusal.json").write_text(json.dumps(ev["install_refusal"]))
     guards = home / ".thalamus" / "guards"
     guards.mkdir(parents=True)
     (guards / "2026-09.jsonl").write_text("\n".join(json.dumps(r) for r in ev["guards"]))
@@ -227,6 +229,62 @@ CASES = [
 ]
 
 
+TYPO = "live-typo"
+_REFUSAL_TEXT = (f"ValueError: /cfg/experts/{TYPO}.yaml: 1 validation error for "
+                 "ExpertManifest\nwrite_boundry\n  Extra inputs are not permitted")
+
+
+def refusal_clean() -> dict:
+    return {"sessions": [], "graph": {"vertices": [], "edges": []},
+            "contract": {"exit": 0}, "project_files": {}, "transcripts": {},
+            "personas": {TYPO: {"agent": None, "codex_profile": None}},
+            "guards": [], "logs": {},
+            "install_refusal": {"exit": 1, "stdout": "", "stderr": _REFUSAL_TEXT}}
+
+
+def _installed_anyway(ev):
+    ev["install_refusal"]["exit"] = 0
+
+
+def _refused_for_another_reason(ev):
+    ev["install_refusal"]["stderr"] = "ValueError: /cfg/experts/other.yaml: bad preset"
+
+
+def _persona_written(ev):
+    ev["personas"][TYPO]["agent"] = "---\nmodel: haiku\n---\n"
+
+
+def _no_install_result(ev):
+    ev["install_refusal"] = None
+
+
+#: (poison, check, subject, expected verdict), against the misspelled-boundary config
+REFUSAL_CASES = [
+    (_installed_anyway, "install-refuses-unknown-key", "misspelled-boundary", oracle.FAIL),
+    (_refused_for_another_reason, "install-refuses-unknown-key", "misspelled-boundary",
+     oracle.FAIL),
+    (_no_install_result, "install-refuses-unknown-key", "misspelled-boundary", oracle.FAIL),
+    (_persona_written, "no-persona-for-refused-manifest", TYPO, oracle.FAIL),
+]
+
+
+def refusal_failures() -> list[str]:
+    config = matrix.by_name(ROOT)["misspelled-boundary"]
+    failures = []
+    base = verdicts(refusal_clean(), config)
+    for key in (("install-refuses-unknown-key", "misspelled-boundary"),
+                ("no-persona-for-refused-manifest", TYPO)):
+        if base.get(key) != oracle.PASS:
+            failures.append(f"clean refusal evidence: {key} is {base.get(key)}, want pass")
+    for poison, check, subject, want in REFUSAL_CASES:
+        ev = copy.deepcopy(refusal_clean())
+        poison(ev)
+        got = verdicts(ev, config).get((check, subject))
+        if got != want:
+            failures.append(f"{poison.__name__} -> {check} [{subject}]: got {got}, want {want}")
+    return failures
+
+
 def main() -> int:
     config = matrix.by_name(ROOT)["write-boundary"]
     failures = []
@@ -255,9 +313,12 @@ def main() -> int:
     if got != oracle.KNOWN:
         failures.append(f"known tag: got {got}, want {oracle.KNOWN}")
 
+    failures += refusal_failures()
+
     for line in failures:
         print("FAIL", line)
-    print(f"{len(CASES) + 2 - len(failures)}/{len(CASES) + 2} oracle cases hold")
+    total = len(CASES) + 2 + len(REFUSAL_CASES) + 1
+    print(f"{total - len(failures)}/{total} oracle cases hold")
     return 1 if failures else 0
 
 

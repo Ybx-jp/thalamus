@@ -2194,6 +2194,18 @@ def uninstall(dry_run: bool = False) -> list[str]:
 
     actions.append(deregister_mcp(dry_run=dry_run))
     actions.append(deregister_codex_mcp(dry_run=dry_run))
+    # The derived profiles stay, but each is rewritten against the registration as it
+    # now stands: one still carrying the `[mcp_servers.thalamus]` forwarding table
+    # after the server is gone stops every `codex --profile` launch at startup
+    # (`pin.codex_registers_thalamus`).
+    if dry_run:
+        actions.append(f"would rewrite derived codex profiles in {CODEX_HOME}")
+    elif shutil.which("codex") is not None:
+        try:
+            written = write_all_codex_profiles()
+            actions.append(f"rewrote {len(written)} derived codex profiles in {CODEX_HOME}")
+        except (OSError, ValueError) as exc:
+            actions.append(f"codex profiles NOT rewritten: {exc}")
 
     # The hook-trust records in `$CODEX_HOME/config.toml` are deliberately left where
     # they are. They are codex's own state about a decision the operator made, the

@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-29T00:31:25-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:5997af161249eb0766f8cb796bb0744329d36051964436ee2fc26b578af2e651
+  artifact: sha256:bb4f0c07d5db9a796aaf8c6303812c28536e0a5b9f0ead2793620ed084d153d6
+  note: propagated from a moved ground
+
+- 2026-09-29T00:31:35-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:bb4f0c07d5db9a796aaf8c6303812c28536e0a5b9f0ead2793620ed084d153d6
+  note: CapabilityBoundary gained model_config forbidding undeclared fields; it still carries the deny and allow tool and skill lists that limit a scope, so the assertion is unaffected
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live
