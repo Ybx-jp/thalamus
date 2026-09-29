@@ -28,10 +28,11 @@ time horizon or a heuristic on the log body.
 Errors persist until dismissed, per the operator's rule, so this owns a scrap of
 state: `~/.thalamus/console/distill-dismissed.json`. Its `seeded_at` stamp is
 the clean slate, read off the filesystem's own clock rather than `time.time()` —
-every log already on disk the first time this runs counts as dismissed, so the widget starts blank instead of opening on a pile of
-archaeology. Both that stamp and a per-session dismissal are compared against
-the log's *mtime*, which means a session that re-distills later and fails again
-comes back on its own: the new write moves mtime past the dismissal.
+every log already on disk the first time this runs counts as dismissed, so the
+widget starts blank instead of opening on a pile of archaeology. Both that stamp
+and a per-session dismissal are compared against the log's *mtime*, which means a
+session that re-distills later and fails again comes back on its own: the new
+write moves mtime past the dismissal.
 """
 
 from __future__ import annotations
