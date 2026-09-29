@@ -254,6 +254,33 @@ def load_events(
     return events
 
 
+def _render_text_blocks(blocks: list) -> str:
+    return "\n".join(
+        block.get("text", "")
+        for block in blocks
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
+
+
+def _render_mcp_result(result: dict, default: str | None = None) -> str:
+    """The text a model saw, from an MCP result object or the server's envelope.
+
+    `content` text blocks are what the harness rendered to the model; codex's
+    `structuredContent.result` and the server's bare `{"result": ...}` carry the same
+    text. `isError` adds no marker: an error result's text already opens with the
+    rejection phrases `is_rejected` matches, exactly as in the list shape.
+    """
+    content = result.get("content")
+    if isinstance(content, list):
+        return _render_text_blocks(content)
+    structured = result.get("structuredContent")
+    if isinstance(structured, dict) and isinstance(structured.get("result"), str):
+        return structured["result"]
+    if isinstance(result.get("result"), str):
+        return result["result"]
+    return json.dumps(result) if default is None else default
+
+
 def _parse_line(line: str) -> TraceEvent | None:
     try:
         record = json.loads(line)
@@ -278,14 +305,12 @@ def _parse_line(line: str) -> TraceEvent | None:
 
     # Claude Code wraps MCP results as [{type: "text", text: ...}]; the hook may have
     # recorded either that structure or the bare string, depending on harness version.
-    if isinstance(tool_response, list):
-        tool_response = "\n".join(
-            block.get("text", "")
-            for block in tool_response
-            if isinstance(block, dict) and block.get("type") == "text"
-        )
-    elif isinstance(tool_response, dict):
-        tool_response = json.dumps(tool_response)
+    # codex hands over the whole MCP result object, {content: [...], structuredContent:
+    # {result: ...}, isError, _meta}; its content blocks are the same list.
+    if isinstance(tool_response, dict):
+        tool_response = _render_mcp_result(tool_response)
+    elif isinstance(tool_response, list):
+        tool_response = _render_text_blocks(tool_response)
 
     # The thalamus MCP server itself returns {"result": <rendered text>}, and the tap
     # records that envelope (sometimes JSON-encoded into a string). Unwrap it so the
@@ -299,8 +324,8 @@ def _parse_line(line: str) -> TraceEvent | None:
         except json.JSONDecodeError:
             pass
         else:
-            if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
-                tool_response = envelope["result"]
+            if isinstance(envelope, dict):
+                tool_response = _render_mcp_result(envelope, default=tool_response)
 
     if not isinstance(tool_response, str):
         tool_response = ""
