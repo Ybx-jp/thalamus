@@ -254,6 +254,54 @@ class TestParse:
         assert facts.touched[f"{CWD}/src/a.py"] == ["exec-5909589e"]
         assert facts.tool_calls == 1
 
+    def test_a_filechange_item_reaches_touched_anchored_on_its_open_call(self, tmp_path):
+        """The 0.148.0 grammar writes a patch as an `item_completed` `FileChange`
+        carrying the same `changes` map; the item's own `id` appears in no other row, so
+        the anchor is the call still awaiting its output when the item arrives."""
+        changes = {f"{CWD}/notes/a.md": {"type": "add", "content": "x\n"},
+                   f"{CWD}/src/b.py": {"type": "update", "unified_diff": "@@\n+x\n",
+                                       "move_path": None},
+                   f"{CWD}/src/c.py": {"type": "delete", "content": "y\n"}}
+        path = _write(tmp_path, [
+            _meta(), _user("edit it"),
+            _row("response_item", {"type": "custom_tool_call", "call_id": "call_done",
+                                   "name": "exec", "input": "ls"}),
+            _row("response_item", {"type": "custom_tool_call_output",
+                                   "call_id": "call_done", "output": "ok"}),
+            _row("response_item", {"type": "custom_tool_call", "call_id": "call_patch",
+                                   "name": "exec", "input": "apply_patch"}),
+            _completed({"type": "FileChange", "id": "exec-9b7d", "changes": changes,
+                        "status": "completed", "stdout": "", "stderr": ""}),
+            _row("response_item", {"type": "custom_tool_call_output",
+                                   "call_id": "call_patch", "output": "ok"}),
+        ])
+        facts = ct.parse(path)
+
+        assert set(facts.touched) == set(changes)
+        assert facts.touched[f"{CWD}/notes/a.md"] == ["call_patch"]
+        assert facts.unrecognized == 0
+
+    def test_a_filechange_with_no_single_open_call_is_recorded_unanchored(self, tmp_path):
+        changes = {f"{CWD}/a.md": {"type": "add", "content": "x\n"}}
+        item = {"type": "FileChange", "id": "exec-1", "changes": changes}
+        call = lambda cid: _row("response_item", {  # noqa: E731
+            "type": "custom_tool_call", "call_id": cid, "name": "exec", "input": "x"})
+        none_open = ct.parse(_write(tmp_path, [_meta(), _user("go"), _completed(item)]))
+        two_open = ct.parse(_write(tmp_path, [
+            _meta(), _user("go"), call("call_1"), call("call_2"), _completed(item)]))
+
+        assert none_open.touched == {f"{CWD}/a.md": []}
+        assert two_open.touched == {f"{CWD}/a.md": []}
+
+    def test_a_filechange_with_unreadable_changes_is_counted_unrecognised(self, tmp_path):
+        path = _write(tmp_path, [
+            _meta(), _user("edit it"),
+            _completed({"type": "FileChange", "id": "exec-1", "changes": None}),
+        ])
+        facts = ct.parse(path)
+
+        assert not facts.touched and facts.unrecognized == 1
+
     def test_the_ingress_floor_is_computable_from_the_transcript_alone(self, tmp_path):
         """Codex embeds tool output, so an empty `external_texts` means nothing was
         fetched — the Claude Code meaning, not Cursor's "we cannot know"."""

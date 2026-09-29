@@ -10,6 +10,8 @@ that is the standard that puts these four ahead of the rest of the lifecycle.
 """
 
 import json
+import multiprocessing
+import threading
 
 import pytest
 
@@ -116,6 +118,121 @@ def test_occasions_number_per_room_and_kind(ledger):
     assert ceremonies.next_index("alpha", "acceptance", path=ledger) == 2
     assert ceremonies.next_index("beta", "review", path=ledger) == 2
     assert ceremonies.next_index("beta", "close", path=ledger) == 1
+
+
+def _open_many(path, count, use_skip):
+    for i in range(count):
+        if use_skip and i % 2:
+            ceremonies.skip("alpha", "review", path=path)
+        else:
+            ceremonies.start("alpha", "review", path=path)
+
+
+def test_contending_processes_number_occasions_uniquely(ledger):
+    """
+    Scenario: several processes open and skip the same (room, kind) in a tight loop.
+    Expected: occasion indices are exactly 1..N with no repeats, which needs each row
+    on disk before the next locker reads.
+    """
+    procs, per = 6, 15
+    ctx = multiprocessing.get_context("fork")
+    workers = [
+        ctx.Process(target=_open_many, args=(ledger, per, n % 2 == 0))
+        for n in range(procs)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=60)
+        assert worker.exitcode == 0
+
+    rows = ceremonies.read_rows(ledger)
+    assert sorted(row["occasion_index"] for row in rows) == list(
+        range(1, procs * per + 1)
+    )
+    assert len({row["occasion_id"] for row in rows}) == procs * per
+
+
+def _open_concurrently(monkeypatch, opens):
+    """Run `opens` on threads, each held right after it reads the ledger.
+
+    The barrier parks every caller between its read of the rows and its write, so a
+    caller that reads outside the lock is forced to read before any peer has written.
+    A caller that reads under the lock parks while holding it, its peers block on the
+    flock, and the barrier times out — which releases the holder to write.
+    """
+    real = ceremonies.next_index
+    barrier = threading.Barrier(len(opens), timeout=1)
+
+    def parked(*args, **kwargs):
+        index = real(*args, **kwargs)
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:
+            pass
+        return index
+
+    monkeypatch.setattr(ceremonies, "next_index", parked)
+    results: list[dict] = []
+    threads = [
+        threading.Thread(target=lambda open_=open_: results.append(open_()))
+        for open_ in opens
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return results
+
+
+def test_concurrent_opens_of_one_room_and_kind_get_distinct_occasions(
+    ledger, monkeypatch
+):
+    """
+    Scenario: two sessions open the same (room, kind) at once, both reading the ledger
+    before either writes.
+    Expected: distinct occasion ids, and the ledger holds both rows.
+    """
+    results = _open_concurrently(
+        monkeypatch,
+        [
+            lambda: ceremonies.start("alpha", "review", path=ledger),
+            lambda: ceremonies.start("alpha", "review", path=ledger),
+        ],
+    )
+
+    assert sorted(row["occasion_index"] for row in results) == [1, 2]
+    assert len({row["occasion_id"] for row in results}) == 2
+    assert [row["occasion_index"] for row in ceremonies.read_rows(ledger)] == sorted(
+        row["occasion_index"] for row in results
+    )
+
+
+def test_a_concurrent_start_and_skip_do_not_share_an_occasion(ledger, monkeypatch):
+    results = _open_concurrently(
+        monkeypatch,
+        [
+            lambda: ceremonies.start("alpha", "review", path=ledger),
+            lambda: ceremonies.skip("alpha", "review", reason="cost", path=ledger),
+        ],
+    )
+
+    assert sorted(row["occasion_index"] for row in results) == [1, 2]
+
+
+def test_sequential_opens_number_consecutively_under_the_same_harness(
+    ledger, monkeypatch
+):
+    """Control: the harness alone does not change numbering when opens do not overlap."""
+    first = _open_concurrently(
+        monkeypatch, [lambda: ceremonies.start("alpha", "review", path=ledger)]
+    )
+    second = _open_concurrently(
+        monkeypatch, [lambda: ceremonies.skip("alpha", "review", path=ledger)]
+    )
+
+    assert first[0]["occasion_index"] == 1
+    assert second[0]["occasion_index"] == 2
 
 
 # --- 2. Non-occurrence ---------------------------------------------------------------
