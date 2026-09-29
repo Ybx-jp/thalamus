@@ -10,6 +10,7 @@ that is the standard that puts these four ahead of the rest of the lifecycle.
 """
 
 import json
+import multiprocessing
 import threading
 
 import pytest
@@ -117,6 +118,39 @@ def test_occasions_number_per_room_and_kind(ledger):
     assert ceremonies.next_index("alpha", "acceptance", path=ledger) == 2
     assert ceremonies.next_index("beta", "review", path=ledger) == 2
     assert ceremonies.next_index("beta", "close", path=ledger) == 1
+
+
+def _open_many(path, count, use_skip):
+    for i in range(count):
+        if use_skip and i % 2:
+            ceremonies.skip("alpha", "review", path=path)
+        else:
+            ceremonies.start("alpha", "review", path=path)
+
+
+def test_contending_processes_number_occasions_uniquely(ledger):
+    """
+    Scenario: several processes open and skip the same (room, kind) in a tight loop.
+    Expected: occasion indices are exactly 1..N with no repeats, which needs each row
+    on disk before the next locker reads.
+    """
+    procs, per = 6, 15
+    ctx = multiprocessing.get_context("fork")
+    workers = [
+        ctx.Process(target=_open_many, args=(ledger, per, n % 2 == 0))
+        for n in range(procs)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=60)
+        assert worker.exitcode == 0
+
+    rows = ceremonies.read_rows(ledger)
+    assert sorted(row["occasion_index"] for row in rows) == list(
+        range(1, procs * per + 1)
+    )
+    assert len({row["occasion_id"] for row in rows}) == procs * per
 
 
 def _open_concurrently(monkeypatch, opens):

@@ -63,6 +63,7 @@ from __future__ import annotations
 import fcntl
 import json
 import math
+import os
 import random
 import re
 from dataclasses import dataclass
@@ -164,6 +165,10 @@ def _append(row: dict, path: Path | None = None) -> dict:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
+            # Flushed before the lock drops: the handle is buffered, so unlocking first
+            # would let the next locker read a ledger missing this row.
+            handle.flush()
+            os.fsync(handle.fileno())
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
     return row
@@ -188,6 +193,10 @@ def _append_occasion(
         try:
             row = build(next_index(room, kind, path=ledger))
             handle.write(json.dumps(row, sort_keys=True) + "\n")
+            # Flushed before the lock drops: the handle is buffered, so unlocking first
+            # would let the next locker read a ledger missing this row.
+            handle.flush()
+            os.fsync(handle.fileno())
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
     return row
