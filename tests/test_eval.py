@@ -1285,6 +1285,49 @@ def test_the_draw_is_reproducible_from_the_record_alone():
     assert record.propensity == 0.6
 
 
+def test_load_keeps_every_row_that_shares_a_rendered_response(tmp_path):
+    """The same response served twice hashes identically; both draws must survive
+    `load()` rather than the later one shadowing the earlier."""
+    from thalamus.eval import policy
+
+    rendered = "one response, served twice"
+    for hour in (0, 1):
+        _kept, record = policy.apply(
+            ["scope:main:claim:a", "scope:main:claim:b"],
+            policy=policy.WithholdPolicy(rate=0.5), scope="main", tool="t", query="q",
+            ts=datetime(2026, 8, 1, hour, tzinfo=timezone.utc),
+        )
+        policy.log(record, rendered, base=tmp_path)
+
+    loaded = policy.load(tmp_path)
+    sha = policy.response_key(rendered)
+    assert sorted(loaded) == [
+        (sha, "2026-08-01T00:00:00+00:00"), (sha, "2026-08-01T01:00:00+00:00"),
+    ]
+
+
+def test_sync_pairs_a_repeated_response_with_its_last_ledger_record(tmp_path):
+    """Pins the rule sync applies to a sha with several ledger rows (open decision in
+    #328): the last record in file order wins, as it did when `load()` keyed by sha."""
+    from thalamus.eval import policy
+    from thalamus.eval import sync as sync_mod
+
+    rendered = "one response, served twice"
+    seeds = []
+    for hour in (0, 1):
+        _kept, record = policy.apply(
+            ["scope:main:claim:a", "scope:main:claim:b"],
+            policy=policy.WithholdPolicy(rate=0.5), scope="main", tool="t",
+            query=f"q{hour}", ts=datetime(2026, 8, 1, hour, tzinfo=timezone.utc),
+        )
+        policy.log(record, rendered, base=tmp_path)
+        seeds.append(record.seed)
+
+    by_sha = sync_mod._withheld_by_sha(tmp_path)
+    assert len(by_sha) == 1
+    assert by_sha[policy.response_key(rendered)].seed == seeds[-1]
+
+
 def test_a_retrieval_is_never_fully_withheld():
     """An empty render is a *miss*, and the tap cannot tell a miss from a
     fully-withheld retrieval — two different events must not share a shape."""
@@ -1311,8 +1354,8 @@ def test_records_round_trip_and_key_on_the_rendered_response(tmp_path):
     policy.log(record, rendered, base=tmp_path)
 
     loaded = policy.load(tmp_path)
-    assert policy.response_key(rendered) in loaded
-    restored = loaded[policy.response_key(rendered)]
+    assert (policy.response_key(rendered), record.ts) in loaded
+    restored = loaded[(policy.response_key(rendered), record.ts)]
     assert restored.withheld == record.withheld
     assert restored.offered == offered
     assert policy.load(tmp_path / "nonexistent") == {}

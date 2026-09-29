@@ -181,12 +181,16 @@ def log(record: WithholdRecord, rendered: str, *, base: Path | None = None) -> P
     return path
 
 
-def load(base: Path | None = None) -> dict[str, WithholdRecord]:
-    """Every record, keyed by the hash of the response it produced."""
+def load(base: Path | None = None) -> dict[tuple[str, str], WithholdRecord]:
+    """Every record, keyed by `(response_sha256, ts)`, in file order.
+
+    The hash alone is not unique: the same response served twice hashes identically,
+    so a hash-only key lets a later draw shadow an earlier one.
+    """
     directory = base or POLICY_DIR
     if not directory.is_dir():
         return {}
-    records: dict[str, WithholdRecord] = {}
+    records: dict[tuple[str, str], WithholdRecord] = {}
     for path in sorted(directory.glob("*.jsonl")):
         for line in path.read_text().splitlines():
             line = line.strip()
@@ -197,7 +201,7 @@ def load(base: Path | None = None) -> dict[str, WithholdRecord]:
             except (json.JSONDecodeError, TypeError):
                 continue
             if record.response_sha256:
-                records[record.response_sha256] = record
+                records[(record.response_sha256, record.ts)] = record
     return records
 
 
