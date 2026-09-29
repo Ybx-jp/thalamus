@@ -148,3 +148,28 @@ def test_a_payload_without_a_command_is_searched_raw(tmp_path):
     """
     raw = json.dumps({"tool_name": "Bash", "tool_input": {"argv": "thalamus write x.yaml"}})
     assert run_guard(None, tmp_path, raw=raw).returncode == BLOCK_EXIT
+
+
+def test_a_block_lands_a_row_in_the_guard_ledger(tmp_path):
+    """
+    Scenario: a blocked self-write, then a passing command
+
+    The block is the guard's evidence that it fired; the ledger under
+    `$HOME/.thalamus/guards/` is where the eval loop reads it. The row names the
+    guard and the verb; a passing command writes none.
+    """
+    result = run_guard("uv run thalamus extract --session abc --write", tmp_path)
+    assert result.returncode == BLOCK_EXIT
+    files = list((tmp_path / ".thalamus" / "guards").glob("*.jsonl"))
+    assert len(files) == 1
+    rows = [json.loads(line) for line in files[0].read_text().splitlines()]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["guard"] == "write-guard"
+    assert row["verdict"] == "block"
+    assert row["verb"] == "thalamus extract --write"
+    assert row["session_id"] == "wg-sess-1"
+    assert row["tool"] == "Bash"
+
+    run_guard("uv run thalamus thread approve x", tmp_path)
+    assert len(files[0].read_text().splitlines()) == 1
