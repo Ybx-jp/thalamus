@@ -58,6 +58,7 @@ CASE_MODULES = (
     "qe.cases.dispatch_addressability",
     "qe.cases.tool_write_freedom",
     "qe.cases.emptiness_predicate",
+    "qe.cases.console_send_oversize_text",
     "qe.cases.arch_extractor",
     "qe.cases.arch_route_channel",
     "qe.cases.expectation_additions",
