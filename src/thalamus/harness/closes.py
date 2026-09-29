@@ -29,11 +29,12 @@ here provides.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
+
+from thalamus.harness.ledger_io import locked_ledger, write_row
 
 CLOSES_DIR = Path.home() / ".thalamus" / "closes"
 LEDGER_FILE = CLOSES_DIR / "closes.jsonl"
@@ -79,15 +80,37 @@ def read_rows(path: Path | None = None) -> list[dict]:
 
 def _append(row: dict, path: Path | None = None) -> dict:
     """Append one row under an exclusive lock, and return it."""
-    ledger = path or LEDGER_FILE
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    with ledger.open("a") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            handle.write(json.dumps(row, sort_keys=True) + "\n")
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    with locked_ledger(path or LEDGER_FILE) as handle:
+        write_row(handle, row)
     return row
+
+
+def _settle(
+    ref: str, event: str, build, path: Path | None = None
+) -> tuple[dict, bool]:
+    """Append the `event` row that settles `ref`, unless one is already there.
+
+    The check and the append share one exclusive lock: a check made through the
+    unlocked `find_proposal` would let two concurrent callers both see the ref unsettled
+    and both append. Returns `(row, created)`; when the ref already carries a row of this
+    event, that row is returned and nothing is written. `build` receives the proposal
+    and returns the row. The opposite event does not count: approving a rejected ref
+    appends.
+    """
+    with locked_ledger(path or LEDGER_FILE) as handle:
+        rows = read_rows(path)
+        proposal = next(
+            (r for r in rows if r.get("event") == PROPOSED and r.get("ref") == ref),
+            None,
+        )
+        if proposal is None:
+            raise ValueError(f"no proposal `{ref}` in the close ledger")
+        for existing in rows:
+            if existing.get("event") == event and existing.get("ref") == ref:
+                return existing, False
+        row = build(proposal)
+        write_row(handle, row)
+    return row, True
 
 
 def propose(
@@ -149,8 +172,12 @@ def approve(
     approver_evidence: str,
     approved_by: str = "operator",
     path: Path | None = None,
-) -> dict:
-    """Record the operator's approval of a proposal.
+) -> tuple[dict, bool]:
+    """Record the operator's approval of a proposal, once.
+
+    Returns `(row, created)`. A ref already approved returns its existing row with
+    `created` False and writes nothing, so a repeated approval cannot mint a second row
+    for the caller to write a second graph edge from.
 
     The row is written **before** the graph edge, and that order is deliberate: a close
     whose ledger row is missing cannot be corroborated afterwards, while a row whose
@@ -159,11 +186,10 @@ def approve(
     """
     if surface not in SURFACES:
         raise ValueError(f"unknown approval surface `{surface}` — one of {SURFACES}")
-    proposal = find_proposal(ref, path)
-    if proposal is None:
-        raise ValueError(f"no proposal `{ref}` in the close ledger")
-    return _append(
-        {
+    return _settle(
+        ref,
+        APPROVED,
+        lambda proposal: {
             "event": APPROVED,
             "ref": ref,
             "thread_id": proposal["thread_id"],
@@ -177,18 +203,22 @@ def approve(
     )
 
 
-def reject(ref: str, reason: str = "", path: Path | None = None) -> dict:
-    """Record that the operator declined a proposed close.
+def reject(
+    ref: str, reason: str = "", path: Path | None = None
+) -> tuple[dict, bool]:
+    """Record that the operator declined a proposed close, once.
+
+    Returns `(row, created)`; a ref already rejected returns its existing row with
+    `created` False.
 
     Kept as a row rather than a deletion because a rejected proposal is the only
     negative evidence the basis-finders will ever get: precision cannot be measured
     from approvals alone.
     """
-    proposal = find_proposal(ref, path)
-    if proposal is None:
-        raise ValueError(f"no proposal `{ref}` in the close ledger")
-    return _append(
-        {
+    return _settle(
+        ref,
+        REJECTED,
+        lambda proposal: {
             "event": REJECTED,
             "ref": ref,
             "thread_id": proposal["thread_id"],

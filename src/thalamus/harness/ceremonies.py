@@ -63,12 +63,13 @@ from __future__ import annotations
 import fcntl
 import json
 import math
-import os
 import random
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from thalamus.harness.ledger_io import locked_ledger, write_row
 
 CEREMONIES_DIR = Path.home() / ".thalamus" / "ceremonies"
 LEDGER_FILE = CEREMONIES_DIR / "ceremonies.jsonl"
@@ -159,18 +160,8 @@ def _append(row: dict, path: Path | None = None) -> dict:
     A row whose content depends on the rows already present goes through
     `_append_occasion` instead, which holds the same lock across its read.
     """
-    ledger = path or LEDGER_FILE
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    with ledger.open("a") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            handle.write(json.dumps(row, sort_keys=True) + "\n")
-            # Flushed before the lock drops: the handle is buffered, so unlocking first
-            # would let the next locker read a ledger missing this row.
-            handle.flush()
-            os.fsync(handle.fileno())
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    with locked_ledger(path or LEDGER_FILE) as handle:
+        write_row(handle, row)
     return row
 
 
@@ -187,18 +178,9 @@ def _append_occasion(
     the row.
     """
     ledger = path or LEDGER_FILE
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    with ledger.open("a") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            row = build(next_index(room, kind, path=ledger))
-            handle.write(json.dumps(row, sort_keys=True) + "\n")
-            # Flushed before the lock drops: the handle is buffered, so unlocking first
-            # would let the next locker read a ledger missing this row.
-            handle.flush()
-            os.fsync(handle.fileno())
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    with locked_ledger(ledger) as handle:
+        row = build(next_index(room, kind, path=ledger))
+        write_row(handle, row)
     return row
 
 

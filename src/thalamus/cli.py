@@ -4762,7 +4762,10 @@ def _cmd_thread(args, parser):
         return
 
     if command == "reject":
-        row = closes_mod.reject(args.ref, args.reason)
+        row, created = closes_mod.reject(args.ref, args.reason)
+        if not created:
+            print(f"already rejected {row['ref']}  {row['scope']}:{row['thread_id']}")
+            return
         print(f"rejected {row['ref']}  {row['scope']}:{row['thread_id']}")
         return
 
@@ -4778,9 +4781,17 @@ def _cmd_thread(args, parser):
             "console": "console:unattributed",
             "session": "session:unattributed",
         }[args.surface]
-        approval = closes_mod.approve(
+        approval, created = closes_mod.approve(
             args.ref, surface=args.surface, approver_evidence=evidence
         )
+        if not created:
+            # The first approval already wrote the edge; a second graph write would
+            # restate it under a different closed_at.
+            print(
+                f"already approved {proposal['scope']}:{proposal['thread_id']}"
+                f" ({args.ref}); nothing written"
+            )
+            return
         close = ThreadClose(
             thread_id=proposal["thread_id"],
             scope=proposal["scope"],
