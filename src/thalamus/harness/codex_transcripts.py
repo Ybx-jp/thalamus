@@ -476,9 +476,10 @@ def _record_completed_item(
 
     Counts the things this envelope is the *only* surface for — the operator's
     prompts, a `web.search` extension, and a `FileChange` item's touched files (the
-    0.148.0 grammar writes a patch as this item, not as `patch_apply_end`) — and deliberately counts nothing else. Its
-    `CommandExecution` and `Reasoning` items restate `response_item` rows that are
-    already counted, so folding them in would inflate the same totals twice.
+    0.148.0 grammar writes a patch as this item, not as `patch_apply_end`) — and
+    deliberately counts nothing else. Its `CommandExecution` and `Reasoning` items
+    restate `response_item` rows that are already counted, so folding them in would
+    inflate the same totals twice.
 
     An unknown `item.type` increments `unrecognized` rather than being ignored, on the
     module's standing rule: the next grammar change has to arrive as a number somebody
@@ -522,9 +523,9 @@ def _record_touches(facts: TranscriptFacts, payload: dict, anchor: str) -> None:
     `payload` is a `patch_apply_end` event or a `FileChange` item — both carry the same
     `changes` map. The anchor is codex's own `call_id` (the event's own, or for an item
     the call still open when it arrived; empty when that is ambiguous), not a
-    synthesized row index: unlike Cursor,
-    codex writes real identifiers, so the provenance walk lands on the exact call
-    without this module inventing an addressing scheme for it.
+    synthesized row index: unlike Cursor, codex writes real identifiers, so the
+    provenance walk lands on the exact call without this module inventing an
+    addressing scheme for it.
     """
     changes = payload.get("changes")
     if not isinstance(changes, dict):
