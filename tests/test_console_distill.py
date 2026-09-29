@@ -8,6 +8,7 @@ what each log body means, and the two ways a row stops being shown.
 from __future__ import annotations
 
 import json
+import os
 import time
 
 import pytest
@@ -547,16 +548,46 @@ def test_the_backlog_on_disk_at_first_run_is_a_clean_slate(tmp_path):
         (logs / f"session-end-old{n}0000.log").write_text(
             FAILED.format(sid=f"old{n}0000", scope="main"))
 
-    watch = DistillWatch(logs=logs, pins=pins, state=tmp_path / "dismissed.json",
+    state = tmp_path / "dismissed.json"
+    watch = DistillWatch(logs=logs, pins=pins, state=state,
                          kills=tmp_path / "killed.jsonl")
     assert watch.rows() == []
 
-    # ...but a distillation that happens after the seed is not swallowed by it.
-    (logs / "session-end-new00000.log").write_text(
-        FAILED.format(sid="new00000", scope="main"))
+    # ...but a distillation that happens after the seed is not swallowed by it. The
+    # log's mtime is pinned a few ms past the persisted seed, so this does not depend
+    # on how far apart the two writes landed.
+    new = logs / "session-end-new00000.log"
+    new.write_text(FAILED.format(sid="new00000", scope="main"))
+    seed = json.loads(state.read_text())["seeded_at"]
+    os.utime(new, (seed + 0.005, seed + 0.005))
     with pins.open("a") as fh:
         fh.write(json.dumps({"session_id": "new00000-rest", "scope": "main",
                              "cwd": "/home/op/code/thalamus"}) + "\n")
+    watch._scanned_at = 0.0
+    assert [r["session"] for r in watch.rows()] == ["new00000"]
+
+
+def test_the_seed_is_read_off_the_filesystem_clock_not_time_time(tmp_path, monkeypatch):
+    """A log's mtime comes from the kernel's coarse clock, which can trail
+    `time.time()`. A wall clock running ahead of the filesystem must not hide a log
+    written after the seed."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    pins = tmp_path / "pins.jsonl"
+    state = tmp_path / "dismissed.json"
+    monkeypatch.setattr(time, "time", lambda: 4_000_000_000.0)   # far ahead of any mtime
+    watch = DistillWatch(logs=logs, pins=pins, state=state,
+                         kills=tmp_path / "killed.jsonl")
+    assert watch.rows() == []
+    seed = json.loads(state.read_text())["seeded_at"]
+    assert seed < 3_000_000_000.0
+    assert list(logs.iterdir()) == []          # the probe leaves nothing behind
+
+    log = logs / "session-end-new00000.log"
+    log.write_text(FAILED.format(sid="new00000", scope="main"))
+    os.utime(log, (seed + 0.005, seed + 0.005))
+    pins.write_text(json.dumps({"session_id": "new00000-rest", "scope": "main",
+                                "cwd": "/home/op/code/thalamus"}) + "\n")
     watch._scanned_at = 0.0
     assert [r["session"] for r in watch.rows()] == ["new00000"]
 
