@@ -189,6 +189,84 @@ def test_the_servers_result_envelope_is_unwrapped_so_misses_stay_misses(tmp_path
     assert not events[0].is_legacy()
 
 
+def _codex_result(text: str, is_error: bool = False) -> dict:
+    return {
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": {"result": text},
+        "isError": is_error,
+        "_meta": {"fastmcp": {"wrap_result": True}},
+    }
+
+
+def test_codex_mcp_result_object_parses_like_the_claude_list_shape(tmp_path):
+    """
+    Scenario: codex records the whole MCP result object as tool_response, where Claude
+    Code records the bare content-block list
+
+    Measured failure (#306): the object was JSON-dumped, so a miss read as legacy and a
+    hit's backticked vertex ids sat inside an escaped JSON string. eval sync skipped
+    every codex recall. The same text in either shape must classify identically.
+    """
+    hit_text = (
+        "**Node:** `scope:main:session:abc` — a summary.\n\n---\n\n"
+        "**Node:** `scope:main:claim:aa` — a claim."
+    )
+    rejected_text = "Rejected: traversal is missing a terminal step."
+    (tmp_path / "2026-07.jsonl").write_text(
+        "\n".join(
+            [
+                _tap_line(ts="2026-07-15T10:00:01Z", tool_response=_codex_result("No matching memories found.")),
+                _tap_line(ts="2026-07-15T10:00:02Z", tool_response=_codex_result(hit_text)),
+                _tap_line(ts="2026-07-15T10:00:03Z", tool_response=_codex_result(rejected_text, True)),
+                _tap_line(ts="2026-07-15T10:00:04Z", tool_response=[{"type": "text", "text": hit_text}]),
+                # structuredContent alone, and the object JSON-encoded into a string
+                _tap_line(ts="2026-07-15T10:00:05Z", tool_response={"structuredContent": {"result": hit_text}}),
+                _tap_line(ts="2026-07-15T10:00:06Z", tool_response=json.dumps(_codex_result(hit_text))),
+            ]
+        )
+    )
+
+    miss, hit, rejected, claude_hit, structured_only, encoded = load_events(tmp_path)
+
+    assert miss.is_miss() and not miss.is_legacy()
+    assert not hit.is_legacy() and not hit.is_miss()
+    assert hit.returned_node_ids() == ["scope:main:session:abc", "scope:main:claim:aa"]
+    assert rejected.is_rejected() and not rejected.is_legacy()
+    assert hit.tool_response == claude_hit.tool_response
+    assert structured_only.returned_node_ids() == hit.returned_node_ids()
+    assert encoded.returned_node_ids() == hit.returned_node_ids()
+
+
+def test_codex_result_without_content_text_falls_back_and_malformed_blocks_are_skipped(tmp_path):
+    """
+    Scenario: a codex result whose `content` is empty but whose structuredContent
+    carries the hit; and a text block whose text is null
+
+    An empty content list must not hide structuredContent.result (the hit would land as
+    a zero-node trace). A non-string text must not raise: load_events does not catch,
+    so one malformed line would end eval sync.
+    """
+    hit_text = "**Node:** `scope:main:session:abc` — a summary."
+    (tmp_path / "2026-07.jsonl").write_text(
+        "\n".join(
+            [
+                _tap_line(ts="2026-07-15T10:00:01Z", tool_response={
+                    "content": [], "structuredContent": {"result": hit_text}}),
+                _tap_line(ts="2026-07-15T10:00:02Z", tool_response={
+                    "content": [{"type": "text", "text": None}],
+                    "structuredContent": {"result": hit_text}}),
+                _tap_line(ts="2026-07-15T10:00:03Z", tool_response=[{"type": "text", "text": None}]),
+            ]
+        )
+    )
+
+    empty_content, null_text, null_list = load_events(tmp_path)
+
+    assert empty_content.returned_node_ids() == ["scope:main:session:abc"]
+    assert null_text.returned_node_ids() == ["scope:main:session:abc"]
+    assert null_list.tool_response == ""
+
+
 def test_tap_records_the_pin_and_old_lines_still_parse(tmp_path):
     """
     Scenario: A pinned session's tap line carries scope; a pre-pinning line doesn't
