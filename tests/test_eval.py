@@ -1306,6 +1306,40 @@ def test_load_keeps_every_row_that_shares_a_rendered_response(tmp_path):
     ]
 
 
+def _ledger_row(sha, ts, seed):
+    return json.dumps({
+        "version": "withhold-v1", "rate": 0.5, "session_id": "", "scope": "main",
+        "tool": "t", "ts": ts, "seed": seed, "offered": [], "withheld": [],
+        "response_sha256": sha,
+    })
+
+
+def test_load_skips_rows_whose_key_fields_are_not_strings(tmp_path):
+    """A row with an unhashable ts or sha is malformed like any other bad row: skipped,
+    not fatal to the whole load."""
+    from thalamus.eval import policy
+
+    good = _ledger_row("h", "2026-08-01T00:00:00+00:00", "ok")
+    bad_ts = json.loads(good) | {"ts": []}
+    bad_ts2 = json.loads(good) | {"ts": {}}
+    bad_sha = json.loads(good) | {"response_sha256": ["x"]}
+    (tmp_path / "2026-08.jsonl").write_text(
+        "\n".join([json.dumps(bad_ts), json.dumps(bad_ts2), json.dumps(bad_sha), good]) + "\n"
+    )
+    assert [r.seed for r in policy.load(tmp_path).values()] == ["ok"]
+
+
+def test_sync_pairs_a_repeated_key_by_its_last_row_in_file_order(tmp_path):
+    """File order A(sha,t1) B(sha,t2) A2(sha,t1): the last row is A2, not B."""
+    from thalamus.eval import sync as sync_mod
+
+    t1, t2 = "2026-08-01T00:00:00+00:00", "2026-08-01T01:00:00+00:00"
+    (tmp_path / "2026-08.jsonl").write_text("\n".join([
+        _ledger_row("h", t1, "A"), _ledger_row("h", t2, "B"), _ledger_row("h", t1, "A2"),
+    ]) + "\n")
+    assert sync_mod._withheld_by_sha(tmp_path)["h"].seed == "A2"
+
+
 def test_sync_pairs_a_repeated_response_with_its_last_ledger_record(tmp_path):
     """Pins the rule sync applies to a sha with several ledger rows (open decision in
     #328): the last record in file order wins, as it did when `load()` keyed by sha."""
