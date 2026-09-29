@@ -2137,6 +2137,16 @@ def test_send_keeps_no_waiting_preflight_because_the_operator_can_see_it(tmp_pat
     assert any("1" in args for args in sent)
 
 
+def test_send_hands_tmux_the_text_as_data(tmp_path):
+    """`/api/send` puts `--` before the text and escapes a trailing `;`, so text that
+    starts with `-` is not parsed as flags and a final `;` is not a command separator."""
+    cfg = Config(project_root=tmp_path, scan_roots=[tmp_path])
+    with _serving(cfg, windows=WINDOW_FIELDS) as post:
+        post("/api/send", {"index": 0, "text": "-t 0;", "submit": False})
+        sends = [c for c in post.fake.calls if c[0] == "send-keys"]
+    assert list(sends[0][-3:]) == ["-l", "--", "-t 0\\;"]
+
+
 def test_codex_composer_settles_before_enter(tmp_path, monkeypatch):
     """Codex coalesces inserted text; Enter must follow that settle boundary or it
     only commits the text and the operator has to submit twice."""

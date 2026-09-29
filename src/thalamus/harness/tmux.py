@@ -53,6 +53,21 @@ def argv(*args: str) -> list[str]:
     return ["tmux", "-L", socket_name(), *args]
 
 
+def literal_text_args(text: str) -> tuple[str, str, str]:
+    """The argv tail that makes `send-keys` type `text` byte-for-byte.
+
+    tmux parses the text element as it parses any other argument, in two places `-l`
+    does not reach. Option parsing stops only at `--`, so text starting with `-` is read
+    as flags (`-t 0` retargets the send to another pane). And a token that ends in `;`
+    has that `;` consumed as a command separator, while `\\;` is unescaped to `;`, so
+    a trailing `;` is delivered as `\\;`. Only the last character is special: tmux
+    receives the text as one argv element, and a `;` anywhere else arrives as data.
+    """
+    if text.endswith(";"):
+        text = text[:-1] + "\\;"
+    return ("-l", "--", text)
+
+
 def inside() -> bool:
     """Is this process running in a client of *our* server?
 

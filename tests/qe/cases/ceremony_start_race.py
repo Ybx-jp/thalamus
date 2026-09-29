@@ -1,41 +1,42 @@
-"""Two concurrent `ceremonies.start()` calls on the same (room, kind) must not share
-one `occasion_id`.
+"""Concurrent `ceremonies.start()` / `skip()` on one (room, kind) must never share an
+`occasion_id`, and the indices they claim must be exactly 1..N.
 
-The concurrency shape of the qe charter's write-path gap (issue #76): two writers
-interleaving on the same target must produce a consistent result, not a torn one.
-`ceremonies.start()` (`src/thalamus/harness/ceremonies.py:301`) computes the next
-occasion index by calling `next_index()`, which reads the whole ledger, and only *then*
-calls `_append()`, whose `fcntl.LOCK_EX` covers just the write. The module's own
-docstring on `_append` (line ~154) claims the lock is "held across read-then-append, not
-just the write... two ceremonies opening in one room at once would otherwise both read
-the same count and claim the same occasion." The code does not do this: the read
-(`next_index`) happens in the caller, entirely outside `_append`'s lock, so the claim
-describes an invariant the implementation does not enforce.
+The write-path concurrency gap of issue #76, filed as #168 (start) and #234 (skip).
+`ceremonies._append_occasion` reads the ledger to number the occasion and appends the
+row under one `flock`. Two properties follow, and this case asserts both from outside:
 
-**Forcing the window, not hoping for it.** A real race between two `start()` calls is a
-timing accident and would make this case flaky if it depended on scheduler luck.
-Instead a `threading.Barrier(2)` is spliced into the case's own call to `next_index`
-(rebound on the `ceremonies` module, restored in `finally`) so both threads are
-guaranteed to finish reading the ledger before either is allowed to append — the exact
-interleaving the docstring says cannot happen. This is a synchronization point injected
-by the case, not a change to the module under test: `_append`'s lock, `next_index`'s
-counting logic, and `start()`'s call order are exercised unmodified.
+1. **Distinct, contiguous ids under real contention.** Writers are hammered as 4
+   separate processes and as 8 threads (flock behaves differently across an fd shared by
+   threads and across processes), each opening 10-20 occasions in a ledger whose parent
+   directory does not exist yet (first-ever creation races too), mixing `start` and
+   `skip` on one (room, kind). Every claimed id must be unique and the ids must be
+   `<room>:<kind>:1..N` with no gap.
+2. **Independent counters.** Concurrent writers on different (room, kind) pairs must
+   each see their own 1..N and share nothing.
 
-**The control.** Two sequential (non-racing) `start()` calls on the same (room, kind)
-must produce two distinct occasion ids — asserted first, and reported as
-COLLAPSED_SENTINEL if it fails, because a comparator that cannot tell apart two
-sequential opens could not possibly tell apart two racing ones either.
+No barrier is spliced into the module: a lock held across the read makes a
+read/append barrier unreachable (the second caller blocks on the flock), so the
+earlier forced-window form of this case could only express the broken state. Real
+contention over many iterations distinguishes both.
 
-**Confirmed as a real defect, not asserted.** Filed as issue #168, tagged `issue=168,
-fixed=False`, and pinned in `expectations.json`. Reproduction: force the barrier as
-above and call `start("room1", "retrospective")` from two threads; both rows land as
-`occasion_id = "room1:retrospective:1"`. Widening the barrier to three threads
-reproduces the same collision among three occasions instead of two, confirming the race
-is in the read-then-append gap and not a two-thread special case.
+The lock has to cover the write reaching the file, not only the write call: the
+row is flushed and fsynced before `LOCK_UN`. With the flush missing, the next locker
+reads a ledger that lacks the previous row and reuses its index (duplicates in every run
+of the process stress).
+
+**The control.** Sequential opens must yield distinct ids (COLLAPSED_SENTINEL otherwise).
+**Driving it red.** Against the parent of cf1df8c (21a385b, index read outside the
+lock) the case reports duplicates in the 4-process and 8-thread runs; against cf1df8c
+(lock across the read, no flush before unlock) it reports duplicates in the process run.
+Removing the `flush()` from `_append_occasion` reproduces the second.
 """
 
 from __future__ import annotations
 
+import collections
+import json
+import subprocess
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -46,13 +47,55 @@ _ROOM = "qe-race-room"
 _KIND = "retrospective"
 
 
+_WORKER = r"""
+import sys, json
+from pathlib import Path
+from thalamus.harness import ceremonies as c
+ledger, room, kind, n, mix = Path(sys.argv[1]), sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5] == "1"
+ids = []
+for i in range(n):
+    if mix and i % 2:
+        ids.append(c.skip(room, kind, reason="qe", path=ledger)["occasion_id"])
+    else:
+        ids.append(c.start(room, kind, path=ledger)["occasion_id"])
+print(json.dumps(ids))
+"""
+
+
+def _procs(ledger: Path, jobs: list[tuple[str, str]], n: int, mix: bool) -> list[str]:
+    handles = [
+        subprocess.Popen(
+            [sys.executable, "-c", _WORKER, str(ledger), room, kind, str(n), "1" if mix else "0"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        for room, kind in jobs
+    ]
+    ids: list[str] = []
+    for handle in handles:
+        out, err = handle.communicate(timeout=60)
+        if handle.returncode != 0:
+            raise RuntimeError(f"worker failed: {err[-300:]}")
+        ids.extend(json.loads(out))
+    return ids
+
+
+def _check(label: str, ids: list[str], expected: dict[tuple[str, str], int]):
+    """None when ids are unique and per-(room, kind) exactly 1..N, else a witness."""
+    dupes = sorted(k for k, v in collections.Counter(ids).items() if v > 1)
+    if dupes:
+        return f"{label}: {len(dupes)} duplicated occasion_id(s), e.g. {dupes[:3]} among {len(ids)}"
+    for (room, kind), count in expected.items():
+        got = sorted(int(i.rsplit(":", 1)[1]) for i in ids if i.rsplit(":", 1)[0] == f"{room}:{kind}")
+        if got != list(range(1, count + 1)):
+            return f"{label}: {room}:{kind} indices {got[:5]}... are not 1..{count}"
+    return None
+
+
 def run() -> Finding | None:
     from thalamus.harness import ceremonies  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         ledger = Path(tmp) / "ceremonies.jsonl"
-
-        # CONTROL: two sequential (non-racing) opens must claim distinct occasions.
         ceremonies.start(_ROOM, _KIND, path=ledger)
         ceremonies.start(_ROOM, _KIND, path=ledger)
         control_ids = sorted(
@@ -62,70 +105,66 @@ def run() -> Finding | None:
         if len(set(control_ids)) != 2:
             return Finding(
                 failure_class=FailureClass.COLLAPSED_SENTINEL,
-                summary="two sequential (non-concurrent) start() calls did not claim "
-                        "distinct occasion ids, so this case cannot distinguish a race "
-                        "from ordinary behaviour",
+                summary="two sequential start() calls did not claim distinct occasion "
+                        "ids, so this case cannot distinguish a race from ordinary behaviour",
                 witness=f"sequential control ids: {control_ids}",
                 site="tests/qe/cases/ceremony_start_race.py",
             )
 
-    with tempfile.TemporaryDirectory() as tmp:
-        ledger = Path(tmp) / "ceremonies.jsonl"
+    witnesses: list[str] = []
+    try:
+        # 4 processes, start+skip mixed, same (room, kind), ledger dir absent.
+        for trial in range(3):
+            with tempfile.TemporaryDirectory() as tmp:
+                ids = _procs(Path(tmp) / "new" / "l.jsonl", [(_ROOM, _KIND)] * 4, 15, True)
+                w = _check(f"4 processes mixed start/skip (trial {trial})", ids, {(_ROOM, _KIND): 60})
+                if w:
+                    witnesses.append(w)
+                    break
+        # 8 threads on one fd-per-call, same (room, kind).
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "new" / "l.jsonl"
+            tids: list[str] = []
+            lock = threading.Lock()
 
-        original_next_index = ceremonies.next_index
-        barrier = threading.Barrier(2)
+            def _thread():
+                got = [ceremonies.start(_ROOM, _KIND, path=ledger)["occasion_id"] for _ in range(10)]
+                with lock:
+                    tids.extend(got)
 
-        def _racing_next_index(room, kind, rows=None, path=None):
-            index = original_next_index(room, kind, rows=rows, path=path)
-            # Both threads must finish this read before either is allowed to append —
-            # the exact window the module's docstring says the lock closes.
-            barrier.wait(timeout=5.0)
-            return index
-
-        ceremonies.next_index = _racing_next_index
-        try:
-            results: list[str] = []
-            errors: list[str] = []
-
-            def _worker():
-                try:
-                    row = ceremonies.start(_ROOM, _KIND, path=ledger)
-                    results.append(row["occasion_id"])
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"{type(exc).__name__}: {exc}")
-
-            t1 = threading.Thread(target=_worker)
-            t2 = threading.Thread(target=_worker)
-            t1.start()
-            t2.start()
-            t1.join(timeout=10.0)
-            t2.join(timeout=10.0)
-        finally:
-            ceremonies.next_index = original_next_index
-
-        if errors or len(results) != 2:
-            return Finding(
-                failure_class=FailureClass.COLLAPSED_SENTINEL,
-                summary="the forced race did not complete both start() calls, so it "
-                        "cannot be read as evidence about the race window",
-                witness=f"results={results} errors={errors}",
-                site="tests/qe/cases/ceremony_start_race.py",
-            )
-
-        if len(set(results)) == 2:
-            return None
-
+            threads = [threading.Thread(target=_thread) for _ in range(8)]
+            [t.start() for t in threads]
+            [t.join(timeout=60) for t in threads]
+            w = _check("8 threads start", tids, {(_ROOM, _KIND): 80})
+            if w:
+                witnesses.append(w)
+        # Different (room, kind) pairs concurrently: independent counters.
+        with tempfile.TemporaryDirectory() as tmp:
+            pairs = [("qe-a", "retrospective"), ("qe-a", "review"), ("qe-b", "retrospective"), ("qe-b", "review")]
+            ids = _procs(Path(tmp) / "l.jsonl", pairs * 2, 10, False)
+            w = _check("4 pairs x 2 processes", ids, {pair: 20 for pair in pairs})
+            if w:
+                witnesses.append(w)
+    except Exception as exc:  # noqa: BLE001
         return Finding(
-            failure_class=FailureClass.INVARIANT_FALSIFIED,
-            summary=(
-                "ceremonies.start() reads next_index() outside _append()'s lock, so "
-                "two concurrent opens of the same (room, kind) can both compute the "
-                "same occasion index and append rows sharing one occasion_id — the "
-                "module's own docstring claims this cannot happen"
-            ),
-            witness=f"two concurrent start() calls both produced occasion_id={results}",
-            site="src/thalamus/harness/ceremonies.py:start,next_index,_append",
+            failure_class=FailureClass.COLLAPSED_SENTINEL,
+            summary="the contention harness itself failed, so it is no evidence about the race",
+            witness=f"{type(exc).__name__}: {exc}",
+            site="tests/qe/cases/ceremony_start_race.py",
         )
+
+    if not witnesses:
+        return None
+    return Finding(
+        failure_class=FailureClass.INVARIANT_FALSIFIED,
+        summary=(
+            "concurrent ceremonies.start()/skip() on one (room, kind) claimed duplicate "
+            "or non-contiguous occasion ids: the index is computed from a ledger read "
+            "that does not yet include the previous writer's row"
+        ),
+        witness="; ".join(witnesses),
+        site="src/thalamus/harness/ceremonies.py:_append_occasion",
+    )
 
 
 CASE = Case(
@@ -136,5 +175,5 @@ CASE = Case(
     summary="two ceremonies opened at once in the same room must not share one occasion_id",
     run=run,
     issue=168,
-    fixed=False,
+    fixed=True,
 )

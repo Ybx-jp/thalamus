@@ -13,13 +13,6 @@
   ],
   "expectations": [
     {
-      "case": "typed-text-reaches-the-pane-as-data-not-as-tmux-arguments",
-      "failure_class": "boundary-leak",
-      "witness_contains": "'-t 0' (a chunk that retargets the send to a pane of its own choosing) -> pane held ''",
-      "triaged_at_rev": "ea06c91",
-      "note": "Issue #152. Text posted to /api/send is read by tmux as arguments. The pin is the retarget payload rather than the dash-flag ones because it is the sharpest of the set: a repair that added `--` fixes every entry in the witness at once, and a repair that somehow left this one would drift here."
-    },
-    {
       "case": "policy-load-collapses-hash-collision",
       "failure_class": "invariant-falsified",
       "witness_contains": "load() returned 1 record(s) for this hash; keying by (sha, ts) instead recovers 2",
@@ -39,13 +32,6 @@
       "witness_contains": "approvals for ref after 1st approve(): 1; after 2nd approve(): 2",
       "triaged_at_rev": "d1ad70b",
       "note": "Issue #170. closes.approve() has no guard against re-invocation on an already-settled ref; find_proposal() matches the original PROPOSED row regardless of whether it was since approved, so a second approve() call appends a second APPROVED row. The pin is the 1-vs-2 row count for one ref; a fix that makes the second call a no-op or raise keeps the count at 1 and this entry goes stale."
-    },
-    {
-      "case": "ceremony-start-serializes-concurrent-opens",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "two concurrent start() calls both produced occasion_id=['qe-race-room:retrospective:1', 'qe-race-room:retrospective:1']",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #168. ceremonies.start() computes next_index() by reading the ledger before _append()'s lock is taken, so two concurrent opens of the same (room, kind) can both read the same count and claim the same occasion_id. The pin is the identical occasion_id from both threads under a forced read-then-append race; a fix that widens the lock (or otherwise serializes index assignment) makes the two ids differ and this entry goes stale."
     },
     {
       "case": "ledger-append-survives-a-partial-write",
@@ -88,13 +74,6 @@
       "witness_contains": "kill-window target='qe-close-probe:0' resolves to='B'; recycle_window: forced=True naming 'session-A', respawn-window target='qe-close-probe:0' resolves to='B'",
       "triaged_at_rev": "10c8fa5",
       "note": "Issue #153, narrower than filed. The issue's quoted lines (unconditional index-addressing) no longer exist: close_window/recycle_window now open with wid = _window_id(cfg, idx); target = wid or f\"{cfg.session}:{idx}\", and the primary interleaving the issue describes does not reproduce when wid capture succeeds - _window_gone(cfg, wid) correctly notices a same-indexed replacement's arrival and returns before either function forces. The residual defect is the fallback: when _window_id's own capture fails at teardown start, target stays index-shaped for the whole grace budget AND _window_gone's `if not wid: return False` guard disables its early exit outright, so a same-indexed replacement is force-killed (or force-respawned) in the original session's place while the kill row still names the original. The pin is both functions' resolved-to='B' outcome under a failed wid capture; a fix that refuses to proceed past an empty wid (rather than falling back to idx-addressing) makes this branch unreachable and this entry goes stale."
-    },
-    {
-      "case": "codex-filechange-reaches-touched",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "FileChange changes=['/work/project/notes/codex.md'] -> touched={}",
-      "triaged_at_rev": "4a42972",
-      "note": "Issue #302. codex_transcripts reads item_completed for UserMessage/AgentMessage/CommandExecution/Reasoning/Extension but not FileChange, which is how codex-cli 0.154.0 records a patch; the written path never reaches touched. Goes stale when FileChange's changes map is read the way patch_apply_end's is."
     },
     {
       "case": "codex-trace-envelope-parses",
