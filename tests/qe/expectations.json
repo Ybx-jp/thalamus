@@ -95,6 +95,13 @@
       "witness_contains": "manifest declares tier=3 (WILD); batch provenance tier(s) written=[2] (CURATED=2)",
       "triaged_at_rev": "4a42972",
       "note": "Issue #283. ExpertManifest.tier (contract/manifest.py:275) is parsed from every config/experts/*.yaml manifest and read by nothing; build_batch() (harness/ingest.py:572-576) stamps every claim's and entity's Provenance with a hardcoded Tier.CURATED regardless of scope. A manifest declaring tier: 3 (Tier.WILD) has its ingested content written at tier 2 instead, so the operator's downgrade never reaches the graph or the floor-over-derived_from computation. The pin is the declared-3-vs-written-2 pair; a fix that has build_batch (or its caller) read the scope's manifest tier and use it (floored so a feed cannot declare itself above CURATED) makes the written tier equal 3 and this entry goes stale."
+    },
+    {
+      "case": "session-end-log-is-per-session",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "2 sessions sharing id prefix 01a0d7d6 wrote 1 log file(s) ['session-end-01a0d7d6.log']",
+      "triaged_at_rev": "9b02207",
+      "note": "Issue #303. claude-code/session-end.sh and codex/session-end.sh name the log session-end-${session_id:0:8}.log; two UUIDv7 ids sharing their first 8 hex digits (codex, within ~65 s) write one file. Driven hermetically: the real hook, temp HOME, stub uv on PATH. Goes stale when each session gets its own log."
     }
   ]
 }
