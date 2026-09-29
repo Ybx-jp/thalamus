@@ -63,6 +63,7 @@ from __future__ import annotations
 import fcntl
 import json
 import math
+import os
 import random
 import re
 from dataclasses import dataclass
@@ -155,11 +156,8 @@ def read_rows(path: Path | None = None) -> list[dict]:
 def _append(row: dict, path: Path | None = None) -> dict:
     """Append one row under an exclusive lock, and return it.
 
-    The lock is held across read-then-append, not just the write, because
-    `occasion_index` is computed from the rows already present: two ceremonies opening
-    in one room at once would otherwise both read the same count and claim the same
-    occasion. Sessions run concurrently in this checkout by design, so that race is the
-    expected case rather than the exotic one.
+    A row whose content depends on the rows already present goes through
+    `_append_occasion` instead, which holds the same lock across its read.
     """
     ledger = path or LEDGER_FILE
     ledger.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +165,38 @@ def _append(row: dict, path: Path | None = None) -> dict:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
+            # Flushed before the lock drops: the handle is buffered, so unlocking first
+            # would let the next locker read a ledger missing this row.
+            handle.flush()
+            os.fsync(handle.fileno())
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return row
+
+
+def _append_occasion(
+    room: str, kind: str, build, path: Path | None = None
+) -> dict:
+    """Number an occasion and append its row under one exclusive lock.
+
+    The lock is held across read-then-append, not just the write, because
+    `occasion_index` is computed from the rows already present: two ceremonies opening
+    in one room at once would otherwise both read the same count and claim the same
+    occasion. Sessions run concurrently in this checkout by design, so that race is the
+    expected case rather than the exotic one. `build` receives the index and returns
+    the row.
+    """
+    ledger = path or LEDGER_FILE
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    with ledger.open("a") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            row = build(next_index(room, kind, path=ledger))
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+            # Flushed before the lock drops: the handle is buffered, so unlocking first
+            # would let the next locker read a ledger missing this row.
+            handle.flush()
+            os.fsync(handle.fileno())
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
     return row
@@ -321,10 +351,10 @@ def start(
     """
     if kind not in CEREMONY_KINDS:
         raise ValueError(f"unknown ceremony kind `{kind}` — one of {CEREMONY_KINDS}")
-    ledger = path or LEDGER_FILE
-    index = next_index(room, kind, path=ledger)
-    return _append(
-        {
+    return _append_occasion(
+        room,
+        kind,
+        lambda index: {
             "event": EVENT_START,
             "room": room,
             "ceremony_kind": kind,
@@ -337,7 +367,7 @@ def start(
             "prereg_id": prereg_id,
             "ts_start": _now(),
         },
-        ledger,
+        path,
     )
 
 
@@ -377,10 +407,10 @@ def skip(room: str, kind: str, *, reason: str = "", path: Path | None = None) ->
     """
     if kind not in CEREMONY_KINDS:
         raise ValueError(f"unknown ceremony kind `{kind}` — one of {CEREMONY_KINDS}")
-    ledger = path or LEDGER_FILE
-    index = next_index(room, kind, path=ledger)
-    return _append(
-        {
+    return _append_occasion(
+        room,
+        kind,
+        lambda index: {
             "event": EVENT_SKIPPED,
             "room": room,
             "ceremony_kind": kind,
@@ -389,7 +419,7 @@ def skip(room: str, kind: str, *, reason: str = "", path: Path | None = None) ->
             "reason": reason,
             "ts": _now(),
         },
-        ledger,
+        path,
     )
 
 
