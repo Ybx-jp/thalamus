@@ -76,6 +76,32 @@ case "$command" in
     exit 0 ;;
 esac
 
+scope="$(thalamus_scope_from_payload "$input")"
+
+# The guard ledger row, in the shape `role-guard.sh` and `graph-guard.sh` write. Only
+# blocks are logged: nearly every Bash call passes this guard, so a pass row would be
+# noise.
+log_event() {
+  local guard_dir="$HOME/.thalamus/guards"
+  mkdir -p "$guard_dir"
+  printf '%s' "$input" | jq -c \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg scope "$scope" \
+    --arg verdict "$1" \
+    --arg verb "$2" \
+    --arg guard "write-guard" \
+    '{ts: $ts,
+      session_id: (.session_id // ""),
+      agent_type: (.agent_type // ""),
+      scope: $scope,
+      cwd: (.cwd // ""),
+      guard: $guard,
+      guard_version: 1,
+      verdict: $verdict,
+      tool: (.tool_name // ""),
+      verb: $verb}' >> "$guard_dir/$(date -u +%Y-%m).jsonl" || true
+}
+
 is_self_write=0
 case "$command" in
   *thalamus*write*)
