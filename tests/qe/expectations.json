@@ -83,13 +83,6 @@
       "note": "Issue #295. write-guard.sh calls log_event, which only role-guard.sh and graph-guard.sh define for themselves; the block happens and no ledger row is written. Goes stale when write-guard's block lands a row."
     },
     {
-      "case": "codex-trace-envelope-parses",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "codex shape -> miss=False legacy=True",
-      "triaged_at_rev": "4a42972",
-      "note": "Issue #306. codex records a thalamus MCP result as {content, structuredContent, isError, _meta}; _parse_line JSON-dumps it and unwraps only a top-level {result}, so the rendered text stays in JSON and a miss reads as legacy. Goes stale when a dict response's content text (or structuredContent.result) is unwrapped."
-    },
-    {
       "case": "manifest-tier-not-enforced-by-ingest",
       "failure_class": "unenforced-signal",
       "witness_contains": "manifest declares tier=3 (WILD); batch provenance tier(s) written=[2] (CURATED=2)",
