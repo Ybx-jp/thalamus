@@ -2,8 +2,8 @@
 Typed text reaches the pane as data (harness/tmux.py literal_text_args).
 
 Interfaces: thalamus.harness.tmux.literal_text_args, dispatch._send
-Infrastructure: a private tmux server (`-L`, never the roster's) running `sleep` (the tty echoes what it is sent), read
-back with capture-pane; skipped when tmux is absent
+Infrastructure: a private tmux server (`-L`, never the roster's) whose pane runs `stty raw -echo; cat > FILE`, read
+back from FILE once a trailing sentinel arrives; skipped when tmux is absent
 Scope: `send-keys -l` still parses its text argument as tmux syntax — a leading `-` is
 flags (`-t 0` retargets the send) and a trailing `;` is a command separator.
 """
@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import time
+import uuid
 
 import pytest
 
@@ -24,41 +25,61 @@ PAYLOADS = ["-t 0", "-X", "--", "a;", "a\\;", ";", "\\;", "a;;", "x; y", "x ;y",
 needs_tmux = pytest.mark.skipif(not shutil.which("tmux"), reason="tmux not installed")
 
 
-@pytest.fixture
-def pane():
-    sock = f"thalamus-test-literal-{os.getpid()}"
+SENTINEL = "\x01"
 
-    def tmux(*args):
-        return subprocess.run(["tmux", "-L", sock, "-f", "/dev/null", *args],
-                              capture_output=True, text=True, timeout=5)
 
-    tmux("new-session", "-d", "-s", "s", "-x", "200", "-y", "20", "echo READY; sleep 300")
+class _Pane:
+    """A private tmux server's one pane, running `stty raw -echo; cat > FILE`."""
+
+    def __init__(self, sock, tmp):
+        self.sock = sock
+        self.out = tmp / "out.bin"
+        self.ready = tmp / "ready"
+
+    def tmux(self, *args):
+        return subprocess.run(["tmux", "-L", self.sock, "-f", "/dev/null", *args],
+                              capture_output=True, text=True, timeout=30)
+
+    def _cmd(self):
+        return (f"stty raw -echo; : > {self.out}; touch {self.ready}; "
+                f"exec cat >> {self.out}")
+
+    def start(self):
+        self.tmux("new-session", "-d", "-s", "s", "-x", "200", "-y", "20", "sh", "-c", self._cmd())
+
+    def typed(self, args, deadline_s=60.0):
+        """The bytes the pane's process received from `send-keys args`.
+
+        The pane records raw bytes (no echo, no line discipline) and a sentinel is sent
+        in a separate `send-keys` after `args`; the pty delivers in order, so the
+        sentinel's arrival means everything sent before it has arrived or was lost.
+        Nothing is timed against a screen."""
+        self.ready.unlink(missing_ok=True)
+        self.tmux("respawn-pane", "-k", "-t", "s:0.0", "sh", "-c", self._cmd())
+        self._wait(lambda: self.ready.exists(), deadline_s)
+        self.tmux("send-keys", "-t", "s:0.0", *args)
+        self.tmux("send-keys", "-t", "s:0.0", "-l", "--", SENTINEL)
+        self._wait(lambda: self.out.read_bytes().endswith(SENTINEL.encode()), deadline_s)
+        return self.out.read_bytes()[:-1].decode()
+
+    @staticmethod
+    def _wait(cond, deadline_s):
+        deadline = time.monotonic() + deadline_s
+        while not cond():
+            assert time.monotonic() < deadline, "the pane never reached the expected state"
+            time.sleep(0.02)
+
+
+@pytest.fixture(scope="module")
+def pane(tmp_path_factory):
+    """One private server per module, on a socket no other worker or run shares."""
+    p = _Pane(f"thalamus-test-literal-{os.getpid()}-{uuid.uuid4().hex[:8]}",
+              tmp_path_factory.mktemp("literal"))
     try:
-        yield tmux
+        p.start()
+        yield p
     finally:
-        tmux("kill-server")
-
-
-def _screen(tmux):
-    """The pane's first two lines, padded — capture-pane trims trailing blanks."""
-    return [*tmux("capture-pane", "-p", "-J", "-t", "s:0.0").stdout.split("\n"), "", ""][:2]
-
-
-def _typed(tmux, args, want):
-    """What the pane shows after `send-keys args`, polled until it equals `want` or a
-    few seconds pass. The pane prints READY first so keys are never sent before its shell
-    is reading."""
-    tmux("respawn-pane", "-k", "-t", "s:0.0", "echo READY; sleep 300")
-    deadline = time.time() + 5.0
-    while _screen(tmux)[0] != "READY" and time.time() < deadline:
-        time.sleep(0.02)
-    tmux("send-keys", "-t", "s:0.0", *args)
-    deadline = time.time() + 5.0
-    while True:
-        shown = _screen(tmux)[1]
-        if shown == want or time.time() > deadline:
-            return shown
-        time.sleep(0.05)
+        p.tmux("kill-server")
 
 
 @needs_tmux
@@ -70,7 +91,7 @@ def test_text_arrives_byte_for_byte(pane, text):
     Verification: the pane shows exactly the text. Without `--` and the `;` escape
     `-t 0`, `-X`, `--`, `a;`, `;` and `a;;` are lost, retargeted or truncated.
     """
-    assert _typed(pane, literal_text_args(text), text) == text
+    assert pane.typed(literal_text_args(text)) == text
 
 
 @needs_tmux
@@ -78,7 +99,7 @@ def test_the_bare_argv_loses_these_payloads(pane):
     """The control: the argv without the helper (`-l` alone) drops or mangles the
     payloads, so the parametrized test above measures the helper and not a permissive
     tmux."""
-    lost = [t for t in PAYLOADS if _typed(pane, ["-l", t], t) != t]
+    lost = [t for t in PAYLOADS if pane.typed(["-l", t]) != t]
     assert {"-t 0", "--", "a;", ";"} <= set(lost)
 
 
