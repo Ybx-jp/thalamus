@@ -13,13 +13,6 @@
   ],
   "expectations": [
     {
-      "case": "typed-text-reaches-the-pane-as-data-not-as-tmux-arguments",
-      "failure_class": "boundary-leak",
-      "witness_contains": "'-t 0' (a chunk that retargets the send to a pane of its own choosing) -> pane held ''",
-      "triaged_at_rev": "ea06c91",
-      "note": "Issue #152. Text posted to /api/send is read by tmux as arguments. The pin is the retarget payload rather than the dash-flag ones because it is the sharpest of the set: a repair that added `--` fixes every entry in the witness at once, and a repair that somehow left this one would drift here."
-    },
-    {
       "case": "policy-load-collapses-hash-collision",
       "failure_class": "invariant-falsified",
       "witness_contains": "load() returned 1 record(s) for this hash; keying by (sha, ts) instead recovers 2",
