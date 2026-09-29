@@ -51,6 +51,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 # names are re-exported below, and `panes` reaches nothing but the standard library.
 from thalamus.harness import panes
 from thalamus.harness.tmux import argv as tmux_argv
+from thalamus.harness.tmux import literal_text_args
 from thalamus.harness.tmux import socket_name as tmux_socket
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -2499,7 +2500,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(text, str):
                 return self._send(400, {"error": "text must be a string"})
             if text:
-                tmux("send-keys", "-t", target, "-l", text)
+                tmux("send-keys", "-t", target, *literal_text_args(text))
             if data.get("submit", True):
                 win = next((w for w in windows if w["index"] == idx), None)
                 if text and win and win.get("harness") == "codex":
