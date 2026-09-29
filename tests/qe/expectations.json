@@ -95,13 +95,6 @@
       "witness_contains": "manifest declares tier=3 (WILD); batch provenance tier(s) written=[2] (CURATED=2)",
       "triaged_at_rev": "4a42972",
       "note": "Issue #283. ExpertManifest.tier (contract/manifest.py:275) is parsed from every config/experts/*.yaml manifest and read by nothing; build_batch() (harness/ingest.py:572-576) stamps every claim's and entity's Provenance with a hardcoded Tier.CURATED regardless of scope. A manifest declaring tier: 3 (Tier.WILD) has its ingested content written at tier 2 instead, so the operator's downgrade never reaches the graph or the floor-over-derived_from computation. The pin is the declared-3-vs-written-2 pair; a fix that has build_batch (or its caller) read the scope's manifest tier and use it (floored so a feed cannot declare itself above CURATED) makes the written tier equal 3 and this entry goes stale."
-    },
-    {
-      "case": "console-distill-seed-hides-log-written-after-seed",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "mtime = seeded_at - 1.5 ms never surfaced in 3 consecutive scans",
-      "triaged_at_rev": "9b02207",
-      "note": "Issue #187. DistillWatch.rows() (console/distill.py) hides any log with st_mtime <= seeded_at unless it classifies active, where seeded_at = time.time() and st_mtime comes from the kernel's coarse clock, up to a tick behind. A log written after the seed with an mtime 1.5 ms below it is dropped on every scan; the same log at seeded_at + 2 s surfaces. A fix that stops the seed comparison from swallowing post-seed writes (e.g. seeding from the newest existing mtime, or a margin in the comparison) makes the log surface and this entry goes stale."
     }
   ]
 }
