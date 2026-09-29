@@ -1,17 +1,19 @@
-"""`policy.load()` keys the withholding ledger by `response_sha256` alone, so two ledger
-rows that legitimately share a rendered response collapse into one loaded record.
+"""`policy.load()` keeps every withholding-ledger row that shares a rendered response.
 
-Issue #143 measured this against the live ledger: 751 rows over 741 distinct hashes, 741
-records recoverable through `load()`, 10 silently shadowed. The duplicate hash is not
-corruption — the same recall response served twice hashes identically, and the ledger
-stores that as two withholding *decisions* over one rendered payload — but the loader's
-`dict[str, WithholdRecord]` can hold only the last row written for a given hash, so the
-first decision (its `offered`/`withheld` sets, its seed, its ts) is unrecoverable and any
-downstream count is under by however many collisions occurred.
+The ledger stores the same recall response served twice as two withholding decisions
+over one hash, so `load()` keys by `(response_sha256, ts)` and both survive (issue #143;
+the live ledger has 751 rows over 741 hashes). Driven through `policy.log`/`policy.load`
+against a throwaway directory, never `~/.thalamus/policy`.
 
-Driven through `policy.log`/`policy.load` themselves against a throwaway ledger
-directory, never `~/.thalamus/policy`, so the fixture is real ledger rows on disk and not
-a hand-typed dict imitating one.
+Asserted: the two-row collision loads as 2 (with a distinct-hash control loading as 2);
+a row whose `ts` is an unhashable list or dict is skipped without costing the well-formed
+row after it; and `eval sync`'s sha map keeps last-record-in-file-order when an identical
+`(sha, ts)` row recurs non-adjacently (A, B, A2 gives A2). The pairing rule for repeated
+servings is open in #328, so last-wins is pinned as the current behaviour, not endorsed.
+
+Drive it red: key `load()` by `response_sha256` alone (collision check), build the key
+outside the malformed-row guard (list-`ts` check), or drop the pop-before-insert (order
+check). Each was run red against the pre-fix parent or the intermediate fix.
 """
 
 from __future__ import annotations
@@ -38,6 +40,76 @@ def _row(policy_mod, *, ts, seed, offered, withheld):
         offered=offered,
         withheld=withheld,
     )
+
+
+def _write_rows(base: Path, name: str, lines: list[str]) -> None:
+    base.mkdir(parents=True, exist_ok=True)
+    (base / name).write_text("\n".join(lines) + "\n")
+
+
+def _raw(sha, ts, seed):
+    return json.dumps({
+        "version": "v", "rate": 0.5, "session_id": "", "scope": "probe", "tool": "recall",
+        "ts": ts, "seed": seed, "offered": ["a", "b"], "withheld": ["b"],
+        "response_sha256": sha,
+    })
+
+
+def _adversarial_rows(policy, root: Path) -> Finding | None:
+    """Attacks on the (sha, ts) key itself, run once the basic collision is fixed."""
+    from thalamus.eval.sync import _withheld_by_sha  # noqa: PLC0415
+
+    sha = "a" * 64
+    other = "b" * 64
+
+    # A row whose ts is not a hashable scalar must be skipped like any other malformed
+    # row: the key tuple is built outside the try, so an unhashable ts raises out of
+    # load() and takes every well-formed row (and eval sync / withholding) with it.
+    for bad_ts in ([], {}):
+        base = root / f"badts-{type(bad_ts).__name__}"
+        _write_rows(base, "2026-08.jsonl",
+                    [_raw(sha, bad_ts, "bad"), _raw(other, "2026-08-01T00:00:00", "good")])
+        try:
+            records = policy.load(base=base)
+        except Exception as exc:  # noqa: BLE001
+            return Finding(
+                failure_class=FailureClass.INVARIANT_FALSIFIED,
+                summary="policy.load() raises on a ledger row whose ts is unhashable "
+                        "instead of skipping it like every other malformed row",
+                witness=f"ts={bad_ts!r} row followed by a well-formed row: load() "
+                        f"raised {type(exc).__name__}: {exc}",
+                site="src/thalamus/eval/policy.py::load",
+            )
+        if [r.seed for r in records.values()].count("good") != 1:
+            return Finding(
+                failure_class=FailureClass.INVARIANT_FALSIFIED,
+                summary="a malformed-ts row cost the well-formed row after it",
+                witness=f"ts={bad_ts!r}: seeds loaded {[r.seed for r in records.values()]}",
+                site="src/thalamus/eval/policy.py::load",
+            )
+
+    # sync's sha map is last-record-in-file-order (#328 leaves that rule open, so it is
+    # pinned as-is). A row repeated with an identical (sha, ts) later in the file must
+    # not move a sha's winner: dict re-assignment keeps the first insertion position, so
+    # A, B, A' would make B the last entry although A' is last in the file.
+    base = root / "order"
+    _write_rows(base, "2026-08.jsonl", [
+        _raw(sha, "2026-08-01T00:00:00", "A"),
+        _raw(sha, "2026-08-01T00:00:05", "B"),
+        _raw(sha, "2026-08-01T00:00:00", "A2"),
+    ])
+    winner = _withheld_by_sha(base)[sha].seed
+    if winner != "A2":
+        return Finding(
+            failure_class=FailureClass.INVARIANT_FALSIFIED,
+            summary="eval sync's sha map no longer pairs a repeated response with the "
+                    "last record in file order when an identical (sha, ts) row recurs "
+                    "non-adjacently",
+            witness=f"file order A, B, A2 (A and A2 share sha and ts): sync map winner "
+                    f"is {winner!r}, the parent commit's last-wins gives 'A2'",
+            site="src/thalamus/eval/sync.py::_withheld_by_sha",
+        )
+    return None
 
 
 def run() -> Finding | None:
@@ -107,7 +179,7 @@ def run() -> Finding | None:
             )
 
         if len(loaded) == 2:
-            return None  # load() already preserves both rows
+            return _adversarial_rows(policy, root)
 
         return Finding(
             failure_class=FailureClass.INVARIANT_FALSIFIED,
@@ -136,5 +208,5 @@ CASE = Case(
             "survive policy.load(), not collapse into whichever the dict keeps last",
     run=run,
     issue=143,
-    fixed=False,
+    fixed=True,
 )

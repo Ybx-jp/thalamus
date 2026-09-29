@@ -13,13 +13,6 @@
   ],
   "expectations": [
     {
-      "case": "policy-load-collapses-hash-collision",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "load() returned 1 record(s) for this hash; keying by (sha, ts) instead recovers 2",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #143. policy.load() keys the withholding ledger by response_sha256 alone. Two rows sharing one rendered response (the same recall answer served to two withholding decisions) collapse to whichever the dict keeps last. The pin is the 1-vs-2 record count for one hash, contrasted with keying by (sha, ts): a fix that dedupes by sha alone leaves the count at 1 and does not drift here; a fix that widens the key moves it."
-    },
-    {
       "case": "artifact-repo-identity-splits-across-worktrees",
       "failure_class": "invariant-falsified",
       "witness_contains": "relativize gave repo_main='repo-main' repo_secondary='repo-secondary' for the same relative path 'notes/plan.md' \u2014 two Artifact identities for one file",
