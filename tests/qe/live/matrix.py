@@ -98,6 +98,10 @@ class Config:
     #: scope -> {skill name: SKILL.md text}
     skills: dict[str, dict[str, str]] = field(default_factory=dict)
     harnesses: tuple[str, ...] = ("claude",)
+    #: Substrings `thalamus init` must refuse the config with. A config that sets this
+    #: runs no session: the install is the surface, and its evidence is the exit status,
+    #: the refusal text and whether a persona was still generated for the scope.
+    install_refuses: tuple[str, ...] = ()
 
 
 def _manifest(scope: str, extra: str = "", *, cost: str = "light") -> str:
@@ -271,20 +275,15 @@ def configs(thalamus_root: str) -> tuple[Config, ...]:
             name="misspelled-boundary",
             summary="A manifest whose operator misspelled `write_boundary`: the intent "
                     "is a */src/* deny, and a loader that drops unknown keys runs the "
-                    "scope unbounded without a word.",
+                    "scope unbounded without a word. The install must refuse it, naming "
+                    "the file and the key, and generate no persona for the scope (#294). "
+                    "The correctly spelled twin is `write-boundary`, which installs.",
             manifests={"live-typo": _manifest(
                 "live-typo",
                 "write_boundry:\n  deny_globs:\n    - \"*/src/*\"\n"
                 "  reason: live-tier fixture — the key above is misspelled on purpose.\n")},
-            sessions=(
-                Session(
-                    name="typo-trip", scope="live-typo",
-                    prompt=_WRITE_PROMPT.format(files="src/typo.py"),
-                    writes=("src/typo.py",),
-                    denied_writes=("src/typo.py",),
-                    known=(("denied-writes-absent", 294),),
-                ),
-            ),
+            sessions=(),
+            install_refuses=("live-typo.yaml", "write_boundry", "Extra inputs are not permitted"),
         ),
     )
 

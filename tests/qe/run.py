@@ -109,6 +109,7 @@ CASE_MODULES = (
     "qe.cases.codex_filechange_touches",
     "qe.cases.codex_trace_envelope",
     "qe.cases.codex_scope_not_forwarded",
+    "qe.cases.codex_profile_without_registration",
 )
 
 

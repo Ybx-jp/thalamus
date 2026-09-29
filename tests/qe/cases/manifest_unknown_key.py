@@ -1,13 +1,13 @@
 """A manifest key the loader does not know must refuse the load, not vanish.
 
-`ExpertManifest` declares no `model_config`, so pydantic's default applies and an
-unknown top-level key is dropped without a word. The keys that matter most are the
+`ExpertManifest`, `WriteBoundary` and `CapabilityBoundary` set `extra="forbid"`, so an
+unknown key raises instead of being dropped. The keys that matter most are the
 boundaries, and every one of them has a safe-looking default: a missing
-`write_boundary` is an empty one, a missing `budget` is `inherit`. So an operator who
-writes `write_boundry:` — one letter off — gets a manifest that loads, generates its
-persona, installs, and runs the scope with **no write boundary at all**, while the file
-he reads says there is one. The live tier's `misspelled-boundary` config drives the same
-manifest through a real session; this is the hermetic half.
+`write_boundary` is an empty one, a missing `budget` is `inherit`. An operator who
+writes `write_boundry:` — one letter off — must not get a manifest that loads, generates
+its persona, installs, and runs the scope with **no write boundary at all** while the
+file he reads says there is one. The live tier's `misspelled-boundary` config drives the
+same manifest through `thalamus init`; this is the hermetic half.
 
 The property: loading a manifest carrying an unknown top-level key raises. Checked on the
 real loader (`contract.manifest.load_manifest`) against a config root written to a
@@ -18,9 +18,8 @@ glob in place — otherwise a loader that could not read the temporary root at a
 wrong `THALAMUS_CONFIG_DIR` seam, a changed filename rule) would raise for the wrong
 reason and this case would pass on it.
 
-**Shown capable of going red.** It is red on the tree as it stands. Add
-`model_config = ConfigDict(extra="forbid")` to `ExpertManifest` and it goes green; the
-control keeps passing.
+**Shown capable of going red.** Removing `extra="forbid"` from `ExpertManifest` makes the
+misspelled manifest load and this case return a finding; the control keeps passing.
 """
 
 from __future__ import annotations
@@ -63,7 +62,7 @@ def run() -> Finding | None:
         "a manifest whose `write_boundary` key is misspelled loads without error and "
         "runs the scope with an empty write boundary",
         witness=f"write_boundry: deny */src/* -> write_boundary={loaded.write_boundary!r}",
-        site="src/thalamus/contract/manifest.py (ExpertManifest has no extra='forbid')")
+        site="src/thalamus/contract/manifest.py::ExpertManifest (extra='forbid')")
 
 
 CASE = Case(
@@ -74,4 +73,5 @@ CASE = Case(
     summary="an unknown top-level manifest key must refuse the load, not drop silently",
     run=run,
     issue=294,
+    fixed=True,
 )
