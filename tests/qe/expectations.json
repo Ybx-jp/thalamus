@@ -27,20 +27,6 @@
       "note": "Issue #157. artifact_paths.relativize derives repo identity from the bare checkout directory name, so two worktrees of one repository mint two Artifact identities for one file. The pin is the two differing repo_main/repo_secondary values for one shared relative path; a fix that keys identity on git-common-dir (or an equivalent fold) makes them equal and this entry goes stale."
     },
     {
-      "case": "thread-approve-is-idempotent",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "approvals for ref after 1st approve(): 1; after 2nd approve(): 2",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #170. closes.approve() has no guard against re-invocation on an already-settled ref; find_proposal() matches the original PROPOSED row regardless of whether it was since approved, so a second approve() call appends a second APPROVED row. The pin is the 1-vs-2 row count for one ref; a fix that makes the second call a no-op or raise keeps the count at 1 and this entry goes stale."
-    },
-    {
-      "case": "ledger-append-survives-a-partial-write",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "expected ['pre-crash', 'post-crash'], recovered ['pre-crash']",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #169. _append() (harness/closes.py and harness/ceremonies.py, same shape) writes json.dumps(row) + \"\\n\" with no fencing against a prior partial write: a crash that leaves a trailing line with no newline causes the next writer's valid append to merge onto it, and read_rows() drops the merged line whole - losing the post-crash row, not just the in-flight one. The pin is the missing 'post-crash' thread_id; a fix that fences a dangling partial line (or writes the newline first) recovers it and this entry goes stale."
-    },
-    {
       "case": "blinded-install-reads-as-never-installed",
       "failure_class": "collapsed-sentinel",
       "witness_contains": "blinded:  state=pending ok=False exit=0 detail='none of the <N> wirings are in <HOME>/.claude/settings.json yet \u2014 `thalamus init` writes them'\nnever:    state=pending ok=False exit=0 detail='none of the <N> wirings are in <HOME>/.claude/settings.json yet \u2014 `thalamus init` writes them'",
