@@ -36,6 +36,15 @@ none
 
 ## Verdicts
 
+- 2026-09-29T12:20:01-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:a5906bdbd52910d271a666e19443cf1c2c393f34a13f8a61d984a210dfe48ab2
+  artifact: sha256:e89f409c487a3cc2be968c98fd7401f76567cf83ba6ff1fdecef4c6d81103644
+  note: propagated from a moved ground
+
+- 2026-09-29T12:30:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:e89f409c487a3cc2be968c98fd7401f76567cf83ba6ff1fdecef4c6d81103644
+  note: the failure-line stripper also accepts a full session id before the reason; the distilled-versus-undistilled decision for a traceback below a clean summary is unchanged -- the assertion is unaffected
+
 ## References
 
 - src/thalamus/console/distill.py · standing · cites-as-live

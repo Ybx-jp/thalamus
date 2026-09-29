@@ -836,7 +836,7 @@ keeps that true.
   read view.
 - **Distillation state is derived from the log, except the one state no log can
   hold.** The SessionEnd hook forks and exits, so there is no lockfile or pid file —
-  the state machine is `~/.thalamus/logs/session-end-<sid8>.log`, joined against the
+  the state machine is `~/.thalamus/logs/session-end-<session id>.log`, joined against the
   pin ledger to drop subagent residue (two thirds of the logs on a working box).
   It rides the poll the client already runs rather than getting a loop of its own,
   and is cached against (mtime, size) so a steady-state poll opens no file. States

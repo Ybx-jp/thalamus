@@ -41,10 +41,12 @@ from pathlib import Path
 LOG_DIR = Path.home() / ".thalamus" / "logs"
 HOOK_FAILURE_LOG = LOG_DIR / "hook-failures.log"
 
-# `session-end-<sid8>.log`, which the SessionEnd hook opens before it forks and appends
+# `session-end-<session id>.log`, which the SessionEnd hook opens before it forks and appends
 # the detached block's whole output to. Its *mtime* is when distillation last finished
 # writing, and its content is the only account of what happened.
-SESSION_LOG = re.compile(r"session-end-[0-9a-f]{8}\.log$")
+# Logs written under the old eight-character name are still on disk and still count.
+SESSION_LOG = re.compile(r"session-end-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.log$"
+                         r"|session-end-[0-9a-f]{8}\.log$")
 
 
 @dataclass

@@ -204,6 +204,15 @@ suite("rows: a record outliving its window is the steady state");
   check("a record with a live window joins onto it, not beside it",
     joined[0].rows.length === 1, String(joined[0].rows.length));
   check("on the first eight of the session id", joined[0].rows[0].d.state === "active");
+
+  const full = groupSessions(
+    [{ name: "a", session_id: "01a0d7d6-749b-7c3e", project: "", observed: true },
+     { name: "b", session_id: "01a0d7d6-7f21-7b90", project: "", observed: true }],
+    [{ session: "01a0d7d6-7f21-7b90", state: "error", age: 10, project: "" },
+     { session: "01a0d7d6-749b-7c3e", state: "active", age: 5, project: "" }]);
+  const byName = Object.fromEntries(full[0].rows.map((r) => [r.w.name, r.d.state]));
+  check("two windows sharing an id prefix each join their own record by the full id",
+    byName.a === "active" && byName.b === "error", JSON.stringify(byName));
 }
 
 suite("groups: the key is the project, and a cwd is never it");

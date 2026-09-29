@@ -35,6 +35,15 @@ none
 
 ## Verdicts
 
+- 2026-09-29T12:20:01-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:0718ccdc74095a80b51e4d73eb818fe3434cf914a4bab036edd2765b31042de4
+  artifact: sha256:84a3506548f8b14b5a3f4a7417786c5b8001fc2525e3ac0f6c82b7a0e1321269
+  note: propagated from a moved ground
+
+- 2026-09-29T12:30:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:84a3506548f8b14b5a3f4a7417786c5b8001fc2525e3ac0f6c82b7a0e1321269
+  note: the section now keys the ledger join on the full session id (legacy eight-character logs join by prefix) and matches kill rows against both name shapes; the clock re-derivation of cached quiet logs is unchanged -- the assertion is unaffected
+
 ## References
 
 - src/thalamus/console/distill.py · standing · cites-as-live
