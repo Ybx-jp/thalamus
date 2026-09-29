@@ -36,6 +36,10 @@ none
 <!-- APPEND BELOW THIS LINE ONLY -->
 
 ## Verdicts
+- 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:37de7dc21a705b345f7ee0e0bf082bd2e16e4016a57871a4c5bfb02310bfde0b
+  note: run_job's JobTimeout handler now assigns agentic.salvage; the note check against the served handles, the arm assignment and the trace fields are unchanged, so the assertion is unaffected
+
 
 ## References
 

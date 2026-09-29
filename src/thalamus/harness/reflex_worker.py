@@ -319,7 +319,7 @@ def run_job(
             )
     except agentic.JobTimeout:
         result.stopped = "timeout"
-        result.kept = agentic.returned_in_order(job)
+        result.kept = agentic.salvage(job, result)
     except (ExtractionError, OSError, RuntimeError) as exc:
         pointer.unlink(missing_ok=True)
         return finish("error", detail=str(exc)[:300], **_effort(job, result, started))
@@ -409,11 +409,14 @@ def _row_line(handle: str, row: vocabulary.Row, block: str, anchors: list[str]) 
 
 def _effort(job: Job, result: agentic.AgenticResult, started: float) -> dict:
     """What the plan did — the manipulation check — and where its time went."""
-    turns = result.turns
+    # Every model call, the loop's turns and the admission's verdicts alike.
+    turns = result.turns + result.admit_turns
     totals = [t.total_ms for t in turns if t.total_ms is not None]
     return {
         "calls": job.calls, "nodes": len(job.handles),
-        "turns": len(turns),
+        "turns": len(result.turns),
+        "listwise": len(result.listwise), "verdicts": len(result.admit_turns),
+        "admit_ms": sum(t.wall_ms for t in result.admit_turns),
         "ms": round((time.monotonic() - started) * 1000),
         "load_ms": sum(t.load_ms or 0 for t in turns),
         # Time the requests waited for the server's one slot: wall minus the server's
@@ -483,7 +486,8 @@ def deliver(
                 "depth": depth, "trigger_ts": data.get("trigger_ts", ""),
                 "ready_ts": data.get("ready_ts", ""), "outcome": data.get("outcome", ""),
                 **{key: data.get(key) for key in (
-                    "triggers", "queued_ms", "calls", "nodes", "turns", "ms",
+                    "triggers", "queued_ms", "calls", "nodes", "turns", "listwise",
+                    "verdicts", "admit_ms", "ms",
                     "load_ms", "slot_wait_ms", "stop", "note", "note_status", "note_arm",
                     "note_cited",
                 )},

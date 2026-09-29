@@ -37,6 +37,10 @@ none
 <!-- APPEND BELOW THIS LINE ONLY -->
 
 ## Verdicts
+- 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex_worker.py § "deliver" =sha256:20634ac43b350b4afc0c6ae0327fd0c43771b5573cbdf9c5700f5880762e61b8
+  note: deliver now also copies listwise, verdicts and admit_ms into the trace's tool_input; the trace's ts, tool_name, response and depth and the budget charge are unchanged, so the assertion is unaffected
+
 
 ## References
 

@@ -128,6 +128,8 @@ class Job:
     clock: Callable[[], float] = time.monotonic
     # handle -> vertex id, in the order the nodes were first returned.
     handles: dict[str, str] = field(default_factory=dict)
+    # handle -> the row a planner was shown under it, in the order it was first shown.
+    shown: dict[str, Row] = field(default_factory=dict)
     calls: int = 0
     row_chars: int = 0
     started: float = field(init=False)
@@ -162,11 +164,13 @@ class Job:
             if self._past_node_cap(row.vid):
                 lines.append(f"cap: {self.caps.nodes} distinct nodes returned; the rest dropped")
                 break
-            line = row.line(self.handle_for(row.vid))
+            handle = self.handle_for(row.vid)
+            line = row.line(handle)
             if self.row_chars + len(line) > self.caps.row_chars:
                 lines.append(f"cap: {self.caps.row_chars} characters of rows; the rest dropped")
                 break
             self.row_chars += len(line) + 1
+            self.shown.setdefault(handle, row)
             lines.append(line)
         return "\n".join(lines)
 
