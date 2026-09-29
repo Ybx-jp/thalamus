@@ -392,13 +392,15 @@ class DistillWatch:
         """
         probe = self.logs / f".seed-{os.getpid()}.probe"
         try:
+            # A missing directory would otherwise persist a wall-clock seed forever.
+            self.logs.mkdir(parents=True, exist_ok=True)
             probe.write_bytes(b"")
             try:
                 return probe.stat().st_mtime
             finally:
                 probe.unlink(missing_ok=True)
         except OSError:
-            return time.time()      # no logs directory yet: nothing on it to compare
+            return time.time()      # the directory cannot be created or written
 
     def _write_state(self, state: dict) -> None:
         try:
@@ -569,7 +571,11 @@ class DistillWatch:
                 # created the log and entered a quiet model call. Hiding every file
                 # older than `seeded_at` made that whole active phase invisible; a
                 # successful run then disappeared without ever drawing a row.
-                if st.st_mtime <= seeded_at and kind != "active":
+                # Strictly older: on a coarse-timestamp filesystem the seed probe and
+                # a log written in the same tick share an mtime, and that log is new
+                # work. A backlog file from the probe's own tick may surface; that is
+                # the accepted cost.
+                if st.st_mtime < seeded_at and kind != "active":
                     continue
 
                 if kind == "done":

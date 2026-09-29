@@ -547,6 +547,9 @@ def test_the_backlog_on_disk_at_first_run_is_a_clean_slate(tmp_path):
     for n in range(3):
         (logs / f"session-end-old{n}0000.log").write_text(
             FAILED.format(sid=f"old{n}0000", scope="main"))
+        # a backlog file a tick or more older than the seed, not one in its own tick
+        os.utime(logs / f"session-end-old{n}0000.log",
+                 (time.time() - 60, time.time() - 60))
 
     state = tmp_path / "dismissed.json"
     watch = DistillWatch(logs=logs, pins=pins, state=state,
@@ -590,6 +593,36 @@ def test_the_seed_is_read_off_the_filesystem_clock_not_time_time(tmp_path, monke
                                 "cwd": "/home/op/code/thalamus"}) + "\n")
     watch._scanned_at = 0.0
     assert [r["session"] for r in watch.rows()] == ["new00000"]
+
+
+def test_a_log_sharing_the_seeds_tick_is_not_hidden(tmp_path):
+    """On a coarse-timestamp filesystem the seed probe and a log written in the same
+    tick carry the same mtime; that log is new work."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    pins = tmp_path / "pins.jsonl"
+    state = tmp_path / "dismissed.json"
+    watch = DistillWatch(logs=logs, pins=pins, state=state,
+                         kills=tmp_path / "killed.jsonl")
+    assert watch.rows() == []
+    seed = json.loads(state.read_text())["seeded_at"]
+    log = logs / "session-end-new00000.log"
+    log.write_text(FAILED.format(sid="new00000", scope="main"))
+    os.utime(log, (seed, seed))
+    pins.write_text(json.dumps({"session_id": "new00000-rest", "scope": "main",
+                                "cwd": "/home/op/code/thalamus"}) + "\n")
+    watch._scanned_at = 0.0
+    assert [r["session"] for r in watch.rows()] == ["new00000"]
+
+
+def test_a_missing_logs_dir_still_seeds_from_the_filesystem_clock(tmp_path, monkeypatch):
+    logs = tmp_path / "not-yet" / "logs"
+    state = tmp_path / "dismissed.json"
+    monkeypatch.setattr(time, "time", lambda: 4_000_000_000.0)
+    watch = DistillWatch(logs=logs, pins=tmp_path / "pins.jsonl", state=state,
+                         kills=tmp_path / "killed.jsonl")
+    watch.rows()
+    assert json.loads(state.read_text())["seeded_at"] < 3_000_000_000.0
 
 
 def test_distilling_sorts_above_errors(box):
