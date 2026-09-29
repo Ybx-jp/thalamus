@@ -256,9 +256,11 @@ def load_events(
 
 def _render_text_blocks(blocks: list) -> str:
     return "\n".join(
-        block.get("text", "")
+        block["text"]
         for block in blocks
-        if isinstance(block, dict) and block.get("type") == "text"
+        if isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
     )
 
 
@@ -268,16 +270,21 @@ def _render_mcp_result(result: dict, default: str | None = None) -> str:
     `content` text blocks are what the harness rendered to the model; codex's
     `structuredContent.result` and the server's bare `{"result": ...}` carry the same
     text. `isError` adds no marker: an error result's text already opens with the
-    rejection phrases `is_rejected` matches, exactly as in the list shape.
+    rejection phrases `is_rejected` matches, exactly as in the list shape. A `content`
+    with no text falls through to the structured forms.
     """
     content = result.get("content")
     if isinstance(content, list):
-        return _render_text_blocks(content)
+        text = _render_text_blocks(content)
+        if text:
+            return text
     structured = result.get("structuredContent")
     if isinstance(structured, dict) and isinstance(structured.get("result"), str):
         return structured["result"]
     if isinstance(result.get("result"), str):
         return result["result"]
+    if isinstance(content, list):
+        return ""
     return json.dumps(result) if default is None else default
 
 

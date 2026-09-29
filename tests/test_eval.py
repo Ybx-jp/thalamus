@@ -237,6 +237,36 @@ def test_codex_mcp_result_object_parses_like_the_claude_list_shape(tmp_path):
     assert encoded.returned_node_ids() == hit.returned_node_ids()
 
 
+def test_codex_result_without_content_text_falls_back_and_malformed_blocks_are_skipped(tmp_path):
+    """
+    Scenario: a codex result whose `content` is empty but whose structuredContent
+    carries the hit; and a text block whose text is null
+
+    An empty content list must not hide structuredContent.result (the hit would land as
+    a zero-node trace). A non-string text must not raise: load_events does not catch,
+    so one malformed line would end eval sync.
+    """
+    hit_text = "**Node:** `scope:main:session:abc` — a summary."
+    (tmp_path / "2026-07.jsonl").write_text(
+        "\n".join(
+            [
+                _tap_line(ts="2026-07-15T10:00:01Z", tool_response={
+                    "content": [], "structuredContent": {"result": hit_text}}),
+                _tap_line(ts="2026-07-15T10:00:02Z", tool_response={
+                    "content": [{"type": "text", "text": None}],
+                    "structuredContent": {"result": hit_text}}),
+                _tap_line(ts="2026-07-15T10:00:03Z", tool_response=[{"type": "text", "text": None}]),
+            ]
+        )
+    )
+
+    empty_content, null_text, null_list = load_events(tmp_path)
+
+    assert empty_content.returned_node_ids() == ["scope:main:session:abc"]
+    assert null_text.returned_node_ids() == ["scope:main:session:abc"]
+    assert null_list.tool_response == ""
+
+
 def test_tap_records_the_pin_and_old_lines_still_parse(tmp_path):
     """
     Scenario: A pinned session's tap line carries scope; a pre-pinning line doesn't
