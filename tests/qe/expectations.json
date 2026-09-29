@@ -81,6 +81,13 @@
       "witness_contains": "manifest declares tier=3 (WILD); batch provenance tier(s) written=[2] (CURATED=2)",
       "triaged_at_rev": "4a42972",
       "note": "Issue #283. ExpertManifest.tier (contract/manifest.py:275) is parsed from every config/experts/*.yaml manifest and read by nothing; build_batch() (harness/ingest.py:572-576) stamps every claim's and entity's Provenance with a hardcoded Tier.CURATED regardless of scope. A manifest declaring tier: 3 (Tier.WILD) has its ingested content written at tier 2 instead, so the operator's downgrade never reaches the graph or the floor-over-derived_from computation. The pin is the declared-3-vs-written-2 pair; a fix that has build_batch (or its caller) read the scope's manifest tier and use it (floored so a feed cannot declare itself above CURATED) makes the written tier equal 3 and this entry goes stale."
+    },
+    {
+      "case": "session-end-shell-quote-injection",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "claude-code/session_id: injected `touch` ran and created ['QE335_MARKER']; codex/session_id: injected `touch` ran and created ['QE335_MARKER']",
+      "triaged_at_rev": "9aa87a4",
+      "note": "Issue #335. The SessionEnd hooks splice '$session_id', '$scope', '$room' and others into a double-quoted `nohup sh -c` block as single-quoted words, so a value containing a single quote closes the quoting and sh runs the rest. A session id of q'; touch M; echo ' created M through claude-code, codex and cursor/distill.sh; the same value as a pin-ledger scope or room did through claude-code and codex. The pin is the first two vectors' marker creation; the case's control is a benign id reaching the stub uv's extract in each hook."
     }
   ]
 }
