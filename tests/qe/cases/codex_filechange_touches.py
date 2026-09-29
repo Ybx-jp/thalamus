@@ -2,8 +2,8 @@
 
 codex-cli 0.148.0 moved its events under one `item_completed` envelope, and
 `harness/codex_transcripts.py` reads that grammar for `UserMessage`, `AgentMessage`,
-`CommandExecution`, `Reasoning` and `Extension`. By 0.154.0 a patch no longer writes a
-`patch_apply_end` event at all: the structured record of a file write is an
+`CommandExecution`, `Reasoning` and `Extension`. In that grammar (measured in 0.148.0 and
+0.154.0 rollouts) a patch writes no `patch_apply_end` event at all: the structured record of a file write is an
 `item_completed` whose item is `FileChange`, carrying the same
 `changes: {"<absolute path>": {"type": "add", ...}}` map. `FileChange` is not in
 `_COMPLETED_ITEMS`, so it is counted as unrecognised and its paths are dropped. A codex
@@ -16,15 +16,20 @@ carried the `FileChange` row, and the distilled Session touched 0 Artifacts whil
 SessionEnd log said "5 record(s) … did not match the expected codex shape".
 
 The property: `codex_transcripts.parse` over a rollout holding a `FileChange` item
-reports the changed path in `touched`. The row is the live one, with the path made
-generic.
+reports the changed path in `touched`, anchored on the `call_id` of the tool call that
+wrote it. The item's own `id` ("exec-<uuid>") appears in no other row of a rollout (0 of
+29 recorded FileChange items), so it joins to nothing; the call is the single tool call
+open (issued, output not yet seen) when the item arrives. With two calls open the owner
+is ambiguous and the anchor must be empty, never either call's id. The row is the live
+one, with the path made generic.
 
 **Control.** The same `changes` map in the older grammar's `patch_apply_end` event must
 reach `touched` — otherwise a parse that read nothing at all (a moved file, a changed
 signature) would make this case look like the defect.
 
-**Shown capable of going red.** Red on the tree as it stands; handling `FileChange` the
-way `patch_apply_end` is handled (`_record_touches` on the item) turns it green.
+**Shown capable of going red.** Against the parent of the fix (`FileChange` absent from
+`_COMPLETED_ITEMS`) the path is missing from `touched`; against the first fix, which
+anchored on the item's `id`, the anchor assertion fails.
 """
 
 from __future__ import annotations
@@ -65,6 +70,14 @@ def _patch_apply_end() -> dict:
         "changes": _CHANGES}}
 
 
+def _call(call_id: str = "call_probe_exec") -> dict:
+    # The real shape: the exec call that wrote the patch sits directly before the
+    # FileChange row, and its output directly after; only the call carries a call_id.
+    return {"timestamp": "2026-09-25T09:12:40.900Z", "type": "response_item", "payload": {
+        "type": "custom_tool_call", "id": f"ctc_{call_id}", "status": "completed",
+        "call_id": call_id, "name": "exec", "input": "apply_patch"}}
+
+
 def _touched(rows: list[dict]) -> dict:
     from thalamus.harness import codex_transcripts
 
@@ -84,8 +97,24 @@ def run() -> Finding | None:
             "missing FileChange path would prove nothing",
             witness=f"touched={control!r}",
             site="tests/qe/cases/codex_filechange_touches.py")
-    got = _touched([_meta(), _filechange()])
+    got = _touched([_meta(), _call(), _filechange()])
     if _PATH in got:
+        if "call_probe_exec" not in got[_PATH]:
+            return Finding(
+                FailureClass.INVARIANT_FALSIFIED,
+                "a FileChange's touch is anchored on an id that joins to no row in the "
+                "rollout; the call that wrote the file is the open custom_tool_call",
+                witness=f"anchors={got[_PATH]!r}, call_id in rollout='call_probe_exec'",
+                site="src/thalamus/harness/codex_transcripts.py (_record_completed_item "
+                     "FileChange anchor)")
+        ambiguous = _touched([_meta(), _call(), _call("call_probe_other"), _filechange()])
+        if ambiguous.get(_PATH) != []:
+            return Finding(
+                FailureClass.INVARIANT_FALSIFIED,
+                "with two tool calls open a FileChange is anchored on a guess instead of "
+                "being left unanchored",
+                witness=f"two open calls -> anchors={ambiguous.get(_PATH)!r}, expected []",
+                site="src/thalamus/harness/codex_transcripts.py (_record_completed_item)")
         return None
     return Finding(
         FailureClass.INVARIANT_FALSIFIED,
@@ -104,4 +133,5 @@ CASE = Case(
     summary="a file a codex 0.154 session writes must reach the session's touched files",
     run=run,
     issue=302,
+    fixed=True,
 )
