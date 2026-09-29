@@ -81,6 +81,35 @@ def test_a_manifest_naming_an_undefined_preset_fails_to_load(tmp_path):
         load_manifest("s", base)
 
 
+@pytest.mark.parametrize("body", [
+    "cots: cheap\n",
+    "write_boundry:\n  deny_globs: ['*/src/*']\n",
+    "write_boundary:\n  deny_glob: ['*/src/*']\n",
+    "capability_boundary:\n  deny_tool: ['Bash']\n",
+], ids=["top-level", "boundary-name", "write-boundary-field", "capability-field"])
+def test_a_manifest_key_the_model_does_not_know_refuses_the_load(tmp_path, body):
+    """Every dimension reads "no restriction" when absent, so a dropped misspelling
+    would run the scope unbounded while its file still reads as bounded (#294)."""
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "experts" / "s.yaml").write_text("scope: s\nname: S\n" + body)
+
+    with pytest.raises(ValueError, match=r"(?s)s\.yaml.*[Ee]xtra inputs are not permitted"):
+        load_manifest("s", tmp_path)
+
+
+def test_the_correctly_spelled_boundary_loads(tmp_path):
+    """The control for the refusal above: the same keys spelled right load intact."""
+    (tmp_path / "experts").mkdir()
+    (tmp_path / "experts" / "s.yaml").write_text(
+        "scope: s\nname: S\nwrite_boundary:\n  deny_globs: ['*/src/*']\n"
+        "capability_boundary:\n  deny_tools: ['Bash']\n")
+
+    manifest = load_manifest("s", tmp_path)
+
+    assert manifest.write_boundary.deny_globs == ["*/src/*"]
+    assert manifest.effective_capability_boundary.deny_tools == ["Bash"]
+
+
 def test_a_bad_presets_file_fails_every_manifest_that_loads_against_it(tmp_path):
     base = _config(tmp_path, "cheap:\n  effort: extreme\n", None)
 

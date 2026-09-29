@@ -34,6 +34,15 @@ none
 
 ## Verdicts
 
+- 2026-09-29T00:31:25-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "WriteBoundary" =sha256:937332e7ec6a0921e6618ecbaa05ed1f8d346efc86aa92728af2409981b30f85
+  artifact: sha256:b82f6077939586cab6ba7c16b16fda29a37cdb5f0d7f0f710e92c7ec7a562728
+  note: propagated from a moved ground
+
+- 2026-09-29T00:31:35-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "WriteBoundary" =sha256:b82f6077939586cab6ba7c16b16fda29a37cdb5f0d7f0f710e92c7ec7a562728
+  note: WriteBoundary gained model_config forbidding undeclared fields; the deny and allow globs and their enforcement by role-guard are unchanged, so the assertion is unaffected
+
 ## References
 
 - README.md · standing · cites-as-live

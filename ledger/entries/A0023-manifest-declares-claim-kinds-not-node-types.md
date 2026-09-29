@@ -58,6 +58,14 @@ none
 - 2026-09-24T01:10:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:8f19ee8fefce8dcc7641297cc9e4e97debf5bf635830bcf61bb8de42a332a8b4
   note: a budget field joins cost, and presets resolve per dimension through one private mapping; still no node type declared, so the assertion is unaffected
+- 2026-09-29T00:31:25-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:8f19ee8fefce8dcc7641297cc9e4e97debf5bf635830bcf61bb8de42a332a8b4
+  artifact: sha256:3ef12bb520ff34e1f9f3f1449c2c3f6ab73c2f003500091bd43e3b8521cccf98
+  note: propagated from a moved ground
+
+- 2026-09-29T00:31:35-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:3ef12bb520ff34e1f9f3f1449c2c3f6ab73c2f003500091bd43e3b8521cccf98
+  note: ExpertManifest gained model_config forbidding undeclared keys; it declares no node type, so the assertion is unaffected
 
 ## References
 
