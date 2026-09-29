@@ -89,6 +89,7 @@ from pathlib import Path
 from thalamus.harness import panes as panes_mod
 from thalamus.harness import pin, quick, readiness
 from thalamus.harness.tmux import argv as tmux_argv
+from thalamus.harness.tmux import literal_text_args
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
@@ -534,7 +535,7 @@ def _send(pane: str, text: str, submit: bool = True) -> str:
     """Literal text, then Enter as a separate call. Returns "" or an error."""
     # `-l` sends the text literally: without it tmux interprets the payload as key
     # names, so a message containing the word `Enter` would submit itself early.
-    typed = _tmux("send-keys", "-t", pane, "-l", text)
+    typed = _tmux("send-keys", "-t", pane, *literal_text_args(text))
     if typed.returncode != 0:
         return typed.stderr.strip() or "send-keys refused the text"
     if submit:
