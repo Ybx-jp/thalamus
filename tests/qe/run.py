@@ -74,6 +74,7 @@ CASE_MODULES = (
     "qe.cases.console_write_origin",
     "qe.cases.console_close_reads_pane_death",
     "qe.cases.console_send_text_is_data_not_argv",
+    "qe.cases.console_distill_seed_clock_skew",
     "qe.cases.console_post_survives_malformed_body",
     "qe.cases.thread_approve_idempotency",
     "qe.cases.ceremony_start_race",
