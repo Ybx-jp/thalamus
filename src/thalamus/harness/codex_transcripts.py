@@ -55,7 +55,8 @@ Two things are genuinely different from Claude Code, and both are handled explic
 per-kind events above with a single `item_completed` carrying a typed `item`:
 `UserMessage` and `AgentMessage` (text under `content: [{type, text}]` rather than a
 plain `message` string), `CommandExecution`, `Reasoning`, and `Extension` — whose
-`kind: "web.search"` is what `web_search_end` used to be. Codex's own built-ins also
+`kind: "web.search"` is what `web_search_end` used to be. In that grammar a patch is a
+`FileChange` item carrying `patch_apply_end`'s `changes` map. Codex's own built-ins also
 moved to plain `function_call` alongside code mode. Both grammars are read, and the
 older one is not a legacy path: rollouts written by every version the operator ever ran
 sit in the same `sessions/` tree, so a reader that followed the CLI forward would stop
@@ -72,7 +73,7 @@ Cursor reader states: a record this grammar does not cover is counted in
 `unrecognized` and surfaced by the sweep, never quietly dropped. That rule bites
 harder here than it reads, and deliberately. Codex's own protocol layer admits
 record kinds this module has never observed — an `exec_command_end` event, an
-`item_completed` item type beyond the five measured — and they are **not**
+`item_completed` item type beyond the six measured — and they are **not**
 pre-declared as tolerated. A codex release that changes the grammar again must arrive
 as a loud `unrecognized` count and not as "those sessions touched no files" (RFC
 9413's virtuous intolerance; LangSec, Momot et al., IEEE SecDev 2016).
@@ -157,8 +158,10 @@ _EVENT_MSGS = frozenset({"task_started", "task_complete", "user_message",
 # The `item.type` values `item_completed` carries. `CommandExecution` and `Reasoning`
 # are recognised and deliberately not counted: each is a second view of a
 # `response_item` row that is already counted, and the tool-call total is taken there.
+# `FileChange` is the 0.148.0 grammar's patch record: `patch_apply_end`'s `changes` map,
+# in an item.
 _COMPLETED_ITEMS = frozenset({"UserMessage", "AgentMessage", "CommandExecution",
-                              "Reasoning", "Extension"})
+                              "Reasoning", "Extension", "FileChange"})
 # The `Extension` kind that means a fetch happened — 0.148.0's `web_search_end`.
 _WEB_EXTENSION = "web.search"
 
@@ -342,6 +345,10 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
     # reports two fetches for one. Which surface exists depends on the model, so
     # neither can simply be ignored.
     search_ends = 0
+    # call_id of every tool call row seen and not yet answered by its output row, in
+    # order. A `FileChange` item carries no call_id of its own; the call it belongs to
+    # is the one still open when it arrives.
+    open_calls: dict[str, None] = {}
 
     for record, decodable in _rows(path):
         if not decodable or not isinstance(record, dict):
@@ -387,6 +394,8 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
             elif item == "custom_tool_call":
                 facts.tool_calls += 1
                 call_id = payload.get("call_id")
+                if call_id:
+                    open_calls[str(call_id)] = None
                 program = payload.get("input")
                 if call_id and isinstance(program, str) and _INGRESS_CALL in program:
                     ingress_calls.add(str(call_id))
@@ -394,8 +403,11 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
                 # Same event as a code-mode call — one tool invocation — so it is
                 # counted in the same total and not in a second one.
                 facts.tool_calls += 1
-            elif item == "custom_tool_call_output":
-                if payload.get("call_id") in ingress_calls:
+                if payload.get("call_id"):
+                    open_calls[str(payload["call_id"])] = None
+            elif item in ("custom_tool_call_output", "function_call_output"):
+                open_calls.pop(str(payload.get("call_id")), None)
+                if item == "custom_tool_call_output" and payload.get("call_id") in ingress_calls:
                     text = _output_text(payload.get("output"))
                     if text:
                         facts.external_texts.append(text)
@@ -426,11 +438,11 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
             # the same alternatives-not-additions trap `search_ends` is reconciled for.
             pass
         elif item == "patch_apply_end":
-            _record_touches(facts, payload)
+            _record_touches(facts, payload, str(payload.get("call_id") or ""))
         elif item == "web_search_end":
             search_ends += 1
         elif item == "item_completed":
-            search_ends += _record_completed_item(facts, payload)
+            search_ends += _record_completed_item(facts, payload, open_calls)
 
     # The code-mode count wins where it exists, because that is the surface whose
     # output carried the verbatim text into `external_texts`; `web_search_end` is the
@@ -457,13 +469,17 @@ def _item_text(item: dict) -> str:
     return "\n".join(part for part in parts if part)
 
 
-def _record_completed_item(facts: TranscriptFacts, payload: dict) -> int:
+def _record_completed_item(
+    facts: TranscriptFacts, payload: dict, open_calls: dict[str, None],
+) -> int:
     """Fold one 0.148.0 `item_completed` event in. Returns fetches to add.
 
-    Counts the two things this envelope is the *only* surface for — the operator's
-    prompts and a `web.search` extension — and deliberately counts nothing else. Its
-    `CommandExecution` and `Reasoning` items restate `response_item` rows that are
-    already counted, so folding them in would inflate the same totals twice.
+    Counts the things this envelope is the *only* surface for — the operator's
+    prompts, a `web.search` extension, and a `FileChange` item's touched files (the
+    0.148.0 grammar writes a patch as this item, not as `patch_apply_end`) — and
+    deliberately counts nothing else. Its `CommandExecution` and `Reasoning` items
+    restate `response_item` rows that are already counted, so folding them in would
+    inflate the same totals twice.
 
     An unknown `item.type` increments `unrecognized` rather than being ignored, on the
     module's standing rule: the next grammar change has to arrive as a number somebody
@@ -491,23 +507,32 @@ def _record_completed_item(facts: TranscriptFacts, payload: dict) -> int:
                 facts.first_prompt = text.strip()
     elif kind == "Extension" and item.get("kind") == _WEB_EXTENSION:
         return 1
+    elif kind == "FileChange":
+        # The item's own `id` ("exec-<uuid>") appears in no other row, so it cannot
+        # anchor anything. The call it belongs to is the one tool call still awaiting
+        # its output; with none or several open the owner is ambiguous, and the path is
+        # recorded unanchored rather than pinned to a guess.
+        anchor = next(iter(open_calls)) if len(open_calls) == 1 else ""
+        _record_touches(facts, item, anchor)
     return 0
 
 
-def _record_touches(facts: TranscriptFacts, payload: dict) -> None:
+def _record_touches(facts: TranscriptFacts, payload: dict, anchor: str) -> None:
     """Anchor every file a patch touched to the call that touched it.
 
-    The anchor is codex's own `call_id`, not a synthesized row index: unlike Cursor,
-    codex writes real identifiers, so the provenance walk lands on the exact call
-    without this module inventing an addressing scheme for it.
+    `payload` is a `patch_apply_end` event or a `FileChange` item — both carry the same
+    `changes` map. The anchor is codex's own `call_id` (the event's own, or for an item
+    the call still open when it arrived; empty when that is ambiguous), not a
+    synthesized row index: unlike Cursor, codex writes real identifiers, so the
+    provenance walk lands on the exact call without this module inventing an
+    addressing scheme for it.
     """
     changes = payload.get("changes")
     if not isinstance(changes, dict):
-        # A `patch_apply_end` whose changes we cannot read is a recognised record
+        # A patch record whose changes we cannot read is a recognised record
         # carrying an unreadable field — the case the count exists for.
         facts.unrecognized += 1
         return
-    anchor = str(payload.get("call_id") or "")
     for identifier in changes:
         if not identifier:
             continue
