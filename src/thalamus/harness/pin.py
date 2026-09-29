@@ -808,6 +808,56 @@ def _codex_mcp_tables(servers: dict[str, dict]) -> str:
     return "".join(blocks)
 
 
+CODEX_MCP_FORWARDED_ENV = (
+    # The variables a pinned codex session's `thalamus` MCP server needs from the
+    # launch: the pin itself (scope, room, fork parent) and the two roots it reads
+    # config and archives from. codex hands a stdio server only a fixed set of parent
+    # variables plus the names `mcp_servers.<id>.env_vars` lists (A0193, cites-as-live),
+    # so without this list every codex pin's memory tools resolve to `main`. A Claude
+    # Code server inherits the whole environment and needs none of it.
+    "THALAMUS_SCOPE",
+    "THALAMUS_ROOM",
+    "THALAMUS_FORKED_FROM",
+    "THALAMUS_CONFIG_DIR",
+    "THALAMUS_ARCHIVE_DIR",
+)
+
+
+def _codex_pin_forwarding() -> str:
+    """The profile layer that adds `env_vars` to the registered `thalamus` server.
+
+    A profile layer merges into the base `[mcp_servers.thalamus]` key by key, so the
+    registration's `command`, `args` and `env` stand and only the whitelist is added
+    (A0211, cites-as-live). A pinned codex session's server then starts with every
+    variable in `CODEX_MCP_FORWARDED_ENV` (A0210, cites-as-live). The registration
+    itself cannot carry the list: `codex mcp add` has no `env_vars` flag, and
+    `config.toml` is codex's file (`install.register_codex_mcp`).
+    """
+    names = ", ".join(_toml_str(name) for name in CODEX_MCP_FORWARDED_ENV)
+    return f"\n[mcp_servers.thalamus]\nenv_vars = [{names}]\n"
+
+
+def codex_registers_thalamus(home: Path | None = None) -> bool:
+    """Is a `thalamus` MCP server registered in `$CODEX_HOME/config.toml`?
+
+    Read-only. The profile adds its forwarding table only when it is, because a
+    `[mcp_servers.thalamus]` table with no command of its own and none to merge into
+    stops codex at startup (A0211, cites-as-live) — every launch naming the profile
+    would fail. An unreadable file counts as not registered: the profile then only
+    loses forwarding, never the launch.
+    """
+    import tomllib
+
+    from thalamus.harness.codex_transcripts import codex_home
+
+    try:
+        config = tomllib.loads((codex_home(home) / "config.toml").read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    servers = config.get("mcp_servers")
+    return isinstance(servers, dict) and isinstance(servers.get("thalamus"), dict)
+
+
 def codex_profile_name(scope: str) -> str:
     """The `--profile` argument for a scope. Deliberately `agent_name`'s value.
 
@@ -861,7 +911,8 @@ def _codex_cost_keys(manifest: ExpertManifest) -> str:
 
 
 def render_codex_profile(manifest: ExpertManifest,
-                         servers: dict[str, dict] | None = None) -> str:
+                         servers: dict[str, dict] | None = None,
+                         forward_pin: bool = False) -> str:
     """The generated profile file for a pinned codex session.
 
     `developer_instructions` and not `model_instructions_file`: the latter *replaces*
@@ -894,6 +945,7 @@ def render_codex_profile(manifest: ExpertManifest,
         f"developer_instructions = {_toml_str(charter)}\n"
         f"{_codex_cost_keys(manifest)}"
         f"{_codex_mcp_tables(servers)}"
+        f"{_codex_pin_forwarding() if forward_pin and 'thalamus' not in servers else ''}"
     )
 
 
@@ -917,7 +969,9 @@ def write_codex_profile(manifest: ExpertManifest, home: Path | None = None,
     home = home or codex_home()
     home.mkdir(parents=True, exist_ok=True)
     path = home / f"{codex_profile_name(manifest.scope)}.config.toml"
-    path.write_text(render_codex_profile(manifest, scope_mcp_servers(manifest.scope, base)))
+    path.write_text(render_codex_profile(
+        manifest, scope_mcp_servers(manifest.scope, base),
+        forward_pin=codex_registers_thalamus(home)))
     return path
 
 

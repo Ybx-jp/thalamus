@@ -1040,6 +1040,48 @@ def test_the_profile_lands_where_the_profile_flag_resolves_it(tmp_path):
     )
 
 
+_REGISTERED = (
+    '[mcp_servers.thalamus]\ncommand = "uv"\nargs = ["run", "thalamus-mcp"]\n\n'
+    '[mcp_servers.thalamus.env]\nTHALAMUS_GRAPH_URL = "ws://localhost:8182/gremlin"\n'
+)
+
+
+def test_a_codex_profile_forwards_the_pin_to_a_registered_thalamus_server(tmp_path):
+    """codex hands a stdio server only the parent variables `env_vars` names, so
+    without the whitelist a codex pin's memory tools resolve to `main` (#289). The
+    table adds `env_vars` alone: `command`, `args` and `env` stay the registration's."""
+    import tomllib
+
+    base = _tooled_config(tmp_path)
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / "config.toml").write_text(_REGISTERED)
+
+    path = write_codex_profile(load_manifest("designer", base), home=home, base=base)
+
+    table = tomllib.loads(path.read_text())["mcp_servers"]["thalamus"]
+    assert table == {"env_vars": list(pin.CODEX_MCP_FORWARDED_ENV)}
+    assert "THALAMUS_SCOPE" in table["env_vars"]
+
+
+@pytest.mark.parametrize("config", [None, "model = \"x\"\n", "not [ toml"],
+                         ids=["no-config", "no-server", "unreadable"])
+def test_a_codex_profile_adds_no_thalamus_table_without_a_registration(tmp_path, config):
+    """A `[mcp_servers.thalamus]` table with nothing to merge into has no transport,
+    and codex refuses to start on it — every launch naming the profile would fail."""
+    import tomllib
+
+    base = _tooled_config(tmp_path)
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    if config is not None:
+        (home / "config.toml").write_text(config)
+
+    path = write_codex_profile(load_manifest("designer", base), home=home, base=base)
+
+    assert "thalamus" not in tomllib.loads(path.read_text()).get("mcp_servers", {})
+
+
 def test_executor_bound_expert_has_no_interactive_agent_or_profile(tmp_path):
     """A delegated scope must fail closed instead of inheriting the caller's model."""
     base = tmp_path / "config"
