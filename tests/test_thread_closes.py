@@ -425,3 +425,48 @@ def test_an_append_after_a_partial_line_lands_on_its_own_line(tmp_path):
         first["ref"],
         third["ref"],
     ]
+
+
+def test_a_failed_graph_write_is_repaired_by_rerunning_approve(tmp_path, monkeypatch):
+    """
+    Scenario: `thread approve` records its ledger row, then the graph write fails.
+    Expected: re-running it writes the edge without a second ledger row, and running it
+    again writes the edge again (idempotent) with still one row.
+    """
+    import argparse
+
+    from thalamus import cli
+    from thalamus.substrate import writer
+
+    path = _ledger(tmp_path)
+    monkeypatch.setattr(closes, "LEDGER_FILE", path)
+    ref = _propose(path)["ref"]
+
+    written = []
+    failing = {"on": True}
+
+    def fake_write(graph, close):
+        if failing["on"]:
+            raise RuntimeError("graph down")
+        written.append(close)
+        return "agent-vid"
+
+    monkeypatch.setattr(writer, "write_thread_close", fake_write)
+    monkeypatch.setattr(cli, "connect", lambda url: object())
+    monkeypatch.setattr(cli, "close_connection", lambda graph: None)
+    monkeypatch.setattr(cli, "_persist", lambda graph: None)
+
+    args = argparse.Namespace(
+        thread_command="approve", ref=ref, surface="cli", evidence="", notes="", url=""
+    )
+    with pytest.raises(RuntimeError):
+        cli._cmd_thread(args, None)
+    assert len(closes.approvals(path)) == 1
+
+    failing["on"] = False
+    cli._cmd_thread(args, None)
+    cli._cmd_thread(args, None)
+
+    assert len(written) == 2
+    assert written[0] == written[1]
+    assert len(closes.approvals(path)) == 1

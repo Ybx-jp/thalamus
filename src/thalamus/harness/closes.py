@@ -176,8 +176,8 @@ def approve(
     """Record the operator's approval of a proposal, once.
 
     Returns `(row, created)`. A ref already approved returns its existing row with
-    `created` False and writes nothing, so a repeated approval cannot mint a second row
-    for the caller to write a second graph edge from.
+    `created` False and writes nothing, so a repeated approval never adds a second row.
+    The caller still writes the graph edge, which is how a failed edge write is repaired.
 
     The row is written **before** the graph edge, and that order is deliberate: a close
     whose ledger row is missing cannot be corroborated afterwards, while a row whose
