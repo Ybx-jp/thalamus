@@ -35,6 +35,19 @@ none
 
 ## Verdicts
 
+- 2026-09-29T12:17:50-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:0718ccdc74095a80b51e4d73eb818fe3434cf914a4bab036edd2765b31042de4
+  artifact: sha256:6bb2e54734399d7d00a46f6aea8516a04b03a20b89fc6fbef66d3f6b03baed46
+  note: propagated from a moved ground
+
+- 2026-09-29T12:20:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:6bb2e54734399d7d00a46f6aea8516a04b03a20b89fc6fbef66d3f6b03baed46
+  note: DistillWatch gained _fs_now, which stamps the clean-slate seed from the filesystem clock; the clock-driven re-classification through _by_clock is unchanged
+
+- 2026-09-29T12:40:00-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:0993d4a386ffc58896791848d9df762ab41a368199cce624ed975ac683028fa7
+  note: the seed probe now creates the logs directory and the seed comparison is strict; the clock-driven re-classification through _by_clock is unchanged
+
 ## References
 
 - src/thalamus/console/distill.py · standing · cites-as-live
