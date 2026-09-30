@@ -44,6 +44,9 @@ none
 - 2026-09-24T23:02:59-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:3b2136909ca337ce278103163738aa0efd8e48fb51e2508b2deeea37b56cdeb7
   note: run_job now checks the note and assigns its arm before packing a served job; every outcome path and the deadline are unchanged, so the assertion is unaffected
+- 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:37de7dc21a705b345f7ee0e0bf082bd2e16e4016a57871a4c5bfb02310bfde0b
+  note: run_job's JobTimeout handler now assigns agentic.salvage, which serves what admission kept when admission had begun and what the job returned otherwise; a timed-out job that resolves nothing still finishes as timeout, and every other outcome path and the deadline are unchanged, so the assertion is unaffected
 
 
 ## References

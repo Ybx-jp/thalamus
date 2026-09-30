@@ -197,10 +197,15 @@ def test_the_loop_stops_before_a_turn_once_the_session_is_gone_or_time_is_up(mon
 
 
 class _Job:
-    """A compiler job with fixed handles; `call` records and answers."""
+    """A compiler job with fixed handles, every one of them shown; `call` records and answers."""
 
     def __init__(self, handles):
         self.handles = dict(handles)
+        self.shown = {
+            handle: Row(vid=vid, kind="decision", tier=1, date="2026-09-12",
+                        summary=f"record {vid}")
+            for handle, vid in self.handles.items()
+        }
         self.calls = 0
         self.seen = []
 
@@ -210,9 +215,16 @@ class _Job:
         return "R1.1 · session · tier 1 · 2026-09-01 · a record"
 
 
-def test_the_plan_keeps_the_models_handles_in_order_and_records_the_stop(monkeypatch):
+@pytest.fixture
+def pointwise(monkeypatch):
+    """The worker's environment with the per-record admission turned on."""
+    monkeypatch.setenv(agentic.ADMISSION_ENV, "pointwise")
+
+
+def test_by_default_the_plan_serves_the_stops_handles_in_order_and_judges_nothing(monkeypatch):
+    monkeypatch.delenv(agentic.ADMISSION_ENV, raising=False)
     job = _Job({"R1.1": "v1", "R1.2": "v2", "R1.3": "v3"})
-    _script(monkeypatch, [
+    sent = _script(monkeypatch, [
         _reply(("lexical_by_kind", {"missing": "the budget decision",
                                     "query": "reflex, budget", "kind": "decision"})),
         _reply(("stop", {"keep": ["R1.2", "R1.1", "R1.2", "R9.9"], "reason": "both bear",
@@ -222,11 +234,135 @@ def test_the_plan_keeps_the_models_handles_in_order_and_records_the_stop(monkeyp
                          excerpt="x", deadline=time.monotonic() + 30)
     assert result.stopped == "stop_tool" and result.reason == "both bear"
     assert result.note == "The budget was set at 24k [R1.2]."
-    assert result.kept == ["v2", "v1"]
+    assert result.kept == ["v2", "v1"] and result.listwise == ["R1.2", "R1.1"]
     assert result.unknown_kept == ["R9.9"]
+    assert len(sent) == 2 and result.verdicts == [] and result.admitted == ""
     # `missing` is the stop log's, never an argument the compiler sees; commas are spacing.
     assert job.seen == [("lexical_by_kind", {"query": "reflex budget", "kind": "decision"})]
     assert result.hops[0].missing == "the budget decision"
+
+    # A value other than `pointwise` leaves the default in place.
+    monkeypatch.setenv(agentic.ADMISSION_ENV, "graded")
+    sent = _script(monkeypatch, [_reply(("stop", {"keep": ["R1.3"], "reason": "r"}))])
+    result = agentic.run(job, cli=cli_for("local"), model="m", anchors=[], excerpt="",
+                         deadline=time.monotonic() + 30)
+    assert result.kept == ["v3"] and len(sent) == 1
+
+
+def test_a_loop_the_caps_end_packs_what_it_returned_and_one_with_no_selection_packs_nothing(monkeypatch):
+    monkeypatch.delenv(agentic.ADMISSION_ENV, raising=False)
+    job = _Job({f"R1.{n}": f"v{n}" for n in range(1, 8)})
+    _script(monkeypatch, [_reply(("by_path", {"missing": "m", "path": "x"}))] * agentic.MAX_TURNS)
+    result = agentic.run(job, cli=cli_for("local"), model="m", anchors=[], excerpt="",
+                         deadline=time.monotonic() + 30)
+    assert result.stopped == "max_turns"
+    assert result.kept == [f"v{n}" for n in range(1, agentic.MAX_KEEP + 1)]
+
+    _script(monkeypatch, [_reply(content="nothing here")])
+    result = agentic.run(_Job({"R1.1": "v1"}), cli=cli_for("local"), model="m",
+                         anchors=[], excerpt="", deadline=time.monotonic() + 30)
+    assert result.stopped == "no_tool_calls" and result.kept == []
+
+
+def _verdict(keep, content=None):
+    """An admission answer: `{"keep": keep}`, or `content` verbatim."""
+    text = content if content is not None else json.dumps({"keep": keep})
+    return {"message": {"role": "assistant", "content": text},
+            "load_duration": 0, "total_duration": 20_000_000, "eval_count": 7}
+
+
+def test_the_plan_ranks_by_the_stop_and_admits_by_a_verdict_per_row(monkeypatch, pointwise):
+    job = _Job({"R1.1": "v1", "R1.2": "v2", "R1.3": "v3"})
+    sent = _script(monkeypatch, [
+        _reply(("lexical_by_kind", {"missing": "the budget decision",
+                                    "query": "reflex, budget", "kind": "decision"})),
+        _reply(("stop", {"keep": ["R1.2", "R1.1", "R1.2", "R9.9"], "reason": "both bear",
+                         "note": " The budget was set at 24k [R1.2]. "})),
+        _verdict(True), _verdict(False), _verdict(True),
+    ])
+    result = agentic.run(job, cli=cli_for("local"), model="m", anchors=["reflex_budget"],
+                         excerpt="x", deadline=time.monotonic() + 30)
+    assert result.stopped == "stop_tool" and result.reason == "both bear"
+    assert result.note == "The budget was set at 24k [R1.2]."
+    assert result.listwise == ["R1.2", "R1.1"]
+    assert result.unknown_kept == ["R9.9"]
+    # The stop's handles are judged first in its order, then the rest as shown; the
+    # stop named R1.1 and its verdict dropped it, and R1.3, which it did not name, is kept.
+    assert [(v.handle, v.keep) for v in result.verdicts] == [
+        ("R1.2", True), ("R1.1", False), ("R1.3", True)]
+    assert result.kept == ["v2", "v3"] and result.admitted == "complete"
+    # Each verdict is its own call: no tools, the schema as the format, the one row last.
+    admission = sent[2:]
+    assert all("tools" not in body and body["format"] == agentic.ADMIT_SCHEMA
+               for body in admission)
+    assert admission[0]["messages"][0]["content"] == agentic.ADMIT_SYSTEM
+    assert admission[0]["messages"][1]["content"].endswith(
+        "The record:\ndecision · tier 1 · 2026-09-12 · record v2")
+    # `missing` is the stop log's, never an argument the compiler sees; commas are spacing.
+    assert job.seen == [("lexical_by_kind", {"query": "reflex budget", "kind": "decision"})]
+    assert result.hops[0].missing == "the budget decision"
+    log = result.stop_log()
+    assert log["listwise"] == ["R1.2", "R1.1"] and len(log["verdicts"]) == 3
+
+
+def test_a_stop_whose_every_row_is_dropped_serves_nothing(monkeypatch, pointwise):
+    """Abstention: the listwise keep named two rows and no verdict admitted either."""
+    job = _Job({"R1.1": "v1", "R1.2": "v2"})
+    _script(monkeypatch, [
+        _reply(("stop", {"keep": ["R1.1", "R1.2"], "reason": "closest"})),
+        _verdict(False), _verdict(False),
+    ])
+    result = agentic.run(job, cli=cli_for("local"), model="m", anchors=[], excerpt="",
+                         deadline=time.monotonic() + 30)
+    assert result.listwise == ["R1.1", "R1.2"] and result.kept == []
+
+
+def test_an_answer_that_does_not_parse_is_no_verdict_and_not_kept(monkeypatch, pointwise):
+    job = _Job({"R1.1": "v1", "R1.2": "v2"})
+    _script(monkeypatch, [
+        _reply(("stop", {"keep": ["R1.1"], "reason": "r"})),
+        _verdict(None, content='{"keep": tr'), _verdict(True),
+    ])
+    result = agentic.run(job, cli=cli_for("local"), model="m", anchors=[], excerpt="",
+                         deadline=time.monotonic() + 30)
+    assert [(v.handle, v.keep) for v in result.verdicts] == [("R1.1", None), ("R1.2", True)]
+    assert result.kept == ["v2"]
+
+
+def test_admission_stops_at_the_keep_cap_and_when_the_session_ends(monkeypatch, pointwise):
+    job = _Job({f"R1.{n}": f"v{n}" for n in range(1, 9)})
+    _script(monkeypatch, [_reply(("stop", {"keep": [], "reason": "r"}))]
+            + [_verdict(True)] * agentic.MAX_KEEP)
+    result = agentic.run(job, cli=cli_for("local"), model="m", anchors=[], excerpt="",
+                         deadline=time.monotonic() + 30)
+    assert result.admitted == "enough" and len(result.verdicts) == agentic.MAX_KEEP
+    assert result.kept == [f"v{n}" for n in range(1, agentic.MAX_KEEP + 1)]
+
+    # alive before the loop's one turn and the first verdict, gone before the second
+    alive = iter([True, True, False])
+    _script(monkeypatch, [_reply(("stop", {"keep": [], "reason": "r"})), _verdict(True)])
+    result = agentic.run(job, cli=cli_for("local"), model="m", anchors=[], excerpt="",
+                         deadline=time.monotonic() + 30, alive=lambda: next(alive))
+    assert result.admitted == "session_end" and result.stopped == "session_end"
+    assert len(result.verdicts) == 1
+
+
+def test_a_job_the_clock_ends_serves_what_admission_had_kept_or_else_what_it_returned():
+    job = _Job({f"R1.{n}": f"v{n}" for n in range(1, 8)})
+    result = agentic.AgenticResult()
+    assert agentic.salvage(job, result) == [f"v{n}" for n in range(1, agentic.MAX_KEEP + 1)]
+    result.admitted = "complete"
+    result.verdicts = [agentic.Verdict("R1.3", False, 1), agentic.Verdict("R1.6", True, 1)]
+    assert agentic.salvage(job, result) == ["v6"]
+
+
+def test_a_structured_answer_past_its_deadline_is_none_and_makes_no_request(monkeypatch):
+    sent = _script(monkeypatch, [])
+    assert extraction.run_structured_chat(
+        cli_for("local"), "m", [], schema=agentic.ADMIT_SCHEMA,
+        deadline=time.monotonic() - 1, max_tokens=8,
+    ) is None
+    assert sent == []
 
 
 def test_an_empty_word_search_tells_the_model_to_change_its_words(monkeypatch):
@@ -248,18 +384,22 @@ def test_an_empty_word_search_tells_the_model_to_change_its_words(monkeypatch):
     assert replies == [agentic.EMPTY_SEARCH, retrieval.NO_RESULTS]
 
 
-def test_a_loop_the_caps_end_packs_what_it_returned_and_one_with_no_selection_packs_nothing(monkeypatch):
+def test_under_pointwise_a_loop_the_turn_cap_ends_is_admitted_row_by_row(monkeypatch, pointwise):
     job = _Job({f"R1.{n}": f"v{n}" for n in range(1, 8)})
-    _script(monkeypatch, [_reply(("by_path", {"missing": "m", "path": "x"}))] * agentic.MAX_TURNS)
+    _script(monkeypatch,
+            [_reply(("by_path", {"missing": "m", "path": "x"}))] * agentic.MAX_TURNS
+            + [_verdict(n % 2 == 0) for n in range(1, 8)])
     result = agentic.run(job, cli=cli_for("local"), model="m", anchors=[], excerpt="",
                          deadline=time.monotonic() + 30)
-    assert result.stopped == "max_turns"
-    assert result.kept == [f"v{n}" for n in range(1, agentic.MAX_KEEP + 1)]
+    assert result.stopped == "max_turns" and result.listwise == []
+    assert result.kept == ["v2", "v4", "v6"]
 
-    _script(monkeypatch, [_reply(content="nothing here")])
-    result = agentic.run(_Job({"R1.1": "v1"}), cli=cli_for("local"), model="m",
-                         anchors=[], excerpt="", deadline=time.monotonic() + 30)
-    assert result.stopped == "no_tool_calls" and result.kept == []
+    # A loop the clock ends has no time to judge in, and packs what it returned.
+    _script(monkeypatch, [])
+    result = agentic.run(job, cli=cli_for("local"), model="m", anchors=[], excerpt="",
+                         deadline=time.monotonic() - 1)
+    assert result.stopped == "deadline" and result.verdicts == []
+    assert result.kept == [f"v{n}" for n in range(1, agentic.MAX_KEEP + 1)]
 
 
 def test_every_vocabulary_tool_is_offered_with_a_required_statement_of_what_is_missing():

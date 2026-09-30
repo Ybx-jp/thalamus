@@ -468,7 +468,17 @@ and an excerpt of the session — the user's prompts, the agent's prose and tool
 and the failing result, with every other tool result reduced to a label naming its
 tool — and every call it makes carries a statement of what it still needs, logged with
 the call. It ends by naming the handles it keeps, at most five, or none; a loop the caps
-end instead serves what its calls returned. The hook does not wait for it: the firing is
+end instead serves what its calls returned. With `THALAMUS_REFLEX_ADMISSION=pointwise`
+in the environment the worker inherits (the `env` block of `~/.claude/settings.json`),
+that list only ranks: what is served is decided one record at a time, by a separate call
+per row the model was shown that sees the failure, the excerpt and that row and answers
+keep or drop. The named rows are judged first, in the model's order, then the rest in
+the order they were shown, until five are kept; a loop the turn cap ends is judged the
+same way, and one the clock ends serves what was admitted by then, or what its calls
+returned if admission had not begun.<!-- (A0208, cites-as-live) --> The named list and
+every verdict are in the trace's stop log. It is off by default: on a replay of 20 real
+jobs the per-row judge on `ghoul-qwen3:8b-q6_K` kept about two rows in three and served
+more unrelated records than the named list did. The hook does not wait for it: the firing is
 queued under `~/.thalamus/reflex/queue/<session>/<agent>/`, where a trigger arriving
 while a job waits joins it, and the hook starts `thalamus reflex --work` detached unless
 a worker holds the global lock. The worker runs jobs oldest first, one at a time, and
@@ -714,3 +724,4 @@ expert subgraphs the server grants.<!-- (A0171, cites-as-live) -->
 | `THALAMUS_LOG_LEVEL` | Log level for the MCP server process (`thalamus-mcp`), default `WARNING`. Set it to `INFO` or `DEBUG` when a recall is returning something you cannot explain |
 | `THALAMUS_TMUX_SOCKET` | The tmux server the roster, `spawn`, `dispatch` and the console address (`tmux -L …`), default `thalamus`. Two checkouts on one box get separate control planes by setting it differently |
 | `THALAMUS_WITHHOLD` | The per-node suppression rate `memory_recall` applies, read at each call. Absent or unparseable means off, and an unrandomized session logs nothing — so the intervention leaves no trace when it is not running. Every draw appends to `~/.thalamus/policy/`; `thalamus eval withholding` reads them |
+| `THALAMUS_REFLEX_ADMISSION` | `pointwise` turns on the reflex agentic plan's per-record admission, read by the worker at each job; any other value, or none, serves the plan's own keep list (see *Agentic* above) |

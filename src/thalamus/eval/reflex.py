@@ -85,7 +85,9 @@ def _spread(values: list[int]) -> str:
 _EFFORT_LABELS = (
     ("calls", "calls"), ("nodes", "nodes returned"), ("ms", "ms"),
     ("records", "records served"), ("linked", "of them reached by the spread"),
-    ("turns", "model turns"), ("depth", "tool calls before delivery"),
+    ("turns", "model turns"), ("listwise", "named by the stop"),
+    ("verdicts", "admission verdicts"), ("admit_ms", "admission ms"),
+    ("depth", "tool calls before delivery"),
 )
 
 
@@ -357,7 +359,8 @@ def reflex_report(
         effort = report.effort.setdefault(event.tool, {})
         # `hops` marks a plan that spreads; only there is `linked` a measurement.
         spreads = "hops" in event.tool_input
-        for key in ("calls", "nodes", "ms", "linked", "turns", "depth"):
+        for key in ("calls", "nodes", "ms", "linked", "turns", "listwise", "verdicts",
+                    "admit_ms", "depth"):
             value = event.tool_input.get(key)
             if key == "linked" and not spreads:
                 continue
