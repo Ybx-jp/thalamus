@@ -12,6 +12,8 @@ row is checked." The `Agent`-not-`Session` closer follows PROV-O's attribution-w
 activity pattern: ascribe to the agent when the generating activity is irrelevant.
 """
 
+import multiprocessing
+
 import pytest
 from gremlin_python.process.traversal import Direction, Merge, T
 
@@ -334,3 +336,137 @@ def test_re_closing_the_same_thread_writes_the_same_edge():
     assert write_thread_close(first, close) == write_thread_close(second, close)
     assert first.merged_edges == second.merged_edges
     assert first.properties == second.properties
+
+
+def _approve_once(path, ref):
+    closes.approve(ref, surface="cli", approver_evidence="cli:tty", path=path)
+
+
+def test_a_repeated_approval_returns_the_original_row(tmp_path):
+    """
+    Scenario: the operator approves the same ref twice.
+    Expected: the second call is a no-op returning the first row; one APPROVED row.
+    """
+    path = _ledger(tmp_path)
+    ref = _propose(path)["ref"]
+
+    first, created_first = closes.approve(
+        ref, surface="cli", approver_evidence="cli:tty", path=path
+    )
+    second, created_second = closes.approve(
+        ref, surface="console", approver_evidence="console:x", path=path
+    )
+
+    assert (created_first, created_second) == (True, False)
+    assert second == first
+    assert len(closes.approvals(path)) == 1
+
+
+def test_a_repeated_rejection_returns_the_original_row(tmp_path):
+    """
+    Scenario: the operator rejects the same ref twice.
+    Expected: the second call returns the first row and writes nothing.
+    """
+    path = _ledger(tmp_path)
+    ref = _propose(path)["ref"]
+
+    first, created_first = closes.reject(ref, reason="no", path=path)
+    second, created_second = closes.reject(ref, reason="still no", path=path)
+
+    assert (created_first, created_second) == (True, False)
+    assert second == first
+    assert [r["event"] for r in closes.read_rows(path)].count(closes.REJECTED) == 1
+
+
+def test_the_opposite_settlement_still_appends(tmp_path):
+    """Approving a rejected ref (and the reverse) is not a repeat: the row is appended."""
+    path = _ledger(tmp_path)
+    ref = _propose(path)["ref"]
+    closes.reject(ref, path=path)
+    _row, created = closes.approve(
+        ref, surface="cli", approver_evidence="cli:tty", path=path
+    )
+    assert created
+    _row, created = closes.reject(ref, path=path)
+    assert not created
+
+
+def test_concurrent_approvals_of_one_ref_write_one_row(tmp_path):
+    """
+    Scenario: several forked processes approve one ref at the same moment.
+    Expected: exactly one APPROVED row; the check and the append share one lock.
+    """
+    path = _ledger(tmp_path)
+    ref = _propose(path)["ref"]
+    ctx = multiprocessing.get_context("fork")
+    workers = [ctx.Process(target=_approve_once, args=(path, ref)) for _ in range(8)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=60)
+        assert worker.exitcode == 0
+
+    assert len(closes.approvals(path)) == 1
+
+
+def test_an_append_after_a_partial_line_lands_on_its_own_line(tmp_path):
+    """
+    Scenario: a writer died mid-row, leaving a line with no trailing newline.
+    Expected: the next proposal is readable; the partial line is skipped, not merged
+    into it.
+    """
+    path = _ledger(tmp_path)
+    first = _propose(path, thread_id="t1")
+    with path.open("a") as handle:
+        handle.write('{"event": "proposed", "ref": "dead')
+    third = _propose(path, thread_id="t3")
+
+    assert [row["ref"] for row in closes.read_rows(path)] == [
+        first["ref"],
+        third["ref"],
+    ]
+
+
+def test_a_failed_graph_write_is_repaired_by_rerunning_approve(tmp_path, monkeypatch):
+    """
+    Scenario: `thread approve` records its ledger row, then the graph write fails.
+    Expected: re-running it writes the edge without a second ledger row, and running it
+    again writes the edge again (idempotent) with still one row.
+    """
+    import argparse
+
+    from thalamus import cli
+    from thalamus.substrate import writer
+
+    path = _ledger(tmp_path)
+    monkeypatch.setattr(closes, "LEDGER_FILE", path)
+    ref = _propose(path)["ref"]
+
+    written = []
+    failing = {"on": True}
+
+    def fake_write(graph, close):
+        if failing["on"]:
+            raise RuntimeError("graph down")
+        written.append(close)
+        return "agent-vid"
+
+    monkeypatch.setattr(writer, "write_thread_close", fake_write)
+    monkeypatch.setattr(cli, "connect", lambda url: object())
+    monkeypatch.setattr(cli, "close_connection", lambda graph: None)
+    monkeypatch.setattr(cli, "_persist", lambda graph: None)
+
+    args = argparse.Namespace(
+        thread_command="approve", ref=ref, surface="cli", evidence="", notes="", url=""
+    )
+    with pytest.raises(RuntimeError):
+        cli._cmd_thread(args, None)
+    assert len(closes.approvals(path)) == 1
+
+    failing["on"] = False
+    cli._cmd_thread(args, None)
+    cli._cmd_thread(args, None)
+
+    assert len(written) == 2
+    assert written[0] == written[1]
+    assert len(closes.approvals(path)) == 1
