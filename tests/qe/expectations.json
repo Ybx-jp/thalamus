@@ -67,6 +67,13 @@
       "witness_contains": "17000-byte text: HTTP 200 {\"ok\": true} while the pane held 1 byte(s) (b'\\r') including an Enter; tmux said 'command too long'",
       "triaged_at_rev": "9b02207",
       "note": "Issue #327. /api/send (console/server.py) calls tmux send-keys -l -- <text> without reading the return code; tmux rejects an argv over about 16340 bytes with 'command too long' (rc 1) and types nothing, the handler still answers 200 {ok: true}, and with submit on (the default) it then sends Enter into a composer that received no text. The pin is the 200 plus the pane holding only the Enter, with tmux's own refusal as the cause; a fix that answers non-2xx and skips the Enter, or that delivers long text through a buffer, makes this entry go stale."
+      },
+      {
+      "case": "session-end-shell-quote-injection",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "claude-code/session_id: injected `touch` ran and created ['QE335_MARKER']; codex/session_id: injected `touch` ran and created ['QE335_MARKER']",
+      "triaged_at_rev": "9aa87a4",
+      "note": "Issue #335. The SessionEnd hooks splice '$session_id', '$scope', '$room' and others into a double-quoted `nohup sh -c` block as single-quoted words, so a value containing a single quote closes the quoting and sh runs the rest. A session id of q'; touch M; echo ' created M through claude-code, codex and cursor/distill.sh; the same value as a pin-ledger scope or room did through claude-code and codex. The pin is the first two vectors' marker creation; the case's control is a benign id reaching the stub uv's extract in each hook."
     }
   ]
 }

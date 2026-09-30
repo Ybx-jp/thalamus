@@ -55,6 +55,7 @@ CASE_MODULES = (
     "qe.cases.probe_vocabulary",
     "qe.cases.shadowed_tests",
     "qe.cases.hook_detachment",
+    "qe.cases.session_end_shell_quote_injection",
     "qe.cases.dispatch_addressability",
     "qe.cases.tool_write_freedom",
     "qe.cases.emptiness_predicate",
