@@ -2217,7 +2217,7 @@ def _cmd_extract(args):
     env_forked_from = resolve_forked_from()
 
     # One resolution for the whole sweep, printed once. This line lands in
-    # ~/.thalamus/logs/session-end-<sid8>.log, which — since the graph records the
+    # ~/.thalamus/logs/session-end-<session id>.log, which — since the graph records the
     # harness that *wrote* a Session and not the CLI that distilled it — is the only
     # per-run record of what produced these claims.
     extractor = extractor_policy.resolve(

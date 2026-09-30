@@ -103,6 +103,21 @@ def test_the_newest_session_log_is_the_one_reported(logs):
     assert when.startswith("20")
 
 
+def test_a_log_named_for_the_full_session_id_is_reported(logs):
+    """Logs are named for the whole session id; the eight-character names written
+    before that stay readable beside them."""
+    import os
+    legacy = logs / "session-end-aaaaaaaa.log"
+    legacy.write_text("wrote 1 session\n")
+    os.utime(legacy, (time.time() - 600, time.time() - 600))
+    (logs / "session-end-01a0d7d6-749b-7c3e-8a51-2f9d4e6b1a07.log").write_text(
+        "wrote 2 sessions\nsynced 4 traces\n")
+
+    _, tail = status_module.last_distillation()
+
+    assert tail == "synced 4 traces"
+
+
 def test_a_directory_with_no_session_logs_reports_that_rather_than_guessing(logs, monkeypatch,
                                                                            capsys):
     (logs / "hook-failures.log").write_text("")

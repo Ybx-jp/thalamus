@@ -113,6 +113,7 @@ CASE_MODULES = (
     "qe.cases.codex_trace_envelope",
     "qe.cases.codex_scope_not_forwarded",
     "qe.cases.codex_profile_without_registration",
+    "qe.cases.session_end_log_per_session",
 )
 
 

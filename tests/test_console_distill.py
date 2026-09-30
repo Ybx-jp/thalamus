@@ -685,3 +685,59 @@ def test_a_log_that_never_reached_the_run_mark_is_not_treated_as_dismissed(box):
     # And it is still dismissible: acknowledging zero runs hides it until it runs.
     assert box.watch.dismiss("bb22bb22")
     assert box.watch.rows() == []
+
+
+# ---- logs are keyed on the full session id ---------------------------------
+
+A = "01a0d7d6-749b-7c3e-8a51-2f9d4e6b1a07"
+B = "01a0d7d6-7f21-7b90-9c44-0e8d3a5f6b12"      # same first 8 hex digits as A (UUIDv7)
+
+
+def _pin_full(box, sid, scope="homelab"):
+    with box.watch.pins.open("a") as fh:
+        fh.write(json.dumps({"session_id": sid, "scope": scope, "cwd": "/w/x",
+                             "tmux_pane": "%1", "ts": "now"}) + "\n")
+
+
+def test_a_full_id_log_surfaces_and_joins_its_pin(box):
+    _pin_full(box, A, scope="literature")
+    box.log(A, FAILED)
+    rows = box.watch.rows()
+    assert [(r["session"], r["scope"], r["state"]) for r in rows] == [
+        (A, "literature", "error")]
+
+
+def test_two_sessions_sharing_an_id_prefix_are_two_rows(box):
+    _pin_full(box, A, scope="literature")
+    _pin_full(box, B, scope="homelab")
+    box.log(A, FAILED, scope="literature")
+    box.log(B, FAILED, scope="homelab")
+    rows = {r["session"]: r["scope"] for r in box.watch.rows()}
+    assert rows == {A: "literature", B: "homelab"}
+
+
+def test_a_legacy_eight_character_log_still_surfaces(box):
+    _pin_full(box, A, scope="literature")
+    box.log(A[:8], FAILED, scope="literature")
+    rows = box.watch.rows()
+    assert [(r["session"], r["scope"]) for r in rows] == [(A[:8], "literature")]
+
+
+def test_dismissing_a_full_id_row_hides_only_that_session(box):
+    _pin_full(box, A)
+    _pin_full(box, B)
+    box.log(A, FAILED)
+    box.log(B, FAILED)
+    assert box.watch.dismiss(A)
+    box.watch._scanned_at = 0.0
+    assert [r["session"] for r in box.watch.rows()] == [B]
+
+
+def test_a_kill_row_is_keyed_on_the_full_id_and_yields_to_its_own_log(box):
+    box.kill(A)
+    box.kill(B)
+    assert {r["session"] for r in box.watch.rows()} == {A, B}
+    _pin_full(box, A)
+    box.log(A, DONE)                    # A distilled after all; B's kill still stands
+    box.watch._scanned_at = 0.0
+    assert [r["session"] for r in box.watch.rows()] == [B]

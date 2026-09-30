@@ -257,7 +257,7 @@ class TestSessionEnd:
 
         Verifications:
         - the hook resolves the scope ledger-first and logs the distillation it is
-          about to run, under the `session-end-<sid8>.log` name the console's
+          about to run, under the `session-end-<session id>.log` name the console's
           distillation widget is a state machine over
         - it returns immediately, having forked the work
 
@@ -309,6 +309,28 @@ class TestSessionEnd:
         assert f"--transcript {rollout}" in text
         assert "--scope literature" in text
         assert "eval sync --write" in text
+
+    def test_two_sessions_sharing_an_id_prefix_get_two_logs(self, tmp_path):
+        """UUIDv7 ids share their first 8 hex digits for about a minute, so the log is
+        named for the whole id: two sessions started together must not write one file."""
+        ids = ("01a0d7d6-749b-7c3e-8a51-2f9d4e6b1a07",
+               "01a0d7d6-7f21-7b90-9c44-0e8d3a5f6b12")
+        shim = tmp_path / "bin"
+        shim.mkdir()
+        (shim / "uv").write_text("#!/bin/sh\necho \"uv $*\"\n")
+        (shim / "uv").chmod(0o755)
+        for sid in ids:
+            rollout = tmp_path / f"rollout-2026-09-25T00-00-00-{sid}.jsonl"
+            rollout.write_text('{"type":"session_meta"}\n')
+            run_hook("session-end.sh",
+                     {"session_id": sid, "cwd": "/w", "hook_event_name": "SessionEnd",
+                      "reason": "other", "transcript_path": str(rollout)},
+                     tmp_path, env={"PATH": f"{shim}:{PATH}"})
+        logs = tmp_path / ".thalamus" / "logs"
+        assert sorted(p.name for p in logs.glob("session-end-*.log")) == [
+            f"session-end-{sid}.log" for sid in ids]
+        for sid in ids:
+            assert f"distilling session {sid} " in (logs / f"session-end-{sid}.log").read_text()
 
     def test_a_missing_rollout_with_a_ledger_row_is_recorded_as_a_fault(self, tmp_path):
         """`transcript_path` is nullable in codex's own schema. A ledger row means

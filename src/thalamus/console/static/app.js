@@ -1219,9 +1219,12 @@ function groupSessions(windows, distill) {
 
   const rows = [];
   for (const w of windows || []) {
-    const key8 = (w.session_id || "").slice(0, 8);
-    const d = (key8 && byId.get(key8)) || null;
-    if (d) byId.delete(key8);
+    // The full id first; a record made before records were keyed on it names only
+    // the first eight characters.
+    const full = w.session_id || "";
+    const key = byId.has(full) ? full : full.slice(0, 8);
+    const d = (key && byId.get(key)) || null;
+    if (d) byId.delete(key);
     rows.push({ w, d });
   }
   // Whatever is left belongs to a window that is already gone. It renders from the
@@ -1283,7 +1286,7 @@ function groupSessions(windows, distill) {
  * the same checkout and stay byte-identical under it. `name` plus the absolute open
  * time separates most of them; ledger stamps are 1-second resolution and roster sync
  * spawns in a burst, so when even that collides — and only then — the rows show
- * `#index`. `session_id[:8]` is the join key and never a label; it identifies
+ * `#index`. `session_id` is the join key and never a label; it identifies
  * nothing to a human.
  */
 function annotateCollisions(rows, groupRoot) {
