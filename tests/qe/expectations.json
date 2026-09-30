@@ -13,32 +13,11 @@
   ],
   "expectations": [
     {
-      "case": "policy-load-collapses-hash-collision",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "load() returned 1 record(s) for this hash; keying by (sha, ts) instead recovers 2",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #143. policy.load() keys the withholding ledger by response_sha256 alone. Two rows sharing one rendered response (the same recall answer served to two withholding decisions) collapse to whichever the dict keeps last. The pin is the 1-vs-2 record count for one hash, contrasted with keying by (sha, ts): a fix that dedupes by sha alone leaves the count at 1 and does not drift here; a fix that widens the key moves it."
-    },
-    {
       "case": "artifact-repo-identity-splits-across-worktrees",
       "failure_class": "invariant-falsified",
       "witness_contains": "relativize gave repo_main='repo-main' repo_secondary='repo-secondary' for the same relative path 'notes/plan.md' \u2014 two Artifact identities for one file",
       "triaged_at_rev": "d1ad70b",
       "note": "Issue #157. artifact_paths.relativize derives repo identity from the bare checkout directory name, so two worktrees of one repository mint two Artifact identities for one file. The pin is the two differing repo_main/repo_secondary values for one shared relative path; a fix that keys identity on git-common-dir (or an equivalent fold) makes them equal and this entry goes stale."
-    },
-    {
-      "case": "thread-approve-is-idempotent",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "approvals for ref after 1st approve(): 1; after 2nd approve(): 2",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #170. closes.approve() has no guard against re-invocation on an already-settled ref; find_proposal() matches the original PROPOSED row regardless of whether it was since approved, so a second approve() call appends a second APPROVED row. The pin is the 1-vs-2 row count for one ref; a fix that makes the second call a no-op or raise keeps the count at 1 and this entry goes stale."
-    },
-    {
-      "case": "ledger-append-survives-a-partial-write",
-      "failure_class": "invariant-falsified",
-      "witness_contains": "expected ['pre-crash', 'post-crash'], recovered ['pre-crash']",
-      "triaged_at_rev": "d1ad70b",
-      "note": "Issue #169. _append() (harness/closes.py and harness/ceremonies.py, same shape) writes json.dumps(row) + \"\\n\" with no fencing against a prior partial write: a crash that leaves a trailing line with no newline causes the next writer's valid append to merge onto it, and read_rows() drops the merged line whole - losing the post-crash row, not just the in-flight one. The pin is the missing 'post-crash' thread_id; a fix that fences a dangling partial line (or writes the newline first) recovers it and this entry goes stale."
     },
     {
       "case": "blinded-install-reads-as-never-installed",
@@ -83,6 +62,13 @@
       "note": "Issue #283. ExpertManifest.tier (contract/manifest.py:275) is parsed from every config/experts/*.yaml manifest and read by nothing; build_batch() (harness/ingest.py:572-576) stamps every claim's and entity's Provenance with a hardcoded Tier.CURATED regardless of scope. A manifest declaring tier: 3 (Tier.WILD) has its ingested content written at tier 2 instead, so the operator's downgrade never reaches the graph or the floor-over-derived_from computation. The pin is the declared-3-vs-written-2 pair; a fix that has build_batch (or its caller) read the scope's manifest tier and use it (floored so a feed cannot declare itself above CURATED) makes the written tier equal 3 and this entry goes stale."
     },
     {
+      "case": "send-oversize-text-is-delivered-or-refused-and-never-submitted",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "17000-byte text: HTTP 200 {\"ok\": true} while the pane held 1 byte(s) (b'\\r') including an Enter; tmux said 'command too long'",
+      "triaged_at_rev": "9b02207",
+      "note": "Issue #327. /api/send (console/server.py) calls tmux send-keys -l -- <text> without reading the return code; tmux rejects an argv over about 16340 bytes with 'command too long' (rc 1) and types nothing, the handler still answers 200 {ok: true}, and with submit on (the default) it then sends Enter into a composer that received no text. The pin is the 200 plus the pane holding only the Enter, with tmux's own refusal as the cause; a fix that answers non-2xx and skips the Enter, or that delivers long text through a buffer, makes this entry go stale."
+      },
+      {
       "case": "session-end-shell-quote-injection",
       "failure_class": "invariant-falsified",
       "witness_contains": "claude-code/session_id: injected `touch` ran and created ['QE335_MARKER']; codex/session_id: injected `touch` ran and created ['QE335_MARKER']",

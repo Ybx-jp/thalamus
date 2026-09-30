@@ -27,11 +27,12 @@ time horizon or a heuristic on the log body.
 
 Errors persist until dismissed, per the operator's rule, so this owns a scrap of
 state: `~/.thalamus/console/distill-dismissed.json`. Its `seeded_at` stamp is
-the clean slate — every log already on disk the first time this runs counts as
-dismissed, so the widget starts blank instead of opening on a pile of
-archaeology. Both that stamp and a per-session dismissal are compared against
-the log's *mtime*, which means a session that re-distills later and fails again
-comes back on its own: the new write moves mtime past the dismissal.
+the clean slate, read off the filesystem's own clock rather than `time.time()` —
+every log already on disk the first time this runs counts as dismissed, so the
+widget starts blank instead of opening on a pile of archaeology. Both that stamp
+and a per-session dismissal are compared against the log's *mtime*, which means a
+session that re-distills later and fails again comes back on its own: the new
+write moves mtime past the dismissal.
 """
 
 from __future__ import annotations
@@ -376,11 +377,31 @@ class DistillWatch:
         except (OSError, ValueError):
             # First run (or a corrupt file, which is the same thing here): stamp
             # now and let every log that already exists fall behind the stamp.
-            got = {"v": STATE_V, "seeded_at": time.time(), "dismissed": {},
+            got = {"v": STATE_V, "seeded_at": self._fs_now(), "dismissed": {},
                    "dismissed_kills": {}}
             self._write_state(got)
         self._state = got
         return got
+
+    def _fs_now(self) -> float:
+        """The filesystem's own clock: the mtime of a file written just now.
+
+        A log's mtime comes from the kernel's coarse timestamp clock, which lags
+        `time.time()` by up to a tick, so a log written just after a wall-clock seed
+        can carry an mtime before it. Stamping the seed with the mtime of a probe
+        written beside the logs puts both sides of the comparison on one clock.
+        """
+        probe = self.logs / f".seed-{os.getpid()}.probe"
+        try:
+            # A missing directory would otherwise persist a wall-clock seed forever.
+            self.logs.mkdir(parents=True, exist_ok=True)
+            probe.write_bytes(b"")
+            try:
+                return probe.stat().st_mtime
+            finally:
+                probe.unlink(missing_ok=True)
+        except OSError:
+            return time.time()      # the directory cannot be created or written
 
     def _write_state(self, state: dict) -> None:
         try:
@@ -551,7 +572,11 @@ class DistillWatch:
                 # created the log and entered a quiet model call. Hiding every file
                 # older than `seeded_at` made that whole active phase invisible; a
                 # successful run then disappeared without ever drawing a row.
-                if st.st_mtime <= seeded_at and kind != "active":
+                # Strictly older: on a coarse-timestamp filesystem the seed probe and
+                # a log written in the same tick share an mtime, and that log is new
+                # work. A backlog file from the probe's own tick may surface; that is
+                # the accepted cost.
+                if st.st_mtime < seeded_at and kind != "active":
                     continue
 
                 if kind == "done":

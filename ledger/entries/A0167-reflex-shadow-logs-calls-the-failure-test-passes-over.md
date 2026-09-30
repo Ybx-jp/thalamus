@@ -58,6 +58,9 @@ none
 - 2026-09-24T23:02:59-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:9de704c817af205a374ef45b30893a7b7df6259a58b34c438ae5734801789bb6
   note: reflex_report gained note counts and a note-arm map; the shadow loop and its per-event counts are unchanged, so the assertion is unaffected
+- 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:d5c259425c08068b69e01b4911356bdbacf6f728c2818b820676eb0fbd6a5f6a
+  note: reflex_report now also collects listwise, verdicts and admit_ms into the per-arm effort figures; the shadow loop and its per-event counts are unchanged, so the assertion is unaffected
 
 
 ## References

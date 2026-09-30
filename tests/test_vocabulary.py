@@ -304,6 +304,9 @@ def test_the_row_character_cap_drops_rows_and_says_so(tools):
 
     assert len(lines) == 3 and lines[-1].startswith("cap: ")
     assert job.row_chars <= 2 * one_row
+    # The row the cap dropped was given a handle but never shown, and only a shown row
+    # is one the agentic plan's admission can judge.
+    assert list(job.shown) == ["R4.1", "R4.2"] and len(job.handles) == 3
 
 
 def test_rows_is_call_without_the_rendering(tools):

@@ -90,6 +90,13 @@ class SyncOutcome:
         return "\n".join(lines)
 
 
+def _withheld_by_sha(policy_base: Path | None) -> dict[str, "policy_mod.WithholdRecord"]:
+    """The ledger keyed by response hash. A sha served more than once maps to its last
+    record in file order; the pairing rule for repeated servings is an open decision
+    in #328."""
+    return {sha: record for (sha, _ts), record in policy_mod.load(policy_base).items()}
+
+
 def sync(
     g: GraphTraversalSource,
     *,
@@ -109,7 +116,7 @@ def sync(
     # The withholding draws, keyed by the hash of the response each produced. Empty
     # when the policy has never run, which is the default — an unrandomized corpus
     # simply carries no propensities rather than carrying wrong ones.
-    withheld = policy_mod.load(policy_base)
+    withheld = _withheld_by_sha(policy_base)
 
     by_session: dict[str, list[TraceEvent]] = {}
     for event in load_events(traces_base, tools=_SYNC_TOOLS):

@@ -4762,7 +4762,10 @@ def _cmd_thread(args, parser):
         return
 
     if command == "reject":
-        row = closes_mod.reject(args.ref, args.reason)
+        row, created = closes_mod.reject(args.ref, args.reason)
+        if not created:
+            print(f"already rejected {row['ref']}  {row['scope']}:{row['thread_id']}")
+            return
         print(f"rejected {row['ref']}  {row['scope']}:{row['thread_id']}")
         return
 
@@ -4778,7 +4781,10 @@ def _cmd_thread(args, parser):
             "console": "console:unattributed",
             "session": "session:unattributed",
         }[args.surface]
-        approval = closes_mod.approve(
+        # A repeat approval writes no ledger row but still writes the edge: the row lands
+        # before the edge, so a failed graph write is repaired by re-running this, and
+        # `write_thread_close` is idempotent.
+        approval, created = closes_mod.approve(
             args.ref, surface=args.surface, approver_evidence=evidence
         )
         close = ThreadClose(
@@ -4799,6 +4805,8 @@ def _cmd_thread(args, parser):
             _persist(graph)
         finally:
             close_connection(graph)
+        if not created:
+            print(f"approval {args.ref} was already recorded; close edge rewritten")
         print(f"closed {close.scope}:{close.thread_id} as {close.status.value}")
         print(f"  {agent_vid} -[RESOLVES {{basis: {close.basis}}}]-> "
               f"{vid('Thread', close.thread_id, close.scope)}")

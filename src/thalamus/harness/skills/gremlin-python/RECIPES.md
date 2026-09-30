@@ -800,5 +800,6 @@ never-randomized nodes into whichever arm you call the control.
 Join on `policy_seed`, not on `session_id`: the ledger's own `session_id` is the empty
 string on every row **by design** (`policy.py` — the MCP server cannot see its caller's
 session, and `eval sync` fills it in on the Trace instead). Seeds are unique across the
-ledger. `response_sha256` is the key `sync.py` itself joins on and works too, but it
-collides on 9 hashes covering 10 rows (#143), where `policy_seed` does not.
+ledger. `policy.load()` keys every row by `(response_sha256, ts)`. `sync.py` joins on
+`response_sha256` alone, which pairs a repeated response with its last record (open in
+#328); `policy_seed` is unique per row.

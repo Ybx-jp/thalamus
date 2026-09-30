@@ -4,37 +4,22 @@ The partial-write / crash-recovery shape of the qe charter's write-path gap (iss
 interrupt a write and assert the surviving state is consistent — the reader can still
 parse it, or the write is absent, but never half-applied and silently accepted.
 
-`closes._append()` (`src/thalamus/harness/closes.py:80`, byte-identical in shape to
-`ceremonies._append()`) opens the ledger `"a"`, takes `fcntl.LOCK_EX`, and writes
-`json.dumps(row, sort_keys=True) + "\\n"`. A process killed after the OS has accepted
-some but not all of those bytes — a real and unremarkable failure mode, not a
-contrived one — leaves the file with a trailing line that has no newline. `read_rows()`
-tolerates a malformed *line* by design (`json.JSONDecodeError: continue`), which is the
-right defense against a line that is garbage on its own. It does not defend against the
-sharper case here: the next writer to open the file in append mode writes its own valid
-JSON directly onto the end of that unterminated line, with nothing separating the two.
-`read_rows()` then sees one line that parses as neither record and drops it whole —
-discarding not only the row that was mid-write when the crash happened, but the
-*next, fully valid write made after recovery*, with no error and no signal that
-anything was lost.
+A process killed after the OS has accepted some but not all of a row's bytes leaves the
+ledger with a trailing line that has no newline. `read_rows()` skips a malformed line by
+design; the append path (`harness/ledger_io.write_row`, used by `closes` and
+`ceremonies`) writes a newline first when the file does not end in one, so the next
+row lands on its own line and only the in-flight row is lost.
 
-**The mutation, run as the control.** `_append()` is not called for the crash: the
-truncated bytes are written directly, byte-sliced from a real `json.dumps` encoding of a
-row this module would have produced, cut at half its length with the trailing newline
-withheld — the shape a `SIGKILL` mid-`write(2)` leaves. That is the only fabricated
-input in this case; every other row comes from the real `propose()`. A clean-recovery
-control (a valid row, properly newline-terminated, followed by another valid `propose()`
-call) is run first and must recover both rows, or the comparator cannot be trusted to
-tell a lost row from an absent one.
+**The mutation, run as the control.** The crash is simulated by writing a real
+`json.dumps` row cut at half its length with the newline withheld — the shape a
+`SIGKILL` mid-`write(2)` leaves; every other row comes from the real `propose()`. A
+clean-recovery control (two properly terminated rows) runs first and must recover both,
+or the comparator cannot tell a lost row from an absent one.
 
-**Confirmed as a real defect, not asserted.** Filed as issue #169, tagged `issue=169,
-fixed=False`, and pinned in `expectations.json`. Reproduction: propose one row, append
-the first half of a second row's JSON with no trailing newline (the simulated crash),
-then propose a third, valid row (the simulated post-crash resume) — `read_rows()`
-returns only the first row; the third is gone, merged into the unparseable line the
-crash left. Varying the truncation point (a quarter, three-quarters of the row) changes
-nothing: any withheld newline reproduces the loss, which is what confirms the defect is
-the missing separator rather than a specific offset.
+**Mutation that drives it red.** Against 9b02207, where `_append()` wrote
+`json.dumps(row) + "\\n"` straight after the partial line, `read_rows()` returns only
+`['pre-crash']`: the post-crash row merges into the unparseable line. Any truncation
+point reproduces it; the missing separator is the defect, not an offset.
 """
 
 from __future__ import annotations
@@ -97,7 +82,19 @@ def run() -> Finding | None:
         recovered = [row["thread_id"] for row in closes.read_rows(ledger)]
 
     if recovered == ["pre-crash", "post-crash"]:
-        return None
+        # A writer killed after its last byte but before the newline leaves a complete
+        # row; the fence must end that line, not merge the next row into it.
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "closes.jsonl"
+            with ledger.open("a") as handle:
+                handle.write(json.dumps({"event": "proposed", "ref": "r1",
+                                          "thread_id": "unterminated", "scope": "qe"}))
+            closes.propose(thread_id="after", scope="qe", basis="b",
+                            disposition="settled", rationale="r",
+                            proposed_by="qe-case", path=ledger)
+            recovered = [row["thread_id"] for row in closes.read_rows(ledger)]
+        if recovered == ["unterminated", "after"]:
+            return None
 
     return Finding(
         failure_class=FailureClass.INVARIANT_FALSIFIED,
@@ -108,8 +105,8 @@ def run() -> Finding | None:
             "row written after recovery rather than just the one in flight during "
             "the crash"
         ),
-        witness=f"expected ['pre-crash', 'post-crash'], recovered {recovered}",
-        site="src/thalamus/harness/closes.py:_append",
+        witness=f"recovered {recovered} after a partial or unterminated row",
+        site="src/thalamus/harness/ledger_io.py:write_row",
     )
 
 
@@ -121,5 +118,5 @@ CASE = Case(
     summary="a crash mid-append must not swallow the next writer's row",
     run=run,
     issue=169,
-    fixed=False,
+    fixed=True,
 )

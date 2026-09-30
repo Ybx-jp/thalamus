@@ -900,3 +900,19 @@ def test_an_end_for_an_occasion_that_never_started_is_reported(ledger):
     report = ceremonies.audit(path=ledger)
     assert report.orphan_ends == ("alpha:review:9",)
     assert not report.clean()
+
+
+def test_an_append_after_a_partial_line_lands_on_its_own_line(ledger):
+    """
+    Scenario: a writer died mid-row, leaving a line with no trailing newline.
+    Expected: the next occasion is readable, through both append paths.
+    """
+    ceremonies.start("alpha", "review", path=ledger)
+    with ledger.open("a") as handle:
+        handle.write('{"event": "ceremony_start", "room": "al')
+    started = ceremonies.start("alpha", "review", path=ledger)
+    skipped = ceremonies.skip("alpha", "review", path=ledger)
+
+    ids = [row["occasion_id"] for row in ceremonies.read_rows(ledger)]
+    assert ids[-2:] == [started["occasion_id"], skipped["occasion_id"]]
+    assert len(ids) == 3

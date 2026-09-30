@@ -1235,38 +1235,17 @@ def run_tool_loop(
                 **({"num_ctx": cli.context_window} if cli.context_window else {}),
             },
         }
-        request = urllib.request.Request(
-            f"{base}/api/chat",
-            data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        started = time.monotonic()
-        try:
-            with urllib.request.urlopen(request, timeout=max(1.0, remaining)) as response:
-                data = json.load(response)
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode(errors="replace")[:500]
-            raise ExtractionError(f"{base}/api/chat returned {exc.code}: {detail}") from None
-        except OSError as exc:
-            if isinstance(exc, TimeoutError) or isinstance(
-                getattr(exc, "reason", None), TimeoutError
-            ):
-                return ToolLoopRun(messages, turns, "deadline")
-            raise ExtractionError(f"{base}/api/chat unreachable: {exc}") from None
+        answered = _post_chat(base, body, remaining)
+        if answered is None:
+            return ToolLoopRun(messages, turns, "deadline")
+        data, wall_ms = answered
         message = data.get("message") or {}
         calls = [
             call.get("function") or {}
             for call in message.get("tool_calls") or []
             if isinstance(call, dict)
         ]
-        turns.append(LoopTurn(
-            wall_ms=round((time.monotonic() - started) * 1000),
-            load_ms=_nanos_to_ms(data.get("load_duration")),
-            total_ms=_nanos_to_ms(data.get("total_duration")),
-            prompt_tokens=data.get("prompt_eval_count"),
-            output_tokens=data.get("eval_count"),
-            tool_calls=len(calls),
-        ))
+        turns.append(_turn(data, wall_ms, len(calls)))
         messages.append({
             "role": "assistant",
             "content": message.get("content") or "",
@@ -1288,6 +1267,84 @@ def run_tool_loop(
                 return ToolLoopRun(messages, turns, "stop_tool")
             messages.append({"role": "tool", "tool_name": name, "content": content})
     return ToolLoopRun(messages, turns, "max_turns")
+
+
+def _post_chat(base: str, body: dict, remaining: float) -> tuple[dict, int] | None:
+    """One `/api/chat` request and its wall milliseconds; None when the socket timed out."""
+    request = urllib.request.Request(
+        f"{base}/api/chat",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=max(1.0, remaining)) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")[:500]
+        raise ExtractionError(f"{base}/api/chat returned {exc.code}: {detail}") from None
+    except OSError as exc:
+        if isinstance(exc, TimeoutError) or isinstance(
+            getattr(exc, "reason", None), TimeoutError
+        ):
+            return None
+        raise ExtractionError(f"{base}/api/chat unreachable: {exc}") from None
+    return data, round((time.monotonic() - started) * 1000)
+
+
+def _turn(data: dict, wall_ms: int, tool_calls: int) -> LoopTurn:
+    return LoopTurn(
+        wall_ms=wall_ms,
+        load_ms=_nanos_to_ms(data.get("load_duration")),
+        total_ms=_nanos_to_ms(data.get("total_duration")),
+        prompt_tokens=data.get("prompt_eval_count"),
+        output_tokens=data.get("eval_count"),
+        tool_calls=tool_calls,
+    )
+
+
+def run_structured_chat(
+    cli,
+    model: str,
+    messages: list[dict],
+    *,
+    schema: dict,
+    deadline: float,
+    max_tokens: int,
+) -> tuple[dict | None, LoopTurn] | None:
+    """One `/api/chat` answer constrained to `schema`, parsed, with the turn's figures.
+
+    ollama's structured output: `format` carries the JSON schema and the server
+    constrains decoding to it. The object is None when the answer still does not parse
+    (a reply the token cap cut off); the whole result is None when the deadline passed
+    before or during the request.
+    """
+    base = cli.endpoint.rstrip("/").removesuffix("/v1")
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    body = {
+        "model": model,
+        "messages": messages,
+        "format": schema,
+        "stream": False,
+        "think": False,
+        "options": {
+            "temperature": 0.0,
+            "num_predict": max_tokens,
+            **({"num_ctx": cli.context_window} if cli.context_window else {}),
+        },
+    }
+    answered = _post_chat(base, body, remaining)
+    if answered is None:
+        return None
+    data, wall_ms = answered
+    content = str((data.get("message") or {}).get("content") or "")
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        parsed = None
+    return (parsed if isinstance(parsed, dict) else None), _turn(data, wall_ms, 0)
 
 
 def _nanos_to_ms(value) -> int | None:

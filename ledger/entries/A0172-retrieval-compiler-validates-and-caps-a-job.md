@@ -50,6 +50,10 @@ none
 - 2026-09-25T02:25:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/retrieval.py § "Job" =sha256:5cae7fd8228fdbf7627acb780e15ac607a3b7f3b5cf0cd757023c4179239936a
   note: Job.call's empty-result string is now the module constant NO_RESULTS, with the same text; validation, scope supply and the four caps are unchanged, so the assertion is unaffected
+- 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
+  evidence: code: src/thalamus/harness/retrieval.py § "Job" =sha256:fe0a890b6e8b259fa9167ecdae3623f5adef135ca7d07362dfe276c5bf8fdf40
+  note: Job gained `shown`, the row each handle was shown under, filled in call after the character cap check; validation, scoping, the call and time caps, the node and character caps and their defaults are unchanged, so the assertion is unaffected
+
 
 ## References
 
