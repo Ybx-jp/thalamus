@@ -60,6 +60,13 @@
       "witness_contains": "manifest declares tier=3 (WILD); batch provenance tier(s) written=[2] (CURATED=2)",
       "triaged_at_rev": "4a42972",
       "note": "Issue #283. ExpertManifest.tier (contract/manifest.py:275) is parsed from every config/experts/*.yaml manifest and read by nothing; build_batch() (harness/ingest.py:572-576) stamps every claim's and entity's Provenance with a hardcoded Tier.CURATED regardless of scope. A manifest declaring tier: 3 (Tier.WILD) has its ingested content written at tier 2 instead, so the operator's downgrade never reaches the graph or the floor-over-derived_from computation. The pin is the declared-3-vs-written-2 pair; a fix that has build_batch (or its caller) read the scope's manifest tier and use it (floored so a feed cannot declare itself above CURATED) makes the written tier equal 3 and this entry goes stale."
+    },
+    {
+      "case": "send-oversize-text-is-delivered-or-refused-and-never-submitted",
+      "failure_class": "invariant-falsified",
+      "witness_contains": "17000-byte text: HTTP 200 {\"ok\": true} while the pane held 1 byte(s) (b'\\r') including an Enter; tmux said 'command too long'",
+      "triaged_at_rev": "9b02207",
+      "note": "Issue #327. /api/send (console/server.py) calls tmux send-keys -l -- <text> without reading the return code; tmux rejects an argv over about 16340 bytes with 'command too long' (rc 1) and types nothing, the handler still answers 200 {ok: true}, and with submit on (the default) it then sends Enter into a composer that received no text. The pin is the 200 plus the pane holding only the Enter, with tmux's own refusal as the cause; a fix that answers non-2xx and skips the Enter, or that delivers long text through a buffer, makes this entry go stale."
     }
   ]
 }
