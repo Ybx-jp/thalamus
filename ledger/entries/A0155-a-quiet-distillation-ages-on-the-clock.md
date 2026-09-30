@@ -47,6 +47,14 @@ none
 - 2026-09-29T12:40:00-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:0993d4a386ffc58896791848d9df762ab41a368199cce624ed975ac683028fa7
   note: the seed probe now creates the logs directory and the seed comparison is strict; the clock-driven re-classification through _by_clock is unchanged
+- 2026-09-29T22:12:55-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:0993d4a386ffc58896791848d9df762ab41a368199cce624ed975ac683028fa7
+  artifact: sha256:5df063072c3dbcc724a87b4e6bdd8f89fb3b6ec6ae21b85dd2ad9bb119601958
+  note: propagated from a moved ground
+
+- 2026-09-29T22:14:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/console/distill.py § "DistillWatch" =sha256:5df063072c3dbcc724a87b4e6bdd8f89fb3b6ec6ae21b85dd2ad9bb119601958
+  note: the ledger join is keyed by the full session id and by its eight-character prefix for legacy log names, and kill rows are matched against both name shapes; the clock-driven re-classification through _by_clock is unchanged -- the assertion is unaffected
 
 ## References
 

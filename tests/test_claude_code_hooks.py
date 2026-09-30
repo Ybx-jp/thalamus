@@ -567,7 +567,7 @@ class TestTranscriptlessSessionsAreNotDistilled:
 
         _session_end(tmp_path, tmp_path, "real-sess-1", bin_dir)
 
-        log = tmp_path / ".thalamus" / "logs" / "session-end-real-ses.log"
+        log = tmp_path / ".thalamus" / "logs" / "session-end-real-sess-1.log"
         assert log.exists(), "a real session's missing transcript went unrecorded"
         assert "nothing to distill" in log.read_text()
         time.sleep(1.5)

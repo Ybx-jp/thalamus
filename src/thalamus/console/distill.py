@@ -4,7 +4,7 @@ SessionEnd launches `thalamus extract` **detached** (`nohup … &` in
 `hooks/claude-code/session-end.sh`), so the tmux window is gone long before the
 distillation it triggered finishes. There is no lockfile, no pid file and no
 status record anywhere; the single artifact is
-`~/.thalamus/logs/session-end-<sid8>.log`, which the hook creates before
+`~/.thalamus/logs/session-end-<session id>.log`, which the hook creates before
 forking and the detached job appends to. That log is therefore the whole state
 machine, and this module reads it as one:
 
@@ -64,6 +64,9 @@ KILLS = Path.home() / ".thalamus" / "console" / "distill-killed.jsonl"
 # seed stamp and forgets its dismissals rather than misreading them.
 STATE_V = 3
 
+# A log is named for the full session id. Logs written before that carry the first eight
+# characters, which name no session uniquely; they still surface, joined to the ledger
+# by prefix.
 PREFIX = "session-end-"
 SUFFIX = ".log"
 
@@ -220,7 +223,7 @@ def record_kill(session: str, scope: str, cwd: str, op: str,
     path = path or KILLS
     # The row carries its own identity because by the time anyone reads it the
     # window is gone by construction — this is written *as* it is destroyed.
-    row = {"session": (session or "")[:8], "scope": scope or "", "cwd": cwd or "",
+    row = {"session": session or "", "scope": scope or "", "cwd": cwd or "",
            "project": project or "", "repo_root": repo_root or "",
            "op": op, "at": at if at is not None else time.time()}
     if not row["session"]:
@@ -286,7 +289,7 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
         elif line.startswith(FAIL_MARK) and not fail_line:
             # `✗ <sid8>  extraction failed: …` — the row already names the
             # session, so only the reason is worth the width on a phone.
-            fail_line = re.sub(r"^[0-9a-f]{8}\s+", "",
+            fail_line = re.sub(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\s+|^[0-9a-f]{8}\s+", "",
                                line.lstrip(FAIL_MARK).strip())
 
     if NO_TRANSCRIPT in text:
@@ -499,6 +502,11 @@ class DistillWatch:
                     # and carry none of the fields a row needs.
                     if rec.get("event") or not rec.get("session_id"):
                         continue
+                    # Under the full id, and under its first eight characters too
+                    # for the legacy logs named that way. The two key shapes cannot
+                    # collide, and the prefix entry is the latest session to start
+                    # with it — the most a name that short can promise.
+                    rows[rec["session_id"]] = rec
                     rows[rec["session_id"][:8]] = rec
         except OSError:
             return self._ledger
@@ -522,6 +530,8 @@ class DistillWatch:
             # sessions those logs belong to: a killed-window row is an assertion
             # that no log exists, so a log that does exist overrules it.
             out, seen, seen_sessions = [], set(), set()
+            # Legacy logs (an 8-character name) are held apart from full-id ones so a
+            # kill row is matched against the right kind: a full id is never a prefix.
             try:
                 entries = list(os.scandir(self.logs))
             except OSError:
@@ -618,9 +628,12 @@ class DistillWatch:
             # artifact exists. A session that later distilled anyway — a race the
             # kill lost — is dropped, because the log is evidence and the kill row is
             # only an expectation.
+            legacy_seen = {s for s in seen_sessions if len(s) == 8}
+            seen_prefixes = {s[:8] for s in seen_sessions}
             dismissed_kills = state.get("dismissed_kills", {})
             for session, row in self._kill_rows().items():
-                if session in seen_sessions:
+                if (session in seen_sessions or session[:8] in legacy_seen
+                        or (len(session) == 8 and session in seen_prefixes)):
                     continue
                 at = row.get("at", 0.0)
                 if at <= seeded_at or at <= dismissed_kills.get(session, 0):

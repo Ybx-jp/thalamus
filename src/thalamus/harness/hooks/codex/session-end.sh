@@ -28,7 +28,7 @@
 # under the day it ran rather than under its cwd, so there is no project-dir argument
 # to pass and no `--projects-dir` analogue.
 #
-# The log file shares the Claude Code hook's `session-end-<sid8>.log` name on purpose:
+# The log file shares the Claude Code hook's `session-end-<session id>.log` name on purpose:
 # the console's distillation widget (console/distill.py) is a state machine over
 # exactly that name joined against the pin ledger, and codex sessions write a ledger
 # row, so keeping the name gives codex distillation the same live status view for
@@ -53,7 +53,7 @@ transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
 [ -n "$session_id" ] || exit 0
 
 log_dir="$HOME/.thalamus/logs"
-log="$log_dir/session-end-${session_id:0:8}.log"
+log="$log_dir/session-end-${session_id}.log"
 ledger="$HOME/.thalamus/pins/pins.jsonl"
 
 # Extraction's precondition, checked before paying for it — a `uv run`, a model call
@@ -112,9 +112,9 @@ fi
 room="${room:-$(thalamus_resolve_room)}"
 
 if [ -n "$room" ]; then
-  echo "distilling session ${session_id:0:8} into scope $scope (room $room)" >>"$log"
+  echo "distilling session ${session_id} into scope $scope (room $room)" >>"$log"
 else
-  echo "distilling session ${session_id:0:8} into scope $scope" >>"$log"
+  echo "distilling session ${session_id} into scope $scope" >>"$log"
 fi
 
 # Detached, and everything that costs time runs inside the fork. A SessionEnd hook

@@ -64,7 +64,7 @@ else
 fi
 
 log_dir="$HOME/.thalamus/logs"
-log="$log_dir/session-end-${session_id:0:8}.log"
+log="$log_dir/session-end-${session_id}.log"
 
 # Extraction's precondition, checked before paying for it. **SessionEnd fires for
 # subagents too** — they are sessions to the harness — but a subagent has no
@@ -150,9 +150,9 @@ fi
 forked_from="${forked_from:-$(thalamus_resolve_forked_from)}"
 
 if [ -n "$room" ]; then
-  echo "distilling session ${session_id:0:8} into scope $scope (room $room)" >>"$log"
+  echo "distilling session ${session_id} into scope $scope (room $room)" >>"$log"
 else
-  echo "distilling session ${session_id:0:8} into scope $scope" >>"$log"
+  echo "distilling session ${session_id} into scope $scope" >>"$log"
 fi
 
 # --force: a resumed session that was distilled at an earlier stop gets re-extracted
@@ -229,7 +229,7 @@ nohup sh -c "
     mkdir -p '$log_dir' 2>/dev/null || return 0
     now=\$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
     printf '%s session-end.sh: %s exited %s for session %s — %s. See %s.\n' \
-      \"\$now\" \"\$1\" \"\$2\" '${session_id:0:8}' \"\$3\" '$log' \
+      \"\$now\" \"\$1\" \"\$2\" '${session_id}' \"\$3\" '$log' \
       >>'$log_dir/hook-failures.log' 2>/dev/null || true
   }
   uv run --project '$repo_root' thalamus extract --harness claude \

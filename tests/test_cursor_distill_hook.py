@@ -122,7 +122,7 @@ class TestItWaitsForTheTranscript:
         run({"session_id": "sess-abcdefgh", "transcript_path": str(transcript)}, home)
         written = logs(home)
         assert len(written) == 1
-        assert written[0].name == "cursor-distill-sess-abc.log"
+        assert written[0].name == "cursor-distill-sess-abcdefgh.log"
         assert "waiting for" in written[0].read_text()
 
     def test_the_settle_loop_outlasts_a_writer_still_appending(self, home, tmp_path):

@@ -87,10 +87,10 @@ scope="${ledger_scope:-$env_scope}"
 
 log_dir="$HOME/.thalamus/logs"
 mkdir -p "$log_dir"
-log="$log_dir/cursor-distill-${session_id:0:8}.log"
+log="$log_dir/cursor-distill-${session_id}.log"
 repo_root="$(cd "$here/../../../../.." && pwd)"
 
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) waiting for ${session_id:0:8} to settle" >>"$log"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) waiting for ${session_id} to settle" >>"$log"
 
 # Everything that costs time runs detached. The hook itself must return immediately —
 # a sessionEnd hook still running when the process exits is cancelled, which is how the
