@@ -151,6 +151,35 @@ def _runs(text: str) -> int:
 EXIT_RE = re.compile(r"^extract exited (\d+)\b")
 TRACEBACK_MARK = "Traceback (most recent call last):"
 
+# A traceback Python printed and then carried on past. A finalizer that raises while
+# the interpreter shuts down is reported under this line and swallowed, so it says how
+# the process tore down, not why it stopped: the 2026-10-05 shutdown left four logs
+# whose only traceback was gremlin_python's transport `__del__` failing on a running
+# event loop, followed by asyncio's "Unclosed client session" — and the row named the
+# session object's repr as the fault.
+IGNORED_MARK = "Exception ignored "
+
+
+def _traceback_starts(lines: list[str]) -> list[int]:
+    """Where the tracebacks that ended something begin; teardown noise is not one
+    (A0215, cites-as-live)."""
+    return [i for i, line in enumerate(lines) if line.startswith(TRACEBACK_MARK)
+            and not (i and lines[i - 1].startswith(IGNORED_MARK))]
+
+
+def _booted_at() -> float:
+    """When this machine last booted, from the kernel; 0.0 where it cannot say."""
+    try:
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return float(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0.0
+
+
+BOOTED_AT = _booted_at()
+
 
 def _last_run(text: str) -> str:
     """The log from its most recent run mark on.
@@ -176,12 +205,12 @@ def _crash_detail(lines: list[str]) -> str:
     names the fault, and it is the last rather than the first because a chained
     traceback re-raises: the final exception is the one that reached the top.
     """
-    starts = [i for i, line in enumerate(lines) if line.startswith(TRACEBACK_MARK)]
+    starts = _traceback_starts(lines)
     if not starts:
         return ""
     last = ""
     for line in lines[starts[-1] + 1:]:
-        if EXIT_RE.match(line):
+        if EXIT_RE.match(line) or line.startswith(IGNORED_MARK):
             break
         if line and not line[0].isspace():
             last = line.strip()
@@ -264,7 +293,8 @@ def _by_clock(idle: float) -> tuple[str, str]:
     return "abandoned", "nothing has moved since the extract process went quiet"
 
 
-def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
+def _classify(text: str, mtime: float, now: float,
+              booted_at: float | None = None) -> tuple[str, str]:
     """(state, detail) for one log body.
 
     State is 'active', 'done', 'stalled', 'abandoned' or 'error'. 'done' never
@@ -306,15 +336,15 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     # recorded settles it, or the traceback where the hook records none, and the row
     # then names the exception instead of ageing into "nothing has moved"
     # (A0178, cites-as-live).
-    if exited or TRACEBACK_MARK in text:
+    traces = _traceback_starts(lines)
+    if exited or traces:
         # A traceback below a clean summary is not extract's: extract printed its
         # summary and exited 0, and the hook then ran `eval sync`, which died. The
         # session *was* distilled, and a row reading as if it was not sends the
         # operator to re-distill work that landed. Still an error — what sync died on
         # is worth the band (an archive read that failed its hash, 2026-09-25) — but
         # one that says which half failed (A0205, cites-as-live).
-        trace_at = max((i for i, line in enumerate(lines)
-                        if line.startswith(TRACEBACK_MARK)), default=-1)
+        trace_at = max(traces, default=-1)
         if not exited and summary is not None and not int(summary.group(3)) \
                 and trace_at > summary_at:
             return "error", ("distilled; eval sync failed — "
@@ -330,6 +360,15 @@ def _classify(text: str, mtime: float, now: float) -> tuple[str, str]:
     if NOTHING_TO_DISTILL in text or HOOK_NO_TRANSCRIPT in text:
         return "done", ""
     if summary is None:
+        # A job whose log stopped before this machine booted is not quiet, it is gone:
+        # no process survives a reboot. The clock would call it `active` for twenty
+        # minutes and `abandoned` after an hour, and neither says what happened — the
+        # shutdown killed extract before it finished, and the session needs a rerun
+        # (A0216, cites-as-live).
+        booted = BOOTED_AT if booted_at is None else booted_at
+        if mtime < booted:
+            return "error", ("interrupted — the machine shut down before extract "
+                             "finished; not distilled")
         return _by_clock(now - mtime)
     if int(summary.group(3)) or fail_line:
         return "error", fail_line or f"{summary.group(3)} failed"
