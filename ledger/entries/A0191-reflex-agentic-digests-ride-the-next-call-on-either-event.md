@@ -40,7 +40,23 @@ none
 - 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/reflex_worker.py § "deliver" =sha256:20634ac43b350b4afc0c6ae0327fd0c43771b5573cbdf9c5700f5880762e61b8
   note: deliver now also copies listwise, verdicts and admit_ms into the trace's tool_input; the trace's ts, tool_name, response and depth and the budget charge are unchanged, so the assertion is unaffected
+- 2026-10-08T00:17:08-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:031232e668301a6cd9d47a992888bbbe633a568074e272b3920d5a212d60daa8
+  artifact: sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  note: propagated from a moved ground
 
+- 2026-10-08T00:17:08-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "deliver" =sha256:20634ac43b350b4afc0c6ae0327fd0c43771b5573cbdf9c5700f5880762e61b8
+  artifact: sha256:446ba82234f6e8bdc594bb5d62c71519472c090a4970842166606bbe43ee67a5
+  note: propagated from a moved ground
+
+- 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  note: Read at the current revision. The agentic firing is still appended to its agent's pending job and the hook returns; only the spawn_worker call gained the concurrent flag — the assertion is unaffected.
+
+- 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/harness/reflex_worker.py § "deliver" =sha256:446ba82234f6e8bdc594bb5d62c71519472c090a4970842166606bbe43ee67a5
+  note: Read at the current revision. deliver copies the job's channel, model and channel_run figures into the outcome row and the trace's tool_input; the delivery-time trace, depth and budget charge are unchanged — the assertion is unaffected.
 
 ## References
 

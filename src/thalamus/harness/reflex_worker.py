@@ -1,11 +1,14 @@
 """The memory reflex's worker and carrier — the agentic plan's path to the agent.
 
 `thalamus reflex --work` is the worker: a detached process `reflex_queue.spawn_worker`
-starts from the trigger hook. It takes one global lock (`~/.thalamus/reflex/worker.lock`),
-because the local model serves one request at a time, and holds it while it claims
-jobs oldest-first across every `(session, agent)` key, runs each, and exits when none
-remain. The kernel releases the lock when the process dies, so there is no stale lock
-to clear; a job a dead worker had claimed is found by the sweep and recorded `died`.
+starts from the trigger hook. It claims jobs oldest-first across every
+`(session, agent)` key, runs each, and exits when none remain. A key with a job in
+flight is passed over, so one agent never has two jobs running. On the local channel
+(`reflex_channel`) the worker also takes one global lock
+(`~/.thalamus/reflex/worker.lock`), because the local model serves one request at a
+time; on the claude channel every trigger starts a worker and they run side by side.
+The kernel releases the lock when the process dies, so there is no stale lock to
+clear; a job a dead worker had claimed is found by the sweep and recorded `died`.
 
 Each job runs under one wall clock from its claim, `DEADLINE_SECONDS`, enforced by a
 timer around the whole loop rather than by the model or a socket timeout alone. A job
@@ -38,8 +41,7 @@ from pathlib import Path
 from gremlin_python.process.graph_traversal import GraphTraversalSource
 
 from thalamus.contract.manifest import available_scopes
-from thalamus.harness import agentic, quick, reflex_note, reflex_queue
-from thalamus.harness.agents import cli_for
+from thalamus.harness import agentic, quick, reflex_channel, reflex_note, reflex_queue
 from thalamus.harness.extraction import ExtractionError
 from thalamus.harness.reflex import (
     ARM_AGENTIC,
@@ -143,12 +145,24 @@ def _read_job(path: Path) -> tuple[list[dict], int]:
     return lines, torn
 
 
+def _in_flight(directory: Path) -> bool:
+    """Whether another live worker holds a job of this key."""
+    for claimed in directory.glob("pending.*.claimed"):
+        try:
+            pid = int(claimed.name.split(".")[1])
+        except (IndexError, ValueError):
+            continue
+        if pid != os.getpid() and _pid_alive(pid):
+            return True
+    return False
+
+
 def claim_next(root: Path) -> _Claimed | None:
-    """Claim the oldest pending job by renaming it under its key's lock."""
+    """Claim the oldest pending job whose key has none in flight, under the key's lock."""
     for path in sorted(_pending(root), key=_first_ts):
         directory = path.parent
         with locked(directory):
-            if not path.is_file():
+            if not path.is_file() or _in_flight(directory):
                 continue
             claimed = directory / f"pending.{os.getpid()}.claimed"
             path.rename(claimed)
@@ -166,18 +180,29 @@ def work(
     model: str = "",
     alive: Callable[[str], bool] = session_alive,
 ) -> int:
-    """Run every pending job, then exit. Returns how many ran; 0 when another worker holds the lock."""
-    cli = cli or cli_for("local")
+    """Run every pending job, then exit. Returns how many ran.
+
+    `cli` and `model` default to the channel's (`reflex_channel.resolve`). A local
+    worker returns 0 when another holds the global lock; a worker on any other channel
+    takes no lock.
+    """
+    if cli is None:
+        try:
+            cli, model = reflex_channel.resolve(model)
+        except reflex_channel.UnknownChannel as exc:
+            return _refuse_all(root, str(exc))
     model = model or cli.default_model
+    concurrent = cli.transport == "subprocess"
     ran = 0
     lock_path = reflex_queue.worker_lock_path(root)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     while True:
         with lock_path.open("a") as handle:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return ran
+            if not concurrent:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return ran
             g = None
             try:
                 sweep(root, alive=alive)
@@ -195,6 +220,7 @@ def work(
                             "session_id": str(first.get("session_id") or ""),
                             "agent_id": str(first.get("agent_id") or ""),
                             "plan": ARM_AGENTIC, "triggers": len(claimed.lines),
+                            "channel": cli.harness, "model": model,
                             "outcome": "error", "detail": f"{type(exc).__name__}: {exc}"[:300],
                         })
                         claimed.path.unlink(missing_ok=True)
@@ -204,11 +230,29 @@ def work(
             finally:
                 if g is not None:
                     close_graph(g)
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        # A trigger that found the lock held started no worker; it relies on this
-        # rescan, made after the lock is released, to be seen.
+                if not concurrent:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        # A trigger that found the lock held started no worker, and one whose key was
+        # in flight found nothing to claim; both rely on this rescan to be seen.
         if not _pending(root):
             return ran
+        if all(_in_flight(p.parent) for p in _pending(root)):
+            return ran
+
+
+def _refuse_all(root: Path, detail: str) -> int:
+    """Record every pending job as an error: the channel it would run on is not one."""
+    refused = 0
+    while (claimed := claim_next(root)) is not None:
+        first = claimed.lines[0] if claimed.lines else {}
+        append_outcome(root, {
+            "session_id": str(first.get("session_id") or ""),
+            "agent_id": str(first.get("agent_id") or ""), "plan": ARM_AGENTIC,
+            "triggers": len(claimed.lines), "outcome": "error", "detail": detail[:300],
+        })
+        claimed.path.unlink(missing_ok=True)
+        refused += 1
+    return refused
 
 
 class _Clock:
@@ -273,6 +317,7 @@ def run_job(
     row = {
         "session_id": session_id, "agent_id": agent_id, "plan": ARM_AGENTIC,
         "triggers": len(lines), "torn": claimed.torn, "queued_ms": queued_ms,
+        "channel": cli.harness, "model": model,
     }
 
     def finish(outcome: str, **fields) -> str:
@@ -315,7 +360,7 @@ def run_job(
             agentic.run(
                 job, cli=cli, model=model, anchors=anchors, excerpt=text,
                 deadline=started + deadline_seconds, result=result,
-                alive=lambda: alive(session_id),
+                alive=lambda: alive(session_id), cwd=str(first.get("cwd") or ""),
             )
     except agentic.JobTimeout:
         result.stopped = "timeout"
@@ -362,12 +407,13 @@ def run_job(
         reflex_note.assign_note_arm(root, session_id, firing_id) if note_check.valid else ""
     )
     shown_note = result.note if note_arm == reflex_note.SHOWN else ""
+    searcher = reflex_channel.searcher(cli, model)
     frame = render_envelope([], anchors, voiced=voiced, pointer=str(pointer),
-                            trigger=trigger_ts, note=shown_note)
+                            trigger=trigger_ts, note=shown_note, searcher=searcher)
     kept, _held = pack_digest(digest_lines, DIGEST_CHAR_CAP, frame)
     # Strongest last, nearest the agent's next turn.
     digest = render_envelope(kept[::-1], anchors, voiced=voiced, pointer=str(pointer),
-                             trigger=trigger_ts, note=shown_note)
+                             trigger=trigger_ts, note=shown_note, searcher=searcher)
     ready_ts = now()
     pointer.write_text(render_pointer(firing_id, trigger_ts, handles, blocks),
                        encoding="utf-8")
@@ -412,9 +458,10 @@ def _effort(job: Job, result: agentic.AgenticResult, started: float) -> dict:
     # Every model call, the loop's turns and the admission's verdicts alike.
     turns = result.turns + result.admit_turns
     totals = [t.total_ms for t in turns if t.total_ms is not None]
+    channel_turns = result.channel_run.get("num_turns")
     return {
         "calls": job.calls, "nodes": len(job.handles),
-        "turns": len(result.turns),
+        "turns": channel_turns if isinstance(channel_turns, int) else len(result.turns),
         "listwise": len(result.listwise), "verdicts": len(result.admit_turns),
         "admit_ms": sum(t.wall_ms for t in result.admit_turns),
         "ms": round((time.monotonic() - started) * 1000),
@@ -423,6 +470,9 @@ def _effort(job: Job, result: agentic.AgenticResult, started: float) -> dict:
         # own time, per turn.
         "slot_wait_ms": sum(t.wall_ms for t in turns) - sum(totals) if totals else None,
         "stop": result.stop_log(),
+        # The claude channel's envelope: API time, tokens, the vendor's cost estimate,
+        # and the models that actually answered.
+        "channel_run": result.channel_run,
     }
 
 
@@ -460,6 +510,7 @@ def deliver(
                 "session_id": session_id, "agent_id": agent_id, "plan": ARM_AGENTIC,
                 "firing_id": data.get("firing_id", ""), "triggers": data.get("triggers"),
                 "queued_ms": data.get("queued_ms"),
+                "channel": data.get("channel", ""), "model": data.get("model", ""),
             }
             if not budget.fits:
                 Path(str(data.get("pointer") or "")).unlink(missing_ok=True)
@@ -489,7 +540,7 @@ def deliver(
                     "triggers", "queued_ms", "calls", "nodes", "turns", "listwise",
                     "verdicts", "admit_ms", "ms",
                     "load_ms", "slot_wait_ms", "stop", "note", "note_status", "note_arm",
-                    "note_cited",
+                    "note_cited", "channel", "model", "channel_run",
                 )},
             }
             _append_trace({

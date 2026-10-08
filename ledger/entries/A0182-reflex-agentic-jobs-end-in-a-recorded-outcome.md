@@ -47,7 +47,14 @@ none
 - 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:37de7dc21a705b345f7ee0e0bf082bd2e16e4016a57871a4c5bfb02310bfde0b
   note: run_job's JobTimeout handler now assigns agentic.salvage, which serves what admission kept when admission had begun and what the job returned otherwise; a timed-out job that resolves nothing still finishes as timeout, and every other outcome path and the deadline are unchanged, so the assertion is unaffected
+- 2026-10-08T00:17:08-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:37de7dc21a705b345f7ee0e0bf082bd2e16e4016a57871a4c5bfb02310bfde0b
+  artifact: sha256:f30c9e8af5ab3b02d7ec122e9ea24fa57247dc7a5eb983401e41bc9e34b00138
+  note: propagated from a moved ground
 
+- 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:1f096a228a3e13b5ae7611ef68f722bf9bb14401ae6a3b3c657b55a0dbf132a8
+  note: Read at the current revision. run_job now records the channel and model on every outcome row, names the channel's model in the envelope, and passes the agent's cwd to the plan; a claude-channel run that cannot start or reports an error raises ExtractionError into the same error outcome, and the session_end, timeout, empty and error paths are otherwise as before — the assertion is unaffected.
 
 ## References
 

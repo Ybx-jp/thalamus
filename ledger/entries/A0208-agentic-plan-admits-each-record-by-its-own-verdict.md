@@ -39,7 +39,13 @@ none
 
 ## Verdicts
 
-## References
+- 2026-10-08T00:17:08-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/agentic.py § "run" =sha256:89f4ac0eb02a12277dcc0ee3ec6b2142835c4e25eace9e18527b00d9b1f59c94
+  artifact: sha256:27e6f22ff409346af7187a2b6e3da861a0c4ad31d6b1af4034fb006e77bb73d8
+  note: propagated from a moved ground
 
-- docs/cli.md · standing · cites-as-live
-- src/thalamus/harness/agentic.py · standing · cites-as-live
+- 2026-10-08T00:25:00-07:00 · superseded · grade: argued · author: main
+  evidence: entry: A0218-agentic-plan-admits-each-record-by-its-own-verdict-on-the-local-channel · supersedes
+  note: Pointwise admission now holds on the local channel only; on the claude channel the value ends the job as an error before any model call. The admission order, cap, salvage and the default listwise serving are unchanged.
+
+## References

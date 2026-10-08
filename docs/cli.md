@@ -18,6 +18,7 @@ thalamus status                    # is memory being written? sessions, and the 
 thalamus rescope <scope>           # redirect this session's distillation, before it distills
 thalamus reflex --session-id <id> --response-file <path>   # the reflex hook's worker (see The eval loop)
 thalamus reflex --work                # run the agentic plan's queued jobs; the trigger starts it detached
+thalamus reflex --job-tools <dir>     # one claude-channel job's vocabulary over MCP; its claude -p starts it
 thalamus reflex --deliver --session-id <id> [--agent-id <id>]   # the carrier: print ready digests
 thalamus reflex --sweep               # record and clear queue state nothing will reach
 ```
@@ -462,26 +463,44 @@ since its rows reach no model: 49 calls, every node they can return, and 8 secon
 six replayed firings it added 0.25–0.55 s to the 2–3 s word match took. Each trace
 carries the calls, nodes and milliseconds its plan used, and propagation's its hops too.
 
-*Agentic* is the local model (`THALAMUS_LOCAL_MODEL`, served by ollama) driving the
-vocabulary through ollama's `/api/chat` tool calls. It is handed the firing's anchors
+*Agentic* is a model driving the vocabulary, on one of two channels. By default it is
+Haiku, as one `claude -p` per job on the operator's own Claude Code login, with the
+vocabulary served to it as an MCP server (`thalamus reflex --job-tools`) that relays
+each call back to the worker holding the job; with `THALAMUS_REFLEX_CHANNEL=local` it is
+the local model (`THALAMUS_LOCAL_MODEL`, served by ollama) through `/api/chat` tool
+calls. `THALAMUS_REFLEX_MODEL` names any other model the channel's CLI
+takes.<!-- (A0222, cites-as-live) --> The
+`claude -p` loads the operator's settings, model aliases, MCP servers, hooks and
+permission mode as any other would, with four things fixed: `THALAMUS_SANDBOX` in its
+environment, so every Thalamus hook it fires declines and the job is neither distilled
+nor fires the reflex; `--no-session-persistence`, so it leaves no transcript; the
+vocabulary allowed by name; and Bash, Edit, Write, NotebookEdit, WebFetch and WebSearch
+denied, because it runs in the agent's working directory beside the agent — it may read
+files there, and neither change them nor bring fetched pages into a
+note.<!-- (A0223, cites-as-live) --> It is handed
+the firing's anchors
 and an excerpt of the session — the user's prompts, the agent's prose and tool calls,
 and the failing result, with every other tool result reduced to a label naming its
 tool — and every call it makes carries a statement of what it still needs, logged with
 the call. It ends by naming the handles it keeps, at most five, or none; a loop the caps
 end instead serves what its calls returned. With `THALAMUS_REFLEX_ADMISSION=pointwise`
 in the environment the worker inherits (the `env` block of `~/.claude/settings.json`),
-that list only ranks: what is served is decided one record at a time, by a separate call
+on the local channel — the claude channel records such a job as an error — that list
+only ranks: what is served is decided one record at a time, by a separate call
 per row the model was shown that sees the failure, the excerpt and that row and answers
 keep or drop. The named rows are judged first, in the model's order, then the rest in
 the order they were shown, until five are kept; a loop the turn cap ends is judged the
 same way, and one the clock ends serves what was admitted by then, or what its calls
-returned if admission had not begun.<!-- (A0208, cites-as-live) --> The named list and
+returned if admission had not begun.<!-- (A0218, cites-as-live) --> The named list and
 every verdict are in the trace's stop log. It is off by default: on a replay of 20 real
 jobs the per-row judge on `ghoul-qwen3:8b-q6_K` kept about two rows in three and served
 more unrelated records than the named list did. The hook does not wait for it: the firing is
 queued under `~/.thalamus/reflex/queue/<session>/<agent>/`, where a trigger arriving
-while a job waits joins it, and the hook starts `thalamus reflex --work` detached unless
-a worker holds the global lock. The worker runs jobs oldest first, one at a time, and
+while a job waits joins it, and the hook starts `thalamus reflex --work` detached. On
+the local channel a worker holds a global lock, so jobs run oldest first, one at a time,
+and a trigger that finds the lock held starts none; on the claude channel every trigger
+starts a worker and jobs run side by side, never two for one agent at
+once.<!-- (A0222, cites-as-live) --> The worker
 leaves each digest ready; `reflex-pointer-tap.sh` delivers it on that agent's next
 tool call, whether it succeeded or failed, and the trace line is written then, timestamped at delivery and
 carrying the number of tool calls the agent made after the failure, and the digest's
@@ -490,7 +509,9 @@ A job whose session is no longer live makes no model call, one that runs past 12
 seconds is recorded as a timeout rather than an empty answer, and every job that is
 not delivered is recorded in `~/.thalamus/reflex/jobs/<month>.jsonl` with the reason:
 empty, timeout, died, session_end, budget, undelivered or
-error.<!-- (A0182, cites-as-live) --> `eval reflex` reports those outcomes beside the
+error. Every row, and every agentic trace, names the channel and model that ran the job,
+and a claude-channel trace carries the run's turns, API time, tokens and the vendor's
+cost estimate.<!-- (A0182, cites-as-live) --> `eval reflex` reports those outcomes beside the
 plans, with the delivery depth and the wait from trigger to claim.
 
 The agentic plan's `stop` call also carries a **note**: one to three sentences, written
@@ -501,7 +522,7 @@ nothing phrased as an instruction. A note that fails is not delivered and the re
 out without it. A note that passes is shown in the digest or withheld from it, split in
 balanced blocks within the session, so the note's effect is read over the same kind of
 records rather than confounded with which records were kept; the note's text, check and
-arm are in the trace either way.<!-- (A0190, cites-as-live) --> `eval reflex` counts
+arm are in the trace either way.<!-- (A0217, cites-as-live) --> `eval reflex` counts
 delivered notes by check and by arm, and reads the verdicts on agentic traces separately
 as `reflex_agentic (note shown)` and `(note withheld)`.
 
@@ -724,4 +745,6 @@ expert subgraphs the server grants.<!-- (A0171, cites-as-live) -->
 | `THALAMUS_LOG_LEVEL` | Log level for the MCP server process (`thalamus-mcp`), default `WARNING`. Set it to `INFO` or `DEBUG` when a recall is returning something you cannot explain |
 | `THALAMUS_TMUX_SOCKET` | The tmux server the roster, `spawn`, `dispatch` and the console address (`tmux -L …`), default `thalamus`. Two checkouts on one box get separate control planes by setting it differently |
 | `THALAMUS_WITHHOLD` | The per-node suppression rate `memory_recall` applies, read at each call. Absent or unparseable means off, and an unrandomized session logs nothing — so the intervention leaves no trace when it is not running. Every draw appends to `~/.thalamus/policy/`; `thalamus eval withholding` reads them |
-| `THALAMUS_REFLEX_ADMISSION` | `pointwise` turns on the reflex agentic plan's per-record admission, read by the worker at each job; any other value, or none, serves the plan's own keep list (see *Agentic* above) |
+| `THALAMUS_REFLEX_CHANNEL` | Which model serves the reflex agentic plan, read by the trigger and the worker: `claude` (the default) runs each job as one `claude -p` and jobs run side by side; `local` runs them one at a time on the local model. Any other value records every queued job as an error naming it |
+| `THALAMUS_REFLEX_MODEL` | The model the agentic plan asks its channel for, passed through unchecked; default `haiku` on `claude`, `THALAMUS_LOCAL_MODEL` on `local` |
+| `THALAMUS_REFLEX_ADMISSION` | `pointwise` turns on the reflex agentic plan's per-record admission on the local channel, read by the worker at each job; any other value, or none, serves the plan's own keep list (see *Agentic* above) |

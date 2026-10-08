@@ -43,3 +43,4 @@ The hooks reference says a hook process inherits the parent environment apart fr
 ## References
 
 - docs/design/launch-templates.md · standing · cites-as-live
+- src/thalamus/harness/reflex_channel.py · standing · cites-as-live

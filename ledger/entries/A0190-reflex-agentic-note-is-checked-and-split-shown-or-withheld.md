@@ -39,8 +39,13 @@ none
 - 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:37de7dc21a705b345f7ee0e0bf082bd2e16e4016a57871a4c5bfb02310bfde0b
   note: run_job's JobTimeout handler now assigns agentic.salvage; the note check against the served handles, the arm assignment and the trace fields are unchanged, so the assertion is unaffected
+- 2026-10-08T00:17:08-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex_worker.py § "run_job" =sha256:37de7dc21a705b345f7ee0e0bf082bd2e16e4016a57871a4c5bfb02310bfde0b
+  artifact: sha256:f30c9e8af5ab3b02d7ec122e9ea24fa57247dc7a5eb983401e41bc9e34b00138
+  note: propagated from a moved ground
 
+- 2026-10-08T00:25:00-07:00 · superseded · grade: measured · author: main
+  evidence: entry: A0217-reflex-agentic-note-is-checked-and-split-shown-or-withheld · supersedes
+  note: The note is now written by the channel's model — Haiku through claude -p by default, the local model with THALAMUS_REFLEX_CHANNEL=local — rather than always the local model; the checks, the arm split and the trace fields are unchanged.
 
 ## References
-
-- docs/cli.md · standing · cites-as-live

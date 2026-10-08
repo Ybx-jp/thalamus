@@ -116,7 +116,14 @@ none
 - 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:d5c259425c08068b69e01b4911356bdbacf6f728c2818b820676eb0fbd6a5f6a
   note: reflex_report now also collects listwise, verdicts and admit_ms from agentic traces into the per-arm effort figures; the per-event counts of qualifying and served firings are unchanged, so the assertion is unaffected
+- 2026-10-08T00:17:08-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:031232e668301a6cd9d47a992888bbbe633a568074e272b3920d5a212d60daa8
+  artifact: sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  note: propagated from a moved ground
 
+- 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  note: Read at the current revision. The agentic branch now passes reflex_channel.concurrent() to spawn_worker; the event recorded on every ledger row and trace line is unchanged — the assertion is unaffected.
 
 ## References
 
