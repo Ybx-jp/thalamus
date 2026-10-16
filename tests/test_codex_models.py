@@ -128,8 +128,11 @@ def test_no_codex_on_path_means_no_catalog_and_the_pinned_list_stands(monkeypatc
 
 
 def test_the_console_and_policy_offer_the_live_list(fake_codex):
+    # Read against the real clock, so `gpt-5.5` (retired in `LIVE` at 2026-10-14) is
+    # absent: the live list with retirements applied, and not the pinned list, which
+    # also carries `gpt-5.6-terra`.
     assert AGENT_CLIS["codex"].offered_models == (
-        "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.5",
+        "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-luna",
     )
 
 
