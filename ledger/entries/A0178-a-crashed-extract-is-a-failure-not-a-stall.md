@@ -49,6 +49,9 @@ none
 - 2026-09-29T22:14:00-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:e89f409c487a3cc2be968c98fd7401f76567cf83ba6ff1fdecef4c6d81103644
   note: the failure-line stripper also accepts a full session id before the reason; the crash-versus-stall decision is unchanged -- the assertion is unaffected
+- 2026-10-06T18:02:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:d51bab4e9aae7e3b4c5cca6027a882673fa28cbf6155d75f7b3c651952210a5a
+  note: the traceback test now reads _traceback_starts, which leaves out a traceback CPython printed under `Exception ignored` during teardown (A0215), and a no-summary log older than the boot returns error before the clock (A0216); a real crash's exit line or traceback is still decided as error naming the exception before any clock state -- the assertion is unaffected
 
 ## References
 

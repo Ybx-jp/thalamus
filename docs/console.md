@@ -862,6 +862,14 @@ keeps that true.
   reads `distilled; eval sync failed — <exception>`. Nothing needs re-distilling —
   the next session end's sync sweeps the backlog — but what sync died on is still
   worth seeing.<!-- (A0205, cites-as-live) -->
+  A traceback under an `Exception ignored` line is neither: it is a finalizer Python
+  reported and swallowed while the interpreter tore down, and it names a leaked
+  object, not a fault, so it never decides a row or supplies its
+  detail.<!-- (A0215, cites-as-live) -->
+  **A log with no ending that predates the current boot was interrupted.** No process
+  survives a reboot, so a job whose log stopped before `/proc/stat`'s `btime` is a
+  distillation the shutdown killed, and the row is an error saying so rather than one
+  the clock ages through `stalled` and `abandoned`.<!-- (A0216, cites-as-live) -->
   **The last run mark in a log decides the row.** A log holds one attempt per
   distillation rather than one state, so a re-distill that succeeds clears the crash
   above it, and one that crashes is not laundered by the summary above
