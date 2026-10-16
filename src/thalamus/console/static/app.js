@@ -2008,12 +2008,23 @@ async function openSpawn() {
   els.admin.hidden = true;
   els.spawnLog.hidden = true;
   els.spawnLog.textContent = "";
-  if (!spawnOpts) {
+  // Only a good answer is cached. A fetch that dies on a radio handoff, or a proxy
+  // that answers 502 while the tailnet reconnects, renders an empty sheet for this
+  // open and is asked again on the next one — cached, it emptied the sheet for the
+  // rest of the page's life while the poll, which retries, kept the sessions live.
+  if (!spawnOpts || spawnOpts.failed) {
     els.spawnScopes.textContent = "…";
     try {
       const r = await req("api/spawn-options", { cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       spawnOpts = await r.json();
-    } catch (e) { spawnOpts = { scopes: [], dirs: [], rooms: [] }; }
+    } catch (e) {
+      spawnOpts = { scopes: [], dirs: [], rooms: [], failed: true };
+      els.spawnLog.hidden = false;
+      els.spawnLog.textContent =
+        `could not load the roster and directories (${e.message || e}); ` +
+        "close this sheet and open it again to retry.";
+    }
   }
   renderSpawnChips();
 }
