@@ -45,6 +45,10 @@ none
   evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:e89f409c487a3cc2be968c98fd7401f76567cf83ba6ff1fdecef4c6d81103644
   note: the failure-line stripper also accepts a full session id before the reason; the distilled-versus-undistilled decision for a traceback below a clean summary is unchanged -- the assertion is unaffected
 
+- 2026-10-06T18:02:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/console/distill.py § "_classify" =sha256:d51bab4e9aae7e3b4c5cca6027a882673fa28cbf6155d75f7b3c651952210a5a
+  note: the trace position now comes from _traceback_starts, which leaves out teardown noise printed under `Exception ignored` (A0215), so such noise below a clean summary is no longer read as a sync crash; a real traceback below a zero-failure summary is still reported as distilled with eval sync failed -- the assertion is unaffected
+
 ## References
 
 - src/thalamus/console/distill.py · standing · cites-as-live

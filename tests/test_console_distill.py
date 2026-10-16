@@ -53,9 +53,29 @@ HOOK_NO_TX = ("no transcript at /home/op/.claude/projects/-home-op-code/"
               "{sid}-a157-47ff-b8b2-f5ab.jsonl — nothing to distill\n")
 
 
+# Interpreter teardown after the process was told to stop, as the 2026-10-05 shutdown
+# left it in four logs at once: gremlin_python's transport finalizer raising on a
+# running loop, Python reporting and swallowing it, then asyncio's leak warning. No
+# summary, no exit line, and no traceback that ended anything.
+TEARDOWN = ("Exception ignored in: <function AiohttpTransport.__del__ at 0x77f1>\n"
+            "Traceback (most recent call last):\n"
+            '  File "/home/op/.venv/lib/python3.12/site-packages/gremlin_python/'
+            'driver/aiohttp/transport.py", line 67, in __del__\n'
+            "    self.close()\n"
+            "RuntimeError: Cannot run the event loop while another loop is running\n"
+            "2026-10-05 23:08:49,461 ERROR asyncio: Unclosed client session\n"
+            "client_session: <aiohttp.client.ClientSession object at 0x77f11ec7c050>\n")
+SHUTDOWN = ("distilling session {sid} into scope {scope}\n"
+            "1 sessions to extract (extractor: codex/gpt-5.6-sol)\n" + TEARDOWN)
+
+
 @pytest.fixture()
-def box(tmp_path):
+def box(tmp_path, monkeypatch):
     """A watcher over throwaway logs/ledger/state, seeded as if freshly started."""
+    # A box that booted long before any log here. A CI runner booted minutes ago, and
+    # every aged log below would otherwise predate the boot and read as a shutdown.
+    from thalamus.console import distill          # noqa: PLC0415
+    monkeypatch.setattr(distill, "BOOTED_AT", 0.0)
     logs = tmp_path / "logs"
     logs.mkdir()
     pins = tmp_path / "pins.jsonl"
@@ -395,6 +415,58 @@ def test_a_crashed_run_is_named_by_its_exception_not_its_frames(box):
     box.pin("ccccbbbb")
     box.log("ccccbbbb", CRASHED)
     (row,) = box.watch.rows()
+    assert row["detail"].startswith("ValueError: Archive corruption")
+
+
+def test_teardown_noise_is_not_the_exception_that_ended_the_run(box):
+    """`Exception ignored in:` is Python reporting a finalizer it swallowed on the way
+    out. Read as a crash, the row named `client_session: <aiohttp…>` — the repr of a
+    leaked object — as the reason four sessions were not distilled."""
+    box.pin("cccc1111")
+    box.log("cccc1111", SHUTDOWN)
+    (row,) = box.watch.rows()
+    assert row["state"] == "active"
+
+
+def test_a_log_that_stopped_before_this_boot_was_interrupted(box, monkeypatch):
+    """No process survives a reboot, so a log with no ending that predates the boot is
+    a job the shutdown killed — not one that may yet finish, and not a stall to wait
+    out for twenty minutes before saying so."""
+    from thalamus.console import distill          # noqa: PLC0415
+    monkeypatch.setattr(distill, "BOOTED_AT", time.time() - 60)
+    box.pin("cccc2222")
+    box.log("cccc2222", SHUTDOWN, age_s=120)
+    (row,) = box.watch.rows()
+    assert row["state"] == "error"
+    assert "shut down" in row["detail"]
+    assert "client_session" not in row["detail"]
+
+
+def test_a_log_that_finished_before_this_boot_is_still_done(box, monkeypatch):
+    """The boot only speaks for a job with no ending; a summary already settled it."""
+    from thalamus.console import distill          # noqa: PLC0415
+    monkeypatch.setattr(distill, "BOOTED_AT", time.time() - 60)
+    box.pin("cccc3333")
+    box.log("cccc3333", DONE + TEARDOWN, age_s=120)
+    assert box.watch.rows() == []
+
+
+def test_teardown_noise_below_a_clean_summary_is_not_a_sync_crash(box):
+    """A0205's branch reads a traceback under a clean summary as `eval sync` dying.
+    Finalizer noise there is neither half failing."""
+    box.pin("cccc4444")
+    box.log("cccc4444", DONE + TEARDOWN)
+    assert box.watch.rows() == []
+
+
+def test_a_real_crash_is_named_past_the_teardown_noise_after_it(box):
+    """A crash still tears the interpreter down, so the noise follows the real
+    traceback before the hook's exit line; the row names the crash, not the leak."""
+    box.pin("cccc5555")
+    body = CRASHED.replace("extract exited 1", TEARDOWN + "extract exited 1")
+    box.log("cccc5555", body)
+    (row,) = box.watch.rows()
+    assert row["state"] == "error"
     assert row["detail"].startswith("ValueError: Archive corruption")
 
 
