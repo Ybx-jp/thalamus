@@ -32,6 +32,7 @@ from thalamus.harness import (
     agentic,
     extraction,
     reflex,
+    reflex_channel,
     reflex_note,
     reflex_queue,
     reflex_worker,
@@ -439,8 +440,9 @@ def test_a_torn_line_is_skipped_and_counted_while_its_complete_twin_is_taken(tmp
     assert not pending.exists() and claimed.path.name == f"pending.{os.getpid()}.claimed"
 
 
-def test_a_worker_finding_the_lock_held_runs_nothing(tmp_path):
+def test_a_worker_finding_the_lock_held_runs_nothing(tmp_path, monkeypatch):
     import fcntl
+    monkeypatch.setenv(reflex_channel.CHANNEL_ENV, "local")
     reflex_queue.enqueue(tmp_path, _job_line())
     lock = reflex_queue.worker_lock_path(tmp_path)
     with lock.open("a") as handle:
@@ -448,6 +450,61 @@ def test_a_worker_finding_the_lock_held_runs_nothing(tmp_path):
         assert reflex_queue.worker_running(tmp_path)
         assert reflex_worker.work(tmp_path, connect_graph=lambda: None) == 0
     assert not reflex_queue.worker_running(tmp_path)
+
+
+def test_a_claude_channel_worker_takes_no_lock(tmp_path, monkeypatch):
+    import fcntl
+    reflex_queue.enqueue(tmp_path, _job_line())
+    seen = []
+
+    def run_job(claimed, *, cli, model, **kwargs):
+        seen.append((cli.harness, model))
+        claimed.path.unlink()
+        return "empty"
+
+    monkeypatch.setattr(reflex_worker, "run_job", run_job)
+    lock = reflex_queue.worker_lock_path(tmp_path)
+    with lock.open("a") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        assert reflex_worker.work(tmp_path, connect_graph=object,
+                                  alive=lambda s: True) == 1
+    assert seen == [("claude", "haiku")]
+
+
+def test_a_key_with_a_job_in_flight_is_passed_over_until_it_lands(tmp_path):
+    reflex_queue.enqueue(tmp_path, _job_line(session="s1", ts="2026-09-24T12:00:00Z"))
+    reflex_queue.enqueue(tmp_path, _job_line(session="s2", ts="2026-09-24T12:00:01Z"))
+    busy = reflex_queue.key_dir(tmp_path, "s1", "")
+    flight = busy / f"pending.{os.getppid()}.claimed"
+    flight.write_text(json.dumps(_job_line()) + "\n")
+    assert reflex_worker.claim_next(tmp_path).lines[0]["session_id"] == "s2"
+    assert reflex_worker.claim_next(tmp_path) is None
+    flight.unlink()
+    assert reflex_worker.claim_next(tmp_path).lines[0]["session_id"] == "s1"
+
+
+def test_a_worker_on_an_unknown_channel_records_every_job_as_an_error(tmp_path,
+                                                                      monkeypatch):
+    monkeypatch.setenv(reflex_channel.CHANNEL_ENV, "gemini")
+    reflex_queue.enqueue(tmp_path, _job_line(session="s1"))
+    reflex_queue.enqueue(tmp_path, _job_line(session="s2"))
+    assert reflex_worker.work(tmp_path, connect_graph=object) == 2
+    rows = reflex_queue.load_outcomes(tmp_path)
+    assert [row["outcome"] for row in rows] == ["error", "error"]
+    assert "gemini" in rows[0]["detail"]
+
+
+def test_a_concurrent_spawn_starts_a_worker_while_one_runs(tmp_path, monkeypatch):
+    import fcntl
+    started = []
+    monkeypatch.setattr(reflex_queue.subprocess, "Popen",
+                        lambda argv, **kwargs: started.append(argv))
+    lock = reflex_queue.worker_lock_path(tmp_path)
+    with lock.open("a") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        assert not reflex_queue.spawn_worker(tmp_path, log=tmp_path / "log")
+        assert reflex_queue.spawn_worker(tmp_path, log=tmp_path / "log", concurrent=True)
+    assert len(started) == 1 and "--work" in started[0]
 
 
 def test_a_dead_workers_claim_is_died_and_a_live_ones_is_left(tmp_path):
@@ -535,6 +592,22 @@ def test_a_served_job_leaves_a_ready_digest_under_the_cap_naming_its_trigger(
     assert ready["handles"] == {"R1.1": "scope:main:claim:a"}
     assert "`scope:main:claim:a`" in Path(ready["pointer"]).read_text()
     assert not claimed.path.exists()
+    assert "a local model searched" in ready["digest"]
+    assert (ready["channel"], ready["model"]) == ("local", "m")
+
+
+def test_a_claude_channel_digest_names_the_model_that_chose_it(
+        tmp_path, monkeypatch, graph_reads):
+    monkeypatch.setattr(agentic, "run", _plan(kept=["scope:main:claim:a"]))
+    claimed = _claim(tmp_path)
+    outcome = reflex_worker.run_job(claimed, g=object(), root=tmp_path,
+                                    cli=cli_for("claude"), model="haiku",
+                                    now=lambda: _NOW, alive=lambda session: True)
+    assert outcome == "ready"
+    ready = json.loads(next(tmp_path.glob("queue/s1/session/ready/*.json")).read_text())
+    assert "a model (haiku, through claude -p) searched" in ready["digest"]
+    assert "local model" not in ready["digest"]
+    assert (ready["channel"], ready["model"]) == ("claude", "haiku")
 
 
 def test_a_job_that_keeps_nothing_is_empty_and_leaves_no_pointer(tmp_path, monkeypatch, graph_reads):
@@ -743,7 +816,7 @@ def test_a_shown_note_is_in_the_digest_and_a_withheld_one_only_in_the_record(
     monkeypatch.setattr(agentic, "run", _plan(kept=["scope:main:claim:a"], note=note))
     _run(tmp_path, _claim(tmp_path))
     ready = _ready_file(tmp_path)
-    assert note in ready["digest"] and "written by the local model" in ready["digest"]
+    assert note in ready["digest"] and "written by a local model" in ready["digest"]
     assert ready["note_arm"] == "shown" and ready["note_status"] == "valid"
     assert ready["chars"] <= reflex.DIGEST_CHAR_CAP
     next(tmp_path.glob("queue/s1/session/ready/*.json")).unlink()

@@ -1,4 +1,4 @@
-"""The memory reflex's queue — where a firing that needs the local model waits.
+"""The memory reflex's queue — where a firing that needs a model waits.
 
 Word match and propagation serve from the trigger hook itself. A firing assigned the
 agentic plan (`harness/agentic.py`) cannot: a model loop takes tens of seconds, and a
@@ -29,10 +29,11 @@ import fcntl
 import json
 import os
 import subprocess
-import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+from thalamus.harness.reflex_channel import thalamus_argv
 
 # The agent key of a firing from the session itself, which carries no `agent_id`.
 SESSION_AGENT = "session"
@@ -107,18 +108,19 @@ def worker_running(root: Path) -> bool:
     return False
 
 
-def spawn_worker(root: Path, *, url: str = "", log: Path | None = None) -> bool:
-    """Start a detached worker unless one is running. True when one was started.
+def spawn_worker(root: Path, *, url: str = "", log: Path | None = None,
+                 concurrent: bool = False) -> bool:
+    """Start a detached worker unless a lone one is running. True when one was started.
 
-    A worker started between the check and the spawn is harmless: the second finds the
-    lock held and exits. A job appended after a running worker last looked is picked
-    up by that worker's rescan after it releases the lock (`reflex_worker.work`).
+    With `concurrent` (`reflex_channel.concurrent`), always: workers run side by side
+    and one that finds nothing it may claim exits. Otherwise a worker started between
+    the check and the spawn is harmless: the second finds the lock held and exits. A
+    job appended after a running worker last looked is picked up by that worker's
+    rescan after it releases the lock (`reflex_worker.work`).
     """
-    if worker_running(root):
+    if not concurrent and worker_running(root):
         return False
-    binary = Path(sys.executable).parent / "thalamus"
-    argv = [str(binary) if binary.exists() else "thalamus", "reflex", "--work",
-            "--reflex-dir", str(root)]
+    argv = [*thalamus_argv(), "reflex", "--work", "--reflex-dir", str(root)]
     if url:
         argv += ["--url", url]
     log = log or Path.home() / ".thalamus" / "logs" / "reflex-worker.log"

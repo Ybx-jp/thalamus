@@ -17,10 +17,11 @@ over the graph's edges reached, each of those lines naming the edge it came over
 (A0177, cites-as-live). No model is in the
 loop of either: candidates are never paraphrased, so nothing here can re-voice a
 recorded decision into an instruction for the reader. *Agentic* (`harness/agentic.py`)
-is a local model choosing the calls; it is too slow for the hook to wait on, so its
-firing is queued and a detached worker's digest reaches the agent through the carrier
-on a later call (`harness/reflex_worker.py`) (A0191, cites-as-live). The model chooses
-records and never rewrites them: its lines are built from the rows it chose, and the
+is a model choosing the calls, Haiku or the local model (`harness/reflex_channel.py`);
+it is too slow for the hook to wait on, so its firing is queued and a detached worker's
+digest reaches the agent through the carrier on a later call
+(`harness/reflex_worker.py`) (A0191, cites-as-live). The model chooses records and
+never rewrites them: its lines are built from the rows it chose, and the
 records are quoted verbatim like every other plan's. Its one piece of its own prose, a
 note on what the kept records establish, is checked and delivered as an arm of its own
 (`harness/reflex_note.py`). What enters the agent's context is a
@@ -63,7 +64,7 @@ from pathlib import Path
 
 from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.harness import propagation, reflex_queue
+from thalamus.harness import propagation, reflex_channel, reflex_queue
 from thalamus.harness.extraction import _tokens
 from thalamus.harness.retrieval import Caps, Job
 from thalamus.harness.transcripts import trigger_text
@@ -401,6 +402,7 @@ def render_envelope(
     linked: bool = False,
     trigger: str = "",
     note: str = "",
+    searcher: str = "a local model",
 ) -> str:
     """The digest: the one label its lines do not carry, the lines, then the file.
 
@@ -416,12 +418,13 @@ def render_envelope(
     time, since delivery order is not fire order and "above" would point at whichever
     call the carrier happened to ride. `note` is the agentic plan's checked note
     (`reflex_note`), set only on a digest whose firing drew the shown arm; it sits
-    after the lines it cites, labelled as model-written.
+    after the lines it cites, labelled as model-written. `searcher` names the model that
+    chose the records and wrote the note, as `reflex_channel.searcher` words it.
     """
     if trigger:
         opening = (
             "Thalamus memory reflex (tier-0 operator hook, unsolicited, delivered late): "
-            f"an earlier Bash result, at {trigger}, read as a failure, and a local model "
+            f"an earlier Bash result, at {trigger}, read as a failure, and {searcher} "
             "searched the graph for memory bearing on it, starting from its identifiers "
             f"({', '.join(anchors)})."
         )
@@ -452,7 +455,7 @@ def render_envelope(
         lines.append("\n".join(items))
     if note:
         lines.append(
-            "Note (written by the local model from the records above, not recalled; "
+            f"Note (written by {searcher} from the records above, not recalled; "
             f"each sentence cites the records it rests on): {note}"
         )
     if pointer:
@@ -646,7 +649,8 @@ def fire(
         record("queued", arm=arm, anchors=fresh, keys=keys,
                detail="joined the pending job" if absorbed else "")
         if spawn:
-            reflex_queue.spawn_worker(root, url=worker_url)
+            reflex_queue.spawn_worker(root, url=worker_url,
+                                      concurrent=reflex_channel.concurrent())
         return ""
 
     query = " ".join(fresh)

@@ -1,8 +1,9 @@
-"""The agentic plan — a local model choosing retrieval calls, the compiler running them.
+"""The agentic plan — a model choosing retrieval calls, the compiler running them.
 
 The memory reflex's third plan. A job is handed the anchors of the failure that fired
-it and an excerpt of the session (`transcripts.excerpt_for_job`), and the local model
-(`ghoul`) drives the retrieval vocabulary through `extraction.run_tool_loop`: every
+it and an excerpt of the session (`transcripts.excerpt_for_job`), and the channel's
+model drives the retrieval vocabulary: Haiku through one `claude -p` by default, or the
+local model (`ghoul`) through `extraction.run_tool_loop` (`reflex_channel`). Every
 call it makes is a tool of `retrieval.TOOLS`, validated, scoped and capped by the
 job's `retrieval.Job`, and every node it sees is a row under a handle that job minted.
 The model never writes Gremlin and never names a scope.
@@ -16,11 +17,11 @@ the rule is measured rather than assumed. A loop the caps or the clock end inste
 not a stop: what its completed calls returned is packed in the order the job first saw
 it.
 
-With `THALAMUS_REFLEX_ADMISSION=pointwise` in the worker's environment, what is served
-is decided per record instead, and the stop's `keep` list only ranks. Every row the
-model was shown is judged on its own — the failure, the excerpt and that one row, keep
-or drop — the stop's handles first in its order, then the rest in the order they were
-shown, until `MAX_KEEP` are kept or every row is judged. A loop the turn cap ends is
+With `THALAMUS_REFLEX_ADMISSION=pointwise` in the worker's environment, on the local
+channel only, what is served is decided per record instead, and the stop's `keep` list
+only ranks. Every row the model was shown is judged on its own — the failure, the
+excerpt and that one row, keep or drop — the stop's handles first in its order, then
+the rest in the order they were shown, until `MAX_KEEP` are kept or every row is judged. A loop the turn cap ends is
 judged the same way, with no ranking to put first; one the clock ends serves what was
 admitted before it, or, when admission had not begun, what its calls returned. The
 listwise keep and every verdict are in the stop log. It is off by default because on a
@@ -45,7 +46,9 @@ import re
 import time
 from dataclasses import dataclass, field
 
+from thalamus.harness import reflex_channel
 from thalamus.harness.extraction import (
+    ExtractionError,
     LoopTurn,
     StopLoop,
     run_structured_chat,
@@ -282,6 +285,9 @@ class AgenticResult:
     turns: list = field(default_factory=list)
     admit_turns: list[LoopTurn] = field(default_factory=list)
     ms: int = 0
+    # The claude channel's run as its envelope reports it (`reflex_channel.run_loop`);
+    # empty on the local channel, whose figures are per turn.
+    channel_run: dict = field(default_factory=dict)
 
     def stop_log(self) -> dict:
         return {
@@ -309,14 +315,25 @@ def run(
     deadline: float,
     result: AgenticResult | None = None,
     alive=None,
+    cwd: str = "",
 ) -> AgenticResult:
     """Run the plan in `job` and return what it keeps.
 
     `result` is filled in place as the loop goes, so a caller whose clock fires
     mid-loop still holds every hop that completed. `alive` is checked before every
-    model turn (`run_tool_loop`).
+    model turn (`run_tool_loop`), or between calls on the claude channel. A `cli`
+    reached by subprocess runs the loop as one `claude -p` in `cwd`
+    (`reflex_channel.run_loop`).
     """
     result = result if result is not None else AgenticResult()
+    spawned = cli.transport == "subprocess"
+    if spawned and pointwise_admission():
+        # The admission is a constrained-decoding call per row against ollama, which
+        # the claude channel has no counterpart for.
+        raise ExtractionError(
+            f"{ADMISSION_ENV}=pointwise runs on the local channel only; unset it or set "
+            f"{reflex_channel.CHANNEL_ENV}=local"
+        )
     started = time.monotonic()
     stop_args: dict = {}
 
@@ -340,31 +357,40 @@ def run(
         ))
         return rendered
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": job_prompt(anchors, excerpt)},
-    ]
-    loop = run_tool_loop(
-        cli, model, tool_schemas(), messages,
-        execute=execute, deadline=deadline, max_turns=MAX_TURNS, alive=alive,
-        turns=result.turns,
-    )
-    result.stopped = loop.stopped
-    if loop.stopped == "stop_tool":
+    if spawned:
+        ran = reflex_channel.run_loop(
+            cli, model, tool_schemas(), system=SYSTEM_PROMPT,
+            prompt=job_prompt(anchors, excerpt), execute=execute, deadline=deadline,
+            max_turns=MAX_TURNS, alive=alive, cwd=cwd,
+        )
+        result.channel_run = ran.figures
+        stopped = ran.stopped
+    else:
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": job_prompt(anchors, excerpt)},
+        ]
+        stopped = run_tool_loop(
+            cli, model, tool_schemas(), messages,
+            execute=execute, deadline=deadline, max_turns=MAX_TURNS, alive=alive,
+            turns=result.turns,
+        ).stopped
+    result.stopped = stopped
+    if stopped == "stop_tool":
         result.reason = str(stop_args.get("reason") or "")
         result.note = str(stop_args.get("note") or "").strip()
         keep = stop_args.get("keep")
         named = [str(h) for h in keep] if isinstance(keep, list) else []
         result.listwise = select(job, named, result)
-    if pointwise_admission() and loop.stopped in ("stop_tool", "max_turns"):
+    if pointwise_admission() and stopped in ("stop_tool", "max_turns"):
         admit(job, cli=cli, model=model, anchors=anchors, excerpt=excerpt,
               deadline=deadline, result=result, alive=alive)
         result.kept = admitted(job, result)
         if result.admitted == "session_end":
             result.stopped = "session_end"
-    elif loop.stopped == "stop_tool":
+    elif stopped == "stop_tool":
         result.kept = [job.handles[handle] for handle in result.listwise][:MAX_KEEP]
-    elif loop.stopped in ("max_turns", "deadline"):
+    elif stopped in ("max_turns", "deadline"):
         result.kept = returned_in_order(job)
     result.ms = round((time.monotonic() - started) * 1000)
     return result
@@ -405,7 +431,7 @@ def admit(
     The listwise keep goes first in its own order, then every other shown row in the
     order it was shown. Verdicts are appended to `result` as they come, so a job the
     worker's clock ends mid-admission still serves what was admitted before it
-    (A0208, cites-as-live).
+    (A0218, cites-as-live).
     """
     # A named handle the character cap kept from the model's view has no row to judge.
     ranked = [h for h in result.listwise if h in job.shown]

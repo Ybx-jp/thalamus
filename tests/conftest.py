@@ -111,3 +111,15 @@ def _isolate_session_env(monkeypatch):
     """
     for name in SESSION_ENV:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_reflex_channel(monkeypatch):
+    """Unset the operator's reflex channel and model for every test.
+
+    `reflex_channel.resolve` reads both from the environment, which on the operator's
+    box is whatever `~/.claude/settings.json` exports to the session running pytest. A
+    test that relies on the default channel would otherwise test his choice instead.
+    """
+    for name in ("THALAMUS_REFLEX_CHANNEL", "THALAMUS_REFLEX_MODEL"):
+        monkeypatch.delenv(name, raising=False)

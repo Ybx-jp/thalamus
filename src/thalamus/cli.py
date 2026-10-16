@@ -372,6 +372,12 @@ def _main():
         "detached worker the trigger starts (harness/reflex_worker.py)",
     )
     reflex_parser.add_argument(
+        "--job-tools", type=Path, default=None, metavar="DIR",
+        help="Serve one claude-channel job's vocabulary over MCP stdio, relaying each "
+        "call to the worker through DIR's socket — what the job's `claude -p` starts "
+        "(harness/reflex_channel.py)",
+    )
+    reflex_parser.add_argument(
         "--deliver", action="store_true",
         help="Print the digests ready for this session and agent, oldest first, and "
         "record their delivery — the carrier's delivery half",
@@ -2541,6 +2547,11 @@ def _cmd_reflex(args):
     from thalamus.harness import reflex_worker
     from thalamus.harness.reflex import fire, reflex_dir, shadow
 
+    if getattr(args, "job_tools", None):
+        from thalamus.harness.reflex_channel import serve_tools
+
+        serve_tools(args.job_tools)
+        return
     if args.work:
         reflex_worker.work(
             reflex_dir(args.reflex_dir),

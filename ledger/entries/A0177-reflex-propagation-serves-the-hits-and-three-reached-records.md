@@ -43,7 +43,14 @@ none
 - 2026-09-24T20:37:18-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:031232e668301a6cd9d47a992888bbbe633a568074e272b3920d5a212d60daa8
   note: fire gained an agentic branch that returns before any retrieval, and keys is computed before it; the propagation path — word match's lines, at most three reached records by activation, the unfitted record neither served nor written to the pointer file — is unchanged, so the assertion is unaffected
+- 2026-10-08T00:17:08-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:031232e668301a6cd9d47a992888bbbe633a568074e272b3920d5a212d60daa8
+  artifact: sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  note: propagated from a moved ground
 
+- 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
+  evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
+  note: Read at the current revision. The only change is the concurrent flag on the agentic branch's spawn_worker call; the propagation plan's serving, ordering, cap and pointer file are untouched — the assertion is unaffected.
 
 ## References
 
