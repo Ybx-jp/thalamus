@@ -28,7 +28,7 @@ precision and left its subject alone.
 to say "the harness already does this, so an adapter must decline" — and an adapter
 built anyway *double-fires*: two registrations for one obligation, the same denial
 reaching the agent twice in one tool result, and two rows per block in a ledger whose
-passes are evidence for the roster's granularity audit. LSP forbids the same shape
+passes are evidence for the expert set's granularity audit. LSP forbids the same shape
 for the same reason: a server may not register one capability both statically and
 dynamically for one selector (`scope:architect:claim:d1f3f6e9100cbab5`). Without
 `UNKNOWN`, `ABSENT` gets written next to something nobody measured, and `ABSENT` is a
@@ -190,7 +190,7 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
     ),
     BoundaryRow(
         "capability_boundary.tool", "claude", Provision.PROVIDED, _WIRED,
-        "The roster default denies `Artifact` for every scope but `designer`; "
+        "The expert default denies `Artifact` for every scope but `designer`; "
         "`action: list` is read-only and passes.",
     ),
     BoundaryRow(
@@ -199,7 +199,7 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
         "`role-guard.sh` treats `mcp__penpot__*` tool names the way it treats "
         "`Artifact`, so `effective_capability_boundary.denies_tool` runs on the real "
         "MCP-qualified name and a scope's `allow_tools` can carve a slice back out "
-        "of the roster-wide deny — `frontend`'s read/comment grant is the one "
+        "of the every-expert deny — `frontend`'s read/comment grant is the one "
         "declared case. Named for one server rather than a blanket `mcp__.*`: no "
         "other scope declares an MCP server today, and a matcher firing on every "
         "MCP call would run this guard against `mcp__thalamus__*` too, for a "
@@ -329,7 +329,7 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
             conditions=_CURSOR_COND,
             reask="live-session",
         ),
-        "The roster default's only denied tool has no referent here, so the "
+        "The expert default's only denied tool has no referent here, so the "
         "capability boundary is **vacuous** on Cursor rather than unenforced. A "
         "manifest that denies an MCP tool would change this row, and none does.",
     ),

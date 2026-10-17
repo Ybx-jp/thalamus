@@ -92,8 +92,10 @@ fresh, for everyone.
 | **Docker** | runs the graph (Gremlin Server on TinkerGraph) |
 | **Python ≥3.11** and [**uv**](https://docs.astral.sh/uv/) | the package and its CLI |
 | **jq** | every hook parses its stdin with it; without it the hook layer dies silently |
-| **tmux** | the roster and the console drive pinned sessions as tmux windows |
 | **A coding-agent CLI**: Claude Code (`claude`), Cursor (`agent`), codex (`codex`), or any mix | distillation shells out to it |
+
+The console additionally needs **tmux**: it runs pinned sessions as tmux windows
+([docs/console.md](docs/console.md)).
 
 ### Install
 
@@ -174,7 +176,7 @@ controls and no key bindings, and no artwork ships.
   `--check` runs that same path and stops at the model call, reporting the host that
   actually served the bytes for no model spend.<!-- (A0089, cites-as-live) -->
   The bytes are retained either way; the graph is what `--write` gates.
-- **The expert roster.** Each scope is declared by a manifest in `config/experts/` and
+- **Experts.** Each scope is declared by a manifest in `config/experts/` and
   nothing else.<!-- (A0004, cites-as-live) -->
   Five ship as examples; write a YAML file and you have a sixth.
 - **Role boundaries.** Where a scope is defined by what it must not produce, its
@@ -186,23 +188,23 @@ controls and no key bindings, and no artwork ships.
   The reverse denial is in the ownership table, so no other scope can soften what it
   asserts either.<!-- (A0093, cites-as-live) -->
 - **Session pinning.** One OS process, one immutable pin. `thalamus pin <scope>`
-  launches a session into a scope; `thalamus roster` brings up the `main` anchor, and
-  experts are spawned on demand (`--all` opens one window per manifest). The MCP server
+  hands the terminal to a session pinned to that scope. The MCP server
   reads the scope from its environment at startup and no tool accepts a scope argument,
   so a model cannot widen its own view by asking. Nor by shelling out: the graph client
   reaches the whole graph<!-- (A0148, cites-as-live) -->,
   so a PreToolUse guard keeps a pinned session off it and on the tools that confine a
   read to the pin.
-- **The console.** Because a pin is a process in a tmux window, the whole roster is
-  addressable from one place. `thalamus console` serves it to a browser: a tab per
-  window, the live pane, a composer, and one tap to spawn an expert in a project. It
-  installs as a PWA on a phone over a tailnet.
+- **The console.** Optional, and the part that needs tmux: it runs pinned sessions as
+  tmux windows so all of them are addressable from one place. `thalamus console`
+  serves them to a browser: a tab per window, the live pane, a composer, and one tap
+  to spawn an expert in a project. It installs as a PWA on a phone over a tailnet.
 - **Consultations.** Cross-expert questions ride single-use tickets where minting the
   ticket is writing the exchange record, and answers must cite nodes inside the
   consulted scope.<!-- (A0094, cites-as-live) -->
   Beside it, `thalamus quick ask` forks an expert's live session rather than
   cold-starting one.<!-- (A0063, cites-as-live) -->
-- **Rooms.** A private roster whose members see and message each other and nobody else,
+- **Rooms.** Part of the console: a private set of live sessions whose members see and
+  message each other and nobody else,
   enforced by a per-room config directory and an outbound
   guard.<!-- (A0096, cites-as-live) -->
 - **The eval loop.** Every memory-tool call is logged as a `Trace` node, judged used or
@@ -216,7 +218,7 @@ controls and no key bindings, and no artwork ships.
 
 ## Status
 
-Built and running: the graph, the archive, curated ingestion, the roster and pinning,
+Built and running: the graph, the archive, curated ingestion, experts and pinning, the console,
 consultations, rooms, and the eval loop's trace, attribution and cost layers.
 
 In progress: counterfactual measurement at a scale that can settle whether recalled
@@ -235,7 +237,7 @@ Roadmap and open work live in
 | [Getting started](docs/getting-started.md) | Install, first run, and what each step should look like |
 | [Concepts](docs/concepts.md) | Scopes, experts, the federation contract, trust tiers, distillation |
 | [CLI reference](docs/cli.md) | Every command |
-| [The console](docs/console.md) | Driving the roster from your phone: the PWA, reaching it off the box, keeping it up |
+| [The console](docs/console.md) | Driving your pinned sessions from your phone: the PWA, reaching it off the box, keeping it up |
 | [Contributing](CONTRIBUTING.md) | Tests, conventions, how the pieces fit |
 
 ## Layout
@@ -244,7 +246,7 @@ Roadmap and open work live in
 src/thalamus/
   substrate/   storage kernel: schema, Gremlin writer, Gremlin reader, query span tap
   contract/    the federation boundary: ontology, expert manifests, conformance
-  console/     the browser/PWA control plane over the tmux roster
+  console/     the optional browser/PWA control plane: tmux windows, rooms, dispatch
   archive/     immutable content-addressed store for retained evidence
   harness/     where it meets the agent: MCP server, hooks, skills, bootstrap, ingest
   eval/        trace tap, attribution, cost: the live-serving half of the eval loop.

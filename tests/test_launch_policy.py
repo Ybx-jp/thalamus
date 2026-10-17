@@ -140,7 +140,7 @@ class TestLapsing:
 class TestTheStoreIsNotTrusted:
     def test_an_unknown_value_falls_back_to_the_default(self, store):
         """The store is a file a future release may have written differently. A stale
-        entry has to launch at the default, not stop the roster from starting."""
+        entry has to launch at the default, not stop the session from starting."""
         store.write_text(json.dumps(
             {"version": 1, "harnesses": {"cursor": {PERMISSION_POSTURE: {"value": "yolo"}}}}))
         assert lp.effective("cursor", store=store, now=NOW) == {}

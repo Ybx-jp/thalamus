@@ -61,7 +61,7 @@ def sandbox(tmp_path, monkeypatch):
     # resolved at import (install.py:98), and redirecting `USER_CODEX_HOOKS` and
     # `USER_CODEX_MCP` leaves everything that globs the *directory* pointed at the
     # operator's real ~/.codex: `install()` wrote derived profiles into it and
-    # `uninstall()` deleted them, so the suite rewrote his roster as it ran (#71).
+    # `uninstall()` deleted them, so the suite rewrote his expert agents as it ran (#71).
     # Both resolutions, because there are two and they disagree about *when*.
     # `install.CODEX_HOME` is computed at import, so it needs the attribute; the
     # profile writer goes through `codex_transcripts.codex_home()`, which reads the
@@ -1432,7 +1432,7 @@ class TestTheSuiteWritesOnlyInsideItsSandbox:
     Found the slow way: `CODEX_HOME` is resolved at import, and the fixture redirected
     the two paths *derived* from it while leaving the directory itself pointed at the
     real `~/.codex`. `install()` wrote derived codex profiles into it and `uninstall()`
-    deleted them, so a suite run rewrote the operator's roster — 9 profiles from his
+    deleted them, so a suite run rewrote the operator's expert agents — 9 profiles from his
     private manifests replaced by the 5 tracked here — and nothing said so. It
     surfaced as a `thalamus init --check` line that disagreed with a directory listing
     a minute later.

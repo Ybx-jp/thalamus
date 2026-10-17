@@ -6,7 +6,7 @@ refuse_reason
 Infrastructure: none; a fake graph, fake session descriptors on tmp_path, and a fake
 subprocess runner. No `claude` is launched.
 Scope: the launcher's obligations, each of which was measured as failing
-silently — target resolution against the live roster (never the pin ledger), the
+silently — target resolution against the live session list (never the pin ledger), the
 parent's own `--agent`, `THALAMUS_FORKED_FROM`, both cache fields, the login notice
 that arrives as a well-formed answer with exit 0, and the delta that keeps a fork
 from re-asserting its parent's episode.
@@ -194,7 +194,7 @@ def fake_runner(stdout: str, returncode: int = 0, stderr: str = ""):
 
 
 # --------------------------------------------------------------------------------------
-# Target resolution — the live roster, never the pin ledger
+# Target resolution — the live session list, never the pin ledger
 # --------------------------------------------------------------------------------------
 
 
@@ -469,7 +469,7 @@ def test_the_fork_runs_in_the_parents_cwd():
     Scenario: The launcher runs the fork
 
     Verifications:
-    - cwd is the parent's, from the roster entry
+    - cwd is the parent's, from the session list entry
 
     A temp dir files the transcript under a project dir `discover()` withholds, and
     the "Unknown project dir(s)" exit lands in a detached log — so it fails silently.
@@ -974,9 +974,9 @@ def test_a_live_session_that_never_had_a_turn_is_not_forkable(wired):
     - the refusal fires before the exchange is minted, so nothing is spent
     - no fork is launched
 
-    A session registers in the live roster the moment it starts and files no transcript
+    A session registers in the live session list the moment it starts and files no transcript
     until its first turn, so `--resume` exits 1 with `No conversation found`. Measured
-    on the roster this launcher was verified against, where three of four live experts
+    on the box this launcher was verified against, where three of four live experts
     were in exactly this state.
     """
     graph = FakeGraph()

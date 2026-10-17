@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from thalamus.contract.manifest import (
-    ROSTER_CAPABILITY_DEFAULT,
+    EXPERT_CAPABILITY_DEFAULT,
     CapabilityBoundary,
     ExpertManifest,
     WriteBoundary,
@@ -103,7 +103,7 @@ class TestShippedManifests:
     def test_every_declared_boundary_explains_itself(self):
         """A block that cannot say why teaches route-around.
 
-        Over the whole roster rather than a named subset: the manifests are operator
+        Over every expert rather than a named subset: the manifests are operator
         files and the set of them changes, so a fixed list would stop covering the
         expert added after it was written."""
         declared = [
@@ -117,13 +117,13 @@ class TestShippedManifests:
 
 
 class TestCapabilityBoundary:
-    def test_an_undeclared_boundary_inherits_the_roster_default(self):
+    def test_an_undeclared_boundary_inherits_the_expert_default(self):
         """The opposite of WriteBoundary's default, and the whole design rests on
-        it: the operator's decision was roster-wide, so silence means inherit. A
+        it: the operator's decision covers every expert, so silence means inherit. A
         caller reading the raw field would unbind every scope but `designer`."""
         manifest = ExpertManifest(scope="x", name="X")
         assert manifest.capability_boundary is None
-        assert manifest.effective_capability_boundary is ROSTER_CAPABILITY_DEFAULT
+        assert manifest.effective_capability_boundary is EXPERT_CAPABILITY_DEFAULT
 
     def test_an_explicit_empty_block_is_the_opt_out(self):
         """Three states, each with a written meaning. Without this one, a scope
@@ -141,13 +141,13 @@ class TestCapabilityBoundary:
         assert boundary.denies_skill("frontend-design:frontend-design") == "frontend-design*"
         assert boundary.denies_skill("recall-strategy") is None
 
-    def test_the_roster_default_covers_the_design_surface(self):
+    def test_the_expert_default_covers_the_design_surface(self):
         """Named individually: a bundled assertion cannot say which half failed."""
         for skill in ("artifact-design", "artifact-diagramming", "artifact-capabilities",
                       "frontend-design:frontend-design", "dataviz", "author-repo-diagram"):
-            assert ROSTER_CAPABILITY_DEFAULT.denies_skill(skill), f"{skill} is design work"
-        assert ROSTER_CAPABILITY_DEFAULT.denies_tool("Artifact")
-        assert ROSTER_CAPABILITY_DEFAULT.denies_tool("mcp__penpot__create_shape")
+            assert EXPERT_CAPABILITY_DEFAULT.denies_skill(skill), f"{skill} is design work"
+        assert EXPERT_CAPABILITY_DEFAULT.denies_tool("Artifact")
+        assert EXPERT_CAPABILITY_DEFAULT.denies_tool("mcp__penpot__create_shape")
 
     def test_allow_tools_carves_a_name_back_out_of_a_deny(self):
         """The read/comment grant a scope like `frontend` needs: a deny on the whole
@@ -184,10 +184,10 @@ class TestCapabilityBoundary:
         """A capability boundary that caught the skills an expert needs to do its job
         would teach route-around, which this project prices above the gap it closes."""
         for skill in ("recall-strategy", "gremlin-python", "ground-in-literature",
-                      "consult-an-expert", "add-roster-expert"):
-            assert ROSTER_CAPABILITY_DEFAULT.denies_skill(skill) is None
+                      "consult-an-expert", "add-an-expert"):
+            assert EXPERT_CAPABILITY_DEFAULT.denies_skill(skill) is None
         for tool in ("Read", "Write", "Bash", "Task"):
-            assert ROSTER_CAPABILITY_DEFAULT.denies_tool(tool) is None
+            assert EXPERT_CAPABILITY_DEFAULT.denies_tool(tool) is None
 
     def test_an_empty_name_is_not_a_match(self):
         """Payloads reach the guard without a skill name; they are not invocations."""
@@ -209,7 +209,7 @@ class TestShippedCapabilityBoundaries:
         """Declared once, inherited everywhere — the property that makes storing it
         once safe rather than merely tidy.
 
-        Parametrized over the roster on disk rather than over a written list, so an
+        Parametrized over the experts on disk rather than over a written list, so an
         expert added tomorrow is covered without anyone remembering to add it here."""
         boundary = load_manifest(scope).effective_capability_boundary
         assert boundary.denies_skill("artifact-design")
@@ -217,7 +217,7 @@ class TestShippedCapabilityBoundaries:
 
     def test_the_default_explains_itself_and_names_the_alternative(self):
         """A block that cannot say what to do instead teaches route-around."""
-        reason = ROSTER_CAPABILITY_DEFAULT.reason
+        reason = EXPERT_CAPABILITY_DEFAULT.reason
         assert reason.strip()
         assert "markdown" in reason.lower()
 
@@ -256,10 +256,10 @@ def _mcp_tool_payload(tool_name):
     }
 
 
-def _roster_config(tmp_path, manifests):
+def _experts_config(tmp_path, manifests):
     """A THALAMUS_CONFIG_DIR value carrying the given {scope: yaml_text} manifests.
 
-    Self-contained rather than pointed at the shipped roster: `frontend`'s real
+    Self-contained rather than pointed at the shipped experts: `frontend`'s real
     capability_boundary lives outside this checkout (config/experts is
     THALAMUS_CONFIG_DIR-overridden to a private notes repo in the operator's own
     setup), so a test asserting the *mechanism* has to build its own fixture scope
@@ -326,7 +326,7 @@ class TestRoleGuardHook:
         """`Explore` and `general-purpose` name no manifest, so resolution falls
         through to the launcher's pin. Short-circuiting on any agent_type instead
         would make `Agent(subagent_type="general-purpose")` a one-line route around
-        every boundary in the roster."""
+        every expert's boundary."""
         payload = write_payload(f"{REPO}/src/thalamus/console/static/app.js")
         payload["agent_type"] = "general-purpose"
         result = run_guard(payload, tmp_path, {"CLAUDE_CODE_AGENT": "thalamus-designer"})
@@ -390,9 +390,9 @@ class TestRoleGuardHook:
 
     def test_it_blocks_an_mcp_penpot_tool_from_a_scope_with_no_override(self, tmp_path):
         """A scope that declares no `capability_boundary` at all inherits
-        ROSTER_CAPABILITY_DEFAULT's blanket `mcp__penpot__*` deny, the same way it
+        EXPERT_CAPABILITY_DEFAULT's blanket `mcp__penpot__*` deny, the same way it
         already inherits the `Artifact` deny."""
-        config = _roster_config(tmp_path, {"plain": "scope: plain\nname: Plain\n"})
+        config = _experts_config(tmp_path, {"plain": "scope: plain\nname: Plain\n"})
         result = run_guard(
             _mcp_tool_payload("mcp__penpot__create_shape"),
             tmp_path,
@@ -411,7 +411,7 @@ class TestRoleGuardHook:
             "  allow_tools: [\"mcp__penpot__get_comments\", \"mcp__penpot__create_comment\"]\n"
             "  reason: view and comment only\n"
         )
-        config = _roster_config(tmp_path, {"viewer": manifest})
+        config = _experts_config(tmp_path, {"viewer": manifest})
         env = {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-viewer"}
 
         allowed = run_guard(_mcp_tool_payload("mcp__penpot__get_comments"), tmp_path, env)
@@ -441,7 +441,7 @@ class TestRoleGuardHook:
             '  deny_tools: ["mcp__penpot__*"]\n'
             f'  reason: "{"why " * 30000}"\n'
         )
-        config = _roster_config(tmp_path, {"wordy": manifest})
+        config = _experts_config(tmp_path, {"wordy": manifest})
         result = run_guard(
             _mcp_tool_payload("mcp__penpot__create_shape"),
             tmp_path,

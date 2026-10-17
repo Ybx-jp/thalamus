@@ -4,7 +4,7 @@
 # its role is to write the changes it proposes. Its boundary is a pin trigger
 # instead — campaign sessions only (reorganization, a measured performance fix, a
 # reliability hardening pass), while feature work stays with `main` and consults
-# this scope. That makes it the roster's clearest test of whether a boundary that
+# this scope. That makes it the clearest test among the experts of whether a boundary that
 # lives in when-you-pin can hold as well as one that lives in what-you-may-write.
 
 contract: v0

@@ -37,6 +37,22 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:45:40-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:3ef12bb520ff34e1f9f3f1449c2c3f6ab73c2f003500091bd43e3b8521cccf98
+  artifact: sha256:b65fad6b3e06f0440ee1686f649afff4af1258e0dfdb69d93764b818f0e4baeb
+  note: propagated from a moved ground
+
+- 2026-10-16T17:45:40-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:bb4f0c07d5db9a796aaf8c6303812c28536e0a5b9f0ead2793620ed084d153d6
+  artifact: sha256:71d23739bb329a5e26b87e97209f6b94a754070020547c72f81191e1beea44e9
+  note: propagated from a moved ground
+- 2026-10-16T17:55:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:b65fad6b3e06f0440ee1686f649afff4af1258e0dfdb69d93764b818f0e4baeb
+  note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
+- 2026-10-16T17:55:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:71d23739bb329a5e26b87e97209f6b94a754070020547c72f81191e1beea44e9
+  note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
+
 ## References
 
 - src/thalamus/contract/manifest.py · standing · cites-as-live

@@ -42,6 +42,13 @@ none
 - 2026-09-29T00:31:35-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:bb4f0c07d5db9a796aaf8c6303812c28536e0a5b9f0ead2793620ed084d153d6
   note: CapabilityBoundary gained model_config forbidding undeclared fields; it still carries the deny and allow tool and skill lists that limit a scope, so the assertion is unaffected
+- 2026-10-16T17:45:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:bb4f0c07d5db9a796aaf8c6303812c28536e0a5b9f0ead2793620ed084d153d6
+  artifact: sha256:71d23739bb329a5e26b87e97209f6b94a754070020547c72f81191e1beea44e9
+  note: propagated from a moved ground
+- 2026-10-16T17:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/contract/manifest.py § "CapabilityBoundary" =sha256:71d23739bb329a5e26b87e97209f6b94a754070020547c72f81191e1beea44e9
+  note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
 
 ## References
 

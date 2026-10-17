@@ -1,9 +1,9 @@
 # Expert manifest — evaluation methodology.
 #
 # This file existing is the entire federation surface for the expert — the
-# zero-glue test. Adding a scope this way is a deliberate top-down roster act,
+# zero-glue test. Adding a scope this way is a deliberate top-down decision,
 # distinct from procurement drift, and the decision belongs in the project's
-# roster rationale.
+# rationale for its experts.
 
 contract: v0
 scope: eval-methodology

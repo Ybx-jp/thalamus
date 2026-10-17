@@ -242,7 +242,7 @@ src/thalamus/
   substrate/   storage kernel — schema, Gremlin writer, Gremlin reader, query span tap.
                Below the contract: knows nodes and edges, not experts or tiers
   contract/    the federation boundary — ontology, expert manifests, conformance
-  console/     the browser control plane over the tmux roster
+  console/     the optional browser control plane: tmux windows, rooms, dispatch
   archive/     immutable content-addressed store for retained evidence
   harness/     MCP server, hooks, skills, transcript bootstrap, ingest
   eval/        trace tap, attribution, cost — the live-serving half of the eval loop.

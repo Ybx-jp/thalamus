@@ -2,9 +2,13 @@
 
 **Drive your pinned sessions from your phone.**
 
-A pinned session is an OS process in a tmux window ([concepts.md](concepts.md),
-"the process is the pin"), which makes tmux the one place all of them are
-addressable at once. `thalamus console` puts a small HTTP server in front of that
+The console is optional, and it is the part of Thalamus that needs tmux. It runs each
+pinned session ([concepts.md](concepts.md), "the process is the pin") as a window in a
+tmux session of its own, which makes tmux the one place all of them are addressable at
+once. `thalamus roster` brings up the `main` anchor and experts are spawned on demand
+(`--all` opens one window per expert), so the console's session is a set of addressable
+processes.<!-- (A0014, cites-as-live) -->
+`thalamus console` puts a small HTTP server in front of that
 tmux session and serves a browser client over it: one row per session, the live
 pane, a composer, the terminal keys a phone keyboard doesn't have, and buttons for
 the two operations that otherwise need a laptop — spawning an expert session in a
@@ -15,8 +19,11 @@ always addressing windows *by index*, so the session's active window never moves
 and a terminal attached to the same session is left exactly where you put it. You
 can drive the roster from a phone while your desk is still logged into it.
 
-### The roster's tmux server
+### The console's tmux server
 
+The console's session runs on a tmux server of its own — `tmux -L thalamus`, named by
+`THALAMUS_TMUX_SOCKET` — because tmux ignores `HOME` and a socket is the only thing
+that separates one checkout's control plane from another's.<!-- (A0015, cites-as-live) -->
 Every tmux call this project makes names its server: `tmux -L thalamus …`. The
 socket name is `THALAMUS_TMUX_SOCKET` (default `thalamus`), and it is the one
 isolation boundary the harness cannot get from the environment — tmux locates its
@@ -959,6 +966,14 @@ startup when it can't find one, and serves anyway so the ＋ button still works.
 
 **A restart never finishes.** The session is holding a dialog `/exit` can't
 dismiss. It force-respawns after 4 minutes; that path skips distillation.
+
+**Sessions won't start, and the anchor restart hangs.** Something attached with
+`tmux -L thalamus new -A -s thalamus` before `thalamus roster` ran, so window 0 is a
+bare shell and `main` sits at index 1. Restart on the anchor types `/exit` into bash
+(`-bash: /exit: No such file or directory`), the pane never dies, and the console sits
+`recycling` for the full grace. Confirm index 0 is an idle shell (`tmux -L thalamus
+list-panes`, no child processes), then `tmux -L thalamus kill-window -t thalamus:0`
+and run `thalamus roster` again.
 
 **Slash commands are missing.** They're read per-window from `~/.claude/skills`
 and that window's `.claude/skills`, refetched whenever you open a different session.

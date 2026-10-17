@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:45:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/mcp_server.py § "SCOPE" =sha256:73c525c221ca6e6b0c1dedf6f6e5bd7601dd1018ab7f47d1b126c2f6d2e90b70
+  artifact: sha256:5f1664a6409820aad355a35d58176038e6b3b2fde3e687f9673693f4f7101118
+  note: propagated from a moved ground
+- 2026-10-16T17:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/mcp_server.py § "SCOPE" =sha256:5f1664a6409820aad355a35d58176038e6b3b2fde3e687f9673693f4f7101118
+  note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
+
 ## References
 
 - CONTRIBUTING.md · standing · cites-as-live

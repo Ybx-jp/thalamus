@@ -9,7 +9,7 @@
 # (A0149, cites-as-live).
 # `substrate.writer.connect()` hands back a source over the whole graph
 # (A0148, cites-as-live),
-# and `Bash` is not in `ROSTER_CAPABILITY_DEFAULT.deny_tools`
+# and `Bash` is not in `EXPERT_CAPABILITY_DEFAULT.deny_tools`
 # (contract/manifest.py:241) — so a pin that can run a shell reads every vertex and edge
 # in the graph, including `main`'s episodic memory and every other expert's. The
 # `gremlin-python` skill installs at user scope for every pin and documented that path
@@ -23,7 +23,7 @@
 # the contract says is not crossable, which is the argument that made attribution
 # scope-closed.
 #
-# `Bash` is NOT denied to roster pins, and answering this by denying it would be the
+# `Bash` is NOT denied to expert pins, and answering this by denying it would be the
 # wrong repair: experts run the same work sessions do, and the capability default denies
 # design skills and publishing tools, not the shell.
 #
@@ -114,7 +114,7 @@ fi
 scope="$(thalamus_scope_from_payload "$input")"
 
 # Passes are logged beside blocks, for the reason `role-guard.sh` logs them: the
-# roster's granularity audit asks whether a scope earned its partition, and how often
+# expert set's granularity audit asks whether a scope earned its partition, and how often
 # `main` uses the code path this denies an expert is evidence for that question.
 log_event() {
   local guard_dir="$HOME/.thalamus/guards"

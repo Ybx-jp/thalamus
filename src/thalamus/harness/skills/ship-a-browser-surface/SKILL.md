@@ -41,7 +41,7 @@ The first three are seconds and catch most of it.
 4. **`uv run thalamus contract check`** — only if a live write path changed. A pure
    client change does not need it.
 5. **`curl -s "$CONSOLE/api/panes" | python3 -m json.tool | head -40`** against
-   the **live roster**, where `CONSOLE` is the console's bind address —
+   the **live console session**, where `CONSOLE` is the console's bind address —
    `127.0.0.1:8378` unless you changed it. The tests use fixtures; every
    field-shape surprise in this client was found this way and not by a test.
 6. **The deploy check, then the phone.** See below.

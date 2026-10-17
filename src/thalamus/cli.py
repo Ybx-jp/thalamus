@@ -271,10 +271,10 @@ def _main():
     )
     ingest_parser.add_argument("location", help="URL (allowlist-gated) or local file path")
     ingest_parser.add_argument(
-        # Required, not defaulted. Every scope on the roster procures documents, and a
+        # Required, not defaulted. Every expert scope procures documents, and a
         # default sends a document nobody named to `literature` — where it is not wrong
         # enough to notice, since the literature consultant serves every scope anyway.
-        # A named-but-unknown scope still fails at `load_manifest`, which lists the roster.
+        # A named-but-unknown scope still fails at `load_manifest`, which lists the experts.
         "--scope", required=True,
         help="Expert scope; needs a manifest in config/experts/",
     )
@@ -437,9 +437,9 @@ def _main():
         "Reads no graph and makes no model call; needs the CLIs on PATH.",
     )
     contract_check_parser.add_argument(
-        "--roster", action="store_true",
+        "--experts", action="store_true",
         help="Print the boundaries in force for every expert scope, resolved. Reads "
-        "no graph: the manifests and the roster default are the whole answer.",
+        "no graph: the manifests and the expert capability default are the whole answer.",
     )
 
     # The architect's instrument. Reads code, writes a git-tracked model and
@@ -886,7 +886,7 @@ def _main():
     )
     eval_vocabulary_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
-    # Pin / roster commands — "the process is the pin"
+    # Pin commands — "the process is the pin"; roster and spawn are the console's
     init_parser = subparsers.add_parser(
         "init", help="Install the harness at user scope so it arms in any directory"
     )
@@ -3318,7 +3318,7 @@ def _report_capabilities():
     print("Capability declarations OK — every one re-asked and confirmed.")
 
 
-def _report_roster_boundaries():
+def _report_expert_boundaries():
     """Print what actually binds each scope, resolved rather than as declared.
 
     The capability boundary is stored once and inherited, which is what keeps six
@@ -3829,8 +3829,8 @@ def _cmd_contract(args, contract_parser):
         _report_capabilities()
         return
 
-    if getattr(args, "roster", False):
-        _report_roster_boundaries()
+    if getattr(args, "experts", False):
+        _report_expert_boundaries()
         return
 
     from thalamus.contract.conformance import ADVISORY, check_graph, severity_of
@@ -4492,7 +4492,7 @@ def _cmd_preset(args, parser):
             sys.exit(str(exc))
         verb = "replaced" if replacing else "defined"
         print(f"{verb} {dimension.key} preset `{args.name}` in {path}")
-        print("Generated agent files pick it up at the next `thalamus init`, pin or roster.")
+        print("Generated agent files pick it up at the next `thalamus init`, pin or spawn.")
         return
 
     if command == "remove":

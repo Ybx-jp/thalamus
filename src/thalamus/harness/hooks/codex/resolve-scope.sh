@@ -28,7 +28,7 @@
 
 # The Claude Code library, for the helpers whose behaviour is harness-independent:
 # thalamus_repo_root, thalamus_config_root, thalamus_require_binaries,
-# thalamus_resolve_room, thalamus_resolve_forked_from, thalamus_roster.
+# thalamus_resolve_room, thalamus_resolve_forked_from, thalamus_experts.
 # `thalamus_resolve_scope` is redefined below; everything else is taken as-is rather
 # than mirrored, because a second copy of `thalamus_require_binaries` would be a
 # second failure log to keep in step.

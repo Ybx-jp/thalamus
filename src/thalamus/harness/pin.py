@@ -57,7 +57,7 @@ USER_AGENTS_DIR = Path.home() / ".claude" / "agents"
 
 # Room config dirs. A room's boundary IS its harness's config root: on Claude Code
 # peer discovery enumerates `$CLAUDE_CONFIG_DIR/sessions/*.json` and name resolution
-# answers from that roster, so members of one room see only each other. The
+# answers from that list, so members of one room see only each other. The
 # location is chosen against the rest of the box — `$HOME` must not move (the pin
 # ledger, archive and logs are anchored there), `~/code` is scanned by the console's
 # spawn picker, and `~/.claude` is swept by the harness's own cleanup.
@@ -65,7 +65,7 @@ ROOMS_DIR = Path.home() / ".thalamus" / "rooms"
 
 # The variable each harness reads its config root from. Declared per harness rather
 # than spelled as one harness's name, because the two do not partition the same set:
-# `CLAUDE_CONFIG_DIR` moves the discovery roster, the transcripts, the settings and
+# `CLAUDE_CONFIG_DIR` moves the discovery list, the transcripts, the settings and
 # the credentials together, while `CURSOR_CONFIG_DIR` moves the config root and the
 # `chats/` transcript store and leaves credentials and hook wiring where they were.
 #
@@ -130,7 +130,7 @@ def resolve_pin(env: os._Environ | dict[str, str] | None = None,
     The agent picker (`claude --agent thalamus-<scope>`, FleetView, the plane's
     launch surfaces) starts a pinned persona without going through this launcher,
     so THALAMUS_SCOPE carries whatever the surrounding shell had. Measured
-    2026-07-18: all three roster expert sessions ran with
+    2026-07-18: all three pinned expert sessions ran with
     CLAUDE_CODE_AGENT=thalamus-<scope> but THALAMUS_SCOPE=main — every memory op
     silently hit main. The harness exports CLAUDE_CODE_AGENT into the MCP
     server's own environment (measured on the live server processes), so the
@@ -679,7 +679,7 @@ def scope_mcp_config(scope: str, base: Path | None = None) -> Path | None:
 
     Tool surfaces are not free and they are not shared. The Penpot server the
     `designer` scope works through publishes 68 tools; carried in `.mcp.json` they
-    would arm in every session in the project, which is the whole roster paying for
+    would arm in every session in the project, which is every expert paying for
     one scope's tooling. Declared per scope, they arm only where they are used, and
     additively — a scope with a file here gets the house `thalamus` server *plus*
     its own.

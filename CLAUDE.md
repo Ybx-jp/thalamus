@@ -256,7 +256,7 @@ the thing in ordinary words, and cut what he did not ask about.
 ## Repo hygiene
 
 - **Work you intend to commit goes in your own worktree.** Sessions run concurrently
-  here — roster pins, a second terminal, the console's spawns — and a shared checkout
+  here — pinned sessions, a second terminal, the console's spawns — and a shared checkout
   gives them one index, one HEAD, and one working tree between them: your `git add`
   stages their half-finished file, their commit moves HEAD out from under your rebase.
   A worktree is one call (`EnterWorktree`). Merge back when the work is done.

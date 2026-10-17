@@ -156,7 +156,7 @@ PIN_ROWS: tuple[PinRow, ...] = (
                at="2026-08-12",
                where="the launcher's argv carries `THALAMUS_SCOPE=<scope>` as an `env` "
                      "prefix. Measured both arms in a throwaway tmux session whose "
-                     "session env holds `THALAMUS_SCOPE=main`, as the roster's does: "
+                     "session env holds `THALAMUS_SCOPE=main`, as the console's does: "
                      "with the prefix `qe` survived `respawn-window`, without it the "
                      "window came back as `main`",
                verified_against="harness/launcher.LAUNCH_SHAPES",

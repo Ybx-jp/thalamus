@@ -3,7 +3,7 @@
 #
 # Thin adapter over ../claude-code/post-tool-use.sh, the eval loop's layer-1
 # feed. Cursor reports MCP tools by BARE name (no mcp__<server>__ prefix), so
-# the adapter gates on the thalamus tool roster and restores the
+# the adapter gates on the thalamus tool list and restores the
 # `mcp__thalamus__` prefix before writing — trace records stay uniform across
 # harnesses and `eval sync` needs no harness awareness.
 #
@@ -26,7 +26,7 @@ input=$(cat)
 tool_name=$(printf '%s' "$input" | jq -r '.tool_name // empty')
 bare="${tool_name#mcp__thalamus__}"
 
-# The thalamus MCP tool roster (harness/mcp_server.py) — anything else on this
+# The thalamus MCP tool list (harness/mcp_server.py) — anything else on this
 # machine's MCP surface is not ours to trace.
 case "$bare" in
   memory_recall|memory_recall_by_artifact|memory_recall_by_project|\

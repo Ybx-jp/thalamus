@@ -1,5 +1,5 @@
 """
-Which roster the suite itself runs against.
+Which expert set the suite itself runs against.
 
 Interfaces: tests/conftest.py's environment scrub, read back through
 contract.manifest.
@@ -7,7 +7,7 @@ Infrastructure: none — this is a statement about the process running pytest.
 Scope: one property, and it is about the suite rather than the product. Several
 tests are parametrized over `available_scopes()`, so the *number of tests collected*
 depends on which manifest directory `THALAMUS_CONFIG_DIR` names. Exported to a
-private roster it was 1369; unexported, 1365 — and both runs printed a passing suite
+private expert set it was 1369; unexported, 1365 — and both runs printed a passing suite
 with nothing saying the covered set differed. A contributor's green and the
 operator's green have to be the same claim.
 """
@@ -25,7 +25,7 @@ def test_the_suite_runs_against_the_manifests_this_repository_tracks():
 
     The scrub is in conftest at import time rather than in an autouse fixture,
     because parametrization is evaluated during collection and no fixture has run
-    yet. A test that wants a different roster still sets the variable in its own
+    yet. A test that wants a different expert set still sets the variable in its own
     body — this fixes the floor, not the ceiling.
     """
     assert "THALAMUS_CONFIG_DIR" not in os.environ

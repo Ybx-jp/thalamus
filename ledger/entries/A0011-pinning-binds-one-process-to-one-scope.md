@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:45:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/pin.py § "resolve_pin" =sha256:b1133eb7a69ea289bc74e3627e9ef74dff013341ff3e7c9f1ee37b7390167a8f
+  artifact: sha256:f7866de3eff43158b40e505829c2d9c30a615213990db521873ca95fd0851cc1
+  note: propagated from a moved ground
+- 2026-10-16T17:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/pin.py § "resolve_pin" =sha256:f7866de3eff43158b40e505829c2d9c30a615213990db521873ca95fd0851cc1
+  note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

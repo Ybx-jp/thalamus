@@ -164,7 +164,7 @@ Self-audit — what retrieval is costing and wasting, per scope:
     g.V().hasLabel('Trace').outE('RETURNS').has('used',false)
       .inV().groupCount().by(id).unfold().order().by(values,desc).limit(5)
 
-**L4 — consultation.** A question inside a roster expert's domain that shapes a
+**L4 — consultation.** A question inside another expert's domain that shapes a
 design or a metric is a `consult_request`, not a thin answer from general
 knowledge — the domains are the `domain` fields of `config/experts/*.yaml`, and
 reading them is how you find out whose question this is — and the consult

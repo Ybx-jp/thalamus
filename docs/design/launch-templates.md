@@ -21,15 +21,16 @@ harness does with it, is in [`settings-table.md`](../../settings-table.md).
 
 Every launch path ends in one function, `launcher.launch_argv` (`launcher.py:487`):
 
-- `thalamus pin <scope>` → `pin.launch` (`pin.py:1332`) → `_session_argv` (`pin.py:1069`)
-- `thalamus spawn <scope>` → `pin.spawn` (`pin.py:1360`), which sets `-e THALAMUS_SCOPE`
-- `thalamus roster` → `pin.roster` (`pin.py:1420`)
+- `thalamus pin <scope>` → `pin.launch` → `pin.session_argv`; with `--room`, or inside
+  tmux, through `console/windows.launch` first
+- `thalamus spawn <scope>` → `console/windows.spawn`, which sets `-e THALAMUS_SCOPE`
+- `thalamus roster` → `console/windows.roster`
 - Console `/api/spawn` (`server.py:2280`); `/api/recycle` (`server.py:2464`) re-runs the stored argv
 - `quick.fork_argv` (`quick.py:373`); `thalamus delegate` (`delegate.py:113`)
 
-`_session_argv` and `spawn` regenerate the scope's Claude agent file and codex profile
-on **every** launch (`pin.py:1094`, `:1101`, `:1387`). The write is a plain
-`write_text` to one shared path per scope, not temp-and-rename (`pin.py:707-724`).
+`pin.session_argv` and `windows.spawn` regenerate the scope's Claude agent file and
+codex profile on **every** launch. The write is a plain `write_text` to one shared
+path per scope, not temp-and-rename (`pin.write_agent`).
 
 ## What a template can cover today
 

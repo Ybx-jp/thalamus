@@ -144,7 +144,7 @@ traversal or the pointer, not a design.
    **`--scope` is not optional judgement, and the default is wrong more often than it
    is right.** `literature` holds the memory, retrieval and evaluation canon; a
    *domain's* literature belongs to the domain. Read the `domain` and `allowlist`
-   fields of `config/experts/*.yaml` to find out whose it is — every roster manifest
+   fields of `config/experts/*.yaml` to find out whose it is — every expert manifest
    declares `tier`, `claim_kinds` and an `allowlist` for exactly this question, and
    a list of scopes written down anywhere else is a stale copy of them. Local files
    bypass the allowlist because hand-feeding *is* the curation decision.
