@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -39,13 +40,14 @@ from thalamus.harness import (
 from thalamus.harness import closes as closes_mod
 from thalamus.harness import quick as quick_mod
 from thalamus.harness.bootstrap import bootstrap_project
-from thalamus.harness.ceremonies import (
+from thalamus.console.ceremonies import (
     CEREMONY_KINDS,
     COMPARATOR_ARMS,
     RESOLUTION_OUTCOMES,
 )
 from thalamus.harness import pin
-from thalamus.harness.pin import ROSTER_SESSION, resolve_forked_from, resolve_room
+from thalamus.console.windows import ROSTER_SESSION
+from thalamus.harness.pin import resolve_forked_from, resolve_room
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot, snapshot_quietly
 from thalamus.substrate.writer import (
     DEFAULT_URL,
@@ -3276,7 +3278,7 @@ def _report_capabilities():
     from thalamus.contract.boundaries import check_boundaries
     from thalamus.contract.pinning import check_pinning
     from thalamus.contract.probes import check_capabilities
-    from thalamus.contract.rooms import check_rooms
+    from thalamus.console.room_capabilities import check_rooms
 
     # Two kinds of declaration, one report. A flag row says what a CLI accepts; a
     # boundary row says what actually binds on a harness — and the second is the one
@@ -3919,7 +3921,7 @@ def _cmd_eval(args, eval_parser):
         )
         project_dir = (args.project_dir or Path.cwd()).resolve()
         if args.by_occasion:
-            from thalamus.eval.cost import occasion_burn
+            from thalamus.console.occasion_cost import occasion_burn
 
             print(occasion_burn(since).render())
         else:
@@ -4174,10 +4176,15 @@ def _cmd_rescope(args):
 
 def _cmd_pin(args):
     from thalamus.contract.paths import PROJECT_ROOT
-    from thalamus.harness.pin import launch
 
     try:
-        launch(args.scope, PROJECT_ROOT, room=args.room, harness=args.harness)
+        # A room, or a surrounding tmux to open a window in, is the console's to
+        # handle; otherwise this terminal becomes the pinned session.
+        if args.room or os.environ.get("TMUX"):
+            from thalamus.console.windows import launch
+            launch(args.scope, PROJECT_ROOT, room=args.room, harness=args.harness)
+        else:
+            pin.launch(args.scope, PROJECT_ROOT, harness=args.harness)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"Pin failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -4187,7 +4194,7 @@ def _cmd_spawn(args):
     import subprocess
 
     from thalamus.contract.paths import PROJECT_ROOT
-    from thalamus.harness.pin import spawn
+    from thalamus.console.windows import spawn
 
     cwd = args.dir if args.dir is not None else PROJECT_ROOT
     try:
@@ -4200,7 +4207,7 @@ def _cmd_spawn(args):
 
 def _cmd_roster(args):
     from thalamus.contract.paths import PROJECT_ROOT
-    from thalamus.harness.pin import WindowDied, roster
+    from thalamus.console.windows import WindowDied, roster
 
     try:
         roster(PROJECT_ROOT, full=getattr(args, "all", False), room=args.room)
@@ -4330,11 +4337,12 @@ def _cmd_quick(args, parser):
 
 
 def _cmd_room(args, parser):
+    from thalamus.console import rooms
     from thalamus.harness import pin
 
     if args.room_command == "create":
         try:
-            config = pin.ensure_room(args.room)
+            config = rooms.ensure_room(args.room)
         except (ValueError, RuntimeError) as e:
             print(f"Room failed: {e}", file=sys.stderr)
             sys.exit(1)
@@ -4354,8 +4362,8 @@ def _cmd_room(args, parser):
         transcripts_dir = config / "projects"
         count = len(list(transcripts_dir.glob("*/*.jsonl"))) if transcripts_dir.is_dir() else 0
         print(f"  transcripts:  {count} (distilled from here, not ~/.claude/projects)")
-        host = pin.host_config_dir()
-        for name in pin.ROOM_LINKED:
+        host = rooms.host_config_dir()
+        for name in rooms.ROOM_LINKED:
             link = config / name
             if link.is_symlink():
                 state = "→ " + str(link.readlink())
@@ -4366,12 +4374,12 @@ def _cmd_room(args, parser):
             else:
                 state = "MISSING" if not link.exists() else "not a link (stale copy)"
             print(f"  {name:22} {state}")
-        copied = config / pin.ROOM_COPIED
-        print(f"  {pin.ROOM_COPIED:22} {'copy' if copied.is_file() else 'MISSING'}")
+        copied = config / rooms.ROOM_COPIED
+        print(f"  {rooms.ROOM_COPIED:22} {'copy' if copied.is_file() else 'MISSING'}")
         return
 
     if args.room_command == "list":
-        names = pin.rooms()
+        names = rooms.rooms()
         if not names:
             print("No rooms. `thalamus spawn <scope> --room <name>` opens one.")
             return
@@ -4631,7 +4639,7 @@ def _agent_closes(graph) -> list[dict]:
 
 
 def _cmd_ceremony(args, parser):
-    from thalamus.harness import ceremonies
+    from thalamus.console import ceremonies
 
     try:
         if args.ceremony_command == "start":
@@ -4779,7 +4787,7 @@ def _cmd_ceremony(args, parser):
 
 
 def _cmd_dispatch(args):
-    from thalamus.harness import dispatch as dispatch_mod
+    from thalamus.console import dispatch as dispatch_mod
 
     # Deliberately NOT defaulted to `resolve_pin()` here. `dispatch.authenticate`
     # establishes the sender from the calling process and refuses a member that names
@@ -4846,7 +4854,7 @@ def _cmd_console(args):
     import subprocess
 
     from thalamus.console.server import FAVORITES_STORE, Config, PortInUse, serve
-    from thalamus.harness import tmux
+    from thalamus.console import tmux
     from thalamus.contract.paths import PROJECT_ROOT
 
     if not shutil.which("tmux"):

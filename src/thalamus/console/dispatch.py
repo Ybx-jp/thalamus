@@ -28,7 +28,7 @@ and the Enter ran the command. So the hazard is the harness-independent one, and
 refusal is too — but the *evidence* for it is not. Claude Code publishes a `status`
 the session writes about itself; Cursor publishes nothing, so the evidence there is a
 descriptor our own hooks bracket around the interval a modal can occupy
-(`harness/readiness.py`), with the visible screen kept only as a positive-only
+(`console/readiness.py`), with the visible screen kept only as a positive-only
 falsifier over the calls that bracket does not cover. Both answer the same question
 with different authority, which is why `Target.harness` is on the row.
 
@@ -60,7 +60,7 @@ A Cursor member has neither: the harness registers no session anywhere, and its
 `sessionStart` hook deliberately writes no pane (claiming one unconditionally would
 hand the console's read view to a headless probe). So its roster is the control plane
 itself — `panes.room_panes` recovers room, scope and address from the window's own
-start command, which `pin._with_room` put there and which survives `respawn-window`.
+start command, which `rooms._with_room` put there and which survives `respawn-window`.
 There is no second roster to cross-check against, because the pane *is* the roster
 entry and the address at once; what takes the cross-check's place is that a member
 publishing no readiness we authored is refused, on the same principle.
@@ -86,10 +86,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from thalamus.harness import panes as panes_mod
-from thalamus.harness import pin, quick, readiness
-from thalamus.harness.tmux import argv as tmux_argv
-from thalamus.harness.tmux import literal_text_args
+from thalamus.console import panes as panes_mod
+from thalamus.harness import pin, quick
+from thalamus.console import readiness, rooms
+from thalamus.console.tmux import argv as tmux_argv
+from thalamus.console.tmux import literal_text_args
 
 GUARDS_DIR = Path.home() / ".thalamus" / "guards"
 PINS_FILE = Path.home() / ".thalamus" / "pins" / "pins.jsonl"
@@ -385,7 +386,7 @@ def _cursor_targets(
             Target(
                 scope=pane.scope,
                 session_id=_ledger_session(room, pane.scope, pins_file),
-                name=pin.room_member_name(room, pane.scope),
+                name=rooms.room_member_name(room, pane.scope),
                 pane=pane.pane_id,
                 status=status,
                 updated_at=0,

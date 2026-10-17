@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.harness import dispatch
+from thalamus.console import dispatch
 
 JS_DIR = Path(__file__).parent / "js"
 SCRIPTS = sorted(JS_DIR.glob("*.test.mjs"))

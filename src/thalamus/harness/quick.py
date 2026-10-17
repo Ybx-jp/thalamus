@@ -130,7 +130,7 @@ class LiveSession:
 def config_dir(env: dict[str, str] | None = None) -> Path:
     """The config dir *this process* is in — the room's, when it is in one.
 
-    Deliberately not `pin.host_config_dir()`, which refuses a room dir because it
+    Deliberately not `rooms.host_config_dir()`, which refuses a room dir because it
     answers a different question (what a new room is provisioned *from*). Discovery
     is the room boundary: a caller inside a room must see its room-mates and nobody
     else, which is exactly what reading its own `CLAUDE_CONFIG_DIR` gives.

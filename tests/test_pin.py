@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 
 from thalamus.contract.manifest import available_scopes, load_manifest
+from thalamus.console import rooms, windows
+from thalamus.console.windows import spawn
 from thalamus.harness import pin
 from thalamus.harness.pin import (
     agent_name,
@@ -25,7 +27,6 @@ from thalamus.harness.pin import (
     resolve,
     resolve_pin,
     scope_mcp_servers,
-    spawn,
     write_agent,
     write_all_agents,
     write_all_codex_profiles,
@@ -43,7 +44,7 @@ def _argv_only(monkeypatch):
     cannot answer it, and these tests are not asking. The confirmation is exercised
     against a live tmux server in tests/test_spawn_settle.py.
     """
-    monkeypatch.setattr("thalamus.harness.pin.confirm_started", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
 
 
 def test_agent_definition_is_derived_from_the_manifest():
@@ -97,7 +98,7 @@ def test_write_all_agents_writes_every_expert_into_the_dir(tmp_path):
 def test_spawn_rejects_a_nonexistent_directory(tmp_path, monkeypatch):
     """spawn's cwd becomes the window's working dir — a bad path must fail loudly
     before any tmux window is created, not silently open somewhere wrong."""
-    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
 
     with pytest.raises(ValueError, match="not a directory"):
         spawn("literature", tmp_path / "does-not-exist", base=REPO_CONFIG)
@@ -119,9 +120,9 @@ def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monk
         rc = 1 if "has-session" in cmd else 0
         return subprocess.CompletedProcess(cmd, rc, stdout="", stderr="")
 
-    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
-    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
     _argv_only(monkeypatch)
 
     spawn("literature", tmp_path, base=REPO_CONFIG)
@@ -152,8 +153,8 @@ def _fake_tmux(monkeypatch, ids):
         stdout = next(handout) if "new-window" in cmd else ""
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
-    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
     monkeypatch.delenv("TMUX", raising=False)
     monkeypatch.delenv("THALAMUS_ROOM", raising=False)
     return calls
@@ -175,10 +176,10 @@ def test_roster_confirms_every_window_it_opens(tmp_path, monkeypatch, capsys):
     scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
     _fake_tmux(monkeypatch, [f"@{n}" for n in range(1, len(scopes) + 1)])
     confirmed: list[str] = []
-    monkeypatch.setattr("thalamus.harness.pin.confirm_started",
+    monkeypatch.setattr("thalamus.console.windows.confirm_started",
                         lambda window_id, *a, **kw: confirmed.append(window_id))
 
-    pin.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+    windows.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
 
     assert confirmed == [f"@{n}" for n in range(1, len(scopes) + 1)]
     assert "Roster running in tmux session `fake-roster`" in capsys.readouterr().out
@@ -209,8 +210,8 @@ def _fake_tmux_holding(monkeypatch, ids, present):
                              for i, name in enumerate(present))
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
-    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
     monkeypatch.delenv("TMUX", raising=False)
     monkeypatch.delenv("THALAMUS_ROOM", raising=False)
     return calls
@@ -234,9 +235,9 @@ def test_roster_leaves_a_scope_that_already_has_a_window_alone(
     already, expected_new = scopes[:2], scopes[2:]
     calls = _fake_tmux_holding(
         monkeypatch, [f"@{n}" for n in range(1, len(expected_new) + 1)], already)
-    monkeypatch.setattr("thalamus.harness.pin.confirm_started", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
 
-    pin.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+    windows.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
 
     printed = capsys.readouterr().out
     opened = [c[c.index("-n") + 1] for c in calls if "new-window" in c]
@@ -256,9 +257,9 @@ def test_roster_opens_every_scope_when_the_session_holds_none(tmp_path, monkeypa
     scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
     calls = _fake_tmux_holding(
         monkeypatch, [f"@{n}" for n in range(1, len(scopes) + 1)], present=[])
-    monkeypatch.setattr("thalamus.harness.pin.confirm_started", lambda *a, **kw: None)
+    monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
 
-    pin.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+    windows.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
 
     opened = [c[c.index("-n") + 1] for c in calls if "new-window" in c]
     assert opened == scopes
@@ -282,14 +283,14 @@ def test_one_dead_roster_window_does_not_abort_the_others(tmp_path, monkeypatch,
 
     def fake_confirm(window_id, *a, **kw):
         if window_id == "@2":
-            raise pin.WindowDied("the window was created and its command exited "
+            raise windows.WindowDied("the window was created and its command exited "
                                  "(exit 127) before it could be called started — "
                                  "it printed: claude: not found")
 
-    monkeypatch.setattr("thalamus.harness.pin.confirm_started", fake_confirm)
+    monkeypatch.setattr("thalamus.console.windows.confirm_started", fake_confirm)
 
-    with pytest.raises(pin.WindowDied) as death:
-        pin.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+    with pytest.raises(windows.WindowDied) as death:
+        windows.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
 
     message = str(death.value)
     assert f"1 of {len(scopes)}" in message
@@ -365,7 +366,7 @@ def test_the_arming_travels_with_the_agent_not_with_one_launchers_argv(tmp_path)
     Scenario: `claude --agent thalamus-designer` typed by hand — no launcher, no flags
 
     THE defect this guards. A scope's MCP servers used to be a `--mcp-config` flag on
-    `_session_argv`, which is one launch route out of several: the agent picker,
+    `session_argv`, which is one launch route out of several: the agent picker,
     FleetView, `thalamus spawn` and a bare shell all reach `--agent` without passing
     through it. Every one of those produced a session whose system prompt asserts it
     is a visual designer working in a design tool, in a process with no design tool
@@ -377,7 +378,7 @@ def test_the_arming_travels_with_the_agent_not_with_one_launchers_argv(tmp_path)
     thalamus-designer` alone reports `penpot` connected with 68 tools, and both `qe`
     and an unpinned session report zero.
     """
-    from thalamus.harness.pin import _session_argv, scope_mcp_servers
+    from thalamus.harness.pin import session_argv, scope_mcp_servers
 
     base = _tooled_config(tmp_path)
 
@@ -389,7 +390,7 @@ def test_the_arming_travels_with_the_agent_not_with_one_launchers_argv(tmp_path)
     ], "the documented schema is a LIST of single-key maps, not a mapping"
 
     # The flag is gone, and its absence is the point: nothing may depend on it.
-    argv = _session_argv("designer", tmp_path / "proj", base=base)
+    argv = session_argv("designer", tmp_path / "proj", base=base)
     assert "--mcp-config" not in argv
     assert argv[:3] == ["claude", "--agent", "thalamus-designer"]
 
@@ -532,10 +533,10 @@ def test_a_room_rides_the_argv_so_it_survives_a_recycle(tmp_path, monkeypatch):
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 1 if "has-session" in cmd else 0, stdout="", stderr="")
 
-    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
-    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
-    monkeypatch.setattr("thalamus.harness.pin.ensure_room",
+    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus.console.rooms.ensure_room",
                         lambda room, host=None, harness="claude": None)
     _argv_only(monkeypatch)
     monkeypatch.setenv("THALAMUS_ROOM", "alpha")
@@ -589,9 +590,9 @@ def test_a_deliberate_config_dir_override_survives_a_roomless_launch(tmp_path, m
     the operator chose.
     """
     calls: list[list[str]] = []
-    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
-    monkeypatch.setattr("thalamus.harness.pin.subprocess.run",
+    monkeypatch.setattr("thalamus.console.windows.subprocess.run",
                         lambda cmd, *a, **kw: (calls.append(cmd), subprocess.CompletedProcess(
                             cmd, 1 if "has-session" in cmd else 0, stdout="", stderr=""))[1])
     _argv_only(monkeypatch)
@@ -644,9 +645,9 @@ def test_ensure_room_builds_the_measured_layout(tmp_path, monkeypatch):
     (host.parent / ".claude.json").write_text('{"mcpServers": {"thalamus": {"cmd": "x"}}}')
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: host.parent))
 
-    config = pin.ensure_room("alpha", host=host)
+    config = rooms.ensure_room("alpha", host=host)
 
-    for owned in pin.ROOM_OWNED:
+    for owned in rooms.ROOM_OWNED:
         assert (config / owned).is_dir() and not (config / owned).is_symlink(), owned
     for linked in ("skills", "agents", "plugins", "settings.json",
                    ".credentials.json"):
@@ -656,7 +657,7 @@ def test_ensure_room_builds_the_measured_layout(tmp_path, monkeypatch):
 
     policy = config / "settings.local.json"
     assert policy.is_file() and not policy.is_symlink()
-    assert json.loads(policy.read_text())["permissions"]["allow"] == list(pin.ROOM_ALLOWLIST)
+    assert json.loads(policy.read_text())["permissions"]["allow"] == list(rooms.ROOM_ALLOWLIST)
 
     copied = config / ".claude.json"
     assert copied.is_file() and not copied.is_symlink()
@@ -678,11 +679,11 @@ def test_a_tuned_room_allowlist_survives_the_next_launch(tmp_path, monkeypatch):
     host = _host(tmp_path)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: host.parent))
 
-    config = pin.ensure_room("alpha", host=host)
+    config = rooms.ensure_room("alpha", host=host)
     policy = config / "settings.local.json"
     policy.write_text(json.dumps({"permissions": {"allow": ["Bash(make:*)"]}}))
 
-    pin.ensure_room("alpha", host=host)
+    rooms.ensure_room("alpha", host=host)
 
     assert json.loads(policy.read_text())["permissions"]["allow"] == ["Bash(make:*)"]
 
@@ -712,8 +713,8 @@ def test_every_pinned_session_launches_in_auto_and_only_a_room_gets_a_name(tmp_p
     assert launch_argv("claude", "qe", persona="thalamus-qe") == [
         "claude", "--agent", "thalamus-qe", "--permission-mode", "auto",
     ]
-    assert pin.launch_flags("", "qe") == []
-    assert pin.launch_flags("alpha", "qe") == ["--name", "alpha-qe"]
+    assert rooms.launch_flags("", "qe") == []
+    assert rooms.launch_flags("alpha", "qe") == ["--name", "alpha-qe"]
     assert PERMISSION_MODE != "bypassPermissions"
 
 
@@ -727,7 +728,7 @@ def test_the_room_allowlist_reaches_neither_the_network_nor_history(tmp_path):
     last place to widen it. `git commit`/`push` are out for a separate reason: a room
     member's commit is a decision the operator should see happen.
     """
-    seed = " ".join(pin.ROOM_ALLOWLIST)
+    seed = " ".join(rooms.ROOM_ALLOWLIST)
     for forbidden in ("curl", "wget", "nc ", "ssh", "git commit", "git push", "rm "):
         assert forbidden not in seed, forbidden
     # And it is a real allowlist rather than a wildcard wearing one's clothes.
@@ -758,7 +759,7 @@ def test_ensure_room_replaces_a_symlinked_projects_dir(tmp_path, monkeypatch):
     config.mkdir(parents=True)
     (config / "projects").symlink_to(real_projects)
 
-    pin.ensure_room("alpha", host=host)
+    rooms.ensure_room("alpha", host=host)
 
     assert (config / "projects").is_dir() and not (config / "projects").is_symlink()
     assert not any((config / "projects").iterdir())
@@ -782,14 +783,14 @@ def test_ensure_room_refreshes_mcp_servers_without_resetting_the_member(tmp_path
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: host.parent))
     source = host.parent / ".claude.json"
     source.write_text('{"mcpServers": {"thalamus": {"cmd": "x"}}}')
-    pin.ensure_room("alpha", host=host)
+    rooms.ensure_room("alpha", host=host)
 
     copied = pin.room_config_dir("alpha") / ".claude.json"
     copied.write_text(json.dumps({"mcpServers": {}, "hasTrustDialogAccepted": True,
                                   "projects": {"/room/work": {}}}))
     source.write_text('{"mcpServers": {"thalamus": {"cmd": "x"}, "other": {"cmd": "y"}}}')
 
-    pin.ensure_room("alpha", host=host)
+    rooms.ensure_room("alpha", host=host)
 
     after = json.loads(copied.read_text())
     assert set(after["mcpServers"]) == {"thalamus", "other"}
@@ -811,7 +812,7 @@ def test_ensure_room_refuses_a_name_that_is_not_a_room(name, tmp_path, monkeypat
     """
     monkeypatch.setattr(pin, "ROOMS_DIR", tmp_path / "rooms")
     with pytest.raises(ValueError):
-        pin.ensure_room(name, host=_host(tmp_path))
+        rooms.ensure_room(name, host=_host(tmp_path))
 
 
 def test_ensure_room_refuses_without_credentials(tmp_path, monkeypatch):
@@ -829,7 +830,7 @@ def test_ensure_room_refuses_without_credentials(tmp_path, monkeypatch):
     host = _host(tmp_path)
     (host / ".credentials.json").unlink()
     with pytest.raises(RuntimeError, match="credentials"):
-        pin.ensure_room("alpha", host=host)
+        rooms.ensure_room("alpha", host=host)
 
 
 def test_rooms_lists_what_is_on_disk(tmp_path, monkeypatch):
@@ -843,13 +844,13 @@ def test_rooms_lists_what_is_on_disk(tmp_path, monkeypatch):
     read off the process: a room exists exactly when its config dir does, and a
     separate list could disagree with that.
     """
-    rooms = tmp_path / "rooms"
-    monkeypatch.setattr(pin, "ROOMS_DIR", rooms)
-    assert pin.rooms() == []
+    rooms_dir = tmp_path / "rooms"
+    monkeypatch.setattr(pin, "ROOMS_DIR", rooms_dir)
+    assert rooms.rooms() == []
     for name in ("alpha", "beta", "Not A Room"):
-        (rooms / name).mkdir(parents=True)
-    (rooms / "loose.txt").write_text("x")
-    assert sorted(pin.rooms()) == ["alpha", "beta"]
+        (rooms_dir / name).mkdir(parents=True)
+    (rooms_dir / "loose.txt").write_text("x")
+    assert sorted(rooms.rooms()) == ["alpha", "beta"]
 
 
 def test_the_ledger_answers_what_room_a_session_was_launched_into(tmp_path):
@@ -1134,9 +1135,9 @@ def test_every_roster_window_is_held_at_the_shipped_geometry(tmp_path, monkeypat
         stdout = "@7\n@9\n" if "list-windows" in cmd and "#{window_id}" in cmd else ""
         return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
-    monkeypatch.setattr("thalamus.harness.pin.shutil.which", lambda _: "/usr/bin/tmux")
+    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.harness.pin.write_all_agents", lambda *a, **kw: None)
-    monkeypatch.setattr("thalamus.harness.pin.subprocess.run", fake_run)
+    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
     _argv_only(monkeypatch)
 
     spawn("literature", tmp_path, base=REPO_CONFIG)
@@ -1144,8 +1145,8 @@ def test_every_roster_window_is_held_at_the_shipped_geometry(tmp_path, monkeypat
     resized = [c for c in calls if "resize-window" in c]
     assert [c[c.index("-t") + 1] for c in resized] == ["@7", "@9"]
     for c in resized:
-        assert c[c.index("-x") + 1] == str(pin.WINDOW_COLS)
-        assert c[c.index("-y") + 1] == str(pin.WINDOW_ROWS)
+        assert c[c.index("-x") + 1] == str(windows.WINDOW_COLS)
+        assert c[c.index("-y") + 1] == str(windows.WINDOW_ROWS)
     assert not [c for c in calls if "window-size" in c], \
         "the size is the only thing pinned; `manual` comes with it"
 
@@ -1232,3 +1233,32 @@ def test_a_budget_output_cap_lands_in_the_codex_profile_and_nothing_else_does(tm
     assert profile["tool_output_token_limit"] == 4000
     assert not any("turn" in key for key in profile)
     assert "maxTurns" not in render_agent(manifest)
+
+
+def test_launch_execs_here_even_inside_tmux_and_carries_what_the_caller_adds(
+        tmp_path, monkeypatch):
+    """
+    Scenario: `pin.launch` is called from inside a tmux pane, with a room's variables
+    and flags passed in by the caller
+
+    Verifications:
+    - it execs in this terminal rather than opening a window: windows are
+      `console/windows.py`'s, and core has no tmux branch
+    - the scope, the caller's env and the caller's extra argv all reach the exec
+    """
+    monkeypatch.setenv("TMUX", "/tmp/fake,1,0")
+    # Registered so teardown restores both: `launch` writes them into the real environ.
+    monkeypatch.delenv("THALAMUS_ROOM", raising=False)
+    monkeypatch.delenv("THALAMUS_SCOPE", raising=False)
+    monkeypatch.chdir(tmp_path)
+    execs: list[list[str]] = []
+    monkeypatch.setattr(pin.os, "execvp", lambda path, argv: execs.append(list(argv)))
+    monkeypatch.setattr(pin.os, "chdir", lambda path: None)
+
+    pin.launch("main", tmp_path, env=(("THALAMUS_ROOM", "atlas"),),
+               extra_argv=("--name", "atlas-main"))
+
+    (argv,) = execs
+    assert argv[-2:] == ["--name", "atlas-main"]
+    assert pin.os.environ["THALAMUS_SCOPE"] == "main"
+    assert pin.os.environ["THALAMUS_ROOM"] == "atlas"

@@ -263,7 +263,7 @@ CURSOR_HOOK_WIRING: list[tuple[str, str]] = [
     ("afterShellExecution", "gremlin-tap.sh"),
     ("afterMCPExecution", "mcp-tap.sh"),
     ("postToolUse", "inject.sh"),
-    # The readiness bracket (harness/readiness.py). Five entries for two scripts,
+    # The readiness bracket (console/readiness.py). Five entries for two scripts,
     # because the interval a modal can occupy is delimited by pairs: the shell pair and
     # the MCP pair open it, and `sessionStart` establishes the resting state so a
     # member is addressable before it has run anything. The events are the specialized

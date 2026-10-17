@@ -7,10 +7,10 @@ directory, which is the absence that made a Cursor member unaddressable and stal
 the room decision.
 
 The substitute is the control plane itself. Every pinned window is created by
-`pin._open_window` with the room and the scope in its **own start command**, and
+`windows._open_window` with the room and the scope in its **own start command**, and
 `#{pane_start_command}` renders that command back for as long as the pane exists —
 including across the `respawn-window` the console's restart button runs, which is
-exactly why `pin._with_room` puts them there rather than trusting tmux's `-e`
+exactly why `rooms._with_room` puts them there rather than trusting tmux's `-e`
 environment. So membership, scope, harness and address are all recoverable from the
 window list, for a harness that registers nothing anywhere.
 
@@ -68,7 +68,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 
-from thalamus.harness.tmux import argv as tmux_argv
+from thalamus.console.tmux import argv as tmux_argv
 
 # Which harness a window is running, read from the command it was created with. The
 # binary is the only honest signal: `pane_current_command` shows whatever is in the

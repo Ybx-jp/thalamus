@@ -1,7 +1,7 @@
 """
-Typed text reaches the pane as data (harness/tmux.py literal_text_args).
+Typed text reaches the pane as data (console/tmux.py literal_text_args).
 
-Interfaces: thalamus.harness.tmux.literal_text_args, dispatch._send
+Interfaces: thalamus.console.tmux.literal_text_args, dispatch._send
 Infrastructure: a private tmux server (`-L`, never the roster's) whose pane runs `stty raw -echo; cat > FILE`, read
 back from FILE once a trailing sentinel arrives; skipped when tmux is absent
 Scope: `send-keys -l` still parses its text argument as tmux syntax — a leading `-` is
@@ -16,8 +16,8 @@ import uuid
 
 import pytest
 
-from thalamus.harness import dispatch
-from thalamus.harness.tmux import literal_text_args
+from thalamus.console import dispatch
+from thalamus.console.tmux import literal_text_args
 
 PAYLOADS = ["-t 0", "-X", "--", "a;", "a\\;", ";", "\\;", "a;;", "x; y", "x ;y",
             "-", "", "a;b;", ";;", "; ;", "\\\\;"]

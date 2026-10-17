@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.harness import dispatch
+from thalamus.console import dispatch
 
 HOOKS = Path(__file__).resolve().parents[1] / "src" / "thalamus" / "harness" / "hooks"
 
@@ -231,10 +231,10 @@ class TestPrecision:
     @pytest.mark.parametrize("command", [
         # A path names both words and invokes nothing.
         "git add src/thalamus/console/static/app.js tests/js/roster.test.mjs",
-        "sed -n '100,120p' src/thalamus/harness/dispatch.py",
-        "grep -n 'caller_room' src/thalamus/harness/dispatch.py",
-        "rg -n 'def dispatch\\(' -A 25 src/thalamus/harness/dispatch.py",
-        "git diff -- src/thalamus/harness/dispatch.py",
+        "sed -n '100,120p' src/thalamus/console/dispatch.py",
+        "grep -n 'caller_room' src/thalamus/console/dispatch.py",
+        "rg -n 'def dispatch\\(' -A 25 src/thalamus/console/dispatch.py",
+        "git diff -- src/thalamus/console/dispatch.py",
         "git add src/thalamus/console/server.py docs/console.md",
         # Prose that mentions the tool and a verb, in a quoted argument.
         'gh pr create --body "thalamus console: roster sync stays idempotent"',

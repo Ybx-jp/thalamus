@@ -54,7 +54,7 @@ record of the launch and not the pin itself.
 
 `tmux new-window -e VAR=x` sets the initial process environment and is **not** stored
 in the session environment, so `respawn-window` — exactly what the console's restart
-button runs — re-executes the argv with that variable gone (`pin._with_room` records
+button runs — re-executes the argv with that variable gone (`rooms._with_room` records
 the same measurement for rooms). Claude Code survives because `--agent` rides the argv.
 Cursor has no argv pin carrier, so a recycled window comes back inheriting the session
 env's `THALAMUS_SCOPE=main` — and `role-guard.sh` short-circuits on `main` before it
@@ -163,7 +163,7 @@ from thalamus.harness.agents import LAUNCHABLE
 # So that citation is what selects `auto`, not what argues against it.
 #
 # In a room the mode is also load-bearing for delivery: a member stopped at a prompt
-# reports `waiting`, which is exactly the status `harness/dispatch.py` refuses to send
+# reports `waiting`, which is exactly the status `console/dispatch.py` refuses to send
 # into, so a prompting member is an unaddressable one. That argument does not carry to
 # Cursor, where there are no rooms and nothing dispatches — which is what makes leaving
 # a Cursor window at its own configured posture tolerable rather than merely cheaper.
@@ -503,7 +503,7 @@ def launch_argv(
     **`selections` defaults to the stored launch policy, read here rather than passed
     in.** Threading it through every caller instead would put it on the two launch
     paths that remembered and leave it off the ones that did not — the divergence
-    `pin.launch_flags` already names, where a flag added to one path and not the other
+    `rooms.launch_flags` already names, where a flag added to one path and not the other
     is a difference nothing reports. Passing it explicitly is for tests and for a
     caller that genuinely means "ignore what is stored".
 

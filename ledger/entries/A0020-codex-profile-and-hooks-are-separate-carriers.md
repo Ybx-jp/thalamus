@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:35:24-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/pin.py § "_session_argv" =sha256:c87c3b5f0b3c148b6e6cc00a7fdb4a466eafa5358aec8cc106261e5133680d4b
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/pin.py § "session_argv" =sha256:e30774a147632902dce927182fcf1a36c16a098e32d0afd0277cb5aa0d6ecd64
+  note: `_session_argv` is now `session_argv` and no longer appends room flags (those are console/rooms.py's `launch_flags`); the codex profile write and `launch_argv`'s env prefix are unchanged. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

@@ -11,7 +11,7 @@ alive later; how much later is a per-harness measurement (launcher's docstring),
 these tests are what stop that number from being decorative.
 
 The private socket is the whole reason this can run at all. tmux ignores HOME, so it
-is the one surface no environment redirection reaches — `harness/tmux.py` names the
+is the one surface no environment redirection reaches — `console/tmux.py` names the
 server on every call it builds, and pointing that one variable somewhere else is what
 keeps a test off the operator's live roster.
 """
@@ -26,7 +26,9 @@ import pytest
 
 from thalamus.console import server
 from thalamus.console.server import Config, do_spawn
-from thalamus.harness import pin, tmux
+from thalamus.harness import pin
+from thalamus.console import windows
+from thalamus.console import tmux
 from thalamus.harness.launcher import LAUNCH_SHAPES, settle_s
 
 pytestmark = pytest.mark.skipif(shutil.which("tmux") is None,
@@ -43,7 +45,7 @@ def private_tmux(tmp_path, monkeypatch):
     """A tmux server of our own, plus a `bin` directory that shadows PATH.
 
     The socket is set in the environment rather than by shimming the binary, so the
-    code under test is the code that ships: `harness/tmux.py` reads
+    code under test is the code that ships: `console/tmux.py` reads
     `THALAMUS_TMUX_SOCKET` on every call and every argv in `src/` goes through it.
 
     Yields the bin directory: a test writes its fake harness binaries there, and
@@ -127,22 +129,22 @@ def test_the_exit_status_is_rendered_when_tmux_still_has_it(monkeypatch, tmp_pat
     through a real death, which makes both branches deterministic and asserts the
     thing the race obscures rather than a rewording of the other test.
     """
-    monkeypatch.setattr(pin, "_pane_epitaph", lambda window_id: "Not logged in.")
-    monkeypatch.setattr(pin, "_set_remain_on_exit", lambda window_id, mode: None)
-    monkeypatch.setattr(pin.subprocess, "run",
+    monkeypatch.setattr(windows, "_pane_epitaph", lambda window_id: "Not logged in.")
+    monkeypatch.setattr(windows, "_set_remain_on_exit", lambda window_id, mode: None)
+    monkeypatch.setattr(windows.subprocess, "run",
                         lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
 
-    monkeypatch.setattr(pin, "_pane_state", lambda window_id: (True, "1"))
-    with pytest.raises(pin.WindowDied) as carried:
-        pin.confirm_started("@1", "cursor")
+    monkeypatch.setattr(windows, "_pane_state", lambda window_id: (True, "1"))
+    with pytest.raises(windows.WindowDied) as carried:
+        windows.confirm_started("@1", "cursor")
     assert "(exit 1)" in str(carried.value)
     assert "Not logged in." in str(carried.value)
 
     # And a corpse tmux can no longer describe says the same thing without inventing
     # a status. `exit 0` would be the dangerous invention: it reads as a clean exit.
-    monkeypatch.setattr(pin, "_pane_state", lambda window_id: (True, ""))
-    with pytest.raises(pin.WindowDied) as reaped:
-        pin.confirm_started("@1", "cursor")
+    monkeypatch.setattr(windows, "_pane_state", lambda window_id: (True, ""))
+    with pytest.raises(windows.WindowDied) as reaped:
+        windows.confirm_started("@1", "cursor")
     assert "exit" not in str(reaped.value).split(" — ")[0].replace("exited", "")
     assert "Not logged in." in str(reaped.value)
 
@@ -278,9 +280,9 @@ def test_the_confirmation_is_called_from_pin_and_not_copied_into_the_console():
     behaviour is asserted separately: `spawn` and `roster` by the real-tmux cases above,
     and `launch` by the case below, which had no behavioural test at all.
     """
-    assert "confirm_started" in pin.spawn.__code__.co_names
-    assert "confirm_started" in pin.launch.__code__.co_names
-    assert "confirm_started" in pin.roster.__code__.co_names
+    assert "confirm_started" in windows.spawn.__code__.co_names
+    assert "confirm_started" in windows.launch.__code__.co_names
+    assert "confirm_started" in windows.roster.__code__.co_names
     assert not hasattr(server, "SPAWN_SETTLE_S")
 
 
@@ -294,12 +296,12 @@ def test_a_pinned_launch_inside_tmux_propagates_a_window_that_died(monkeypatch, 
     is trustworthy.
     """
     monkeypatch.setenv("TMUX", "/tmp/fake,1,0")
-    monkeypatch.setattr(pin.subprocess, "run", lambda cmd, *a, **kw: subprocess.CompletedProcess(
+    monkeypatch.setattr(windows.subprocess, "run", lambda cmd, *a, **kw: subprocess.CompletedProcess(
         cmd, 0, stdout="@9", stderr=""))
-    monkeypatch.setattr(pin, "confirm_started", _dies)
+    monkeypatch.setattr(windows, "confirm_started", _dies)
 
-    with pytest.raises(pin.WindowDied, match="claude: not found"):
-        pin.launch("main", tmp_path)
+    with pytest.raises(windows.WindowDied, match="claude: not found"):
+        windows.launch("main", tmp_path)
 
 
 def test_a_pinned_launch_inside_tmux_reports_a_window_that_lived(monkeypatch, tmp_path,
@@ -307,16 +309,16 @@ def test_a_pinned_launch_inside_tmux_reports_a_window_that_lived(monkeypatch, tm
     """The control. "It raised" is also what a `launch` that is broken in some other
     way does, so the same path with a surviving window has to report the pin."""
     monkeypatch.setenv("TMUX", "/tmp/fake,1,0")
-    monkeypatch.setattr(pin.subprocess, "run", lambda cmd, *a, **kw: subprocess.CompletedProcess(
+    monkeypatch.setattr(windows.subprocess, "run", lambda cmd, *a, **kw: subprocess.CompletedProcess(
         cmd, 0, stdout="@9", stderr=""))
-    monkeypatch.setattr(pin, "confirm_started", lambda *a, **kw: None)
+    monkeypatch.setattr(windows, "confirm_started", lambda *a, **kw: None)
 
-    pin.launch("main", tmp_path)
+    windows.launch("main", tmp_path)
 
     assert "Pinned window `main`" in capsys.readouterr().out
 
 
 def _dies(*_args, **_kwargs):
-    raise pin.WindowDied("the window was created and its command exited (exit 127) "
+    raise windows.WindowDied("the window was created and its command exited (exit 127) "
                          "before it could be called started — it printed: "
                          "claude: not found")

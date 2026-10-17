@@ -1,8 +1,8 @@
 """Rooms on a harness that registers nothing.
 
 Subject: the three mechanisms a Cursor room rests on — the boundary variable
-(`pin._room_env`), the roster read off the control plane (`harness/panes.py`), and the
-readiness verdict that decides whether `harness/dispatch.py` may type into a member.
+(`rooms._room_env`), the roster read off the control plane (`console/panes.py`), and the
+readiness verdict that decides whether `console/dispatch.py` may type into a member.
 
 Infrastructure: the screen fixtures below are **verbatim captures** from a live
 interactive Cursor session driven in tmux on 2026-08-13 against build
@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from thalamus.harness import dispatch, pin
-from thalamus.harness import panes as panes_mod
+from thalamus.console import rooms
+from thalamus.console import dispatch
+from thalamus.console import panes as panes_mod
 
 # --- captured screens -------------------------------------------------------------
 
@@ -83,8 +84,8 @@ class TestTheBoundaryIsTheHarnesssOwnVariable:
         `chats/` store with every other session, and still reports as a member from
         every surface that reports one.
         """
-        claude = dict(pin._room_env("alpha", "claude"))
-        cursor = dict(pin._room_env("alpha", "cursor"))
+        claude = dict(rooms._room_env("alpha", "claude"))
+        cursor = dict(rooms._room_env("alpha", "cursor"))
 
         assert claude["THALAMUS_ROOM"] == cursor["THALAMUS_ROOM"] == "alpha"
         assert "CLAUDE_CONFIG_DIR" in claude and "CURSOR_CONFIG_DIR" not in claude
@@ -94,7 +95,7 @@ class TestTheBoundaryIsTheHarnesssOwnVariable:
     def test_a_harness_with_no_declared_variable_is_refused(self):
         """A room that cannot be spelled is refused rather than launched unbounded."""
         with pytest.raises(ValueError, match="no config-root variable"):
-            pin._room_env("alpha", "aider")
+            rooms._room_env("alpha", "aider")
 
     def test_a_roomless_launch_clears_the_launched_harnesss_variable(self, monkeypatch):
         """
@@ -108,7 +109,7 @@ class TestTheBoundaryIsTheHarnesssOwnVariable:
         reads — the leak this guards against, one harness over.
         """
         monkeypatch.delenv("CURSOR_CONFIG_DIR", raising=False)
-        assert pin._room_clear("cursor") == [
+        assert rooms._room_clear("cursor") == [
             "env", "-u", "THALAMUS_ROOM", "-u", "CURSOR_CONFIG_DIR",
         ]
 
@@ -121,7 +122,7 @@ class TestTheBoundaryIsTheHarnesssOwnVariable:
         rides the argv; the room has to ride it for the same reason, or a phone tap
         turns a member into an outsider that still looks like a member.
         """
-        argv = pin._with_room(["agent", "--trust"], "alpha", "cursor")
+        argv = rooms._with_room(["agent", "--trust"], "alpha", "cursor")
         assert argv[0] == "env"
         assert "THALAMUS_ROOM=alpha" in argv
         assert any(part.startswith("CURSOR_CONFIG_DIR=") for part in argv)

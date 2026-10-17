@@ -38,6 +38,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:35:24-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/launcher.py § "launch_argv" =sha256:9903832749283d245cd16744318d8e3e7aca651b35e10620fe099f929590ddd5
+  artifact: sha256:ac91a7149680b15f49aabf30c6f45af2dc167f49e0e42caa99e5be66e110e0e5
+  note: propagated from a moved ground
+- 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/launcher.py § "launch_argv" =sha256:ac91a7149680b15f49aabf30c6f45af2dc167f49e0e42caa99e5be66e110e0e5
+  note: Only a docstring reference changed, from `pin.launch_flags` to `rooms.launch_flags`. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

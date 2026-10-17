@@ -116,7 +116,7 @@ class TestLiveStatus:
         """Spelled in `codex_transcripts` rather than imported, because `dispatch`
         pulls in half the harness and this module is on the extraction path. This is
         what keeps the duplication from drifting."""
-        dispatch = pytest.importorskip("thalamus.harness.dispatch")
+        dispatch = pytest.importorskip("thalamus.console.dispatch")
         assert (ct.CODEX_IDLE, ct.CODEX_BUSY) == (dispatch.IDLE_STATUS,
                                                   dispatch.BUSY_STATUS)
         assert ct.CODEX_UNKNOWN not in dispatch.DELIVERABLE_STATUSES

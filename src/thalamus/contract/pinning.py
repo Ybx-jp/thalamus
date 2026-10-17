@@ -175,7 +175,7 @@ PIN_ROWS: tuple[PinRow, ...] = (
                   kind="source-read", reask="free",
                   conditions=()),
            "`harness/launcher.LAUNCH_SHAPES` builds it; rooms are still refused — "
-           "`pin.ensure_room` names codex explicitly."),
+           "`rooms.ensure_room` names codex explicitly."),
     PinRow("pin.routing", "codex", Provision.PROVIDED,
            _codex("`SessionStart` fires with `THALAMUS_SCOPE` from the argv `env` "
                   "prefix, at the first submitted turn rather than at launch",
