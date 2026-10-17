@@ -198,9 +198,9 @@ thalamus snapshot                  # flush the in-memory graph to disk now
 
 ```bash
 thalamus pin <scope>               # launch a session pinned to an expert scope
-thalamus roster                    # console: bring up its tmux session (--all for every expert)
 thalamus spawn <scope>             # console: one on-demand pinned tmux window
-thalamus console                   # drive pinned sessions from a browser or phone
+thalamus console                   # drive pinned sessions from a browser or phone;
+                                   #   creates its tmux session if missing
 thalamus quick ask <scope> "<q>"   # consult a live expert by forking its own session
 thalamus quick targets             # which experts are forkable, and how warm each is
 thalamus quick delta               # what a fork contributed back

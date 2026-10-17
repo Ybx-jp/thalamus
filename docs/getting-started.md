@@ -215,25 +215,6 @@ The console runs pinned sessions as tmux windows and serves them to a browser, s
 needs **tmux** (`tmux -V`) on top of the prerequisites above.
 
 ```bash
-thalamus roster            # bring up the console's tmux session
-thalamus spawn architect   # one on-demand pinned window
-```
-
-`thalamus roster` opens the `main` anchor window in a tmux session; experts are
-spawned on demand from there or from the console, and `--all` opens one window per
-manifest. A window whose command exits before it can be called started is reported as
-a failure with what the pane printed, and the command exits non-zero.
-
-The session runs on its own tmux server, so attach with the socket named:
-
-```bash
-tmux -L thalamus attach -t thalamus
-```
-
-`thalamus roster` prints that line. `THALAMUS_TMUX_SOCKET` changes the socket name,
-which is how two checkouts on one box keep separate control planes.
-
-```bash
 thalamus console
 ```
 
@@ -241,24 +222,26 @@ thalamus console
 Control plane on http://127.0.0.1:8378  (tmux session `thalamus`)
 ```
 
+On its first run the console creates tmux session `thalamus` with a `main` window, the
+anchor. Experts are spawned on demand, from the console or with
+`thalamus spawn <scope>`. A window whose command exits before it can be called started
+is reported with what the pane printed, and the console serves anyway so you can read
+it and retry.
+
 The console is a browser front end over that tmux session: one row per session, the
 live pane, a composer, the terminal keys a phone keyboard lacks, and one tap to spawn
 an expert in a project or restart one so a wiring change arms. It never moves the
 active window, so the terminal on your desk stays where you left it.
 
-If you have not started its tmux session yet, the console tells you so and serves anyway:
+The session runs on its own tmux server, so attach with the socket named:
 
+```bash
+tmux -L thalamus attach -t thalamus
 ```
-No windows in tmux session "thalamus".
 
-The console bridges a tmux session — it doesn't create one. Start the roster on the host:
-
-  thalamus roster
-
-Or bridge any tmux session you like:
-
-  tmux -L thalamus new -d -s thalamus -n main
-```
+The console prints that line when it creates the session. `THALAMUS_TMUX_SOCKET`
+changes the socket name, which is how two checkouts on one box keep separate control
+planes.
 
 The console binds `127.0.0.1` and carries **no authentication**. To reach it from a
 phone, put `tailscale serve` in front of that loopback port and publish it on your

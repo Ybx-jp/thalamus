@@ -485,11 +485,10 @@ function mdInline(raw) {
 // Zero windows is a different failure from a window with no output, and it is the
 // first thing a fresh install shows. The server answered, so the beacon is already
 // green; without this the page is a blank rectangle that manages to look connected
-// and broken at the same time. `thalamus console` deliberately serves before the
-// roster exists — it prints that to its own stderr, which nobody holding a phone can
-// read, so this is where that sentence actually reaches the operator. Say which
-// session was looked for and how to make one: the console bridges a session, it
-// never creates one.
+// and broken at the same time. `thalamus console` creates its session at startup and
+// serves even when that fails — it prints the failure to its own stderr, which nobody
+// holding a phone can read — and the session can also end later, when its last
+// window exits. Say which session was looked for and how to get it back.
 function renderNoSession(session, socket) {
   const s = session || "thalamus";
   // The socket comes from the server: the roster lives on its own tmux server
@@ -499,9 +498,8 @@ function renderNoSession(session, socket) {
   els.screen.className = "screen-empty onboard";
   els.screen.textContent =
     `No windows in tmux session "${s}".\n\n` +
-    `The console bridges a tmux session — it doesn't create one. ` +
-    `Start the roster on the host:\n\n` +
-    `  thalamus roster\n\n` +
+    `Tap roster sync in ⚙ to open the main window again, ` +
+    `or ＋ to start a session.\n\n` +
     `Or bridge any tmux session you like:\n\n` +
     `  tmux -L ${L} new -d -s ${s} -n main`;
   renderedText = "";

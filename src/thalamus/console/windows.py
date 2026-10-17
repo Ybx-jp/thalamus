@@ -4,7 +4,7 @@ One window per pinned session, the window name being the scope. Coordination sta
 tmux, not in Thalamus: nothing here tracks the processes it starts, because the pin
 ledger already records what actually ran. `launch` opens a window when called inside
 tmux and otherwise hands off to `harness/pin.py`'s exec; `spawn` is the console's
-button; `roster` brings up the `main` anchor window.
+button; `ensure_anchor` gives the console's session its `main` anchor window.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ from thalamus.console.rooms import (
     _with_room,
     launch_flags,
 )
-from thalamus.contract.manifest import available_scopes
 from thalamus.contract.ontology import MAIN_SCOPE
 from thalamus.harness import pin
 
@@ -51,12 +50,11 @@ def _unleak_session_env(target: str | None, room: str,
 
 
 def _tmux_windows(target: str | None) -> set[tuple[str, str]]:
-    """Every window as (name, room) — the pair roster idempotency keys on.
+    """Every window as (name, room) — the pair `ensure_anchor`'s idempotency keys on.
 
-    The name alone stopped being the identity once rooms existed: a room's `main`
-    and the roster's own `main` are two sessions in two config dirs, so skipping
-    the second because the first exists would leave the room without the window it
-    asked for.
+    The name alone is not the identity: a room's `main` and the console's own `main`
+    are two sessions in two config dirs, so taking the first for the second would
+    leave the console without its anchor.
     """
     cmd = tmux.argv("list-windows", *(["-t", target] if target else []),
                     "-F", "#{window_index}\t#{window_name}")
@@ -75,7 +73,7 @@ def _tmux_windows(target: str | None) -> set[tuple[str, str]]:
 def _open_window(scope: str, argv: list[str], project_root: Path, target: str | None,
                  detached: bool = False, room: str = "",
                  harness: str = "claude") -> str:
-    # detached (-d): don't switch the session's active window. Roster additions run
+    # detached (-d): don't switch the session's active window. Console additions run
     # underneath attached clients (/tty, PC attaches), which must not be yanked to
     # the new window; an interactive `thalamus pin` keeps the switch — the operator
     # asked for that window.
@@ -288,12 +286,12 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
           harness: str = "claude") -> None:
     """Open ONE detached pinned window on demand — the plane's spawn button.
 
-    Unlike `roster` (which opens the whole set at bring-up), spawn creates a single
-    expert window in a chosen directory: `cwd` becomes the window's working dir, so
-    the session's work — and the memory it distills — is about that project while
-    still pinned to `scope`. The derived agent files are written to USER_AGENTS_DIR
-    first so `--agent` resolves regardless of `cwd`. Detached (`-d`) so an attached
-    /tty or PC client is never yanked to the new window (same rule as roster).
+    Spawn creates a single expert window in a chosen directory: `cwd` becomes the
+    window's working dir, so the session's work — and the memory it distills — is
+    about that project while still pinned to `scope`. The derived agent files are
+    written to USER_AGENTS_DIR first so `--agent` resolves regardless of `cwd`.
+    Detached (`-d`) so an attached /tty or PC client is never yanked to the new window
+    (same rule as `ensure_anchor`).
     """
     if not (tmux.inside() or shutil.which("tmux")):
         raise RuntimeError("spawn needs tmux (it IS the control plane)")
@@ -313,9 +311,10 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
             pin.write_codex_profile(manifest, base=base)
     argv = [*launch_argv(harness, scope, persona=persona), *launch_flags(room, scope, harness)]
 
-    # The session must exist (the tty unit's `tmux -L thalamus new -A -s thalamus` creates it,
-    # as does `thalamus roster`); create it if somehow absent so spawn never fails.
-    # Create it *with* this scope's window, the way `roster` does. A bare
+    # The session must exist (`thalamus console` creates it at startup, and the tty
+    # unit's `tmux -L thalamus new -A -s thalamus` does on first connect); create it if
+    # somehow absent so spawn never fails.
+    # Create it *with* this scope's window, the way `ensure_anchor` does. A bare
     # `new-session` would leave a shell placeholder at the lowest index, and the
     # plane reads the lowest index as the anchor — the un-closable window whose cwd
     # is its reference for roster sync. A placeholder there outranks every real
@@ -343,107 +342,64 @@ def spawn(scope: str, cwd: Path, session: str = ROSTER_SESSION,
     print(f"Spawned `{scope}`{_in_room(room)} in {cwd}")
 
 
-def roster(project_root: Path, base: Path | None = None, full: bool = False,
-           session: str | None = None, room: str | None = None) -> None:
-    """Bring up the roster. Default: only the `main` anchor window (experts
-    are spawned on demand from the plane). `full=True` opens one window per expert.
+def ensure_anchor(project_root: Path, session: str = ROSTER_SESSION,
+                  base: Path | None = None) -> None:
+    """Make sure `session` exists and holds the `main` anchor window.
 
-    Opening every expert at bring-up was retired: idle expert windows never get a
-    prompt, so each one wrote a pin-ledger spawn with no engagement and inflated the
-    `pinned, never retrieved` routing metric (measured 2026-07-19). On-demand spawn
-    means a window exists only when an expert is actually being used.
+    Creates the session with `main` as its first window when the session is missing,
+    opens `main` again in a session that has lost it, and leaves a session that already
+    holds it alone. `thalamus console` calls it at startup for a missing session, and
+    the admin sheet's roster sync calls it on demand.
 
-    Idempotent either way: windows already named for a scope are left alone. In a
-    room the name carries the room, so a room's `main` and the outside `main` are
-    two windows and neither suppresses the other — they are different sessions in
-    different config dirs, and collapsing them would put one of them in the wrong
-    one.
+    The anchor is the only window this opens. Experts open on demand from the console:
+    an expert window nobody prompts writes a pin-ledger spawn with no engagement and
+    inflates the `pinned, never retrieved` routing metric (measured 2026-07-19).
 
-    `session` names the target session explicitly. Left None (the CLI's case) the
-    target is the surrounding tmux session when there is one, else ROSTER_SESSION.
-    The console server passes it: it drives a session by name and must not
-    behave differently depending on whether the server process happens to have
-    been started from inside a tmux of its own.
+    Always roomless. The anchor is the console's own window, and this runs inside a
+    long-lived server process, so taking the room from the environment would put the
+    anchor in whatever room the server was started in. A room's `main` is a different
+    session in a different config dir, so it does not count as the anchor here.
 
-    Every window this opens is held to its settle deadline, and a death raises
-    `WindowDied` naming the scopes that died and quoting what their panes printed.
-    One death does not abort the rest: with `full=True` the roster is one independent
-    window per manifest, and refusing to open the rest because an early one could not
-    start would turn a single broken scope into a roster that is not up. So all of
-    them are opened, all of them are confirmed, and the raise at the end carries
-    every failure — the survivors stay running and the exit code is still non-zero.
+    Creating the session *with* `main` matters: whichever window is created first takes
+    the lowest index, the console reads the lowest index as the anchor, and a bare
+    `new-session` would put a shell there for the life of the tmux server.
+
+    The window is held to its settle deadline, and a death raises `WindowDied` quoting
+    what the pane printed.
     """
-    inside = tmux.inside() and session is None
-    if not (inside or shutil.which("tmux")):
-        raise RuntimeError(
-            "roster needs tmux (it IS the control plane); run `thalamus pin <scope>` instead"
-        )
+    if not shutil.which("tmux"):
+        raise RuntimeError("the console needs tmux to hold its sessions")
 
-    scopes = [MAIN_SCOPE, *available_scopes(base)] if full else [MAIN_SCOPE]
-    target = session or (None if inside else ROSTER_SESSION)
-    room = _entered_room(room)
-    room_flags = [f for k, v in _room_env(room) for f in ("-e", f"{k}={v}")]
-
-    # (scope, window id) for every window this call created, in creation order.
-    # Confirmation is deferred to a second pass so the settle deadlines overlap:
-    # confirming inline would make an `--all` bring-up wait one settle per window,
-    # end to end, for a roster whose windows all came up at once.
-    created: list[tuple[str, str]] = []
-
-    if target and subprocess.run(
-        tmux.argv("has-session", "-t", target), capture_output=True
-    ).returncode != 0:
-        first = scopes.pop(0)
+    room = ""
+    argv = _member_argv(MAIN_SCOPE, project_root, base, room)
+    if subprocess.run(tmux.argv("has-session", "-t", session),
+                      capture_output=True).returncode != 0:
         window_id = subprocess.run(
-            tmux.argv("new-session", "-d", "-s", target,
-                      "-P", "-F", "#{window_id}", "-n", first,
-                      "-c", str(project_root), "-e", f"THALAMUS_SCOPE={first}", *room_flags,
-                      "--", *_with_room(_member_argv(first, project_root, base, room), room)),
+            tmux.argv("new-session", "-d", "-s", session,
+                      "-P", "-F", "#{window_id}", "-n", MAIN_SCOPE,
+                      "-c", str(project_root), "-e", f"THALAMUS_SCOPE={MAIN_SCOPE}",
+                      "--", *_with_room(argv, room)),
             check=True, stdout=subprocess.PIPE, text=True,
         ).stdout.strip()
-        # Held open from the moment the window exists rather than when its turn to be
-        # confirmed comes round: the deaths worth reading are exec failures at tens of
-        # milliseconds, and a pane reaped before the option is set leaves no corpse and
-        # so no epitaph — which is the whole thing the operator needs.
-        _set_remain_on_exit(window_id, "on")
-        created.append((first, window_id))
-        _unleak_session_env(target, room)
+        _unleak_session_env(session, room)
+    elif (MAIN_SCOPE, room) in _tmux_windows(session):
+        print(f"`{MAIN_SCOPE}` already has a window in tmux session `{session}` — "
+              f"attach with: {tmux.attach_hint(session)}")
+        return
+    else:
+        window_id = _open_window(MAIN_SCOPE, argv, project_root, session,
+                                 detached=True, room=room)
+    # Held open from the moment the window exists: the deaths worth reading are exec
+    # failures at tens of milliseconds, and a pane reaped before the option is set
+    # leaves no epitaph to quote.
+    _set_remain_on_exit(window_id, "on")
+    _pin_window_sizes(session)
 
-    existing = _tmux_windows(target)
-    for scope in scopes:
-        if (scope, room) in existing:
-            print(f"`{scope}`{_in_room(room)} already has a window — skipped")
-            continue
-        window_id = _open_window(scope, _member_argv(scope, project_root, base, room),
-                                 project_root, target, detached=True, room=room)
-        _set_remain_on_exit(window_id, "on")
-        created.append((scope, window_id))
-
-    _pin_window_sizes(target)
-
-    # A clean return from tmux is not evidence that anything is running — `new-window`
-    # reports success once it has forked. Nothing said "opened" until the window has
-    # survived its harness's settle deadline.
-    died: list[str] = []
-    for scope, window_id in created:
-        try:
-            confirm_started(window_id)
-        except WindowDied as death:
-            died.append(f"`{scope}`{_in_room(room)}: {death}")
-        else:
-            print(f"Pinned window `{scope}`{_in_room(room)} opened")
-
-    # Asked of tmux rather than inferred: a dead window is killed on the way out, and
-    # killing the only window in a session ends the session. Claiming a roster to
-    # attach to when there is none is the failure this whole path is closing.
-    if target and subprocess.run(
-        tmux.argv("has-session", "-t", target), capture_output=True
-    ).returncode == 0:
-        print(f"Roster running in tmux session `{target}` — "
-              f"attach with: {tmux.attach_hint(target)}")
-
-    if died:
-        raise WindowDied(
-            f"{len(died)} of {len(created)} roster window(s) did not start:\n  "
-            + "\n  ".join(died)
-        )
+    # A clean return from tmux is not evidence that anything is running: `new-window`
+    # reports success once it has forked, before its command has execed.
+    try:
+        confirm_started(window_id)
+    except WindowDied as death:
+        raise WindowDied(f"`{MAIN_SCOPE}` did not start: {death}") from None
+    print(f"Pinned window `{MAIN_SCOPE}` opened in tmux session `{session}` — "
+          f"attach with: {tmux.attach_hint(session)}")

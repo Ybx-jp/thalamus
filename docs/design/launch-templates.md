@@ -24,7 +24,7 @@ Every launch path ends in one function, `launcher.launch_argv` (`launcher.py:487
 - `thalamus pin <scope>` → `pin.launch` → `pin.session_argv`; with `--room`, or inside
   tmux, through `console/windows.launch` first
 - `thalamus spawn <scope>` → `console/windows.spawn`, which sets `-e THALAMUS_SCOPE`
-- `thalamus roster` → `console/windows.roster`
+- `thalamus console` at startup, and roster sync → `console/windows.ensure_anchor`
 - Console `/api/spawn` (`server.py:2280`); `/api/recycle` (`server.py:2464`) re-runs the stored argv
 - `quick.fork_argv` (`quick.py:373`); `thalamus delegate` (`delegate.py:113`)
 

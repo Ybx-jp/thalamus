@@ -886,7 +886,7 @@ def _main():
     )
     eval_vocabulary_parser.add_argument("--url", default=DEFAULT_URL, help="Gremlin endpoint")
 
-    # Pin commands — "the process is the pin"; roster and spawn are the console's
+    # Pin commands — "the process is the pin"; spawn is the console's
     init_parser = subparsers.add_parser(
         "init", help="Install the harness at user scope so it arms in any directory"
     )
@@ -984,15 +984,6 @@ def _main():
     spawn_parser.add_argument(
         "--harness", choices=agents.LAUNCHABLE, default="claude", help="Which CLI to pin (default: claude). The charter rides `--agent` on claude and `--profile` on codex; `cursor` has no carrier for one, so its pin routes and is bounded without it — see contract/pinning.py for what `pinned` covers on each. codex and cursor both take the scope as an argv `env` prefix as well, which is what survives `respawn-window` (on codex `--profile` restores the charter but tells the hooks nothing). Both also default to their own resting permission posture rather than to `auto`, so a pinned session can stop at a prompt: the console's posture panel is where that is changed, and harness/launcher.py records what each rung gives up."
     )
-
-    roster_parser = subparsers.add_parser(
-        "roster", help="Bring up the tmux roster (the `main` anchor; --all for every expert)"
-    )
-    roster_parser.add_argument(
-        "--all", action="store_true",
-        help="Open one window per expert manifest (legacy full roster)"
-    )
-    roster_parser.add_argument("--room", default=None, help=ROOM_FLAG_HELP)
 
     quick_parser = subparsers.add_parser(
         "quick",
@@ -1479,8 +1470,6 @@ def _main():
         _cmd_pin(args)
     elif args.command == "spawn":
         _cmd_spawn(args)
-    elif args.command == "roster":
-        _cmd_roster(args)
     elif args.command == "quick":
         _cmd_quick(args, quick_parser)
     elif args.command == "room":
@@ -4205,29 +4194,6 @@ def _cmd_spawn(args):
         sys.exit(1)
 
 
-def _cmd_roster(args):
-    from thalamus.contract.paths import PROJECT_ROOT
-    from thalamus.console.windows import WindowDied, roster
-
-    try:
-        roster(PROJECT_ROOT, full=getattr(args, "all", False), room=args.room)
-    except (ValueError, RuntimeError) as e:
-        print(f"Roster failed: {e}", file=sys.stderr)
-        # A window whose command never execs prints nothing, so there is no epitaph
-        # to quote and the cause is almost always the binary. The hint is all the
-        # operator gets in that case, and it is the case that brought them here.
-        if isinstance(e, WindowDied):
-            # Every registered harness, not `claude`: the roster spawns whichever the
-            # pin asked for, and naming one binary sends an operator whose codex or
-            # Cursor window died to check a CLI that was never involved.
-            binaries = ", ".join(
-                f"`{agents.cli_for(h).binary} --version`" for h in agents.LAUNCHABLE
-            )
-            print(f"Check that the harness binary is on your PATH — {binaries}.",
-                  file=sys.stderr)
-        sys.exit(1)
-
-
 def _cmd_quick(args, parser):
     from thalamus.harness import pin
 
@@ -4878,10 +4844,23 @@ def _cmd_console(args):
     )
     if subprocess.run(tmux.argv("has-session", "-t", cfg.session),
                       capture_output=True).returncode != 0:
-        # Serve anyway: the console showing an empty roster and a working spawn
-        # button is a better answer than a refusal the operator reads on a phone.
-        print(f"! no tmux session `{cfg.session}` yet — start one with `thalamus roster`, "
-              "or use the console's ＋ button once it's up.")
+        # Only a missing session is created. An existing one is bridged as it stands:
+        # `--session` may name any tmux session, and the console adds nothing to one
+        # it did not create until the operator asks (roster sync, ＋).
+        from thalamus.console.windows import WindowDied, ensure_anchor
+
+        try:
+            ensure_anchor(Path(cfg.project_root), session=cfg.session)
+        except (ValueError, RuntimeError, subprocess.CalledProcessError) as e:
+            # Serve anyway: the console showing an empty roster and a working spawn
+            # button is a better answer than a refusal the operator reads on a phone.
+            print(f"! could not open `main` in tmux session `{cfg.session}`: {e}",
+                  file=sys.stderr)
+            # A window whose command never execs prints nothing, so there is no
+            # epitaph to quote and the cause is almost always the binary.
+            if isinstance(e, WindowDied):
+                print(f"Check that `{agents.cli_for('claude').binary} --version` works "
+                      "on this process's PATH.", file=sys.stderr)
     try:
         serve(cfg, host=args.host, port=args.port)
     except PortInUse as e:

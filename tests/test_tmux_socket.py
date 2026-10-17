@@ -59,8 +59,8 @@ def test_the_socket_flag_precedes_the_command_word():
 def test_inside_asks_which_server_not_whether_any(monkeypatch, handle, socket, expected):
     """A bare truth test on `$TMUX` answers "some tmux", which is the wrong question.
 
-    An operator sitting in a default-socket tmux who runs `thalamus roster` would
-    otherwise be treated as already inside the roster, and the windows would open on a
+    An operator sitting in a default-socket tmux who runs `thalamus pin` would
+    otherwise be treated as already inside the roster, and the window would open on a
     server they are not looking at.
     """
     monkeypatch.setenv(tmux.SOCKET_ENV, socket)
@@ -73,7 +73,7 @@ def test_inside_asks_which_server_not_whether_any(monkeypatch, handle, socket, e
 
 
 def test_the_attach_hint_names_the_socket_it_would_need(monkeypatch):
-    """`thalamus roster` prints this line, so a wrong one is a wrong instruction."""
+    """`thalamus console` prints this line, so a wrong one is a wrong instruction."""
     monkeypatch.setenv(tmux.SOCKET_ENV, "checkout-b")
 
     assert tmux.attach_hint("thalamus") == "tmux -L checkout-b attach -t thalamus"
