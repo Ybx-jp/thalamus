@@ -11,8 +11,9 @@ every clone cannot.
 a different repository now and took the last `.example` file with it, but nothing about the
 leak needed the suffix: what publishes a host is any configuration file this repository
 tracks, and several are still here as worked examples — `config/mcp/designer.json` names a
-server URL, `config/gremlin-server.yaml` a bind address. So the scan covers every tracked
-file under `config/`, plus any `.example` or `.env.*` file anywhere, which is the class that
+server URL, `src/thalamus/graph/gremlin-server.yaml` a bind address. So the scan covers every
+tracked file under `config/` and under `src/thalamus/graph/` (the graph server's
+configuration, which ships in the wheel), plus any `.example` or `.env.*` file anywhere, which is the class that
 returns the moment a deployment does.
 
 The property is narrow on purpose, because the obvious wide version is wrong. "Every value
@@ -130,13 +131,16 @@ def _acceptable(value: str) -> bool:
     return _identifies_nothing(stripped)
 
 
+_CONFIG_PREFIXES = ("config/", "src/thalamus/graph/")
+
+
 def _tracked_config() -> list[Path]:
     """Tracked configuration files. Enumerated from git, not from a hand list."""
     out = subprocess.run(["git", "ls-files", "-z"], cwd=str(_REPO),
                          capture_output=True, text=True, check=False)
     names = [n for n in out.stdout.split("\0") if n]
     return [_REPO / n for n in names
-            if n.startswith("config/")
+            if n.startswith(_CONFIG_PREFIXES)
             or n.endswith(".example") or n.endswith(".example.env")
             or Path(n).name.startswith(".env.")]
 
@@ -158,7 +162,7 @@ def run() -> Finding | None:
             failure_class=FailureClass.COLLAPSED_SENTINEL,
             summary="no tracked configuration file was found, so 'no config names a real "
                     "host' and 'no config was read' are the same result",
-            witness=f"git ls-files under {_REPO} matched nothing under config/ and no "
+            witness=f"git ls-files under {_REPO} matched nothing under config/ or src/thalamus/graph/ and no "
                     f".example file",
             site="tests/qe/cases/published_config.py:_tracked_config",
         )
@@ -214,7 +218,7 @@ def run() -> Finding | None:
         witness=f"{len(leaks)} of {checked} sensitive-named assignment(s): "
                 + "; ".join(leaks[:6])
                 + (f" (+{len(leaks) - 6} more)" if len(leaks) > 6 else ""),
-        site="tracked configuration under config/ and *.example",
+        site="tracked configuration under config/, src/thalamus/graph/ and *.example",
     )
 
 

@@ -72,7 +72,7 @@ _DEAD_GRAPH_URL = "ws://localhost:9/gremlin"
 # `substrate.writer.graph_down_detail` — asserted literally, not just "no exception",
 # because sameness across every hostile argument is the positive evidence that the
 # argument never reached anything past the gate.
-_GRAPH_DOWN_MARKER = "docker compose up -d"
+_GRAPH_DOWN_MARKER = "thalamus graph up"
 
 # Hostile values, keyed by the only two annotations this tool surface uses. Each
 # entry is (label, value) so a failure witness names which value broke it.

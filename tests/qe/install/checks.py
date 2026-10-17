@@ -797,7 +797,7 @@ def check_graph_down_diagnosis() -> Result:
     text = step_log("checked")
     if not text:
         return skip("no --check output was captured")
-    diagnosis = "docker compose up -d" in text and "start it with" in text
+    diagnosis = "thalamus graph up" in text and "start it with" in text
     graph_down_config = CONFIG_NAME == "graph-not-started"
 
     # install.py:1206-1208 applies graph_down_detail only when the probe says nothing is
