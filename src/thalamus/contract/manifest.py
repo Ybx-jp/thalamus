@@ -12,7 +12,6 @@ can write.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath

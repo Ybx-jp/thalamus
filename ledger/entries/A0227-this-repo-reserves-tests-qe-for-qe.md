@@ -36,6 +36,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T22:55:39-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/ownership.py § "rows" =sha256:d57ccdbecac74160c397264ccc61e8d8f1de14ef9bbce06cf2fb6a303ec25054
+  artifact: sha256:3528d67aa268b5936a3cc235f707139a7e8597af4ed403a1faf01a556b9345a2
+  note: propagated from a moved ground
+- 2026-10-16T22:55:52-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/contract/ownership.py § "rows" =sha256:3528d67aa268b5936a3cc235f707139a7e8597af4ed403a1faf01a556b9345a2
+  note: rows now narrows each field to a non-empty str before returning it, for the type checker; what it reads, refuses and returns is unchanged. The assertion is unaffected.
+
 ## References
 
 - CLAUDE.md · standing · cites-as-live

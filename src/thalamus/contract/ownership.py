@@ -63,13 +63,15 @@ def rows(root: Path | None = None) -> tuple[tuple[str, str, str], ...]:
         raise ValueError(f"{path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"{path}: expected an object of row name to row")
-    out = []
+    out: list[tuple[str, str, str]] = []
     for name, row in raw.items():
-        fields = [row.get(k) if isinstance(row, dict) else None
-                  for k in ("glob", "owner", "reason")]
-        if not all(isinstance(f, str) and f.strip() for f in fields):
+        glob, owner, reason = ((row.get(k) for k in ("glob", "owner", "reason"))
+                               if isinstance(row, dict) else (None, None, None))
+        if not (isinstance(glob, str) and glob.strip()
+                and isinstance(owner, str) and owner.strip()
+                and isinstance(reason, str) and reason.strip()):
             raise ValueError(f"{path}: row `{name}` needs a non-empty glob, owner and reason")
-        out.append((fields[0], fields[1], fields[2]))
+        out.append((glob, owner, reason))
     return tuple(out)
 
 
