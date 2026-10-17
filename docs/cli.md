@@ -592,9 +592,8 @@ names. Its `reference_extensions` list is what stops it accusing live code — t
 scripts under `harness/hooks/` embed Python heredocs that import from the package, so a
 symbol whose only caller is `role-guard.sh` is reached, not dead. Those blocks are
 parsed as Python and walked by the same reference pass the `.py` files get; a text match
-would not do, because this repo has a real call to `WriteBoundary.denies` and a comment
-mentioning `ownership.fallback_markers()` in the same file, and only one of them is a
-caller.
+would not do, because `role-guard.sh` has real calls to `denies` inside its heredocs
+and the word `denies` in its shell comments, and only the first is a caller.
 
 The census states its own reach limits as findings rather than dropping them: a
 `getattr()` with a computed name, a name that appears in a string, a star re-export and

@@ -61,12 +61,12 @@ citation-slug = "forbid"
 # `lab`/`experiment` pointer — a measurement whose ground is a lab record belongs to the
 # private bridging ledger (Ybx-jp/thalamus-notes#4), and in this repository such a
 # sentence can only be `argued`.
-evidence-sectioned = ["code", "js", "toml", "toml-key", "yaml"]
+evidence-sectioned = ["code", "js", "toml", "toml-key", "yaml", "json"]
 evidence-plain = []
 
 # Who may write a verdict, and the name the machinery writes under. Scope names are added
 # as a scope first writes one; `ledger/` deliberately has no row in
-# `contract/ownership.PATH_OWNERSHIP`, because that table reserves a tree *for* one scope
+# `config/ownership.json`, because that table reserves a tree *for* one scope
 # and denies every other, and the ledger is cross-scope by construction — a claim about
 # `tests/qe/` and a claim about `substrate/` are neighbours in the same directory. Who may
 # speak is the allowlist below; where they may write is not the question the ledger asks.
@@ -136,3 +136,9 @@ toml-key = '^{name} = '
 # start a top-level key, so none of them opens or ends a section. Measured over the
 # five yaml grounds: each now spans its key's whole block and no other top-level key.
 yaml ='^(?![ \t#-]){name}:'
+# A key of a JSON object written two spaces in, and everything nested under it, running
+# to the next key at that depth: the rows of a table such as `config/ownership.json`,
+# whose top level is an object of row name to row. Nested keys sit four spaces in, so
+# none of them opens or ends a section. JSON carries no comments, so the claim about a
+# row is cited from the prose that explains the file.
+json = '^  "{name}":'

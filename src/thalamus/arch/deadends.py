@@ -36,15 +36,13 @@ are parsed as Python, and the same reference walk runs over the result. The chan
 `denies_skill` cannot be matched by a substring of `denies` and why a Python comment
 inside a heredoc reaches nothing.
 
-**A word in shell prose is not a call, and this repo proves it both ways.** The same
-`role-guard.sh` writes the word `denies` in a comment describing the mechanism, three
-lines from a real call — and writes `ownership.fallback_markers()`, parentheses and all,
-in a comment recording that those markers are *copy-pasted instead of* calling it,
-because the interpreter that would compute them is the thing that just failed. No text
-match separates those two, and counting either would silence a true finding. Nothing
-outside a parsed block is counted as a reference; a whole-word occurrence of a name the
-census is about to report is attached to that finding as a limit, so the reader is
-pointed at the one line that could refute it.
+**A word in shell prose is not a call.** The same `role-guard.sh` writes the word
+`denies` in comments describing its mechanism, a dozen lines above a real call to
+`contract.ownership.denies`, and a comment can as easily name a function in order to say
+it is *not* called. No text match separates a mention from a call, and counting one
+would silence a true finding. Nothing outside a parsed block is counted as a reference;
+a whole-word occurrence of a name the census is about to report is attached to that
+finding as a limit, so the reader is pointed at the one line that could refute it.
 
 The failure modes this leaves, all in the direction of reporting rather than silencing:
 a heredoc opened inside a quoted string is believed in and then discarded unread when no
@@ -664,12 +662,11 @@ def _embedded_imports(tree: ast.Module, modules: dict[str, str]) -> set[str]:
 def _text_mentions(text: str, covered: set[int], names: set[str]) -> dict[str, set[int]]:
     """Where a defined name occurs as a whole word outside every embedded-Python block.
 
-    These are **not** counted as references, and the reason is measured on this repo:
-    `role-guard.sh` writes the words `denies` and `fallback_markers()` in shell comments
-    describing the mechanism, one of which sits beside a real call and one of which
-    documents a deliberate copy-paste *instead* of a call. A text match cannot separate
-    those, so counting it would silence a true finding. It is reported as a limit on the
-    findings it could have refuted instead.
+    These are **not** counted as references. `role-guard.sh` writes the word `denies`
+    in shell comments describing its mechanism, near a real call; a comment can as easily
+    name a function to say it is not called. A text match cannot separate those, so
+    counting it would silence a true finding. It is reported as a limit on the findings
+    it could have refuted instead.
     """
     found: dict[str, set[int]] = {}
     for number, line in enumerate(text.splitlines(), start=1):

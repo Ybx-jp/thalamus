@@ -33,8 +33,8 @@ none
 <!-- APPEND BELOW THIS LINE ONLY -->
 
 ## Verdicts
+- 2026-10-16T22:43:58-07:00 · superseded · grade: measured · author: architect
+  evidence: entry: A0227-this-repo-reserves-tests-qe-for-qe · supersedes
+  note: The table moved from contract/ownership.PATH_OWNERSHIP into the config root's ownership.json; this repository's row is unchanged.
 
 ## References
-
-- CLAUDE.md · standing · cites-as-live
-- docs/concepts.md · standing · cites-as-live

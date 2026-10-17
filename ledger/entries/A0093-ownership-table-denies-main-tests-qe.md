@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T22:41:07-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/ownership.py § "PATH_OWNERSHIP" =sha256:f33adb9ac694919a583e2e6961574c7deb18b249407e5a660f77c470dfd9a4cf
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-16T22:43:58-07:00 · corroborated · grade: measured · author: architect
+  evidence: json: config/ownership.json § "qe-oracle" =sha256:eeb9dfe14470f2ce8fe5a450a48c78a7a060f9d8248eb2b981738fe842656941
+  note: The tests/qe/ row, its owner and its mirror-of-src reason moved verbatim from contract/ownership.PATH_OWNERSHIP to this row. #343 moves the ownership table out of the package into the config root's ownership.json. The assertion is unaffected.
+
 ## References
 
 - README.md · standing · cites-as-live

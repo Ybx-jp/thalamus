@@ -381,7 +381,7 @@ question that still needs a measurement designed is not yet a defect to reproduc
 a gap in coverage is closed by writing the check, not reproduced by it.
 
 Never tag what you have not watched reproduce. `tests/qe/` belongs to the `qe` scope
-(`contract/ownership.PATH_OWNERSHIP`), so a change from anywhere else hands the
+(`config/ownership.json`), so a change from anywhere else hands the
 reproduction over rather than writing it. When the defect is fixed, that same check
 gains `fixed=True` and its control, and goes on standing as the regression guard — a
 red there afterwards means the repair came undone.

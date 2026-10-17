@@ -148,11 +148,10 @@ The full walkthrough, including what the first run looks like, is
 Thalamus runs from a clone, and `git pull` is the upgrade path. A wheel built from
 the tree installs outside a checkout: it finds its own hook scripts and skills, and its
 hooks run the CLI under the interpreter `thalamus init` records, and `init` gives it
-two example experts. It is not published yet. The package still carries this
-repository's own ownership rule — `tests/qe/` writable only by the `qe` scope — which
-would apply in every repository a wheel's user works in, so `pyproject.toml` carries
-`Private :: Do Not Upload` until that rule moves into configuration. The classifier
-makes the closed index mechanical rather than a stated intention.
+two example experts. It is not published yet: the graph server's compose file and
+configuration ship only in the clone, so a wheel alone cannot bring up the graph it
+writes to, and `pyproject.toml` carries `Private :: Do Not Upload` until they ship with
+it. The classifier makes the closed index mechanical rather than a stated intention.
 
 One feature is experimental and off by default: frame themes, which render the pane
 inside artwork, behind `thalamus console --frames PATH`. Without the flag there are no

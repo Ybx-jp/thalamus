@@ -13,7 +13,7 @@ run, and that it stays cheap enough to sit ahead of the exemption it displaces.
 from __future__ import annotations
 
 import json
-import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -21,16 +21,17 @@ from pathlib import Path
 import pytest
 
 from thalamus.contract.ownership import (
-    PATH_OWNERSHIP,
+    OWNERSHIP_FILE,
     denies,
-    fallback_markers,
     owner_of,
+    rows,
 )
 
 REPO = Path(__file__).resolve().parents[1]
 HOOKS = REPO / "src" / "thalamus" / "harness" / "hooks" / "claude-code"
 GUARD = HOOKS / "role-guard.sh"
 OWNED = f"{REPO}/tests/qe/expectations.json"
+TABLE = REPO / "config" / OWNERSHIP_FILE
 
 
 @pytest.fixture
@@ -38,8 +39,9 @@ def owner_experts(tmp_path):
     """A roster declaring the scope that owns `tests/qe/`, and its mirror deny.
 
     Ownership binds by scope name and reads no manifest — that independence is the
-    reason the table lives here rather than in `config/experts/`, and is what lets
-    it bind `main`. Two things around it do read one: scope *resolution* through
+    reason the table is its own file rather than a manifest field, and is what lets
+    it bind `main`. The table is read from the same config root, so this one carries
+    the checkout's. Two things around it do read one: scope *resolution* through
     the agent picker admits a name only when a manifest backs it, and the mirror
     half of the partition (`*/src/*`) is a `write_boundary` field. Both are handed
     an expert set of this test's own making, so the partition property is asserted
@@ -58,6 +60,7 @@ def owner_experts(tmp_path):
         "  reason: >-\n"
         "    qe holds the oracle, not the fix.\n"
     )
+    shutil.copyfile(TABLE, tmp_path / "config" / OWNERSHIP_FILE)
     return {"THALAMUS_CONFIG_DIR": str(tmp_path / "config")}
 
 
@@ -128,7 +131,8 @@ class TestTheTable:
         assert denies("main", f"{REPO}/src/thalamus/cli.py") is None
 
     def test_a_row_carries_the_reason_shown_to_the_blocked_session(self):
-        for glob, owner, reason in PATH_OWNERSHIP:
+        assert rows(), "this checkout's table is empty — the loop below would pass vacuously"
+        for glob, owner, reason in rows():
             assert glob and owner
             assert len(reason.strip()) > 40, f"{glob} has no usable denial message"
 
@@ -149,20 +153,57 @@ class TestTheTable:
         shipped = set(available_scopes())
         assert shipped, "no manifests found — the check below would pass vacuously"
 
-        orphaned = sorted({owner for _, owner, _ in PATH_OWNERSHIP} - shipped)
+        orphaned = sorted({owner for _, owner, _ in rows()} - shipped)
         assert not orphaned, (
             f"ownership rows reserve a tree for {orphaned}, which no manifest in "
-            f"config/experts/ declares. Nobody can be pinned to those scopes, so the "
+            f"the same config root declares. Nobody can be pinned to those scopes, so the "
             f"trees they own cannot be edited by anyone. Shipped: {sorted(shipped)}"
         )
+
+
+class TestTheTableIsConfiguration:
+    """The rule is one repository's decision about its own trees, read from the config
+    root beside the manifests, so a root without the file reserves nothing."""
+
+    def test_a_root_without_the_file_reserves_nothing(self, tmp_path):
+        assert rows(tmp_path) == ()
+        assert denies("main", OWNED, tmp_path) is None
+
+    def test_a_row_in_another_root_binds_there(self, tmp_path):
+        (tmp_path / OWNERSHIP_FILE).write_text(json.dumps({
+            "docs": {"glob": "*/handbook/*", "owner": "writer",
+                     "reason": "The handbook is the writer's to change."}}))
+
+        assert denies("main", "/repo/handbook/a.md", tmp_path)[1] == "writer"
+        assert denies("writer", "/repo/handbook/a.md", tmp_path) is None
+        assert denies("main", OWNED, tmp_path) is None, "this checkout's row is not there"
+
+    def test_a_malformed_table_is_reported_not_read_as_empty(self, tmp_path):
+        (tmp_path / OWNERSHIP_FILE).write_text("{not json")
+        with pytest.raises(ValueError, match=OWNERSHIP_FILE):
+            rows(tmp_path)
+
+    def test_a_row_missing_its_reason_is_refused(self, tmp_path):
+        (tmp_path / OWNERSHIP_FILE).write_text(json.dumps(
+            {"bare": {"glob": "*/x/*", "owner": "qe"}}))
+        with pytest.raises(ValueError, match="row `bare`"):
+            rows(tmp_path)
+
+    def test_the_wheel_ships_no_table(self):
+        """The package carries no ownership row of its own: an installed wheel's config
+        root starts without the file, and the examples `init` copies do not add one."""
+        examples = REPO / "src" / "thalamus" / "examples"
+        assert not list(examples.rglob(OWNERSHIP_FILE))
+        assert not list((REPO / "src" / "thalamus").rglob(OWNERSHIP_FILE))
 
 
 class TestTheCostThatDecidedTheModule:
     def test_importing_ownership_does_not_import_pydantic(self):
         """Load-bearing, not stylistic. This module is imported on every Edit/Write in
-        every session on the box, including unpinned ones. Measured: bare interpreter
-        15ms, this module ~15ms, `contract.manifest` 151ms — and the 151ms is the
-        pydantic import, not the YAML read (`load_manifest` adds only 24ms on top).
+        every session on the box, including unpinned ones. Measured, best of 15 fresh
+        interpreters: bare 13.8 ms, `import json` 18.7 ms, `import yaml` 31.1 ms,
+        `contract.manifest` 151 ms — and the 151 ms is the pydantic import, not the
+        YAML read.
 
         A typed table here would make the ownership test more expensive than the
         manifest load whose cost the `main` short-circuit exists to avoid, which would
@@ -197,24 +238,28 @@ class TestTheDegradedPathFailsClosed:
     one's is a scope editing the oracle that indicts it.
     """
 
-    def test_the_inlined_markers_match_the_table(self):
-        """The guard cannot call `fallback_markers()` in the state where it needs them
-        — the interpreter is what failed. So the literals are duplicated into the shell
-        script, and this test is the thing that keeps the duplication honest."""
-        script = GUARD.read_text()
-        block = re.search(r'for pair in ((?:"[^"]+"\s*)+); do', script)
-        assert block, "the degraded fallback loop is gone from role-guard.sh"
-        inlined = set()
-        for pair in re.findall(r'"([^"]+)"', block.group(1)):
-            marker, _, owner = pair.rpartition(":")
-            inlined.add((marker, owner))
-        expected = {
-            (marker, row[1]) for marker, row in zip(fallback_markers(), PATH_OWNERSHIP)
+    def test_the_degraded_path_reads_the_table_not_a_copy_of_it(self, tmp_path):
+        """With the interpreter unavailable the guard reads `ownership.json` with jq, so
+        a row added to a config root binds on the degraded path with no second list to
+        keep in step. The control is the same payload against a root without the row."""
+        root = tmp_path / "config"
+        root.mkdir()
+        (root / OWNERSHIP_FILE).write_text(json.dumps({
+            "docs": {"glob": "*/handbook/*", "owner": "writer",
+                     "reason": "The handbook is the writer's to change."}}))
+        payload = {
+            "tool_name": "Edit",
+            "tool_input": {"content": "writing into /repo/handbook/a.md"},
+            "session_id": "test",
         }
-        assert inlined == expected, (
-            f"role-guard.sh's inlined markers {inlined} disagree with "
-            f"contract/ownership.py {expected}"
-        )
+
+        refused = run_guard(payload, tmp_path, {"THALAMUS_CONFIG_DIR": str(root)})
+        (root / OWNERSHIP_FILE).unlink()
+        control = run_guard(payload, tmp_path, {"THALAMUS_CONFIG_DIR": str(root)})
+
+        assert refused.returncode == 2, _evidence("degraded handbook row", refused)
+        assert "/handbook/" in refused.stderr
+        assert control.returncode == 0, control.stderr
 
     def test_an_unparseable_target_naming_an_owned_path_is_refused(self, tmp_path):
         payload = {

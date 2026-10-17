@@ -41,6 +41,9 @@ from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 _REPO = Path(__file__).resolve().parents[3]
 _HOOKS = _REPO / "src/thalamus/harness/hooks"
+# The ownership table lives in the config root; pinned so role-guard's block means the
+# same thing whatever THALAMUS_CONFIG_DIR the runner's shell carries.
+_CONFIG_ROOT = _REPO / "config"
 _SITE = "src/thalamus/harness/hooks/claude-code/write-guard.sh"
 # Assembled so this file's own text never matches the guard's verb pattern.
 _WRITE = "thalamus " + "wri" + "te f.json"
@@ -51,6 +54,7 @@ def _invoke(script: str, payload: dict | str, home: str) -> subprocess.Completed
     env = dict(os.environ)
     env["HOME"] = home
     env["THALAMUS_SCOPE"] = "main"
+    env["THALAMUS_CONFIG_DIR"] = str(_CONFIG_ROOT)
     for var in ("CLAUDE_CODE_AGENT", "THALAMUS_ROOM", "THALAMUS_SANDBOX"):
         env.pop(var, None)
     stdin = payload if isinstance(payload, str) else json.dumps(payload)

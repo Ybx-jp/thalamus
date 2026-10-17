@@ -35,6 +35,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T22:41:07-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "default_config" =sha256:0f402b9802fe503a01963d46b8b4f532901869526db5fa079bf4522fdeb8b322
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-16T22:43:58-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/contract/paths.py § "config_root" =sha256:189c7712b210539e93c4b7a3126a7b496079c9580d0388acc52bf333339124d1
+  note: The fallback moved from manifest.default_config into paths.config_root unchanged: the checkout's config/, else ~/.thalamus/config. #343 moves the ownership table out of the package into the config root's ownership.json, which needs the config root without importing manifest. The assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

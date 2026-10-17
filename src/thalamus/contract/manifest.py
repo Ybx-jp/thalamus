@@ -12,7 +12,6 @@ can write.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
@@ -32,17 +31,6 @@ from thalamus.contract.capabilities import (
     read_presets,
 )
 from thalamus.contract import paths
-
-
-def default_config() -> Path:
-    """The config root when neither `base` nor THALAMUS_CONFIG_DIR names one.
-
-    A checkout's own `config/` is its development config; an installed wheel has none
-    and reads the user's, `~/.thalamus/config`. Read at call time, so it follows HOME.
-    """
-    if paths.CHECKOUT is not None:
-        return paths.CHECKOUT / "config"
-    return Path.home() / ".thalamus" / "config"
 
 
 @dataclass(frozen=True)
@@ -506,11 +494,10 @@ class ExpertManifest(BaseModel):
 def config_root(base: Path | None = None) -> Path:
     """The tier-0 configuration directory — manifests and anything beside them.
 
-    `base`, then THALAMUS_CONFIG_DIR, then the checkout's `config/`, then
-    `~/.thalamus/config` for an installed wheel.
+    `base` when given, else `paths.config_root()`: THALAMUS_CONFIG_DIR, then the
+    checkout's `config/`, then `~/.thalamus/config` for an installed wheel.
     """
-    override = os.environ.get("THALAMUS_CONFIG_DIR")
-    return base or (Path(override).expanduser() if override else default_config())
+    return base or paths.config_root()
 
 
 def experts_dir(base: Path | None = None) -> Path:

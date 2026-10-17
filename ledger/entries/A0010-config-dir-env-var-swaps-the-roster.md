@@ -41,6 +41,13 @@ none
 - 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/contract/manifest.py § "config_root" =sha256:dd5b8d978f037debbc4c3ea0afe757765d6e8125aa63e6fefc789f69fbde63d1
   note: config_root's fallback became default_config (checkout `config/`, else ~/.thalamus/config); THALAMUS_CONFIG_DIR still overrides it. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+- 2026-10-16T22:41:07-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "config_root" =sha256:dd5b8d978f037debbc4c3ea0afe757765d6e8125aa63e6fefc789f69fbde63d1
+  artifact: sha256:215abf6b8b3c0094f351fcb3e30c1404ab79f610c5062beb84024aebb815cbcb
+  note: propagated from a moved ground
+- 2026-10-16T22:43:58-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/contract/manifest.py § "config_root" =sha256:215abf6b8b3c0094f351fcb3e30c1404ab79f610c5062beb84024aebb815cbcb
+  note: config_root delegates to paths.config_root, which reads THALAMUS_CONFIG_DIR first. #343 moves the ownership table out of the package into the config root's ownership.json. The assertion is unaffected.
 
 ## References
 

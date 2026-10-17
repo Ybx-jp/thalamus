@@ -87,7 +87,7 @@ tmux windows from the console is `docs/console.md`'s, not this skill's.
    policy appears nowhere in the file you just wrote.
 2d. **If the scope is defined by what it is licensed to DECIDE, nothing in the
    contract expresses that** — `write_boundary`, `capability_boundary` and
-   `PATH_OWNERSHIP` all deny, and there is no field meaning *this scope decides*.
+   the config root's `ownership.json` all deny, and there is no field meaning *this scope decides*.
    Put the grant in `domain`, state it as a rule the session can apply (what is
    closed here, what is returned, and to whom), and expect no enforcement. Do not
    reach for a hook to simulate one: the MAST result often cited for "prose fails"
