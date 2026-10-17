@@ -157,7 +157,7 @@ def test_a_missing_docker_is_a_sentence_not_a_traceback(registry, monkeypatch):
     with pytest.raises(snapshots.SnapshotError) as absent:
         snapshots.take("some-state")
     assert "`docker` is not on PATH" in str(absent.value)
-    assert "docker compose up -d" in str(absent.value)
+    assert "thalamus graph up" in str(absent.value)
 
     with pytest.raises(snapshots.SnapshotError, match="not on PATH"):
         snapshots._run_or_raise(["docker", "start", "thalamus-graph"], "cannot start")

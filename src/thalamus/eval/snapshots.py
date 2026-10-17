@@ -53,6 +53,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from thalamus import snapshotting
+from thalamus.contract.paths import GRAPH_COMPOSE
 from thalamus.substrate.snapshot import DEFAULT_SNAPSHOT_PATH, snapshot
 from thalamus.substrate.writer import DEFAULT_URL, close_connection, connect
 
@@ -234,7 +235,7 @@ def restore(name: str, *, safety_snapshot: bool = True, url: str | None = None) 
 DOCKER_ABSENT = (
     "`docker` is not on PATH. Snapshots are files inside the graph container and "
     "every operation here goes through it — install Docker and bring the graph up "
-    "with `docker compose up -d`, then retry."
+    "with `thalamus graph up`, then retry."
 )
 
 
@@ -313,7 +314,7 @@ def _write_snapshot_conf(name: str, graph_location: str) -> Path:
     one in exactly one property. The init script is dropped: it belongs to the live
     graph's startup, and a read-only replay has nothing to initialise.
     """
-    repo_conf = Path(__file__).resolve().parents[3] / "config"
+    repo_conf = GRAPH_COMPOSE.parent
     out = Path.home() / ".thalamus" / "snapshot-conf" / name
     out.mkdir(parents=True, exist_ok=True)
 

@@ -666,7 +666,7 @@ An aggregate beats both by an order of magnitude when the question is aggregate:
 that costs 11 s. Reach for the scan only when a rule genuinely needs per-element rows.
 
 None of these is an index question. TinkerGraph's only index is an exact-value hash
-map (`graph.createIndex`), no index is declared in `config/tinkergraph.properties`, and
+map (`graph.createIndex`), no index is declared in `src/thalamus/graph/tinkergraph.properties`, and
 `hasLabel` has no index in TinkerGraph at all — every one of these is a full scan by
 construction, so what varies is only how much crosses the wire.
 

@@ -1,0 +1,47 @@
+# The graph server. Ships in the package beside the three files it mounts, so an
+# installed wheel brings it up with `thalamus graph up` and a clone with
+# `docker compose up -d` (the root compose file includes this one).
+#
+# The project name and the volume key together name the data volume,
+# `thalamus_thalamus-graph-data`. Changing either starts an empty graph beside the
+# old one rather than moving it.
+name: thalamus
+
+services:
+  graph:
+    image: tinkerpop/gremlin-server:3.7.3
+    restart: unless-stopped
+    # SIGTERM makes TinkerGraph flush graphLocation on the way out. Give the JVM
+    # room to finish that write rather than letting compose SIGKILL it at 10s.
+    stop_grace_period: 60s
+    # Unbounded, this container is among the fattest RSS on the host, so memory
+    # pressure from anything else gets it picked by the kernel's OOM killer first —
+    # and TinkerGraph is in-memory, which makes that a data-loss event rather than a
+    # restart (homelab, exchange 432ff6f9cd6f43ba). Measured steady state is
+    # ~970MiB; 3g leaves the JVM room to grow without being the kernel's preferred
+    # victim.
+    mem_limit: 3g
+    ports:
+      - "127.0.0.1:8182:8182"
+    volumes:
+      # This directory: gremlin-server.yaml, tinkergraph.properties and
+      # thalamus-graph.groovy, relative to this file wherever it was installed.
+      - .:/opt/gremlin-server/conf/thalamus:ro
+      # The graph file lives here. Mounted on the image's own data directory so
+      # the named volume inherits the `gremlin` uid that the server runs as.
+      - thalamus-graph-data:/opt/gremlin-server/data
+    # Bypasses the image entrypoint on purpose. That script `sed -i`s the config
+    # to pin `host:` to the container IP, which fails against a read-only mount
+    # and would otherwise dirty a tracked file. `host: 0.0.0.0` in the yaml binds
+    # every interface, which is what the substitution was approximating.
+    entrypoint: ["/opt/gremlin-server/bin/gremlin-server.sh"]
+    command: ["conf/thalamus/gremlin-server.yaml"]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8182"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  thalamus-graph-data:

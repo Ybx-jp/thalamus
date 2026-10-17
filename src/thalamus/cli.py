@@ -623,6 +623,18 @@ def _main():
         help="Apply the plan. Without this, nothing is written.",
     )
 
+    # Graph command — the graph server's lifecycle, from the compose file in the package
+    graph_parser = subparsers.add_parser(
+        "graph",
+        help="Bring the graph server up, stop it, or show it (Docker Compose, from "
+             "the compose file shipped in the package)",
+    )
+    graph_parser.add_argument(
+        "graph_command", choices=GRAPH_COMMANDS,
+        help="up: start it and wait until healthy; stop: stop it, which flushes the "
+             "graph to disk; ps: show its state",
+    )
+
     # Snapshot command — durability on demand
     snapshot_parser = subparsers.add_parser(
         "snapshot",
@@ -1454,6 +1466,8 @@ def _main():
         _cmd_retire_sources(args)
     elif args.command == "repair-claim-addresses":
         _cmd_repair_claim_addresses(args)
+    elif args.command == "graph":
+        _cmd_graph(args)
     elif args.command == "snapshot":
         _cmd_snapshot(args)
     elif args.command == "eval":
@@ -3181,6 +3195,30 @@ def _cmd_backfill_chunks(args):
             print("DRY RUN — nothing written. Re-run with --write to persist.")
     finally:
         close_connection(graph)
+
+
+# What each `thalamus graph` verb runs after `docker compose -f <compose file>`. `down`
+# is not here: with `-v` it deletes the graph's volume, which is the operator's memory,
+# and a verb that sits one flag away from that is not one this command offers.
+GRAPH_COMMANDS = {
+    "up": ["up", "-d", "--wait", "--wait-timeout", "180"],
+    "stop": ["stop"],
+    "ps": ["ps"],
+}
+
+
+def _cmd_graph(args):
+    import shutil
+    import subprocess
+
+    from thalamus.contract.paths import GRAPH_COMPOSE
+
+    if not shutil.which("docker"):
+        print("`docker` is not on PATH — the graph server runs in Docker. Install it, "
+              "then re-run `thalamus graph up`.", file=sys.stderr)
+        sys.exit(1)
+    argv = ["docker", "compose", "-f", str(GRAPH_COMPOSE), *GRAPH_COMMANDS[args.graph_command]]
+    sys.exit(subprocess.run(argv).returncode)
 
 
 def _cmd_snapshot(args):

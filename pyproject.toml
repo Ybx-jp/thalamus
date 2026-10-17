@@ -11,10 +11,9 @@ license-files = ["LICENSE"]
 authors = [{ name = "Jackson Porter" }]
 keywords = ["agents", "memory", "knowledge-graph", "gremlin", "llm", "evaluation"]
 classifiers = [
-    # Not published to any index yet. The graph server's `docker-compose.yml` and
-    # `config/` files ship only in the clone, so an installed wheel cannot bring up
-    # the graph it writes to. This classifier makes that a mechanical guarantee
-    # rather than an intention; PyPI refuses an upload carrying it. The name is taken on PyPI
+    # Not published to any index yet: the core is released as `thalamus-memory`,
+    # and until that release this classifier makes the closed index a mechanical
+    # guarantee rather than an intention; PyPI refuses an upload carrying it. The name is taken on PyPI
     # regardless — `thalamus` there is GNU Health's federation server.
     "Private :: Do Not Upload",
     "Development Status :: 3 - Alpha",

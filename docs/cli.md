@@ -191,6 +191,7 @@ thalamus schema                    # the session graph JSON schema
 thalamus contract check            # audit the live graph against the federation contract
                                    #   violations exit 1; advisories print and do not
 thalamus pulse                     # live telemetry dashboard over the eval loop
+thalamus graph up|stop|ps          # the graph server, from the compose file the package ships
 thalamus snapshot                  # flush the in-memory graph to disk now
 ```
 

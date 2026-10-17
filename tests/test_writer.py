@@ -935,7 +935,7 @@ class TestConnectRefusesADownGraph:
         been run, and that sentence is what has to reach them."""
         with pytest.raises(GraphUnavailable) as exc:
             connect(self.DEAD)
-        assert "docker compose up -d" in str(exc.value)
+        assert "thalamus graph up" in str(exc.value)
         assert "localhost:9" in str(exc.value)
 
     def test_the_live_path_and_the_installer_give_one_diagnosis(self):

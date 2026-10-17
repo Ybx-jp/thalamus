@@ -18,7 +18,7 @@ check can go red (`oracle_cases.py`).
 
 ## The graph
 
-The layout is the documented one, reproduced without Docker: `config/` mounted at
+The layout is the documented one, reproduced without Docker: `src/thalamus/graph/` mounted at
 `/opt/gremlin-server/conf/thalamus`, the graph file at
 `/opt/gremlin-server/data/thalamus-graph.kryo`, the server started from
 `/opt/gremlin-server` with `conf/thalamus/gremlin-server.yaml`. The path matters: the
@@ -105,7 +105,7 @@ def cmd_graph_dirs() -> int:
     conf = GREMLIN / "conf" / "thalamus"
     conf.mkdir(parents=True, exist_ok=True)
     for name in ("gremlin-server.yaml", "tinkergraph.properties", "thalamus-graph.groovy"):
-        shutil.copy2(THALAMUS / "config" / name, conf / name)
+        shutil.copy2(THALAMUS / "src" / "thalamus" / "graph" / name, conf / name)
     (GREMLIN / "data").mkdir(parents=True, exist_ok=True)
     return sh(["chown", "-R", "1000:1000", str(GREMLIN)]).returncode
 

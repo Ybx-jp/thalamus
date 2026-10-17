@@ -36,6 +36,11 @@ when it is actually serving.
 The graph lives in the named `thalamus-graph-data` Docker volume, outside the checkout.
 `docker compose stop` is safe. `docker compose down -v` deletes your memory.
 
+The compose file at the top of the clone includes the one the package ships in
+`src/thalamus/graph/`. Once the package is installed, `thalamus graph up`, `stop` and
+`ps` run the same compose file from wherever it was installed, and reach the same
+volume.<!-- (A0228, cites-as-live) -->
+
 ## 3. Install the package
 
 ```bash
