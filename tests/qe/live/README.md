@@ -33,7 +33,7 @@ collected HOME back out, and run `cell.py`'s verbs in order can drive this tier.
 | config | surface |
 |---|---|
 | `write-boundary` | `write_boundary` deny on a real `Write`; the sibling path passes; a disarmed control writes both |
-| `capability-default` | the roster's default capability boundary on `Skill`; a scope skill listed at session start; a thalamus recall leaving a Trace |
+| `capability-default` | the experts' default capability boundary on `Skill`; a scope skill listed at session start; a thalamus recall leaving a Trace |
 | `mcp-allowlist` | a scope's own MCP server armed in its generated agent; `deny_tools` with `allow_tools` carving `read_*` back |
 | `budget-cap` | a two-call `budget` preset against a session asked for five |
 | `codex-luna` | codex sessions through the generated profile: the `light` preset as `gpt-5.6-luna`, the boundary on `apply_patch`, codex's own SessionEnd, and whether a codex session can reach the thalamus MCP tools |

@@ -45,7 +45,7 @@ _MANIFEST_YAML = f"""\
 contract: v0
 scope: {_SCOPE}
 name: "QE tier probe"
-domain: "adversarial probe scope for issue 283 — never a real roster expert"
+domain: "adversarial probe scope for issue 283 — never a real expert"
 tier: 3
 """
 

@@ -47,7 +47,7 @@ _HOOK = (Path(__file__).resolve().parents[3]
 _SITE = "src/thalamus/harness/hooks/claude-code/graph-guard.sh"
 _BLOCK = 2
 
-#: A real roster scope, so the boundary applies; `main` passes everything.
+#: A real expert scope, so the boundary applies; `main` passes everything.
 _EXPERT = "architect"
 
 BLOCK, PASS = "block", "pass"
