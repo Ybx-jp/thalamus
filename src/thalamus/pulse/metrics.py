@@ -63,7 +63,7 @@ _SESSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 # never runs them.
 SYNC_COMMAND = "thalamus eval sync --write"
 RESTART_COMMAND = "systemctl --user restart thalamus-pulse"
-GRAPH_COMMAND = "docker compose up -d"
+GRAPH_COMMAND = "thalamus graph up"
 LOG_COMMAND = "journalctl --user -u thalamus-pulse -n 50"
 
 # The paths whose commits change what this page shows: pulse itself and the eval

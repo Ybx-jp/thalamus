@@ -22,7 +22,7 @@ from gremlin_python.process.graph_traversal import GraphTraversalSource
 logger = logging.getLogger(__name__)
 
 # Server-side path. Must match `gremlin.tinkergraph.graphLocation` in
-# config/tinkergraph.properties — writing anywhere else produces a file that
+# src/thalamus/graph/tinkergraph.properties — writing anywhere else produces a file that
 # startup will not load.
 DEFAULT_SNAPSHOT_PATH = "/opt/gremlin-server/data/thalamus-graph.kryo"
 

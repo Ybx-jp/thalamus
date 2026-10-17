@@ -1305,7 +1305,7 @@ def verify_runtime(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
         detail = graph_down_detail(detail)
     elif not reachable:
         detail = (f"{detail} — the port is published before the server finishes "
-                  "starting, which takes a few seconds. Check `docker compose ps` "
+                  "starting, which takes a few seconds. Check `thalamus graph ps` "
                   "shows the graph healthy, then re-run `thalamus init --check`")
     checks.append(Check("graph reachable", reachable, detail, advisory=True))
 

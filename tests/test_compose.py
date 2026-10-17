@@ -1,8 +1,8 @@
 """
 The compose file against the code that dials what it brings up.
 
-Interfaces: docker-compose.yml, config/gremlin-server.yaml, and
-substrate.writer.DEFAULT_URL.
+Interfaces: src/thalamus/graph/docker-compose.yml and the gremlin-server.yaml beside
+it, the root docker-compose.yml that includes them, and substrate.writer.DEFAULT_URL.
 Infrastructure: YAML parsing only — no Docker, no daemon, no pull. The live check
 is `thalamus init --check`, which probes the running graph; this is the static half,
 and it is the half that can run anywhere.
@@ -19,10 +19,12 @@ from pathlib import Path
 import pytest
 import yaml
 
+from thalamus.contract.paths import GRAPH_COMPOSE
 from thalamus.substrate import writer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-COMPOSE = REPO_ROOT / "docker-compose.yml"
+ROOT_COMPOSE = REPO_ROOT / "docker-compose.yml"
+COMPOSE = GRAPH_COMPOSE
 
 
 @pytest.fixture(scope="module")
@@ -86,15 +88,15 @@ def test_the_served_config_declares_the_same_port(graph_service):
     which is mounted read-only), so nothing in the image reconciles the two either.
     """
     _, _, container_port = _published(graph_service)
-    mount = next(v for v in graph_service["volumes"] if v.startswith("./config:"))
+    mount = next(v for v in graph_service["volumes"] if v.startswith(".:"))
     mounted_at = mount.split(":")[1]
     served = graph_service["command"][0]
 
     assert served.endswith(".yaml")
-    on_disk = REPO_ROOT / "config" / Path(served).name
-    assert on_disk.is_file(), f"compose serves {served}, which is not in config/"
+    on_disk = COMPOSE.parent / Path(served).name
+    assert on_disk.is_file(), f"compose serves {served}, which is not beside it"
     assert mounted_at.rstrip("/").endswith(Path(served).parent.name), (
-        f"compose serves {served}, but ./config is mounted at {mounted_at}")
+        f"compose serves {served}, but its directory is mounted at {mounted_at}")
     assert yaml.safe_load(on_disk.read_text())["port"] == container_port
 
 
@@ -113,3 +115,26 @@ def test_the_documented_address_matches_the_published_one(graph_service, doc):
     text = (REPO_ROOT / doc).read_text()
 
     assert f"{host}:{host_port}" in text, f"{doc} does not name {host}:{host_port}"
+
+
+def test_a_clone_and_a_wheel_bring_up_the_same_graph():
+    """The root compose file includes the packaged one under the same project name.
+
+    The project name and the volume key together name the data volume, so a root file
+    with another name — or a worktree directory name standing in for a missing one —
+    would start an empty graph beside the operator's.
+    """
+    root = yaml.safe_load(ROOT_COMPOSE.read_text())
+    packaged = yaml.safe_load(COMPOSE.read_text())
+
+    assert root["name"] == packaged["name"] == "thalamus"
+    assert root["include"] == [str(COMPOSE.relative_to(REPO_ROOT))]
+    assert "services" not in root, "the graph is defined once, in the package"
+    assert list(packaged["volumes"]) == ["thalamus-graph-data"]
+
+
+def test_the_graph_server_files_ship_in_the_package():
+    """`thalamus graph up` from a wheel needs every file the compose file mounts."""
+    for name in ("gremlin-server.yaml", "tinkergraph.properties", "thalamus-graph.groovy"):
+        assert (COMPOSE.parent / name).is_file(), name
+    assert COMPOSE.parent.parent.name == "thalamus", "outside the package, a wheel lacks it"

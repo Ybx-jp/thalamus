@@ -1207,7 +1207,7 @@ class TestRuntimeAdvisories:
         monkeypatch.setenv("THALAMUS_GRAPH_URL", "ws://localhost:9/gremlin")
         graph = [c for c in install.verify_runtime(("claude",)) if c.name == "graph reachable"][0]
         assert not graph.ok and graph.advisory
-        assert "docker compose up -d" in graph.detail
+        assert "thalamus graph up" in graph.detail
 
     def test_a_graph_that_is_up_but_not_yet_serving_is_not_told_to_start(self, monkeypatch):
         """The third state the two-stage probe did not distinguish.
@@ -1226,8 +1226,8 @@ class TestRuntimeAdvisories:
                  if c.name == "graph reachable"][0]
 
         assert not graph.ok and graph.advisory
-        assert "docker compose up -d" not in graph.detail
-        assert "docker compose ps" in graph.detail
+        assert "thalamus graph up" not in graph.detail
+        assert "thalamus graph ps" in graph.detail
         assert "a few seconds" in graph.detail
 
     def test_an_empty_graph_is_not_a_fault(self, monkeypatch):

@@ -69,11 +69,11 @@ class TestTheGraphIsDown:
         monkeypatch.setattr(mcp_server, "GRAPH_URL", self.DEAD)
         result = mcp_server._connect()
         assert isinstance(result, str)
-        assert "docker compose up -d" in result
+        assert "thalamus graph up" in result
 
     def test_a_tool_answers_with_it_rather_than_raising(self, monkeypatch):
         """The `isinstance(g, str)` guard at the head of each tool is what turns that
         into an answer; it was unreachable for this case until the probe existed."""
         monkeypatch.setattr(mcp_server, "GRAPH_URL", self.DEAD)
-        assert "docker compose up -d" in mcp_server.memory_recall("anything")
-        assert "docker compose up -d" in mcp_server.memory_open_threads()
+        assert "thalamus graph up" in mcp_server.memory_recall("anything")
+        assert "thalamus graph up" in mcp_server.memory_open_threads()

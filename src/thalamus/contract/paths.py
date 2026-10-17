@@ -28,6 +28,12 @@ from pathlib import Path
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 
 
+#: The graph server's compose file, shipped in the package beside the files it mounts.
+#: `thalamus graph` runs Docker Compose against it; a clone's root compose file
+#: includes it.
+GRAPH_COMPOSE = PACKAGE_DIR / "graph" / "docker-compose.yml"
+
+
 def _checkout() -> Path | None:
     root = PACKAGE_DIR.parents[1]
     if PACKAGE_DIR.parent.name == "src" and (root / "pyproject.toml").is_file():
