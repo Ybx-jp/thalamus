@@ -1,0 +1,9 @@
+{
+  "retirements": [
+    {
+      "module": "qe.cases.ci_triage_verify_report",
+      "reason": "the CI triage feature was removed from src/; the case asserted on its verify report and has no subject",
+      "removed_by": "#348"
+    }
+  ]
+}
