@@ -74,8 +74,9 @@ layers:
   - src/thalamus/contract/ontology.py
   - src/thalamus/contract/manifest.py
   - src/thalamus/contract/__init__.py
-  # ownership.py declares which paths belong to which scope and imports nothing but
-  # stdlib. A leaf that everything may read is what this layer is.
+  # ownership.py reads which paths belong to which scope from the config root, and
+  # imports nothing but stdlib and paths.py. A leaf that everything may read is what
+  # this layer is.
   - src/thalamus/contract/ownership.py
   # capabilities.py declares dimensions and reads the operator's presets for them; read
   # by manifest.py (which resolves a scope's selection) and by every harness renderer
@@ -220,15 +221,6 @@ deadends:
   kinds: [function, method, class]
   report_unreferenced: false
   exemptions:
-  - reason: >-
-      role-guard.sh reaches its degraded path exactly when `thalamus.contract.ownership`
-      will not import, so it cannot call this — it inlines the same literals in its
-      `for pair in ...` loop instead. tests/test_ownership.py
-      ::TestTheDegradedPathFailsClosed::test_the_inlined_markers_match_the_table parses
-      those literals back out of the script and asserts they equal this function's
-      output, so the duplication is checked rather than trusted.
-    path: src/thalamus/contract/ownership.py
-    symbol: fallback_markers
   - reason: >-
       Imported by the companion repo thalamus-eval, whose
       src/thalamus_eval/legibility.py re-exports the WCAG arithmetic from here and calls

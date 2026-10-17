@@ -19,6 +19,7 @@ directory holding `pyproject.toml` with this package under its `src/`.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -41,6 +42,23 @@ CHECKOUT: Path | None = _checkout()
 #: registration must name to be this install's: the checkout, or the interpreter the
 #: wheel was installed under.
 INSTALL_IDENTITY = str(CHECKOUT) if CHECKOUT else sys.executable
+
+def config_root() -> Path:
+    """The tier-0 configuration directory: THALAMUS_CONFIG_DIR, else the checkout's
+    `config/`, else `~/.thalamus/config` for an installed wheel.
+
+    A checkout's own `config/` is its development config; an installed wheel has none
+    and reads the user's. Read at call time, so it follows the environment and HOME.
+    Here rather than in `contract/manifest.py` because `role-guard.sh` resolves it on
+    every edit through `contract/ownership.py`, which must not pay manifest's import.
+    """
+    override = os.environ.get("THALAMUS_CONFIG_DIR")
+    if override:
+        return Path(override).expanduser()
+    if CHECKOUT is not None:
+        return CHECKOUT / "config"
+    return Path.home() / ".thalamus" / "config"
+
 
 def default_project_dir() -> Path:
     """Where a pinned session or the console opens when no directory is named: the

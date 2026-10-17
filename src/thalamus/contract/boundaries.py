@@ -180,11 +180,11 @@ BOUNDARY_ROWS: tuple[BoundaryRow, ...] = (
     BoundaryRow(
         "path_ownership.path", "claude", Provision.PROVIDED, _WIRED,
         "The inverse of write_boundary.path, and the only boundary here that binds "
-        "`main`: ownership is resolved from `contract/ownership.PATH_OWNERSHIP` "
+        "`main`: ownership is resolved from the config root's `ownership.json` "
         "rather than from a manifest, because the scope it most needs to bind has no "
         "manifest to declare a deny in. Ordered ahead of the `main` short-circuit, "
-        "which is why the table imports no pydantic — 151ms there would cost more "
-        "than the manifest load the short-circuit exists to avoid. Alone among these "
+        "which is why its reader is stdlib-only — 151ms of pydantic there would cost "
+        "more than the manifest load the short-circuit exists to avoid. Alone among these "
         "rows the rule fails CLOSED: an unparseable payload is searched raw and "
         "refused, the `write-guard.sh` posture rather than this guard's.",
     ),

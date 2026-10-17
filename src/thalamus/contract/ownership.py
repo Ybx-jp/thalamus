@@ -2,12 +2,16 @@
 
 `WriteBoundary` (contract/manifest.py) answers "which paths may scope X not write",
 declared per scope. This module answers the inverse — "who owns path P" — and the
-inverse is not expressible there. `config/experts/` holds a manifest per expert and no
+inverse is not expressible there. A config root holds a manifest per expert and no
 `main.yaml`, so the scope a directory boundary most needs to bind has nowhere to
-declare it, and writing the owned glob into every other manifest stores one fact
-once per scope.
-The rule therefore lives once, here, beside the manifests rather than inside them, the
-way `EXPERT_CAPABILITY_DEFAULT` does for capability.
+declare it, and writing the owned glob into every other manifest stores one fact once
+per scope. The rule therefore lives once, in the config root beside the manifests —
+`ownership.json` — rather than inside them.
+
+The table is configuration, not code: a row is one repository's decision about one of
+its trees. This repository's `config/ownership.json` reserves `tests/qe/` for `qe`; a
+config root without the file reserves nothing, which is what an installed wheel starts
+with.
 
 **Why this is admissible when a path allow-list was refused.** The 2026-08-11 ruling
 (ticket `1ed468b61248497e`) held an allow-list incoherent inside a
@@ -19,80 +23,80 @@ exception, its complement is untouched, and its own failure mode is *permit* —
 is the status quo. It cannot be worse than what ships without it. Settled in
 `073d451b006e4a81`.
 
-**No pydantic, and that is load-bearing rather than stylistic.** This module is
+**Stdlib only, and that is load-bearing rather than stylistic.** This module is
 imported by `role-guard.sh` on every `Edit`/`Write` in every session on the box,
-including unpinned ones that reach no manifest. Measured on this machine: bare
-interpreter 15 ms, this module ~15 ms, a `dataclasses` version 30 ms, and importing
-`contract.manifest` **151 ms** — of which the YAML read is only 24 ms, so the cost
-that the guard's `main` short-circuit was written to avoid is the pydantic import
-itself, not the manifest load. A typed table here would make the ownership test more
-expensive than the check it is ordered ahead of. Rows are plain tuples for that
-reason; `contract.manifest` re-exports a typed view for callers already paying the
-import.
+including unpinned ones that reach no manifest. Measured on this machine, best of 15
+fresh interpreters: bare 13.8 ms, `import json` 18.7 ms, `import yaml` 31.1 ms, and
+importing `contract.manifest` 151 ms (its pydantic import, not its YAML read). The table
+is JSON for that reason, and because the guard's degraded path reads the same file with
+`jq` when Python is the thing that failed.
 """
 
 from __future__ import annotations
 
+import json
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
-# (glob, owner, reason). fnmatch over the ABSOLUTE POSIX path, matching
-# `WriteBoundary.denies` so the contract has one matching semantics rather than two —
-# `*` crosses `/`, and an absolute match survives `thalamus spawn --dir` into another
-# checkout where nothing repo-relative would resolve.
-#
-# Keep this table short. Every row is a path main cannot write, and main is the scope
-# that writes this repository.
-PATH_OWNERSHIP: tuple[tuple[str, str, str], ...] = (
-    (
-        "*/tests/qe/*",
-        "qe",
-        "The oracle is not edited by the party it indicts. `qe` holds the adversarial "
-        "suite and its triage file; the scope whose implementation those cases assert "
-        "against does not get to adjust what they assert. This is the mirror of qe's "
-        "own `*/src/*` deny, and until both directions hold there is no partition — "
-        "only a scope that cannot fix its own findings.",
-    ),
-)
+from thalamus.contract.paths import config_root
+
+#: The table's file name in the config root. An object of row name to
+#: `{"glob", "owner", "reason"}`; fnmatch over the ABSOLUTE POSIX path, matching
+#: `WriteBoundary.denies` so the contract has one matching semantics rather than two —
+#: `*` crosses `/`, and an absolute match survives `thalamus spawn --dir` into another
+#: checkout where nothing repo-relative would resolve.
+OWNERSHIP_FILE = "ownership.json"
+
+
+def rows(root: Path | None = None) -> tuple[tuple[str, str, str], ...]:
+    """The config root's ownership rows as (glob, owner, reason); none without the file.
+
+    A file that is present and malformed raises, naming itself: a table nobody can read
+    is a configuration error to report, not an empty table to act on silently.
+    """
+    path = (root or config_root()) / OWNERSHIP_FILE
+    try:
+        raw = json.loads(path.read_text())
+    except FileNotFoundError:
+        return ()
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path}: expected an object of row name to row")
+    out = []
+    for name, row in raw.items():
+        fields = [row.get(k) if isinstance(row, dict) else None
+                  for k in ("glob", "owner", "reason")]
+        if not all(isinstance(f, str) and f.strip() for f in fields):
+            raise ValueError(f"{path}: row `{name}` needs a non-empty glob, owner and reason")
+        out.append((fields[0], fields[1], fields[2]))
+    return tuple(out)
 
 
 def _normalise(file_path: str) -> str:
     return PurePosixPath(Path(file_path).as_posix()).as_posix()
 
 
-def owner_of(file_path: str) -> tuple[str, str, str] | None:
+def owner_of(file_path: str, root: Path | None = None) -> tuple[str, str, str] | None:
     """The ownership row claiming this path, or None if no row does."""
     if not file_path:
         return None
     target = _normalise(file_path)
-    for row in PATH_OWNERSHIP:
+    for row in rows(root):
         if fnmatch(target, row[0]):
             return row
     return None
 
 
-def denies(scope: str, file_path: str) -> tuple[str, str, str] | None:
+def denies(scope: str, file_path: str,
+           root: Path | None = None) -> tuple[str, str, str] | None:
     """The row blocking `scope` from writing `file_path`, or None.
 
     An unowned path is never blocked here, and the owner is never blocked from its
     own path. Every other scope is — `main` included, which is the whole point and
     the one thing `WriteBoundary` cannot express.
     """
-    row = owner_of(file_path)
+    row = owner_of(file_path, root)
     if row is None or row[1] == scope:
         return None
     return row
-
-
-def fallback_markers() -> tuple[str, ...]:
-    """Literal substrings for the guard's degraded path, one per row.
-
-    `role-guard.sh` searches the raw payload for these when it cannot parse a target
-    out of the hook input — the `write-guard.sh` degradation, applied to this rule:
-    when the structured read fails the raw payload is searched instead, so the rule
-    fails CLOSED even though the guard around it fails open. The guard cannot call
-    this function in that state (it is the Python that is unavailable), so the same
-    literals are inlined there and `test_ownership.py` asserts the two agree. The
-    duplication is real and is checked rather than denied.
-    """
-    return tuple(row[0].strip("*") for row in PATH_OWNERSHIP)

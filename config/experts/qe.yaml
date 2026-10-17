@@ -62,8 +62,8 @@ allowlist:
 # Deliberately narrow: qe writes freely under tests/, because the path from an
 # exploratory campaign to a green suite requires it.
 #
-# Note the mirror. `contract/ownership.PATH_OWNERSHIP` reserves `*/tests/qe/*` for
-# this scope, denying every other scope including `main`. The two directions are one
+# Note the mirror. `config/ownership.json` reserves `*/tests/qe/*` for this scope,
+# denying every other scope including `main`. The two directions are one
 # partition: qe cannot repair what it indicts, and nobody else can quietly soften
 # what qe asserts. A manifest removed from this directory takes half of that with it,
 # and leaves a tree nobody can edit.

@@ -1,0 +1,7 @@
+{
+  "qe-oracle": {
+    "glob": "*/tests/qe/*",
+    "owner": "qe",
+    "reason": "The oracle is not edited by the party it indicts. `qe` holds the adversarial suite and its triage file; the scope whose implementation those cases assert against does not get to adjust what they assert. This is the mirror of qe's own `*/src/*` deny, and until both directions hold there is no partition — only a scope that cannot fix its own findings."
+  }
+}

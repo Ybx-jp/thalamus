@@ -235,7 +235,7 @@ class TestForeignCwdPinResolution:
 
     CLAUDE_PROJECT_DIR then names the *working* repo, not the Thalamus checkout.
     Anchoring manifest lookup on it made the hooks resolve `main` while the MCP
-    server — which anchors on contract/manifest.default_config and never reads
+    server — which anchors on contract/paths.config_root and never reads
     CLAUDE_PROJECT_DIR — enforced the real scope. Because session-end is
     ledger-first, that mismatch distilled the whole session into the wrong
     scope: the 2026-07-18 mis-scoping leak arriving through the ledger instead

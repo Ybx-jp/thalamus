@@ -140,15 +140,17 @@ log_event() {
 
 # ---- Path ownership, ordered AHEAD of the `main` exemption ----
 #
-# `contract/ownership.PATH_OWNERSHIP` says who owns a path. Unlike `write_boundary`
-# it must bind `main`, which has no manifest to declare a deny in — so the test runs
+# The config root's `ownership.json` says who owns a path (`contract/ownership.py`
+# reads it). Unlike `write_boundary` it must bind `main`, which has no manifest to
+# declare a deny in — so the test runs
 # before the short-circuit below rather than after it. The ordering is what keeps the
 # fast path: an unowned target exits here, and the `main` exemption is still consulted
 # before anything loads a manifest.
 #
-# The cost is measured, and it is why `ownership.py` imports no pydantic: bare
-# interpreter 15ms, that module ~15ms, `contract.manifest` 151ms. Importing the typed
-# contract here would make the cheap test more expensive than the expensive one.
+# The cost is measured, and it is why `ownership.py` is stdlib-only and its table is
+# JSON: a bare interpreter 13.8 ms, `import json` 18.7 ms, `import yaml` 31.1 ms,
+# `contract.manifest` 151 ms. Importing the typed contract here would make the cheap
+# test more expensive than the expensive one.
 #
 # This rule does not depend on the structured read having worked. That is the
 # `write-guard.sh` posture applied to one rule: when the read fails, the RAW payload
@@ -198,20 +200,25 @@ Blocked: \`${target}\` is owned by scope \`${owner}\`, and this session is \`${s
 
 ${reason}
 
-This is an ownership row in \`contract/ownership.PATH_OWNERSHIP\`, declared tier-0 and
-not something this session can widen. Hand the change to \`${owner}\` — mint a
+This is the ownership row \`${glob}\` in the config root's \`ownership.json\`, declared
+tier-0 and not something this session can widen. Hand the change to \`${owner}\` — mint a
 consultation ticket, or report it to the operator. If the boundary itself is wrong,
 that is an operator decision and an edit to the table, not a route around it.
 EOF
       exit 2 ;;
     *)
-      # Degraded: no target parsed, or the ownership module would not load. Markers
-      # are inlined from `ownership.fallback_markers()` because the interpreter that
-      # could compute them is the thing that just failed; `test_ownership.py` asserts
-      # the two lists agree, so the duplication is checked rather than denied.
-      for pair in "/tests/qe/:qe"; do
-        marker="${pair%%:*}"
-        owner="${pair##*:}"
+      # Degraded: no target parsed, or the ownership module would not load. The
+      # table is read with jq instead, since the interpreter is what just failed: each
+      # row's glob with its `*`s removed is a literal to search the raw payload for.
+      # A table jq cannot read yields no markers, which is the rule's permit failure.
+      table="$(thalamus_config_root)/ownership.json"
+      pairs=""
+      if [ -f "$table" ]; then
+        pairs=$(jq -r 'to_entries[] | "\(.value.glob | gsub("\\*"; ""))\t\(.value.owner)"' \
+          "$table" 2>/dev/null || true)
+      fi
+      while IFS=$'\t' read -r marker owner; do
+        [ -n "$marker" ] || continue
         [ "$scope" != "$owner" ] || continue
         case "$input" in
           *"$marker"*)
@@ -231,7 +238,7 @@ deliberately cruder than the real one.
 EOF
             exit 2 ;;
         esac
-      done ;;
+      done <<< "$pairs" ;;
   esac
 fi
 

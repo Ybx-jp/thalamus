@@ -114,11 +114,13 @@ A manifest can also declare:
   startup and reads the body when a task calls for it.<!-- (A0170, cites-as-live) -->
   This is the grant that `capability_boundary`'s `deny_skills` cannot express.
 
-A boundary can also run the other way. `contract/ownership.PATH_OWNERSHIP` reserves a
+A boundary can also run the other way. The config root's `ownership.json` reserves a
 tree *for* one scope and denies every other, `main` included — which is the half a
-manifest cannot express, since `main` has no manifest to declare it in. `tests/qe/` is
-the one row: qe cannot repair what it indicts, and nobody else can soften what it
-asserts.<!-- (A0008, cites-as-live) -->
+manifest cannot express, since `main` has no manifest to declare it in. This
+repository's table has one row, `tests/qe/` for `qe`: qe cannot repair what it
+indicts, and nobody else can soften what it asserts.<!-- (A0227, cites-as-live) -->
+A config root without the file reserves nothing, which is where an installed wheel
+starts.
 
 The two halves are not symmetric in one respect worth knowing. The deny survives a
 manifest's removal and the grant does not, so deleting a manifest whose scope owns a

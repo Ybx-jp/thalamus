@@ -513,9 +513,8 @@ def test_a_symbol_a_shell_hook_imports_is_reached_not_reported(tmp_path):
 
 
 def test_a_mention_in_shell_prose_does_not_rescue_a_symbol(tmp_path):
-    """The measured case: `role-guard.sh` names `fallback_markers()` in a comment to record
-    that its markers are copy-pasted *instead* of calling it. Counting that text match
-    would silence a true finding."""
+    """A shell comment can name a function to say it is *not* called. Counting that text
+    match would silence a true finding."""
     repo = _tree(
         tmp_path,
         {

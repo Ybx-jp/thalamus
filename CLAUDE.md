@@ -282,10 +282,10 @@ the thing in ordinary words, and cut what he did not ask about.
   tiers.<!-- (A0141, cites-as-live) -->
   An import of `contract/` into `substrate/` means the change belongs elsewhere.
 - **`tests/qe/` is owned by scope `qe`, and `main` cannot write
-  it.<!-- (A0008, cites-as-live) -->**
-  The oracle is not edited by the party it indicts — `contract/ownership.PATH_OWNERSHIP`
-  declares it tier-0 and `role-guard.sh` blocks the write, which is the mirror of qe's
-  own `src/` deny.<!-- (A0092, cites-as-live) -->
+  it.<!-- (A0227, cites-as-live) -->**
+  The oracle is not edited by the party it indicts — `config/ownership.json` declares
+  it tier-0 and `role-guard.sh` blocks the write, which is the mirror of qe's own
+  `src/` deny.<!-- (A0092, cites-as-live) -->
   Hand the change to a `qe`-pinned session and let it land the file. The boundary is not
   a lint to work around: a scope that can edit what asserts against it has no oracle,
   only a second opinion of its own.
