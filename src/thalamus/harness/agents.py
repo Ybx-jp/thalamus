@@ -380,11 +380,11 @@ AGENT_CLIS: dict[str, AgentCLI] = {
         # not instrumentation.
         reports_cost=False,
         model_hint=CODEX_MODEL_HINT,
-        # Every model the catalog lists, in the vendor's own `priority` order (1, 6,
-        # 7, 8, 12). Verified live 2026-09-10, codex-cli 0.154.0. `gpt-reserve` and
+        # Every model the catalog lists, in the vendor's own `priority` order (2, 5,
+        # 8, 9). Verified live 2026-10-16, codex-cli 0.154.0. `gpt-reserve` and
         # `codex-auto-review` are in the catalog and omitted: both ship
         # `visibility: "hide"`, so they are not models the vendor offers for selection.
-        models=("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"),
+        models=("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
         live_models=_codex_live_models,
         invocation="exec",
         envelope="jsonl-events",
