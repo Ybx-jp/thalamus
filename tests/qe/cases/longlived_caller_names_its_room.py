@@ -13,8 +13,9 @@ interactive environment, and the manager environment was measured clean. It arms
 moment anything runs `systemctl --user import-environment` from a room shell, and the
 fix removes the dependence rather than resting on that.
 
-`do_spawn` and `roster_sync` already pass `room=""` with docstrings giving exactly this
-reasoning, and `/api/spawn` already had a `..._never_inherits_one` test. Dispatch got
+`do_spawn` already passes `room=""` with a docstring giving exactly this reasoning,
+`roster_sync` reaches `ensure_anchor`, which takes no room and so is roomless by
+construction, and `/api/spawn` already had a `..._never_inherits_one` test. Dispatch got
 neither the argument nor the test, which is why this is pinned as a property over
 *every* call site instead of as one more assertion at one of them.
 

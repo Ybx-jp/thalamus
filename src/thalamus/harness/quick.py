@@ -21,7 +21,7 @@ Everything the launcher is obliged to do here was measured, not reasoned:
   against the prompt cache; mismatching it costs a full miss.
 - **`THALAMUS_FORKED_FROM` is the other one.** Without it a fork files as an
   independent witness of what is really its parent's episode.
-- **Targets resolve from the live roster, never the pin ledger.** The ledger has no
+- **Targets resolve from the live session list, never the pin ledger.** The ledger has no
   exit event, so its newest row is a birth certificate that can name a dead session.
 - **The fork runs in the parent's cwd**, or its transcript lands somewhere
   `transcripts.discover()` withholds and the distillation fails in a detached log.
@@ -640,7 +640,7 @@ def find_transcript(session_id: str, projects_dir: Path) -> Path | None:
 def has_conversation(session_id: str, projects_root: Path | None = None) -> bool:
     """Is there anything for `--resume` to restore?
 
-    A session registers in the live roster the moment it starts, but the harness files
+    A session registers in the live session list the moment it starts, but the harness files
     no transcript until its first turn — so a freshly spawned expert is *live* and not
     *forkable*, and `claude --resume` exits 1 with `No conversation found with session
     ID`. Measured while verifying this launcher against a session spawned seconds

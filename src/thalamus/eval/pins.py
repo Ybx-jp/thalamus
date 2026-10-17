@@ -138,12 +138,12 @@ class ExpertPins:
     pinned: Utility = field(default_factory=Utility)
     consulted: Utility = field(default_factory=Utility)
     # Denominator split (semantics vetted: scope:main:exchange:63b647977a624b85).
-    # Spawn records alone conflate roster bring-up with routing decisions, so
+    # Spawn records alone conflate bring-up spawns with routing decisions, so
     # ledger_only is gated on engagement — a session with no user prompt had no
     # measurement opportunity and carries no routing signal. Both counts stay
     # attribution, never utility claims.
     ledger_only: int = 0  # engaged in the ledger, no traces landed
-    idle_spawns: int = 0  # spawned, never engaged — roster churn, disclosed not judged
+    idle_spawns: int = 0  # spawned, never engaged — bring-up churn, disclosed not judged
 
     def signal(self) -> str:
         if self.pinned.attributed < SIGNAL_FLOOR or self.consulted.attributed < SIGNAL_FLOOR:
@@ -197,7 +197,7 @@ class PinReport:
             if expert.idle_spawns:
                 lines.append(
                     f"  excluded: {expert.idle_spawns} idle spawn(s) — ledger entries with "
-                    "no user prompt (roster bring-up, not a routing decision)"
+                    "no user prompt (a bring-up spawn, not a routing decision)"
                 )
             lines.append(f"  consulted: {expert.consulted.line()} (served into other scopes)")
             lines.append(f"  signal: {expert.signal()}")

@@ -171,7 +171,7 @@ def load_engaged(path: Path | None = None) -> set[str]:
     """Sessions that received at least one user prompt (pin-engaged.sh).
 
     The engagement boundary for the pin report's denominator: spawn records alone
-    conflate roster bring-up with operator routing (the 2026-07-19 confound;
+    conflate bring-up spawns with operator routing (the 2026-07-19 confound;
     semantics vetted in scope:main:exchange:63b647977a624b85).
     """
     return {

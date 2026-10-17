@@ -111,7 +111,7 @@ class TestInjectedInstruction:
         of them. The hook and `transcripts.resolve_repo_root` are asserted together
         because they are two implementations of one fact, in two languages: this one
         picks whose threads are recalled at session start and writes the pin-ledger
-        row the console groups the roster by, that one picks what the session
+        row the console groups its sessions by, that one picks what the session
         distills under. They cannot be allowed to drift.
         """
         checkout = tmp_path / "myproject"
@@ -282,7 +282,7 @@ class TestForeignCwdPinResolution:
     def test_ledger_records_the_repo_and_project_a_session_started_in(self, tmp_path):
         """The console's only route to either.
 
-        A roster row groups by project and disambiguates by repository, and tmux
+        A console row groups by project and disambiguates by repository, and tmux
         knows neither — it knows a pane's cwd. `cwd` cannot stand in for them in
         both directions at once: a checkout and a subdirectory of it are one project
         that sorts as two, while several sessions in one checkout share the string
@@ -367,7 +367,7 @@ class TestPaneClaim:
     """`tmux_pane` is the console read view's join key, and it is claimable.
 
     Every session this hook fires for inherits TMUX_PANE from whatever spawned
-    it, so a `claude -p` run from a Bash tool inside a roster window arrives
+    it, so a `claude -p` run from a Bash tool inside a console window arrives
     carrying that window's pane id. Last-row-wins then points the window's read
     view at the probe: measured 2026-08-10, a two-message `reply with OK only`
     subprocess held the main window's read view for five hours and presented as
@@ -385,7 +385,7 @@ class TestPaneClaim:
         assert row["entrypoint"] == "cli"
 
     def test_headless_subprocess_does_not_claim_the_pane_it_inherited(self, tmp_path):
-        """The bug: `claude -p` from inside a roster window, TMUX_PANE and all."""
+        """The bug: `claude -p` from inside a console window, TMUX_PANE and all."""
         row = self.row(tmp_path, {"TMUX_PANE": "%0", "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
         assert row["tmux_pane"] == ""
         assert row["entrypoint"] == "sdk-cli"
@@ -854,7 +854,7 @@ def test_falsify_ignores_tools_that_are_not_the_ad_hoc_surface(tmp_path):
     assert _firings(tmp_path, "falsify") == []
 
 
-def _roster(tmp_path, *scopes):
+def _experts(tmp_path, *scopes):
     """A manifest directory this test owns, returned as a THALAMUS_CONFIG_DIR value."""
     experts = tmp_path / "config" / "experts"
     experts.mkdir(parents=True, exist_ok=True)
@@ -871,10 +871,10 @@ def _design_prompt(session_id):
     }
 
 
-def test_design_class_names_the_roster_it_finds_on_disk(tmp_path):
+def test_design_class_names_the_experts_it_finds_on_disk(tmp_path):
     """
     Scenario: A `main` session asks a design-shaped question with four experts
-    on the roster.
+    declared.
 
     Verifications:
     - every scope with a manifest is offered, so adding an expert does not
@@ -883,7 +883,7 @@ def test_design_class_names_the_roster_it_finds_on_disk(tmp_path):
     - no self-ticket is offered: `main` has no manifest, so `consult_request`
       against it is refused at the mint
     """
-    config = _roster(tmp_path, "architect", "dl", "literature", "qe")
+    config = _experts(tmp_path, "architect", "dl", "literature", "qe")
 
     out = _run_conditioning(
         _design_prompt("s-design"), tmp_path, THALAMUS_CONFIG_DIR=config
@@ -904,13 +904,13 @@ def test_design_class_routes_an_expert_session_across_and_offers_the_self_ticket
     Verifications:
     - the reminder names the pin and leaves the design inside it to the session
     - `dl` is absent from the cross-scope list, whose sentence is "where the
-      design crosses out of `dl`" — a fixed roster string put every expert's own
+      design crosses out of `dl`" — a fixed expert list put every expert's own
       scope in it
     - the self-ticket is named instead, since a general-purpose subagent is what
       a session reaches for when nothing points at `consult_request` on its own
       scope
     """
-    config = _roster(tmp_path, "architect", "dl", "qe")
+    config = _experts(tmp_path, "architect", "dl", "qe")
 
     out = _run_conditioning(
         _design_prompt("s-design-dl"),
@@ -952,7 +952,7 @@ def test_selfticket_class_names_the_self_ticket_to_a_pinned_session(tmp_path):
       "consult yourself for corroboration"
     - once per session
     """
-    config = _roster(tmp_path, "architect", "dl", "qe")
+    config = _experts(tmp_path, "architect", "dl", "qe")
     env = {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-dl"}
 
     out = _run_conditioning(
@@ -986,7 +986,7 @@ def test_selfticket_class_is_silent_where_the_ticket_would_be_refused_or_wrong(t
       vocabulary; a survey is not the class, and the standing operator
       authorization blesses disposable-context sweeps
     """
-    config = _roster(tmp_path, "architect", "dl", "qe")
+    config = _experts(tmp_path, "architect", "dl", "qe")
     expert = {"THALAMUS_CONFIG_DIR": config, "CLAUDE_CODE_AGENT": "thalamus-dl"}
 
     main = _run_conditioning(

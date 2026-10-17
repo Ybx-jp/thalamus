@@ -125,7 +125,7 @@ _SENTINEL_SKILL = (
     "is listed at session start.\n---\n\nReply with the word SENTINEL.\n"
 )
 
-#: A stdio MCP server named `penpot` so the roster's real capability matcher
+#: A stdio MCP server named `penpot` so the real expert capability matcher
 #: (`mcp__penpot__*`) applies to it. Tools: `read_board`, `create_board`.
 PENPOT_STUB = "tests/qe/live/fixtures/penpot_stub.py"
 
@@ -161,7 +161,7 @@ def configs(thalamus_root: str) -> tuple[Config, ...]:
         ),
         Config(
             name="capability-default",
-            summary="A scope declaring no capability boundary inherits the roster "
+            summary="A scope declaring no capability boundary inherits the expert "
                     "default (Skill `dataviz` denied), is listed its own scope skill "
                     "at session start, and a thalamus recall leaves a Trace.",
             manifests={"live-capdefault": _manifest("live-capdefault")},

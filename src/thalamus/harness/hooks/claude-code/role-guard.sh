@@ -20,10 +20,10 @@
 #
 # `capability_boundary` (contract/manifest.CapabilityBoundary) bounds tools and
 # named skills, and its default runs the other way: a scope that declares nothing
-# inherits ROSTER_CAPABILITY_DEFAULT, which denies the design skills and artifact
+# inherits EXPERT_CAPABILITY_DEFAULT, which denies the design skills and artifact
 # publishing. `designer` is the one scope that opts out, because those are its
 # charter. The defaults differ because the decisions did — path bounds were drawn
-# per scope, this one was drawn once for the whole roster.
+# per scope, this one was drawn once for every expert.
 #
 # Gated on the resolved pin rather than on the derived agent file, deliberately. A
 # `tools:` list in agent frontmatter would bind only sessions launched through the
@@ -258,7 +258,7 @@ try:
         boundary = manifest.write_boundary
         pattern = boundary.denies(target)
     else:
-        # Never the raw field: its None is "inherit the roster default", and
+        # Never the raw field: its None is "inherit the expert default", and
         # reading it directly would unbind every scope that declared nothing.
         boundary = manifest.effective_capability_boundary
         pattern = (boundary.denies_skill(target) if kind == "skill"
@@ -272,7 +272,7 @@ PY
 )
 
 if [ -z "$verdict" ]; then
-  # Passes are logged too. The roster's granularity audit asks whether a scope
+  # Passes are logged too. The expert set's granularity audit asks whether a scope
   # earned its partition, and "never came near its own boundary" is evidence for
   # that question exactly as a block is.
   log_event pass ""
@@ -291,10 +291,10 @@ case "$kind" in
     declared="config/experts/${scope}.yaml (\`write_boundary\`)" ;;
   skill)
     verb="does not invoke the skill"
-    declared="the roster capability default (contract/manifest.ROSTER_CAPABILITY_DEFAULT), unless config/experts/${scope}.yaml overrides it" ;;
+    declared="the expert capability default (contract/manifest.EXPERT_CAPABILITY_DEFAULT), unless config/experts/${scope}.yaml overrides it" ;;
   *)
     verb="does not use the tool"
-    declared="the roster capability default (contract/manifest.ROSTER_CAPABILITY_DEFAULT), unless config/experts/${scope}.yaml overrides it" ;;
+    declared="the expert capability default (contract/manifest.EXPERT_CAPABILITY_DEFAULT), unless config/experts/${scope}.yaml overrides it" ;;
 esac
 
 cat >&2 <<EOF

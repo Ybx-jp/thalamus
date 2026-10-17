@@ -53,7 +53,7 @@ def test_edges_through_global_artifacts_do_not_count_as_scope_crossings():
 
     This is the load-bearing case. Artifacts are shared, so two experts that ever touched
     the same file are joined through one. If paths through globals counted as crossings,
-    the cross-scope density metric that grades roster granularity (the split/merge signal)
+    the cross-scope density metric that grades expert-set granularity (the split/merge signal)
     would measure "same repo" rather than "same domain" and be useless.
     """
     literature_claim = vid("Claim", "aaa", "literature")

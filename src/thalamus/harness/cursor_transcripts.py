@@ -189,7 +189,7 @@ _CURSOR_PATH_INPUTS: dict[str, tuple[str, ...]] = {
 UNRESOLVED_SCOPE = ""
 
 # Cursor's own web tools, for the ingress *detection* half. Naming these is still
-# a guess — the tool roster is undocumented, and the live sessions observed so far
+# a guess — the tool set is undocumented, and the live sessions observed so far
 # exercised only `Shell`, so no web-tool name has been seen in a transcript yet —
 # so nothing depends on the guess being complete: `ingress_verifiable=False`
 # already floors the session whether or not a name here matches. A hit only

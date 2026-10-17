@@ -203,15 +203,15 @@ def test_a_window_that_survives_its_settle_is_reported_started(private_tmux, tmp
     assert shown.stdout.split() == ["remain-on-exit", "off"]
 
 
-def test_a_roster_window_that_cannot_exec_is_not_reported_as_a_roster(
+def test_an_anchor_that_cannot_exec_is_not_reported_as_a_session(
         private_tmux, tmp_path, monkeypatch):
     """
-    Scenario: `thalamus roster` on a box with no `claude` — the reported bug
+    Scenario: roster sync on a box with no `claude` — the reported bug
 
     Verifications:
     - the bring-up is a failure, and points at PATH
-    - the dead window is cleared, so nothing claims a roster is attachable
-    - no "Roster running in tmux session" line is printed
+    - the dead window is cleared, so nothing claims a session is attachable
+    - no "opened in tmux session" line is printed
 
     Driven through `roster_sync` because that is the surface the bug is worst on:
     the console answered `{"ok": true}`, then drew its no-session screen telling
@@ -224,13 +224,13 @@ def test_a_roster_window_that_cannot_exec_is_not_reported_as_a_roster(
 
     assert ok is False
     assert "PATH" in output
-    assert "Roster running" not in output
+    assert "opened in tmux session" not in output
     assert _windows("settle-roster") == []
 
 
-def test_a_roster_window_that_survives_its_settle_is_reported_started(private_tmux,
+def test_an_anchor_that_survives_its_settle_is_reported_started(private_tmux,
                                                                      tmp_path):
-    """The other half: a roster whose anchor comes up reports success, keeps the
+    """The other half: an anchor that comes up reports success, keeps the
     window, and turns `remain-on-exit` back off — the option is held only for the
     settle, and a window that kept it would leave a corpse the console's close and
     recycle paths read as a window still there."""
@@ -240,7 +240,7 @@ def test_a_roster_window_that_survives_its_settle_is_reported_started(private_tm
     ok, output = server.roster_sync(cfg)
 
     assert ok is True
-    assert "Roster running in tmux session `roster-live`" in output
+    assert "Pinned window `main` opened in tmux session `roster-live`" in output
     live = [w for w in _windows("roster-live") if w.endswith(" 0")]
     assert len(live) == 1
     shown = subprocess.run(tmux.argv("show-options", "-w", "-t", live[0].split()[0],
@@ -276,12 +276,12 @@ def test_the_confirmation_is_called_from_pin_and_not_copied_into_the_console():
 
     This is a structural assertion and nothing more — it stays green for a `spawn`
     that calls `confirm_started` inside a `try` that swallows `WindowDied` (#226). The
-    behaviour is asserted separately: `spawn` and `roster` by the real-tmux cases above,
+    behaviour is asserted separately: `spawn` and `ensure_anchor` by the real-tmux cases above,
     and `launch` by the case below, which had no behavioural test at all.
     """
     assert "confirm_started" in windows.spawn.__code__.co_names
     assert "confirm_started" in windows.launch.__code__.co_names
-    assert "confirm_started" in windows.roster.__code__.co_names
+    assert "confirm_started" in windows.ensure_anchor.__code__.co_names
     assert not hasattr(server, "SPAWN_SETTLE_S")
 
 

@@ -613,7 +613,7 @@ SHELL_WINDOW_NAME = "shell"
 # server.
 NO_ROSTER_SESSION = (
     "there is no roster session to open a shell in. Bring one up first — "
-    "`thalamus roster` on the box, or spawn a session from this sheet."
+    "roster sync in ⚙, or spawn a session from this sheet."
 )
 
 # Appended when a spawned window died without saying anything the operator can act
@@ -1281,23 +1281,20 @@ def _run_capturing(fn, *args, **kwargs) -> tuple[bool, str, Exception | None]:
 
 
 def roster_sync(cfg: Config) -> tuple[bool, str]:
-    """Recreate any missing roster window. Idempotent, so it only opens what isn't
-    there (e.g. the anchor after an uncaught exit).
+    """Recreate the session and its `main` anchor if either is gone (e.g. the anchor
+    after an uncaught exit). Idempotent, so a running anchor is left alone.
 
-    Explicitly roomless: the anchor is the roster's own window, and leaving the room
-    to the environment would put it in whatever room this long-lived server process
-    was started in — where it would stop being the roster's anchor at all.
-
-    `windows.roster` holds each window it opens to its settle deadline, so a window that
-    was created and died reports here as a failure rather than as a sync that worked
-    and produced nothing — the state in which the client draws its no-session screen
-    and tells the operator to run the sync they just ran.
+    `windows.ensure_anchor` is roomless by construction and holds the window it opens
+    to its settle deadline, so a window that was created and died reports here as a
+    failure rather than as a sync that worked and produced nothing — the state in
+    which the client draws its no-session screen and tells the operator to run the
+    sync they just ran.
     """
     windows = windows_module()
     if windows is None:
         return False, EXPERTS_UNAVAILABLE
-    ok, output, error = _run_capturing(windows.roster, cfg.project_root,
-                                       session=cfg.session, room="")
+    ok, output, error = _run_capturing(windows.ensure_anchor, cfg.project_root,
+                                       session=cfg.session)
     if isinstance(error, windows.WindowDied):
         return False, "\n\n".join(x for x in (output, SPAWN_FAILED_HINT) if x)
     return ok, output
@@ -2404,7 +2401,7 @@ class Handler(BaseHTTPRequestHandler):
                     # a member's shell would authenticate as that member for its whole
                     # life and refuse every other room — naming, in the refusal, a room
                     # the operator is not in and cannot see. The same reasoning already
-                    # makes `do_spawn` and `roster_sync` pass `room=""` explicitly.
+                    # makes `do_spawn` pass `room=""` and `ensure_anchor` roomless.
                     caller_room="",
                     scopes=scopes or None,
                     partial=bool(data.get("partial")),

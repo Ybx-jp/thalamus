@@ -6,8 +6,8 @@ inverse is not expressible there. `config/experts/` holds a manifest per expert 
 `main.yaml`, so the scope a directory boundary most needs to bind has nowhere to
 declare it, and writing the owned glob into every other manifest stores one fact
 once per scope.
-The rule therefore lives once, here, beside the roster rather than inside it, the
-way `ROSTER_CAPABILITY_DEFAULT` does for capability.
+The rule therefore lives once, here, beside the manifests rather than inside them, the
+way `EXPERT_CAPABILITY_DEFAULT` does for capability.
 
 **Why this is admissible when a path allow-list was refused.** The 2026-08-11 ruling
 (ticket `1ed468b61248497e`) held an allow-list incoherent inside a

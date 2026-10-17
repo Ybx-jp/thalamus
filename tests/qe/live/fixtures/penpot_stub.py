@@ -1,6 +1,6 @@
 """A stdio MCP server that answers to the name `penpot`, for the live tier.
 
-It is named after the real design server so the roster's real capability matcher —
+It is named after the real design server so the real expert capability matcher —
 `mcp__penpot__*` in the default boundary and in role-guard's hook matcher — applies to
 it without a fixture-only code path. Two tools, one of each kind a boundary tells
 apart: a read (`read_board`) and an authoring call (`create_board`). Each answers with

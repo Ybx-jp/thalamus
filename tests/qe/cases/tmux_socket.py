@@ -5,8 +5,8 @@ tmux is the one surface that ignores `HOME` completely. Measured:
 because tmux locates its server through `/tmp/tmux-<uid>/` (or `$TMUX_TMPDIR`), not
 through the home directory.
 
-Nothing in `src/` passes `-L` (socket name) or `-S` (socket path). So `thalamus roster`,
-`pin --spawn`, `dispatch` and the console's `/api/key` and `/api/send` all address
+Nothing in `src/` passes `-L` (socket name) or `-S` (socket path). So `thalamus console`
+(through `ensure_anchor`), `pin --spawn`, `dispatch` and the console's `/api/key` and `/api/send` all address
 whatever tmux server the box happens to be running — which is the operator's live
 control plane, with real pinned sessions in it.
 

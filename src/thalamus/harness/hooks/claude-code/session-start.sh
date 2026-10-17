@@ -111,10 +111,10 @@ if [ -n "$session_id" ]; then
   # are correlated — and nothing in a finished graph can tell three sessions that
   # independently agreed from three that were in the room together, which is why this
   # is recorded at write time or not at all.
-  # `tmux_pane` is the console's join key. The console addresses roster windows by
+  # `tmux_pane` is the console's join key. The console addresses its windows by
   # index, but an index identifies nothing durable: it renumbers when a window
   # closes, and two windows routinely share a name, a scope, and a cwd at once
-  # (measured — a live roster held two `main` windows both pinned to scope main in
+  # (measured — a live console session held two `main` windows both pinned to scope main in
   # the same checkout). Every other route to "which session is
   # in this window" was tried and rejected: tmux environments are session-scoped,
   # not per-window; /proc/<pid>/environ carries THALAMUS_SCOPE but no session id;
@@ -127,7 +127,7 @@ if [ -n "$session_id" ]; then
   # resolves it. Empty outside tmux, which is the correct answer there.
   #
   # Only an *interactive* session may claim a pane. A `claude -p` spawned from a
-  # Bash tool inside a roster window is a full session — it fires this hook — and
+  # Bash tool inside a console window is a full session — it fires this hook — and
   # it inherits TMUX_PANE from the window that spawned it, so an unconditional
   # claim hands the pane's key to a headless probe and last-row-wins points the
   # console's read view at it. Measured 2026-08-10: a two-message `reply with OK
@@ -145,7 +145,7 @@ if [ -n "$session_id" ]; then
   case "$entrypoint" in
     cli|"") pane="${TMUX_PANE:-}" ;;
   esac
-  # `repo_root` and `project` are what group a roster row by the thing the operator
+  # `repo_root` and `project` are what group a console row by the thing the operator
   # thinks in. `cwd` cannot: two sessions in ~/code/thalamus and ~/code/thalamus/lab
   # are one project and sort as two, while three sessions in one checkout share a cwd
   # string exactly and sort as one indistinguishable pile. Both are already resolved

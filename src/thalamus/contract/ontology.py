@@ -375,7 +375,7 @@ def edge_crosses_scope(source_id: str, target_id: str) -> bool:
     Edges touching a global node are NOT crossings. This is load-bearing: if paths
     through the shared Artifact vertex counted, then any two experts that ever touched
     the same file would look densely interconnected, and the cross-scope density metric
-    that grades roster granularity would be measuring "same repo"
+    that grades expert-set granularity would be measuring "same repo"
     instead of "same domain".
     """
     source_scope = scope_of(source_id)

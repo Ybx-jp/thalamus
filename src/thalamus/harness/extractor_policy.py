@@ -335,7 +335,7 @@ def describe(pass_: str = DEFAULT_PASS, *, store: Path | None = None) -> dict:
         options.append({
             "value": harness,
             # The harness name, not the binary. Everywhere else on this console — the
-            # spawn sheet, the roster rows, the posture cards — a harness is picked by
+            # spawn sheet, the session rows, the posture cards — a harness is picked by
             # its name, and Cursor is the one where the two differ (`agent`). A chip
             # reading `agent` beside `claude` and `codex` would be the only place on
             # the surface where the operator has to know a binary to pick a vendor.

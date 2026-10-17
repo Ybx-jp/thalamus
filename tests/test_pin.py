@@ -8,7 +8,6 @@ verified live — a launcher can only be tested by the process
 it launches, which is exactly where the boundary falls.
 """
 
-import itertools
 import json
 import subprocess
 from pathlib import Path
@@ -138,77 +137,30 @@ def test_spawn_into_an_absent_session_leaves_no_shell_placeholder(tmp_path, monk
     assert not [c for c in calls if "new-window" in c]
 
 
-def _fake_tmux(monkeypatch, ids):
-    """Answer every tmux call successfully, handing out `ids` to `new-window`.
+def _fake_tmux(monkeypatch, *, session_exists=True, present=(), window_id="@1"):
+    """Answer every tmux call successfully, as a session holding `present` windows.
 
-    Returns the call log. `has-session` succeeding means roster takes the
-    open-into-an-existing-session path, and an empty `list-windows` means it
-    considers no scope already covered.
+    Returns the call log. `session_exists=False` makes `has-session` fail, which sends
+    `ensure_anchor` down the create-the-session path. Two `list-windows` calls with
+    different `-F` formats sit behind its idempotency — `_tmux_windows` asks for names,
+    `window_room` for start commands — so the fake answers on the format rather than
+    the subcommand. No window is in a room: a bare start command puts every index at
+    room "".
     """
     calls: list[list[str]] = []
-    handout = iter(ids)
 
     def fake_run(cmd, *a, **kw):
         calls.append(cmd)
-        stdout = next(handout) if "new-window" in cmd else ""
-        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
-
-    monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
-    monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
-    monkeypatch.delenv("TMUX", raising=False)
-    monkeypatch.delenv("THALAMUS_ROOM", raising=False)
-    return calls
-
-
-def test_roster_confirms_every_window_it_opens(tmp_path, monkeypatch, capsys):
-    """
-    Scenario: bring up the full roster with a fake tmux that reports success
-
-    Verifications:
-    - every window the roster creates is held to its settle deadline
-    - the attach line is printed, because the session is still there
-
-    `tmux new-window` exits 0 once it has forked, which is before the command it was
-    given has execed. Without this, `thalamus roster` reported success and exit 0 for
-    a window that was already gone, and the console then drew its no-session screen
-    telling the operator to run the command they had just been told worked.
-    """
-    scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
-    _fake_tmux(monkeypatch, [f"@{n}" for n in range(1, len(scopes) + 1)])
-    confirmed: list[str] = []
-    monkeypatch.setattr("thalamus.console.windows.confirm_started",
-                        lambda window_id, *a, **kw: confirmed.append(window_id))
-
-    windows.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
-
-    assert confirmed == [f"@{n}" for n in range(1, len(scopes) + 1)]
-    assert "Roster running in tmux session `fake-roster`" in capsys.readouterr().out
-
-
-def _fake_tmux_holding(monkeypatch, ids, present):
-    """`_fake_tmux`, but with `list-windows` reporting `present` already open.
-
-    Two `list-windows` calls with different `-F` formats sit behind roster's
-    idempotency — `_tmux_windows` asks for names, `window_room` asks for start commands
-    — so the fake answers on the format rather than the subcommand. Neither window is
-    in a room: a bare start command puts every index at room "".
-    """
-    calls: list[list[str]] = []
-    # Ids keep coming after `ids` runs out. A fake that raises StopIteration on the
-    # window it did not expect reports an exhausted iterator where the finding is
-    # "a window was opened that should not have been" — the assertion below says that.
-    handout = itertools.chain(ids, (f"@extra-{n}" for n in itertools.count(1)))
-
-    def fake_run(cmd, *a, **kw):
-        calls.append(cmd)
-        stdout = ""
-        if "new-window" in cmd:
-            stdout = next(handout)
+        stdout, code = "", 0
+        if "has-session" in cmd:
+            code = 0 if session_exists else 1
+        elif "new-window" in cmd or "new-session" in cmd:
+            stdout = window_id
         elif "list-windows" in cmd:
             wants_names = "window_name" in cmd[cmd.index("-F") + 1]
             stdout = "".join(f"{i}\t{name if wants_names else 'claude'}\n"
                              for i, name in enumerate(present))
-        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+        return subprocess.CompletedProcess(cmd, code, stdout=stdout, stderr="")
 
     monkeypatch.setattr("thalamus.console.windows.shutil.which", lambda _: "/usr/bin/tmux")
     monkeypatch.setattr("thalamus.console.windows.subprocess.run", fake_run)
@@ -217,88 +169,106 @@ def _fake_tmux_holding(monkeypatch, ids, present):
     return calls
 
 
-def test_roster_leaves_a_scope_that_already_has_a_window_alone(
+def _created(calls, verb):
+    return [c[c.index("-n") + 1] for c in calls if verb in c]
+
+
+def test_ensure_anchor_confirms_the_window_it_opens(tmp_path, monkeypatch, capsys):
+    """
+    Scenario: the console's session exists without `main`, and tmux reports success
+
+    Verifications:
+    - `main` is opened, and it is the only window opened
+    - the window is held to its settle deadline before anything says it opened
+    - the attach line names the session
+
+    `tmux new-window` exits 0 once it has forked, which is before the command it was
+    given has execed. Without the confirmation the console reported a working anchor
+    that was already gone, then drew its no-session screen.
+    """
+    calls = _fake_tmux(monkeypatch, present=["architect"])
+    confirmed: list[str] = []
+    monkeypatch.setattr("thalamus.console.windows.confirm_started",
+                        lambda window_id, *a, **kw: confirmed.append(window_id))
+
+    windows.ensure_anchor(tmp_path, session="fake-console", base=REPO_CONFIG)
+
+    assert _created(calls, "new-window") == [pin.MAIN_SCOPE]
+    assert confirmed == ["@1"]
+    assert ("Pinned window `main` opened in tmux session `fake-console`"
+            in capsys.readouterr().out)
+
+
+def test_ensure_anchor_leaves_a_session_already_holding_main_alone(
         tmp_path, monkeypatch, capsys):
     """
-    Scenario: the full roster is brought up against a session already holding two scopes
+    Scenario: roster sync runs against a session whose `main` is still running
 
     Verifications:
-    - no window is opened for a scope that is already present
-    - the scopes that are not present are still opened
+    - no window is opened
     - the skip is printed rather than silent
 
-    The idempotency the roster docstring promises is what makes `thalamus roster` safe
-    to re-run — the console re-runs it on every bring-up. Without the skip, a second run
-    opens a duplicate window per scope and the plane shows two of each (#230).
+    The idempotency is what makes roster sync safe to press. Without it a second press
+    opens a duplicate `main` and the console shows two (#230). The test above, which
+    drives the same fake with `main` absent and sees it opened, is this one's control.
     """
-    scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
-    already, expected_new = scopes[:2], scopes[2:]
-    calls = _fake_tmux_holding(
-        monkeypatch, [f"@{n}" for n in range(1, len(expected_new) + 1)], already)
+    calls = _fake_tmux(monkeypatch, present=[pin.MAIN_SCOPE, "architect"])
     monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
 
-    windows.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+    windows.ensure_anchor(tmp_path, session="fake-console", base=REPO_CONFIG)
 
-    printed = capsys.readouterr().out
-    opened = [c[c.index("-n") + 1] for c in calls if "new-window" in c]
-
-    assert opened == expected_new
-    for scope in already:
-        assert f"`{scope}` already has a window — skipped" in printed
+    assert _created(calls, "new-window") == []
+    assert _created(calls, "new-session") == []
+    assert "`main` already has a window" in capsys.readouterr().out
 
 
-def test_roster_opens_every_scope_when_the_session_holds_none(tmp_path, monkeypatch):
-    """The control for the test above, through the same fake.
-
-    "Nothing was opened for these two" is also what a fake that silently answers no
-    window at all produces. Driving the identical path with an empty session must open
-    every scope, or the skip test is measuring the stub rather than the skip.
+def test_ensure_anchor_creates_a_missing_session_with_main_as_its_first_window(
+        tmp_path, monkeypatch):
     """
-    scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
-    calls = _fake_tmux_holding(
-        monkeypatch, [f"@{n}" for n in range(1, len(scopes) + 1)], present=[])
-    monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
-
-    windows.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
-
-    opened = [c[c.index("-n") + 1] for c in calls if "new-window" in c]
-    assert opened == scopes
-
-
-def test_one_dead_roster_window_does_not_abort_the_others(tmp_path, monkeypatch, capsys):
-    """
-    Scenario: the full roster comes up and the second window's command dies
+    Scenario: `thalamus console` starts on a box with no session yet
 
     Verifications:
-    - the remaining windows are still opened and still confirmed
-    - the failure raises, naming the scope that died and quoting its pane
-    - the scopes that came up are still reported opened
+    - the session is created with `main` as the window it is created with
+    - no separate `new-window` follows it
 
-    The roster is a set of independent windows, so refusing to open the eighth
-    because the seventh could not start would turn one broken scope into a roster
-    that is not up. The raise at the end is what keeps the exit code honest.
+    Whichever window is created first takes the lowest index, and the console reads the
+    lowest index as the anchor. A bare `new-session` followed by `new-window main` would
+    leave a shell there for the life of the tmux server.
     """
-    scopes = [pin.MAIN_SCOPE, *available_scopes(REPO_CONFIG)]
-    _fake_tmux(monkeypatch, [f"@{n}" for n in range(1, len(scopes) + 1)])
+    calls = _fake_tmux(monkeypatch, session_exists=False)
+    monkeypatch.setattr("thalamus.console.windows.confirm_started", lambda *a, **kw: None)
+
+    windows.ensure_anchor(tmp_path, session="fake-console", base=REPO_CONFIG)
+
+    assert _created(calls, "new-session") == [pin.MAIN_SCOPE]
+    assert _created(calls, "new-window") == []
+
+
+def test_an_anchor_that_dies_raises_naming_it_and_quoting_its_pane(
+        tmp_path, monkeypatch, capsys):
+    """
+    Scenario: `main`'s command exits before its settle deadline
+
+    Verifications:
+    - the failure raises, naming `main` and quoting what the pane printed
+    - nothing claims the window opened
+    """
+    _fake_tmux(monkeypatch, present=[])
 
     def fake_confirm(window_id, *a, **kw):
-        if window_id == "@2":
-            raise windows.WindowDied("the window was created and its command exited "
+        raise windows.WindowDied("the window was created and its command exited "
                                  "(exit 127) before it could be called started — "
                                  "it printed: claude: not found")
 
     monkeypatch.setattr("thalamus.console.windows.confirm_started", fake_confirm)
 
     with pytest.raises(windows.WindowDied) as death:
-        windows.roster(tmp_path, base=REPO_CONFIG, full=True, session="fake-roster")
+        windows.ensure_anchor(tmp_path, session="fake-console", base=REPO_CONFIG)
 
     message = str(death.value)
-    assert f"1 of {len(scopes)}" in message
-    assert f"`{scopes[1]}`" in message
+    assert "`main` did not start" in message
     assert "claude: not found" in message, "the pane's own words are the diagnosis"
-    printed = capsys.readouterr().out
-    assert f"Pinned window `{scopes[2]}`" in printed, "the survivors still came up"
-    assert f"Pinned window `{scopes[1]}`" not in printed
+    assert "opened" not in capsys.readouterr().out
 
 
 def test_main_is_pinnable_without_a_manifest_and_unknown_scopes_are_not():

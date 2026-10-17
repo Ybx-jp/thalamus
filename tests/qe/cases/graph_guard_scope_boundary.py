@@ -1,7 +1,7 @@
 """An expert pin's shell must not reach the graph the MCP tools confine it away from.
 
 Issue #204: `substrate.writer.connect()` applies no scope filter, and `Bash` is not in
-`ROSTER_CAPABILITY_DEFAULT.deny_tools`, so before `graph-guard.sh` existed a pin holding
+`EXPERT_CAPABILITY_DEFAULT.deny_tools`, so before `graph-guard.sh` existed a pin holding
 a shell read every vertex and edge in the graph — `main`'s episodic memory and every
 other expert's included — regardless of what `memory_query` and `reader.recall` confine
 it away from on the MCP surface. `graph-guard.sh` is the fix, wired on all three
@@ -103,7 +103,7 @@ ALLOW = "ALLOW"
 
 #: Standing in for any non-main scope: the env-fallback half of `thalamus_resolve_scope`
 #: does not check the name against a manifest, so any non-"main" string draws the
-#: boundary this guard exists to draw. `architect` is used because it is a real roster
+#: boundary this guard exists to draw. `architect` is used because it is a real expert
 #: scope (`config/experts/architect.yaml`) rather than a name invented for this probe.
 _EXPERT_SCOPE = "architect"
 

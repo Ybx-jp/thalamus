@@ -805,14 +805,14 @@ def test_pin_ledger_splits_spawn_records_from_engagement_events(tmp_path):
 
 def test_pin_report_excludes_idle_spawns_from_the_routing_denominator():
     """
-    Scenario: the tmux roster spawned an expert's window at bring-up (ledger
+    Scenario: the console spawned an expert's window at bring-up (ledger
     entry, no user prompt, no traces) alongside a session the operator engaged
     but which never retrieved
 
     Verifications:
     - with an engaged set, the idle spawn lands in idle_spawns, not ledger_only
     - the engaged-but-traceless session stays in ledger_only (itself a signal)
-    - the render discloses the exclusion in neutral roster-churn language
+    - the render discloses the exclusion in neutral bring-up language
     - engaged=None (no engagement records in the ledger) keeps old behavior
     """
     from thalamus.eval.pins import build_pin_report
@@ -824,7 +824,7 @@ def test_pin_report_excludes_idle_spawns_from_the_routing_denominator():
     assert (expert.ledger_only, expert.idle_spawns) == (1, 1)
     rendered = gated.render()
     assert "+1 engaged with none landed" in rendered
-    assert "excluded: 1 idle spawn(s)" in rendered and "roster bring-up" in rendered
+    assert "excluded: 1 idle spawn(s)" in rendered and "a bring-up spawn" in rendered
 
     ungated = build_pin_report([], [], pins, experts=["homelab"])
     assert (ungated.experts[0].ledger_only, ungated.experts[0].idle_spawns) == (2, 0)
@@ -1476,7 +1476,7 @@ def test_records_round_trip_and_key_on_the_rendered_response(tmp_path):
 def test_every_retrieval_mcp_tool_is_traced_and_tapped():
     """A retrieval surface the eval loop cannot see is a surface that measures nothing.
 
-    Three rosters name the memory tools independently — the MCP server itself, the
+    Three lists name the memory tools independently — the MCP server itself, the
     eval loop's RETRIEVAL_TOOLS (what lands as a Trace), and the Cursor tap's case
     statement (what reaches the tap at all). They have desynced before: adding a tool
     to the server and forgetting the tap silently drops that tool's traces on Cursor.
@@ -1507,7 +1507,7 @@ def test_every_retrieval_mcp_tool_is_traced_and_tapped():
 
     missing_from_tap = {name for name in exposed if name not in tap}
     assert not missing_from_tap, (
-        f"MCP tools absent from the Cursor tap roster (untraced on Cursor): "
+        f"MCP tools absent from the Cursor tap list (untraced on Cursor): "
         f"{sorted(missing_from_tap)}"
     )
 

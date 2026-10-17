@@ -1,11 +1,11 @@
 #!/bin/bash
 # Thalamus UserPromptSubmit hook — mark this session engaged in the pin ledger.
 #
-# The session-start hook records every *spawn*; the tmux roster spawns every
+# The session-start hook records every *spawn*; a console bring-up can spawn every
 # expert's pinned session at bring-up, so spawn records alone conflate
 # infrastructure churn with operator routing decisions (the 2026-07-19
 # "pinned, never retrieved" confound — 9 of 15 expert ledger entries were
-# idle roster spawns). The first user prompt is the engagement boundary: from
+# idle bring-up spawns). The first user prompt is the engagement boundary: from
 # here on, a session with no retrievals is an *attribution gap*, not noise.
 # Semantics vetted by the eval-methodology expert
 # (scope:main:exchange:63b647977a624b85): engagement-gating restores the

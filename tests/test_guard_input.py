@@ -11,7 +11,7 @@ past by handing it something it cannot parse.
 
 A guard that examined the call and approved it and a guard that died before looking
 are the same event from outside — exit 0, nothing on stderr — so an unreadable payload
-would otherwise be one line past every boundary the roster draws.
+would otherwise be one line past every boundary the manifests draw.
 """
 
 from __future__ import annotations

@@ -66,6 +66,13 @@ none
 - 2026-09-29T00:31:35-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:3ef12bb520ff34e1f9f3f1449c2c3f6ab73c2f003500091bd43e3b8521cccf98
   note: ExpertManifest gained model_config forbidding undeclared keys; it declares no node type, so the assertion is unaffected
+- 2026-10-16T17:45:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:3ef12bb520ff34e1f9f3f1449c2c3f6ab73c2f003500091bd43e3b8521cccf98
+  artifact: sha256:b65fad6b3e06f0440ee1686f649afff4af1258e0dfdb69d93764b818f0e4baeb
+  note: propagated from a moved ground
+- 2026-10-16T17:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/contract/manifest.py § "ExpertManifest" =sha256:b65fad6b3e06f0440ee1686f649afff4af1258e0dfdb69d93764b818f0e4baeb
+  note: Only wording in the section changed: #342 retires "roster" where it meant the set of experts or the console's tmux windows. The assertion is unaffected.
 
 ## References
 

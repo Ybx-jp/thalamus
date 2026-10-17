@@ -414,7 +414,7 @@ LAUNCH_SHAPES: dict[str, LaunchShape] = {
         # `pin_carrier` describes, and carries both.
         persona_flag_carries_scope=False,
         # Empty, and not because codex has no preconditions — because its two are not
-        # flags. `--skip-git-repo-check` belongs to the headless sandbox: a roster
+        # flags. `--skip-git-repo-check` belongs to the headless sandbox: a console
         # window opens in the checkout, which is a git repo, so passing it here would
         # declare a precondition this launch does not have.
         #
@@ -467,7 +467,7 @@ def capability_argv(harness: str, selections: Mapping[str, str] | None = None) -
     An unknown capability key or an unknown value falls back to the capability's own
     default rather than raising: the store is a file on disk that a future release may
     have written differently, and the failure mode for a stale entry has to be "launch
-    at the default" and not "the roster will not start".
+    at the default" and not "the session will not start".
     """
     shape = LAUNCH_SHAPES.get(harness)
     if shape is None:

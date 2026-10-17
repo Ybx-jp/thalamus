@@ -75,7 +75,7 @@ log_file="$log_dir/$(date -u +%Y-%m).jsonl"
 
 # The pin, resolved once: it is both a logged field and — for the design class — part
 # of what gets injected. A reminder that tells every session to consult the same three
-# experts is wrong twice over on an expert session: it names a subset of the roster,
+# experts is wrong twice over on an expert session: it names a subset of the experts,
 # and it puts the reader's own scope in a list whose sentence is "where the design
 # crosses out of your domain", which its own scope by definition does not. The
 # self-ticket is a different move and is named separately in the pinned branch.
@@ -122,9 +122,9 @@ case "$event" in
       "\b(design|architect|propose|new (feature|component|skill|hook|expert|metric|schema)|should we (build|add|write|create)|let'?s (build|add|write|create|implement|enhance))\b" \
       <<< "$prompt" \
       && ! fired_already design; then
-      others="$(thalamus_roster "$scope")"
+      others="$(thalamus_experts "$scope")"
       if [ "$scope" = "main" ]; then
-        routing="consult_request to whichever roster expert owns this domain — $others"
+        routing="consult_request to whichever expert owns this domain — $others"
       else
         routing="you are pinned to \`$scope\`, so design inside that domain is yours to do — and when it is big enough that you would otherwise spawn a general-purpose subagent to second-pass it, the move is \`consult_request(expert=\"$scope\")\`, a self-ticket: same fresh context, plus a brief assembled against the question, a close the server refuses unless reads happened under the ticket, and an exchange record. consult_request where the design crosses out of \`$scope\` — $others"
       fi
@@ -146,7 +146,7 @@ case "$event" in
     case "$tool" in
       TaskCreate)
         if ! fired_already milestone; then
-          emit milestone "Thalamus conditioning (tier-0 operator hook, fires once/session): multi-step work is starting. Check now: (1) does an open thread overlap this work? (2) which roster expert covers this domain — consult before designing, not after; (3) any gremlin ahead: RECIPES.md before writing new queries."
+          emit milestone "Thalamus conditioning (tier-0 operator hook, fires once/session): multi-step work is starting. Check now: (1) does an open thread overlap this work? (2) which expert covers this domain — consult before designing, not after; (3) any gremlin ahead: RECIPES.md before writing new queries."
           exit 0
         fi
         ;;

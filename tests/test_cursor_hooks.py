@@ -119,7 +119,7 @@ class TestSessionStart:
 
         Verifications:
         - the primed project is the repository's name, not the worktree directory's
-        - the pin ledger row the console groups the roster by carries the same
+        - the pin ledger row the console groups its sessions by carries the same
 
         Four implementations resolve this fact, in two languages, and they cannot
         drift: `transcripts.resolve_repo_root` decides what a session distills under,
@@ -150,7 +150,7 @@ class TestSessionStart:
         assert 'project="myproject"' in json.loads(result.stdout)["additional_context"]
 
         pin = read_jsonl(tmp_path / ".thalamus" / "pins" / "pins.jsonl")[0]
-        # Verifies: the roster groups this session with the repo's other sessions
+        # Verifies: the console groups this session with the repo's other sessions
         assert pin["project"] == "myproject"
         assert pin["repo_root"] == str(checkout)
         # Verifies: cwd still records where the session actually ran

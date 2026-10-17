@@ -41,7 +41,8 @@ none
 - 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/console/windows.py § "roster" =sha256:4693b1c04a1b8071fc8e95fa2bfc382afd05c7e017a0c286b42bdf3e490c6c43
   note: `roster` moved from harness/pin.py to console/windows.py unchanged. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+- 2026-10-16T21:15:00-07:00 · superseded · grade: measured · author: architect
+  evidence: entry: A0224-console-creates-its-session-with-only-the-anchor · supersedes
+  note: `thalamus roster` and its `--all` are removed; `thalamus console` creates its session with the `main` anchor through `windows.ensure_anchor`. Experts are still spawned on demand.
 
 ## References
-
-- docs/concepts.md · standing · cites-as-live

@@ -7,7 +7,7 @@
 #
 # The agent picker (`claude --agent thalamus-<scope>`) starts a pinned persona
 # without threading THALAMUS_SCOPE, so the env alone lies about the pin (measured
-# 2026-07-18: all three roster expert sessions carried
+# 2026-07-18: all three pinned expert sessions carried
 # CLAUDE_CODE_AGENT=thalamus-<scope> with THALAMUS_SCOPE=main).
 #
 # A subagent inherits its launcher's environment wholesale, so both CLAUDE_CODE_AGENT
@@ -104,7 +104,7 @@ thalamus_require_binaries() {
 # turns into a plain `exit 0`) — and not one of those codes is the blocking code. From
 # outside, a guard that examined the call and approved it and a guard that died before
 # looking are the same event, so an unreadable payload is a way past every boundary the
-# roster draws.
+# manifests draw.
 #
 # Reading through this makes all three a block instead. It sets `thalamus_guard_input`
 # for the caller, and on any of the three it prints the reason and exits 2 — the code
@@ -194,7 +194,7 @@ thalamus_resolve_forked_from() {
 # Ordering, not short-circuiting. A non-Thalamus subagent (`general-purpose`,
 # `Explore`) names an agent_type that matches no manifest, and it must fall through
 # to the launcher's pin — otherwise "spawn a general-purpose subagent to write the
-# fix" is a one-line route around every boundary in the roster.
+# fix" is a one-line route around every expert's boundary.
 thalamus_resolve_scope() {
   local config scope candidate
   config="$(thalamus_config_root)"
@@ -215,10 +215,10 @@ thalamus_resolve_scope() {
 
 # Every expert scope with a manifest on disk, space-separated, sorted. The bash
 # mirror of contract/manifest.available_scopes, and read on each call for the same
-# reason: the roster grows, and a surface that names a fixed subset of it goes stale
+# reason: the expert set grows, and a surface that names a fixed subset of it goes stale
 # the day an expert is added — silently, since a list of experts looks equally
 # plausible whether or not it is complete. $1 (optional) excludes one scope.
-thalamus_roster() {
+thalamus_experts() {
   local config exclude="${1:-}" path scope out=""
   config="$(thalamus_config_root)"
   for path in "$config"/experts/*.yaml; do

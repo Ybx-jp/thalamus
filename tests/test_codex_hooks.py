@@ -157,7 +157,7 @@ class TestThePaneClaim:
         return path
 
     def test_an_interactive_tui_claims_its_pane(self, tmp_path):
-        """`originator=codex-tui` with a plain `source=cli` is the roster window the
+        """`originator=codex-tui` with a plain `source=cli` is the console window the
         operator is looking at, and the only shape that may claim."""
         transcript = self.rollout(tmp_path, "codex-tui", "cli")
         run_hook("session-start.sh",
@@ -167,7 +167,7 @@ class TestThePaneClaim:
         assert pin["tmux_pane"] == "%9"
 
     def test_a_headless_exec_run_claims_nothing(self, tmp_path):
-        """The case the hazard is about: `codex exec` shelled out of a roster window
+        """The case the hazard is about: `codex exec` shelled out of a console window
         inherits that window's TMUX_PANE, and writes `originator=codex_exec`."""
         transcript = self.rollout(tmp_path, "codex_exec", "exec")
         run_hook("session-start.sh",

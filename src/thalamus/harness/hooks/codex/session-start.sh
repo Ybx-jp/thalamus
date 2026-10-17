@@ -24,10 +24,10 @@
 # TUI quit without submitting fired only SessionEnd, with the rollout at one line;
 # submitting one turn fired SessionStart at that turn. In `codex exec` it fires at
 # startup. The consequence is a fact to state rather than a defect to work around: a
-# spawned-but-unused codex roster window leaves no ledger row. The pin still reaches
+# spawned-but-unused codex console window leaves no ledger row. The pin still reaches
 # the session — harness/launcher.launch_argv puts `env THALAMUS_SCOPE=<scope>` in the
 # argv for persona-less harnesses — and the console derives a window's harness from
-# its start command, so roster identity does not depend on this row either.
+# its start command, so a window's identity does not depend on this row either.
 
 set -euo pipefail
 
@@ -77,7 +77,7 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 # `tmux_pane` is claimed only by an interactive TUI session, and the discriminator is
 # the rollout's own `session_meta`, not the hook payload. The hazard is the one
 # ../cursor/session-start.sh still has no answer to: a headless run spawned from a
-# shell inside a roster window inherits TMUX_PANE from that window, and an
+# shell inside a console window inherits TMUX_PANE from that window, and an
 # unconditional claim hands the console's read view to a probe (measured 2026-08-10 on
 # Claude Code: five hours of a window's read view lost to a two-message probe).
 #

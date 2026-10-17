@@ -11,7 +11,6 @@ attention.
 | **Docker** | runs the graph | `docker --version` |
 | **Python ≥3.11** + [**uv**](https://docs.astral.sh/uv/) | the package and CLI | `uv --version` |
 | **jq** | every hook parses its stdin with it | `jq --version` |
-| **tmux** | the roster and console drive pinned sessions as tmux windows | `tmux -V` |
 | **Claude Code** (`claude`), **Cursor** (`agent`) or **codex** (`codex`) | distillation shells out to it | `claude --version` |
 
 `jq` is not optional. The hook layer is shell scripts that parse their stdin with it,
@@ -192,39 +191,28 @@ matches this checkout — all of which can be perfectly correct while nothing is
 written. `status` reports what was actually written and cannot tell you why it was
 not.
 
-## 7. Bring up the roster
+## 7. Pin an expert
 
 An expert is a scope declared by a manifest in `config/experts/`. Five ship as
 examples: `architect`, `designer`, `eval-methodology`, `literature` and `qe`. Two of
 them are worth reading before you write your own — `designer` shows how a scope is
 given its own MCP tools, and `qe` shows a scope defined by what it must *not* produce.
 
-To use your own roster instead, point `THALAMUS_CONFIG_DIR` at a directory holding an
+To use your own experts instead, point `THALAMUS_CONFIG_DIR` at a directory holding an
 `experts/` subdirectory. The same variable supplies the eval task battery from
 `tasks/`.
 
 ```bash
-thalamus roster            # bring up the tmux roster
-thalamus pin literature    # or launch one pinned session directly
-thalamus spawn architect   # one on-demand pinned window
+thalamus pin literature    # this terminal becomes a session pinned to `literature`
 ```
 
-`thalamus roster` opens the `main` anchor window in a tmux session; experts are
-spawned on demand from there or from the console, and `--all` opens one window per
-manifest. Each window runs your agent CLI pinned to that scope, so it needs `claude`
-on your PATH. A window whose command exits before it can be called started is
-reported as a failure with what the pane printed, and the command exits non-zero.
+The session runs your agent CLI pinned to that scope, so it needs `claude` on your
+PATH.
 
-The roster runs on its own tmux server, so attach with the socket named:
+## 8. Optional: the console
 
-```bash
-tmux -L thalamus attach -t thalamus
-```
-
-`thalamus roster` prints that line. `THALAMUS_TMUX_SOCKET` changes the socket name,
-which is how two checkouts on one box keep separate control planes.
-
-## 8. Open the console
+The console runs pinned sessions as tmux windows and serves them to a browser, so it
+needs **tmux** (`tmux -V`) on top of the prerequisites above.
 
 ```bash
 thalamus console
@@ -234,24 +222,26 @@ thalamus console
 Control plane on http://127.0.0.1:8378  (tmux session `thalamus`)
 ```
 
-The console is a browser front end over the tmux roster: one row per session, the
+On its first run the console creates tmux session `thalamus` with a `main` window, the
+anchor. Experts are spawned on demand, from the console or with
+`thalamus spawn <scope>`. A window whose command exits before it can be called started
+is reported with what the pane printed, and the console serves anyway so you can read
+it and retry.
+
+The console is a browser front end over that tmux session: one row per session, the
 live pane, a composer, the terminal keys a phone keyboard lacks, and one tap to spawn
 an expert in a project or restart one so a wiring change arms. It never moves the
 active window, so the terminal on your desk stays where you left it.
 
-If you have not started a roster yet, the console tells you so and serves anyway:
+The session runs on its own tmux server, so attach with the socket named:
 
+```bash
+tmux -L thalamus attach -t thalamus
 ```
-No windows in tmux session "thalamus".
 
-The console bridges a tmux session — it doesn't create one. Start the roster on the host:
-
-  thalamus roster
-
-Or bridge any tmux session you like:
-
-  tmux -L thalamus new -d -s thalamus -n main
-```
+The console prints that line when it creates the session. `THALAMUS_TMUX_SOCKET`
+changes the socket name, which is how two checkouts on one box keep separate control
+planes.
 
 The console binds `127.0.0.1` and carries **no authentication**. To reach it from a
 phone, put `tailscale serve` in front of that loopback port and publish it on your
@@ -342,7 +332,7 @@ run at all; it records the loss in `~/.thalamus/logs/hook-failures.log` and
 one was. Restore the binary, then re-run the check. Sessions that ended in the gap
 can still be recovered with `thalamus bootstrap` and `thalamus extract`.
 
-**`Roster failed: … did not start`** — a roster window was created and its command
+**`Roster failed: … did not start`** — a console window was created and its command
 exited before it could be called started. The message quotes what the pane printed,
 which is the diagnosis when there is one; when the command could not be executed at
 all there is nothing to quote, and the cause is almost always that `claude` is not on

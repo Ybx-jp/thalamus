@@ -198,9 +198,9 @@ thalamus snapshot                  # flush the in-memory graph to disk now
 
 ```bash
 thalamus pin <scope>               # launch a session pinned to an expert scope
-thalamus roster                    # bring up the tmux roster (--all for every expert)
-thalamus spawn <scope>             # one on-demand pinned tmux window
-thalamus console                   # drive the roster from a browser or phone
+thalamus spawn <scope>             # console: one on-demand pinned tmux window
+thalamus console                   # drive pinned sessions from a browser or phone;
+                                   #   creates its tmux session if missing
 thalamus quick ask <scope> "<q>"   # consult a live expert by forking its own session
 thalamus quick targets             # which experts are forkable, and how warm each is
 thalamus quick delta               # what a fork contributed back
@@ -218,7 +218,7 @@ thalamus preset remove cost deep                           # refused while a man
 
 ### Rooms
 
-A room is a private roster whose members see and message only each other.
+A room is a private set of live sessions whose members see and message only each other.
 
 ```bash
 thalamus room create <name>        # create a room's config directory
@@ -699,7 +699,7 @@ expert subgraphs the server grants.<!-- (A0171, cites-as-live) -->
 | `THALAMUS_GRAPH_URL` | The Gremlin endpoint, read by `status`, `init`, `init --check` and the MCP server. **Every other command ignores it** and takes `--url`, defaulting to `ws://localhost:8182/gremlin` — so setting this and running `ingest` or `extract` still writes to localhost ([#60](https://github.com/Ybx-jp/thalamus/issues/60)) |
 | `THALAMUS_ARCHIVE_DIR` | Where retained transcripts and their indexes live, instead of `~/.thalamus/archive`. The index follows the archive; it has no override of its own |
 | `THALAMUS_LOG_LEVEL` | Log level for the MCP server process (`thalamus-mcp`), default `WARNING`. Set it to `INFO` or `DEBUG` when a recall is returning something you cannot explain |
-| `THALAMUS_TMUX_SOCKET` | The tmux server the roster, `spawn`, `dispatch` and the console address (`tmux -L …`), default `thalamus`. Two checkouts on one box get separate control planes by setting it differently |
+| `THALAMUS_TMUX_SOCKET` | The tmux server the console's `roster`, `spawn` and `dispatch` address (`tmux -L …`), default `thalamus`. Two checkouts on one box get separate control planes by setting it differently |
 | `THALAMUS_WITHHOLD` | The per-node suppression rate `memory_recall` applies, read at each call. Absent or unparseable means off, and an unrandomized session logs nothing — so the intervention leaves no trace when it is not running. Every draw appends to `~/.thalamus/policy/`; `thalamus eval withholding` reads them |
 | `THALAMUS_REFLEX_CHANNEL` | Which model serves the reflex agentic plan, read by the trigger and the worker: `claude` (the default) runs each job as one `claude -p` and jobs run side by side; `local` runs them one at a time on the local model. Any other value records every queued job as an error naming it |
 | `THALAMUS_REFLEX_MODEL` | The model the agentic plan asks its channel for, passed through unchecked; default `haiku` on `claude`, `THALAMUS_LOCAL_MODEL` on `local` |

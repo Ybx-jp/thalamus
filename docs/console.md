@@ -2,9 +2,13 @@
 
 **Drive your pinned sessions from your phone.**
 
-A pinned session is an OS process in a tmux window ([concepts.md](concepts.md),
-"the process is the pin"), which makes tmux the one place all of them are
-addressable at once. `thalamus console` puts a small HTTP server in front of that
+The console is optional, and it is the part of Thalamus that needs tmux. It runs each
+pinned session ([concepts.md](concepts.md), "the process is the pin") as a window in a
+tmux session of its own, which makes tmux the one place all of them are addressable at
+once. `thalamus console` creates that session with only the `main` anchor window when
+it is missing, and experts are spawned on demand, so the console's session is a set of
+addressable processes.<!-- (A0224, cites-as-live) -->
+`thalamus console` puts a small HTTP server in front of that
 tmux session and serves a browser client over it: one row per session, the live
 pane, a composer, the terminal keys a phone keyboard doesn't have, and buttons for
 the two operations that otherwise need a laptop — spawning an expert session in a
@@ -15,8 +19,11 @@ always addressing windows *by index*, so the session's active window never moves
 and a terminal attached to the same session is left exactly where you put it. You
 can drive the roster from a phone while your desk is still logged into it.
 
-### The roster's tmux server
+### The console's tmux server
 
+The console's session runs on a tmux server of its own — `tmux -L thalamus`, named by
+`THALAMUS_TMUX_SOCKET` — because tmux ignores `HOME` and a socket is the only thing
+that separates one checkout's control plane from another's.<!-- (A0015, cites-as-live) -->
 Every tmux call this project makes names its server: `tmux -L thalamus …`. The
 socket name is `THALAMUS_TMUX_SOCKET` (default `thalamus`), and it is the one
 isolation boundary the harness cannot get from the environment — tmux locates its
@@ -24,7 +31,8 @@ server through `/tmp/tmux-<uid>/`, never through `HOME`, so `HOME=/tmp/x tmux
 list-sessions` returns the operator's real sessions.
 
 Two things follow. A bare `tmux attach` on your desk will not find the roster; use
-`tmux -L thalamus attach -t thalamus`, which is the line `thalamus roster` prints.
+`tmux -L thalamus attach -t thalamus`, which is the line `thalamus console` prints when
+it creates the session.
 And two checkouts on one box get separate control planes by setting
 `THALAMUS_TMUX_SOCKET` differently — nothing else has to change.
 
@@ -39,7 +47,7 @@ client of its own — it reads whatever size the window has — so an attaching
 desktop terminal or the `/tty` page must not resize the windows out from under it;
 that is what `manual` buys, and it is why a desktop `tmux -L thalamus attach`
 shows a fixed 60×50 box rather than filling the terminal. Nothing reads tmux's `default-size`: it is 80×24 on any box
-without a hand-written tmux.conf, and the project ships none. `thalamus roster` and
+without a hand-written tmux.conf, and the project ships none. Opening the anchor and
 every spawn resize every window in the session, so a session created at the stock
 size by `tmux new -A` is corrected the next time either runs.
 
@@ -75,17 +83,17 @@ Installable to a home screen as a PWA, and it works in any browser without that.
 
 Assumes [getting started](getting-started.md) is done — Thalamus installed and
 `thalamus init` run. Beyond that you need **tmux** and the **claude** CLI, which
-the roster launches.
+the console launches.
 
 Commands below are written as `thalamus …`. The CLI lives at `.venv/bin/thalamus`
 and is not on your PATH: prefix them with `uv run`, or `source .venv/bin/activate`
 first.
 
 ```bash
-thalamus roster        # opens tmux session `thalamus` with the `main` anchor window
 thalamus console       # serves http://127.0.0.1:8378
 ```
 
+On its first run it creates tmux session `thalamus` with the `main` anchor window.
 Open <http://127.0.0.1:8378> and you have it. Ctrl+C stops the server; the tmux
 session and every session in it keep running — the console is a window onto the
 roster, never its owner.
@@ -428,9 +436,8 @@ action as the smaller target is how a mis-tap happens.
 
 **⚙ is the admin sheet**, and it holds what is not a per-session act:
 
-- **roster sync** re-runs `thalamus roster`, which is idempotent backfill: it adds
-  windows the pin ledger expects, recreates the anchor if it exited, and touches
-  nothing already running.
+- **roster sync** recreates the session and its `main` anchor if either is gone, and
+  touches nothing already running.
 - **restart all** recycles every window in sequence, which is N irreversible losses
   behind one confirm. It sits in its own section with its own shape rather than
   beside `roster sync`, and its confirm enumerates the count and the groups it will
@@ -570,6 +577,8 @@ WorkingDirectory=%h/code/thalamus
 # PATH must be pinned, not inherited — see "Pin PATH in the unit" below.
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/code/thalamus/.venv/bin/thalamus console --service thalamus-console.service
+# The console creates the tmux session, so the tmux server is in this unit's cgroup.
+KillMode=process
 Restart=on-failure
 RestartSec=2
 
@@ -730,36 +739,23 @@ from a process of its own session so launchd signalling the job cannot take the
 request down with it. Name any other units you want reachable from your phone the same
 way (`--service` repeats).
 
-The tmux session is separate and outlives the console. If you want it up at boot
-too, give it its own unit — and let **`thalamus roster`** be what creates it:
+The tmux session outlives the console, and the console is what creates it: on
+startup, when the session is missing, it creates it with the `main` anchor as its
+first window. That is why the unit above carries `KillMode=process`. The tmux server
+is forked by the console and stays in the unit's cgroup, and the default
+`control-group` kills everything in that cgroup on stop: a `systemctl --user restart`
+of the console, or the admin sheet's restart, would end every session with it.
+Measured on systemd 255 with a tmux server forked by a transient unit: gone after
+`stop` under the default, still running under `KillMode=process`.
 
-```ini
-# ~/.config/systemd/user/thalamus-roster.service
-[Unit]
-Description=Thalamus roster
-After=network.target
-Before=thalamus-console.service        # and any unit that attaches a terminal
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=%h/code/thalamus
-ExecStart=%h/code/thalamus/.venv/bin/thalamus roster
-KillMode=process
-```
-
-**Whichever unit creates the session defines window 0**, and the lowest-indexed
+**Whichever process creates the session defines window 0**, and the lowest-indexed
 window is the anchor — un-closable, and the reference directory for roster sync.
-A unit running bare `tmux -L thalamus new -A -s thalamus` (or a web terminal doing it on
-first connect) puts a *shell* there, and it then outranks every real session for
-the life of the tmux server: roster sync adds `main` beside it rather than
-reclaiming index 0, and **restart** on it types `/exit` into a shell, so the
-recycle hangs its whole 4-minute grace. Ordering the roster first is what keeps
-the anchor a real session.
-
-`KillMode=process` matters for the same reason: the tmux server is forked by
-`ExecStart` and stays in the unit's cgroup, so the default `control-group` would
-take every session down with a `systemctl --user restart` of this unit.
+A unit running bare `tmux -L thalamus new -A -s thalamus` (or a web terminal doing it
+on first connect) puts a *shell* there if it runs before the console, and the shell
+then outranks every real session for the life of the tmux server: roster sync adds
+`main` beside it rather than reclaiming index 0, and **restart** on it types `/exit`
+into a shell, so the recycle hangs its whole 4-minute grace. Start the console before
+anything that attaches a terminal with `new -A`.
 
 ---
 
@@ -953,12 +949,22 @@ renders open in `read`, marked waiting, and is answered in `term` with ↑ ↓ a
 `⏎`. If nothing at all repaints, the beacon reads "no signal" once a request has
 outlived its deadline; the next poll recovers on its own without a reload.
 
-**No sessions, or "No output captured".** There's no tmux session by that name yet, or
-it has no windows. `thalamus roster` creates it; the console prints a warning at
-startup when it can't find one, and serves anyway so the ＋ button still works.
+**No sessions, or "No output captured".** There's no tmux session by that name, or it
+has no windows. The console creates the session at startup and prints to its own
+stderr if `main` would not start, then serves anyway so the ＋ button and roster
+sync still work. A session whose last window exited is gone; roster sync brings it
+back.
 
 **A restart never finishes.** The session is holding a dialog `/exit` can't
 dismiss. It force-respawns after 4 minutes; that path skips distillation.
+
+**Sessions won't start, and the anchor restart hangs.** Something attached with
+`tmux -L thalamus new -A -s thalamus` before the console started, so window 0 is a
+bare shell and `main` sits at index 1. Restart on the anchor types `/exit` into bash
+(`-bash: /exit: No such file or directory`), the pane never dies, and the console sits
+`recycling` for the full grace. Confirm index 0 is an idle shell (`tmux -L thalamus
+list-panes`, no child processes), then `tmux -L thalamus kill-window -t thalamus:0`
+and press roster sync.
 
 **Slash commands are missing.** They're read per-window from `~/.claude/skills`
 and that window's `.claude/skills`, refetched whenever you open a different session.

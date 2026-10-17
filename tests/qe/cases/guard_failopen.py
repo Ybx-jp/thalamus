@@ -144,7 +144,7 @@ _PERMITTED_COMMAND = "ls -la /tmp"
 #: marker and interpreter invocation both present (issue #204). Its verdict depends
 #: on scope, unlike every other guard in this table, so its row pins the scope this
 #: probe runs as via `env` rather than trusting the `THALAMUS_SCOPE=main` every other
-#: row is invoked under (see `_invoke`) — `architect` is a real roster scope, not a
+#: row is invoked under (see `_invoke`) — `architect` is a real expert scope, not a
 #: name invented for this probe.
 _CONNECT = (
     'python -c "from thalamus.substrate.writer import connect; '

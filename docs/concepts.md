@@ -128,7 +128,7 @@ A test asserts every owning scope still ships a manifest.
 
 Five manifests ship as examples: `architect`, `designer`, `eval-methodology`,
 `literature` and `qe`. Point `THALAMUS_CONFIG_DIR` at a directory holding your own
-`experts/` to use a different roster; the same variable supplies the eval task battery
+`experts/` to use a different set of experts; the same variable supplies the eval task battery
 from `tasks/`.<!-- (A0010, cites-as-live) -->
 
 ## Pinning
@@ -141,15 +141,9 @@ scope.<!-- (A0012, cites-as-live) -->
 The MCP server reads that at startup, and **no tool accepts a scope argument** — the
 server decides what the session can see, and a model cannot widen its own view by
 asking.<!-- (A0001, cites-as-live) -->
-The pin lasts as long as the process.
-
-`thalamus roster` brings up the `main` anchor and experts are spawned on demand (`--all`
-opens one window per expert), so the roster is a set of addressable
-processes.<!-- (A0014, cites-as-live) -->
-That is also what makes the console possible: a browser tab per window. The roster runs
-on a tmux server of its own — `tmux -L thalamus`, named by `THALAMUS_TMUX_SOCKET` —
-because tmux ignores `HOME` and a socket is the only thing that separates one checkout's
-control plane from another's.<!-- (A0015, cites-as-live) -->
+The pin lasts as long as the process, and `thalamus pin` hands the terminal it was run in
+to that process. The console, which is optional, runs pinned sessions as tmux windows
+instead so one browser can reach all of them ([console.md](console.md)).
 
 A pin is not one property, and the harnesses do not carry all of it. Routing and the
 boundary bind on all three.<!-- (A0016, cites-as-live) -->
@@ -381,9 +375,13 @@ transcript.<!-- (A0064, cites-as-live) -->
 
 ## Rooms
 
-A **room** is a private roster. Members see and message each other and nobody else,
-enforced by a per-room config directory and an outbound guard rather than by
-convention. Sessions are launched into a room with `--room`.
+A **room** is a private set of live sessions. Members see and message each other and
+nobody else, enforced by a per-room config directory and an outbound guard rather than
+by convention. Sessions are launched into a room with `--room`. Rooms are part of the
+console: their members are tmux windows, which is how a room can hold Claude Code,
+codex and Cursor sessions at once. The graph records only which room a session was in,
+and agreement between sessions that shared one is flagged as possibly one
+conversation.
 
 ## Ingestion
 
@@ -500,7 +498,7 @@ against `codex_exec`/`"exec"`, with a subagent run distinguished by a `source` t
 an
 object rather than a string. Both fields are read, because a subagent inherits its
 parent's originator and is precisely the nested case the gate exists for: a headless run
-shelled out of a roster window inherits that window's `TMUX_PANE`, and an unconditional
+shelled out of a console window inherits that window's `TMUX_PANE`, and an unconditional
 claim would hand the operator's read view to a probe.
 
 Codex also gates its hooks behind a trust record the operator grants once, per

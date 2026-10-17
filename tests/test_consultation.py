@@ -278,7 +278,7 @@ def test_unknown_experts_and_empty_questions_are_refused(monkeypatch):
     """
     Scenario: The model asks for a scope with no manifest, and for nothing at all
 
-    The manifest set is the roster: no manifest, no expert.
+    The manifest set is the expert set: no manifest, no expert.
     """
     _stub_manifests(monkeypatch)
     graph = FakeGraph()

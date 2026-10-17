@@ -161,11 +161,11 @@ class CapabilityBoundary(BaseModel):
     Agentverse gap analysis names as two High
     gaps in agent platforms — no capability permissions (cloud analogue: IAM
     least-privilege) and no policy engine (cloud analogue: org SCPs), arXiv
-    2606.20570 — for one roster rather than for a platform.
+    2606.20570 — for one set of experts rather than for a platform.
 
     **Omission does not mean unbounded, unlike `WriteBoundary`.** The operator's
-    decision here was made once for the whole roster, so the default lives in
-    `ROSTER_CAPABILITY_DEFAULT` and a manifest that declares nothing inherits it;
+    decision here was made once for every expert, so the default lives in
+    `EXPERT_CAPABILITY_DEFAULT` and a manifest that declares nothing inherits it;
     an explicit block overrides it, and an explicit empty block is the opt-out.
     Three states, each with a written meaning — LSP's rule for omitted capability
     properties (`scope:architect:claim:5d76e83a27802b2f`). The defaults differ
@@ -245,12 +245,12 @@ class CapabilityBoundary(BaseModel):
         return pattern
 
 
-# One roster-wide decision, stored once. Six identical manifest blocks would be a
+# One decision for every expert, stored once. Six identical manifest blocks would be a
 # normalization error, and duplicated declarations have drifted in this codebase
 # before — `install.py`'s prose parity claim went stale unnoticed, which is why that
 # count is now derived rather than stated. Every pinned expert inherits this;
 # `designer` opts out in its own manifest; `main` never reaches the guard.
-ROSTER_CAPABILITY_DEFAULT = CapabilityBoundary(
+EXPERT_CAPABILITY_DEFAULT = CapabilityBoundary(
     deny_tools=["Artifact", "mcp__penpot__*"],
     deny_skills=[
         "artifact-*",
@@ -264,7 +264,7 @@ ROSTER_CAPABILITY_DEFAULT = CapabilityBoundary(
         "a markdown file and its path, and the operator can read or publish it; if "
         "the artifact itself matters, open a thread for `designer`. The Penpot MCP "
         "tools are `designer`'s authoring surface for the same reason and are denied "
-        "roster-wide for the same charter argument, narrower than the skill/Artifact "
+        "to every expert for the same charter argument, narrower than the skill/Artifact "
         "denial only in that a scope can carve a slice back out via its own "
         "`allow_tools` — `frontend`'s read/comment grant is the one declared case."
     ),
@@ -319,8 +319,8 @@ class ExpertManifest(BaseModel):
     capability_boundary: CapabilityBoundary | None = Field(
         None,
         description="Tools and skills this scope may not invoke. Absent means "
-        "inherit ROSTER_CAPABILITY_DEFAULT — the opposite of write_boundary's default, "
-        "because this decision was made once for the whole roster rather than per scope. "
+        "inherit EXPERT_CAPABILITY_DEFAULT — the opposite of write_boundary's default, "
+        "because this decision was made once for every expert rather than per scope. "
         "An explicit empty block is the opt-out.",
     )
 
@@ -346,7 +346,7 @@ class ExpertManifest(BaseModel):
 
     @property
     def effective_capability_boundary(self) -> CapabilityBoundary:
-        """What actually binds this scope — the declared block, or the roster default.
+        """What actually binds this scope — the declared block, or the expert default.
 
         Read this rather than the field: the field's `None` is a real third state,
         and a caller that treats it as an empty boundary silently unbinds every
@@ -354,7 +354,7 @@ class ExpertManifest(BaseModel):
         """
         if self.capability_boundary is not None:
             return self.capability_boundary
-        return ROSTER_CAPABILITY_DEFAULT
+        return EXPERT_CAPABILITY_DEFAULT
 
     def allows(self, origin: str) -> bool:
         """Is this origin inside the allowlist? Non-URL origins are operator-fed."""

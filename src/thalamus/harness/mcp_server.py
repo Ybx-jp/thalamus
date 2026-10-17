@@ -82,9 +82,9 @@ SCOPE = resolve_pin()
 # the consulted scope per-exchange.
 #
 # Read per call, not once at import. SCOPE can be resolved at startup because a
-# process's pin cannot change under it, but the roster can: manifests are added to
+# process's pin cannot change under it, but the expert set can: manifests are added to
 # config/experts/ while servers are running, and a server that cached this list
-# serves every session it owns a roster frozen at its own launch date — silently,
+# serves every session it owns an expert set frozen at its own launch date — silently,
 # since a missing scope reads as an expert that simply knows nothing. `available_scopes`
 # globs the manifest directory on each call, so freshness costs one directory listing.
 def knowledge_scopes() -> list[str]:

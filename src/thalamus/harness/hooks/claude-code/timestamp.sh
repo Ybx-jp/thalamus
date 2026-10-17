@@ -2,7 +2,7 @@
 # Thalamus timestamp hook — keep every session (especially long-running pinned
 # expert tmux sessions) aware of the actual wall clock.
 #
-# Why: the harness stamps currentDate once at session start. Pinned roster
+# Why: the harness stamps currentDate once at session start. Pinned expert
 # sessions run for days, so their notion of "today" drifts and they hallucinate
 # dates in answers, distillations, and doc edits (operator-observed,
 # 2026-07-18). This injects one short line of ground truth on every prompt.

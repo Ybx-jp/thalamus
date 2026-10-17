@@ -33,8 +33,8 @@ SOCKET_ENV = "THALAMUS_TMUX_SOCKET"
 # Named rather than empty. An empty default would mean "the box's default server",
 # which is the unscoped behaviour wearing a flag, and it would make the isolation
 # depend on every caller remembering to set the variable. The roster therefore lives
-# on its own server: `tmux -L thalamus attach -t thalamus`, and `thalamus roster`
-# prints that line.
+# on its own server: `tmux -L thalamus attach -t thalamus`, and `thalamus console`
+# prints that line when it creates the session.
 DEFAULT_SOCKET = "thalamus"
 
 
@@ -74,8 +74,8 @@ def inside() -> bool:
     `$TMUX` is `<socket-path>,<server-pid>,<session-id>`, and a bare truth test on it
     answers a different question — "some tmux" — which was the same answer before the
     server was named and is the wrong one now. An operator sitting in a default-socket
-    tmux who runs `thalamus roster` would otherwise be treated as already inside the
-    roster, and the windows would open on a server they are not looking at.
+    tmux who runs `thalamus pin` would otherwise be treated as already inside the
+    roster, and the window would open on a server they are not looking at.
     """
     handle = os.environ.get("TMUX", "")
     if not handle:

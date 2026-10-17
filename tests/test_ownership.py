@@ -34,7 +34,7 @@ OWNED = f"{REPO}/tests/qe/expectations.json"
 
 
 @pytest.fixture
-def owner_roster(tmp_path):
+def owner_experts(tmp_path):
     """A roster declaring the scope that owns `tests/qe/`, and its mirror deny.
 
     Ownership binds by scope name and reads no manifest — that independence is the
@@ -42,11 +42,11 @@ def owner_roster(tmp_path):
     it bind `main`. Two things around it do read one: scope *resolution* through
     the agent picker admits a name only when a manifest backs it, and the mirror
     half of the partition (`*/src/*`) is a `write_boundary` field. Both are handed
-    a roster of this test's own making, so the partition property is asserted
+    an expert set of this test's own making, so the partition property is asserted
     against a declared boundary rather than against whichever experts a checkout
     happens to carry.
     """
-    experts = tmp_path / "roster" / "experts"
+    experts = tmp_path / "config" / "experts"
     experts.mkdir(parents=True)
     (experts / "qe.yaml").write_text(
         "contract: v0\n"
@@ -58,7 +58,7 @@ def owner_roster(tmp_path):
         "  reason: >-\n"
         "    qe holds the oracle, not the fix.\n"
     )
-    return {"THALAMUS_CONFIG_DIR": str(tmp_path / "roster")}
+    return {"THALAMUS_CONFIG_DIR": str(tmp_path / "config")}
 
 
 def run_guard(payload, home, env=None):
@@ -226,13 +226,13 @@ class TestTheDegradedPathFailsClosed:
         assert result.returncode == 2
         assert "/tests/qe/" in result.stderr
 
-    def test_the_owner_still_passes_on_the_degraded_path(self, tmp_path, owner_roster):
+    def test_the_owner_still_passes_on_the_degraded_path(self, tmp_path, owner_experts):
         payload = {
             "tool_name": "Edit",
             "tool_input": {"content": f"writing into {REPO}/tests/qe/x.json"},
             "agent_type": "thalamus-qe",
         }
-        assert run_guard(payload, tmp_path, owner_roster).returncode == 0
+        assert run_guard(payload, tmp_path, owner_experts).returncode == 0
 
     def test_an_unrelated_payload_is_not_swept_up(self, tmp_path):
         payload = {
@@ -250,24 +250,24 @@ class TestTheGuardEnforcesIt:
         assert "owned by scope `qe`" in result.stderr
         assert "qe" in result.stderr
 
-    def test_qe_can_write_its_own_directory(self, tmp_path, owner_roster):
+    def test_qe_can_write_its_own_directory(self, tmp_path, owner_experts):
         result = run_guard(
             write_payload(OWNED),
             tmp_path,
-            {"CLAUDE_CODE_AGENT": "thalamus-qe", **owner_roster},
+            {"CLAUDE_CODE_AGENT": "thalamus-qe", **owner_experts},
         )
         assert result.returncode == 0
 
-    def test_the_partition_runs_both_ways(self, tmp_path, owner_roster):
+    def test_the_partition_runs_both_ways(self, tmp_path, owner_experts):
         """The point of the rule. A scope denied the implementation tree while `main`
         writes its oracle freely is not partitioned from it — an authority that runs
         one way is not a partition."""
         qe_into_src = run_guard(
             write_payload(f"{REPO}/src/thalamus/cli.py"),
             tmp_path,
-            {"CLAUDE_CODE_AGENT": "thalamus-qe", **owner_roster},
+            {"CLAUDE_CODE_AGENT": "thalamus-qe", **owner_experts},
         )
-        main_into_qe = run_guard(write_payload(OWNED), tmp_path, owner_roster)
+        main_into_qe = run_guard(write_payload(OWNED), tmp_path, owner_experts)
         assert qe_into_src.returncode == 2, _evidence("qe into src/", qe_into_src)
         assert main_into_qe.returncode == 2, _evidence("main into tests/qe/",
                                                        main_into_qe)
