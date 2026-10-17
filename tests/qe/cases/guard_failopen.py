@@ -109,6 +109,8 @@ from pathlib import Path
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 _HOOKS_ROOT = Path(__file__).resolve().parents[3] / "src/thalamus/harness/hooks"
+#: The config root holding the `ownership.json` role-guard reads.
+_CONFIG_ROOT = Path(__file__).resolve().parents[3] / "config"
 
 #: Claude Code's and codex's blocking exit code. Anything else lets the call through.
 _BLOCK = 2
@@ -124,8 +126,8 @@ NO_VERDICT = "NO_VERDICT"
 #: into a grep -E pattern and `room-guard.sh` into another.
 _ROOM = "qeprobe"
 
-#: A path no scope but `qe` may write, per contract/ownership.PATH_OWNERSHIP. Absolute,
-#: because that table fnmatches the absolute POSIX path — and containing the literal
+#: A path no scope but `qe` may write, per the `qe-oracle` row of the config root's
+#: `ownership.json`. Absolute, because that table fnmatches the absolute POSIX path — and containing the literal
 #: `/tests/qe/` so the guard's degraded raw-payload branch matches it too. Either way
 #: the verdict is a block, which is what makes this control independent of whether the
 #: box can import `thalamus.contract.ownership` at all.
@@ -311,10 +313,15 @@ def _invoke(harness: str, guard: _Guard, stdin: str, *,
     guards resolve is a property of this call and not of the session running it. Under
     the operator's own pin `role-guard.sh` would resolve `qe`, which owns `_OWNED_PATH`,
     and its positive control would silently stop being one.
+
+    THALAMUS_CONFIG_DIR is pinned to this checkout's `config/` for the same reason: the
+    ownership table is read from the config root, and a root without `ownership.json`
+    reserves nothing, which would silence the same control.
     """
     env = dict(os.environ)
     env["HOME"] = home
     env["THALAMUS_SCOPE"] = "main"
+    env["THALAMUS_CONFIG_DIR"] = str(_CONFIG_ROOT)
     env.pop("CLAUDE_CODE_AGENT", None)
     env.pop("THALAMUS_ROOM", None)
     env.pop("THALAMUS_SANDBOX", None)  # sandbox makes every hook exit 0; that mutes the probe
