@@ -72,6 +72,20 @@ declaration is STALE, and fails this case, when:
   `CASE_MODULES` nor its tree) and the declaration is new in this change -- a typo or a
   removal that never happened.
 
+Two bases, each for what it is right for. The erosion signals and the excusing of
+removals (which removals a declaration turns from red to non-red) are judged against the
+event's base: a case module removed in this push is the thing being reported, and on a
+push to master the merge-base with `origin/master` is head itself, so only the event's
+`before` can name what that push changed. The stale rule is judged against the event's
+base OR the merge target (the merge-base of head and `origin/master`), and a declaration
+is not stale when either one shows the removal. A branch pushed in several steps can
+remove a module in one push and declare it in a later one; at that later push the pushed
+ref's prior tip already lacks the module, so the event's base alone reads a legitimate
+retirement as one that never happened (#348 at 3cafa39, push-event run 38987551369). The
+merge target still has the module, which is what separates that case from the two the
+rule exists for: a typo, and a removal that never happened, are absent at both. Inert is
+likewise judged against either base: declared at it, and the module already absent there.
+
 A declaration already present at the base whose module the base already lacks is
 inert, not stale: the removal merged, the entry has done its work, and failing it would
 turn every pull request in flight at that moment red for a file none of them touched
@@ -224,6 +238,24 @@ def _base() -> tuple[str, str]:
     )
 
 
+def _merge_target() -> str | None:
+    """The merge-base of HEAD and `origin/master`, or None when it names nothing useful.
+
+    None when no such ref resolves, or when the merge-base is head itself (a push to
+    master): there it carries no information beyond what the event's base does.
+    """
+    for ref in ("origin/master", "origin/HEAD"):
+        rc, resolved = _git("rev-parse", "--verify", "--quiet", ref)
+        if rc != 0 or not resolved:
+            continue
+        rc, merge_base = _git("merge-base", "HEAD", ref)
+        if rc != 0 or not _is_commit(merge_base):
+            return None
+        rc, head = _git("rev-parse", "HEAD")
+        return None if rc == 0 and head == merge_base else merge_base
+    return None
+
+
 def _content_at(rev: str, rel: str) -> str | None:
     rc, out = _git("show", f"{rev}:{rel}")
     if rc != 0:
@@ -335,13 +367,17 @@ def classify_removals(
     head_files: set[str],
     declared: dict[str, retirements_mod.Retirement],
     declared_at_base: set[str],
+    target_modules: set[str] | None = None,
+    target_files: set[str] | None = None,
+    declared_at_target: set[str] | None = None,
 ) -> tuple[list[str], list[str], list[str]]:
     """(undeclared deregistered, undeclared deleted files, stale declarations).
 
     Pure, so the control can drive it with synthetic sets. The first two are what the
     guard reports; a module named in `declared` and actually removed is excused from
     both. The third is the declarations that match nothing (see "Declared
-    retirements" in the module docstring).
+    retirements" in the module docstring). The `target_*` arguments are the merge
+    target's view (None when there is none); they widen only the stale rule.
     """
     by_file = {case_file_of(m): m for m in declared}
     dereg = sorted(base_modules - head_modules)
@@ -358,6 +394,12 @@ def classify_removals(
                 f"CASE_MODULES at head -- the case is back; delete the declaration")
         elif module in removed:
             continue
+        elif target_modules is not None and target_files is not None and (
+                module in target_modules or entry.case_file in target_files):
+            continue  # removed since the merge target, in an earlier push of this branch
+        elif (declared_at_target is not None and module in declared_at_target
+              and target_modules is not None and target_files is not None):
+            continue  # inert against the merge target: declared there, module absent there
         elif (module in declared_at_base and module not in base_modules
               and entry.case_file not in base_files):
             continue  # inert: the removal already merged
@@ -526,6 +568,29 @@ def _control_retirements() -> None:
     if got != ([], [], []):
         raise Undecidable(f"a merged-and-carried declaration was failed: {got!r}")
 
+    # #348: removal in one push, declaration in a later one. The push base (the commit
+    # between) already lacks the module; the merge target still has it.
+    got = classify_removals(
+        head_m, head_m, head_f, head_f, decl("qe.cases.beta"), set(),
+        base_m, base_f, set())
+    if got != ([], [], []):
+        raise Undecidable(f"a retirement split across pushes was failed as stale: {got!r}")
+
+    # and the two things the rule exists for stay stale when a merge target is given:
+    # a typo (absent at both) and a declaration the target never had a module for
+    got = classify_removals(
+        head_m, head_m, head_f, head_f, decl("qe.cases.gamma"), set(),
+        base_m, base_f, set())
+    if len(got[2]) != 1 or "not removed" not in got[2][0]:
+        raise Undecidable(f"a typo'd declaration passed with a merge target: {got!r}")
+
+    # the module is back at head: stale whatever the target says
+    got = classify_removals(
+        base_m, base_m, base_f, base_f, decl("qe.cases.beta"), set(),
+        base_m, base_f, set())
+    if len(got[2]) != 1 or "back" not in got[2][0]:
+        raise Undecidable(f"a restored module passed with a merge target: {got!r}")
+
     # the declaration file refuses what would make "declared" ambiguous
     for bad in (
         '{"retirements": [{"module": "qe.cases.x", "reason": "", "removed_by": "#1"}]}',
@@ -572,8 +637,25 @@ def run() -> Finding | None:
     except (OSError, retirements_mod.MalformedRetirements) as exc:
         raise Undecidable(f"the retirement declarations cannot be read: {exc}")
 
+    target = _merge_target()
+    target_modules = target_files = declared_at_target = None
+    if target is not None:
+        target_runpy = _content_at(target, _RUNPY_REL)
+        target_modules = case_modules(target_runpy) if target_runpy is not None else set()
+        target_files = _case_files_at(target)
+        try:
+            target_decl_text = _content_at(target, retirements_mod.RETIREMENTS_REL)
+            declared_at_target = set(
+                retirements_mod.parse(
+                    target_decl_text, f"{retirements_mod.RETIREMENTS_REL} at {target}")
+                if target_decl_text is not None else {}
+            )
+        except retirements_mod.MalformedRetirements as exc:
+            raise Undecidable(f"the retirement declarations cannot be read: {exc}")
+
     deregistered, deleted, stale = classify_removals(
-        base_modules, head_modules, base_files, head_files, declared, declared_at_base)
+        base_modules, head_modules, base_files, head_files, declared, declared_at_base,
+        target_modules, target_files, declared_at_target)
 
     problems: list[str] = []
     if deregistered:
