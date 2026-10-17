@@ -83,6 +83,22 @@ reproduction PR that adds a known-red entry therefore shows red on `mute-review`
 green on `adversarial` and the rest of the required checks — the addition is reported,
 not blocked, and the merge decision is the operator reading that report.
 
+## Retiring a case
+
+`case-erosion-is-never-silent` is red on a case module that left the tree or
+`CASE_MODULES`. When the case's subject was deleted from `src/` on purpose, the branch
+that deletes it adds an entry to `retirements.json` in the same change:
+
+    {"module": "qe.cases.some_case", "reason": "why there is no subject", "removed_by": "#123"}
+
+`removed_by` is an issue or PR reference, or the `src/` path that is gone. The entry
+excuses only that module's removal; a surviving case's shrinking `classes=` or dropping
+`Finding(` sites stays red. `expectation-additions-are-never-silent` reports an entry
+added since the base revision, so the retirement shows red on `mute-review` and green on
+`adversarial`, as an added known-red entry does. An entry fails the erosion guard if its
+module is registered in `CASE_MODULES` at head, or if nothing was removed relative to the
+base. Once the removal has merged the entry is inert and may be deleted.
+
 ## Adding a case
 
 A case returns `None` to pass or a `Finding` to fail, and must not raise — a raised
