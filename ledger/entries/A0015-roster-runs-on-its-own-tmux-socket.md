@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:35:24-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/tmux.py § "SOCKET_ENV" =sha256:fee4ab61b591612a236711bc86876d9a71e4e486650a99142c4e146ddb7462b5
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/console/tmux.py § "SOCKET_ENV" =sha256:fee4ab61b591612a236711bc86876d9a71e4e486650a99142c4e146ddb7462b5
+  note: harness/tmux.py moved to console/tmux.py unchanged. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

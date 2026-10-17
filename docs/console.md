@@ -892,7 +892,7 @@ keeps that true.
   session's own start, epoch seconds, converted at the boundary from the ledger's
   ISO stamp). Absent where the ledger has no value, never inferred from the cwd.
 - **Whether a session is stopped waiting on a human is served, not computed by the
-  client.** `harness/dispatch.py` owns what the state means and the harness's
+  client.** `console/dispatch.py` owns what the state means and the harness's
   session descriptor owns the value; the console joins them to a window and reduces
   them to `observed`, `blocked`, `blocked_since`, `activity` and `activity_since`.
   **`observed` is the field to branch on.** Session descriptors are partitioned by

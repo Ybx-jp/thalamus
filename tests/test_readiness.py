@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from thalamus.harness import panes as panes_mod
-from thalamus.harness import readiness
+from thalamus.console import panes as panes_mod
+from thalamus.console import readiness
 
 HOOKS = Path(__file__).resolve().parents[1] / "src/thalamus/harness/hooks/cursor"
 
@@ -212,7 +212,7 @@ class TestTheRowTheRefusalNames:
     a row nobody declared is worse than a vague one — it reads as citing a record."""
 
     def test_the_named_row_exists_for_both_harnesses(self):
-        from thalamus.contract.rooms import ROOM_ROWS
+        from thalamus.console.room_capabilities import ROOM_ROWS
 
         declared = {(r.component, r.harness) for r in ROOM_ROWS}
         assert ("room.peer_readiness", "cursor") in declared
@@ -221,7 +221,7 @@ class TestTheRowTheRefusalNames:
     def test_the_cursor_row_states_its_coverage_gap(self):
         """Partial coverage on a safety gate is the shape that hides a failure. The row
         has to say what is bracketed, not merely that something is."""
-        from thalamus.contract.rooms import ROOM_ROWS
+        from thalamus.console.room_capabilities import ROOM_ROWS
 
         row = next(r for r in ROOM_ROWS
                    if r.component == "room.peer_readiness" and r.harness == "cursor")
@@ -239,7 +239,7 @@ class TestTheRowTheRefusalNames:
         the *roster* passed the moment tmux supplied one, while the hazard it was
         protecting against was untouched.
         """
-        from thalamus.contract import rooms
+        from thalamus.console import room_capabilities as rooms
         from thalamus.contract.boundaries import Provision
 
         weakened = tuple(
@@ -260,7 +260,7 @@ class TestTheRowTheRefusalNames:
         assert "room.peer_readiness" in detail
 
     def test_the_shipped_table_passes_its_own_gate(self):
-        from thalamus.contract.rooms import check_rooms
+        from thalamus.console.room_capabilities import check_rooms
 
         assert [r for r in check_rooms() if r[1] == "drift"] == []
 

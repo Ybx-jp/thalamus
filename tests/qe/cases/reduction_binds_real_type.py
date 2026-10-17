@@ -50,7 +50,7 @@ def _reads(fn, receiver: str) -> set[str]:
 def run() -> Finding | None:
     import importlib  # noqa: PLC0415
 
-    from thalamus.harness import dispatch  # noqa: PLC0415
+    from thalamus.console import dispatch  # noqa: PLC0415
     from thalamus.harness.quick import LiveSession  # noqa: PLC0415
 
     carried = {f.name for f in dataclasses.fields(LiveSession)}
@@ -81,7 +81,7 @@ def run() -> Finding | None:
         for name in sorted(module_reads):
             if not hasattr(dispatch, name):
                 drifted.append(
-                    f"{fn_name} reads dispatch.{name}, which harness.dispatch does "
+                    f"{fn_name} reads dispatch.{name}, which console.dispatch does "
                     f"not define")
 
     # CONTROL: the scan must actually see reads. A regex that matches nothing turns

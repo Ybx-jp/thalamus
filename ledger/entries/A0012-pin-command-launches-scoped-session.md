@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:35:24-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/pin.py § "launch" =sha256:ce099670146c8d118e1423896cc58b595adca156fc1f3af3982c168eff1fcef7
+  artifact: sha256:71a3ba2212d10eeb8fbe7ce9b6b1c011c09a50d3bf7757e72896a2afff6eef82
+  note: propagated from a moved ground
+- 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/pin.py § "launch" =sha256:71a3ba2212d10eeb8fbe7ce9b6b1c011c09a50d3bf7757e72896a2afff6eef82
+  note: Core `launch` now only execs, setting THALAMUS_SCOPE and any caller-supplied env before it; the tmux-window branch moved to console/windows.py. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

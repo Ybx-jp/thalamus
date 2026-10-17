@@ -600,7 +600,7 @@ def _occasion_fixture(tmp_path):
     operator's, which is where a real room puts them — the same boundary that
     partitions session discovery partitions the transcripts cost is computed from.
     """
-    from thalamus.harness import ceremonies
+    from thalamus.console import ceremonies
 
     ledger = tmp_path / "ceremonies.jsonl"
     ledger.write_text(
@@ -680,7 +680,7 @@ def test_occasion_burn_attributes_to_the_innermost_window_and_counts_once(tmp_pa
       is the work the ceremony structure does not describe
     - a session with no room in the pin ledger is never attributed to one
     """
-    from thalamus.eval.cost import occasion_burn
+    from thalamus.console.occasion_cost import occasion_burn
 
     projects, rooms_base, pins, ledger = _occasion_fixture(tmp_path)
 
@@ -746,7 +746,7 @@ def test_occasion_burn_says_so_when_no_room_transcript_is_reachable(tmp_path):
     room whose members carry no room in the pin ledger is invisible to `eval rooms`
     for the same reason, and a bare zero here reads as "the room was cheap".
     """
-    from thalamus.eval.cost import occasion_burn
+    from thalamus.console.occasion_cost import occasion_burn
 
     projects, rooms_base, _, ledger = _occasion_fixture(tmp_path)
     empty_pins = tmp_path / "empty.jsonl"

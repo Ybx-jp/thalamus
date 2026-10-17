@@ -71,8 +71,8 @@ _CLAUDE = Evidence(
 _TMUX = Evidence(
     kind="source-read",
     at="2026-08-13",
-    where="`harness/panes.py` recovers room, scope and address from "
-          "`#{pane_start_command}`, which `pin._with_room` writes and which survives "
+    where="`console/panes.py` recovers room, scope and address from "
+          "`#{pane_start_command}`, which `rooms._with_room` writes and which survives "
           "`respawn-window`; liveness is `#{pane_dead}`",
     verified_against="panes.py",
     conditions=(),
@@ -85,7 +85,7 @@ _BRACKET = Evidence(
     where="`beforeShellExecution` fires before Cursor's own approval modal — probe hook "
           "logged 11:01:15, modal still unanswered 11:01:20 — so "
           "`hooks/cursor/readiness-*.sh` bracket the interval a modal can occupy and "
-          "`harness/readiness.py` reads the descriptor they write",
+          "`console/readiness.py` reads the descriptor they write",
     verified_against="cursor/2026.08.11-e8db854",
     conditions=(Condition.INTERACTIVE,),
     reask="live-session",

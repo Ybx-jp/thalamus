@@ -49,10 +49,10 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 # Imported at module scope, unlike this module's other Thalamus imports: these two
 # names are re-exported below, and `panes` reaches nothing but the standard library.
-from thalamus.harness import panes
-from thalamus.harness.tmux import argv as tmux_argv
-from thalamus.harness.tmux import literal_text_args
-from thalamus.harness.tmux import socket_name as tmux_socket
+from thalamus.console import panes
+from thalamus.console.tmux import argv as tmux_argv
+from thalamus.console.tmux import literal_text_args
+from thalamus.console.tmux import socket_name as tmux_socket
 
 STATIC_DIR = Path(__file__).with_name("static")
 DEFAULT_PORT = 8378
@@ -108,23 +108,53 @@ _dispatch_cache: object = _PIN_UNSET
 
 
 def dispatch_module():
-    """`thalamus.harness.dispatch`, or None when the package is absent.
+    """`thalamus.console.dispatch`, or None when the package is absent.
 
     Deferred for the same reason as the expert layer. Kept as its own accessor rather
     than reached through `pin_module()` because the console is a *thin client* over
     the verb: every refusal, the whole-fan-out pre-flight and the row writing live in
-    `harness/dispatch.py`, and a second implementation here — even a small one — would
+    `console/dispatch.py`, and a second implementation here — even a small one — would
     be a second policy about when it is safe to type into somebody's session.
     """
     global _dispatch_cache
     if _dispatch_cache is _PIN_UNSET:
         try:
-            from thalamus.harness import dispatch
+            from thalamus.console import dispatch
         except Exception:  # noqa: BLE001 — any import failure means "not available"
             _dispatch_cache = None
         else:
             _dispatch_cache = dispatch
     return _dispatch_cache
+
+
+_windows_cache: object = _PIN_UNSET
+_rooms_cache: object = _PIN_UNSET
+
+
+def windows_module():
+    """`thalamus.console.windows` — spawn and roster — or None when the package is absent."""
+    global _windows_cache
+    if _windows_cache is _PIN_UNSET:
+        try:
+            from thalamus.console import windows
+        except Exception:  # noqa: BLE001 — any import failure means "not available"
+            _windows_cache = None
+        else:
+            _windows_cache = windows
+    return _windows_cache
+
+
+def rooms_module():
+    """`thalamus.console.rooms` — making and listing rooms — or None when absent."""
+    global _rooms_cache
+    if _rooms_cache is _PIN_UNSET:
+        try:
+            from thalamus.console import rooms
+        except Exception:  # noqa: BLE001 — any import failure means "not available"
+            _rooms_cache = None
+        else:
+            _rooms_cache = rooms
+    return _rooms_cache
 
 
 _read_cache: object = _PIN_UNSET
@@ -578,7 +608,7 @@ SHELL_WINDOW_NAME = "shell"
 # What opening a shell reports when there is no roster session to open it in. The
 # console does NOT create the session here, and that is deliberate: `new-session`
 # would put the shell at the lowest window index, which is the anchor — the window
-# roster sync references and nothing can close (`pin.spawn` documents the same
+# roster sync references and nothing can close (`windows.spawn` documents the same
 # hazard). A shell anchor would outrank every real session for the life of the tmux
 # server.
 NO_ROSTER_SESSION = (
@@ -719,9 +749,9 @@ class Config:
     allowed_origins: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        pin = pin_module()
+        pin, windows = pin_module(), windows_module()
         if not self.session:
-            self.session = pin.ROSTER_SESSION if pin else FALLBACK_SESSION
+            self.session = windows.ROSTER_SESSION if windows else FALLBACK_SESSION
         if not self.project_root:
             self.project_root = pin.PROJECT_ROOT if pin else Path.cwd()
         self.project_root = Path(self.project_root).expanduser().resolve()
@@ -1258,24 +1288,24 @@ def roster_sync(cfg: Config) -> tuple[bool, str]:
     to the environment would put it in whatever room this long-lived server process
     was started in — where it would stop being the roster's anchor at all.
 
-    `pin.roster` holds each window it opens to its settle deadline, so a window that
+    `windows.roster` holds each window it opens to its settle deadline, so a window that
     was created and died reports here as a failure rather than as a sync that worked
     and produced nothing — the state in which the client draws its no-session screen
     and tells the operator to run the sync they just ran.
     """
-    pin = pin_module()
-    if pin is None:
+    windows = windows_module()
+    if windows is None:
         return False, EXPERTS_UNAVAILABLE
-    ok, output, error = _run_capturing(pin.roster, cfg.project_root,
+    ok, output, error = _run_capturing(windows.roster, cfg.project_root,
                                        session=cfg.session, room="")
-    if isinstance(error, pin.WindowDied):
+    if isinstance(error, windows.WindowDied):
         return False, "\n\n".join(x for x in (output, SPAWN_FAILED_HINT) if x)
     return ok, output
 
 
 def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "",
              harness: str = "claude") -> tuple[bool, str]:
-    """Open one on-demand pinned window. `harness.pin` owns the mechanics: derived
+    """Open one on-demand pinned window. `console/windows.py` owns the mechanics: derived
     agent write, detached create, window-size pin, room provisioning.
 
     `room` is always passed explicitly, never left to the environment: this server
@@ -1283,18 +1313,18 @@ def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "",
     put every spawn in whatever room the *server* happened to be started in.
 
     A clean return from `tmux new-window` is NOT evidence that a window exists, so
-    `pin.spawn` holds the new window to its harness's settle deadline and raises
-    `pin.WindowDied` if it does not survive. Measured 2026-08-08: with `claude` off
+    `windows.spawn` holds the new window to its harness's settle deadline and raises
+    `windows.WindowDied` if it does not survive. Measured 2026-08-08: with `claude` off
     the server's PATH every spawn answered `{"ok": true}` and produced nothing, which
     reads on the phone as a button that does nothing. Only a death is a failure here
     — a window that is still alive at the deadline is reported started, and one that
     dies after it is visible only in the window list.
     """
-    pin = pin_module()
-    if pin is None:
+    windows = windows_module()
+    if windows is None:
         return False, EXPERTS_UNAVAILABLE
     with SPAWN_LOCK:
-        ok, output, error = _run_capturing(pin.spawn, scope, directory,
+        ok, output, error = _run_capturing(windows.spawn, scope, directory,
                                            session=cfg.session, room=room,
                                            harness=harness)
         if ok:
@@ -1302,7 +1332,7 @@ def do_spawn(cfg: Config, scope: str, directory: Path, room: str = "",
         # The PATH hint belongs to exactly one failure. A window that died is
         # overwhelmingly a window whose command could not be executed; a scope that
         # does not exist or a directory that is not one has already said so itself.
-        if isinstance(error, pin.WindowDied):
+        if isinstance(error, windows.WindowDied):
             return False, "\n\n".join(x for x in (output, SPAWN_FAILED_HINT) if x)
         return False, output
 
@@ -1442,7 +1472,7 @@ def extractor_policy_view() -> list[dict]:
 
 # Reading a harness off a start command is the control plane's own question, and it is
 # now dispatch's too — a Cursor room member is addressed by the pane its start command
-# created. It lives with the rest of that reading in `harness/panes.py`; re-exported
+# created. It lives with the rest of that reading in `console/panes.py`; re-exported
 # here because this module's callers and its tests know it by this name.
 HARNESS_BINARIES = panes.HARNESS_BINARIES
 window_harness = panes.harness_of
@@ -2173,10 +2203,10 @@ class Handler(BaseHTTPRequestHandler):
             from thalamus.console import sweep
             return self._send(200, sweep.status())
         if path == "/api/spawn-options":
-            pin = pin_module()
+            rooms = rooms_module()
             dirs, _ = spawn_dirs(self.cfg)
             return self._send(200, {"scopes": known_scopes(), "dirs": dirs,
-                                    "rooms": pin.rooms() if pin else [],
+                                    "rooms": rooms.rooms() if rooms else [],
                                     "harnesses": spawn_harnesses(),
                                     # Advertised rather than assumed by the client.
                                     # `static/` is served off disk and the Python is
@@ -2185,7 +2215,7 @@ class Handler(BaseHTTPRequestHandler):
                                     # while after every edit — and a shell chip whose
                                     # POST would 404 is a button that does nothing.
                                     "shell": True,
-                                    "experts": pin is not None})
+                                    "experts": has_experts()})
         if path == "/api/frames":
             # Absolute paths stay server-side; the client addresses a frame by name.
             return self._send(200, {"frames": [{"name": f["name"], "panel": f["panel"]}
@@ -2296,7 +2326,7 @@ class Handler(BaseHTTPRequestHandler):
             if harness not in LAUNCH_SHAPES:
                 return self._send(400, {"error": "unknown harness"})
             # Validated rather than matched against the existing list: naming a new
-            # room IS how one is created, and `pin.ensure_room` builds it. The
+            # room IS how one is created, and `rooms.ensure_room` builds it. The
             # charset check is the security-relevant half — the name reaches a path
             # and the guard's roommate pattern.
             if room and not pin.valid_room(room):

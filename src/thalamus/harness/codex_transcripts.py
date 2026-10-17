@@ -631,7 +631,7 @@ def _timestamp(value) -> datetime | None:
 # So the reader here is not a heartbeat and not a screen read. It reports what codex
 # recorded, and reports UNKNOWN whenever the record does not reach.
 
-#: The status vocabulary, which is `harness/dispatch.py`'s and not a second one.
+#: The status vocabulary, which is `console/dispatch.py`'s and not a second one.
 #: Spelled rather than imported because `dispatch` imports half the harness and this
 #: module is on the extraction path; `tests/test_codex_liveness.py` asserts the two
 #: agree, so the duplication cannot drift silently.

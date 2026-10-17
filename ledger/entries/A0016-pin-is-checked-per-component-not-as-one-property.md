@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:35:24-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/pinning.py § "PIN_ROWS" =sha256:201cf8dcec4edeb0fcca06cb9d070ecdd058a54243eb96c8067deb66d6a8d164
+  artifact: sha256:d4d8b6e66ce326e2acf33a0bf0798dfc19cbbdea2b5b51804df7d4e1e85b56c8
+  note: propagated from a moved ground
+- 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/contract/pinning.py § "PIN_ROWS" =sha256:d4d8b6e66ce326e2acf33a0bf0798dfc19cbbdea2b5b51804df7d4e1e85b56c8
+  note: Only a row's evidence text changed, naming `rooms.ensure_room` where it named `pin.ensure_room`. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

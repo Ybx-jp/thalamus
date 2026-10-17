@@ -1,7 +1,7 @@
 #!/bin/bash
 # Thalamus beforeShellExecution / beforeMCPExecution hook — open the readiness bracket.
 #
-# The opening half of the first-party readiness descriptor (harness/readiness.py). A
+# The opening half of the first-party readiness descriptor (console/readiness.py). A
 # member is about to make a call that may raise an approval modal, so it stops being
 # addressable until the paired after-event closes the bracket.
 #

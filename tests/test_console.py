@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from thalamus.console import windows
 from thalamus.console import server
 from thalamus.console.server import Config, Handler, parse_windows, spawn_dirs
 
@@ -37,15 +38,6 @@ def _repo(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     (path / ".git").mkdir(exist_ok=True)
     return path
-
-
-def _pin():
-    """The real `harness.pin`, which the console imports lazily rather than holding.
-
-    Tests patch the module the console resolves at call time, not an attribute on
-    the console — there is deliberately no `server.pin` to reach for.
-    """
-    return server.pin_module()
 
 
 # ---- the projection the client renders ----
@@ -320,7 +312,7 @@ def _attribute_reads(fn, receiver: str) -> set[str]:
 def test_the_reduction_reads_only_module_constants_the_real_module_has():
     """The same binding for the *module* the reduction reads, not just the session.
 
-    `attach_blocked` reads three constants off `harness.dispatch`, and the liveness
+    `attach_blocked` reads three constants off `console.dispatch`, and the liveness
     tests hand it a hand-written `_Dispatch` class that re-declares all three. That
     class is a fake in exactly the sense the descriptor was: it grows whatever the
     code asks it for, so a rename in `dispatch.py` leaves the suite green and takes
@@ -333,7 +325,7 @@ def test_the_reduction_reads_only_module_constants_the_real_module_has():
     Derived from source for the same reason as above — a fourth constant is covered
     the day it is read, not the day someone remembers to add it here.
     """
-    from thalamus.harness import dispatch as dispatch_mod
+    from thalamus.console import dispatch as dispatch_mod
 
     reads = _attribute_reads(server.attach_blocked, "dispatch")
     # `dispatch.quick` is the module's own import, reached for `live_sessions()`.
@@ -950,7 +942,7 @@ def test_the_spawn_endpoint_names_the_room_and_never_inherits_one(tmp_path, monk
     Scenario: the console spawns into a room, and then spawns solo
 
     Verifications:
-    - the room from the request reaches `pin.spawn`
+    - the room from the request reaches `windows.spawn`
     - a request with no room passes "" — not None, which would mean "read the env"
 
     The console is a long-lived server process. If it left the room to
@@ -961,7 +953,7 @@ def test_the_spawn_endpoint_names_the_room_and_never_inherits_one(tmp_path, monk
     code = tmp_path / "code"
     cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
     seen: list[dict] = []
-    monkeypatch.setattr(_pin(), "spawn",
+    monkeypatch.setattr(windows, "spawn",
                         lambda scope, cwd, **kw: seen.append({"scope": scope, **kw}))
 
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
@@ -976,7 +968,7 @@ def test_the_spawn_endpoint_names_the_room_and_never_inherits_one(tmp_path, monk
 
 def test_a_spawn_whose_window_died_is_reported_failed(tmp_path, monkeypatch):
     """
-    Scenario: `pin.spawn` reports the window it made did not survive its settle
+    Scenario: `windows.spawn` reports the window it made did not survive its settle
 
     Verifications:
     - the response is a failure, not the success every layer below it reported
@@ -988,18 +980,17 @@ def test_a_spawn_whose_window_died_is_reported_failed(tmp_path, monkeypatch):
     instantly and is reaped, while tmux, `pin`, and the console all still see
     success. Measured 2026-08-08: with `claude` off the server's PATH every spawn
     answered ok and produced nothing, which reads on a phone as a button that does
-    nothing at all. The verdict is `pin`'s, since it is the only layer holding the
+    nothing at all. The verdict is `windows`', since it is the only layer holding the
     id of the window it made; the console's job is that it reaches the operator.
     """
     code = tmp_path / "code"
     cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
-    pin = _pin()
 
     def died(*a, **k):
-        raise pin.WindowDied("the window was created and its command exited (exit 1) "
+        raise windows.WindowDied("the window was created and its command exited (exit 1) "
                              "— it printed: Not logged in.")
 
-    monkeypatch.setattr(pin, "spawn", died)
+    monkeypatch.setattr(windows, "spawn", died)
 
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         status, body = post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
@@ -1022,7 +1013,7 @@ def test_only_a_dead_window_gets_the_path_hint(tmp_path, monkeypatch):
     def refused(*a, **k):
         raise ValueError("not a directory: /home/op/code/gone")
 
-    monkeypatch.setattr(_pin(), "spawn", refused)
+    monkeypatch.setattr(windows, "spawn", refused)
 
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
         status, body = post("/api/spawn", {"scope": "main", "dir": str(code / "alpha")})
@@ -1037,7 +1028,7 @@ def test_the_harness_the_phone_picked_is_the_one_that_launches(tmp_path, monkeyp
     Scenario: the sheet's harness chip is tapped over to Cursor and a session spawned
 
     Verifications:
-    - the harness from the request reaches `pin.spawn`
+    - the harness from the request reaches `windows.spawn`
     - the picker offers exactly the harnesses that can be pinned, and says which of
       them carries a persona
 
@@ -1050,7 +1041,7 @@ def test_the_harness_the_phone_picked_is_the_one_that_launches(tmp_path, monkeyp
     code = tmp_path / "code"
     cfg = Config(project_root=_repo(code / "alpha"), scan_roots=[code])
     seen: list[dict] = []
-    monkeypatch.setattr(_pin(), "spawn",
+    monkeypatch.setattr(windows, "spawn",
                         lambda scope, cwd, **kw: seen.append({"scope": scope, **kw}))
 
     with _serving(cfg, windows=WINDOW_FIELDS) as post:
@@ -2031,7 +2022,7 @@ def test_the_dispatch_endpoint_declares_its_roomlessness_to_the_real_signature()
     """
     Scenario: the guard above, pinned at the seam instead of through a refusal.
 
-    Verification: `harness.dispatch.dispatch` really accepts `caller_room`, and the
+    Verification: `console.dispatch.dispatch` really accepts `caller_room`, and the
     console really passes `""` for it.
 
     Bound against the *real* function via `inspect.signature`, not a spy. The test
@@ -2046,7 +2037,7 @@ def test_the_dispatch_endpoint_declares_its_roomlessness_to_the_real_signature()
     """
     import inspect
 
-    from thalamus.harness import dispatch as dispatch_mod
+    from thalamus.console import dispatch as dispatch_mod
 
     parameters = inspect.signature(dispatch_mod.dispatch).parameters
     assert "caller_room" in parameters, (
@@ -2082,12 +2073,12 @@ def test_the_dialogue_delegates_rather_than_reimplementing_the_preflight(tmp_pat
     """
     Scenario: a dispatch that the verb accepts.
 
-    Verification: the console calls `harness.dispatch.dispatch` and renders what it
+    Verification: the console calls `console.dispatch.dispatch` and renders what it
     returns — it does not decide anything about `waiting` itself. A second
     implementation here, however small, would be a second policy about when it is
     safe to type into somebody's session, and the two would drift.
     """
-    from thalamus.harness import dispatch as dispatch_mod
+    from thalamus.console import dispatch as dispatch_mod
 
     seen = {}
 

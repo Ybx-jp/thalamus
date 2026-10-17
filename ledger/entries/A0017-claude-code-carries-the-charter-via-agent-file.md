@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T17:35:24-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/pin.py § "write_agent" =sha256:0546100a9f15db84bef0d5150038e237b200448079e07cee192fdf012864c1f5
+  artifact: sha256:2dd7ee24759cc35e2f6e45cfc02f67744e17bd20acbaa41e96ba7c85cf0759d0
+  note: propagated from a moved ground
+- 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/pin.py § "write_agent" =sha256:2dd7ee24759cc35e2f6e45cfc02f67744e17bd20acbaa41e96ba7c85cf0759d0
+  note: Only the docstring changed, naming the console's spawn where it named `spawn`. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

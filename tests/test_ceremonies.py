@@ -1,7 +1,7 @@
 """
-Ceremony ledger tests (harness/ceremonies.py) — the first four lifecycle records.
+Ceremony ledger tests (console/ceremonies.py) — the first four lifecycle records.
 
-Interfaces: thalamus.harness.ceremonies (start, end, skip, mint_deliverable,
+Interfaces: thalamus.console.ceremonies (start, end, skip, mint_deliverable,
 record_revision, record_assignment, draw, next_index, audit, render)
 Infrastructure: a tmp_path ledger; no graph, no network, no harness
 Scope: the four records that make later analysis possible at all. Each test below is
@@ -15,7 +15,7 @@ import threading
 
 import pytest
 
-from thalamus.harness import ceremonies
+from thalamus.console import ceremonies
 
 
 @pytest.fixture

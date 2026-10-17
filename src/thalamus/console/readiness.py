@@ -7,7 +7,7 @@ approved a shell command the sender could not see.
 
 Claude Code answers "is it safe to send" from `$CLAUDE_CONFIG_DIR/sessions/<pid>.json`,
 whose `status` the harness writes from inside its own event loop. Cursor publishes no
-equivalent, and the substitute `harness/panes.py` reads — the visible screen — is a
+equivalent, and the substitute `console/panes.py` reads — the visible screen — is a
 **one-directional falsifier**: seeing a modal proves `waiting`, not seeing one proves
 nothing, because `capture-pane` truncates to the visible height and a dialog can be
 drawn below the fold. A check whose negative result is uninformative is not a
@@ -54,7 +54,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thalamus.harness import panes as panes_mod
+from thalamus.console import panes as panes_mod
 
 READINESS_DIR = Path.home() / ".thalamus" / "readiness"
 

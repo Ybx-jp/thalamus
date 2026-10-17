@@ -42,6 +42,13 @@ none
 - 2026-09-20T20:37:29-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/console/server.py § "Config" =sha256:3c4c07889839f40bc14a2efbda83e9520544a1df306795b48e972fc75dced976
   note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the class docstring was rewrapped. The assertion is unaffected.
+- 2026-10-16T17:35:24-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/server.py § "Config" =sha256:3c4c07889839f40bc14a2efbda83e9520544a1df306795b48e972fc75dced976
+  artifact: sha256:615c62739f84b9ede48022790c3e1b23dd2d205624be4d225c809c22c819c634
+  note: propagated from a moved ground
+- 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/console/server.py § "Config" =sha256:615c62739f84b9ede48022790c3e1b23dd2d205624be4d225c809c22c819c634
+  note: `__post_init__` now reads ROSTER_SESSION from console/windows.py; the favorites handling is unchanged. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
 
 ## References
 

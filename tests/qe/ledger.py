@@ -1,7 +1,7 @@
 """The run ledger, and the durability idiom no current writer in this repo has.
 
 Two existing writers each get half of it right and neither gets both:
-`harness/ceremonies.py:157-173` takes an exclusive `flock` and never syncs;
+`console/ceremonies.py:1008` takes an exclusive `flock` and never syncs;
 `eval/rescore.py:371-378` syncs and never locks. This one does both.
 
 The rule that matters more than either, and that comes from a live defect:

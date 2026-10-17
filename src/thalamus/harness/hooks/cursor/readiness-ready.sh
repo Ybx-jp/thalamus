@@ -2,7 +2,7 @@
 # Thalamus sessionStart / afterShellExecution / afterMCPExecution hook — close the
 # readiness bracket.
 #
-# The closing half of the first-party readiness descriptor (harness/readiness.py).
+# The closing half of the first-party readiness descriptor (console/readiness.py).
 # `ready` is the resting state: written once when a member's session starts, so a
 # freshly-launched member is addressable at all, and again each time a bracketed call
 # completes.

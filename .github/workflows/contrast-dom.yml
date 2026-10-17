@@ -66,7 +66,7 @@ jobs:
       # built to refuse.
       #
       # `-L thalamus` is not decoration: every tmux call in `src/` names its server
-      # (`harness/tmux.py`), so a roster built on the box's default server is one the
+      # (`console/tmux.py`), so a roster built on the box's default server is one the
       # console cannot see.
       - name: Build a roster to render
         run: |
