@@ -43,7 +43,7 @@ thalamus_sandbox_guard
 # under `set -euo pipefail` and the session is lost in silence. With it, the loss is a
 # dated line in ~/.thalamus/logs/hook-failures.log that `thalamus init --check` reads
 # back.
-thalamus_require_binaries jq uv || exit 0
+thalamus_require_binaries jq $(thalamus_cli_needs) || exit 0
 
 input=$(cat)
 
@@ -130,17 +130,17 @@ fi
 # (they can only land post-distill) and sweeps whatever backlog other sessions left.
 # It runs even when extract declines, because the sweep is still worth it.
 #
-# `uv run --project <checkout>` rather than the session's cwd: a codex session pinned
-# into another repo has a cwd that is not a uv project with thalamus in it, so a
-# cwd-anchored invocation resolves no `thalamus` command and the session silently
-# never distills. `--project` (not `--directory`) leaves the child's cwd alone.
-repo_root="$(thalamus_repo_root)"
+# This install's CLI (`thalamus_cli_argv`), not one resolved from the session's cwd:
+# a codex session pinned into another repo has a cwd with no thalamus in it, and a
+# cwd-anchored invocation would silently never distill.
+thalamus_cli_argv || exit 0
+cli="$(thalamus_cli_quoted)"
 
 nohup sh -c "
-  uv run --project '$repo_root' thalamus extract --harness codex \
+  $cli extract --harness codex \
     --session '$session_id' --scope '$scope' --room '$room' \
     --transcript '$transcript_path' --force --write
-  uv run --project '$repo_root' thalamus eval sync --write
+  $cli eval sync --write
 " >>"$log" 2>&1 </dev/null &
 
 exit 0

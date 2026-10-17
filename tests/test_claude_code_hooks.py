@@ -18,6 +18,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -234,7 +235,7 @@ class TestForeignCwdPinResolution:
 
     CLAUDE_PROJECT_DIR then names the *working* repo, not the Thalamus checkout.
     Anchoring manifest lookup on it made the hooks resolve `main` while the MCP
-    server — which anchors on contract/manifest._DEFAULT_CONFIG and never reads
+    server — which anchors on contract/manifest.default_config and never reads
     CLAUDE_PROJECT_DIR — enforced the real scope. Because session-end is
     ledger-first, that mismatch distilled the whole session into the wrong
     scope: the 2026-07-18 mis-scoping leak arriving through the ledger instead
@@ -352,15 +353,95 @@ class TestForeignCwdPinResolution:
             "CLAUDE_CODE_AGENT": "thalamus-literature",
         }) == "main"
 
-    def test_repo_root_is_the_checkout_not_the_working_project(self, tmp_path):
+    def test_the_checkout_is_the_one_the_hooks_sit_in_not_the_working_project(
+            self, tmp_path):
         root = subprocess.run(
-            ["bash", "-c", f'. "{HOOKS}/resolve-scope.sh"; thalamus_repo_root'],
+            ["bash", "-c", f'. "{HOOKS}/resolve-scope.sh"; thalamus_checkout'],
             capture_output=True, text=True, timeout=30, cwd=str(tmp_path),
             env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/local/bin",
                  "CLAUDE_PROJECT_DIR": str(tmp_path)},
         ).stdout.strip()
         assert Path(root) == HOOKS.parents[4]
         assert (Path(root) / "pyproject.toml").is_file()
+
+
+def _installed_hooks(tmp_path: Path) -> Path:
+    """The claude-code hooks laid out the way a wheel installs them, with no checkout.
+
+    `site-packages/thalamus/harness/hooks/claude-code/` under a venv-shaped prefix: the
+    package directory's parent is `site-packages`, not `src`, so nothing above it is a
+    checkout.
+    """
+    hooks = (tmp_path / "venv" / "lib" / "python3.12" / "site-packages" / "thalamus"
+             / "harness" / "hooks" / "claude-code")
+    hooks.parent.mkdir(parents=True)
+    shutil.copytree(HOOKS, hooks)
+    return hooks
+
+
+class TestInstalledLayout:
+    """The same helpers, run from where a wheel puts them.
+
+    The checkout half is the control: the identical function, sourced from the
+    checkout, answers with the checkout (the test above). These are the answers that
+    differ only because the scripts sit in an installed package.
+    """
+
+    def _run(self, hooks: Path, home: Path, script: str, env: dict | None = None):
+        return subprocess.run(
+            ["bash", "-c", f'. "{hooks}/resolve-scope.sh"; {script}'],
+            capture_output=True, text=True, timeout=30, cwd=str(home),
+            env={"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/local/bin", **(env or {})},
+        )
+
+    def test_an_installed_layout_has_no_checkout(self, tmp_path):
+        hooks = _installed_hooks(tmp_path)
+        assert self._run(hooks, tmp_path, "thalamus_checkout").stdout == ""
+
+    def test_its_config_root_is_the_users_unless_overridden(self, tmp_path):
+        hooks = _installed_hooks(tmp_path)
+        assert (self._run(hooks, tmp_path, "thalamus_config_root").stdout
+                == str(tmp_path / ".thalamus" / "config"))
+        assert self._run(hooks, tmp_path, "thalamus_config_root",
+                         {"THALAMUS_CONFIG_DIR": "/elsewhere"}).stdout == "/elsewhere"
+
+    def test_it_runs_the_cli_under_the_recorded_interpreter(self, tmp_path):
+        hooks = _installed_hooks(tmp_path)
+        (tmp_path / ".thalamus").mkdir()
+        (tmp_path / ".thalamus" / "python").write_text(sys.executable + "\n")
+
+        out = self._run(hooks, tmp_path,
+                        'thalamus_cli_argv && printf "%s\\n" "${THALAMUS_CLI[@]}"')
+
+        assert out.returncode == 0
+        assert out.stdout.splitlines() == [sys.executable, "-m", "thalamus"]
+
+    def test_with_no_record_it_refuses_and_says_why(self, tmp_path):
+        hooks = _installed_hooks(tmp_path)
+
+        out = self._run(hooks, tmp_path, "thalamus_cli_argv")
+
+        assert out.returncode != 0
+        log = (tmp_path / ".thalamus" / "logs" / "hook-failures.log").read_text()
+        assert "no interpreter recorded in ~/.thalamus/python" in log
+        assert "thalamus init" in log
+
+    def test_the_quoted_form_survives_a_space_in_the_interpreter_path(self, tmp_path):
+        hooks = _installed_hooks(tmp_path)
+        spaced = tmp_path / "a dir" / "python"
+        spaced.parent.mkdir()
+        # A wrapper, not a symlink: a symlinked venv interpreter outside the venv finds
+        # no `pyvenv.cfg` beside the path it was invoked by, and loses the package.
+        spaced.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+        spaced.chmod(0o755)
+        (tmp_path / ".thalamus").mkdir()
+        (tmp_path / ".thalamus" / "python").write_text(str(spaced))
+
+        out = self._run(hooks, tmp_path,
+                        'thalamus_cli_argv && sh -c "$(thalamus_cli_quoted) --help" '
+                        '>/dev/null && echo ran')
+
+        assert out.stdout.strip() == "ran", out.stderr
 
 
 class TestPaneClaim:

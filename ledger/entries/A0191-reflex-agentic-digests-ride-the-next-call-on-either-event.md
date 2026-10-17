@@ -57,6 +57,13 @@ none
 - 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/harness/reflex_worker.py § "deliver" =sha256:446ba82234f6e8bdc594bb5d62c71519472c090a4970842166606bbe43ee67a5
   note: Read at the current revision. deliver copies the job's channel, model and channel_run figures into the outcome row and the trace's tool_input; the delivery-time trace, depth and budget charge are unchanged — the assertion is unaffected.
+- 2026-10-16T21:58:03-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex-pointer-tap.sh § "context" =sha256:c108b12e3e4cdb154d6a9e1f58c3423d838ce6fdd7b02517e45016f0925ab1ed
+  artifact: sha256:3470b84f12164ccfdd489a9fa6c6003269a5f5af5e35ebd752a17db9c16abc8c
+  note: propagated from a moved ground
+- 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex-pointer-tap.sh § "context" =sha256:3470b84f12164ccfdd489a9fa6c6003269a5f5af5e35ebd752a17db9c16abc8c
+  note: reflex-pointer-tap.sh runs the carrier through thalamus_cli_argv instead of `uv run --project`; delivery is unchanged. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
 
 ## References
 

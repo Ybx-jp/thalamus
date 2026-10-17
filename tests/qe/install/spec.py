@@ -263,12 +263,10 @@ CONFIGS: tuple[Config, ...] = (
     # control is the checkout's own answer to the same question and both have to come
     # off the same box on the same day.
     Config("installed-wheel",
-           "The product installed as a wheel outside a checkout. `contract/paths.py:21` "
-           "anchors PROJECT_ROOT at `parents[3]`, which from "
-           "`site-packages/thalamus/contract/paths.py` is the venv's `lib/pythonX.Y`, "
-           "so everything the harness loads by repo-relative path is looked for "
-           "somewhere nothing was installed.",
-           issue=35, builds_a_wheel=True),
+           "The product installed as a wheel outside a checkout. The package "
+           "resolves its hook scripts and skills under its own directory, so the "
+           "harness finds what the wheel shipped without a checkout anywhere near it.",
+           issue=35, fixed=True, builds_a_wheel=True),
 )
 
 
@@ -453,14 +451,10 @@ CHECKS: tuple[Check, ...] = (
     # ---- the packaged layout ----------------------------------------------------
     Check("installed-wheel-finds-the-scripts-it-ships", Phase.WHEEL, Severity.BLOCKS,
           "A wheel installed outside a checkout must resolve the files it shipped "
-          "with. `contract/paths.py:21` is `Path(__file__).resolve().parents[3]`, and "
-          "its own docstring states the premise — 'this project runs from its "
-          "checkout'. From `site-packages/thalamus/contract/paths.py` that arithmetic "
-          "lands on the venv's `lib/pythonX.Y`, so `verify()` looks for the hook "
-          "scripts under `<venv>/lib/pythonX.Y/src/thalamus/harness/hooks/`, where "
-          "nothing is, while the scripts themselves sit in the package it just "
-          "installed. `config/experts/` is not in the wheel at all.",
-          issue=35,
+          "with. `PACKAGE_DIR` is the installed `thalamus/` directory and `CHECKOUT` "
+          "is None, so `verify()` finds the Claude Code, Cursor and Codex hook "
+          "scripts under `PACKAGE_DIR/harness/hooks/` where the wheel put them.",
+          issue=35, fixed=True,
           control="the SAME `thalamus init --check`, run in the same phase from the "
                   "checkout's own `.venv/bin/thalamus` against a home of its own, "
                   "must report those script sets PRESENT. Without that half the "

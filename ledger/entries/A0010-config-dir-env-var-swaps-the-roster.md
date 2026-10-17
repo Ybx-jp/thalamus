@@ -34,6 +34,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T21:58:02-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/contract/manifest.py § "config_root" =sha256:c95eeb87ed26a9a80eefc691546dff4e8e5c22af096b5de1a19ae6b67d1cb3b9
+  artifact: sha256:dd5b8d978f037debbc4c3ea0afe757765d6e8125aa63e6fefc789f69fbde63d1
+  note: propagated from a moved ground
+- 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/contract/manifest.py § "config_root" =sha256:dd5b8d978f037debbc4c3ea0afe757765d6e8125aa63e6fefc789f69fbde63d1
+  note: config_root's fallback became default_config (checkout `config/`, else ~/.thalamus/config); THALAMUS_CONFIG_DIR still overrides it. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

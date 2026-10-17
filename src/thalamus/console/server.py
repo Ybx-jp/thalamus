@@ -753,7 +753,10 @@ class Config:
         if not self.session:
             self.session = windows.ROSTER_SESSION if windows else FALLBACK_SESSION
         if not self.project_root:
-            self.project_root = pin.PROJECT_ROOT if pin else Path.cwd()
+            checkout = None
+            if pin:
+                from thalamus.contract.paths import CHECKOUT as checkout
+            self.project_root = checkout or Path.cwd()
         self.project_root = Path(self.project_root).expanduser().resolve()
         if not self.favorites:
             self.favorites = [self.project_root]

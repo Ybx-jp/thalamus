@@ -6,6 +6,13 @@
 # a main-plane session. Kept as a separate mirror so a future Cursor
 # pin channel has exactly one place to land.
 
+# The Claude Code library first, for the harness-independent helpers — where this
+# install is and how to run its CLI (thalamus_checkout, thalamus_config_root,
+# thalamus_cli_argv, thalamus_python) and the failure log they write to — the way
+# ../codex/resolve-scope.sh takes them. Everything this file defines below replaces
+# the library's version of the same name.
+. "$(dirname "${BASH_SOURCE[0]}")/../claude-code/resolve-scope.sh"
+
 thalamus_resolve_scope() {
   printf '%s' "${THALAMUS_SCOPE:-main}"
 }

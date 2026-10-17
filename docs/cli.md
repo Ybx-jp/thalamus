@@ -695,7 +695,7 @@ expert subgraphs the server grants.<!-- (A0171, cites-as-live) -->
 | Variable | Effect |
 |---|---|
 | `THALAMUS_SCOPE` | The session's pin. Read once at server startup |
-| `THALAMUS_CONFIG_DIR` | Where `experts/` and `mcp/` are read from, instead of the checkout's `config/`. The eval battery in the companion repo reads its own `tasks/` from the same variable |
+| `THALAMUS_CONFIG_DIR` | Where `experts/` and `mcp/` are read from, instead of the checkout's `config/` (or `~/.thalamus/config` for an installed wheel). The eval battery in the companion repo reads its own `tasks/` from the same variable |
 | `THALAMUS_GRAPH_URL` | The Gremlin endpoint, read by `status`, `init`, `init --check` and the MCP server. **Every other command ignores it** and takes `--url`, defaulting to `ws://localhost:8182/gremlin` — so setting this and running `ingest` or `extract` still writes to localhost ([#60](https://github.com/Ybx-jp/thalamus/issues/60)) |
 | `THALAMUS_ARCHIVE_DIR` | Where retained transcripts and their indexes live, instead of `~/.thalamus/archive`. The index follows the archive; it has no override of its own |
 | `THALAMUS_LOG_LEVEL` | Log level for the MCP server process (`thalamus-mcp`), default `WARNING`. Set it to `INFO` or `DEBUG` when a recall is returning something you cannot explain |

@@ -31,10 +31,18 @@ from thalamus.contract.capabilities import (
     Preset,
     read_presets,
 )
-from thalamus.contract.paths import PROJECT_ROOT
+from thalamus.contract import paths
 
-# Local-first project; THALAMUS_CONFIG_DIR overrides for anything fancier.
-_DEFAULT_CONFIG = PROJECT_ROOT / "config"
+
+def default_config() -> Path:
+    """The config root when neither `base` nor THALAMUS_CONFIG_DIR names one.
+
+    A checkout's own `config/` is its development config; an installed wheel has none
+    and reads the user's, `~/.thalamus/config`. Read at call time, so it follows HOME.
+    """
+    if paths.CHECKOUT is not None:
+        return paths.CHECKOUT / "config"
+    return Path.home() / ".thalamus" / "config"
 
 
 @dataclass(frozen=True)
@@ -496,9 +504,13 @@ class ExpertManifest(BaseModel):
 
 
 def config_root(base: Path | None = None) -> Path:
-    """The tier-0 configuration directory — manifests and anything beside them."""
+    """The tier-0 configuration directory — manifests and anything beside them.
+
+    `base`, then THALAMUS_CONFIG_DIR, then the checkout's `config/`, then
+    `~/.thalamus/config` for an installed wheel.
+    """
     override = os.environ.get("THALAMUS_CONFIG_DIR")
-    return base or (Path(override).expanduser() if override else _DEFAULT_CONFIG)
+    return base or (Path(override).expanduser() if override else default_config())
 
 
 def experts_dir(base: Path | None = None) -> Path:

@@ -4164,16 +4164,18 @@ def _cmd_rescope(args):
 
 
 def _cmd_pin(args):
-    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.contract.paths import default_project_dir
+
+    project_dir = default_project_dir()
 
     try:
         # A room, or a surrounding tmux to open a window in, is the console's to
         # handle; otherwise this terminal becomes the pinned session.
         if args.room or os.environ.get("TMUX"):
             from thalamus.console.windows import launch
-            launch(args.scope, PROJECT_ROOT, room=args.room, harness=args.harness)
+            launch(args.scope, project_dir, room=args.room, harness=args.harness)
         else:
-            pin.launch(args.scope, PROJECT_ROOT, harness=args.harness)
+            pin.launch(args.scope, project_dir, harness=args.harness)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"Pin failed: {e}", file=sys.stderr)
         sys.exit(1)
@@ -4182,10 +4184,10 @@ def _cmd_pin(args):
 def _cmd_spawn(args):
     import subprocess
 
-    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.contract.paths import default_project_dir
     from thalamus.console.windows import spawn
 
-    cwd = args.dir if args.dir is not None else PROJECT_ROOT
+    cwd = args.dir if args.dir is not None else default_project_dir()
     try:
         spawn(args.scope, cwd, session=args.session, room=args.room,
               harness=args.harness)
@@ -4821,7 +4823,7 @@ def _cmd_console(args):
 
     from thalamus.console.server import FAVORITES_STORE, Config, PortInUse, serve
     from thalamus.console import tmux
-    from thalamus.contract.paths import PROJECT_ROOT
+    from thalamus.contract.paths import default_project_dir
 
     if not shutil.which("tmux"):
         print("The console needs tmux — it drives the pinned roster's windows.",
@@ -4830,7 +4832,7 @@ def _cmd_console(args):
 
     cfg = Config(
         session=args.session,
-        project_root=args.project_root or PROJECT_ROOT,
+        project_root=args.project_root or default_project_dir(),
         favorites=args.dir,
         scan_roots=args.scan,
         # Named here rather than defaulted inside Config: this is a path on this

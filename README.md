@@ -145,12 +145,12 @@ The full walkthrough, including what the first run looks like, is
 
 ## What this release is
 
-Thalamus runs from a clone, and the clone is the distribution. There is no
-`pip install thalamus`: several modules resolve paths from the repo root and the
-expert manifests in `config/` live outside the package, so a wheel would look for
-paths only a checkout has. `git pull` is the upgrade path. `pyproject.toml` carries
-`Private :: Do Not Upload`, which makes the closed index mechanical rather than a
-stated intention.
+Thalamus runs from a clone, and `git pull` is the upgrade path. A wheel built from
+the tree installs outside a checkout: it finds its own hook scripts and skills, and its
+hooks run the CLI under the interpreter `thalamus init` records. It is not published
+yet. The wheel ships no expert manifests, so `pyproject.toml` carries
+`Private :: Do Not Upload` until it does, which makes the closed index mechanical
+rather than a stated intention.
 
 One feature is experimental and off by default: frame themes, which render the pane
 inside artwork, behind `thalamus console --frames PATH`. Without the flag there are no

@@ -296,7 +296,7 @@ scopes and tiers mean, and the [CLI reference](cli.md) for everything else.
 | The graph | Docker volume `thalamus-graph-data` |
 | Retained transcripts | `~/.thalamus/archive/` |
 | Ledgers, pins, eval state | `~/.thalamus/` |
-| Expert manifests | `config/experts/` in the checkout, or `$THALAMUS_CONFIG_DIR/experts/` |
+| Expert manifests | `$THALAMUS_CONFIG_DIR/experts/`, else `config/experts/` in the checkout, else `~/.thalamus/config/experts/` for an installed wheel |
 
 Both the graph and the archive sit outside the checkout by construction. There is
 nothing in the tree to ship.

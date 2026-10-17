@@ -24,20 +24,88 @@
 # cannot see it. The hook is the more accurate of the two. Precedence and manifest
 # check stay in step; the extra channel does not.
 
-# The Thalamus checkout — the tree this script sits in, five levels up from
-# src/thalamus/harness/hooks/claude-code/. Anchored on BASH_SOURCE and NOT on
-# CLAUDE_PROJECT_DIR, which names the session's *working* project and is a
-# different repo entirely whenever a session runs outside the checkout
-# (`thalamus spawn --dir`). THALAMUS_CONFIG_DIR still overrides the config
-# location, exactly as contract/manifest.experts_dir does on the Python side.
-thalamus_repo_root() {
-  (cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
+# The Thalamus checkout this script sits in, or nothing for an installed wheel — the
+# bash mirror of contract/paths.CHECKOUT, from the same test: the package directory
+# (three up from hooks/claude-code/) sits under a `src/` whose parent holds
+# `pyproject.toml`. Anchored on BASH_SOURCE and NOT on CLAUDE_PROJECT_DIR, which names
+# the session's *working* project and is a different repo entirely whenever a session
+# runs outside the checkout (`thalamus spawn --dir`).
+thalamus_checkout() {
+  local pkg src
+  pkg="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)" || return 0
+  src="$(dirname "$pkg")"
+  if [ "${src##*/}" = "src" ] && [ -f "$(dirname "$src")/pyproject.toml" ]; then
+    dirname "$src"
+  fi
 }
 
-# The tier-0 config directory — the bash mirror of contract/manifest.config_root.
+# The tier-0 config directory — the bash mirror of contract/manifest.config_root:
+# THALAMUS_CONFIG_DIR, then the checkout's `config/`, then ~/.thalamus/config.
 thalamus_config_root() {
-  local config="${THALAMUS_CONFIG_DIR:-$(thalamus_repo_root)/config}"
+  local checkout config
+  checkout="$(thalamus_checkout)"
+  if [ -n "${THALAMUS_CONFIG_DIR:-}" ]; then config="$THALAMUS_CONFIG_DIR"
+  elif [ -n "$checkout" ]; then config="$checkout/config"
+  else config="$HOME/.thalamus/config"
+  fi
   printf '%s' "${config/#\~/$HOME}"
+}
+
+# The command that runs this install's `thalamus` CLI, into the array THALAMUS_CLI —
+# the bash mirror of contract/paths.cli_argv. A checkout runs `uv run --project
+# <checkout> thalamus`; an installed wheel runs the interpreter `thalamus init`
+# recorded in ~/.thalamus/python, as `<python> -m thalamus`. Returns non-zero, with
+# the reason in hook-failures.log, when neither can run.
+#
+# `--project` rather than the session's cwd: a session pinned into another repo has a
+# cwd that is not a uv project with thalamus in it, so a cwd-anchored invocation
+# resolves no `thalamus` command. `--project` (not `--directory`) leaves the child's
+# cwd alone.
+thalamus_cli_argv() {
+  local checkout py
+  checkout="$(thalamus_checkout)"
+  if [ -n "$checkout" ]; then
+    thalamus_require_binaries uv || return 1
+    THALAMUS_CLI=(uv run --project "$checkout" thalamus)
+    return 0
+  fi
+  py="$(cat "$HOME/.thalamus/python" 2>/dev/null)"
+  if [ -z "$py" ] || [ ! -x "$py" ]; then
+    thalamus_record_failure "no interpreter recorded in ~/.thalamus/python (found: '${py}') — run \`thalamus init\`"
+    return 1
+  fi
+  THALAMUS_CLI=("$py" -m thalamus)
+}
+
+# The binaries thalamus_cli_argv needs on PATH: `uv` for a checkout, none for an
+# installed wheel. For a hook's own `thalamus_require_binaries jq $(thalamus_cli_needs)`,
+# so one record names everything that is missing at once.
+thalamus_cli_needs() {
+  if [ -n "$(thalamus_checkout)" ]; then printf 'uv'; fi
+}
+
+# THALAMUS_CLI as one string of single-quoted words, for a script handed to `sh -c`.
+# Call thalamus_cli_argv first.
+thalamus_cli_quoted() {
+  local word out=""
+  for word in "${THALAMUS_CLI[@]}"; do
+    out="$out'${word//\'/\'\\\'\'}' "
+  done
+  printf '%s' "${out% }"
+}
+
+# An interpreter with this package importable, for a hook that runs Python directly:
+# the checkout's own .venv interpreter, else the one `thalamus init` recorded. Prints
+# nothing when there is neither; the caller decides what that costs it.
+thalamus_python() {
+  local checkout py
+  checkout="$(thalamus_checkout)"
+  if [ -n "$checkout" ]; then
+    py="$checkout/.venv/bin/python"
+  else
+    py="$(cat "$HOME/.thalamus/python" 2>/dev/null)"
+  fi
+  if [ -n "$py" ] && [ -x "$py" ]; then printf '%s' "$py"; fi
 }
 
 # Sandbox guard — call at the top of every hook, right after sourcing this file.
@@ -79,9 +147,16 @@ thalamus_require_binaries() {
     command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"
   done
   [ -n "$missing" ] || return 0
+  thalamus_record_failure "not on PATH:$missing — this session was not distilled. Restore it, then re-run \`thalamus init --check\`"
+  return 1
+}
 
+# One line in hook-failures.log, naming the hook that could not run and why. Returns
+# 0 whether or not the line could be written: the record is best-effort, and the
+# caller has already decided to stop.
+thalamus_record_failure() {
   local log_dir="$HOME/.thalamus/logs"
-  mkdir -p "$log_dir" 2>/dev/null || return 1
+  mkdir -p "$log_dir" 2>/dev/null || return 0
 
   # bash's own clock where it has one (4.2+), `date` where it does not. The whole
   # point of the record is *when*, so it is worth one process on a path that only
@@ -89,11 +164,11 @@ thalamus_require_binaries() {
   local now=""
   printf -v now '%(%Y-%m-%dT%H:%M:%SZ)T' -1 2>/dev/null \
     || now="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"
-  # ${BASH_SOURCE[1]##*/} rather than basename: naming the missing binary must not
-  # depend on another one being present.
-  printf '%s %s: not on PATH:%s — this session was not distilled. Restore it, then re-run `thalamus init --check`.\n' \
-    "$now" "${BASH_SOURCE[1]##*/}" "$missing" >>"$log_dir/hook-failures.log" 2>/dev/null || true
-  return 1
+  # The outermost script on the stack is the hook the harness ran; the helpers that
+  # call this sit above it. `##*/` rather than basename: naming the failure must not
+  # depend on another binary being present.
+  local hook="${BASH_SOURCE[${#BASH_SOURCE[@]}-1]##*/}"
+  printf '%s %s: %s\n' "$now" "$hook" "$1" >>"$log_dir/hook-failures.log" 2>/dev/null || true
 }
 
 # The stdin read for a PreToolUse guard, and the only one any of them may use.

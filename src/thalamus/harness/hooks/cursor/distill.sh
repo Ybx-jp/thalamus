@@ -88,7 +88,8 @@ scope="${ledger_scope:-$env_scope}"
 log_dir="$HOME/.thalamus/logs"
 mkdir -p "$log_dir"
 log="$log_dir/cursor-distill-${session_id}.log"
-repo_root="$(cd "$here/../../../../.." && pwd)"
+thalamus_cli_argv || exit 0
+cli="$(thalamus_cli_quoted)"
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) waiting for ${session_id} to settle" >>"$log"
 
@@ -98,9 +99,9 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) waiting for ${session_id} to settle" >>"$lo
 #
 # --force so a resumed Cursor session re-distills against its longer transcript;
 # claims are content-addressed, so unchanged judgement converges on the same nodes
-# rather than duplicating. `uv run --project` resolves the environment from the
-# checkout while leaving cwd alone, since a session pinned into another repo has a cwd
-# that is not a uv project and would silently resolve no `thalamus` at all.
+# rather than duplicating. This install's CLI (`thalamus_cli_argv`) rather than one
+# resolved from cwd, since a session pinned into another repo has a cwd with no
+# thalamus in it and would silently distill nothing.
 nohup sh -c "
   last=''
   stable=0
@@ -118,7 +119,7 @@ nohup sh -c "
     waited=\$((waited + $POLL_S))
   done
   echo \"\$(date -u +%Y-%m-%dT%H:%M:%SZ) settled after \${waited}s; distilling into scope $scope\"
-  uv run --project '$repo_root' thalamus extract --harness cursor \
+  $cli extract --harness cursor \
     --session '$session_id' --scope '$scope' --force --write
 " >>"$log" 2>&1 </dev/null &
 

@@ -44,7 +44,6 @@ from thalamus.contract.manifest import (
     load_manifest,
 )
 from thalamus.contract.ontology import MAIN_SCOPE
-from thalamus.contract.paths import PROJECT_ROOT
 
 AGENT_PREFIX = "thalamus-"
 
@@ -364,7 +363,7 @@ description: Pinned Thalamus session for the {manifest.name} expert (scope `{man
 {_charter(manifest, selfcheck)}"""
 
 
-def write_agent(manifest: ExpertManifest, project_root: Path,
+def write_agent(manifest: ExpertManifest, project_root: Path | None = None,
                 agents_dir: Path | None = None, base: Path | None = None) -> Path:
     """Write the derived agent file. Defaults to the repo's .claude/agents (the
     interactive pin, which opens in the repo); the console's spawn passes USER_AGENTS_DIR so
@@ -378,7 +377,10 @@ def write_agent(manifest: ExpertManifest, project_root: Path,
             f"expert `{manifest.scope}` is delegated through "
             f"`{manifest.executor}`; use `thalamus delegate {manifest.scope}`"
         )
-    agents_dir = agents_dir or (project_root / ".claude" / "agents")
+    if agents_dir is None:
+        if project_root is None:
+            raise ValueError("write_agent needs a project_root or an agents_dir")
+        agents_dir = project_root / ".claude" / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
     path = agents_dir / f"{agent_name(manifest.scope)}.md"
     path.write_text(render_agent(manifest, scope_mcp_servers(manifest.scope, base)))
@@ -398,7 +400,7 @@ def write_all_agents(agents_dir: Path, base: Path | None = None) -> None:
             ):
                 stale.unlink()
             continue
-        write_agent(manifest, PROJECT_ROOT, agents_dir=agents_dir, base=base)
+        write_agent(manifest, agents_dir=agents_dir, base=base)
 
 
 # TOML's own escapes for a basic string, plus the two delimiters. Everything else

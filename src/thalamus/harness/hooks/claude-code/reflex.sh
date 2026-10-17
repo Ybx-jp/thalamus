@@ -42,7 +42,8 @@ set -euo pipefail
 
 . "$(dirname "${BASH_SOURCE[0]}")/resolve-scope.sh"
 thalamus_sandbox_guard
-thalamus_require_binaries jq uv || exit 0
+thalamus_require_binaries jq $(thalamus_cli_needs) || exit 0
+thalamus_cli_argv || exit 0
 
 input=$(cat)
 
@@ -77,16 +78,21 @@ mkdir -p "$log_dir"
 
 # A call the failure test passes over is shadow-logged: `thalamus reflex --shadow`
 # records what it would have anchored on and retrieves nothing. Detached, with every
-# stream closed, so the hook returns at once and the agent never waits on a `uv run`
+# stream closed, so the hook returns at once and the agent never waits on the CLI
 # for a call that was not a failure; the child removes the response file itself
 # (A0167, cites-as-live).
 if [ "$interrupted" != "true" ] \
   && ! grep -qE "$failure_re" <<< "$output"; then
+  # The four values first, then the CLI's own words, so `"$@"` after `shift 4` is
+  # the command with nothing re-quoted.
   nohup sh -c '
-    uv run --project "$1" thalamus reflex --shadow \
-      --session-id "$2" --agent-id "$3" --event "$4" --response-file "$5"
-    rm -f "$5"
-  ' shadow "$(thalamus_repo_root)" "$session" "$agent_id" "$event" "$response" \
+    session=$1 agent=$2 event=$3 response=$4
+    shift 4
+    "$@" reflex --shadow \
+      --session-id "$session" --agent-id "$agent" --event "$event" \
+      --response-file "$response"
+    rm -f "$response"
+  ' shadow "$session" "$agent_id" "$event" "$response" "${THALAMUS_CLI[@]}" \
     </dev/null >/dev/null 2>>"$log_dir/reflex.log" &
   exit 0
 fi
@@ -100,12 +106,12 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // ""')
 transcript=$(printf '%s' "$input" | jq -r '.transcript_path // ""')
 tool_use_id=$(printf '%s' "$input" | jq -r '.tool_use_id // ""')
 
-# `--project <checkout>`, not the session's cwd: a session pinned into another repo
-# has a cwd that is not a uv project with thalamus in it (session-end.sh's reason).
+# This install's CLI, not one resolved from the session's cwd: a session pinned into
+# another repo has a cwd with no thalamus in it (session-end.sh's reason).
 # The worker's stderr — a graph that is down, a refusal — goes to a log rather than
 # to the session: a PostToolUse hook's stderr reaches the user as noise, and a reflex
 # that cannot serve is meant to be silent.
-context=$(uv run --project "$(thalamus_repo_root)" thalamus reflex \
+context=$("${THALAMUS_CLI[@]}" reflex \
   --session-id "$session" --scope "$scope" \
   --agent-id "$agent_id" --agent-type "$agent_type" \
   --cwd "$cwd" --tool-name "$tool_name" --event "$event" \

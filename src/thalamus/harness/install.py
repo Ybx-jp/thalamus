@@ -57,7 +57,7 @@ from pathlib import Path
 
 from thalamus.harness import agents
 from thalamus.harness.agents import LAUNCHABLE as AGENT_LAUNCHABLE
-from thalamus.contract.paths import PROJECT_ROOT
+from thalamus.contract.paths import CHECKOUT, INSTALL_IDENTITY, PACKAGE_DIR, cli_argv, mcp_argv
 from thalamus.harness.pin import (
     USER_AGENTS_DIR,
     write_all_agents,
@@ -66,11 +66,13 @@ from thalamus.harness.pin import (
 from thalamus.substrate.writer import graph_down_detail, probe_socket, split_ws
 
 USER_SETTINGS = Path.home() / ".claude" / "settings.json"
-PROJECT_SETTINGS = PROJECT_ROOT / ".claude" / "settings.json"
-PROJECT_MCP = PROJECT_ROOT / ".mcp.json"
+# The checkout's own project-scope config, which `init` clears of an older
+# project-scope install. An installed wheel has no checkout, and touches no project.
+PROJECT_SETTINGS = CHECKOUT / ".claude" / "settings.json" if CHECKOUT else None
+PROJECT_MCP = CHECKOUT / ".mcp.json" if CHECKOUT else None
 
-HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "claude-code"
-SKILL_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "skills"
+HOOK_DIR = PACKAGE_DIR / "harness" / "hooks" / "claude-code"
+SKILL_DIR = PACKAGE_DIR / "harness" / "skills"
 USER_SKILLS_DIR = Path.home() / ".claude" / "skills"
 
 # Keep disposable, general-purpose workers off the interactive session's model. A
@@ -86,13 +88,21 @@ VANILLA_SUBAGENT_MODEL = "sonnet"
 # `recorded_hook_failures`.
 HOOK_FAILURE_LOG = Path.home() / ".thalamus" / "logs" / "hook-failures.log"
 
-CURSOR_HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "cursor"
+# Where `init` records the interpreter an installed wheel's hooks run the CLI under.
+# A hook is a bash script with no Python of its own to ask, and a harness's PATH is
+# not the shell's, so the record names it by absolute path — the way pre-commit's
+# generated hook carries the INSTALL_PYTHON it was installed with. Read by
+# `thalamus_cli` (hooks/claude-code/resolve-scope.sh). A checkout writes none: its
+# hooks run `uv run --project <checkout>`.
+INTERPRETER_RECORD = Path.home() / ".thalamus" / "python"
+
+CURSOR_HOOK_DIR = PACKAGE_DIR / "harness" / "hooks" / "cursor"
 USER_CURSOR_HOOKS = Path.home() / ".cursor" / "hooks.json"
 USER_CURSOR_MCP = Path.home() / ".cursor" / "mcp.json"
-PROJECT_CURSOR_HOOKS = PROJECT_ROOT / ".cursor" / "hooks.json"
-PROJECT_CURSOR_MCP = PROJECT_ROOT / ".cursor" / "mcp.json"
+PROJECT_CURSOR_HOOKS = CHECKOUT / ".cursor" / "hooks.json" if CHECKOUT else None
+PROJECT_CURSOR_MCP = CHECKOUT / ".cursor" / "mcp.json" if CHECKOUT else None
 
-CODEX_HOOK_DIR = PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / "codex"
+CODEX_HOOK_DIR = PACKAGE_DIR / "harness" / "hooks" / "codex"
 
 # Codex's config root, and the file this installer arms codex's hooks in. codex loads
 # hooks from every active config layer — a hooks.json or inline `[hooks]` tables in
@@ -776,7 +786,9 @@ def build_codex_hook_block() -> dict:
 
 
 def build_mcp_entry() -> dict:
-    """The MCP server, anchored on the checkout rather than the session's cwd.
+    """The MCP server, anchored on this install rather than the session's cwd:
+    `uv run --project <checkout>` from a checkout, the wheel's own interpreter
+    otherwise (`paths.mcp_argv`).
 
     THALAMUS_SCOPE is deliberately absent: `main` is the default for a plainly
     launched process, and a pinned session gets its scope from the picked agent
@@ -798,11 +810,8 @@ def build_mcp_entry() -> dict:
     rate = os.environ.get("THALAMUS_WITHHOLD", "").strip()
     if rate:
         env["THALAMUS_WITHHOLD"] = rate
-    return {
-        "command": "uv",
-        "args": ["run", "--project", str(PROJECT_ROOT), "thalamus-mcp"],
-        "env": env,
-    }
+    command, *args = mcp_argv()
+    return {"command": command, "args": args, "env": env}
 
 
 def build_cursor_hook_block() -> dict:
@@ -893,8 +902,8 @@ def install_cursor(dry_run: bool = False) -> list[str]:
         if not dry_run:
             _write_json(USER_CURSOR_MCP, cursor_mcp)
 
-    project = _load_json(PROJECT_CURSOR_HOOKS)
-    if project.get("hooks"):
+    project = _load_json(PROJECT_CURSOR_HOOKS) if PROJECT_CURSOR_HOOKS else {}
+    if PROJECT_CURSOR_HOOKS and project.get("hooks"):
         stripped = _strip_cursor_hooks(json.loads(json.dumps(project)))
         if stripped != project:
             actions.append(
@@ -905,8 +914,8 @@ def install_cursor(dry_run: bool = False) -> list[str]:
     else:
         actions.append("project-scope cursor hook block already absent")
 
-    project_mcp = _load_json(PROJECT_CURSOR_MCP)
-    if "thalamus" in project_mcp.get("mcpServers", {}):
+    project_mcp = _load_json(PROJECT_CURSOR_MCP) if PROJECT_CURSOR_MCP else {}
+    if PROJECT_CURSOR_MCP and "thalamus" in project_mcp.get("mcpServers", {}):
         remaining = {k: v for k, v in project_mcp["mcpServers"].items() if k != "thalamus"}
         actions.append(
             f"{'would remove' if dry_run else 'removed'} project-scope `thalamus` cursor MCP "
@@ -1366,7 +1375,7 @@ def probe_entry_point() -> tuple[bool, str]:
     """
     try:
         proc = subprocess.run(
-            ["uv", "run", "--project", str(PROJECT_ROOT), "thalamus", "--help"],
+            cli_argv("--help"),
             capture_output=True, text=True, timeout=180, cwd=str(Path.home()),
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
@@ -1679,16 +1688,16 @@ def verify_codex() -> list[Check]:
     codex_cli = shutil.which("codex")
     served = codex_mcp_registration()
     checks.append(Check(
-        "codex MCP server registered", str(PROJECT_ROOT) in served,
-        f"`thalamus` in {USER_CODEX_MCP}" if str(PROJECT_ROOT) in served
+        "codex MCP server registered", INSTALL_IDENTITY in served,
+        f"`thalamus` in {USER_CODEX_MCP}" if INSTALL_IDENTITY in served
         else "could not run: `codex` is not on this machine, and the registration "
              "goes in through `codex mcp add`" if codex_cli is None
         else f"not registered yet ({USER_CODEX_MCP}) — `thalamus init` registers it"
         if not served
-        else f"registered with codex but not against this checkout ({PROJECT_ROOT}) "
+        else f"registered with codex but not against this install ({INSTALL_IDENTITY}) "
              "— re-run `thalamus init`",
         pending=not served and codex_cli is not None,
-        blocked=codex_cli is None and str(PROJECT_ROOT) not in served,
+        blocked=codex_cli is None and INSTALL_IDENTITY not in served,
     ))
 
     # Checked rather than assumed because the failure is silent on this harness
@@ -1747,24 +1756,41 @@ def verify(harnesses: tuple[str, ...] = HARNESSES) -> list[Check]:
                               "(`apt install jq`, `brew install jq`)",
                         advisory=jq is None, surface="runtime"))
 
-    uv = shutil.which("uv")
-    checks.append(Check("uv on PATH", uv is not None,
-                        uv or "NOT FOUND — distillation cannot run. Install uv "
-                              "(https://astral.sh/uv)",
-                        advisory=uv is None, surface="runtime"))
+    # How the hooks run the CLI differs by install (`paths.cli_argv`): a checkout's
+    # through uv, an installed wheel's through the interpreter `init` recorded. Each
+    # mode is checked for the one thing it runs on.
+    runnable = True
+    if CHECKOUT is not None:
+        uv = shutil.which("uv")
+        runnable = uv is not None
+        checks.append(Check("uv on PATH", runnable,
+                            uv or "NOT FOUND — distillation cannot run. Install uv "
+                                  "(https://astral.sh/uv)",
+                            advisory=not runnable, surface="runtime"))
+        not_runnable = "not attempted — uv is not on PATH to run it with"
+    else:
+        recorded = recorded_interpreter()
+        checks.append(Check(
+            "interpreter recorded", recorded == sys.executable,
+            f"{recorded} ({INTERPRETER_RECORD})" if recorded == sys.executable
+            else f"none yet ({INTERPRETER_RECORD}) — `thalamus init` records it, and "
+                 "until it does no hook can run the CLI" if not recorded
+            else f"records {recorded}, not this install's {sys.executable} — re-run "
+                 "`thalamus init`",
+            pending=not recorded, surface="runtime"))
+        not_runnable = ""
 
     # The load-bearing one: SessionEnd's exact invocation, from a cwd that is
     # deliberately not the checkout. This is the call that used to die detached.
     #
-    # Without uv it cannot be attempted, and an item that vanishes from the output
-    # reads as a check that passed. Reporting it blocked keeps the count honest about
-    # what was and was not asked.
-    if uv:
+    # Without uv a checkout cannot attempt it, and an item that vanishes from the
+    # output reads as a check that passed. Reporting it blocked keeps the count honest
+    # about what was and was not asked.
+    if runnable:
         ok, detail = probe_entry_point()
         checks.append(Check("distillation entry point", ok, detail, surface="runtime"))
     else:
-        checks.append(Check("distillation entry point", False,
-                            "not attempted — uv is not on PATH to run it with",
+        checks.append(Check("distillation entry point", False, not_runnable,
                             blocked=True, surface="runtime"))
 
     agents = sorted(USER_AGENTS_DIR.glob("thalamus-*.md")) if USER_AGENTS_DIR.is_dir() else []
@@ -1879,17 +1905,17 @@ def verify_claude_mcp() -> Check:
     """
     cli = shutil.which("claude")
     served = claude_mcp_registration()
-    against_this_checkout = str(PROJECT_ROOT) in served
+    against_this_install = INSTALL_IDENTITY in served
     return Check(
-        "claude MCP server registered", against_this_checkout,
-        f"`thalamus` registered at user scope against {PROJECT_ROOT}"
-        if against_this_checkout
+        "claude MCP server registered", against_this_install,
+        f"`thalamus` registered at user scope against {INSTALL_IDENTITY}"
+        if against_this_install
         else "could not run: `claude` is not on this machine, and the registration "
              "goes in through `claude mcp add`" if cli is None and not served
         else "not registered yet — `thalamus init` registers it, and until it does no "
              "`mcp__thalamus__*` tool appears in any session"
         if not served
-        else f"registered, but not against this checkout ({PROJECT_ROOT}) — "
+        else f"registered, but not against this install ({INSTALL_IDENTITY}) — "
              "re-run `thalamus init`",
         pending=not served and cli is not None,
         # Blocked only when there is genuinely no answer: nothing registered *and* no
@@ -1988,6 +2014,32 @@ def relaunch_checks(env_drift: list[str]) -> list[Check]:
     )]
 
 
+def record_interpreter(dry_run: bool = False) -> list[str]:
+    """Write INTERPRETER_RECORD for an installed wheel; nothing for a checkout.
+
+    The record names `sys.executable`, the interpreter running this `init` — the one
+    the wheel is installed under. Rewritten only when it names something else, so a
+    second `init` is a no-op.
+    """
+    if CHECKOUT is not None:
+        return []
+    if recorded_interpreter() == sys.executable:
+        return [f"interpreter record already current ({INTERPRETER_RECORD})"]
+    if not dry_run:
+        INTERPRETER_RECORD.parent.mkdir(parents=True, exist_ok=True)
+        INTERPRETER_RECORD.write_text(sys.executable + "\n")
+    return [f"{'would record' if dry_run else 'recorded'} {sys.executable} as the "
+            f"interpreter the hooks run under ({INTERPRETER_RECORD})"]
+
+
+def recorded_interpreter() -> str:
+    """What INTERPRETER_RECORD names, or "" when there is no record."""
+    try:
+        return INTERPRETER_RECORD.read_text().strip()
+    except OSError:
+        return ""
+
+
 def install(dry_run: bool = False,
             harnesses: tuple[str, ...] = HARNESSES) -> tuple[list[str], list[Check]]:
     """Install at user scope; strip the project-scope duplicate. Idempotent.
@@ -2000,7 +2052,7 @@ def install(dry_run: bool = False,
     install that reports success without exercising anything is precisely the
     silent misconfiguration this module exists to prevent.
     """
-    actions: list[str] = []
+    actions: list[str] = record_interpreter(dry_run=dry_run)
 
     if "cursor" in harnesses:
         actions.extend(install_cursor(dry_run=dry_run))
@@ -2043,8 +2095,8 @@ def install(dry_run: bool = False,
     # Mutual exclusion: with hooks at user scope, the project block would be a
     # second definition whose command string differs, so dedup would not collapse
     # it. Removing it keeps the merge-vs-override question off the critical path.
-    project = _load_json(PROJECT_SETTINGS)
-    if project.get("hooks"):
+    project = _load_json(PROJECT_SETTINGS) if PROJECT_SETTINGS else {}
+    if PROJECT_SETTINGS and project.get("hooks"):
         stripped = _strip_thalamus_hooks(json.loads(json.dumps(project)))
         if stripped != project:
             actions.append(
@@ -2059,8 +2111,8 @@ def install(dry_run: bool = False,
     # and a user-scope server of the same name are two definitions, and the docs
     # do not say which wins. Its `uv run` is cwd-relative anyway, so it is the
     # broken one — remove the whole file if it holds nothing else.
-    project_mcp = _load_json(PROJECT_MCP)
-    if "thalamus" in project_mcp.get("mcpServers", {}):
+    project_mcp = _load_json(PROJECT_MCP) if PROJECT_MCP else {}
+    if PROJECT_MCP and "thalamus" in project_mcp.get("mcpServers", {}):
         remaining = {k: v for k, v in project_mcp["mcpServers"].items() if k != "thalamus"}
         actions.append(
             f"{'would remove' if dry_run else 'removed'} project-scope `thalamus` MCP server "
@@ -2123,6 +2175,9 @@ def _consent_lines(harnesses: tuple[str, ...]) -> list[str]:
         "~/.thalamus/profiles/ — appends this run's own query-cost rows "
         "(`THALAMUS_PROFILE=0` disables the tap)",
     ]
+    if CHECKOUT is None:
+        lines.append(f"{INTERPRETER_RECORD} — records the interpreter the hooks run "
+                     "the CLI under")
     return lines
 
 
@@ -2194,6 +2249,13 @@ def uninstall(dry_run: bool = False) -> list[str]:
 
     actions.append(deregister_mcp(dry_run=dry_run))
     actions.append(deregister_codex_mcp(dry_run=dry_run))
+    # Wiring rather than memory, so it goes with the hooks that read it — and only when
+    # it names this install's interpreter, the same proof the skill links are held to.
+    if CHECKOUT is None and recorded_interpreter() == sys.executable:
+        actions.append(f"{'would remove' if dry_run else 'removed'} the interpreter "
+                       f"record ({INTERPRETER_RECORD})")
+        if not dry_run:
+            INTERPRETER_RECORD.unlink(missing_ok=True)
     # The derived profiles stay, but each is rewritten against the registration as it
     # now stands: one still carrying the `[mcp_servers.thalamus]` forwarding table
     # after the server is gone stops every `codex --profile` launch at startup
@@ -2294,7 +2356,7 @@ def check_report(harnesses: tuple[str, ...] = HARNESSES) -> dict:
         # carries the HOME it was taken against: the whole point of running it in
         # a cell is that the answer differs per HOME.
         "home": str(Path.home()),
-        "project_root": str(PROJECT_ROOT),
+        "install": INSTALL_IDENTITY,
         "harnesses": list(harnesses),
         "checks": [
             {

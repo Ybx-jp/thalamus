@@ -130,6 +130,8 @@ Five manifests ship as examples: `architect`, `designer`, `eval-methodology`,
 `literature` and `qe`. Point `THALAMUS_CONFIG_DIR` at a directory holding your own
 `experts/` to use a different set of experts; the same variable supplies the eval task battery
 from `tasks/`.<!-- (A0010, cites-as-live) -->
+Without it, a checkout reads its own `config/` and an installed wheel reads
+`~/.thalamus/config`.<!-- (A0225, cites-as-live) -->
 
 ## Pinning
 

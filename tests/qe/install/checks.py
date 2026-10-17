@@ -491,24 +491,23 @@ def _console_probe() -> dict:
     }
 
 
-#: The `verify()` checks that look for a directory anchored on PROJECT_ROOT, by the
-#: names install.py renders them under (install.py:1642, :1357, :1482). All three
-#: resolve `PROJECT_ROOT / "src" / "thalamus" / "harness" / "hooks" / <harness>` and
-#: report a `missing: [...]` list, so all three read the anchor and nothing else.
+#: The `verify()` checks that look for a hook directory under the installed package,
+#: by the names install.py renders them under. Each resolves
+#: `PACKAGE_DIR / "harness" / "hooks" / <harness>` and reports a `missing: [...]`
+#: list, so all three read the package anchor and nothing else.
 SCRIPT_PRESENCE_CHECKS = ("hook scripts present", "cursor hook scripts present",
                           "codex hook scripts present")
 
-#: What the package thinks its project root is, and whether a checkout is there. Run
-#: under both interpreters, so the two answers are comparable rather than merely both
-#: recorded.
+#: What the package thinks its own directory is, whether it sees a source checkout
+#: (None for a wheel), and whether the Claude Code hook directory is under the package.
+#: Run under both interpreters, so the two answers are comparable rather than merely
+#: both recorded.
 _PATHS_DUMP = (
     "import json;"
-    "from thalamus.contract.paths import PROJECT_ROOT as r;"
-    "print(json.dumps({'project_root': str(r),"
-    "'pyproject': (r / 'pyproject.toml').is_file(),"
-    "'config_experts': (r / 'config' / 'experts').is_dir(),"
-    "'hook_dir': (r / 'src' / 'thalamus' / 'harness' / 'hooks' / 'claude-code')"
-    ".is_dir()}))"
+    "from thalamus.contract.paths import PACKAGE_DIR as p, CHECKOUT as c;"
+    "print(json.dumps({'package_dir': str(p),"
+    "'checkout': str(c) if c else None,"
+    "'hook_dir': (p / 'harness' / 'hooks' / 'claude-code').is_dir()}))"
 )
 
 
@@ -1349,11 +1348,11 @@ def check_uninstall_leaves_no_dangling_link() -> Result:
 def check_installed_wheel_finds_the_scripts_it_ships() -> Result:
     """Does a wheel installed outside a checkout resolve the files it shipped with?
 
-    Read off `init --check`'s own rendering rather than off `PROJECT_ROOT` directly,
+    Read off `init --check`'s own rendering rather than off `PACKAGE_DIR` directly,
     because the anchor being wrong is the cause and the missing scripts are the
-    impact: a fix that re-anchors on the package makes these lines pass, and a fix
-    that only moves the constant somewhere else does not. The resolved root is
-    recorded in the detail either way, so the witness names the cause.
+    impact: an anchor that resolves under the package makes these lines pass, and one
+    that only looks right as a constant does not. The resolved package dir and
+    checkout are recorded in the detail either way, so the witness names the cause.
     """
     snapshot_state = load_snapshot("wheel")
     if snapshot_state is None:
@@ -1390,16 +1389,15 @@ def check_installed_wheel_finds_the_scripts_it_ships() -> Result:
             "this box and a missing script under the wheel could not be attributed to "
             "packaging")
 
-    checkout_root = (probe.get("checkout_paths") or {}).get("project_root")
+    checkout_root = (probe.get("checkout_paths") or {}).get("checkout")
     control = (f"the same probe from {control_cli['cli']} found all "
-               f"{len(control_scripts)} script sets present, anchored on "
+               f"{len(control_scripts)} script sets present, with checkout "
                f"{checkout_root} (rc={control_cli.get('rc')})")
 
     paths = probe.get("wheel_paths") or {}
-    root = paths.get("project_root", "unresolved")
-    where = (f"the installed package resolves PROJECT_ROOT to {root} "
-             f"(pyproject.toml: {paths.get('pyproject')}, "
-             f"config/experts: {paths.get('config_experts')}, "
+    where = (f"the installed package resolves PACKAGE_DIR to "
+             f"{paths.get('package_dir', 'unresolved')} "
+             f"(checkout: {paths.get('checkout')}, "
              f"hooks dir: {paths.get('hook_dir')})")
 
     # Ordered ahead of the intersection deliberately: a wheel with no console script
