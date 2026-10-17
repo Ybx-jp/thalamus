@@ -36,6 +36,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T21:58:03-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/cli.py § "_cmd_console" =sha256:f3285b856c0c1f0c41c8c98ae463a434d4f478bd5ef112036ca0a1ed99ba9f58
+  artifact: sha256:64c760e0f7b1bc61fec9eba101a408f4ade8864925e235e76ad9c008e01c3ea6
+  note: propagated from a moved ground
+- 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/cli.py § "_cmd_console" =sha256:64c760e0f7b1bc61fec9eba101a408f4ade8864925e235e76ad9c008e01c3ea6
+  note: _cmd_console's default project root comes from paths.default_project_dir; session creation is unchanged. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+
 ## References
 
 - docs/console.md · standing · cites-as-live

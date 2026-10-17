@@ -42,6 +42,13 @@ none
 - 2026-09-20T20:37:29-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:d3826e654bfd232338d3f54777aacf0090c959b8b5b68fa1cc261ed97ab3133b
   note: the citation marker inside this section now names the entry by id alone, under the `citation-slug` rule `claims-ledger.toml` sets for source files, and the docstring line holding it was rejoined. The assertion is unaffected.
+- 2026-10-16T21:58:03-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:d3826e654bfd232338d3f54777aacf0090c959b8b5b68fa1cc261ed97ab3133b
+  artifact: sha256:9143b6488c5821ece4d592a17a90cd2378a586e7300b9aecb9a1454ab8443e89
+  note: propagated from a moved ground
+- 2026-10-16T22:10:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:9143b6488c5821ece4d592a17a90cd2378a586e7300b9aecb9a1454ab8443e89
+  note: _consent_lines names the interpreter record for an installed wheel, outside the harness gate like the other unconditional targets. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
 
 ## References
 

@@ -41,6 +41,13 @@ none
 - 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/harness/pin.py § "write_agent" =sha256:2dd7ee24759cc35e2f6e45cfc02f67744e17bd20acbaa41e96ba7c85cf0759d0
   note: Only the docstring changed, naming the console's spawn where it named `spawn`. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+- 2026-10-16T21:58:02-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/pin.py § "write_agent" =sha256:2dd7ee24759cc35e2f6e45cfc02f67744e17bd20acbaa41e96ba7c85cf0759d0
+  artifact: sha256:4b8c15bfbf24b1c47ea4229c4dd221833fff96b11673464ef9f29c5c498179a3
+  note: propagated from a moved ground
+- 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/pin.py § "write_agent" =sha256:4b8c15bfbf24b1c47ea4229c4dd221833fff96b11673464ef9f29c5c498179a3
+  note: write_agent's project_root became optional when an agents_dir is given; the agent file is still generated under `.claude/agents/`. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
 
 ## References
 

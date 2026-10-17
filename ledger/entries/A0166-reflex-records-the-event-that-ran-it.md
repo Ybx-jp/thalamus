@@ -124,6 +124,13 @@ none
 - 2026-10-08T00:20:00-07:00 · corroborated · grade: argued · author: main
   evidence: code: src/thalamus/harness/reflex.py § "fire" =sha256:861aa97e16791bb83e7d98d65334302056c2d753016b4dfeb7821cbc1ff99746
   note: Read at the current revision. The agentic branch now passes reflex_channel.concurrent() to spawn_worker; the event recorded on every ledger row and trace line is unchanged — the assertion is unaffected.
+- 2026-10-16T21:58:03-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "context" =sha256:f92f251f98f38577716d8a855d97a84cb2f2b331c66ff5de7c74135870a93ec6
+  artifact: sha256:efabf5445f4a096d5888e6dfd7bc5215a4b7fd6034377c4ac3a0a77643b666ff
+  note: propagated from a moved ground
+- 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "context" =sha256:efabf5445f4a096d5888e6dfd7bc5215a4b7fd6034377c4ac3a0a77643b666ff
+  note: reflex.sh runs the CLI through thalamus_cli_argv instead of `uv run --project`; what each firing records is unchanged. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
 
 ## References
 

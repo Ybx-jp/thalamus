@@ -63,6 +63,7 @@ layers:
 - name: entry
   includes:
   - src/thalamus/cli.py
+  - src/thalamus/__main__.py
   - src/thalamus/__init__.py
   # mcp_server.py is an entry point that happens to live in harness/. It is the process
   # the MCP client launches, and it reaches up into eval and conformance the way

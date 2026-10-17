@@ -27,15 +27,16 @@
 #      resolve the same scope this file does.
 
 # The Claude Code library, for the helpers whose behaviour is harness-independent:
-# thalamus_repo_root, thalamus_config_root, thalamus_require_binaries,
-# thalamus_resolve_room, thalamus_resolve_forked_from, thalamus_experts.
+# thalamus_checkout, thalamus_config_root, thalamus_cli_argv, thalamus_python,
+# thalamus_require_binaries, thalamus_resolve_room, thalamus_resolve_forked_from,
+# thalamus_experts.
 # `thalamus_resolve_scope` is redefined below; everything else is taken as-is rather
 # than mirrored, because a second copy of `thalamus_require_binaries` would be a
 # second failure log to keep in step.
 #
-# Sourcing does not disturb `thalamus_repo_root`: it reads `${BASH_SOURCE[0]}` inside
+# Sourcing does not disturb `thalamus_checkout`: it reads `${BASH_SOURCE[0]}` inside
 # the function body, which is the file the function was *defined* in — the Claude
-# Code library — and both directories sit at the same depth under the checkout.
+# Code library — and both directories sit at the same depth under the package.
 . "$(dirname "${BASH_SOURCE[0]}")/../claude-code/resolve-scope.sh"
 
 # Env-only, replacing the Claude Code precedence (picked agent, then env). Codex has

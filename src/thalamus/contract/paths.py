@@ -1,21 +1,67 @@
-"""Where this checkout is.
+"""Where this install is: its own files, the checkout it runs from if any, and how
+to run it.
 
-The repo root is a fact about the tree the package was loaded from: no config, no
-manifest, no I/O, nothing above it in the import graph. It sits in the vocabulary
-layer because the modules that need it sit in three different ones —
-`contract/manifest.py` anchors `config/` to it, `harness/pin.py` opens a pinned
-session in it, and `substrate/writer.py` names it in the graph-down message — and a
-home inside any one of those layers makes the other two read across a boundary. Held
-in one place, the arithmetic is also written once rather than per caller.
+Three facts, one place. The package's own files (hook scripts, skills, static
+assets) sit next to this module wherever it was installed. A source checkout is
+present only when the package was loaded from one (`uv sync` installs it editable,
+so this module is `<checkout>/src/thalamus/contract/paths.py`); an installed wheel
+has none, and everything that asks for one says what it does instead. The command
+that runs this install follows from which of the two it is.
 
-This project runs from its checkout (`uv run`), so the tree the file sits in is the
-project a pinned session should open in. `parents[3]` counts up from
-`src/thalamus/contract/paths.py`; a module at a different depth cannot reuse that
-expression and should import this name rather than write its own.
+No config, no manifest, nothing above it in the import graph: it sits in the
+vocabulary layer because the modules that need it sit in several, and a home inside
+any one of them would make the others read across a boundary.
+
+The hook scripts answer the same question in bash (`resolve-scope.sh`'s
+`thalamus_checkout` and `thalamus_cli`), from the same test: a checkout is a
+directory holding `pyproject.toml` with this package under its `src/`.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+#: The installed package itself: `thalamus/`. Hook scripts, skills and static assets
+#: are resolved under it, so they are found wherever the package was installed.
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
+
+
+def _checkout() -> Path | None:
+    root = PACKAGE_DIR.parents[1]
+    if PACKAGE_DIR.parent.name == "src" and (root / "pyproject.toml").is_file():
+        return root
+    return None
+
+
+#: The source checkout this package was loaded from, or None for an installed wheel.
+CHECKOUT: Path | None = _checkout()
+
+#: Where `thalamus init --check` says this install lives, and what an MCP
+#: registration must name to be this install's: the checkout, or the interpreter the
+#: wheel was installed under.
+INSTALL_IDENTITY = str(CHECKOUT) if CHECKOUT else sys.executable
+
+def default_project_dir() -> Path:
+    """Where a pinned session or the console opens when no directory is named: the
+    checkout when running from one, else the directory the command was run in."""
+    return CHECKOUT if CHECKOUT is not None else Path.cwd()
+
+
+def cli_argv(*args: str) -> list[str]:
+    """The command that runs this install's `thalamus` CLI with `args`.
+
+    A checkout runs through `uv run --project`, which keeps its environment in step
+    with its lockfile. An installed wheel runs under the interpreter it was installed
+    into, by absolute path, because a harness's PATH is not the shell's.
+    """
+    if CHECKOUT is not None:
+        return ["uv", "run", "--project", str(CHECKOUT), "thalamus", *args]
+    return [sys.executable, "-m", "thalamus", *args]
+
+
+def mcp_argv() -> list[str]:
+    """The command that serves this install's MCP server."""
+    if CHECKOUT is not None:
+        return ["uv", "run", "--project", str(CHECKOUT), "thalamus-mcp"]
+    return [sys.executable, "-m", "thalamus.harness.mcp_server"]

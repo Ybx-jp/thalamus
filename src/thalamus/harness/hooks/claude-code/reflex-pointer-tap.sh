@@ -110,7 +110,7 @@ if [ "$pointer_named" = 1 ]; then
 fi
 
 [ "$ready" = 1 ] || exit 0
-thalamus_require_binaries uv || exit 0
+thalamus_cli_argv || exit 0
 
 agent_id=$(printf '%s' "$input" | jq -r '.agent_id // ""')
 key="${agent_id:-session}"
@@ -124,7 +124,7 @@ done
 event=$(printf '%s' "$input" | jq -r '.hook_event_name // "PostToolUse"')
 log_dir="$HOME/.thalamus/logs"
 mkdir -p "$log_dir"
-context=$(uv run --project "$(thalamus_repo_root)" thalamus reflex --deliver \
+context=$("${THALAMUS_CLI[@]}" reflex --deliver \
   --session-id "$session" --agent-id "$agent_id" --event "$event" \
   2>>"$log_dir/reflex.log") || context=""
 

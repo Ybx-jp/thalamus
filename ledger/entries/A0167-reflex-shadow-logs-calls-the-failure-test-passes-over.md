@@ -61,7 +61,13 @@ none
 - 2026-09-28T17:12:02-07:00 · corroborated · grade: measured · author: main
   evidence: code: src/thalamus/eval/reflex.py § "reflex_report" =sha256:d5c259425c08068b69e01b4911356bdbacf6f728c2818b820676eb0fbd6a5f6a
   note: reflex_report now also collects listwise, verdicts and admit_ms into the per-arm effort figures; the shadow loop and its per-event counts are unchanged, so the assertion is unaffected
-
+- 2026-10-16T21:58:03-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "log_dir" =sha256:683fbe2423d6545cc5aae6bddbc48c770af8a3360a91bbb47577898caa11cb66
+  artifact: sha256:7df901951e1fc04c08e28cf63b3a6fd06b67e186a4cbe078b153bdced8fdd283
+  note: propagated from a moved ground
+- 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/hooks/claude-code/reflex.sh § "log_dir" =sha256:7df901951e1fc04c08e28cf63b3a6fd06b67e186a4cbe078b153bdced8fdd283
+  note: reflex.sh's detached shadow process runs the CLI through thalamus_cli_argv and passes it as positional words; it is still detached and unwaited. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
 
 ## References
 

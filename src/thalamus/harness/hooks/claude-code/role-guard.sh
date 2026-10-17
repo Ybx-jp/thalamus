@@ -108,9 +108,8 @@ case "$tool_name" in
     target="$tool_name" ;;
   *) exit 0 ;;
 esac
-repo_root="$(thalamus_repo_root)"
-py="$repo_root/.venv/bin/python"
-[ -x "$py" ] || py="python3"
+py="$(thalamus_python)"
+[ -n "$py" ] || py="python3"
 
 guard_label="role-boundary"
 

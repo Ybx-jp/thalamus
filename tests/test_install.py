@@ -15,6 +15,7 @@ two, and foreign hooks left intact — not about the installer's return value.
 
 import json
 import re
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,7 +23,9 @@ import pytest
 
 from thalamus import cli
 from thalamus.harness import install
-from thalamus.contract.paths import PROJECT_ROOT
+from thalamus.contract.paths import CHECKOUT, INSTALL_IDENTITY
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -83,13 +86,13 @@ def sandbox(tmp_path, monkeypatch):
     # the tests that are about it.
     monkeypatch.setattr(
         install, "codex_mcp_registration",
-        lambda: f"  args: run --project {PROJECT_ROOT} thalamus-mcp\n")
+        lambda: f"  args: run --project {INSTALL_IDENTITY} thalamus-mcp\n")
     # The Claude Code read, stubbed for the same reason: it shells out to the
     # operator's `claude`, so an unstubbed test reports on his registration rather
     # than on the code, and comes back blocked on a runner that has no `claude`.
     monkeypatch.setattr(
         install, "claude_mcp_registration",
-        lambda: f"  Args: run --project {PROJECT_ROOT} thalamus-mcp\n")
+        lambda: f"  Args: run --project {INSTALL_IDENTITY} thalamus-mcp\n")
     # The twin of the seam above, and the one that was never wired into it:
     # `registered_mcp_env` shells out to the same `claude mcp get thalamus`, so an
     # unstubbed test reads the operator's real registration and pays a real CLI boot
@@ -231,7 +234,7 @@ class TestCursorInstall:
         assert hooks["version"] == 1
         assert set(hooks["hooks"]) == {e for e, _ in install.CURSOR_HOOK_WIRING}
         served = json.loads(sandbox["cursor_user_mcp"].read_text())["mcpServers"]["thalamus"]
-        assert str(PROJECT_ROOT) in served["args"]
+        assert INSTALL_IDENTITY in served["args"]
 
     def test_strips_the_project_scope_duplicate(self, sandbox):
         """Cursor documents Project > User precedence, so a surviving project
@@ -564,7 +567,18 @@ class TestHookBlock:
 class TestMcpEntry:
     def test_anchored_on_the_checkout_not_the_session_cwd(self):
         entry = install.build_mcp_entry()
-        assert entry["args"] == ["run", "--project", str(PROJECT_ROOT), "thalamus-mcp"]
+        assert entry["command"] == "uv"
+        assert entry["args"] == ["run", "--project", str(CHECKOUT), "thalamus-mcp"]
+
+    def test_an_installed_wheel_registers_its_own_interpreter(self, monkeypatch):
+        """No checkout means no `uv run --project`: the server is the wheel's own
+        interpreter running the module, by absolute path."""
+        monkeypatch.setattr("thalamus.contract.paths.CHECKOUT", None)
+
+        entry = install.build_mcp_entry()
+
+        assert entry["command"] == sys.executable
+        assert entry["args"] == ["-m", "thalamus.harness.mcp_server"]
 
     def test_no_scope_is_baked_in(self):
         """A static user-scope config cannot know the pin; baking one would pin
@@ -817,7 +831,7 @@ class TestTheClaudeCodeMcpRegistration:
     def test_a_registration_against_this_checkout_passes(self, sandbox):
         check = install.verify_claude_mcp()
 
-        assert check.ok and str(PROJECT_ROOT) in check.detail
+        assert check.ok and INSTALL_IDENTITY in check.detail
 
     def _present(self, monkeypatch, *names):
         """Pin the CLI as present: pending is the state of a box that can act on it,
@@ -854,7 +868,7 @@ class TestTheClaudeCodeMcpRegistration:
         check = install.verify_claude_mcp()
 
         assert not check.ok and not check.pending and not check.blocked
-        assert "not against this checkout" in check.detail
+        assert "not against this install" in check.detail
         assert check.render().startswith("  ✗")
 
     def test_a_box_without_the_claude_cli_could_not_run_it(self, sandbox, monkeypatch):
@@ -1580,7 +1594,7 @@ class TestTheInstallMatrixCountsTheSameWiring:
     """
 
     def test_expected_hook_entries_matches_hook_wiring(self):
-        source = (PROJECT_ROOT / "tests" / "qe" / "install" / "checks.py").read_text()
+        source = (REPO / "tests" / "qe" / "install" / "checks.py").read_text()
         match = re.search(r"^EXPECTED_HOOK_ENTRIES = (\d+)$", source, re.M)
         assert match, "checks.py no longer declares EXPECTED_HOOK_ENTRIES"
 
@@ -1689,7 +1703,7 @@ class TestTheCheckAsData:
         says nothing without the HOME it describes."""
         report = install.check_report()
         assert report["home"] == str(Path.home())
-        assert report["project_root"] == str(PROJECT_ROOT)
+        assert report["install"] == INSTALL_IDENTITY
 
     def test_json_without_check_is_refused_rather_than_ignored(self, sandbox):
         """`--json` is the shape of the *verification*, so accepting it beside an
@@ -1802,3 +1816,87 @@ class TestConsentNamesTheSelectionsRadius:
 
         assert install.run(harness="claude") == 1
         assert seen == [("claude",)]
+
+
+class TestInstalledWheel:
+    """`init` from an installed wheel, which has no checkout.
+
+    The checkout's own behaviour is every other test in this file and is the control:
+    the same functions, with `CHECKOUT` set, write no record and check `uv`.
+    """
+
+    @pytest.fixture
+    def wheel(self, sandbox, monkeypatch, tmp_path):
+        record = tmp_path / ".thalamus" / "python"
+        monkeypatch.setattr(install, "CHECKOUT", None)
+        monkeypatch.setattr(install, "INTERPRETER_RECORD", record)
+        return record
+
+    def test_init_records_the_interpreter_it_ran_under(self, wheel):
+        actions = install.record_interpreter()
+
+        assert wheel.read_text().strip() == sys.executable
+        assert any("recorded" in a for a in actions)
+
+    def test_a_second_init_leaves_a_current_record_alone(self, wheel):
+        install.record_interpreter()
+        before = wheel.stat().st_mtime_ns
+
+        actions = install.record_interpreter()
+
+        assert wheel.stat().st_mtime_ns == before
+        assert any("already current" in a for a in actions)
+
+    def test_a_dry_run_records_nothing(self, wheel):
+        install.record_interpreter(dry_run=True)
+        assert not wheel.exists()
+
+    def test_a_checkout_records_nothing(self, wheel, monkeypatch):
+        monkeypatch.setattr(install, "CHECKOUT", REPO)
+        assert install.record_interpreter() == []
+        assert not wheel.exists()
+
+    def test_verify_reports_a_missing_record_as_pending_not_broken(self, wheel):
+        row = next(c for c in install.verify(("claude",)) if c.name == "interpreter recorded")
+        assert not row.ok and row.pending
+
+    def test_verify_fails_a_record_naming_another_interpreter(self, wheel):
+        wheel.parent.mkdir(parents=True)
+        wheel.write_text("/somewhere/else/python\n")
+
+        row = next(c for c in install.verify(("claude",)) if c.name == "interpreter recorded")
+
+        assert not row.ok and not row.pending
+        assert "/somewhere/else/python" in row.detail
+
+    def test_verify_does_not_ask_an_installed_wheel_for_uv(self, wheel):
+        names = {c.name for c in install.verify(("claude",))}
+        assert "uv on PATH" not in names
+
+    def test_uninstall_removes_the_record_it_wrote(self, wheel):
+        install.record_interpreter()
+
+        install.uninstall()
+
+        assert not wheel.exists()
+
+    def test_uninstall_leaves_a_record_that_names_another_install(self, wheel):
+        wheel.parent.mkdir(parents=True)
+        wheel.write_text("/somewhere/else/python\n")
+
+        install.uninstall()
+
+        assert wheel.read_text() == "/somewhere/else/python\n"
+
+    def test_the_consent_prompt_names_the_record(self, wheel):
+        assert any(str(wheel) in line for line in install._consent_lines(("claude",)))
+
+    def test_project_scope_files_are_not_touched_without_a_checkout(self, wheel, monkeypatch):
+        for name in ("PROJECT_SETTINGS", "PROJECT_MCP", "PROJECT_CURSOR_HOOKS",
+                     "PROJECT_CURSOR_MCP"):
+            monkeypatch.setattr(install, name, None)
+
+        actions, _ = install.install()
+
+        assert not any("project-scope" in a and ("strip" in a or "remov" in a)
+                       for a in actions)

@@ -49,6 +49,13 @@ none
 - 2026-10-16T17:45:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/console/server.py § "Config" =sha256:615c62739f84b9ede48022790c3e1b23dd2d205624be4d225c809c22c819c634
   note: `__post_init__` now reads ROSTER_SESSION from console/windows.py; the favorites handling is unchanged. Moved by #342, which takes tmux and room handling out of core into console/; the assertion is unaffected.
+- 2026-10-16T21:58:03-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/console/server.py § "Config" =sha256:615c62739f84b9ede48022790c3e1b23dd2d205624be4d225c809c22c819c634
+  artifact: sha256:8a2bfc10a4c2ee663584182e29f0c1cb63e882375428134b706326bf78d246c8
+  note: propagated from a moved ground
+- 2026-10-16T22:10:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/console/server.py § "Config" =sha256:8a2bfc10a4c2ee663584182e29f0c1cb63e882375428134b706326bf78d246c8
+  note: Config's project_root default reads paths.CHECKOUT instead of the removed pin.PROJECT_ROOT; the favorites store is untouched. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
 
 ## References
 

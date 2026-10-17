@@ -27,7 +27,7 @@ thalamus_sandbox_guard
 # script dies on the first `jq` under `set -euo pipefail` and the session is lost in
 # silence; with it, the loss is a dated line in ~/.thalamus/logs/hook-failures.log
 # that `thalamus init --check` reads back.
-thalamus_require_binaries jq uv || exit 0
+thalamus_require_binaries jq $(thalamus_cli_needs) || exit 0
 
 input=$(cat)
 
@@ -165,13 +165,11 @@ fi
 # declines (non-conversation session): the sweep is still worth it. Trace
 # identity is content-addressed, so concurrent session-ends converge instead of
 # duplicating. The Pulse dashboard's pending stamp reads this loop's result.
-# `uv run --project <checkout>`, not the session's cwd: a session pinned into
-# another repo (`thalamus spawn --dir`) has a cwd that is not a uv project with
-# thalamus in it, so a cwd-anchored invocation resolves no `thalamus` command and
-# the session silently never distills. --project (not --directory) keeps the
-# child's cwd where it is while resolving the environment from the checkout, the
-# same pattern the thalamus-pulse user unit already uses.
-repo_root="$(thalamus_repo_root)"
+# This install's CLI (`thalamus_cli_argv`), not one resolved from the session's cwd:
+# a session pinned into another repo (`thalamus spawn --dir`) has a cwd with no
+# thalamus in it, and a cwd-anchored invocation would silently never distill.
+thalamus_cli_argv || exit 0
+cli="$(thalamus_cli_quoted)"
 
 # A fork distills its **delta**, not its transcript. A `--fork-session` JSONL is the
 # parent's whole conversation restamped with the fork's own sessionId, the parent's
@@ -195,7 +193,7 @@ repo_root="$(thalamus_repo_root)"
 nohup sh -c "
   projects_dir='$projects_dir'
   if [ -n '$forked_from' ] && [ -n '$transcript_path' ]; then
-    if delta_root=\$(uv run --project '$repo_root' thalamus quick delta \
+    if delta_root=\$($cli quick delta \
         --transcript '$transcript_path' --parent '$forked_from'); then
       projects_dir=\"\$delta_root\"
       echo \"fork of ${forked_from:0:8}: distilling delta only, from \$delta_root\"
@@ -232,7 +230,7 @@ nohup sh -c "
       \"\$now\" \"\$1\" \"\$2\" '${session_id}' \"\$3\" '$log' \
       >>'$log_dir/hook-failures.log' 2>/dev/null || true
   }
-  uv run --project '$repo_root' thalamus extract --harness claude \
+  $cli extract --harness claude \
     --session '$session_id' --scope '$scope' --room '$room' \
     --forked-from '$forked_from' \$projects_arg --force --write -- '$project_dir'
   status=\$?
@@ -241,7 +239,7 @@ nohup sh -c "
     echo \"extract exited \$status — not running eval sync against a half-written episode\"
     exit \$status
   fi
-  uv run --project '$repo_root' thalamus eval sync --write \
+  $cli eval sync --write \
     || record_failure 'thalamus eval sync' \$? 'this session was distilled; its traces were not synced'
 " >>"$log" 2>&1 </dev/null &
 

@@ -42,12 +42,13 @@ if [ -z "${THALAMUS_MAX_TURNS:-}${THALAMUS_MAX_TOOL_CALLS:-}${THALAMUS_MAX_TOKEN
   exit 0
 fi
 
-repo_root="$(thalamus_repo_root)"
-py="$repo_root/.venv/bin/python"
-if [ -x "$py" ]; then
+py="$(thalamus_python)"
+if [ -n "$py" ]; then
   run=("$py")
 else
-  run=(uv run --project "$repo_root" python)
+  checkout="$(thalamus_checkout)"
+  [ -n "$checkout" ] || exit 0
+  run=(uv run --project "$checkout" python)
 fi
 
 log_dir="$HOME/.thalamus/logs"
