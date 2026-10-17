@@ -1,7 +1,7 @@
 """What the operator types is what the pane receives — tmux must read it as data.
 
 Issue #152, fixed. `/api/send` (`console/server.py`) and `dispatch._send`
-(`harness/dispatch.py`) hand caller text to `tmux send-keys -l`. `-l` stops tmux reading
+(`console/dispatch.py`) hand caller text to `tmux send-keys -l`. `-l` stops tmux reading
 the text as key names, but two layers under it still parse the text element as tmux
 syntax:
 
@@ -244,7 +244,7 @@ def _arrived(private: _PrivateTmux, argv: tuple[str, ...], text: str) -> tuple[b
 
 def run() -> Finding | None:
     from thalamus.console import server as console  # noqa: PLC0415
-    from thalamus.harness import dispatch  # noqa: PLC0415
+    from thalamus.console import dispatch  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         private = _PrivateTmux(Path(tmp))
@@ -303,7 +303,7 @@ def run() -> Finding | None:
                             summary="dispatch._send built no send-keys argv for a "
                                     "payload, so this case cannot report on it",
                             witness=f"text={text!r} ({why}) produced no send-keys call",
-                            site="src/thalamus/harness/dispatch.py",
+                            site="src/thalamus/console/dispatch.py",
                         )
                     captured.append(("dispatch._send", text, why, new[0]))
             finally:
@@ -365,7 +365,7 @@ def run() -> Finding | None:
                             "dropped",
                     witness="; ".join(lost) + " — the same payloads all arrive through "
                             "an argv built as `-l -- <text, final ; escaped>`",
-                    site="src/thalamus/console/server.py, src/thalamus/harness/dispatch.py",
+                    site="src/thalamus/console/server.py, src/thalamus/console/dispatch.py",
                 )
         finally:
             private.stop()

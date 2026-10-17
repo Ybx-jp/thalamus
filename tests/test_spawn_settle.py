@@ -26,7 +26,6 @@ import pytest
 
 from thalamus.console import server
 from thalamus.console.server import Config, do_spawn
-from thalamus.harness import pin
 from thalamus.console import windows
 from thalamus.console import tmux
 from thalamus.harness.launcher import LAUNCH_SHAPES, settle_s

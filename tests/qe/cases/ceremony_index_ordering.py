@@ -2,7 +2,7 @@
 
 The ordering-independence shape of the qe charter's write-path gap (issue #76): apply
 the same set of inputs in two different orders and assert the same final state.
-`next_index()` (`src/thalamus/harness/ceremonies.py:185`) numbers *occasions*, not
+`next_index()` (`src/thalamus/console/ceremonies.py:197`) numbers *occasions*, not
 *runs* — its own docstring is explicit that "a skipped ceremony consumes an index," so a
 room's `start()` and `skip()` calls share one counter. That makes order a live question:
 if `skip()` secretly failed to consume an index the way `start()` does, or consumed two,
@@ -40,7 +40,7 @@ _KIND = "review"
 
 
 def _run_order(ops: tuple[str, ...]) -> list[int]:
-    from thalamus.harness import ceremonies  # noqa: PLC0415
+    from thalamus.console import ceremonies  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         ledger = Path(tmp) / "ceremonies.jsonl"
@@ -95,7 +95,7 @@ def run() -> Finding | None:
         ),
         witness=f"order {order_a} -> indices {indices_a}; "
                 f"order {order_b} -> indices {indices_b}",
-        site="src/thalamus/harness/ceremonies.py:next_index",
+        site="src/thalamus/console/ceremonies.py:next_index",
     )
 
 

@@ -57,7 +57,8 @@ def _call_args(source: str, start: int) -> str:
 
 
 def run() -> Finding | None:
-    from thalamus.harness import dispatch, pin  # noqa: PLC0415
+    from thalamus.console import dispatch
+    from thalamus.harness import pin  # noqa: PLC0415
 
     faults: list[str] = []
 

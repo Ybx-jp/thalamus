@@ -45,7 +45,7 @@ def _descriptor_helper():
 
 
 def run() -> Finding | None:
-    from thalamus.harness import dispatch  # noqa: PLC0415
+    from thalamus.console import dispatch  # noqa: PLC0415
 
     descriptor = _descriptor_helper()
     root = Path(tempfile.mkdtemp(prefix="qe-dispatch-"))
@@ -116,7 +116,7 @@ def run() -> Finding | None:
             summary="no member of the room is addressable by name, so the filter is "
                     "failing wholesale rather than for one member class",
             witness="; ".join(unaddressable),
-            site="src/thalamus/harness/dispatch.py::preflight",
+            site="src/thalamus/console/dispatch.py::preflight",
         )
 
     if not unaddressable:
@@ -130,7 +130,7 @@ def run() -> Finding | None:
             "launched without one is visible when unnamed and invisible when named"
         ),
         witness="; ".join(unaddressable),
-        site="src/thalamus/harness/dispatch.py::preflight (scope filter)",
+        site="src/thalamus/console/dispatch.py::preflight (scope filter)",
     )
 
 

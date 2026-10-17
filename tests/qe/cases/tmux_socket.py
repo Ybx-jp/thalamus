@@ -49,7 +49,7 @@ def _socket_scoped(rest: str) -> bool:
 
     `tmux [-L name | -S path] <command> [args]`: the socket flag is a *server* option and
     must precede the command word. A search for `-L`/`-S` anywhere in the argv is not the
-    same question, and the difference is not hypothetical — `pin.py:807` builds
+    same question, and the difference is not hypothetical — `console/windows.py` builds
     `tmux capture-pane -p -J -S - -t <window>`, where `-S` is capture-pane's start-line
     flag asking for scrollback history. An unordered search read that as a scoped call and
     reported `16/17 unscoped` against a true 17/17, which is a false negative in the
