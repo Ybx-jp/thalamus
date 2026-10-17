@@ -17,6 +17,7 @@ from typing import Any, Protocol
 import uvicorn
 import yaml
 
+from thalamus import __version__
 from thalamus.substrate.schema import CloseDisposition, SessionGraph, ThreadClose
 from thalamus.archive import archive_dir
 from thalamus.console.server import DEFAULT_PORT as CONSOLE_PORT
@@ -90,6 +91,10 @@ def _main():
                "retire-sources, repair-claim-addresses) are not listed here: they migrate an "
                "existing graph and a new one can never need them. Each answers "
                "--help, and docs/cli.md documents them under Maintenance.",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"thalamus {__version__}",
+        help="Print the installed version and exit",
     )
     parser.add_argument(
         "--debug",

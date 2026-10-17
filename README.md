@@ -149,9 +149,8 @@ Thalamus runs from a clone, and `git pull` is the upgrade path. A wheel built fr
 the tree installs outside a checkout: it finds its own hook scripts and skills, and its
 hooks run the CLI under the interpreter `thalamus init` records, and `init` gives it
 two example experts, and `thalamus graph up` brings up the graph from the compose file
-it ships. It is not published yet: `pyproject.toml` carries `Private :: Do Not Upload`
-until the core is released as `thalamus-memory`, which makes the closed index
-mechanical rather than a stated intention.
+it ships. A version tag publishes it to PyPI as `thalamus-memory` (CONTRIBUTING.md,
+"Releasing"); the import name and the CLI stay `thalamus`.
 
 One feature is experimental and off by default: frame themes, which render the pane
 inside artwork, behind `thalamus console --frames PATH`. Without the flag there are no

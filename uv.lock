@@ -2941,7 +2941,7 @@ wheels = [
 ]
 
 [[package]]
-name = "thalamus"
+name = "thalamus-memory"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
