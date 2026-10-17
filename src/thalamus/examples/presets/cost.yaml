@@ -1,0 +1,11 @@
+# Presets for the `cost` dimension, selected by name from an expert manifest.
+# Written by `thalamus preset`; hand edits are read the same, comments are not kept.
+frugal:
+  model_class: standard
+  effort: low
+balanced:
+  model_class: strong
+  effort: medium
+max:
+  model_class: frontier
+  effort: high

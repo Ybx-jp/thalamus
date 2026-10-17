@@ -1,0 +1,43 @@
+# Expert manifest — technical literature. An example: edit it, or delete it.
+#
+# An expert is a scope: its own memory, which a session pinned to it reads first and
+# writes into when it ends. This one is fed by curated ingestion —
+# `thalamus ingest <url> --scope literature` — so the papers and posts you choose to
+# feed it become claims it can cite back, each with the passage it came from.
+#
+# `thalamus init` copied this file into your config root because the root held no
+# manifests. It never overwrites one, so this file is yours to change.
+
+contract: v0
+scope: literature
+name: Technical literature
+
+# What this expert knows about. A pinned session's charter states it, and so does
+# every consultation answered from here. Write the fields you actually work in.
+domain: >-
+  The research literature behind the projects I work on: papers, technical reports
+  and engineering write-ups, read for what they report and how they measured it.
+
+# Origin tier of everything ingestion writes here. Tier 2 is curated third-party
+# content: it informs a session and never instructs it, however good the source is.
+tier: 2
+
+# The kinds of claim ingestion writes. Declare only what a real writer produces, so an
+# empty kind is a gap rather than a decoration.
+claim_kinds:
+  - literature/finding # what a source reports or demonstrates
+  - literature/technique # a method the source introduces or evaluates
+
+# Hosts `thalamus ingest <url>` may fetch from, matched as suffixes. Keep it short:
+# the list is the curation. A local file bypasses it, because handing one over is
+# itself the curation decision.
+allowlist:
+  - arxiv.org
+  - aclanthology.org
+  - openreview.net
+  - github.com
+
+# The `budget` preset this scope's sessions run under, from `presets/budget.yaml`
+# beside this directory. A session that spends it is told to answer, then stopped.
+# Remove the line to leave the scope uncapped.
+budget: standard

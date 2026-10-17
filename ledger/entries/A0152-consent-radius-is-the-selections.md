@@ -49,6 +49,13 @@ none
 - 2026-10-16T22:10:00-07:00 · corroborated · grade: argued · author: architect
   evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:9143b6488c5821ece4d592a17a90cd2378a586e7300b9aecb9a1454ab8443e89
   note: _consent_lines names the interpreter record for an installed wheel, outside the harness gate like the other unconditional targets. #35 makes an installed wheel resolve its own files and run itself (contract/paths.py). The assertion is unaffected.
+- 2026-10-16T22:32:10-07:00 · contested · grade: argued · author: propagation
+  evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:9143b6488c5821ece4d592a17a90cd2378a586e7300b9aecb9a1454ab8443e89
+  artifact: sha256:2994f582f2226bcc229caef60e194098be799d0b12782ef278905c94edf5360f
+  note: propagated from a moved ground
+- 2026-10-16T22:45:00-07:00 · corroborated · grade: argued · author: architect
+  evidence: code: src/thalamus/harness/install.py § "_consent_lines" =sha256:2994f582f2226bcc229caef60e194098be799d0b12782ef278905c94edf5360f
+  note: _consent_lines names the config root when init will seed it with the example experts, outside the harness gate like the other unconditional targets. The assertion is unaffected.
 
 ## References
 

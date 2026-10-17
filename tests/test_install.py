@@ -1900,3 +1900,76 @@ class TestInstalledWheel:
 
         assert not any("project-scope" in a and ("strip" in a or "remov" in a)
                        for a in actions)
+
+
+class TestTheExamplesShipAndSeedAnEmptyConfigRoot:
+    """`init` gives a fresh install experts to pin, without touching a chosen set.
+
+    The checkout is the control: its `config/` holds manifests, so every other test in
+    this file runs `install()` against it and none of them copies anything.
+    """
+
+    @pytest.fixture
+    def root(self, sandbox, tmp_path, monkeypatch):
+        root = tmp_path / "config-root"
+        monkeypatch.setenv("THALAMUS_CONFIG_DIR", str(root))
+        return root
+
+    def test_every_shipped_example_loads_and_its_presets_resolve(self):
+        from thalamus.contract.manifest import available_scopes, load_manifest
+
+        base = install.EXAMPLES_DIR
+        assert available_scopes(base) == ["literature", "qe"]
+        literature = load_manifest("literature", base)
+        assert literature.budget == "standard"
+        assert literature.budget_preset.sets["max_turns"] == "40"
+        assert load_manifest("qe", base).write_boundary.denies("/repo/src/app.py")
+
+    def test_an_empty_root_receives_every_example(self, root):
+        actions = install.seed_config()
+
+        shipped = sorted(p.relative_to(install.EXAMPLES_DIR)
+                         for p in install.EXAMPLES_DIR.rglob("*.yaml"))
+        assert sorted(p.relative_to(root) for p in root.rglob("*.yaml")) == shipped
+        assert any("copied the example experts" in a for a in actions)
+
+    def test_a_root_holding_any_manifest_is_left_alone(self, root):
+        (root / "experts").mkdir(parents=True)
+        (root / "experts" / "mine.yaml").write_text("scope: mine\n")
+
+        assert install.seed_config() == []
+        assert sorted(p.name for p in root.rglob("*.yaml")) == ["mine.yaml"]
+
+    def test_a_file_already_there_is_never_replaced(self, root):
+        presets = root / "presets"
+        presets.mkdir(parents=True)
+        (presets / "budget.yaml").write_text("tight:\n  max_turns: 5\n")
+
+        install.seed_config()
+
+        assert (presets / "budget.yaml").read_text() == "tight:\n  max_turns: 5\n"
+        assert (root / "experts" / "literature.yaml").is_file()
+
+    def test_a_second_init_copies_nothing(self, root):
+        install.seed_config()
+        assert install.seed_config() == []
+
+    def test_a_dry_run_copies_nothing(self, root):
+        actions = install.seed_config(dry_run=True)
+        assert not root.exists()
+        assert any("would copy" in a for a in actions)
+
+    def test_install_derives_agents_from_the_seeded_experts(self, root, monkeypatch):
+        # The sandbox stubs the writer out; this test is about what it is given.
+        from thalamus.harness import pin
+        monkeypatch.setattr(install, "write_all_agents", pin.write_all_agents)
+
+        install.install(harnesses=("claude",))
+
+        written = sorted(p.name for p in install.USER_AGENTS_DIR.glob("thalamus-*.md"))
+        assert written == ["thalamus-literature.md", "thalamus-qe.md"]
+
+    def test_the_consent_prompt_names_the_root_only_when_it_will_be_seeded(self, root):
+        assert any(str(root) in line for line in install._consent_lines(("claude",)))
+        install.seed_config()
+        assert not any(str(root) in line for line in install._consent_lines(("claude",)))

@@ -126,8 +126,12 @@ tree leaves that tree unwritable by everyone rather than reserved for
 someone.<!-- (A0009, cites-as-live) -->
 A test asserts every owning scope still ships a manifest.
 
-Five manifests ship as examples: `architect`, `designer`, `eval-methodology`,
-`literature` and `qe`. Point `THALAMUS_CONFIG_DIR` at a directory holding your own
+This repository's `config/` holds five manifests: `architect`, `designer`,
+`eval-methodology`, `literature` and `qe`. An installed wheel ships two examples,
+`literature` and `qe`, with `budget` and `cost` presets files, and `thalamus init`
+copies them into a config root that holds no manifests, never replacing a file that is
+already there.<!-- (A0226, cites-as-live) -->
+Point `THALAMUS_CONFIG_DIR` at a directory holding your own
 `experts/` to use a different set of experts; the same variable supplies the eval task battery
 from `tasks/`.<!-- (A0010, cites-as-live) -->
 Without it, a checkout reads its own `config/` and an installed wheel reads
