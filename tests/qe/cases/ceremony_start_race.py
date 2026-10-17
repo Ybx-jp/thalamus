@@ -50,7 +50,7 @@ _KIND = "retrospective"
 _WORKER = r"""
 import sys, json
 from pathlib import Path
-from thalamus.harness import ceremonies as c
+from thalamus.console import ceremonies as c
 ledger, room, kind, n, mix = Path(sys.argv[1]), sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5] == "1"
 ids = []
 for i in range(n):
@@ -92,7 +92,7 @@ def _check(label: str, ids: list[str], expected: dict[tuple[str, str], int]):
 
 
 def run() -> Finding | None:
-    from thalamus.harness import ceremonies  # noqa: PLC0415
+    from thalamus.console import ceremonies  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
         ledger = Path(tmp) / "ceremonies.jsonl"
@@ -163,7 +163,7 @@ def run() -> Finding | None:
             "that does not yet include the previous writer's row"
         ),
         witness="; ".join(witnesses),
-        site="src/thalamus/harness/ceremonies.py:_append_occasion",
+        site="src/thalamus/console/ceremonies.py:_append_occasion",
     )
 
 
