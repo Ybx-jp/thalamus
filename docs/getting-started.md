@@ -193,10 +193,12 @@ not.
 
 ## 7. Pin an expert
 
-An expert is a scope declared by a manifest in `config/experts/`. Five ship as
-examples: `architect`, `designer`, `eval-methodology`, `literature` and `qe`. Two of
+An expert is a scope declared by a manifest in `config/experts/`. This checkout's
+holds five: `architect`, `designer`, `eval-methodology`, `literature` and `qe`. Two of
 them are worth reading before you write your own — `designer` shows how a scope is
 given its own MCP tools, and `qe` shows a scope defined by what it must *not* produce.
+An installed wheel ships `literature` and `qe` as examples, and `thalamus init` copies
+them into `~/.thalamus/config` when it holds no manifests.
 
 To use your own experts instead, point `THALAMUS_CONFIG_DIR` at a directory holding an
 `experts/` subdirectory. The same variable supplies the eval task battery from

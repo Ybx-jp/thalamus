@@ -57,6 +57,7 @@ from pathlib import Path
 
 from thalamus.harness import agents
 from thalamus.harness.agents import LAUNCHABLE as AGENT_LAUNCHABLE
+from thalamus.contract.manifest import config_root
 from thalamus.contract.paths import CHECKOUT, INSTALL_IDENTITY, PACKAGE_DIR, cli_argv, mcp_argv
 from thalamus.harness.pin import (
     USER_AGENTS_DIR,
@@ -73,6 +74,11 @@ PROJECT_MCP = CHECKOUT / ".mcp.json" if CHECKOUT else None
 
 HOOK_DIR = PACKAGE_DIR / "harness" / "hooks" / "claude-code"
 SKILL_DIR = PACKAGE_DIR / "harness" / "skills"
+
+# Example experts and presets that ship in the package, laid out as a config root is:
+# `experts/*.yaml` and `presets/*.yaml`. `init` copies them into a config root that
+# holds no manifests, so a fresh install has experts to pin (`seed_config`).
+EXAMPLES_DIR = PACKAGE_DIR / "examples"
 USER_SKILLS_DIR = Path.home() / ".claude" / "skills"
 
 # Keep disposable, general-purpose workers off the interactive session's model. A
@@ -2014,6 +2020,38 @@ def relaunch_checks(env_drift: list[str]) -> list[Check]:
     )]
 
 
+def _holds_manifests(root: Path) -> bool:
+    return any((root / "experts").glob("*.yaml"))
+
+
+def seed_config(dry_run: bool = False) -> list[str]:
+    """Copy the shipped examples into the config root, if it holds no manifests.
+
+    Never overwrites. A root with any manifest in it is the operator's configuration
+    and is left alone entirely, so examples are never mixed into a set someone chose;
+    and in a root that has none, a file already present (a hand-written preset, say)
+    is skipped rather than replaced. A checkout's own `config/` always holds
+    manifests, so this is a no-op there.
+    """
+    root = config_root()
+    if _holds_manifests(root):
+        return []
+    copied: list[Path] = []
+    for source in sorted(EXAMPLES_DIR.rglob("*.yaml")):
+        dest = root / source.relative_to(EXAMPLES_DIR)
+        if dest.exists():
+            continue
+        copied.append(dest)
+        if not dry_run:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, dest)
+    if not copied:
+        return []
+    names = ", ".join(str(d.relative_to(root)) for d in copied)
+    return [f"{'would copy' if dry_run else 'copied'} the example experts and presets "
+            f"into {root}: {names}"]
+
+
 def record_interpreter(dry_run: bool = False) -> list[str]:
     """Write INTERPRETER_RECORD for an installed wheel; nothing for a checkout.
 
@@ -2053,6 +2091,9 @@ def install(dry_run: bool = False,
     silent misconfiguration this module exists to prevent.
     """
     actions: list[str] = record_interpreter(dry_run=dry_run)
+    # Before anything reads the manifests: the agents and codex profiles below are
+    # derived from whatever experts the config root holds.
+    actions.extend(seed_config(dry_run=dry_run))
 
     if "cursor" in harnesses:
         actions.extend(install_cursor(dry_run=dry_run))
@@ -2178,6 +2219,10 @@ def _consent_lines(harnesses: tuple[str, ...]) -> list[str]:
     if CHECKOUT is None:
         lines.append(f"{INTERPRETER_RECORD} — records the interpreter the hooks run "
                      "the CLI under")
+    root = config_root()
+    if not _holds_manifests(root):
+        lines.append(f"{root} — copies the example experts and presets (it holds no "
+                     "manifests yet; nothing there is overwritten)")
     return lines
 
 

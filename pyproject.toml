@@ -11,12 +11,12 @@ license-files = ["LICENSE"]
 authors = [{ name = "Jackson Porter" }]
 keywords = ["agents", "memory", "knowledge-graph", "gremlin", "llm", "evaluation"]
 classifiers = [
-    # Not published to any index yet. An installed wheel resolves its own files and
-    # runs its hooks (`contract/paths.py`), but it ships no expert manifests, so it
-    # installs a harness with no experts in it. This classifier makes that a
-    # mechanical guarantee rather than an intention; PyPI refuses an upload carrying
-    # it. The name is taken on PyPI regardless — `thalamus` there is GNU Health's
-    # federation server.
+    # Not published to any index yet. `contract/ownership.PATH_OWNERSHIP` still
+    # reserves `*/tests/qe/*` for the `qe` scope in the package itself, so an
+    # installed wheel would apply this repository's rule in every repository its
+    # user works in. This classifier makes that a mechanical guarantee rather than
+    # an intention; PyPI refuses an upload carrying it. The name is taken on PyPI
+    # regardless — `thalamus` there is GNU Health's federation server.
     "Private :: Do Not Upload",
     "Development Status :: 3 - Alpha",
     "Environment :: Console",

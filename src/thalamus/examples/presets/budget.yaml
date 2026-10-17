@@ -1,0 +1,17 @@
+# Presets for the `budget` dimension, selected by name from an expert manifest's
+# `budget:`. A session that spends one is told to answer, then stopped; the prompt
+# ends, not the session. A key left out is not capped.
+#
+#   max_turns       tool-using model turns per prompt
+#   max_tool_calls  tool calls per prompt
+#   max_tokens      tokens processed over the whole session, cached input included
+#   max_subagent_tokens     the same, for one subagent run
+#   max_tool_output_tokens  how large one tool result may reach the model
+#
+# Written by `thalamus preset`; hand edits are read the same, comments are not kept.
+standard:
+  max_turns: 40
+  max_tool_calls: 120
+long:
+  max_turns: 150
+  max_tool_calls: 500

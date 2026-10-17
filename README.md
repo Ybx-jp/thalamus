@@ -147,10 +147,12 @@ The full walkthrough, including what the first run looks like, is
 
 Thalamus runs from a clone, and `git pull` is the upgrade path. A wheel built from
 the tree installs outside a checkout: it finds its own hook scripts and skills, and its
-hooks run the CLI under the interpreter `thalamus init` records. It is not published
-yet. The wheel ships no expert manifests, so `pyproject.toml` carries
-`Private :: Do Not Upload` until it does, which makes the closed index mechanical
-rather than a stated intention.
+hooks run the CLI under the interpreter `thalamus init` records, and `init` gives it
+two example experts. It is not published yet. The package still carries this
+repository's own ownership rule — `tests/qe/` writable only by the `qe` scope — which
+would apply in every repository a wheel's user works in, so `pyproject.toml` carries
+`Private :: Do Not Upload` until that rule moves into configuration. The classifier
+makes the closed index mechanical rather than a stated intention.
 
 One feature is experimental and off by default: frame themes, which render the pane
 inside artwork, behind `thalamus console --frames PATH`. Without the flag there are no
@@ -178,7 +180,8 @@ controls and no key bindings, and no artwork ships.
   The bytes are retained either way; the graph is what `--write` gates.
 - **Experts.** Each scope is declared by a manifest in `config/experts/` and
   nothing else.<!-- (A0004, cites-as-live) -->
-  Five ship as examples; write a YAML file and you have a sixth.
+  This repository's `config/` holds five, and an installed wheel ships two examples;
+  write a YAML file and you have another.
 - **Role boundaries.** Where a scope is defined by what it must not produce, its
   manifest declares a `write_boundary` and a PreToolUse hook enforces it against the
   file-editing tools.<!-- (A0091, cites-as-live) -->
