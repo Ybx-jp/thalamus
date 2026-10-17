@@ -15,8 +15,8 @@ pending job per key: a trigger arriving while one waits is appended to it, and t
 worker sees every absorbed trigger when it claims the job.
 
 Every line is appended under an exclusive `flock` on the key's `lock`, with an
-`fsync` before the lock drops (`ci_triage.py`'s idiom, for #169's reason: a torn line
-merges the next writer's row into it).
+`fsync` before the lock drops, for #169's reason: a torn line merges the next writer's
+row into it.
 
 Two ledgers sit beside the queue: `deliveries/<session>.jsonl`, the characters the
 carrier put in context, which the session's budget is charged with alongside the

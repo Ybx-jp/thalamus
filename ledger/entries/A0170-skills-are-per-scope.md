@@ -35,6 +35,14 @@ none
 
 ## Verdicts
 
+- 2026-10-16T16:49:16-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/hooks/claude-code/session-start.sh § "scope_skills" =sha256:c9689ef02ae15b880e1f7e4c6b12beab718d79b002e443246503f5b2ee45b1fe
+  artifact: sha256:a7ef4b629d6aa895ff251922979df2c94d2e5d90e55e6a05d21accb911d5ba43
+  note: propagated from a moved ground
+- 2026-10-16T16:51:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: src/thalamus/harness/hooks/claude-code/session-start.sh § "scope_skills" =sha256:a7ef4b629d6aa895ff251922979df2c94d2e5d90e55e6a05d21accb911d5ba43
+  note: The section's span ended at the next top-level assignment, the CI triage brief's `triage=""`, which was deleted with CI triage. The scope_skills lines themselves are unchanged, and the hook still appends only the session's own scope's skills, so the assertion is unaffected.
+
 ## References
 
 - docs/concepts.md · standing · cites-as-live

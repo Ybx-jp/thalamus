@@ -92,7 +92,6 @@ CASE_MODULES = (
     "qe.cases.query_guard_evasion",
     "qe.cases.console_teardown_kills_reused_window",
     "qe.cases.install_cell_ceiling",
-    "qe.cases.ci_triage_verify_report",
     "qe.cases.case_logic_erosion",
     "qe.cases.reflex_envelope_voice",
     "qe.cases.reflex_budget_ceiling",
