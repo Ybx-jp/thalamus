@@ -121,6 +121,15 @@ only verdict in this suite that cannot itself be muted. Three conditions take th
    difference below unsound, so both are refused rather than compared. That check is the
    `174b44c` regression, kept permanently.
 
+## Declared case retirements are additions too
+
+`tests/qe/retirements.json` lets `case-erosion-is-never-silent` pass a case module that
+was removed on purpose (`retirements.py`). That is the same act as a known-red entry --
+a red becomes a non-red -- so this case reports a retirement present at head and absent
+at the base revision, and CI's `mute-review` job, which runs this case alone, is where it
+shows. Removing a retirement is free, like removing an expectation. The entry's reason
+and pointer are printed so the reader does not have to open the file.
+
 ## The positive control
 
 The case asserts an absence, so it carries the control the README demands: a synthetic
@@ -137,6 +146,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from .. import retirements as retirements_mod
 from ..model import Case, FailureClass, Finding, Substrate, Tier
 
 _CASE_NAME = "expectation-additions-are-never-silent"
@@ -281,11 +291,15 @@ def _base() -> tuple[str, str]:
     )
 
 
-def _content_at(rev: str) -> str | None:
-    rc, out = _git("show", f"{rev}:{_REL}")
+def _content_at_path(rev: str, rel: str) -> str | None:
+    rc, out = _git("show", f"{rev}:{rel}")
     if rc != 0:
         return None
     return out
+
+
+def _content_at(rev: str) -> str | None:
+    return _content_at_path(rev, _REL)
 
 
 # ---------------------------------------------------------------------- the differ
@@ -320,6 +334,15 @@ def _grown(base: dict[str, dict], head: dict[str, dict]) -> tuple[list[str], lis
     return added, widened
 
 
+def _retirements_added(
+    base: dict[str, retirements_mod.Retirement], head: dict[str, retirements_mod.Retirement],
+) -> list[str]:
+    return [
+        f"RETIRED {m} (removed_by={head[m].removed_by}, reason={head[m].reason!r})"
+        for m in sorted(set(head) - set(base))
+    ]
+
+
 _CONTROL_BASE = json.dumps({"expectations": [
     {"case": "planted-survivor", "witness_contains": "alpha beta gamma"},
     {"case": "planted-narrowed", "witness_contains": "beta"},
@@ -340,6 +363,18 @@ def _control() -> None:
         problems.append(f"added={added}, expected ['planted-added']")
     if len(widened) != 1 or not widened[0].startswith("planted-survivor:"):
         problems.append(f"widened={widened}, expected exactly the planted-survivor widening")
+    old = retirements_mod.parse(
+        '{"retirements": [{"module": "qe.cases.kept", "reason": "r", "removed_by": "#1"}]}',
+        "control-retirements-base")
+    new = retirements_mod.parse(
+        '{"retirements": [{"module": "qe.cases.kept", "reason": "r", "removed_by": "#1"},'
+        ' {"module": "qe.cases.fresh", "reason": "gone", "removed_by": "#2"}]}',
+        "control-retirements-head")
+    got = _retirements_added(old, new)
+    if len(got) != 1 or not got[0].startswith("RETIRED qe.cases.fresh") \
+            or _retirements_added(new, old):
+        problems.append(
+            f"retirements added={got}, expected exactly qe.cases.fresh and no shrink report")
     if problems:
         raise Undecidable(
             "positive control failed, so a clean report below would be unfalsifiable: "
@@ -372,7 +407,20 @@ def run() -> Finding | None:
     base = _parse(base_text, f"{_REL} at {rev}") if base_text is not None else {}
 
     added, widened = _grown(base, head)
-    if not added and not widened:
+
+    try:
+        retired_head = retirements_mod.parse(
+            retirements_mod.RETIREMENTS_PATH.read_text(encoding="utf-8"),
+            f"the working tree's {retirements_mod.RETIREMENTS_REL}")
+        retired_text = _content_at_path(rev, retirements_mod.RETIREMENTS_REL)
+        retired_base = (
+            retirements_mod.parse(retired_text, f"{retirements_mod.RETIREMENTS_REL} at {rev}")
+            if retired_text is not None else {})
+    except (OSError, retirements_mod.MalformedRetirements) as exc:
+        raise Undecidable(f"the retirement declarations cannot be compared: {exc}")
+    retired = _retirements_added(retired_base, retired_head)
+
+    if not added and not widened and not retired:
         return None
 
     parts = [f"base={rev[:12]} via {how}"]
@@ -383,17 +431,22 @@ def run() -> Finding | None:
             f"witness_contains={row.get('witness_contains', '')!r})"
         )
     parts.extend(f"WIDENED {entry}" for entry in widened)
+    parts.extend(retired)
 
     what = []
     if added:
         what.append(f"{len(added)} entry(ies) added")
     if widened:
         what.append(f"{len(widened)} pin(s) widened")
+    if retired:
+        what.append(
+            f"{len(retired)} case retirement(s) declared (a removed case no longer "
+            f"reaches case-erosion-is-never-silent as a red)")
 
     return Finding(
         failure_class=FailureClass.INVARIANT_FALSIFIED,
         summary=(
-            f"the known-red list grew: {' and '.join(what)} since {rev[:12]}. Adding an "
+            f"the known-red list grew or a mute was declared: {' and '.join(what)} since {rev[:12]}. Adding an "
             f"entry turns a NEW_FAILURE into a KNOWN_RED and the run's exit 1 into exit 0, "
             f"and widening a pin extends a mute already granted — neither is a unilateral "
             f"qe action (docs/13, What is allowed to go quiet). The authorization is "
