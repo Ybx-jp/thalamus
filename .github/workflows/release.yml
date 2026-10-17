@@ -1,0 +1,119 @@
+name: Release
+
+# A tag is the only thing that publishes `thalamus-memory` to PyPI. Both artifacts that go
+# there, the wheel and the sdist, are the ones this job built and then installed into
+# clean environments outside the checkout, where each runs `thalamus init` and
+# `thalamus init --check` against a HOME of its own. A distribution that cannot install
+# its own harness never reaches the index.
+#
+# Copied from claims-ledger's release workflow (Ybx-jp/claims-ledger), the pattern this
+# operator already publishes with: Trusted Publishing, every action pinned to a commit,
+# and the publish job gated on a tag ref.
+on:
+  push:
+    tags: ["v*"]
+  # A dispatch builds and proves; it publishes only when it is dispatched from a tag ref,
+  # which is what the `publish` job's own condition says.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: `claims-ledger validate` checks append-only properties across it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      # verify.yml also runs on the tag push; these are its graph-free gates, here so that
+      # publication waits on them rather than racing them.
+      - name: The gates, before anything is built
+        run: |
+          uv sync --extra dev
+          uv run ruff check src tests
+          uv run ty check src
+          uv run pytest -q
+          uv run thalamus arch rules --gate
+          uv run thalamus arch scan --check
+          uv run thalamus arch dead --gate
+          uv run claims-ledger check
+      - run: uv build
+      - run: uv tool run twine check --strict dist/*
+      - name: The tag and the package agree on the version
+        # A tag over a different `__version__` would publish a release nobody can name.
+        # Skipped for a manual run, which has no tag.
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          uv venv /tmp/clean
+          uv pip install --python /tmp/clean/bin/python dist/*.whl
+          version=$(/tmp/clean/bin/thalamus --version | awk '{print $2}')
+          tag="${GITHUB_REF_NAME#v}"
+          test "$version" = "$tag" || { echo "tag $tag, package $version"; exit 1; }
+      - name: Each distribution installs its harness from elsewhere
+        # The wheel and the sdist, each in its own environment, from a directory that is
+        # not the checkout and with a HOME of its own: `init` must find the hook scripts
+        # and skills it shipped, record its interpreter and seed the example experts, and
+        # `init --check` must then pass. Claude Code, codex and Cursor are not on the
+        # runner, so their registrations report blocked rather than failed, and the graph
+        # is not up, which is advisory.
+        run: |
+          for kind in whl tar.gz; do
+            env_dir="/tmp/prove-$kind"
+            uv venv "$env_dir"
+            uv pip install --python "$env_dir/bin/python" "$GITHUB_WORKSPACE"/dist/*.$kind
+            home=$(mktemp -d)
+            mkdir -p /tmp/elsewhere && cd /tmp/elsewhere
+            HOME="$home" "$env_dir/bin/thalamus" init --yes --harness claude
+            HOME="$home" "$env_dir/bin/thalamus" init --check --harness claude
+            test -f "$home/.thalamus/config/experts/literature.yaml"
+            cd "$GITHUB_WORKSPACE"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    # Only a tag publishes, including a `workflow_dispatch` naming a tag ref. Trusted
+    # Publishing binds the repository, the workflow file and the environment, never the
+    # ref, so without this condition a dispatch from any branch would publish.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment: pypi
+    # Trusted Publishing: PyPI mints a short-lived token for this job, so no long-lived
+    # secret lives in the repository. The first publish needs an account-level pending
+    # publisher (https://pypi.org/manage/account/publishing/) naming this repository, the
+    # workflow file `release.yml` and the environment `pypi`, and the `pypi` environment
+    # must exist in this repository's settings. CONTRIBUTING.md, "Releasing".
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
+
+  github_release:
+    needs: publish
+    # Same gate as `publish`, and after it: a Release names a tag that reached PyPI.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    # `contents: write` is held to this one job, which runs no code from the repository.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
+        with:
+          name: dist
+          path: dist/
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" --generate-notes dist/*

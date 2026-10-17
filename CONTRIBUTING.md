@@ -405,6 +405,32 @@ append-only comparison holds each parent's list to be a prefix of its child's, s
 branches that both append to the same entry have no merge resolution that passes. Merge
 `master` into the branch first, then append.
 
+## Releasing
+
+The core is published to PyPI as `thalamus-memory`; the import name and the CLI stay
+`thalamus`. A tag `vX.Y.Z` is the only thing that publishes.
+`.github/workflows/release.yml` then:
+
+1. runs the graph-free gates;
+2. builds the wheel and the sdist, and checks them with `twine check --strict`;
+3. checks that the tag matches `thalamus --version`;
+4. installs each artifact into a clean environment outside the checkout and runs
+   `thalamus init` and `thalamus init --check` there against a fresh HOME;
+5. publishes through Trusted Publishing, and creates the GitHub Release.
+
+To cut a release, set `__version__` in `src/thalamus/__init__.py`, merge it, then tag
+that commit on `master` and push the tag.
+
+Two things have to exist before the first publish, and nothing in the repository
+creates them:
+
+- **A pending publisher on PyPI.** At <https://pypi.org/manage/account/publishing/>,
+  add project `thalamus-memory`, owner `Ybx-jp`, repository `thalamus`, workflow
+  `release.yml`, environment `pypi`. PyPI turns it into the project's own publisher on
+  the first successful upload.
+- **A `pypi` environment in this repository** (Settings → Environments). The publish job
+  runs under it.
+
 ## Grounding new design
 
 Two standing rules for anything new — a feature, a component, a schema change, an eval

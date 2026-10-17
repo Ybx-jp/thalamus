@@ -1,5 +1,7 @@
 [project]
-name = "thalamus"
+# Published as `thalamus-memory`; the import name and the CLI stay `thalamus`. The
+# bare name on PyPI is GNU Health's federation server.
+name = "thalamus-memory"
 # Single-sourced from the package, so a tag can never disagree with what an
 # installed `thalamus.__version__` reports.
 dynamic = ["version"]
@@ -11,11 +13,6 @@ license-files = ["LICENSE"]
 authors = [{ name = "Jackson Porter" }]
 keywords = ["agents", "memory", "knowledge-graph", "gremlin", "llm", "evaluation"]
 classifiers = [
-    # Not published to any index yet: the core is released as `thalamus-memory`,
-    # and until that release this classifier makes the closed index a mechanical
-    # guarantee rather than an intention; PyPI refuses an upload carrying it. The name is taken on PyPI
-    # regardless — `thalamus` there is GNU Health's federation server.
-    "Private :: Do Not Upload",
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
@@ -105,6 +102,14 @@ path = "src/thalamus/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/thalamus"]
+
+# What builds the package, and nothing of the repository around it: `.claude/`, `ledger/`,
+# `tests/` and `docs/` are this checkout's development surface, and the suite reads the
+# repository's own layout (its `config/`, ledger and arch model), so it cannot run from
+# an unpacked sdist anyway. Anchored with a leading `/`, as claims-ledger's are, so a
+# pattern matches at the top only.
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md", "/LICENSE"]
 
 [tool.ruff]
 line-length = 100
