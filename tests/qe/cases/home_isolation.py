@@ -102,17 +102,16 @@ def run() -> Finding | None:
 
         # A path escapes only if it sits under the real home AND is not the checkout.
         #
-        # The naive filter — "starts with the real home" — is wrong, and the first
-        # version of this case used it and reported `pin.PROJECT_ROOT` as an escape.
-        # PROJECT_ROOT is derived from `__file__`, so it names the repository, which on
-        # this box merely happens to live under the real home. It is *supposed* to point at
-        # the checkout and following HOME would be the bug.
+        # The naive filter — "starts with the real home" — is wrong: a path derived
+        # from `__file__` (the package dir, the checkout) names the repository, which on
+        # this box merely happens to live under the real home. It is *supposed* to point
+        # at the checkout, and following HOME would be the bug.
         #
-        # PROJECT_ROOT is still an isolation concern for a different reason — `install()`
-        # strips PROJECT_SETTINGS from it (`install.py:967`), so arming hooks dirties the
-        # operator's checkout — but that is a write-target problem, not a HOME-redirection
-        # failure, and asserting it here would make this case red for a reason its own
-        # summary does not describe.
+        # The checkout is still an isolation concern for a different reason — `install()`
+        # strips PROJECT_SETTINGS from it, so arming hooks dirties the operator's
+        # checkout — but that is a write-target problem, not a HOME-redirection failure,
+        # and asserting it here would make this case red for a reason its own summary
+        # does not describe.
         real_home = Path.home().resolve()
         repo = Path(__file__).resolve().parents[3]
         escaped = sorted(
