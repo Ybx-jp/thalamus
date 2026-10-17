@@ -96,9 +96,6 @@ layers:
   - src/thalamus/contract/boundaries.py
   - src/thalamus/contract/pinning.py
   - src/thalamus/contract/probes.py
-  # rooms.py imports boundaries and probes and answers the same kind of question about
-  # a member that they answer about a boundary and a pin.
-  - src/thalamus/contract/rooms.py
 - name: archive
   includes:
   - src/thalamus/archive/**
