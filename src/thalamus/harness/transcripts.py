@@ -312,6 +312,18 @@ def tool_result_text(block: dict) -> str:
     return ""
 
 
+def is_compaction_summary(record: dict) -> bool:
+    """Whether a record is the summary Claude Code writes when it compacts a session.
+
+    It is a user-type record with a bare-string content, so every reader that takes such
+    a record for the operator typing would read the harness's restatement of the
+    conversation as something the operator said. It is skipped instead of relabelled:
+    compaction only appends, so the turns it summarises are earlier in the same file,
+    and reading it would count them twice (A0229, cites-as-live).
+    """
+    return bool(record.get("isCompactSummary"))
+
+
 def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
     """Read a transcript and recover every fact that needs no inference.
 
@@ -359,7 +371,7 @@ def parse(path: Path, *, session_id: str | None = None) -> TranscriptFacts:
 
         if record_type not in ("user", "assistant"):
             continue
-        if record.get("isSidechain") or record.get("isMeta"):
+        if record.get("isSidechain") or record.get("isMeta") or is_compaction_summary(record):
             continue  # subagent sidechains are their own episodes, not this one
 
         facts.message_count += 1
@@ -592,6 +604,8 @@ def excerpt_for_job(
         return Excerpt(text="", found=found)
     for record in _records(path):
         if record.get("type") not in ("user", "assistant") or record.get("isMeta"):
+            continue
+        if is_compaction_summary(record):
             continue
         if record.get("isSidechain") and not sidechain:
             continue

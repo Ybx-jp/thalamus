@@ -53,7 +53,7 @@ from thalamus.harness.agents import (
     cli_for,
     sandbox_env,
 )
-from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS
+from thalamus.harness.transcripts import EXTERNAL_INGRESS_TOOLS, is_compaction_summary
 from thalamus.substrate.reader import (
     MIN_MATCHED_RATIO,
     MIN_MATCHED_TERMS,
@@ -199,8 +199,9 @@ def render_digest(
     """Render archived transcript bytes into a compact, readable exchange log.
 
     Keeps user prompts, assistant prose, tool calls (name + salient input), and heavily
-    truncated tool results. Drops sidechains, meta records, and system-injected noise —
-    the extractor needs the *conversation*, not the plumbing.
+    truncated tool results. Drops sidechains, meta records, system-injected noise, and
+    the summary a compaction writes, whose turns are already earlier in the file
+    (A0229, cites-as-live) — the extractor needs the *conversation*, not the plumbing.
 
     Harness-tolerant where the harnesses are alike and dispatched where they are not.
     Claude Code discriminates rows with `type`, Cursor with `role` and nothing else
@@ -220,7 +221,7 @@ def render_digest(
     lines: list[str] = []
     external_tool_uses: set[str] = set()
     for record in _records(payload):
-        if record.get("isSidechain") or record.get("isMeta"):
+        if record.get("isSidechain") or record.get("isMeta") or is_compaction_summary(record):
             continue
         record_type = record.get("type") or record.get("role")
         content = (record.get("message") or {}).get("content")

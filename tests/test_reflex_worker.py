@@ -96,6 +96,20 @@ def test_the_excerpt_keeps_the_agents_turns_and_the_trigger_and_labels_other_res
     assert excerpt.found == {"t2"}
 
 
+def test_the_excerpt_skips_the_compaction_summary(tmp_path):
+    path = _transcript(tmp_path / "t.jsonl", [
+        _user("fix the reflex budget test"),
+        {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted"},
+        _user("This session is being continued: COMPACTED RESTATEMENT", isCompactSummary=True),
+        _call("t2"),
+        _result("t2", FAILURE),
+    ])
+    excerpt = excerpt_for_job(path, {"t2"})
+    assert "[user] fix the reflex budget test" in excerpt.text
+    assert "COMPACTED RESTATEMENT" not in excerpt.text
+    assert "reflex_budget over" in excerpt.text
+
+
 def test_the_excerpt_skips_sidechain_records_in_the_parent_and_keeps_them_in_a_subagents_file(tmp_path):
     records = [_user("parent prompt"), _call("s1", isSidechain=True),
                _result("s1", FAILURE, isSidechain=True)]
