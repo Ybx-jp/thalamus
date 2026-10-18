@@ -31,6 +31,9 @@ dependencies = [
     "fastmcp>=3.4.0",
     "fastapi>=0.139.0",
     "uvicorn[standard]>=0.51.0",
+    # Loads the plugins installed under the `thalamus` entry-point group
+    # (`thalamus.plugins`). pytest's own plugin manager, pure Python.
+    "pluggy>=1.5",
 ]
 
 [project.urls]
@@ -77,17 +80,6 @@ frames = [
     "numpy>=2.1",
     "scipy>=1.14",
 ]
-# PDF text extraction for `thalamus ingest` (harness/ingest.to_text). Optional because
-# a text extractor is not a runtime path — every other surface reads bytes the archive
-# already holds — and because the ingestion protocol pays for plumbing when measurement
-# asks. It asked: the software-engineering and HCI venues (ICSE, CHI, FSE, TSE) publish
-# PDF only, including on hosts the literature allowlist already reaches, so without this
-# that whole literature is reachable only by hand-converting a file, which archives the
-# conversion instead of the paper and files it under a local path instead of a citable
-# origin. pypdf is pure Python and has no native build.
-pdf = [
-    "pypdf>=5.0",
-]
 
 [project.scripts]
 thalamus = "thalamus.cli:main"
@@ -96,6 +88,25 @@ thalamus-mcp = "thalamus.harness.mcp_server:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# One repository, one lockfile, several distributions. This file is the core,
+# `thalamus-memory`; each directory under `packages/` is a plugin that depends on the
+# core and on no other plugin, which `thalamus arch rules --gate` enforces over the
+# import graph. Copied from uv's workspace layout.
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+thalamus-ingest = { workspace = true }
+
+# The plugins are installed into the development environment by default, so the suite
+# and the gates see them. A dependency group rather than an extra because a group is
+# not published: the core's metadata on PyPI names no plugin.
+[dependency-groups]
+plugins = ["thalamus-ingest"]
+
+[tool.uv]
+default-groups = ["plugins"]
 
 [tool.hatch.version]
 path = "src/thalamus/__init__.py"
@@ -123,8 +134,7 @@ target-version = "py311"
 python = ".venv"
 python-version = "3.11"
 
-# No rule is switched off globally. The optional extras (`nli`, `frames`,
-# `pdf`) are imported inside the functions that need them and are absent from a default
+# No rule is switched off globally. The optional extras (`nli`, `frames`) are imported inside the functions that need them and are absent from a default
 # `uv sync --extra dev`; an unresolved import of one is the declared arrangement rather
 # than a defect, and is suppressed at the import site with its reason, so that every
 # *other* unresolved import stays an error.

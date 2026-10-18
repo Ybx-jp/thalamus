@@ -20,6 +20,7 @@ from thalamus.substrate import spans
 from thalamus.substrate.artifact_paths import checkout_registry, relativize
 from thalamus.substrate.schema import (
     Alternative,
+    Chunk,
     Claim,
     Provenance,
     SessionGraph,
@@ -897,36 +898,13 @@ def write_knowledge(g: GraphTraversalSource, batch, *, gate: Gate) -> str:
         entity_vids[entity.name] = entity_vid
 
     # Chunks before claims, so the anchor edge has something to point at.
-    chunk_vids: dict[int, str] = {}
-    previous_vid = ""
-    for chunk in batch.chunks:
-        chunk_vid = vid("Chunk", chunk.local_id(source.content_hash), batch.scope)
-        chunk_properties = {
-            "text": chunk.text,
-            "ordinal": chunk.ordinal,
-            "start": chunk.start,
-            "end": chunk.end,
-            "scope": batch.scope,
-            **_provenance_properties(chunk.provenance or provenance),
-        }
-        graph_traversal = (
-            g.merge_v({T.id: chunk_vid, T.label: "Chunk"})
-            .option(Merge.on_create, {T.id: chunk_vid, **chunk_properties})
-            .option(Merge.on_match, chunk_properties)
-        )
-        _iterate(graph_traversal, "upsert Chunk", chunk_vid)
-        chunk_vids[chunk.ordinal] = chunk_vid
+    chunk_vids = write_chunks(
+        g, batch.chunks,
+        source_vid=source_vid, content_hash=source.content_hash, scope=batch.scope,
+        provenance=provenance, entity_vids=entity_vids,
+    )
 
-        # Same floor the claims get, and the reason reaching a chunk is
-        # provenance-mediated rather than provenance-free.
-        _ensure_edge(g, chunk_vid, source_vid, "DERIVED_FROM")
-        if previous_vid:
-            _ensure_edge(g, previous_vid, chunk_vid, "ADJACENT_IN_TEXT")
-        previous_vid = chunk_vid
-        for name in chunk.about:
-            if name in entity_vids:
-                _ensure_edge(g, chunk_vid, entity_vids[name], "ABOUT")
-
+    anchors: dict[str, str] = {}
     for index, claim in enumerate(batch.claims):
         claim_vid = vid("Claim", claim.content_id(), batch.scope)
         claim_properties = {
@@ -956,7 +934,8 @@ def write_knowledge(g: GraphTraversalSource, batch, *, gate: Gate) -> str:
         # be found verbatim — an anchor that had to be guessed is worse than none.
         anchor = batch.anchors.get(index)
         if anchor is not None and anchor in chunk_vids:
-            _ensure_edge(g, claim_vid, chunk_vids[anchor], "ANCHORS")
+            anchors[claim_vid] = chunk_vids[anchor]
+    write_anchors(g, anchors)
 
     logger.info(
         "Wrote knowledge batch: %s (scope=%s, %d claims, %d entities, %d chunks)",
@@ -967,6 +946,60 @@ def write_knowledge(g: GraphTraversalSource, batch, *, gate: Gate) -> str:
         len(batch.chunks),
     )
     return source_vid
+
+
+def write_chunks(
+    g: GraphTraversalSource,
+    chunks: list[Chunk],
+    *,
+    source_vid: str,
+    content_hash: str,
+    scope: str,
+    provenance: Provenance,
+    entity_vids: Mapping[str, str],
+) -> dict[int, str]:
+    """Write a document's verbatim chunks beside its Source; return ordinal -> vertex ID.
+
+    Each chunk is DERIVED_FROM the Source, ADJACENT_IN_TEXT to the one before it, and
+    ABOUT whichever of `entity_vids` it names. Merged on vertex ID, so re-writing a
+    document's chunks repairs a partial write rather than duplicating it.
+    """
+    chunk_vids: dict[int, str] = {}
+    previous_vid = ""
+    for chunk in chunks:
+        chunk_vid = vid("Chunk", chunk.local_id(content_hash), scope)
+        chunk_properties = {
+            "text": chunk.text,
+            "ordinal": chunk.ordinal,
+            "start": chunk.start,
+            "end": chunk.end,
+            "scope": scope,
+            **_provenance_properties(chunk.provenance or provenance),
+        }
+        graph_traversal = (
+            g.merge_v({T.id: chunk_vid, T.label: "Chunk"})
+            .option(Merge.on_create, {T.id: chunk_vid, **chunk_properties})
+            .option(Merge.on_match, chunk_properties)
+        )
+        _iterate(graph_traversal, "upsert Chunk", chunk_vid)
+        chunk_vids[chunk.ordinal] = chunk_vid
+
+        # Same floor the claims get, and the reason reaching a chunk is
+        # provenance-mediated rather than provenance-free.
+        _ensure_edge(g, chunk_vid, source_vid, "DERIVED_FROM")
+        if previous_vid:
+            _ensure_edge(g, previous_vid, chunk_vid, "ADJACENT_IN_TEXT")
+        previous_vid = chunk_vid
+        for name in chunk.about:
+            if name in entity_vids:
+                _ensure_edge(g, chunk_vid, entity_vids[name], "ABOUT")
+    return chunk_vids
+
+
+def write_anchors(g: GraphTraversalSource, anchors: Mapping[str, str]) -> None:
+    """Claim -[ANCHORS]-> Chunk, for each claim vertex ID mapped to the chunk it quotes."""
+    for claim_vid, chunk_vid in anchors.items():
+        _ensure_edge(g, claim_vid, chunk_vid, "ANCHORS")
 
 
 def _article_heads(g: GraphTraversalSource, scope: str, origin: str) -> list[str]:

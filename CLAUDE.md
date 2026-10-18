@@ -19,8 +19,8 @@ Run them before you push rather than after CI tells you.
   cores).<!-- (A0121, cites-as-live) -->
   Add `-n 0` when iterating on one file — 16 workers cost ~3s to boot, which a single
   file never earns back.
-- `uv run ruff check src tests`
-- `uv run ty check src` — no diagnostics. ty is pinned to the patch in `pyproject.toml`;
+- `uv run ruff check src packages tests`
+- `uv run ty check src packages` — no diagnostics. ty is pinned to the patch in `pyproject.toml`;
   raise it deliberately, fixing whatever the new release reports in the same
   change.<!-- (A0122, cites-as-live) -->
 - `uv run thalamus arch rules --gate` — a dependency the declared layers forbid fails
@@ -278,6 +278,12 @@ the thing in ordinary words, and cut what he did not ask about.
   after raising the pin. The install writes only its own file names, so the hooks this
   repository writes for its own development sit beside them in `.claude/hooks/`, all
   wired from `.claude/settings.json`.
+- **A plugin under `packages/` depends on the core and on nothing else**, and the core
+  imports no plugin; `arch rules --gate` holds both directions, and CI's `installs-alone`
+  job (`tools/check-packages-install-alone.sh`) catches an import a plugin did not
+  declare. Commands arrive through `register_commands` in `src/thalamus/plugins.py`; add
+  a new extension point with the first plugin that needs it. See CONTRIBUTING.md
+  §"Plugins".
 - `substrate/` sits below the contract: it knows nodes and edges, not experts or trust
   tiers.<!-- (A0141, cites-as-live) -->
   An import of `contract/` into `substrate/` means the change belongs elsewhere.

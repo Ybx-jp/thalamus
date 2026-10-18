@@ -40,6 +40,29 @@ deciding something: the counterfactual arm runner in the companion repo runs it 
 a confinement cell before the cell spends anything, to establish that the treatment it
 is about to measure was actually installed there.
 
+## Plugins
+
+The core distribution, `thalamus-memory`, is memory itself: distillation, recall, the MCP
+server, experts and consultations. Further commands come from plugin packages, each
+installed on its own and depending on the core and nothing else:
+
+| Package | Adds |
+|---|---|
+| `thalamus-ingest` | `ingest`, `backfill-chunks` |
+
+A plugin declares a module under the `thalamus` entry-point group, and every `thalamus`
+invocation loads the ones installed. A plugin that fails to load, or whose commands cannot
+be registered — one reusing a name the core already has, for instance — is reported on
+stderr and skipped; the core's commands and every other plugin's still
+work.<!-- (A0233, cites-as-live) -->
+That matters because the hooks and SessionEnd distillation run through the same
+`thalamus` command.
+
+In a checkout, `uv sync` installs every package under `packages/` into the development
+environment. Elsewhere, `pip install . ./packages/thalamus-ingest` from the checkout
+installs the core and that plugin together; the plugin needs a core with the
+entry-point group, which no release on PyPI has yet.
+
 ## Building memory
 
 ```bash
@@ -55,6 +78,9 @@ thalamus validate session.yaml     # check an extraction against the contract
 thalamus ingest <url|path> --scope <expert> --check   # verify the source, no model call
 thalamus ingest <url|path> --scope <expert>  # feed one document to an expert (dry run; --write to persist)
 ```
+
+`ingest` is added by the `thalamus-ingest` plugin ([Plugins](#plugins)); the core
+package alone does not have it.
 
 `--harness` and `--extract-with` are two questions, not one. `--harness` says who
 *wrote* the transcripts, which decides how the digest is rendered and where sessions are
@@ -144,9 +170,7 @@ there would read as "this was free" rather than "nobody priced it". Every change
 given week's claims: the graph stores the harness that *wrote* a session, not the one that
 extracted it, and a Source stores no extractor at all.
 
-`ingest` reads HTML, plain text, and PDF. **PDF needs the `pdf` extra** (`uv sync
---extra pdf`); without it the format is refused and the message names the extra. The
-document is the positional argument — `--url` on this command is the Gremlin endpoint,
+`ingest` reads HTML, plain text, and PDF. The document is the positional argument — `--url` on this command is the Gremlin endpoint,
 as it is on `write`, `bootstrap` and `extract`, and a document passed there is refused
 before anything is fetched.
 
@@ -628,7 +652,7 @@ came for. Each still answers `--help`, and each is a dry run unless `--write` is
 passed.
 
 ```bash
-thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices
+thalamus backfill-chunks           # co-index already-ingested documents as Chunk vertices (thalamus-ingest)
 thalamus audit-artifacts           # measure how fragmented Artifact identity is (read-only)
 thalamus repair-projects           # re-anchor project values that named a directory, not a repo
 thalamus derive-artifact-paths     # project Artifact identifiers onto (repo, path)

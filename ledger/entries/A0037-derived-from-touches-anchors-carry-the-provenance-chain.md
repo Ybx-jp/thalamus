@@ -43,6 +43,13 @@ none
 - 2026-09-24T01:16:00-07:00 · corroborated · grade: measured · author: architect
   evidence: code: src/thalamus/harness/ingest.py § "anchor_citations" =sha256:38a3116f8bd9a4417d7a03fdd061acaa72699b9819673e6e1ec2b84f468df974
   note: anchor_citations now takes the index-aligned citation strings instead of claim objects; it still resolves each claim's ANCHORS target chunk by its verbatim citation, so the assertion is unaffected.
+- 2026-10-18T13:51:40-07:00 · contested · grade: measured · author: propagation
+  evidence: code: src/thalamus/harness/ingest.py § "anchor_citations" =sha256:38a3116f8bd9a4417d7a03fdd061acaa72699b9819673e6e1ec2b84f468df974
+  artifact: absent
+  note: propagated from a withdrawn ground
+- 2026-10-18T13:55:00-07:00 · corroborated · grade: measured · author: architect
+  evidence: code: packages/thalamus-ingest/src/thalamus_ingest/ingest.py § "anchor_citations" =sha256:38a3116f8bd9a4417d7a03fdd061acaa72699b9819673e6e1ec2b84f468df974
+  note: harness/ingest.py moved unchanged into the thalamus-ingest plugin package as thalamus_ingest/ingest.py; the citation-to-chunk anchoring the assertion names is the same function, so the assertion is unaffected
 
 ## References
 

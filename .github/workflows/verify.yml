@@ -49,13 +49,13 @@ jobs:
           node-version: "22"
 
       - name: Lint
-        run: uv run ruff check src tests
+        run: uv run ruff check src packages tests
 
       # Pinned to the patch in pyproject.toml. ty is pre-1.0 and its inference moves
       # between releases, so the version is raised deliberately with its new diagnostics
       # fixed in the same change, never picked up by a floating spec on a Tuesday.
       - name: Types
-        run: uv run ty check src
+        run: uv run ty check src packages
 
       - name: Tests
         run: uv run pytest -q
@@ -101,3 +101,16 @@ jobs:
       - name: Graph logs
         if: failure()
         run: docker compose logs graph
+
+  # Every package in the workspace installs into one environment above, so a plugin that
+  # imports something its own pyproject.toml does not declare passes every step there.
+  # Here the core installs alone, and each plugin installs with the core and its own
+  # declared dependencies only. `arch rules` checks which packages a plugin imports;
+  # this checks that it declared them.
+  installs-alone:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build --all-packages -o dist
+      - run: tools/check-packages-install-alone.sh dist

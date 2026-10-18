@@ -2,8 +2,8 @@
 Curated-ingestion tests — manifest gating and the model-free half of ingest.
 
 Interfaces: contract.manifest.ExpertManifest/load_manifest (allowlist, claim-kind
-triage), harness.ingest.fetch/preflight/check_origin/to_text/build_batch,
-cli._cmd_ingest argument handling
+triage), thalamus_ingest.ingest.fetch/preflight/check_origin/to_text/build_batch,
+thalamus_ingest.commands.ingest argument handling
 Infrastructure: tmp_path for manifest files and the archive; loopback HTTP servers for
 redirect handling; no egress, no model
 Scope: the gates a document passes on its way into a knowledge subgraph, and what
@@ -19,8 +19,8 @@ import pytest
 from thalamus.contract.conformance import check_knowledge
 from thalamus.contract.manifest import ExpertManifest, available_scopes, load_manifest
 from thalamus.harness import extraction
-from thalamus.harness import ingest as ingest_mod
-from thalamus.harness.ingest import IngestError, build_batch, check_origin, fetch, to_text
+from thalamus_ingest import ingest as ingest_mod
+from thalamus_ingest.ingest import IngestError, build_batch, check_origin, fetch, to_text
 from thalamus.substrate.schema import Tier
 
 
@@ -240,7 +240,7 @@ def _pdf_bytes(*lines: str) -> bytes:
     Built here rather than committed as a binary fixture: a fixture cannot be read in
     review and drifts silently from what the parser is asked to handle, while this puts
     the text going in beside the assertion on the text coming out. Generating it needs
-    nothing — only reading it back needs the `pdf` extra.
+    nothing but this function.
 
     The text goes through a base-14 Helvetica with no /Encoding override, so it is
     StandardEncoding: `\\257` is the `fl` ligature glyph, which is how a real typeset
@@ -276,14 +276,13 @@ def _pdf_bytes(*lines: str) -> bytes:
 
 def test_a_pdf_becomes_text():
     """
-    Scenario: a PDF fed to the extractor with the `pdf` extra installed
+    Scenario: a PDF fed to the extractor
 
     Refusing this format never kept a literature out — ICSE, CHI, FSE and TSE publish
     PDF only, including on hosts the allowlist already reaches — it routed one through
     hand-conversion, which archives the conversion instead of the paper and records a
     local path where a citable origin belongs.
     """
-    pytest.importorskip("pypdf", reason="PDF extraction rides the `pdf` extra")
 
     text = to_text(_pdf_bytes("Speculative merges detect conflicts before a merge."))
 
@@ -301,7 +300,6 @@ def test_a_pdfs_line_breaks_and_ligatures_do_not_sever_its_terms():
     the graph cannot be searched for. Collapsing whitespace first would leave
     `con- flict`, which is why the rejoin runs before it.
     """
-    pytest.importorskip("pypdf", reason="PDF extraction rides the `pdf` extra")
 
     # `\257` is StandardEncoding's `fl`; the second line begins mid-word.
     text = to_text(_pdf_bytes("A merge con-", r"\257ict, and a \257agged one."))
@@ -318,35 +316,9 @@ def test_a_pdf_with_no_extractable_text_is_named_for_what_it_is():
     which would call it a document too short to assert anything and send the reader
     looking at the wrong thing.
     """
-    pytest.importorskip("pypdf", reason="PDF extraction rides the `pdf` extra")
 
     with pytest.raises(IngestError, match="scanned or image-only"):
         to_text(_pdf_bytes())
-
-
-def test_a_pdf_without_the_extra_refuses_and_names_the_extra(monkeypatch):
-    """Honest degradation, not a silent empty read.
-
-    The import is forced to fail rather than the extra being uninstalled, so this runs
-    on a box that has it. Without the guard an absent parser would extract nothing and
-    read downstream as a short document.
-    """
-    import builtins  # noqa: PLC0415
-
-    real_import = builtins.__import__
-
-    def refuse_pypdf(name, *args, **kwargs):
-        if name == "pypdf":
-            raise ImportError("No module named 'pypdf'")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", refuse_pypdf)
-
-    with pytest.raises(IngestError, match="uv sync --extra pdf") as caught:
-        to_text(b"%PDF-1.7 ...")
-
-    # It must also name the fallback's cost, or the fallback reads as equivalent.
-    assert "local path as the origin" in str(caught.value)
 
 
 def test_the_arxiv_abstract_page_is_refused_whatever_format_it_would_have_served():
@@ -390,7 +362,7 @@ def test_digest_report_names_what_the_extractor_never_saw():
     this — markup-to-text ratio swings by an order of magnitude — so the report is
     denominated in text chars, the same unit as the budget.
     """
-    from thalamus.harness.ingest import DigestReport
+    from thalamus_ingest.ingest import DigestReport
 
     over = DigestReport(text_chars=90_025, budget=24_000)
     assert over.truncated
@@ -419,7 +391,7 @@ def test_chunking_covers_the_whole_document_without_severing_words():
     whitespace because the model is asked for verbatim citations, and a half-word
     is an anchor that will not match the source.
     """
-    from thalamus.harness.ingest import chunk_text
+    from thalamus_ingest.ingest import chunk_text
 
     words = " ".join(f"word{n:04d}" for n in range(4000))
     chunks = chunk_text(words, size=1000, overlap=100)
@@ -450,7 +422,7 @@ def test_chunked_prompts_thread_the_document_vocabulary_forward():
     fragmenting per chunk. The part banner also has to stop the model inventing a
     title from a section heading it happens to be looking at.
     """
-    from thalamus.harness.ingest import build_prompt
+    from thalamus_ingest.ingest import build_prompt
 
     prompt = build_prompt("chunk text", "file://doc", ["Gleaning"], part=(3, 7))
     assert "PART 3 OF 7" in prompt
@@ -473,7 +445,7 @@ def test_merge_retains_duplicate_claims_and_dedups_entities_by_exact_name():
     a similarity judgement — and a near-name stays a separate entity rather than
     being silently fused.
     """
-    from thalamus.harness.ingest import merge_extractions
+    from thalamus_ingest.ingest import merge_extractions
 
     merged = merge_extractions([
         {
@@ -539,7 +511,7 @@ def test_one_unparseable_chunk_costs_its_own_pass_and_says_so():
     must not vanish either: a silently dropped chunk is a coverage hole, which is
     the exact defect chunking exists to close.
     """
-    from thalamus.harness.ingest import DigestReport
+    from thalamus_ingest.ingest import DigestReport
 
     report = DigestReport(text_chars=90_000, chunks=4, failed_chunks=(3,))
     assert report.chunks - len(report.failed_chunks) == 3
@@ -556,7 +528,7 @@ def test_combined_run_never_reports_an_unpriced_pass_as_free():
     understate a chunked ingest — the run whose cost the operator most needs.
     """
     from thalamus.harness.extraction import ExtractionRun
-    from thalamus.harness.ingest import _combine_runs
+    from thalamus_ingest.ingest import _combine_runs
 
     combined = _combine_runs([
         ExtractionRun(text="a", cost_usd=0.15, duration_ms=1000),
@@ -730,7 +702,7 @@ def test_prompt_carries_known_entities_for_name_convergence():
     known-claims feed on the episodic side. No entities yet renders as an explicit
     "(none)", never a dangling template slot.
     """
-    from thalamus.harness.ingest import build_prompt
+    from thalamus_ingest.ingest import build_prompt
 
     prompt = build_prompt("Some article text", "https://arxiv.org/abs/1", ["Reflexion", "RAG"])
     assert "- Reflexion" in prompt and "- RAG" in prompt
@@ -750,7 +722,7 @@ def test_prompt_demands_quoted_entity_names():
     completely opaque diagnosis. The fix is at the format level, so the guard has to
     be too: the template must show the quoted block form, and say why.
     """
-    from thalamus.harness.ingest import build_prompt
+    from thalamus_ingest.ingest import build_prompt
 
     prompt = build_prompt("text", "https://example.com/a")
     assert 'about:\n      - "Entity Name"' in prompt, "flow-sequence example splits on commas"
@@ -768,7 +740,7 @@ def test_chunks_carry_their_location_and_anchor_only_on_a_real_quote():
     batch already declared, which is why chunk-to-chunk "mentions" is a 2-hop walk
     through shared entities instead of a quadratic edge set.
     """
-    from thalamus.harness.ingest import anchor_citations, build_chunks
+    from thalamus_ingest.ingest import anchor_citations, build_chunks
     from thalamus.substrate.schema import LiteratureClaim
 
     text = ("alpha " * 2000) + "the measured gap was 15.9 points " + ("omega " * 2000)
@@ -1142,7 +1114,7 @@ def test_the_document_url_in_the_endpoint_flag_is_refused_before_the_fetch(
     """
     from types import SimpleNamespace
 
-    from thalamus import cli
+    from thalamus_ingest import commands
 
     _install_manifest(tmp_path, monkeypatch)
 
@@ -1157,7 +1129,7 @@ def test_the_document_url_in_the_endpoint_flag_is_refused_before_the_fetch(
         title="", url="https://cs.uwaterloo.ca/~x/paper.pdf", check=False, refetch=False, write=True,
     )
     with pytest.raises(SystemExit) as exit_info:
-        cli._cmd_ingest(args)
+        commands.ingest(args)
 
     assert exit_info.value.code == 1
     err = capsys.readouterr().err
@@ -1180,14 +1152,15 @@ def test_a_write_run_reaches_the_endpoint_before_it_bills_the_model(
     """
     from types import SimpleNamespace
 
-    from thalamus import cli
+    from thalamus.substrate import writer
+    from thalamus_ingest import commands
 
     _install_manifest(tmp_path, monkeypatch)
 
     def _refuse(*_args, **_kwargs):
         raise ConnectionRefusedError("nothing listening on localhost:8182")
 
-    monkeypatch.setattr(cli, "connect", _refuse)
+    monkeypatch.setattr(writer, "connect", _refuse)
 
     def _must_not_run(*_args, **_kwargs):
         raise AssertionError("billed a model against an endpoint that cannot be written to")
@@ -1201,7 +1174,7 @@ def test_a_write_run_reaches_the_endpoint_before_it_bills_the_model(
         check=False, refetch=False, write=True,
     )
     with pytest.raises(SystemExit) as exit_info:
-        cli._cmd_ingest(args)
+        commands.ingest(args)
 
     assert exit_info.value.code == 1
     err = capsys.readouterr().err
@@ -1213,7 +1186,7 @@ def test_check_and_write_are_refused_together(tmp_path, monkeypatch, capsys):
     """They are opposites: one stops before the model call, the other runs it."""
     from types import SimpleNamespace
 
-    from thalamus import cli
+    from thalamus_ingest import commands
 
     _install_manifest(tmp_path, monkeypatch)
     args = SimpleNamespace(
@@ -1222,7 +1195,7 @@ def test_check_and_write_are_refused_together(tmp_path, monkeypatch, capsys):
         check=True, refetch=False, write=True,
     )
     with pytest.raises(SystemExit) as exit_info:
-        cli._cmd_ingest(args)
+        commands.ingest(args)
 
     assert exit_info.value.code == 1
     assert "opposites" in capsys.readouterr().err
@@ -1473,14 +1446,14 @@ def test_ingestion_runs_on_its_own_setting_not_distillation_s(tmp_path, monkeypa
     moving that spend must not require also moving the SessionEnd pass, which is the
     cheap one and the one whose output the operator reads every day.
     """
-    from thalamus import cli
+    from thalamus_ingest import commands
     from thalamus.harness import extractor_policy as ep
 
     _ingest_ready(tmp_path, monkeypatch)
     seen = _captured_extraction(monkeypatch)
     ep.select("codex", "gpt-5.6-luna", pass_="ingest")
 
-    cli._cmd_ingest(_ingest_args())
+    commands.ingest(_ingest_args())
 
     assert seen and seen[0] == ("codex", "gpt-5.6-luna")
     # The other pass is untouched: nothing was chosen for it, so it still follows the
@@ -1490,14 +1463,14 @@ def test_ingestion_runs_on_its_own_setting_not_distillation_s(tmp_path, monkeypa
 
 def test_ingestion_follows_distillation_until_it_is_set(tmp_path, monkeypatch):
     """An operator who wants one answer for both still gets it in one tap."""
-    from thalamus import cli
+    from thalamus_ingest import commands
     from thalamus.harness import extractor_policy as ep
 
     _ingest_ready(tmp_path, monkeypatch)
     seen = _captured_extraction(monkeypatch)
     ep.select("codex", pass_="distill")
 
-    cli._cmd_ingest(_ingest_args())
+    commands.ingest(_ingest_args())
 
     assert seen and seen[0][0] == "codex"
 
@@ -1505,14 +1478,14 @@ def test_ingestion_follows_distillation_until_it_is_set(tmp_path, monkeypatch):
 def test_the_ingest_flag_outranks_both_settings(tmp_path, monkeypatch):
     """`--harness` is the narrower statement: it is about this document, and a stored
     policy overriding it would make the flag unusable for trying an extractor once."""
-    from thalamus import cli
+    from thalamus_ingest import commands
     from thalamus.harness import extractor_policy as ep
 
     _ingest_ready(tmp_path, monkeypatch)
     seen = _captured_extraction(monkeypatch)
     ep.select("codex", pass_="ingest")
 
-    cli._cmd_ingest(_ingest_args(harness="cursor"))
+    commands.ingest(_ingest_args(harness="cursor"))
 
     assert seen and seen[0][0] == "cursor"
 
@@ -1522,14 +1495,14 @@ def test_an_ingest_says_what_extracted_it(tmp_path, monkeypatch, capsys):
     line is the only record a completed ingest leaves of which CLI produced its claims —
     and it prints before the call, where it is also a statement of what is about to be
     billed."""
-    from thalamus import cli
+    from thalamus_ingest import commands
     from thalamus.harness import extractor_policy as ep
 
     _ingest_ready(tmp_path, monkeypatch)
     _captured_extraction(monkeypatch)
     ep.select("codex", "gpt-5.6-luna", pass_="ingest")
 
-    cli._cmd_ingest(_ingest_args())
+    commands.ingest(_ingest_args())
 
     out = capsys.readouterr().out
     assert "Extractor: codex/gpt-5.6-luna — the ingestion setting" in out
