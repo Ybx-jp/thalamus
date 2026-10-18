@@ -114,6 +114,7 @@ CASE_MODULES = (
     "qe.cases.codex_profile_without_registration",
     "qe.cases.session_end_log_per_session",
     "qe.cases.graph_guard_script_pairing",
+    "qe.cases.project_override_recall_key",
 )
 
 
